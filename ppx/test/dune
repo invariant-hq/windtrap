@@ -1,0 +1,5 @@
+(test
+ (name test_ppx_windtrap)
+ (libraries windtrap)
+ (preprocess
+  (pps ppx_windtrap)))

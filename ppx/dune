@@ -1,0 +1,23 @@
+(library
+ (name ppx_windtrap)
+ (public_name ppx_windtrap)
+ (kind ppx_rewriter)
+ (instrumentation.backend
+  (ppx ppx_windtrap))
+ (libraries ppxlib)
+ (ppx_runtime_libraries windtrap)
+ (preprocess
+  (pps ppxlib.metaquot))
+ (inline_tests.backend
+  (runner_libraries windtrap)
+  (generate_runner
+   (progn
+    (echo "let () = Windtrap.Ppx_runtime.init Sys.argv;;")
+    (echo "let () = Windtrap.Ppx_runtime.exit ();;")))
+  (flags
+   "inline-test-runner"
+   %{library-name}
+   -source-tree-root
+   %{workspace_root}
+   -diff-cmd
+   -)))

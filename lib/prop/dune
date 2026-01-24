@@ -1,0 +1,4 @@
+(library
+ (name windtrap_prop)
+ (public_name windtrap.prop)
+ (libraries))
