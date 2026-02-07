@@ -13,6 +13,8 @@ let fail_tag = "FAIL"
 let skip_tag = "SKIP"
 let tag_width = 4
 let compact_line_width = 60
+let slowest_count = 5
+let slowest_threshold = 5.0
 
 (* ───── Types ───── *)
 
@@ -44,6 +46,7 @@ type t = {
   mutable printed_groups : string list;
   mutable junit_results : junit_result list;
   mutable junit_file : string option;
+  mutable slowest : (float * string) list;
 }
 
 (* ───── Construction ───── *)
@@ -59,6 +62,7 @@ let create ~mode ~total_tests =
     printed_groups = [];
     junit_results = [];
     junit_file = None;
+    slowest = [];
   }
 
 let set_junit_file t file = t.junit_file <- Some file
@@ -126,6 +130,20 @@ let collect_failure t ~path result =
       t.failures <- (path, failure, output_file) :: t.failures
   | Pass _ | Skip _ -> ()
 
+(* Maintain a descending-sorted list of the N slowest tests. *)
+let record_slowest t ~path time =
+  let entry = (time, path) in
+  let rec insert = function
+    | [] -> [ entry ]
+    | ((t', _) as x) :: rest ->
+        if time > t' then entry :: x :: rest else x :: insert rest
+  in
+  let updated = insert t.slowest in
+  t.slowest <-
+    (if List.length updated > slowest_count then
+       List.filteri (fun i _ -> i < slowest_count) updated
+     else updated)
+
 let result_time = function
   | Pass { time; _ } | Fail { time; _ } -> time
   | Skip _ -> 0.0
@@ -160,6 +178,9 @@ let print_group_headers t groups =
 let report_result t ~path ~groups result =
   t.tests_so_far <- t.tests_so_far + 1;
   t.total_time <- t.total_time +. result_time result;
+  (match result with
+  | Pass { time; _ } | Fail { time; _ } -> record_slowest t ~path time
+  | Skip _ -> ());
   match t.mode with
   | Compact ->
       let style, c =
@@ -398,6 +419,19 @@ let finish t =
 
 let total_time t = t.total_time
 
+let print_slowest t =
+  if
+    t.slowest <> []
+    && t.total_time >= slowest_threshold
+    && t.tests_so_far >= slowest_count
+  then begin
+    Pp.pr "@.%a@." (Pp.styled `Faint Pp.string) "Slowest tests:";
+    List.iter
+      (fun (time, path) ->
+        Pp.pr "  %a  %s@." (Pp.styled `Faint pp_time) time path)
+      t.slowest
+  end
+
 let print_summary t ~passed ~failed ~skipped ~time () =
   write_junit_xml t ~passed ~failed ~skipped ~time;
   match t.mode with
@@ -422,4 +456,5 @@ let print_summary t ~passed ~failed ~skipped ~time () =
         Pp.pr "%a in %s. %d test%s run.@."
           (Pp.styled `Bold (Pp.styled `Green Pp.string))
           "Test Successful" time_str total (plural total);
+      print_slowest t;
       if in_github_actions () then Pp.pr "::endgroup::@."
