@@ -162,10 +162,16 @@ let run_single_test ~progress ~log_trap ~groups ~test_pos ~timeout ~retries
 
 (* ───── Tree Traversal ───── *)
 
+type hooks = {
+  before_each : (unit -> unit) option;
+  after_each : (unit -> unit) option;
+}
+
 type run_state = {
   path_segments : string list;
   tag_stack : Tag.t list;
   focus_stack : bool list;
+  hooks_stack : hooks list;
   result : result;
   failure_count : int;
 }
@@ -183,6 +189,7 @@ let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
       path_segments = [];
       tag_stack = [];
       focus_stack = [];
+      hooks_stack = [];
       result = empty_result;
       failure_count = 0;
     }
@@ -207,6 +214,21 @@ let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
               let focus_skip =
                 focus_active && (not focused) && not (in_focused_scope state)
               in
+              let with_hooks fn =
+                let run_before_hooks () =
+                  List.iter
+                    (fun h -> Option.iter (fun f -> f ()) h.before_each)
+                    (List.rev state.hooks_stack)
+                in
+                let run_after_hooks () =
+                  List.iter
+                    (fun h -> Option.iter (fun f -> f ()) h.after_each)
+                    state.hooks_stack
+                in
+                fun () ->
+                  run_before_hooks ();
+                  Fun.protect ~finally:run_after_hooks fn
+              in
               let test_result =
                 if focus_skip then begin
                   Progress.report_result progress ~path ~groups
@@ -217,7 +239,7 @@ let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
                   match filter ~path eff_tags with
                   | `Run ->
                       run_single_test ~progress ~log_trap ~groups ~test_pos:pos
-                        ~timeout ~retries ~test_name:name path fn
+                        ~timeout ~retries ~test_name:name path (with_hooks fn)
                   | `Skip ->
                       Progress.report_result progress ~path ~groups
                         (Skip { reason = None });
@@ -228,26 +250,32 @@ let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
                 result = combine state.result test_result;
                 failure_count = state.failure_count + test_result.failed;
               }
-          | Test.Enter_group { name; tags; setup; focused; _ } ->
+          | Test.Enter_group
+              { name; tags; setup; before_each; after_each; focused; _ } ->
               Option.iter (fun f -> f ()) setup;
               {
                 state with
                 path_segments = name :: state.path_segments;
                 tag_stack = tags :: state.tag_stack;
                 focus_stack = focused :: state.focus_stack;
+                hooks_stack = { before_each; after_each } :: state.hooks_stack;
               }
           | Test.Leave_group { teardown; _ } -> (
               Option.iter (fun f -> f ()) teardown;
               match
-                (state.path_segments, state.tag_stack, state.focus_stack)
+                ( state.path_segments,
+                  state.tag_stack,
+                  state.focus_stack,
+                  state.hooks_stack )
               with
-              | [], _, _ | _, [], _ | _, _, [] -> state
-              | _ :: segs, _ :: tags, _ :: focus ->
+              | [], _, _, _ | _, [], _, _ | _, _, [], _ | _, _, _, [] -> state
+              | _ :: segs, _ :: tags, _ :: focus, _ :: hooks ->
                   {
                     state with
                     path_segments = segs;
                     tag_stack = tags;
                     focus_stack = focus;
+                    hooks_stack = hooks;
                   }))
       initial test
   in

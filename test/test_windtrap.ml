@@ -801,6 +801,47 @@ let focused_tests =
           is_true (T.has_focused tests));
     ]
 
+let hooks_tests =
+  let counter = ref 0 in
+  let log = ref [] in
+  group "Hooks"
+    [
+      group "before_each"
+        ~before_each:(fun () -> incr counter)
+        ~setup:(fun () -> counter := 0)
+        [
+          test "runs before first test" (fun () ->
+              equal Testable.int 1 !counter);
+          test "runs before second test" (fun () ->
+              equal Testable.int 2 !counter);
+        ];
+      group "after_each"
+        ~after_each:(fun () -> incr counter)
+        ~setup:(fun () -> counter := 0)
+        [
+          test "counter is 0 before first test" (fun () ->
+              equal Testable.int 0 !counter);
+          test "after_each ran after first test" (fun () ->
+              equal Testable.int 1 !counter);
+        ];
+      group "nested hooks ordering"
+        ~before_each:(fun () -> log := "outer_before" :: !log)
+        ~after_each:(fun () -> log := "outer_after" :: !log)
+        ~setup:(fun () -> log := [])
+        [
+          group "inner"
+            ~before_each:(fun () -> log := "inner_before" :: !log)
+            ~after_each:(fun () -> log := "inner_after" :: !log)
+            [
+              test "hooks run in correct order" (fun () ->
+                  equal
+                    (Testable.list Testable.string)
+                    [ "inner_before"; "outer_before" ]
+                    !log);
+            ];
+        ];
+    ]
+
 let snapshot_config_tests =
   group "Snapshot"
     [
@@ -851,5 +892,6 @@ let () =
       distance_tests;
       runner_filter_tests;
       focused_tests;
+      hooks_tests;
       snapshot_config_tests;
     ]

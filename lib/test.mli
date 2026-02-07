@@ -41,13 +41,18 @@ val group :
   ?tags:Tag.t ->
   ?setup:(unit -> unit) ->
   ?teardown:(unit -> unit) ->
+  ?before_each:(unit -> unit) ->
+  ?after_each:(unit -> unit) ->
   string ->
   t list ->
   t
 (** [group name children] creates a test group. Tags are inherited by children.
 
     @param setup Runs once before any child test.
-    @param teardown Runs once after all child tests, even on failure. *)
+    @param teardown Runs once after all child tests, even on failure.
+    @param before_each Runs before every individual test in this group.
+    @param after_each
+      Runs after every individual test in this group (even on failure). *)
 
 val ftest :
   ?pos:pos ->
@@ -66,6 +71,8 @@ val fgroup :
   ?tags:Tag.t ->
   ?setup:(unit -> unit) ->
   ?teardown:(unit -> unit) ->
+  ?before_each:(unit -> unit) ->
+  ?after_each:(unit -> unit) ->
   string ->
   t list ->
   t
@@ -133,6 +140,8 @@ type visit =
       pos : pos option;
       tags : Tag.t;
       setup : (unit -> unit) option;
+      before_each : (unit -> unit) option;
+      after_each : (unit -> unit) option;
       focused : bool;
     }  (** Entering a group node, before visiting children. *)
   | Leave_group of { name : string; teardown : (unit -> unit) option }

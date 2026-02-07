@@ -68,13 +68,21 @@ val group :
   ?tags:Tag.t ->
   ?setup:(unit -> unit) ->
   ?teardown:(unit -> unit) ->
+  ?before_each:(unit -> unit) ->
+  ?after_each:(unit -> unit) ->
   string ->
   test list ->
   test
 (** [group name children] creates a test group. Tags are inherited by children.
 
     @param setup Runs once before any child test.
-    @param teardown Runs once after all child tests, even on failure. *)
+    @param teardown Runs once after all child tests, even on failure.
+    @param before_each
+      Runs before every individual test in this group. Hooks from nested groups
+      stack: outer [before_each] runs first.
+    @param after_each
+      Runs after every individual test in this group (even on failure). Hooks
+      from nested groups stack: inner [after_each] runs first. *)
 
 val ftest :
   ?pos:Test.pos ->
@@ -93,6 +101,8 @@ val fgroup :
   ?tags:Tag.t ->
   ?setup:(unit -> unit) ->
   ?teardown:(unit -> unit) ->
+  ?before_each:(unit -> unit) ->
+  ?after_each:(unit -> unit) ->
   string ->
   test list ->
   test

@@ -24,6 +24,8 @@ type t =
       tags : Tag.t;
       setup : (unit -> unit) option;
       teardown : (unit -> unit) option;
+      before_each : (unit -> unit) option;
+      after_each : (unit -> unit) option;
       focused : bool;
     }
 
@@ -48,11 +50,25 @@ let ftest ?pos ?tags ?timeout ?retries name fn =
   | Test t -> Test { t with focused = true }
   | Group _ -> assert false
 
-let group ?pos ?(tags = Tag.empty) ?setup ?teardown name children =
-  Group { name; children; pos; tags; setup; teardown; focused = false }
+let group ?pos ?(tags = Tag.empty) ?setup ?teardown ?before_each ?after_each
+    name children =
+  Group
+    {
+      name;
+      children;
+      pos;
+      tags;
+      setup;
+      teardown;
+      before_each;
+      after_each;
+      focused = false;
+    }
 
-let fgroup ?pos ?tags ?setup ?teardown name children =
-  match group ?pos ?tags ?setup ?teardown name children with
+let fgroup ?pos ?tags ?setup ?teardown ?before_each ?after_each name children =
+  match
+    group ?pos ?tags ?setup ?teardown ?before_each ?after_each name children
+  with
   | Group g -> Group { g with focused = true }
   | Test _ -> assert false
 
@@ -103,6 +119,8 @@ type visit =
       pos : pos option;
       tags : Tag.t;
       setup : (unit -> unit) option;
+      before_each : (unit -> unit) option;
+      after_each : (unit -> unit) option;
       focused : bool;
     }
   | Leave_group of { name : string; teardown : (unit -> unit) option }
@@ -111,8 +129,23 @@ let rec fold f acc t =
   match t with
   | Test { name; fn; pos; tags; timeout; retries; focused } ->
       f acc (Case { name; fn; pos; tags; timeout; retries; focused })
-  | Group { name; children; pos; tags; setup; teardown; focused } ->
-      let acc = f acc (Enter_group { name; pos; tags; setup; focused }) in
+  | Group
+      {
+        name;
+        children;
+        pos;
+        tags;
+        setup;
+        teardown;
+        before_each;
+        after_each;
+        focused;
+      } ->
+      let acc =
+        f acc
+          (Enter_group
+             { name; pos; tags; setup; before_each; after_each; focused })
+      in
       let acc = List.fold_left (fold f) acc children in
       f acc (Leave_group { name; teardown })
 
