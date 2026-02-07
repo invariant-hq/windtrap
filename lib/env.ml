@@ -85,6 +85,7 @@ let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 (* ───── Test Filtering ───── *)
 
 let filter () = get_string "WINDTRAP_FILTER"
+let exclude () = get_string "WINDTRAP_EXCLUDE"
 let timeout () = get_float "WINDTRAP_TIMEOUT"
 
 (* ───── Tag Filtering ───── *)

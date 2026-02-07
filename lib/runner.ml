@@ -280,7 +280,8 @@ let default_config () =
 
 (* ───── Filter Construction ───── *)
 
-let make_filter ~quick ~filter_pattern ~required_tags ~dropped_tags =
+let make_filter ~quick ~filter_pattern ~exclude_pattern ~required_tags
+    ~dropped_tags =
   let speed_filter t =
     if quick then
       match Tag.get_speed t with Tag.Quick -> `Run | Tag.Slow -> `Skip
@@ -300,9 +301,20 @@ let make_filter ~quick ~filter_pattern ~required_tags ~dropped_tags =
     | Some pat ->
         if Text.contains_substring ~pattern:pat path then `Run else `Skip
   in
+  let exclude_filter ~path =
+    match exclude_pattern with
+    | None -> `Run
+    | Some pat ->
+        if Text.contains_substring ~pattern:pat path then `Skip else `Run
+  in
   fun ~path t ->
-    match (speed_filter t, predicate_filter t, pattern_filter ~path) with
-    | `Run, `Run, `Run -> `Run
+    match
+      ( speed_filter t,
+        predicate_filter t,
+        pattern_filter ~path,
+        exclude_filter ~path )
+    with
+    | `Run, `Run, `Run, `Run -> `Run
     | _ -> `Skip
 
 (* ───── Entry Point ───── *)

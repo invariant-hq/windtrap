@@ -11,6 +11,7 @@ type t = {
   bail : int option;
   quick : bool option;
   filter : string option;
+  exclude : string option;
   list_only : bool option;
   output_dir : string option;
   update : bool option;
@@ -29,6 +30,7 @@ let empty =
     bail = None;
     quick = None;
     filter = None;
+    exclude = None;
     list_only = None;
     output_dir = None;
     update = None;
@@ -58,6 +60,7 @@ let print_help prog_name =
   Pp.pr "    -l, --list             List tests without running@,";
   Pp.pr "    -u, --update           Update snapshots@,";
   Pp.pr "    -f, --filter PATTERN   Filter tests by name@,";
+  Pp.pr "    -e, --exclude PATTERN  Exclude tests by name@,";
   Pp.pr
     "    --tag LABEL            Run only tests with this label (repeatable)@,";
   Pp.pr "    --exclude-tag LABEL    Skip tests with this label (repeatable)@,@,";
@@ -75,6 +78,7 @@ let print_help prog_name =
   Pp.pr "    WINDTRAP_STREAM        Stream output (1/true/yes)@,";
   Pp.pr "    WINDTRAP_FORMAT        Output format (verbose/compact/tap/junit)@,";
   Pp.pr "    WINDTRAP_FILTER        Filter pattern@,";
+  Pp.pr "    WINDTRAP_EXCLUDE       Exclude pattern@,";
   Pp.pr "    WINDTRAP_UPDATE        Update snapshots (1/true/yes)@,";
   Pp.pr "    WINDTRAP_SEED          Random seed for property tests@,";
   Pp.pr "    WINDTRAP_PROP_COUNT    Number of property test cases@,";
@@ -109,6 +113,11 @@ let rec parse_args acc = function
       parse_args { acc with filter = Some pat } rest
   | "--filter" :: [] | "-f" :: [] ->
       Pp.epr "Error: --filter requires an argument@.";
+      exit 1
+  | ("-e" | "--exclude") :: pat :: rest ->
+      parse_args { acc with exclude = Some pat } rest
+  | "--exclude" :: [] | "-e" :: [] ->
+      Pp.epr "Error: --exclude requires an argument@.";
       exit 1
   (* Tag filtering *)
   | "--tag" :: label :: rest ->
@@ -173,6 +182,10 @@ let rec parse_args acc = function
     ->
       let pat = String.sub arg 9 (String.length arg - 9) in
       parse_args { acc with filter = Some pat } rest
+  | arg :: rest
+    when String.length arg > 10 && String.sub arg 0 10 = "--exclude=" ->
+      let pat = String.sub arg 10 (String.length arg - 10) in
+      parse_args { acc with exclude = Some pat } rest
   | arg :: rest when String.length arg > 9 && String.sub arg 0 9 = "--format="
     ->
       let fmt = String.sub arg 9 (String.length arg - 9) in
@@ -267,8 +280,8 @@ let resolve_opt prog cli env =
   |> Option.fold ~none:(env ()) ~some:Option.some
 
 let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
-    ?snapshot_dir ?filter ?format ?junit ?seed ?timeout ?prop_count ?tags
-    ?exclude_tags (cli : t) =
+    ?snapshot_dir ?filter ?exclude ?format ?junit ?seed ?timeout ?prop_count
+    ?tags ?exclude_tags (cli : t) =
   let quick = resolve quick cli.quick (fun () -> None) false in
   let bail =
     match (bail, fail_fast) with
@@ -283,6 +296,7 @@ let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
   in
   let update = resolve update cli.update Env.update false in
   let filter_pattern = resolve_opt filter cli.filter Env.filter in
+  let exclude_pattern = resolve_opt exclude cli.exclude Env.exclude in
   let junit = resolve_opt junit cli.junit (fun () -> None) in
 
   let stream = resolve stream cli.stream Env.stream false in
@@ -324,7 +338,8 @@ let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
     @ cli.exclude_tags @ Env.exclude_tag ()
   in
   let filter =
-    Runner.make_filter ~quick ~filter_pattern ~required_tags ~dropped_tags
+    Runner.make_filter ~quick ~filter_pattern ~exclude_pattern ~required_tags
+      ~dropped_tags
   in
   {
     Runner.filter;

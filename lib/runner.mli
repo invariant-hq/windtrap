@@ -59,13 +59,15 @@ val list_tests : string -> Test.t list -> unit
 val make_filter :
   quick:bool ->
   filter_pattern:string option ->
+  exclude_pattern:string option ->
   required_tags:string list ->
   dropped_tags:string list ->
   filter
-(** [make_filter ~quick ~filter_pattern ~required_tags ~dropped_tags] builds a
-    filter that skips:
+(** [make_filter ~quick ~filter_pattern ~exclude_pattern ~required_tags
+     ~dropped_tags] builds a filter that skips:
     - slow tests when [quick] is [true],
     - tests with the ["disabled"] label,
     - tests whose path does not contain [filter_pattern] (substring match),
+    - tests whose path contains [exclude_pattern] (substring match),
     - tests missing any of [required_tags],
     - tests having any of [dropped_tags]. *)

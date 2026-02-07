@@ -39,7 +39,7 @@ let fixture create =
 type format = Progress.mode = Compact | Verbose | Tap | Junit
 
 let run ?quick ?bail ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
-    ?filter ?list_only ?format ?junit ?seed ?timeout ?prop_count ?tags
+    ?filter ?exclude ?list_only ?format ?junit ?seed ?timeout ?prop_count ?tags
     ?exclude_tags ?argv name tests =
   let cli = Cli.parse (Option.value ~default:Sys.argv argv) in
 
@@ -55,8 +55,8 @@ let run ?quick ?bail ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
 
   let config =
     Cli.resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
-      ?snapshot_dir ?filter ?format ?junit ?seed ?timeout ?prop_count ?tags
-      ?exclude_tags cli
+      ?snapshot_dir ?filter ?exclude ?format ?junit ?seed ?timeout ?prop_count
+      ?tags ?exclude_tags cli
   in
   let result = Runner.run ~config name tests in
   if result.failed > 0 then exit 1

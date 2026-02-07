@@ -155,6 +155,7 @@ val run :
   ?update:bool ->
   ?snapshot_dir:string ->
   ?filter:string ->
+  ?exclude:string ->
   ?list_only:bool ->
   ?format:format ->
   ?junit:string ->
@@ -194,6 +195,9 @@ val run :
     @param snapshot_dir Overrides snapshot root directory
     @param filter
       Filter tests by name (substring match). CLI: [-f PATTERN] or positional.
+    @param exclude
+      Exclude tests by name (substring match). CLI: [-e PATTERN],
+      [--exclude PATTERN], env: [WINDTRAP_EXCLUDE].
     @param list_only List test names without running. CLI: [-l].
     @param format
       Output format: Verbose, Compact, Tap, or Junit (default: Verbose)

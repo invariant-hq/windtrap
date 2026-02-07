@@ -503,6 +503,15 @@ let cli_tests =
           test "--exclude-tag=LABEL equals-style" (fun () ->
               let cli = parse [ "--exclude-tag=slow" ] in
               equal (Testable.list Testable.string) [ "slow" ] cli.exclude_tags);
+          test "-e sets exclude" (fun () ->
+              let cli = parse [ "-e"; "Snapshot" ] in
+              some Testable.string "Snapshot" cli.exclude);
+          test "--exclude sets exclude" (fun () ->
+              let cli = parse [ "--exclude"; "Snapshot" ] in
+              some Testable.string "Snapshot" cli.exclude);
+          test "--exclude=PATTERN equals-style" (fun () ->
+              let cli = parse [ "--exclude=Slow" ] in
+              some Testable.string "Slow" cli.exclude);
           test "--prop-count parses integer" (fun () ->
               let cli = parse [ "--prop-count"; "500" ] in
               equal (Testable.option Testable.int) (Some 500) cli.prop_count);
@@ -705,10 +714,10 @@ let distance_tests =
     ]
 
 let runner_filter_tests =
-  let make_filter ?(quick = false) ?filter_pattern ?(required_tags = [])
-      ?(dropped_tags = []) () =
-    Windtrap__Runner.make_filter ~quick ~filter_pattern ~required_tags
-      ~dropped_tags
+  let make_filter ?(quick = false) ?filter_pattern ?exclude_pattern
+      ?(required_tags = []) ?(dropped_tags = []) () =
+    Windtrap__Runner.make_filter ~quick ~filter_pattern ~exclude_pattern
+      ~required_tags ~dropped_tags
   in
   group "Runner"
     [
@@ -751,6 +760,19 @@ let runner_filter_tests =
           test "excluded tag runs non-matching" (fun () ->
               let filter = make_filter ~dropped_tags:[ "flaky" ] () in
               is_true (filter ~path:"test" Tag.empty = `Run));
+          test "exclude pattern skips matching" (fun () ->
+              let filter = make_filter ~exclude_pattern:"Snapshot" () in
+              is_true (filter ~path:"Suite › Snapshot › test" Tag.empty = `Skip));
+          test "exclude pattern runs non-matching" (fun () ->
+              let filter = make_filter ~exclude_pattern:"Snapshot" () in
+              is_true (filter ~path:"Suite › Runner › test" Tag.empty = `Run));
+          test "filter and exclude combined" (fun () ->
+              let filter =
+                make_filter ~filter_pattern:"Suite" ~exclude_pattern:"Slow" ()
+              in
+              is_true (filter ~path:"Suite › Fast" Tag.empty = `Run);
+              is_true (filter ~path:"Suite › Slow" Tag.empty = `Skip);
+              is_true (filter ~path:"Other › Fast" Tag.empty = `Skip));
         ];
     ]
 

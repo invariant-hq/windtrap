@@ -96,6 +96,9 @@ val project_root : unit -> string option
 val filter : unit -> string option
 (** [WINDTRAP_FILTER]: substring pattern for filtering tests by name. *)
 
+val exclude : unit -> string option
+(** [WINDTRAP_EXCLUDE]: substring pattern for excluding tests by name. *)
+
 val timeout : unit -> float option
 (** [WINDTRAP_TIMEOUT]: default timeout in seconds for all tests. *)
 

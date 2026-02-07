@@ -21,6 +21,8 @@ type t = {
   quick : bool option;  (** [-q], [--quick]: skip slow tests. *)
   filter : string option;
       (** [-f], [--filter], or first positional argument: test name filter. *)
+  exclude : string option;
+      (** [-e], [--exclude]: exclude tests whose path contains this pattern. *)
   list_only : bool option;  (** [-l], [--list]: list tests without running. *)
   output_dir : string option;  (** [-o], [--output]: directory for test logs. *)
   update : bool option;  (** [-u], [--update]: update snapshots. *)
@@ -67,6 +69,7 @@ val resolve_config :
   ?update:bool ->
   ?snapshot_dir:string ->
   ?filter:string ->
+  ?exclude:string ->
   ?format:Progress.mode ->
   ?junit:string ->
   ?seed:int ->
