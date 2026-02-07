@@ -276,13 +276,20 @@ let default_config () =
 
 (* ───── Filter Construction ───── *)
 
-let make_filter ~quick ~filter_pattern =
+let make_filter ~quick ~filter_pattern ~required_tags ~dropped_tags =
   let speed_filter t =
     if quick then
       match Tag.get_speed t with Tag.Quick -> `Run | Tag.Slow -> `Skip
     else `Run
   in
-  let predicate_filter = Tag.filter_predicate Tag.initial_predicate in
+  let predicate =
+    let p = Tag.initial_predicate in
+    let p =
+      List.fold_left (fun p tag -> Tag.require_tag tag p) p required_tags
+    in
+    List.fold_left (fun p tag -> Tag.drop_tag tag p) p dropped_tags
+  in
+  let predicate_filter = Tag.filter_predicate predicate in
   let pattern_filter ~path =
     match filter_pattern with
     | None -> `Run

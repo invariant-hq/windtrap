@@ -85,3 +85,18 @@ let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 
 let filter () = get_string "WINDTRAP_FILTER"
 let timeout () = get_float "WINDTRAP_TIMEOUT"
+
+(* ───── Tag Filtering ───── *)
+
+let split_comma s =
+  String.split_on_char ',' s
+  |> List.filter (fun s -> String.length (String.trim s) > 0)
+  |> List.map String.trim
+
+let tag () =
+  match get_string "WINDTRAP_TAG" with Some s -> split_comma s | None -> []
+
+let exclude_tag () =
+  match get_string "WINDTRAP_EXCLUDE_TAG" with
+  | Some s -> split_comma s
+  | None -> []

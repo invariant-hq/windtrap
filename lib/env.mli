@@ -95,3 +95,11 @@ val filter : unit -> string option
 
 val timeout : unit -> float option
 (** [WINDTRAP_TIMEOUT]: default timeout in seconds for all tests. *)
+
+(** {1 Tag Filtering} *)
+
+val tag : unit -> string list
+(** [WINDTRAP_TAG]: comma-separated list of required tags. *)
+
+val exclude_tag : unit -> string list
+(** [WINDTRAP_EXCLUDE_TAG]: comma-separated list of excluded tags. *)

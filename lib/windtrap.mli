@@ -159,6 +159,8 @@ val run :
   ?junit:string ->
   ?seed:int ->
   ?timeout:float ->
+  ?tags:string list ->
+  ?exclude_tags:string list ->
   ?argv:string array ->
   string ->
   test list ->
@@ -190,6 +192,13 @@ val run :
     @param timeout
       Default timeout in seconds for tests without a per-test timeout. CLI:
       [--timeout N], env: [WINDTRAP_TIMEOUT].
+    @param tags
+      Required labels. Only tests with all listed labels will run. CLI:
+      [--tag LABEL] (repeatable), env: [WINDTRAP_TAG] (comma-separated).
+    @param exclude_tags
+      Excluded labels. Tests with any listed label will be skipped. CLI:
+      [--exclude-tag LABEL] (repeatable), env: [WINDTRAP_EXCLUDE_TAG]
+      (comma-separated).
     @param argv Command line arguments to parse (default: [Sys.argv]) *)
 
 (** {1 Equality Assertions} *)

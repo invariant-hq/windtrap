@@ -17,6 +17,8 @@ type t = {
   junit : string option;
   seed : int option;
   timeout : float option;
+  tags : string list;
+  exclude_tags : string list;
 }
 
 let empty =
@@ -32,6 +34,8 @@ let empty =
     junit = None;
     seed = None;
     timeout = None;
+    tags = [];
+    exclude_tags = [];
   }
 
 (* ───── Help And Parsing ───── *)
@@ -49,7 +53,10 @@ let print_help prog_name =
   Pp.pr "    -x, --fail-fast        Stop on first failure@,";
   Pp.pr "    -l, --list             List tests without running@,";
   Pp.pr "    -u, --update           Update snapshots@,";
-  Pp.pr "    -f, --filter PATTERN   Filter tests by name@,@,";
+  Pp.pr "    -f, --filter PATTERN   Filter tests by name@,";
+  Pp.pr
+    "    --tag LABEL            Run only tests with this label (repeatable)@,";
+  Pp.pr "    --exclude-tag LABEL    Skip tests with this label (repeatable)@,@,";
   Pp.pr "OUTPUT:@,";
   Pp.pr "    --format FMT           Output: verbose, compact, tap, junit@,";
   Pp.pr "    --junit PATH           Write JUnit XML to file@,@,";
@@ -65,6 +72,8 @@ let print_help prog_name =
   Pp.pr "    WINDTRAP_UPDATE        Update snapshots (1/true/yes)@,";
   Pp.pr "    WINDTRAP_SEED          Random seed for property tests@,";
   Pp.pr "    WINDTRAP_COLOR         Color output (always/never/auto)@,";
+  Pp.pr "    WINDTRAP_TAG           Required tags (comma-separated)@,";
+  Pp.pr "    WINDTRAP_EXCLUDE_TAG   Excluded tags (comma-separated)@,";
   Pp.pr "@]%!"
 
 let rec parse_args acc = function
@@ -85,6 +94,17 @@ let rec parse_args acc = function
       parse_args { acc with filter = Some pat } rest
   | "--filter" :: [] | "-f" :: [] ->
       Pp.epr "Error: --filter requires an argument@.";
+      exit 1
+  (* Tag filtering *)
+  | "--tag" :: label :: rest ->
+      parse_args { acc with tags = label :: acc.tags } rest
+  | "--tag" :: [] ->
+      Pp.epr "Error: --tag requires an argument@.";
+      exit 1
+  | "--exclude-tag" :: label :: rest ->
+      parse_args { acc with exclude_tags = label :: acc.exclude_tags } rest
+  | "--exclude-tag" :: [] ->
+      Pp.epr "Error: --exclude-tag requires an argument@.";
       exit 1
   (* Output options *)
   | "--format" :: fmt :: rest -> parse_args { acc with format = Some fmt } rest
@@ -156,6 +176,13 @@ let rec parse_args acc = function
       | _ ->
           Pp.epr "Error: --timeout requires a positive number@.";
           exit 1)
+  | arg :: rest when String.length arg > 6 && String.sub arg 0 6 = "--tag=" ->
+      let label = String.sub arg 6 (String.length arg - 6) in
+      parse_args { acc with tags = label :: acc.tags } rest
+  | arg :: rest
+    when String.length arg > 14 && String.sub arg 0 14 = "--exclude-tag=" ->
+      let label = String.sub arg 14 (String.length arg - 14) in
+      parse_args { acc with exclude_tags = label :: acc.exclude_tags } rest
   (* Unknown flag *)
   | arg :: _ when String.length arg > 0 && arg.[0] = '-' ->
       Pp.epr "Unknown option: %s@." arg;
@@ -200,7 +227,7 @@ let resolve_opt prog cli env =
   |> Option.fold ~none:(env ()) ~some:Option.some
 
 let resolve_config ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
-    ?filter ?format ?junit ?seed ?timeout (cli : t) =
+    ?filter ?format ?junit ?seed ?timeout ?tags ?exclude_tags (cli : t) =
   let quick = resolve quick cli.quick (fun () -> None) false in
   let fail_fast = resolve fail_fast cli.fail_fast (fun () -> None) false in
   let output_dir =
@@ -243,7 +270,14 @@ let resolve_config ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
         Option.bind (Env.timeout ()) (fun t -> if t > 0.0 then Some t else None))
   in
 
-  let filter = Runner.make_filter ~quick ~filter_pattern in
+  let required_tags = Option.value ~default:[] tags @ cli.tags @ Env.tag () in
+  let dropped_tags =
+    Option.value ~default:[] exclude_tags
+    @ cli.exclude_tags @ Env.exclude_tag ()
+  in
+  let filter =
+    Runner.make_filter ~quick ~filter_pattern ~required_tags ~dropped_tags
+  in
   {
     Runner.filter;
     progress_mode;

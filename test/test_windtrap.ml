@@ -454,6 +454,21 @@ let cli_tests =
               some Testable.bool true cli.quick;
               some Testable.bool true cli.fail_fast;
               some Testable.string "foo" cli.filter);
+          test "--tag adds to tags list" (fun () ->
+              let cli = parse [ "--tag"; "integration" ] in
+              equal (Testable.list Testable.string) [ "integration" ] cli.tags);
+          test "--tag is repeatable" (fun () ->
+              let cli = parse [ "--tag"; "unit"; "--tag"; "fast" ] in
+              equal (Testable.list Testable.string) [ "fast"; "unit" ] cli.tags);
+          test "--tag=LABEL equals-style" (fun () ->
+              let cli = parse [ "--tag=integration" ] in
+              equal (Testable.list Testable.string) [ "integration" ] cli.tags);
+          test "--exclude-tag adds to exclude list" (fun () ->
+              let cli = parse [ "--exclude-tag"; "flaky" ] in
+              equal (Testable.list Testable.string) [ "flaky" ] cli.exclude_tags);
+          test "--exclude-tag=LABEL equals-style" (fun () ->
+              let cli = parse [ "--exclude-tag=slow" ] in
+              equal (Testable.list Testable.string) [ "slow" ] cli.exclude_tags);
         ];
       group "parse_format"
         [
@@ -650,52 +665,52 @@ let distance_tests =
     ]
 
 let runner_filter_tests =
+  let make_filter ?(quick = false) ?filter_pattern ?(required_tags = [])
+      ?(dropped_tags = []) () =
+    Windtrap__Runner.make_filter ~quick ~filter_pattern ~required_tags
+      ~dropped_tags
+  in
   group "Runner"
     [
       group "make_filter"
         [
           test "no filters runs everything" (fun () ->
-              let filter =
-                Windtrap__Runner.make_filter ~quick:false ~filter_pattern:None
-              in
+              let filter = make_filter () in
               is_true (filter ~path:"any test" Tag.empty = `Run));
           test "quick mode skips slow tests" (fun () ->
-              let filter =
-                Windtrap__Runner.make_filter ~quick:true ~filter_pattern:None
-              in
+              let filter = make_filter ~quick:true () in
               is_true (filter ~path:"slow test" (Tag.speed Tag.Slow) = `Skip));
           test "quick mode runs quick tests" (fun () ->
-              let filter =
-                Windtrap__Runner.make_filter ~quick:true ~filter_pattern:None
-              in
+              let filter = make_filter ~quick:true () in
               is_true (filter ~path:"fast test" Tag.empty = `Run));
           test "pattern filter matches" (fun () ->
-              let filter =
-                Windtrap__Runner.make_filter ~quick:false
-                  ~filter_pattern:(Some "foo")
-              in
+              let filter = make_filter ~filter_pattern:"foo" () in
               is_true (filter ~path:"test foo bar" Tag.empty = `Run));
           test "pattern filter skips non-matching" (fun () ->
-              let filter =
-                Windtrap__Runner.make_filter ~quick:false
-                  ~filter_pattern:(Some "foo")
-              in
+              let filter = make_filter ~filter_pattern:"foo" () in
               is_true (filter ~path:"test bar baz" Tag.empty = `Skip));
           test "disabled tests are skipped" (fun () ->
-              let filter =
-                Windtrap__Runner.make_filter ~quick:false ~filter_pattern:None
-              in
+              let filter = make_filter () in
               is_true
                 (filter ~path:"disabled test" (Tag.labels [ "disabled" ])
                 = `Skip));
           test "combined quick and pattern" (fun () ->
-              let filter =
-                Windtrap__Runner.make_filter ~quick:true
-                  ~filter_pattern:(Some "match")
-              in
+              let filter = make_filter ~quick:true ~filter_pattern:"match" () in
               is_true (filter ~path:"match test" Tag.empty = `Run);
               is_true (filter ~path:"no" Tag.empty = `Skip);
               is_true (filter ~path:"match slow" (Tag.speed Tag.Slow) = `Skip));
+          test "required tag runs matching" (fun () ->
+              let filter = make_filter ~required_tags:[ "integration" ] () in
+              is_true (filter ~path:"test" (Tag.labels [ "integration" ]) = `Run));
+          test "required tag skips non-matching" (fun () ->
+              let filter = make_filter ~required_tags:[ "integration" ] () in
+              is_true (filter ~path:"test" Tag.empty = `Skip));
+          test "excluded tag skips matching" (fun () ->
+              let filter = make_filter ~dropped_tags:[ "flaky" ] () in
+              is_true (filter ~path:"test" (Tag.labels [ "flaky" ]) = `Skip));
+          test "excluded tag runs non-matching" (fun () ->
+              let filter = make_filter ~dropped_tags:[ "flaky" ] () in
+              is_true (filter ~path:"test" Tag.empty = `Run));
         ];
     ]
 

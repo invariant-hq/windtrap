@@ -25,6 +25,12 @@ type t = {
   junit : string option;  (** [--junit]: write JUnit XML to this path. *)
   seed : int option;  (** [--seed]: random seed for property tests. *)
   timeout : float option;  (** [--timeout]: default timeout in seconds. *)
+  tags : string list;
+      (** [--tag]: required labels (repeatable). Tests without these labels are
+          skipped. *)
+  exclude_tags : string list;
+      (** [--exclude-tag]: excluded labels (repeatable). Tests with these labels
+          are skipped. *)
 }
 (** Parsed CLI flags. [None] means the flag was not provided. *)
 
@@ -60,6 +66,8 @@ val resolve_config :
   ?junit:string ->
   ?seed:int ->
   ?timeout:float ->
+  ?tags:string list ->
+  ?exclude_tags:string list ->
   t ->
   Runner.config
 (** [resolve_config ... cli] builds a {!Runner.config} by merging sources with
