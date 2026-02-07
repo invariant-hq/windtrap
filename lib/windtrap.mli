@@ -165,8 +165,11 @@ val run :
   string ->
   test list ->
   unit
-(** [run name tests] runs the test suite and exits with code 1 if any tests
-    fail.
+(** [run name tests] runs the test suite and exits the process.
+
+    - Exit 0: all tests passed (at least one ran).
+    - Exit 1: at least one test failed.
+    - Exit 2: no tests ran (all filtered out). Helps catch typos in filters.
 
     Tests with the "disabled" label are automatically skipped.
 
