@@ -368,15 +368,20 @@ let unified_diff ~context ~expected_label ~actual_label expected actual =
     let hunks = hunks_of_ops ~context ops in
     let buf = Buffer.create 2048 in
     Buffer.add_string buf
-      (Pp.str "--- %s\n+++ %s\n" expected_label actual_label);
+      (Pp.styled_string `Bold
+         (Pp.str "--- %s\n+++ %s\n" expected_label actual_label));
     (* Reorder lines within change groups so - comes before +.
        A change group is a consecutive sequence of - and + lines.
        Context lines ( ) flush and separate change groups. *)
     let output_line buf (p, line) =
-      Buffer.add_char buf p;
-      Buffer.add_char buf ' ';
-      Buffer.add_string buf line;
-      Buffer.add_char buf '\n'
+      let s = Pp.str "%c %s\n" p line in
+      let colored =
+        match p with
+        | '-' -> Pp.styled_string `Red s
+        | '+' -> Pp.styled_string `Green s
+        | _ -> s
+      in
+      Buffer.add_string buf colored
     in
     let flush_changes buf dels adds =
       List.iter (output_line buf) (List.rev dels);
@@ -385,8 +390,9 @@ let unified_diff ~context ~expected_label ~actual_label expected actual =
     List.iter
       (fun h ->
         Buffer.add_string buf
-          (Pp.str "@@ -%d,%d +%d,%d @@\n" h.exp_start h.exp_len h.act_start
-             h.act_len);
+          (Pp.styled_string `Cyan
+             (Pp.str "@@ -%d,%d +%d,%d @@\n" h.exp_start h.exp_len h.act_start
+                h.act_len));
         let dels = ref [] in
         let adds = ref [] in
         List.iter
