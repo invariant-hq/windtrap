@@ -8,7 +8,7 @@
 type t = {
   stream : bool option;
   format : string option;
-  fail_fast : bool option;
+  bail : int option;
   quick : bool option;
   filter : string option;
   list_only : bool option;
@@ -26,7 +26,7 @@ let empty =
   {
     stream = None;
     format = None;
-    fail_fast = None;
+    bail = None;
     quick = None;
     filter = None;
     list_only = None;
@@ -52,7 +52,9 @@ let print_help prog_name =
   Pp.pr
     "    -v, --verbose          Verbose output (alias for --format verbose)@,";
   Pp.pr "    -q, --quick            Skip slow tests@,";
-  Pp.pr "    -x, --fail-fast        Stop on first failure@,";
+  Pp.pr
+    "    -x, --fail-fast        Stop on first failure (alias for --bail 1)@,";
+  Pp.pr "    --bail N               Stop after N failures@,";
   Pp.pr "    -l, --list             List tests without running@,";
   Pp.pr "    -u, --update           Update snapshots@,";
   Pp.pr "    -f, --filter PATTERN   Filter tests by name@,";
@@ -89,8 +91,16 @@ let rec parse_args acc = function
   | ("-v" | "--verbose") :: rest ->
       parse_args { acc with format = Some "verbose" } rest
   | ("-q" | "--quick") :: rest -> parse_args { acc with quick = Some true } rest
-  | ("-x" | "--fail-fast") :: rest ->
-      parse_args { acc with fail_fast = Some true } rest
+  | ("-x" | "--fail-fast") :: rest -> parse_args { acc with bail = Some 1 } rest
+  | "--bail" :: n :: rest -> (
+      match int_of_string_opt n with
+      | Some b when b > 0 -> parse_args { acc with bail = Some b } rest
+      | _ ->
+          Pp.epr "Error: --bail requires a positive integer@.";
+          exit 1)
+  | "--bail" :: [] ->
+      Pp.epr "Error: --bail requires an argument@.";
+      exit 1
   | ("-l" | "--list") :: rest ->
       parse_args { acc with list_only = Some true } rest
   | ("-u" | "--update") :: rest ->
@@ -201,6 +211,14 @@ let rec parse_args acc = function
   | arg :: rest when String.length arg > 6 && String.sub arg 0 6 = "--tag=" ->
       let label = String.sub arg 6 (String.length arg - 6) in
       parse_args { acc with tags = label :: acc.tags } rest
+  | arg :: rest when String.length arg > 7 && String.sub arg 0 7 = "--bail="
+    -> (
+      let n = String.sub arg 7 (String.length arg - 7) in
+      match int_of_string_opt n with
+      | Some b when b > 0 -> parse_args { acc with bail = Some b } rest
+      | _ ->
+          Pp.epr "Error: --bail requires a positive integer@.";
+          exit 1)
   | arg :: rest
     when String.length arg > 14 && String.sub arg 0 14 = "--exclude-tag=" ->
       let label = String.sub arg 14 (String.length arg - 14) in
@@ -248,11 +266,16 @@ let resolve_opt prog cli env =
   |> Option.fold ~none:cli ~some:Option.some
   |> Option.fold ~none:(env ()) ~some:Option.some
 
-let resolve_config ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
-    ?filter ?format ?junit ?seed ?timeout ?prop_count ?tags ?exclude_tags
-    (cli : t) =
+let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
+    ?snapshot_dir ?filter ?format ?junit ?seed ?timeout ?prop_count ?tags
+    ?exclude_tags (cli : t) =
   let quick = resolve quick cli.quick (fun () -> None) false in
-  let fail_fast = resolve fail_fast cli.fail_fast (fun () -> None) false in
+  let bail =
+    match (bail, fail_fast) with
+    | Some n, _ -> Some n
+    | None, Some true -> Some 1
+    | _ -> cli.bail
+  in
   let output_dir =
     resolve output_dir cli.output_dir
       (fun () -> None)
@@ -309,7 +332,7 @@ let resolve_config ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
     log_dir = output_dir;
     capture;
     snapshot_config;
-    stop_on_error = fail_fast;
+    bail;
     junit_file = junit;
     seed;
     default_timeout = timeout;

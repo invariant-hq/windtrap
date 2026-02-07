@@ -148,6 +148,7 @@ type format =
 
 val run :
   ?quick:bool ->
+  ?bail:int ->
   ?fail_fast:bool ->
   ?output_dir:string ->
   ?stream:bool ->
@@ -178,7 +179,13 @@ val run :
     programmatic arguments, CLI flags, environment variables, defaults.
 
     @param quick Skip tests tagged as slow (default: false)
-    @param fail_fast Stop after first test failure (default: false)
+    @param bail
+      Stop the suite after [N] failures. CLI: [--bail N]. Useful for large
+      suites where you want to stop early without aborting on the very first
+      failure.
+    @param fail_fast
+      Stop after first test failure (default: false). Sugar for [~bail:1]. CLI:
+      [-x], [--fail-fast].
     @param output_dir Directory for test logs (default: "_build/_tests")
     @param stream
       Stream test output to console instead of capturing to files. Useful for

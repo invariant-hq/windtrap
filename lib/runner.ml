@@ -166,7 +166,7 @@ type run_state = {
   path_segments : string list;
   tag_stack : Tag.t list;
   result : result;
-  stopped : bool;
+  failure_count : int;
 }
 
 (* Merge inherited group tags with the test's own tags. Tags from outer groups
@@ -175,20 +175,23 @@ let effective_tags tag_stack tags =
   let ordered = List.rev tag_stack @ [ tags ] in
   List.fold_left Tag.merge Tag.empty ordered
 
-let run_test ~progress ~log_trap ~filter ~stop_on_error ~default_timeout
-    ~root_name test =
+let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~root_name test
+    =
   let initial =
     {
       path_segments = [];
       tag_stack = [];
       result = empty_result;
-      stopped = false;
+      failure_count = 0;
     }
+  in
+  let bailed state =
+    match bail with Some n -> state.failure_count >= n | None -> false
   in
   let final_state =
     Test.fold
       (fun state visit ->
-        if state.stopped then state
+        if bailed state then state
         else
           match visit with
           | Test.Case { name; fn; tags; pos; timeout; retries } ->
@@ -208,11 +211,10 @@ let run_test ~progress ~log_trap ~filter ~stop_on_error ~default_timeout
                       (Skip { reason = None });
                     { passed = 0; failed = 0; skipped = 1 }
               in
-              let should_stop = stop_on_error && test_result.failed > 0 in
               {
                 state with
                 result = combine state.result test_result;
-                stopped = should_stop;
+                failure_count = state.failure_count + test_result.failed;
               }
           | Test.Enter_group { name; tags; setup; _ } ->
               Option.iter (fun f -> f ()) setup;
@@ -229,16 +231,16 @@ let run_test ~progress ~log_trap ~filter ~stop_on_error ~default_timeout
                   { state with path_segments = segs; tag_stack = tags }))
       initial test
   in
-  (final_state.result, final_state.stopped)
+  (final_state.result, bailed final_state)
 
-let run_tests ~progress ~log_trap ~filter ~stop_on_error ~default_timeout
-    ~root_name tests =
+let run_tests ~progress ~log_trap ~filter ~bail ~default_timeout ~root_name
+    tests =
   let rec loop acc = function
     | [] -> acc
     | test :: rest ->
         let result, stopped =
-          run_test ~progress ~log_trap ~filter ~stop_on_error ~default_timeout
-            ~root_name test
+          run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~root_name
+            test
         in
         let acc = combine acc result in
         if stopped then acc else loop acc rest
@@ -255,7 +257,7 @@ type config = {
   log_dir : string;
   capture : bool;
   snapshot_config : Snapshot.Config.t;
-  stop_on_error : bool;
+  bail : int option;
   junit_file : string option;
   seed : int option;
   default_timeout : float option;
@@ -269,7 +271,7 @@ let default_config () =
     log_dir = Path_ops.default_log_dir ();
     capture = true;
     snapshot_config = Snapshot.Config.default ();
-    stop_on_error = false;
+    bail = None;
     junit_file = None;
     seed = None;
     default_timeout = None;
@@ -323,8 +325,7 @@ let run ?(config = default_config ()) root_name tests =
   Option.iter (Progress.set_junit_file progress) config.junit_file;
   Progress.print_header progress ~name:root_name ~run_id;
   let result =
-    run_tests ~progress ~log_trap ~filter:config.filter
-      ~stop_on_error:config.stop_on_error
+    run_tests ~progress ~log_trap ~filter:config.filter ~bail:config.bail
       ~default_timeout:config.default_timeout ~root_name tests
   in
   Progress.finish progress;

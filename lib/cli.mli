@@ -15,7 +15,9 @@ type t = {
   stream : bool option;  (** [-s], [--stream]: stream output to console. *)
   format : string option;
       (** [--format]: output format ([verbose], [compact], [tap], [junit]). *)
-  fail_fast : bool option;  (** [-x], [--fail-fast]: stop on first failure. *)
+  bail : int option;
+      (** [--bail N], [-x]: stop after N failures. [-x] / [--fail-fast] sets
+          this to [1]. *)
   quick : bool option;  (** [-q], [--quick]: skip slow tests. *)
   filter : string option;
       (** [-f], [--filter], or first positional argument: test name filter. *)
@@ -58,6 +60,7 @@ val parse_format : string -> Progress.mode
 
 val resolve_config :
   ?quick:bool ->
+  ?bail:int ->
   ?fail_fast:bool ->
   ?output_dir:string ->
   ?stream:bool ->

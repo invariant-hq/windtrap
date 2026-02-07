@@ -23,7 +23,8 @@ type config = {
   log_dir : string;  (** Directory for captured stdout/stderr logs. *)
   capture : bool;  (** When [false], streams output to the console. *)
   snapshot_config : Snapshot.Config.t;  (** Snapshot testing settings. *)
-  stop_on_error : bool;  (** Stop the suite on the first failure. *)
+  bail : int option;
+      (** Stop the suite after this many failures. [None] runs all tests. *)
   junit_file : string option;  (** Path for JUnit XML output, if any. *)
   seed : int option;
       (** Random seed for property tests. Propagated to {!Windtrap_prop.Prop}.

@@ -446,9 +446,15 @@ let cli_tests =
           test "-q sets quick" (fun () ->
               let cli = parse [ "-q" ] in
               some Testable.bool true cli.quick);
-          test "-x sets fail_fast" (fun () ->
+          test "-x sets bail to 1" (fun () ->
               let cli = parse [ "-x" ] in
-              some Testable.bool true cli.fail_fast);
+              some Testable.int 1 cli.bail);
+          test "--bail sets bail count" (fun () ->
+              let cli = parse [ "--bail"; "3" ] in
+              some Testable.int 3 cli.bail);
+          test "--bail=N equals-style" (fun () ->
+              let cli = parse [ "--bail=5" ] in
+              some Testable.int 5 cli.bail);
           test "-l sets list_only" (fun () ->
               let cli = parse [ "-l" ] in
               some Testable.bool true cli.list_only);
@@ -480,7 +486,7 @@ let cli_tests =
               let cli = parse [ "-s"; "-q"; "-x"; "-f"; "foo" ] in
               some Testable.bool true cli.stream;
               some Testable.bool true cli.quick;
-              some Testable.bool true cli.fail_fast;
+              some Testable.int 1 cli.bail;
               some Testable.string "foo" cli.filter);
           test "--tag adds to tags list" (fun () ->
               let cli = parse [ "--tag"; "integration" ] in

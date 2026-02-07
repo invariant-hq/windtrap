@@ -38,9 +38,9 @@ let fixture create =
 
 type format = Progress.mode = Compact | Verbose | Tap | Junit
 
-let run ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir ?filter
-    ?list_only ?format ?junit ?seed ?timeout ?prop_count ?tags ?exclude_tags
-    ?argv name tests =
+let run ?quick ?bail ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
+    ?filter ?list_only ?format ?junit ?seed ?timeout ?prop_count ?tags
+    ?exclude_tags ?argv name tests =
   let cli = Cli.parse (Option.value ~default:Sys.argv argv) in
 
   (* Resolve list_only with priority: programmatic arg > CLI flag > default *)
@@ -54,7 +54,7 @@ let run ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir ?filter
   end;
 
   let config =
-    Cli.resolve_config ?quick ?fail_fast ?output_dir ?stream ?update
+    Cli.resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
       ?snapshot_dir ?filter ?format ?junit ?seed ?timeout ?prop_count ?tags
       ?exclude_tags cli
   in
