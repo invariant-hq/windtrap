@@ -22,6 +22,9 @@ val int32_towards : int32 -> int32 -> int32 Seq.t
 val int64_towards : int64 -> int64 -> int64 Seq.t
 (** [int64_towards dest x] is like {!int_towards} for [int64]. *)
 
+val nativeint_towards : nativeint -> nativeint -> nativeint Seq.t
+(** [nativeint_towards dest x] is like {!int_towards} for [nativeint]. *)
+
 val float_towards : float -> float -> float Seq.t
 (** [float_towards dest x] is like {!int_towards} for [float]. Produces at most
     15 elements, since float division does not converge as reliably as integer

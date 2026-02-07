@@ -73,6 +73,14 @@ let int64 =
     check = None;
   }
 
+let nativeint =
+  {
+    pp = (fun ppf n -> Pp.pf ppf "%nd" n);
+    equal = Nativeint.equal;
+    gen = Some Windtrap_prop.Gen.nativeint;
+    check = None;
+  }
+
 (* NaN = NaN for testing purposes, unlike IEEE 754 where NaN <> NaN.
    This lets tests assert that a function producing NaN actually returns NaN. *)
 let float eps =
@@ -149,6 +157,25 @@ let result ok_t err_t =
       (match (ok_t.gen, err_t.gen) with
       | Some ok_gen, Some err_gen ->
           Some (Windtrap_prop.Gen.result ok_gen err_gen)
+      | _ -> None);
+    check = None;
+  }
+
+let either left_t right_t =
+  {
+    pp =
+      (fun ppf -> function
+        | Either.Left x -> Pp.pf ppf "Left (%a)" left_t.pp x
+        | Either.Right x -> Pp.pf ppf "Right (%a)" right_t.pp x);
+    equal =
+      (fun a b ->
+        match (a, b) with
+        | Either.Left a, Either.Left b -> left_t.equal a b
+        | Either.Right a, Either.Right b -> right_t.equal a b
+        | _ -> false);
+    gen =
+      (match (left_t.gen, right_t.gen) with
+      | Some lg, Some rg -> Some (Windtrap_prop.Gen.either lg rg)
       | _ -> None);
     check = None;
   }

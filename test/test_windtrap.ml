@@ -100,6 +100,26 @@ let testable_tests =
           test "forces and compares" (fun () ->
               equal (Testable.lazy_t Testable.int) (lazy 42) (lazy (40 + 2)));
         ];
+      group "nativeint"
+        [
+          test "equal values" (fun () -> equal Testable.nativeint 42n 42n);
+          test "different values" (fun () -> not_equal Testable.nativeint 0n 1n);
+        ];
+      group "either"
+        [
+          test "Left equals Left" (fun () ->
+              equal
+                (Testable.either Testable.int Testable.string)
+                (Either.Left 1) (Either.Left 1));
+          test "Right equals Right" (fun () ->
+              equal
+                (Testable.either Testable.int Testable.string)
+                (Either.Right "hello") (Either.Right "hello"));
+          test "Left differs from Right" (fun () ->
+              not_equal
+                (Testable.either Testable.int Testable.int)
+                (Either.Left 1) (Either.Right 1));
+        ];
       group "to_string"
         [
           test "converts int to string" (fun () ->

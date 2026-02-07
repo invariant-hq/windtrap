@@ -79,6 +79,9 @@ val int64_range : ?origin:int64 -> int64 -> int64 -> int64 t
 
     @raise Invalid_argument if [high < low]. *)
 
+val nativeint : nativeint t
+(** Generates native integers using full platform range. Shrinks toward [0n]. *)
+
 val float : float t
 (** Generates floats using bit manipulation over the full IEEE 754 range,
     including NaN, infinity, and subnormal values. Shrinks toward [0.0]. *)
@@ -126,6 +129,10 @@ val option : ?ratio:float -> 'a t -> 'a option t
 val result : ?ratio:float -> 'a t -> 'e t -> ('a, 'e) result t
 (** [result ok_gen err_gen] generates [Ok] or [Error].
     @param ratio Probability of [Ok] (default: 0.75). *)
+
+val either : ?ratio:float -> 'a t -> 'b t -> ('a, 'b) Either.t t
+(** [either left_gen right_gen] generates [Left] or [Right].
+    @param ratio Probability of [Left] (default: 0.5). *)
 
 val list : 'a t -> 'a list t
 (** [list gen] generates lists. Length biased toward small. Uses efficient

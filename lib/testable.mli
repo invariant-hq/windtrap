@@ -67,6 +67,7 @@ val bool : bool t
 val int : int t
 val int32 : int32 t
 val int64 : int64 t
+val nativeint : nativeint t
 
 val float : float -> float t
 (** [float eps] creates a testable with absolute tolerance [eps]. Two floats [a]
@@ -86,6 +87,9 @@ val bytes : bytes t
 
 val option : 'a t -> 'a option t
 val result : 'a t -> 'b t -> ('a, 'b) result t
+
+val either : 'a t -> 'b t -> ('a, 'b) Either.t t
+(** [either left right] creates a testable for [Either.t] values. *)
 
 val list : 'a t -> 'a list t
 (** [list t] creates a testable for lists. Produces highlighted diffs on

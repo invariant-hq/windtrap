@@ -47,6 +47,18 @@ let int64_towards dest x () =
 
 (* Float halving can produce infinitely many distinct values without reaching
    the target, so we cap at 15 iterations to keep shrinking bounded. *)
+let nativeint_towards dest x () =
+  Seq.unfold
+    (fun current ->
+      if Nativeint.equal current x then None
+      else
+        let half_diff =
+          Nativeint.sub (Nativeint.div x 2n) (Nativeint.div current 2n)
+        in
+        if Nativeint.equal half_diff 0n then Some (current, x)
+        else Some (current, Nativeint.add current half_diff))
+    dest ()
+
 let float_towards dest x () =
   let rec go current limit () =
     if limit <= 0 then Seq.Nil

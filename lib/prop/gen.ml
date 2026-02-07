@@ -156,6 +156,24 @@ let int64_range ?origin low high st =
   in
   Tree.make_primitive (fun x -> Shrink.int64_towards origin x) n
 
+let nativeint st =
+  if Sys.int_size >= 63 then
+    (* 64-bit platform: assemble from two 30-bit calls *)
+    let low = Nativeint.of_int (Random.State.bits st) in
+    let high =
+      Nativeint.shift_left (Nativeint.of_int (Random.State.bits st)) 30
+    in
+    let bits = Nativeint.logor low high in
+    if Random.State.bool st then
+      Tree.make_primitive (fun n -> Shrink.nativeint_towards 0n n) bits
+    else
+      Tree.make_primitive
+        (fun n -> Shrink.nativeint_towards 0n n)
+        (Nativeint.neg bits)
+  else
+    (* 32-bit platform: same as int *)
+    Tree.map Nativeint.of_int (int st)
+
 let float st =
   (* Assemble 64 random bits and reinterpret as IEEE 754 double to cover the
      full float range including NaN, infinity, and subnormals *)
@@ -194,6 +212,11 @@ let result ?(ratio = 0.75) ok_gen err_gen st =
   let p = Random.State.float st 1.0 in
   if p < 1.0 -. ratio then Tree.map (fun e -> Error e) (err_gen st)
   else Tree.map (fun o -> Ok o) (ok_gen st)
+
+let either ?(ratio = 0.5) left_gen right_gen st =
+  let p = Random.State.float st 1.0 in
+  if p < ratio then Tree.map (fun x -> Either.Left x) (left_gen st)
+  else Tree.map (fun x -> Either.Right x) (right_gen st)
 
 let list_size size_gen gen st =
   let st' = Random.State.copy st in
