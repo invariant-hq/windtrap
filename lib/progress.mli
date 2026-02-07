@@ -72,6 +72,9 @@ val total_time : t -> float
 (** [total_time t] returns the cumulative execution time across all reported
     tests, in seconds. *)
 
+val failed_paths : t -> string list
+(** [failed_paths t] returns the paths of all failed tests. *)
+
 val print_summary :
   t -> passed:int -> failed:int -> skipped:int -> time:float -> unit -> unit
 (** [print_summary t ~passed ~failed ~skipped ~time ()] prints the final summary

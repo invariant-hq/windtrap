@@ -189,6 +189,7 @@ val run :
   ?snapshot_dir:string ->
   ?filter:string ->
   ?exclude:string ->
+  ?failed:bool ->
   ?list_only:bool ->
   ?format:format ->
   ?junit:string ->
@@ -231,6 +232,9 @@ val run :
     @param exclude
       Exclude tests by name (substring match). CLI: [-e PATTERN],
       [--exclude PATTERN], env: [WINDTRAP_EXCLUDE].
+    @param failed
+      Rerun only tests that failed in the last run. CLI: [--failed]. Reads from
+      a [.last-failed] file in the output directory.
     @param list_only List test names without running. CLI: [-l].
     @param format
       Output format: Verbose, Compact, Tap, or Junit (default: Verbose)

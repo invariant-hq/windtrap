@@ -12,6 +12,7 @@ type t = {
   quick : bool option;
   filter : string option;
   exclude : string option;
+  failed : bool option;
   list_only : bool option;
   output_dir : string option;
   update : bool option;
@@ -31,6 +32,7 @@ let empty =
     quick = None;
     filter = None;
     exclude = None;
+    failed = None;
     list_only = None;
     output_dir = None;
     update = None;
@@ -57,6 +59,7 @@ let print_help prog_name =
   Pp.pr
     "    -x, --fail-fast        Stop on first failure (alias for --bail 1)@,";
   Pp.pr "    --bail N               Stop after N failures@,";
+  Pp.pr "    --failed               Rerun only tests that failed last time@,";
   Pp.pr "    -l, --list             List tests without running@,";
   Pp.pr "    -u, --update           Update snapshots@,";
   Pp.pr "    -f, --filter PATTERN   Filter tests by name@,";
@@ -105,6 +108,7 @@ let rec parse_args acc = function
   | "--bail" :: [] ->
       Pp.epr "Error: --bail requires an argument@.";
       exit 1
+  | "--failed" :: rest -> parse_args { acc with failed = Some true } rest
   | ("-l" | "--list") :: rest ->
       parse_args { acc with list_only = Some true } rest
   | ("-u" | "--update") :: rest ->
@@ -280,8 +284,8 @@ let resolve_opt prog cli env =
   |> Option.fold ~none:(env ()) ~some:Option.some
 
 let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
-    ?snapshot_dir ?filter ?exclude ?format ?junit ?seed ?timeout ?prop_count
-    ?tags ?exclude_tags (cli : t) =
+    ?snapshot_dir ?filter ?exclude ?failed ?format ?junit ?seed ?timeout
+    ?prop_count ?tags ?exclude_tags (cli : t) =
   let quick = resolve quick cli.quick (fun () -> None) false in
   let bail =
     match (bail, fail_fast) with
@@ -337,9 +341,31 @@ let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
     Option.value ~default:[] exclude_tags
     @ cli.exclude_tags @ Env.exclude_tag ()
   in
-  let filter =
+  let use_failed =
+    resolve (Option.map (fun b -> b) failed) cli.failed (fun () -> None) false
+  in
+  let failed_allowlist =
+    if use_failed then
+      let paths = Runner.read_last_failed output_dir in
+      if paths = [] then begin
+        Pp.epr "%a No previous failures recorded. Running all tests.@."
+          (Pp.styled `Yellow Pp.string)
+          "[INFO]";
+        None
+      end
+      else Some paths
+    else None
+  in
+  let base_filter =
     Runner.make_filter ~quick ~filter_pattern ~exclude_pattern ~required_tags
       ~dropped_tags
+  in
+  let filter =
+    match failed_allowlist with
+    | None -> base_filter
+    | Some paths ->
+        fun ~path tags ->
+          if List.mem path paths then base_filter ~path tags else `Skip
   in
   {
     Runner.filter;

@@ -365,6 +365,36 @@ let make_filter ~quick ~filter_pattern ~exclude_pattern ~required_tags
     | `Run, `Run, `Run, `Run -> `Run
     | _ -> `Skip
 
+(* ───── Last Failed Persistence ───── *)
+
+let last_failed_path log_dir = Filename.concat log_dir ".last-failed"
+
+let write_last_failed log_dir paths =
+  let file = last_failed_path log_dir in
+  match paths with
+  | [] -> ( try Sys.remove file with Sys_error _ -> ())
+  | _ ->
+      let oc = open_out file in
+      Fun.protect
+        ~finally:(fun () -> close_out oc)
+        (fun () -> List.iter (fun p -> output_string oc (p ^ "\n")) paths)
+
+let read_last_failed log_dir =
+  let file = last_failed_path log_dir in
+  if Sys.file_exists file then
+    let ic = open_in file in
+    Fun.protect
+      ~finally:(fun () -> close_in ic)
+      (fun () ->
+        let lines = ref [] in
+        (try
+           while true do
+             lines := input_line ic :: !lines
+           done
+         with End_of_file -> ());
+        List.rev !lines |> List.filter (fun s -> String.length s > 0))
+  else []
+
 (* ───── Entry Point ───── *)
 
 let count_tests root_name tests =
@@ -399,6 +429,7 @@ let run ?(config = default_config ()) root_name tests =
   | Progress.Verbose | Progress.Compact ->
       Log_trap.setup_symlinks log_trap;
       Log_trap.print_location log_trap);
+  write_last_failed config.log_dir (Progress.failed_paths progress);
   if focus_active then
     Pp.epr
       "@.%a Focused tests detected — some tests were skipped. Remove \

@@ -518,6 +518,9 @@ let cli_tests =
           test "--prop-count=N equals-style" (fun () ->
               let cli = parse [ "--prop-count=200" ] in
               equal (Testable.option Testable.int) (Some 200) cli.prop_count);
+          test "--failed sets failed" (fun () ->
+              let cli = parse [ "--failed" ] in
+              some Testable.bool true cli.failed);
         ];
       group "parse_format"
         [

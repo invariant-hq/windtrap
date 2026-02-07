@@ -23,6 +23,8 @@ type t = {
       (** [-f], [--filter], or first positional argument: test name filter. *)
   exclude : string option;
       (** [-e], [--exclude]: exclude tests whose path contains this pattern. *)
+  failed : bool option;
+      (** [--failed]: rerun only tests that failed in the last run. *)
   list_only : bool option;  (** [-l], [--list]: list tests without running. *)
   output_dir : string option;  (** [-o], [--output]: directory for test logs. *)
   update : bool option;  (** [-u], [--update]: update snapshots. *)
@@ -70,6 +72,7 @@ val resolve_config :
   ?snapshot_dir:string ->
   ?filter:string ->
   ?exclude:string ->
+  ?failed:bool ->
   ?format:Progress.mode ->
   ?junit:string ->
   ?seed:int ->

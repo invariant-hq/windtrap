@@ -54,6 +54,12 @@ val list_tests : string -> Test.t list -> unit
 (** [list_tests name tests] prints all test paths to stdout in sorted order
     without running them. *)
 
+(** {1 Last Failed} *)
+
+val read_last_failed : string -> string list
+(** [read_last_failed log_dir] reads the list of failed test paths from the
+    previous run. Returns an empty list if no [.last-failed] file exists. *)
+
 (** {1 Filtering} *)
 
 val make_filter :

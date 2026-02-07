@@ -66,6 +66,7 @@ let create ~mode ~total_tests =
   }
 
 let set_junit_file t file = t.junit_file <- Some file
+let failed_paths t = List.rev_map (fun (path, _, _) -> path) t.failures
 
 (* ───── Header And Formatting ───── *)
 
