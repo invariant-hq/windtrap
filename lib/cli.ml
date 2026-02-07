@@ -17,6 +17,7 @@ type t = {
   junit : string option;
   seed : int option;
   timeout : float option;
+  prop_count : int option;
   tags : string list;
   exclude_tags : string list;
 }
@@ -34,6 +35,7 @@ let empty =
     junit = None;
     seed = None;
     timeout = None;
+    prop_count = None;
     tags = [];
     exclude_tags = [];
   }
@@ -63,6 +65,8 @@ let print_help prog_name =
   Pp.pr "OTHER:@,";
   Pp.pr "    --seed N               Random seed for property tests@,";
   Pp.pr "    --timeout N            Default timeout in seconds@,";
+  Pp.pr
+    "    --prop-count N         Number of property test cases (default: 100)@,";
   Pp.pr "    -o, --output DIR       Directory for test logs@,";
   Pp.pr "    -h, --help             Show this help@,@,";
   Pp.pr "ENVIRONMENT VARIABLES:@,";
@@ -71,6 +75,7 @@ let print_help prog_name =
   Pp.pr "    WINDTRAP_FILTER        Filter pattern@,";
   Pp.pr "    WINDTRAP_UPDATE        Update snapshots (1/true/yes)@,";
   Pp.pr "    WINDTRAP_SEED          Random seed for property tests@,";
+  Pp.pr "    WINDTRAP_PROP_COUNT    Number of property test cases@,";
   Pp.pr "    WINDTRAP_COLOR         Color output (always/never/auto)@,";
   Pp.pr "    WINDTRAP_TAG           Required tags (comma-separated)@,";
   Pp.pr "    WINDTRAP_EXCLUDE_TAG   Excluded tags (comma-separated)@,";
@@ -134,6 +139,15 @@ let rec parse_args acc = function
   | "--timeout" :: [] ->
       Pp.epr "Error: --timeout requires an argument@.";
       exit 1
+  | "--prop-count" :: n :: rest -> (
+      match int_of_string_opt n with
+      | Some c when c > 0 -> parse_args { acc with prop_count = Some c } rest
+      | _ ->
+          Pp.epr "Error: --prop-count requires a positive integer@.";
+          exit 1)
+  | "--prop-count" :: [] ->
+      Pp.epr "Error: --prop-count requires an argument@.";
+      exit 1
   (* Other options *)
   | ("-o" | "--output") :: dir :: rest ->
       parse_args { acc with output_dir = Some dir } rest
@@ -175,6 +189,14 @@ let rec parse_args acc = function
       | Some t when t > 0.0 -> parse_args { acc with timeout = Some t } rest
       | _ ->
           Pp.epr "Error: --timeout requires a positive number@.";
+          exit 1)
+  | arg :: rest
+    when String.length arg > 13 && String.sub arg 0 13 = "--prop-count=" -> (
+      let n = String.sub arg 13 (String.length arg - 13) in
+      match int_of_string_opt n with
+      | Some c when c > 0 -> parse_args { acc with prop_count = Some c } rest
+      | _ ->
+          Pp.epr "Error: --prop-count requires a positive integer@.";
           exit 1)
   | arg :: rest when String.length arg > 6 && String.sub arg 0 6 = "--tag=" ->
       let label = String.sub arg 6 (String.length arg - 6) in
@@ -227,7 +249,8 @@ let resolve_opt prog cli env =
   |> Option.fold ~none:(env ()) ~some:Option.some
 
 let resolve_config ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
-    ?filter ?format ?junit ?seed ?timeout ?tags ?exclude_tags (cli : t) =
+    ?filter ?format ?junit ?seed ?timeout ?prop_count ?tags ?exclude_tags
+    (cli : t) =
   let quick = resolve quick cli.quick (fun () -> None) false in
   let fail_fast = resolve fail_fast cli.fail_fast (fun () -> None) false in
   let output_dir =
@@ -270,6 +293,8 @@ let resolve_config ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
         Option.bind (Env.timeout ()) (fun t -> if t > 0.0 then Some t else None))
   in
 
+  let prop_count = resolve_opt prop_count cli.prop_count Env.prop_count in
+
   let required_tags = Option.value ~default:[] tags @ cli.tags @ Env.tag () in
   let dropped_tags =
     Option.value ~default:[] exclude_tags
@@ -288,4 +313,5 @@ let resolve_config ?quick ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
     junit_file = junit;
     seed;
     default_timeout = timeout;
+    prop_count;
   }

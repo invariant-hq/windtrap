@@ -71,6 +71,7 @@ let columns () =
 
 let tail_errors () = get_int "WINDTRAP_TAIL_ERRORS"
 let seed () = get_int "WINDTRAP_SEED"
+let prop_count () = get_int "WINDTRAP_PROP_COUNT"
 
 (* ───── Snapshot Settings ───── *)
 

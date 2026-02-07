@@ -43,6 +43,11 @@ val set_default_seed : int option -> unit
     is [None] and [WINDTRAP_SEED] is not set. Called by {!Windtrap.run} to
     propagate the CLI [--seed] flag to property tests. *)
 
+val set_default_count : int option -> unit
+(** [set_default_count count] sets a global default test count used when no
+    explicit [config.count] override is provided. Called by {!Windtrap.run} to
+    propagate the CLI [--prop-count] flag. *)
+
 (** {1 Results} *)
 
 (** Result of running a property test. *)

@@ -31,6 +31,9 @@ type config = {
   default_timeout : float option;
       (** Default timeout in seconds, used when a test has no per-test timeout.
       *)
+  prop_count : int option;
+      (** Override property test count. Applied globally when no per-test config
+          is set. *)
 }
 
 (** {1 Running} *)

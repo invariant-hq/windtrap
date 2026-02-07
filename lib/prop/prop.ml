@@ -78,6 +78,8 @@ let random_seed () =
 
 let default_seed = ref None
 let set_default_seed s = default_seed := s
+let default_count = ref None
+let set_default_count c = default_count := c
 
 let get_seed config =
   match config.seed with
@@ -90,6 +92,12 @@ let get_seed config =
           |> Option.value ~default:(random_seed ()))
 
 let check ?(config = default_config) ?rand arb prop =
+  let config =
+    match !default_count with
+    | Some c when config.count = default_config.count ->
+        { config with count = c; max_gen = c * 3 }
+    | _ -> config
+  in
   let seed = get_seed config in
   let rand =
     match rand with Some r -> r | None -> Random.State.make [| seed |]

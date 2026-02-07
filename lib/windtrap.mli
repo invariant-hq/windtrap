@@ -159,6 +159,7 @@ val run :
   ?junit:string ->
   ?seed:int ->
   ?timeout:float ->
+  ?prop_count:int ->
   ?tags:string list ->
   ?exclude_tags:string list ->
   ?argv:string array ->
@@ -195,6 +196,9 @@ val run :
     @param timeout
       Default timeout in seconds for tests without a per-test timeout. CLI:
       [--timeout N], env: [WINDTRAP_TIMEOUT].
+    @param prop_count
+      Number of test cases per property test (default: 100). CLI:
+      [--prop-count N], env: [WINDTRAP_PROP_COUNT].
     @param tags
       Required labels. Only tests with all listed labels will run. CLI:
       [--tag LABEL] (repeatable), env: [WINDTRAP_TAG] (comma-separated).

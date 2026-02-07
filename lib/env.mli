@@ -70,6 +70,9 @@ val tail_errors : unit -> int option
 val seed : unit -> int option
 (** [WINDTRAP_SEED]: random seed for property-based testing. *)
 
+val prop_count : unit -> int option
+(** [WINDTRAP_PROP_COUNT]: number of test cases per property test. *)
+
 val update : unit -> bool option
 (** [WINDTRAP_UPDATE]: update snapshot files instead of comparing. *)
 

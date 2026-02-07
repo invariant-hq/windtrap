@@ -25,6 +25,8 @@ type t = {
   junit : string option;  (** [--junit]: write JUnit XML to this path. *)
   seed : int option;  (** [--seed]: random seed for property tests. *)
   timeout : float option;  (** [--timeout]: default timeout in seconds. *)
+  prop_count : int option;
+      (** [--prop-count]: number of property test cases. *)
   tags : string list;
       (** [--tag]: required labels (repeatable). Tests without these labels are
           skipped. *)
@@ -66,6 +68,7 @@ val resolve_config :
   ?junit:string ->
   ?seed:int ->
   ?timeout:float ->
+  ?prop_count:int ->
   ?tags:string list ->
   ?exclude_tags:string list ->
   t ->

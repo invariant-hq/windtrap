@@ -469,6 +469,12 @@ let cli_tests =
           test "--exclude-tag=LABEL equals-style" (fun () ->
               let cli = parse [ "--exclude-tag=slow" ] in
               equal (Testable.list Testable.string) [ "slow" ] cli.exclude_tags);
+          test "--prop-count parses integer" (fun () ->
+              let cli = parse [ "--prop-count"; "500" ] in
+              equal (Testable.option Testable.int) (Some 500) cli.prop_count);
+          test "--prop-count=N equals-style" (fun () ->
+              let cli = parse [ "--prop-count=200" ] in
+              equal (Testable.option Testable.int) (Some 200) cli.prop_count);
         ];
       group "parse_format"
         [

@@ -259,6 +259,7 @@ type config = {
   junit_file : string option;
   seed : int option;
   default_timeout : float option;
+  prop_count : int option;
 }
 
 let default_config () =
@@ -272,6 +273,7 @@ let default_config () =
     junit_file = None;
     seed = None;
     default_timeout = None;
+    prop_count = None;
   }
 
 (* ───── Filter Construction ───── *)
@@ -310,6 +312,7 @@ let run ?(config = default_config ()) root_name tests =
   check_duplicates root_name tests;
   Snapshot.set_config config.snapshot_config;
   Windtrap_prop.Prop.set_default_seed config.seed;
+  Windtrap_prop.Prop.set_default_count config.prop_count;
   let run_id = Run_id.generate () in
   let log_trap =
     Log_trap.create ~root:config.log_dir ~suite_name:root_name ~run_id
