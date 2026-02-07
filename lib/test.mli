@@ -49,6 +49,33 @@ val group :
     @param setup Runs once before any child test.
     @param teardown Runs once after all child tests, even on failure. *)
 
+val ftest :
+  ?pos:pos ->
+  ?tags:Tag.t ->
+  ?timeout:float ->
+  ?retries:int ->
+  string ->
+  (unit -> 'a) ->
+  t
+(** [ftest name fn] creates a focused test case. When any focused test or group
+    exists in the suite, only focused tests run. A warning is printed after the
+    run to remind you to remove focus markers before committing. *)
+
+val fgroup :
+  ?pos:pos ->
+  ?tags:Tag.t ->
+  ?setup:(unit -> unit) ->
+  ?teardown:(unit -> unit) ->
+  string ->
+  t list ->
+  t
+(** [fgroup name children] creates a focused test group. All tests inside a
+    focused group are treated as focused. *)
+
+val has_focused : t list -> bool
+(** [has_focused tests] returns [true] if any test or group in the tree is
+    focused. *)
+
 val slow :
   ?pos:pos ->
   ?tags:Tag.t ->
@@ -99,12 +126,14 @@ type visit =
       tags : Tag.t;
       timeout : float option;
       retries : int;
+      focused : bool;
     }  (** A leaf test case. *)
   | Enter_group of {
       name : string;
       pos : pos option;
       tags : Tag.t;
       setup : (unit -> unit) option;
+      focused : bool;
     }  (** Entering a group node, before visiting children. *)
   | Leave_group of { name : string; teardown : (unit -> unit) option }
       (** Leaving a group node, after all children have been visited. *)

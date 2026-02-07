@@ -15,7 +15,9 @@ module Ppx_runtime = Ppx_runtime
 type test = Test.t
 
 let test = Test.test
+let ftest = Test.ftest
 let group = Test.group
+let fgroup = Test.fgroup
 let slow = Test.slow
 let bracket = Test.bracket
 

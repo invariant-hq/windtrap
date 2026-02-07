@@ -76,6 +76,29 @@ val group :
     @param setup Runs once before any child test.
     @param teardown Runs once after all child tests, even on failure. *)
 
+val ftest :
+  ?pos:Test.pos ->
+  ?tags:Tag.t ->
+  ?timeout:float ->
+  ?retries:int ->
+  string ->
+  (unit -> 'a) ->
+  test
+(** [ftest name fn] creates a focused test case. When any focused test or group
+    exists, only focused tests run. A warning is printed to remind you to remove
+    focus markers before committing. *)
+
+val fgroup :
+  ?pos:Test.pos ->
+  ?tags:Tag.t ->
+  ?setup:(unit -> unit) ->
+  ?teardown:(unit -> unit) ->
+  string ->
+  test list ->
+  test
+(** [fgroup name children] creates a focused test group. All tests inside a
+    focused group are treated as focused. *)
+
 val slow :
   ?pos:Test.pos ->
   ?tags:Tag.t ->

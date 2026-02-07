@@ -776,6 +776,31 @@ let runner_filter_tests =
         ];
     ]
 
+let focused_tests =
+  let module T = Windtrap__Test in
+  group "Focused"
+    [
+      test "has_focused detects ftest" (fun () ->
+          let tests =
+            [ T.test "a" (fun () -> ()); T.ftest "b" (fun () -> ()) ]
+          in
+          is_true (T.has_focused tests));
+      test "has_focused detects fgroup" (fun () ->
+          let tests = [ T.fgroup "g" [ T.test "a" (fun () -> ()) ] ] in
+          is_true (T.has_focused tests));
+      test "has_focused returns false when none focused" (fun () ->
+          let tests =
+            [
+              T.test "a" (fun () -> ());
+              T.group "g" [ T.test "b" (fun () -> ()) ];
+            ]
+          in
+          is_false (T.has_focused tests));
+      test "has_focused finds nested ftest" (fun () ->
+          let tests = [ T.group "g" [ T.ftest "a" (fun () -> ()) ] ] in
+          is_true (T.has_focused tests));
+    ]
+
 let snapshot_config_tests =
   group "Snapshot"
     [
@@ -825,5 +850,6 @@ let () =
       text_tests;
       distance_tests;
       runner_filter_tests;
+      focused_tests;
       snapshot_config_tests;
     ]

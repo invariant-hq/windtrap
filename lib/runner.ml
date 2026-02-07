@@ -165,6 +165,7 @@ let run_single_test ~progress ~log_trap ~groups ~test_pos ~timeout ~retries
 type run_state = {
   path_segments : string list;
   tag_stack : Tag.t list;
+  focus_stack : bool list;
   result : result;
   failure_count : int;
 }
@@ -175,12 +176,13 @@ let effective_tags tag_stack tags =
   let ordered = List.rev tag_stack @ [ tags ] in
   List.fold_left Tag.merge Tag.empty ordered
 
-let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~root_name test
-    =
+let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
+    ~root_name test =
   let initial =
     {
       path_segments = [];
       tag_stack = [];
+      focus_stack = [];
       result = empty_result;
       failure_count = 0;
     }
@@ -188,59 +190,77 @@ let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~root_name test
   let bailed state =
     match bail with Some n -> state.failure_count >= n | None -> false
   in
+  let in_focused_scope state = List.exists Fun.id state.focus_stack in
   let final_state =
     Test.fold
       (fun state visit ->
         if bailed state then state
         else
           match visit with
-          | Test.Case { name; fn; tags; pos; timeout; retries } ->
+          | Test.Case { name; fn; tags; pos; timeout; retries; focused } ->
               let path = build_path root_name (name :: state.path_segments) in
               let groups = List.rev state.path_segments in
               let eff_tags = effective_tags state.tag_stack tags in
               let timeout =
                 match timeout with Some _ -> timeout | None -> default_timeout
               in
+              let focus_skip =
+                focus_active && (not focused) && not (in_focused_scope state)
+              in
               let test_result =
-                match filter ~path eff_tags with
-                | `Run ->
-                    run_single_test ~progress ~log_trap ~groups ~test_pos:pos
-                      ~timeout ~retries ~test_name:name path fn
-                | `Skip ->
-                    Progress.report_result progress ~path ~groups
-                      (Skip { reason = None });
-                    { passed = 0; failed = 0; skipped = 1 }
+                if focus_skip then begin
+                  Progress.report_result progress ~path ~groups
+                    (Skip { reason = None });
+                  { passed = 0; failed = 0; skipped = 1 }
+                end
+                else
+                  match filter ~path eff_tags with
+                  | `Run ->
+                      run_single_test ~progress ~log_trap ~groups ~test_pos:pos
+                        ~timeout ~retries ~test_name:name path fn
+                  | `Skip ->
+                      Progress.report_result progress ~path ~groups
+                        (Skip { reason = None });
+                      { passed = 0; failed = 0; skipped = 1 }
               in
               {
                 state with
                 result = combine state.result test_result;
                 failure_count = state.failure_count + test_result.failed;
               }
-          | Test.Enter_group { name; tags; setup; _ } ->
+          | Test.Enter_group { name; tags; setup; focused; _ } ->
               Option.iter (fun f -> f ()) setup;
               {
                 state with
                 path_segments = name :: state.path_segments;
                 tag_stack = tags :: state.tag_stack;
+                focus_stack = focused :: state.focus_stack;
               }
           | Test.Leave_group { teardown; _ } -> (
               Option.iter (fun f -> f ()) teardown;
-              match (state.path_segments, state.tag_stack) with
-              | [], _ | _, [] -> state
-              | _ :: segs, _ :: tags ->
-                  { state with path_segments = segs; tag_stack = tags }))
+              match
+                (state.path_segments, state.tag_stack, state.focus_stack)
+              with
+              | [], _, _ | _, [], _ | _, _, [] -> state
+              | _ :: segs, _ :: tags, _ :: focus ->
+                  {
+                    state with
+                    path_segments = segs;
+                    tag_stack = tags;
+                    focus_stack = focus;
+                  }))
       initial test
   in
   (final_state.result, bailed final_state)
 
-let run_tests ~progress ~log_trap ~filter ~bail ~default_timeout ~root_name
-    tests =
+let run_tests ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
+    ~root_name tests =
   let rec loop acc = function
     | [] -> acc
     | test :: rest ->
         let result, stopped =
-          run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~root_name
-            test
+          run_test ~progress ~log_trap ~filter ~bail ~default_timeout
+            ~focus_active ~root_name test
         in
         let acc = combine acc result in
         if stopped then acc else loop acc rest
@@ -327,6 +347,7 @@ let run ?(config = default_config ()) root_name tests =
   Snapshot.set_config config.snapshot_config;
   Windtrap_prop.Prop.set_default_seed config.seed;
   Windtrap_prop.Prop.set_default_count config.prop_count;
+  let focus_active = Test.has_focused tests in
   let run_id = Run_id.generate () in
   let log_trap =
     Log_trap.create ~root:config.log_dir ~suite_name:root_name ~run_id
@@ -338,7 +359,7 @@ let run ?(config = default_config ()) root_name tests =
   Progress.print_header progress ~name:root_name ~run_id;
   let result =
     run_tests ~progress ~log_trap ~filter:config.filter ~bail:config.bail
-      ~default_timeout:config.default_timeout ~root_name tests
+      ~default_timeout:config.default_timeout ~focus_active ~root_name tests
   in
   Progress.finish progress;
   Progress.print_summary progress ~passed:result.passed ~failed:result.failed
@@ -350,4 +371,10 @@ let run ?(config = default_config ()) root_name tests =
   | Progress.Verbose | Progress.Compact ->
       Log_trap.setup_symlinks log_trap;
       Log_trap.print_location log_trap);
+  if focus_active then
+    Pp.epr
+      "@.%a Focused tests detected — some tests were skipped. Remove \
+       ftest/fgroup before committing.@."
+      (Pp.styled `Yellow Pp.string)
+      "[WARNING]";
   result

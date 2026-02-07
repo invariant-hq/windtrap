@@ -15,6 +15,7 @@ type t =
       tags : Tag.t;
       timeout : float option;
       retries : int;
+      focused : bool;
     }
   | Group of {
       name : string;
@@ -23,6 +24,7 @@ type t =
       tags : Tag.t;
       setup : (unit -> unit) option;
       teardown : (unit -> unit) option;
+      focused : bool;
     }
 
 (* ───── Test Creation ───── *)
@@ -30,10 +32,29 @@ type t =
 (* Wraps [fn] to discard its return value, so users can write tests returning
    any type without needing to add [ignore] themselves. *)
 let test ?pos ?(tags = Tag.empty) ?timeout ?(retries = 0) name fn =
-  Test { name; fn = (fun () -> ignore (fn ())); pos; tags; timeout; retries }
+  Test
+    {
+      name;
+      fn = (fun () -> ignore (fn ()));
+      pos;
+      tags;
+      timeout;
+      retries;
+      focused = false;
+    }
+
+let ftest ?pos ?tags ?timeout ?retries name fn =
+  match test ?pos ?tags ?timeout ?retries name fn with
+  | Test t -> Test { t with focused = true }
+  | Group _ -> assert false
 
 let group ?pos ?(tags = Tag.empty) ?setup ?teardown name children =
-  Group { name; children; pos; tags; setup; teardown }
+  Group { name; children; pos; tags; setup; teardown; focused = false }
+
+let fgroup ?pos ?tags ?setup ?teardown name children =
+  match group ?pos ?tags ?setup ?teardown name children with
+  | Group g -> Group { g with focused = true }
+  | Test _ -> assert false
 
 let slow ?pos ?(tags = Tag.empty) ?timeout ?retries name fn =
   test ?pos ~tags:(Tag.merge tags (Tag.speed Slow)) ?timeout ?retries name fn
@@ -45,7 +66,22 @@ let bracket ?pos ?(tags = Tag.empty) ?timeout ?(retries = 0) ~setup ~teardown
     Fun.protect ~finally:(fun () -> teardown resource) (fun () -> fn resource)
   in
   Test
-    { name; fn = (fun () -> ignore (wrapped ())); pos; tags; timeout; retries }
+    {
+      name;
+      fn = (fun () -> ignore (wrapped ()));
+      pos;
+      tags;
+      timeout;
+      retries;
+      focused = false;
+    }
+
+let rec has_focused_one = function
+  | Test { focused; _ } -> focused
+  | Group { focused; children; _ } ->
+      focused || List.exists has_focused_one children
+
+let has_focused tests = List.exists has_focused_one tests
 
 (* ───── Test Traversal ───── *)
 
@@ -60,21 +96,23 @@ type visit =
       tags : Tag.t;
       timeout : float option;
       retries : int;
+      focused : bool;
     }
   | Enter_group of {
       name : string;
       pos : pos option;
       tags : Tag.t;
       setup : (unit -> unit) option;
+      focused : bool;
     }
   | Leave_group of { name : string; teardown : (unit -> unit) option }
 
 let rec fold f acc t =
   match t with
-  | Test { name; fn; pos; tags; timeout; retries } ->
-      f acc (Case { name; fn; pos; tags; timeout; retries })
-  | Group { name; children; pos; tags; setup; teardown } ->
-      let acc = f acc (Enter_group { name; pos; tags; setup }) in
+  | Test { name; fn; pos; tags; timeout; retries; focused } ->
+      f acc (Case { name; fn; pos; tags; timeout; retries; focused })
+  | Group { name; children; pos; tags; setup; teardown; focused } ->
+      let acc = f acc (Enter_group { name; pos; tags; setup; focused }) in
       let acc = List.fold_left (fold f) acc children in
       f acc (Leave_group { name; teardown })
 
