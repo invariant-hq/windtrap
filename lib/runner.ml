@@ -296,6 +296,9 @@ let make_filter ~quick ~filter_pattern =
 
 (* ───── Entry Point ───── *)
 
+let count_tests root_name tests =
+  List.concat_map (collect_paths root_name) tests |> List.length
+
 let run ?(config = default_config ()) root_name tests =
   check_duplicates root_name tests;
   Snapshot.set_config config.snapshot_config;
@@ -305,7 +308,8 @@ let run ?(config = default_config ()) root_name tests =
     Log_trap.create ~root:config.log_dir ~suite_name:root_name ~run_id
       ~enabled:config.capture
   in
-  let progress = Progress.create ~mode:config.progress_mode in
+  let total_tests = count_tests root_name tests in
+  let progress = Progress.create ~mode:config.progress_mode ~total_tests in
   Option.iter (Progress.set_junit_file progress) config.junit_file;
   Progress.print_header progress ~name:root_name ~run_id;
   let result =

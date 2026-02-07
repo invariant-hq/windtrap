@@ -43,8 +43,10 @@ type test_result =
 type t
 (** A mutable progress reporter instance. Not thread-safe. *)
 
-val create : mode:mode -> t
-(** [create ~mode] returns a fresh reporter with zero counters. *)
+val create : mode:mode -> total_tests:int -> t
+(** [create ~mode ~total_tests] returns a fresh reporter with zero counters.
+    [total_tests] is the expected number of tests for progress display. Pass [0]
+    when the total is unknown. *)
 
 val set_junit_file : t -> string -> unit
 (** [set_junit_file t path] configures JUnit XML output to [path]. The file is

@@ -37,6 +37,7 @@ type junit_result = {
 type t = {
   mode : mode;
   is_tty : bool;
+  total_tests : int;
   mutable tests_so_far : int;
   mutable total_time : float;
   mutable failures : (string * Failure.t * string option) list;
@@ -47,10 +48,11 @@ type t = {
 
 (* ───── Construction ───── *)
 
-let create ~mode =
+let create ~mode ~total_tests =
   {
     mode;
     is_tty = Lazy.force Env.is_tty_stdout;
+    total_tests;
     tests_so_far = 0;
     total_time = 0.0;
     failures = [];
@@ -93,7 +95,30 @@ let pp_time ppf = function
 
 (* ───── Result Reporting ───── *)
 
-let report_start _t ~path:_ ~groups:_ = ()
+let extract_test_name path =
+  let sep = " › " in
+  let sep_len = String.length sep in
+  let rec find_last_sep pos =
+    if pos < 0 then None
+    else if
+      pos + sep_len <= String.length path && String.sub path pos sep_len = sep
+    then Some pos
+    else find_last_sep (pos - 1)
+  in
+  match find_last_sep (String.length path - sep_len) with
+  | Some i -> String.sub path (i + sep_len) (String.length path - i - sep_len)
+  | None -> path
+
+let report_start t ~path ~groups:_ =
+  match t.mode with
+  | Verbose when t.is_tty && t.total_tests > 0 ->
+      let test_name = extract_test_name path in
+      Pp.pr "\r\027[2K%a"
+        (Pp.styled `Faint Pp.string)
+        (Pp.str "  Running [%d/%d] %s..." (t.tests_so_far + 1) t.total_tests
+           test_name);
+      Pp.flush Format.std_formatter ()
+  | _ -> ()
 
 let collect_failure t ~path result =
   match result with
@@ -132,20 +157,6 @@ let print_group_headers t groups =
     new_groups;
   t.printed_groups <- groups
 
-let extract_test_name path =
-  let sep = " › " in
-  let sep_len = String.length sep in
-  let rec find_last_sep pos =
-    if pos < 0 then None
-    else if
-      pos + sep_len <= String.length path && String.sub path pos sep_len = sep
-    then Some pos
-    else find_last_sep (pos - 1)
-  in
-  match find_last_sep (String.length path - sep_len) with
-  | Some i -> String.sub path (i + sep_len) (String.length path - i - sep_len)
-  | None -> path
-
 let report_result t ~path ~groups result =
   t.tests_so_far <- t.tests_so_far + 1;
   t.total_time <- t.total_time +. result_time result;
@@ -158,7 +169,12 @@ let report_result t ~path ~groups result =
         | Skip _ -> (`Yellow, 'S')
       in
       Pp.pr "%a" (Pp.styled style Pp.char) c;
-      if t.tests_so_far mod compact_line_width = 0 then Pp.pr "@.";
+      if t.tests_so_far mod compact_line_width = 0 then
+        if t.total_tests > 0 then
+          Pp.pr " %a@."
+            (Pp.styled `Faint Pp.string)
+            (Pp.str "[%d/%d]" t.tests_so_far t.total_tests)
+        else Pp.pr "@.";
       Pp.flush Format.std_formatter ();
       collect_failure t ~path result
   | Verbose ->
