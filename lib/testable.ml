@@ -29,6 +29,7 @@ let pp t = t.pp
 let equal t = t.equal
 let gen t = t.gen
 let check t = t.check
+let to_string t v = Pp.to_string (pp t) v
 
 (* ───── Primitive Testables ───── *)
 

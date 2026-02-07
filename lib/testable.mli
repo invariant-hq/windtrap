@@ -57,6 +57,9 @@ val gen : 'a t -> 'a Windtrap_prop.Gen.t option
 val check : 'a t -> ('a -> 'a -> 'a check_result) option
 (** [check t] returns the custom check function, if any. *)
 
+val to_string : 'a t -> 'a -> string
+(** [to_string t v] pretty-prints [v] to a string using [t]'s printer. *)
+
 (** {1 Primitive Testables} *)
 
 val unit : unit t

@@ -100,6 +100,14 @@ let testable_tests =
           test "forces and compares" (fun () ->
               equal (Testable.lazy_t Testable.int) (lazy 42) (lazy (40 + 2)));
         ];
+      group "to_string"
+        [
+          test "converts int to string" (fun () ->
+              equal Testable.string "42" (Testable.to_string Testable.int 42));
+          test "converts list to string" (fun () ->
+              equal Testable.string "[1; 2; 3]"
+                (Testable.to_string Testable.(list int) [ 1; 2; 3 ]));
+        ];
     ]
 
 let check_tests =
