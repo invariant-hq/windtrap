@@ -1,5 +1,5 @@
 (test
  (name test_windtrap)
- (libraries windtrap)
+ (libraries windtrap windtrap.prop)
  (instrumentation
   (backend ppx_windtrap)))

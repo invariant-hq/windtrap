@@ -314,6 +314,103 @@ let property_tests =
           is_true (is_sorted sorted));
     ]
 
+let property_regression_tests =
+  group "Property regressions"
+    [
+      group "generator independence"
+        [
+          test "pair components are not locked to the same RNG stream"
+            (fun () ->
+              let gen = Gen.pair (Gen.int_range 0 9) (Gen.int_range 0 9) in
+              let rand = Random.State.make [| 42 |] in
+              let found =
+                Gen.find ~count:100 ~f:(fun (a, b) -> a <> b) gen rand
+              in
+              is_some found);
+          test "triple components are not locked to the same RNG stream"
+            (fun () ->
+              let gen =
+                Gen.triple (Gen.int_range 0 9) (Gen.int_range 0 9)
+                  (Gen.int_range 0 9)
+              in
+              let rand = Random.State.make [| 43 |] in
+              let found =
+                Gen.find ~count:100
+                  ~f:(fun (a, b, c) -> not (a = b && b = c))
+                  gen rand
+              in
+              is_some found);
+        ];
+      group "range behavior"
+        [
+          test "int generator reaches values beyond 30-bit range" (fun () ->
+              if Sys.word_size <= 32 then
+                skip ~reason:"requires a wide int platform" ()
+              else
+                let bound = (1 lsl 30) - 1 in
+                let rand = Random.State.make [| 44 |] in
+                let found =
+                  Gen.find ~count:20
+                    ~f:(fun n -> n > bound || n < -bound - 1)
+                    Gen.int rand
+                in
+                is_some found);
+          test "nativeint generator reaches values beyond 30-bit range"
+            (fun () ->
+              if Sys.word_size <= 32 then
+                skip ~reason:"requires a wide nativeint platform" ()
+              else
+                let bound = Nativeint.of_int ((1 lsl 30) - 1) in
+                let lower = Nativeint.sub (Nativeint.neg bound) 1n in
+                let rand = Random.State.make [| 45 |] in
+                let found =
+                  Gen.find ~count:20
+                    ~f:(fun n -> n > bound || n < lower)
+                    Gen.nativeint rand
+                in
+                is_some found);
+          test "int_range min_int..0 does not collapse to min_int" (fun () ->
+              let rand = Random.State.make [| 46 |] in
+              let found =
+                Gen.find ~count:100
+                  ~f:(fun n -> n <> min_int)
+                  (Gen.int_range min_int 0) rand
+              in
+              is_some found);
+          test "int64_range near max_int has more than one value" (fun () ->
+              let low = Int64.sub Int64.max_int 10L in
+              let rand = Random.State.make [| 47 |] in
+              let found =
+                Gen.find ~count:100
+                  ~f:(fun n -> n <> low)
+                  (Gen.int64_range low Int64.max_int)
+                  rand
+              in
+              is_some found);
+        ];
+      group "config behavior"
+        [
+          test "default prop_count does not override a custom max_gen"
+            (fun () ->
+              let module P = Windtrap_prop.Prop in
+              let module A = Windtrap_prop.Arbitrary in
+              let config = { P.default_config with max_gen = 7 } in
+              let arb = A.make ~gen:Gen.int ~print:string_of_int in
+              Fun.protect
+                ~finally:(fun () -> P.set_default_count None)
+                (fun () ->
+                  P.set_default_count (Some 500);
+                  match
+                    P.check ~config ~rand:(Random.State.make [| 48 |]) arb
+                      (fun _ -> reject ())
+                  with
+                  | P.Gave_up { count; discarded; _ } ->
+                      equal Testable.int 0 count;
+                      equal Testable.int 7 discarded
+                  | _ -> fail "expected Gave_up result"));
+        ];
+    ]
+
 let diffing_tests =
   let open Testable in
   group "Component Diffing"
@@ -887,6 +984,7 @@ let () =
       bracket_tests;
       timeout_tests;
       property_tests;
+      property_regression_tests;
       diffing_tests;
       cli_tests;
       expect_tests;
