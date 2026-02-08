@@ -149,18 +149,45 @@ let int64 st =
   let bits = Int64.(logor high (logor mid low)) in
   Tree.make_primitive (fun n -> Shrink.int64_towards 0L n) bits
 
+let int64_nonneg_raw st =
+  (* Random.State.bits yields 30 bits; 30+30+3 gives a full non-negative
+     63-bit value. *)
+  let low = Int64.of_int (Random.State.bits st) in
+  let mid = Int64.shift_left (Int64.of_int (Random.State.bits st)) 30 in
+  let high =
+    Int64.shift_left (Int64.of_int (Random.State.bits st land 0x7)) 60
+  in
+  Int64.(logor high (logor mid low))
+
+let int64_bound upper st =
+  if upper < 0L then invalid_arg "Gen.int64_bound: upper < 0";
+  if Int64.equal upper Int64.max_int then int64_nonneg_raw st
+  else
+    let bound = Int64.add upper 1L in
+    Int64.rem (int64_nonneg_raw st) bound
+
 let pick_origin_int64 ~low ~high ~goal =
   if goal < low then low else if goal > high then high else goal
 
 let int64_range ?origin low high st =
   if high < low then invalid_arg "Gen.int64_range: high < low";
-  (* int64 ranges can exceed max representable int, so always use float *)
-  let f_low = Int64.to_float low in
-  let f_high = Int64.to_float high in
-  let f_range = f_high -. f_low +. 1.0 in
   let n =
-    let offset = Int64.of_float (Random.State.float st f_range) in
-    Int64.add low offset
+    if low >= 0L || high < 0L then
+      let offset = int64_bound (Int64.sub high low) st in
+      Int64.add low offset
+    else
+      (* Range spans zero: choose side proportionally, then sample that side
+         with integer arithmetic. *)
+      let f_low = Int64.to_float low in
+      let f_high = Int64.to_float high in
+      let ratio = -.f_low /. (1.0 +. f_high -. f_low) in
+      if Random.State.float st 1.0 <= ratio then
+        if Int64.equal low Int64.min_int then
+          Int64.sub (Int64.neg (int64_nonneg_raw st)) 1L
+        else
+          let offset = int64_bound (Int64.pred (Int64.neg low)) st in
+          Int64.neg (Int64.succ offset)
+      else int64_bound high st
   in
   let origin =
     pick_origin_int64 ~low ~high ~goal:(Option.value origin ~default:0L)
