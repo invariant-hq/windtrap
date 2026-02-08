@@ -589,3 +589,25 @@ val assume : bool -> unit
 
 val reject : unit -> 'a
 (** [reject ()] unconditionally discards the current test case. *)
+
+val collect : string -> unit
+(** [collect label] records [label] for the current property case.
+
+    Labels are reported as a distribution over successful (non-discarded)
+    property cases. Calling [collect] multiple times with the same label in one
+    case counts once. *)
+
+val classify : string -> bool -> unit
+(** [classify label cond] is [if cond then collect label]. *)
+
+val cover : label:string -> at_least:float -> bool -> unit
+(** [cover ~label ~at_least cond] declares a required minimum coverage for
+    [label], and records a hit when [cond] is true.
+
+    Coverage is measured over successful (non-discarded) cases and checked once
+    the property has generated all required cases. If unmet, the property fails
+    with a coverage report.
+
+    @raise Invalid_argument
+      if [at_least] is not in [[0.0, 100.0]], or if the same [label] is used
+      with conflicting thresholds in one property run. *)

@@ -450,6 +450,100 @@ let property_regression_tests =
                       equal Testable.int 7 discarded
                   | _ -> fail "expected Gave_up result"));
         ];
+      group "coverage behavior"
+        [
+          test "coverage requirement can pass" (fun () ->
+              let module P = Windtrap_prop.Prop in
+              let module A = Windtrap_prop.Arbitrary in
+              let config = { P.default_config with count = 20; max_gen = 20 } in
+              let arb = A.make ~gen:Gen.int ~print:string_of_int in
+              match
+                P.check ~config ~rand:(Random.State.make [| 52 |]) arb (fun x ->
+                    cover ~label:"all" ~at_least:100.0 true;
+                    classify "non-negative" (x >= 0);
+                    true)
+              with
+              | P.Success { count; discarded } ->
+                  equal Testable.int 20 count;
+                  equal Testable.int 0 discarded
+              | _ -> fail "expected Success result");
+          test "coverage failure reports missing label and collected counts"
+            (fun () ->
+              let module P = Windtrap_prop.Prop in
+              let module A = Windtrap_prop.Arbitrary in
+              let config = { P.default_config with count = 30; max_gen = 30 } in
+              let arb =
+                A.make ~gen:(Gen.int_range (-1) 1) ~print:string_of_int
+              in
+              match
+                P.check ~config ~rand:(Random.State.make [| 53 |]) arb (fun x ->
+                    cover ~label:"positive" ~at_least:95.0 (x > 0);
+                    true)
+              with
+              | P.Coverage_failed { count; missing; collected; _ } ->
+                  is_true
+                    (List.exists
+                       (fun issue -> issue.P.label = "positive")
+                       missing);
+                  let hits =
+                    Option.value ~default:0
+                      (List.assoc_opt "positive" collected)
+                  in
+                  is_true (hits < count)
+              | _ -> fail "expected Coverage_failed result");
+          test "collect is counted at most once per case" (fun () ->
+              let module P = Windtrap_prop.Prop in
+              let module A = Windtrap_prop.Arbitrary in
+              let config = { P.default_config with count = 12; max_gen = 12 } in
+              let arb = A.make ~gen:Gen.int ~print:string_of_int in
+              match
+                P.check ~config ~rand:(Random.State.make [| 54 |]) arb (fun _ ->
+                    collect "dup";
+                    collect "dup";
+                    cover ~label:"never" ~at_least:100.0 false;
+                    true)
+              with
+              | P.Coverage_failed { count; collected; _ } ->
+                  let dup_hits =
+                    Option.value ~default:0 (List.assoc_opt "dup" collected)
+                  in
+                  equal Testable.int count dup_hits
+              | _ -> fail "expected Coverage_failed result");
+          test "conflicting cover thresholds raise Invalid_argument" (fun () ->
+              let module P = Windtrap_prop.Prop in
+              let module A = Windtrap_prop.Arbitrary in
+              let config = { P.default_config with count = 1; max_gen = 1 } in
+              let arb = A.make ~gen:Gen.int ~print:string_of_int in
+              match
+                P.check ~config ~rand:(Random.State.make [| 55 |]) arb (fun _ ->
+                    cover ~label:"x" ~at_least:10.0 true;
+                    cover ~label:"x" ~at_least:20.0 true;
+                    true)
+              with
+              | P.Error { exn = Invalid_argument _; _ } -> ()
+              | _ -> fail "expected Error Invalid_argument");
+          test "coverage uses only successful cases as denominator" (fun () ->
+              let module P = Windtrap_prop.Prop in
+              let module A = Windtrap_prop.Arbitrary in
+              let config = { P.default_config with count = 10; max_gen = 25 } in
+              let toggle = ref false in
+              let gen =
+                Gen.make_primitive
+                  ~gen:(fun _ ->
+                    toggle := not !toggle;
+                    !toggle)
+                  ~shrink:(fun _ -> Seq.empty)
+              in
+              let arb = A.make ~gen ~print:string_of_bool in
+              match
+                P.check ~config ~rand:(Random.State.make [| 56 |]) arb (fun x ->
+                    assume x;
+                    cover ~label:"true-case" ~at_least:100.0 true;
+                    true)
+              with
+              | P.Success { discarded; _ } -> is_true (discarded > 0)
+              | _ -> fail "expected Success result");
+        ];
     ]
 
 let diffing_tests =

@@ -47,3 +47,13 @@ val assume : bool -> unit
 
 val reject : unit -> 'a
 (** [reject ()] unconditionally discards the current test case. *)
+
+val collect : string -> unit
+(** [collect label] records [label] for the current property case. *)
+
+val classify : string -> bool -> unit
+(** [classify label cond] records [label] when [cond] is true. *)
+
+val cover : label:string -> at_least:float -> bool -> unit
+(** [cover ~label ~at_least cond] declares and checks a coverage requirement for
+    [label], and records a hit when [cond] is true. *)

@@ -8,6 +8,13 @@ exception Reject
 let assume b = if not b then raise Reject
 let reject () = raise Reject
 
+type coverage_issue = {
+  label : string;
+  required : float;
+  actual : float;
+  hits : int;
+}
+
 type config = {
   count : int;
   max_gen : int;
@@ -35,21 +42,83 @@ type result =
       exn : exn;
       backtrace : string;
     }
+  | Coverage_failed of {
+      count : int;
+      discarded : int;
+      seed : int;
+      missing : coverage_issue list;
+      collected : (string * int) list;
+    }
   | Gave_up of { count : int; discarded : int; seed : int }
+
+type runtime_context = {
+  case_collect : (string, unit) Hashtbl.t;
+  case_cover_hits : (string, unit) Hashtbl.t;
+  collect_counts : (string, int) Hashtbl.t;
+  cover_requirements : (string, float) Hashtbl.t;
+  cover_hits : (string, int) Hashtbl.t;
+}
+
+let current_context : runtime_context option ref = ref None
+
+let with_active_context f =
+  match !current_context with
+  | Some ctx -> f ctx
+  | None ->
+      invalid_arg
+        "Windtrap_prop.collect/classify/cover must be called inside a running \
+         property"
+
+let collect label =
+  with_active_context (fun ctx -> Hashtbl.replace ctx.case_collect label ())
+
+let classify label cond = if cond then collect label
+
+let cover ~label ~at_least cond =
+  if Float.is_nan at_least || at_least < 0.0 || at_least > 100.0 then
+    invalid_arg "cover: at_least must be in [0.0, 100.0]";
+  with_active_context (fun ctx ->
+      (match Hashtbl.find_opt ctx.cover_requirements label with
+      | None -> Hashtbl.add ctx.cover_requirements label at_least
+      | Some prev when Float.equal prev at_least -> ()
+      | Some prev ->
+          invalid_arg
+            (Printf.sprintf
+               "cover: label %S has conflicting thresholds (%.1f vs %.1f)" label
+               prev at_least));
+      if cond then begin
+        Hashtbl.replace ctx.case_collect label ();
+        Hashtbl.replace ctx.case_cover_hits label ()
+      end)
 
 type 'a test_outcome = Pass | Fail | Discard | Exception of exn * string
 type shrink_goal = Shrink_failures | Shrink_exceptions
 
-let run_test prop x =
-  try if prop x then Pass else Fail with
-  | Reject -> Discard
-  | exn ->
-      let bt = Printexc.get_raw_backtrace () in
-      Exception (exn, Printexc.raw_backtrace_to_string bt)
+let run_test ~ctx prop x =
+  Hashtbl.reset ctx.case_collect;
+  Hashtbl.reset ctx.case_cover_hits;
+  current_context := Some ctx;
+  Fun.protect
+    ~finally:(fun () -> current_context := None)
+    (fun () ->
+      try if prop x then Pass else Fail with
+      | Reject -> Discard
+      | exn ->
+          let bt = Printexc.get_raw_backtrace () in
+          Exception (exn, Printexc.raw_backtrace_to_string bt))
 
 (* Greedy descent: at each node, try shrink candidates left-to-right and take
    the first one that still matches the current failure mode, then recurse. *)
 let shrink ~max_shrink ~goal ~prop tree =
+  let shrink_ctx =
+    {
+      case_collect = Hashtbl.create 0;
+      case_cover_hits = Hashtbl.create 0;
+      collect_counts = Hashtbl.create 0;
+      cover_requirements = Hashtbl.create 0;
+      cover_hits = Hashtbl.create 0;
+    }
+  in
   let accepts = function
     | Pass | Discard -> false
     | Fail -> goal = Shrink_failures
@@ -63,7 +132,8 @@ let shrink ~max_shrink ~goal ~prop tree =
         | Seq.Nil -> None
         | Seq.Cons (candidate_tree, rest) ->
             let candidate = Tree.root candidate_tree in
-            if accepts (run_test prop candidate) then Some candidate_tree
+            if accepts (run_test ~ctx:shrink_ctx prop candidate) then
+              Some candidate_tree
             else try_shrinks rest
       in
       match try_shrinks (Tree.children current_tree) with
@@ -80,6 +150,49 @@ let default_seed = ref None
 let set_default_seed s = default_seed := s
 let default_count = ref None
 let set_default_count c = default_count := c
+
+let make_context () =
+  {
+    case_collect = Hashtbl.create 8;
+    case_cover_hits = Hashtbl.create 8;
+    collect_counts = Hashtbl.create 32;
+    cover_requirements = Hashtbl.create 16;
+    cover_hits = Hashtbl.create 16;
+  }
+
+let incr_count tbl key =
+  let next = Option.value ~default:0 (Hashtbl.find_opt tbl key) + 1 in
+  Hashtbl.replace tbl key next
+
+let commit_case ctx =
+  Hashtbl.iter
+    (fun label () -> incr_count ctx.collect_counts label)
+    ctx.case_collect;
+  Hashtbl.iter
+    (fun label () -> incr_count ctx.cover_hits label)
+    ctx.case_cover_hits
+
+let sorted_collect_counts tbl =
+  Hashtbl.to_seq tbl |> List.of_seq
+  |> List.sort (fun (a, _) (b, _) -> compare a b)
+
+let coverage_missing ~total ctx =
+  let percentage hits =
+    if total <= 0 then 0.0 else float_of_int hits *. 100.0 /. float_of_int total
+  in
+  let missing =
+    Hashtbl.to_seq ctx.cover_requirements
+    |> Seq.filter_map (fun (label, required) ->
+        let hits =
+          Option.value ~default:0 (Hashtbl.find_opt ctx.cover_hits label)
+        in
+        let actual = percentage hits in
+        if actual +. 1e-9 < required then Some { label; required; actual; hits }
+        else None)
+    |> List.of_seq
+    |> List.sort (fun a b -> compare a.label b.label)
+  in
+  (missing, sorted_collect_counts ctx.collect_counts)
 
 let get_seed config =
   match config.seed with
@@ -108,9 +221,14 @@ let check ?(config = default_config) ?rand arb prop =
   in
   let gen = Arbitrary.gen arb in
   let print = Arbitrary.print arb in
+  let ctx = make_context () in
 
   let rec loop ~passed ~discarded ~generated =
-    if passed >= config.count then Success { count = passed; discarded }
+    if passed >= config.count then
+      let missing, collected = coverage_missing ~total:passed ctx in
+      if missing = [] then Success { count = passed; discarded }
+      else
+        Coverage_failed { count = passed; discarded; seed; missing; collected }
     else if generated >= config.max_gen then
       Gave_up { count = passed; discarded; seed }
     else
@@ -131,8 +249,9 @@ let check ?(config = default_config) ?rand arb prop =
             }
       | Ok tree -> (
           let x = Tree.root tree in
-          match run_test prop x with
+          match run_test ~ctx prop x with
           | Pass ->
+              commit_case ctx;
               loop ~passed:(passed + 1) ~discarded ~generated:(generated + 1)
           | Discard ->
               loop ~passed ~discarded:(discarded + 1) ~generated:(generated + 1)
@@ -160,7 +279,7 @@ let check ?(config = default_config) ?rand arb prop =
               let shrunk_value = Tree.root shrunk_tree in
               let counterexample = print shrunk_value in
               let exn, backtrace =
-                match run_test prop shrunk_value with
+                match run_test ~ctx prop shrunk_value with
                 | Exception (shrunk_exn, shrunk_bt) -> (shrunk_exn, shrunk_bt)
                 | _ -> (exn, backtrace)
               in

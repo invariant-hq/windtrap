@@ -110,6 +110,9 @@ module Gen = Windtrap_prop.Gen
 
 let assume = Windtrap_prop.assume
 let reject = Windtrap_prop.reject
+let collect = Windtrap_prop.collect
+let classify = Windtrap_prop.classify
+let cover = Windtrap_prop.cover
 
 (* Bridge between Testable (assertion-oriented) and Arbitrary (generation-
    oriented). Extracts the generator from a testable, failing early if absent. *)
@@ -168,6 +171,46 @@ let prop ?(config = Windtrap_prop.Prop.default_config) ?pos ?tags ?timeout name
               (Pp.styled_string `Faint
                  (Printf.sprintf "Replay with: WINDTRAP_SEED=%d" seed))
               backtrace_part
+          in
+          Failure.raise_failure ?pos msg
+      | Windtrap_prop.Prop.Coverage_failed
+          { count; discarded; seed; missing; collected } ->
+          let coverage_lines =
+            missing
+            |> List.map (fun issue ->
+                Printf.sprintf "- %s: required >= %.1f%%, got %.1f%% (%d/%d)"
+                  issue.Windtrap_prop.Prop.label
+                  issue.Windtrap_prop.Prop.required
+                  issue.Windtrap_prop.Prop.actual issue.Windtrap_prop.Prop.hits
+                  count)
+          in
+          let collected_lines =
+            match collected with
+            | [] -> [ "- (none)" ]
+            | _ ->
+                List.map
+                  (fun (label, hits) ->
+                    let pct =
+                      if count <= 0 then 0.0
+                      else float_of_int hits *. 100.0 /. float_of_int count
+                    in
+                    Printf.sprintf "- %s: %.1f%% (%d/%d)" label pct hits count)
+                  collected
+          in
+          let msg =
+            Printf.sprintf
+              "Property coverage failed after %d successful tests (%d \
+               discarded, seed=%d)\n\
+               Missing coverage:\n\
+               %s\n\
+               Collected buckets:\n\
+               %s\n\
+               %s"
+              count discarded seed
+              (String.concat "\n" coverage_lines)
+              (String.concat "\n" collected_lines)
+              (Pp.styled_string `Faint
+                 (Printf.sprintf "Replay with: WINDTRAP_SEED=%d" seed))
           in
           Failure.raise_failure ?pos msg
       | Windtrap_prop.Prop.Gave_up { count; discarded; seed } ->

@@ -21,6 +21,27 @@ val assume : bool -> unit
 val reject : unit -> 'a
 (** [reject ()] unconditionally discards the current test case. *)
 
+val collect : string -> unit
+(** [collect label] records [label] for the current generated case.
+
+    Collected labels are reported as a distribution. A label is counted at most
+    once per generated case, even if [collect] is called multiple times. *)
+
+val classify : string -> bool -> unit
+(** [classify label cond] is [if cond then collect label]. *)
+
+val cover : label:string -> at_least:float -> bool -> unit
+(** [cover ~label ~at_least cond] declares a coverage requirement and records a
+    hit for [label] when [cond] is true.
+
+    Coverage is checked over successful (non-discarded) cases. The property
+    fails with {!result.Coverage_failed} when [label] appears in less than
+    [at_least] percent of successful cases.
+
+    @raise Invalid_argument
+      if [at_least] is not in [[0.0, 100.0]], or if the same [label] is used
+      with conflicting thresholds in one property run. *)
+
 (** {1 Configuration} *)
 
 type config = {
@@ -50,6 +71,14 @@ val set_default_count : int option -> unit
 
 (** {1 Results} *)
 
+type coverage_issue = {
+  label : string;
+  required : float;
+  actual : float;
+  hits : int;
+}
+(** A coverage requirement that was not met. *)
+
 (** Result of running a property test. *)
 type result =
   | Success of { count : int; discarded : int }
@@ -69,6 +98,15 @@ type result =
       exn : exn;
       backtrace : string;
     }  (** Property raised an unexpected exception. *)
+  | Coverage_failed of {
+      count : int;
+      discarded : int;
+      seed : int;
+      missing : coverage_issue list;
+      collected : (string * int) list;
+    }
+      (** Property predicate passed, but one or more coverage requirements were
+          not met. *)
   | Gave_up of { count : int; discarded : int; seed : int }
       (** Generation attempts reached [max_gen] before [count] tests passed. *)
 

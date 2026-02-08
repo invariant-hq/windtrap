@@ -9,3 +9,6 @@ module Prop = Prop
 
 let assume = Prop.assume
 let reject = Prop.reject
+let collect = Prop.collect
+let classify = Prop.classify
+let cover = Prop.cover
