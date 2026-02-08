@@ -33,6 +33,8 @@ type t = {
   timeout : float option;  (** [--timeout]: default timeout in seconds. *)
   prop_count : int option;
       (** [--prop-count]: number of property test cases. *)
+  color : string option;
+      (** [--color]: color output ([always], [never], [auto]). *)
   tags : string list;
       (** [--tag]: required labels (repeatable). Tests without these labels are
           skipped. *)

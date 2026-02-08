@@ -50,6 +50,11 @@ val setup_color : unit -> unit
 (** [setup_color ()] configures the Fmt style renderers for stdout and stderr
     based on {!use_color} and {!use_color_stderr}. Call once at startup. *)
 
+val override_color : string -> unit
+(** [override_color mode] overrides the color setting with [mode] which must be
+    ["always"], ["never"], or ["auto"]. Exits with an error for unknown values.
+    Called after CLI parsing to apply the [--color] flag. *)
+
 (** {1 WINDTRAP_* Variables} *)
 
 val stream : unit -> bool option

@@ -20,6 +20,7 @@ type t = {
   seed : int option;
   timeout : float option;
   prop_count : int option;
+  color : string option;
   tags : string list;
   exclude_tags : string list;
 }
@@ -40,9 +41,12 @@ let empty =
     seed = None;
     timeout = None;
     prop_count = None;
+    color = None;
     tags = [];
     exclude_tags = [];
   }
+
+let version = "0.1.0"
 
 (* ───── Help And Parsing ───── *)
 
@@ -75,7 +79,11 @@ let print_help prog_name =
   Pp.pr "    --timeout N            Default timeout in seconds@,";
   Pp.pr
     "    --prop-count N         Number of property test cases (default: 100)@,";
+  Pp.pr
+    "    --color MODE           Color output: always, never, auto (default: \
+     auto)@,";
   Pp.pr "    -o, --output DIR       Directory for test logs@,";
+  Pp.pr "    -V, --version          Show version and exit@,";
   Pp.pr "    -h, --help             Show this help@,@,";
   Pp.pr "ENVIRONMENT VARIABLES:@,";
   Pp.pr "    WINDTRAP_STREAM        Stream output (1/true/yes)@,";
@@ -85,9 +93,20 @@ let print_help prog_name =
   Pp.pr "    WINDTRAP_UPDATE        Update snapshots (1/true/yes)@,";
   Pp.pr "    WINDTRAP_SEED          Random seed for property tests@,";
   Pp.pr "    WINDTRAP_PROP_COUNT    Number of property test cases@,";
+  Pp.pr "    WINDTRAP_TIMEOUT       Default timeout in seconds@,";
   Pp.pr "    WINDTRAP_COLOR         Color output (always/never/auto)@,";
   Pp.pr "    WINDTRAP_TAG           Required tags (comma-separated)@,";
-  Pp.pr "    WINDTRAP_EXCLUDE_TAG   Excluded tags (comma-separated)@,";
+  Pp.pr "    WINDTRAP_EXCLUDE_TAG   Excluded tags (comma-separated)@,@,";
+  Pp.pr "SNAPSHOT ENVIRONMENT VARIABLES:@,";
+  Pp.pr "    WINDTRAP_SNAPSHOT_DIR           Centralized snapshot directory@,";
+  Pp.pr
+    "    WINDTRAP_SNAPSHOT_DIFF_CONTEXT  Context lines in diffs (default: 3)@,";
+  Pp.pr "    WINDTRAP_SNAPSHOT_MAX_BYTES     Truncation limit for snapshots@,";
+  Pp.pr
+    "    WINDTRAP_SNAPSHOT_REPORT        Report snapshot updates (1/true/yes)@,";
+  Pp.pr "    WINDTRAP_PROJECT_ROOT          Project root for path resolution@,";
+  Pp.pr "    WINDTRAP_COLUMNS               Override terminal width@,";
+  Pp.pr "    WINDTRAP_TAIL_ERRORS           Max lines shown per failure@,";
   Pp.pr "@]%!"
 
 let rec parse_args acc = function
@@ -171,12 +190,20 @@ let rec parse_args acc = function
   | "--prop-count" :: [] ->
       Pp.epr "Error: --prop-count requires an argument@.";
       exit 1
+  (* Color *)
+  | "--color" :: mode :: rest -> parse_args { acc with color = Some mode } rest
+  | "--color" :: [] ->
+      Pp.epr "Error: --color requires an argument (always, never, auto)@.";
+      exit 1
   (* Other options *)
   | ("-o" | "--output") :: dir :: rest ->
       parse_args { acc with output_dir = Some dir } rest
   | "--output" :: [] | "-o" :: [] ->
       Pp.epr "Error: --output requires an argument@.";
       exit 1
+  | ("-V" | "--version") :: _ ->
+      Pp.pr "windtrap %s@." version;
+      exit 0
   | ("-h" | "--help") :: _ ->
       print_help Sys.argv.(0);
       exit 0
@@ -240,6 +267,9 @@ let rec parse_args acc = function
     when String.length arg > 14 && String.sub arg 0 14 = "--exclude-tag=" ->
       let label = String.sub arg 14 (String.length arg - 14) in
       parse_args { acc with exclude_tags = label :: acc.exclude_tags } rest
+  | arg :: rest when String.length arg > 8 && String.sub arg 0 8 = "--color=" ->
+      let mode = String.sub arg 8 (String.length arg - 8) in
+      parse_args { acc with color = Some mode } rest
   (* Unknown flag *)
   | arg :: _ when String.length arg > 0 && arg.[0] = '-' ->
       Pp.epr "Unknown option: %s@." arg;
@@ -286,6 +316,8 @@ let resolve_opt prog cli env =
 let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
     ?snapshot_dir ?filter ?exclude ?failed ?format ?junit ?seed ?timeout
     ?prop_count ?tags ?exclude_tags (cli : t) =
+  (* Apply --color override before anything that might emit styled output. *)
+  Option.iter Env.override_color cli.color;
   let quick = resolve quick cli.quick (fun () -> None) false in
   let bail =
     match (bail, fail_fast) with
@@ -315,7 +347,7 @@ let resolve_config ?quick ?bail ?fail_fast ?output_dir ?stream ?update
     | None, Some s, _ -> parse_format s
     | None, None, Some s -> parse_format s
     | None, None, None ->
-        if Option.is_some junit then Progress.Junit else Progress.Verbose
+        if Option.is_some junit then Progress.Junit else Progress.Compact
   in
 
   let snapshot_config =

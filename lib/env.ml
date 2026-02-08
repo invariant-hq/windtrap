@@ -59,6 +59,25 @@ let setup_color () =
   Pp.use_ansi_stdout := Lazy.force use_color;
   Pp.use_ansi_stderr := Lazy.force use_color_stderr
 
+let override_color mode =
+  let enabled =
+    match mode with
+    | "always" -> true
+    | "never" -> false
+    | "auto" -> Lazy.force is_tty_stdout || Lazy.force inside_dune
+    | _ ->
+        Pp.epr "Unknown color mode: %s. Use: always, never, auto@." mode;
+        exit 1
+  in
+  let enabled_stderr =
+    match mode with
+    | "always" -> true
+    | "never" -> false
+    | _ -> Lazy.force is_tty_stderr || Lazy.force inside_dune
+  in
+  Pp.use_ansi_stdout := enabled;
+  Pp.use_ansi_stderr := enabled_stderr
+
 (* ───── WINDTRAP_* Environment Variables ───── *)
 
 let stream () = get_bool "WINDTRAP_STREAM"

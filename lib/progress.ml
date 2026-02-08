@@ -70,16 +70,13 @@ let failed_paths t = List.rev_map (fun (path, _, _) -> path) t.failures
 
 (* ───── Header And Formatting ───── *)
 
-let print_header t ~name ~run_id =
+let print_header t ~name ~run_id:_ =
   match t.mode with
   | Tap -> Pp.pr "TAP version 13@."
   | Junit -> ()
   | Verbose | Compact ->
       if in_github_actions () then Pp.pr "::group::%s@." name;
-      Pp.pr "Testing %a.@." (Pp.styled `Bold Pp.string) name;
-      Pp.pr "%a@.@."
-        (Pp.styled `Faint Pp.string)
-        (Printf.sprintf "Run ID: %s" run_id)
+      Pp.pr "Testing %a.@.@." (Pp.styled `Bold Pp.string) name
 
 let print_rule width =
   let rule_width = min width 60 in
@@ -443,19 +440,18 @@ let print_summary t ~passed ~failed ~skipped ~time () =
   | Verbose | Compact ->
       let total = passed + failed + skipped in
       let time_str = Pp.str "%a" pp_time time in
-      let plural n = if n = 1 then "" else "s" in
+      let plural = if total = 1 then "" else "s" in
+      let skip_suffix =
+        if skipped > 0 then Printf.sprintf " (%d skipped)" skipped else ""
+      in
       if failed > 0 then
-        Pp.pr "%a in %s. %d test%s run.@."
+        Pp.pr "%a in %s. %d test%s run.%s@."
           (Pp.styled `Bold (Pp.styled `Red Pp.string))
-          (Printf.sprintf "%d failure%s" failed (plural failed))
-          time_str total (plural total)
-      else if skipped > 0 then
-        Pp.pr "%a (%d skipped) in %s. %d test%s run.@."
-          (Pp.styled `Bold (Pp.styled `Green Pp.string))
-          "Test Successful" skipped time_str total (plural total)
+          (Printf.sprintf "%d failed" failed)
+          time_str total plural skip_suffix
       else
-        Pp.pr "%a in %s. %d test%s run.@."
+        Pp.pr "%a in %s. %d test%s run.%s@."
           (Pp.styled `Bold (Pp.styled `Green Pp.string))
-          "Test Successful" time_str total (plural total);
+          "All tests passed" time_str total plural skip_suffix;
       print_slowest t;
       if in_github_actions () then Pp.pr "::endgroup::@."

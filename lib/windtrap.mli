@@ -174,8 +174,8 @@ val fixture : (unit -> 'a) -> unit -> 'a
 (** {1 Running Tests} *)
 
 type format =
-  | Compact  (** One character per test (dot reporter). *)
-  | Verbose  (** Tree-style hierarchical output (default). *)
+  | Compact  (** One character per test (dot reporter, default). *)
+  | Verbose  (** Tree-style hierarchical output. *)
   | Tap  (** {{:https://testanything.org/} TAP} (Test Anything Protocol). *)
   | Junit  (** JUnit XML to stdout. *)
 
@@ -237,7 +237,7 @@ val run :
       a [.last-failed] file in the output directory.
     @param list_only List test names without running. CLI: [-l].
     @param format
-      Output format: Verbose, Compact, Tap, or Junit (default: Verbose)
+      Output format: Compact, Verbose, Tap, or Junit (default: Compact)
     @param junit Path to write JUnit XML report
     @param seed
       Random seed for property tests. CLI: [--seed N], env: [WINDTRAP_SEED].
