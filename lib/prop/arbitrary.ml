@@ -32,23 +32,37 @@ let pp_triple pp_a pp_b pp_c (a, b, c) =
 let pp_quad pp_a pp_b pp_c pp_d (a, b, c, d) =
   "(" ^ pp_a a ^ ", " ^ pp_b b ^ ", " ^ pp_c c ^ ", " ^ pp_d d ^ ")"
 
+(* Windows string_of_float may include leading exponent zero (e.g. e-010). *)
+let cut_exp_zero s =
+  match String.split_on_char 'e' s with
+  | [ significand; exponent ] -> (
+      match exponent.[0] with
+      | '+' -> Printf.sprintf "%se+%i" significand (int_of_string exponent)
+      | _ -> Printf.sprintf "%se%i" significand (int_of_string exponent))
+  | _ -> s
+
+let pp_float f =
+  if Float.is_nan f && Float.sign_bit f then "-nan"
+  else if Sys.win32 then cut_exp_zero (string_of_float f)
+  else string_of_float f
+
 (* ───── Primitives ───── *)
 
 let unit = make ~gen:Gen.unit ~print:(fun () -> "()")
 let bool = make ~gen:Gen.bool ~print:string_of_bool
 let int = make ~gen:Gen.int ~print:string_of_int
 let int_range low high = make ~gen:(Gen.int_range low high) ~print:string_of_int
-let int32 = make ~gen:Gen.int32 ~print:Int32.to_string
+let int32 = make ~gen:Gen.int32 ~print:(fun i -> Int32.to_string i ^ "l")
 
 let int32_range low high =
-  make ~gen:(Gen.int32_range low high) ~print:Int32.to_string
+  make ~gen:(Gen.int32_range low high) ~print:(fun i -> Int32.to_string i ^ "l")
 
-let int64 = make ~gen:Gen.int64 ~print:Int64.to_string
+let int64 = make ~gen:Gen.int64 ~print:(fun i -> Int64.to_string i ^ "L")
 
 let int64_range low high =
-  make ~gen:(Gen.int64_range low high) ~print:Int64.to_string
+  make ~gen:(Gen.int64_range low high) ~print:(fun i -> Int64.to_string i ^ "L")
 
-let float = make ~gen:Gen.float ~print:string_of_float
+let float = make ~gen:Gen.float ~print:pp_float
 let char = make ~gen:Gen.char ~print:(fun c -> Printf.sprintf "%C" c)
 let string = make ~gen:Gen.string ~print:(fun s -> Printf.sprintf "%S" s)
 
