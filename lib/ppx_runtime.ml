@@ -241,6 +241,26 @@ let leave_group () =
 
 (* ───── Test Execution ───── *)
 
+(* Auto-execute tests when the program exits without an explicit [%%run_tests].
+   Safe no-ops: inline mode (exit() handles it), [%%run_tests] was called
+   (top_level_tests already cleared), no PPX tests registered (empty list). *)
+let () =
+  at_exit (fun () ->
+      if am_test_runner () then ()
+      else
+        let tests = List.rev !top_level_tests in
+        top_level_tests := [];
+        if tests <> [] then begin
+          let name = Option.value ~default:"Tests" !inline_suite_name in
+          let cli = Cli.parse Sys.argv in
+          if cli.list_only = Some true then Runner.list_tests name tests
+          else begin
+            let config = Cli.resolve_config cli in
+            let result = Runner.run ~config name tests in
+            if result.Runner.failed > 0 then Stdlib.exit 1
+          end
+        end)
+
 let run_tests name =
   if !group_stack <> [] then
     failwith "Windtrap.Ppx_runtime.run_tests: unclosed test groups";

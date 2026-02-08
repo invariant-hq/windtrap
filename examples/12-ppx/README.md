@@ -1,8 +1,9 @@
 # `12-ppx`
 
 PPX test syntax. The `ppx_windtrap` preprocessor provides `let%test`,
-`let%expect_test`, `module%test`, and `[%%run_tests]` for writing self-contained
-test executables with hierarchical grouping and expect tests.
+`let%expect_test`, and `module%test` for writing self-contained test
+executables with hierarchical grouping and expect tests. Tests auto-execute
+when the program exits.
 
 ```bash
 dune exec ./examples/12-ppx/main.exe
@@ -12,16 +13,16 @@ dune exec ./examples/12-ppx/main.exe
 
 - Writing boolean tests with `let%test`
 - Grouping tests with `module%test`
-- Running test suites with `[%%run_tests]`
+- Auto-execution (no `[%%run_tests]` needed)
 
 ## Key Syntax
 
 | Syntax | Purpose |
 |--------|---------|
 | `let%test "name" = expr` | Declare a test (body uses assertions) |
+| `let%expect_test name = ...` | Output comparison test |
 | `module%test Name = struct ... end` | Group tests into a hierarchy |
-| `[%%run_tests]` | Execute all registered tests |
-| `[%%run_tests "Suite Name"]` | Execute with a custom suite name |
+| `[%%run_tests "Suite Name"]` | Optional: set a custom suite name |
 
 ## Dune Configuration
 
@@ -41,9 +42,10 @@ Module-based PPX tests use a regular executable:
 | `let%test "name" = expr` | Assertion-based test |
 | `let%expect_test name = ...` | Output comparison test |
 | `module%test Name = struct ... end` | Group tests into a hierarchy |
-| `[%%run_tests "Suite"]` | Execute all registered tests |
+| `[%%run_tests "Suite"]` | Optional: set a custom suite name |
 
-All PPX test forms can be mixed freely in the same file.
+Tests auto-execute when the program exits. All PPX test forms can be mixed
+freely in the same file.
 
 ## Try It
 

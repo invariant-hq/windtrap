@@ -82,10 +82,12 @@ val leave_group : unit -> unit
 val run_tests : string -> unit
 (** [run_tests name] runs all registered tests under the suite [name].
 
-    In executable mode, runs tests via the Windtrap runner and terminates the
-    process (exit 0 on success, exit 1 on failure). In inline test mode, defers
-    execution to {!exit} which handles test running and correction file
-    generation.
+    This call is optional in executable mode — if omitted, tests auto-execute
+    when the program exits via an [at_exit] handler with the default suite name
+    ["Tests"]. Use [[%%run_tests "Name"]] to set a custom suite name.
+
+    In inline test mode, defers execution to {!exit} which handles test running
+    and correction file generation.
 
     @raise Failure if any test groups are still open (missing {!leave_group}).
 *)

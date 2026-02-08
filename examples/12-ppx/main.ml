@@ -62,5 +62,5 @@ module%test StringOps = struct
   end
 end
 
-(* Execute all registered tests. An optional name labels the suite. *)
-[%%run_tests "PPX Test Syntax"]
+(* Tests auto-execute when the program exits. Use [%%run_tests "Name"] to
+   set a custom suite name, otherwise the default "Tests" is used. *)
