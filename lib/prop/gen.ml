@@ -308,31 +308,23 @@ let oneofl xs st =
   match xs with
   | [] -> invalid_arg "Gen.oneofl: empty list"
   | _ ->
-      let i = Random.State.int st (List.length xs) in
-      let x = List.nth xs i in
-      (* Shrink by walking backwards through earlier list positions *)
-      let earlier () =
-        Seq.unfold
-          (fun j ->
-            if j <= 0 then None
-            else Some (Tree.pure (List.nth xs (j - 1)), j - 1))
-          i ()
+      let i_tree =
+        Tree.make_primitive
+          (fun i -> Shrink.int_towards 0 i)
+          (Random.State.int st (List.length xs))
       in
-      Tree.Tree (x, earlier)
+      Tree.map (List.nth xs) i_tree
 
 let frequency weighted_gens st =
   match weighted_gens with
   | [] -> invalid_arg "Gen.frequency: empty list"
   | _ ->
-      let total =
-        List.fold_left (fun acc (w, _) -> acc + max 0 w) 0 weighted_gens
-      in
+      let total = List.fold_left (fun acc (w, _) -> acc + w) 0 weighted_gens in
       if total < 1 then invalid_arg "Gen.frequency: total weight < 1";
       let pick = Random.State.int st total in
       let rec choose acc = function
         | [] -> assert false
         | (w, g) :: rest ->
-            let w = max 0 w in
             if pick < acc + w then g st else choose (acc + w) rest
       in
       choose 0 weighted_gens

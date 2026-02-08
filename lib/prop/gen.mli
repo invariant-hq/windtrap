@@ -172,7 +172,7 @@ val oneofl : 'a list -> 'a t
 
 val frequency : (int * 'a t) list -> 'a t
 (** [frequency weighted_gens] picks a generator with probability proportional to
-    its weight. Negative weights are treated as 0.
+    its weight.
 
     @raise Invalid_argument
       if [weighted_gens] is empty or total weight is less than 1. *)
