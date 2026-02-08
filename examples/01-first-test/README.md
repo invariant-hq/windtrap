@@ -29,16 +29,14 @@ When you run this example, you'll see:
 
 ```
 Testing First Test.
-This run has ID 'XXXXXXXX'.
 
-  [PASS] addition works                                                    <1ms
-  [PASS] adding zero                                                       <1ms
-  [PASS] negative numbers                                                  <1ms
+...
 
-Test Successful in <1ms. 3 tests run.
+All tests passed in <1ms. 3 tests run.
 ```
 
-Each test shows its status (`[PASS]` or `[FAIL]`) and execution time.
+By default, output uses compact format (one dot per passing test). Use `-v` for
+verbose output showing each test name and status.
 
 ## Try It
 

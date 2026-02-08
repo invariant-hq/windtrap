@@ -27,27 +27,33 @@ dune exec ./examples/x-demo/main.exe
 ```
 Testing Windtrap Demo.
 
+...F.FF..S..FF....
+
+N failed in <1ms. M tests run. (K skipped)
+```
+
+Use `-v` for verbose output showing the group hierarchy and individual results:
+
+```
+Testing Windtrap Demo.
+
 › Passing
   › Math
     › Arithmetic
-      [PASS] addition                                                      <1ms
-      [PASS] subtraction                                                   <1ms
-      [PASS] multiplication                                                <1ms
-    › Comparisons
-      [PASS] less than                                                     <1ms
-      [PASS] greater than                                                  <1ms
+      PASS addition 42μs
+      PASS subtraction 36μs
+      PASS multiplication 35μs
   ...
 
 › Failing Assertions
   › Equality
-  > [FAIL] int mismatch                                                    <1ms
-    [FAIL] string mismatch                                                 <1ms
-    [FAIL] list mismatch                                                   <1ms
+    FAIL int mismatch 55μs
+    FAIL string mismatch 38μs
   ...
 
 › Skipped
-  [SKIP] platform check                                                    <1ms
-  [SKIP] feature flag                                                      <1ms
+  SKIP platform check
+  SKIP feature flag
   ...
 ```
 
@@ -108,8 +114,8 @@ dune exec ./examples/x-demo/main.exe -- -q
 # List all tests without running
 dune exec ./examples/x-demo/main.exe -- -l
 
-# Compact output for CI
-dune exec ./examples/x-demo/main.exe -- --format compact
+# Verbose output (shows group hierarchy)
+dune exec ./examples/x-demo/main.exe -- -v
 
 # Update snapshots to accept current output
 dune exec ./examples/x-demo/main.exe -- -u

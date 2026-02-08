@@ -81,15 +81,24 @@ For PPX inline tests:
 ./my_tests.exe [OPTIONS] [PATTERN]
 
   -f, --filter PATTERN   Filter tests by name
+  -e, --exclude PATTERN  Exclude tests by name
   -x, --fail-fast        Stop on first failure
+  --bail N               Stop after N failures
+  --failed               Rerun only tests that failed last time
   -q, --quick            Skip slow tests
   -u, --update           Update snapshot files
   -l, --list             List tests without running
   -s, --stream           Stream output (don't capture)
-  --format FMT           verbose, compact, tap, junit
+  -v, --verbose          Verbose output (default: compact)
+  --format FMT           compact, verbose, tap, junit
   --junit PATH           Write JUnit XML report
+  --tag LABEL            Run only tests with this label (repeatable)
+  --exclude-tag LABEL    Skip tests with this label (repeatable)
   --seed N               Reproducible property test seed
   --timeout N            Default timeout in seconds
+  --prop-count N         Number of property test cases (default: 100)
+  --color MODE           Color output: always, never, auto
+  -V, --version          Show version
 ```
 
 ## Examples

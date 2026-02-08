@@ -26,22 +26,32 @@ When you run this example, you'll see:
 ```
 Testing Groups.
 
-  Math
-    Addition
-      [PASS] positive numbers                                              <1ms
-      [PASS] negative numbers                                              <1ms
-      [PASS] with zero                                                     <1ms
-    Multiplication
-      [PASS] positive numbers                                              <1ms
-      [PASS] by zero                                                       <1ms
-      [PASS] by one                                                        <1ms
-  Comparisons
-    [PASS] less than                                                       <1ms
-    [PASS] greater than                                                    <1ms
-    [PASS] equality                                                        <1ms
-  [PASS] standalone test                                                   <1ms
+..........
 
-Test Successful in <1ms. 10 tests run.
+All tests passed in <1ms. 10 tests run.
+```
+
+Use `-v` for verbose output to see the group hierarchy:
+
+```
+Testing Groups.
+
+› Math
+  › Addition
+    PASS positive numbers 43μs
+    PASS negative numbers 37μs
+    PASS with zero 35μs
+  › Multiplication
+    PASS positive numbers 36μs
+    PASS by zero 35μs
+    PASS by one 35μs
+› Comparisons
+  PASS less than 37μs
+  PASS greater than 35μs
+  PASS equality 35μs
+PASS standalone test 36μs
+
+All tests passed in <1ms. 10 tests run.
 ```
 
 The indentation shows how groups nest. `Math` contains `Addition` and

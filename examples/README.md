@@ -129,14 +129,22 @@ group "Integration"
 | Option                    | Purpose                                  |
 | ------------------------- | ---------------------------------------- |
 | `-s, --stream`            | Stream output to console (don't capture) |
-| `-v, --verbose`           | Verbose output (alias for `--format verbose`) |
+| `-v, --verbose`           | Verbose output (default: compact)        |
 | `-q, --quick`             | Skip slow tests                          |
 | `-x, --fail-fast`         | Stop on first failure                    |
+| `--bail N`                | Stop after N failures                    |
+| `--failed`                | Rerun only tests that failed last time   |
 | `-l, --list`              | List tests without running               |
 | `-u, --update`            | Update snapshot files                    |
 | `-f, --filter PATTERN`    | Filter tests by name                     |
+| `-e, --exclude PATTERN`   | Exclude tests by name                    |
 | `PATTERN`                 | Positional filter (same as -f)           |
-| `--format FMT`            | Output: verbose, compact, tap, junit     |
+| `--tag LABEL`             | Run only tests with this label           |
+| `--exclude-tag LABEL`     | Skip tests with this label               |
+| `--format FMT`            | Output: compact, verbose, tap, junit     |
 | `--junit PATH`            | Write JUnit XML report                   |
 | `--seed N`                | Random seed for property tests           |
 | `--timeout N`             | Default timeout in seconds               |
+| `--prop-count N`          | Number of property test cases            |
+| `--color MODE`            | Color output: always, never, auto        |
+| `-V, --version`           | Show version                             |

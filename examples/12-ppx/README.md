@@ -51,7 +51,7 @@ freely in the same file.
 
 1. Add a new `module%test` group for list operations.
 2. Try nesting `module%test` three levels deep.
-3. Run with `--format compact` to see compact output.
+3. Run with `-v` to see verbose output with group hierarchy.
 
 ## Next Steps
 
