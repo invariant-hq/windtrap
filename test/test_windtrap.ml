@@ -377,6 +377,47 @@ let property_regression_tests =
                   (Gen.int_range min_int 0) rand
               in
               is_some found);
+          test "int_range handles large non-negative bounds" (fun () ->
+              let bound = 1 lsl 30 in
+              let gen = Gen.int_range 0 bound in
+              let rand = Random.State.make [| 49 |] in
+              let draw () =
+                match Gen.find ~count:1 ~f:(fun _ -> true) gen rand with
+                | Some n -> n
+                | None -> fail "expected a generated value"
+              in
+              let samples = List.init 100 (fun _ -> draw ()) in
+              List.iter
+                (fun n ->
+                  is_true (n >= 0);
+                  is_true (n <= bound))
+                samples);
+          test "int_range handles large zero-spanning bounds" (fun () ->
+              let low = -((1 lsl 30) + 1024) in
+              let high = 1024 in
+              let gen = Gen.int_range low high in
+              let rand = Random.State.make [| 50 |] in
+              let draw () =
+                match Gen.find ~count:1 ~f:(fun _ -> true) gen rand with
+                | Some n -> n
+                | None -> fail "expected a generated value"
+              in
+              let samples = List.init 100 (fun _ -> draw ()) in
+              List.iter
+                (fun n ->
+                  is_true (n >= low);
+                  is_true (n <= high))
+                samples);
+          test "int_range -1..max_int does not degenerate to max_int" (fun () ->
+              let rand = Random.State.make [| 51 |] in
+              let gen = Gen.int_range (-1) max_int in
+              let draw () =
+                match Gen.find ~count:1 ~f:(fun _ -> true) gen rand with
+                | Some n -> n
+                | None -> fail "expected a generated value"
+              in
+              let samples = List.init 50 (fun _ -> draw ()) in
+              is_true (List.exists (fun n -> n <> max_int) samples));
           test "int64_range near max_int has more than one value" (fun () ->
               let low = Int64.sub Int64.max_int 10L in
               let rand = Random.State.make [| 47 |] in

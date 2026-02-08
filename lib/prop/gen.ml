@@ -64,6 +64,12 @@ let int st =
   if Random.State.bool st then Tree.map (fun n -> -n - 1) (int_pos st)
   else int_pos st
 
+let int_bound upper st =
+  if upper < 0 then invalid_arg "Gen.int_bound: upper < 0";
+  if upper <= max_random_int - 1 then Random.State.int st (upper + 1)
+  else if upper = max_int then int_pos_raw st
+  else int_pos_raw st mod (upper + 1)
+
 let pick_origin_in_range ~low ~high ~goal =
   if goal < low then low else if goal > high then high else goal
 
@@ -73,14 +79,7 @@ let int_range ?origin low high st =
     if low = high then low
     else if low >= 0 || high < 0 then
       (* Range is entirely non-negative or entirely negative *)
-      let range = high - low + 1 in
-      if range <= 0 then
-        (* Overflow: range exceeds max_int, fall back to float *)
-        low
-        + int_of_float
-            (Random.State.float st
-               (float_of_int high -. float_of_int low +. 1.0))
-      else low + Random.State.int st range
+      low + int_bound (high - low) st
     else
       (* Range spans zero: choose side proportionally, then sample within it *)
       let f_low = float_of_int low in
@@ -88,9 +87,8 @@ let int_range ?origin low high st =
       let ratio = -.f_low /. (1.0 +. f_high -. f_low) in
       if Random.State.float st 1.0 <= ratio then
         if low = min_int then -int_pos_raw st - 1
-        else -Random.State.int st (-low) - 1
-      else if high + 1 > 0 then Random.State.int st (high + 1)
-      else high
+        else -int_bound (pred (-low)) st - 1
+      else int_bound high st
   in
   let origin =
     pick_origin_in_range ~low ~high ~goal:(Option.value origin ~default:0)
