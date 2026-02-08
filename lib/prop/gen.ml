@@ -87,7 +87,8 @@ let int_range ?origin low high st =
       let f_high = float_of_int high in
       let ratio = -.f_low /. (1.0 +. f_high -. f_low) in
       if Random.State.float st 1.0 <= ratio then
-        if -low > 0 then -Random.State.int st (-low) - 1 else low
+        if low = min_int then -int_pos_raw st - 1
+        else -Random.State.int st (-low) - 1
       else if high + 1 > 0 then Random.State.int st (high + 1)
       else high
   in
