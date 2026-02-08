@@ -68,4 +68,4 @@ dune exec ./examples/10-tags/main.exe -- --quick
 
 ## Next Steps
 
-Continue to [11-ppx](../11-ppx/) to learn about inline expect tests.
+Continue to [11-inline-tests](../11-inline-tests/) to learn about inline expect tests.

@@ -17,9 +17,8 @@
 val init : string array -> unit
 (** [init argv] parses command-line arguments from [argv]. Called once by the
     generated test runner. Recognized flags: [-source-tree-root], [-diff-cmd],
-    [-partition]. Unrecognized flags are silently ignored.
-
-    @raise Failure if called more than once. *)
+    [-partition]. Unrecognized flags are silently ignored. Subsequent calls are
+    silently ignored. *)
 
 val exit : unit -> unit
 (** [exit ()] runs all registered tests, writes pending corrections, and
@@ -37,24 +36,17 @@ val am_test_runner : unit -> bool
 val set_lib : string -> unit
 (** Set the current library name being tested. *)
 
-(** {1 Test Execution} *)
+(** {1 Expectation Checking} *)
 
 type location = { file : string; line : int; start_col : int; end_col : int }
 (** Source location for an expect node. *)
 
-val run_test :
-  file:string -> line:int -> name:string option -> fn:(unit -> unit) -> unit
-(** [run_test ~file ~line ~name ~fn] registers an expect test. Despite its name,
-    the test is not executed immediately; all registered tests run when {!exit}
-    is called. *)
-
-(** {1 Expectation Checking} *)
-
 val expect : loc:location -> expected:string option -> unit
 (** [expect ~loc ~expected] checks captured output against [expected] using
     normalized comparison (trailing whitespace and blank lines are trimmed).
-    Pass [None] for [expected] to assert that no output was produced. Records a
-    correction and raises on mismatch.
+    Pass [None] for [expected] to assert that no output was produced. In inline
+    test mode, records a correction for [dune promote]; in executable mode, just
+    raises on mismatch.
 
     @raise Failure.Check_failure if output does not match. *)
 
@@ -88,10 +80,12 @@ val leave_group : unit -> unit
     @raise Failure if no group is currently open. *)
 
 val run_tests : string -> unit
-(** [run_tests name] runs all registered tests under the suite [name], then
-    terminates the process. Exits with code 0 on success, code 1 on failure. If
-    [--list] was passed on the command line, prints test paths and exits without
-    running.
+(** [run_tests name] runs all registered tests under the suite [name].
+
+    In executable mode, runs tests via the Windtrap runner and terminates the
+    process (exit 0 on success, exit 1 on failure). In inline test mode, defers
+    execution to {!exit} which handles test running and correction file
+    generation.
 
     @raise Failure if any test groups are still open (missing {!leave_group}).
 *)

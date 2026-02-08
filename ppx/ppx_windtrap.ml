@@ -93,17 +93,15 @@ let expect_test_extension =
   Extension.V3.declare_inline "expect_test" Extension.Context.structure_item
     expect_test_pattern (fun ~ctxt name body ->
       let loc = Expansion_context.Extension.extension_point_loc ctxt in
-      let file = Expansion_context.Extension.input_name ctxt in
       let line = loc.loc_start.pos_lnum in
       (* Convention: [let%expect_test _ = ...] means anonymous test *)
-      let name_expr =
-        if name = "_" then [%expr None] else [%expr Some [%e estring ~loc name]]
+      let test_name =
+        if name = "_" then Printf.sprintf "line_%d" line else name
       in
       [
         [%stri
           let () =
-            Windtrap.Ppx_runtime.run_test ~file:[%e estring ~loc file]
-              ~line:[%e eint ~loc line] ~name:[%e name_expr] ~fn:(fun () ->
+            Windtrap.Ppx_runtime.add_test [%e estring ~loc test_name] (fun () ->
                 [%e body])];
       ])
 

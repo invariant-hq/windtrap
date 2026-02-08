@@ -17,8 +17,8 @@ Learn Windtrap through progressively complex examples. Start with
 | [`08-properties`](08-properties/) | Property & parameterized testing | `prop`, `cases`, `assume`                  |
 | [`09-fixtures`](09-fixtures/)     | Setup and teardown               | `bracket`, `fixture`, `~setup`, `~retries` |
 | [`10-tags`](10-tags/)             | Tagging and filtering            | `Tag.labels`, `--filter`                   |
-| [`11-ppx`](11-ppx/)               | Inline expect tests              | `let%expect_test`, `[%expect]`             |
-| [`12-ppx-test`](12-ppx-test/)     | Module-based PPX tests           | `let%test`, `module%test`, `[%%run_tests]` |
+| [`11-inline-tests`](11-inline-tests/) | Inline tests                 | `let%expect_test`, `[%expect]`             |
+| [`12-ppx`](12-ppx/)               | PPX test syntax                  | `let%test`, `let%expect_test`, `[%%run_tests]` |
 | [`13-cli`](13-cli/)               | Command-line options             | `--format`, `--junit`                      |
 | [`x-demo`](x-demo/)               | Visual showcase                  | All features with intentional failures     |
 
@@ -36,7 +36,7 @@ For example:
 dune exec ./examples/01-first-test/main.exe
 ```
 
-The inline PPX example (11-ppx) runs differently:
+The inline tests example (11-inline-tests) runs differently:
 
 ```bash
 dune runtest

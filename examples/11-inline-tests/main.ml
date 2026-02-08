@@ -1,12 +1,12 @@
-(* Inline expect tests with PPX.
+(* Inline tests with PPX.
 
-   The ppx_windtrap preprocessor provides a more concise syntax for expect
-   tests, similar to ppx_expect. Tests are embedded directly in your source
-   files.
+   Tests embedded directly in source files, run with [dune runtest]. Dune
+   generates a test runner that discovers and executes all [let%expect_test]
+   definitions. Mismatched output produces .corrected files for
+   [dune promote].
 
-   To run PPX tests: dune runtest
-
-   See the dune file for required configuration. *)
+   See the dune file for required configuration:
+   [(inline_tests)] and [(preprocess (pps ppx_windtrap))]. *)
 
 (* A function we want to test. *)
 let greet name = Printf.printf "Hello, %s!\n" name

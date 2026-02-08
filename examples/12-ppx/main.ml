@@ -1,9 +1,10 @@
-(* Module-based test syntax with PPX.
+(* PPX test syntax.
 
-   The ppx_windtrap preprocessor provides [let%test], [module%test], and
-   [%%run_tests] for writing self-contained test executables with grouping.
+   The ppx_windtrap preprocessor provides [let%test], [let%expect_test],
+   [module%test], and [%%run_tests] for writing self-contained test
+   executables with grouping and expect tests.
 
-   To run: dune exec ./examples/12-ppx-test/main.exe *)
+   To run: dune exec ./examples/12-ppx/main.exe *)
 
 open Windtrap
 
@@ -20,6 +21,25 @@ module%test Arithmetic = struct
   let%test "mul commutative" = equal Testable.int (mul 3 7) (mul 7 3)
   let%test "add identity" = equal Testable.int 42 (add 0 42)
   let%test "mul identity" = equal Testable.int 42 (mul 1 42)
+end
+
+(* Expect tests — capture stdout and compare. *)
+let%expect_test greet =
+  Printf.printf "Hello, %s!" "world";
+  [%expect {|Hello, world!|}]
+
+module%test ExpectExamples = struct
+  let%expect_test multi_step =
+    print_string "first";
+    [%expect {|first|}];
+    print_string "second";
+    [%expect {|second|}]
+
+  let%expect_test capture_and_transform =
+    print_string "value: 42";
+    let out = [%expect.output] in
+    print_endline (String.uppercase_ascii out);
+    [%expect {|VALUE: 42|}]
 end
 
 (* Nested groups for deeper hierarchies. *)
