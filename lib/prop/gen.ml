@@ -244,13 +244,28 @@ let list_size size_gen gen st =
       let st' = Random.State.copy st' in
       let rec build n acc =
         if n <= 0 then
-          let l = List.rev acc in
-          Tree.Tree (List.map Tree.root l, Tree.build_list_shrink_tree l)
+          List.fold_left
+            (fun acc elt_tree -> Tree.liftA2 List.cons elt_tree acc)
+            (Tree.pure []) acc
         else build (n - 1) (gen st' :: acc)
       in
       build size [])
 
-let list gen = list_size nat gen
+(* Like QCheck2 list/list_small: use only size root, then apply a custom
+   bisection shrink strategy over list structure. *)
+let list_ignore_size_tree size_gen gen st =
+  let st' = Random.State.split st in
+  let size = Tree.root (size_gen st) in
+  let st' = Random.State.copy st' in
+  let rec build n acc =
+    if n <= 0 then
+      let l = List.rev acc in
+      Tree.Tree (List.map Tree.root l, Tree.build_list_shrink_tree l)
+    else build (n - 1) (gen st' :: acc)
+  in
+  build size []
+
+let list gen = list_ignore_size_tree nat gen
 let array gen st = Tree.map Array.of_list (list gen st)
 
 let pair a b =
@@ -271,8 +286,12 @@ let oneof gens st =
   match gens with
   | [] -> invalid_arg "Gen.oneof: empty list"
   | _ ->
-      let i = Random.State.int st (List.length gens) in
-      (List.nth gens i) st
+      let i_tree =
+        Tree.make_primitive
+          (fun i -> Shrink.int_towards 0 i)
+          (Random.State.int st (List.length gens))
+      in
+      Tree.bind i_tree (fun i -> (List.nth gens i) st)
 
 let oneofl xs st =
   match xs with
@@ -326,15 +345,7 @@ let bytes st = map Bytes.of_string string st
 
 (* ───── Size Control ───── *)
 
-let sized f st =
-  let p = Random.State.float st 1.0 in
-  let size =
-    if p < 0.5 then Random.State.int st 10
-    else if p < 0.75 then Random.State.int st 100
-    else if p < 0.95 then Random.State.int st 500
-    else Random.State.int st 1000
-  in
-  f size st
+let sized f = bind nat f
 
 (* ───── Shrink Control ───── *)
 
