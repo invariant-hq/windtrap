@@ -46,8 +46,18 @@ let bool st =
 (* Random.State.int bound is 2^30-1 on all platforms, not max_int *)
 let max_random_int = (1 lsl 30) - 1
 
+let int_pos_raw st =
+  if Sys.word_size = 32 then Random.State.bits st
+  else
+    (* Build a full-width positive int from 30+30+2 random bits. *)
+    let top2_mask = 0b11 in
+    let left = (Random.State.bits st land top2_mask) lsl 60 in
+    let middle = Random.State.bits st lsl 30 in
+    let right = Random.State.bits st in
+    left lor middle lor right
+
 let int_pos st =
-  let x = Random.State.int st max_random_int in
+  let x = int_pos_raw st in
   Tree.make_primitive (fun n -> Shrink.int_towards 0 n) x
 
 let int st =
@@ -156,23 +166,7 @@ let int64_range ?origin low high st =
   in
   Tree.make_primitive (fun x -> Shrink.int64_towards origin x) n
 
-let nativeint st =
-  if Sys.int_size >= 63 then
-    (* 64-bit platform: assemble from two 30-bit calls *)
-    let low = Nativeint.of_int (Random.State.bits st) in
-    let high =
-      Nativeint.shift_left (Nativeint.of_int (Random.State.bits st)) 30
-    in
-    let bits = Nativeint.logor low high in
-    if Random.State.bool st then
-      Tree.make_primitive (fun n -> Shrink.nativeint_towards 0n n) bits
-    else
-      Tree.make_primitive
-        (fun n -> Shrink.nativeint_towards 0n n)
-        (Nativeint.neg bits)
-  else
-    (* 32-bit platform: same as int *)
-    Tree.map Nativeint.of_int (int st)
+let nativeint st = Tree.map Nativeint.of_int (int st)
 
 let float st =
   (* Assemble 64 random bits and reinterpret as IEEE 754 double to cover the
