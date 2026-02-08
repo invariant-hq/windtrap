@@ -73,6 +73,11 @@ let int_bound upper st =
 let pick_origin_in_range ~low ~high ~goal =
   if goal < low then low else if goal > high then high else goal
 
+let resolve_origin ~loc ~low ~high ~origin =
+  if origin < low then invalid_arg (loc ^ ": origin < low")
+  else if origin > high then invalid_arg (loc ^ ": origin > high")
+  else origin
+
 let int_range ?origin low high st =
   if high < low then invalid_arg "Gen.int_range: high < low";
   let n =
@@ -90,8 +95,10 @@ let int_range ?origin low high st =
         else -int_bound (pred (-low)) st - 1
       else int_bound high st
   in
+  let default_origin = pick_origin_in_range ~low ~high ~goal:0 in
   let origin =
-    pick_origin_in_range ~low ~high ~goal:(Option.value origin ~default:0)
+    resolve_origin ~loc:"Gen.int_range" ~low ~high
+      ~origin:(Option.value origin ~default:default_origin)
   in
   Tree.make_primitive (fun x -> Shrink.int_towards origin x) n
 
@@ -208,9 +215,13 @@ let float st =
 
 let float_range ?origin low high st =
   if high < low then invalid_arg "Gen.float_range: high < low";
+  if high -. low > max_float then
+    invalid_arg "Gen.float_range: high -. low > max_float";
   let x = low +. Random.State.float st (high -. low) in
+  let default_origin = pick_origin_in_range ~low ~high ~goal:0.0 in
   let origin =
-    pick_origin_in_range ~low ~high ~goal:(Option.value origin ~default:0.0)
+    resolve_origin ~loc:"Gen.float_range" ~low ~high
+      ~origin:(Option.value origin ~default:default_origin)
   in
   Tree.make_primitive (fun f -> Shrink.float_towards origin f) x
 

@@ -51,7 +51,8 @@ val int_range : ?origin:int -> int -> int -> int t
 (** [int_range low high] generates integers in [[low, high]]. Shrinks toward
     [origin] (default: closest to 0 within range).
 
-    @raise Invalid_argument if [high < low]. *)
+    @raise Invalid_argument if [high < low], [origin < low], or [origin > high].
+*)
 
 val nat : int t
 (** Generates non-negative integers in [[0, 10_000]], biased toward small
@@ -91,7 +92,9 @@ val float_range : ?origin:float -> float -> float -> float t
     (exclusive). Shrinks toward [origin] (default: closest to [0.0] within
     range).
 
-    @raise Invalid_argument if [high < low]. *)
+    @raise Invalid_argument
+      if [high < low], [high -. low > max_float], [origin < low], or
+      [origin > high]. *)
 
 val char : char t
 (** Generates printable ASCII characters ([' '] to ['~']). Shrinks toward [' '].
