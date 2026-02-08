@@ -18,18 +18,18 @@ let map f gen st = Tree.map f (gen st)
 let ( >|= ) gen f = map f gen
 
 let ap fgen xgen st =
-  let st' = Random.State.copy st in
+  let st' = Random.State.split st in
   Tree.ap (fgen st) (xgen st')
 
 let bind gen f st =
-  let st' = Random.State.copy st in
-  Tree.bind (gen st) (fun x -> f x st')
+  let st' = Random.State.split st in
+  Tree.bind (gen st) (fun x -> f x (Random.State.copy st'))
 
 let ( >>= ) = bind
 let ( let+ ) gen f = map f gen
 
 let ( and+ ) a b st =
-  let st' = Random.State.copy st in
+  let st' = Random.State.split st in
   Tree.liftA2 (fun x y -> (x, y)) (a st) (b st')
 
 let ( let* ) = bind
@@ -219,7 +219,7 @@ let either ?(ratio = 0.5) left_gen right_gen st =
   else Tree.map (fun x -> Either.Right x) (right_gen st)
 
 let list_size size_gen gen st =
-  let st' = Random.State.copy st in
+  let st' = Random.State.split st in
   Tree.bind (size_gen st) (fun size ->
       let st' = Random.State.copy st' in
       let rec build n acc =
@@ -233,30 +233,17 @@ let list_size size_gen gen st =
 let list gen = list_size nat gen
 let array gen st = Tree.map Array.of_list (list gen st)
 
-let pair a b st =
-  let st' = Random.State.copy st in
-  Tree.liftA2 (fun x y -> (x, y)) (a st) (b st')
+let pair a b =
+  let+ x = a and+ y = b in
+  (x, y)
 
-let triple a b c st =
-  let st_b = Random.State.copy st in
-  let st_c = Random.State.copy st in
-  let ta = a st in
-  let tb = b st_b in
-  let tc = c st_c in
-  let tab = Tree.liftA2 (fun x y -> (x, y)) ta tb in
-  Tree.liftA2 (fun (x, y) z -> (x, y, z)) tab tc
+let triple a b c =
+  let+ x, y = pair a b and+ z = c in
+  (x, y, z)
 
-let quad a b c d st =
-  let st_b = Random.State.copy st in
-  let st_c = Random.State.copy st in
-  let st_d = Random.State.copy st in
-  let ta = a st in
-  let tb = b st_b in
-  let tc = c st_c in
-  let td = d st_d in
-  let tab = Tree.liftA2 (fun x y -> (x, y)) ta tb in
-  let tabc = Tree.liftA2 (fun (x, y) z -> (x, y, z)) tab tc in
-  Tree.liftA2 (fun (x, y, z) w -> (x, y, z, w)) tabc td
+let quad a b c d =
+  let+ x, y, z = triple a b c and+ w = d in
+  (x, y, z, w)
 
 (* ───── Choice ───── *)
 
