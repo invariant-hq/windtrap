@@ -60,13 +60,13 @@ val float : float t
 (** Generates floats. Shrinks toward [0.0]. *)
 
 val char : char t
-(** Generates printable ASCII characters. *)
+(** Generates characters in the [0..255] byte range. *)
 
 val string : string t
-(** Generates strings of printable characters. *)
+(** Generates strings of bytes. *)
 
 val bytes : bytes t
-(** Generates bytes of printable ASCII characters. *)
+(** Generates bytes. *)
 
 (** {1 Containers} *)
 

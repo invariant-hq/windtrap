@@ -231,7 +231,10 @@ let char_range ?origin low high =
   let origin = Option.map Char.code origin in
   map Char.chr (int_range ?origin lo hi)
 
-let char = char_range ' ' '~'
+let char st =
+  let c = Random.State.int st 256 in
+  let shrink i = Shrink.int_towards (Char.code 'a') i in
+  Tree.map Char.chr (Tree.make_primitive shrink c)
 
 (* ───── Containers ───── *)
 

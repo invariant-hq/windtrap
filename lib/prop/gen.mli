@@ -97,8 +97,7 @@ val float_range : ?origin:float -> float -> float -> float t
       [origin > high]. *)
 
 val char : char t
-(** Generates printable ASCII characters ([' '] to ['~']). Shrinks toward [' '].
-*)
+(** Generates characters in the [0..255] byte range. Shrinks toward ['a']. *)
 
 val char_range : ?origin:char -> char -> char -> char t
 (** [char_range low high] generates characters in [[low, high]]. Shrinks toward
@@ -107,8 +106,7 @@ val char_range : ?origin:char -> char -> char -> char t
     @raise Invalid_argument if [high < low]. *)
 
 val string : string t
-(** Generates strings of printable ASCII characters. Length biased toward small
-    values (see {!nat}). Shrinks toward shorter strings and simpler characters.
+(** Generates strings of bytes. Length biased toward small values (see {!nat}).
 *)
 
 val string_of : char t -> string t
@@ -120,8 +118,7 @@ val string_size : int t -> char t -> string t
     [size_gen] and characters from [char_gen]. *)
 
 val bytes : bytes t
-(** Generates bytes of printable ASCII characters. Length biased toward small
-    values. *)
+(** Generates bytes. Length biased toward small values. *)
 
 (** {1 Containers} *)
 
