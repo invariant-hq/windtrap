@@ -60,13 +60,13 @@ let nativeint_towards dest x () =
     dest ()
 
 let float_towards dest x () =
-  let rec go current limit () =
-    if limit <= 0 then Seq.Nil
-    else if Float.equal current x then Seq.Nil
-    else
-      let half_diff = (x -. current) /. 2.0 in
-      if Float.abs half_diff < Float.epsilon then
-        Seq.Cons (current, fun () -> Seq.Nil)
-      else Seq.Cons (current, go (current +. half_diff) (limit - 1))
-  in
-  go dest 15 ()
+  Seq.take 15
+    (Seq.unfold
+       (fun current ->
+         if Float.equal current x then None
+         else
+           let half_diff = (x /. 2.0) -. (current /. 2.0) in
+           if Float.equal half_diff 0.0 then Some (current, x)
+           else Some (current, current +. half_diff))
+       dest)
+    ()

@@ -28,4 +28,4 @@ val nativeint_towards : nativeint -> nativeint -> nativeint Seq.t
 val float_towards : float -> float -> float Seq.t
 (** [float_towards dest x] is like {!int_towards} for [float]. Produces at most
     15 elements, since float division does not converge as reliably as integer
-    division. Stops early if the step falls below {!Float.epsilon}. *)
+    division. *)
