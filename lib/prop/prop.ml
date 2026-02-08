@@ -95,7 +95,11 @@ let check ?(config = default_config) ?rand arb prop =
   let config =
     match !default_count with
     | Some c when config.count = default_config.count ->
-        { config with count = c; max_gen = c * 3 }
+        let max_gen =
+          if config.max_gen = default_config.max_gen then c * 3
+          else config.max_gen
+        in
+        { config with count = c; max_gen }
     | _ -> config
   in
   let seed = get_seed config in
