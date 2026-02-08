@@ -38,6 +38,7 @@ type result =
   | Gave_up of { count : int; discarded : int; seed : int }
 
 type 'a test_outcome = Pass | Fail | Discard | Exception of exn * string
+type shrink_goal = Shrink_failures | Shrink_exceptions
 
 let run_test prop x =
   try if prop x then Pass else Fail with
@@ -47,30 +48,29 @@ let run_test prop x =
       Exception (exn, Printexc.raw_backtrace_to_string bt)
 
 (* Greedy descent: at each node, try shrink candidates left-to-right and take
-   the first one that still fails, then recurse into that subtree. *)
-let shrink ~max_shrink ~prop ~print tree =
-  let rec go steps current_tree current_str =
-    if steps >= max_shrink then (current_str, steps)
+   the first one that still matches the current failure mode, then recurse. *)
+let shrink ~max_shrink ~goal ~prop tree =
+  let accepts = function
+    | Pass | Discard -> false
+    | Fail -> goal = Shrink_failures
+    | Exception _ -> goal = Shrink_exceptions
+  in
+  let rec go steps current_tree =
+    if steps >= max_shrink then (current_tree, steps)
     else
       let rec try_shrinks seq =
         match seq () with
         | Seq.Nil -> None
-        | Seq.Cons (candidate_tree, rest) -> (
+        | Seq.Cons (candidate_tree, rest) ->
             let candidate = Tree.root candidate_tree in
-            match run_test prop candidate with
-            | Fail -> Some candidate_tree
-            | Pass | Discard -> try_shrinks rest
-            | Exception _ ->
-                (* Treat exceptions as failures so we can minimize them too *)
-                Some candidate_tree)
+            if accepts (run_test prop candidate) then Some candidate_tree
+            else try_shrinks rest
       in
       match try_shrinks (Tree.children current_tree) with
-      | None -> (current_str, steps)
-      | Some smaller_tree ->
-          let smaller_str = print (Tree.root smaller_tree) in
-          go (steps + 1) smaller_tree smaller_str
+      | None -> (current_tree, steps)
+      | Some smaller_tree -> go (steps + 1) smaller_tree
   in
-  go 0 tree (print (Tree.root tree))
+  go 0 tree
 
 let random_seed () =
   Random.self_init ();
@@ -114,28 +114,56 @@ let check ?(config = default_config) ?rand arb prop =
     else if generated >= config.max_gen then
       Gave_up { count = passed; discarded; seed }
     else
-      let tree = gen rand in
-      let x = Tree.root tree in
-      match run_test prop x with
-      | Pass -> loop ~passed:(passed + 1) ~discarded ~generated:(generated + 1)
-      | Discard ->
-          loop ~passed ~discarded:(discarded + 1) ~generated:(generated + 1)
-      | Fail ->
-          let counterexample = print x in
-          let shrunk_counterexample, shrink_steps =
-            shrink ~max_shrink:config.max_shrink ~prop ~print tree
-          in
-          Failed
+      match
+        try Ok (gen rand)
+        with exn ->
+          let bt = Printexc.get_raw_backtrace () in
+          Stdlib.Error (exn, Printexc.raw_backtrace_to_string bt)
+      with
+      | Stdlib.Error (exn, backtrace) ->
+          Error
             {
               count = passed;
-              discarded;
               seed;
-              counterexample;
-              shrunk_counterexample;
-              shrink_steps;
+              counterexample = "<generator raised before producing a value>";
+              exn;
+              backtrace;
             }
-      | Exception (exn, backtrace) ->
-          let counterexample = print x in
-          Error { count = passed; seed; counterexample; exn; backtrace }
+      | Ok tree -> (
+          let x = Tree.root tree in
+          match run_test prop x with
+          | Pass ->
+              loop ~passed:(passed + 1) ~discarded ~generated:(generated + 1)
+          | Discard ->
+              loop ~passed ~discarded:(discarded + 1) ~generated:(generated + 1)
+          | Fail ->
+              let counterexample = print x in
+              let shrunk_tree, shrink_steps =
+                shrink ~max_shrink:config.max_shrink ~goal:Shrink_failures ~prop
+                  tree
+              in
+              let shrunk_counterexample = print (Tree.root shrunk_tree) in
+              Failed
+                {
+                  count = passed;
+                  discarded;
+                  seed;
+                  counterexample;
+                  shrunk_counterexample;
+                  shrink_steps;
+                }
+          | Exception (exn, backtrace) ->
+              let shrunk_tree, _ =
+                shrink ~max_shrink:config.max_shrink ~goal:Shrink_exceptions
+                  ~prop tree
+              in
+              let shrunk_value = Tree.root shrunk_tree in
+              let counterexample = print shrunk_value in
+              let exn, backtrace =
+                match run_test prop shrunk_value with
+                | Exception (shrunk_exn, shrunk_bt) -> (shrunk_exn, shrunk_bt)
+                | _ -> (exn, backtrace)
+              in
+              Error { count = passed; seed; counterexample; exn; backtrace })
   in
   loop ~passed:0 ~discarded:0 ~generated:0
