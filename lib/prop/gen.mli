@@ -87,8 +87,9 @@ val float : float t
     including NaN, infinity, and subnormal values. Shrinks toward [0.0]. *)
 
 val float_range : ?origin:float -> float -> float -> float t
-(** [float_range low high] generates floats in [[low, high]]. Shrinks toward
-    [origin] (default: closest to [0.0] within range).
+(** [float_range low high] generates floats between [low] (inclusive) and [high]
+    (exclusive). Shrinks toward [origin] (default: closest to [0.0] within
+    range).
 
     @raise Invalid_argument if [high < low]. *)
 
