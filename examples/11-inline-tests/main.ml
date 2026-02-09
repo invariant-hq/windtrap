@@ -16,26 +16,26 @@ let format_list items =
   List.iter (fun item -> Printf.printf "- %s\n" item) items
 
 (* Basic expect test. *)
-let%expect_test hello_world =
+let%expect_test "hello_world" =
   print_endline "Hello, world!";
   [%expect {|Hello, world!|}]
 
 (* Multiple expects in one test. *)
-let%expect_test multiple_expects =
+let%expect_test "multiple_expects" =
   print_endline "First line";
   [%expect {|First line|}];
   print_endline "Second line";
   [%expect {|Second line|}]
 
 (* Testing functions. *)
-let%expect_test testing_functions =
+let%expect_test "testing_functions" =
   Printf.printf "add 2 3 = %d\n" (add 2 3);
   [%expect {|add 2 3 = 5|}];
   Printf.printf "add 10 20 = %d\n" (add 10 20);
   [%expect {|add 10 20 = 30|}]
 
 (* Whitespace is normalized by default. *)
-let%expect_test normalized_whitespace =
+let%expect_test "normalized_whitespace" =
   print_endline "  Hello  ";
   print_endline "";
   print_endline "  World  ";
@@ -45,18 +45,18 @@ let%expect_test normalized_whitespace =
     World
   |}]
 
-(* Use [%expect.exact] when whitespace matters. *)
-let%expect_test exact_matching =
+(* Use [%expect_exact] when whitespace matters. *)
+let%expect_test "exact_matching" =
   print_string "no newline";
-  [%expect.exact {|no newline|}]
+  [%expect_exact {|no newline|}]
 
 (* Empty expect — assert no output. *)
-let%expect_test no_output =
+let%expect_test "no_output" =
   let _ = add 1 2 in
   [%expect {||}]
 
 (* Testing formatted output. *)
-let%expect_test formatted_list =
+let%expect_test "formatted_list" =
   format_list [ "apples"; "bananas"; "cherries" ];
   [%expect {|
     - apples
@@ -65,14 +65,14 @@ let%expect_test formatted_list =
   |}]
 
 (* Capture output for post-processing. *)
-let%expect_test capture_output =
+let%expect_test "capture_output" =
   print_string "value: 42";
   let out = [%expect.output] in
   print_endline (String.uppercase_ascii out);
   [%expect {|VALUE: 42|}]
 
 (* Chained capture and transformation. *)
-let%expect_test chained_capture =
+let%expect_test "chained_capture" =
   greet "Alice";
   let greeting = [%expect.output] in
   Printf.printf "Got %d chars: %s" (String.length greeting)

@@ -66,9 +66,9 @@ val output : unit -> string
     These functions support the [module%test] and [let%test] syntax for building
     test trees using a stack-based group nesting model. *)
 
-val add_test : string -> (unit -> unit) -> unit
-(** [add_test name fn] adds a test case to the current group, or to the
-    top-level if no group is open. *)
+val add_test : ?tags:string list -> string -> (unit -> unit) -> unit
+(** [add_test ?tags name fn] adds a test case to the current group, or to the
+    top-level if no group is open. [tags] are attached as label tags. *)
 
 val enter_group : string -> unit
 (** [enter_group name] starts a new test group. *)

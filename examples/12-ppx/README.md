@@ -20,7 +20,7 @@ dune exec ./examples/12-ppx/main.exe
 | Syntax | Purpose |
 |--------|---------|
 | `let%test "name" = expr` | Declare a test (body uses assertions) |
-| `let%expect_test name = ...` | Output comparison test |
+| `let%expect_test "name" = ...` | Output comparison test |
 | `module%test Name = struct ... end` | Group tests into a hierarchy |
 | `[%%run_tests "Suite Name"]` | Optional: set a custom suite name |
 
@@ -40,7 +40,7 @@ Module-based PPX tests use a regular executable:
 | Syntax | Purpose |
 |--------|---------|
 | `let%test "name" = expr` | Assertion-based test |
-| `let%expect_test name = ...` | Output comparison test |
+| `let%expect_test "name" = ...` | Output comparison test |
 | `module%test Name = struct ... end` | Group tests into a hierarchy |
 | `[%%run_tests "Suite"]` | Optional: set a custom suite name |
 

@@ -228,8 +228,8 @@ type test_frame = { name : string; mutable tests : Test.t list }
 let group_stack : test_frame list ref = ref []
 let top_level_tests : Test.t list ref = ref []
 
-let add_test name fn =
-  let t = Test.test name fn in
+let add_test ?(tags = []) name fn =
+  let t = Test.test ~tags:(Tag.labels tags) name fn in
   match !group_stack with
   | [] -> top_level_tests := t :: !top_level_tests
   | frame :: _ -> frame.tests <- t :: frame.tests

@@ -10,7 +10,7 @@ dune runtest
 ## What You'll Learn
 
 - Writing inline tests with `let%expect_test`
-- Checking output with `[%expect]` (normalized) and `[%expect.exact]` (exact)
+- Checking output with `[%expect]` (normalized) and `[%expect_exact]` (exact)
 - Capturing output with `[%expect.output]` for post-processing
 
 ## Syntax Reference
@@ -19,9 +19,9 @@ dune runtest
 
 | Syntax | Purpose |
 |--------|---------|
-| `let%expect_test name = ...` | Declare an inline expect test |
+| `let%expect_test "name" = ...` | Declare an inline expect test |
 | `[%expect {|...\|}]` | Assert normalized output matches |
-| `[%expect.exact {|...\|}]` | Assert output matches exactly |
+| `[%expect_exact {|...\|}]` | Assert output matches exactly |
 | `[%expect.output]` | Return captured output as a string |
 
 These tests run via dune's inline test runner (`dune runtest`).

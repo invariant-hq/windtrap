@@ -38,7 +38,7 @@ let make_location_expr ~loc ~file (ploc : Location.t) =
       end_col = [%e eint ~loc (ploc.loc_end.pos_cnum - ploc.loc_end.pos_bol)];
     }]
 
-(* Both [%expect] and [%expect.exact] share the same expansion logic,
+(* Both [%expect] and [%expect_exact] share the same expansion logic,
    differing only in which runtime function they call. *)
 let declare_expect_extension name ~make_call =
   Extension.V3.declare name Extension.Context.expression
@@ -67,7 +67,7 @@ let expect_extension =
           ~expected:[%e expected_expr]])
 
 let expect_exact_extension =
-  declare_expect_extension "expect.exact"
+  declare_expect_extension "expect_exact"
     ~make_call:(fun ~loc loc_expr expected_expr ->
       [%expr
         Windtrap.Ppx_runtime.expect_exact ~loc:[%e loc_expr]
@@ -82,44 +82,90 @@ let expect_output_extension =
 
 (* ───── Inline Test Runner Extensions ───── *)
 
+type test_name = Explicit of string | Anonymous
+
+type expect_test_binding = {
+  name : test_name;
+  tags : string list;
+  body : expression;
+}
+
+let parse_tags_attr ~loc attr =
+  match attr with
+  | {
+   attr_name = { txt = "tags"; _ };
+   attr_payload =
+     PStr
+       [
+         {
+           pstr_desc =
+             Pstr_eval
+               ({ pexp_desc = Pexp_constant (Pconst_string (s, _, _)); _ }, _);
+           _;
+         };
+       ];
+   _;
+  } ->
+      [ s ]
+  | {
+   attr_name = { txt = "tags"; _ };
+   attr_payload =
+     PStr
+       [ { pstr_desc = Pstr_eval ({ pexp_desc = Pexp_tuple exprs; _ }, _); _ } ];
+   _;
+  } ->
+      List.map
+        (function
+          | { pexp_desc = Pexp_constant (Pconst_string (s, _, _)); _ } -> s
+          | _ ->
+              Location.raise_errorf ~loc
+                "Expected [@tags \"...\"] or [@tags (\"...\", ...)]")
+        exprs
+  | { attr_name = { txt = "tags"; _ }; _ } ->
+      Location.raise_errorf ~loc
+        "Expected [@tags \"...\"] or [@tags (\"...\", ...)]"
+  | _ -> []
+
+let parse_test_name ~loc pat =
+  match pat.ppat_desc with
+  | Ppat_constant (Pconst_string (name, _, _)) -> Explicit name
+  | Ppat_any -> Anonymous
+  | _ ->
+      Location.raise_errorf ~loc
+        "Expected let%%expect_test \"name\" = ... or let%%expect_test _ = ..."
+
+let parse_expect_test_binding ~loc items =
+  match items with
+  | [
+   {
+     pstr_desc = Pstr_value (Nonrecursive, [ { pvb_pat; pvb_expr = body; _ } ]);
+     _;
+   };
+  ] ->
+      let tags =
+        List.concat_map (parse_tags_attr ~loc) pvb_pat.ppat_attributes
+      in
+      { name = parse_test_name ~loc pvb_pat; tags; body }
+  | _ -> Location.raise_errorf ~loc "Expected let%%expect_test <name> = <expr>"
+
 let expect_test_extension =
   Extension.V3.declare_inline "expect_test" Extension.Context.structure_item
-    Ast_pattern.(
-      pstr __
-      |> map1 ~f:(fun items ->
-             match items with
-             | [
-              {
-                pstr_desc =
-                  Pstr_value
-                    ( Nonrecursive,
-                      [
-                        {
-                          pvb_pat = { ppat_desc = Ppat_var { txt = name; _ }; _ };
-                          pvb_expr = body;
-                          _;
-                        };
-                      ] );
-                _;
-              };
-             ] ->
-                 (name, body)
-             | _ ->
-                 raise
-                   (Invalid_argument
-                      "Expected let%expect_test <name> = <expr>")))
-    (fun ~ctxt (name, body) ->
+    Ast_pattern.(pstr __)
+    (fun ~ctxt items ->
       let loc = Expansion_context.Extension.extension_point_loc ctxt in
+      let binding = parse_expect_test_binding ~loc items in
       let line = loc.loc_start.pos_lnum in
-      (* Convention: [let%expect_test _ = ...] means anonymous test *)
       let test_name =
-        if name = "_" then Printf.sprintf "line_%d" line else name
+        match binding.name with
+        | Explicit name -> name
+        | Anonymous -> Printf.sprintf "line_%d" line
       in
+      let tags_expr = elist ~loc (List.map (estring ~loc) binding.tags) in
       [
         [%stri
           let () =
-            Windtrap.Ppx_runtime.add_test [%e estring ~loc test_name] (fun () ->
-                [%e body])];
+            Windtrap.Ppx_runtime.add_test ~tags:[%e tags_expr]
+              [%e estring ~loc test_name] (fun () -> [%e binding.body])];
       ])
 
 (* ───── Module-Based Test Syntax ───── *)

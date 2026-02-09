@@ -24,18 +24,18 @@ module%test Arithmetic = struct
 end
 
 (* Expect tests — capture stdout and compare. *)
-let%expect_test greet =
+let%expect_test "greet" =
   Printf.printf "Hello, %s!" "world";
   [%expect {|Hello, world!|}]
 
 module%test ExpectExamples = struct
-  let%expect_test multi_step =
+  let%expect_test "multi_step" =
     print_string "first";
     [%expect {|first|}];
     print_string "second";
     [%expect {|second|}]
 
-  let%expect_test capture_and_transform =
+  let%expect_test "capture_and_transform" =
     print_string "value: 42";
     let out = [%expect.output] in
     print_endline (String.uppercase_ascii out);
