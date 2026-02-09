@@ -38,6 +38,15 @@ let make_location_expr ~loc ~file (ploc : Location.t) =
       end_col = [%e eint ~loc (ploc.loc_end.pos_cnum - ploc.loc_end.pos_bol)];
     }]
 
+let make_point_location_expr ~loc ~file (pos : Lexing.position) =
+  [%expr
+    {
+      Windtrap.Ppx_runtime.file = [%e estring ~loc file];
+      line = [%e eint ~loc pos.pos_lnum];
+      start_col = [%e eint ~loc (pos.pos_cnum - pos.pos_bol)];
+      end_col = [%e eint ~loc (pos.pos_cnum - pos.pos_bol)];
+    }]
+
 (* Both [%expect] and [%expect_exact] share the same expansion logic,
    differing only in which runtime function they call. *)
 let declare_expect_extension name ~make_call =
@@ -153,6 +162,7 @@ let expect_test_extension =
     Ast_pattern.(pstr __)
     (fun ~ctxt items ->
       let loc = Expansion_context.Extension.extension_point_loc ctxt in
+      let file = Expansion_context.Extension.input_name ctxt in
       let binding = parse_expect_test_binding ~loc items in
       let line = loc.loc_start.pos_lnum in
       let test_name =
@@ -161,11 +171,17 @@ let expect_test_extension =
         | Anonymous -> Printf.sprintf "line_%d" line
       in
       let tags_expr = elist ~loc (List.map (estring ~loc) binding.tags) in
+      let trailing_loc_expr =
+        make_point_location_expr ~loc ~file binding.body.pexp_loc.loc_end
+      in
       [
         [%stri
           let () =
             Windtrap.Ppx_runtime.add_test ~tags:[%e tags_expr]
-              [%e estring ~loc test_name] (fun () -> [%e binding.body])];
+              [%e estring ~loc test_name] (fun () ->
+                Windtrap.Ppx_runtime.run_expect_test
+                  ~trailing_loc:[%e trailing_loc_expr] (fun () ->
+                    [%e binding.body]))];
       ])
 
 (* ───── Module-Based Test Syntax ───── *)

@@ -36,7 +36,10 @@ let () =
 (* ───── Corrections ───── *)
 
 type location = { file : string; line : int; start_col : int; end_col : int }
-type correction = { loc : location; expected : string option; actual : string }
+
+type correction =
+  | Update_expect_payload of { loc : location; actual : string }
+  | Replace_node of { loc : location; replacement : string }
 
 let raise_output_mismatch message ~expected ~actual =
   let diff =
@@ -126,7 +129,7 @@ let expect ~loc ~expected =
     (* In inline mode, record the correction for .corrected file generation;
        in both modes, raise so the test fails immediately. *)
     if am_test_runner () then begin
-      let corr : correction = { loc; expected; actual = actual_raw } in
+      let corr : correction = Update_expect_payload { loc; actual = actual_raw } in
       record_correction ~file:loc.file corr
     end;
     let expected_str = Option.value ~default:"" expected_norm in
@@ -140,7 +143,7 @@ let expect_exact ~loc ~expected =
   in
   if not matches then begin
     if am_test_runner () then begin
-      let corr : correction = { loc; expected; actual } in
+      let corr : correction = Update_expect_payload { loc; actual } in
       record_correction ~file:loc.file corr
     end;
     let expected_str = Option.value ~default:"" expected in
@@ -167,6 +170,32 @@ let find_safe_tag content =
   in
   try_tag ""
 
+let loc_of_correction = function
+  | Update_expect_payload { loc; _ } -> loc
+  | Replace_node { loc; _ } -> loc
+
+let format_expect_node actual =
+  let tag = find_safe_tag actual in
+  let payload = Printf.sprintf "{%s|%s|%s}" tag actual tag in
+  Printf.sprintf "[%%expect %s]" payload
+
+let check_trailing_output ~trailing_loc =
+  let trailing_raw = Expect.output () in
+  let trailing_norm = Expect.normalize trailing_raw in
+  if trailing_norm <> "" then begin
+    if am_test_runner () then begin
+      let replacement = ";\n  " ^ format_expect_node trailing_raw in
+      record_correction ~file:trailing_loc.file
+        (Replace_node { loc = trailing_loc; replacement })
+    end;
+    raise_output_mismatch "Trailing output not matched by [%expect]"
+      ~expected:"" ~actual:trailing_norm
+  end
+
+let run_expect_test ~trailing_loc fn =
+  fn ();
+  check_trailing_output ~trailing_loc
+
 (* Write a .corrected file for a single source file by splicing actual output
    into the expect nodes. Reads from the sandbox and writes alongside it so
    dune's diff action can pick up the corrected version. *)
@@ -186,10 +215,23 @@ let write_corrected_file ~file =
     (* Reverse line order: splicing multi-line content shifts subsequent
        line numbers, so process from bottom to top. *)
     let sorted_corrs =
-      List.sort (fun a b -> compare b.loc.line a.loc.line) corrs
+      List.sort
+        (fun a b ->
+          let la = loc_of_correction a in
+          let lb = loc_of_correction b in
+          compare lb.line la.line)
+        corrs
     in
     List.iter
-      (fun { loc; actual; _ } ->
+      (fun correction ->
+        let loc, replacement =
+          match correction with
+          | Update_expect_payload { loc; actual } ->
+              let tag = find_safe_tag actual in
+              let actual_escaped = Printf.sprintf "{%s|%s|%s}" tag actual tag in
+              (loc, actual_escaped)
+          | Replace_node { loc; replacement } -> (loc, replacement)
+        in
         if loc.line > 0 && loc.line <= Array.length lines_arr then begin
           let line_content = lines_arr.(loc.line - 1) in
           let before = String.sub line_content 0 loc.start_col in
@@ -199,9 +241,7 @@ let write_corrected_file ~file =
                 (String.length line_content - loc.end_col)
             else ""
           in
-          let tag = find_safe_tag actual in
-          let actual_escaped = Printf.sprintf "{%s|%s|%s}" tag actual tag in
-          lines_arr.(loc.line - 1) <- before ^ actual_escaped ^ after
+          lines_arr.(loc.line - 1) <- before ^ replacement ^ after
         end)
       sorted_corrs;
     (* Write to cwd (the sandbox) as basename + ".corrected". Dune's diff

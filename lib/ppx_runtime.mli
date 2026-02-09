@@ -61,6 +61,11 @@ val output : unit -> string
     {!expect}, {!expect_exact}, or [output] call. Returns [""] if no output was
     captured. *)
 
+val run_expect_test : trailing_loc:location -> (unit -> unit) -> unit
+(** [run_expect_test ~trailing_loc fn] executes [fn] and then fails if output
+    remains unmatched at test end. In inline mode, unmatched trailing output is
+    recorded as an inserted [[%expect]] correction at [trailing_loc]. *)
+
 (** {1 Module-based Test Syntax}
 
     These functions support the [module%test] and [let%test] syntax for building
