@@ -82,16 +82,33 @@ let expect_output_extension =
 
 (* ───── Inline Test Runner Extensions ───── *)
 
-let expect_test_pattern =
-  let open Ast_pattern in
-  pstr
-    (pstr_value nonrecursive
-       (value_binding ~pat:(ppat_var __) ~expr:__ ~constraint_:none ^:: nil)
-    ^:: nil)
-
 let expect_test_extension =
   Extension.V3.declare_inline "expect_test" Extension.Context.structure_item
-    expect_test_pattern (fun ~ctxt name body ->
+    Ast_pattern.(
+      pstr __
+      |> map1 ~f:(fun items ->
+             match items with
+             | [
+              {
+                pstr_desc =
+                  Pstr_value
+                    ( Nonrecursive,
+                      [
+                        {
+                          pvb_pat = { ppat_desc = Ppat_var { txt = name; _ }; _ };
+                          pvb_expr = body;
+                          _;
+                        };
+                      ] );
+                _;
+              };
+             ] ->
+                 (name, body)
+             | _ ->
+                 raise
+                   (Invalid_argument
+                      "Expected let%expect_test <name> = <expr>")))
+    (fun ~ctxt (name, body) ->
       let loc = Expansion_context.Extension.extension_point_loc ctxt in
       let line = loc.loc_start.pos_lnum in
       (* Convention: [let%expect_test _ = ...] means anonymous test *)
