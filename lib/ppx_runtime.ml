@@ -38,6 +38,12 @@ let () =
 type location = { file : string; line : int; start_col : int; end_col : int }
 type correction = { loc : location; expected : string option; actual : string }
 
+let raise_output_mismatch message ~expected ~actual =
+  let diff =
+    Myers.diff ~expected_label:"expected" ~actual_label:"actual" expected actual
+  in
+  Failure.raise_failure (Pp.str "%s@.@.%s" message diff)
+
 let corrections : (string, correction list) Hashtbl.t = Hashtbl.create 16
 let corrections_mutex = Mutex.create ()
 
@@ -123,7 +129,7 @@ let expect ~loc ~expected =
       record_correction ~file:loc.file corr
     end;
     let expected_str = Option.value ~default:"" expected_norm in
-    Failure.raise_failure ~expected:expected_str ~actual "Output mismatch"
+    raise_output_mismatch "Output mismatch" ~expected:expected_str ~actual
   end
 
 let expect_exact ~loc ~expected =
@@ -137,8 +143,8 @@ let expect_exact ~loc ~expected =
       record_correction ~file:loc.file corr
     end;
     let expected_str = Option.value ~default:"" expected in
-    Failure.raise_failure ~expected:expected_str ~actual
-      "Output mismatch (exact)"
+    raise_output_mismatch "Output mismatch (exact)" ~expected:expected_str
+      ~actual
   end
 
 let output () = Expect.output ()

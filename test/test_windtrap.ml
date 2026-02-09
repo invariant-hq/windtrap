@@ -794,6 +794,45 @@ let expect_tests =
               let result = Windtrap__Expect.normalize "   \n   \n" in
               equal Testable.string "" result);
         ];
+      group "mismatch reporting"
+        [
+          test "capture mismatch includes unified diff" (fun () ->
+              let failure =
+                try
+                  ignore (capture (fun () -> print_endline "hello") "world");
+                  None
+                with Windtrap__Failure.Check_failure f -> Some f
+              in
+              match failure with
+              | None -> fail "Expected mismatch"
+              | Some f ->
+                  let rendered = Pp.to_string Windtrap__Failure.pp f in
+                  is_true
+                    (Windtrap__Text.contains_substring ~pattern:"@@ -"
+                       rendered));
+          test "ppx runtime mismatch includes unified diff" (fun () ->
+              let loc =
+                {
+                  Windtrap__Ppx_runtime.file = "test_file.ml";
+                  line = 1;
+                  start_col = 0;
+                  end_col = 0;
+                }
+              in
+              let failure =
+                try
+                  Windtrap__Ppx_runtime.expect ~loc ~expected:(Some "expected");
+                  None
+                with Windtrap__Failure.Check_failure f -> Some f
+              in
+              match failure with
+              | None -> fail "Expected mismatch"
+              | Some f ->
+                  let rendered = Pp.to_string Windtrap__Failure.pp f in
+                  is_true
+                    (Windtrap__Text.contains_substring ~pattern:"@@ -"
+                       rendered));
+        ];
     ]
 
 let path_ops_tests =

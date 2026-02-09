@@ -77,26 +77,31 @@ let output () =
 
 (* ───── Expect Functions ───── *)
 
+let raise_output_mismatch message ~expected ~actual =
+  let diff =
+    Myers.diff ~expected_label:"expected" ~actual_label:"actual" expected actual
+  in
+  Failure.raise_failure (Pp.str "%s@.@.%s" message diff)
+
 let expect_exact expected =
   match !current_trap with
   | None ->
       if expected <> "" then
-        Failure.raise_failure ~expected ~actual:""
-          "Output mismatch (no capture context)"
+        raise_output_mismatch "Output mismatch (no capture context)" ~expected
+          ~actual:""
   | Some trap ->
       drain_formatters ();
       let actual = Log_trap.get_unconsumed trap in
       Log_trap.consume trap;
-      if actual <> expected then
-        Failure.raise_failure ~expected ~actual "Output mismatch"
+      if actual <> expected then raise_output_mismatch "Output mismatch" ~expected ~actual
 
 let expect expected =
   match !current_trap with
   | None ->
       let expected_norm = normalize expected in
       if expected_norm <> "" then
-        Failure.raise_failure ~expected:expected_norm ~actual:""
-          "Output mismatch (no capture context)"
+        raise_output_mismatch "Output mismatch (no capture context)"
+          ~expected:expected_norm ~actual:""
   | Some trap ->
       drain_formatters ();
       let actual = Log_trap.get_unconsumed trap in
@@ -104,8 +109,8 @@ let expect expected =
       let actual_norm = normalize actual in
       let expected_norm = normalize expected in
       if actual_norm <> expected_norm then
-        Failure.raise_failure ~expected:expected_norm ~actual:actual_norm
-          "Output mismatch"
+        raise_output_mismatch "Output mismatch" ~expected:expected_norm
+          ~actual:actual_norm
 
 (* ───── Capture Functions ───── *)
 
@@ -145,8 +150,8 @@ let capture_impl ~normalize_output fn expected =
             else (actual, expected)
           in
           if actual_cmp <> expected_cmp then
-            Failure.raise_failure ~expected:expected_cmp ~actual:actual_cmp
-              "Output mismatch";
+            raise_output_mismatch "Output mismatch" ~expected:expected_cmp
+              ~actual:actual_cmp;
           result))
 
 let capture fn expected = capture_impl ~normalize_output:true fn expected
