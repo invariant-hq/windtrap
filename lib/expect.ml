@@ -94,7 +94,8 @@ let expect_exact expected =
       drain_formatters ();
       let actual = Log_trap.get_unconsumed trap in
       Log_trap.consume trap;
-      if actual <> expected then raise_output_mismatch "Output mismatch" ~expected ~actual
+      if actual <> expected then
+        raise_output_mismatch "Output mismatch" ~expected ~actual
 
 let expect expected =
   match !current_trap with

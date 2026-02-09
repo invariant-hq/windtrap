@@ -11,12 +11,10 @@ let colorize_unified_diff diff_text =
       Pp.styled_string `Bold line
     else if String.starts_with ~prefix:"+++ " line then
       Pp.styled_string `Bold line
-    else if String.starts_with ~prefix:"- " line then
-      Pp.styled_string `Red line
+    else if String.starts_with ~prefix:"- " line then Pp.styled_string `Red line
     else if String.starts_with ~prefix:"+ " line then
       Pp.styled_string `Green line
     else line
   in
   String.split_on_char '\n' diff_text
-  |> List.map style_line
-  |> String.concat "\n"
+  |> List.map style_line |> String.concat "\n"

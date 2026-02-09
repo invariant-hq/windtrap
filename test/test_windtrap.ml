@@ -808,8 +808,7 @@ let expect_tests =
               | Some f ->
                   let rendered = Pp.to_string Windtrap__Failure.pp f in
                   is_true
-                    (Windtrap__Text.contains_substring ~pattern:"@@ -"
-                       rendered));
+                    (Windtrap__Text.contains_substring ~pattern:"@@ -" rendered));
           test "ppx runtime mismatch includes unified diff" (fun () ->
               let loc =
                 {
@@ -830,8 +829,7 @@ let expect_tests =
               | Some f ->
                   let rendered = Pp.to_string Windtrap__Failure.pp f in
                   is_true
-                    (Windtrap__Text.contains_substring ~pattern:"@@ -"
-                       rendered));
+                    (Windtrap__Text.contains_substring ~pattern:"@@ -" rendered));
         ];
     ]
 
