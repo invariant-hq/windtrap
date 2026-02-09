@@ -405,6 +405,10 @@ let run ?(config = default_config ()) root_name tests =
   Snapshot.set_config config.snapshot_config;
   Windtrap_prop.Prop.set_default_seed config.seed;
   Windtrap_prop.Prop.set_default_count config.prop_count;
+  let coverage_dir =
+    Filename.concat (Filename.dirname config.log_dir) "_coverage"
+  in
+  Windtrap_coverage.set_output_prefix (Filename.concat coverage_dir "windtrap");
   let focus_active = Test.has_focused tests in
   let run_id = Run_id.generate () in
   let log_trap =

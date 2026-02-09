@@ -118,4 +118,5 @@ Windtrap builds on ideas from several OCaml testing projects:
 - **Craig Ferguson's Alcotest PRs** ([#294](https://github.com/mirage/alcotest/pull/294), [#247](https://github.com/mirage/alcotest/pull/247)) -- API design and subcomponent diffing
 - **[ppx_expect](https://github.com/janestreet/ppx_expect)** and **[ppx_inline_test](https://github.com/janestreet/ppx_inline_test)** by Jane Street -- expect test paradigm and dune integration
 - **[QCheck2](https://github.com/c-cube/qcheck)** by Simon Cruanes et al. -- generator design and integrated shrinking
+- **[Bisect_ppx](https://github.com/aantron/bisect_ppx)** by Anton Bachin et al. -- coverage instrumentation and runtime
 - **[mtime](https://erratique.ch/software/mtime)** by The mtime programmers -- monotonic clock implementation

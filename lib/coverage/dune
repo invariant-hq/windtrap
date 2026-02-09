@@ -1,0 +1,4 @@
+(library
+ (name windtrap_coverage)
+ (public_name windtrap.coverage)
+ (libraries unix))

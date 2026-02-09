@@ -5,7 +5,7 @@
  (instrumentation.backend
   (ppx ppx_windtrap))
  (libraries ppxlib)
- (ppx_runtime_libraries windtrap)
+ (ppx_runtime_libraries windtrap.coverage)
  (preprocess
   (pps ppxlib.metaquot))
  (inline_tests.backend

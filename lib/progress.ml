@@ -446,4 +446,10 @@ let print_summary t ~passed ~failed ~skipped ~time () =
           (Pp.styled `Bold (Pp.styled `Green Pp.string))
           "All tests passed" time_str total plural skip_suffix;
       print_slowest t;
+      let cov = Windtrap_coverage.data () in
+      if Hashtbl.length cov > 0 then begin
+        let s = Windtrap_coverage.summarize cov in
+        Pp.pr "Coverage: %.2f%% of expressions.@."
+          (Windtrap_coverage.percentage s)
+      end;
       if in_github_actions () then Pp.pr "::endgroup::@."
