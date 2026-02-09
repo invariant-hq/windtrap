@@ -141,7 +141,7 @@ let expect_internal ~count_towards_reachability ~loc ~expected =
        in both modes, raise so the test fails immediately. *)
     if am_test_runner () then begin
       let corr : correction =
-        Update_expect_payload { loc; actual = actual_raw }
+        Update_expect_payload { loc; actual }
       in
       record_correction ~file:loc.file corr
     end;
@@ -201,7 +201,7 @@ let check_trailing_output ~trailing_loc =
   let trailing_norm = Expect.normalize trailing_raw in
   if trailing_norm <> "" then begin
     if am_test_runner () then begin
-      let replacement = ";\n  " ^ format_expect_node trailing_raw in
+      let replacement = ";\n  " ^ format_expect_node trailing_norm in
       record_correction ~file:trailing_loc.file
         (Replace_node { loc = trailing_loc; replacement })
     end;
