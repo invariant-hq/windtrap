@@ -18,14 +18,14 @@ let combine a b =
 
 (* ───── Path Utilities ───── *)
 
-let build_path root segments = String.concat " › " (root :: List.rev segments)
+let build_path segments = String.concat " › " (List.rev segments)
 
-let collect_paths root_name test =
+let collect_paths test =
   Test.fold
     (fun (segments, paths) visit ->
       match visit with
       | Test.Case { name; _ } ->
-          (segments, build_path root_name (name :: segments) :: paths)
+          (segments, build_path (name :: segments) :: paths)
       | Test.Enter_group { name; _ } -> (name :: segments, paths)
       | Test.Leave_group _ -> (
           match segments with [] -> ([], paths) | _ :: rest -> (rest, paths)))
@@ -42,13 +42,13 @@ let find_duplicates paths =
         false))
     paths
 
-let list_tests root_name tests =
-  let paths = List.concat_map (collect_paths root_name) tests in
+let list_tests _root_name tests =
+  let paths = List.concat_map collect_paths tests in
   List.iter (Pp.pr "%s@.") (List.sort String.compare paths)
 
-let check_duplicates root_name tests =
+let check_duplicates _root_name tests =
   match
-    List.concat_map (collect_paths root_name) tests
+    List.concat_map collect_paths tests
     |> find_duplicates
     |> List.sort_uniq String.compare
   with
@@ -183,7 +183,7 @@ let effective_tags tag_stack tags =
   List.fold_left Tag.merge Tag.empty ordered
 
 let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
-    ~root_name test =
+    test =
   let initial =
     {
       path_segments = [];
@@ -205,7 +205,7 @@ let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
         else
           match visit with
           | Test.Case { name; fn; tags; pos; timeout; retries; focused } ->
-              let path = build_path root_name (name :: state.path_segments) in
+              let path = build_path (name :: state.path_segments) in
               let groups = List.rev state.path_segments in
               let eff_tags = effective_tags state.tag_stack tags in
               let timeout =
@@ -282,13 +282,13 @@ let run_test ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
   (final_state.result, bailed final_state)
 
 let run_tests ~progress ~log_trap ~filter ~bail ~default_timeout ~focus_active
-    ~root_name tests =
+    tests =
   let rec loop acc = function
     | [] -> acc
     | test :: rest ->
         let result, stopped =
           run_test ~progress ~log_trap ~filter ~bail ~default_timeout
-            ~focus_active ~root_name test
+            ~focus_active test
         in
         let acc = combine acc result in
         if stopped then acc else loop acc rest
@@ -397,8 +397,8 @@ let read_last_failed log_dir =
 
 (* ───── Entry Point ───── *)
 
-let count_tests root_name tests =
-  List.concat_map (collect_paths root_name) tests |> List.length
+let count_tests tests =
+  List.concat_map collect_paths tests |> List.length
 
 let run ?(config = default_config ()) root_name tests =
   check_duplicates root_name tests;
@@ -415,13 +415,13 @@ let run ?(config = default_config ()) root_name tests =
     Log_trap.create ~root:config.log_dir ~suite_name:root_name ~run_id
       ~enabled:config.capture
   in
-  let total_tests = count_tests root_name tests in
+  let total_tests = count_tests tests in
   let progress = Progress.create ~mode:config.progress_mode ~total_tests in
   Option.iter (Progress.set_junit_file progress) config.junit_file;
   Progress.print_header progress ~name:root_name ~run_id;
   let result =
     run_tests ~progress ~log_trap ~filter:config.filter ~bail:config.bail
-      ~default_timeout:config.default_timeout ~focus_active ~root_name tests
+      ~default_timeout:config.default_timeout ~focus_active tests
   in
   Progress.finish progress;
   Progress.print_summary progress ~passed:result.passed ~failed:result.failed

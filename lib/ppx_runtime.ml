@@ -310,11 +310,22 @@ let write_corrected_file ~file =
 
 (* ───── Module-Based Test Syntax ───── *)
 
+let module_name_of_file file =
+  let base = Filename.basename file in
+  match String.index_opt base '.' with
+  | Some i -> String.capitalize_ascii (String.sub base 0 i)
+  | None -> String.capitalize_ascii base
+
 (* A frame in the test group tree being built *)
-type test_frame = { name : string; tags : Tag.t; mutable tests : Test.t list }
+type test_frame = {
+  name : string;
+  tags : Tag.t;
+  file_module : string option;
+  mutable tests : Test.t list;
+}
 
 let group_stack : test_frame list ref = ref []
-let top_level_tests : Test.t list ref = ref []
+let top_level_tests : (string option * Test.t) list ref = ref []
 
 let add_test ?file ?(tags = []) name fn =
   let partition_name = Option.map Filename.basename file in
@@ -329,25 +340,58 @@ let add_test ?file ?(tags = []) name fn =
   in
   if include_test then begin
     let t = Test.test ~tags:(Tag.labels tags) name fn in
+    let file_module = Option.map module_name_of_file file in
     match !group_stack with
-    | [] -> top_level_tests := t :: !top_level_tests
+    | [] -> top_level_tests := (file_module, t) :: !top_level_tests
     | frame :: _ -> frame.tests <- t :: frame.tests
   end
 
-let enter_group ?(tags = []) name =
-  group_stack := { name; tags = Tag.labels tags; tests = [] } :: !group_stack
+let enter_group ?file ?(tags = []) name =
+  let file_module = Option.map module_name_of_file file in
+  group_stack :=
+    { name; tags = Tag.labels tags; file_module; tests = [] } :: !group_stack
 
 let leave_group () =
   match !group_stack with
   | [] -> failwith "Windtrap.Ppx_runtime.leave_group: no group to leave"
-  | frame :: rest -> (
+  | frame :: rest ->
       let group =
         Test.group ~tags:frame.tags frame.name (List.rev frame.tests)
       in
       group_stack := rest;
-      match rest with
-      | [] -> top_level_tests := group :: !top_level_tests
+      (match rest with
+      | [] ->
+          top_level_tests := (frame.file_module, group) :: !top_level_tests
       | parent :: _ -> parent.tests <- group :: parent.tests)
+
+(* Collect registered tests, grouping top-level tests by their source file
+   module. Tests from the same file are wrapped in a [Test.group] named after
+   the OCaml module (e.g., "my_file.ml" → "My_file"). Tests without file
+   info (manual registrations) remain ungrouped at the top level. *)
+let collect_tests () =
+  let entries = List.rev !top_level_tests in
+  top_level_tests := [];
+  let file_map : (string, Test.t list ref) Hashtbl.t = Hashtbl.create 16 in
+  let file_order = ref [] in
+  let ungrouped = ref [] in
+  List.iter
+    (fun (file_mod, test) ->
+      match file_mod with
+      | None -> ungrouped := test :: !ungrouped
+      | Some m -> (
+          match Hashtbl.find_opt file_map m with
+          | Some tests -> tests := test :: !tests
+          | None ->
+              file_order := m :: !file_order;
+              Hashtbl.add file_map m (ref [ test ])))
+    entries;
+  let file_groups =
+    List.rev !file_order
+    |> List.map (fun m ->
+           let tests = List.rev !(Hashtbl.find file_map m) in
+           Test.group m tests)
+  in
+  List.rev !ungrouped @ file_groups
 
 (* ───── Test Execution ───── *)
 
@@ -358,8 +402,7 @@ let () =
   at_exit (fun () ->
       if am_test_runner () then ()
       else
-        let tests = List.rev !top_level_tests in
-        top_level_tests := [];
+        let tests = collect_tests () in
         if tests <> [] then begin
           let name = Option.value ~default:"Tests" !inline_suite_name in
           let cli = Cli.parse Sys.argv in
@@ -383,8 +426,7 @@ let run_tests name =
        the inline-test-runner flags, so we defer execution to exit(). *)
     inline_suite_name := Some name
   else begin
-    let tests = List.rev !top_level_tests in
-    top_level_tests := [];
+    let tests = collect_tests () in
 
     let cli = Cli.parse Sys.argv in
     if cli.list_only = Some true then begin
@@ -406,8 +448,7 @@ let exit () =
       list_partitions ();
       Stdlib.exit 0
     end;
-    let tests = List.rev !top_level_tests in
-    top_level_tests := [];
+    let tests = collect_tests () in
     if tests = [] then Stdlib.exit 0;
 
     let suite_name = Option.value ~default:"Tests" !inline_suite_name in

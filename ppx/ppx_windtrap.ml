@@ -309,8 +309,8 @@ let test_extension =
             [
               [%stri
                 let () =
-                  Windtrap.Ppx_runtime.enter_group ~tags:[%e tags_expr]
-                    [%e estring ~loc name]];
+                  Windtrap.Ppx_runtime.enter_group ~file:[%e estring ~loc file]
+                    ~tags:[%e tags_expr] [%e estring ~loc name]];
               pstr_module ~loc
                 (module_binding ~loc
                    ~name:(Located.mk ~loc (Some name))
