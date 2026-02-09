@@ -449,7 +449,10 @@ let print_summary t ~passed ~failed ~skipped ~time () =
       let cov = Windtrap_coverage.data () in
       if Hashtbl.length cov > 0 then begin
         let s = Windtrap_coverage.summarize cov in
-        Pp.pr "Coverage: %.2f%% of expressions.@."
-          (Windtrap_coverage.percentage s)
+        let pct = Windtrap_coverage.percentage s in
+        let style = (Windtrap_coverage.coverage_style s :> Pp.style) in
+        Pp.pr "Coverage: %d/%d (%a) of expressions.@." s.visited s.total
+          (Pp.styled style Pp.string)
+          (Printf.sprintf "%.2f%%" pct)
       end;
       if in_github_actions () then Pp.pr "::endgroup::@."

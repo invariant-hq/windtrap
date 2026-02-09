@@ -32,8 +32,9 @@ let find_coverage_files = function
         list_non_recursively is_coverage_file Filename.current_dir_name
       in
       let in_build =
-        if Sys.file_exists "_build/_coverage"
-           && Sys.is_directory "_build/_coverage"
+        if
+          Sys.file_exists "_build/_coverage"
+          && Sys.is_directory "_build/_coverage"
         then list_recursively is_coverage_file "_build/_coverage"
         else []
       in
@@ -46,8 +47,7 @@ let find_coverage_files = function
 let load_coverage files =
   let tbl : Windtrap_coverage.coverage = Hashtbl.create 17 in
   List.iter
-    (fun path ->
-      Windtrap_coverage.merge tbl (Windtrap_coverage.read_file path))
+    (fun path -> Windtrap_coverage.merge tbl (Windtrap_coverage.read_file path))
     files;
   tbl
 
@@ -58,16 +58,21 @@ let usage =
 
 Options:
   --per-file        Show per-file breakdown
+  --skip-covered    Hide files with 100% coverage (with --per-file)
   --coverage-path   Directory to search for .coverage files (repeatable)
   --help            Show this help message|}
 
 let run args =
   let per_file = ref false in
+  let skip_covered = ref false in
   let coverage_paths = ref [] in
   let rec parse = function
     | [] -> ()
     | "--per-file" :: rest ->
         per_file := true;
+        parse rest
+    | "--skip-covered" :: rest ->
+        skip_covered := true;
         parse rest
     | "--coverage-path" :: path :: rest ->
         coverage_paths := path :: !coverage_paths;
@@ -89,4 +94,5 @@ let run args =
     exit 1
   end;
   let coverage = load_coverage files in
-  Windtrap_coverage.print_summary ~per_file:!per_file coverage
+  Windtrap_coverage.print_summary ~per_file:!per_file
+    ~skip_covered:!skip_covered coverage

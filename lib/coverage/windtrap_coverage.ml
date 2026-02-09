@@ -140,7 +140,6 @@ let random_filename ~prefix =
 
 let default_coverage_file = ref "windtrap"
 let default_log_file = ref "windtrap-coverage.log"
-
 let set_output_prefix path = default_coverage_file := path
 
 let full_path fname =
@@ -159,20 +158,18 @@ let rec mkdir_p d =
 let log_error =
   lazy
     (match Sys.getenv_opt "WINDTRAP_COVERAGE_LOG" with
-     | Some s when String.uppercase_ascii s = "SILENT" -> fun _ -> ()
-     | Some s when String.uppercase_ascii s = "STDERR" ->
-         fun msg -> prerr_endline (" *** " ^ msg)
-     | opt ->
-         let path =
-           match opt with Some p -> p | None -> !default_log_file
-         in
-         let oc =
-           lazy
-             (let oc = open_out_bin (full_path path) in
-              at_exit (fun () -> close_out_noerr oc);
-              oc)
-         in
-         fun msg -> Printf.fprintf (Lazy.force oc) " *** %s\n" msg)
+    | Some s when String.uppercase_ascii s = "SILENT" -> fun _ -> ()
+    | Some s when String.uppercase_ascii s = "STDERR" ->
+        fun msg -> prerr_endline (" *** " ^ msg)
+    | opt ->
+        let path = match opt with Some p -> p | None -> !default_log_file in
+        let oc =
+          lazy
+            (let oc = open_out_bin (full_path path) in
+             at_exit (fun () -> close_out_noerr oc);
+             oc)
+        in
+        fun msg -> Printf.fprintf (Lazy.force oc) " *** %s\n" msg)
 
 let log_error msg = (Lazy.force log_error) msg
 
@@ -180,8 +177,8 @@ let file_channel () =
   let prefix =
     full_path
       (match Sys.getenv_opt "WINDTRAP_COVERAGE_FILE" with
-       | Some p -> p
-       | None -> !default_coverage_file)
+      | Some p -> p
+      | None -> !default_coverage_file)
   in
   let dir = Filename.dirname prefix in
   mkdir_p dir;
@@ -227,8 +224,7 @@ let register_dump : unit Lazy.t = lazy (at_exit dump_at_exit)
 
 (* ───── Merging ───── *)
 
-let saturating_add x y =
-  if x > max_int - y then max_int else x + y
+let saturating_add x y = if x > max_int - y then max_int else x + y
 
 let elementwise_saturating_add xs ys =
   let longer, shorter =
@@ -275,33 +271,68 @@ let summarize_per_file cov =
 let percentage { visited; total } =
   if total > 0 then float_of_int visited *. 100. /. float_of_int total else 100.
 
-let print_summary ~per_file cov =
-  let fmt_pct s = Printf.sprintf "%.2f" (percentage s) in
+let coverage_style s =
+  let pct = percentage s in
+  if pct >= 80. then `Green else if pct >= 60. then `Yellow else `Red
+
+(* ───── Terminal Coloring ───── *)
+
+let is_tty = lazy (Unix.isatty Unix.stdout)
+
+let ansi_of_coverage_style = function
+  | `Green -> "\027[32m"
+  | `Yellow -> "\027[33m"
+  | `Red -> "\027[31m"
+
+let colorize s style =
+  if Lazy.force is_tty then ansi_of_coverage_style style ^ s ^ "\027[0m" else s
+
+(* ───── Summary Printing ───── *)
+
+let print_summary ~per_file ~skip_covered cov =
+  let fmt_pct s =
+    let pct = percentage s in
+    Printf.sprintf "%6.2f%%" pct
+  in
   let overall = summarize cov in
   if per_file then begin
     let stats = summarize_per_file cov in
+    let stats_to_show =
+      if skip_covered then List.filter (fun (_, s) -> s.visited < s.total) stats
+      else stats
+    in
     let digits i = String.length (string_of_int i) in
     let vw =
       List.fold_left
         (fun m (_, s) -> max m (digits s.visited))
-        (digits overall.visited) stats
+        (digits overall.visited) stats_to_show
     in
     let tw =
       List.fold_left
         (fun m (_, s) -> max m (digits s.total))
-        (digits overall.total) stats
+        (digits overall.total) stats_to_show
     in
     List.iter
       (fun (name, s) ->
-        Printf.printf "%6s %%   %*i/%-*i   %s\n" (fmt_pct s) vw s.visited tw
-          s.total name)
-      stats;
-    Printf.printf "%6s %%   %i/%i   Project coverage\n%!" (fmt_pct overall)
-      overall.visited overall.total
+        let pct_str = colorize (fmt_pct s) (coverage_style s) in
+        Printf.printf "%s   %*d / %-*d   %s\n" pct_str vw s.visited tw s.total
+          name)
+      stats_to_show;
+    let rule_width = 7 + 3 + vw + 3 + tw + 3 + 5 in
+    Printf.printf "%s\n" (String.make rule_width '-');
+    let pct_str = colorize (fmt_pct overall) (coverage_style overall) in
+    Printf.printf "%s   %d / %d   Total\n%!" pct_str overall.visited
+      overall.total
   end
-  else
-    Printf.printf "Coverage: %i/%i (%s%%)\n%!" overall.visited overall.total
-      (fmt_pct overall)
+  else begin
+    let pct_str =
+      colorize
+        (Printf.sprintf "%.2f%%" (percentage overall))
+        (coverage_style overall)
+    in
+    Printf.printf "Coverage: %d/%d (%s)\n%!" overall.visited overall.total
+      pct_str
+  end
 
 (* ───── Registration ───── *)
 
