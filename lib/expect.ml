@@ -80,6 +80,7 @@ let output () =
 let raise_output_mismatch message ~expected ~actual =
   let diff =
     Myers.diff ~expected_label:"expected" ~actual_label:"actual" expected actual
+    |> Diff_display.colorize_unified_diff
   in
   Failure.raise_failure (Pp.str "%s@.@.%s" message diff)
 

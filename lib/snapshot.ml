@@ -147,6 +147,7 @@ let unified_diff ~context ~expected_label ~actual_label expected actual =
     Pp.str "Diff omitted (snapshot too large: %d lines total)." max_total
   else
     Myers.diff ~context ~expected_label ~actual_label expected actual
+    |> Diff_display.colorize_unified_diff
 
 (* ───── Snapshot Path Resolution ───── *)
 
