@@ -6,6 +6,41 @@
 open Ppxlib
 open Ast_builder.Default
 
+type maybe_drop = Keep | Drop
+
+let maybe_drop_mode = ref Keep
+
+let () =
+  Driver.Cookies.add_simple_handler "inline-test"
+    Ast_pattern.(pexp_ident (lident __'))
+    ~f:(function
+      | None -> ()
+      | Some id -> (
+          match id.txt with
+          | "drop" | "drop_with_deadcode" -> maybe_drop_mode := Drop
+          | s ->
+              Location.raise_errorf ~loc:id.loc
+                "invalid 'inline-test' cookie (%s), expected one of: drop, \
+                 drop_with_deadcode"
+                s))
+
+let () =
+  Driver.Cookies.add_simple_handler "inline_tests"
+    Ast_pattern.(estring __')
+    ~f:(function
+      | None -> ()
+      | Some id -> (
+          match id.txt with
+          | "enabled" -> maybe_drop_mode := Keep
+          | "disabled" | "ignored" -> maybe_drop_mode := Drop
+          | s ->
+              Location.raise_errorf ~loc:id.loc
+                "invalid 'inline_tests' cookie (%s), expected one of: enabled, \
+                 disabled or ignored"
+                s))
+
+let maybe_drop items = match !maybe_drop_mode with Keep -> items | Drop -> []
+
 (* ───── Expect Extensions ───── *)
 
 let extract_string_payload_with_loc ~loc payload =
@@ -182,7 +217,8 @@ let expect_test_extension =
                 Windtrap.Ppx_runtime.run_expect_test
                   ~trailing_loc:[%e trailing_loc_expr] (fun () ->
                     [%e binding.body]))];
-      ])
+      ]
+      |> maybe_drop)
 
 (* ───── Module-Based Test Syntax ───── *)
 
@@ -234,24 +270,26 @@ let test_extension =
       let loc = Expansion_context.Extension.extension_point_loc ctxt in
       match item with
       | Test_case (name, body) ->
-          [
-            [%stri
-              let () =
-                Windtrap.Ppx_runtime.add_test [%e estring ~loc name] (fun () ->
-                    [%e body])];
-          ]
+          maybe_drop
+            [
+              [%stri
+                let () =
+                  Windtrap.Ppx_runtime.add_test [%e estring ~loc name]
+                    (fun () -> [%e body])];
+            ]
       | Test_module (name, module_expr) ->
           (* Wrap the module body with enter_group/leave_group calls so that
              tests defined inside are scoped under this group name. *)
-          [
-            [%stri
-              let () = Windtrap.Ppx_runtime.enter_group [%e estring ~loc name]];
-            pstr_module ~loc
-              (module_binding ~loc
-                 ~name:(Located.mk ~loc (Some name))
-                 ~expr:module_expr);
-            [%stri let () = Windtrap.Ppx_runtime.leave_group ()];
-          ])
+          maybe_drop
+            [
+              [%stri
+                let () = Windtrap.Ppx_runtime.enter_group [%e estring ~loc name]];
+              pstr_module ~loc
+                (module_binding ~loc
+                   ~name:(Located.mk ~loc (Some name))
+                   ~expr:module_expr);
+              [%stri let () = Windtrap.Ppx_runtime.leave_group ()];
+            ])
 
 let run_tests_extension =
   Extension.V3.declare_inline "run_tests" Extension.Context.structure_item
@@ -272,7 +310,8 @@ let run_tests_extension =
             estring ~loc s
         | _ -> Location.raise_errorf ~loc "Expected optional string argument"
       in
-      [ [%stri let () = Windtrap.Ppx_runtime.run_tests [%e name_expr]] ])
+      maybe_drop
+        [ [%stri let () = Windtrap.Ppx_runtime.run_tests [%e name_expr]] ])
 
 (* ───── Registration ───── *)
 
