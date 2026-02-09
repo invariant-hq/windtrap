@@ -17,6 +17,7 @@ let source_tree_root = ref None
 let diff_cmd = ref None
 let current_lib = ref None
 let partition = ref None
+let list_partitions_only = ref false
 let am_test_runner_flag = ref false
 let inline_suite_name = ref None
 
@@ -70,6 +71,9 @@ let clear_corrections ~file =
   Hashtbl.remove corrections file;
   Mutex.unlock corrections_mutex
 
+module String_set = Set.Make (String)
+
+let discovered_partitions : String_set.t ref = ref String_set.empty
 (* When running via dune, the PPX-emitted file path is relative to the build
    root (e.g., "example/example_ppx.ml"), but initial_dir is the library's
    build directory (e.g., "_build/default/example"). Using basename avoids
@@ -80,6 +84,9 @@ let absolute_path filename =
   else filename
 
 let am_test_runner () = !am_test_runner_flag
+
+let list_partitions () =
+  String_set.elements !discovered_partitions |> List.iter print_endline
 
 (* ───── Argument Parsing ───── *)
 
@@ -105,9 +112,9 @@ let init argv =
           parse rest
       | "-partition" :: p :: rest ->
           partition := Some p;
-          Pp.epr
-            "Warning: -partition flag is not yet supported by windtrap, \
-             ignoring@.";
+          parse rest
+      | "-list-partitions" :: rest ->
+          list_partitions_only := true;
           parse rest
       | _ :: rest -> parse rest
     in
@@ -268,11 +275,23 @@ type test_frame = { name : string; mutable tests : Test.t list }
 let group_stack : test_frame list ref = ref []
 let top_level_tests : Test.t list ref = ref []
 
-let add_test ?(tags = []) name fn =
-  let t = Test.test ~tags:(Tag.labels tags) name fn in
-  match !group_stack with
-  | [] -> top_level_tests := t :: !top_level_tests
-  | frame :: _ -> frame.tests <- t :: frame.tests
+let add_test ?file ?(tags = []) name fn =
+  let partition_name = Option.map Filename.basename file in
+  Option.iter
+    (fun p -> discovered_partitions := String_set.add p !discovered_partitions)
+    partition_name;
+  let include_test =
+    match (!partition, partition_name) with
+    | None, _ -> true
+    | Some wanted, Some p -> String.equal wanted p
+    | Some _, None -> true
+  in
+  if include_test then begin
+    let t = Test.test ~tags:(Tag.labels tags) name fn in
+    match !group_stack with
+    | [] -> top_level_tests := t :: !top_level_tests
+    | frame :: _ -> frame.tests <- t :: frame.tests
+  end
 
 let enter_group name = group_stack := { name; tests = [] } :: !group_stack
 
@@ -311,6 +330,10 @@ let () =
 let run_tests name =
   if !group_stack <> [] then
     failwith "Windtrap.Ppx_runtime.run_tests: unclosed test groups";
+  if !list_partitions_only then begin
+    list_partitions ();
+    Stdlib.exit 0
+  end;
   if am_test_runner () then
     (* Inline mode: store suite name for exit() to use. Cli.parse cannot handle
        the inline-test-runner flags, so we defer execution to exit(). *)
@@ -335,6 +358,10 @@ let run_tests name =
 let exit () =
   if not (am_test_runner ()) then Stdlib.exit 0
   else begin
+    if !list_partitions_only then begin
+      list_partitions ();
+      Stdlib.exit 0
+    end;
     let tests = List.rev !top_level_tests in
     top_level_tests := [];
     if tests = [] then Stdlib.exit 0;

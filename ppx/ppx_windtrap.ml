@@ -212,8 +212,8 @@ let expect_test_extension =
       [
         [%stri
           let () =
-            Windtrap.Ppx_runtime.add_test ~tags:[%e tags_expr]
-              [%e estring ~loc test_name] (fun () ->
+            Windtrap.Ppx_runtime.add_test ~file:[%e estring ~loc file]
+              ~tags:[%e tags_expr] [%e estring ~loc test_name] (fun () ->
                 Windtrap.Ppx_runtime.run_expect_test
                   ~trailing_loc:[%e trailing_loc_expr] (fun () ->
                     [%e binding.body]))];
@@ -268,14 +268,15 @@ let test_extension =
                    "Expected let%test \"name\" = ... or module%test Name = ...")))
     (fun ~ctxt item ->
       let loc = Expansion_context.Extension.extension_point_loc ctxt in
+      let file = Expansion_context.Extension.input_name ctxt in
       match item with
       | Test_case (name, body) ->
           maybe_drop
             [
               [%stri
                 let () =
-                  Windtrap.Ppx_runtime.add_test [%e estring ~loc name]
-                    (fun () -> [%e body])];
+                  Windtrap.Ppx_runtime.add_test ~file:[%e estring ~loc file]
+                    [%e estring ~loc name] (fun () -> [%e body])];
             ]
       | Test_module (name, module_expr) ->
           (* Wrap the module body with enter_group/leave_group calls so that

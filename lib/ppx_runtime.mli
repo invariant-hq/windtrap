@@ -17,8 +17,8 @@
 val init : string array -> unit
 (** [init argv] parses command-line arguments from [argv]. Called once by the
     generated test runner. Recognized flags: [-source-tree-root], [-diff-cmd],
-    [-partition]. Unrecognized flags are silently ignored. Subsequent calls are
-    silently ignored. *)
+    [-partition], [-list-partitions]. Unrecognized flags are silently ignored.
+    Subsequent calls are silently ignored. *)
 
 val exit : unit -> unit
 (** [exit ()] runs all registered tests, writes pending corrections, and
@@ -71,9 +71,11 @@ val run_expect_test : trailing_loc:location -> (unit -> unit) -> unit
     These functions support the [module%test] and [let%test] syntax for building
     test trees using a stack-based group nesting model. *)
 
-val add_test : ?tags:string list -> string -> (unit -> unit) -> unit
-(** [add_test ?tags name fn] adds a test case to the current group, or to the
-    top-level if no group is open. [tags] are attached as label tags. *)
+val add_test :
+  ?file:string -> ?tags:string list -> string -> (unit -> unit) -> unit
+(** [add_test ?file ?tags name fn] adds a test case to the current group, or to
+    the top-level if no group is open. [tags] are attached as label tags. [file]
+    is used for inline-test partitioning. *)
 
 val enter_group : string -> unit
 (** [enter_group name] starts a new test group. *)

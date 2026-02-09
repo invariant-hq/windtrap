@@ -14,9 +14,15 @@
    (progn
     (echo "let () = Windtrap.Ppx_runtime.init Sys.argv;;")
     (echo "let () = Windtrap.Ppx_runtime.exit ();;")))
+  (list_partitions_flags
+   "inline-test-runner"
+   %{library-name}
+   -list-partitions)
   (flags
    "inline-test-runner"
    %{library-name}
+   -partition
+   %{partition}
    -source-tree-root
    %{workspace_root}
    -diff-cmd
