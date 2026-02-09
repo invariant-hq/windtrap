@@ -140,9 +140,7 @@ let expect_internal ~count_towards_reachability ~loc ~expected =
     (* In inline mode, record the correction for .corrected file generation;
        in both modes, raise so the test fails immediately. *)
     if am_test_runner () then begin
-      let corr : correction =
-        Update_expect_payload { loc; actual }
-      in
+      let corr : correction = Update_expect_payload { loc; actual } in
       record_correction ~file:loc.file corr
     end;
     let expected_str = Option.value ~default:"" expected_norm in
@@ -354,14 +352,13 @@ let enter_group ?file ?(tags = []) name =
 let leave_group () =
   match !group_stack with
   | [] -> failwith "Windtrap.Ppx_runtime.leave_group: no group to leave"
-  | frame :: rest ->
+  | frame :: rest -> (
       let group =
         Test.group ~tags:frame.tags frame.name (List.rev frame.tests)
       in
       group_stack := rest;
-      (match rest with
-      | [] ->
-          top_level_tests := (frame.file_module, group) :: !top_level_tests
+      match rest with
+      | [] -> top_level_tests := (frame.file_module, group) :: !top_level_tests
       | parent :: _ -> parent.tests <- group :: parent.tests)
 
 (* Collect registered tests, grouping top-level tests by their source file
@@ -388,8 +385,8 @@ let collect_tests () =
   let file_groups =
     List.rev !file_order
     |> List.map (fun m ->
-           let tests = List.rev !(Hashtbl.find file_map m) in
-           Test.group m tests)
+        let tests = List.rev !(Hashtbl.find file_map m) in
+        Test.group m tests)
   in
   List.rev !ungrouped @ file_groups
 

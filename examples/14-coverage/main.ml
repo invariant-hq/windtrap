@@ -17,7 +17,10 @@ open Windtrap
 
 (* ── A small library to measure coverage on ─────────────────────────── *)
 
-type shape = Circle of float | Rect of float * float | Triangle of float * float
+type shape =
+  | Circle of float
+  | Rect of float * float
+  | Triangle of float * float
 
 let area = function
   | Circle r -> Float.pi *. r *. r

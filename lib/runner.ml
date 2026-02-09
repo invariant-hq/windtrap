@@ -397,8 +397,7 @@ let read_last_failed log_dir =
 
 (* ───── Entry Point ───── *)
 
-let count_tests tests =
-  List.concat_map collect_paths tests |> List.length
+let count_tests tests = List.concat_map collect_paths tests |> List.length
 
 let run ?(config = default_config ()) root_name tests =
   check_duplicates root_name tests;
