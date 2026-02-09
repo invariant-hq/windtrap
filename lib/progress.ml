@@ -283,22 +283,14 @@ let print_output_tail ~limit output_file =
   | None -> ()
   | Some path when not (Sys.file_exists path) -> ()
   | Some path ->
-      let lines, omitted = read_tail ~limit path in
-      if lines <> [] then begin
-        Pp.pr "%a@." (Pp.styled `Faint Pp.string) "Captured output:";
-        if omitted > 0 then
-          Pp.pr "... (omitting %d line%s)@." omitted
-            (if omitted = 1 then "" else "s");
-        List.iter (fun line -> Pp.pr "%s@." line) lines;
-        Pp.pr "@.";
-        let short_path = Path_ops.collapse_home path in
-        Pp.pr "%a@."
-          (Pp.styled `Faint (fun ppf () ->
-               Pp.pf ppf "Full output: %a"
-                 (Pp.styled `Cyan Pp.string)
-                 short_path))
-          ()
-      end
+      (* Intentionally suppress captured-output rendering for failures.
+         We still read the tail to preserve current plumbing and avoid dead-code
+         warnings until this path is removed entirely. *)
+      ignore (read_tail ~limit path)
+
+let ends_with_newline s =
+  let len = String.length s in
+  len > 0 && s.[len - 1] = '\n'
 
 (* ───── GitHub Actions Integration ───── *)
 
@@ -411,7 +403,7 @@ let finish t =
               print_failure_header ~tag:fail_tag ~path;
               Pp.pr "%a@." Failure.pp failure;
               print_output_tail ~limit:tail_errors_limit output_file;
-              Pp.pr "@.";
+              if not (ends_with_newline failure.message) then Pp.pr "@.";
               print_rule 80)
             failures)
 
