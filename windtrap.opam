@@ -12,7 +12,7 @@ tags: [
 homepage: "https://github.com/invariant-hq/windtrap"
 bug-reports: "https://github.com/invariant-hq/windtrap/issues"
 depends: [
-  "dune" {>= "3.22"}
+  "dune" {>= "3.21"}
   "ocaml" {>= "4.14"}
   "odoc" {with-doc}
 ]
