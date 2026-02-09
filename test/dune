@@ -1,5 +1,11 @@
 (test
  (name test_windtrap)
+ (modules test_windtrap)
  (libraries windtrap windtrap.prop)
  (instrumentation
   (backend ppx_windtrap)))
+
+(test
+ (name test_myers)
+ (modules test_myers)
+ (libraries windtrap windtrap.myers))
