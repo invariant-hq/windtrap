@@ -1,4 +1,4 @@
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix clock windtrap_prop))
+ (libraries unix clock windtrap_prop windtrap.myers))
