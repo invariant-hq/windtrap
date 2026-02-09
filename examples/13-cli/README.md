@@ -110,9 +110,6 @@ dune exec ./mytest.exe -- -x
 2. Use a positional filter to run a subset of tests.
 3. Compare default (compact) and `-v` (verbose) output.
 
-## Congratulations!
+## Next Steps
 
-You've completed the Windtrap examples. For more information:
-
-- API documentation: `dune build @doc`
-- Source code: [github.com/tmattio/windtrap](https://github.com/tmattio/windtrap)
+Continue to [14-coverage](../14-coverage/) to learn about code coverage.

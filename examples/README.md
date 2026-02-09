@@ -20,6 +20,7 @@ Learn Windtrap through progressively complex examples. Start with
 | [`11-inline-tests`](11-inline-tests/) | Inline tests                 | `let%expect_test`, `[%expect]`             |
 | [`12-ppx`](12-ppx/)               | PPX test syntax                  | `let%test`, `let%expect_test`, `[%%run_tests]` |
 | [`13-cli`](13-cli/)               | Command-line options             | `--format`, `--junit`                      |
+| [`14-coverage`](14-coverage/)     | Code coverage                    | `--instrument-with`, `windtrap coverage`   |
 | [`x-demo`](x-demo/)               | Visual showcase                  | All features with intentional failures     |
 
 ## Running Examples
@@ -40,6 +41,12 @@ The inline tests example (11-inline-tests) runs differently:
 
 ```bash
 dune runtest
+```
+
+The coverage example (14-coverage) requires the `--instrument-with` flag:
+
+```bash
+dune exec ./examples/14-coverage/main.exe --instrument-with ppx_windtrap
 ```
 
 ## Quick Reference
