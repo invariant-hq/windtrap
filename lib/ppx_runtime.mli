@@ -62,10 +62,7 @@ val output : unit -> string
     captured. *)
 
 val run_expect_test :
-  must_reach_count:int ->
-  trailing_loc:location ->
-  (unit -> unit) ->
-  unit
+  must_reach_count:int -> trailing_loc:location -> (unit -> unit) -> unit
 (** [run_expect_test ~must_reach_count ~trailing_loc fn] executes [fn] with
     must-reach and trailing-output checks. In inline mode, unmatched trailing
     output is recorded as an inserted [[%expect]] correction at [trailing_loc].

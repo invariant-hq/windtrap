@@ -76,6 +76,7 @@ module String_set = Set.Make (String)
 let discovered_partitions : String_set.t ref = ref String_set.empty
 let expected_must_reach_count = ref 0
 let reached_must_reach_count = ref 0
+
 (* When running via dune, the PPX-emitted file path is relative to the build
    root (e.g., "example/example_ppx.ml"), but initial_dir is the library's
    build directory (e.g., "_build/default/example"). Using basename avoids
@@ -139,7 +140,9 @@ let expect_internal ~count_towards_reachability ~loc ~expected =
     (* In inline mode, record the correction for .corrected file generation;
        in both modes, raise so the test fails immediately. *)
     if am_test_runner () then begin
-      let corr : correction = Update_expect_payload { loc; actual = actual_raw } in
+      let corr : correction =
+        Update_expect_payload { loc; actual = actual_raw }
+      in
       record_correction ~file:loc.file corr
     end;
     let expected_str = Option.value ~default:"" expected_norm in

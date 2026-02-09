@@ -234,8 +234,7 @@ let expect_test_extension =
               ~tags:[%e tags_expr] [%e estring ~loc test_name] (fun () ->
                 Windtrap.Ppx_runtime.run_expect_test
                   ~must_reach_count:[%e eint ~loc must_reach_count]
-                  ~trailing_loc:[%e trailing_loc_expr]
-                  (fun () ->
+                  ~trailing_loc:[%e trailing_loc_expr] (fun () ->
                     [%e binding.body]))];
       ]
       |> maybe_drop)
