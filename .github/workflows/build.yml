@@ -1,0 +1,41 @@
+name: Build and test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout tree
+        uses: actions/checkout@v4
+
+      - name: Set-up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5
+
+      - name: Install OCaml dependencies
+        run: opam install . --deps-only --with-test
+
+      - name: Build and test windtrap
+        run: |
+          opam exec -- dune build windtrap
+          opam exec -- dune build @windtrap/runtest
+
+      - name: Build and test ppx_windtrap
+        run: |
+          opam exec -- dune build ppx_windtrap
+          opam exec -- dune build @ppx_windtrap/runtest
