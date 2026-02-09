@@ -74,6 +74,8 @@ let clear_corrections ~file =
 module String_set = Set.Make (String)
 
 let discovered_partitions : String_set.t ref = ref String_set.empty
+let expected_must_reach_count = ref 0
+let reached_must_reach_count = ref 0
 (* When running via dune, the PPX-emitted file path is relative to the build
    root (e.g., "example/example_ppx.ml"), but initial_dir is the library's
    build directory (e.g., "_build/default/example"). Using basename avoids
@@ -125,7 +127,8 @@ let set_lib lib = current_lib := Some lib
 
 (* ───── Expectation Checking ───── *)
 
-let expect ~loc ~expected =
+let expect_internal ~count_towards_reachability ~loc ~expected =
+  if count_towards_reachability then incr reached_must_reach_count;
   let actual_raw = Expect.output () in
   let actual = Expect.normalize actual_raw in
   let expected_norm = Option.map Expect.normalize expected in
@@ -143,7 +146,11 @@ let expect ~loc ~expected =
     raise_output_mismatch "Output mismatch" ~expected:expected_str ~actual
   end
 
+let expect ~loc ~expected =
+  expect_internal ~count_towards_reachability:true ~loc ~expected
+
 let expect_exact ~loc ~expected =
+  incr reached_must_reach_count;
   let actual = Expect.output () in
   let matches =
     match expected with None -> actual = "" | Some exp -> actual = exp
@@ -199,9 +206,25 @@ let check_trailing_output ~trailing_loc =
       ~expected:"" ~actual:trailing_norm
   end
 
-let run_expect_test ~trailing_loc fn =
-  fn ();
-  check_trailing_output ~trailing_loc
+let check_must_reach_expect_nodes () =
+  if !reached_must_reach_count <> !expected_must_reach_count then
+    Failure.raise_failure
+      (Printf.sprintf
+         "Expected %d reachable [%%expect] / [%%expect_exact] nodes, but \
+          reached %d"
+         !expected_must_reach_count !reached_must_reach_count)
+
+let run_expect_test ~must_reach_count ~trailing_loc fn =
+  expected_must_reach_count := must_reach_count;
+  reached_must_reach_count := 0;
+  Fun.protect
+    ~finally:(fun () ->
+      expected_must_reach_count := 0;
+      reached_must_reach_count := 0)
+    (fun () ->
+      fn ();
+      check_trailing_output ~trailing_loc;
+      check_must_reach_expect_nodes ())
 
 (* Write a .corrected file for a single source file by splicing actual output
    into the expect nodes. Reads from the sandbox and writes alongside it so

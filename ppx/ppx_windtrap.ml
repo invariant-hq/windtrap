@@ -192,6 +192,23 @@ let parse_expect_test_binding ~loc items =
       { name = parse_test_name ~loc pvb_pat; tags; body }
   | _ -> Location.raise_errorf ~loc "Expected let%%expect_test <name> = <expr>"
 
+let count_must_reach_nodes expr =
+  let counter =
+    object
+      inherit [int] Ast_traverse.fold as super
+
+      method! expression e acc =
+        let acc =
+          match e.pexp_desc with
+          | Pexp_extension ({ txt = "expect" | "expect_exact"; _ }, _) ->
+              acc + 1
+          | _ -> acc
+        in
+        super#expression e acc
+    end
+  in
+  counter#expression expr 0
+
 let expect_test_extension =
   Extension.V3.declare_inline "expect_test" Extension.Context.structure_item
     Ast_pattern.(pstr __)
@@ -206,6 +223,7 @@ let expect_test_extension =
         | Anonymous -> Printf.sprintf "line_%d" line
       in
       let tags_expr = elist ~loc (List.map (estring ~loc) binding.tags) in
+      let must_reach_count = count_must_reach_nodes binding.body in
       let trailing_loc_expr =
         make_point_location_expr ~loc ~file binding.body.pexp_loc.loc_end
       in
@@ -215,7 +233,9 @@ let expect_test_extension =
             Windtrap.Ppx_runtime.add_test ~file:[%e estring ~loc file]
               ~tags:[%e tags_expr] [%e estring ~loc test_name] (fun () ->
                 Windtrap.Ppx_runtime.run_expect_test
-                  ~trailing_loc:[%e trailing_loc_expr] (fun () ->
+                  ~must_reach_count:[%e eint ~loc must_reach_count]
+                  ~trailing_loc:[%e trailing_loc_expr]
+                  (fun () ->
                     [%e binding.body]))];
       ]
       |> maybe_drop)
