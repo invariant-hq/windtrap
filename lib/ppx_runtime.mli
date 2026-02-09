@@ -77,8 +77,8 @@ val add_test :
     the top-level if no group is open. [tags] are attached as label tags. [file]
     is used for inline-test partitioning. *)
 
-val enter_group : string -> unit
-(** [enter_group name] starts a new test group. *)
+val enter_group : ?tags:string list -> string -> unit
+(** [enter_group ?tags name] starts a new test group. *)
 
 val leave_group : unit -> unit
 (** [leave_group ()] closes the current test group and adds it to its parent

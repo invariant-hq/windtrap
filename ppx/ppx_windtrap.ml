@@ -223,68 +223,75 @@ let expect_test_extension =
 (* ───── Module-Based Test Syntax ───── *)
 
 type test_item =
-  | Test_case of string * expression
-  | Test_module of string * module_expr
+  | Test_case of test_name * string list * expression
+  | Test_module of string * string list * module_expr
+
+let parse_test_item ~loc items =
+  match items with
+  | [
+   {
+     pstr_desc = Pstr_value (Nonrecursive, [ { pvb_pat; pvb_expr = body; _ } ]);
+     _;
+   };
+  ] ->
+      let tags =
+        List.concat_map (parse_tags_attr ~loc) pvb_pat.ppat_attributes
+      in
+      Test_case (parse_test_name ~loc pvb_pat, tags, body)
+  | [
+   {
+     pstr_desc =
+       Pstr_module
+         {
+           pmb_name = { txt = Some name; _ };
+           pmb_expr = mod_expr;
+           pmb_attributes;
+           _;
+         };
+     _;
+   };
+  ] ->
+      let tags = List.concat_map (parse_tags_attr ~loc) pmb_attributes in
+      Test_module (name, tags, mod_expr)
+  | _ ->
+      Location.raise_errorf ~loc
+        "Expected let%%test \"name\" = ..., let%%test _ = ..., or module%%test \
+         Name = ..."
 
 let test_extension =
   Extension.V3.declare_inline "test" Extension.Context.structure_item
-    Ast_pattern.(
-      pstr __
-      |> map1 ~f:(fun items ->
-          match items with
-          | [
-           {
-             pstr_desc =
-               Pstr_value
-                 ( Nonrecursive,
-                   [
-                     {
-                       pvb_pat =
-                         {
-                           ppat_desc =
-                             Ppat_constant (Pconst_string (name, _, _));
-                           _;
-                         };
-                       pvb_expr = body;
-                       _;
-                     };
-                   ] );
-             _;
-           };
-          ] ->
-              Test_case (name, body)
-          | [
-           {
-             pstr_desc =
-               Pstr_module
-                 { pmb_name = { txt = Some name; _ }; pmb_expr = mod_expr; _ };
-             _;
-           };
-          ] ->
-              Test_module (name, mod_expr)
-          | _ ->
-              raise
-                (Invalid_argument
-                   "Expected let%test \"name\" = ... or module%test Name = ...")))
-    (fun ~ctxt item ->
+    Ast_pattern.(pstr __)
+    (fun ~ctxt items ->
       let loc = Expansion_context.Extension.extension_point_loc ctxt in
       let file = Expansion_context.Extension.input_name ctxt in
+      let item = parse_test_item ~loc items in
       match item with
-      | Test_case (name, body) ->
+      | Test_case (name, tags, body) ->
+          let line = loc.loc_start.pos_lnum in
+          let test_name =
+            match name with
+            | Explicit n -> n
+            | Anonymous -> Printf.sprintf "line_%d" line
+          in
+          let tags_expr = elist ~loc (List.map (estring ~loc) tags) in
           maybe_drop
             [
               [%stri
                 let () =
                   Windtrap.Ppx_runtime.add_test ~file:[%e estring ~loc file]
-                    [%e estring ~loc name] (fun () -> [%e body])];
+                    ~tags:[%e tags_expr] [%e estring ~loc test_name] (fun () ->
+                      [%e body])];
             ]
-      | Test_module (name, module_expr) ->
+      | Test_module (name, tags, module_expr) ->
           (* Wrap the module body with enter_group/leave_group calls so that
              tests defined inside are scoped under this group name. *)
+          let tags_expr = elist ~loc (List.map (estring ~loc) tags) in
           maybe_drop
             [
               [%stri
-                let () = Windtrap.Ppx_runtime.enter_group [%e estring ~loc name]];
+                let () =
+                  Windtrap.Ppx_runtime.enter_group ~tags:[%e tags_expr]
+                    [%e estring ~loc name]];
               pstr_module ~loc
                 (module_binding ~loc
                    ~name:(Located.mk ~loc (Some name))

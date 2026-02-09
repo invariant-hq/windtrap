@@ -285,7 +285,7 @@ let write_corrected_file ~file =
 (* ───── Module-Based Test Syntax ───── *)
 
 (* A frame in the test group tree being built *)
-type test_frame = { name : string; mutable tests : Test.t list }
+type test_frame = { name : string; tags : Tag.t; mutable tests : Test.t list }
 
 let group_stack : test_frame list ref = ref []
 let top_level_tests : Test.t list ref = ref []
@@ -308,13 +308,16 @@ let add_test ?file ?(tags = []) name fn =
     | frame :: _ -> frame.tests <- t :: frame.tests
   end
 
-let enter_group name = group_stack := { name; tests = [] } :: !group_stack
+let enter_group ?(tags = []) name =
+  group_stack := { name; tags = Tag.labels tags; tests = [] } :: !group_stack
 
 let leave_group () =
   match !group_stack with
   | [] -> failwith "Windtrap.Ppx_runtime.leave_group: no group to leave"
   | frame :: rest -> (
-      let group = Test.group frame.name (List.rev frame.tests) in
+      let group =
+        Test.group ~tags:frame.tags frame.name (List.rev frame.tests)
+      in
       group_stack := rest;
       match rest with
       | [] -> top_level_tests := group :: !top_level_tests

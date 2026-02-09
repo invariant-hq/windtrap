@@ -3,6 +3,13 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+let%test ("basic_bool" [@tags "ppx"]) = ()
+let%test _ = ()
+
+module%test Tagged = struct
+  let%test ("in_group" [@tags "ppx"]) = ()
+end
+
 let%expect_test "basic_output" =
   print_endline "Hello, world!";
   [%expect {|Hello, world!|}]
