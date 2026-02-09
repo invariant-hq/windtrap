@@ -2,9 +2,9 @@
 
 **One library for all your OCaml tests.**
 
-Unit tests, property-based tests, snapshot tests, and expect tests -- in a
-single package with one API. No need to glue together Alcotest + QCheck +
-ppx_expect + custom snapshot code.
+Unit tests, property-based tests, snapshot tests, expect tests, and code
+coverage -- in a single package with one API. No need to glue together
+Alcotest + QCheck + ppx_expect + Bisect_ppx + custom snapshot code.
 
 ```ocaml
 open Windtrap
@@ -72,6 +72,8 @@ For PPX inline tests:
 **Parameterized tests** -- `cases` generates one test per input value from a list.
 
 **Fixtures** -- `bracket` for per-test setup/teardown, `fixture` for lazy shared resources, `group ~setup ~teardown` for suite-level hooks.
+
+**Code coverage** -- Built-in expression-level coverage via `ppx_windtrap`. Run with `dune runtest --instrument-with ppx_windtrap` to get an inline coverage percentage after test results, or use `windtrap coverage --per-file` for a detailed report.
 
 **Test runner** -- Filtering (`-f`), fail-fast (`-x`), output formats (verbose, compact, TAP, JUnit), snapshot updates (`-u`), GitHub Actions annotations.
 
