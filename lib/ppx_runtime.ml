@@ -217,40 +217,60 @@ let write_corrected_file ~file =
         ~finally:(fun () -> close_in ic)
         (fun () -> really_input_string ic (in_channel_length ic))
     in
-    let lines = String.split_on_char '\n' content in
-    let lines_arr = Array.of_list lines in
-    (* Reverse line order: splicing multi-line content shifts subsequent
-       line numbers, so process from bottom to top. *)
-    let sorted_corrs =
-      List.sort
-        (fun a b ->
-          let la = loc_of_correction a in
-          let lb = loc_of_correction b in
-          compare lb.line la.line)
-        corrs
+    let line_offsets =
+      let offsets = ref [ 0 ] in
+      String.iteri
+        (fun i ch -> if ch = '\n' then offsets := (i + 1) :: !offsets)
+        content;
+      Array.of_list (List.rev !offsets)
     in
-    List.iter
-      (fun correction ->
-        let loc, replacement =
-          match correction with
-          | Update_expect_payload { loc; actual } ->
-              let tag = find_safe_tag actual in
-              let actual_escaped = Printf.sprintf "{%s|%s|%s}" tag actual tag in
-              (loc, actual_escaped)
-          | Replace_node { loc; replacement } -> (loc, replacement)
-        in
-        if loc.line > 0 && loc.line <= Array.length lines_arr then begin
-          let line_content = lines_arr.(loc.line - 1) in
-          let before = String.sub line_content 0 loc.start_col in
-          let after =
-            if loc.end_col < String.length line_content then
-              String.sub line_content loc.end_col
-                (String.length line_content - loc.end_col)
-            else ""
+    let content_len = String.length content in
+    let to_abs_offset loc col =
+      if loc.line <= 0 || loc.line > Array.length line_offsets then None
+      else
+        let line_start = line_offsets.(loc.line - 1) in
+        let abs = line_start + col in
+        Some (max 0 (min content_len abs))
+    in
+    let edits =
+      List.filter_map
+        (fun correction ->
+          let loc, replacement =
+            match correction with
+            | Update_expect_payload { loc; actual } ->
+                let tag = find_safe_tag actual in
+                let actual_escaped =
+                  Printf.sprintf "{%s|%s|%s}" tag actual tag
+                in
+                (loc, actual_escaped)
+            | Replace_node { loc; replacement } -> (loc, replacement)
           in
-          lines_arr.(loc.line - 1) <- before ^ replacement ^ after
-        end)
-      sorted_corrs;
+          match
+            (to_abs_offset loc loc.start_col, to_abs_offset loc loc.end_col)
+          with
+          | Some start_pos, Some end_pos when start_pos <= end_pos ->
+              Some (start_pos, end_pos, replacement)
+          | _ -> None)
+        corrs
+      |> List.sort (fun (a, _, _) (b, _, _) -> compare a b)
+    in
+    let patched =
+      let buf = Buffer.create (String.length content) in
+      let rec apply cursor = function
+        | [] ->
+            if cursor < content_len then
+              Buffer.add_substring buf content cursor (content_len - cursor)
+        | (start_pos, end_pos, replacement) :: rest ->
+            if start_pos < cursor then apply cursor rest
+            else begin
+              Buffer.add_substring buf content cursor (start_pos - cursor);
+              Buffer.add_string buf replacement;
+              apply end_pos rest
+            end
+      in
+      apply 0 edits;
+      Buffer.contents buf
+    in
     (* Write to cwd (the sandbox) as basename + ".corrected". Dune's diff
        action expects the corrected file adjacent to the source inside the
        sandbox, e.g. _build/.sandbox/<hash>/default/example/foo.ml.corrected *)
@@ -258,12 +278,7 @@ let write_corrected_file ~file =
     let oc = open_out corrected_file in
     Fun.protect
       ~finally:(fun () -> close_out oc)
-      (fun () ->
-        Array.iteri
-          (fun i line ->
-            output_string oc line;
-            if i < Array.length lines_arr - 1 then output_char oc '\n')
-          lines_arr);
+      (fun () -> output_string oc patched);
     clear_corrections ~file
   end
 
