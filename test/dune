@@ -7,3 +7,8 @@
  (name test_myers)
  (modules test_myers)
  (libraries windtrap windtrap.myers))
+
+(test
+ (name test_coverage)
+ (modules test_coverage)
+ (libraries windtrap.coverage))

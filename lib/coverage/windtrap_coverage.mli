@@ -72,6 +72,14 @@ val merge : coverage -> instrumented_file list -> unit
 
 type summary = { visited : int; total : int }
 
+type file_report = {
+  filename : string;
+  summary : summary;
+  uncovered_offsets : int list;
+  uncovered_lines : int list;
+  source_available : bool;
+}
+
 val summarize : coverage -> summary
 (** Compute aggregate (visited, total) counts across all files. *)
 
@@ -85,7 +93,32 @@ val coverage_style : summary -> [ `Green | `Yellow | `Red ]
 (** Return a color style based on coverage percentage: green >= 80%, yellow >=
     60%, red < 60%. Useful with {!Pp.styled} for inline output. *)
 
-val print_summary : per_file:bool -> skip_covered:bool -> coverage -> unit
+val collapse_ranges : int list -> (int * int) list
+(** [collapse_ranges lines] collapses a sorted list of line numbers into
+    contiguous ranges. E.g., [[1; 2; 3; 7; 8]] becomes [[(1, 3); (7, 8)]]. *)
+
+val format_ranges : (int * int) list -> string
+(** [format_ranges ranges] formats ranges as ["1-3, 7-8"]. Single lines appear
+    without a dash. *)
+
+val reports : ?source_paths:string list -> coverage -> file_report list
+(** Build deterministic per-file coverage reports with uncovered points and
+    uncovered line numbers.
+
+    [source_paths] is used to resolve source files for line mapping. When a
+    source file can't be found or read, [uncovered_lines] is empty and
+    [source_available] is [false]. *)
+
+val print_summary :
+  per_file:bool -> skip_covered:bool -> ?source_paths:string list -> coverage -> unit
 (** Print a human-readable coverage report to stdout with color-coded
-    percentages. When [skip_covered] is true, files with 100% coverage are
-    omitted from the per-file report. *)
+    percentages. When [per_file] is true and [source_paths] is provided,
+    uncovered line ranges are shown below each file. When [skip_covered] is
+    true, files with 100% coverage are omitted from the per-file report. *)
+
+val print_uncovered :
+  ?context:int -> ?source_paths:string list -> coverage -> unit
+(** Print uncovered source code snippets with surrounding context lines.
+    Each uncovered line is prefixed with [>] and highlighted. Context lines
+    are dimmed. Only files with uncovered lines and available source are
+    shown. [context] defaults to [1]. *)

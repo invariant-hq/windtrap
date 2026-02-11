@@ -13,6 +13,8 @@ dune exec ./examples/14-coverage/main.exe --instrument-with ppx_windtrap
 - Running tests with `--instrument-with`
 - Viewing inline coverage results
 - Generating per-file coverage reports with `windtrap coverage`
+- Viewing uncovered source snippets with `windtrap coverage -u`
+- Exporting machine-readable uncovered lines with `windtrap coverage -j`
 
 ## Dune Configuration
 
@@ -48,11 +50,17 @@ After running with instrumentation:
 # Inline summary (printed automatically after test results)
 # Coverage: 20.47% of expressions.
 
-# Aggregate report
+# Per-file breakdown with uncovered line ranges (default)
 dune exec windtrap -- coverage
 
-# Per-file breakdown
-dune exec windtrap -- coverage --per-file
+# Uncovered source snippets (most useful for iterating)
+dune exec windtrap -- coverage -u
+
+# Machine-readable report (for scripts/agents)
+dune exec windtrap -- coverage -j
+
+# One-line summary only
+dune exec windtrap -- coverage --summary-only
 ```
 
 ## Coverage Attributes
