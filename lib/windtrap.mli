@@ -19,8 +19,8 @@
           [
             group "Calculator"
               [
-                test "addition" (fun () -> equal Testable.int 5 (add 2 3));
-                test "subtraction" (fun () -> equal Testable.int 1 (sub 3 2));
+                test "addition" (fun () -> equal int 5 (add 2 3));
+                test "subtraction" (fun () -> equal int 1 (sub 3 2));
               ];
             test "standalone" (fun () -> is_true true);
           ]
@@ -40,6 +40,82 @@ module Pp = Pp
 module Ppx_runtime = Ppx_runtime
 (** {b Internal.} Runtime support for [windtrap.ppx]. Used by PPX-generated
     code; not intended for direct use. *)
+
+(** {1 Testable Constructors}
+
+    Type-safe equality witnesses used by assertions ({!equal}, {!not_equal}) and
+    property tests ({!prop}). Compose them freely: [pair int string],
+    [list (option int)], etc.
+
+    These are re-exported from {!module:Testable} for convenience. Use the
+    {!module:Testable} module directly for construction helpers like
+    {!Testable.make} and accessors like {!Testable.pp}. *)
+
+type 'a testable = 'a Testable.t
+(** Alias for {!type:Testable.t}. *)
+
+(** {2 Primitives} *)
+
+val unit : unit testable
+val bool : bool testable
+val int : int testable
+val int32 : int32 testable
+val int64 : int64 testable
+val nativeint : nativeint testable
+val char : char testable
+val string : string testable
+val bytes : bytes testable
+
+val float : float -> float testable
+(** [float eps] creates a testable with absolute tolerance [eps]. *)
+
+val float_rel : rel:float -> abs:float -> float testable
+(** [float_rel ~rel ~abs] creates a testable with both relative and absolute
+    tolerance. *)
+
+(** {2 Containers} *)
+
+val option : 'a testable -> 'a option testable
+val result : 'a testable -> 'b testable -> ('a, 'b) result testable
+
+val either : 'a testable -> 'b testable -> ('a, 'b) Either.t testable
+(** Testable for [Either.t] values. *)
+
+val list : 'a testable -> 'a list testable
+(** Testable for lists. Produces highlighted diffs on failure. *)
+
+val array : 'a testable -> 'a array testable
+(** Testable for arrays. Produces highlighted diffs on failure. *)
+
+val pair : 'a testable -> 'b testable -> ('a * 'b) testable
+val triple : 'a testable -> 'b testable -> 'c testable -> ('a * 'b * 'c) testable
+
+val quad :
+  'a testable ->
+  'b testable ->
+  'c testable ->
+  'd testable ->
+  ('a * 'b * 'c * 'd) testable
+
+(** {2 Combinators} *)
+
+val pass : 'a testable
+(** Always considers values equal. Useful for ignoring parts of a structure. *)
+
+val slist : 'a testable -> ('a -> 'a -> int) -> 'a list testable
+(** [slist t cmp] compares lists as sets, ignoring order. *)
+
+val of_equal : ('a -> 'a -> bool) -> 'a testable
+(** [of_equal eq] creates a testable from an equality function. *)
+
+val contramap : ('a -> 'b) -> 'b testable -> 'a testable
+(** [contramap f t] transforms values with [f] before comparing. *)
+
+val seq : 'a testable -> 'a Seq.t testable
+(** Testable for sequences. *)
+
+val lazy_t : 'a testable -> 'a Lazy.t testable
+(** Testable for lazy values. *)
 
 (** {1 Test Creation} *)
 
@@ -144,7 +220,7 @@ val bracket :
       ]
     ]} *)
 
-val cases : 'a Testable.t -> 'a list -> string -> ('a -> unit) -> test
+val cases : 'a testable -> 'a list -> string -> ('a -> unit) -> test
 (** [cases testable cases name fn] creates a group with one test per case.
 
     Test names are generated as "[name] (case_value)" using the testable's
@@ -152,10 +228,10 @@ val cases : 'a Testable.t -> 'a list -> string -> ('a -> unit) -> test
 
     {[
       cases
-        Testable.(triple int int int)
+        (triple int int int)
         [ (2, 3, 5); (0, 0, 0); (-1, 1, 0) ]
         "addition"
-        (fun (a, b, expected) -> equal Testable.int expected (a + b))
+        (fun (a, b, expected) -> equal int expected (a + b))
     ]} *)
 
 val fixture : (unit -> 'a) -> unit -> 'a
@@ -262,7 +338,7 @@ val equal :
   ?here:Check.here ->
   ?pos:Check.pos ->
   ?msg:string ->
-  'a Testable.t ->
+  'a testable ->
   'a ->
   'a ->
   unit
@@ -272,7 +348,7 @@ val not_equal :
   ?here:Check.here ->
   ?pos:Check.pos ->
   ?msg:string ->
-  'a Testable.t ->
+  'a testable ->
   'a ->
   'a ->
   unit
@@ -300,7 +376,7 @@ val some :
   ?here:Check.here ->
   ?pos:Check.pos ->
   ?msg:string ->
-  'a Testable.t ->
+  'a testable ->
   'a ->
   'a option ->
   unit
@@ -320,7 +396,7 @@ val ok :
   ?here:Check.here ->
   ?pos:Check.pos ->
   ?msg:string ->
-  'a Testable.t ->
+  'a testable ->
   'a ->
   ('a, 'b) result ->
   unit
@@ -330,7 +406,7 @@ val error :
   ?here:Check.here ->
   ?pos:Check.pos ->
   ?msg:string ->
-  'b Testable.t ->
+  'b testable ->
   'b ->
   ('a, 'b) result ->
   unit
@@ -463,7 +539,7 @@ val capture : (unit -> 'a) -> string -> 'a
                 42)
               "ok"
           in
-          equal Testable.int 42 x)
+          equal int 42 x)
     ]} *)
 
 val capture_exact : (unit -> 'a) -> string -> 'a
@@ -475,8 +551,8 @@ val capture_exact : (unit -> 'a) -> string -> 'a
     generated values. On failure, counterexamples are automatically shrunk to
     find minimal failing cases.
 
-    Testables with generators (like [Testable.int], [Testable.list], etc.) can
-    be used directly for property testing:
+    Testables with generators (like {!val:int}, {!val:list}, etc.) can be used
+    directly for property testing:
 
     {[
       open Windtrap
@@ -485,10 +561,10 @@ val capture_exact : (unit -> 'a) -> string -> 'a
         run "Properties"
           [
             prop "reverse is involutive"
-              Testable.(list int)
+              (list int)
               (fun l -> List.rev (List.rev l) = l);
             prop "append length"
-              Testable.(pair (list int) (list int))
+              (pair (list int) (list int))
               (fun (l1, l2) ->
                 List.length (l1 @ l2) = List.length l1 + List.length l2);
           ]
@@ -504,7 +580,7 @@ val prop :
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->
-  'a Testable.t ->
+  'a testable ->
   ('a -> bool) ->
   test
 (** [prop name testable law] creates a property test.
@@ -515,15 +591,15 @@ val prop :
 
     {[
       prop "reverse is involutive"
-        Testable.(list int)
+        (list int)
         (fun l -> List.rev (List.rev l) = l)
     ]}
 
     @param config Property test configuration (count, seed, etc.)
     @param timeout Maximum time for all test cases.
     @raise Invalid_argument
-      if [testable] has no generator. Built-in testables like [Testable.int]
-      always have generators; custom testables need [Testable.make ~gen]. *)
+      if [testable] has no generator. Built-in testables like {!val:int} always
+      have generators; custom testables need [Testable.make ~gen]. *)
 
 val prop' :
   ?config:Windtrap_prop.Prop.config ->
@@ -531,7 +607,7 @@ val prop' :
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->
-  'a Testable.t ->
+  'a testable ->
   ('a -> unit) ->
   test
 (** [prop' name testable fn] is like {!prop} but uses Windtrap assertions.
@@ -541,7 +617,7 @@ val prop' :
 
     {[
       prop' "sorted list is sorted"
-        Testable.(list int)
+        (list int)
         (fun l ->
           let sorted = List.sort Int.compare l in
           (* Use Windtrap assertions *)
@@ -554,8 +630,8 @@ val prop2 :
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->
-  'a Testable.t ->
-  'b Testable.t ->
+  'a testable ->
+  'b testable ->
   ('a -> 'b -> bool) ->
   test
 (** [prop2 name t1 t2 law] is a convenience for two-argument properties. *)
@@ -566,9 +642,9 @@ val prop3 :
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->
-  'a Testable.t ->
-  'b Testable.t ->
-  'c Testable.t ->
+  'a testable ->
+  'b testable ->
+  'c testable ->
   ('a -> 'b -> 'c -> bool) ->
   test
 (** [prop3 name t1 t2 t3 law] is a convenience for three-argument properties. *)
@@ -581,7 +657,7 @@ val assume : bool -> unit
 
     {[
       prop "division"
-        Testable.(pair int int)
+        (pair int int)
         (fun (a, b) ->
           assume (b <> 0);
           (a / b * b) + (a mod b) = a)

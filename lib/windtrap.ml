@@ -10,6 +10,36 @@ module Tag = Tag
 module Pp = Pp
 module Ppx_runtime = Ppx_runtime
 
+(* ───── Testable Constructors ───── *)
+
+type 'a testable = 'a Testable.t
+
+let unit = Testable.unit
+let bool = Testable.bool
+let int = Testable.int
+let int32 = Testable.int32
+let int64 = Testable.int64
+let nativeint = Testable.nativeint
+let float = Testable.float
+let float_rel = Testable.float_rel
+let char = Testable.char
+let string = Testable.string
+let bytes = Testable.bytes
+let option = Testable.option
+let result = Testable.result
+let either = Testable.either
+let list = Testable.list
+let array = Testable.array
+let pair = Testable.pair
+let triple = Testable.triple
+let quad = Testable.quad
+let pass = Testable.pass
+let slist = Testable.slist
+let of_equal = Testable.of_equal
+let contramap = Testable.contramap
+let seq = Testable.seq
+let lazy_t = Testable.lazy_t
+
 (* ───── Test Creation ───── *)
 
 type test = Test.t
