@@ -76,7 +76,7 @@ let print_header t ~name ~run_id:_ =
   | Junit -> ()
   | Verbose | Compact ->
       if in_github_actions () then Pp.pr "::group::%s@." name;
-      Pp.pr "Testing %a.@.@." (Pp.styled `Bold Pp.string) name
+      Pp.pr "@.Testing %a.@.@." (Pp.styled `Bold Pp.string) name
 
 let print_rule width =
   let rule_width = min width 60 in
