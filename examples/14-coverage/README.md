@@ -1,10 +1,10 @@
 # `14-coverage`
 
-Code coverage. Windtrap has built-in coverage instrumentation via `windtrap.ppx`
-— no external tools needed.
+Code coverage. Windtrap has built-in coverage instrumentation — no external
+tools needed.
 
 ```bash
-dune exec ./examples/14-coverage/main.exe --instrument-with windtrap.ppx
+dune exec ./examples/14-coverage/main.exe --instrument-with windtrap
 ```
 
 ## What You'll Learn
@@ -26,15 +26,15 @@ measure:
  (name main)
  (libraries windtrap)
  (instrumentation
-  (backend windtrap.ppx --coverage)))
+  (backend windtrap)))
 ```
 
-Coverage is only activated when you pass `--instrument-with windtrap.ppx` to
+Coverage is only activated when you pass `--instrument-with windtrap` to
 dune. Without that flag, the stanza is ignored and there is zero overhead.
 
 ## How It Works
 
-1. **Instrumentation**: `windtrap.ppx --coverage` inserts visit counters at
+1. **Instrumentation**: `--instrument-with windtrap` inserts visit counters at
    every expression in your code at compile time.
 2. **Execution**: When tests run, counters are incremented for each visited
    expression.
@@ -90,7 +90,7 @@ let internal_helper () = ...
 ## Try It
 
 1. Run without `--instrument-with` and note there is no coverage line.
-2. Run with `--instrument-with windtrap.ppx` and observe the coverage
+2. Run with `--instrument-with windtrap` and observe the coverage
    percentage.
 3. Add a test for the untested `Triangle` branch of `perimeter` and see the
    coverage increase.

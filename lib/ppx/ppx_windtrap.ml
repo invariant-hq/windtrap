@@ -353,20 +353,3 @@ let () =
         Context_free.Rule.extension test_extension;
         Context_free.Rule.extension run_tests_extension;
       ]
-
-(* ───── Coverage Instrumentation ───── *)
-
-let coverage_enabled = ref false
-
-let () =
-  Driver.add_arg "--coverage" (Arg.Set coverage_enabled)
-    ~doc:" Enable coverage instrumentation"
-
-let () =
-  let impl ctxt ast =
-    if !coverage_enabled then
-      (new Instrument.instrumenter)#transform_impl_file ctxt ast
-    else ast
-  in
-  let instrument = Driver.Instrument.V2.make impl ~position:After in
-  Driver.register_transformation ~instrument "ppx_windtrap_coverage"

@@ -2,4 +2,4 @@
  (name main)
  (libraries windtrap)
  (instrumentation
-  (backend windtrap.ppx --coverage)))
+  (backend windtrap)))

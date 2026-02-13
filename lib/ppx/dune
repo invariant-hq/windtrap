@@ -2,10 +2,7 @@
  (name ppx_windtrap)
  (public_name windtrap.ppx)
  (kind ppx_rewriter)
- (instrumentation.backend
-  (ppx windtrap.ppx))
  (libraries ppxlib)
- (ppx_runtime_libraries windtrap.coverage)
  (preprocess
   (pps ppxlib.metaquot))
  (inline_tests.backend

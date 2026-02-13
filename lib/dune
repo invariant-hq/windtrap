@@ -2,5 +2,5 @@
  (name windtrap)
  (public_name windtrap)
  (libraries unix clock windtrap_prop windtrap.myers windtrap.coverage)
- (instrumentation
-  (backend windtrap.ppx --coverage)))
+ (instrumentation.backend
+  (ppx windtrap.coverage.ppx)))

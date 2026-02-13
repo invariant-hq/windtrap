@@ -67,7 +67,7 @@ For PPX inline tests:
 
 **Fixtures** -- `bracket` for per-test setup/teardown, `fixture` for lazy shared resources, `group ~setup ~teardown` for suite-level hooks.
 
-**Code coverage** -- Built-in expression-level coverage via `windtrap.ppx`. Run with `dune runtest --instrument-with windtrap.ppx` to get an inline coverage percentage after test results, `windtrap coverage --per-file` for a detailed text report, or `windtrap coverage --json` for machine-readable uncovered lines.
+**Code coverage** -- Built-in expression-level coverage. Run with `dune runtest --instrument-with windtrap` to get an inline coverage percentage after test results, `windtrap coverage --per-file` for a detailed text report, or `windtrap coverage --json` for machine-readable uncovered lines.
 
 **Test runner** -- Filtering (`-f`), fail-fast (`-x`), output formats (verbose, compact, TAP, JUnit), snapshot updates (`-u`), GitHub Actions annotations.
 
