@@ -96,7 +96,7 @@ let run ?quick ?bail ?fail_fast ?output_dir ?stream ?update ?snapshot_dir
   in
   let result = Runner.run ~config name tests in
   if result.failed > 0 then exit 1
-  else if result.passed = 0 then begin
+  else if result.passed = 0 && result.skipped = 0 then begin
     Pp.epr "%a No tests matched the current filter.@."
       (Pp.styled `Yellow Pp.string)
       "[WARNING]";
