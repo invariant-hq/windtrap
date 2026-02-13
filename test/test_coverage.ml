@@ -20,8 +20,7 @@ let expect_bool ~label expected actual =
 let pp_range_list xs =
   xs
   |> List.map (fun (s, e) -> Printf.sprintf "(%d, %d)" s e)
-  |> String.concat "; "
-  |> Printf.sprintf "[%s]"
+  |> String.concat "; " |> Printf.sprintf "[%s]"
 
 let expect_range_list ~label expected actual =
   if expected <> actual then
@@ -29,7 +28,8 @@ let expect_range_list ~label expected actual =
       (pp_range_list actual)
 
 let expect_string ~label expected actual =
-  if expected <> actual then failf "%s: expected %S, got %S" label expected actual
+  if expected <> actual then
+    failf "%s: expected %S, got %S" label expected actual
 
 let write_file path contents =
   let channel = open_out_bin path in
@@ -60,7 +60,8 @@ let test_reports_map_uncovered_lines () =
           expect_bool ~label:"source_available" true report.source_available;
           expect_int_list ~label:"uncovered_offsets" [ 10; 20; 21 ]
             report.uncovered_offsets;
-          expect_int_list ~label:"uncovered_lines" [ 2; 3 ] report.uncovered_lines
+          expect_int_list ~label:"uncovered_lines" [ 2; 3 ]
+            report.uncovered_lines
       | _ -> failwith "expected exactly one coverage report")
 
 let test_reports_without_source () =
@@ -75,25 +76,28 @@ let test_reports_without_source () =
   match reports with
   | [ report ] ->
       expect_bool ~label:"source_available" false report.source_available;
-      expect_int_list ~label:"uncovered_offsets" [ 2; 8 ] report.uncovered_offsets;
+      expect_int_list ~label:"uncovered_offsets" [ 2; 8 ]
+        report.uncovered_offsets;
       expect_int_list ~label:"uncovered_lines" [] report.uncovered_lines
   | _ -> failwith "expected exactly one coverage report"
 
 let test_collapse_ranges () =
-  expect_range_list ~label:"empty" []
-    (Windtrap_coverage.collapse_ranges []);
-  expect_range_list ~label:"single" [ (5, 5) ]
+  expect_range_list ~label:"empty" [] (Windtrap_coverage.collapse_ranges []);
+  expect_range_list ~label:"single"
+    [ (5, 5) ]
     (Windtrap_coverage.collapse_ranges [ 5 ]);
-  expect_range_list ~label:"contiguous" [ (1, 3) ]
+  expect_range_list ~label:"contiguous"
+    [ (1, 3) ]
     (Windtrap_coverage.collapse_ranges [ 1; 2; 3 ]);
-  expect_range_list ~label:"two ranges" [ (1, 3); (7, 8) ]
+  expect_range_list ~label:"two ranges"
+    [ (1, 3); (7, 8) ]
     (Windtrap_coverage.collapse_ranges [ 1; 2; 3; 7; 8 ]);
-  expect_range_list ~label:"gaps" [ (1, 1); (3, 3); (5, 5) ]
+  expect_range_list ~label:"gaps"
+    [ (1, 1); (3, 3); (5, 5) ]
     (Windtrap_coverage.collapse_ranges [ 1; 3; 5 ])
 
 let test_format_ranges () =
-  expect_string ~label:"empty" ""
-    (Windtrap_coverage.format_ranges []);
+  expect_string ~label:"empty" "" (Windtrap_coverage.format_ranges []);
   expect_string ~label:"single line" "5"
     (Windtrap_coverage.format_ranges [ (5, 5) ]);
   expect_string ~label:"range" "1-3"

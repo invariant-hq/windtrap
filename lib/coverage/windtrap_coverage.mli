@@ -110,7 +110,11 @@ val reports : ?source_paths:string list -> coverage -> file_report list
     [source_available] is [false]. *)
 
 val print_summary :
-  per_file:bool -> skip_covered:bool -> ?source_paths:string list -> coverage -> unit
+  per_file:bool ->
+  skip_covered:bool ->
+  ?source_paths:string list ->
+  coverage ->
+  unit
 (** Print a human-readable coverage report to stdout with color-coded
     percentages. When [per_file] is true and [source_paths] is provided,
     uncovered line ranges are shown below each file. When [skip_covered] is
@@ -118,7 +122,7 @@ val print_summary :
 
 val print_uncovered :
   ?context:int -> ?source_paths:string list -> coverage -> unit
-(** Print uncovered source code snippets with surrounding context lines.
-    Each uncovered line is prefixed with [>] and highlighted. Context lines
-    are dimmed. Only files with uncovered lines and available source are
-    shown. [context] defaults to [1]. *)
+(** Print uncovered source code snippets with surrounding context lines. Each
+    uncovered line is prefixed with [>] and highlighted. Context lines are
+    dimmed. Only files with uncovered lines and available source are shown.
+    [context] defaults to [1]. *)

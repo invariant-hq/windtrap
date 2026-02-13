@@ -307,7 +307,10 @@ let dedup_preserving_order paths =
   loop [] [] paths
 
 let source_candidates ~source_paths filename =
-  filename :: List.map (fun source_path -> Filename.concat source_path filename) source_paths
+  filename
+  :: List.map
+       (fun source_path -> Filename.concat source_path filename)
+       source_paths
   |> dedup_preserving_order
 
 let with_open_in_bin path f =
@@ -324,13 +327,17 @@ let read_file_contents path =
 let find_readable_source ~source_paths filename =
   source_candidates ~source_paths filename
   |> List.find_map (fun path ->
-         if Sys.file_exists path then
-           match read_file_contents path with Some source -> Some source | None -> None
-         else None)
+      if Sys.file_exists path then
+        match read_file_contents path with
+        | Some source -> Some source
+        | None -> None
+      else None)
 
 let line_numbers_of_offsets source offsets =
   let offsets =
-    offsets |> List.filter (fun offset -> offset >= 0) |> List.sort_uniq Int.compare
+    offsets
+    |> List.filter (fun offset -> offset >= 0)
+    |> List.sort_uniq Int.compare
   in
   let length = String.length source in
   let rec advance pos line target =
@@ -372,9 +379,7 @@ let file_report ~source_paths file =
 
 let reports ?(source_paths = []) cov =
   let source_paths = normalize_source_paths source_paths in
-  Hashtbl.fold
-    (fun _ file acc -> file_report ~source_paths file :: acc)
-    cov []
+  Hashtbl.fold (fun _ file acc -> file_report ~source_paths file :: acc) cov []
   |> List.sort (fun a b -> String.compare a.filename b.filename)
 
 let collapse_ranges lines =
@@ -389,7 +394,7 @@ let collapse_ranges lines =
 let format_ranges ranges =
   ranges
   |> List.map (fun (s, e) ->
-         if s = e then string_of_int s else Printf.sprintf "%d-%d" s e)
+      if s = e then string_of_int s else Printf.sprintf "%d-%d" s e)
   |> String.concat ", "
 
 (* ───── Terminal Coloring ───── *)
@@ -422,9 +427,7 @@ let print_summary ~per_file ~skip_covered ?(source_paths = []) cov =
     in
     let file_reports =
       if skip_covered then
-        List.filter
-          (fun r -> r.summary.visited < r.summary.total)
-          file_reports
+        List.filter (fun r -> r.summary.visited < r.summary.total) file_reports
       else file_reports
     in
     let digits i = String.length (string_of_int i) in
@@ -473,7 +476,9 @@ let print_uncovered ?(context = 1) ?(source_paths = []) cov =
   let source_paths = normalize_source_paths source_paths in
   let file_reports = reports ~source_paths cov in
   let file_reports =
-    List.filter (fun r -> r.uncovered_lines <> [] && r.source_available) file_reports
+    List.filter
+      (fun r -> r.uncovered_lines <> [] && r.source_available)
+      file_reports
   in
   let is_first = ref true in
   List.iter
@@ -493,13 +498,15 @@ let print_uncovered ?(context = 1) ?(source_paths = []) cov =
           if not !is_first then print_newline ();
           is_first := false;
           let pct = percentage r.summary in
-          Printf.printf "%s (%s, %d/%d)\n"
-            (bold r.filename)
+          Printf.printf "%s (%s, %d/%d)\n" (bold r.filename)
             (colorize (Printf.sprintf "%.2f%%" pct) (coverage_style r.summary))
             r.summary.visited r.summary.total;
           let line_num_width =
             List.fold_left
-              (fun m (_, e) -> max m (String.length (string_of_int (min total_lines (e + context)))))
+              (fun m (_, e) ->
+                max m
+                  (String.length
+                     (string_of_int (min total_lines (e + context)))))
               1 ranges
           in
           let is_first_region = ref true in
@@ -508,19 +515,17 @@ let print_uncovered ?(context = 1) ?(source_paths = []) cov =
               let ctx_start = max 1 (range_start - context) in
               let ctx_end = min total_lines (range_end + context) in
               if not !is_first_region then
-                Printf.printf "%s\n" (dim (String.make (line_num_width + 4) '.'));
+                Printf.printf "%s\n"
+                  (dim (String.make (line_num_width + 4) '.'));
               is_first_region := false;
               for line = ctx_start to ctx_end do
                 let text =
                   if line <= total_lines then lines.(line - 1) else ""
                 in
                 if Hashtbl.mem uncovered_set line then
-                  Printf.printf "%s %*d | %s\n"
-                    (colorize ">" `Red)
-                    line_num_width line
-                    (colorize text `Red)
-                else
-                  Printf.printf "  %*d | %s\n" line_num_width line (dim text)
+                  Printf.printf "%s %*d | %s\n" (colorize ">" `Red)
+                    line_num_width line (colorize text `Red)
+                else Printf.printf "  %*d | %s\n" line_num_width line (dim text)
               done)
             ranges)
     file_reports;
@@ -531,8 +536,7 @@ let print_uncovered ?(context = 1) ?(source_paths = []) cov =
       (Printf.sprintf "%.2f%%" (percentage overall))
       (coverage_style overall)
   in
-  Printf.printf "Coverage: %d/%d (%s)\n%!" overall.visited overall.total
-    pct_str
+  Printf.printf "Coverage: %d/%d (%s)\n%!" overall.visited overall.total pct_str
 
 (* ───── Registration ───── *)
 

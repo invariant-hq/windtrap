@@ -43,12 +43,12 @@ let find_coverage_files = function
   | paths ->
       paths
       |> List.concat_map (fun path ->
-             if Sys.file_exists path then
-               match Sys.is_directory path with
-               | true -> list_recursively is_coverage_file path
-               | false -> if is_coverage_file path then [ path ] else []
-               | exception Sys_error _ -> []
-             else [])
+          if Sys.file_exists path then
+            match Sys.is_directory path with
+            | true -> list_recursively is_coverage_file path
+            | false -> if is_coverage_file path then [ path ] else []
+            | exception Sys_error _ -> []
+          else [])
       |> sort_unique
 
 let load_coverage files =
@@ -71,7 +71,8 @@ let json_escape s =
       | '\t' -> Buffer.add_string buffer "\\t"
       | c ->
           let code = Char.code c in
-          if code < 32 then Buffer.add_string buffer (Printf.sprintf "\\u%04x" code)
+          if code < 32 then
+            Buffer.add_string buffer (Printf.sprintf "\\u%04x" code)
           else Buffer.add_char buffer c)
     s;
   Buffer.contents buffer
@@ -94,24 +95,25 @@ let print_json ~skip_covered ~source_paths coverage =
   Printf.printf "{\n";
   Printf.printf
     "  \"summary\": {\"visited\": %d, \"total\": %d, \"percentage\": %.2f},\n"
-    overall.visited overall.total (Windtrap_coverage.percentage overall);
+    overall.visited overall.total
+    (Windtrap_coverage.percentage overall);
   Printf.printf "  \"files\": [\n";
   let last_index = List.length reports - 1 in
   reports
   |> List.iteri (fun index report ->
-         let suffix = if index = last_index then "" else "," in
-         let summary = report.Windtrap_coverage.summary in
-         Printf.printf
-           "    {\"path\": \"%s\", \"visited\": %d, \"total\": %d, \
-            \"percentage\": %.2f, \"source_available\": %s, \
-            \"uncovered_offsets\": %s, \"uncovered_lines\": %s}%s\n"
-           (json_escape report.Windtrap_coverage.filename) summary.visited
-           summary.total
-           (Windtrap_coverage.percentage summary)
-           (if report.Windtrap_coverage.source_available then "true" else "false")
-           (json_int_list report.Windtrap_coverage.uncovered_offsets)
-           (json_int_list report.Windtrap_coverage.uncovered_lines)
-           suffix);
+      let suffix = if index = last_index then "" else "," in
+      let summary = report.Windtrap_coverage.summary in
+      Printf.printf
+        "    {\"path\": \"%s\", \"visited\": %d, \"total\": %d, \
+         \"percentage\": %.2f, \"source_available\": %s, \
+         \"uncovered_offsets\": %s, \"uncovered_lines\": %s}%s\n"
+        (json_escape report.Windtrap_coverage.filename)
+        summary.visited summary.total
+        (Windtrap_coverage.percentage summary)
+        (if report.Windtrap_coverage.source_available then "true" else "false")
+        (json_int_list report.Windtrap_coverage.uncovered_offsets)
+        (json_int_list report.Windtrap_coverage.uncovered_lines)
+        suffix);
   Printf.printf "  ]\n}\n%!"
 
 (* ───── CLI ───── *)
@@ -143,7 +145,10 @@ let split_equals args =
     (fun arg ->
       match String.index_opt arg '=' with
       | Some i when i > 0 && arg.[0] = '-' ->
-          [ String.sub arg 0 i; String.sub arg (i + 1) (String.length arg - i - 1) ]
+          [
+            String.sub arg 0 i;
+            String.sub arg (i + 1) (String.length arg - i - 1);
+          ]
       | _ -> [ arg ])
     args
 
@@ -215,12 +220,9 @@ let run args =
   end;
   let coverage = load_coverage files in
   let source_paths =
-    match List.rev !source_paths with
-    | [] -> [ "." ]
-    | paths -> paths
+    match List.rev !source_paths with [] -> [ "." ] | paths -> paths
   in
-  if !json then
-    print_json ~skip_covered:!skip_covered ~source_paths coverage
+  if !json then print_json ~skip_covered:!skip_covered ~source_paths coverage
   else if !show_uncovered then
     Windtrap_coverage.print_uncovered ~context:!context ~source_paths coverage
   else
