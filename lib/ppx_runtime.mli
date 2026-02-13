@@ -45,7 +45,13 @@ val set_lib : string -> unit
 
 (** {1 Expectation Checking} *)
 
-type location = { file : string; line : int; start_col : int; end_col : int }
+type location = {
+  file : string;
+  line : int;
+  start_col : int;
+  end_line : int;
+  end_col : int;
+}
 (** Source location for an expect node. *)
 
 val expect : loc:location -> expected:string option -> unit

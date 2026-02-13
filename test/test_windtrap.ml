@@ -815,6 +815,7 @@ let expect_tests =
                   Windtrap__Ppx_runtime.file = "test_file.ml";
                   line = 1;
                   start_col = 0;
+                  end_line = 1;
                   end_col = 0;
                 }
               in

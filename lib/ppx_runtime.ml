@@ -5,9 +5,14 @@
 
 (* ───── Initialization ───── *)
 
-(* Tests may chdir during execution; we need the original cwd later to write
-   .corrected files where dune expects them. *)
-let initial_dir = lazy (Sys.getcwd ())
+(* Capture the cwd eagerly at module load time (before any test code runs).
+   Tests may chdir during execution; we need the original cwd later to write
+   .corrected files where dune expects them. The lazy wrapper is kept so that
+   downstream code can continue using [Lazy.force]; the actual Sys.getcwd ()
+   call happens here, at module initialisation. *)
+let initial_dir =
+  let dir = Sys.getcwd () in
+  lazy dir
 let () = Env.setup_color ()
 let already_initialized = Atomic.make false
 
@@ -43,7 +48,13 @@ let () =
 
 (* ───── Corrections ───── *)
 
-type location = { file : string; line : int; start_col : int; end_col : int }
+type location = {
+  file : string;
+  line : int;
+  start_col : int;
+  end_line : int;
+  end_col : int;
+}
 
 type correction =
   | Update_expect_payload of { loc : location; actual : string }
@@ -255,10 +266,10 @@ let write_corrected_file ~file =
       Array.of_list (List.rev !offsets)
     in
     let content_len = String.length content in
-    let to_abs_offset loc col =
-      if loc.line <= 0 || loc.line > Array.length line_offsets then None
+    let to_abs_offset ~line col =
+      if line <= 0 || line > Array.length line_offsets then None
       else
-        let line_start = line_offsets.(loc.line - 1) in
+        let line_start = line_offsets.(line - 1) in
         let abs = line_start + col in
         Some (max 0 (min content_len abs))
     in
@@ -276,7 +287,8 @@ let write_corrected_file ~file =
             | Replace_node { loc; replacement } -> (loc, replacement)
           in
           match
-            (to_abs_offset loc loc.start_col, to_abs_offset loc loc.end_col)
+            ( to_abs_offset ~line:loc.line loc.start_col,
+              to_abs_offset ~line:loc.end_line loc.end_col )
           with
           | Some start_pos, Some end_pos when start_pos <= end_pos ->
               Some (start_pos, end_pos, replacement)
@@ -325,35 +337,42 @@ type test_frame = {
   name : string;
   tags : Tag.t;
   file_module : string option;
+  partition_name : string option;
   mutable tests : Test.t list;
 }
 
 let group_stack : test_frame list ref = ref []
-let top_level_tests : (string option * Test.t) list ref = ref []
+
+type test_entry = {
+  file_module : string option;
+  partition_name : string option;
+  test : Test.t;
+}
+
+let top_level_tests : test_entry list ref = ref []
 
 let add_test ?file ?(tags = []) name fn =
   let partition_name = Option.map Filename.basename file in
   Option.iter
     (fun p -> discovered_partitions := String_set.add p !discovered_partitions)
     partition_name;
-  let include_test =
-    match (!partition, partition_name) with
-    | None, _ -> true
-    | Some wanted, Some p -> String.equal wanted p
-    | Some _, None -> true
-  in
-  if include_test then begin
-    let t = Test.test ~tags:(Tag.labels tags) name fn in
-    let file_module = Option.map module_name_of_file file in
-    match !group_stack with
-    | [] -> top_level_tests := (file_module, t) :: !top_level_tests
-    | frame :: _ -> frame.tests <- t :: frame.tests
-  end
+  let t = Test.test ~tags:(Tag.labels tags) name fn in
+  let file_module = Option.map module_name_of_file file in
+  match !group_stack with
+  | [] ->
+      top_level_tests :=
+        { file_module; partition_name; test = t } :: !top_level_tests
+  | frame :: _ -> frame.tests <- t :: frame.tests
 
 let enter_group ?file ?(tags = []) name =
   let file_module = Option.map module_name_of_file file in
+  let partition_name = Option.map Filename.basename file in
+  Option.iter
+    (fun p -> discovered_partitions := String_set.add p !discovered_partitions)
+    partition_name;
   group_stack :=
-    { name; tags = Tag.labels tags; file_module; tests = [] } :: !group_stack
+    { name; tags = Tag.labels tags; file_module; partition_name; tests = [] }
+    :: !group_stack
 
 let leave_group () =
   match !group_stack with
@@ -364,22 +383,43 @@ let leave_group () =
       in
       group_stack := rest;
       match rest with
-      | [] -> top_level_tests := (frame.file_module, group) :: !top_level_tests
+      | [] ->
+          top_level_tests :=
+            { file_module = frame.file_module;
+              partition_name = frame.partition_name;
+              test = group;
+            }
+            :: !top_level_tests
       | parent :: _ -> parent.tests <- group :: parent.tests)
 
 (* Collect registered tests, grouping top-level tests by their source file
    module. Tests from the same file are wrapped in a [Test.group] named after
    the OCaml module (e.g., "my_file.ml" → "My_file"). Tests without file
-   info (manual registrations) remain ungrouped at the top level. *)
+   info (manual registrations) remain ungrouped at the top level.
+
+   Partition filtering is applied here (not at registration time) because
+   init() — which sets the partition ref — runs after test modules have loaded
+   and registered their tests via add_test. *)
 let collect_tests () =
   let entries = List.rev !top_level_tests in
   top_level_tests := [];
+  let entries =
+    match !partition with
+    | None -> entries
+    | Some wanted ->
+        List.filter
+          (fun { partition_name; _ } ->
+            match partition_name with
+            | None -> true
+            | Some p -> String.equal wanted p)
+          entries
+  in
   let file_map : (string, Test.t list ref) Hashtbl.t = Hashtbl.create 16 in
   let file_order = ref [] in
   let ungrouped = ref [] in
   List.iter
-    (fun (file_mod, test) ->
-      match file_mod with
+    (fun { file_module; test; _ } ->
+      match file_module with
       | None -> ungrouped := test :: !ungrouped
       | Some m -> (
           match Hashtbl.find_opt file_map m with

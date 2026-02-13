@@ -70,6 +70,7 @@ let make_location_expr ~loc ~file (ploc : Location.t) =
       line = [%e eint ~loc ploc.loc_start.pos_lnum];
       start_col =
         [%e eint ~loc (ploc.loc_start.pos_cnum - ploc.loc_start.pos_bol)];
+      end_line = [%e eint ~loc ploc.loc_end.pos_lnum];
       end_col = [%e eint ~loc (ploc.loc_end.pos_cnum - ploc.loc_end.pos_bol)];
     }]
 
@@ -79,6 +80,7 @@ let make_point_location_expr ~loc ~file (pos : Lexing.position) =
       Windtrap.Ppx_runtime.file = [%e estring ~loc file];
       line = [%e eint ~loc pos.pos_lnum];
       start_col = [%e eint ~loc (pos.pos_cnum - pos.pos_bol)];
+      end_line = [%e eint ~loc pos.pos_lnum];
       end_col = [%e eint ~loc (pos.pos_cnum - pos.pos_bol)];
     }]
 
