@@ -32,5 +32,5 @@ jobs:
 
       - name: Build and test
         run: |
-          opam exec -- dune build windtrap
+          opam exec -- dune build
           opam exec -- dune build @runtest
