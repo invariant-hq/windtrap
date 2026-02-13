@@ -1,9 +1,9 @@
 (library
  (name ppx_windtrap)
- (public_name ppx_windtrap)
+ (public_name windtrap.ppx)
  (kind ppx_rewriter)
  (instrumentation.backend
-  (ppx ppx_windtrap))
+  (ppx windtrap.ppx))
  (libraries ppxlib)
  (ppx_runtime_libraries windtrap.coverage)
  (preprocess

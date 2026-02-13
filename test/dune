@@ -12,3 +12,9 @@
  (name test_coverage)
  (modules test_coverage)
  (libraries windtrap.coverage))
+
+(test
+ (name test_ppx)
+ (libraries windtrap)
+ (preprocess
+  (pps windtrap.ppx)))

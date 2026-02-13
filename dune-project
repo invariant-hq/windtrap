@@ -10,6 +10,7 @@
  (github invariant-hq/windtrap))
 
 (homepage "https://github.com/invariant-hq/windtrap")
+
 (bug_reports "https://github.com/invariant-hq/windtrap/issues")
 
 (authors "Thibaut Mattio <thibaut.mattio@gmail.com>")
@@ -22,20 +23,11 @@
  (name windtrap)
  (synopsis "One library for all your OCaml tests")
  (description
-  "Unit tests, property-based tests, snapshot tests, and expect tests in a single package with one API.")
+  "Unit tests, property-based tests, snapshot tests, and expect tests in a single package with one API. Includes a PPX for inline expect tests and code coverage.")
  (depends
-  (ocaml (>= 4.14)))
+  (ocaml
+   (>= 4.14))
+  (ppxlib
+   (>= 0.28.0)))
  (tags
-  (testing unit-test property-testing expect-test snapshot-testing)))
-
-(package
- (name ppx_windtrap)
- (synopsis "PPX for inline expect tests with windtrap")
- (description
-  "ppx_windtrap provides PPX syntax for inline expect tests, similar to ppx_expect. It enables let%expect_test and [%expect] syntax for testing output.")
- (depends
-  (ocaml (>= 4.14))
-  (windtrap (= :version))
-  (ppxlib (>= 0.28.0)))
- (tags
-  (testing ppx expect-test inline-test)))
+  (testing unit-test property-testing expect-test snapshot-testing ppx)))

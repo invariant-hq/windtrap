@@ -30,12 +30,7 @@ jobs:
       - name: Install OCaml dependencies
         run: opam install . --deps-only --with-test
 
-      - name: Build and test windtrap
+      - name: Build and test
         run: |
           opam exec -- dune build windtrap
-          opam exec -- dune build @windtrap/runtest
-
-      - name: Build and test ppx_windtrap
-        run: |
-          opam exec -- dune build ppx_windtrap
-          opam exec -- dune build @ppx_windtrap/runtest
+          opam exec -- dune build @runtest

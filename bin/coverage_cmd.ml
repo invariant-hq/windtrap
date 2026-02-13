@@ -209,8 +209,8 @@ let run args =
   if files = [] then begin
     Printf.eprintf
       "Error: no *.coverage files found\n\
-       Hint: Add (instrumentation (backend ppx_windtrap --coverage)) to your\n\
-       dune-project and run: dune runtest --instrument-with ppx_windtrap\n";
+       Hint: Add (instrumentation (backend windtrap.ppx --coverage)) to your\n\
+       dune-project and run: dune runtest --instrument-with windtrap.ppx\n";
     exit 1
   end;
   let coverage = load_coverage files in

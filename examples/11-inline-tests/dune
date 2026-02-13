@@ -3,4 +3,4 @@
  (libraries windtrap)
  (inline_tests)
  (preprocess
-  (pps ppx_windtrap)))
+  (pps windtrap.ppx)))

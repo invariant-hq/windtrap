@@ -1,6 +1,6 @@
 # `11-inline-tests`
 
-Inline tests with PPX. The `ppx_windtrap` preprocessor provides a concise
+Inline tests with PPX. The `windtrap.ppx` preprocessor provides a concise
 syntax for expect tests embedded directly in source files.
 
 ```bash
@@ -35,7 +35,7 @@ Add PPX preprocessing to your library or executable:
  (name mylib)
  (libraries windtrap)
  (inline_tests)
- (preprocess (pps ppx_windtrap)))
+ (preprocess (pps windtrap.ppx)))
 ```
 
 ## When to Use PPX vs Runtime API

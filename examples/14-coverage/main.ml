@@ -1,12 +1,12 @@
 (* Code coverage.
 
-   Windtrap has built-in coverage instrumentation powered by ppx_windtrap.
+   Windtrap has built-in coverage instrumentation powered by windtrap.ppx.
 
    To enable coverage, add an (instrumentation ...) stanza to the dune file of
    the library you want to measure, then run tests with [--instrument-with]:
 
    {[dune exec ./examples/14-coverage/main.exe \
-       --instrument-with ppx_windtrap]}
+       --instrument-with windtrap.ppx]}
 
    After the run, coverage data is written to [_build/_coverage/]. Use the
    [windtrap coverage] command to view a report:

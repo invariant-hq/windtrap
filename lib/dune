@@ -3,4 +3,4 @@
  (public_name windtrap)
  (libraries unix clock windtrap_prop windtrap.myers windtrap.coverage)
  (instrumentation
-  (backend ppx_windtrap --coverage)))
+  (backend windtrap.ppx --coverage)))
