@@ -117,13 +117,21 @@ val seq : 'a testable -> 'a Seq.t testable
 val lazy_t : 'a testable -> 'a Lazy.t testable
 (** Testable for lazy values. *)
 
-(** {1 Test Creation} *)
+(** {1 Types} *)
 
 type test
 (** An abstract test or group of tests. *)
 
+type pos = string * int * int * int
+(** Source position as produced by [__POS__]. *)
+
+type here = Lexing.position
+(** Source position as produced by [[%here]]. *)
+
+(** {1 Test Creation} *)
+
 val test :
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   ?retries:int ->
@@ -140,7 +148,7 @@ val test :
       tests. *)
 
 val group :
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?setup:(unit -> unit) ->
   ?teardown:(unit -> unit) ->
@@ -161,7 +169,7 @@ val group :
       from nested groups stack: inner [after_each] runs first. *)
 
 val ftest :
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   ?retries:int ->
@@ -173,7 +181,7 @@ val ftest :
     focus markers before committing. *)
 
 val fgroup :
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?setup:(unit -> unit) ->
   ?teardown:(unit -> unit) ->
@@ -186,7 +194,7 @@ val fgroup :
     focused group are treated as focused. *)
 
 val slow :
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   ?retries:int ->
@@ -197,7 +205,7 @@ val slow :
     [~quick:true] is passed to {!run}. The return value of [fn] is ignored. *)
 
 val bracket :
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   ?retries:int ->
@@ -335,8 +343,8 @@ val run :
 (** {1 Equality Assertions} *)
 
 val equal :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?msg:string ->
   'a testable ->
   'a ->
@@ -345,8 +353,8 @@ val equal :
 (** [equal testable expected actual] asserts that [expected] equals [actual]. *)
 
 val not_equal :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?msg:string ->
   'a testable ->
   'a ->
@@ -356,25 +364,25 @@ val not_equal :
 
 (** {1 Boolean Assertions} *)
 
-val is_true : ?here:Check.here -> ?pos:Check.pos -> ?msg:string -> bool -> unit
+val is_true : ?here:here -> ?pos:pos -> ?msg:string -> bool -> unit
 (** [is_true b] asserts that [b] is [true]. *)
 
-val is_false : ?here:Check.here -> ?pos:Check.pos -> ?msg:string -> bool -> unit
+val is_false : ?here:here -> ?pos:pos -> ?msg:string -> bool -> unit
 (** [is_false b] asserts that [b] is [false]. *)
 
 (** {1 Option Assertions} *)
 
 val is_some :
-  ?here:Check.here -> ?pos:Check.pos -> ?msg:string -> 'a option -> unit
+  ?here:here -> ?pos:pos -> ?msg:string -> 'a option -> unit
 (** [is_some opt] asserts that [opt] is [Some _]. *)
 
 val is_none :
-  ?here:Check.here -> ?pos:Check.pos -> ?msg:string -> 'a option -> unit
+  ?here:here -> ?pos:pos -> ?msg:string -> 'a option -> unit
 (** [is_none opt] asserts that [opt] is [None]. *)
 
 val some :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?msg:string ->
   'a testable ->
   'a ->
@@ -385,16 +393,16 @@ val some :
 (** {1 Result Assertions} *)
 
 val is_ok :
-  ?here:Check.here -> ?pos:Check.pos -> ?msg:string -> ('a, 'b) result -> unit
+  ?here:here -> ?pos:pos -> ?msg:string -> ('a, 'b) result -> unit
 (** [is_ok r] asserts that [r] is [Ok _]. *)
 
 val is_error :
-  ?here:Check.here -> ?pos:Check.pos -> ?msg:string -> ('a, 'b) result -> unit
+  ?here:here -> ?pos:pos -> ?msg:string -> ('a, 'b) result -> unit
 (** [is_error r] asserts that [r] is [Error _]. *)
 
 val ok :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?msg:string ->
   'a testable ->
   'a ->
@@ -403,8 +411,8 @@ val ok :
 (** [ok testable expected r] asserts that [r] is [Ok expected]. *)
 
 val error :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?msg:string ->
   'b testable ->
   'b ->
@@ -415,8 +423,8 @@ val error :
 (** {1 Exception Assertions} *)
 
 val raises :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?msg:string ->
   exn ->
   (unit -> 'a) ->
@@ -429,8 +437,8 @@ val raises :
     such cases. *)
 
 val raises_match :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?msg:string ->
   (exn -> bool) ->
   (unit -> 'a) ->
@@ -439,18 +447,18 @@ val raises_match :
     [pred]. *)
 
 val no_raise :
-  ?here:Check.here -> ?pos:Check.pos -> ?msg:string -> (unit -> 'a) -> 'a
+  ?here:here -> ?pos:pos -> ?msg:string -> (unit -> 'a) -> 'a
 (** [no_raise fn] asserts that [fn ()] does not raise, and returns its result.
 *)
 
 (** {1 Custom Failures} *)
 
-val fail : ?here:Check.here -> ?pos:Check.pos -> string -> 'a
+val fail : ?here:here -> ?pos:pos -> string -> 'a
 (** [fail msg] fails the test with message [msg]. *)
 
 val failf :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ('a, Format.formatter, unit, 'b) format4 ->
   'a
 (** [failf fmt ...] fails the test with a formatted message. *)
@@ -470,18 +478,18 @@ val skip : ?reason:string -> unit -> 'a
 (** {1 Snapshot Testing} *)
 
 val snapshot :
-  ?here:Check.here -> ?pos:Check.pos -> ?name:string -> string -> unit
+  ?here:here -> ?pos:pos -> ?name:string -> string -> unit
 (** [snapshot ~pos:__POS__ actual] compares [actual] against a stored snapshot.
     Create snapshots with [WINDTRAP_UPDATE=1] or [~update:true]. *)
 
 val snapshot_pp :
-  ?here:Check.here -> ?pos:Check.pos -> ?name:string -> 'a Pp.t -> 'a -> unit
+  ?here:here -> ?pos:pos -> ?name:string -> 'a Pp.t -> 'a -> unit
 (** [snapshot_pp ~pos:__POS__ pp value] pretty-prints [value] and snapshots the
     result. *)
 
 val snapshotf :
-  ?here:Check.here ->
-  ?pos:Check.pos ->
+  ?here:here ->
+  ?pos:pos ->
   ?name:string ->
   ('a, Format.formatter, unit, unit) format4 ->
   'a
@@ -576,7 +584,7 @@ module Gen = Windtrap_prop.Gen
 
 val prop :
   ?config:Windtrap_prop.Prop.config ->
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->
@@ -603,7 +611,7 @@ val prop :
 
 val prop' :
   ?config:Windtrap_prop.Prop.config ->
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->
@@ -626,7 +634,7 @@ val prop' :
 
 val prop2 :
   ?config:Windtrap_prop.Prop.config ->
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->
@@ -638,7 +646,7 @@ val prop2 :
 
 val prop3 :
   ?config:Windtrap_prop.Prop.config ->
-  ?pos:Test.pos ->
+  ?pos:pos ->
   ?tags:Tag.t ->
   ?timeout:float ->
   string ->

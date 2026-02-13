@@ -40,9 +40,13 @@ let contramap = Testable.contramap
 let seq = Testable.seq
 let lazy_t = Testable.lazy_t
 
-(* ───── Test Creation ───── *)
+(* ───── Types ───── *)
 
 type test = Test.t
+type pos = string * int * int * int
+type here = Lexing.position
+
+(* ───── Test Creation ───── *)
 
 let test = Test.test
 let ftest = Test.ftest
