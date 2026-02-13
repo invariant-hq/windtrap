@@ -28,7 +28,7 @@ These tests run via dune's inline test runner (`dune runtest`).
 
 ## Dune Configuration
 
-Add PPX preprocessing to your library or executable:
+Add PPX preprocessing to your library:
 
 ```dune
 (library
@@ -37,6 +37,34 @@ Add PPX preprocessing to your library or executable:
  (inline_tests)
  (preprocess (pps windtrap.ppx)))
 ```
+
+### Executable alternative
+
+Libraries with `(inline_tests)` are included in releases, which may be
+undesirable. You can use a standard executable instead by setting the
+`WINDTRAP_PROMOTE` environment variable and adding a `(diff?)` rule:
+
+```dune
+(executable
+ (name my_test)
+ (libraries windtrap)
+ (preprocess (pps windtrap.ppx)))
+
+(rule
+ (alias runtest)
+ (action
+  (progn
+   (setenv WINDTRAP_PROMOTE true
+    (run ./my_test.exe))
+   (diff? my_test.ml my_test.ml.corrected))))
+```
+
+The test source file is identical in both cases. `WINDTRAP_PROMOTE` tells
+windtrap to write `.corrected` files on mismatch, and `(diff?)` lets dune
+detect the diff and register it for `dune promote`.
+
+For multi-file tests, add a `(diff?)` entry per file that contains `[%expect]`
+nodes.
 
 ## When to Use PPX vs Runtime API
 

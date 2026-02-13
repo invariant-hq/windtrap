@@ -4,3 +4,21 @@
  (inline_tests)
  (preprocess
   (pps windtrap.ppx)))
+
+; Alternative: use an executable instead of a library to keep test files out of
+; releases. Set WINDTRAP_PROMOTE to enable .corrected file generation, then use
+; (diff?) so dune promote can update the source.
+;
+; (executable
+;  (name main)
+;  (libraries windtrap)
+;  (preprocess
+;   (pps windtrap.ppx)))
+;
+; (rule
+;  (alias runtest)
+;  (action
+;   (progn
+;    (setenv WINDTRAP_PROMOTE true
+;     (run ./main.exe))
+;    (diff? main.ml main.ml.corrected))))

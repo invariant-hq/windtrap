@@ -31,6 +31,13 @@ val am_test_runner : unit -> bool
 (** [am_test_runner ()] returns [true] if running as the inline test runner
     (i.e., [init] received the [inline-test-runner] argument). *)
 
+val should_record_corrections : unit -> bool
+(** [should_record_corrections ()] returns [true] if correction recording is
+    enabled. This is the case either when running as the inline test runner
+    ({!am_test_runner}) or when the [WINDTRAP_PROMOTE] environment variable is
+    set to ["true"] or ["1"]. The latter enables the [dune promote] workflow
+    for executable-based expect tests without requiring [(inline_tests)]. *)
+
 (** {1 Test Registration} *)
 
 val set_lib : string -> unit
@@ -44,15 +51,16 @@ type location = { file : string; line : int; start_col : int; end_col : int }
 val expect : loc:location -> expected:string option -> unit
 (** [expect ~loc ~expected] checks captured output against [expected] using
     normalized comparison (trailing whitespace and blank lines are trimmed).
-    Pass [None] for [expected] to assert that no output was produced. In inline
-    test mode, records a correction for [dune promote]; in executable mode, just
-    raises on mismatch.
+    Pass [None] for [expected] to assert that no output was produced. When
+    correction recording is enabled ({!should_record_corrections}), records a
+    correction for [dune promote]; otherwise just raises on mismatch.
 
     @raise Failure.Check_failure if output does not match. *)
 
 val expect_exact : loc:location -> expected:string option -> unit
 (** [expect_exact ~loc ~expected] checks captured output against [expected]
-    using exact byte-for-byte comparison. Otherwise behaves like {!expect}.
+    using exact byte-for-byte comparison. Otherwise behaves like {!expect}
+    (including correction recording when enabled).
 
     @raise Failure.Check_failure if output does not match. *)
 

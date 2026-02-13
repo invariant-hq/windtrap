@@ -19,12 +19,16 @@ let current_lib = ref None
 let partition = ref None
 let list_partitions_only = ref false
 let am_test_runner_flag = ref false
+let promote_mode_flag = ref false
 let inline_suite_name = ref None
 
 (* Must detect inline-test-runner mode eagerly: [%%run_tests] executes at
    module load time and needs am_test_runner_flag to decide whether to run
    tests immediately or defer to exit(). Full arg parsing happens later in
-   init(), but this flag must already be set. *)
+   init(), but this flag must already be set.
+
+   Similarly, WINDTRAP_PROMOTE enables correction recording for
+   executable-based expect tests (no inline_tests backend needed). *)
 let () =
   let args = Array.to_list Sys.argv in
   let rec detect = function
@@ -32,7 +36,10 @@ let () =
     | _ :: rest -> detect rest
     | [] -> ()
   in
-  detect args
+  detect args;
+  match Sys.getenv_opt "WINDTRAP_PROMOTE" with
+  | Some ("1" | "true") -> promote_mode_flag := true
+  | _ -> ()
 
 (* ───── Corrections ───── *)
 
@@ -87,6 +94,7 @@ let absolute_path filename =
   else filename
 
 let am_test_runner () = !am_test_runner_flag
+let should_record_corrections () = !am_test_runner_flag || !promote_mode_flag
 
 let list_partitions () =
   String_set.elements !discovered_partitions |> List.iter print_endline
@@ -137,9 +145,7 @@ let expect_internal ~count_towards_reachability ~loc ~expected =
     match expected_norm with None -> actual = "" | Some exp -> actual = exp
   in
   if not matches then begin
-    (* In inline mode, record the correction for .corrected file generation;
-       in both modes, raise so the test fails immediately. *)
-    if am_test_runner () then begin
+    if should_record_corrections () then begin
       let corr : correction = Update_expect_payload { loc; actual } in
       record_correction ~file:loc.file corr
     end;
@@ -157,7 +163,7 @@ let expect_exact ~loc ~expected =
     match expected with None -> actual = "" | Some exp -> actual = exp
   in
   if not matches then begin
-    if am_test_runner () then begin
+    if should_record_corrections () then begin
       let corr : correction = Update_expect_payload { loc; actual } in
       record_correction ~file:loc.file corr
     end;
@@ -198,7 +204,7 @@ let check_trailing_output ~trailing_loc =
   let trailing_raw = Expect.output () in
   let trailing_norm = Expect.normalize trailing_raw in
   if trailing_norm <> "" then begin
-    if am_test_runner () then begin
+    if should_record_corrections () then begin
       let replacement = ";\n  " ^ format_expect_node trailing_norm in
       record_correction ~file:trailing_loc.file
         (Replace_node { loc = trailing_loc; replacement })
@@ -390,6 +396,18 @@ let collect_tests () =
   in
   List.rev !ungrouped @ file_groups
 
+(* ───── Correction Flushing ───── *)
+
+(* Write all pending .corrected files and return whether any were written.
+   Restores cwd to initial_dir so files land where dune expects them. *)
+let flush_corrections () =
+  Sys.chdir (Lazy.force initial_dir);
+  Mutex.lock corrections_mutex;
+  let files = Hashtbl.fold (fun file _ acc -> file :: acc) corrections [] in
+  Mutex.unlock corrections_mutex;
+  List.iter (fun file -> write_corrected_file ~file) files;
+  files <> []
+
 (* ───── Test Execution ───── *)
 
 (* Auto-execute tests when the program exits without an explicit [%%run_tests].
@@ -407,7 +425,12 @@ let () =
           else begin
             let config = Cli.resolve_config cli in
             let result = Runner.run ~config name tests in
-            if result.Runner.failed > 0 then Stdlib.exit 1
+            if !promote_mode_flag then begin
+              let has_corrections = flush_corrections () in
+              if not has_corrections && result.Runner.failed > 0 then
+                Stdlib.exit 1
+            end
+            else if result.Runner.failed > 0 then Stdlib.exit 1
           end
         end)
 
@@ -433,7 +456,11 @@ let run_tests name =
 
     let config = Cli.resolve_config cli in
     let result = Runner.run ~config name tests in
-    if result.Runner.failed > 0 then Stdlib.exit 1
+    if !promote_mode_flag then begin
+      let has_corrections = flush_corrections () in
+      if not has_corrections && result.Runner.failed > 0 then Stdlib.exit 1
+    end
+    else if result.Runner.failed > 0 then Stdlib.exit 1
   end
 
 (* ───── Entry Point ───── *)
@@ -452,18 +479,12 @@ let exit () =
     let config = Cli.resolve_config Cli.empty in
     let result = Runner.run ~config suite_name tests in
 
-    (* Restore initial cwd so .corrected files land where dune expects them *)
-    Sys.chdir (Lazy.force initial_dir);
-    Mutex.lock corrections_mutex;
-    let files = Hashtbl.fold (fun file _ acc -> file :: acc) corrections [] in
-    Mutex.unlock corrections_mutex;
-    List.iter (fun file -> write_corrected_file ~file) files;
+    let has_corrections = flush_corrections () in
 
-    (* Exit with appropriate code. IMPORTANT: When corrections exist, we MUST
-       exit with 0 so that dune's Action.progn continues to the diff actions.
-       The diff action is what registers files for promotion. If we exit
-       non-zero, progn stops and the diff never runs. *)
-    let has_corrections = files <> [] in
+    (* IMPORTANT: When corrections exist, we MUST exit with 0 so that dune's
+       Action.progn continues to the diff actions. The diff action is what
+       registers files for promotion. If we exit non-zero, progn stops and the
+       diff never runs. *)
     let exit_code =
       if has_corrections then 0 (* Let diff action run and handle promotion *)
       else if result.Runner.failed > 0 then 1
