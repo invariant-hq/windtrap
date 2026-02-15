@@ -60,11 +60,27 @@ val check : 'a t -> ('a -> 'a -> 'a check_result) option
 val to_string : 'a t -> 'a -> string
 (** [to_string t v] pretty-prints [v] to a string using [t]'s printer. *)
 
+val with_gen : 'a Windtrap_prop.Gen.t -> 'a t -> 'a t
+(** [with_gen gen t] returns a copy of [t] that uses [gen] as its random
+    generator. Useful when the default generator produces values outside the
+    domain of the property under test.
+
+    {[
+      (* int with bounded range to avoid overflow in arithmetic *)
+      let safe_int = Testable.(with_gen Gen.small_int int)
+    ]} *)
+
 (** {1 Primitive Testables} *)
 
 val unit : unit t
 val bool : bool t
 val int : int t
+
+val small_int : int t
+(** Like {!int} but uses {!Windtrap_prop.Gen.small_int}, which generates
+    integers in [\[-10_000, 10_000\]]. Useful for properties involving
+    arithmetic that would overflow with full-range integers. *)
+
 val int32 : int32 t
 val int64 : int64 t
 val nativeint : nativeint t

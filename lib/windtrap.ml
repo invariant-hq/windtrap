@@ -17,6 +17,7 @@ type 'a testable = 'a Testable.t
 let unit = Testable.unit
 let bool = Testable.bool
 let int = Testable.int
+let small_int = Testable.small_int
 let int32 = Testable.int32
 let int64 = Testable.int64
 let nativeint = Testable.nativeint

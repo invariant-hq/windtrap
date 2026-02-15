@@ -30,6 +30,7 @@ let equal t = t.equal
 let gen t = t.gen
 let check t = t.check
 let to_string t v = Pp.to_string (pp t) v
+let with_gen gen t = { t with gen = Some gen }
 
 (* ───── Primitive Testables ───── *)
 
@@ -54,6 +55,14 @@ let int =
     pp = Pp.int;
     equal = Int.equal;
     gen = Some Windtrap_prop.Gen.int;
+    check = None;
+  }
+
+let small_int =
+  {
+    pp = Pp.int;
+    equal = Int.equal;
+    gen = Some Windtrap_prop.Gen.small_int;
     check = None;
   }
 

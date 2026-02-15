@@ -59,6 +59,12 @@ type 'a testable = 'a Testable.t
 val unit : unit testable
 val bool : bool testable
 val int : int testable
+
+val small_int : int testable
+(** Like {!int} but generates integers in [\[-10_000, 10_000\]]. Useful for
+    properties involving arithmetic that would overflow with full-range
+    integers. *)
+
 val int32 : int32 testable
 val int64 : int64 testable
 val nativeint : nativeint testable
