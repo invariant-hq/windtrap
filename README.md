@@ -13,10 +13,10 @@ let () =
   run "My Project"
     [
       test "addition" (fun () ->
-          equal Testable.int 5 (2 + 3));
+          equal int 5 (2 + 3));
 
       prop "reverse is involutive"
-        Testable.(list int)
+        (list int)
         (fun l -> List.rev (List.rev l) = l);
 
       test "json output" (fun () ->
