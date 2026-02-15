@@ -163,6 +163,11 @@ let check_tests =
           test "no_raise returns value" (fun () ->
               let result = no_raise (fun () -> 42) in
               equal Testable.int 42 result);
+          test "raises_invalid_arg catches matching" (fun () ->
+              raises_invalid_arg "bad input" (fun () ->
+                  invalid_arg "bad input"));
+          test "raises_failure catches matching" (fun () ->
+              raises_failure "boom" (fun () -> failwith "boom"));
         ];
       group "custom messages"
         [

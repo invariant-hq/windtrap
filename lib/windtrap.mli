@@ -457,6 +457,34 @@ val no_raise :
 (** [no_raise fn] asserts that [fn ()] does not raise, and returns its result.
 *)
 
+val raises_invalid_arg :
+  ?here:here ->
+  ?pos:pos ->
+  ?msg:string ->
+  string ->
+  (unit -> 'a) ->
+  unit
+(** [raises_invalid_arg expected_msg fn] asserts that [fn ()] raises
+    [Invalid_argument] with message [expected_msg]. On failure, shows the
+    expected vs actual exception message.
+
+    {[
+      test "negative size" (fun () ->
+          raises_invalid_arg "size must be positive" (fun () ->
+              create ~size:(-1) ()))
+    ]} *)
+
+val raises_failure :
+  ?here:here ->
+  ?pos:pos ->
+  ?msg:string ->
+  string ->
+  (unit -> 'a) ->
+  unit
+(** [raises_failure expected_msg fn] asserts that [fn ()] raises [Failure] with
+    message [expected_msg]. On failure, shows the expected vs actual exception
+    message. *)
+
 (** {1 Custom Failures} *)
 
 val fail : ?here:here -> ?pos:pos -> string -> 'a

@@ -180,6 +180,44 @@ let no_raise ?here ?pos ?msg fn =
         ~actual:(Pp.str "exception %s" (Printexc.to_string exn))
         "Unexpected exception"
 
+let raises_invalid_arg ?here ?pos ?msg expected_msg fn =
+  try
+    let _ = fn () in
+    fail_with_values ?here ?pos ?msg
+      ~expected:(Pp.str "Invalid_argument %S" expected_msg)
+      ~actual:"no exception" "Exception mismatch"
+  with
+  | Failure.Check_failure _ as e -> raise e
+  | Invalid_argument actual_msg when String.equal actual_msg expected_msg -> ()
+  | Invalid_argument actual_msg ->
+      fail_with_values ?here ?pos ?msg
+        ~expected:(Pp.str "Invalid_argument %S" expected_msg)
+        ~actual:(Pp.str "Invalid_argument %S" actual_msg)
+        "Wrong exception message"
+  | exn ->
+      fail_with_values ?here ?pos ?msg
+        ~expected:(Pp.str "Invalid_argument %S" expected_msg)
+        ~actual:(Printexc.to_string exn) "Wrong exception raised"
+
+let raises_failure ?here ?pos ?msg expected_msg fn =
+  try
+    let _ = fn () in
+    fail_with_values ?here ?pos ?msg
+      ~expected:(Pp.str "Failure %S" expected_msg)
+      ~actual:"no exception" "Exception mismatch"
+  with
+  | Failure.Check_failure _ as e -> raise e
+  | Stdlib.Failure actual_msg when String.equal actual_msg expected_msg -> ()
+  | Stdlib.Failure actual_msg ->
+      fail_with_values ?here ?pos ?msg
+        ~expected:(Pp.str "Failure %S" expected_msg)
+        ~actual:(Pp.str "Failure %S" actual_msg)
+        "Wrong exception message"
+  | exn ->
+      fail_with_values ?here ?pos ?msg
+        ~expected:(Pp.str "Failure %S" expected_msg)
+        ~actual:(Printexc.to_string exn) "Wrong exception raised"
+
 (* ───── Custom Failures ───── *)
 
 let fail ?here ?pos msg = Failure.raise_failure ?here ?pos msg

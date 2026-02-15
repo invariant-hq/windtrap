@@ -100,6 +100,18 @@ val no_raise : ?here:here -> ?pos:pos -> ?msg:string -> (unit -> 'a) -> 'a
 (** [no_raise fn] asserts that [fn ()] does not raise, and returns its result.
 *)
 
+val raises_invalid_arg :
+  ?here:here -> ?pos:pos -> ?msg:string -> string -> (unit -> 'a) -> unit
+(** [raises_invalid_arg expected_msg fn] asserts that [fn ()] raises
+    [Invalid_argument] with message [expected_msg]. On failure, shows the
+    expected vs actual exception message. *)
+
+val raises_failure :
+  ?here:here -> ?pos:pos -> ?msg:string -> string -> (unit -> 'a) -> unit
+(** [raises_failure expected_msg fn] asserts that [fn ()] raises [Failure] with
+    message [expected_msg]. On failure, shows the expected vs actual exception
+    message. *)
+
 (** {1 Custom Failures} *)
 
 val fail : ?here:here -> ?pos:pos -> string -> 'a
