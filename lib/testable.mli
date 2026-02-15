@@ -30,13 +30,17 @@ type 'a check_result =
 
 val make :
   pp:'a Pp.t ->
-  equal:('a -> 'a -> bool) ->
+  ?equal:('a -> 'a -> bool) ->
   ?gen:'a Windtrap_prop.Gen.t ->
   ?check:('a -> 'a -> 'a check_result) ->
   unit ->
   'a t
 (** [make ~pp ~equal ()] creates a testable.
 
+    @param equal
+      Equality function for assertions. Defaults to structural equality [(=)].
+      For property-only testables (used with {!Windtrap.prop} but not
+      {!Windtrap.equal}), this can be omitted.
     @param gen
       Random generator for property-based testing with {!Windtrap.prop}.
     @param check

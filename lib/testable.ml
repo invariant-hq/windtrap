@@ -24,7 +24,7 @@ type 'a t = {
   check : ('a -> 'a -> 'a check_result) option;
 }
 
-let make ~pp ~equal ?gen ?check () = { pp; equal; gen; check }
+let make ~pp ?(equal = ( = )) ?gen ?check () = { pp; equal; gen; check }
 let pp t = t.pp
 let equal t = t.equal
 let gen t = t.gen
