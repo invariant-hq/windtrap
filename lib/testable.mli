@@ -85,6 +85,10 @@ val small_int : int t
     integers in [\[-10_000, 10_000\]]. Useful for properties involving
     arithmetic that would overflow with full-range integers. *)
 
+val nat : int t
+(** Like {!int} but generates non-negative integers in [\[0, 10_000\]], biased
+    towards small values. Useful for indices, sizes, and counts. *)
+
 val int32 : int32 t
 val int64 : int64 t
 val nativeint : nativeint t

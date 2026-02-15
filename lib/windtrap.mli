@@ -65,6 +65,10 @@ val small_int : int testable
     properties involving arithmetic that would overflow with full-range
     integers. *)
 
+val nat : int testable
+(** Like {!int} but generates non-negative integers in [\[0, 10_000\]], biased
+    towards small values. Useful for indices, sizes, and counts. *)
+
 val int32 : int32 testable
 val int64 : int64 testable
 val nativeint : nativeint testable

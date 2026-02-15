@@ -66,6 +66,14 @@ let small_int =
     check = None;
   }
 
+let nat =
+  {
+    pp = Pp.int;
+    equal = Int.equal;
+    gen = Some Windtrap_prop.Gen.nat;
+    check = None;
+  }
+
 let int32 =
   {
     pp = Pp.int32;
