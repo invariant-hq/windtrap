@@ -2,7 +2,7 @@
  (name windtrap_coverage_ppx)
  (public_name windtrap.coverage.ppx)
  (kind ppx_rewriter)
- (libraries ppxlib)
+ (libraries ppxlib ppxlib.astlib)
  (ppx_runtime_libraries windtrap.coverage)
  (preprocess
   (pps ppxlib.metaquot)))
