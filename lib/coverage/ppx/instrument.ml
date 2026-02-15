@@ -46,9 +46,20 @@ end = struct
     if attr_name.txt <> "coverage" then `None
     else
       match attr_payload with
-      | Parsetree.PStr [%str off] -> `Off
-      | PStr [%str on] -> `On
-      | PStr [%str exclude_file] -> `Exclude_file
+      | Parsetree.PStr
+          [ { pstr_desc =
+                Pstr_eval
+                  ({ pexp_desc = Pexp_ident { txt = Longident.Lident s; _ }; _ }, _);
+              _
+            }
+          ] -> (
+          match s with
+          | "off" -> `Off
+          | "on" -> `On
+          | "exclude_file" -> `Exclude_file
+          | _ ->
+              Location.raise_errorf ~loc:attr_loc
+                "Bad payload in coverage attribute.")
       | _ ->
           Location.raise_errorf ~loc:attr_loc
             "Bad payload in coverage attribute."
