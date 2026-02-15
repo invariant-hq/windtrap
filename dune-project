@@ -26,8 +26,8 @@
   "Unit tests, property-based tests, snapshot tests, and expect tests in a single package with one API. Includes a PPX for inline expect tests and code coverage.")
  (depends
   (ocaml
-   (>= 4.14))
+   (>= 5.0))
   (ppxlib
-   (>= 0.28.0)))
+   (>= 0.32.0)))
  (tags
   (testing unit-test property-testing expect-test snapshot-testing ppx)))
