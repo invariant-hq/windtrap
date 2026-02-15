@@ -19,7 +19,7 @@ bug-reports: "https://github.com/invariant-hq/windtrap/issues"
 depends: [
   "dune" {>= "3.21"}
   "ocaml" {>= "5.0"}
-  "ppxlib" {>= "0.32.0"}
+  "ppxlib" {>= "0.37.0"}
   "odoc" {with-doc}
 ]
 build: [

@@ -28,6 +28,6 @@
   (ocaml
    (>= 5.0))
   (ppxlib
-   (>= 0.32.0)))
+   (>= 0.37.0)))
  (tags
   (testing unit-test property-testing expect-test snapshot-testing ppx)))
