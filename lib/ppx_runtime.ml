@@ -13,6 +13,7 @@
 let initial_dir =
   let dir = Sys.getcwd () in
   lazy dir
+
 let () = Env.setup_color ()
 let already_initialized = Atomic.make false
 
@@ -385,7 +386,8 @@ let leave_group () =
       match rest with
       | [] ->
           top_level_tests :=
-            { file_module = frame.file_module;
+            {
+              file_module = frame.file_module;
               partition_name = frame.partition_name;
               test = group;
             }
@@ -467,7 +469,7 @@ let () =
             let result = Runner.run ~config name tests in
             if !promote_mode_flag then begin
               let has_corrections = flush_corrections () in
-              if not has_corrections && result.Runner.failed > 0 then
+              if (not has_corrections) && result.Runner.failed > 0 then
                 Stdlib.exit 1
             end
             else if result.Runner.failed > 0 then Stdlib.exit 1
@@ -498,7 +500,7 @@ let run_tests name =
     let result = Runner.run ~config name tests in
     if !promote_mode_flag then begin
       let has_corrections = flush_corrections () in
-      if not has_corrections && result.Runner.failed > 0 then Stdlib.exit 1
+      if (not has_corrections) && result.Runner.failed > 0 then Stdlib.exit 1
     end
     else if result.Runner.failed > 0 then Stdlib.exit 1
   end

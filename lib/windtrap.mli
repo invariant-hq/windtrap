@@ -61,12 +61,12 @@ val bool : bool testable
 val int : int testable
 
 val small_int : int testable
-(** Like {!int} but generates integers in [\[-10_000, 10_000\]]. Useful for
+(** Like {!int} but generates integers in [[-10_000, 10_000]]. Useful for
     properties involving arithmetic that would overflow with full-range
     integers. *)
 
 val nat : int testable
-(** Like {!int} but generates non-negative integers in [\[0, 10_000\]], biased
+(** Like {!int} but generates non-negative integers in [[0, 10_000]], biased
     towards small values. Useful for indices, sizes, and counts. *)
 
 val int32 : int32 testable
@@ -98,7 +98,9 @@ val array : 'a testable -> 'a array testable
 (** Testable for arrays. Produces highlighted diffs on failure. *)
 
 val pair : 'a testable -> 'b testable -> ('a * 'b) testable
-val triple : 'a testable -> 'b testable -> 'c testable -> ('a * 'b * 'c) testable
+
+val triple :
+  'a testable -> 'b testable -> 'c testable -> ('a * 'b * 'c) testable
 
 val quad :
   'a testable ->
@@ -134,8 +136,7 @@ val testable :
   ?check:('a -> 'a -> 'a Testable.check_result) ->
   unit ->
   'a testable
-(** [testable ~pp ()] creates a custom testable. Shorthand for
-    {!Testable.make}.
+(** [testable ~pp ()] creates a custom testable. Shorthand for {!Testable.make}.
 
     {[
       let point = testable ~pp:pp_point ~equal:equal_point ()
@@ -260,8 +261,7 @@ val cases : 'a testable -> 'a list -> string -> ('a -> unit) -> test
     pretty-printer.
 
     {[
-      cases
-        (triple int int int)
+      cases (triple int int int)
         [ (2, 3, 5); (0, 0, 0); (-1, 1, 0) ]
         "addition"
         (fun (a, b, expected) -> equal int expected (a + b))
@@ -368,23 +368,11 @@ val run :
 (** {1 Equality Assertions} *)
 
 val equal :
-  ?here:here ->
-  ?pos:pos ->
-  ?msg:string ->
-  'a testable ->
-  'a ->
-  'a ->
-  unit
+  ?here:here -> ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal testable expected actual] asserts that [expected] equals [actual]. *)
 
 val not_equal :
-  ?here:here ->
-  ?pos:pos ->
-  ?msg:string ->
-  'a testable ->
-  'a ->
-  'a ->
-  unit
+  ?here:here -> ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [not_equal testable a b] asserts that [a] does not equal [b]. *)
 
 (** {1 Boolean Assertions} *)
@@ -397,12 +385,10 @@ val is_false : ?here:here -> ?pos:pos -> ?msg:string -> bool -> unit
 
 (** {1 Option Assertions} *)
 
-val is_some :
-  ?here:here -> ?pos:pos -> ?msg:string -> 'a option -> unit
+val is_some : ?here:here -> ?pos:pos -> ?msg:string -> 'a option -> unit
 (** [is_some opt] asserts that [opt] is [Some _]. *)
 
-val is_none :
-  ?here:here -> ?pos:pos -> ?msg:string -> 'a option -> unit
+val is_none : ?here:here -> ?pos:pos -> ?msg:string -> 'a option -> unit
 (** [is_none opt] asserts that [opt] is [None]. *)
 
 val some :
@@ -417,12 +403,10 @@ val some :
 
 (** {1 Result Assertions} *)
 
-val is_ok :
-  ?here:here -> ?pos:pos -> ?msg:string -> ('a, 'b) result -> unit
+val is_ok : ?here:here -> ?pos:pos -> ?msg:string -> ('a, 'b) result -> unit
 (** [is_ok r] asserts that [r] is [Ok _]. *)
 
-val is_error :
-  ?here:here -> ?pos:pos -> ?msg:string -> ('a, 'b) result -> unit
+val is_error : ?here:here -> ?pos:pos -> ?msg:string -> ('a, 'b) result -> unit
 (** [is_error r] asserts that [r] is [Error _]. *)
 
 val ok :
@@ -448,12 +432,7 @@ val error :
 (** {1 Exception Assertions} *)
 
 val raises :
-  ?here:here ->
-  ?pos:pos ->
-  ?msg:string ->
-  exn ->
-  (unit -> 'a) ->
-  unit
+  ?here:here -> ?pos:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
 (** [raises exn fn] asserts that [fn ()] raises [exn].
 
     Uses structural equality (the [=] operator) to compare exceptions. This
@@ -462,27 +441,16 @@ val raises :
     such cases. *)
 
 val raises_match :
-  ?here:here ->
-  ?pos:pos ->
-  ?msg:string ->
-  (exn -> bool) ->
-  (unit -> 'a) ->
-  unit
+  ?here:here -> ?pos:pos -> ?msg:string -> (exn -> bool) -> (unit -> 'a) -> unit
 (** [raises_match pred fn] asserts that [fn ()] raises an exception matching
     [pred]. *)
 
-val no_raise :
-  ?here:here -> ?pos:pos -> ?msg:string -> (unit -> 'a) -> 'a
+val no_raise : ?here:here -> ?pos:pos -> ?msg:string -> (unit -> 'a) -> 'a
 (** [no_raise fn] asserts that [fn ()] does not raise, and returns its result.
 *)
 
 val raises_invalid_arg :
-  ?here:here ->
-  ?pos:pos ->
-  ?msg:string ->
-  string ->
-  (unit -> 'a) ->
-  unit
+  ?here:here -> ?pos:pos -> ?msg:string -> string -> (unit -> 'a) -> unit
 (** [raises_invalid_arg expected_msg fn] asserts that [fn ()] raises
     [Invalid_argument] with message [expected_msg]. On failure, shows the
     expected vs actual exception message.
@@ -494,12 +462,7 @@ val raises_invalid_arg :
     ]} *)
 
 val raises_failure :
-  ?here:here ->
-  ?pos:pos ->
-  ?msg:string ->
-  string ->
-  (unit -> 'a) ->
-  unit
+  ?here:here -> ?pos:pos -> ?msg:string -> string -> (unit -> 'a) -> unit
 (** [raises_failure expected_msg fn] asserts that [fn ()] raises [Failure] with
     message [expected_msg]. On failure, shows the expected vs actual exception
     message. *)
@@ -510,10 +473,7 @@ val fail : ?here:here -> ?pos:pos -> string -> 'a
 (** [fail msg] fails the test with message [msg]. *)
 
 val failf :
-  ?here:here ->
-  ?pos:pos ->
-  ('a, Format.formatter, unit, 'b) format4 ->
-  'a
+  ?here:here -> ?pos:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
 (** [failf fmt ...] fails the test with a formatted message. *)
 
 (** {1 Test Control} *)
@@ -530,8 +490,7 @@ val skip : ?reason:string -> unit -> 'a
 
 (** {1 Snapshot Testing} *)
 
-val snapshot :
-  ?here:here -> ?pos:pos -> ?name:string -> string -> unit
+val snapshot : ?here:here -> ?pos:pos -> ?name:string -> string -> unit
 (** [snapshot ~pos:__POS__ actual] compares [actual] against a stored snapshot.
     Create snapshots with [WINDTRAP_UPDATE=1] or [~update:true]. *)
 
@@ -621,9 +580,8 @@ val capture_exact : (unit -> 'a) -> string -> 'a
       let () =
         run "Properties"
           [
-            prop "reverse is involutive"
-              (list int)
-              (fun l -> List.rev (List.rev l) = l);
+            prop "reverse is involutive" (list int) (fun l ->
+                List.rev (List.rev l) = l);
             prop "append length"
               (pair (list int) (list int))
               (fun (l1, l2) ->
@@ -651,9 +609,8 @@ val prop :
     find a minimal failing case.
 
     {[
-      prop "reverse is involutive"
-        (list int)
-        (fun l -> List.rev (List.rev l) = l)
+      prop "reverse is involutive" (list int) (fun l ->
+          List.rev (List.rev l) = l)
     ]}
 
     @param config Property test configuration (count, seed, etc.)
@@ -677,9 +634,7 @@ val prop' :
     assertions like {!equal} inside [fn].
 
     {[
-      prop' "sorted list is sorted"
-        (list int)
-        (fun l ->
+      prop' "sorted list is sorted" (list int) (fun l ->
           let sorted = List.sort Int.compare l in
           (* Use Windtrap assertions *)
           is_true (is_sorted sorted))
@@ -722,8 +677,8 @@ val prop4 :
   'd testable ->
   ('a -> 'b -> 'c -> 'd -> bool) ->
   test
-(** [prop4 name t1 t2 t3 t4 law] is a convenience for four-argument
-    properties. *)
+(** [prop4 name t1 t2 t3 t4 law] is a convenience for four-argument properties.
+*)
 
 val assume : bool -> unit
 (** [assume b] discards the current test case if [b] is false.
@@ -732,9 +687,7 @@ val assume : bool -> unit
     possible, as excessive discarding can cause tests to give up.
 
     {[
-      prop "division"
-        (pair int int)
-        (fun (a, b) ->
+      prop "division" (pair int int) (fun (a, b) ->
           assume (b <> 0);
           (a / b * b) + (a mod b) = a)
     ]} *)

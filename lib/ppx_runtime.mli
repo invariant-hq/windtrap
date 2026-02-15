@@ -35,8 +35,8 @@ val should_record_corrections : unit -> bool
 (** [should_record_corrections ()] returns [true] if correction recording is
     enabled. This is the case either when running as the inline test runner
     ({!am_test_runner}) or when the [WINDTRAP_PROMOTE] environment variable is
-    set to ["true"] or ["1"]. The latter enables the [dune promote] workflow
-    for executable-based expect tests without requiring [(inline_tests)]. *)
+    set to ["true"] or ["1"]. The latter enables the [dune promote] workflow for
+    executable-based expect tests without requiring [(inline_tests)]. *)
 
 (** {1 Test Registration} *)
 

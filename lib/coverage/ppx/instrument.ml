@@ -47,11 +47,14 @@ end = struct
     else
       match attr_payload with
       | Parsetree.PStr
-          [ { pstr_desc =
+          [
+            {
+              pstr_desc =
                 Pstr_eval
-                  ({ pexp_desc = Pexp_ident { txt = Longident.Lident s; _ }; _ }, _);
-              _
-            }
+                  ( { pexp_desc = Pexp_ident { txt = Longident.Lident s; _ }; _ },
+                    _ );
+              _;
+            };
           ] -> (
           match s with
           | "off" -> `Off

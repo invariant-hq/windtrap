@@ -82,11 +82,11 @@ val int : int t
 
 val small_int : int t
 (** Like {!int} but uses {!Windtrap_prop.Gen.small_int}, which generates
-    integers in [\[-10_000, 10_000\]]. Useful for properties involving
-    arithmetic that would overflow with full-range integers. *)
+    integers in [[-10_000, 10_000]]. Useful for properties involving arithmetic
+    that would overflow with full-range integers. *)
 
 val nat : int t
-(** Like {!int} but generates non-negative integers in [\[0, 10_000\]], biased
+(** Like {!int} but generates non-negative integers in [[0, 10_000]], biased
     towards small values. Useful for indices, sizes, and counts. *)
 
 val int32 : int32 t
