@@ -40,6 +40,7 @@ let of_equal = Testable.of_equal
 let contramap = Testable.contramap
 let seq = Testable.seq
 let lazy_t = Testable.lazy_t
+let testable = Testable.make
 
 (* ───── Types ───── *)
 

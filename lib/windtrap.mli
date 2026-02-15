@@ -123,6 +123,21 @@ val seq : 'a testable -> 'a Seq.t testable
 val lazy_t : 'a testable -> 'a Lazy.t testable
 (** Testable for lazy values. *)
 
+val testable :
+  pp:'a Pp.t ->
+  ?equal:('a -> 'a -> bool) ->
+  ?gen:'a Windtrap_prop.Gen.t ->
+  ?check:('a -> 'a -> 'a Testable.check_result) ->
+  unit ->
+  'a testable
+(** [testable ~pp ()] creates a custom testable. Shorthand for
+    {!Testable.make}.
+
+    {[
+      let point = testable ~pp:pp_point ~equal:equal_point ()
+      let tensor = testable ~pp:pp_tensor ~gen:gen_tensor ()
+    ]} *)
+
 (** {1 Types} *)
 
 type test
