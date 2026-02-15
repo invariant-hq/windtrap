@@ -275,3 +275,7 @@ let prop2 ?config ?pos ?tags ?timeout name a b law =
 let prop3 ?config ?pos ?tags ?timeout name a b c law =
   prop ?config ?pos ?tags ?timeout name (Testable.triple a b c)
     (fun (x, y, z) -> law x y z)
+
+let prop4 ?config ?pos ?tags ?timeout name a b c d law =
+  prop ?config ?pos ?tags ?timeout name (Testable.quad a b c d)
+    (fun (w, x, y, z) -> law w x y z)

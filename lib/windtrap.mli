@@ -691,6 +691,21 @@ val prop3 :
   test
 (** [prop3 name t1 t2 t3 law] is a convenience for three-argument properties. *)
 
+val prop4 :
+  ?config:Windtrap_prop.Prop.config ->
+  ?pos:pos ->
+  ?tags:Tag.t ->
+  ?timeout:float ->
+  string ->
+  'a testable ->
+  'b testable ->
+  'c testable ->
+  'd testable ->
+  ('a -> 'b -> 'c -> 'd -> bool) ->
+  test
+(** [prop4 name t1 t2 t3 t4 law] is a convenience for four-argument
+    properties. *)
+
 val assume : bool -> unit
 (** [assume b] discards the current test case if [b] is false.
 
