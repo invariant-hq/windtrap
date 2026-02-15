@@ -41,8 +41,7 @@ Add PPX preprocessing to your library:
 ### Executable alternative
 
 Libraries with `(inline_tests)` are included in releases, which may be
-undesirable. You can use a standard executable instead by setting the
-`WINDTRAP_PROMOTE` environment variable and adding a `(diff?)` rule:
+undesirable. You can use a standard executable instead with a `(diff?)` rule:
 
 ```dune
 (executable
@@ -54,14 +53,13 @@ undesirable. You can use a standard executable instead by setting the
  (alias runtest)
  (action
   (progn
-   (setenv WINDTRAP_PROMOTE true
-    (run ./my_test.exe))
+   (run ./my_test.exe)
    (diff? my_test.ml my_test.ml.corrected))))
 ```
 
-The test source file is identical in both cases. `WINDTRAP_PROMOTE` tells
-windtrap to write `.corrected` files on mismatch, and `(diff?)` lets dune
-detect the diff and register it for `dune promote`.
+The test source file is identical in both cases. When running inside dune,
+windtrap automatically writes `.corrected` files on mismatch, and `(diff?)`
+lets dune detect the diff and register it for `dune promote`.
 
 For multi-file tests, add a `(diff?)` entry per file that contains `[%expect]`
 nodes.

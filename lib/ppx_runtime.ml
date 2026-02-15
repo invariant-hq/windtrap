@@ -25,16 +25,12 @@ let current_lib = ref None
 let partition = ref None
 let list_partitions_only = ref false
 let am_test_runner_flag = ref false
-let promote_mode_flag = ref false
 let inline_suite_name = ref None
 
 (* Must detect inline-test-runner mode eagerly: [%%run_tests] executes at
    module load time and needs am_test_runner_flag to decide whether to run
    tests immediately or defer to exit(). Full arg parsing happens later in
-   init(), but this flag must already be set.
-
-   Similarly, WINDTRAP_PROMOTE enables correction recording for
-   executable-based expect tests (no inline_tests backend needed). *)
+   init(), but this flag must already be set. *)
 let () =
   let args = Array.to_list Sys.argv in
   let rec detect = function
@@ -42,10 +38,7 @@ let () =
     | _ :: rest -> detect rest
     | [] -> ()
   in
-  detect args;
-  match Sys.getenv_opt "WINDTRAP_PROMOTE" with
-  | Some ("1" | "true") -> promote_mode_flag := true
-  | _ -> ()
+  detect args
 
 (* ───── Corrections ───── *)
 
@@ -106,7 +99,8 @@ let absolute_path filename =
   else filename
 
 let am_test_runner () = !am_test_runner_flag
-let should_record_corrections () = !am_test_runner_flag || !promote_mode_flag
+let should_record_corrections () =
+  !am_test_runner_flag || Lazy.force Env.inside_dune
 
 let list_partitions () =
   String_set.elements !discovered_partitions |> List.iter print_endline
@@ -467,7 +461,7 @@ let () =
           else begin
             let config = Cli.resolve_config cli in
             let result = Runner.run ~config name tests in
-            if !promote_mode_flag then begin
+            if Lazy.force Env.inside_dune then begin
               let has_corrections = flush_corrections () in
               if (not has_corrections) && result.Runner.failed > 0 then
                 Stdlib.exit 1
@@ -498,7 +492,7 @@ let run_tests name =
 
     let config = Cli.resolve_config cli in
     let result = Runner.run ~config name tests in
-    if !promote_mode_flag then begin
+    if Lazy.force Env.inside_dune then begin
       let has_corrections = flush_corrections () in
       if (not has_corrections) && result.Runner.failed > 0 then Stdlib.exit 1
     end
