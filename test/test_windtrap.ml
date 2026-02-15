@@ -378,6 +378,8 @@ let property_regression_tests =
               in
               is_some found);
           test "int_range handles large non-negative bounds" (fun () ->
+              if Sys.int_size <= 32 then
+                skip ~reason:"requires 63-bit integers" ();
               let bound = 1 lsl 30 in
               let gen = Gen.int_range 0 bound in
               let rand = Random.State.make [| 49 |] in
@@ -393,6 +395,8 @@ let property_regression_tests =
                   is_true (n <= bound))
                 samples);
           test "int_range handles large zero-spanning bounds" (fun () ->
+              if Sys.int_size <= 32 then
+                skip ~reason:"requires 63-bit integers" ();
               let low = -((1 lsl 30) + 1024) in
               let high = 1024 in
               let gen = Gen.int_range low high in
