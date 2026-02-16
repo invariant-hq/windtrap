@@ -6,7 +6,7 @@
    the library you want to measure, then run tests with [--instrument-with]:
 
    {[dune exec ./examples/14-coverage/main.exe \
-       --instrument-with windtrap]}
+       --instrument-with ppx_windtrap]}
 
    After the run, coverage data is written to [_build/_coverage/]. Use the
    [windtrap coverage] command to view a report:

@@ -889,12 +889,22 @@ let path_ops_tests =
       group "mkdir_p"
         [
           test "creates nested directories" (fun () ->
-              let tmpdir = let d = Filename.temp_file "windtrap_test" "" in Sys.remove d; Windtrap__Path_ops.mkdir_p d; d in
+              let tmpdir =
+                let d = Filename.temp_file "windtrap_test" "" in
+                Sys.remove d;
+                Windtrap__Path_ops.mkdir_p d;
+                d
+              in
               let nested = Filename.concat tmpdir "a/b/c" in
               Windtrap__Path_ops.mkdir_p nested;
               is_true (Sys.file_exists nested && Sys.is_directory nested));
           test "no-op on existing directory" (fun () ->
-              let tmpdir = let d = Filename.temp_file "windtrap_test" "" in Sys.remove d; Windtrap__Path_ops.mkdir_p d; d in
+              let tmpdir =
+                let d = Filename.temp_file "windtrap_test" "" in
+                Sys.remove d;
+                Windtrap__Path_ops.mkdir_p d;
+                d
+              in
               Windtrap__Path_ops.mkdir_p tmpdir;
               is_true (Sys.file_exists tmpdir));
         ];

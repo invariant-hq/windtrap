@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Runtime support for windtrap.ppx.
+(** Runtime support for ppx_windtrap.
 
     Provides the runtime functions called by PPX-generated code for test
     execution, output capture, expectation checking, and corrected file

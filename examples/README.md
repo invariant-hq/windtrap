@@ -46,7 +46,7 @@ dune runtest
 The coverage example (14-coverage) requires the `--instrument-with` flag:
 
 ```bash
-dune exec ./examples/14-coverage/main.exe --instrument-with windtrap
+dune exec ./examples/14-coverage/main.exe --instrument-with ppx_windtrap
 ```
 
 ## Quick Reference

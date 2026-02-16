@@ -99,6 +99,7 @@ let absolute_path filename =
   else filename
 
 let am_test_runner () = !am_test_runner_flag
+
 let should_record_corrections () =
   !am_test_runner_flag || Lazy.force Env.inside_dune
 

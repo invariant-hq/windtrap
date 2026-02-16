@@ -34,6 +34,12 @@ let () =
 opam install windtrap
 ```
 
+For PPX inline tests and code coverage, also install:
+
+```
+opam install ppx_windtrap
+```
+
 ## dune setup
 
 ```lisp
@@ -48,7 +54,7 @@ For PPX inline tests:
 (library
  (name mylib)
  (inline_tests)
- (preprocess (pps windtrap.ppx)))
+ (preprocess (pps ppx_windtrap)))
 ```
 
 ## Features
@@ -61,13 +67,13 @@ For PPX inline tests:
 
 **Expect testing** -- `expect` captures stdout and compares with whitespace normalization. `capture` returns the function result while checking output.
 
-**Inline expect tests** -- `let%expect_test` and `[%expect]` via `windtrap.ppx`. Mismatches produce `.corrected` files compatible with `dune promote`.
+**Inline expect tests** -- `let%expect_test` and `[%expect]` via `ppx_windtrap`. Mismatches produce `.corrected` files compatible with `dune promote`.
 
 **Parameterized tests** -- `cases` generates one test per input value from a list.
 
 **Fixtures** -- `bracket` for per-test setup/teardown, `fixture` for lazy shared resources, `group ~setup ~teardown` for suite-level hooks.
 
-**Code coverage** -- Built-in expression-level coverage. Run with `dune runtest --instrument-with windtrap` to get an inline coverage percentage after test results, `windtrap coverage --per-file` for a detailed text report, or `windtrap coverage --json` for machine-readable uncovered lines.
+**Code coverage** -- Built-in expression-level coverage. Run with `dune runtest --instrument-with ppx_windtrap` to get an inline coverage percentage after test results, `windtrap coverage --per-file` for a detailed text report, or `windtrap coverage --json` for machine-readable uncovered lines.
 
 **Test runner** -- Filtering (`-f`), fail-fast (`-x`), output formats (verbose, compact, TAP, JUnit), snapshot updates (`-u`), GitHub Actions annotations.
 

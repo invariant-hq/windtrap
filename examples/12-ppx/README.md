@@ -1,6 +1,6 @@
 # `12-ppx`
 
-PPX test syntax. The `windtrap.ppx` preprocessor provides `let%test`,
+PPX test syntax. The `ppx_windtrap` preprocessor provides `let%test`,
 `let%expect_test`, and `module%test` for writing self-contained test
 executables with hierarchical grouping and expect tests. Tests auto-execute
 when the program exits.
@@ -32,7 +32,7 @@ Module-based PPX tests use a regular executable:
 (executable
  (name main)
  (libraries windtrap)
- (preprocess (pps windtrap.ppx)))
+ (preprocess (pps ppx_windtrap)))
 ```
 
 ## PPX Syntax Overview

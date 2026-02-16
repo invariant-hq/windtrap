@@ -17,4 +17,4 @@
  (name test_ppx)
  (libraries windtrap)
  (preprocess
-  (pps windtrap.ppx)))
+  (pps ppx_windtrap)))

@@ -1,6 +1,6 @@
 (* PPX test syntax.
 
-   The windtrap.ppx preprocessor provides [let%test], [let%expect_test],
+   The ppx_windtrap preprocessor provides [let%test], [let%expect_test],
    [module%test], and [%%run_tests] for writing self-contained test
    executables with grouping and expect tests.
 

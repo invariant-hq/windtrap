@@ -2,4 +2,4 @@
  (name main)
  (libraries windtrap)
  (preprocess
-  (pps windtrap.ppx)))
+  (pps ppx_windtrap)))

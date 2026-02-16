@@ -38,7 +38,7 @@ module Pp = Pp
 (** Lightweight pretty-printing with ANSI styling. *)
 
 module Ppx_runtime = Ppx_runtime
-(** {b Internal.} Runtime support for [windtrap.ppx]. Used by PPX-generated
+(** {b Internal.} Runtime support for [ppx_windtrap]. Used by PPX-generated
     code; not intended for direct use. *)
 
 (** {1 Testable Constructors}

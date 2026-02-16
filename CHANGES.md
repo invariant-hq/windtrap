@@ -7,12 +7,12 @@ All notable changes to this project will be documented in this file.
 
 ## [0.1.0] - 2026-02-13
 
-Windtrap is an all-in-one OCaml testing framework that unifies unit tests, property-based tests, snapshot tests, and expect tests under a single API. Instead of juggling multiple testing libraries, Windtrap gives you one cohesive package with a PPX for inline expect tests (`windtrap.ppx`).
+Windtrap is an all-in-one OCaml testing framework that unifies unit tests, property-based tests, snapshot tests, and expect tests under a single API. Instead of juggling multiple testing libraries, Windtrap gives you one cohesive package with a PPX for inline expect tests (`ppx_windtrap`).
 
 - Unit tests with combinators, tags, skip, brackets, and timeouts.
 - Property-based testing with configurable seeds and shrinking.
 - Snapshot testing with automatic file management and diffing.
-- Inline expect tests via `windtrap.ppx` with automatic correction.
+- Inline expect tests via `ppx_windtrap` with automatic correction.
 - CLI test runner with filtering, verbosity, and color support.
 - Test coverage reporting with `bisect_ppx` integration.
 

@@ -3,7 +3,7 @@
  (libraries windtrap)
  (inline_tests)
  (preprocess
-  (pps windtrap.ppx)))
+  (pps ppx_windtrap)))
 
 ; Alternative: use an executable instead of a library to keep test files out of
 ; releases. Windtrap writes .corrected files automatically when running inside
@@ -13,7 +13,7 @@
 ;  (name main)
 ;  (libraries windtrap)
 ;  (preprocess
-;   (pps windtrap.ppx)))
+;   (pps ppx_windtrap)))
 ;
 ; (rule
 ;  (alias runtest)

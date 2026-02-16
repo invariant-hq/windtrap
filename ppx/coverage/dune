@@ -1,6 +1,6 @@
 (library
  (name windtrap_coverage_ppx)
- (public_name windtrap.coverage.ppx)
+ (public_name ppx_windtrap.coverage)
  (kind ppx_rewriter)
  (libraries ppxlib ppxlib.astlib)
  (ppx_runtime_libraries windtrap.coverage)

@@ -6,7 +6,7 @@
    [dune promote].
 
    See the dune file for required configuration:
-   [(inline_tests)] and [(preprocess (pps windtrap.ppx))]. *)
+   [(inline_tests)] and [(preprocess (pps ppx_windtrap))]. *)
 
 (* A function we want to test. *)
 let greet name = Printf.printf "Hello, %s!\n" name
