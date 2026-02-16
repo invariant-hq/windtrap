@@ -15,6 +15,7 @@
 
 (test
  (name test_ppx)
+ (package ppx_windtrap)
  (libraries windtrap)
  (preprocess
   (pps ppx_windtrap)))
