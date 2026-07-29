@@ -80,7 +80,39 @@ let tests =
         equal ~msg:"malformed timeout is passed through" (option string)
           (Some "soon") (Env.timeout ());
         clear "WINDTRAP_TIMEOUT";
-        equal ~msg:"timeout unset" (option string) None (Env.timeout ()));
+        equal ~msg:"timeout unset" (option string) None (Env.timeout ());
+        set "WINDTRAP_SLOW_THRESHOLD" "0.5";
+        equal ~msg:"slow_threshold raw" (option string) (Some "0.5")
+          (Env.slow_threshold ());
+        set "WINDTRAP_SLOW_THRESHOLD" "fast";
+        equal ~msg:"malformed slow_threshold is passed through" (option string)
+          (Some "fast") (Env.slow_threshold ());
+        clear "WINDTRAP_SLOW_THRESHOLD";
+        equal ~msg:"slow_threshold unset" (option string) None
+          (Env.slow_threshold ());
+        set "WINDTRAP_SHARD" "2/4";
+        equal ~msg:"shard raw" (option string) (Some "2/4") (Env.shard ());
+        set "WINDTRAP_SHARD" "5/2";
+        equal ~msg:"malformed shard is passed through" (option string)
+          (Some "5/2") (Env.shard ());
+        clear "WINDTRAP_SHARD";
+        equal ~msg:"shard unset" (option string) None (Env.shard ()));
+    test "output-level mirrors parse as booleans" (fun () ->
+        clear "WINDTRAP_VERBOSE";
+        clear "WINDTRAP_QUIET";
+        equal ~msg:"verbose unset" (option bool) None (Env.verbose ());
+        equal ~msg:"quiet unset" (option bool) None (Env.quiet ());
+        set "WINDTRAP_VERBOSE" "1";
+        equal ~msg:"verbose truthy" (option bool) (Some true) (Env.verbose ());
+        set "WINDTRAP_QUIET" "on";
+        equal ~msg:"quiet truthy" (option bool) (Some true) (Env.quiet ());
+        set "WINDTRAP_QUIET" "off";
+        equal ~msg:"quiet falsy" (option bool) (Some false) (Env.quiet ());
+        set "WINDTRAP_VERBOSE" "maybe";
+        equal ~msg:"unparseable verbose reads as unset" (option bool) None
+          (Env.verbose ());
+        clear "WINDTRAP_VERBOSE";
+        clear "WINDTRAP_QUIET");
     test "seed is passed through unparsed" (fun () ->
         set "WINDTRAP_SEED" "s1:7be1d2c904aa31f5";
         equal (option string) (Some "s1:7be1d2c904aa31f5") (Env.seed ());

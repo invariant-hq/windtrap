@@ -489,25 +489,11 @@ let parse argv =
 let first_some higher lower =
   match higher with Some _ -> higher | None -> lower
 
-(* WINDTRAP_QUIET and WINDTRAP_VERBOSE are read here rather than in Env:
-   the Env inventory is owned by another track at this stage — moving the
-   readers there is an orchestration follow-up. Bool convention shared
-   with WINDTRAP_STREAM: truthy/falsy spellings, case-insensitively;
-   empty, unset, or unparseable count as unset. *)
-let env_bool name =
-  match Sys.getenv_opt name with
-  | None | Some "" -> None
-  | Some value -> (
-      match String.lowercase_ascii (String.trim value) with
-      | "1" | "true" | "yes" | "y" | "on" -> Some true
-      | "0" | "false" | "no" | "n" | "off" -> Some false
-      | _ -> None)
-
 (* The environment layer of the output level. Within the layer verbose
    wins over quiet — the variables carry no order to make last-one-wins
    meaningful, so the tie-break is fixed and documented. *)
 let env_output () =
-  match (env_bool "WINDTRAP_VERBOSE", env_bool "WINDTRAP_QUIET") with
+  match (Env.verbose (), Env.quiet ()) with
   | Some true, _ -> Some `Verbose
   | _, Some true -> Some `Quiet
   | _, _ -> None
@@ -579,19 +565,10 @@ let resolve ?(overrides = empty) cli =
       ~render:(Pp.str "%g") ~expected:"a positive number" higher env_value
   in
   let* slow_threshold =
-    (* WINDTRAP_SLOW_THRESHOLD is read here rather than in Env: the Env
-       inventory is owned by another track at this stage — moving the reader
-       there is an orchestration follow-up. Convention shared with
-       WINDTRAP_TIMEOUT: empty counts as unset; a malformed or out-of-range
-       winning value is an error naming its source. *)
     let higher = first_some overrides.slow_threshold cli.slow_threshold in
     let* env_value =
       env_numeric ~source:"WINDTRAP_SLOW_THRESHOLD" ~parse:float_of_string_opt
-        ~expected:"a non-negative number"
-        (match Sys.getenv_opt "WINDTRAP_SLOW_THRESHOLD" with
-        | None | Some "" -> None
-        | Some value -> Some value)
-        higher
+        ~expected:"a non-negative number" (Env.slow_threshold ()) higher
     in
     checked ~flag:"--slow-threshold" ~env:"WINDTRAP_SLOW_THRESHOLD"
       ~valid:(fun t -> Float.is_finite t && t >= 0.)
@@ -617,14 +594,11 @@ let resolve ?(overrides = empty) cli =
       None
   in
   let* shard =
-    (* WINDTRAP_SHARD is read here rather than in Env: the Env inventory is
-       owned by another track at this stage — moving the reader there is an
-       orchestration follow-up. Empty counts as unset (Env's convention);
-       like WINDTRAP_SEED, a malformed winning token is an error, because a
+    (* Like WINDTRAP_SEED, a malformed winning token is an error, because a
        silently ignored shard reruns the whole suite in every bucket. *)
     let env_shard () =
-      match Sys.getenv_opt "WINDTRAP_SHARD" with
-      | None | Some "" -> Ok None
+      match Env.shard () with
+      | None -> Ok None
       | Some value -> (
           match shard_of_string value with
           | Some shard -> Ok (Some shard)

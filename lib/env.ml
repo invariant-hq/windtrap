@@ -105,8 +105,12 @@ let exclude_tags () = comma_list "WINDTRAP_EXCLUDE_TAG"
    winning mirror must be a loud usage error, never a silent default
    (prop/F-4). *)
 let timeout () = get_string "WINDTRAP_TIMEOUT"
+let slow_threshold () = get_string "WINDTRAP_SLOW_THRESHOLD"
 let prop_count () = get_string "WINDTRAP_PROP_COUNT"
+let shard () = get_string "WINDTRAP_SHARD"
 let stream () = get_bool "WINDTRAP_STREAM"
+let verbose () = get_bool "WINDTRAP_VERBOSE"
+let quiet () = get_bool "WINDTRAP_QUIET"
 
 let columns () =
   match get_int "WINDTRAP_COLUMNS" with

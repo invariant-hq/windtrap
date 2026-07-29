@@ -5,10 +5,13 @@
 
 (** Environment variable reading and platform detection.
 
-    Every environment variable windtrap consults is read here, so the full
-    inventory is this interface. Readers are plain functions that re-read the
-    environment on every call; nothing is cached. A variable set to the empty
-    string counts as unset.
+    Every environment variable the core library consults is read here, so this
+    interface is its inventory. Two lookups live elsewhere by design: the
+    coverage runtime reads its own [WINDTRAP_COVERAGE_FILE] (windtrap links the
+    coverage library, not the reverse, so it cannot depend on this module), and
+    {!Path_ops} consults [HOME] as a platform fallback when resolving the home
+    directory. Readers are plain functions that re-read the environment on every
+    call; nothing is cached. A variable set to the empty string counts as unset.
 
     Boolean variables accept [1], [true], [yes], [y], [on] and their negations,
     case-insensitively; unparseable values count as unset. The presence-style
@@ -116,13 +119,31 @@ val timeout : unit -> string option
     winning value is a usage error naming the variable, never a silent default.
 *)
 
+val slow_threshold : unit -> string option
+(** [slow_threshold ()] is [WINDTRAP_SLOW_THRESHOLD], the slow-test reporting
+    threshold in seconds, unparsed — the CLI layer owns validation, like
+    {!seed}'s. *)
+
 val prop_count : unit -> string option
 (** [prop_count ()] is [WINDTRAP_PROP_COUNT], the number of generated cases per
     property, unparsed — the CLI layer owns validation, like {!seed}'s. *)
 
+val shard : unit -> string option
+(** [shard ()] is [WINDTRAP_SHARD], a [k/n] shard selector, unparsed — the CLI
+    layer owns validation, like {!seed}'s. *)
+
 val stream : unit -> bool option
 (** [stream ()] is [WINDTRAP_STREAM]: stream test output instead of capturing
     it. *)
+
+val verbose : unit -> bool option
+(** [verbose ()] is [WINDTRAP_VERBOSE], requesting the [`Verbose] output level.
+    The CLI layer resolves the level; within the environment layer [verbose]
+    wins over [quiet]. *)
+
+val quiet : unit -> bool option
+(** [quiet ()] is [WINDTRAP_QUIET], requesting the [`Quiet] output level. See
+    {!verbose} for the tie-break. *)
 
 val columns : unit -> int option
 (** [columns ()] is [WINDTRAP_COLUMNS], a terminal width override. Non-positive
