@@ -890,10 +890,6 @@ let record_covered value =
   if value = `No_problem then Hashtbl.remove covered path
   else Hashtbl.replace covered path (value = `Covered)
 
-let is_fatal = function
-  | Stack_overflow | Out_of_memory | Sys.Break -> true
-  | _ -> false
-
 (* Trailing output, resolved like a node against the merged history: an
    instance with no trailing output is a passing reach, so a functor whose
    instances disagree produces ppx_expect's "different trailing outputs"
@@ -994,7 +990,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
              .corrected content is written, and the exit protocol never sees
              it (the runner classifies Skip outcomes out of the failed set). *)
           raise (Failure.Skip_test reason)
-      | exception exn when is_fatal exn -> raise exn
+      | exception exn when Failure.is_fatal exn -> raise exn
       | exception exn ->
           (* An assertion, timeout, or any other uncaught exception is never
              a correction (Law 11): resolve the reached nodes — their

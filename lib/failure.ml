@@ -75,6 +75,19 @@ let () =
           "Exit_attempt (code under test called exit; intercepted by windtrap)"
     | _ -> None)
 
+(* ───── Boundary rules ───── *)
+
+let is_fatal = function
+  | Sys.Break | Out_of_memory | Stack_overflow -> true
+  | _ -> false
+
+(* The backtrace of the most recently raised exception, when the runtime
+   recorded one. Read before anything else can raise. *)
+let recorded_backtrace () =
+  if Printexc.backtrace_status () then
+    match Printexc.get_backtrace () with "" -> None | bt -> Some bt
+  else None
+
 (* ───── Bounds (implementation constants, not contract) ───── *)
 
 (* Payload strings are pp-rendered values or user messages; past this many

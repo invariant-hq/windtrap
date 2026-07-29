@@ -38,6 +38,14 @@ let split_lines s =
 
 let dashes n = String.concat "" (List.init (max 0 n) (fun _ -> "\u{2500}"))
 
+(* The one description of a failing property case — "example N" / "case N"
+   / "case N, shrunk S steps" — shared by the one-line summary and the
+   failure block's counterexample line. *)
+let property_case_desc ~examples ~case_index ~shrink_steps =
+  if examples then spf "example %d" (case_index + 1)
+  else if shrink_steps = 0 then spf "case %d" case_index
+  else spf "case %d, shrunk %d steps" case_index shrink_steps
+
 (* POSIX single-quoting: closes the quote around every embedded [']. *)
 let shell_quote s =
   "'" ^ String.concat "'\\''" (String.split_on_char '\'' s) ^ "'"
@@ -214,11 +222,7 @@ let headline (f : Failure.t) =
         spf "snapshot %S: duplicate name" name
     | Failure.Property
         { rendered; case_index; shrink_steps; timed_out; examples; _ } ->
-        let desc =
-          if examples then spf "example %d" (case_index + 1)
-          else if shrink_steps = 0 then spf "case %d" case_index
-          else spf "case %d, shrunk %d steps" case_index shrink_steps
-        in
+        let desc = property_case_desc ~examples ~case_index ~shrink_steps in
         let desc =
           (* The shrink search hit the whole-test budget (D2): the mark
              travels into the one-line summary too. *)
@@ -671,11 +675,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         examples;
         inner;
       } ->
-      let desc =
-        if examples then spf "example %d" (case_index + 1)
-        else if shrink_steps = 0 then spf "case %d" case_index
-        else spf "case %d, shrunk %d steps" case_index shrink_steps
-      in
+      let desc = property_case_desc ~examples ~case_index ~shrink_steps in
       if String.contains rendered '\n' then begin
         put_ind (spf "counterexample (%s):" desc);
         put_block rendered

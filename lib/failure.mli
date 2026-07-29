@@ -216,6 +216,24 @@ exception Exit_attempt
     cannot observe the requested exit code. Registered with a [Printexc] printer
     so every stringification site renders it identically. *)
 
+(** {1:boundaries Boundary rules}
+
+    The two exception rules every failure boundary shares: which raised
+    exceptions must propagate untouched, and how a raised exception's backtrace
+    is captured for the ones that are recorded. *)
+
+val is_fatal : exn -> bool
+(** [is_fatal exn] is [true] iff [exn] is one of the exceptions no failure
+    boundary may swallow — [Sys.Break], [Out_of_memory], [Stack_overflow]. Catch
+    sites re-raise these instead of recording a failure: an interrupt or a
+    resource exhaustion must stop the run, not fail one test. *)
+
+val recorded_backtrace : unit -> string option
+(** [recorded_backtrace ()] is the backtrace of the most recently raised
+    exception when the runtime recorded one, and [None] when backtrace recording
+    is off or the recorded backtrace is empty. Read it before anything else can
+    raise. *)
+
 (** {1:constructors Constructors}
 
     Constructors default [phase] to {!Body} and bound every payload string (see

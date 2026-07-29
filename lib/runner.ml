@@ -9,10 +9,6 @@
    independently.
   ---------------------------------------------------------------------------*)
 
-let is_fatal = function
-  | Sys.Break | Out_of_memory | Stack_overflow -> true
-  | _ -> false
-
 (* The exit guard. Registered once per process (registration state, like
    Run's fixture ids, is process identity, not run state — RFC Law 9);
    per-run data flows through the ambient slot. Stdlib.at_exit runs each
@@ -220,7 +216,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
     phase := ph;
     match Loc.delimit fn with
     | value -> Some value
-    | exception exn when not (is_fatal exn) ->
+    | exception exn when not (Failure.is_fatal exn) ->
         let backtrace = Printexc.get_raw_backtrace () in
         classify ph exn backtrace;
         None
@@ -261,7 +257,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
            Capture.with_capture (Run.capture run) ~groups ~test_name boundary
          with
          | () -> ()
-         | exception exn when not (is_fatal exn) ->
+         | exception exn when not (Failure.is_fatal exn) ->
              (* Capture setup or restore failed (e.g. the log file could not
                 be created): a failure of this test, not of the run. *)
              let backtrace = Printexc.get_raw_backtrace () in

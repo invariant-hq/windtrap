@@ -31,13 +31,6 @@ let fail_raise ?pos ?msg ?expected ?actual ?predicate ?backtrace
           ?predicate ?backtrace ?same_constructor ?expected_message
           ?actual_message ()))
 
-(* The backtrace of the most recently raised exception, when the runtime
-   recorded one. Read before anything else can raise. *)
-let recorded_backtrace () =
-  if Printexc.backtrace_status () then
-    match Printexc.get_backtrace () with "" -> None | bt -> Some bt
-  else None
-
 let abstract = "<abstract>"
 
 (* ───── Comparisons ───── *)
@@ -172,7 +165,7 @@ let raises ?pos ?msg expected_exn fn =
     ->
       raise e
   | exception raised ->
-      let backtrace = recorded_backtrace () in
+      let backtrace = Failure.recorded_backtrace () in
       if raised <> expected_exn then
         (* Equality already ruled out, so same constructor means "right
            exception, wrong payload" — recorded for the message diff. *)
@@ -194,7 +187,7 @@ let raises_match ?pos ?msg pred fn =
     ->
       raise e
   | exception raised ->
-      let backtrace = recorded_backtrace () in
+      let backtrace = Failure.recorded_backtrace () in
       if not (pred raised) then
         fail_raise ?pos ?msg ~predicate:true
           ~actual:(Printexc.to_string raised)

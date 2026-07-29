@@ -210,10 +210,6 @@ let current_opt () =
   | Some (In_test frame) -> Some frame
   | Some (In_run _) | None -> None
 
-let is_fatal = function
-  | Sys.Break | Out_of_memory | Stack_overflow -> true
-  | _ -> false
-
 (* ───── Test-body operations ───── *)
 
 let current_test () = (current_frame ()).fr_path
@@ -274,7 +270,7 @@ let subtest name fn =
       let backtrace = Printexc.get_raw_backtrace () in
       pop ();
       Printexc.raise_with_backtrace control backtrace
-  | exception exn when is_fatal exn ->
+  | exception exn when Failure.is_fatal exn ->
       let backtrace = Printexc.get_raw_backtrace () in
       pop ();
       Printexc.raise_with_backtrace exn backtrace
@@ -458,7 +454,7 @@ let release_fixtures t ~announce =
                must not walk past the runner into its caller (D4). *)
             match Loc.delimit release with
             | () -> release_all acc ids
-            | exception exn when not (is_fatal exn) ->
+            | exception exn when not (Failure.is_fatal exn) ->
                 release_all (release_failure entry exn :: acc) ids))
   in
   release_all [] ids

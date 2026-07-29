@@ -454,4 +454,11 @@ let tests =
            with F.Skip_test r -> r = Some "no docker");
         check "Timeout: carries the limit"
           (try raise (F.Timeout 2.5) with F.Timeout t -> t = 2.5));
+    test "is_fatal: exactly the never-swallowed exceptions" (fun () ->
+        check "Sys.Break is fatal" (F.is_fatal Sys.Break);
+        check "Out_of_memory is fatal" (F.is_fatal Out_of_memory);
+        check "Stack_overflow is fatal" (F.is_fatal Stack_overflow);
+        check "Check_failure is not fatal"
+          (not (F.is_fatal (F.Check_failure (F.message "boom"))));
+        check "an ordinary exception is not fatal" (not (F.is_fatal Not_found)));
   ]

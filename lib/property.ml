@@ -131,11 +131,6 @@ type case_result =
   | Failed of failure_class
   | Control of exn * Printexc.raw_backtrace
 
-let recorded_backtrace () =
-  if Printexc.backtrace_status () then
-    match Printexc.get_backtrace () with "" -> None | bt -> Some bt
-  else None
-
 let run_case ctx body value =
   reset_case ctx;
   match body ctx value with
@@ -144,7 +139,7 @@ let run_case ctx body value =
   | exception Failure.Check_failure failure -> Failed (Assertion failure)
   | exception ((Failure.Skip_test _ | Failure.Timeout _) as control) ->
       Control (control, Printexc.get_raw_backtrace ())
-  | exception exn -> Failed (Exception (exn, recorded_backtrace ()))
+  | exception exn -> Failed (Exception (exn, Failure.recorded_backtrace ()))
 
 (* ───── Shrinking ─────
 
@@ -299,7 +294,7 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard
               Printexc.raise_with_backtrace control
                 (Printexc.get_raw_backtrace ())
           | exception exn ->
-              let backtrace = recorded_backtrace () in
+              let backtrace = Failure.recorded_backtrace () in
               fail ~rendered:"<generator raised before producing a value>"
                 ~case_index:attempts ~shrink_steps:0 ~examples:false
                 (Exception (exn, backtrace))
