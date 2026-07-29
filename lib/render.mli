@@ -253,15 +253,15 @@ val finish :
       ([coverage: 87.2% (312/358 points) · WINDTRAP_COVERAGE=report for detail],
       the percentage styled by the runtime's thresholds — green at 80% and
       above, yellow at 60%, red below) when [coverage] is given (unless
-      [`Quiet]). When other executables' [.coverage] files sit beside this
-      process's dump destination — several instrumented test stanzas — the line
-      scopes itself and points at the aggregate instead:
+      [`Quiet]). When the summary's [siblings] field is set — other executables'
+      [.coverage] files sat beside this process's dump destination at snapshot
+      time, several instrumented test stanzas — the line scopes itself and
+      points at the aggregate instead:
       [coverage: 52.4% (11/21 points, this executable) · project: dune build
-       @cover]. Sibling detection is best-effort: on a cold parallel first run
-      the hint can be absent (siblings dump at exit, after this renders); it is
-      deterministic from the second run on. The caller omits [coverage] under
-      the [report]/[full]/[off] coverage modes: {!coverage_report} prints its
-      own line, without the hint.
+       @cover]. The fact arrives on the record ({!Run.summary}, read by the
+      driver when it snapshots coverage); this renderer touches no filesystem
+      for it. The caller omits [coverage] under the [report]/[full]/[off]
+      coverage modes: {!coverage_report} prints its own line, without the hint.
 
     Classification is record-driven, as {!result} (amendment B12): excused
     results — failing results that did not count ([r.counted = false]) — leave

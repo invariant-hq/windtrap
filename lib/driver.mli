@@ -107,7 +107,16 @@ val snapshot_coverage : Run.t -> Windtrap_coverage.t
     instrumented code registered any data, the summary is recorded into [run]
     ({!Run.set_coverage}) for renderers to project like any other run data.
     Returns the collection for {!coverage_report}. The entire Law-12 coupling of
-    the core library lives here and in the renderers. *)
+    the core library lives here and in the renderers.
+
+    The recorded summary carries the sibling fact ({!Run.summary.siblings}):
+    whether other executables' [.coverage] dumps sit beside this process's dump
+    destination, read here — at snapshot time, the run's one filesystem look —
+    so renderers stay projections. Best-effort by design: on a cold parallel
+    first run a sibling's dump may not exist yet (dumps are written atomically
+    at exit, after this snapshot), so the fact can be absent once; it is
+    deterministic from the second run on, and a spurious sibling (an orphaned
+    dump) only makes the resulting hint advisory, never wrong. *)
 
 val coverage_summary :
   coverage_mode:[ `Summary | `Report | `Full | `Off ] ->

@@ -87,7 +87,7 @@ type result = {
   srandom_root : Seed.seed option;
 }
 
-type summary = { visited : int; total : int }
+type summary = { visited : int; total : int; siblings : bool }
 
 type t = {
   config : config;

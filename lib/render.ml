@@ -1263,29 +1263,6 @@ let coverage_line t ?(note = "") ?hint (s : Windtrap_coverage.summary) =
     (spf "coverage: %s (%d/%d points%s)%s" (pct_styled t s) s.visited s.total
        note hint)
 
-(* Sibling detection (aggregation design, E6): other executables'
-   .coverage files beside this process's own dump destination mean the
-   inline number is one executable's view of the code it links, and the
-   project number is the merge — the line says so instead of posing as
-   the total. Best-effort by design: on a cold parallel first run a
-   sibling's dump may not exist yet (dumps are written atomically at
-   exit, after this renders), so the hint can be absent once; it is
-   deterministic from the second run on, and a spurious sibling (an
-   orphaned dump) only makes the hint advisory, never wrong. *)
-let coverage_has_siblings () =
-  match Windtrap_coverage.dump_destination () with
-  | None -> false
-  | Some path -> (
-      let dir = Filename.dirname path in
-      match Sys.readdir dir with
-      | exception Sys_error _ -> false
-      | entries ->
-          Array.exists
-            (fun entry ->
-              Filename.check_suffix entry ".coverage"
-              && Filename.concat dir entry <> path)
-            entries)
-
 (* One source-excerpt block: file heading, then each uncovered region with
    a gutter marker on the uncovered lines and [·····] between regions. *)
 let coverage_excerpts t (r : Windtrap_coverage.file_report) =
@@ -1419,10 +1396,14 @@ let finish t ?coverage ~results ~duration () =
     (* Diagnosis, not signal: the slowest list is verbose-only. *)
     if t.mode = `Verbose then slowest t results
   end;
+  (* The sibling fact rides the summary record (the driver read it at
+     snapshot time, aggregation design E6): siblings mean this number is
+     one executable's view of the code it links, and the project number
+     is the merge — the line says so instead of posing as the total. *)
   (match coverage with
-  | Some { Run.visited; total } when t.mode <> `Quiet ->
+  | Some { Run.visited; total; siblings } when t.mode <> `Quiet ->
       let s = { Windtrap_coverage.visited; total } in
-      if coverage_has_siblings () then
+      if siblings then
         coverage_line t ~note:"this executable"
           ~hint:"project: dune build @cover" s
       else coverage_line t ~hint:"WINDTRAP_COVERAGE=report for detail" s

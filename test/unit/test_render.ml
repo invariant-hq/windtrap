@@ -183,7 +183,7 @@ let expected_coverage_line =
 let expected_end = expected_failures ^ expected_slow_warnings ^ expected_summary
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
-let golden_coverage = { Run.visited = 312; total = 358 }
+let golden_coverage = { Run.visited = 312; total = 358; siblings = false }
 
 let test_golden_compact () =
   let actual =
@@ -207,6 +207,26 @@ let test_golden_verbose () =
      ^ expected_slowest ^ expected_coverage_line)
     ~actual;
   check_absent "plain transcript has no escape codes" ~sub:"\027" actual
+
+let test_coverage_line_siblings () =
+  (* The sibling fact is payload, not filesystem (the driver reads it at
+     snapshot time): a summary recording siblings scopes the line to this
+     executable and points at the aggregate instead of the report hint. *)
+  let t =
+    with_renderer (fun r ->
+        Render.finish r
+          ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
+          ~duration:0.1
+          ~coverage:{ golden_coverage with Run.siblings = true }
+          ())
+  in
+  check_contains "sibling summary scopes the line and names the aggregate"
+    ~sub:
+      "coverage: 87.2% (312/358 points, this executable) · project: dune build \
+       @cover\n"
+    t;
+  check_absent "the scoped line drops the report hint"
+    ~sub:"WINDTRAP_COVERAGE=report" t
 
 let test_quiet () =
   let t = transcript ~mode:`Quiet () in
@@ -1981,6 +2001,7 @@ let tests =
   [
     test "golden compact transcript (default)" test_golden_compact;
     test "golden verbose transcript (-v)" test_golden_verbose;
+    test "coverage line scopes itself on siblings" test_coverage_line_siblings;
     test "quiet mode (-q)" test_quiet;
     test "quiet green run is one line" test_quiet_green_run;
     test "ansi styling and diff highlighting" test_ansi;

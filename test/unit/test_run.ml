@@ -762,11 +762,12 @@ let () =
 let () =
   let run = make_run () in
   check "no coverage snapshot by default" (Run.coverage run = None);
-  Run.set_coverage run { Run.visited = 312; total = 358 };
+  Run.set_coverage run { Run.visited = 312; total = 358; siblings = true };
   match Run.coverage run with
   | Some summary ->
       check "the coverage snapshot is exposed to renderers"
-        (summary.Run.visited = 312 && summary.Run.total = 358)
+        (summary.Run.visited = 312 && summary.Run.total = 358
+       && summary.Run.siblings)
   | None -> check "coverage snapshot recorded" false
 
 (* ───── Summary ───── *)

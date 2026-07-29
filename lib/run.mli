@@ -398,6 +398,13 @@ val results : t -> result list
 type summary = {
   visited : int;  (** Instrumented blocks visited at least once. *)
   total : int;  (** Instrumented blocks in every registered file. *)
+  siblings : bool;
+      (** Whether other executables' [.coverage] dumps sit beside this process's
+          dump destination at snapshot time: the numbers are then one
+          executable's view of the code it links, not the project total, and
+          renderers say so. The driver computes the fact when it snapshots
+          coverage — a renderer projects the record and touches no filesystem.
+      *)
 }
 (** The type for end-of-run coverage summaries. *)
 

@@ -25,8 +25,6 @@ let am_test_runner = ref false
 let current_lib = ref None
 let partition = ref None
 let list_partitions_only = ref false
-let source_tree_root = ref None
-let diff_cmd = ref None
 
 let init argv =
   if !initialized then ()
@@ -44,13 +42,10 @@ let init argv =
       | "-list-partitions" :: rest ->
           list_partitions_only := true;
           parse rest
-      | "-source-tree-root" :: root :: rest ->
-          (* Kept relative: when running sandboxed the path must escape the
-             sandbox exactly as dune wrote it. *)
-          source_tree_root := Some root;
-          parse rest
-      | "-diff-cmd" :: cmd :: rest ->
-          diff_cmd := Some cmd;
+      | ("-source-tree-root" | "-diff-cmd") :: _value :: rest ->
+          (* Protocol arguments windtrap does not use: the value is consumed
+             (it may itself look like a flag — dune passes [-diff-cmd -])
+             and ignored. *)
           parse rest
       | _ :: rest -> parse rest
     in
@@ -902,7 +897,9 @@ let is_fatal = function
 (* Trailing output, resolved like a node against the merged history: an
    instance with no trailing output is a passing reach, so a functor whose
    instances disagree produces ppx_expect's "different trailing outputs"
-   CR block instead of the last instance silently winning. *)
+   CR block instead of the last instance silently winning. Returns [true]
+   iff a trailing correction was recorded (unmatched output exists on some
+   reach). *)
 let resolve_trailing ctx ~raw =
   let insert_column = column ctx.ctx_body_loc + 2 in
   let formatted =
@@ -925,7 +922,7 @@ let resolve_trailing ctx ~raw =
       ~trailing_loc:ctx.ctx_trailing_loc ~contents
   in
   match (distinct_fails reaches, any_pass) with
-  | [], _ -> None
+  | [], _ -> false
   | [ { formatted; shown } ], false ->
       record formatted;
       (match result with
@@ -936,7 +933,7 @@ let resolve_trailing ctx ~raw =
                ~msg:"trailing output not matched by [%expect]" ~expected:""
                ~actual:shown ())
       | Pass -> ());
-      Some true
+      true
   | _ ->
       let cr =
         cr_for_multiple_outputs ~output_name:"trailing output"
@@ -949,7 +946,7 @@ let resolve_trailing ctx ~raw =
            ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
            ~msg:"trailing output not matched by [%expect]" ~expected:""
            ~actual:cr ());
-      Some true
+      true
 
 let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
     =
@@ -978,14 +975,14 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
       | () ->
           (* Trailing output not matched by any node becomes an inserted
              node; then per-node reachability (mechanism (d)). *)
-          let trailing_covered =
+          let trailing_problem =
             let raw =
               consume_output ctx ~pos:(pos_of ~file ctx.ctx_trailing_loc)
             in
             resolve_trailing ctx ~raw
           in
           let nodes_covered = resolve_nodes ctx ~check_reachability:true in
-          if trailing_covered = None && not (had_problems ctx) then
+          if (not trailing_problem) && not (had_problems ctx) then
             record_covered `No_problem
           else if nodes_covered then record_covered `Covered
           else record_covered `Not_covered
@@ -1090,8 +1087,6 @@ let reset () =
   current_lib := None;
   partition := None;
   list_partitions_only := false;
-  source_tree_root := None;
-  diff_cmd := None;
   group_stack := [];
   top_level := [];
   Hashtbl.reset top_names;
