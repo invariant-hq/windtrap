@@ -221,7 +221,7 @@ let inner_failure = function
   | Exception (exn, backtrace) ->
       Failure.raised ~actual:(Printexc.to_string exn) ?backtrace ()
 
-let run ?loc ?(count = default_count) ?max_discard
+let run ?loc ?(count = default_count) ?config_count ?max_discard
     ?(max_shrink = default_max_shrink) ?(examples = []) ~root ~path gen body =
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
   if max_shrink < 0 then
@@ -242,8 +242,9 @@ let run ?loc ?(count = default_count) ?max_discard
   let stats () = stats_of ~cases:!cases ~discards:!discards ctx in
   let fail ~rendered ~case_index ~shrink_steps ?timed_out ~examples cls =
     let failure =
-      Failure.property ?loc ~inner:(inner_failure cls) ?timed_out ~rendered
-        ~case_index ~shrink_steps ~root ~examples ()
+      Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
+        ?count:config_count ~rendered ~case_index ~shrink_steps ~root ~examples
+        ()
     in
     Fail { failure; stats = stats () }
   in

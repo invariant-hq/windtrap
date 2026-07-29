@@ -59,16 +59,25 @@ let accept_line = function
   | `Mirrors ->
       "accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff"
 
-let replay_line invocation ~seed ~filter =
+(* [count] is a property failure's config-sourced case count
+   (Failure.kind.Property): the hint restates it — [--prop-count]/
+   [WINDTRAP_PROP_COUNT] — because replaying a late case needs at least as
+   many cases as the failing run generated; a declaration-site count needs
+   no flag and never reaches here. *)
+let replay_line ?count invocation ~seed ~filter =
   let token = Seed.to_string seed in
+  let flag = function Some n -> spf " --prop-count %d" n | None -> "" in
+  let env = function Some n -> spf " WINDTRAP_PROP_COUNT=%d" n | None -> "" in
   match (invocation, filter) with
   | `Exe cmd, Some flt ->
-      spf "replay: %s --seed %s -f %s" cmd token (shell_quote flt)
-  | `Exe cmd, None -> spf "replay: %s --seed %s" cmd token
-  | `Mirrors, Some flt ->
-      spf "replay: WINDTRAP_SEED=%s WINDTRAP_FILTER=%s dune runtest" token
+      spf "replay: %s --seed %s%s -f %s" cmd token (flag count)
         (shell_quote flt)
-  | `Mirrors, None -> spf "replay: WINDTRAP_SEED=%s dune runtest" token
+  | `Exe cmd, None -> spf "replay: %s --seed %s%s" cmd token (flag count)
+  | `Mirrors, Some flt ->
+      spf "replay: WINDTRAP_SEED=%s%s WINDTRAP_FILTER=%s dune runtest" token
+        (env count) (shell_quote flt)
+  | `Mirrors, None ->
+      spf "replay: WINDTRAP_SEED=%s%s dune runtest" token (env count)
 
 let pp_duration secs =
   if secs >= 60. then
@@ -652,8 +661,16 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             (spf "snapshot %S: duplicate name \u{2014} first checked by \"%s\""
                name (sanitize_name first_test)))
   | Failure.Property
-      { rendered; case_index; shrink_steps; timed_out; root; examples; inner }
-    ->
+      {
+        rendered;
+        case_index;
+        shrink_steps;
+        timed_out;
+        root;
+        count;
+        examples;
+        inner;
+      } ->
       let desc =
         if examples then spf "example %d" (case_index + 1)
         else if shrink_steps = 0 then spf "case %d" case_index
@@ -688,7 +705,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             ~ind:(ind ^ "  ") ppf i
       | None -> ());
       if commands && not examples then
-        put_ind (replay_line invocation ~seed:root ~filter)
+        put_ind (replay_line ?count invocation ~seed:root ~filter)
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m -> List.iter (fun line -> put_ind line) (split_lines m)
 

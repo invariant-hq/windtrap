@@ -161,6 +161,7 @@ type kind =
       shrink_steps : int;
       timed_out : float option;
       root : Seed.seed;
+      count : int option;
       examples : bool;
       inner : t option;
     }
@@ -172,10 +173,15 @@ type kind =
           every other path: a timeout before any case has failed times out the
           whole test instead, so [timed_out] is never set when [examples] is
           [true]. [root] is the run's root seed — renderers derive the replay
-          line from it (RFC Law 3); [examples] is [true] when the case came from
-          the explicit examples list (such cases are never seeded or shrunk);
-          [inner] is the assertion failure raised by the property body at the
-          shrunk counterexample, when it was a {!Check_failure}. *)
+          line from it (RFC Law 3); [count] is the effective case count when run
+          configuration ([--prop-count] / [WINDTRAP_PROP_COUNT]) supplied it,
+          and [None] when the declaration site fixed the count or the engine
+          default applied — renderers restate it in the replay line exactly when
+          present, because replaying a late case needs at least as many cases as
+          the failing run generated; [examples] is [true] when the case came
+          from the explicit examples list (such cases are never seeded or
+          shrunk); [inner] is the assertion failure raised by the property body
+          at the shrunk counterexample, when it was a {!Check_failure}. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
 
 and t = {
@@ -283,6 +289,7 @@ val property :
   ?loc:Loc.t ->
   ?inner:t ->
   ?timed_out:float ->
+  ?count:int ->
   rendered:string ->
   case_index:int ->
   shrink_steps:int ->
@@ -291,8 +298,8 @@ val property :
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
-    {!Property} failure; see {!kind} for the payload semantics. [timed_out]
-    defaults to [None]. *)
+    {!Property} failure; see {!kind} for the payload semantics. [timed_out] and
+    [count] default to [None]. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)

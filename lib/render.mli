@@ -411,7 +411,12 @@ val pp_failure :
       seed (RFC Law 7), spelled from the invocation:
       [replay: <exe> --seed <root token> -f '<filter>'] under [`Exe],
       [replay: WINDTRAP_SEED=<root token> WINDTRAP_FILTER='<filter>' dune
-       runtest] under [`Mirrors];
+       runtest] under [`Mirrors]. A config-sourced case count riding the payload
+      ({!Failure.kind.Property}'s [count]) is restated in the line —
+      [--prop-count <n>] under [`Exe], [WINDTRAP_PROP_COUNT=<n>] under
+      [`Mirrors] — because replaying a late case needs at least as many cases as
+      the failing run generated; a declaration-site count replays without any
+      flag;
     - message: the text ([(empty failure message)] when it is empty).
 
     Every line is indented four spaces and the output ends with a newline. The

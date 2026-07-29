@@ -835,6 +835,23 @@ let test_property_projections () =
   let quoted = failure_block ~filter:"it's › tricky" Fixtures.prop_failure in
   check_contains "replay filter is shell-quoted"
     ~sub:{|WINDTRAP_FILTER='it'\''s › tricky'|} quoted;
+  (* A config-sourced count rides the payload and the replay line restates
+     it — replaying a late case needs at least as many cases as the failing
+     run. A payload without a count (the declaration-site form) is pinned
+     flagless just above. *)
+  let counted =
+    Failure.property ~count:1000 ~rendered:"0" ~case_index:499 ~shrink_steps:1
+      ~root:Fixtures.root ~examples:false ()
+  in
+  check_contains "config-sourced count: Mirrors replay restates the mirror"
+    ~sub:
+      "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_PROP_COUNT=1000 dune \
+       runtest"
+    (failure_block counted);
+  check_contains "config-sourced count: Exe replay restates --prop-count"
+    ~sub:
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 -f 'late'"
+    (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" counted);
   let multi =
     failure_block
       (Failure.property ~rendered:"Rect\n  (2, 0)" ~case_index:3 ~shrink_steps:0

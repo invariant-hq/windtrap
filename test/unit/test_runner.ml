@@ -1361,6 +1361,8 @@ let () =
     [
       Runner.prop "counted" Gen.int (fun _ -> ());
       Runner.prop ~count:2 "declared" Gen.int (fun _ -> ());
+      Runner.prop "counted-fails" Gen.int (fun _ -> Check.fail "no");
+      Runner.prop ~count:2 "declared-fails" Gen.int (fun _ -> Check.fail "no");
     ]
   in
   expect_run "prop-count suite runs" ~config tests @@ fun outcome ->
@@ -1369,11 +1371,58 @@ let () =
       check_int "--prop-count applies when undeclared" ~expected:5
         ~actual:stats.Property.cases
   | _ -> check "counted recorded" false);
-  match result_of outcome [ "declared" ] with
+  (match result_of outcome [ "declared" ] with
   | Some { Run.prop_stats = Some stats; _ } ->
       check_int "a declared ~count beats --prop-count" ~expected:2
         ~actual:stats.Property.cases
-  | _ -> check "declared recorded" false
+  | _ -> check "declared recorded" false);
+  (match failure_list (outcome_of outcome [ "counted-fails" ]) with
+  | [ { Failure.kind = Failure.Property { count; _ }; _ } ] ->
+      check "a config-sourced count rides the failure payload" (count = Some 5)
+  | _ -> check "counted-fails yields a Property failure" false);
+  match failure_list (outcome_of outcome [ "declared-fails" ]) with
+  | [ { Failure.kind = Failure.Property { count; _ }; _ } ] ->
+      check "a declared ~count never rides the payload (it replays by itself)"
+        (count = None)
+  | _ -> check "declared-fails yields a Property failure" false
+
+(* The replay-hint contract behind the payload count: a case beyond the
+   default count is reachable on replay only when the failing run's
+   config-sourced count is restated. The body fails on its 500th call, so
+   under [--prop-count 1000] the failure lands at case 499; replaying the
+   root with the payload count reproduces it, while the same root under
+   the default count never reaches the case — the pre-payload hint's lie. *)
+let () =
+  with_temp_root @@ fun root ->
+  let calls = ref 0 in
+  let tests =
+    [
+      Runner.prop "late" Gen.int (fun _ ->
+          incr calls;
+          if !calls >= 500 then Check.fail "late failure");
+    ]
+  in
+  let run_with name ~prop_count f =
+    calls := 0;
+    let config = { (base_config ~log_dir:root ()) with Run.prop_count } in
+    expect_run name ~config tests f
+  in
+  run_with "late-failure run" ~prop_count:(Some 1000) @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "late" ]) with
+  | [ { Failure.kind = Failure.Property { case_index; count; root; _ }; _ } ] ->
+      check "the late case fails beyond the default count"
+        (case_index = 499 && count = Some 1000 && root = 0x5eedL)
+  | _ -> check "late yields a Property failure" false);
+  run_with "replay with the payload count" ~prop_count:(Some 1000)
+  @@ fun replay ->
+  (match failure_list (outcome_of replay [ "late" ]) with
+  | [ { Failure.kind = Failure.Property { case_index; _ }; _ } ] ->
+      check "seed plus payload count reproduces the failing case"
+        (case_index = 499)
+  | _ -> check "replay with the count reproduces a Property failure" false);
+  run_with "replay without the count" ~prop_count:None @@ fun no_count ->
+  check "the same seed under the default count never reaches the case"
+    (outcome_of no_count [ "late" ] = Some Failure.Pass)
 
 let () =
   with_temp_root @@ fun root ->

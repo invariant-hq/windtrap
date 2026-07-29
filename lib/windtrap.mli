@@ -453,7 +453,9 @@ val prop :
     value of [gen].
 
     - [count] is the generated-case count; the declaration site wins over
-      [--prop-count], which wins over the default of [100].
+      [--prop-count], which wins over the default of [100]. A failure under a
+      [--prop-count]-supplied count restates it in the replay hint — replaying a
+      late case needs at least as many cases as the failing run.
     - [examples] are explicit inputs run before any generation, unshrunk (they
       are already the reviewed minimal form) — the home for regressions worth
       keeping forever: [prop ~examples:[ Rect (2., 0.) ] ...].

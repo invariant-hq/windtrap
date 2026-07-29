@@ -48,14 +48,19 @@ let prop ?pos ?tags ?count ?examples name gen law =
   let body () =
     let frame = Run.current_frame () in
     let config = Run.config (Run.run_of_frame frame) in
-    (* Case count: declaration site > --prop-count > engine default. *)
-    let count =
-      match count with Some _ -> count | None -> config.Run.prop_count
+    (* Case count: declaration site > --prop-count > engine default. A
+       config-sourced count also rides failure payloads ([config_count]) so
+       the replay hint can restate the flag — a declaration-site count
+       replays by itself. *)
+    let count, config_count =
+      match count with
+      | Some _ -> (count, None)
+      | None -> (config.Run.prop_count, config.Run.prop_count)
     in
     let path = Test_tree.path_to_string (Run.path frame) in
     let outcome =
-      Property.run ?loc ?count ?examples ~root:config.Run.seed ~path gen
-        (fun context value ->
+      Property.run ?loc ?count ?config_count ?examples ~root:config.Run.seed
+        ~path gen (fun context value ->
           Run.with_prop_context frame context (fun () -> law value))
     in
     raise (Prop_outcome outcome)
