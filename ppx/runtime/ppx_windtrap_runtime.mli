@@ -11,4 +11,4 @@
     alias, so the spelling of windtrap's internal module layout stays out of
     generated code. Not for direct use. *)
 
-module Ppx_runtime = Windtrap__Ppx_runtime
+module Ppx_runtime = Windtrap.Private.Ppx_runtime

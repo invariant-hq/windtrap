@@ -3,4 +3,4 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-module Ppx_runtime = Windtrap__Ppx_runtime
+module Ppx_runtime = Windtrap.Private.Ppx_runtime

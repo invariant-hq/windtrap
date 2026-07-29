@@ -23,8 +23,6 @@
 
 open Windtrap.Private
 open Harness
-module Ppx_runtime = Windtrap__Ppx_runtime
-module Expect_test_config = Windtrap__Expect_test_config
 
 let () = init "ppx_runtime"
 

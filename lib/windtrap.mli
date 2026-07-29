@@ -674,10 +674,12 @@ module Private : sig
   module Diff = Diff
   module Driver = Driver
   module Env = Env
+  module Expect_test_config = Expect_test_config
   module Failure = Failure
   module Loc = Loc
   module Path_ops = Path_ops
   module Pp = Pp
+  module Ppx_runtime = Ppx_runtime
   module Property = Property
   module Render = Render
   module Render_github = Render_github

@@ -9,4 +9,4 @@
     of the same name shadows this one and why monadic (Async-style) configs fail
     to compile. *)
 
-include module type of Windtrap__Expect_test_config
+include module type of Windtrap.Private.Expect_test_config

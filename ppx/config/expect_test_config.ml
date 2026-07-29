@@ -3,4 +3,4 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-include Windtrap__Expect_test_config
+include Windtrap.Private.Expect_test_config

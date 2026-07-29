@@ -1,8 +1,3 @@
-; The stable module path generated code uses to reach Ppx_runtime.
-; Windtrap's facade is sealed; until the orchestrator re-exports
-; Ppx_runtime through Windtrap.Private, the alias below is the one
-; place that spells the mangled library-internal name.
-
 (library
  (name ppx_windtrap_runtime)
  (public_name ppx_windtrap.runtime)
