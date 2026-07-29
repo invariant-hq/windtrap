@@ -41,13 +41,9 @@ let noise_threshold = 4. /. 5.
 
 (* ───── Line splitting and common-outer stripping ───── *)
 
-(* "a\nb\n" and "a\nb" both split to [|"a"; "b"|]: a single trailing newline
-   is not significant (documented in the .mli). *)
-let split_lines s =
-  let parts = String.split_on_char '\n' s in
-  match List.rev parts with
-  | "" :: rev_rest -> Array.of_list (List.rev rev_rest)
-  | _ -> Array.of_list parts
+(* Text.split_lines owns the rule: a single trailing newline is not
+   significant (documented in the .mli). *)
+let split_lines s = Array.of_list (Text.split_lines s)
 
 let common_prefix_len a b =
   let n = min (Array.length a) (Array.length b) in

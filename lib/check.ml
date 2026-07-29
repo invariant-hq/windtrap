@@ -60,22 +60,6 @@ let is_false ?pos ?msg b =
 
 (* ───── String containment ───── *)
 
-(* Byte offset of the first occurrence of [needle] in [haystack]. The empty
-   needle occurs at [0], matching Text.contains_substring's rule. Naive scan:
-   needles are assertion-sized. *)
-let first_occurrence ~needle haystack =
-  let n = String.length needle and len = String.length haystack in
-  if n = 0 then Some 0
-  else
-    let matches_at i =
-      let rec go j = j = n || (haystack.[i + j] = needle.[j] && go (j + 1)) in
-      go 0
-    in
-    let rec scan i =
-      if i + n > len then None else if matches_at i then Some i else scan (i + 1)
-    in
-    scan 0
-
 let fail_containment ?pos ?msg ?found_at ~expected ~needle ~haystack () =
   raise
     (Failure.Check_failure
@@ -83,7 +67,7 @@ let fail_containment ?pos ?msg ?found_at ~expected ~needle ~haystack () =
           ~needle ~haystack ()))
 
 let contains ?pos ?msg ~sub haystack =
-  match first_occurrence ~needle:sub haystack with
+  match Text.first_occurrence ~pattern:sub haystack with
   | Some _ -> ()
   | None ->
       fail_containment ?pos ?msg
@@ -91,7 +75,7 @@ let contains ?pos ?msg ~sub haystack =
         ~needle:sub ~haystack ()
 
 let not_contains ?pos ?msg ~sub haystack =
-  match first_occurrence ~needle:sub haystack with
+  match Text.first_occurrence ~pattern:sub haystack with
   | None -> ()
   | Some found_at ->
       fail_containment ?pos ?msg ~found_at

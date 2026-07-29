@@ -30,12 +30,6 @@ let rec take n = function
   | _ when n <= 0 -> []
   | x :: rest -> x :: take (n - 1) rest
 
-(* Lines of [s], one per LF; a single trailing newline is not a line. *)
-let split_lines s =
-  match List.rev (String.split_on_char '\n' s) with
-  | "" :: rest -> List.rev rest
-  | parts -> List.rev parts
-
 let dashes n = String.concat "" (List.init (max 0 n) (fun _ -> "\u{2500}"))
 
 (* The one description of a failing property case — "example N" / "case N"
@@ -416,7 +410,7 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
        it after a label would break the four-space indentation. *)
     if String.contains expected '\n' then begin
       put (ind ^ st `Faint "both render as:");
-      List.iter (fun l -> put (ind ^ "  " ^ l)) (split_lines expected)
+      List.iter (fun l -> put (ind ^ "  " ^ l)) (Text.split_lines expected)
     end
     else begin
       put (ind ^ st `Faint "expected" ^ "  " ^ expected);
@@ -446,7 +440,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   in
   let put_ind line = put (ind ^ line) in
   let put_block s =
-    List.iter (fun line -> put_ind ("  " ^ line)) (split_lines s)
+    List.iter (fun line -> put_ind ("  " ^ line)) (Text.split_lines s)
   in
   (* Phase and location header. *)
   let phase =
@@ -521,7 +515,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
          (* Block form (the [both sides equal:] precedent): no unified diff,
             no markers; under [ansi] the occurrence highlights on its line. *)
          put_ind (st `Faint "haystack:");
-         let lines = split_lines excerpt_text in
+         let lines = Text.split_lines excerpt_text in
          let offsets =
            (* Byte offset of each line's first byte within the excerpt. *)
            let rec go acc off = function
@@ -623,14 +617,15 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
           put_block a
       | None, None -> put_ind "expected an exception, but none was raised");
       match backtrace with
-      | Some bt -> List.iter (fun l -> put_ind (st `Faint l)) (split_lines bt)
+      | Some bt ->
+          List.iter (fun l -> put_ind (st `Faint l)) (Text.split_lines bt)
       | None -> ())
   | Failure.Snapshot { name; path; state } -> (
       let accept () = if commands then put_ind (accept_line invocation) in
       match state with
       | Failure.Missing { proposed } ->
           put_ind (spf "snapshot %S: no baseline at %s" name path);
-          let lines = split_lines proposed in
+          let lines = Text.split_lines proposed in
           let n = List.length lines in
           put_ind (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
           List.iter
@@ -707,7 +702,8 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       if commands && not examples then
         put_ind (replay_line ?count invocation ~seed:root ~filter)
   | Failure.Message "" -> put_ind "(empty failure message)"
-  | Failure.Message m -> List.iter (fun line -> put_ind line) (split_lines m)
+  | Failure.Message m ->
+      List.iter (fun line -> put_ind line) (Text.split_lines m)
 
 let pp_failure ~ansi ?(excerpt = false) ?filter ?(invocation = `Mirrors) ppf f =
   pp_gen ~ansi ~excerpt ~filter ~commands:true ~invocation ~ind:indent ppf f
@@ -1070,7 +1066,7 @@ let labeled_rule t label =
 
 let pp_tail t (tail : Failure.tail) =
   if not (tail.text = "" && tail.omitted_bytes = 0) then begin
-    let lines = split_lines tail.text in
+    let lines = Text.split_lines tail.text in
     let total = List.length lines in
     let shown_count = min t.tail_lines total in
     let shown = List.filteri (fun i _ -> i >= total - shown_count) lines in

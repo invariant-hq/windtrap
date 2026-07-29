@@ -27,6 +27,17 @@ let tests =
           (Text.ensure_trailing_newline "a\n");
         equal ~msg:"empty becomes newline" string "\n"
           (Text.ensure_trailing_newline ""));
+    test "split_lines: a single trailing newline is not a line" (fun () ->
+        equal ~msg:"trailing newline dropped" (list string) [ "a"; "b" ]
+          (Text.split_lines "a\nb\n");
+        equal ~msg:"no trailing newline" (list string) [ "a"; "b" ]
+          (Text.split_lines "a\nb");
+        equal ~msg:"only one trailing empty line is dropped" (list string)
+          [ "a"; "" ] (Text.split_lines "a\n\n");
+        equal ~msg:"interior empty lines kept" (list string) [ "a"; ""; "b" ]
+          (Text.split_lines "a\n\nb");
+        equal ~msg:"empty string has no lines" (list string) []
+          (Text.split_lines ""));
     test "length_utf8 counts characters, not bytes" (fun () ->
         equal ~msg:"ascii length" int 5 (Text.length_utf8 "hello");
         equal ~msg:"two-byte chars" int 5 (Text.length_utf8 "héllo");
@@ -66,6 +77,19 @@ let tests =
         is_true ~msg:"truncated prefix ends on a char boundary"
           (let out = Text.truncate_bytes_utf8 5 "ééééé" in
            String.length out > 0 && Char.code out.[0] land 0xC0 <> 0x80));
+    test "first_occurrence returns the byte offset" (fun () ->
+        equal ~msg:"match in the middle" (option int) (Some 1)
+          (Text.first_occurrence ~pattern:"ell" "hello");
+        equal ~msg:"match at the start" (option int) (Some 0)
+          (Text.first_occurrence ~pattern:"he" "hello");
+        equal ~msg:"first of several occurrences" (option int) (Some 1)
+          (Text.first_occurrence ~pattern:"a" "banana");
+        equal ~msg:"empty pattern occurs at zero" (option int) (Some 0)
+          (Text.first_occurrence ~pattern:"" "hello");
+        equal ~msg:"absent pattern" (option int) None
+          (Text.first_occurrence ~pattern:"z" "hello");
+        equal ~msg:"pattern longer than the string" (option int) None
+          (Text.first_occurrence ~pattern:"hello!" "hello"));
     test "contains_substring" (fun () ->
         is_true ~msg:"finds substring in middle"
           (Text.contains_substring ~pattern:"ell" "hello");

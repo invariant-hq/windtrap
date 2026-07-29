@@ -30,6 +30,13 @@ let ensure_trailing_newline s =
   else if s.[String.length s - 1] = '\n' then s
   else s ^ "\n"
 
+(* "a\nb\n" and "a\nb" both split to ["a"; "b"]: a single trailing newline
+   terminates the last line instead of opening an empty one. *)
+let split_lines s =
+  match List.rev (String.split_on_char '\n' s) with
+  | "" :: rest -> List.rev rest
+  | parts -> List.rev parts
+
 (* ───── UTF-8-aware operations ───── *)
 
 let length_utf8 s =
@@ -78,28 +85,21 @@ let truncate_bytes_utf8 max_bytes s =
 
 (* ───── Search ───── *)
 
-(* Local exceptions with raise_notrace give early exit from the nested
-   loops without the cost of capturing a backtrace. *)
-let contains_substring ~pattern s =
-  let plen = String.length pattern in
-  let slen = String.length s in
-  if plen = 0 then true
-  else if plen > slen then false
-  else begin
-    let exception Found in
-    let exception Mismatch in
-    try
-      for i = 0 to slen - plen do
-        try
-          for j = 0 to plen - 1 do
-            if s.[i + j] <> pattern.[j] then raise_notrace Mismatch
-          done;
-          raise_notrace Found
-        with Mismatch -> ()
-      done;
-      false
-    with Found -> true
-  end
+(* Naive scan: patterns are assertion- and filter-sized. *)
+let first_occurrence ~pattern s =
+  let n = String.length pattern and len = String.length s in
+  if n = 0 then Some 0
+  else
+    let matches_at i =
+      let rec go j = j = n || (s.[i + j] = pattern.[j] && go (j + 1)) in
+      go 0
+    in
+    let rec scan i =
+      if i + n > len then None else if matches_at i then Some i else scan (i + 1)
+    in
+    scan 0
+
+let contains_substring ~pattern s = first_occurrence ~pattern s <> None
 
 (* ───── ANSI escapes ───── *)
 

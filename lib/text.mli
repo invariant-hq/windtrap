@@ -20,6 +20,12 @@ val ensure_trailing_newline : string -> string
 (** [ensure_trailing_newline s] is [s] with a final ["\n"] appended when [s]
     does not already end in one. [ensure_trailing_newline ""] is ["\n"]. *)
 
+val split_lines : string -> string list
+(** [split_lines s] is the lines of [s], split on LF. A single trailing newline
+    terminates the last line rather than opening an empty one, so ["a\nb\n"] and
+    ["a\nb"] are both [["a"; "b"]]; every other empty line is kept.
+    [split_lines ""] is [[]]. *)
+
 (** {1:utf8 UTF-8-aware operations} *)
 
 val length_utf8 : string -> int
@@ -43,9 +49,15 @@ val truncate_bytes_utf8 : int -> string -> string
 
 (** {1:search Search} *)
 
+val first_occurrence : pattern:string -> string -> int option
+(** [first_occurrence ~pattern s] is the byte offset of the first occurrence of
+    [pattern] in [s] as a byte substring, and [None] when [pattern] does not
+    occur. An empty [pattern] occurs at [0]. *)
+
 val contains_substring : pattern:string -> string -> bool
 (** [contains_substring ~pattern s] is [true] iff [s] contains [pattern] as a
-    byte substring. An empty [pattern] always matches. *)
+    byte substring, i.e. iff {!first_occurrence} finds an occurrence. An empty
+    [pattern] always matches. *)
 
 (** {1:ansi ANSI escapes} *)
 
