@@ -35,12 +35,6 @@ let install_exit_guard () =
     at_exit exit_guard
   end
 
-(* Wall-clock timing, clamped so a stepped clock cannot produce negative
-   durations. The monotonic windtrap.clock sublibrary is the intended source
-   once lib/dune links it (orchestrator chokepoint). *)
-let now () = Unix.gettimeofday ()
-let elapsed since = Float.max 0. (now () -. since)
-
 (* ───── Property tests ───── *)
 
 (* The channel between a [prop] body and the classifier below: the body
@@ -325,11 +319,11 @@ let run_case ~on_event run (case : Test_tree.case) =
       Run.frame run ~path:case.Test_tree.path ~file:case.Test_tree.file
         ~loc:case.Test_tree.loc
     in
-    let start = now () in
+    let start = Clock.counter () in
     let outcome, prop_stats =
       run_attempt run frame case ~limit ~groups ~test_name
     in
-    let duration = spent +. elapsed start in
+    let duration = spent +. Clock.count_s start in
     let failed = counts_failed ~xfail:case.Test_tree.xfail outcome in
     if failed && number < total_attempts then attempt (number + 1) duration
     else
@@ -536,7 +530,7 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
   | Some (k, n) when k < 1 || n < k ->
       invalid_arg "windtrap: shard must be K/N with 1 <= K <= N"
   | Some _ | None -> ());
-  let started = now () in
+  let started = Clock.counter () in
   let cases = Test_tree.flatten tests in
   let total = List.length cases in
   let paths =
@@ -582,7 +576,7 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
                       release_failures = [];
                       orphans = [];
                       pruned = None;
-                      duration = elapsed started;
+                      duration = Clock.count_s started;
                       exit_code = 0;
                     }
                 else
@@ -719,6 +713,6 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
                       release_failures;
                       orphans;
                       pruned;
-                      duration = elapsed started;
+                      duration = Clock.count_s started;
                       exit_code;
                     }))

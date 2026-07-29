@@ -28,8 +28,8 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | everything below; links `unix` and `windtrap.coverage` (the Law-12 seam) only |
-| `windtrap.clock` | `lib/clock/` | monotonic clock C stubs; built but not yet linked — the runner still times with `Unix.gettimeofday` (see the note in `lib/runner.ml`) |
+| library `windtrap` | `lib/` | everything below; links `unix`, `windtrap.clock`, and `windtrap.coverage` (the Law-12 seam) only — both sublibraries are in-package, so Law 10's no-third-party-weight posture is untouched |
+| `windtrap.clock` | `lib/clock/` | monotonic clock C stubs; the runner's timing source for per-test durations and the run total |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
 | binary `windtrap` | `bin/` | the `coverage` reporting subcommand (`--min`, `--json`) |
 | package `ppx_windtrap` | `ppx/`, `ppx/coverage/` | the expect/inline PPX and the coverage instrumentation backend; the only unit that sees ppxlib |
