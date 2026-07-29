@@ -1,0 +1,56 @@
+; T2 named change (a): the inline (ppx) runner's coverage is live — the
+; summary line and the WINDTRAP_COVERAGE=report/full modes follow the
+; library runner's rules through the shared Driver seam. covlib is
+; instrumented unconditionally (pps, no --instrument-with needed) and its
+; [false] branch is never exercised, so the report has an uncovered
+; region to name; runner_main mirrors the inline_tests backend's
+; generated runner (the conformance corpus pattern). drive_inline_coverage
+; spawns it twice under a scrubbed environment — default mode, then
+; WINDTRAP_COVERAGE=report — with WINDTRAP_COVERAGE_FILE pointed at a
+; fresh scratch dump per run (nothing lands in the real _build/_coverage,
+; and sibling detection stays inert). Durations are masked; the committed
+; goldens pin the summary line and the report block byte-for-byte.
+
+(library
+ (name covlib)
+ (modules covlib)
+ (preprocess
+  (pps ppx_windtrap.coverage)))
+
+(executable
+ (name runner_main)
+ (modules runner_main inline_cov)
+ (libraries windtrap ppx_windtrap.runtime covlib)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name drive_inline_coverage)
+ (modules drive_inline_coverage)
+ (libraries unix))
+
+(rule
+ (targets run-summary-log run-summary-exit run-report-log run-report-exit)
+ (deps covlib.ml)
+ (action
+  (run ./drive_inline_coverage.exe run %{dep:runner_main.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff summary-log.expected run-summary-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff summary-exit.expected run-summary-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff report-log.expected run-report-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff report-exit.expected run-report-exit)))

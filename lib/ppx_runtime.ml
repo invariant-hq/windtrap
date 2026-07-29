@@ -1023,63 +1023,36 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc
 
 (* ───── The inline runner driver ───── *)
 
-let run_inline_suite ~suite ~config tests =
-  let inside_dune = Env.inside_dune () in
-  let tty = Env.is_tty_stdout () in
-  let ansi =
-    Env.resolve_color config.Run.color ~tty ~inside_dune
-      ~term_dumb:(Env.term_dumb ())
-  in
-  let github = Env.in_github_actions () in
-  (* One behavior, both runners (ppx/F-4): the renderer is wired exactly as
-     the library runner wires it — the WINDTRAP_QUIET/WINDTRAP_VERBOSE
-     mirrors pick the verbosity level (the inline protocol has no CLI, so
-     the mirrors are the CLI), WINDTRAP_SLOW_THRESHOLD tunes the slow
-     warnings, and tests tagged ["slow"] (their own tag or an ancestor's)
-     are exempt from the threshold. The live tail stays off under the
-     GitHub sink for the same reason as in the library runner: cursor
-     controls never land in the CI log. *)
+(* The thin inline driver: composed from Driver's shared producers — one
+   behavior, both runners (ppx/F-4). The inline protocol has no CLI, so the
+   WINDTRAP_* mirrors are the CLI: WINDTRAP_QUIET/WINDTRAP_VERBOSE pick the
+   verbosity level and WINDTRAP_COVERAGE the coverage mode (resolved in
+   [exit], beside the config). What is legitimately this runner's own stays
+   visible here: the [`Mirrors] hint context, the seedless header, and the
+   returned exit code that [exit] combines with the correction protocol. *)
+let run_inline_suite ~suite ~config ~coverage_mode tests =
   let output = Cli.output_level Cli.empty in
-  let renderer =
-    Render.create ~out:Format.std_formatter ~ansi ~mode:output
-      ~live:(tty && not github)
-      ?columns:(Option.map (Int.max 20) config.Run.columns)
-      ?tail_lines:(Option.map (Int.max 0) config.Run.tail_errors)
-      ~slow_threshold:config.Run.slow_threshold ()
-  in
-  let on_event = function
-    | Runner.Run_started { selected; _ } ->
-        Render.header renderer ~suite ~tests:selected ~seed:None
-    | Runner.Test_started { path } -> Render.begin_test renderer ~path
-    | Runner.Test_finished result -> Render.result renderer result
-    | Runner.Fixture_release { name } ->
-        Render.note renderer ("releasing " ^ name)
-  in
-  if github then print_string (Render_github.group_start suite);
+  let github = Env.in_github_actions () in
+  let renderer = Driver.renderer ~config ~mode:output ~invocation:`Mirrors () in
+  let on_event = Driver.observe renderer ~seed:None in
+  Driver.github_start ~github suite;
   match Runner.execute ~on_event ~config ~suite tests with
   | Error error ->
-      if github then print_string Render_github.group_end;
+      Driver.github_end ~github;
       prerr_endline (Runner.startup_message error);
       Runner.startup_exit_code error
   | Ok outcome ->
       let results = Run.results outcome.Runner.run in
+      let coverage_data = Driver.snapshot_coverage outcome.Runner.run in
       Render.finish renderer
-        ?coverage:(Run.coverage outcome.Runner.run)
+        ?coverage:(Driver.coverage_summary ~coverage_mode outcome.Runner.run)
         ~results ~duration:outcome.Runner.duration ();
-      (* [Path_ops.display] is the one producer of the [wrote] line's path
-         spelling, shared with the library runner (ppx/F-6). *)
-      if output <> `Quiet then
-        List.iter
-          (fun (path, status) ->
-            Format.printf "wrote %s (%s)@." (Path_ops.display path)
-              (match status with
-              | Snapshot.Created -> "new"
-              | Snapshot.Updated -> "updated"))
-          (Snapshot.writes (Run.snapshots outcome.Runner.run));
-      if github then begin
-        print_string Render_github.group_end;
-        print_string (Render_github.annotations results)
-      end;
+      Driver.coverage_report renderer ~coverage_mode outcome.Runner.run
+        coverage_data;
+      Driver.report_snapshots ~out:Format.std_formatter ~output
+        ~invocation:`Mirrors outcome;
+      Driver.github_end ~github;
+      Driver.github_annotations ~github ~invocation:`Mirrors results;
       Format.pp_print_flush Format.std_formatter ();
       Format.pp_print_flush Format.err_formatter ();
       ignore (flush_corrections () : string list);
@@ -1098,7 +1071,16 @@ let exit () =
   | Error error ->
       prerr_endline (Cli.error_message error);
       Stdlib.exit 2
-  | Ok config -> Stdlib.exit (run_inline_suite ~suite ~config tests)
+  | Ok config -> (
+      (* The WINDTRAP_COVERAGE mirror, resolved like the library runner
+         resolves it (minus the flag the inline protocol lacks): an invalid
+         value is a refusal, never silently ignored. *)
+      match Cli.coverage_mode Cli.empty with
+      | Error error ->
+          prerr_endline (Cli.error_message error);
+          Stdlib.exit 2
+      | Ok coverage_mode ->
+          Stdlib.exit (run_inline_suite ~suite ~config ~coverage_mode tests))
 
 (* ───── Test seams ───── *)
 

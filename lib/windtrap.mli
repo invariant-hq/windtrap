@@ -672,6 +672,7 @@ module Private : sig
   module Check = Check
   module Cli = Cli
   module Diff = Diff
+  module Driver = Driver
   module Env = Env
   module Failure = Failure
   module Loc = Loc

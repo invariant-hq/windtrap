@@ -34,8 +34,9 @@
   test_render
   test_render_junit
   test_render_github
-  test_cli)
- (libraries windtrap clock unix harness))
+  test_cli
+  test_driver)
+ (libraries windtrap windtrap_coverage clock unix harness))
 
 ; The meta suites drive the ambient slot and Runner.execute in-process
 ; with synthetic configs; execute refuses to nest inside an active run,

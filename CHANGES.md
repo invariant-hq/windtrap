@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 - Only document user-facing changes (features, bug fixes, performance improvements, API changes, etc.)
 - Add new entries at the top of the appropriate section (most recent first)
 
+## [Unreleased]
+
+### Fixed
+
+- The inline (ppx) runner's coverage is live: when the code under test is
+  instrumented, the run prints the same coverage summary line as the
+  library runner, and the `WINDTRAP_COVERAGE=report`/`full` mirrors print
+  the same per-file report — one behavior, both runners. An invalid
+  `WINDTRAP_COVERAGE` value is refused (exit 2) instead of silently
+  ignored, as on the library runner.
+- The inline (ppx) runner's baseline pruning (`WINDTRAP_PRUNE=1`) is no
+  longer silent: deleted baselines print `pruned <path>` lines, stale
+  baselines print `stale baseline:` lines with the removal hint, and a
+  refused prune explains its blockers — exactly the library runner's
+  report.
+
 ## [0.2.0] - 2026-07-28
 
 Windtrap 0.2.0 is a ground-up rewrite of the whole library around one idea:

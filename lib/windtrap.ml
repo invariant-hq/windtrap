@@ -21,6 +21,7 @@ module Private = struct
   module Check = Check
   module Cli = Cli
   module Diff = Diff
+  module Driver = Driver
   module Env = Env
   module Failure = Failure
   module Loc = Loc
@@ -196,12 +197,6 @@ let temp_file = Run.temp_file
 
 let version = "3.0.0~dev"
 
-(* Path shown in rerun hints and snapshot reports: the shared
-   [Path_ops.display] spelling (D5 §8) — one producer with the inline
-   runner's [wrote] lines (ppx/F-6), so the line classes stay byte-equal
-   to the manual's transcripts across both runners. *)
-let display_path = Path_ops.display
-
 (* The hint context (D5 §1), computed once at startup and threaded to every
    renderer and transport: under dune, a [dune exec] spelling of this
    executable — truthful for every dune invocation of every stanza kind,
@@ -217,72 +212,12 @@ let invocation_of ~inside_dune argv : Render.invocation =
       if Filename.is_relative argv0 then Filename.concat (Sys.getcwd ()) argv0
       else argv0
     in
-    `Exe ("dune exec " ^ display_path absolute ^ " --")
+    `Exe ("dune exec " ^ Path_ops.display absolute ^ " --")
   end
   else `Exe argv0
 
 let print_cli_error ~prog error =
   Format.eprintf "%s@.%s@." (Cli.error_message error) (Cli.usage ~prog)
-
-let explain_prune_refusal (refusal : Snapshot.prune_refusal) =
-  let blockers =
-    List.concat
-      [
-        (if refusal.Snapshot.not_update_run then
-           [ "the run was not an update run (-u / WINDTRAP_UPDATE=1)" ]
-         else []);
-        (if refusal.Snapshot.filtered then [ "a filter narrowed the run" ]
-         else []);
-        (if refusal.Snapshot.skipped > 0 then
-           [ Pp.str "%d selected test(s) skipped" refusal.Snapshot.skipped ]
-         else []);
-        (if refusal.Snapshot.failed > 0 then
-           [ Pp.str "%d selected test(s) failed" refusal.Snapshot.failed ]
-         else []);
-        (if refusal.Snapshot.focused > 0 then
-           [ Pp.str "%d test(s) are focused" refusal.Snapshot.focused ]
-         else []);
-      ]
-  in
-  "prune refused: " ^ String.concat "; " blockers
-
-let report_snapshots ~invocation (outcome : Runner.outcome) =
-  let writes = Snapshot.writes (Run.snapshots outcome.Runner.run) in
-  List.iter
-    (fun (path, status) ->
-      let status =
-        match status with
-        | Snapshot.Created -> "new"
-        | Snapshot.Updated -> "updated"
-      in
-      Format.printf "wrote %s (%s)@." (display_path path) status)
-    writes;
-  match outcome.Runner.pruned with
-  | Some (Ok deleted) ->
-      List.iter
-        (fun path -> Format.printf "pruned %s@." (display_path path))
-        deleted
-  | Some (Error refusal) ->
-      List.iter
-        (fun path -> Format.printf "stale baseline: %s@." (display_path path))
-        outcome.Runner.orphans;
-      Format.printf "%s@." (explain_prune_refusal refusal)
-  | None -> (
-      match outcome.Runner.orphans with
-      | [] -> ()
-      | orphans ->
-          List.iter
-            (fun path ->
-              Format.printf "stale baseline: %s@." (display_path path))
-            orphans;
-          (* The prune hint derives from the same startup-computed invocation
-             as every other command hint (D5 §1). *)
-          let command =
-            match (invocation : Render.invocation) with
-            | `Exe cmd -> cmd ^ " -u --prune"
-            | `Mirrors -> "WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
-          in
-          Format.printf "remove stale baselines: %s@." command)
 
 let write_junit ~invocation ~suite ~duration ~results path =
   (* Excused-aware (B12): an xfail excused failure emits as a skipped
@@ -300,51 +235,34 @@ let write_junit ~invocation ~suite ~duration ~results path =
   | exception Sys_error message ->
       Format.eprintf "warning: could not write JUnit report: %s@." message
 
+(* The thin library driver: composed from Driver's shared producers — one
+   producer per transcript line class, shared with the inline (ppx) runner.
+   What is legitimately this runner's own stays visible here: the parsed-CLI
+   resolution sources, the argv-computed invocation, the property-aware
+   header seed, GitHub gating minus list-only runs, list-only handling,
+   JUnit, and the process exit. *)
 let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
-  let inside_dune = Env.inside_dune () in
-  let tty = Env.is_tty_stdout () in
-  let ansi =
-    Env.resolve_color config.Run.color ~tty ~inside_dune
-      ~term_dumb:(Env.term_dumb ())
-  in
   let github = Env.in_github_actions () && not config.Run.list_only in
   (* The one invocation every command hint derives from (D5 §1): computed
      here, at startup, and threaded to the renderer and both transports. *)
-  let invocation = invocation_of ~inside_dune argv in
-  let renderer =
-    (* The mode decides what prints; the sink only decides color ([ansi])
-       and the erasable live tail ([live], TTY only) — no sink changes
-       shape. Under GITHUB_ACTIONS the same compact transcript sits inside
-       the ::group:: envelope emitted below, and the live tail is
-       explicitly off even if stdout is a TTY: its erase/redraw control
-       sequences would land verbatim in the CI log. *)
-    Render.create ~out:Format.std_formatter ~ansi ~mode:output
-      ~live:(tty && not github)
-      ?columns:(Option.map (Int.max 20) config.Run.columns)
-      ?tail_lines:(Option.map (Int.max 0) config.Run.tail_errors)
-      ~slow_threshold:config.Run.slow_threshold ~invocation ()
+  let invocation = invocation_of ~inside_dune:(Env.inside_dune ()) argv in
+  let renderer = Driver.renderer ~config ~mode:output ~invocation () in
+  (* Header-seed policy: the root seed iff the suite declares property
+     tests — selection never changes it, so the token stays stable across
+     filtered runs. The inline runner always passes [None]. *)
+  let seed =
+    let has_props =
+      List.exists
+        (fun case -> Tag.mem prop_tag case.Test_tree.tags)
+        (Test_tree.flatten tests)
+    in
+    if has_props then Some config.Run.seed else None
   in
-  let has_props =
-    List.exists
-      (fun case -> Tag.mem prop_tag case.Test_tree.tags)
-      (Test_tree.flatten tests)
-  in
-  let on_event = function
-    | Runner.Run_started { run = _; suite; total = _; selected } ->
-        let seed = if has_props then Some config.Run.seed else None in
-        Render.header renderer ~suite ~tests:selected ~seed
-    | Runner.Test_started { path } -> Render.begin_test renderer ~path
-    | Runner.Test_finished result -> Render.result renderer result
-    | Runner.Fixture_release { name } ->
-        (* [Render.note] closes a partial glyph row first — a raw printf
-           would splice the notice into the compact row — and drops the
-           line under [`Quiet]. *)
-        Render.note renderer ("releasing " ^ name)
-  in
-  if github then print_string (Render_github.group_start suite);
+  let on_event = Driver.observe renderer ~seed in
+  Driver.github_start ~github suite;
   match Runner.execute ~on_event ~config ~suite tests with
   | Error error ->
-      if github then print_string Render_github.group_end;
+      Driver.github_end ~github;
       prerr_endline (Runner.startup_message error);
       exit (Runner.startup_exit_code error)
   | Ok outcome ->
@@ -357,38 +275,16 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
       end;
       let results = Run.results outcome.Runner.run in
       let duration = outcome.Runner.duration in
-      (* The Law-12 seam: when instrumented code registered in-process
-         coverage, snapshot it into the run record; renderers project it
-         below like any other run data. *)
-      let coverage_data = Windtrap_coverage.snapshot () in
-      if not (Windtrap_coverage.is_empty coverage_data) then begin
-        let s = Windtrap_coverage.summary coverage_data in
-        Run.set_coverage outcome.Runner.run
-          { Run.visited = s.visited; total = s.total }
-      end;
-      let inline_coverage =
-        match coverage_mode with
-        | `Summary -> Run.coverage outcome.Runner.run
-        | `Report | `Full | `Off -> None
-      in
-      Render.finish renderer ?coverage:inline_coverage ~results ~duration ();
-      (match coverage_mode with
-      | (`Report | `Full) as mode when Run.coverage outcome.Runner.run <> None
-        ->
-          (* Sources are recorded workspace-relative; under `dune runtest`
-             the cwd is inside _build, so resolve them like snapshots do. *)
-          Render.coverage_report renderer
-            ~source_roots:[ Path_ops.project_root () ]
-            ~mode coverage_data
-      | _ -> ());
-      if output <> `Quiet then report_snapshots ~invocation outcome;
-      if github then begin
-        print_string Render_github.group_end;
-        (* Excused expected failures annotate nothing: an [::error] on a PR
-           demands action, and these did not fail the run (B12) — the
-           transport classifies from the result records. *)
-        print_string (Render_github.annotations ~invocation results)
-      end;
+      let coverage_data = Driver.snapshot_coverage outcome.Runner.run in
+      Render.finish renderer
+        ?coverage:(Driver.coverage_summary ~coverage_mode outcome.Runner.run)
+        ~results ~duration ();
+      Driver.coverage_report renderer ~coverage_mode outcome.Runner.run
+        coverage_data;
+      Driver.report_snapshots ~out:Format.std_formatter ~output ~invocation
+        outcome;
+      Driver.github_end ~github;
+      Driver.github_annotations ~github ~invocation results;
       Option.iter
         (write_junit ~invocation ~suite ~duration ~results)
         config.Run.junit;

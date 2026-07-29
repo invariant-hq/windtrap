@@ -40,4 +40,5 @@ let () =
       Windtrap.group "render_junit" Test_render_junit.tests;
       Windtrap.group "render_github" Test_render_github.tests;
       Windtrap.group "cli" Test_cli.tests;
+      Windtrap.group "driver" Test_driver.tests;
     ]
