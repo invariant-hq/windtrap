@@ -101,43 +101,28 @@ let float_exact =
         || Int64.equal (Int64.bits_of_float a) (Int64.bits_of_float b));
   }
 
-(* The tolerance witnesses carry [~nan_equal] internally in its final (B8)
-   form. The exported [float]/[float_rel] pin it to [false]: the facade's flat
-   re-exports ([windtrap.ml]/[windtrap.mli], orchestrator-owned) fix their
-   arity, so the [?nan_equal] optional parameter lands together with the
-   facade update — flip these two definitions to
-   [let float ?(nan_equal = false) eps = ...] at that point. *)
-let float_tol ~nan_equal eps =
-  {
-    pp = pp_float;
-    equal =
-      (fun a b ->
-        (nan_equal && is_nan a && is_nan b)
-        || a = b
-        || Float.abs (a -. b) <= eps);
-  }
-
-let float eps = float_tol ~nan_equal:false eps
+(* NaN is never equal under the tolerance witnesses: [a = b] is false for
+   NaN, and every [<=] comparison against a NaN difference is false. *)
+let float eps =
+  { pp = pp_float; equal = (fun a b -> a = b || Float.abs (a -. b) <= eps) }
 
 (* Combined tolerance: relative handles large magnitudes, absolute handles
    near-zero values. The relative test requires a finite [max_ab]: with an
    infinite side, [rel *. max_ab] is [infinity] and [diff <= infinity] would
    make [infinity] "equal" to any float (v1's behavior, a latent bug). Equal
    infinities are caught by [a = b]. *)
-let float_rel_tol ~nan_equal ~rel ~abs =
+let float_rel ~rel ~abs =
   {
     pp = pp_float;
     equal =
       (fun a b ->
-        if is_nan a || is_nan b then nan_equal && is_nan a && is_nan b
+        if is_nan a || is_nan b then false
         else if a = b then true
         else
           let diff = Float.abs (a -. b) in
           let max_ab = Float.max (Float.abs a) (Float.abs b) in
           diff <= abs || (Float.is_finite max_ab && diff <= rel *. max_ab));
   }
-
-let float_rel ~rel ~abs = float_rel_tol ~nan_equal:false ~rel ~abs
 
 (* ───── Containers ───── *)
 
