@@ -119,7 +119,7 @@ let accept t entry actual =
   end;
   entry.baseline <- Some actual
 
-let check t ?(update_eligible = true) ?loc ~test ~scope ~name actual =
+let check t ?loc ~test ~scope ~name actual =
   validate_name name;
   match scope with
   | None -> fail ?loc ~name ~path:"" Failure.Unresolvable
@@ -136,7 +136,7 @@ let check t ?(update_eligible = true) ?loc ~test ~scope ~name actual =
                 table
           in
           let actual = canonicalize actual in
-          let updating = t.mode = Update && update_eligible in
+          let updating = t.mode = Update in
           match Hashtbl.find_opt table (String.lowercase_ascii name) with
           | Some entry ->
               (* Recheck iff both sites are known and equal (loops, [cases]

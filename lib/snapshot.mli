@@ -83,7 +83,6 @@ val mode : t -> mode
 
 val check :
   t ->
-  ?update_eligible:bool ->
   ?loc:Loc.t ->
   test:string ->
   scope:string option ->
@@ -133,22 +132,15 @@ val check :
       this run — differs from [actual]: fails with {!Failure.Mismatch} carrying
       both canonical texts; the file is not touched.
 
-    In {!Update} mode, when [update_eligible] is [true]: a missing or differing
-    baseline is accepted — parent directories are created and the canonical
-    content written atomically via {!Atomic_file.write} — and recorded in
-    {!writes} as {!Created} or {!Updated}; an equal baseline is left untouched
-    and unrecorded. A name is accepted with at most one content per run: after
-    acceptance, a check of the same name with different content fails with
-    {!Failure.Mismatch} against the accepted content — never last-write-wins.
-    Acceptance happens only while the run's baseline content for the name is
-    unknown: when an earlier check already read the baseline from disk (for
-    instance under [update_eligible = false]), a later eligible check with
-    different content fails with {!Failure.Mismatch} rather than re-accepting —
-    the baseline a run compares against never changes once established. With
-    [update_eligible = false] (the runner passes it for tests outside the update
-    scope, keeping updates filter-scoped) the call checks exactly as in {!Check}
-    mode. [update_eligible] defaults to [true] and is irrelevant in {!Check}
-    mode.
+    In {!Update} mode: a missing or differing baseline is accepted — parent
+    directories are created and the canonical content written atomically via
+    {!Atomic_file.write} — and recorded in {!writes} as {!Created} or
+    {!Updated}; an equal baseline is left untouched and unrecorded. A name is
+    accepted with at most one content per run: after acceptance — including one
+    whose content equals the disk baseline and writes nothing — a later check of
+    the same name with different content fails with {!Failure.Mismatch} against
+    the accepted content, never re-accepting. The baseline a run compares
+    against never changes once established; updates are never last-write-wins.
 
     Raises [Invalid_argument] if [name] is empty, contains a character outside
     [[A-Za-z0-9._-]], or starts with {!Atomic_file.temp_prefix} (reserved for

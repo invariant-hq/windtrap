@@ -472,28 +472,6 @@ let () =
   check "accept: only the differing path is recorded, as Updated"
     (S.writes t = [ (path_a root "stale", S.Updated) ])
 
-let () =
-  reg "update eligibility gates acceptance" @@ fun () ->
-  with_root @@ fun root ->
-  (* Update-mode calls outside the update scope check like Check mode. *)
-  let t = S.create ~root ~mode:S.Update () in
-  let fl =
-    expect_check_failure "eligibility: ineligible missing" (fun () ->
-        S.check t ~update_eligible:false ~loc:loc_1 ~test:"t"
-          ~scope:(Some scope_a) ~name:"gated" "x")
-  in
-  (match snapshot_payload "eligibility: ineligible missing" fl with
-  | Some (_, _, Failure.Missing _) -> check "eligibility: state is Missing" true
-  | _ -> check "eligibility: state is Missing" false);
-  check "eligibility: nothing written" (S.writes t = []);
-  check "eligibility: no directories created"
-    (not (Sys.file_exists (root ^ "/test")));
-  (* A later eligible recheck of the same site accepts. *)
-  expect_pass "eligibility: eligible recheck accepts" (fun () ->
-      S.check t ~loc:loc_1 ~test:"t" ~scope:(Some scope_a) ~name:"gated" "x");
-  check "eligibility: acceptance recorded"
-    (S.writes t = [ (path_a root "gated", S.Created) ])
-
 (* ───── Writes report order ───── *)
 
 let () =
@@ -702,37 +680,27 @@ let () =
 let () =
   reg "the run baseline never changes once established" @@ fun () ->
   with_root @@ fun root ->
-  (* An ineligible update-mode check reads the disk baseline and
-     establishes it as the run's baseline for the name; a later eligible
-     check with different content is a Mismatch, never a late acceptance
-     that would invalidate the earlier comparison. *)
+  (* An acceptance whose content equals the disk baseline writes nothing
+     but still establishes the run's baseline for the name; a later check
+     with different content is a Mismatch against it, never a late
+     acceptance that would invalidate the earlier comparison. *)
   write_raw (path_a root "held") "disk\n";
   let t = S.create ~root ~mode:S.Update () in
+  expect_pass "established: equal acceptance writes nothing" (fun () ->
+      S.check t ~loc:loc_1 ~test:"t" ~scope:(Some scope_a) ~name:"held" "disk");
+  check "established: equal acceptance unrecorded" (S.writes t = []);
   let fl =
-    expect_check_failure "established: ineligible check reads the baseline"
-      (fun () ->
-        S.check t ~update_eligible:false ~loc:loc_1 ~test:"t"
-          ~scope:(Some scope_a) ~name:"held" "new")
-  in
-  (match
-     snapshot_payload "established: ineligible check reads the baseline" fl
-   with
-  | Some (_, _, Failure.Mismatch { expected; _ }) ->
-      check_string "established: compared against disk" ~expected:"disk\n"
-        ~actual:expected
-  | _ -> check "established: ineligible state is Mismatch" false);
-  let fl =
-    expect_check_failure "established: eligible recheck cannot re-accept"
+    expect_check_failure "established: differing recheck cannot re-accept"
       (fun () ->
         S.check t ~loc:loc_1 ~test:"t" ~scope:(Some scope_a) ~name:"held" "new")
   in
   (match
-     snapshot_payload "established: eligible recheck cannot re-accept" fl
+     snapshot_payload "established: differing recheck cannot re-accept" fl
    with
   | Some (_, _, Failure.Mismatch { expected; _ }) ->
-      check_string "established: still compared against disk" ~expected:"disk\n"
-        ~actual:expected
-  | _ -> check "established: eligible recheck state is Mismatch" false);
+      check_string "established: compared against the established baseline"
+        ~expected:"disk\n" ~actual:expected
+  | _ -> check "established: differing recheck state is Mismatch" false);
   check "established: nothing written" (S.writes t = []);
   check_string "established: baseline bytes untouched" ~expected:"disk\n"
     ~actual:(read_raw (path_a root "held"))
