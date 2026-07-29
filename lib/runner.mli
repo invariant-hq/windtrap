@@ -69,12 +69,12 @@
     [--bail] budget, enter the last-failed store, or turn the exit code [1] —
     while a passing outcome counts as failed and is recorded as [Fail] with one
     message failure (["expected to fail, but the test passed"], naming the
-    [?reason]). Skips are unaffected. {!outcome} [.failed_paths] is the
-    authoritative projection of what counted: renderers distinguish an expected
-    failure (result failed, path absent) from an unexpected pass (path present)
-    with it and the flattened case's {!Test_tree.case.xfail}. For
-    snapshot-orphan reporting and [--prune] gating, {e every} [Fail] result —
-    expected or not — makes the run unclean.
+    [?reason]). Skips are unaffected. Each recorded result carries the decision
+    ({!Run.result.counted}) and the annotation ({!Run.result.xfail}): renderers
+    distinguish an expected failure ([Fail], not counted) from an unexpected
+    pass ([Fail], counted) from the record alone. For snapshot-orphan reporting
+    and [--prune] gating, {e every} [Fail] result — expected or not — makes the
+    run unclean.
 
     {b Selection} (RFC "The runner", {e Selection}): a test runs iff its path
     contains [config.filter] (when set), does not contain [config.exclude] (when

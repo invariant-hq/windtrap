@@ -346,6 +346,12 @@ let run_case ~on_event run (case : Test_tree.case) =
         {
           Run.path = case.Test_tree.path;
           outcome;
+          (* The three rendering facts computed here and nowhere else (the
+             record is the contract): whether the result counted as failed,
+             the expectation annotation, and the slow-tag decision bit. *)
+          counted = failed;
+          xfail = case.Test_tree.xfail;
+          slow_tagged = Tag.mem Tag.slow case.Test_tree.tags;
           duration;
           attempts = number;
           prop_stats;

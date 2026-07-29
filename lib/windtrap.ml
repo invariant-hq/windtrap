@@ -284,13 +284,12 @@ let report_snapshots ~invocation (outcome : Runner.outcome) =
           in
           Format.printf "remove stale baselines: %s@." command)
 
-let write_junit ~invocation ~excused ~suite ~duration ~results path =
+let write_junit ~invocation ~suite ~duration ~results path =
   (* Excused-aware (B12): an xfail excused failure emits as a skipped
-     testcase, matching the run it did not fail; [invocation] keeps the
-     hint bytes in failure bodies equal to the terminal block's. *)
-  let document =
-    Render_junit.render_full ~invocation ~excused ~suite ~results ~duration ()
-  in
+     testcase — the transport classifies from the result records, matching
+     the run it did not fail; [invocation] keeps the hint bytes in failure
+     bodies equal to the terminal block's. *)
+  let document = Render_junit.render ~invocation ~suite ~results ~duration () in
   match
     let channel = open_out path in
     Fun.protect
@@ -325,79 +324,17 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
       ?tail_lines:(Option.map (Int.max 0) config.Run.tail_errors)
       ~slow_threshold:config.Run.slow_threshold ~invocation ()
   in
-  let flat = Test_tree.flatten tests in
   let has_props =
-    List.exists (fun case -> Tag.mem prop_tag case.Test_tree.tags) flat
-  in
-  (* Slow-warning wiring: tests tagged ["slow"] (the [slow] constructor,
-     [~tags], or a tagged ancestor) are exempt from the renderer's slow
-     threshold — the renderer sees results, not tags, so the exemption is
-     computed here like the xfail annotations below. *)
-  let slow_tag_by_path =
-    let table = Hashtbl.create 16 in
-    List.iter
-      (fun case ->
-        if Tag.mem Tag.slow case.Test_tree.tags then
-          Hashtbl.replace table
-            (Test_tree.path_to_string case.Test_tree.path)
-            ())
-      flat;
-    table
-  in
-  let slow_tagged_paths =
-    Hashtbl.fold (fun path () acc -> path :: acc) slow_tag_by_path []
-  in
-  (* Expected-failure wiring (amendment B12). [xfail_by_path] maps joined
-     paths to their annotation; a failing result of an annotated test renders
-     [XFAIL] unless it is the runner's synthesized unexpected-pass failure,
-     recognized by reconstructing its exact message (the event carries no
-     counted-as-failed bit — candidate Runner.event addition). End-of-run
-     projections use [failed_paths], the authoritative source. *)
-  let xfail_by_path =
-    let table = Hashtbl.create 16 in
-    List.iter
-      (fun case ->
-        match case.Test_tree.xfail with
-        | Some annotation ->
-            Hashtbl.replace table
-              (Test_tree.path_to_string case.Test_tree.path)
-              annotation
-        | None -> ())
-      flat;
-    table
-  in
-  let xpass_message (annotation : Test_tree.xfail) =
-    let reason =
-      match annotation.Test_tree.reason with
-      | Some reason -> " (" ^ reason ^ ")"
-      | None -> ""
-    in
-    "expected to fail" ^ reason ^ ", but the test passed"
-  in
-  let excused_of_result (result : Run.result) =
-    match
-      Hashtbl.find_opt xfail_by_path (Test_tree.path_to_string result.Run.path)
-    with
-    | None -> None
-    | Some annotation -> (
-        match result.Run.outcome with
-        | Failure.Fail [ { Failure.kind = Failure.Message message; _ } ]
-          when message = xpass_message annotation ->
-            None (* unexpected pass: stays loud *)
-        | Failure.Fail _ -> Some annotation
-        | Failure.Pass | Failure.Skip _ -> None)
+    List.exists
+      (fun case -> Tag.mem prop_tag case.Test_tree.tags)
+      (Test_tree.flatten tests)
   in
   let on_event = function
     | Runner.Run_started { run = _; suite; total = _; selected } ->
         let seed = if has_props then Some config.Run.seed else None in
         Render.header renderer ~suite ~tests:selected ~seed
     | Runner.Test_started { path } -> Render.begin_test renderer ~path
-    | Runner.Test_finished result ->
-        Render.result renderer ?excused:(excused_of_result result)
-          ~slow_tagged:
-            (Hashtbl.mem slow_tag_by_path
-               (Test_tree.path_to_string result.Run.path))
-          result
+    | Runner.Test_finished result -> Render.result renderer result
     | Runner.Fixture_release { name } ->
         (* [Render.note] closes a partial glyph row first — a raw printf
            would splice the notice into the compact row — and drops the
@@ -429,24 +366,12 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
         Run.set_coverage outcome.Runner.run
           { Run.visited = s.visited; total = s.total }
       end;
-      let excused =
-        List.filter_map
-          (fun (result : Run.result) ->
-            let path = Test_tree.path_to_string result.Run.path in
-            match (Hashtbl.find_opt xfail_by_path path, result.Run.outcome) with
-            | Some annotation, Failure.Fail _
-              when not (List.mem path outcome.Runner.failed_paths) ->
-                Some (path, annotation)
-            | _ -> None)
-          results
-      in
       let inline_coverage =
         match coverage_mode with
         | `Summary -> Run.coverage outcome.Runner.run
         | `Report | `Full | `Off -> None
       in
-      Render.finish renderer ?coverage:inline_coverage ~excused
-        ~slow_tagged:slow_tagged_paths ~results ~duration ();
+      Render.finish renderer ?coverage:inline_coverage ~results ~duration ();
       (match coverage_mode with
       | (`Report | `Full) as mode when Run.coverage outcome.Runner.run <> None
         ->
@@ -460,13 +385,12 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
       if github then begin
         print_string Render_github.group_end;
         (* Excused expected failures annotate nothing: an [::error] on a PR
-           demands action, and these did not fail the run (B12). *)
-        print_string
-          (Render_github.annotations ~invocation ~excused:(List.map fst excused)
-             results)
+           demands action, and these did not fail the run (B12) — the
+           transport classifies from the result records. *)
+        print_string (Render_github.annotations ~invocation results)
       end;
       Option.iter
-        (write_junit ~invocation ~excused ~suite ~duration ~results)
+        (write_junit ~invocation ~suite ~duration ~results)
         config.Run.junit;
       if
         outcome.Runner.focus_active

@@ -61,13 +61,14 @@ let annotation ?(invocation = `Mirrors) ~path (f : Failure.t) =
   in
   spf "::error %stitle=%s::%s\n" location title (escape_data message)
 
-let annotations ?invocation ?(excused = []) results =
+let annotations ?invocation results =
   let buf = Buffer.create 256 in
   List.iter
     (fun (r : Run.result) ->
+      (* Counted failures only (the record's bit, amendment B12): an excused
+         expected failure did not fail the run and annotates nothing. *)
       match r.outcome with
-      | Failure.Fail fs
-        when not (List.mem (Test_tree.path_to_string r.path) excused) ->
+      | Failure.Fail fs when r.counted ->
           List.iter
             (fun f ->
               Buffer.add_string buf (annotation ?invocation ~path:r.path f))

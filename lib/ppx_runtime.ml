@@ -1047,30 +1047,11 @@ let run_inline_suite ~suite ~config tests =
       ?tail_lines:(Option.map (Int.max 0) config.Run.tail_errors)
       ~slow_threshold:config.Run.slow_threshold ()
   in
-  let slow_tag_by_path =
-    let table = Hashtbl.create 16 in
-    List.iter
-      (fun case ->
-        if Tag.mem Tag.slow case.Test_tree.tags then
-          Hashtbl.replace table
-            (Test_tree.path_to_string case.Test_tree.path)
-            ())
-      (Test_tree.flatten tests);
-    table
-  in
-  let slow_tagged_paths =
-    Hashtbl.fold (fun path () acc -> path :: acc) slow_tag_by_path []
-  in
   let on_event = function
     | Runner.Run_started { selected; _ } ->
         Render.header renderer ~suite ~tests:selected ~seed:None
     | Runner.Test_started { path } -> Render.begin_test renderer ~path
-    | Runner.Test_finished result ->
-        Render.result renderer
-          ~slow_tagged:
-            (Hashtbl.mem slow_tag_by_path
-               (Test_tree.path_to_string result.Run.path))
-          result
+    | Runner.Test_finished result -> Render.result renderer result
     | Runner.Fixture_release { name } ->
         Render.note renderer ("releasing " ^ name)
   in
@@ -1084,8 +1065,7 @@ let run_inline_suite ~suite ~config tests =
       let results = Run.results outcome.Runner.run in
       Render.finish renderer
         ?coverage:(Run.coverage outcome.Runner.run)
-        ~slow_tagged:slow_tagged_paths ~results
-        ~duration:outcome.Runner.duration ();
+        ~results ~duration:outcome.Runner.duration ();
       (* [Path_ops.display] is the one producer of the [wrote] line's path
          spelling, shared with the library runner (ppx/F-6). *)
       if output <> `Quiet then

@@ -727,6 +727,9 @@ let () =
     {
       Run.path = [ "a" ];
       outcome = Failure.Pass;
+      counted = false;
+      xfail = None;
+      slow_tagged = false;
       duration = 0.25;
       attempts = 1;
       prop_stats = None;
@@ -737,6 +740,9 @@ let () =
     {
       Run.path = [ "g"; "b" ];
       outcome = Failure.Fail [ Failure.message "boom" ];
+      counted = true;
+      xfail = None;
+      slow_tagged = false;
       duration = 1.5;
       attempts = 3;
       prop_stats = None;

@@ -61,6 +61,29 @@ let () =
       Windtrap.run ~argv "invsuite" [ test "boom" (fun () -> equal int 1 2) ]
   | _ -> ()
 
+(* The xpass-collision child (F4): re-exec'd to run the facade's [run] on
+   an xfail test whose real failure message equals the runner's synthesized
+   unexpected-pass string. Classification is record-driven ([Run.result]'s
+   [counted] bit), so the stream must render the failure as excused —
+   agreeing with the exit code and the "1 expected failure" summary — never
+   reconstruct the decision by matching the message. *)
+let () =
+  match Array.to_list Sys.argv with
+  | [ _; "--xpass-collide-child"; log_dir; level ] ->
+      clear_env ();
+      let argv =
+        Array.of_list
+          ([ "collide-child"; "-o"; log_dir; "--color"; "never" ]
+          @ if level = "verbose" then [ "--verbose" ] else [])
+      in
+      Windtrap.run ~argv "collide"
+        [
+          xfail
+            (test "collide" (fun () ->
+                 fail "expected to fail, but the test passed"));
+        ]
+  | _ -> ()
+
 let with_temp_root f = with_temp_root ~prefix:"windtrap-facade-" f
 
 let base_config ~log_dir () =
@@ -919,6 +942,55 @@ let () =
     let mirrors = spawn_invocation_child "mirrors" in
     check "empty argv: no rerun hint (Mirrors has no --failed)"
       (not (contains "rerun failures only" mirrors)))
+
+(* ───── The xpass-string collision stays excused, process level (F4) ───── *)
+
+let () =
+  if not Sys.win32 then (
+    let spawn_collide_child level =
+      with_temp_root @@ fun root ->
+      let out_read, out_write = Unix.pipe () in
+      let pid =
+        Unix.create_process Sys.executable_name
+          [| Sys.executable_name; "--xpass-collide-child"; root; level |]
+          Unix.stdin out_write Unix.stderr
+      in
+      Unix.close out_write;
+      let buffer = Buffer.create 1024 in
+      let chunk = Bytes.create 4096 in
+      let rec drain () =
+        let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
+        if n > 0 then begin
+          Buffer.add_subbytes buffer chunk 0 n;
+          drain ()
+        end
+      in
+      drain ();
+      Unix.close out_read;
+      let status = snd (Unix.waitpid [] pid) in
+      check
+        ("collide " ^ level ^ " child exits 0 (the failure was expected)")
+        (status = Unix.WEXITED 0);
+      Buffer.contents buffer
+    in
+    (* Compact: the excused failure is not noteworthy, so the transcript is
+       the one named summary line — no flushed header, no loud F glyph. *)
+    let compact = spawn_collide_child "compact" in
+    check "collide compact: summary counts one expected failure"
+      (contains "collide: 1 expected failure in " compact);
+    check "collide compact: no header flush" (not (contains "1 test" compact));
+    check "collide compact: no loud F on the stream"
+      (not (contains "F" compact));
+    (* Verbose streams a line per test: the collision must render XFAIL.
+       The FAIL probe keeps the tag's two-space gutter so it cannot match
+       inside the XFAIL tag itself. *)
+    let verbose = spawn_collide_child "verbose" in
+    check "collide verbose: the stream line is XFAIL"
+      (contains "  XFAIL  collide" verbose);
+    check "collide verbose: no loud FAIL line"
+      (not (contains "  FAIL  collide" verbose));
+    check "collide verbose: summary counts one expected failure"
+      (contains "1 expected failure in " verbose))
 
 (* ───── Summary ───── *)
 

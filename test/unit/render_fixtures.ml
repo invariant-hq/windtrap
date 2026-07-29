@@ -20,9 +20,31 @@ let root =
   | Ok s -> s
   | Error e -> failwith e
 
-let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats ?srandom_root path
-    outcome =
-  { Run.path; outcome; duration; attempts; prop_stats; srandom_root }
+let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats ?srandom_root
+    ?(slow_tagged = false) ?xfail ?counted path outcome =
+  (* [counted] defaults to the runner's rule (Runner.counts_failed): a
+     [Fail] counts unless the test is xfail-annotated — then it is an
+     excused expected failure; passes and skips never count. The
+     unexpected-pass fixture overrides the default. *)
+  let counted =
+    match counted with
+    | Some counted -> counted
+    | None -> (
+        match outcome with
+        | Failure.Fail _ -> xfail = None
+        | Failure.Pass | Failure.Skip _ -> false)
+  in
+  {
+    Run.path;
+    outcome;
+    counted;
+    xfail;
+    slow_tagged;
+    duration;
+    attempts;
+    prop_stats;
+    srandom_root;
+  }
 
 let tail =
   Failure.tail
@@ -87,12 +109,13 @@ let raise_message_failure =
     ~expected_message:"index 3 out of bounds"
     ~actual_message:"index 4 out of bounds" ()
 
-(* B12: an xfail annotation, an excused failing result, and the runner's
-   synthesized unexpected-pass result. *)
+(* B12: an xfail annotation, an excused failing result (annotated, not
+   counted), and the runner's synthesized unexpected-pass result (annotated
+   and counted — the record's bit keeps it loud). *)
 let xfail_reason = { Test_tree.reason = Some "issue #42" }
 
 let excused_result =
-  result
+  result ~xfail:xfail_reason
     [ "known"; "broken carry" ]
     (Failure.Fail
        [
@@ -101,10 +124,8 @@ let excused_result =
            ~expected:"1" ~actual:"2" ();
        ])
 
-let excused_path = Test_tree.path_to_string excused_result.Run.path
-
 let xpass_result =
-  result
+  result ~xfail:xfail_reason ~counted:true
     [ "known"; "fixed already" ]
     (Failure.Fail
        [

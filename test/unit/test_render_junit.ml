@@ -148,11 +148,7 @@ let test_excused_as_skipped () =
       Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
     ]
   in
-  let doc =
-    Render_junit.render_full
-      ~excused:[ (Fixtures.excused_path, Fixtures.xfail_reason) ]
-      ~suite:"s" ~results ~duration:0.5 ()
-  in
+  let doc = Render_junit.render ~suite:"s" ~results ~duration:0.5 () in
   check_well_formed "excused document is well-formed" doc;
   check_contains "excused failure maps to skipped-with-message"
     ~sub:{|<skipped message="expected failure: issue #42"/>|} doc;
@@ -161,21 +157,27 @@ let test_excused_as_skipped () =
   check_contains "counts: excused is a skip, not a failure"
     ~sub:{|tests="3" failures="1" errors="0" skipped="1"|} doc;
   let no_reason =
-    Render_junit.render_full
-      ~excused:[ (Fixtures.excused_path, { Test_tree.reason = None }) ]
-      ~suite:"s"
-      ~results:[ Fixtures.excused_result ]
+    Render_junit.render ~suite:"s"
+      ~results:
+        [
+          {
+            Fixtures.excused_result with
+            Run.xfail = Some { Test_tree.reason = None };
+          };
+        ]
       ~duration:0.1 ()
   in
   check_contains "reasonless excused message"
     ~sub:{|<skipped message="expected failure"/>|} no_reason;
-  let compat =
-    Render_junit.render ~suite:"s"
-      ~results:[ Fixtures.excused_result ]
+  (* The record's bit decides: an unexpected pass carries the annotation
+     but counted, so it emits a failure element, not a skip. *)
+  let xpass =
+    Render_junit.render ~suite:"s" ~results:[ Fixtures.xpass_result ]
       ~duration:0.1 ()
   in
-  check_contains "render (no excused) still counts the failure"
-    ~sub:{|failures="1"|} compat
+  check_contains "an unexpected pass still counts as a failure"
+    ~sub:{|failures="1"|} xpass;
+  check_absent "an unexpected pass is not a skip" ~sub:"<skipped" xpass
 
 (* ───── Subtests (amendment B13) ───── *)
 

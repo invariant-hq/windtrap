@@ -350,6 +350,23 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
 type result = {
   path : string list;  (** The test's full path, groups first. *)
   outcome : Failure.outcome;  (** The classified outcome, failures inside. *)
+  counted : bool;
+      (** [true] iff the result counted as failed — the bit the runner drives
+          retries, [--bail], the exit code, and the last-failed store from
+          ({!Runner}, {e Expected failures}): an ordinary failure, or an [xfail]
+          test's unexpected pass. [false] for passes, skips, and excused
+          expected failures. Renderers classify a failing result from this bit
+          and {!result.xfail} alone — an uncounted [Fail] is an excused expected
+          failure — never by reconstructing runner decisions from failure
+          messages. *)
+  xfail : Test_tree.xfail option;
+      (** The test's expected-failure annotation ({!Test_tree.case.xfail}),
+          carried so renderers can name the expectation ([XFAIL] reasons, JUnit
+          skip messages); [None] for unannotated tests. *)
+  slow_tagged : bool;
+      (** [true] iff the test carries the ["slow"] tag — its own or an
+          ancestor's, as flattened into the case's tags. Such tests are exempt
+          from the renderer's slow threshold everywhere. *)
   duration : float;
       (** The test's execution time in seconds, attempts summed. *)
   attempts : int;  (** Attempts executed: [1] plus retries used. *)
@@ -362,10 +379,9 @@ type result = {
           line of a failing stochastic test from it (RFC Law 7). *)
 }
 (** The type for per-test results, as recorded by the runner after a test
-    completes. Renderers project the accumulated list (RFC Law 4); exit codes
-    and the last-failed store derive from it together with each test's
-    expected-failure annotation ({!Test_tree.case.xfail} — see {!Runner},
-    {e Expected failures}). *)
+    completes. Renderers project the accumulated list (RFC Law 4); the record
+    carries every fact rendering needs — outcome classification included — so no
+    consumer re-derives runner decisions from tables or messages. *)
 
 val record : t -> result -> unit
 (** [record t result] appends [result] to the run's results. *)

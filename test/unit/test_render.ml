@@ -420,12 +420,12 @@ let test_no_tests () =
 let test_glyph_vocabulary () =
   (* A counted failure first flushes the deferred transcript, so the
      probed glyph streams; the leading [F] is dropped below. *)
-  let glyph result ?excused () =
+  let glyph result () =
     let flushed =
       with_renderer (fun r ->
           Render.result r
             (Fixtures.result [ "!" ] (Failure.Fail [ Failure.message "x" ]));
-          Render.result r ?excused result)
+          Render.result r result)
     in
     String.sub flushed 1 (String.length flushed - 1)
   in
@@ -444,13 +444,15 @@ let test_glyph_vocabulary () =
   check_string "glyph: skip is S" ~expected:"S"
     ~actual:(glyph (Fixtures.result [ "t" ] (Failure.Skip None)) ());
   check_string "glyph: expected failure is x" ~expected:"x"
-    ~actual:(glyph Fixtures.excused_result ~excused:Fixtures.xfail_reason ());
-  check_string "glyph: excused ignored on a pass" ~expected:"."
+    ~actual:(glyph Fixtures.excused_result ());
+  check_string "glyph: an xfail annotation on a pass changes nothing"
+    ~expected:"."
     ~actual:
       (glyph
-         (Fixtures.result [ "t" ] Failure.Pass)
-         ~excused:Fixtures.xfail_reason ());
-  (* Unexpected pass: an ordinary counted failure, an ordinary F. *)
+         (Fixtures.result [ "t" ] Failure.Pass ~xfail:Fixtures.xfail_reason)
+         ());
+  (* Unexpected pass: an ordinary counted failure, an ordinary F — the
+     record arrives counted even though it carries the annotation. *)
   check_string "glyph: unexpected pass is a loud F" ~expected:"F"
     ~actual:(glyph Fixtures.xpass_result ())
 
@@ -611,10 +613,8 @@ let test_compact_green_one_liner () =
         Render.header r ~suite:"mylib" ~tests:3 ~seed:None;
         Render.result r (List.nth results 0);
         Render.result r (List.nth results 1);
-        Render.result r ~excused:Fixtures.xfail_reason (List.nth results 2);
-        Render.finish r
-          ~excused:[ (Fixtures.excused_path, Fixtures.xfail_reason) ]
-          ~results ~duration:0.2 ())
+        Render.result r (List.nth results 2);
+        Render.finish r ~results ~duration:0.2 ())
   in
   check_string
     "green compact run: skip and expected-failure segments stay on the line"
@@ -674,12 +674,12 @@ let test_compact_slow_trigger () =
   in
   check_string "the threshold is inclusive (duration >= threshold)"
     ~expected:"." ~actual:at_threshold;
+  let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
     with_renderer (fun r ->
         Render.header r ~suite:"s" ~tests:1 ~seed:None;
-        Render.result r ~slow_tagged:true slow_pass;
-        Render.finish r ~slow_tagged:[ "t" ] ~results:[ slow_pass ]
-          ~duration:1.2 ())
+        Render.result r tagged_pass;
+        Render.finish r ~results:[ tagged_pass ] ~duration:1.2 ())
   in
   check_string "a slow-tagged test is exempt everywhere: one line, no warning"
     ~expected:"s: 1 passed in 1.2s.\n" ~actual:tagged;
@@ -697,11 +697,8 @@ let test_compact_slow_trigger () =
   let excused_fast =
     with_renderer (fun r ->
         Render.header r ~suite:"s" ~tests:1 ~seed:None;
-        Render.result r ~excused:Fixtures.xfail_reason Fixtures.excused_result;
-        Render.finish r
-          ~excused:[ (Fixtures.excused_path, Fixtures.xfail_reason) ]
-          ~results:[ Fixtures.excused_result ]
-          ~duration:0.1 ())
+        Render.result r Fixtures.excused_result;
+        Render.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
   in
   check_string "an excused failure alone is not noteworthy"
     ~expected:"s: 1 expected failure in 0.1s.\n" ~actual:excused_fast
@@ -788,11 +785,11 @@ let test_verbose_slow_warnings () =
     ~sub:"slow: t took 1.50s\n(mark slow tests" t;
   check_contains "verbose: summary follows the hint"
     ~sub:"WINDTRAP_SLOW_THRESHOLD)\n1 passed in 1.5s.\n" t;
+  let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r ~slow_tagged:true slow_pass;
-        Render.finish r ~slow_tagged:[ "t" ] ~results:[ slow_pass ]
-          ~duration:1.5 ())
+        Render.result r tagged_pass;
+        Render.finish r ~results:[ tagged_pass ] ~duration:1.5 ())
   in
   check_absent "verbose: slow-tagged tests warn nowhere" ~sub:"slow: " tagged
 
@@ -1240,7 +1237,7 @@ let test_raise_message_diff_guards () =
 let test_xfail_line () =
   let line =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r ~excused:Fixtures.xfail_reason Fixtures.excused_result)
+        Render.result r Fixtures.excused_result)
   in
   check_contains "xfail line: XFAIL tag and reason"
     ~sub:"  XFAIL  known › broken carry (expected failure: issue #42)" line;
@@ -1248,22 +1245,61 @@ let test_xfail_line () =
   let no_reason =
     with_renderer ~mode:`Verbose (fun r ->
         Render.result r
-          ~excused:{ Test_tree.reason = None }
-          Fixtures.excused_result)
+          {
+            Fixtures.excused_result with
+            Run.xfail = Some { Test_tree.reason = None };
+          })
   in
   check_contains "xfail line: reasonless form" ~sub:"(expected failure)"
     no_reason;
   let quiet =
     with_renderer ~mode:`Quiet (fun r ->
-        Render.result r ~excused:Fixtures.xfail_reason Fixtures.excused_result)
+        Render.result r Fixtures.excused_result)
   in
   check_string "xfail line: suppressed under quiet" ~expected:"" ~actual:quiet;
   let pass_ignores =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r ~excused:Fixtures.xfail_reason
-          (Fixtures.result [ "t" ] Failure.Pass))
+        Render.result r
+          (Fixtures.result [ "t" ] Failure.Pass ~xfail:Fixtures.xfail_reason))
   in
-  check_contains "excused ignored on a pass" ~sub:"PASS" pass_ignores
+  check_contains "an xfail annotation on a pass changes nothing" ~sub:"PASS"
+    pass_ignores
+
+let test_excused_collision () =
+  (* The F4 regression, renderer level: an xfail test whose REAL failure
+     message equals the runner's unexpected-pass string. The record says
+     excused ([counted = false]); classification is record-driven, so the
+     stream agrees with the exit code and the summary — no failure message
+     is ever inspected. *)
+  let collide =
+    Fixtures.result [ "collide" ]
+      (Failure.Fail [ Failure.message "expected to fail, but the test passed" ])
+      ~xfail:{ Test_tree.reason = None }
+  in
+  let stream =
+    with_renderer (fun r ->
+        (* Flush with an unrelated counted failure so the probed glyph
+           commits (the glyph-vocabulary driver's trick). *)
+        Render.result r
+          (Fixtures.result [ "!" ] (Failure.Fail [ Failure.message "x" ]));
+        Render.result r collide)
+  in
+  check_string "collision record still streams the excused glyph" ~expected:"Fx"
+    ~actual:stream;
+  let verbose =
+    with_renderer ~mode:`Verbose (fun r -> Render.result r collide)
+  in
+  check_contains "collision record renders XFAIL, not FAIL" ~sub:"  XFAIL  "
+    verbose;
+  check_absent "collision record: no loud FAIL line" ~sub:"  FAIL  " verbose;
+  let summary =
+    with_renderer (fun r ->
+        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.result r collide;
+        Render.finish r ~results:[ collide ] ~duration:0.1 ())
+  in
+  check_string "collision record: stream, summary, and count agree"
+    ~expected:"s: 1 expected failure in 0.1s.\n" ~actual:summary
 
 let test_finish_excused () =
   let results =
@@ -1273,10 +1309,9 @@ let test_finish_excused () =
       Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
     ]
   in
-  let excused = [ (Fixtures.excused_path, Fixtures.xfail_reason) ] in
   let t =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
-        Render.finish r ~excused ~results ~duration:0.2 ())
+        Render.finish r ~results ~duration:0.2 ())
   in
   check_contains "finish: excused leaves the failed count" ~sub:"failures (1)" t;
   check_absent "finish: excused block absent" ~sub:"broken carry" t;
@@ -1284,7 +1319,7 @@ let test_finish_excused () =
     ~sub:"1 passed, 1 expected failure, 1 failed in 0.2s." t;
   let only_excused =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
-        Render.finish r ~excused
+        Render.finish r
           ~results:
             [ Fixtures.result [ "ok" ] Failure.Pass; Fixtures.excused_result ]
           ~duration:0.2 ())
@@ -1761,7 +1796,7 @@ let test_verbose_pass_labels () =
     unlabeled;
   let excused =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r ~excused:Fixtures.xfail_reason
+        Render.result r
           { Fixtures.excused_result with Run.prop_stats = Some stats })
   in
   check_absent "verbose: XFAIL lines print no table" ~sub:"labels (" excused
@@ -1991,6 +2026,7 @@ let tests =
     test "raise message diff (B1)" test_raise_message_diff;
     test "raise message diff guards" test_raise_message_diff_guards;
     test "xfail line (B12)" test_xfail_line;
+    test "xpass-string collision stays excused (F4)" test_excused_collision;
     test "finish with excused failures" test_finish_excused;
     test "unexpected pass is loud" test_xpass_is_loud;
     test "subtest projection (B13)" test_subtest_projection;

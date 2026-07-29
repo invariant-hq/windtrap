@@ -46,17 +46,12 @@ val annotation :
     the embedded replay and acceptance lines are spelled from — pass the run's
     real invocation so annotation bodies match the terminal block bytes. *)
 
-val annotations :
-  ?invocation:Render.invocation ->
-  ?excused:string list ->
-  Run.result list ->
-  string
+val annotations : ?invocation:Render.invocation -> Run.result list -> string
 (** [annotations results] is the concatenated {!annotation} lines for every
-    failure of every counted failed result in [results], in run order — the
-    block the runner prints once at end of run. [""] when no test failed.
-    [invocation] is passed to each {!annotation}.
+    failure of every counted failed result in [results] ({!Run.result.counted}),
+    in run order — the block the runner prints once at end of run. [""] when no
+    test failed. [invocation] is passed to each {!annotation}.
 
-    [excused], default [[]], lists the run's expected failures (amendment B12)
-    by joined path ({!Test_tree.path_to_string}); their failures produce no
-    annotations — an [::error] on a PR demands action, and an excused failure
-    demands none (its run exited [0]). *)
+    Excused expected failures (amendment B12) — failing results that did not
+    count — produce no annotations: an [::error] on a PR demands action, and an
+    excused failure demands none (its run exited [0]). *)

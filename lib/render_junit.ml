@@ -70,21 +70,22 @@ let failure_text ~filter ~invocation f =
 
 (* One [Fail] outcome, projected: an excused expected failure (amendment
    B12), or a counted failure with its entries partitioned into the test's
-   own and its subtests' (amendment B13). *)
+   own and its subtests' (amendment B13). Classification is record-driven:
+   a failing result that did not count is excused, and the annotation it
+   carries names the expectation. *)
 type fail_case =
   | Excused of Test_tree.xfail
   | Counted of { own : Failure.t list; subtests : Failure.t list }
 
-let classify_fail ~excused (r : Run.result) fs =
-  match List.assoc_opt (Test_tree.path_to_string r.path) excused with
-  | Some xfail -> Excused xfail
-  | None ->
-      let subtests, own =
-        List.partition (Render.is_subtest_failure ~path:r.path) fs
-      in
-      Counted { own; subtests }
+let classify_fail (r : Run.result) fs =
+  if r.counted then
+    let subtests, own =
+      List.partition (Render.is_subtest_failure ~path:r.path) fs
+    in
+    Counted { own; subtests }
+  else Excused (Option.value ~default:{ Test_tree.reason = None } r.xfail)
 
-let render_full ?(invocation = `Mirrors) ~excused ~suite ~results ~duration () =
+let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
   (* Counts range over emitted testcases, not results: each subtest failure
      is its own testcase, and an excused failure is a skip. *)
   let tests = ref 0 and failures = ref 0 and skipped = ref 0 in
@@ -95,7 +96,7 @@ let render_full ?(invocation = `Mirrors) ~excused ~suite ~results ~duration () =
       | Failure.Pass -> ()
       | Failure.Skip _ -> incr skipped
       | Failure.Fail fs -> (
-          match classify_fail ~excused r fs with
+          match classify_fail r fs with
           | Excused _ -> incr skipped
           | Counted { own; subtests } ->
               tests := !tests + List.length subtests;
@@ -161,7 +162,7 @@ let render_full ?(invocation = `Mirrors) ~excused ~suite ~results ~duration () =
           | None -> Buffer.add_string buf "      <skipped/>\n");
           Buffer.add_string buf "    </testcase>\n"
       | Failure.Fail fs -> (
-          match classify_fail ~excused r fs with
+          match classify_fail r fs with
           | Excused { Test_tree.reason } ->
               (* JUnit has no expected-failure state; the mapping (amendment
                  B12) is a skip whose message names the expectation. *)
@@ -205,6 +206,3 @@ let render_full ?(invocation = `Mirrors) ~excused ~suite ~results ~duration () =
   Buffer.add_string buf "  </testsuite>\n";
   Buffer.add_string buf "</testsuites>\n";
   Buffer.contents buf
-
-let render ?invocation ~suite ~results ~duration () =
-  render_full ?invocation ~excused:[] ~suite ~results ~duration ()

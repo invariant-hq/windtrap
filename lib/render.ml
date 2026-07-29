@@ -974,14 +974,22 @@ let pp_prop_stats t (s : Property.stats) =
       s.coverage
   end
 
-let verbose_result t ?excused (r : Run.result) =
+(* Record-driven classification (amendment B12): a failing result that did
+   not count is an excused expected failure — the runner's unexpected-pass
+   synthesis arrives counted, so no failure message is ever inspected. *)
+let counted_failure (r : Run.result) =
+  match r.outcome with
+  | Failure.Fail _ -> r.counted
+  | Failure.Pass | Failure.Skip _ -> false
+
+let verbose_result t (r : Run.result) =
   let name = sanitize_name (Test_tree.path_to_string r.path) in
   let timing =
     pp_duration r.duration
     ^ if r.attempts > 1 then spf " (%d attempts)" r.attempts else ""
   in
-  match (r.outcome, excused) with
-  | Failure.Pass, _ -> (
+  match r.outcome with
+  | Failure.Pass -> (
       put t (test_line t ~tag:"PASS" ~style:`Green ~name ~suffix:"" ~timing);
       (* A passing property with collected labels prints its distribution —
          the same [pp_prop_stats] projection as the failure blocks, so the
@@ -989,39 +997,40 @@ let verbose_result t ?excused (r : Run.result) =
       match r.prop_stats with
       | Some s when s.Property.collected <> [] -> pp_prop_stats t s
       | _ -> ())
-  | Failure.Fail _, Some { Test_tree.reason } ->
+  | Failure.Fail _ when not r.counted ->
       (* An expected failure (amendment B12): informational and dim. *)
       let suffix =
-        match reason with
-        | Some reason -> spf " (expected failure: %s)" reason
-        | None -> " (expected failure)"
+        match r.xfail with
+        | Some { Test_tree.reason = Some reason } ->
+            spf " (expected failure: %s)" reason
+        | Some { Test_tree.reason = None } | None -> " (expected failure)"
       in
       put t (test_line t ~tag:"XFAIL" ~style:`Faint ~name ~suffix ~timing)
-  | Failure.Fail failures, None ->
+  | Failure.Fail failures ->
       let suffix =
         if has_missing_baseline failures then " \u{2014} no baseline" else ""
       in
       put t (test_line t ~tag:"FAIL" ~style:`Red ~name ~suffix ~timing)
-  | Failure.Skip reason, _ ->
+  | Failure.Skip reason ->
       let suffix = match reason with Some r -> spf " (%s)" r | None -> "" in
       put t (test_line t ~tag:"SKIP" ~style:`Yellow ~name ~suffix ~timing:"")
 
-let compact_glyph t ?excused (r : Run.result) =
-  match (r.outcome, excused) with
-  | Failure.Pass, _ -> st t `Green "."
-  | Failure.Fail _, Some _ -> st t `Faint "x" (* expected failure *)
-  | Failure.Fail _, None -> st t `Red "F"
-  | Failure.Skip _, _ -> st t `Yellow "S"
+let compact_glyph t (r : Run.result) =
+  match r.outcome with
+  | Failure.Pass -> st t `Green "."
+  | Failure.Fail _ when not r.counted -> st t `Faint "x" (* expected failure *)
+  | Failure.Fail _ -> st t `Red "F"
+  | Failure.Skip _ -> st t `Yellow "S"
 
 (* Over the slow threshold and not exempt: skips never count (their
    durations are not run time), tests tagged ["slow"] are exempt
    everywhere, and a zero threshold disables the machinery entirely. *)
-let over_threshold t ~slow_tagged (r : Run.result) =
-  t.slow_threshold > 0. && (not slow_tagged)
+let over_threshold t (r : Run.result) =
+  t.slow_threshold > 0. && (not r.slow_tagged)
   && (match r.outcome with Failure.Skip _ -> false | _ -> true)
   && r.duration >= t.slow_threshold
 
-let result t ?excused ?(slow_tagged = false) (r : Run.result) =
+let result t (r : Run.result) =
   t.seen <- t.seen + 1;
   clear_live t;
   match t.mode with
@@ -1031,16 +1040,11 @@ let result t ?excused ?(slow_tagged = false) (r : Run.result) =
          expected failure is not one), or the first completed untagged
          test over the slow threshold, commits the deferred header and
          rows; the triggering glyph and everything after stream live. *)
-      let counted_failure =
-        match (r.outcome, excused) with
-        | Failure.Fail _, None -> true
-        | _, _ -> false
-      in
-      if t.deferred && (counted_failure || over_threshold t ~slow_tagged r) then
+      if t.deferred && (counted_failure r || over_threshold t r) then
         flush_deferred t;
-      emit_glyph t (compact_glyph t ?excused r)
+      emit_glyph t (compact_glyph t r)
   | `Verbose ->
-      verbose_result t ?excused r;
+      verbose_result t r;
       Pp.flush t.out ()
 
 (* ───── End of run ───── *)
@@ -1346,15 +1350,10 @@ let coverage_report t ?source_roots ~mode collection =
     if mode = `Full then List.iter (coverage_excerpts t) reports
   end
 
-let finish t ?coverage ?(excused = []) ?(slow_tagged = []) ~results ~duration ()
-    =
+let finish t ?coverage ~results ~duration () =
   clear_live t;
-  let is_excused (r : Run.result) =
-    List.mem_assoc (Test_tree.path_to_string r.path) excused
-  in
   let failed_results, excused_results =
-    List.partition
-      (fun (r : Run.result) -> not (is_excused r))
+    List.partition counted_failure
       (List.filter
          (fun (r : Run.result) ->
            match r.outcome with Failure.Fail _ -> true | _ -> false)
@@ -1379,14 +1378,7 @@ let finish t ?coverage ?(excused = []) ?(slow_tagged = []) ~results ~duration ()
         | _ -> acc)
       0 failed_results
   in
-  let slow_results =
-    List.filter
-      (fun (r : Run.result) ->
-        over_threshold t
-          ~slow_tagged:(List.mem (Test_tree.path_to_string r.path) slow_tagged)
-          r)
-      results
-  in
+  let slow_results = List.filter (over_threshold t) results in
   if t.deferred && failed = 0 && slow_results = [] then
     (* Green and healthy: the deferred header and rows are discarded and
        the whole transcript is the one named summary line. *)

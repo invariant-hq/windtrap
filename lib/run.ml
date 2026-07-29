@@ -80,6 +80,9 @@ type fixture_entry = {
 type result = {
   path : string list;
   outcome : Failure.outcome;
+  counted : bool;
+  xfail : Test_tree.xfail option;
+  slow_tagged : bool;
   duration : float;
   attempts : int;
   prop_stats : Property.stats option;

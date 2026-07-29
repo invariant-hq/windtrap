@@ -154,15 +154,14 @@ val begin_test : t -> path:string list -> unit
     Prints nothing unless [live] and [ansi] are set and the mode is not
     [`Quiet]. *)
 
-val result :
-  t -> ?excused:Test_tree.xfail -> ?slow_tagged:bool -> Run.result -> unit
+val result : t -> Run.result -> unit
 (** [result t r] prints [r]'s per-test progress, by mode:
 
     - [`Compact]: one glyph — green [.] pass, red [F] counted failure (assert,
       property, snapshot, timeout, unexpected pass), yellow [S] skip, faint [x]
       expected failure. Glyphs buffer until the run proves noteworthy: the first
       counted-failure result, or the first completed test with
-      [r.duration >= slow_threshold] that is not [slow_tagged] (never when the
+      [r.duration >= slow_threshold] that is not [r.slow_tagged] (never when the
       threshold is [0.]), prints the deferred header, then the rows accumulated
       so far, and from there glyphs commit and flush one by one exactly as if
       they had streamed from the start — byte-identical, wraps and counters
@@ -179,26 +178,20 @@ val result :
       show distributions in failure blocks only.
     - [`Quiet]: nothing — failures re-print in full at {!finish}.
 
-    The output derives from [r], [excused], and [slow_tagged] alone; [t] only
-    counts marks for the wrap counter and the live display.
+    The output derives from [r] alone; [t] only counts marks for the wrap
+    counter and the live display.
 
-    [slow_tagged], default [false], marks [r]'s test as carrying the ["slow"]
-    tag (its own or an ancestor's — the caller decides from the flattened case's
-    tags): such tests are exempt from the slow threshold everywhere. Skips never
-    trigger the threshold; their durations are not run time. The duration
-    compared is {!Run.result.duration} — the attempts summed — so a retried test
-    whose attempts together cross the threshold counts as slow even when its
-    final attempt was fast.
-
-    [excused] marks [r] an {e expected} failure (amendment B12): an [xfail] test
-    whose failing outcome did not count — the caller decides from the runner's
-    [failed_paths] projection and the flattened case's {!Test_tree.case.xfail}.
-    The verbose line then renders as a dim, informational [XFAIL] tag with the
-    annotation's reason ([XFAIL  name (expected failure: issue #42)]) instead of
+    Classification is record-driven (amendment B12): a failing result that did
+    not count ([Fail] outcome, [r.counted = false]) is an {e excused} expected
+    failure — the verbose line renders as a dim, informational [XFAIL] tag with
+    [r.xfail]'s reason ([XFAIL  name (expected failure: issue #42)]) instead of
     a loud [FAIL], and the compact glyph as the faint [x]. An [xfail] test that
-    {e passed} needs no marking: the runner records it as an ordinary counted
-    failure whose message names the reason, so its [FAIL] line and block are
-    already loud. [excused] is ignored unless [r]'s outcome is a failure. *)
+    {e passed} arrives as a counted failure whose message names the reason, so
+    its [FAIL] line and block are already loud. Tests with [r.slow_tagged] are
+    exempt from the slow threshold everywhere; skips never trigger it (their
+    durations are not run time). The duration compared is {!Run.result.duration}
+    — the attempts summed — so a retried test whose attempts together cross the
+    threshold counts as slow even when its final attempt was fast. *)
 
 val note : t -> string -> unit
 (** [note t line] prints the run-scoped notice [line] on its own line and
@@ -215,8 +208,6 @@ val note : t -> string -> unit
 val finish :
   t ->
   ?coverage:Run.summary ->
-  ?excused:(string * Test_tree.xfail) list ->
-  ?slow_tagged:string list ->
   results:Run.result list ->
   duration:float ->
   unit ->
@@ -240,7 +231,7 @@ val finish :
       filter, then its bounded captured-output tail and full-log path, printed
       once per test) — when any test failed;
     - the slow warnings (unless [`Quiet]): one faint-yellow line per completed
-      test over the slow threshold not named in [slow_tagged]
+      test over the slow threshold whose record is not [slow_tagged]
       ([slow: parser › tokenize took 2.50s]), in execution order, then one faint
       hint line naming the opt-outs (the ["slow"] tag,
       [WINDTRAP_SLOW_THRESHOLD]). The duration shown and compared is
@@ -275,18 +266,13 @@ val finish :
       the [report]/[full]/[off] coverage modes: {!coverage_report} prints its
       own line, without the hint.
 
-    [excused], default [[]], lists the expected failures (amendment B12) by
-    joined path ({!Test_tree.path_to_string}) with their annotations — the
-    caller derives it as for {!result}. Excused results leave the failure
-    section, the failed count, and the rerun hint: they did not fail the run,
-    and a summary that counted them red would contradict the exit code (their
-    stream lines already reported them as [XFAIL]).
-
-    [slow_tagged], default [[]], lists the joined paths of the tests carrying
-    the ["slow"] tag — the caller derives it from the flattened cases, as
-    {!result}'s per-test flag. Named results are exempt from the slow warnings
-    and from keeping a deferred compact transcript noteworthy; skips are exempt
-    regardless.
+    Classification is record-driven, as {!result} (amendment B12): excused
+    results — failing results that did not count ([r.counted = false]) — leave
+    the failure section, the failed count, and the rerun hint: they did not fail
+    the run, and a summary that counted them red would contradict the exit code
+    (their stream lines already reported them as [XFAIL]). [slow_tagged] results
+    are exempt from the slow warnings and from keeping a deferred compact
+    transcript noteworthy; skips are exempt regardless.
 
     Failure blocks render each test's captured tail from the first
     {!Failure.tail} attached to its failures: the retained lines (at most

@@ -130,24 +130,26 @@ let test_groups () =
 (* ───── Expected failures and subtests (amendments B12/B13) ───── *)
 
 let test_excused_filtered () =
+  (* Classification is record-driven: an excused expected failure — a
+     failing record that did not count — annotates nothing, while the
+     unexpected-pass record (counted, annotation and all) stays loud. *)
   let results =
     [
       Fixtures.excused_result;
       Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
     ]
   in
-  let block =
-    Render_github.annotations ~excused:[ Fixtures.excused_path ] results
-  in
+  let block = Render_github.annotations results in
   check "excused failures produce no annotation"
     (count_occurrences ~sub:"::error " block = 1);
   check_absent "excused test absent from the block" ~sub:"broken carry" block;
   check_contains "counted failures still annotate"
     ~sub:"title=Test failure%3A bad::" block;
   check_string "all failures excused, no output" ~expected:""
-    ~actual:
-      (Render_github.annotations ~excused:[ Fixtures.excused_path ]
-         [ Fixtures.excused_result ])
+    ~actual:(Render_github.annotations [ Fixtures.excused_result ]);
+  check_contains "an unexpected pass still annotates"
+    ~sub:"title=Test failure%3A known › fixed already::"
+    (Render_github.annotations [ Fixtures.xpass_result ])
 
 let test_subtest_annotations () =
   let block = Render_github.annotations [ Fixtures.subtest_result ] in
