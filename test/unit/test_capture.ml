@@ -547,6 +547,37 @@ let dispatch_child () =
   | [ _; "--capture-cloexec-child"; log_dir ] -> child_spawn_holder log_dir
   | _ -> ()
 
+(* ───── The log fd itself is close-on-exec ───── *)
+
+let test_log_fd_is_cloexec () =
+  (* The companion of cli/F-5: the .output fd must be as close-on-exec as
+     the saved dups. An exec'd child writes through the redirected fds 1-2
+     and must not also inherit the raw log fd. The child probes which of
+     its fds 3-9 alias its own stdout — the log file during capture — so
+     unrelated descriptors open in this process cannot trip it. *)
+  if Sys.win32 then skip ~reason:"no /bin/sh on Windows" ();
+  with_temp_root @@ fun root ->
+  let cap = Capture.create ~log_dir:root ~suite:"cloexec" () in
+  let status = ref (-1) in
+  Capture.with_capture cap ~groups:[] ~test_name:"probe" (fun () ->
+      status :=
+        Sys.command
+          "for fd in 3 4 5 6 7 8 9; do if [ /dev/fd/$fd -ef /dev/fd/1 ]; then \
+           echo \"LEAK:$fd\"; fi; done; echo probed");
+  check_int "probe shell exits 0" ~expected:0 ~actual:!status;
+  let run_dir =
+    match Capture.run_dir cap with
+    | Some d -> d
+    | None ->
+        check "run_dir is Some when enabled" false;
+        "."
+  in
+  let content = read_file (Filename.concat run_dir "probe.output") in
+  check "the child still writes through the redirected fd 1"
+    (contains content "probed");
+  check "no fd aliasing the log file leaks to the child"
+    (not (contains content "LEAK:"))
+
 let tests =
   [
     test "fd-level round trip into the per-test file" test_fd_round_trip;
@@ -569,4 +600,5 @@ let tests =
     test "latest links" test_link_latest;
     test "saved descriptors are close-on-exec"
       test_saved_descriptors_are_cloexec;
+    test "the log fd is close-on-exec" test_log_fd_is_cloexec;
   ]

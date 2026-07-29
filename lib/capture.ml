@@ -137,8 +137,13 @@ let with_capture t ~groups ~test_name fn =
       let path = output_path e ~groups ~test_name in
       Path_ops.mkdir_p (Filename.dirname path);
       (* O_TRUNC is the per-attempt reset: a retry reuses the file, so the
-         report shows the final attempt's output only. *)
-      let fd = Unix.openfile path Unix.[ O_WRONLY; O_CREAT; O_TRUNC ] 0o660 in
+         report shows the final attempt's output only. O_CLOEXEC for the
+         same reason the saved dups below are close-on-exec (cli/F-5): a
+         subprocess the test execs writes through the redirected fds 1-2
+         and must never inherit the log fd itself. *)
+      let fd =
+        Unix.openfile path Unix.[ O_WRONLY; O_CREAT; O_TRUNC; O_CLOEXEC ] 0o660
+      in
       let saved =
         (* Output buffered before this attempt belongs to the real streams,
            not to this test: drain before redirecting. *)
