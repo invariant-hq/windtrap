@@ -69,7 +69,6 @@ type config = {
           noteworthy and warns (default [1.]; [0.] disables both). Invariant:
           finite and non-negative, validated by the CLI layer. *)
   prop_count : int option;  (** [--prop-count]: generated cases per property. *)
-  quiet : bool;  (** [--quiet]: failures-only terminal output. *)
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   color : Env.color_mode;  (** [--color]/[WINDTRAP_COLOR]. *)
   columns : int option;

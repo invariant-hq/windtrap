@@ -77,7 +77,6 @@ type invocation = [ `Exe of string | `Mirrors ]
 val create :
   out:Format.formatter ->
   ansi:bool ->
-  ?quiet:bool ->
   ?mode:[ `Quiet | `Compact | `Verbose ] ->
   ?live:bool ->
   ?columns:int ->
@@ -101,8 +100,6 @@ val create :
       preamble; a green, healthy run is one named line). [`Verbose]
       ([--verbose]) prints one status line per test instead of the glyph. Every
       level prints the same failure blocks and the same summary line.
-    - [quiet], legacy sugar: [quiet:true] is [mode:`Quiet]. Ignored when [mode]
-      is given. Defaults to [false].
     - [live], whether {!begin_test} maintains a self-erasing progress display
       with terminal cursor controls. Pass the sink's TTY status; under
       [ansi:false] or [`Quiet] it is off regardless. Defaults to [false].

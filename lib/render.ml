@@ -740,18 +740,13 @@ type t = {
          one-liner's seed suffix. *)
 }
 
-let create ~out ~ansi ?(quiet = false) ?mode ?(live = false)
+let create ~out ~ansi ?(mode = `Compact) ?(live = false)
     ?(columns = default_columns) ?(tail_lines = default_tail_lines)
     ?(slow_threshold = 1.0) ?(invocation = `Mirrors) () =
   if columns < 20 then invalid_arg "Render.create: columns < 20";
   if tail_lines < 0 then invalid_arg "Render.create: tail_lines < 0";
   if not (Float.is_finite slow_threshold && slow_threshold >= 0.) then
     invalid_arg "Render.create: slow_threshold not finite and non-negative";
-  let mode =
-    match mode with
-    | Some mode -> mode
-    | None -> if quiet then `Quiet else `Compact
-  in
   {
     out;
     ansi;

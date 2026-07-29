@@ -677,10 +677,6 @@ let resolve ?(overrides = empty) cli =
       slow_threshold =
         Option.value slow_threshold ~default:defaults.Run.slow_threshold;
       prop_count;
-      (* [Run.config] carries only the quiet bit (the inline ppx runner's
-         renderer wiring reads it); the full three-level axis is
-         [output_level], which the facade resolves for its renderer. *)
-      quiet = resolve_output ~overrides cli = `Quiet;
       junit = first_some overrides.junit cli.junit;
       color =
         Option.value

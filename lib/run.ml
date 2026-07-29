@@ -22,7 +22,6 @@ type config = {
   timeout : float option;
   slow_threshold : float;
   prop_count : int option;
-  quiet : bool;
   junit : string option;
   color : Env.color_mode;
   columns : int option;
@@ -49,7 +48,6 @@ let default_config () =
     timeout = None;
     slow_threshold = 1.0;
     prop_count = None;
-    quiet = false;
     junit = None;
     color = Env.Auto;
     columns = None;

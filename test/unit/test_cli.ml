@@ -376,8 +376,7 @@ let () =
     ((not config.Run.quick)
     && (not config.Run.failed_only)
     && (not config.Run.list_only) && (not config.Run.stream)
-    && (not config.Run.prune) && (not config.Run.quiet)
-    && not config.Run.allow_focus);
+    && (not config.Run.prune) && not config.Run.allow_focus);
   check "default: update off" (config.Run.update = Env.No_update);
   check "default: no bail/timeout/prop-count/junit"
     (config.Run.bail = None && config.Run.timeout = None
@@ -479,11 +478,10 @@ let () =
         Cli.quick = Some true;
         bail = Some 2;
         log_dir = Some "custom-logs";
-        output = Some `Quiet;
       }
   in
   check "parsed booleans and values land in the config"
-    (config.Run.quick && config.Run.bail = Some 2 && config.Run.quiet
+    (config.Run.quick && config.Run.bail = Some 2
     && config.Run.log_dir = "custom-logs")
 
 (* ───── Resolution: numeric limits stay validated past the parser ───── *)
@@ -566,12 +564,9 @@ let () =
   reg "output level resolution" @@ fun () ->
   clear_env ();
   check "default level is compact" (Cli.output_level Cli.empty = `Compact);
-  check "default config is not quiet" (not (resolve Cli.empty).Run.quiet);
   Unix.putenv "WINDTRAP_QUIET" "1";
   check "WINDTRAP_QUIET reaches quiet (the dune runtest path)"
     (Cli.output_level Cli.empty = `Quiet);
-  check "resolve mirrors the winning level into config.quiet"
-    (resolve Cli.empty).Run.quiet;
   check "CLI -v beats WINDTRAP_QUIET"
     (Cli.output_level { Cli.empty with Cli.output = Some `Verbose } = `Verbose);
   Unix.putenv "WINDTRAP_VERBOSE" "1";

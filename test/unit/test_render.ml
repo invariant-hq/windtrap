@@ -387,27 +387,7 @@ let test_create_validation () =
          Render.create ~out:ppf ~ansi:false ~slow_threshold:(-1.0) ()));
   check "create: non-finite slow_threshold rejected"
     (raises (fun () ->
-         Render.create ~out:ppf ~ansi:false ~slow_threshold:Float.nan ()));
-  (* The legacy [?quiet] sugar (the inline ppx runner's wiring). The probe
-     is a counted failure: it streams a glyph under Compact (noteworthy),
-     nothing under Quiet. *)
-  let capture ?quiet ?mode fn =
-    let buf = Buffer.create 64 in
-    let ppf = Format.formatter_of_buffer buf in
-    fn (Render.create ~out:ppf ~ansi:false ?quiet ?mode ());
-    Format.pp_print_flush ppf ();
-    Buffer.contents buf
-  in
-  let result r =
-    Render.result r
-      (Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]))
-  in
-  check_string "create: quiet:true is mode Quiet" ~expected:""
-    ~actual:(capture ~quiet:true result);
-  check_string "create: quiet:false defaults to Compact" ~expected:"F"
-    ~actual:(capture ~quiet:false result);
-  check_string "create: an explicit mode wins over quiet" ~expected:"F"
-    ~actual:(capture ~quiet:true ~mode:`Compact result)
+         Render.create ~out:ppf ~ansi:false ~slow_threshold:Float.nan ()))
 
 let test_no_tests () =
   let t =

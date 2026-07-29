@@ -131,9 +131,8 @@ val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
     each field, the first value present in [overrides] (programmatic, defaults
     to {!empty}), then [cli], then the field's [WINDTRAP_*] environment mirror
     ({!Env}), then {!Run.default_config} — except [tags] and [exclude_tags],
-    which are additive across all three layers, overrides first, and [quiet],
-    which is [true] iff {!output_level} of the same layers resolves [`Quiet].
-    The env-only settings ([WINDTRAP_ALLOW_FOCUS], [WINDTRAP_COLUMNS],
+    which are additive across all three layers, overrides first. The env-only
+    settings ([WINDTRAP_ALLOW_FOCUS], [WINDTRAP_COLUMNS],
     [WINDTRAP_TAIL_ERRORS]) are filled from the environment alone.
 
     Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
@@ -178,9 +177,9 @@ val output_level :
     spellings, as [WINDTRAP_STREAM]; when both are truthy, verbose wins — the
     variables carry no order for last-one-wins), else [`Compact]. Resolved apart
     from {!resolve} like {!coverage_mode}, because it is a rendering decision,
-    not run configuration — {!Run.config} keeps only the [quiet] bit, which
-    {!resolve} fills from the same resolution. Levels never change outcomes or
-    exit codes; the renderer projects the same run data at every level.
+    not run configuration — {!Run.config} carries no verbosity field. Levels
+    never change outcomes or exit codes; the renderer projects the same run data
+    at every level.
 
     Effects: reads the environment when no layer above it decides. Never errors:
     unparseable boolean values count as unset. *)
