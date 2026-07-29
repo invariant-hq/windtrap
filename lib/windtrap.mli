@@ -140,6 +140,8 @@ val slow :
 val cases :
   ?pos:pos ->
   ?tags:string list ->
+  ?timeout:float ->
+  ?retries:int ->
   ?name:('a -> string) ->
   string ->
   'a list ->
@@ -150,7 +152,8 @@ val cases :
     is named by applying the [?name] function to its input — at declaration time
     — when given, and ["<name>.<i>"] otherwise; either way each sub-test is
     individually selectable ([-f "name › 8080"]) and one bad input does not mask
-    the rest. *)
+    the rest. [timeout] and [retries] apply to each child — per input, not per
+    table. *)
 
 val xfail : ?reason:string -> test -> test
 (** [xfail t] marks [t] — and, through a group, every test under it — as
@@ -443,6 +446,7 @@ module Gen = Gen
 val prop :
   ?pos:pos ->
   ?tags:string list ->
+  ?timeout:float ->
   ?count:int ->
   ?examples:'a list ->
   string ->
@@ -452,6 +456,12 @@ val prop :
 (** [prop name gen law] declares a property test: [law] must hold for every
     value of [gen].
 
+    - [timeout] is the per-test limit in seconds (defaults to the runner's
+      [--timeout]); it bounds the whole property — generation and shrinking
+      included. A timeout that expires before any case has failed fails the test
+      as timed out; one that expires during shrinking ends the search and
+      reports the best counterexample found so far, marked as possibly not
+      minimal.
     - [count] is the generated-case count; the declaration site wins over
       [--prop-count], which wins over the default of [100]. A failure under a
       [--prop-count]-supplied count restates it in the replay hint — replaying a
@@ -460,10 +470,8 @@ val prop :
       are already the reviewed minimal form) — the home for regressions worth
       keeping forever: [prop ~examples:[ Rect (2., 0.) ] ...].
 
-    The per-test [timeout] bounds the whole property — generation and shrinking
-    included. A timeout that expires before any case has failed fails the test
-    as timed out; one that expires during shrinking ends the search and reports
-    the best counterexample found so far, marked as possibly not minimal.
+    [prop] deliberately has no [retries]: a property replays deterministically
+    from the root seed, so a retry would re-run the identical failing stream.
 
     Property tests carry the tag ["prop"] (so [--tag prop] selects them); the
     run header prints the root seed token when the suite declares any. *)

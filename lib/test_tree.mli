@@ -116,6 +116,8 @@ val slow :
 val cases :
   ?pos:Loc.pos ->
   ?tags:string list ->
+  ?timeout:float ->
+  ?retries:int ->
   ?name:('a -> string) ->
   string ->
   'a list ->
@@ -126,7 +128,9 @@ val cases :
     [fn input]. The child is named [render input] when [render] is given —
     applied at declaration time — and ["<name>.<i>"] otherwise, making each
     sub-test individually selectable by path filter. All children share the
-    [cases] call's declaration position and file. *)
+    [cases] call's declaration position and file, and each child runs under
+    [timeout] and [retries] — per child, not per table: every input gets the
+    full budget. *)
 
 val bracket :
   ?pos:Loc.pos ->

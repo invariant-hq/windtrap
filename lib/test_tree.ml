@@ -102,7 +102,10 @@ let group ?pos ?tags name children =
 let fgroup ?pos ?tags name children =
   make_group ?pos ?tags ~focused:true name children
 
-let cases ?pos ?(tags = []) ?name:name_of base inputs fn =
+let cases ?pos ?(tags = []) ?timeout ?(retries = 0) ?name:name_of base inputs fn
+    =
+  check_timeout timeout;
+  check_retries retries;
   let loc, file = declared_at pos in
   let child index input =
     let child_name =
@@ -117,8 +120,8 @@ let cases ?pos ?(tags = []) ?name:name_of base inputs fn =
         loc;
         file;
         tags = Tag.empty;
-        timeout = None;
-        retries = 0;
+        timeout;
+        retries;
         focused = false;
         xfail = None;
       }

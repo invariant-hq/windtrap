@@ -295,6 +295,47 @@ let () =
           (contains "timed out" (message_of f))
     | _ -> check "pre-failure timeout: one failure" false
 
+(* The per-test budget is declarable at the site — [prop ~timeout] and
+   [cases ~timeout]/[~retries] — not only through the global [--timeout]:
+   both routes converge on the same Test_tree fields, so the memo semantics
+   pinned above (pre-failure timeout, mid-shrink marking) hold unchanged. *)
+let () =
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let config = base_config ~log_dir:root () in
+    let attempts = ref 0 in
+    let tests =
+      [
+        Runner.prop ~timeout:0.2 "budgeted-prop" Gen.int (fun _ ->
+            Unix.sleepf 0.05);
+        Test_tree.cases ~timeout:0.2 "table"
+          ~name:(function `Slow -> "slow" | `Fast -> "fast")
+          [ `Slow; `Fast ]
+          (fun input -> if input = `Slow then busy_forever ());
+        Test_tree.cases ~retries:2 "flaky-table" [ () ] (fun () ->
+            incr attempts;
+            if !attempts < 3 then Check.fail "not yet");
+      ]
+    in
+    expect_run "declared-budget suite runs" ~config tests @@ fun outcome ->
+    (match failure_list (outcome_of outcome [ "budgeted-prop" ]) with
+    | [ f ] ->
+        check "prop ~timeout bounds the whole property"
+          (contains "timed out" (message_of f))
+    | _ -> check "budgeted-prop: one failure" false);
+    (match failure_list (outcome_of outcome [ "table"; "slow" ]) with
+    | [ f ] ->
+        check "a cases child overrunning its ~timeout times out"
+          (contains "timed out" (message_of f))
+    | _ -> check "table › slow: one failure" false);
+    check "the sibling gets its own full budget"
+      (outcome_of outcome [ "table"; "fast" ] = Some Failure.Pass);
+    match result_of outcome [ "flaky-table"; "flaky-table.0" ] with
+    | Some r ->
+        check "cases ~retries gives each child the extra attempts"
+          (r.Run.outcome = Failure.Pass && r.Run.attempts = 3)
+    | None -> check "flaky-table.0 recorded" false)
+
 (* ───── Retries ───── *)
 
 let () =

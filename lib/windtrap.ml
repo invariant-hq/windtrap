@@ -133,9 +133,9 @@ let contramap = Testable.contramap
    when the suite declares property tests. *)
 let prop_tag = "prop"
 
-let prop ?pos ?tags ?count ?examples name gen law =
+let prop ?pos ?tags ?timeout ?count ?examples name gen law =
   let tags = prop_tag :: Option.value ~default:[] tags in
-  Runner.prop ?pos ~tags ?count ?examples name gen law
+  Runner.prop ?pos ~tags ?timeout ?count ?examples name gen law
 
 let assume = Property.assume
 let reject = Property.reject

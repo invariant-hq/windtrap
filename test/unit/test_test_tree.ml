@@ -251,6 +251,20 @@ let () =
   check "each cases body receives its own input" (List.rev !seen = [ 1; 2; 3 ])
 
 let () =
+  reg "cases forwards timeout and retries to every child" @@ fun () ->
+  (match T.flatten [ T.cases ~timeout:2.5 ~retries:3 "t" [ 0; 1 ] ignore ] with
+  | [ a; b ] ->
+      check "first child carries the declared budget"
+        (a.T.timeout = Some 2.5 && a.T.retries = 3);
+      check "second child carries the declared budget"
+        (b.T.timeout = Some 2.5 && b.T.retries = 3)
+  | _ -> check "cases budget flatten shape" false);
+  expect_invalid_arg "cases rejects a zero timeout" (fun () ->
+      T.cases ~timeout:0. "t" [ 0 ] ignore);
+  expect_invalid_arg "cases rejects negative retries" (fun () ->
+      T.cases ~retries:(-1) "t" [ 0 ] ignore)
+
+let () =
   reg "cases ?name names sub-tests from values" @@ fun () ->
   let tree = T.cases ~name:string_of_int "n" [ 10; 20 ] ignore in
   check_paths "cases ?name names sub-tests from values"

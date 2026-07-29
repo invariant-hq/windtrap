@@ -109,6 +109,7 @@
 val prop :
   ?pos:Loc.pos ->
   ?tags:string list ->
+  ?timeout:float ->
   ?count:int ->
   ?examples:'a list ->
   string ->
@@ -119,9 +120,13 @@ val prop :
     [law] over [gen] through the property engine ({!Property.run}), with
     per-case seeds derived from the run's root seed and the test's path (RFC Law
     7) and the engine's context installed in the frame while [law] runs (so the
-    ambient [collect]/[classify]/[cover] reach it). [count] is the
-    generated-case count: the declaration site wins over [--prop-count], which
-    wins over the engine default of [100]. [examples] run first, unshrunk.
+    ambient [collect]/[classify]/[cover] reach it). [timeout] is the underlying
+    test's per-test limit ({!Test_tree.test}); as the whole property runs inside
+    one test body, it budgets generation and shrinking together — a timeout
+    during the shrink search ends the search at the best counterexample found
+    ({!Property.run}, Shrinking). [count] is the generated-case count: the
+    declaration site wins over [--prop-count], which wins over the engine
+    default of [100]. [examples] run first, unshrunk.
 
     The engine's outcome becomes the test's: a counterexample is a
     {!Failure.Property} failure; an unsatisfied [cover] threshold or an

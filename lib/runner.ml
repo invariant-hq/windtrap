@@ -43,7 +43,7 @@ let install_exit_guard () =
    to user code — the raise happens after the user's law returned. *)
 exception Prop_outcome of Property.outcome
 
-let prop ?pos ?tags ?count ?examples name gen law =
+let prop ?pos ?tags ?timeout ?count ?examples name gen law =
   let loc = Loc.resolve ?pos () in
   let body () =
     let frame = Run.current_frame () in
@@ -65,7 +65,7 @@ let prop ?pos ?tags ?count ?examples name gen law =
     in
     raise (Prop_outcome outcome)
   in
-  Test_tree.test ?pos ?tags name body
+  Test_tree.test ?pos ?tags ?timeout name body
 
 let coverage_failure ?loc (stats : Property.stats) =
   let unsatisfied =
