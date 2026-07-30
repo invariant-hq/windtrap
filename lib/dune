@@ -1,4 +1,7 @@
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix))
+ (libraries unix)
+ (foreign_stubs
+  (language c)
+  (names capture_stubs)))
