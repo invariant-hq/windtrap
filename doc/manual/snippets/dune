@@ -1,0 +1,28 @@
+; Compile-checks for doc/manual/: every OCaml snippet in the manual is
+; mirrored here, so a snippet that rots breaks the build.
+;
+; - manual_snippets: the passing snippets, run green under runtest (its
+;   snapshot baselines live in __snapshots__/, hence the deps glob).
+; - manual_expect: the expect-test chapter's snippets, a real
+;   (inline_tests) library driven by dune exactly as the manual shows.
+; - transcript_fail: the failing walkthroughs — built, never run by
+;   runtest; run it by hand to regenerate the manual's transcripts.
+
+(test
+ (name manual_snippets)
+ (modules manual_snippets)
+ (libraries windtrap)
+ (deps
+  (glob_files_rec __snapshots__/**)))
+
+(library
+ (name manual_expect)
+ (modules manual_expect)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name transcript_fail)
+ (modules transcript_fail)
+ (libraries windtrap))

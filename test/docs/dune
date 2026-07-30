@@ -1,0 +1,14 @@
+; Documentation conformance: compiled mirrors of the RFC guide's call
+; sites (test_guide), the migration reference's compile matrix
+; (test_migrating; CHANGES.md's 0.2.0 entry), and doc/cookbook.md's
+; recipes (test_cookbook). test_guide and test_migrating drive suites
+; through Runner.execute in-process with synthetic configs;
+; test_cookbook runs as a plain windtrap suite through [run].
+
+; test_guide and test_migrating print through the shared meta harness
+; (test/unit/harness.ml) so their one-liners carry the tree-wide summary
+; dialect; test_cookbook needs no harness — windtrap renders its run.
+
+(tests
+ (names test_guide test_migrating test_cookbook)
+ (libraries windtrap unix harness))

@@ -1,0 +1,6 @@
+; The twelve assertion verbs, testable composition, and table-driven cases.
+
+(test
+ (name test_assertions)
+ (modules test_assertions)
+ (libraries windtrap))

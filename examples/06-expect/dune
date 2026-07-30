@@ -1,0 +1,9 @@
+; The guide's expect-test example: a library with (inline_tests) and
+; (pps ppx_windtrap). dune builds and drives the inline runner; stale
+; [%expect] payloads show as a diff and are accepted with dune promote.
+
+(library
+ (name windtrap_example_expect)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))

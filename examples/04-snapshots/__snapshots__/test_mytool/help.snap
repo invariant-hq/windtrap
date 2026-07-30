@@ -1,0 +1,8 @@
+Usage: mytool [OPTIONS] COMMAND
+
+Commands:
+  build    Build the project
+  test     Run the tests
+
+Options:
+  --help   Show this help
