@@ -21,7 +21,6 @@
 
 (package
  (name windtrap)
- (allow_empty)
  (synopsis "One library for all your OCaml tests")
  (description
   "Unit, property, and snapshot tests in one flat API: sixteen assertion verbs with structured diffs for every type, generators with integrated shrinking and replayable seeds, name-keyed snapshot baselines, and a runner with filtering, sharding, and JUnit output. Inline expect tests and code coverage come from the companion ppx_windtrap package.")
