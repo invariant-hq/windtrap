@@ -1,0 +1,35 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_match___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 9 0 in
+      Windtrap_coverage.register ~file:"./fixture_match.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 150; end_ofs = 161 };
+                  { Windtrap_coverage.start_ofs = 173; end_ofs = 178
+                  };{ Windtrap_coverage.start_ofs = 166; end_ofs = 192 };
+                  { Windtrap_coverage.start_ofs = 204; end_ofs = 209
+                  };{ Windtrap_coverage.start_ofs = 197; end_ofs = 223 };
+                  { Windtrap_coverage.start_ofs = 133; end_ofs = 245
+                  };{ Windtrap_coverage.start_ofs = 284; end_ofs = 304 };
+                  { Windtrap_coverage.start_ofs = 269; end_ofs = 278
+                  };{ Windtrap_coverage.start_ofs = 265; end_ofs = 304 }|]
+        ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_match___ml
+[@@@ocaml.text "/*"]
+let classify n =
+  ___windtrap_visit___ 5;
+  (match n with
+   | 0 -> (___windtrap_visit___ 0; "zero")
+   | n when ___windtrap_visit___ 1; n > 0 ->
+       (___windtrap_visit___ 2; "positive")
+   | n when ___windtrap_visit___ 3; n < 0 ->
+       (___windtrap_visit___ 4; "negative")
+   | _ -> assert false)
+let safe_head l =
+  ___windtrap_visit___ 8;
+  (try ___windtrap_post_visit___ 7 (List.hd l)
+   with | Failure _ -> (___windtrap_visit___ 6; "empty"))

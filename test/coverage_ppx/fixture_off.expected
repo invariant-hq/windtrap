@@ -1,0 +1,39 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_off___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 6 0 in
+      Windtrap_coverage.register ~file:"./fixture_off.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 270; end_ofs = 273 };
+                  { Windtrap_coverage.start_ofs = 261; end_ofs = 264
+                  };{ Windtrap_coverage.start_ofs = 247; end_ofs = 273 };
+                  { Windtrap_coverage.start_ofs = 943; end_ofs = 951
+                  };{ Windtrap_coverage.start_ofs = 954; end_ofs = 962 };
+                  { Windtrap_coverage.start_ofs = 930; end_ofs = 962
+                  }|] ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+  end
+open Windtrap_cov_________fixture_off___ml
+[@@@ocaml.text "/*"]
+let visible n =
+  ___windtrap_visit___ 2;
+  if n > 0
+  then (___windtrap_visit___ 1; "p")
+  else (___windtrap_visit___ 0; "n")
+let hidden n = ((if n > 0 then "p" else "n")[@coverage off])
+let skipped n = if n > 0 then "p" else "n"[@@coverage off]
+module Dark_module = struct let inside n = if n > 0 then "p" else "n" end
+[@@coverage off]
+[@@@coverage off]
+let dark n = match n with | 0 -> "z" | _ -> "x"
+module type T  = sig val v : int end
+module Packed = (val
+  if Sys.word_size = 64
+  then ((module struct let v = 1 end) : (module T))
+  else ((module struct let v = 2 end) : (module T)))
+[@@@coverage on]
+let light n =
+  ___windtrap_visit___ 5;
+  (match n with
+   | 0 -> (___windtrap_visit___ 3; "z")
+   | _ -> (___windtrap_visit___ 4; "x"))

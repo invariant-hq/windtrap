@@ -1,0 +1,25 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_scope___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 6 0 in
+      Windtrap_coverage.register ~file:"./fixture_scope.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 563; end_ofs = 568 };
+                  { Windtrap_coverage.start_ofs = 584; end_ofs = 589
+                  };{ Windtrap_coverage.start_ofs = 605; end_ofs = 613 };
+                  { Windtrap_coverage.start_ofs = 636; end_ofs = 642
+                  };{ Windtrap_coverage.start_ofs = 661; end_ofs = 668 };
+                  { Windtrap_coverage.start_ofs = 684; end_ofs = 696
+                  }|] ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+  end
+open Windtrap_cov_________fixture_scope___ml
+[@@@ocaml.text "/*"]
+let top_level = 1
+let greeting = "hello"
+let add a b = ___windtrap_visit___ 0; a + b
+let negate b = ___windtrap_visit___ 1; not b
+let vanish x = ___windtrap_visit___ 2; ignore x
+let labeled_only ~f = ___windtrap_visit___ 3; f ~x:1
+let tail_call x = ___windtrap_visit___ 4; add x 1
+let never () = ___windtrap_visit___ 5; assert false

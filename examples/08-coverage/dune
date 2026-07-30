@@ -1,0 +1,22 @@
+; The coverage walkthrough (the guide's "Coverage" section): one stanza
+; on the library under test, committed once and inert without the flag —
+; this plain `dune runtest` runs uninstrumented, with zero overhead and
+; no coverage output. For the inline percentage and the reports:
+;
+;   dune runtest --instrument-with ppx_windtrap
+;   WINDTRAP_COVERAGE=report dune runtest --instrument-with ppx_windtrap
+;   dune exec windtrap -- coverage --min 80
+;
+; The Sub and Mul arms in calc.ml are deliberately untested: instrumented
+; runs report them as the uncovered lines.
+
+(library
+ (name windtrap_example_coverage)
+ (modules calc)
+ (instrumentation
+  (backend ppx_windtrap)))
+
+(test
+ (name test_calc)
+ (modules test_calc)
+ (libraries windtrap windtrap_example_coverage))

@@ -1,0 +1,12 @@
+; The windtrap reporting binary — the third and last home of coverage
+; code (RFC Law 12). One subcommand, `coverage`: find and merge the
+; .coverage files under _build/_coverage, render the per-file table and
+; excerpts, gate with --min, export --json. The table and excerpt layout
+; live in the library renderer (reached through Windtrap.Private), so the
+; in-process WINDTRAP_COVERAGE modes and this command cannot drift.
+
+(executable
+ (name main)
+ (public_name windtrap)
+ (package windtrap)
+ (libraries windtrap windtrap_coverage))

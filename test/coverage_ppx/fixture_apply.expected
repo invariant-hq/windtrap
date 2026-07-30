@@ -1,0 +1,36 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_apply___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 10 0 in
+      Windtrap_coverage.register ~file:"./fixture_apply.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 432; end_ofs = 437 };
+                  { Windtrap_coverage.start_ofs = 537; end_ofs = 547
+                  };{ Windtrap_coverage.start_ofs = 530; end_ofs = 547 };
+                  { Windtrap_coverage.start_ofs = 638; end_ofs = 646
+                  };{ Windtrap_coverage.start_ofs = 630; end_ofs = 657 };
+                  { Windtrap_coverage.start_ofs = 754; end_ofs = 762
+                  };{ Windtrap_coverage.start_ofs = 744; end_ofs = 762 };
+                  { Windtrap_coverage.start_ofs = 879; end_ofs = 895
+                  };{ Windtrap_coverage.start_ofs = 859; end_ofs = 875 };
+                  { Windtrap_coverage.start_ofs = 859; end_ofs = 915
+                  }|] ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_apply___ml
+[@@@ocaml.text "/*"]
+let helper x = ___windtrap_visit___ 0; x + 1
+let nested x =
+  ___windtrap_visit___ 2; helper (___windtrap_post_visit___ 1 (helper x))
+let bound () =
+  ___windtrap_visit___ 4;
+  (let r = ___windtrap_post_visit___ 3 (helper 1) in r + 1)
+let at_op x =
+  ___windtrap_visit___ 6; helper @@ (___windtrap_post_visit___ 5 (helper x))
+let sequenced () =
+  ___windtrap_visit___ 9;
+  ___windtrap_post_visit___ 8 (print_string "a");
+  ___windtrap_post_visit___ 7 (print_string "b");
+  print_newline ()

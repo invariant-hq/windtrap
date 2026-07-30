@@ -1,0 +1,25 @@
+; A windtrap suite over the coverage runtime. The runtime's independence
+; from the windtrap core is a property of lib/coverage (and pinned by
+; test/coverage_ppx/semantics/test_linkonly); the suite itself dogfoods
+; windtrap. dump_child is a separate instrumented-like executable
+; exercising the at_exit dump end to end, redirected to a scratch file
+; via WINDTRAP_COVERAGE_FILE. WINDTRAP_COVERAGE=off keeps the runner's
+; inline coverage line out of runtest: the suite's synthetic in-process
+; registrations would render a meaningless percentage on every green
+; run.
+
+(executable
+ (name dump_child)
+ (modules dump_child)
+ (libraries windtrap_coverage))
+
+(test
+ (name test_coverage)
+ (modules test_coverage)
+ (libraries windtrap windtrap_coverage unix)
+ (deps dump_child.exe)
+ (action
+  (setenv
+   WINDTRAP_COVERAGE
+   off
+   (run %{test}))))

@@ -1,0 +1,45 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_cond___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 10 0 in
+      Windtrap_coverage.register ~file:"./fixture_cond.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 398; end_ofs = 399 };
+                  { Windtrap_coverage.start_ofs = 393; end_ofs = 399
+                  };{ Windtrap_coverage.start_ofs = 417; end_ofs = 418 };
+                  { Windtrap_coverage.start_ofs = 422; end_ofs = 423
+                  };{ Windtrap_coverage.start_ofs = 442; end_ofs = 443 };
+                  { Windtrap_coverage.start_ofs = 447; end_ofs = 448
+                  };{ Windtrap_coverage.start_ofs = 452; end_ofs = 453 };
+                  { Windtrap_coverage.start_ofs = 509; end_ofs = 512
+                  };{ Windtrap_coverage.start_ofs = 509; end_ofs = 512 };
+                  { Windtrap_coverage.start_ofs = 482; end_ofs = 493
+                  }|] ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_cond___ml
+[@@@ocaml.text "/*"]
+let both x y = ___windtrap_visit___ 1; x && ((___windtrap_visit___ 0; y))
+let either x y =
+  ___windtrap_visit___ 2;
+  if x
+  then (___windtrap_visit___ 2; true)
+  else if y then (___windtrap_visit___ 3; true) else false
+let chain a b c =
+  ___windtrap_visit___ 4;
+  if a
+  then (___windtrap_visit___ 4; true)
+  else
+    if b
+    then (___windtrap_visit___ 5; true)
+    else if c then (___windtrap_visit___ 6; true) else false
+let rec search p =
+  function
+  | [] -> (___windtrap_visit___ 9; false)
+  | x::rest ->
+      (___windtrap_visit___ 8;
+       if ___windtrap_post_visit___ 8 (p x)
+       then (___windtrap_visit___ 7; true)
+       else search p rest)

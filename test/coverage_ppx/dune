@@ -1,0 +1,179 @@
+; Golden expansion tests for the coverage instrumenter, one fixture per
+; instrumented form - the entry-point forms plus the expression-grade
+; restorations (application out-edges, pipelines, &&/|| condition arms,
+; class bodies) - and the exclusions (off attributes at every level,
+; excluded file, lazy guard, leaf-only functions, out-of-scope forms, a
+; file with nothing to instrument). pp.exe is a standalone ppxlib driver
+; linking the rewriter; each fixture .ml is expanded (with-stdout-to) or
+; rejected (with-accepted-exit-codes 1, capturing the diagnostic) and
+; diffed against a committed .expected golden. The goldens pin point
+; indexes and byte extents - editing a fixture reshuffles them, so read
+; every promoted diff. Accept intended changes with dune promote. The
+; fixtures are not compiled: only pp is a module.
+
+(executable
+ (name pp)
+ (modules pp)
+ (libraries ppxlib windtrap_coverage_ppx))
+
+; ── Expansion goldens ──
+
+(rule
+ (with-stdout-to
+  fixture_match.actual
+  (run ./pp.exe --impl %{dep:fixture_match.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_match.expected fixture_match.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_fun.actual
+  (run ./pp.exe --impl %{dep:fixture_fun.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_fun.expected fixture_fun.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_if_loops.actual
+  (run ./pp.exe --impl %{dep:fixture_if_loops.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_if_loops.expected fixture_if_loops.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_lazy.actual
+  (run ./pp.exe --impl %{dep:fixture_lazy.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_lazy.expected fixture_lazy.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_letop.actual
+  (run ./pp.exe --impl %{dep:fixture_letop.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_letop.expected fixture_letop.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_apply.actual
+  (run ./pp.exe --impl %{dep:fixture_apply.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_apply.expected fixture_apply.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_pipeline.actual
+  (run ./pp.exe --impl %{dep:fixture_pipeline.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_pipeline.expected fixture_pipeline.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_cond.actual
+  (run ./pp.exe --impl %{dep:fixture_cond.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_cond.expected fixture_cond.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_class.actual
+  (run ./pp.exe --impl %{dep:fixture_class.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_class.expected fixture_class.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_off.actual
+  (run ./pp.exe --impl %{dep:fixture_off.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_off.expected fixture_off.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_exclude.actual
+  (run ./pp.exe --impl %{dep:fixture_exclude.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_exclude.expected fixture_exclude.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_scope.actual
+  (run ./pp.exe --impl %{dep:fixture_scope.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_scope.expected fixture_scope.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_empty.actual
+  (run ./pp.exe --impl %{dep:fixture_empty.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_empty.expected fixture_empty.actual)))
+
+; ── Rejection diagnostics (malformed and misplaced attributes) ──
+
+(rule
+ (target reject_bad_payload.actual)
+ (action
+  (with-outputs-to
+   reject_bad_payload.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_bad_payload.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_bad_payload.expected reject_bad_payload.actual)))
+
+(rule
+ (target reject_misplaced_on.actual)
+ (action
+  (with-outputs-to
+   reject_misplaced_on.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_misplaced_on.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_misplaced_on.expected reject_misplaced_on.actual)))

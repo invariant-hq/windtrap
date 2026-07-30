@@ -1,0 +1,24 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_letop___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 5 0 in
+      Windtrap_coverage.register ~file:"./fixture_letop.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 144; end_ofs = 147 };
+                  { Windtrap_coverage.start_ofs = 167; end_ofs = 173
+                  };{ Windtrap_coverage.start_ofs = 219; end_ofs = 224 };
+                  { Windtrap_coverage.start_ofs = 203; end_ofs = 224
+                  };{ Windtrap_coverage.start_ofs = 266; end_ofs = 272 }|]
+        ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+  end
+open Windtrap_cov_________fixture_letop___ml
+[@@@ocaml.text "/*"]
+let ( let* ) x f = ___windtrap_visit___ 0; f x
+let ( and* ) a b = ___windtrap_visit___ 1; (a, b)
+let sum =
+  let* a = 1
+   in ___windtrap_visit___ 3; (let* b = 2
+                                in ___windtrap_visit___ 2; a + b)
+let pair = let* a = 1
+           and* b = 2 in ___windtrap_visit___ 4; (a, b)

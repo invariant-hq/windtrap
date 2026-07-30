@@ -1,0 +1,18 @@
+; The expression-grade coverage instrumenter (RFC Laws 13-15; Law 14 as
+; amended 2026-07-28). Exposed as
+; ppx_windtrap's instrumentation backend (the (instrumentation.backend)
+; stanza on the ppx_windtrap library names this rewriter); usable
+; directly with (preprocess (pps ppx_windtrap.coverage)) too, which the
+; semantics tests rely on. ppx_runtime_libraries makes every
+; instrumented library link the windtrap.coverage runtime the generated
+; code calls - and nothing else: instrumented user code must never pull
+; the windtrap core into its closure.
+
+(library
+ (name windtrap_coverage_ppx)
+ (public_name ppx_windtrap.coverage)
+ (kind ppx_rewriter)
+ (libraries ppxlib)
+ (ppx_runtime_libraries windtrap.coverage)
+ (preprocess
+  (pps ppxlib.metaquot)))

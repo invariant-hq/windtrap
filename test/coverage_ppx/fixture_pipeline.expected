@@ -1,0 +1,25 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_pipeline___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 5 0 in
+      Windtrap_coverage.register ~file:"./fixture_pipeline.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 321; end_ofs = 326 };
+                  { Windtrap_coverage.start_ofs = 342; end_ofs = 353
+                  };{ Windtrap_coverage.start_ofs = 342; end_ofs = 363 };
+                  { Windtrap_coverage.start_ofs = 389; end_ofs = 400
+                  };{ Windtrap_coverage.start_ofs = 381; end_ofs = 411 }|]
+        ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_pipeline___ml
+[@@@ocaml.text "/*"]
+let double x = ___windtrap_visit___ 0; x * 2
+let staged x =
+  ___windtrap_visit___ 2;
+  (___windtrap_post_visit___ 1 (x |> double)) |> double
+let bound x =
+  ___windtrap_visit___ 4;
+  (let y = ___windtrap_post_visit___ 3 (x |> double) in y + 1)

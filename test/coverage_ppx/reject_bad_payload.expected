@@ -1,0 +1,4 @@
+File "./reject_bad_payload.ml", line 1, characters 18-35:
+1 | let f n = (n + 1) [@coverage bogus]
+                      ^^^^^^^^^^^^^^^^^
+Error: Bad payload in coverage attribute.

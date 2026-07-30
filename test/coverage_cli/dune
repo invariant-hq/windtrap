@@ -1,0 +1,44 @@
+; The Law-12 seam and the reporting command, end to end and without the
+; instrumenter: inline_child fabricates in-process registrations exactly
+; as PPX-generated initializers would (the frozen interchange contract)
+; and runs a real windtrap suite — the seam, the inline line, and the
+; WINDTRAP_COVERAGE / --coverage modes are exercised through the real
+; facade; `windtrap coverage` (bin/main.exe) is driven as a subprocess
+; over synthetic .coverage files written with the runtime's serializer.
+; A windtrap suite (see test/coverage). The lib/ globs feed
+; the Law-12 budget check: the test counts the core's coverage-runtime
+; mentions and fails when the seam grows past its ~25-line cap.
+
+(test
+ (name test_coverage_cli)
+ (modules test_coverage_cli)
+ (libraries windtrap windtrap_coverage unix)
+ (deps
+  inline_child.exe
+  raise_child.exe
+  covcli_fixture.ml
+  ../../bin/main.exe
+  (glob_files ../../lib/*.ml)
+  (glob_files ../../lib/*.mli)))
+
+(executable
+ (name inline_child)
+ (modules inline_child)
+ (libraries windtrap windtrap_coverage))
+
+; The raise-attribution path is the one place this test uses the real
+; instrumenter: covcli_fixture is instrumented unconditionally (pps, no
+; --instrument-with needed) and raise_child drives it through a real
+; windtrap run. The fixture source itself is a test dep: the CLI check
+; replants it in a scratch project to resolve the uncovered line.
+
+(library
+ (name covcli_fixture)
+ (modules covcli_fixture)
+ (preprocess
+  (pps ppx_windtrap.coverage)))
+
+(executable
+ (name raise_child)
+ (modules raise_child)
+ (libraries windtrap covcli_fixture))

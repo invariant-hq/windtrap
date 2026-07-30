@@ -1,0 +1,4 @@
+File "./reject_misplaced_on.ml", line 1, characters 18-32:
+1 | let f n = (n + 1) [@coverage on]
+                      ^^^^^^^^^^^^^^
+Error: coverage on is not allowed here.

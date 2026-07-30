@@ -1,0 +1,48 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_if_loops___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 12 0 in
+      Windtrap_coverage.register ~file:"./fixture_if_loops.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 184; end_ofs = 185 };
+                  { Windtrap_coverage.start_ofs = 176; end_ofs = 178
+                  };{ Windtrap_coverage.start_ofs = 162; end_ofs = 185 };
+                  { Windtrap_coverage.start_ofs = 155; end_ofs = 156
+                  };{ Windtrap_coverage.start_ofs = 141; end_ofs = 185 };
+                  { Windtrap_coverage.start_ofs = 215; end_ofs = 240
+                  };{ Windtrap_coverage.start_ofs = 202; end_ofs = 240 };
+                  { Windtrap_coverage.start_ofs = 300; end_ofs = 306
+                  };{ Windtrap_coverage.start_ofs = 300; end_ofs = 306 };
+                  { Windtrap_coverage.start_ofs = 261; end_ofs = 319
+                  };{ Windtrap_coverage.start_ofs = 380; end_ofs = 399 };
+                  { Windtrap_coverage.start_ofs = 335; end_ofs = 416
+                  }|] ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_if_loops___ml
+[@@@ocaml.text "/*"]
+let sign n =
+  ___windtrap_visit___ 4;
+  if n > 0
+  then (___windtrap_visit___ 3; 1)
+  else
+    (___windtrap_visit___ 2;
+     if n < 0
+     then (___windtrap_visit___ 1; (-1))
+     else (___windtrap_visit___ 0; 0))
+let warn flag =
+  ___windtrap_visit___ 6;
+  if flag then (___windtrap_visit___ 5; print_endline "watch out")
+let count_up n =
+  ___windtrap_visit___ 9;
+  (let i = ref 0 in
+   while (!i) < n do
+     (___windtrap_visit___ 8; ___windtrap_post_visit___ 7 (incr i)) done;
+   !i)
+let sum n =
+  ___windtrap_visit___ 11;
+  (let total = ref 0 in
+   for i = 1 to n do (___windtrap_visit___ 10; total := ((!total) + i)) done;
+   !total)

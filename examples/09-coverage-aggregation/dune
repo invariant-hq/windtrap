@@ -1,0 +1,35 @@
+; Project coverage across several test stanzas (see README.md): one
+; shared instrumented library, two test executables each exercising
+; their half, and the one rule that merges their .coverage dumps.
+;
+;   dune build @examples/09-coverage-aggregation/cover --instrument-with ppx_windtrap
+;
+; runs every stanza that is out of date, then aggregates. Plain
+; `dune runtest` stays uninstrumented and coverage-free. (universe) is
+; load-bearing: the .coverage files are not declarable dependencies, so
+; it makes the milliseconds-cheap aggregate re-run on every build;
+; without it the action caches against nothing and goes stale.
+
+(library
+ (name windtrap_example_aggregation)
+ (modules half_a half_b)
+ (instrumentation
+  (backend ppx_windtrap)))
+
+(test
+ (name test_a)
+ (modules test_a)
+ (libraries windtrap windtrap_example_aggregation))
+
+(test
+ (name test_b)
+ (modules test_b)
+ (libraries windtrap windtrap_example_aggregation))
+
+(rule
+ (alias cover)
+ (deps
+  (alias_rec runtest)
+  (universe))
+ (action
+  (run %{bin:windtrap} coverage --min 80)))

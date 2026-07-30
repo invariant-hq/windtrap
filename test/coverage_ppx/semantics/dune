@@ -1,0 +1,47 @@
+; Semantics preservation, end to end: covsem_fixtures is a real library
+; instrumented by the rewriter (pps applies it unconditionally - no
+; --instrument-with needed here), and test_semantics runs it and reads
+; the in-process runtime. The instrumented library registers at module
+; load and dumps at exit; WINDTRAP_COVERAGE_FILE points the dump at a
+; scratch name so runtest never writes outside its own directory (the
+; env var is read at first register, before main, hence setenv on the
+; action rather than putenv in the test).
+
+(library
+ (name covsem_fixtures)
+ (modules covsem_fixtures)
+ (preprocess
+  (pps ppx_windtrap.coverage)))
+
+; WINDTRAP_COVERAGE=off keeps the runner's inline coverage line out of
+; runtest: the suite's registry assertions read the snapshot directly,
+; and the line would report the fixture's deliberately incomplete
+; instrumentation on every green run.
+
+(test
+ (name test_semantics)
+ (modules test_semantics)
+ (libraries covsem_fixtures windtrap windtrap_coverage)
+ (action
+  (setenv
+   WINDTRAP_COVERAGE_FILE
+   test_semantics.coverage
+   (setenv
+    WINDTRAP_COVERAGE
+    off
+    (run %{test})))))
+
+; The runtime-only link contract: this executable lists covsem_fixtures
+; alone - no windtrap, no windtrap_coverage - and must still build and
+; run, because ppx_runtime_libraries on the rewriter injects the runtime
+; and nothing else pulls the core in.
+
+(test
+ (name test_linkonly)
+ (modules test_linkonly)
+ (libraries covsem_fixtures)
+ (action
+  (setenv
+   WINDTRAP_COVERAGE_FILE
+   test_linkonly.coverage
+   (run %{test}))))

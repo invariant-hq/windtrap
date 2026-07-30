@@ -1,0 +1,19 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_lazy___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 2 0 in
+      Windtrap_coverage.register ~file:"./fixture_lazy.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 228; end_ofs = 235 };
+                  { Windtrap_coverage.start_ofs = 327; end_ofs = 328
+                  }|] ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+  end
+open Windtrap_cov_________fixture_lazy___ml
+[@@@ocaml.text "/*"]
+let computed = lazy (___windtrap_visit___ 0; 1 + 2)
+let const = lazy 42
+let alias = lazy const
+let none = lazy None
+let thunk = lazy (fun x -> ___windtrap_visit___ 1; x)
+let constrained = lazy (42 : int)

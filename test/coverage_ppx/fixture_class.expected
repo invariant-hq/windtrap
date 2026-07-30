@@ -1,0 +1,31 @@
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_class___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 7 0 in
+      Windtrap_coverage.register ~file:"./fixture_class.ml"
+        ~points:[|{ Windtrap_coverage.start_ofs = 378; end_ofs = 391 };
+                  { Windtrap_coverage.start_ofs = 411; end_ofs = 412
+                  };{ Windtrap_coverage.start_ofs = 429; end_ofs = 435 };
+                  { Windtrap_coverage.start_ofs = 321; end_ofs = 322
+                  };{ Windtrap_coverage.start_ofs = 466; end_ofs = 480 };
+                  { Windtrap_coverage.start_ofs = 486; end_ofs = 492
+                  };{ Windtrap_coverage.start_ofs = 458; end_ofs = 503 }|]
+        ~counts;
+      (fun index -> Windtrap_coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_class___ml
+[@@@ocaml.text "/*"]
+class counter ?(step= ___windtrap_visit___ 3; 1)  () =
+  object
+    val mutable n = 0
+    method bump = ___windtrap_visit___ 0; n <- n + step
+    method value = ___windtrap_visit___ 1; n
+    initializer ___windtrap_visit___ 2; n <- 0
+  end
+let use () =
+  ___windtrap_visit___ 6;
+  (let c = ___windtrap_post_visit___ 4 ((new counter) ()) in
+   ___windtrap_post_visit___ 5 c#bump; c#value)
