@@ -1,0 +1,4 @@
+usage: mytool [OPTION]... FILE...
+
+  -o DIR      write output under DIR
+  -j JOBS     run JOBS rewrites in parallel (default 1)

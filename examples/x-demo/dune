@@ -1,0 +1,19 @@
+; The maintainer's visual validation playground: one suite that exercises
+; every output surface windtrap has, with most tests FAILING BY DESIGN so
+; every failure report renders. This is a plain (executable), NOT a (test)
+; stanza, and it is deliberately not attached to runtest: wiring it in
+; would turn the whole-tree `dune runtest` red forever. The default alias
+; still builds it, so it cannot bit-rot silently. Run it directly:
+;
+;   dune exec examples/x-demo/main.exe
+;
+; See README.md in this directory for the guided tour of what to look at.
+; The instrumentation stanza is inert without --instrument-with; with it,
+; runs additionally print the inline coverage line (over main.ml itself).
+
+(executable
+ (name main)
+ (modules main)
+ (libraries windtrap)
+ (instrumentation
+  (backend ppx_windtrap)))
