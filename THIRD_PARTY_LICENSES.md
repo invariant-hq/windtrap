@@ -1,43 +1,16 @@
 # Third Party Licenses
 
-Windtrap includes code derived from several open source projects. This file
-lists those projects and their licenses.
-
-## QCheck (BSD 2-Clause License)
-
-Files: `lib/prop/gen.ml`, `lib/prop/shrink.ml`, `lib/prop/tree.ml`
-
-```
-Copyright (c) 2013-2017, Guillaume Bury, Simon Cruanes, Vincent Hugot, Jan Midtgaard
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-Redistributions of source code must retain the above copyright notice, this
-list of conditions and the following disclaimer. Redistributions in binary
-form must reproduce the above copyright notice, this list of conditions and
-the following disclaimer in the documentation and/or other materials
-provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-```
+Windtrap is ISC licensed. This file lists the files that include code
+derived from other open source projects, and those projects' licenses.
+Each listed file also carries the attribution in its header.
 
 ## Craig Ferguson's Alcotest work (ISC License)
 
-Files: `lib/testable.ml`, `lib/distance.ml`
+Files: `lib/testable.ml`, `lib/testable.mli`, `lib/diff.ml`, `lib/diff.mli`
 
-Derived from unmerged PRs [#294](https://github.com/mirage/alcotest/pull/294)
-and [#247](https://github.com/mirage/alcotest/pull/247).
+Testable instance printers, float tolerance semantics, and the diff
+refinement edit script derive from Craig Ferguson's unmerged Alcotest PR
+[#247](https://github.com/mirage/alcotest/pull/247).
 
 ```
 Copyright (c) 2020-2021 Craig Ferguson
@@ -57,10 +30,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ## Bisect_ppx (MIT License)
 
-Files: `ppx/instrument.ml`, `lib/coverage/windtrap_coverage.ml`
+Files: `ppx/coverage/instrument.ml`
 
-The coverage instrumenter and runtime are adapted from
-[Bisect_ppx](https://github.com/aantron/bisect_ppx).
+The coverage instrumenter adapts portions of
+[Bisect_ppx](https://github.com/aantron/bisect_ppx), and windtrap's
+`[@coverage]` exclusion attributes use the Bisect_ppx spelling.
 
 ```
 Copyright © 2008-2021 Xavier Clerc, Leonid Rozenberg, Anton Bachin
@@ -86,7 +60,10 @@ SOFTWARE.
 
 ## mtime (ISC License)
 
-Files: `lib/clock/clock.ml`
+Files: `lib/clock/clock.ml`, `lib/clock/clock.mli`, `lib/clock/clock_stubs.c`
+
+The monotonic clock is derived from
+[mtime](https://erratique.ch/software/mtime).
 
 ```
 Copyright (c) 2015 The mtime programmers. All rights reserved.
@@ -102,4 +79,40 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+## ppx_expect (MIT License)
+
+Files: vendored fixtures and goldens under `test/conformance/corpus/`
+(see `test/conformance/NOTICE` for the pinned upstream commit and the
+list of local substitutions)
+
+The expect-test conformance corpus is vendored from
+[ppx_expect](https://github.com/janestreet/ppx_expect)'s test suite.
+`lib/ppx_runtime.ml` contains no copied ppx_expect code, but its payload
+matching, correction formatting, and corrected-file writing deliberately
+reproduce ppx_expect's behavior at the same pinned commit.
+
+```
+The MIT License
+
+Copyright (c) 2015--2026 Jane Street Group, LLC <opensource-contacts@janestreet.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```

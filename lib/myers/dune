@@ -1,3 +1,0 @@
-(library
- (name myers)
- (public_name windtrap.myers))

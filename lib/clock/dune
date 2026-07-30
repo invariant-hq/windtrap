@@ -1,6 +1,0 @@
-(library
- (name clock)
- (public_name windtrap.clock)
- (foreign_stubs
-  (language c)
-  (names clock_stubs)))

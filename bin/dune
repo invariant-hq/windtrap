@@ -1,5 +1,0 @@
-(executable
- (name main)
- (public_name windtrap)
- (package windtrap)
- (libraries windtrap.coverage))

@@ -1,4 +1,0 @@
-(library
- (name windtrap)
- (public_name windtrap)
- (libraries unix clock windtrap_prop windtrap.myers windtrap.coverage))

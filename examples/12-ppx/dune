@@ -1,5 +1,0 @@
-(executable
- (name main)
- (libraries windtrap)
- (preprocess
-  (pps ppx_windtrap)))

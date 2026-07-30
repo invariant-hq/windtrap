@@ -21,20 +21,22 @@
 
 (package
  (name windtrap)
+ (allow_empty)
  (synopsis "One library for all your OCaml tests")
  (description
-  "Unit tests, property-based tests, snapshot tests, and expect tests in a single package with one API.")
+  "Unit, property, and snapshot tests in one flat API: sixteen assertion verbs with structured diffs for every type, generators with integrated shrinking and replayable seeds, name-keyed snapshot baselines, and a runner with filtering, sharding, and JUnit output. Inline expect tests and code coverage come from the companion ppx_windtrap package.")
  (depends
   (ocaml
    (>= 5.0)))
  (tags
-  (testing unit-test property-testing expect-test snapshot-testing)))
+  (testing unit-test property-testing expect-test snapshot-testing coverage)))
 
 (package
  (name ppx_windtrap)
+ (allow_empty)
  (synopsis "PPX and instrumentation backend for windtrap")
  (description
-  "PPX syntax for tests (let%test, let%expect_test, module%test, [%expect], [%%run_tests]) and code coverage instrumentation for windtrap.")
+  "Inline test syntax for windtrap (let%test, module%test, let%expect_test, [%expect], [%expect_exact], [%expect.output]) with corrections accepted via dune promote, plus the expression-coverage instrumentation backend enabled with dune's --instrument-with ppx_windtrap.")
  (depends
   (ocaml
    (>= 5.0))

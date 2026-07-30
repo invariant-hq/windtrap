@@ -1,5 +1,0 @@
-(executable
- (name main)
- (libraries windtrap)
- (instrumentation
-  (backend ppx_windtrap)))

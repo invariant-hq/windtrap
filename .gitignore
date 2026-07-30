@@ -7,5 +7,6 @@ _build/
 # Dune lock files
 dune.lock/
 
-# Development tools lock files
-dev-tools.locks/
+#
+_qa/
+qa/
