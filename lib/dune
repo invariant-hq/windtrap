@@ -1,7 +1,13 @@
+; windtrap_coverage is the Law-12 seam's data source: the runner snapshots
+; in-process coverage at run end for the inline summary (RFC "Packages":
+; the runtime sub-library is "linked by the runner for the inline
+; summary"). The dependency points downward only — windtrap_coverage
+; never links windtrap.
+
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix)
+ (libraries unix windtrap_coverage)
  (foreign_stubs
   (language c)
   (names capture_stubs)))
