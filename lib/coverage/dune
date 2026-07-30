@@ -1,0 +1,8 @@
+; The coverage runtime (RFC Law 12): linked by instrumented user code via
+; ppx_runtime_libraries and by the runner for the inline summary. Stdlib
+; only - it must never pull the windtrap core (or anything else) into the
+; closure of every instrumented library.
+
+(library
+ (name windtrap_coverage)
+ (public_name windtrap.coverage))
