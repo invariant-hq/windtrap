@@ -140,7 +140,9 @@ let test_observe_seed_policy () =
 (* ───── The GitHub envelope ───── *)
 
 let test_github_envelope () =
-  (* The producers print to captured stdout; [github:false] gates each. *)
+  (* The producers print to captured stdout; [github:false] gates each.
+     The empty fold (open immediately closed) is the startup-error shape:
+     the thin drivers close the group before reporting a refusal. *)
   Driver.github_start ~github:true "mylib";
   Driver.github_end ~github:true;
   Driver.github_annotations ~github:true ~invocation:`Mirrors
@@ -155,6 +157,39 @@ let test_github_envelope () =
     [ Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]) ];
   check_string "github:false gates every envelope producer" ~expected:""
     ~actual:(output ())
+
+let test_github_envelope_composed () =
+  (* The composed envelope, as both thin drivers assemble it: the fold
+     opens, the transcript streams inside it, the fold closes, and the
+     annotation block follows the close (driver.mli: "The [::group::]
+     fold around the transcript and the [::error::] annotation block
+     after it" — annotations printed after {!github_end} are never
+     folded away). The transcript is the observer's own output on the
+     same sink, so this pins the composition, not three isolated
+     producers. *)
+  Driver.github_start ~github:true "mylib";
+  let renderer =
+    Render.create ~out:Format.std_formatter ~ansi:false ~mode:`Verbose ()
+  in
+  Driver.observe renderer ~seed:None
+    (Runner.Run_started
+       { run = make_run (); suite = "mylib"; total = 1; selected = 1 });
+  Format.pp_print_flush Format.std_formatter ();
+  Driver.github_end ~github:true;
+  Driver.github_annotations ~github:true ~invocation:`Mirrors
+    [ Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]) ];
+  let enveloped = output () in
+  let offset pattern =
+    match Text.first_occurrence ~pattern enveloped with
+    | Some i -> i
+    | None -> failf "missing %S in the composed envelope:\n%s" pattern enveloped
+  in
+  check "the fold opens first" (offset "::group::mylib\n" = 0);
+  check "the transcript streams inside the fold"
+    (offset "mylib: 1 test" > 0
+    && offset "mylib: 1 test" < offset "\n::endgroup::\n");
+  check "the annotation block follows the closed fold"
+    (offset "\n::endgroup::\n" < offset "::error ")
 
 (* ───── The coverage seam ───── *)
 
@@ -189,6 +224,8 @@ let tests =
     test "snapshot report: orphan hints per invocation" test_report_orphan_hint;
     test "observer: header-seed policy" test_observe_seed_policy;
     test "github envelope: bytes and gating" test_github_envelope;
+    test "github envelope: composed around a transcript"
+      test_github_envelope_composed;
     test "coverage seam: mode selection and the empty snapshot"
       test_coverage_seam;
   ]

@@ -15,11 +15,7 @@ let check_int name ~expected ~actual = equal ~msg:name int expected actual
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
 
 let has ~needle haystack =
-  let nl = String.length needle and hl = String.length haystack in
-  let rec loop i =
-    i + nl <= hl && (String.sub haystack i nl = needle || loop (i + 1))
-  in
-  nl = 0 || loop 0
+  Windtrap.Private.Text.contains_substring ~pattern:needle haystack
 
 let loc_of file line = Loc.of_pos (file, line, 0, 0)
 

@@ -22,13 +22,7 @@ let check condition format =
 let starts_with prefix text = String.starts_with ~prefix text
 
 let contains needle haystack =
-  let n = String.length needle and h = String.length haystack in
-  let rec loop index =
-    if index + n > h then false
-    else if String.sub haystack index n = needle then true
-    else loop (index + 1)
-  in
-  loop 0
+  Windtrap.Private.Text.contains_substring ~pattern:needle haystack
 
 (* One fixed root for the whole suite; per-test streams come from indexes.
    Everything below is deterministic across runs and machines. *)

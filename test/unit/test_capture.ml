@@ -28,13 +28,7 @@ let check_int name ~expected ~actual = equal ~msg:name int expected actual
 (* ───── Helpers ───── *)
 
 let contains text pattern =
-  let tlen = String.length text and plen = String.length pattern in
-  let rec loop i =
-    if i + plen > tlen then false
-    else if String.sub text i plen = pattern then true
-    else loop (i + 1)
-  in
-  loop 0
+  Windtrap.Private.Text.contains_substring ~pattern text
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 

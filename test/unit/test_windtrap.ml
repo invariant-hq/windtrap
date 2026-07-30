@@ -84,6 +84,51 @@ let () =
         ]
   | _ -> ()
 
+(* The focus child (testing/T3): re-exec'd to run the facade's [run] on a
+   passing two-test suite, focused or not, outside CI ([clear_env] unsets
+   CI). The parent asserts the mli-promised warning — windtrap.mli:
+   "outside CI a successful focused run prints a warning" — and its
+   absence without focus. *)
+let () =
+  match Array.to_list Sys.argv with
+  | [ _; "--focus-child"; log_dir; mode ] ->
+      clear_env ();
+      let argv = [| "focus-child"; "-o"; log_dir; "--color"; "never" |] in
+      let pass name = test name (fun () -> is_true true) in
+      let suite =
+        match mode with
+        | "focused" -> [ ftest "picked" (fun () -> is_true true); pass "other" ]
+        | _ -> [ pass "picked"; pass "other" ]
+      in
+      Windtrap.run ~argv "focussuite" suite
+  | _ -> ()
+
+(* Re-exec this executable with [args], returning its exit status and its
+   standard output — plus its standard error when [merge_stderr] (the
+   focus warning prints there). *)
+let spawn_child ?(merge_stderr = false) args =
+  let out_read, out_write = Unix.pipe () in
+  let child_stderr = if merge_stderr then out_write else Unix.stderr in
+  let pid =
+    Unix.create_process Sys.executable_name
+      (Array.of_list (Sys.executable_name :: args))
+      Unix.stdin out_write child_stderr
+  in
+  Unix.close out_write;
+  let buffer = Buffer.create 1024 in
+  let chunk = Bytes.create 4096 in
+  let rec drain () =
+    let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
+    if n > 0 then begin
+      Buffer.add_subbytes buffer chunk 0 n;
+      drain ()
+    end
+  in
+  drain ();
+  Unix.close out_read;
+  let status = snd (Unix.waitpid [] pid) in
+  (status, Buffer.contents buffer)
+
 let with_temp_root f = with_temp_root ~prefix:"windtrap-facade-" f
 
 let base_config ~log_dir () =
@@ -851,26 +896,7 @@ let () =
 let () =
   if not Sys.win32 then (
     with_temp_root @@ fun root ->
-    let out_read, out_write = Unix.pipe () in
-    let pid =
-      Unix.create_process Sys.executable_name
-        [| Sys.executable_name; "--exit-guard-child"; root |]
-        Unix.stdin out_write Unix.stderr
-    in
-    Unix.close out_write;
-    let buffer = Buffer.create 1024 in
-    let chunk = Bytes.create 4096 in
-    let rec drain () =
-      let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
-      if n > 0 then begin
-        Buffer.add_subbytes buffer chunk 0 n;
-        drain ()
-      end
-    in
-    drain ();
-    Unix.close out_read;
-    let status = snd (Unix.waitpid [] pid) in
-    let transcript = Buffer.contents buffer in
+    let status, transcript = spawn_child [ "--exit-guard-child"; root ] in
     check "an exit-bombed suite exits through windtrap's own path with 1"
       (status = Unix.WEXITED 1);
     check_contains "the transcript names the interception"
@@ -907,27 +933,11 @@ let () =
   if not Sys.win32 then (
     let spawn_invocation_child mode =
       with_temp_root @@ fun root ->
-      let out_read, out_write = Unix.pipe () in
-      let pid =
-        Unix.create_process Sys.executable_name
-          [| Sys.executable_name; "--invocation-child"; root; mode |]
-          Unix.stdin out_write Unix.stderr
+      let status, transcript =
+        spawn_child [ "--invocation-child"; root; mode ]
       in
-      Unix.close out_write;
-      let buffer = Buffer.create 1024 in
-      let chunk = Bytes.create 4096 in
-      let rec drain () =
-        let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
-        if n > 0 then begin
-          Buffer.add_subbytes buffer chunk 0 n;
-          drain ()
-        end
-      in
-      drain ();
-      Unix.close out_read;
-      let status = snd (Unix.waitpid [] pid) in
       check (mode ^ " child fails its one test") (status = Unix.WEXITED 1);
-      Buffer.contents buffer
+      transcript
     in
     let standalone = spawn_invocation_child "standalone" in
     check "standalone: rerun hint keeps argv0 verbatim"
@@ -949,29 +959,13 @@ let () =
   if not Sys.win32 then (
     let spawn_collide_child level =
       with_temp_root @@ fun root ->
-      let out_read, out_write = Unix.pipe () in
-      let pid =
-        Unix.create_process Sys.executable_name
-          [| Sys.executable_name; "--xpass-collide-child"; root; level |]
-          Unix.stdin out_write Unix.stderr
+      let status, transcript =
+        spawn_child [ "--xpass-collide-child"; root; level ]
       in
-      Unix.close out_write;
-      let buffer = Buffer.create 1024 in
-      let chunk = Bytes.create 4096 in
-      let rec drain () =
-        let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
-        if n > 0 then begin
-          Buffer.add_subbytes buffer chunk 0 n;
-          drain ()
-        end
-      in
-      drain ();
-      Unix.close out_read;
-      let status = snd (Unix.waitpid [] pid) in
       check
         ("collide " ^ level ^ " child exits 0 (the failure was expected)")
         (status = Unix.WEXITED 0);
-      Buffer.contents buffer
+      transcript
     in
     (* Compact: the excused failure is not noteworthy, so the transcript is
        the one named summary line — no flushed header, no loud F glyph. *)
@@ -991,6 +985,28 @@ let () =
       (not (contains "  FAIL  collide" verbose));
     check "collide verbose: summary counts one expected failure"
       (contains "1 expected failure in " verbose))
+
+(* ───── The focus warning, process level (testing/T3) ───── *)
+
+let () =
+  if not Sys.win32 then (
+    let spawn_focus_child mode =
+      with_temp_root @@ fun root ->
+      let status, transcript =
+        spawn_child ~merge_stderr:true [ "--focus-child"; root; mode ]
+      in
+      check
+        (mode ^ " child exits 0 (focus narrows, never fails)")
+        (status = Unix.WEXITED 0);
+      transcript
+    in
+    let focused = spawn_focus_child "focused" in
+    check_contains "outside CI a successful focused run warns"
+      ~sub:"warning: focus is active (ftest/fgroup) — 1 of 2 tests ran" focused;
+    check_contains "the warning tells the committer what to do"
+      ~sub:"remove the focus before committing" focused;
+    let plain = spawn_focus_child "plain" in
+    check "no focus, no warning" (not (contains "focus is active" plain)))
 
 (* ───── Summary ───── *)
 

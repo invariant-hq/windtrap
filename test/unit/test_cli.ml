@@ -21,33 +21,19 @@ let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
 let contains needle haystack = Text.contains_substring ~pattern:needle haystack
 
-let windtrap_vars =
-  [
-    "CI";
-    "GITHUB_ACTIONS";
-    "WINDTRAP_FILTER";
-    "WINDTRAP_EXCLUDE";
-    "WINDTRAP_TAG";
-    "WINDTRAP_EXCLUDE_TAG";
-    "WINDTRAP_SEED";
-    "WINDTRAP_TIMEOUT";
-    "WINDTRAP_PROP_COUNT";
-    "WINDTRAP_STREAM";
-    "WINDTRAP_UPDATE";
-    "WINDTRAP_PRUNE";
-    "WINDTRAP_ALLOW_FOCUS";
-    "WINDTRAP_COLUMNS";
-    "WINDTRAP_TAIL_ERRORS";
-    "WINDTRAP_COLOR";
-    "WINDTRAP_SHARD";
-    "WINDTRAP_QUIET";
-    "WINDTRAP_VERBOSE";
-    "WINDTRAP_SLOW_THRESHOLD";
-  ]
-
 (* No toplevel clear: module initialization must not clear the hosting
-   runner's own environment. Each resolution test clears what it reads. *)
-let clear_env () = List.iter (fun var -> Unix.putenv var "") windtrap_vars
+   runner's own environment. Each resolution test clears what it reads.
+   The variable inventory is the harness's ([Harness.windtrap_vars]) —
+   one list, one owner, so a mirror added there is cleared here by
+   construction. INSIDE_DUNE and WINDTRAP_PROJECT_ROOT stay untouched:
+   they configure the hosting run itself, not [Cli] resolution. *)
+let clear_env () =
+  List.iter
+    (fun var ->
+      if var <> "INSIDE_DUNE" && var <> "WINDTRAP_PROJECT_ROOT" then
+        Unix.putenv var "")
+    Harness.windtrap_vars
+
 let parse args = Cli.parse (Array.of_list ("windtrap-test" :: args))
 
 let expect_ok name args f =

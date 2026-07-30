@@ -15,14 +15,7 @@ let fail label format =
 let check label condition = is_true ~msg:label condition
 
 let contains text substring =
-  let text_length = String.length text in
-  let substring_length = String.length substring in
-  let rec loop offset =
-    if offset + substring_length > text_length then false
-    else if String.sub text offset substring_length = substring then true
-    else loop (offset + 1)
-  in
-  loop 0
+  Windtrap.Private.Text.contains_substring ~pattern:substring text
 
 let equal_string label expected actual = equal ~msg:label string expected actual
 let equal_int label expected actual = equal ~msg:label int expected actual

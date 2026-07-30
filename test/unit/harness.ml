@@ -65,13 +65,7 @@ let expect_invalid_arg name fn =
   | exception Invalid_argument _ -> ()
 
 let contains needle haystack =
-  let n = String.length needle and h = String.length haystack in
-  let rec loop index =
-    if index + n > h then false
-    else if String.sub haystack index n = needle then true
-    else loop (index + 1)
-  in
-  loop 0
+  Windtrap.Private.Text.contains_substring ~pattern:needle haystack
 
 let check_contains name ~sub haystack =
   incr count;

@@ -21,14 +21,7 @@ let check condition format =
     (fun message -> if not condition then Windtrap.fail message)
     format
 
-let contains needle haystack =
-  let n = String.length needle and h = String.length haystack in
-  let rec loop index =
-    if index + n > h then false
-    else if String.sub haystack index n = needle then true
-    else loop (index + 1)
-  in
-  loop 0
+let contains needle haystack = Text.contains_substring ~pattern:needle haystack
 
 (* One fixed root for most tests: outcomes are deterministic across runs and
    machines (RFC Law 7), so every assertion below is exact. *)
