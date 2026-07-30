@@ -1,0 +1,2 @@
+File "<command-line>", line 1, characters 0-5:
+Error: invalid 'inline-test' cookie (bogus), expected one of: drop, drop_with_deadcode

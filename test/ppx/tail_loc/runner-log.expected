@@ -1,0 +1,11 @@
+tail_loc: 1 test
+F
+──────────────────── failures (1) ────────────────────
+  FAIL  Inline_tail_loc › tail assertion
+    test/ppx/tail_loc/inline_tail_loc.ml:3
+      3 │ let%test "tail assertion" = equal int 1 2
+
+    expected  1
+    actual    2
+──────────────────────────────────────────────────────
+1 failed in <duration>s.

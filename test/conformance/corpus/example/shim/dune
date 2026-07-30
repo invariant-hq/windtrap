@@ -1,0 +1,10 @@
+; Monadic Core/Async/Expect_test_config shims for the hello_async.ml
+; compile-must-fail rule (see ../dune). (wrapped false) so the units
+; are the bare top-level names the byte-identical fixture opens. This
+; library is never linked with ppx_windtrap.config — the whole point is
+; that ITS Expect_test_config, not windtrap's, is in scope.
+
+(library
+ (name conformance_js_shims)
+ (wrapped false)
+ (modules core async expect_test_config))

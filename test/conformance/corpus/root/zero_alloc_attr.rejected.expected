@@ -1,0 +1,4 @@
+File "./zero_alloc_attr.ml", line 34, characters 25-44:
+34 | [@@zero_alloc ignore] [@@expect.uncaught_exn {| (Failure "dummy error") |}]
+                              ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

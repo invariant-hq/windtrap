@@ -1,0 +1,22 @@
+Third-party notice — ppx_expect conformance corpus
+==================================================
+
+The files under corpus/ whose headers do not say "Windtrap-authored"
+are vendored from Jane Street's ppx_expect test suite:
+
+  Upstream:  https://github.com/janestreet/ppx_expect
+  Pinned at: commit 54e2846ae50ffd72c00e528f62fb4a33948d0be2
+  License:   MIT — Copyright (c) 2015--2026 Jane Street Group, LLC
+             <opensource-contacts@janestreet.com>
+
+The full upstream license text (upstream LICENSE.md at the pinned
+commit) is reproduced in this repository's THIRD_PARTY_LICENSES.md. Vendored sources are
+byte-identical to upstream except for the single-line substitutions
+listed in TRIAGE.md ("source tweaks"), applied identically to fixtures
+and their goldens so the corpus builds without Jane Street
+dependencies.
+
+Windtrap-authored harness files in this tree (drive.ml, pp.ml, the
+conformance_runner*.ml mains, corpus_shim.ml, shim/, and all dune
+files) are Copyright (c) 2026 Invariant Systems, ISC licensed, like the
+rest of windtrap.

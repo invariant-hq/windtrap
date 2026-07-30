@@ -1,0 +1,40 @@
+; Formerly-divergent fixture, conforming since the D2 fix and diffed
+; on @runtest (see ../../../RESULTS.md).
+;
+; unflushed_stubs_output.ml: output printed from C stubs without
+; flushing is attributed to the [%expect] node that follows it —
+; Capture drains C stdio (lib/capture_stubs.c) at every consumption
+; point, as upstream's collector does. A conforming run passes with no
+; correction, so the golden is the drive.exe placeholder.
+
+(executable
+ (name conformance_runner)
+ (modules conformance_runner unflushed_stubs_output)
+ (foreign_stubs
+  (language c)
+  (names non_flushing))
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit unflushed_stubs_output.ml.corrected)
+ (deps unflushed_stubs_output.ml)
+ (action
+  (run
+   ../../../drive.exe
+   runner
+   %{dep:conformance_runner.exe}
+   unflushed_stubs_output.ml)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff
+   unflushed_stubs_output.ml.corrected.expected
+   unflushed_stubs_output.ml.corrected)))

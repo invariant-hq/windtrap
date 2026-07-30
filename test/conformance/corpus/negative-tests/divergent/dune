@@ -1,0 +1,36 @@
+; similar_distinct_outputs.ml — a functor instantiated twice registers
+; two tests with identical names/locations; windtrap renames the later
+; duplicate, runs both, and merges their reach histories per node, so
+; the two formatted-identical outputs correct once, byte-identical to
+; the upstream golden (formerly divergence D1; conforming since the
+; duplicate-registration fix, so diffed on @runtest). Kept in its own
+; runner so its exit code is pinned independently.
+
+(executable
+ (name conformance_runner)
+ (modules conformance_runner similar_distinct_outputs)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit similar_distinct_outputs.ml.corrected)
+ (deps similar_distinct_outputs.ml)
+ (action
+  (run
+   ../../../drive.exe
+   runner
+   %{dep:conformance_runner.exe}
+   similar_distinct_outputs.ml)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff
+   similar_distinct_outputs.ml.corrected.expected
+   similar_distinct_outputs.ml.corrected)))

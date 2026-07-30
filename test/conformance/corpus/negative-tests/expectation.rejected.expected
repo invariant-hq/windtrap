@@ -1,0 +1,4 @@
+File "./expectation.ml", line 5, characters 4-15:
+5 |   [%expectation "foo"];
+        ^^^^^^^^^^^
+Error: [%expectation] is not supported by ppx_windtrap

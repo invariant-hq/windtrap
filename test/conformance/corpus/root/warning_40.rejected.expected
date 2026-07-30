@@ -1,0 +1,4 @@
+File "./warning_40.ml", line 10, characters 16-34:
+10 |   let _f () = [%expect.unreachable] in
+                     ^^^^^^^^^^^^^^^^^^
+Error: [%expect.unreachable] is not supported by ppx_windtrap

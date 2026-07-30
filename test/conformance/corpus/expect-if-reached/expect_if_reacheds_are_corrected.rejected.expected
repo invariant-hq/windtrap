@@ -1,0 +1,4 @@
+File "./expect_if_reacheds_are_corrected.ml", line 6, characters 9-26:
+6 |   then [%expect.if_reached {| XXXXXXXXXXXX |}]
+             ^^^^^^^^^^^^^^^^^
+Error: [%expect.if_reached] is not supported by ppx_windtrap

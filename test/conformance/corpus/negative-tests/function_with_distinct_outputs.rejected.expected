@@ -1,0 +1,4 @@
+File "./function_with_distinct_outputs.ml", line 22, characters 6-17:
+22 |     [%expectation {||}];
+           ^^^^^^^^^^^
+Error: [%expectation] is not supported by ppx_windtrap

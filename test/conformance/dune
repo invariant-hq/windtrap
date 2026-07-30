@@ -1,0 +1,30 @@
+; ppx_expect conformance corpus (RFC v3, "Capture, expect, and the PPX").
+; Vendored sources under corpus/ stay byte-identical to the pinned
+; upstream checkout wherever possible — formatting is disabled for the
+; whole subtree so `dune fmt` never rewrites them. See TRIAGE.md for
+; the classification and RESULTS.md for the measured numbers.
+
+(env
+ (_
+  (formatting disabled)))
+
+; drive.exe wraps one inline-runner invocation for the corrections
+; harness: it spawns the runner (protocol argv), captures its combined
+; output to runner-log, records its exit code in runner-exit, and
+; writes a "=== no correction produced ===" placeholder for every
+; fixture whose <f>.corrected the runner did not emit — so the
+; per-fixture (diff ...) rules always have a file to compare and a
+; divergence surfaces as a readable diff, not a missing-target error.
+
+(executable
+ (name drive)
+ (modules drive))
+
+; pp.exe is a standalone ppxlib driver linking the rewriter, used by
+; the rejected-set rules: expanding a rejected fixture must exit 1
+; with the explicit "not supported by ppx_windtrap" diagnostic.
+
+(executable
+ (name pp)
+ (modules pp)
+ (libraries ppxlib ppx_windtrap))

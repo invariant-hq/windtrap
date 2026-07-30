@@ -1,0 +1,4 @@
+File "./expects_still_must_be_reached.ml", line 6, characters 9-26:
+6 |   then [%expect.if_reached {| Hello world! |}]
+             ^^^^^^^^^^^^^^^^^
+Error: [%expect.if_reached] is not supported by ppx_windtrap

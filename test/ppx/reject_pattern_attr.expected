@@ -1,0 +1,4 @@
+File "./reject_pattern_attr.ml", line 5, characters 27-46:
+5 | let%expect_test ("named" [@expect.uncaught_exn {| boom |}]) =
+                               ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

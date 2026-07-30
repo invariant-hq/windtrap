@@ -50,6 +50,6 @@
  (libraries windtrap unix))
 
 (tests
- (names test_run test_runner test_windtrap)
- (modules test_run test_runner test_windtrap)
+ (names test_run test_runner test_ppx_runtime test_windtrap)
+ (modules test_run test_runner test_ppx_runtime test_windtrap)
  (libraries windtrap unix harness))

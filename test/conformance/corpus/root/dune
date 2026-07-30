@@ -1,0 +1,104 @@
+; Upstream test/*.ml — honored pass set: a real (inline_tests) library
+; preprocessed with ppx_windtrap, driven by dune's generated runner
+; under @runtest, exactly the swap the RFC promises adopting suites.
+; Every fixture must pass; any mismatch fails runtest with a
+; promotable diff.
+
+(library
+ (name conformance_root)
+ (modules
+  escaped_strings
+  string_extension_syntax
+  test_output
+  test_stderr
+  unidiomatic_syntax)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+
+; Rejected set: expansion must exit 1 with the explicit
+; "not supported by ppx_windtrap" diagnostic, goldened per file.
+
+(rule
+ (target test_expectation.rejected)
+ (action
+  (with-outputs-to
+   test_expectation.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:test_expectation.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff test_expectation.rejected.expected test_expectation.rejected)))
+
+(rule
+ (target test_sanitize.rejected)
+ (action
+  (with-outputs-to
+   test_sanitize.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:test_sanitize.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff test_sanitize.rejected.expected test_sanitize.rejected)))
+
+(rule
+ (target uncaught_exn.rejected)
+ (action
+  (with-outputs-to
+   uncaught_exn.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:uncaught_exn.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff uncaught_exn.rejected.expected uncaught_exn.rejected)))
+
+(rule
+ (target unreachable.rejected)
+ (action
+  (with-outputs-to
+   unreachable.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:unreachable.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff unreachable.rejected.expected unreachable.rejected)))
+
+(rule
+ (target warning_40.rejected)
+ (action
+  (with-outputs-to
+   warning_40.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:warning_40.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff warning_40.rejected.expected warning_40.rejected)))
+
+(rule
+ (target zero_alloc_attr.rejected)
+ (action
+  (with-outputs-to
+   zero_alloc_attr.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:zero_alloc_attr.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff zero_alloc_attr.rejected.expected zero_alloc_attr.rejected)))

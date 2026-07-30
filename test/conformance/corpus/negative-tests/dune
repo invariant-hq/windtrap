@@ -1,0 +1,313 @@
+; Corrections harness for upstream test/negative-tests: every fixture
+; is an intentionally failing expect test; the observable is the
+; .corrected file the runner writes, compared byte-for-byte against the
+; vendored upstream golden (<f>.ml.corrected.expected). runner-exit
+; pins the promotion-protocol exit code: 0 — every failure in this set
+; is an expect mismatch with a recorded correction. export_test.ml /
+; import_test.ml pass and must produce no corrections (covered by the
+; exit code). The uncaught-exn/expectation/unreachable-family fixtures
+; (comment, exn*, expectation, function_with_distinct_outputs, functor,
+; tag, zero_alloc) are the rejected set, asserted by the pp.exe rules
+; at the bottom. Three fixtures stay diffed on @conformance-divergent
+; instead of @runtest — nine.ml and three.ml (reformat-on-match needs
+; an RFC ruling) and unusual_payload_location.ml (upstream golden is
+; inconsistent with its own pinned source) — see ../../RESULTS.md;
+; similar_distinct_outputs lives in divergent/.
+
+(executable
+ (name conformance_runner)
+ (modules
+  conformance_runner
+  corpus_shim
+  chdir
+  escaped_strings
+  exact
+  export_test
+  flexible
+  import_test
+  missing
+  nine
+  normal_strings
+  semicolon
+  spacing
+  string_extension_syntax
+  string_padding
+  three
+  trailing
+  unidiomatic_syntax
+  unusual_payload_location)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets
+  runner-log
+  runner-exit
+  chdir.ml.corrected
+  escaped_strings.ml.corrected
+  exact.ml.corrected
+  flexible.ml.corrected
+  missing.ml.corrected
+  nine.ml.corrected
+  normal_strings.ml.corrected
+  semicolon.ml.corrected
+  spacing.ml.corrected
+  string_extension_syntax.ml.corrected
+  string_padding.ml.corrected
+  three.ml.corrected
+  trailing.ml.corrected
+  unidiomatic_syntax.ml.corrected
+  unusual_payload_location.ml.corrected)
+ (deps
+  chdir.ml
+  escaped_strings.ml
+  exact.ml
+  export_test.ml
+  flexible.ml
+  import_test.ml
+  missing.ml
+  nine.ml
+  normal_strings.ml
+  semicolon.ml
+  spacing.ml
+  string_extension_syntax.ml
+  string_padding.ml
+  three.ml
+  trailing.ml
+  unidiomatic_syntax.ml
+  unusual_payload_location.ml)
+ (action
+  (run
+   ../../drive.exe
+   runner
+   %{dep:conformance_runner.exe}
+   chdir.ml
+   escaped_strings.ml
+   exact.ml
+   flexible.ml
+   missing.ml
+   nine.ml
+   normal_strings.ml
+   semicolon.ml
+   spacing.ml
+   string_extension_syntax.ml
+   string_padding.ml
+   three.ml
+   trailing.ml
+   unidiomatic_syntax.ml
+   unusual_payload_location.ml)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff chdir.ml.corrected.expected chdir.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff escaped_strings.ml.corrected.expected escaped_strings.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff exact.ml.corrected.expected exact.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff flexible.ml.corrected.expected flexible.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff missing.ml.corrected.expected missing.ml.corrected)))
+
+(rule
+ (alias conformance-divergent)
+ (action
+  (diff nine.ml.corrected.expected nine.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff normal_strings.ml.corrected.expected normal_strings.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff semicolon.ml.corrected.expected semicolon.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff spacing.ml.corrected.expected spacing.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff
+   string_extension_syntax.ml.corrected.expected
+   string_extension_syntax.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff string_padding.ml.corrected.expected string_padding.ml.corrected)))
+
+(rule
+ (alias conformance-divergent)
+ (action
+  (diff three.ml.corrected.expected three.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff trailing.ml.corrected.expected trailing.ml.corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff unidiomatic_syntax.ml.corrected.expected unidiomatic_syntax.ml.corrected)))
+
+(rule
+ (alias conformance-divergent)
+ (action
+  (diff
+   unusual_payload_location.ml.corrected.expected
+   unusual_payload_location.ml.corrected)))
+
+; ── Rejected set: expansion must exit 1 with the explicit diagnostic ──
+
+(rule
+ (target comment.rejected)
+ (action
+  (with-outputs-to
+   comment.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:comment.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff comment.rejected.expected comment.rejected)))
+
+(rule
+ (target exn.rejected)
+ (action
+  (with-outputs-to
+   exn.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:exn.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff exn.rejected.expected exn.rejected)))
+
+(rule
+ (target exn_and_trailing.rejected)
+ (action
+  (with-outputs-to
+   exn_and_trailing.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:exn_and_trailing.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff exn_and_trailing.rejected.expected exn_and_trailing.rejected)))
+
+(rule
+ (target exn_missing.rejected)
+ (action
+  (with-outputs-to
+   exn_missing.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:exn_missing.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff exn_missing.rejected.expected exn_missing.rejected)))
+
+(rule
+ (target expectation.rejected)
+ (action
+  (with-outputs-to
+   expectation.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:expectation.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff expectation.rejected.expected expectation.rejected)))
+
+(rule
+ (target function_with_distinct_outputs.rejected)
+ (action
+  (with-outputs-to
+   function_with_distinct_outputs.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:function_with_distinct_outputs.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff
+   function_with_distinct_outputs.rejected.expected
+   function_with_distinct_outputs.rejected)))
+
+(rule
+ (target functor.rejected)
+ (action
+  (with-outputs-to
+   functor.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:functor.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff functor.rejected.expected functor.rejected)))
+
+(rule
+ (target tag.rejected)
+ (action
+  (with-outputs-to
+   tag.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:tag.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff tag.rejected.expected tag.rejected)))
+
+(rule
+ (target zero_alloc.rejected)
+ (action
+  (with-outputs-to
+   zero_alloc.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:zero_alloc.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff zero_alloc.rejected.expected zero_alloc.rejected)))

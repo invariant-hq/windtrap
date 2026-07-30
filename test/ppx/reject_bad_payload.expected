@@ -1,0 +1,4 @@
+File "./reject_bad_payload.ml", line 5, characters 2-14:
+5 |   [%expect 42]
+      ^^^^^^^^^^^^
+Error: Expected a string literal payload

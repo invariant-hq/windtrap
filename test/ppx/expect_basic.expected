@@ -1,0 +1,187 @@
+let greet name = Printf.printf "hello %s\n" name
+let () =
+  Ppx_windtrap_runtime.Ppx_runtime.add_expect_test ~file:"./expect_basic.ml"
+    ~loc:{
+           Ppx_windtrap_runtime.Ppx_runtime.line = 7;
+           start_bol = 255;
+           start_pos = 255;
+           end_pos = 523
+         } ~tags:[] ~run:Expect_test_config.run
+    ~sanitize:Expect_test_config.sanitize
+    ~nodes:[{
+              Ppx_windtrap_runtime.Ppx_runtime.id = 0;
+              kind = Ppx_windtrap_runtime.Ppx_runtime.Expect;
+              loc =
+                {
+                  Ppx_windtrap_runtime.Ppx_runtime.line = 9;
+                  start_bol = 302;
+                  start_pos = 304;
+                  end_pos = 337
+                };
+              payload =
+                (Some
+                   {
+                     Ppx_windtrap_runtime.Ppx_runtime.contents =
+                       "\n    hello world\n  ";
+                     delimiter = (Ppx_windtrap_runtime.Ppx_runtime.Tag "");
+                     loc =
+                       {
+                         Ppx_windtrap_runtime.Ppx_runtime.line = 9;
+                         start_bol = 302;
+                         start_pos = 313;
+                         end_pos = 336
+                       }
+                   })
+            };
+           {
+             Ppx_windtrap_runtime.Ppx_runtime.id = 1;
+             kind = Ppx_windtrap_runtime.Ppx_runtime.Expect_exact;
+             loc =
+               {
+                 Ppx_windtrap_runtime.Ppx_runtime.line = 15;
+                 start_bol = 451;
+                 start_pos = 453;
+                 end_pos = 491
+               };
+             payload =
+               (Some
+                  {
+                    Ppx_windtrap_runtime.Ppx_runtime.contents =
+                      "captured 12 bytes\n";
+                    delimiter = (Ppx_windtrap_runtime.Ppx_runtime.Tag "");
+                    loc =
+                      {
+                        Ppx_windtrap_runtime.Ppx_runtime.line = 15;
+                        start_bol = 451;
+                        start_pos = 468;
+                        end_pos = 490
+                      }
+                  })
+           };
+           {
+             Ppx_windtrap_runtime.Ppx_runtime.id = 2;
+             kind = Ppx_windtrap_runtime.Ppx_runtime.Expect;
+             loc =
+               {
+                 Ppx_windtrap_runtime.Ppx_runtime.line = 18;
+                 start_bol = 512;
+                 start_pos = 514;
+                 end_pos = 523
+               };
+             payload = None
+           }]
+    ~body_loc:{
+                Ppx_windtrap_runtime.Ppx_runtime.line = 7;
+                start_bol = 255;
+                start_pos = 255;
+                end_pos = 523
+              }
+    ~trailing_loc:{
+                    Ppx_windtrap_runtime.Ppx_runtime.line = 18;
+                    start_bol = 512;
+                    start_pos = 523;
+                    end_pos = 523
+                  } "greetings"
+    (fun () ->
+       greet "world";
+       Ppx_windtrap_runtime.Ppx_runtime.expect ~id:0;
+       greet "again";
+       (let noise = Ppx_windtrap_runtime.Ppx_runtime.expect_output () in
+        Printf.printf "captured %d bytes\n" (String.length noise);
+        Ppx_windtrap_runtime.Ppx_runtime.expect ~id:1;
+        print_string "";
+        Ppx_windtrap_runtime.Ppx_runtime.expect ~id:2))
+let () =
+  Ppx_windtrap_runtime.Ppx_runtime.add_expect_test ~file:"./expect_basic.ml"
+    ~loc:{
+           Ppx_windtrap_runtime.Ppx_runtime.line = 20;
+           start_bol = 525;
+           start_pos = 525;
+           end_pos = 590
+         } ~tags:[] ~run:Expect_test_config.run
+    ~sanitize:Expect_test_config.sanitize
+    ~nodes:[{
+              Ppx_windtrap_runtime.Ppx_runtime.id = 0;
+              kind = Ppx_windtrap_runtime.Ppx_runtime.Expect;
+              loc =
+                {
+                  Ppx_windtrap_runtime.Ppx_runtime.line = 22;
+                  start_bol = 570;
+                  start_pos = 572;
+                  end_pos = 590
+                };
+              payload =
+                (Some
+                   {
+                     Ppx_windtrap_runtime.Ppx_runtime.contents = "quoted";
+                     delimiter = Ppx_windtrap_runtime.Ppx_runtime.Quote;
+                     loc =
+                       {
+                         Ppx_windtrap_runtime.Ppx_runtime.line = 22;
+                         start_bol = 570;
+                         start_pos = 581;
+                         end_pos = 589
+                       }
+                   })
+            }]
+    ~body_loc:{
+                Ppx_windtrap_runtime.Ppx_runtime.line = 20;
+                start_bol = 525;
+                start_pos = 525;
+                end_pos = 590
+              }
+    ~trailing_loc:{
+                    Ppx_windtrap_runtime.Ppx_runtime.line = 22;
+                    start_bol = 570;
+                    start_pos = 590;
+                    end_pos = 590
+                  } "line_20"
+    (fun () ->
+       print_string "quoted"; Ppx_windtrap_runtime.Ppx_runtime.expect ~id:0)
+let () =
+  Ppx_windtrap_runtime.Ppx_runtime.add_expect_test ~file:"./expect_basic.ml"
+    ~loc:{
+           Ppx_windtrap_runtime.Ppx_runtime.line = 24;
+           start_bol = 592;
+           start_pos = 592;
+           end_pos = 677
+         } ~tags:["slow"] ~run:Expect_test_config.run
+    ~sanitize:Expect_test_config.sanitize
+    ~nodes:[{
+              Ppx_windtrap_runtime.Ppx_runtime.id = 0;
+              kind = Ppx_windtrap_runtime.Ppx_runtime.Expect;
+              loc =
+                {
+                  Ppx_windtrap_runtime.Ppx_runtime.line = 26;
+                  start_bol = 656;
+                  start_pos = 658;
+                  end_pos = 677
+                };
+              payload =
+                (Some
+                   {
+                     Ppx_windtrap_runtime.Ppx_runtime.contents = " x ";
+                     delimiter = (Ppx_windtrap_runtime.Ppx_runtime.Tag "x");
+                     loc =
+                       {
+                         Ppx_windtrap_runtime.Ppx_runtime.line = 26;
+                         start_bol = 656;
+                         start_pos = 667;
+                         end_pos = 676
+                       }
+                   })
+            }]
+    ~body_loc:{
+                Ppx_windtrap_runtime.Ppx_runtime.line = 24;
+                start_bol = 592;
+                start_pos = 592;
+                end_pos = 677
+              }
+    ~trailing_loc:{
+                    Ppx_windtrap_runtime.Ppx_runtime.line = 26;
+                    start_bol = 656;
+                    start_pos = 677;
+                    end_pos = 677
+                  } "tagged"
+    (fun () ->
+       print_string "x"; Ppx_windtrap_runtime.Ppx_runtime.expect ~id:0)

@@ -1,0 +1,4 @@
+File "./reject_uncaught_exn.ml", line 7, characters 3-22:
+7 | [@@expect.uncaught_exn {| (Failure boom) |}]
+       ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

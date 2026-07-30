@@ -1,0 +1,4 @@
+File "./exn_and_trailing.ml", line 5, characters 3-22:
+5 | [@@expect.uncaught_exn {| Exit |}]
+       ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

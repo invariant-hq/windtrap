@@ -1,0 +1,4 @@
+File "./exn.ml", line 14, characters 3-22:
+14 | [@@expect.uncaught_exn
+        ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

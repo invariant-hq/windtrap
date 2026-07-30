@@ -1,0 +1,50 @@
+; Upstream test/expect-if-reached — rejected set: [%expect.unreachable]
+; and [%expect.if_reached] must be rejected at expansion time with the
+; explicit "not supported by ppx_windtrap" diagnostic. The upstream
+; negative-test/ files are vendored flat here (unique basenames).
+
+(rule
+ (target passing_tests.rejected)
+ (action
+  (with-outputs-to
+   passing_tests.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:passing_tests.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff passing_tests.rejected.expected passing_tests.rejected)))
+
+(rule
+ (target expect_if_reacheds_are_corrected.rejected)
+ (action
+  (with-outputs-to
+   expect_if_reacheds_are_corrected.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:expect_if_reacheds_are_corrected.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff
+   expect_if_reacheds_are_corrected.rejected.expected
+   expect_if_reacheds_are_corrected.rejected)))
+
+(rule
+ (target expects_still_must_be_reached.rejected)
+ (action
+  (with-outputs-to
+   expects_still_must_be_reached.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../pp.exe --impl %{dep:expects_still_must_be_reached.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff
+   expects_still_must_be_reached.rejected.expected
+   expects_still_must_be_reached.rejected)))

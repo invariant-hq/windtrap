@@ -1,0 +1,4 @@
+File "./reject_expectation.ml", line 5, characters 24-35:
+5 | let check () = ignore [%expectation {| x |}]
+                            ^^^^^^^^^^^
+Error: [%expectation] is not supported by ppx_windtrap

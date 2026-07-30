@@ -1,0 +1,11 @@
+; Quiet-on-green for the whole corpus: the fixture libraries' generated
+; inline-test runners would otherwise pay three lines of windtrap chrome
+; per partition for one or two trivial tests. WINDTRAP_QUIET only trims
+; the green transcript to the summary line — failure blocks, corrections,
+; and exit codes are untouched (levels change what prints, never
+; outcomes), so the .corrected/runner-exit goldens are unaffected.
+
+(env
+ (_
+  (env-vars
+   (WINDTRAP_QUIET 1))))

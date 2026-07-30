@@ -1,0 +1,68 @@
+; Upstream test/example/*.ml — honored pass set (see corpus/root/dune).
+; hello_async.ml is deliberately not in (modules): it is the rejected
+; monadic-Expect_test_config fixture (RFC compat mechanism (b)),
+; asserted by the compile-must-fail rule below against the monadic
+; shims in shim/.
+
+(library
+ (name conformance_example)
+ (modules
+  chdir
+  flexible_whitespace
+  function
+  reordered
+  space_nine
+  xnine)
+ (libraries unix)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))
+
+; hello_async.ml — REJECTED via compat mechanism (b): a monadic
+; Expect_test_config (Async's shape, provided byte-compatibly by the
+; shims in shim/) must make the generated code fail to COMPILE at the
+; ambient [Expect_test_config.run] reference. The fixture is expanded
+; with pp.exe, then typechecked with ocamlc against the shim and
+; runtime cmis; exit 2 (type error) is required and the error text is
+; goldened. (sandbox none): the -I paths reach library .objs dirs in
+; _build that the declared .cma deps guarantee are built; the golden
+; text is also OCaml-compiler-version-sensitive by nature.
+
+(rule
+ (target hello_async_pp.ml)
+ (action
+  (with-stdout-to
+   hello_async_pp.ml
+   (run ../../pp.exe --impl %{dep:hello_async.ml}))))
+
+(rule
+ (target hello_async.compile-rejected)
+ (deps
+  (sandbox none)
+  hello_async_pp.ml
+  shim/conformance_js_shims.cma
+  ../../../../lib/windtrap.cma
+  ../../../../ppx/runtime/ppx_windtrap_runtime.cma)
+ (action
+  (with-outputs-to
+   hello_async.compile-rejected
+   (with-accepted-exit-codes
+    2
+    (run
+     %{ocaml_bin}/ocamlc
+     -stop-after
+     typing
+     -w
+     -a
+     -I
+     shim/.conformance_js_shims.objs/byte
+     -I
+     ../../../../lib/.windtrap.objs/byte
+     -I
+     ../../../../ppx/runtime/.ppx_windtrap_runtime.objs/byte
+     hello_async_pp.ml)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff hello_async.compile-rejected.expected hello_async.compile-rejected)))

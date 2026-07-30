@@ -1,0 +1,36 @@
+; ppx/F-2 + D4 regression: a failing tail-position let%test is attributed
+; to its declaration line — never a generated-driver path. runner_main.exe
+; mirrors the inline_tests backend's generated runner (the conformance
+; corpus pattern); drive_tail_loc.exe spawns it with the protocol argv
+; under a scrubbed environment, masks wall-clock durations, and records
+; the transcript and exit code. The committed golden pins the
+; inline_tail_loc.ml:3 attribution and, by construction, contains no
+; ".inline-tests" or "main.ml-gen" substring.
+
+(executable
+ (name runner_main)
+ (modules runner_main inline_tail_loc)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name drive_tail_loc)
+ (modules drive_tail_loc)
+ (libraries unix))
+
+(rule
+ (targets runner-log runner-exit)
+ (deps inline_tail_loc.ml)
+ (action
+  (run ./drive_tail_loc.exe runner %{dep:runner_main.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))

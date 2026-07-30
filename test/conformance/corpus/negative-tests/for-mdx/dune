@@ -1,0 +1,40 @@
+; Corrections harness for upstream test/negative-tests/for-mdx (see
+; ../dune for the pattern). mdx_cases.ml is the rejected fixture
+; ([%expect.unreachable] and a monadic Expect_test_config).
+
+(executable
+ (name conformance_runner)
+ (modules conformance_runner corpus_shim foo)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit foo.ml.corrected)
+ (deps foo.ml)
+ (action
+  (run ../../../drive.exe runner %{dep:conformance_runner.exe} foo.ml)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff foo.ml.corrected.expected foo.ml.corrected)))
+
+(rule
+ (target mdx_cases.rejected)
+ (action
+  (with-outputs-to
+   mdx_cases.rejected
+   (with-accepted-exit-codes
+    1
+    (run ../../../pp.exe --impl %{dep:mdx_cases.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff mdx_cases.rejected.expected mdx_cases.rejected)))

@@ -1,0 +1,8 @@
+File "hello_async_pp.ml", line 10, characters 25-47:
+10 |          } ~tags:[] ~run:Expect_test_config.run
+                              ^^^^^^^^^^^^^^^^^^^^^^
+Error: The value Expect_test_config.run has type
+         (unit -> unit Expect_test_config.IO.t) -> unit
+       but an expression was expected of type (unit -> unit) -> unit
+       Type unit Expect_test_config.IO.t = unit Async.Deferred.t
+       is not compatible with type unit

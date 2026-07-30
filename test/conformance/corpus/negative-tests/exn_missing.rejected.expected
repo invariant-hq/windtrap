@@ -1,0 +1,4 @@
+File "./exn_missing.ml", line 6, characters 3-22:
+6 | [@@expect.uncaught_exn {| (Failure "hi ho") |}]
+       ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

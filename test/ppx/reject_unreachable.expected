@@ -1,0 +1,4 @@
+File "./reject_unreachable.ml", line 5, characters 18-36:
+5 |   if false then [%expect.unreachable];
+                      ^^^^^^^^^^^^^^^^^^
+Error: [%expect.unreachable] is not supported by ppx_windtrap

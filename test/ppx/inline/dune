@@ -1,0 +1,23 @@
+; End-to-end fixture for the inline_tests backend: a real library
+; preprocessed with ppx_windtrap, driven by dune's generated runner
+; under @runtest. Exercises the payload-shape matrix (multiline,
+; newline-leading, empty-literal, bare, exact, output) and
+; module%test / let%test / let%expect_test nesting against the live
+; promotion protocol. The adversarial promote-loop check (break a
+; payload, see the diff, dune promote restores this exact file) is
+; run transiently against these sources.
+
+; Quiet-on-green: the generated runner runs once per partition; without
+; WINDTRAP_QUIET each partition pays three lines of windtrap chrome for
+; a handful of trivial tests. Failure output is untouched.
+
+(env
+ (_
+  (env-vars
+   (WINDTRAP_QUIET 1))))
+
+(library
+ (name windtrap_test_ppx_inline)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))

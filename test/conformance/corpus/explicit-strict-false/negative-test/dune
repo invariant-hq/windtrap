@@ -1,0 +1,26 @@
+; Corrections harness for upstream test/explicit-strict-false/
+; negative-test (default-flags behavior; see ../dune and
+; corpus/negative-tests/dune for the pattern).
+
+(executable
+ (name conformance_runner)
+ (modules conformance_runner nine)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit nine.ml.corrected)
+ (deps nine.ml)
+ (action
+  (run ../../../drive.exe runner %{dep:conformance_runner.exe} nine.ml)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff nine.ml.corrected.expected nine.ml.corrected)))

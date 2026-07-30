@@ -1,0 +1,4 @@
+File "./unreachable.ml", line 1, characters 36-54:
+1 | let%expect_test _ = if false then [%expect.unreachable]
+                                        ^^^^^^^^^^^^^^^^^^
+Error: [%expect.unreachable] is not supported by ppx_windtrap

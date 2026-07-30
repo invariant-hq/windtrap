@@ -1,0 +1,203 @@
+; Golden expansion tests for the ppx_windtrap rewriter. pp.exe is a
+; standalone ppxlib driver linking the rewriter; each fixture .ml is
+; expanded (with-stdout-to) or rejected (with-accepted-exit-codes 1,
+; capturing the diagnostic) and the result diffed against a committed
+; .expected golden. Accept intended changes with dune promote — read
+; the diff first. The fixtures are not compiled: only pp is a module.
+
+(executable
+ (name pp)
+ (modules pp)
+ (libraries ppxlib ppx_windtrap))
+
+; ── Expansion goldens ──
+
+(rule
+ (with-stdout-to
+  expect_basic.actual
+  (run ./pp.exe --impl %{dep:expect_basic.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff expect_basic.expected expect_basic.actual)))
+
+(rule
+ (with-stdout-to
+  test_basic.actual
+  (run ./pp.exe --impl %{dep:test_basic.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff test_basic.expected test_basic.actual)))
+
+; ── Rejection diagnostics (mechanism (a) and misplacement errors) ──
+
+(rule
+ (target reject_uncaught_exn.actual)
+ (action
+  (with-outputs-to
+   reject_uncaught_exn.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_uncaught_exn.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_uncaught_exn.expected reject_uncaught_exn.actual)))
+
+(rule
+ (target reject_unreachable.actual)
+ (action
+  (with-outputs-to
+   reject_unreachable.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_unreachable.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_unreachable.expected reject_unreachable.actual)))
+
+(rule
+ (target reject_if_reached.actual)
+ (action
+  (with-outputs-to
+   reject_if_reached.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_if_reached.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_if_reached.expected reject_if_reached.actual)))
+
+(rule
+ (target reject_expectation.actual)
+ (action
+  (with-outputs-to
+   reject_expectation.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_expectation.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_expectation.expected reject_expectation.actual)))
+
+(rule
+ (target reject_expect_outside.actual)
+ (action
+  (with-outputs-to
+   reject_expect_outside.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_expect_outside.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_expect_outside.expected reject_expect_outside.actual)))
+
+(rule
+ (target reject_bad_payload.actual)
+ (action
+  (with-outputs-to
+   reject_bad_payload.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_bad_payload.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_bad_payload.expected reject_bad_payload.actual)))
+
+(rule
+ (target reject_module_attr.actual)
+ (action
+  (with-outputs-to
+   reject_module_attr.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_module_attr.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_module_attr.expected reject_module_attr.actual)))
+
+(rule
+ (target reject_pattern_attr.actual)
+ (action
+  (with-outputs-to
+   reject_pattern_attr.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_pattern_attr.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_pattern_attr.expected reject_pattern_attr.actual)))
+
+; ── Cookie drop modes (Jane Street protocol) ──
+
+(rule
+ (with-stdout-to
+  cookie_drop.actual
+  (run ./pp.exe -cookie "inline-test=drop" --impl %{dep:test_basic.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff cookie_drop.expected cookie_drop.actual)))
+
+(rule
+ (with-stdout-to
+  cookie_disabled.actual
+  (run
+   ./pp.exe
+   -cookie
+   "inline_tests=\"disabled\""
+   --impl
+   %{dep:expect_basic.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff cookie_disabled.expected cookie_disabled.actual)))
+
+(rule
+ (with-stdout-to
+  cookie_enabled.actual
+  (run
+   ./pp.exe
+   -cookie
+   "inline_tests=\"enabled\""
+   --impl
+   %{dep:test_basic.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff test_basic.expected cookie_enabled.actual)))
+
+(rule
+ (target cookie_invalid.actual)
+ (action
+  (with-outputs-to
+   cookie_invalid.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe -cookie "inline-test=bogus" --impl %{dep:test_basic.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff cookie_invalid.expected cookie_invalid.actual)))

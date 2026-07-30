@@ -1,0 +1,9 @@
+; Upstream test/no-output-patterns/test.ml — honored pass set: output
+; containing "(regexp)" is matched literally, never as a pattern.
+
+(library
+ (name conformance_nop)
+ (modules test)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))

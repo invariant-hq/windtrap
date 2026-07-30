@@ -1,0 +1,4 @@
+File "./functor.ml", line 26, characters 5-24:
+26 |   [@@expect.uncaught_exn {| (Failure "wrong output") |}]
+          ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

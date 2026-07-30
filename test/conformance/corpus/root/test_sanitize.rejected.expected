@@ -1,0 +1,12 @@
+File "./test_sanitize.ml", lines 6-17, characters 0-3:
+ 6 | module%test _ = struct
+ 7 |   module Expect_test_config = struct
+ 8 |     include Expect_test_config
+ 9 | 
+10 |     let sanitize s = if s = "" then "" else "local module sanitize: " ^ s
+...
+14 |     print_endline "hi!";
+15 |     [%expect {| local module sanitize: hi! |}]
+16 |   ;;
+17 | end
+Error: Expected let%test "name" = ..., let%test _ = ..., or module%test Name = ...

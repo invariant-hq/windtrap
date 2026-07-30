@@ -1,0 +1,4 @@
+File "./comment.ml", line 4, characters 43-62:
+4 | (* this fails, but the comment stays *) [@@expect.uncaught_exn {||}]
+                                               ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

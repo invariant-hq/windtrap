@@ -1,0 +1,4 @@
+File "./reject_if_reached.ml", line 5, characters 18-35:
+5 |   if false then [%expect.if_reached {| never |}];
+                      ^^^^^^^^^^^^^^^^^
+Error: [%expect.if_reached] is not supported by ppx_windtrap

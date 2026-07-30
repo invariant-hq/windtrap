@@ -1,0 +1,4 @@
+File "./uncaught_exn.ml", line 4, characters 3-22:
+4 | [@@expect.uncaught_exn {| "Assert_failure uncaught_exn.ml:3:2" |}]
+       ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

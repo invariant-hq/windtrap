@@ -1,0 +1,12 @@
+; Upstream test/explicit-strict-false/nine.ml — honored pass set.
+; Upstream passes -expect-test-strict-indentation=false, which is
+; ppx_expect's default (upstream src/ppx_expect.ml: strict_indent = ref
+; false); windtrap has the single default rule, so the flag is dropped
+; in this build layer (see TRIAGE.md).
+
+(library
+ (name conformance_esf)
+ (modules nine)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))

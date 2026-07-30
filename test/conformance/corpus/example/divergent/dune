@@ -1,0 +1,62 @@
+; Formerly-divergent fixtures, conforming since the D1/D9 fixes and
+; diffed on @runtest (see ../../../RESULTS.md). One runner per fixture
+; keeps each exit code pinned independently.
+;
+; functor.ml: module M () instantiated twice registers two passing
+; tests with identical names/locations; windtrap renames the later
+; duplicate and runs both. A conforming run passes with no correction,
+; so the golden is the drive.exe placeholder.
+;
+; control_chars.ml: [%expect] payload with control characters and
+; leading-space lines; matching now follows upstream's line splitting
+; and whitespace stripping, so it passes with no correction.
+
+(executable
+ (name conformance_runner)
+ (modules conformance_runner functor)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets functor-log functor-exit functor.ml.corrected)
+ (deps functor.ml)
+ (action
+  (run ../../../drive.exe functor %{dep:conformance_runner.exe} functor.ml)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff functor-exit.expected functor-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff functor.ml.corrected.expected functor.ml.corrected)))
+
+(executable
+ (name runner_control_chars)
+ (modules runner_control_chars control_chars corpus_shim)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets control_chars-log control_chars-exit control_chars.ml.corrected)
+ (deps control_chars.ml)
+ (action
+  (run
+   ../../../drive.exe
+   control_chars
+   %{dep:runner_control_chars.exe}
+   control_chars.ml)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff control_chars-exit.expected control_chars-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff control_chars.ml.corrected.expected control_chars.ml.corrected)))

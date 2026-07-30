@@ -1,0 +1,4 @@
+File "./zero_alloc.ml", line 40, characters 25-44:
+40 | [@@zero_alloc ignore] [@@expect.uncaught_exn {| wrong payload |}]
+                              ^^^^^^^^^^^^^^^^^^^
+Error: [@@expect.uncaught_exn] is not supported by ppx_windtrap

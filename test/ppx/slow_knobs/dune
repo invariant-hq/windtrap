@@ -1,0 +1,46 @@
+; ppx/F-4 regression: the inline (ppx) runner honors the WINDTRAP_VERBOSE
+; and WINDTRAP_SLOW_THRESHOLD mirrors, and tests tagged "slow" are exempt
+; from the threshold. runner_main.exe mirrors the inline_tests backend's
+; generated runner (the conformance corpus pattern); drive_slow_knobs.exe
+; spawns it twice with the protocol argv under a scrubbed environment —
+; compact, then WINDTRAP_VERBOSE=1 — with the threshold pinned to 1ns and
+; every duration masked. The committed goldens pin one slow warning for
+; the untagged test (never the tagged one) and the verbose per-test lines.
+
+(executable
+ (name runner_main)
+ (modules runner_main inline_slow_knobs)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name drive_slow_knobs)
+ (modules drive_slow_knobs)
+ (libraries unix))
+
+(rule
+ (targets run-compact-log run-compact-exit run-verbose-log run-verbose-exit)
+ (deps inline_slow_knobs.ml)
+ (action
+  (run ./drive_slow_knobs.exe run %{dep:runner_main.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff compact-log.expected run-compact-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff compact-exit.expected run-compact-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff verbose-log.expected run-verbose-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff verbose-exit.expected run-verbose-exit)))

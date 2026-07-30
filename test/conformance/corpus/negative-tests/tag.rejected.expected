@@ -1,0 +1,4 @@
+File "./tag.ml", line 21, characters 4-22:
+21 |   [%expect.unreachable]
+         ^^^^^^^^^^^^^^^^^^
+Error: [%expect.unreachable] is not supported by ppx_windtrap
