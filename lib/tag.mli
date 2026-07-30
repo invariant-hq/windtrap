@@ -7,11 +7,11 @@
 
     Tags are plain strings attached to tests and groups ([?tags:string list] on
     the declaration surface); a test's effective tag set is the union of its own
-    tags and its ancestors'. Selection ([--tag], [--exclude-tag], [-q]) is
+    tags and its ancestors'. Selection ([--tag], [--exclude-tag], [--quick]) is
     expressed as a {!predicate} over tag sets.
 
     Two tag names carry built-in meaning: {!slow} (pre-applied by the [slow]
-    test constructor, dropped by [-q]) and {!disabled} (dropped by
+    test constructor, dropped by [--quick]) and {!disabled} (dropped by
     {!default_predicate}). *)
 
 (** {1:tags Tag sets} *)
@@ -45,7 +45,7 @@ val to_list : t -> string list
 
 val slow : string
 (** [slow] is ["slow"]: pre-applied by the [slow] declaration constructor and
-    dropped by the [-q] flag. *)
+    dropped by the [--quick] flag. *)
 
 val disabled : string
 (** [disabled] is ["disabled"]: tests carrying it are skipped by

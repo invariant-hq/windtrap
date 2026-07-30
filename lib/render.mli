@@ -5,18 +5,17 @@
 
 (** The terminal renderer: the run transcript on standard output.
 
-    [Render] projects run data into the terminal transcript (RFC "The runner",
-    {e Output}): a header, one progress mark per test — by default a compact
-    glyph row (green [.] pass, red [F] fail, yellow [S] skip, faint [x] expected
-    failure — amendment B12), one status line per test with its timing under
-    [`Verbose] — failed tests re-printed in full at the end of the run —
-    location, source excerpt, highlighted diff, counterexample and replay line,
-    acceptance command, bounded captured-output tail with the full-log path —
-    then the slow warnings, the summary line, the slowest tests ([`Verbose]
-    only), and the coverage line. The mode decides {e what} prints; the sink
-    decides only color and the erasable live tail — no sink changes shape, and
-    committed glyphs are flushed one by one so a crashed run leaves its partial
-    row visible.
+    [Render] projects run data into the terminal transcript: a header, one
+    progress mark per test — by default a compact glyph row (green [.] pass, red
+    [F] fail, yellow [S] skip, faint [x] expected failure), one status line per
+    test with its timing under [`Verbose] — failed tests re-printed in full at
+    the end of the run — location, source excerpt, highlighted diff,
+    counterexample and replay line, acceptance command, bounded captured-output
+    tail with the full-log path — then the slow warnings, the summary line, the
+    slowest tests ([`Verbose] only), and the coverage line. The mode decides
+    {e what} prints; the sink decides only color and the erasable live tail — no
+    sink changes shape, and committed glyphs are flushed one by one so a crashed
+    run leaves its partial row visible.
 
     {b The noteworthy rule.} A compact-mode run prints its header and glyph row
     only when the run is {e noteworthy}: a counted failure, or a completed test
@@ -36,10 +35,10 @@
     streaming law holds as before — a kill after it leaves the header and the
     partial row in the pipe.
 
-    Renderers are projections (RFC Law 4): everything printed derives from
+    Renderers are projections (Law 4): everything printed derives from
     {!Run.result} values and the typed {!Failure.t} payloads inside them.
     Acceptance and replay command lines are composed here from snapshot names,
-    paths, and root seed tokens (RFC Laws 3 and 7 — the replay line prints the
+    paths, and root seed tokens (Laws 3 and 7 — the replay line prints the
     {e root} token only); diffs are computed here from the rendered values via
     {!Diff}; styling is applied here through {!Pp} under the explicit [ansi]
     decision made at {!create} — nothing reads the environment or the terminal.
@@ -52,7 +51,7 @@
 
     Exact layout — column positions, rule widths, the slowest-5 threshold,
     display bounds on diffs and proposed contents — is illustrative, not
-    contract (RFC "The runner", tuned constants). *)
+    contract: tuned constants, not frozen bytes. *)
 
 (** {1:renderer The renderer} *)
 
@@ -71,8 +70,7 @@ type invocation = [ `Exe of string | `Mirrors ]
     exists and hints spell [WINDTRAP_*] environment prefixes to [dune runtest] —
     the inline runner's context, and the default. The driver computes it once at
     startup; every acceptance, replay, rerun, and prune line derives from it, so
-    no hint can name an invocation that would not re-run the suite (RFC Law 3).
-*)
+    no hint can name an invocation that would not re-run the suite (Law 3). *)
 
 val create :
   out:Format.formatter ->
@@ -178,11 +176,11 @@ val result : t -> Run.result -> unit
     The output derives from [r] alone; [t] only counts marks for the wrap
     counter and the live display.
 
-    Classification is record-driven (amendment B12): a failing result that did
-    not count ([Fail] outcome, [r.counted = false]) is an {e excused} expected
-    failure — the verbose line renders as a dim, informational [XFAIL] tag with
-    [r.xfail]'s reason ([XFAIL  name (expected failure: issue #42)]) instead of
-    a loud [FAIL], and the compact glyph as the faint [x]. An [xfail] test that
+    Classification is record-driven: a failing result that did not count ([Fail]
+    outcome, [r.counted = false]) is an {e excused} expected failure — the
+    verbose line renders as a dim, informational [XFAIL] tag with [r.xfail]'s
+    reason ([XFAIL  name (expected failure: issue #42)]) instead of a loud
+    [FAIL], and the compact glyph as the faint [x]. An [xfail] test that
     {e passed} arrives as a counted failure whose message names the reason, so
     its [FAIL] line and block are already loud. Tests with [r.slow_tagged] are
     exempt from the slow threshold everywhere; skips never trigger it (their
@@ -238,9 +236,9 @@ val finish :
     - the summary line ([46 passed, 2 failed in 1.2s.]) from [results] and
       [duration], the run's wall-clock seconds. Expected failures add their own
       segment ([44 passed, 2 expected failures in 1.2s.]), and counted failures
-      with subtest-labeled entries (amendment B13, see {!is_subtest_failure})
-      state the sub-case count ([2 failed (3 subtest failures)]). In quiet mode
-      the line is prefixed with the suite name recorded by {!header}
+      with subtest-labeled entries (see {!is_subtest_failure}) state the
+      sub-case count ([2 failed (3 subtest failures)]). In quiet mode the line
+      is prefixed with the suite name recorded by {!header}
       ([unit: 448 passed in 0.4s.]) — quiet prints no header, and nothing may
       print without a name;
     - the rerun hint ([rerun failures only: <exe> --failed]) when tests counted
@@ -263,13 +261,13 @@ val finish :
       for it. The caller omits [coverage] under the [report]/[full]/[off]
       coverage modes: {!coverage_report} prints its own line, without the hint.
 
-    Classification is record-driven, as {!result} (amendment B12): excused
-    results — failing results that did not count ([r.counted = false]) — leave
-    the failure section, the failed count, and the rerun hint: they did not fail
-    the run, and a summary that counted them red would contradict the exit code
-    (their stream lines already reported them as [XFAIL]). [slow_tagged] results
-    are exempt from the slow warnings and from keeping a deferred compact
-    transcript noteworthy; skips are exempt regardless.
+    Classification is record-driven, as {!result}: excused results — failing
+    results that did not count ([r.counted = false]) — leave the failure
+    section, the failed count, and the rerun hint: they did not fail the run,
+    and a summary that counted them red would contradict the exit code (their
+    stream lines already reported them as [XFAIL]). [slow_tagged] results are
+    exempt from the slow warnings and from keeping a deferred compact transcript
+    noteworthy; skips are exempt regardless.
 
     Failure blocks render each test's captured tail from the first
     {!Failure.tail} attached to its failures: the retained lines (at most
@@ -277,12 +275,12 @@ val finish :
 
 (** {1:coverage Coverage}
 
-    The coverage detail projection (RFC "Coverage"): one layout serving the
-    in-process [WINDTRAP_COVERAGE]/[--coverage] report modes and, through the
-    facade's [Private], the [windtrap coverage] command over merged files — the
-    inline report and the CI report cannot drift apart. Presentation only: the
-    data (percentages, uncovered lines, excerpt regions) is the coverage
-    runtime's (Law 12, run data rendered late). *)
+    The coverage detail projection: one layout serving the in-process
+    [WINDTRAP_COVERAGE]/[--coverage] report modes and, through the facade's
+    [Private], the [windtrap coverage] command over merged files — the inline
+    report and the CI report cannot drift apart. Presentation only: the data
+    (percentages, uncovered lines, excerpt regions) is the coverage runtime's
+    (Law 12, run data rendered late). *)
 
 val coverage_report :
   t ->
@@ -329,7 +327,7 @@ val pp_run_duration : float -> string
     The kind-by-kind projection of one {!Failure.t}, shared by the terminal
     failure blocks and the {!Render_junit} and {!Render_github} transports.
     Everything derives from the typed payload: no formatting happens at failure
-    sites (RFC Law 4). *)
+    sites (Law 4). *)
 
 val headline : Failure.t -> string
 (** [headline f] is a one-line, unstyled summary of [f]
@@ -342,10 +340,10 @@ val is_subtest_failure : path:string list -> Failure.t -> bool
 (** [is_subtest_failure ~path f] is [true] iff [f]'s [msg] carries a subtest
     label for the test at [path]: it starts with the test's own (leaf) name
     followed by the [" › "] separator — the labeling contract of [subtest]
-    (amendment B13, {!Run.subtest}). The terminal summary counts such entries as
-    sub-cases and {!Render_junit} projects them as separate testcases. The label
-    rides the [msg] slot by design, so a user [?msg] beginning with that exact
-    prefix is indistinguishable from a subtest label. *)
+    ({!Run.subtest}). The terminal summary counts such entries as sub-cases and
+    {!Render_junit} projects them as separate testcases. The label rides the
+    [msg] slot by design, so a user [?msg] beginning with that exact prefix is
+    indistinguishable from a subtest label. *)
 
 val pp_failure :
   ansi:bool ->
@@ -366,7 +364,7 @@ val pp_failure :
       size threshold (currently 8 elements), a summary line states the
       element-grain difference first
       ([lists differ at 3 of 100 elements; first at [37]: expected …, actual …]
-      — {!Diff.sequences}, amendment B7), with a length form
+      — {!Diff.sequences}), with a length form
       ([lists differ in length: expected 100 elements, actual 98]) when the
       counts differ. A difference the diff cannot show is stated in words:
       renderings that are byte-equal (a printer lossier than the equality), or
@@ -383,12 +381,11 @@ val pp_failure :
     - negated equality: the value printed once ([both sides equal: <v>]);
     - raise: expected and raised exceptions, and the recorded backtrace. When
       both exceptions share their constructor and both carry a message payload
-      (amendment B1, {!Failure.kind}), the block diffs the {e messages} instead
-      of repeating the constructor
-      ([raised Invalid_argument with the wrong message:] followed by the two
-      quoted messages with changed spans highlighted, as for equality). A
-      payload with no expected side splits on its [predicate] flag: a
-      [raises_match] rejection renders
+      ({!Failure.kind}), the block diffs the {e messages} instead of repeating
+      the constructor ([raised Invalid_argument with the wrong message:]
+      followed by the two quoted messages with changed spans highlighted, as for
+      equality). A payload with no expected side splits on its [predicate] flag:
+      a [raises_match] rejection renders
       [raised exception does not satisfy the predicate:], and an exception
       nobody expected — a test body's escape — renders [uncaught exception:],
       each followed by the rendered exception and the recorded backtrace;
@@ -396,8 +393,8 @@ val pp_failure :
       (unified diff against the baseline), unresolvable, duplicate (pointing at
       the first check: [first checked at <site>] when its site is known,
       [first checked by "<test>"] otherwise) — followed by the acceptance
-      command line for missing and mismatched baselines (RFC Law 3), spelled
-      from the invocation: [accept: <exe> -u, then review with git diff] under
+      command line for missing and mismatched baselines (Law 3), spelled from
+      the invocation: [accept: <exe> -u, then review with git diff] under
       [`Exe],
       [accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff] under
       [`Mirrors];
@@ -408,7 +405,7 @@ val pp_failure :
       [which failed at:] (recursively, without commands; [which failed with:]
       when the inner failure has no location), and — for seeded cases only,
       never explicit examples — the replay line built from the payload's root
-      seed (RFC Law 7), spelled from the invocation:
+      seed (Law 7), spelled from the invocation:
       [replay: <exe> --seed <root token> -f '<filter>'] under [`Exe],
       [replay: WINDTRAP_SEED=<root token> WINDTRAP_FILTER='<filter>' dune
        runtest] under [`Mirrors]. A config-sourced case count riding the payload

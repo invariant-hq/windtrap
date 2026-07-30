@@ -8,7 +8,7 @@
     spans.
 
     [Diff] computes {e data} for renderers, never presentation: no styling, no
-    labels, no display truncation (RFC Law 4 — those exist only in renderers).
+    labels, no display truncation (Law 4 — those exist only in renderers).
     Renderers call {!hunks} on multi-line payloads (snapshot contents, long pp
     renderings) and {!refine} on a pair of differing lines or short renderings
     to obtain the changed regions to highlight.
@@ -16,14 +16,13 @@
     Both functions are pure and guarded: above internal size bounds the result
     degrades — {!hunks} to a whole-region replacement, {!refine} to [None] — but
     a difference is never silently reported as absent. The guards and the
-    refinement noise cutoff are implementation constants (RFC Unresolved
-    questions), not contract.
+    refinement noise cutoff are implementation constants, not contract.
 
-    {!sequences} is the third grain (amendment B7): when both renderings parse
-    as OCaml-style list or array renderings — the output of the [Testable]
-    container printers — it compares them element by element, so renderers can
-    state the first differing index and the mismatch count instead of leaving a
-    hundred-element diff to speak for itself. *)
+    {!sequences} is the third grain: when both renderings parse as OCaml-style
+    list or array renderings — the output of the [Testable] container printers —
+    it compares them element by element, so renderers can state the first
+    differing index and the mismatch count instead of leaving a hundred-element
+    diff to speak for itself. *)
 
 (** {1:hunks Line hunks} *)
 
@@ -75,7 +74,7 @@ val hunks :
 type span = { start : int; length : int }
 (** The type for byte ranges: [length] bytes starting at offset [start]. Spans
     produced by {!refine} always begin and end on UTF-8 code-point boundaries —
-    a multi-byte character is never split (RFC "Snapshots" canonicalization). *)
+    a multi-byte character is never split. *)
 
 type refinement = {
   expected_spans : span list;  (** Changed ranges of [expected]. *)
@@ -98,14 +97,14 @@ val refine : expected:string -> actual:string -> refinement option
 
 (** {1:sequences Sequence elements}
 
-    Element-grain comparison of two {e rendered} sequences (amendment B7). The
-    inputs are the payload strings of an equality failure, not the original
-    values: parsing recognizes the source-like renderings the [Testable] [list],
-    [array], and [slist] printers produce — [[e1; e2; …]] and [[|e1; e2; …|]] —
-    including the line breaks their compacting boxes insert in long renderings.
-    Anything else — and any rendering this conservative parser cannot account
-    for, such as unbalanced brackets inside a custom printer's output — yields
-    [None], never a wrong element count. *)
+    Element-grain comparison of two {e rendered} sequences. The inputs are the
+    payload strings of an equality failure, not the original values: parsing
+    recognizes the source-like renderings the [Testable] [list], [array], and
+    [slist] printers produce — [[e1; e2; …]] and [[|e1; e2; …|]] — including the
+    line breaks their compacting boxes insert in long renderings. Anything else
+    — and any rendering this conservative parser cannot account for, such as
+    unbalanced brackets inside a custom printer's output — yields [None], never
+    a wrong element count. *)
 
 type mismatch = {
   index : int;

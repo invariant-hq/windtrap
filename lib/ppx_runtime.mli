@@ -6,7 +6,7 @@
 (** The ordinary-OCaml half of [ppx_windtrap]: registration, expect-test
     semantics, corrections, and the inline-test-runner protocol.
 
-    The PPX is a location recorder and nothing more (RFC Law 10): it rewrites
+    The PPX is a location recorder and nothing more (Law 10): it rewrites
     [let%test] / [module%test] / [let%expect_test] into calls to the
     registration functions below, each [[%expect]] / [[%expect_exact]] node into
     {!expect}, and [[%expect.output]] into {!expect_output} — passing source
@@ -22,7 +22,7 @@
     [inline-test-runner <lib> -partition <file>] protocol, and {!exit} collects
     the selected partition, executes it through {!Runner.execute}, writes
     pending [.corrected] files into the sandbox, and terminates with the
-    promotion-protocol exit code (see {!inline_exit_code}; RFC Law 11's scoped
+    promotion-protocol exit code (see {!inline_exit_code}; Law 11's scoped
     deviation).
 
     {b Expect tests.} An expect test declares its [[%expect]] nodes up front
@@ -32,13 +32,13 @@
     normalized for [[%expect]] ({!normalize}), raw for [[%expect_exact]].
     Mismatches do not abort the body: every reached node records its result, so
     one run corrects every stale payload. At the end of the body the runtime
-    checks trailing output and {e per-node} reachability (RFC compat mechanism
-    (d)): a node reached twice and a node reached never can never cancel out.
-    Corrections re-indent payloads relative to the node exactly as ppx_expect
-    does (mechanism (c)), so adopting a ppx_expect suite produces no formatting
-    churn on first promote; a corrected file additionally standardizes the shape
-    of every node its resolved tests declare — the corrected-file style the
-    conformance corpus goldens pin (see {!corrected_source}).
+    checks trailing output and {e per-node} reachability: a node reached twice
+    and a node reached never can never cancel out. Corrections re-indent
+    payloads relative to the node exactly as ppx_expect does, so adopting a
+    ppx_expect suite produces no formatting churn on first promote; a corrected
+    file additionally standardizes the shape of every node its resolved tests
+    declare — the corrected-file style the conformance corpus goldens pin (see
+    {!corrected_source}).
 
     {b Duplicated tests.} A functor whose body declares tests, instantiated more
     than once, registers the same names and locations several times. ppx_expect
@@ -55,8 +55,8 @@
 
     Registration state is module-global by nature (module initializers run
     before any run record exists); everything {e per-run} — capture, results,
-    per-test expect state — lives in the run record and the per-test frames (RFC
-    Law 9). *)
+    per-test expect state — lives in the run record and the per-test frames (Law
+    9). *)
 
 (** {1:locations Locations}
 
@@ -153,7 +153,7 @@ val add_expect_test :
     generated call passes [run] and [sanitize] as [Expect_test_config.run] /
     [Expect_test_config.sanitize] — the {e ambient} names, so a user module
     shadowing [Expect_test_config] is honored, and a monadic config fails to
-    compile at those references (RFC compat mechanism (b): [run] must fit
+    compile at those references (the ppx_expect-shaped contract: [run] must fit
     [(unit -> unit) -> unit]).
 
     - [nodes] declares every expect node lexically inside [body].
@@ -169,23 +169,22 @@ val add_expect_test :
     per-node reachability; everything a body raises — {!Failure.Check_failure},
     {!Failure.Skip_test}, {!Failure.Timeout}, fatal exceptions, and any other
     uncaught exception alike — propagates to the runner, and none of it is a
-    correction (RFC Law 11): nodes reached before the exception still resolve,
-    so their corrections are recorded, but nothing is spliced at the trailing
-    point — a node inserted after a raising statement can never be reached on a
-    future run, so such a correction could never converge under [dune promote].
-    The exception, its backtrace, and the test's captured output belong to the
+    correction (Law 11): nodes reached before the exception still resolve, so
+    their corrections are recorded, but nothing is spliced at the trailing point
+    — a node inserted after a raising statement can never be reached on a future
+    run, so such a correction could never converge under [dune promote]. The
+    exception, its backtrace, and the test's captured output belong to the
     failure report. To pin an expected exception, catch and print it —
     [(try boom () with e -> print_string (Printexc.to_string e))] followed by an
     ordinary [[%expect]] node.
 
     A skip raised in the body ([skip ()], {!Failure.Skip_test}) makes the test
-    an ordinary skip (RFC amendment C2): nothing is checked and nothing is
-    recorded — no correction for any node, the ones reached before the skip
-    included, no trailing-output insertion, and no unreached-node failure — so
-    no [.corrected] content ever exists for the test's nodes, and the test plays
-    no part in the promotion exit rule (see {!inline_exit_code}). Any other
-    reading would blank the goldens of environment-gated expect tests on
-    promote. *)
+    an ordinary skip: nothing is checked and nothing is recorded — no correction
+    for any node, the ones reached before the skip included, no trailing-output
+    insertion, and no unreached-node failure — so no [.corrected] content ever
+    exists for the test's nodes, and the test plays no part in the promotion
+    exit rule (see {!inline_exit_code}). Any other reading would blank the
+    goldens of environment-gated expect tests on promote. *)
 
 (** {1:execution Expect node execution} *)
 
@@ -312,10 +311,10 @@ val inline_exit_code : Runner.outcome -> int
       unreached expect node, or release failure. Corrections already recorded
       are still written by {!flush_corrections} and surface on the next run.
 
-    Skipped tests are invisible to this rule (RFC amendment C2): a skip — in a
-    plain or an expect test — neither forces [1] nor helps reach [0]. A run of
-    skips and covered corrections exits [0]; a run of skips and one assertion
-    failure exits [1]; an all-skipped run exits [0]. *)
+    Skipped tests are invisible to this rule: a skip — in a plain or an expect
+    test — neither forces [1] nor helps reach [0]. A run of skips and covered
+    corrections exits [0]; a run of skips and one assertion failure exits [1];
+    an all-skipped run exits [0]. *)
 
 (** {1:seams Test seams} *)
 

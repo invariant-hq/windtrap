@@ -10,21 +10,21 @@
     file. A baseline's identity is its {e name} — matching [[A-Za-z0-9._-]+],
     unique case-insensitively among the snapshots of one scoping source file
     (baselines are files; macOS and Windows filesystems are case-insensitive) —
-    never a source position (RFC Law 2). Baselines are stored at
+    never a source position (Law 2). Baselines are stored at
     [<src_dir>/__snapshots__/<src_basename>/<name>.snap], where [src_basename]
     is the scoping file's basename without its extension. The layout is frozen:
     renaming a source file re-keys its baselines, and the recipe is [git mv] of
     the [__snapshots__/<basename>] directory before the next run.
 
     {!type:t} is the registry: one value per run, created by the runner and
-    carried in the run record — never a global (RFC Law 9). {!check} is the
-    engine behind the public [snapshot] and [snapshot_pp] wrappers; both feed
-    one registry, so they share one namespace per file by construction. Checking
-    is read-only (RFC Law 1): a missing baseline or a mismatch raises
+    carried in the run record — never a global (Law 9). {!check} is the engine
+    behind the public [snapshot] and [snapshot_pp] wrappers; both feed one
+    registry, so they share one namespace per file by construction. Checking is
+    read-only (Law 1): a missing baseline or a mismatch raises
     {!Failure.Check_failure} with a typed {!Failure.snapshot_state} payload,
-    from which renderers derive diffs and acceptance commands (RFC Laws 3 and
-    4). Only an update-mode run writes — atomically, through {!Atomic_file} —
-    and {!resolve_mode} guards update mode against CI.
+    from which renderers derive diffs and acceptance commands (Laws 3 and 4).
+    Only an update-mode run writes — atomically, through {!Atomic_file} — and
+    {!resolve_mode} guards update mode against CI.
 
     Snapshots are line-oriented {e text}: both sides of every comparison, and
     every accepted baseline, are canonicalized by replacing CR and CRLF line
@@ -157,8 +157,8 @@ type write_status =
 val writes : t -> (string * write_status) list
 (** [writes t] is the baseline paths written by update-mode acceptance so far,
     with their statuses, in the order they were written. Always [[]] in {!Check}
-    mode. Renderers print one line per entry (RFC: every written path is
-    reported with created/updated status). *)
+    mode. Renderers print one line per entry — every written path is reported
+    with its created/updated status. *)
 
 (** {1:orphans Orphans and pruning} *)
 

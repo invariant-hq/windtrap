@@ -8,7 +8,7 @@
     A {!t} value holds one run's capture state: the log-file layout, the run's
     identity inside the log directory, and the byte cursor that {!output}
     advances. The runner owns the value and threads it explicitly; this module
-    keeps no global state (RFC Law 9).
+    keeps no global state (Law 9).
 
     Capture is fd-level: {!with_capture} redirects file descriptors 1 and 2 with
     [dup2], so writes that bypass OCaml channels — C stubs, subprocesses
@@ -34,10 +34,10 @@
 
     Reports are bounded, files are not: the capture file holds the complete
     output, and {!output_tail} reads back only a bounded suffix as
-    {!type:Failure.tail} data (RFC Law 5: a failing test's captured output
-    appears in its report, bounded, with the full-log path). {!type:limits} is
-    also the seam for the deferred file-level prefix + tail bounding (RFC
-    "Capture, expect, and the PPX"). *)
+    {!type:Failure.tail} data (Law 5: a failing test's captured output appears
+    in its report, bounded, with the full-log path). {!type:limits} is also the
+    seam where file-level prefix + tail bounding would land — a deliberately
+    deferred extension. *)
 
 (** {1:limits Retention limits} *)
 
@@ -65,7 +65,7 @@ type t
 (** The type for one run's capture state. Values are either enabled — capture
     into per-test files under a log directory — or {!disabled} ([--stream]).
     Enabled values are mutable (the current test's file and the consumption
-    cursor) and not thread-safe; the runner is sequential (RFC "The runner"). *)
+    cursor) and not thread-safe; the runner is sequential. *)
 
 val create : ?limits:limits -> log_dir:string -> suite:string -> unit -> t
 (** [create ~log_dir ~suite ()] is enabled capture state writing under
@@ -136,10 +136,9 @@ val output : ?pos:Loc.pos -> t -> string
 
     When [t] is {!disabled}, raises {!Failure.Check_failure} with the message
     ["this test requires capture; rerun without --stream"], failing the calling
-    test at the call site (RFC "Capture, expect, and the PPX") — under
-    [--stream] there are no captured bytes to return, and v1's silent [""] made
-    expect tests pass vacuously. The failure's location is
-    [Loc.resolve ?pos ()]. *)
+    test at the call site — under [--stream] there are no captured bytes to
+    return, and v1's silent [""] made expect tests pass vacuously. The failure's
+    location is [Loc.resolve ?pos ()]. *)
 
 val output_tail : t -> Failure.tail option
 (** [output_tail t] is the bounded suffix of the current attempt's {e entire}

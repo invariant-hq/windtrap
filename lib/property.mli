@@ -14,14 +14,14 @@
     integrated shrinking, and per-case label accumulation. It returns a typed
     {!outcome} — a counterexample is a {!Failure.t} with a
     [Failure.kind.Property] payload — which the runner classifies and renderers
-    project (RFC Law 4).
+    project (Law 4).
 
     {b Determinism.} The engine performs no random operation of its own. Case
     [index] of the test named [path] generates from
-    [Seed.derive ~root ~path ~index] (RFC Law 7), so an outcome is a pure
-    function of {!run}'s arguments whenever the generator's callbacks and the
-    body are pure — suite composition never perturbs a property's stream, and a
-    recorded root token replays every failure.
+    [Seed.derive ~root ~path ~index] (Law 7), so an outcome is a pure function
+    of {!run}'s arguments whenever the generator's callbacks and the body are
+    pure — suite composition never perturbs a property's stream, and a recorded
+    root token replays every failure.
 
     {b Bodies.} A body is [unit]-returning and uses the ordinary assertion
     vocabulary; raising [Failure.Check_failure] fails the case, as does any
@@ -36,13 +36,13 @@
     {!run}, Shrinking). The shrink search re-runs the body on candidate inputs,
     so bodies must be deterministic and repeatable.
 
-    {b Ambient wiring (plan).} This module keeps the labelling {!context}
-    explicit: {!run} passes it to the body, and {!collect}, {!classify}, and
-    {!cover} take it as their first argument. The public [('a -> unit)] body
-    surface arrives with the run record (stage G4): the runner stores the
-    running context in the run's single ambient slot and forwards the public
-    [collect]/[classify]/[cover] to the functions here. No state in this module
-    is global (RFC Law 9): every context belongs to one {!run} invocation. *)
+    {b Ambient wiring.} This module keeps the labelling {!context} explicit:
+    {!run} passes it to the body, and {!collect}, {!classify}, and {!cover} take
+    it as their first argument. The public [('a -> unit)] body surface is wired
+    through the run record: the runner stores the running context in the run's
+    single ambient slot and forwards the public [collect]/[classify]/[cover] to
+    the functions here. No state in this module is global (Law 9): every context
+    belongs to one {!run} invocation. *)
 
 (** {1:discarding Discarding} *)
 

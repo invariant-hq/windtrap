@@ -6,38 +6,36 @@
 (** The JUnit renderer: run results as a JUnit XML report.
 
     [Render_junit] projects a run's results into one XML 1.0 document for
-    [--junit PATH] (RFC "The runner", {e Output}): a [testsuites] root wrapping
-    one [testsuite], with one [testcase] per result in execution order carrying
-    its time; failures as [failure] elements whose text is the unstyled
-    {!Render.pp_failure} block, replay and acceptance commands included; skips
-    as [skipped] elements; a failing test's captured tail as [system-out] (RFC
-    Law 5).
+    [--junit PATH]: a [testsuites] root wrapping one [testsuite], with one
+    [testcase] per result in execution order carrying its time; failures as
+    [failure] elements whose text is the unstyled {!Render.pp_failure} block,
+    replay and acceptance commands included; skips as [skipped] elements; a
+    failing test's captured tail as [system-out] (Law 5).
 
     Two run features have no native JUnit form and map as follows:
 
-    - {b Expected failures} (amendment B12). JUnit knows no xfail state, so an
-      {e excused} failure — a failing result that did not count
-      ({!Run.result.counted} false) — becomes a [skipped] testcase whose message
-      names the expectation from {!Run.result.xfail}
-      ([expected failure: issue #42]); its real failures are not emitted,
-      matching the run they did not fail. An [xfail] test that {e passed}
-      arrives as an ordinary counted failure whose message names the reason and
-      needs no mapping.
-    - {b Subtests} (amendment B13). Each subtest failure entry
-      ({!Render.is_subtest_failure}) becomes its {e own} [testcase] — named by
-      the entry's [msg] slot, which carries the [parent › name] label (followed
-      by [: <msg>] when the failing assertion also passed a user [?msg] — the
-      label rides the slot and cannot be split back out) — under the parent's
-      [classname], with time [0.000] (sub-cases are not timed) — emitted
-      directly after the parent's testcase. The parent testcase keeps the test's
-      non-subtest failures and its captured tail; with only subtest failures it
-      carries no [failure] element of its own.
+    - {b Expected failures.} JUnit knows no xfail state, so an {e excused}
+      failure — a failing result that did not count ({!Run.result.counted}
+      false) — becomes a [skipped] testcase whose message names the expectation
+      from {!Run.result.xfail} ([expected failure: issue #42]); its real
+      failures are not emitted, matching the run they did not fail. An [xfail]
+      test that {e passed} arrives as an ordinary counted failure whose message
+      names the reason and needs no mapping.
+    - {b Subtests.} Each subtest failure entry ({!Render.is_subtest_failure})
+      becomes its {e own} [testcase] — named by the entry's [msg] slot, which
+      carries the [parent › name] label (followed by [: <msg>] when the failing
+      assertion also passed a user [?msg] — the label rides the slot and cannot
+      be split back out) — under the parent's [classname], with time [0.000]
+      (sub-cases are not timed) — emitted directly after the parent's testcase.
+      The parent testcase keeps the test's non-subtest failures and its captured
+      tail; with only subtest failures it carries no [failure] element of its
+      own.
 
-    The renderer owns its transport's validity (RFC Law 4 commentary): every
-    emitted field — names, messages, failure text, captured output — is
-    ANSI-stripped ({!Text.strip_ansi}), reduced to the XML 1.0 character range
-    (bytes outside it, malformed UTF-8 included, become U+FFFD), and
-    XML-escaped. No payload can make the document malformed.
+    The renderer owns its transport's validity (Law 4 commentary): every emitted
+    field — names, messages, failure text, captured output — is ANSI-stripped
+    ({!Text.strip_ansi}), reduced to the XML 1.0 character range (bytes outside
+    it, malformed UTF-8 included, become U+FFFD), and XML-escaped. No payload
+    can make the document malformed.
 
     Rendering is pure and deterministic — no clocks, hostnames, or environment;
     equal inputs give equal documents — so writing the file is the caller's (the

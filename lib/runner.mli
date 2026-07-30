@@ -9,11 +9,11 @@
     {!execute} drives a declared {!Test_tree.t} list under a resolved
     {!Run.config}: it applies the startup checks (duplicate paths, the CI focus
     guard, the snapshot CI guard, the [--failed] store), selects tests, runs
-    them one at a time in declaration order (RFC "The runner": one process, one
-    domain, sequential), releases fixtures, maintains the last-failed store, and
+    them one at a time in declaration order (one process, one domain,
+    sequential), releases fixtures, maintains the last-failed store, and
     computes the Law 11 exit code. It prints nothing: progress streams through
     typed {!type:event}s and everything else is data in the returned
-    {!type:outcome} for renderers to project (RFC Law 4).
+    {!type:outcome} for renderers to project (Law 4).
 
     {b The per-test boundary.} Every attempt gets a fresh {!Run.frame} installed
     in the ambient slot, the global [Random] state reseeded to a pure function
@@ -26,7 +26,7 @@
     interrupt blocked C calls. The runner owns [SIGALRM] while a test with a
     limit runs. After every attempt — outside the timeout window, on every path
     where the runner regains control, a fatal exception included — the attempt's
-    scratch paths are removed ({!Run.remove_temp}, RFC Law 8).
+    scratch paths are removed ({!Run.remove_temp}, Law 8).
 
     Outcomes are classified per phase: {!Failure.Check_failure} keeps its
     payload, {!Failure.Skip_test} skips the test, {!Failure.Timeout} becomes a
@@ -51,8 +51,9 @@
     then teardown iff setup succeeded, teardown on every body outcome including
     skip and timeout — with the body and teardown outcomes captured
     {e independently}, one failure-list entry per failed phase, never composed
-    with [Fun.protect] at the reporting boundary (RFC "Resources"). A timeout
-    during teardown is a [Teardown]-phase failure alongside any body failure.
+    with [Fun.protect] at the reporting boundary (Law 8: body and release
+    failures are both reported). A timeout during teardown is a [Teardown]-phase
+    failure alongside any body failure.
 
     {b Retries.} A test with [retries = n] reruns while its outcome
     {e counts as failed} (see {e Expected failures} below — for an [xfail] test
@@ -61,40 +62,40 @@
     {e final} attempt's failures and output tail and the attempt count —
     renderers mark ["attempt N of M"] and pass-after-retries from
     {!Run.result.attempts}. Skips are never retried; the captured-output tail of
-    a failed test is attached to its first failure entry (RFC Law 5).
+    a failed test is attached to its first failure entry (Law 5).
 
-    {b Expected failures} (amendment B12). A test marked {!Test_tree.xfail}
-    still runs, but what counts as failed inverts: a failing outcome is recorded
-    with its real failures yet counts as {e expected} — it does not consume the
-    [--bail] budget, enter the last-failed store, or turn the exit code [1] —
-    while a passing outcome counts as failed and is recorded as [Fail] with one
-    message failure (["expected to fail, but the test passed"], naming the
-    [?reason]). Skips are unaffected. Each recorded result carries the decision
+    {b Expected failures.} A test marked {!Test_tree.xfail} still runs, but what
+    counts as failed inverts: a failing outcome is recorded with its real
+    failures yet counts as {e expected} — it does not consume the [--bail]
+    budget, enter the last-failed store, or turn the exit code [1] — while a
+    passing outcome counts as failed and is recorded as [Fail] with one message
+    failure (["expected to fail, but the test passed"], naming the [?reason]).
+    Skips are unaffected. Each recorded result carries the decision
     ({!Run.result.counted}) and the annotation ({!Run.result.xfail}): renderers
     distinguish an expected failure ([Fail], not counted) from an unexpected
     pass ([Fail], counted) from the record alone. For snapshot-orphan reporting
     and [--prune] gating, {e every} [Fail] result — expected or not — makes the
     run unclean.
 
-    {b Selection} (RFC "The runner", {e Selection}): a test runs iff its path
-    contains [config.filter] (when set), does not contain [config.exclude] (when
-    set), its tags satisfy [--tag]/[--exclude-tag]/[-q] over
-    {!Tag.default_predicate}, it survives the [--failed] allowlist, it falls in
-    the requested [--shard] bucket (when set), and — when any focused node
-    exists — it is focused. Deselected tests do not execute and are not
-    recorded. Fixture releases run after the last executed test on every path
-    where the runner regains control, including under [--bail] and after a fatal
-    exception, announced through {!Fixture_release} before each teardown and
-    outside any per-test timeout (RFC Law 8).
+    {b Selection.} A test runs iff its path contains [config.filter] (when set),
+    does not contain [config.exclude] (when set), its tags satisfy
+    [--tag]/[--exclude-tag]/[--quick] over {!Tag.default_predicate}, it survives
+    the [--failed] allowlist, it falls in the requested [--shard] bucket (when
+    set), and — when any focused node exists — it is focused. Deselected tests
+    do not execute and are not recorded. Fixture releases run after the last
+    executed test on every path where the runner regains control, including
+    under [--bail] and after a fatal exception, announced through
+    {!Fixture_release} before each teardown and outside any per-test timeout
+    (Law 8).
 
-    {b Sharding} (amendment B14). [--shard K/N] partitions the suite into [N]
-    buckets by a deterministic hash of each test's full path ({!Seed.derive}
-    under a frozen constant root) and selects bucket [K]. Buckets are stable
-    across runs, machines, and suite composition — the hash is frozen — so [N]
-    concurrent [dune] partitions cover every test exactly once; renaming or
-    regrouping a test may move it between buckets. Sharding composes with every
-    other selection layer (the bucket applies to the already-filtered set), and
-    an empty shard exits [2] like any empty selection (Law 11).
+    {b Sharding.} [--shard K/N] partitions the suite into [N] buckets by a
+    deterministic hash of each test's full path ({!Seed.derive} under a frozen
+    constant root) and selects bucket [K]. Buckets are stable across runs,
+    machines, and suite composition — the hash is frozen — so [N] concurrent
+    [dune] partitions cover every test exactly once; renaming or regrouping a
+    test may move it between buckets. Sharding composes with every other
+    selection layer (the bucket applies to the already-filtered set), and an
+    empty shard exits [2] like any empty selection (Law 11).
 
     {b The last-failed store} lives at [<log_dir>/<suite>/.last-failed], written
     atomically ({!Atomic_file}) after every executing run. Its format is
@@ -118,8 +119,8 @@ val prop :
   Test_tree.t
 (** [prop name gen law] declares a property test: a leaf test whose body checks
     [law] over [gen] through the property engine ({!Property.run}), with
-    per-case seeds derived from the run's root seed and the test's path (RFC Law
-    7) and the engine's context installed in the frame while [law] runs (so the
+    per-case seeds derived from the run's root seed and the test's path (Law 7)
+    and the engine's context installed in the frame while [law] runs (so the
     ambient [collect]/[classify]/[cover] reach it). [timeout] is the underlying
     test's per-test limit ({!Test_tree.test}); as the whole property runs inside
     one test body, it budgets generation and shrinking together — a timeout
@@ -139,7 +140,7 @@ val prop :
 (** The type for progress events, emitted in execution order. Renderers observe
     them to stream one line per test and to attribute a hanging fixture release;
     they receive only data already decided — no observer can alter status,
-    counts, or scheduling (RFC Law 4). *)
+    counts, or scheduling (Law 4). *)
 type event =
   | Run_started of { run : Run.t; suite : string; total : int; selected : int }
       (** Startup checks passed; [selected] of the suite's [total] tests are
@@ -149,8 +150,8 @@ type event =
   | Test_finished of Run.result
       (** The test completed and its result was recorded. *)
   | Fixture_release of { name : string }
-      (** The fixture identified by [name] is about to release (RFC "Resources":
-          announced before, so a hang is attributable). *)
+      (** The fixture identified by [name] is about to release (announced before
+          the teardown runs, so a hang is attributable). *)
 
 (** {1:startup Startup errors} *)
 
@@ -161,8 +162,7 @@ type startup_error =
           sorted, each listed once. *)
   | Focused_in_ci of ([ `Ftest | `Fgroup ] * Loc.t option) list
       (** Focused nodes exist, [CI] is set, and [WINDTRAP_ALLOW_FOCUS] is not:
-          the focus sites, in declaration order (RFC "The declaration surface",
-          {e Focus}). *)
+          the focus sites, in declaration order. *)
   | Update_refused_in_ci
       (** A snapshot update was requested under [CI] without
           [WINDTRAP_UPDATE=force] ({!Snapshot.resolve_mode}). *)
@@ -172,8 +172,8 @@ type startup_error =
 
 val startup_exit_code : startup_error -> int
 (** [startup_exit_code error] is the process exit code for [error]: [2] for
-    {!No_recorded_failures} (nothing ran, Law 11), [1] for the others (the RFC
-    fixes the focus guard at [1]; the other refusals follow it). *)
+    {!No_recorded_failures} (nothing ran, Law 11), [1] for the others (a refused
+    run is a failed run, not an empty one). *)
 
 val startup_message : startup_error -> string
 (** [startup_message error] is a plain-text (no ANSI) explanation of [error] for
@@ -247,8 +247,8 @@ val execute :
     [config.stream]), rewrites the last-failed store, and — in update mode —
     writes accepted baselines through the snapshot registry. Raises
     [Invalid_argument] when called while a run is already active (from a test
-    body, the calling test fails with that error, per RFC "The declaration
-    surface"), and when [config.shard] violates [1 <= K <= N] — the CLI layer
-    validates every layer it resolves, so only a hand-built configuration can
-    trip this. If [on_event] raises, the run aborts with that exception — after
-    a best-effort fixture release (RFC Law 8), like a fatal exception. *)
+    body, the calling test fails with that error), and when [config.shard]
+    violates [1 <= K <= N] — the CLI layer validates every layer it resolves, so
+    only a hand-built configuration can trip this. If [on_event] raises, the run
+    aborts with that exception — after a best-effort fixture release (Law 8),
+    like a fatal exception. *)

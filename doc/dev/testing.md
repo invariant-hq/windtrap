@@ -2,26 +2,34 @@
 
 How windtrap tests itself, and the workflows that keep the special
 suites honest. `dune runtest` runs everything; scope with a directory
-(`dune runtest test/gen`) or run a built test binary directly with
+(`dune runtest test/unit`) or run a built test binary directly with
 `-f` while iterating.
 
 ## Layout
 
-One directory per module family under `test/`, bottom of the
-dependency graph first: `foundation` and `primitives` (Seed,
-Shrink_tree, Text, Env, …), `data`/`data-testable` (Failure, Diff,
-Testable), `gen`, `property`, `check`, `capture`, `snapshot`,
-`render`, `runner` (Runner + Cli), `structure` (Test_tree, Run),
-`ppx_runtime`, `ppx`, `coverage`, `coverage_cli`, `coverage_ppx`, and
-`facade`. Most are plain executables in house style — a local
-`check`/`check_int` counter, exit nonzero on any failure — because the
-suite under them *is* windtrap: the machinery being tested cannot be
-trusted to report its own bugs. Higher-level suites (facade and up)
-drive declared suites through `Runner.execute` in-process with a
-synthetic config and assert on typed outcomes and renderings, which
-keeps failing tests runnable under a green `runtest`.
+Seven directories under `test/`:
 
-Three kinds of compiled documentation also run here:
+- `unit` — the library suite, flat: one `test_<module>.ml` per `lib/`
+  module, aggregated into a single windtrap-run executable
+  (`main.exe`; address one module with
+  `dune exec test/unit/main.exe -- -f <module>`). Four meta suites
+  (`test_run`, `test_runner`, `test_ppx_runtime`, `test_windtrap`)
+  drive `Runner.execute` and the ambient slot in-process with
+  synthetic configs — the sanctioned way to test runner behavior with
+  windtrap itself — and `execute` refuses to nest inside an active
+  run, so each is a plain executable over the shared hand-rolled
+  `harness.ml` (a local check counter, exit nonzero on any failure):
+  the machinery being tested cannot be trusted to report its own bugs.
+- `conformance` — the ppx_expect conformance corpus (below).
+- `coverage`, `coverage_cli`, `coverage_ppx` — the coverage runtime,
+  the `windtrap coverage` reporting command, and the instrumenter,
+  including its semantics-preservation suite (below).
+- `docs` — compiled documentation (below).
+- `ppx` — PPX rewriting goldens (`.expected` files diffed against the
+  driver's output, rejects included) and the inline-runner fixtures
+  (`inline/`, `inline_coverage/`, `slow_knobs/`, `tail_loc/`).
+
+Three kinds of compiled documentation run in the tree:
 
 - `test/docs/test_guide.ml` — the guide's failing walkthroughs,
   executed in-process, asserting the printed diff, counterexample,

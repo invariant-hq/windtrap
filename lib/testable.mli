@@ -14,10 +14,10 @@
     Build witnesses with {!make} (equality is required — polymorphic equality is
     the explicitly named {!structural}), compose them with the container
     instances and {!contramap}, and ignore components with {!pass}. Diffing is
-    not here: renderers compute diffs from the printed values (RFC "The
-    witness"), so every type gets highlighted diffs from its [pp] alone.
-    Generation is not here either: random generation lives in [Gen], the
-    property-side witness. The two never merge (RFC Law 6). *)
+    not here: renderers compute diffs from the printed values (Law 4), so every
+    type gets highlighted diffs from its [pp] alone. Generation is not here
+    either: random generation lives in [Gen], the property-side witness. The two
+    never merge (Law 6). *)
 
 (** {1:types Types} *)
 

@@ -192,11 +192,16 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 (** [fixture ?teardown create] is an accessor for a run-scoped shared resource.
     Creating the accessor (typically at module toplevel) runs nothing; the first
     call inside a test acquires with [create ()] — inside that test's failure
-    boundary — and later calls return the cached value. A fixture no selected
-    test touches is never acquired; acquired fixtures are released by the runner
-    after the last test, in reverse acquisition order, on every path where the
-    runner regains control (including [--bail]). A release failure is reported
-    and fails the run.
+    boundary — and later calls return the cached value. Acquisition outcomes are
+    cached for the whole run, failures included: a [create] that raises fails
+    the acquiring test, every later call in the run re-raises that exception
+    with the original acquisition backtrace, and nothing is registered for
+    release. A [skip] raised during acquisition is cached as a skip, not an
+    error — every test that touches the accessor skips with the same reason. A
+    fixture no selected test touches is never acquired; acquired fixtures are
+    released by the runner after the last test, in reverse acquisition order, on
+    every path where the runner regains control (including [--bail]). A release
+    failure is reported and fails the run.
 
     Calling the accessor outside a run raises [Invalid_argument]. *)
 
@@ -437,7 +442,7 @@ module Gen = Gen
       uses.
 
     {b Note.} Length- and alphabet-controlled strings are spelled
-    {!Gen.string_of}[ ?size char] and {!Gen.bytes_of} — the RFC's
+    {!Gen.string_of}[ ?size char] and {!Gen.bytes_of} — the natural
     [string ?size ?char] spelling cannot exist (optional arguments on a value
     are unerasable, warning 16), so the knobs live on [string_of]/[bytes_of],
     aligned with {!Gen.list}. See {!Gen} for each generator's distribution,

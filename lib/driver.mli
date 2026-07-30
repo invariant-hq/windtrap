@@ -100,7 +100,7 @@ val report_snapshots :
     Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
     summary. *)
 
-(** {1:coverage The coverage seam (RFC Law 12)} *)
+(** {1:coverage The coverage seam (Law 12)} *)
 
 val snapshot_coverage : Run.t -> Windtrap_coverage.t
 (** [snapshot_coverage run] snapshots in-process coverage at run end: when

@@ -11,13 +11,13 @@
     its own seed with {!derive}. Generators consume randomness by threading an
     immutable SplitMix64 {!state}; no ambient or process-global randomness
     participates, so replaying a root token reproduces every generated value
-    across machines, OCaml versions, and suite compositions (RFC Law 7).
+    across machines, OCaml versions, and suite compositions (Law 7).
 
     {b Stability.} The token format ({!of_string}, {!to_string}), the {!derive}
     definition, and the {!state} stream ({!make}, {!bits64}, {!below}, {!split})
     are frozen at windtrap 3.0. Changing any of them silently re-keys recorded
-    failures and reopens the RFC. The exact algorithms are specified in each
-    value's documentation. *)
+    failures and reopens the design (Law 7). The exact algorithms are specified
+    in each value's documentation. *)
 
 (** {1:seeds Seeds and tokens} *)
 
@@ -50,8 +50,7 @@ val derive : root:seed -> path:string -> index:int -> seed
 (** [derive ~root ~path ~index] is the seed for generated case [index]
     (zero-based) of the test named by [path] under [root]. It is a pure function
     of exactly these three inputs, so suite composition never perturbs another
-    test's stream and any failure replays from the printed root token (RFC Law
-    7).
+    test's stream and any failure replays from the printed root token (Law 7).
 
     The frozen version-1 definition, over 64-bit arithmetic:
 

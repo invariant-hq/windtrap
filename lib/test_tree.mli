@@ -7,30 +7,29 @@
 
     A suite is a list of {!type:t} values: leaf tests and nested groups,
     declared with the constructors below — the declaration surface the facade
-    re-exports (RFC "The declaration surface"). Declaring is pure data
-    construction: no body, setup, or teardown runs until the runner executes the
-    tree. There are no group hooks of any kind — no user callback can run
-    outside a test's exception boundary (RFC Law 8) — and {!bracket} stores its
-    three closures unrun, so the runner captures body and teardown outcomes
-    independently.
+    re-exports. Declaring is pure data construction: no body, setup, or teardown
+    runs until the runner executes the tree. There are no group hooks of any
+    kind — no user callback can run outside a test's exception boundary (Law 8)
+    — and {!bracket} stores its three closures unrun, so the runner captures
+    body and teardown outcomes independently.
 
     {b Paths.} A test is named by its {e path}: the names of its enclosing
     groups, root first, then its own name. {!flatten} derives every path;
     {!path_to_string} renders one as the canonical string that selection filters
-    match and per-case seed derivation hashes (RFC Law 7 — the joined form is
+    match and per-case seed derivation hashes (Law 7 — the joined form is
     frozen; renaming or regrouping a test intentionally re-keys its property
     streams). Duplicate full paths are a startup error detected by the runner;
     the tree only makes paths derivable.
 
     {b Declaration files.} Each test records the source file it was declared in,
-    consumed by snapshot scoping (RFC "Snapshots", location resolution rule
-    (2)): a [snapshot] call without [~pos] scopes its baseline by the enclosing
-    test's declaration file. The file comes from the constructor's [?pos] when
-    given, and otherwise from a best-effort walk of the call stack at
-    declaration time ({!Loc.capture}) — never from backtrace frames at snapshot
-    {e call} time. The fallback can mis-attribute when the constructor call is
-    reached through tail calls (the declaring frame is gone), so helpers that
-    wrap constructors should thread [?pos] through. *)
+    consumed by snapshot scoping ({!Snapshot.check}): a [snapshot] call without
+    [~pos] scopes its baseline by the enclosing test's declaration file. The
+    file comes from the constructor's [?pos] when given, and otherwise from a
+    best-effort walk of the call stack at declaration time ({!Loc.capture}) —
+    never from backtrace frames at snapshot {e call} time. The fallback can
+    mis-attribute when the constructor call is reached through tail calls (the
+    declaring frame is gone), so helpers that wrap constructors should thread
+    [?pos] through. *)
 
 (** {1:trees Trees} *)
 
@@ -53,7 +52,7 @@ type body =
       (** A {!bracket} test, kept as three separate closures — never
           pre-composed — so the runner can run [teardown] iff [setup] succeeded,
           on every outcome, and report body and teardown failures independently
-          (RFC "Resources"). *)
+          (Law 8). *)
 
 (** {1:declaring Declaring tests}
 
@@ -111,7 +110,8 @@ val slow :
   string ->
   (unit -> unit) ->
   t
-(** [slow] is {!test} with the {!Tag.slow} tag pre-applied ([-q] drops it). *)
+(** [slow] is {!test} with the {!Tag.slow} tag pre-applied ([--quick] drops it).
+*)
 
 val cases :
   ?pos:Loc.pos ->
@@ -150,9 +150,9 @@ val bracket :
 
 val xfail : ?reason:string -> t -> t
 (** [xfail t] marks [t] — and, through a group, every test under it — as
-    {e expected to fail} (amendment B12). Marked tests still run; the runner
-    inverts what counts as failed: a failing outcome reports as an expected
-    failure and does not fail the run, while a passing outcome fails loudly
+    {e expected to fail}. Marked tests still run; the runner inverts what counts
+    as failed: a failing outcome reports as an expected failure and does not
+    fail the run, while a passing outcome fails loudly
     (["expected to fail, but the test passed"]). Skips are unaffected. Expected
     failures never enter the last-failed store; an unexpected pass does (see
     {!Runner}).
@@ -174,8 +174,8 @@ val focus_sites : t list -> ([ `Ftest | `Fgroup ] * Loc.t option) list
 (** [focus_sites tests] is every focus-flagged node in declaration order, with
     its kind and declaration location — the data behind the CI focus guard's
     error message
-    (["focused tests committed (ftest at test/test_users.ml:31, …)"], RFC "The
-    declaration surface") and the runner's out-of-CI warning. *)
+    (["focused tests committed (ftest at test/test_users.ml:31, …)"]) and the
+    runner's out-of-CI warning. *)
 
 (** {1:flattening Flattening} *)
 
@@ -205,4 +205,4 @@ val flatten : t list -> case list
 val path_to_string : string list -> string
 (** [path_to_string path] joins [path] with [" › "] — the canonical rendering
     matched by [-f]/[-e] filters and hashed by per-case seed derivation
-    ({!Seed.derive}). The separator is frozen (RFC Law 7). *)
+    ({!Seed.derive}). The separator is frozen (Law 7). *)

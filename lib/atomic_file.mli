@@ -7,7 +7,7 @@
 
     {!write} publishes a file by writing a temporary sibling and renaming it
     over the target, so no reader — including a concurrent or crashed run — ever
-    observes a partially written target (RFC Law 1). Snapshot acceptance and the
+    observes a partially written target (Law 1). Snapshot acceptance and the
     last-failed store write through this module and nothing else.
 
     Temporaries live in the target's directory under the reserved {!temp_prefix}

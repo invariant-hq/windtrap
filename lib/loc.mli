@@ -12,11 +12,11 @@
     none — a report without a location beats a report with a wrong one.
     {!resolve} packages that rule for failure sites.
 
-    Capture is provisional (see the RFC): it takes the first call-stack slot
-    whose compilation unit is neither windtrap's nor the standard library's,
-    inlined slots included, and returns [None] rather than guess. The walk never
-    crosses a {!delimit} frame: the runner runs every user callback under one,
-    so a failing call whose own frame was consumed by tail calls yields [None] —
+    Capture is a provisional heuristic: it takes the first call-stack slot whose
+    compilation unit is neither windtrap's nor the standard library's, inlined
+    slots included, and returns [None] rather than guess. The walk never crosses
+    a {!delimit} frame: the runner runs every user callback under one, so a
+    failing call whose own frame was consumed by tail calls yields [None] —
     never the line that called the runner. *)
 
 (** {1:types Types} *)

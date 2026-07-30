@@ -5,12 +5,12 @@
 
 (** Random value generators with integrated shrinking and printing.
 
-    An ['a t] couples three inseparable concerns (RFC Law 6): drawing a value
-    from a {!Seed.state}, the lazy tree of shrink candidates for the drawn
-    value, and how values print in counterexamples. There is no user-written
-    shrinker anywhere: every generator shrinks, and shrink candidates satisfy
-    the same constraints as generated values — an {!int_range} candidate stays
-    in bounds, a {!such_that} candidate satisfies its predicate.
+    An ['a t] couples three inseparable concerns (Law 6): drawing a value from a
+    {!Seed.state}, the lazy tree of shrink candidates for the drawn value, and
+    how values print in counterexamples. There is no user-written shrinker
+    anywhere: every generator shrinks, and shrink candidates satisfy the same
+    constraints as generated values — an {!int_range} candidate stays in bounds,
+    a {!such_that} candidate satisfies its predicate.
 
     Start from primitives ({!int}, {!float}, {!string}, ...), combine with
     containers ({!list}, {!pair}, ...) and choice ({!of_list}, {!one_of},
@@ -38,7 +38,7 @@
     {b Validation.} Generator constructors never raise: malformed arguments
     ([one_of []], [int_range 3 1]) are reported by raising [Invalid_argument]
     when the generator first samples, inside the running test's exception
-    boundary — a test list that constructs is a test list that runs (RFC Law 6).
+    boundary — a test list that constructs is a test list that runs (Law 6).
 
     Callbacks passed to {!map}, {!bind}, {!such_that}, and generator-valued
     functions given to {!sized} must be pure: the shrink search runs them —
@@ -128,10 +128,10 @@ val string : string t
     first candidate — then shrinks characters individually toward ['a']. Use
     {!string_of} to control the length or character distribution.
 
-    {b Note.} The RFC spells this
-    [string : ?size:int t -> ?char:char t -> string t]; optional arguments on a
-    value are unerasable (warning 16), so the knobs live on {!string_of}
-    instead, aligned with {!list}. *)
+    {b Note.} The natural spelling
+    [string : ?size:int t -> ?char:char t -> string t] is unavailable: optional
+    arguments on a value are unerasable (warning 16), so the knobs live on
+    {!string_of} instead, aligned with {!list}. *)
 
 val string_of : ?size:int t -> char t -> string t
 (** [string_of ?size char] generates a string whose length follows the size
@@ -288,8 +288,9 @@ val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
 
 (** {1:engine Engine interface}
 
-    Low-level API for the property engine and windtrap's own tests; the public
-    facade hides this section. *)
+    Low-level API for the property engine and windtrap's own tests. The facade
+    re-exports it with the rest of this module — public, but advanced: beyond
+    the frozen value stream (Law 7, {!Seed}) it carries no stability promise. *)
 
 exception Rejected
 (** Raised by {!sample} when a {!such_that} filter exhausts its [max_tries]

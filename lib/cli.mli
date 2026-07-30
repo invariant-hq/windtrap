@@ -9,9 +9,9 @@
     argument vector into a {!type:parsed} record of raw flag values, {!resolve}
     merges programmatic overrides, parsed flags, and the [WINDTRAP_*]
     environment mirrors into a {!Run.config} with the precedence
-    {e programmatic > CLI > env > default} (RFC "The runner", {e CLI} — under
-    [dune runtest] the environment mirrors {e are} the CLI), and {!help} renders
-    the flag and variable inventory.
+    {e programmatic > CLI > env > default} (under [dune runtest] the environment
+    mirrors {e are} the CLI), and {!help} renders the flag and variable
+    inventory.
 
     Nothing in this module prints or exits: parse and resolution failures are
     returned as a typed {!type:error} — the caller renders {!error_message} and
@@ -19,7 +19,7 @@
     for the caller to act on. The flag inventory is v1's minus the cut
     [--format] axis — terminal verbosity is one three-level axis ([-q] ⊂ default
     ⊂ [-v], {!output_level}), not a format — plus [--quiet], [--verbose],
-    [--prune] (RFC "The runner", {e Output}) and [--shard] (amendment B14). *)
+    [--prune] and [--shard]. *)
 
 (** {1:parsed Parsed flags} *)
 
@@ -52,7 +52,7 @@ type parsed = {
           capturing. *)
   update : Env.update option;
       (** [-u], [--update]: parse as [Some Env.Update]. Forcing past the CI
-          guard is spelled [WINDTRAP_UPDATE=force] (RFC "Snapshots"). *)
+          guard is spelled [WINDTRAP_UPDATE=force]. *)
   prune : bool option;
       (** [--prune]: delete orphaned baselines after a full, clean update run.
       *)
@@ -160,7 +160,7 @@ val coverage_mode :
     {!parsed.coverage} when present, else the [WINDTRAP_COVERAGE] environment
     mirror, else [`Summary]. Resolved apart from {!resolve} because it is a
     rendering decision, not run configuration — {!Run.config} carries no
-    coverage field (RFC Law 12), and enabling any mode never changes outcomes or
+    coverage field (Law 12), and enabling any mode never changes outcomes or
     exit codes (Law 13). The caller applies it: [`Summary] renders the one-line
     percentage when the run was instrumented, [`Report] and [`Full] add the
     per-file detail, [`Off] renders nothing.

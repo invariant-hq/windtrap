@@ -9,8 +9,8 @@
     failure: a failing verb constructs a single {!Failure.t} — a typed kind, an
     optional location, the [?msg] annotation when given — and raises
     {!Failure.Check_failure}. Verbs never print, never diff, and never touch run
-    state: renderers project failure data into reports (RFC Law 4), computing
-    diffs from the rendered values stored in the payload.
+    state: renderers project failure data into reports (Law 4), computing diffs
+    from the rendered values stored in the payload.
 
     Comparisons go through a {!Testable.t} witness: {!equal} and {!not_equal}
     use its equality and, on failure only, render the values with its printer

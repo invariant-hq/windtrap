@@ -12,9 +12,9 @@
     The runner emits these on standard output only under GitHub Actions
     ({!Env.in_github_actions}); this module never reads the environment.
 
-    The renderer owns its transport's validity (RFC Law 4 commentary):
-    annotation messages are ANSI-stripped and percent-encode newlines as [%0A]
-    (with [%25]/[%0D] for [%] and CR), and command properties — [file], [line],
+    The renderer owns its transport's validity (Law 4 commentary): annotation
+    messages are ANSI-stripped and percent-encode newlines as [%0A] (with
+    [%25]/[%0D] for [%] and CR), and command properties — [file], [line],
     [title] — additionally encode [:] and [,] as [%3A] and [%2C], so no payload
     can terminate or restructure a workflow command.
 
@@ -36,11 +36,11 @@ val annotation :
     {!Render.pp_failure} block — counterexample, replay line, and acceptance
     command included — with its newlines [%0A]-encoded.
 
-    Subtest failure entries (amendment B13) annotate at the parent test: the
-    [title] names the test whose body ran them, the location is the entry's own
-    — a line inside that body — and the [parent › name] label leads the message.
-    Sub-cases are failure entries, not tests, and get no identity of their own
-    here.
+    Subtest failure entries ({!Render.is_subtest_failure}) annotate at the
+    parent test: the [title] names the test whose body ran them, the location is
+    the entry's own — a line inside that body — and the [parent › name] label
+    leads the message. Sub-cases are failure entries, not tests, and get no
+    identity of their own here.
 
     [invocation], default [`Mirrors], is the hint context ({!Render.invocation})
     the embedded replay and acceptance lines are spelled from — pass the run's
@@ -52,6 +52,6 @@ val annotations : ?invocation:Render.invocation -> Run.result list -> string
     in run order — the block the runner prints once at end of run. [""] when no
     test failed. [invocation] is passed to each {!annotation}.
 
-    Excused expected failures (amendment B12) — failing results that did not
-    count — produce no annotations: an [::error] on a PR demands action, and an
-    excused failure demands none (its run exited [0]). *)
+    Excused expected failures — failing results that did not count — produce no
+    annotations: an [::error] on a PR demands action, and an excused failure
+    demands none (its run exited [0]). *)

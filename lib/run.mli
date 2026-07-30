@@ -6,8 +6,8 @@
 (** The per-run record and the one ambient slot.
 
     All mutable run state lives in one {!type:t} created per [run] invocation
-    (RFC Law 9, "no global mutable per-run state"): the resolved {!type:config},
-    the capture state, the snapshot registry, the fixture cache, accumulated
+    (Law 9, "no global mutable per-run state"): the resolved {!type:config}, the
+    capture state, the snapshot registry, the fixture cache, accumulated
     {!type:result}s, and the coverage seam field. Nothing here is a global; a
     later [run] in the same process builds a fresh record, which is what makes
     fixtures re-acquire and snapshot registries start empty.
@@ -22,18 +22,18 @@
     {!current_frame}/{!current} and dispatch on explicit state. When the slot
     holds no frame, reading it raises the assertions-outside-run error:
     [Invalid_argument] with a message explaining that the operation only works
-    inside a test body executed by [run]. The runner is sequential, one domain
-    (RFC "The runner"); nothing here is thread-safe.
+    inside a test body executed by [run]. The runner is sequential, one domain;
+    nothing here is thread-safe.
 
-    Fixture accessors are created with {!fixture} — the RFC "Resources"
-    contract: per-run cache keyed by accessor identity, acquisition on first use
-    inside the calling test's failure boundary, cached acquisition errors and
-    skips (amendment C1), reverse-order release through {!release_fixtures}. *)
+    Fixture accessors are created with {!fixture} — the fixture contract:
+    per-run cache keyed by accessor identity, acquisition on first use inside
+    the calling test's failure boundary, cached acquisition errors and skips,
+    reverse-order release through {!release_fixtures}. *)
 
 (** {1:config Configuration} *)
 
 type config = {
-  seed : Seed.seed;  (** The run's root seed (RFC Law 7). *)
+  seed : Seed.seed;  (** The run's root seed (Law 7). *)
   filter : string option;
       (** [-f]/positional/[WINDTRAP_FILTER]: run only tests whose path contains
           this substring. *)
@@ -47,7 +47,7 @@ type config = {
       (** [--shard K/N]/[WINDTRAP_SHARD]: run only tests whose path hashes into
           bucket [K] of [N] ({!Runner}, {e Selection}). Invariant [1 <= K <= N],
           validated by the CLI layer. *)
-  quick : bool;  (** [-q]: drop {!Tag.slow}-tagged tests. *)
+  quick : bool;  (** [--quick]: drop {!Tag.slow}-tagged tests. *)
   failed_only : bool;  (** [--failed]: rerun only the last run's failures. *)
   list_only : bool;  (** [-l]: list selected tests without running them. *)
   bail : int option;
@@ -81,8 +81,8 @@ type config = {
 }
 (** The type for resolved run configuration: one plain record the CLI layer
     populates by merging programmatic arguments, CLI flags, and environment
-    mirrors in that precedence order (RFC "The runner", {e CLI}). Consumers read
-    it from {!config}; nothing re-reads flags or the environment mid-run. *)
+    mirrors in that precedence order ({!Cli.resolve}). Consumers read it from
+    {!config}; nothing re-reads flags or the environment mid-run. *)
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration with every field at its built-in
@@ -125,7 +125,7 @@ val frame :
   t -> path:string list -> file:string option -> loc:Loc.t option -> frame
 (** [frame t ~path ~file ~loc] is a fresh frame for one attempt of the test at
     [path] (as flattened by [Test_tree.flatten]), declared in [file] — the
-    snapshot-scoping input (RFC "Snapshots", resolution rule (2)) — at [loc];
+    snapshot-scoping input ({!Snapshot.check}'s [~scope] fallback) — at [loc];
     [loc] is the fallback attribution for failures recorded without a location.
 *)
 
@@ -150,11 +150,11 @@ val add_failure : frame -> Failure.t -> unit
 (** [add_failure frame failure] appends [failure] to the attempt's failure list.
     The runner records one entry per phase that failed, already classified with
     {!Failure.with_phase} — a body failure and a teardown failure are two
-    entries (RFC "Failure is data"). A [failure] whose location is [None] — its
-    failing call sat in tail position, so {!Loc.capture} stopped at the runner's
-    delimiter — is recorded with the test's declaration location instead, when
-    the frame has one. Nested failures (a property failure's [inner]) are left
-    untouched. *)
+    entries (Law 4: failures are data). A [failure] whose location is [None] —
+    its failing call sat in tail position, so {!Loc.capture} stopped at the
+    runner's delimiter — is recorded with the test's declaration location
+    instead, when the frame has one. Nested failures (a property failure's
+    [inner]) are left untouched. *)
 
 val failures : frame -> Failure.t list
 (** [failures frame] is the attempt's failures in the order they were added. *)
@@ -217,20 +217,19 @@ val current_opt : unit -> frame option
 
 val current_test : unit -> string list
 (** [current_test ()] is the executing test's full path: enclosing group names
-    root first, then the test's own name (amendment B9). Never empty; joined
-    with {!Test_tree.path_to_string} it is exactly the string selection filters
+    root first, then the test's own name. Never empty; joined with
+    {!Test_tree.path_to_string} it is exactly the string selection filters
     match. Stable across attempts of the same test. *)
 
 val srandom : unit -> Random.State.t
 (** [srandom ()] is a fresh pseudo-random state seeded from the run's root seed
     and the executing test's path — precisely, from
-    [Seed.derive ~root ~path ~index:0] over the canonical joined path (amendment
-    B10). Per RFC Law 7 the seed is a pure function of the printed root token
-    and the test's path: replaying with [--seed] reproduces it, suite
-    composition and filters never perturb it, and renaming or regrouping the
-    test intentionally re-keys it. The derivation is frozen; the values drawn
-    from the state additionally follow the stdlib's [Random] algorithm, which
-    the OCaml version pins.
+    [Seed.derive ~root ~path ~index:0] over the canonical joined path. Per Law 7
+    the seed is a pure function of the printed root token and the test's path:
+    replaying with [--seed] reproduces it, suite composition and filters never
+    perturb it, and renaming or regrouping the test intentionally re-keys it.
+    The derivation is frozen; the values drawn from the state additionally
+    follow the stdlib's [Random] algorithm, which the OCaml version pins.
 
     Every call within the same test returns an identically seeded state — draw
     all of a test's randomness from one state rather than calling twice.
@@ -242,10 +241,10 @@ val srandom : unit -> Random.State.t
     can print the replay command. *)
 
 val subtest : string -> (unit -> unit) -> unit
-(** [subtest name fn] runs [fn ()] as a named sub-case of the executing test
-    (amendment B13). If [fn] raises an assertion failure or any other non-fatal
-    exception, the failure is appended to the test's failure list — labeled with
-    the [" › "]-joined path of the test's name and the enclosing subtest names,
+(** [subtest name fn] runs [fn ()] as a named sub-case of the executing test. If
+    [fn] raises an assertion failure or any other non-fatal exception, the
+    failure is appended to the test's failure list — labeled with the
+    [" › "]-joined path of the test's name and the enclosing subtest names,
     carried in the failure's [msg] slot (prefixed to a user [~msg] when one is
     present) — and [subtest] {e returns}: siblings after a failing subtest still
     run, and the test fails at the end with every recorded entry. Subtests nest;
@@ -264,12 +263,12 @@ val subtest : string -> (unit -> unit) -> unit
 
 (** {1:scratch Runner-owned scratch}
 
-    Per-test temporary paths (amendment B9): created lazily under one scratch
-    directory per test attempt, and removed by the runner after the test on
-    every path where it regains control (RFC Law 8) — failure, skip, timeout,
-    and a fatal exception unwinding the run included — so tests never hand-roll
-    temp lifecycles. Paths are per attempt: a resource that must outlive the
-    test (e.g. one acquired by a {!fixture}) must not live in them. *)
+    Per-test temporary paths: created lazily under one scratch directory per
+    test attempt, and removed by the runner after the test on every path where
+    it regains control (Law 8) — failure, skip, timeout, and a fatal exception
+    unwinding the run included — so tests never hand-roll temp lifecycles. Paths
+    are per attempt: a resource that must outlive the test (e.g. one acquired by
+    a {!fixture}) must not live in them. *)
 
 val temp_dir : ?prefix:string -> unit -> string
 (** [temp_dir ()] is a fresh empty directory for the executing test, created
@@ -294,17 +293,17 @@ val remove_temp : frame -> unit
 (** [remove_temp frame] recursively removes the scratch directory backing
     [frame]'s {!temp_dir}/{!temp_file} paths, when one was created. Runner-side:
     called after every attempt, on every path where the runner regains control
-    (RFC Law 8). Best-effort — removal errors are ignored, never raised (the
-    paths live under the system temporary directory) — and idempotent; symbolic
-    links are removed, never followed. *)
+    (Law 8). Best-effort — removal errors are ignored, never raised (the paths
+    live under the system temporary directory) — and idempotent; symbolic links
+    are removed, never followed. *)
 
 (** {1:fixtures Fixtures} *)
 
 val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
-(** [fixture ?teardown create] is the accessor for a run-scoped shared resource
-    (RFC "Resources"). The accessor owns no state: creating it — typically at
-    module toplevel, outside any run — runs nothing, and its cache lives in the
-    current run's record, keyed by the accessor's identity.
+(** [fixture ?teardown create] is the accessor for a run-scoped shared resource.
+    The accessor owns no state: creating it — typically at module toplevel,
+    outside any run — runs nothing, and its cache lives in the current run's
+    record, keyed by the accessor's identity.
 
     The first call in a run acquires with [create ()] — inside the calling
     test's failure boundary, so an exception from [create] fails that test — and
@@ -312,13 +311,13 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
     return the cached value. A fixture whose acquisition raised caches the
     exception, and every later use in that run re-raises it with the original
     acquisition backtrace — no re-acquisition within a run. A {e skip} raised
-    during acquisition is cached as a skip, not an error (amendment C1): the
-    acquiring test skips with that reason, every later use of the accessor in
-    the run skips with the same reason without re-acquiring, and nothing is
-    registered for release — an unavailable optional resource (a GPU device, a
-    missing tool) must not turn a run red. Because the cache is per run, a later
-    [run] in the same process re-acquires; a fixture no selected test touches is
-    never acquired.
+    during acquisition is cached as a skip, not an error: the acquiring test
+    skips with that reason, every later use of the accessor in the run skips
+    with the same reason without re-acquiring, and nothing is registered for
+    release — an unavailable optional resource (a GPU device, a missing tool)
+    must not turn a run red. Because the cache is per run, a later [run] in the
+    same process re-acquires; a fixture no selected test touches is never
+    acquired.
 
     Calling the accessor outside a run raises the assertions-outside-run error
     ([Invalid_argument], see {!current_frame}). *)
@@ -341,8 +340,8 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
     releases.
 
     The runner calls this after the last test on every path where it regains
-    control — including under [--bail] — and outside any per-test timeout (RFC
-    Law 8). *)
+    control — including under [--bail] — and outside any per-test timeout (Law
+    8). *)
 
 (** {1:results Results} *)
 
@@ -375,10 +374,10 @@ type result = {
   srandom_root : Seed.seed option;
       (** [Some root] — the run's root seed — iff the test called {!srandom} on
           its recorded attempt; [None] otherwise. Renderers print the replay
-          line of a failing stochastic test from it (RFC Law 7). *)
+          line of a failing stochastic test from it (Law 7). *)
 }
 (** The type for per-test results, as recorded by the runner after a test
-    completes. Renderers project the accumulated list (RFC Law 4); the record
+    completes. Renderers project the accumulated list (Law 4); the record
     carries every fact rendering needs — outcome classification included — so no
     consumer re-derives runner decisions from tables or messages. *)
 
@@ -390,7 +389,7 @@ val results : t -> result list
 
 (** {1:coverage Coverage seam}
 
-    Core windtrap's entire coverage coupling (RFC Law 12): at run end the runner
+    Core windtrap's entire coverage coupling (Law 12): at run end the runner
     snapshots in-process coverage — when instrumented code registered any — into
     the field below, and renderers project it like any other run data. No other
     coverage type or call appears in the core library. *)
