@@ -5,10 +5,10 @@
 
 (** Expression-grade coverage instrumentation of implementation files.
 
-    Instruments the v1/Bisect population frozen by RFC Law 14 (as amended
-    2026-07-28) and prepends one initialization module that registers the file's
-    point table with the [Windtrap_coverage] runtime at load time. Two insertion
-    shapes exist:
+    Instruments the frozen v1/Bisect population — scope grows only by deliberate
+    design amendment — and prepends one initialization module that registers the
+    file's point table with the [Windtrap_coverage] runtime at load time. Two
+    insertion shapes exist:
 
     - {e entry points} — [___windtrap_visit___ i; e] at the entry of a block:
       function leaf bodies, [match]/[try]/[function] arms and their guards, [if]
@@ -20,17 +20,17 @@
       method calls, [new], and [assert]: the point fires only when the
       expression {e returns}, so a call that raises reports uncovered. Out-edge
       wrapping is never applied in tail position — the traversal's tail-position
-      analysis keeps every tail call a tail call (Law 13), at the price of
-      attributing a tail call's out-edge to its caller's first non-tail
-      application. Applications of trivial primitives (operators, [raise],
-      [ignore], …) and fully-labeled (partial) applications carry no out-edge.
+      analysis keeps every tail call a tail call, at the price of attributing a
+      tail call's out-edge to its caller's first non-tail application.
+      Applications of trivial primitives (operators, [raise], [ignore], …) and
+      fully-labeled (partial) applications carry no out-edge.
 
     Extents are mixed by design: an entry point carries its block's byte extent
     — an arm's spans the entire arm, pattern start to body end — while an
     out-edge point carries the application's own extent, so a raising call
     paints the call. Point identity is a single attribution byte offset (the
-    donor model): two marks at one offset share a point and the first-recorded
-    extent wins.
+    v1/Bisect model): two marks at one offset share a point and the
+    first-recorded extent wins.
 
     Instrumentation is excluded by the Bisect_ppx attribute spelling:
     [[@coverage off]] on an expression, [[@@coverage off]] on a value or module

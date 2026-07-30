@@ -19,7 +19,7 @@ let check_prints name witness value ~expected =
 let check_equal name witness a b = is_true ~msg:name (T.equal witness a b)
 let check_differ name witness a b = is_false ~msg:name (T.equal witness a b)
 
-(* ───── of_module fixtures ───── *)
+(* of_module fixtures *)
 
 (* The exact WITNESS shape: nothing but [t]/[pp]/[equal]. *)
 module Point = struct

@@ -11,14 +11,14 @@
    runtime/{test_spec,test_node,output}.ml and the shapes its corpus
    goldens pin) — see the .mli for the contract. *)
 
-(* ───── Initialization ───── *)
+(* Initialization *)
 
 (* Captured eagerly at module load, before any test runs: tests may chdir,
    and .corrected files must land where dune's diff action looks — next to
    the copied source in the sandbox, the cwd the runner started in. *)
 let initial_dir = Sys.getcwd ()
 
-(* ───── Protocol state ───── *)
+(* Protocol state *)
 
 let initialized = ref false
 let am_test_runner = ref false
@@ -52,7 +52,7 @@ let init argv =
     parse (Array.to_list argv)
   end
 
-(* ───── Locations and nodes ───── *)
+(* Locations and nodes *)
 
 type loc = { line : int; start_bol : int; start_pos : int; end_pos : int }
 type delimiter = Quote | Tag of string
@@ -66,7 +66,7 @@ let loc_t ~file loc = { Loc.file; line = loc.line; column = column loc }
 let pos_of ~file loc : Loc.pos =
   (file, loc.line, column loc, loc.end_pos - loc.start_bol)
 
-(* ───── Registration ───── *)
+(* Registration *)
 
 module String_set = Set.Make (String)
 
@@ -186,7 +186,7 @@ let collect () =
 
 let partitions () = String_set.elements !partitions_seen
 
-(* ───── Normalization (ppx_expect's pretty-payload pipeline) ───── *)
+(* Normalization (ppx_expect's pretty-payload pipeline) *)
 
 (* Whitespace is Base.Char.is_whitespace — the set ppx_expect strips with. *)
 let is_ws = function
@@ -264,7 +264,7 @@ let normalize s =
          if contents = "" then "" else spaces indent ^ contents)
        (pretty_lines s))
 
-(* ───── Correction formatting (ppx_expect's re-indentation) ───── *)
+(* Correction formatting (ppx_expect's re-indentation) *)
 
 (* Format raw output as the contents of a pretty payload whose node starts at
    column [node_column]: multi-line contents are indented [node_column + 2],
@@ -316,7 +316,7 @@ let extension_name = function
   | Expect -> "expect"
   | Expect_exact -> "expect_exact"
 
-(* ───── Node source rendering (the corrected-file shapes) ───── *)
+(* Node source rendering (the corrected-file shapes) *)
 
 (* The shapes below reproduce the corrected files of the conformance
    corpus byte-for-byte: ppx_expect's runtime writes payload-only patches
@@ -396,7 +396,7 @@ let render_quote_node ~name ~col contents =
 
 (* A styled node: everything the writer needs to re-render one expect
    node of a corrected file. Registered when the node's test resolves
-   (skips never register — RFC amendment C2). *)
+   (skips never register). *)
 type snode = {
   s_kind : node_kind;
   s_span : int * int;
@@ -440,7 +440,7 @@ let snode_of ~file:_ node =
       (match node.payload with Some { contents; _ } -> contents | None -> "");
   }
 
-(* ───── The corrections table ───── *)
+(* The corrections table *)
 
 (* Everything recorded while tests run, keyed so that a node reached by
    several registrations of the same test (functor instantiation) has one
@@ -493,7 +493,7 @@ let register_styled ~file node =
   let sn = snode_of ~file node in
   Hashtbl.replace tbl sn.s_span sn
 
-(* ───── Applying corrections to source ───── *)
+(* Applying corrections to source *)
 
 type patch = { start : int; stop : int; text : string }
 
@@ -638,7 +638,7 @@ let flush_corrections () =
   Hashtbl.reset styled;
   written
 
-(* ───── Coverage of failures by corrections (the exit protocol) ───── *)
+(* Coverage of failures by corrections (the exit protocol) *)
 
 (* Paths of failed tests whose every failure is an expect mismatch with a
    recorded correction. Read by [inline_exit_code]. *)
@@ -667,7 +667,7 @@ let inline_exit_code (outcome : Runner.outcome) =
       then 0
       else 1
 
-(* ───── Expect-test execution ───── *)
+(* Expect-test execution *)
 
 type mismatch = { formatted : string; shown : string }
 type reach_result = Pass | Fail of mismatch
@@ -683,7 +683,7 @@ type reach = { raw : string; result : reach_result }
    per-location slot and corrects from the merged history. Keys are
    (file, span); values are chronological. Bodies buffer reaches locally
    and publish here only at resolution, so a skipped body's reaches are
-   never merged (amendment C2). *)
+   never merged. *)
 let node_pool : (string * int * int, reach list ref) Hashtbl.t =
   Hashtbl.create 16
 
@@ -755,7 +755,8 @@ let expect ~id =
 
 (* ppx_expect's marker for a node reached several times with differing
    outputs: a CR comment followed by every distinct run, spliced as the
-   corrected payload. Reproduced byte-for-byte (compat corpus). *)
+   corrected payload. Reproduced byte-for-byte so corrections stay
+   byte-compatible with ppx_expect's. *)
 let cr_for_multiple_outputs ?(output_name = "test output") ~outputs () =
   let cr =
     Printf.sprintf
@@ -851,8 +852,8 @@ let publish_reaches ctx =
 (* End-of-body resolution. [check_reachability] is off when an exception
    aborted the body: the exception explains the unreached nodes (no
    correction is recorded for the exception itself), so only reached
-   mismatches are recorded. Reachability is judged on this body's own reaches
-   (mechanism (d)); corrections come from the merged history. Returns
+   mismatches are recorded. Reachability is judged on this body's own
+   reaches; corrections come from the merged history. Returns
    [true] iff every recorded problem has a recorded correction — the exit
    protocol's "covered" bit. *)
 let resolve_nodes ctx ~check_reachability =
@@ -970,7 +971,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
       match run body with
       | () ->
           (* Trailing output not matched by any node becomes an inserted
-             node; then per-node reachability (mechanism (d)). *)
+             node; then per-node reachability. *)
           let trailing_problem =
             let raw =
               consume_output ctx ~pos:(pos_of ~file ctx.ctx_trailing_loc)
@@ -983,7 +984,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
           else if nodes_covered then record_covered `Covered
           else record_covered `Not_covered
       | exception Failure.Skip_test reason ->
-          (* Amendment C2: a skipped expect test is an ordinary skip. Nothing
+          (* A skipped expect test is an ordinary skip. Nothing
              is checked or recorded — not the nodes reached before the skip
              (their reaches die with this ctx), not trailing output, not
              reachability — so no correction ever exists for its nodes, no
@@ -993,7 +994,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
       | exception exn when Failure.is_fatal exn -> raise exn
       | exception exn ->
           (* An assertion, timeout, or any other uncaught exception is never
-             a correction (Law 11): resolve the reached nodes — their
+             a correction: resolve the reached nodes — their
              corrections are still recorded — and let the runner classify
              the exception. Nothing is spliced at the trailing point: a node
              inserted after a raising statement can never be reached on a
@@ -1014,7 +1015,7 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc
     (Test_tree.test ~pos:(pos_of ~file loc) ~tags name
        (run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body))
 
-(* ───── The inline runner driver ───── *)
+(* The inline runner driver *)
 
 (* The thin inline driver: composed from Driver's shared producers — one
    behavior, both runners (ppx/F-4). The inline protocol has no CLI, so the
@@ -1075,7 +1076,7 @@ let exit () =
       | Ok coverage_mode ->
           Stdlib.exit (run_inline_suite ~suite ~config ~coverage_mode tests))
 
-(* ───── Test seams ───── *)
+(* Test seams *)
 
 let reset () =
   initialized := false;

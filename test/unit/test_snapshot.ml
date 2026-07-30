@@ -23,7 +23,7 @@ let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
 
-(* ───── Filesystem scaffolding ───── *)
+(* Filesystem scaffolding *)
 
 (* A fresh directory that stands in for the project root; reconstruction
    is lexical, so scoping source files need not exist under it. The
@@ -48,7 +48,7 @@ let sorted_entries dir =
     Sys.readdir dir |> Array.to_list |> List.sort String.compare
   else []
 
-(* ───── Failure-catching helpers ───── *)
+(* Failure-catching helpers *)
 
 (* Runs [f]; records whether it raised [Check_failure] and returns the
    failure for payload inspection. *)
@@ -90,7 +90,7 @@ let path_a root name = dir_a root ^ "/" ^ name ^ ".snap"
 let loc_1 = Loc.of_pos (scope_a, 10, 2, 20)
 let loc_2 = Loc.of_pos (scope_a, 42, 4, 30)
 
-(* ───── resolve_mode: the CI guard ───── *)
+(* resolve_mode: the CI guard *)
 
 let () =
   reg "resolve_mode: the CI guard" @@ fun () ->
@@ -107,7 +107,7 @@ let () =
   check "resolve_mode: Force_update under CI is Update"
     (S.resolve_mode ~ci:true Env.Force_update = S.Mode S.Update)
 
-(* ───── Registry basics ───── *)
+(* Registry basics *)
 
 let () =
   reg "registry basics" @@ fun () ->
@@ -119,7 +119,7 @@ let () =
   check "writes: empty on a fresh registry" (S.writes t = []);
   check "orphans: empty on a fresh registry" (S.orphans t = [])
 
-(* ───── Name validation ───── *)
+(* Name validation *)
 
 let () =
   reg "name validation" @@ fun () ->
@@ -143,7 +143,7 @@ let () =
   valid "A.b-c_9" "name: full alphabet is valid";
   valid "..." "name: dots only is valid"
 
-(* ───── Scope resolution: unresolvable and containment ───── *)
+(* Scope resolution: unresolvable and containment *)
 
 let () =
   reg "scope resolution: unresolvable and containment" @@ fun () ->
@@ -181,7 +181,7 @@ let () =
   check "scope: update mode wrote nothing for an unproven path" (S.writes u = []);
   check "scope: no directories created under root" (sorted_entries root = [])
 
-(* ───── Check mode: missing baseline is read-only ───── *)
+(* Check mode: missing baseline is read-only *)
 
 let () =
   reg "check mode: missing baseline is read-only" @@ fun () ->
@@ -213,7 +213,7 @@ let () =
       check "missing: recheck state is Missing" true
   | _ -> check "missing: recheck state is Missing" false
 
-(* ───── Check mode: match and canonicalization round-trip ───── *)
+(* Check mode: match and canonicalization round-trip *)
 
 let () =
   reg "check mode: match and canonicalization round-trip" @@ fun () ->
@@ -233,7 +233,7 @@ let () =
     ~actual:(read_raw (path_a root "greeting"));
   check "match: no writes recorded" (S.writes t = [])
 
-(* ───── Check mode: mismatch payload ───── *)
+(* Check mode: mismatch payload *)
 
 let () =
   reg "check mode: mismatch payload" @@ fun () ->
@@ -256,7 +256,7 @@ let () =
   check_string "mismatch: baseline file untouched (Law 1)" ~expected:"hello\n"
     ~actual:(read_raw (path_a root "greeting"))
 
-(* ───── Same-baseline rule: rechecks use the run's cached baseline ───── *)
+(* Same-baseline rule: rechecks use the run's cached baseline *)
 
 let () =
   reg "same-baseline rule: rechecks use the cached baseline" @@ fun () ->
@@ -281,7 +281,7 @@ let () =
         ~expected:"one\n" ~actual:expected
   | _ -> check "cache: divergence state is Mismatch" false
 
-(* ───── Duplicate names ───── *)
+(* Duplicate names *)
 
 let () =
   reg "duplicate names" @@ fun () ->
@@ -412,7 +412,7 @@ let () =
       S.check t ~loc:loc_1 ~test:"family › b" ~scope:(Some scope_a)
         ~name:"shared" "x")
 
-(* ───── Update mode: acceptance ───── *)
+(* Update mode: acceptance *)
 
 let () =
   reg "update mode: acceptance" @@ fun () ->
@@ -472,7 +472,7 @@ let () =
   check "accept: only the differing path is recorded, as Updated"
     (S.writes t = [ (path_a root "stale", S.Updated) ])
 
-(* ───── Writes report order ───── *)
+(* Writes report order *)
 
 let () =
   reg "writes report in occurrence order" @@ fun () ->
@@ -486,7 +486,7 @@ let () =
     (S.writes t
     = [ (path_a root "zz", S.Created); (path_a root "aa", S.Created) ])
 
-(* ───── Scope spellings resolve to one identity ───── *)
+(* Scope spellings resolve to one identity *)
 
 let () =
   reg "scope spellings resolve to one identity" @@ fun () ->
@@ -509,7 +509,7 @@ let () =
   check "spelling: single snapshot file"
     (sorted_entries (dir_a root) = [ "one.snap" ])
 
-(* ───── Registry isolation (Law 9) ───── *)
+(* Registry isolation (Law 9) *)
 
 let () =
   reg "registry isolation (Law 9)" @@ fun () ->
@@ -523,7 +523,7 @@ let () =
   expect_pass "isolation: run 2 is a fresh namespace" (fun () ->
       S.check r2 ~loc:loc_2 ~test:"t" ~scope:(Some scope_a) ~name:"iso" "x")
 
-(* ───── Orphans ───── *)
+(* Orphans *)
 
 let () =
   reg "orphans" @@ fun () ->
@@ -555,7 +555,7 @@ let () =
   check "orphans: case-differing spelling of a checked name is referenced"
     (stale_only = [])
 
-(* ───── Prune ───── *)
+(* Prune *)
 
 let () =
   reg "prune: refusal conditions" @@ fun () ->
@@ -608,7 +608,7 @@ let () =
     (sorted_entries (dir_a root)
     = [ ".tmp-leftover.snap"; "kept.snap"; "notes.txt" ])
 
-(* ───── Duplicate detection has priority over content ───── *)
+(* Duplicate detection has priority over content *)
 
 let () =
   reg "duplicate detection has priority over content" @@ fun () ->
@@ -652,7 +652,7 @@ let () =
     ~expected:"x\n"
     ~actual:(read_raw (path_a root "once"))
 
-(* ───── Missing is frozen at the first check ───── *)
+(* Missing is frozen at the first check *)
 
 let () =
   reg "missing is frozen at the first check" @@ fun () ->
@@ -675,7 +675,7 @@ let () =
   | Some (_, _, Failure.Missing _) -> check "frozen-absent: still Missing" true
   | _ -> check "frozen-absent: still Missing" false
 
-(* ───── The run baseline never changes once established ───── *)
+(* The run baseline never changes once established *)
 
 let () =
   reg "the run baseline never changes once established" @@ fun () ->
@@ -705,7 +705,7 @@ let () =
   check_string "established: baseline bytes untouched" ~expected:"disk\n"
     ~actual:(read_raw (path_a root "held"))
 
-(* ───── Content edge cases: binary bytes, lone CR, empty ───── *)
+(* Content edge cases: binary bytes, lone CR, empty *)
 
 let () =
   reg "content edge case: binary bytes" @@ fun () ->
@@ -749,7 +749,7 @@ let () =
   expect_pass "empty: explicit newline matches" (fun () ->
       S.check c ~loc:loc_1 ~test:"t" ~scope:(Some scope_a) ~name:"empty" "\n")
 
-(* ───── Degenerate scopes never resolve to the root itself ───── *)
+(* Degenerate scopes never resolve to the root itself *)
 
 let () =
   reg "degenerate scopes never resolve to the root" @@ fun () ->
@@ -771,7 +771,7 @@ let () =
   degenerate "degenerate scope: root itself" root;
   check "degenerate scope: nothing created" (sorted_entries root = [])
 
-(* ───── Prune: refusal has no side effects; failed removals omitted ───── *)
+(* Prune: refusal has no side effects; failed removals omitted *)
 
 let () =
   reg "prune refusal has no side effects" @@ fun () ->
@@ -807,8 +807,8 @@ let () =
   check "prune-undeletable: directory left in place"
     (sorted_entries (dir_a root) = [ "dir.snap"; "kept.snap" ])
 
-(* ───── Summary ───── *)
+(* Summary *)
 
-(* ───── Suite ───── *)
+(* Suite *)
 
 let tests = List.rev !registered

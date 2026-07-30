@@ -6,12 +6,13 @@
    Instance printers and float tolerance semantics adapted from windtrap v1's
    Testable, itself derived from Craig Ferguson's work on Alcotest
    (https://github.com/mirage/alcotest/pull/247). v3 removes generators and
-   diff hooks from the witness (RFC "The witness", Law 6).
+   diff hooks from the witness: diffs come from printed values, generation
+   lives in Gen, and the two witnesses never merge.
   ---------------------------------------------------------------------------*)
 
 type 'a t = { pp : Format.formatter -> 'a -> unit; equal : 'a -> 'a -> bool }
 
-(* ───── Constructors ───── *)
+(* Constructors *)
 
 let make ~pp ~equal = { pp; equal }
 let structural ~pp = { pp; equal = Stdlib.( = ) }
@@ -36,13 +37,13 @@ let contramap f w =
 let pass =
   { pp = (fun ppf _ -> Pp.string ppf "<pass>"); equal = (fun _ _ -> true) }
 
-(* ───── Observers ───── *)
+(* Observers *)
 
 let pp w = w.pp
 let equal w = w.equal
 let to_string w v = Pp.to_string w.pp v
 
-(* ───── Instances ───── *)
+(* Instances *)
 
 let unit =
   { pp = (fun ppf () -> Pp.string ppf "()"); equal = (fun () () -> true) }
@@ -89,7 +90,7 @@ let pp_float_exact ppf f =
     in
     Pp.string ppf s
 
-(* Bit equality with all NaNs identified (amendment B8): NaN = NaN whatever the
+(* Bit equality with all NaNs identified: NaN = NaN whatever the
    payloads, [0.] <> [-0.], an infinity equal only to an infinity of the same
    sign. Not [Stdlib.Float.equal], which conflates the zeros. *)
 let float_exact =
@@ -124,7 +125,7 @@ let float_rel ~rel ~abs =
           diff <= abs || (Float.is_finite max_ab && diff <= rel *. max_ab));
   }
 
-(* ───── Containers ───── *)
+(* Containers *)
 
 let option w =
   {

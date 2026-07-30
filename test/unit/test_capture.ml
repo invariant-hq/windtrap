@@ -25,7 +25,7 @@ let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
 
-(* ───── Helpers ───── *)
+(* Helpers *)
 
 let contains text pattern =
   Windtrap.Private.Text.contains_substring ~pattern text
@@ -40,7 +40,7 @@ let fd_id fd =
 let with_temp_root f = f (temp_dir ())
 let concat_all = List.fold_left Filename.concat
 
-(* ───── Round trip: fd-level capture into the per-test file ───── *)
+(* Round trip: fd-level capture into the per-test file *)
 
 let test_fd_round_trip () =
   with_temp_root @@ fun root ->
@@ -97,7 +97,7 @@ let test_fd_round_trip () =
       ~actual:(Unix.stat path).Unix.st_size
   end
 
-(* ───── Incremental consumption ───── *)
+(* Incremental consumption *)
 
 let test_incremental_consumption () =
   with_temp_root @@ fun root ->
@@ -136,7 +136,7 @@ let test_incremental_consumption () =
       check_int "nothing omitted" ~expected:0 ~actual:tail.Failure.omitted_bytes;
       check "tail names the log file" (tail.Failure.log_path <> None)
 
-(* ───── Exception safety ───── *)
+(* Exception safety *)
 
 exception Boom
 
@@ -216,7 +216,7 @@ let test_drain_failure_restores () =
      drain it to the real stderr and leave later tests a clean channel. *)
   try flush stderr with Sys_error _ -> ()
 
-(* ───── Disabled ([--stream]) ───── *)
+(* Disabled ([--stream]) *)
 
 let stream_error = "this test requires capture; rerun without --stream"
 
@@ -255,7 +255,7 @@ let test_disabled () =
          0));
   check "output raises at the call site inside a streamed body" !saw
 
-(* ───── Bounded tails ───── *)
+(* Bounded tails *)
 
 let test_limits_validation () =
   check_int "limits observer" ~expected:5
@@ -400,7 +400,7 @@ let test_invalid_utf8_verbatim () =
       check_int "no extra bytes counted omitted" ~expected:56
         ~actual:tail.Failure.omitted_bytes
 
-(* ───── Per-attempt reset ───── *)
+(* Per-attempt reset *)
 
 let test_per_attempt_reset () =
   with_temp_root @@ fun root ->
@@ -423,7 +423,7 @@ let test_per_attempt_reset () =
       check_int "the final attempt omits nothing" ~expected:0
         ~actual:tail.Failure.omitted_bytes
 
-(* ───── Sanitized layout ───── *)
+(* Sanitized layout *)
 
 let test_sanitized_layout () =
   with_temp_root @@ fun root ->
@@ -443,7 +443,7 @@ let test_sanitized_layout () =
   check "a slash in a group makes one component, not two"
     (not (Sys.file_exists (Filename.concat run_dir "a")))
 
-(* ───── Run ids ───── *)
+(* Run ids *)
 
 let is_base36 c = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')
 
@@ -456,7 +456,7 @@ let test_run_ids () =
   check "run ids draw from 0-9A-Z" (String.for_all is_base36 id1);
   check "two runs get distinct ids" (id1 <> id2)
 
-(* ───── Latest links ───── *)
+(* Latest links *)
 
 let test_link_latest () =
   if not Sys.win32 then (
@@ -484,7 +484,7 @@ let test_link_latest () =
       ~expected:(Filename.concat "suite" run_id2)
       ~actual:(Unix.readlink (Filename.concat root "latest")))
 
-(* ───── Saved descriptors are close-on-exec (cli/F-5) ───── *)
+(* Saved descriptors are close-on-exec (cli/F-5) *)
 
 (* The re-exec'd child: captures, spawns a 10-second sleeper whose own
    stdio is /dev/null, and exits. Under capture the child's real stdout is
@@ -541,7 +541,7 @@ let dispatch_child () =
   | [ _; "--capture-cloexec-child"; log_dir ] -> child_spawn_holder log_dir
   | _ -> ()
 
-(* ───── The log fd itself is close-on-exec ───── *)
+(* The log fd itself is close-on-exec *)
 
 let test_log_fd_is_cloexec () =
   (* The companion of cli/F-5: the .output fd must be as close-on-exec as

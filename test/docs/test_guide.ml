@@ -37,7 +37,7 @@ let render ?filter failure =
     (fun ppf f -> Render.pp_failure ~ansi:false ?filter ppf f)
     failure
 
-(* ───── "A failing assertion": the sessions diff ───── *)
+(* "A failing assertion": the sessions diff *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -66,7 +66,7 @@ let () =
             report;
           check_contains "report labels the actual line" ~sub:"actual" report)
 
-(* ───── "A failing property": the shape counterexample ───── *)
+(* "A failing property": the shape counterexample *)
 
 type shape = Circle of float | Rect of float * float
 
@@ -120,7 +120,7 @@ let () =
           check_contains "replay line completes with dune runtest"
             ~sub:"dune runtest" report)
 
-(* ───── "Snapshots": no baseline, proposal and acceptance command ───── *)
+(* "Snapshots": no baseline, proposal and acceptance command *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -150,7 +150,7 @@ let () =
           check_contains "headline names the snapshot" ~sub:{|snapshot "help"|}
             (Render.headline failure))
 
-(* ───── "The runner": the transcript and the rerun hint ───── *)
+(* "The runner": the transcript and the rerun hint *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -200,6 +200,6 @@ let () =
         transcript;
       check "the run exits 1" (outcome.Runner.exit_code = 1)
 
-(* ───── Summary ───── *)
+(* Summary *)
 
 let () = finish ()

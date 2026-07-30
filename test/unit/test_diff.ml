@@ -20,7 +20,7 @@ let check_string name ~expected ~actual = equal ~msg:name string expected actual
 let check_side name ~expected ~actual =
   equal ~msg:name (option string) expected actual
 
-(* ───── Rendering helpers (test-side only; Diff itself renders nothing) ─── *)
+(* Rendering helpers (test-side only; Diff itself renders nothing) *)
 
 let show_line = function
   | Diff.Keep s -> " " ^ s
@@ -142,7 +142,7 @@ let random_lines max_len alphabet =
     (rand (max_len + 1))
     (fun _ -> List.nth alphabet (rand (List.length alphabet)))
 
-(* ───── Refinement helpers ───── *)
+(* Refinement helpers *)
 
 let spans l = List.map (fun s -> (s.Diff.start, s.Diff.length)) l
 
@@ -197,7 +197,7 @@ let spans_ok s span_list =
   in
   go (-1) span_list
 
-(* ───── Sequence-diff helpers ───── *)
+(* Sequence-diff helpers *)
 
 let get name = function
   | Some d -> d

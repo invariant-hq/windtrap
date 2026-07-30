@@ -7,7 +7,8 @@
    refinement adapts the Wagner-Fischer edit script from v1's lib/distance.ml,
    itself derived from Craig Ferguson's work on Alcotest
    (https://github.com/mirage/alcotest/pull/247). v3 merges the two behind a
-   data-only interface (RFC Law 4) and adds size guards (audit hazard 12).
+   data-only interface — no styling, no truncation, renderers project the
+   data — and adds size guards against pathological inputs.
   ---------------------------------------------------------------------------*)
 
 type line = Keep of string | Delete of string | Insert of string
@@ -20,7 +21,7 @@ type hunk = {
   lines : line list;
 }
 
-(* ───── Bounds (implementation constants, not contract) ───── *)
+(* Bounds (implementation constants, not contract) *)
 
 (* Above this many differing lines (both sides summed, after stripping the
    common outer lines) the region is reported as delete-all/insert-all
@@ -39,7 +40,7 @@ let dp_cell_limit = 4_000_000
    refinement is noise rather than signal. *)
 let noise_threshold = 4. /. 5.
 
-(* ───── Line splitting and common-outer stripping ───── *)
+(* Line splitting and common-outer stripping *)
 
 (* Text.split_lines owns the rule: a single trailing newline is not
    significant (documented in the .mli). *)
@@ -64,7 +65,7 @@ let common_suffix_len ~prefix a b =
   done;
   !i
 
-(* ───── Myers shortest edit script (adapted from v1 lib/myers) ───── *)
+(* Myers shortest edit script (adapted from v1 lib/myers) *)
 
 exception Found of int * int array list
 
@@ -159,7 +160,7 @@ let myers ~max_edits (a : string array) (b : string array) =
         Some !ops
   end
 
-(* ───── Hunk grouping ───── *)
+(* Hunk grouping *)
 
 let is_change = function Keep _ -> false | Delete _ | Insert _ -> true
 
@@ -261,7 +262,7 @@ let hunks ?(context = 3) ~expected ~actual () =
     let ops = keeps a 0 prefix @ middle @ keeps a (la - suffix) suffix in
     group_hunks ~context ops
 
-(* ───── Character refinement (adapted from v1 lib/distance.ml) ───── *)
+(* Character refinement (adapted from v1 lib/distance.ml) *)
 
 type span = { start : int; length : int }
 type refinement = { expected_spans : span list; actual_spans : span list }
@@ -345,7 +346,7 @@ let spans_of_indices cps indices =
   in
   go [] indices
 
-(* ───── Sequence elements (amendment B7) ───── *)
+(* Sequence elements *)
 
 type mismatch = {
   index : int;

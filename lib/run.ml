@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* ───── Configuration ───── *)
+(* Configuration *)
 
 type config = {
   seed : Seed.seed;
@@ -56,11 +56,11 @@ let default_config () =
     allow_focus = false;
   }
 
-(* ───── Run records ───── *)
+(* Run records *)
 
 (* A fixture's cache entry. [fx_state] embeds the acquired value in the
    accessor's private exception constructor ([Acquired]), records a skip
-   raised during acquisition (amendment C1: cached as a skip, not an error),
+   raised during acquisition (cached as a skip, not an error),
    or holds the acquisition error with its backtrace; [fx_release] closes
    over the typed value directly, so releasing never needs to project. *)
 type fixture_state =
@@ -95,7 +95,7 @@ type t = {
   snapshots : Snapshot.t;
   fixtures : (int, fixture_entry) Hashtbl.t;
   mutable acquired : int list; (* fixture ids, most recently acquired first *)
-  mutable temp_seq : int; (* next scratch-directory number (B9) *)
+  mutable temp_seq : int; (* next scratch-directory number *)
   mutable rev_results : result list;
   mutable coverage : summary option;
 }
@@ -116,19 +116,19 @@ let config t = t.config
 let capture t = t.capture
 let snapshots t = t.snapshots
 
-(* ───── Per-test frames ───── *)
+(* Per-test frames *)
 
 type frame = {
   owner : t;
   fr_path : string list;
   fr_file : string option;
-  fr_loc : Loc.t option; (* declaration site: the location fallback (D4) *)
+  fr_loc : Loc.t option; (* declaration site: the location fallback *)
   mutable fr_prop : Property.context option;
   mutable fr_rev_failures : Failure.t list;
   mutable fr_subtests : string list; (* enclosing subtests, innermost first *)
-  mutable fr_temp_root : string option; (* the attempt's scratch dir (B9) *)
+  mutable fr_temp_root : string option; (* the attempt's scratch dir *)
   mutable fr_temp_seq : int; (* next path number within the scratch dir *)
-  mutable fr_srandom : bool; (* the attempt called [srandom] (D5 §6) *)
+  mutable fr_srandom : bool; (* the attempt called [srandom] *)
 }
 
 let frame t ~path ~file ~loc =
@@ -173,9 +173,9 @@ let with_prop_context frame ctx fn =
   frame.fr_prop <- Some ctx;
   Fun.protect ~finally:(fun () -> frame.fr_prop <- previous) fn
 
-(* ───── The ambient slot ───── *)
+(* The ambient slot *)
 
-(* The one ambient slot (RFC Law 9): the only run-state [ref] in the
+(* The one ambient slot: the only run-state [ref] in the
    library. It holds what the process is currently executing — the run
    itself while the runner's executing span is open, overlaid by the frame
    of the test attempt while one runs; the runner is sequential, one
@@ -210,7 +210,7 @@ let current_opt () =
   | Some (In_test frame) -> Some frame
   | Some (In_run _) | None -> None
 
-(* ───── Test-body operations ───── *)
+(* Test-body operations *)
 
 let current_test () = (current_frame ()).fr_path
 
@@ -219,11 +219,11 @@ let srandom () =
   (* Record the draw: the runner copies the flag into the result as
      [srandom_root], and a failing test's block prints the replay line from
      it — the root token is in the log exactly when a stochastic failure
-     needs replaying (D5 §6). *)
+     needs replaying. *)
   frame.fr_srandom <- true;
   let root = frame.owner.config.seed in
   let path = Test_tree.path_to_string frame.fr_path in
-  (* The frozen derivation (RFC Law 7): a pure function of the printed root
+  (* The frozen derivation: a pure function of the printed root
      token and the test's path — index 0, no per-call stream. *)
   let seed = Seed.derive ~root ~path ~index:0 in
   Random.State.make
@@ -261,7 +261,7 @@ let subtest name fn =
   match fn () with
   | () -> pop ()
   | exception Failure.Check_failure failure ->
-      (* Record and return: siblings continue (amendment B13). The label is
+      (* Record and return: siblings continue. The label is
          computed before popping so it includes this subtest's name. *)
       add_failure frame (relabel frame failure);
       pop ()
@@ -286,7 +286,7 @@ let subtest name fn =
       add_failure frame (relabel frame failure);
       pop ()
 
-(* ───── Runner-owned scratch (amendment B9) ───── *)
+(* Runner-owned scratch *)
 
 let temp_create_attempts = 64
 
@@ -343,8 +343,8 @@ let temp_file ?(suffix = "") () =
 
 (* Best-effort recursive removal: [lstat] so symbolic links are removed,
    never followed; every filesystem error is swallowed — scratch cleanup
-   must not fail a test or mask its outcome (RFC Law 8 wording: released on
-   every path where the runner regains control). *)
+   must not fail a test or mask its outcome — resources are released on
+   every path where the runner regains control. *)
 let rec remove_tree path =
   match (Unix.lstat path).Unix.st_kind with
   | Unix.S_DIR -> (
@@ -361,11 +361,11 @@ let remove_temp frame =
       frame.fr_temp_root <- None;
       remove_tree dir
 
-(* ───── Fixtures ───── *)
+(* Fixtures *)
 
 (* Accessor identity. Not run state: ids mint process-wide identities for
    fixture accessors and never reset — the per-run cache in [t] is keyed by
-   them, which is what makes a later run re-acquire (RFC "Resources"). *)
+   them, which is what makes a later run re-acquire. *)
 let next_fixture_id = ref 0
 
 let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
@@ -390,7 +390,7 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
     | Some { fx_state = Acquired _; _ } ->
         assert false (* the id is private to this accessor *)
     | Some { fx_state = Skipped reason; _ } ->
-        (* Amendment C1: every later use skips with the cached reason. *)
+        (* Every later use skips with the cached reason. *)
         raise (Failure.Skip_test reason)
     | Some { fx_state = Failed (exn, backtrace); _ } ->
         Printexc.raise_with_backtrace exn backtrace
@@ -410,7 +410,7 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
             run.acquired <- id :: run.acquired;
             value
         | exception Failure.Skip_test reason ->
-            (* Amendment C1: a skip during acquisition is cached as a skip,
+            (* A skip during acquisition is cached as a skip,
                not an error — nothing is registered for release. *)
             let backtrace = Printexc.get_raw_backtrace () in
             Hashtbl.replace run.fixtures id
@@ -440,7 +440,7 @@ let release_failure entry exn =
 let release_fixtures t ~announce =
   let ids = t.acquired in
   t.acquired <- [];
-  (* Release order is contract — reverse acquisition (RFC "Resources") —
+  (* Release order is contract — reverse acquisition —
      so walk [ids] (most recently acquired first) with an explicit loop
      rather than lean on a fold's unspecified effect order. *)
   let rec release_all acc = function
@@ -451,7 +451,7 @@ let release_fixtures t ~announce =
         | Some ({ fx_release = Some release; _ } as entry) -> (
             announce entry.fx_name;
             (* [Loc.delimit]: a location captured inside a release teardown
-               must not walk past the runner into its caller (D4). *)
+               must not walk past the runner into its caller. *)
             match Loc.delimit release with
             | () -> release_all acc ids
             | exception exn when not (Failure.is_fatal exn) ->
@@ -459,12 +459,12 @@ let release_fixtures t ~announce =
   in
   release_all [] ids
 
-(* ───── Results ───── *)
+(* Results *)
 
 let record t result = t.rev_results <- result :: t.rev_results
 let results t = List.rev t.rev_results
 
-(* ───── Coverage seam (RFC Law 12) ───── *)
+(* Coverage seam *)
 
 let set_coverage t summary = t.coverage <- Some summary
 let coverage t = t.coverage

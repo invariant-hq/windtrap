@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (** The default ambient [Expect_test_config], re-exported as a top-level module
-    for [let%expect_test]-generated code (RFC compat mechanism (b)). See
+    for [let%expect_test]-generated code, matching ppx_expect. See
     [lib/expect_test_config.mli] for the contract, including how a user module
     of the same name shadows this one and why monadic (Async-style) configs fail
     to compile. *)

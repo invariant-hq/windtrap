@@ -23,7 +23,7 @@ let check_well_formed name doc =
   | Ok () -> ()
   | Error m -> failf "%s: %s\n  in:\n%s" name m doc
 
-(* ───── The golden document ───── *)
+(* The golden document *)
 
 let small_results =
   [
@@ -68,7 +68,7 @@ let test_golden () =
   check_string "golden JUnit document" ~expected:expected_small ~actual;
   check_well_formed "golden document is well-formed" actual
 
-(* ───── The full fixture run ───── *)
+(* The full fixture run *)
 
 let full () =
   Render_junit.render ~suite:"mylib" ~results:Fixtures.results
@@ -91,7 +91,7 @@ let test_full_run () =
   check_contains "headline in message attribute"
     ~sub:{|message="snapshot &quot;help&quot;: no baseline"|} doc
 
-(* ───── The invocation-spelled hints (D5 §1) ───── *)
+(* The invocation-spelled hints (D5 §1) *)
 
 let test_invocation_hints () =
   (* The JUnit body carries the same hint bytes as the terminal block:
@@ -138,7 +138,7 @@ let test_invocation_hints () =
     ~actual:replay;
   check_contains "replay hint bytes equal the terminal block's" ~sub:replay doc
 
-(* ───── Expected failures (amendment B12) ───── *)
+(* Expected failures (amendment B12) *)
 
 let test_excused_as_skipped () =
   let results =
@@ -179,7 +179,7 @@ let test_excused_as_skipped () =
     ~sub:{|failures="1"|} xpass;
   check_absent "an unexpected pass is not a skip" ~sub:"<skipped" xpass
 
-(* ───── Subtests (amendment B13) ───── *)
+(* Subtests (amendment B13) *)
 
 let subtest_golden =
   {|<?xml version="1.0" encoding="UTF-8"?>
@@ -262,7 +262,7 @@ let test_subtest_user_msg_name () =
       {|<testcase name="contract › shape [0]: user context" classname="s.backend"|}
     doc
 
-(* ───── Transport validity ───── *)
+(* Transport validity *)
 
 let fail_result path failure = Fixtures.result path (Failure.Fail [ failure ])
 
@@ -337,7 +337,7 @@ let test_empty_run () =
   check_contains "empty run counts are zero"
     ~sub:{|tests="0" failures="0" errors="0" skipped="0"|} doc
 
-(* ───── The checker itself ───── *)
+(* The checker itself *)
 
 let test_checker_sanity () =
   let ok s = Xml_check.check s = Ok () in

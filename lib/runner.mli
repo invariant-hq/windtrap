@@ -11,9 +11,9 @@
     guard, the snapshot CI guard, the [--failed] store), selects tests, runs
     them one at a time in declaration order (one process, one domain,
     sequential), releases fixtures, maintains the last-failed store, and
-    computes the Law 11 exit code. It prints nothing: progress streams through
-    typed {!type:event}s and everything else is data in the returned
-    {!type:outcome} for renderers to project (Law 4).
+    computes the [0]/[1]/[2] exit code. It prints nothing: progress streams
+    through typed {!type:event}s and everything else is data in the returned
+    {!type:outcome} for renderers to project.
 
     {b The per-test boundary.} Every attempt gets a fresh {!Run.frame} installed
     in the ambient slot, the global [Random] state reseeded to a pure function
@@ -26,7 +26,7 @@
     interrupt blocked C calls. The runner owns [SIGALRM] while a test with a
     limit runs. After every attempt — outside the timeout window, on every path
     where the runner regains control, a fatal exception included — the attempt's
-    scratch paths are removed ({!Run.remove_temp}, Law 8).
+    scratch paths are removed ({!Run.remove_temp}).
 
     Outcomes are classified per phase: {!Failure.Check_failure} keeps its
     payload, {!Failure.Skip_test} skips the test, {!Failure.Timeout} becomes a
@@ -51,9 +51,9 @@
     then teardown iff setup succeeded, teardown on every body outcome including
     skip and timeout — with the body and teardown outcomes captured
     {e independently}, one failure-list entry per failed phase, never composed
-    with [Fun.protect] at the reporting boundary (Law 8: body and release
-    failures are both reported). A timeout during teardown is a [Teardown]-phase
-    failure alongside any body failure.
+    with [Fun.protect] at the reporting boundary — body and release failures are
+    both reported. A timeout during teardown is a [Teardown]-phase failure
+    alongside any body failure.
 
     {b Retries.} A test with [retries = n] reruns while its outcome
     {e counts as failed} (see {e Expected failures} below — for an [xfail] test
@@ -62,7 +62,7 @@
     {e final} attempt's failures and output tail and the attempt count —
     renderers mark ["attempt N of M"] and pass-after-retries from
     {!Run.result.attempts}. Skips are never retried; the captured-output tail of
-    a failed test is attached to its first failure entry (Law 5).
+    a failed test is attached to its first failure entry.
 
     {b Expected failures.} A test marked {!Test_tree.xfail} still runs, but what
     counts as failed inverts: a failing outcome is recorded with its real
@@ -85,8 +85,7 @@
     do not execute and are not recorded. Fixture releases run after the last
     executed test on every path where the runner regains control, including
     under [--bail] and after a fatal exception, announced through
-    {!Fixture_release} before each teardown and outside any per-test timeout
-    (Law 8).
+    {!Fixture_release} before each teardown and outside any per-test timeout.
 
     {b Sharding.} [--shard K/N] partitions the suite into [N] buckets by a
     deterministic hash of each test's full path ({!Seed.derive} under a frozen
@@ -95,7 +94,7 @@
     [dune] partitions cover every test exactly once; renaming or regrouping a
     test may move it between buckets. Sharding composes with every other
     selection layer (the bucket applies to the already-filtered set), and an
-    empty shard exits [2] like any empty selection (Law 11).
+    empty shard exits [2] like any empty selection.
 
     {b The last-failed store} lives at [<log_dir>/<suite>/.last-failed], written
     atomically ({!Atomic_file}) after every executing run. Its format is
@@ -119,12 +118,12 @@ val prop :
   Test_tree.t
 (** [prop name gen law] declares a property test: a leaf test whose body checks
     [law] over [gen] through the property engine ({!Property.run}), with
-    per-case seeds derived from the run's root seed and the test's path (Law 7)
-    and the engine's context installed in the frame while [law] runs (so the
-    ambient [collect]/[classify]/[cover] reach it). [timeout] is the underlying
-    test's per-test limit ({!Test_tree.test}); as the whole property runs inside
-    one test body, it budgets generation and shrinking together — a timeout
-    during the shrink search ends the search at the best counterexample found
+    per-case seeds derived from the run's root seed and the test's path and the
+    engine's context installed in the frame while [law] runs (so the ambient
+    [collect]/[classify]/[cover] reach it). [timeout] is the underlying test's
+    per-test limit ({!Test_tree.test}); as the whole property runs inside one
+    test body, it budgets generation and shrinking together — a timeout during
+    the shrink search ends the search at the best counterexample found
     ({!Property.run}, Shrinking). [count] is the generated-case count: the
     declaration site wins over [--prop-count], which wins over the engine
     default of [100]. [examples] run first, unshrunk.
@@ -140,7 +139,7 @@ val prop :
 (** The type for progress events, emitted in execution order. Renderers observe
     them to stream one line per test and to attribute a hanging fixture release;
     they receive only data already decided — no observer can alter status,
-    counts, or scheduling (Law 4). *)
+    counts, or scheduling. *)
 type event =
   | Run_started of { run : Run.t; suite : string; total : int; selected : int }
       (** Startup checks passed; [selected] of the suite's [total] tests are
@@ -172,7 +171,7 @@ type startup_error =
 
 val startup_exit_code : startup_error -> int
 (** [startup_exit_code error] is the process exit code for [error]: [2] for
-    {!No_recorded_failures} (nothing ran, Law 11), [1] for the others (a refused
+    {!No_recorded_failures} (nothing ran, so [2]), [1] for the others (a refused
     run is a failed run, not an empty one). *)
 
 val startup_message : startup_error -> string
@@ -213,12 +212,12 @@ type outcome = {
           refusal for renderers to explain. [None] otherwise. *)
   duration : float;  (** Wall-clock seconds from startup checks to release. *)
   exit_code : int;
-      (** Law 11: [1] when any test counted as failed ({!outcome.failed_paths}
-          nonempty) or any release failed; else [2] when no test executed (empty
-          suite or empty selection — the filter-typo case); else [0] — a
-          nonempty selection whose every test skipped is deliberate and exits
-          [0], and so does a run whose only failures were expected ([xfail]).
-          List-only runs exit [0]. *)
+      (** [1] when any test counted as failed ({!outcome.failed_paths} nonempty)
+          or any release failed; else [2] when no test executed (empty suite or
+          empty selection — the filter-typo case); else [0] — a nonempty
+          selection whose every test skipped is deliberate and exits [0], and so
+          does a run whose only failures were expected ([xfail]). List-only runs
+          exit [0]. *)
 }
 (** The type for completed runs: everything renderers project and the facade
     needs to exit. *)
@@ -250,5 +249,5 @@ val execute :
     body, the calling test fails with that error), and when [config.shard]
     violates [1 <= K <= N] — the CLI layer validates every layer it resolves, so
     only a hand-built configuration can trip this. If [on_event] raises, the run
-    aborts with that exception — after a best-effort fixture release (Law 8),
-    like a fatal exception. *)
+    aborts with that exception — after a best-effort fixture release, like a
+    fatal exception. *)

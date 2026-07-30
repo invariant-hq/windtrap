@@ -92,7 +92,7 @@ let find_root gen ~path ~fails ~first_ok =
   in
   try_root 0
 
-(* ───── Determinism and replay ───── *)
+(* Determinism and replay *)
 
 let same_inputs_same_outcome () =
   let path = "determinism" in
@@ -132,7 +132,7 @@ let different_path_different_stream () =
     "distinct paths must not share a stream (adding a property never perturbs \
      another)"
 
-(* ───── Examples ───── *)
+(* Examples *)
 
 let examples_run_first_in_order () =
   let seen = ref [] in
@@ -210,7 +210,7 @@ let examples_count_in_coverage_denominator () =
   | [ { Property.label = "zero"; hits = 4; satisfied = true; _ } ] -> ()
   | _ -> failf "expected zero covered by the 4 examples out of 6 cases"
 
-(* ───── Discards and give-up ───── *)
+(* Discards and give-up *)
 
 let assume_exhaustion_gives_up () =
   let stats =
@@ -316,7 +316,7 @@ let mixed_discards_still_pass () =
   check (stats.Property.cases = 20) "count cases must pass";
   check (stats.Property.discards > 0) "odd draws must discard"
 
-(* ───── Labelling ───── *)
+(* Labelling *)
 
 let classify_partitions_cases () =
   let body ctx x =
@@ -374,7 +374,7 @@ let shrink_runs_do_not_pollute_tables () =
     (stats.Property.collected = [ ("ran", stats.Property.cases) ])
     "shrink re-runs must accumulate into a scratch context only"
 
-(* ───── Coverage ───── *)
+(* Coverage *)
 
 let cover_satisfied_passes () =
   let body ctx _ = Property.cover ctx ~label:"all" ~at_least:100.0 true in
@@ -442,7 +442,7 @@ let cover_invalid_threshold_fails_the_case () =
       check (contains "at_least" text) "the message must name the argument"
   | _ -> failf "expected an inner Raise failure for the invalid threshold"
 
-(* ───── Shrinking ───── *)
+(* Shrinking *)
 
 let shrinks_to_minimal_counterexample () =
   let body _ x = Check.equal Testable.int 0 x in
@@ -599,7 +599,7 @@ let printerless_counterexample_uses_provenance () =
     (String.length rendered >= 6 && String.sub rendered 0 6 = "<from:")
     "a printerless counterexample renders its shrunk draws, got %S" rendered
 
-(* ───── Timeout vs the shrink search (D2) ───── *)
+(* Timeout vs the shrink search (D2) *)
 
 let timeout_during_first_candidate_keeps_unshrunk () =
   (* Call 1 is the failing case; call 2 (the first shrink candidate) raises
@@ -669,7 +669,7 @@ let skip_during_generation_escapes_unchanged () =
   | exception other ->
       failf "expected Skip_test, got %s" (Printexc.to_string other)
 
-(* ───── Failure payload plumbing ───── *)
+(* Failure payload plumbing *)
 
 let msg_and_loc_are_preserved () =
   let loc = { Loc.file = "test/example.ml"; line = 41; column = 2 } in
@@ -723,7 +723,7 @@ let control_exceptions_propagate () =
   | exception other ->
       failf "expected Timeout, got %s" (Printexc.to_string other)
 
-(* ───── Configuration ───── *)
+(* Configuration *)
 
 let huge_count_does_not_overflow_the_budget () =
   (* The default max_discard is 2 * count; beyond max_int / 2 it must clamp
@@ -770,7 +770,7 @@ let assume_and_reject_raise_discard () =
   | exception Property.Discard -> ()
   | _ -> failf "reject must raise Discard"
 
-(* ───── Suite ───── *)
+(* Suite *)
 
 let suite =
   [

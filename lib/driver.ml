@@ -10,11 +10,11 @@
    producer. *)
 
 (* Path shown in [wrote]/[pruned]/hint lines: the shared [Path_ops.display]
-   spelling (D5 §8, ppx/F-6), so the line classes stay byte-equal to the
-   manual's transcripts across both runners. *)
+   spelling, so the line classes stay byte-equal to the manual's transcripts
+   across both runners. *)
 let display_path = Path_ops.display
 
-(* ───── Renderer construction ───── *)
+(* Renderer construction *)
 
 let renderer ~config ~mode ~invocation () =
   let inside_dune = Env.inside_dune () in
@@ -35,7 +35,7 @@ let renderer ~config ~mode ~invocation () =
     ?tail_lines:(Option.map (Int.max 0) config.Run.tail_errors)
     ~slow_threshold:config.Run.slow_threshold ~invocation ()
 
-(* ───── The event observer ───── *)
+(* The event observer *)
 
 let observe renderer ~seed = function
   | Runner.Run_started { run = _; suite; total = _; selected } ->
@@ -48,7 +48,7 @@ let observe renderer ~seed = function
          under [`Quiet]. *)
       Render.note renderer ("releasing " ^ name)
 
-(* ───── The GitHub envelope ───── *)
+(* The GitHub envelope *)
 
 let github_start ~github suite =
   if github then print_string (Render_github.group_start suite)
@@ -57,11 +57,11 @@ let github_end ~github = if github then print_string Render_github.group_end
 
 let github_annotations ~github ~invocation results =
   (* Excused expected failures annotate nothing: an [::error] on a PR
-     demands action, and these did not fail the run (B12) — the transport
+     demands action, and these did not fail the run — the transport
      classifies from the result records. *)
   if github then print_string (Render_github.annotations ~invocation results)
 
-(* ───── The snapshot/prune report ───── *)
+(* The snapshot/prune report *)
 
 let explain_prune_refusal (refusal : Snapshot.prune_refusal) =
   let blockers =
@@ -117,7 +117,7 @@ let report_snapshots ~out ~output ~invocation (outcome : Runner.outcome) =
                 Format.fprintf out "stale baseline: %s@." (display_path path))
               orphans;
             (* The prune hint derives from the same startup-computed
-               invocation as every other command hint (D5 §1). *)
+               invocation as every other command hint. *)
             let command =
               match (invocation : Render.invocation) with
               | `Exe cmd -> cmd ^ " -u --prune"
@@ -126,9 +126,9 @@ let report_snapshots ~out ~output ~invocation (outcome : Runner.outcome) =
             Format.fprintf out "remove stale baselines: %s@." command)
   end
 
-(* ───── The coverage seam (RFC Law 12) ───── *)
+(* The coverage seam *)
 
-(* Sibling detection (aggregation design, E6): other executables'
+(* Sibling detection: other executables'
    .coverage files beside this process's own dump destination mean the
    in-process number is one executable's view of the code it links, and
    the project number is the merge — the coverage line says so instead of

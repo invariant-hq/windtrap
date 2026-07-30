@@ -12,7 +12,7 @@
 
 open Windtrap
 
-(* ───── Recipe 1: temporary directories and files ───── *)
+(* Recipe 1: temporary directories and files *)
 
 let rec rm_rf path =
   if Sys.is_directory path then begin
@@ -62,7 +62,7 @@ let temp_tests =
           is_false (Sys.file_exists !seen));
     ]
 
-(* ───── Recipe 2: scoped environment variables ───── *)
+(* Recipe 2: scoped environment variables *)
 
 let with_env var value fn =
   let saved = Sys.getenv_opt var in
@@ -92,7 +92,7 @@ let env_tests =
             (Sys.getenv_opt "COOKBOOK_ENV_RAISE"));
     ]
 
-(* ───── Recipe 3: the Eio guarantees ─────
+(* Recipe 3: the Eio guarantees
 
    The [with_eio] adapter is a fragment (windtrap has no eio dependency);
    what the cookbook guarantees is that assertion failures are ordinary
@@ -115,7 +115,7 @@ let eio_tests =
           | None -> fail "the assertion did not raise");
     ]
 
-(* ───── Recipe 4: subprocess workers via a role env var ─────
+(* Recipe 4: subprocess workers via a role env var
 
    The dispatch on COOKBOOK_ROLE happens at the bottom of this file,
    before [run] — the worker path never touches windtrap's CLI parsing or
@@ -151,7 +151,7 @@ let subprocess_tests =
           contains ~sub:"lock acquired" (spawn_self ~role:"worker"));
     ]
 
-(* ───── Recipe 5: event sets via slist + contramap ───── *)
+(* Recipe 5: event sets via slist + contramap *)
 
 type event = { path : string; kind : string; timestamp : float }
 
@@ -174,7 +174,7 @@ let projection_tests =
             ]);
     ]
 
-(* ───── Recipe 6: cover with a noise-floor margin ───── *)
+(* Recipe 6: cover with a noise-floor margin *)
 
 let cover_tests =
   group "cover noise floor"
@@ -185,7 +185,7 @@ let cover_tests =
           equal int n n);
     ]
 
-(* ───── Recipe 7: suite-level skip through a skipping fixture ───── *)
+(* Recipe 7: suite-level skip through a skipping fixture *)
 
 let probes = ref 0
 
@@ -202,7 +202,7 @@ let suite_skip_tests =
       test "the probe ran exactly once" (fun () -> equal int 1 !probes);
     ]
 
-(* ───── Recipe 8: codec round-trip ───── *)
+(* Recipe 8: codec round-trip *)
 
 let encode l = String.concat "," (List.map string_of_int l)
 
@@ -218,7 +218,7 @@ let codec_tests =
         (fun l -> equal (list int) l (decode (encode l)));
     ]
 
-(* ───── Recipe 9: two-phase keyed comparison ───── *)
+(* Recipe 9: two-phase keyed comparison *)
 
 type tensor = { shape : int array; data : float array }
 
@@ -244,7 +244,7 @@ let keyed_tests =
               equal (option string) (Some "shape") failure.Private.Failure.msg);
     ]
 
-(* ───── Recipe 10: complex tolerance testable ───── *)
+(* Recipe 10: complex tolerance testable *)
 
 let complex ~rel ~abs : Complex.t testable =
   let close = Testable.equal (float_rel ~rel ~abs) in
@@ -264,7 +264,7 @@ let complex_tests =
             { Complex.re = 1. +. 1e-13; im = 2. -. 1e-13 });
     ]
 
-(* ───── The role dispatch and the suite ───── *)
+(* The role dispatch and the suite *)
 
 let () =
   match Sys.getenv_opt "COOKBOOK_ROLE" with

@@ -7,7 +7,7 @@
 
 open Windtrap
 
-(* ───── helpers ───── *)
+(* helpers *)
 
 (* Busy wait without depending on unix: [Sys.time] is processor time,
    close enough to wall time for a spinning loop, and the loop body hits
@@ -89,7 +89,7 @@ let release_notes =
    released by the runner after the last test (the "releasing" note). *)
 let server_port = fixture ~teardown:(fun (_ : int) -> ()) (fun () -> 43117)
 
-(* ───── 1. compact machinery ─────
+(* 1. compact machinery
 
    41 table cases + 19 named passes fill the first 60-glyph row exactly,
    so the [60/100] counter renders; then S (skip), x (expected failure),
@@ -169,7 +169,7 @@ let compact_tests =
       (test "already fixed upstream" (fun () -> equal int 4 (2 + 2)));
   ]
 
-(* ───── 2. every failure kind, one exemplary test each ───── *)
+(* 2. every failure kind, one exemplary test each *)
 
 let assertion_tests =
   [
@@ -268,7 +268,7 @@ let assertion_tests =
         equal int 4 workers);
   ]
 
-(* ───── 3. properties ───── *)
+(* 3. properties *)
 
 let property_tests =
   [
@@ -301,7 +301,7 @@ let property_tests =
         equal (list int) sorted (List.sort compare sorted));
   ]
 
-(* ───── 4. snapshots ───── *)
+(* 4. snapshots *)
 
 let snapshot_tests =
   [
@@ -315,7 +315,7 @@ let snapshot_tests =
         contains ~sub:"0.2.0" release_notes);
   ]
 
-(* ───── 5. runtime surfaces ───── *)
+(* 5. runtime surfaces *)
 
 let runtime_tests =
   [

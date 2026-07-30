@@ -35,7 +35,7 @@ let in_test ?(path = [ "suite"; "t" ]) ?file run fn =
   let frame = Run.frame run ~path ~file ~loc:None in
   Run.with_frame frame (fun () -> fn frame)
 
-(* ───── Configuration ───── *)
+(* Configuration *)
 
 let () =
   let config = Run.default_config () in
@@ -68,7 +68,7 @@ let () =
   check "create keeps the capture state" (Run.capture run == Capture.disabled);
   check "create keeps the snapshot registry" (Run.snapshots run == snapshots)
 
-(* ───── Frames ───── *)
+(* Frames *)
 
 let () =
   let run = make_run () in
@@ -93,7 +93,7 @@ let () =
         (a.Failure.phase = Failure.Body && b.Failure.phase = Failure.Teardown)
   | _ -> check "failures shape" false
 
-(* ───── Location fallback (D4) ───── *)
+(* Location fallback (D4) *)
 
 let declared = { Loc.file = "test/test_g.ml"; line = 4; column = 2 }
 let elsewhere = { Loc.file = "test/helper.ml"; line = 9; column = 0 }
@@ -136,7 +136,7 @@ let () =
         (f.Failure.loc = None)
   | _ -> check "bare frame failure shape" false
 
-(* ───── The ambient slot ───── *)
+(* The ambient slot *)
 
 let () =
   (* The widened slot (exit guard, D1): [active] answers for the whole
@@ -209,7 +209,7 @@ let () =
       check "second run sees itself, not the first" (Run.current () == run_b));
   check "slot empty after both runs" (Run.current_opt () = None)
 
-(* ───── Property context ───── *)
+(* Property context *)
 
 (* A real [Property.context], captured from a one-case engine run. *)
 let get_prop_context () =
@@ -239,7 +239,7 @@ let () =
       check "property context is restored after a raise"
         (Run.prop_context frame = None))
 
-(* ───── Fixtures ───── *)
+(* Fixtures *)
 
 let () =
   let acquisitions = ref 0 in
@@ -408,7 +408,7 @@ let () =
   check "the registry is drained even after a fatal"
     (Run.release_fixtures run ~announce:ignore = [] && !released = [])
 
-(* ───── current_test (B9) ───── *)
+(* current_test (B9) *)
 
 let () =
   expect_invalid_arg "current_test outside a run raises" (fun () ->
@@ -422,7 +422,7 @@ let () =
   check "current_test is the executing test's full path"
     (!seen = [ "users"; "sessions"; "login" ])
 
-(* ───── srandom (B10) ───── *)
+(* srandom (B10) *)
 
 let () =
   expect_invalid_arg "srandom outside a run raises" (fun () -> Run.srandom ())
@@ -469,7 +469,7 @@ let () =
   check "srandom leaves the global Random state alone"
     (Random.int 1_000_000 = expected)
 
-(* ───── subtest (B13) ───── *)
+(* subtest (B13) *)
 
 let () =
   expect_invalid_arg "subtest outside a run raises" (fun () ->
@@ -558,7 +558,7 @@ let () =
             (msg_of failure = "t › clean")
       | _ -> check "post-control subtest failure shape" false)
 
-(* ───── temp_dir / temp_file (B9) ───── *)
+(* temp_dir / temp_file (B9) *)
 
 let () =
   expect_invalid_arg "temp_dir outside a run raises" (fun () -> Run.temp_dir ());
@@ -677,7 +677,7 @@ let () =
   check "a later attempt gets a fresh scratch directory" (d1 <> d2);
   Run.remove_temp second
 
-(* ───── Fixture acquisition skips (amendment C1) ───── *)
+(* Fixture acquisition skips (amendment C1) *)
 
 let () =
   let attempts = ref 0 in
@@ -717,7 +717,7 @@ let () =
   check_int "a later run re-attempts a skipped acquisition" ~expected:2
     ~actual:!attempts
 
-(* ───── Results ───── *)
+(* Results *)
 
 let () =
   let run = make_run () in
@@ -757,7 +757,7 @@ let () =
         (b.Run.path = [ "g"; "b" ] && b.Run.attempts = 3 && b.Run.duration = 1.5)
   | _ -> check "results shape" false
 
-(* ───── Coverage seam ───── *)
+(* Coverage seam *)
 
 let () =
   let run = make_run () in
@@ -770,6 +770,6 @@ let () =
        && summary.Run.siblings)
   | None -> check "coverage snapshot recorded" false
 
-(* ───── Summary ───── *)
+(* Summary *)
 
 let () = finish ()

@@ -43,7 +43,7 @@ let tests =
         let summary = Windtrap_coverage.summary s in
         check "no point visited before any call" (summary.visited = 0);
         check "the fixture points are all registered" (summary.total >= 20));
-    (* ───── Tail calls survive entry sequencing and out-edge wrapping ───── *)
+    (* Tail calls survive entry sequencing and out-edge wrapping *)
     test "deep tail recursion survives instrumentation" ~tags:[ "slow" ]
       (fun () ->
         check "deep tail recursion through a match arm"
@@ -61,7 +61,7 @@ let tests =
         check "deep tail recursion through a && right arm"
           (F.all_even 20_000_000 = true);
         check "the && arm still answers" (F.all_even 3 = false));
-    (* ───── Evaluation order is untouched ───── *)
+    (* Evaluation order is untouched *)
     test "branch and guard evaluation order is untouched" (fun () ->
         let y, trace = F.order_witness true in
         check_int "order witness true takes arm1" ~expected:10 ~actual:y;
@@ -108,7 +108,7 @@ let tests =
     test "sequence statements run left to right, once" (fun () ->
         check "sequence statements run left to right, once"
           (F.seq_order () = [ "one"; "two" ]));
-    (* ───── Lazy stays lazy; trivial lazy stays a value ───── *)
+    (* Lazy stays lazy; trivial lazy stays a value *)
     test "lazy stays lazy; trivial lazy stays a value" (fun () ->
         check "lazy body not run at module load" (!F.forced = false);
         let before = visited () in
@@ -125,7 +125,7 @@ let tests =
           ~actual:(visited () - after);
         check "trivial lazy compiles as in an uninstrumented build"
           (Lazy.is_val F.trivial = Lazy.is_val (lazy 42)));
-    (* ───── Raising applications: the out-edge is NOT counted ─────
+    (* Raising applications: the out-edge is NOT counted
 
        [tap_ok] and [tap_raise] are shape-identical: leaf-body entry
        point, out-edge point on [f ()], and the argument's own leaf
@@ -148,7 +148,7 @@ let tests =
         check_int
           "the raising path visits one point fewer: the out-edge is not counted"
           ~expected:2 ~actual:(after_raise - after_ok));
-    (* ───── Pipelines and method calls ───── *)
+    (* Pipelines and method calls *)
     test "pipelines and method calls compute uninstrumented results" (fun () ->
         check_int "pipeline in tail position" ~expected:12
           ~actual:(F.pipeline 3);
@@ -160,7 +160,7 @@ let tests =
         check_int "a send with a successor" ~expected:1
           ~actual:(F.poke (new F.adder));
         check "the send's out-edge counted" (visited () - before > 0));
-    (* ───── An arm that is itself a function: two points, two moments ───── *)
+    (* An arm that is itself a function: two points, two moments *)
     test "an arm that is itself a function: two points, two moments" (fun () ->
         let before = visited () in
         let add = F.dispatch `Add in
@@ -175,7 +175,7 @@ let tests =
           ~actual:(add 4 5);
         check_int "visited counts points, not calls" ~expected:0
           ~actual:(visited () - after_apply));
-    (* ───── Instrumented forms compute the uninstrumented results ───── *)
+    (* Instrumented forms compute the uninstrumented results *)
     test "instrumented forms compute the uninstrumented results" (fun () ->
         check_int "while loop" ~expected:55 ~actual:(F.sum_while 10);
         check_int "while loop, zero iterations" ~expected:0
@@ -188,7 +188,7 @@ let tests =
           && String.equal (F.bucket 500) "large");
         check_int "try arm catches" ~expected:0 ~actual:(F.safe_div 7 0);
         check_int "try body result" ~expected:3 ~actual:(F.safe_div 7 2));
-    (* ───── The visit calls counted; a raising path lowers the % ───── *)
+    (* The visit calls counted; a raising path lowers the % *)
     test "the visit calls counted; a raising path lowers the percentage"
       (fun () ->
         let s = Windtrap_coverage.snapshot () in

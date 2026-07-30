@@ -16,7 +16,7 @@
  (modules pp)
  (libraries ppxlib windtrap_coverage_ppx))
 
-; ── Expansion goldens ──
+; Expansion goldens
 
 (rule
  (with-stdout-to
@@ -148,7 +148,7 @@
  (action
   (diff fixture_empty.expected fixture_empty.actual)))
 
-; ── Rejection diagnostics (malformed and misplaced attributes) ──
+; Rejection diagnostics (malformed and misplaced attributes)
 
 (rule
  (target reject_bad_payload.actual)

@@ -3,9 +3,8 @@
   SPDX-License-Identifier: ISC
 
   SplitMix64 constants, the s1: token codec, and the rejection-sampled
-  bounded draw are adapted from windtrap-next's random_engine.ml. The split
-  construction follows Steele, Lea and Vigna, "Fast Splittable Pseudorandom
-  Number Generators" (OOPSLA 2014).
+  bounded draw. The split construction follows Steele, Lea and Vigna, "Fast
+  Splittable Pseudorandom Number Generators" (OOPSLA 2014).
   --------------------------------------------------------------------------*)
 
 type seed = int64
@@ -66,7 +65,7 @@ let mix64 z =
   in
   Int64.(logxor z (shift_right_logical z 31))
 
-(* Derivation. Frozen at v3.0 (Law 7): hash64 is 64-bit FNV-1a over the
+(* Derivation. Frozen at v3.0: hash64 is 64-bit FNV-1a over the
    path's bytes; the case seed is
    mix64 (mix64 (root lxor hash64 path) + golden_gamma * index). *)
 

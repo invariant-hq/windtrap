@@ -4,8 +4,9 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The expression-grade instrumenter (RFC Laws 13-15; Law 14 as amended
-   2026-07-28).
+(* The expression-grade instrumenter. Instrumentation must never change
+   what programs or tests mean — tail-call status, lazy compilation, and
+   evaluation order are preserved by construction.
 
    The instrumented population is v1's Bisect-derived one: block entries
    (function leaf bodies, match/try/function arms and guards, if branches,
@@ -21,7 +22,7 @@
    - post-visit wrapping, [___windtrap_post_visit___ i e] - evaluates [e]
      first and visits only if it returned. Post-visit wrapping is what
      *can* alter tail-call status if mishandled, so [traverse] threads
-     [is_in_tail_position] exactly as the donor does and never wraps an
+     [is_in_tail_position] exactly as v1 does and never wraps an
      application in tail position; the mandatory semantics-preservation
      suite (test/coverage_ppx/semantics) pins this. The [successor]
      threading attributes an out-edge to the expression control flows into
@@ -32,7 +33,7 @@
    mixed by design: entry points carry their block's extent (an arm's spans
    the whole arm, pattern start to body end); out-edge points carry the
    application's extent, so a raising call paints the call itself. Point
-   *identity* is the donor's: a single attribution offset (start, or end-1
+   *identity* is v1's: a single attribution offset (start, or end-1
    under [at_end]) - two marks at one offset share a point, first extent
    wins. The table is emitted in the per-file initialization module that
    [transform_impl_file] prepends. *)
@@ -42,7 +43,7 @@ module Exp = Ast_helper.Exp
 module Cl = Ast_helper.Cl
 module Cf = Ast_helper.Cf
 
-(* ── The [coverage] attributes (Bisect_ppx's spelling) ────────────────── *)
+(* The [coverage] attributes (Bisect_ppx's spelling) *)
 
 let recognize_coverage_attribute { attr_name; attr_payload; attr_loc } =
   if not (String.equal attr_name.txt "coverage") then `None
@@ -90,9 +91,9 @@ let has_exclude_file_attribute structure =
       | _ -> false)
     structure
 
-(* ── Points ───────────────────────────────────────────────────────────── *)
+(* Points *)
 
-(* [key] is the donor's point identity - one byte offset inside the
+(* [key] is v1's point identity - one byte offset inside the
    attribution expression; [start_ofs]/[end_ofs] the extent the report
    paints. [uses_post] records whether any out-edge wrap was emitted, so
    the initialization module only binds [___windtrap_post_visit___] when
@@ -107,9 +108,9 @@ type state = {
 
 let create_state () = { rev_points = []; count = 0; uses_post = false }
 
-(* Donor identity: reuse the existing point at [key] (its first-recorded
-   extent wins); allocate otherwise. Linear search over the (small)
-   per-file table, exactly as the donor. *)
+(* v1's point identity: reuse the existing point at [key] (its
+   first-recorded extent wins); allocate otherwise. Linear search over the
+   (small) per-file table, exactly as v1. *)
 let point_index st ~key ~start_ofs ~end_ofs =
   let rec find index = function
     | p :: _ when p.key = key -> index
@@ -122,7 +123,7 @@ let point_index st ~key ~start_ofs ~end_ofs =
   in
   find (st.count - 1) st.rev_points
 
-(* ── Mark insertion ───────────────────────────────────────────────────── *)
+(* Mark insertion *)
 
 (* [instrument_expr st e] wraps [e] with a visit of a fresh (or shared)
    point:
@@ -203,7 +204,7 @@ let instrument_cases st cases =
       end)
     cases
 
-(* ── Guards (Law 13) ──────────────────────────────────────────────────── *)
+(* Semantics-preservation guards *)
 
 (* [lazy] applied to a trivial syntactic value compiles as already forced;
    a visit under such a [lazy] would turn the value into a thunk and change
@@ -220,7 +221,7 @@ let rec is_trivial_syntactic_value e =
 (* Applications of these never carry an out-edge point: they are
    primitives that cannot fail interestingly (or, for [raise] and friends,
    whose whole point is not returning), and wrapping every arithmetic
-   operator would double the table for no signal. The donor's list,
+   operator would double the table for no signal. v1's list,
    verbatim. *)
 let is_trivial_function = function
   | [%expr ( && )]
@@ -264,9 +265,9 @@ let is_trivial_function = function
       true
   | _ -> false
 
-(* ── Traversal ────────────────────────────────────────────────────────── *)
+(* Traversal *)
 
-(* [traverse] is the donor's engine: a manual walk over the whole
+(* [traverse] is v1's engine: a manual walk over the whole
    expression language that threads [is_in_tail_position] (never post-wrap
    a tail application) and [successor] (attribute an out-edge to the
    expression control reaches next; [`Redundant] when an enclosing form
@@ -670,7 +671,7 @@ class instrumenter st =
         traverse ~is_in_tail_position:false e
       end
 
-    (* Class bodies (Law 14): optional-argument defaults, concrete method
+    (* Class bodies: optional-argument defaults, concrete method
        bodies, and initializers are blocks; their inner expressions reach
        [expression] through the super traversal. *)
     method! class_expr ce =
@@ -752,7 +753,7 @@ class instrumenter st =
     method! attribute attr = attr
   end
 
-(* ── Per-file runtime initialization ──────────────────────────────────── *)
+(* Per-file runtime initialization *)
 
 (* The generated preamble registers the point table and binds the visit
    functions the marks call:
@@ -833,7 +834,7 @@ let runtime_initialization st ~file =
   let stop_comment = [%stri [@@@ocaml.text "/*"]] in
   [ stop_comment; generated_module; module_open; stop_comment ]
 
-(* ── Entry point ──────────────────────────────────────────────────────── *)
+(* Entry point *)
 
 let always_ignore_paths = [ "//toplevel//"; "(stdin)" ]
 let always_ignore_basenames = [ ".ocamlinit"; "topfind" ]

@@ -1,13 +1,14 @@
 ; The ppx_windtrap rewriter and the dune inline_tests backend. The
-; backend incantation is the donor's (windtrap 0.1's ppx/dune): dune builds one
+; backend incantation is windtrap 0.1's ppx/dune: dune builds one
 ; runner per library from generate_runner, then drives it with the
 ; inline-test-runner protocol; Ppx_runtime interprets the flags and
-; exits by the promotion protocol (RFC Law 11's scoped deviation).
+; exits by dune's promotion protocol rather than the standalone
+; runner's 0/1/2 contract.
 ;
 ; ppx_runtime_libraries makes every library preprocessed with
 ; ppx_windtrap depend on the runtime alias and on the top-level
-; Expect_test_config module the generated code references (RFC compat
-; mechanism (b)).
+; Expect_test_config module the generated code references (matching
+; ppx_expect).
 
 (library
  (name ppx_windtrap)

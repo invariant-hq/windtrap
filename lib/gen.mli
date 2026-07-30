@@ -5,7 +5,7 @@
 
 (** Random value generators with integrated shrinking and printing.
 
-    An ['a t] couples three inseparable concerns (Law 6): drawing a value from a
+    An ['a t] couples three inseparable concerns: drawing a value from a
     {!Seed.state}, the lazy tree of shrink candidates for the drawn value, and
     how values print in counterexamples. There is no user-written shrinker
     anywhere: every generator shrinks, and shrink candidates satisfy the same
@@ -38,7 +38,7 @@
     {b Validation.} Generator constructors never raise: malformed arguments
     ([one_of []], [int_range 3 1]) are reported by raising [Invalid_argument]
     when the generator first samples, inside the running test's exception
-    boundary — a test list that constructs is a test list that runs (Law 6).
+    boundary — a test list that constructs is a test list that runs.
 
     Callbacks passed to {!map}, {!bind}, {!such_that}, and generator-valued
     functions given to {!sized} must be pure: the shrink search runs them —
@@ -290,7 +290,7 @@ val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
 
     Low-level API for the property engine and windtrap's own tests. The facade
     re-exports it with the rest of this module — public, but advanced: beyond
-    the frozen value stream (Law 7, {!Seed}) it carries no stability promise. *)
+    the frozen value stream ({!Seed}) it carries no stability promise. *)
 
 exception Rejected
 (** Raised by {!sample} when a {!such_that} filter exhausts its [max_tries]

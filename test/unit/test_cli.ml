@@ -130,7 +130,7 @@ let () =
       check "inline tags accumulate"
         (p.Cli.tags = [ "a"; "c" ] && p.Cli.exclude_tags = [ "b" ]))
 
-(* ───── Parsing: the output level (-q ⊂ default ⊂ -v) ───── *)
+(* Parsing: the output level (-q ⊂ default ⊂ -v) *)
 
 let () =
   reg "output level parsing" @@ fun () ->
@@ -149,7 +149,7 @@ let () =
   expect_ok "--quick is selection only, not the output level" [ "--quick" ]
     (fun p -> check "--quick" (p.Cli.quick = Some true && p.Cli.output = None))
 
-(* ───── Parsing: positionals ───── *)
+(* Parsing: positionals *)
 
 let () =
   reg "positionals" @@ fun () ->
@@ -171,7 +171,7 @@ let () =
   expect_ok "a lone dash is an ordinary positional" [ "-" ] (fun p ->
       check "dash filter" (p.Cli.filter = Some "-"))
 
-(* ───── Parsing: help and version stop early ───── *)
+(* Parsing: help and version stop early *)
 
 let () =
   reg "help and version stop early" @@ fun () ->
@@ -180,7 +180,7 @@ let () =
   expect_ok "--help wins over later garbage" [ "--help"; "--bogus" ] (fun p ->
       check "help despite garbage" p.Cli.help)
 
-(* ───── Parsing: typed errors ───── *)
+(* Parsing: typed errors *)
 
 let () =
   reg "typed parse errors" @@ fun () ->
@@ -243,7 +243,7 @@ let () =
   check "error message names the flag"
     (contains "--bogus" (Cli.error_message (Cli.Unknown_flag "--bogus")))
 
-(* ───── --slow-threshold ───── *)
+(* --slow-threshold *)
 
 let () =
   reg "--slow-threshold parsing" @@ fun () ->
@@ -255,7 +255,7 @@ let () =
   expect_ok "--slow-threshold=SECS parses inline" [ "--slow-threshold=0.5" ]
     (fun p -> check "inline threshold" (p.Cli.slow_threshold = Some 0.5))
 
-(* ───── --shard (amendment B14) ───── *)
+(* --shard (amendment B14) *)
 
 let () =
   reg "--shard parsing (B14)" @@ fun () ->
@@ -286,7 +286,7 @@ let () =
       " 1/4";
     ]
 
-(* ───── Help and usage ───── *)
+(* Help and usage *)
 
 let () =
   reg "help and usage text" @@ fun () ->
@@ -341,7 +341,7 @@ let () =
     ~expected:"usage: mytests.exe [OPTIONS] [PATTERN]"
     ~actual:(Cli.usage ~prog:"/some/path/mytests.exe")
 
-(* ───── Resolution: defaults ───── *)
+(* Resolution: defaults *)
 
 let resolve ?overrides parsed =
   match Cli.resolve ?overrides parsed with
@@ -373,7 +373,7 @@ let () =
     (config.Run.columns = None && config.Run.tail_errors = None);
   check "default: log dir non-empty" (String.length config.Run.log_dir > 0)
 
-(* ───── Resolution: precedence ───── *)
+(* Resolution: precedence *)
 
 let () =
   reg "resolution precedence: programmatic > CLI > env" @@ fun () ->
@@ -470,7 +470,7 @@ let () =
     (config.Run.quick && config.Run.bail = Some 2
     && config.Run.log_dir = "custom-logs")
 
-(* ───── Resolution: numeric limits stay validated past the parser ───── *)
+(* Resolution: numeric limits stay validated past the parser *)
 
 let () =
   reg "numeric limits stay validated past the parser" @@ fun () ->
@@ -544,7 +544,7 @@ let () =
   check "--color beats WINDTRAP_COLOR" (config.Run.color = Env.Always);
   clear_env ()
 
-(* ───── Resolution: the output level ───── *)
+(* Resolution: the output level *)
 
 let () =
   reg "output level resolution" @@ fun () ->
@@ -573,7 +573,7 @@ let () =
        { Cli.empty with Cli.output = Some `Verbose }
     = `Quiet)
 
-(* ───── Resolution: --slow-threshold and WINDTRAP_SLOW_THRESHOLD ───── *)
+(* Resolution: --slow-threshold and WINDTRAP_SLOW_THRESHOLD *)
 
 let () =
   reg "--slow-threshold resolution" @@ fun () ->
@@ -617,7 +617,7 @@ let () =
       check "a non-finite programmatic threshold errors" true
   | Ok _ | Error _ -> check "a non-finite programmatic threshold errors" false
 
-(* ───── Resolution: --shard and WINDTRAP_SHARD (amendment B14) ───── *)
+(* Resolution: --shard and WINDTRAP_SHARD (amendment B14) *)
 
 let () =
   reg "--shard resolution (B14)" @@ fun () ->
@@ -646,6 +646,6 @@ let () =
       check "an out-of-range programmatic shard errors" true
   | Ok _ | Error _ -> check "an out-of-range programmatic shard errors" false
 
-(* ───── Suite ───── *)
+(* Suite *)
 
 let tests = List.rev !registered

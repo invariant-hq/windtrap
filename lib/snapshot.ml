@@ -6,10 +6,10 @@
 (* Rewritten for v3 from windtrap v1's lib/snapshot.ml, which contributed
    the colocated __snapshots__ layout and the canonicalize-both-sides rule.
    The per-run name registry, read-only checking, one-accepted-content rule
-   and orphan logic are new (RFC "Snapshots"); path reconstruction lives in
-   Path_ops and atomic writes in Atomic_file. *)
+   and orphan logic are new in v3; path reconstruction lives in Path_ops and
+   atomic writes in Atomic_file. *)
 
-(* ───── Modes and the CI guard ───── *)
+(* Modes and the CI guard *)
 
 type mode = Check | Update
 type mode_resolution = Mode of mode | Refused_in_ci
@@ -19,13 +19,13 @@ let resolve_mode ~ci = function
   | Env.Update -> if ci then Refused_in_ci else Mode Update
   | Env.Force_update -> Mode Update
 
-(* ───── Registries ───── *)
+(* Registries *)
 
 type write_status = Created | Updated
 
 (* One name in one baseline directory. [site] is the first check's site and
    [owner] the test that made it (duplicate detection needs no surviving
-   call frame — D4); [baseline] is the canonical content every later check
+   call frame); [baseline] is the canonical content every later check
    of the name compares against — set at the first successful read (Check
    mode) or at acceptance (Update mode), [None] while the baseline is
    missing. *)
@@ -56,7 +56,7 @@ let create ?root ~mode () =
 
 let mode t = t.mode
 
-(* ───── Names ───── *)
+(* Names *)
 
 let valid_name_char = function
   | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '.' | '_' | '-' -> true
@@ -74,7 +74,7 @@ let validate_name name =
           [A-Za-z0-9._-]+ and may not start with the reserved %S prefix"
          name Atomic_file.temp_prefix)
 
-(* ───── Canonicalization and file reading ───── *)
+(* Canonicalization and file reading *)
 
 let canonicalize s = Text.ensure_trailing_newline (Text.normalize_newlines s)
 
@@ -84,7 +84,7 @@ let read_file path =
     ~finally:(fun () -> close_in_noerr ic)
     (fun () -> really_input_string ic (in_channel_length ic))
 
-(* ───── Scope resolution ───── *)
+(* Scope resolution *)
 
 let chop_extension name =
   try Filename.chop_extension name with Invalid_argument _ -> name
@@ -98,14 +98,14 @@ let baseline_dir t file =
       let base = chop_extension (Filename.basename abs) in
       Ok (dir ^ "/__snapshots__/" ^ base)
 
-(* ───── Checking ───── *)
+(* Checking *)
 
 let fail ?loc ~name ~path state =
   raise (Failure.Check_failure (Failure.snapshot ?loc ~name ~path state))
 
 (* Accept [actual] for [entry]: write it atomically unless an equal
    baseline already exists, and record the write. Checking never reaches
-   this function; only update-mode acceptance does (RFC Law 1). *)
+   this function; only update-mode acceptance does. *)
 let accept t entry actual =
   let existed = Path_ops.file_exists entry.path in
   let unchanged =
@@ -142,7 +142,7 @@ let check t ?loc ~test ~scope ~name actual =
               (* Recheck iff both sites are known and equal (loops, [cases]
                  families, retries), or a site is unknown and the same test
                  is checking; Duplicate otherwise — [owner] catches every
-                 cross-test duplicate without a surviving call frame (D4). *)
+                 cross-test duplicate without a surviving call frame. *)
               let duplicate =
                 match (entry.site, loc) with
                 | Some first, Some second -> not (Loc.equal first second)
@@ -178,11 +178,11 @@ let check t ?loc ~test ~scope ~name actual =
                   fail ?loc ~name ~path (Failure.Mismatch { expected; actual })
               end))
 
-(* ───── Acceptance report ───── *)
+(* Acceptance report *)
 
 let writes t = List.rev t.writes_rev
 
-(* ───── Orphans and pruning ───── *)
+(* Orphans and pruning *)
 
 let snap_suffix = ".snap"
 

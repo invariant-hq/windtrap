@@ -6,14 +6,14 @@
 (** The ordinary-OCaml half of [ppx_windtrap]: registration, expect-test
     semantics, corrections, and the inline-test-runner protocol.
 
-    The PPX is a location recorder and nothing more (Law 10): it rewrites
-    [let%test] / [module%test] / [let%expect_test] into calls to the
-    registration functions below, each [[%expect]] / [[%expect_exact]] node into
-    {!expect}, and [[%expect.output]] into {!expect_output} — passing source
-    locations, payload literals, and the ambient [Expect_test_config]'s [run]
-    and [sanitize]. Every semantic decision — matching, normalization, per-node
-    reachability, correction formatting, exit codes — lives here, in ordinary
-    OCaml, testable without the PPX.
+    The PPX is a location recorder and nothing more: it rewrites [let%test] /
+    [module%test] / [let%expect_test] into calls to the registration functions
+    below, each [[%expect]] / [[%expect_exact]] node into {!expect}, and
+    [[%expect.output]] into {!expect_output} — passing source locations, payload
+    literals, and the ambient [Expect_test_config]'s [run] and [sanitize]. Every
+    semantic decision — matching, normalization, per-node reachability,
+    correction formatting, exit codes — lives here, in ordinary OCaml, testable
+    without the PPX.
 
     {b Life cycle.} Module initializers run the registration calls as the test
     library loads, building a per-source-file registry. The generated runner
@@ -22,8 +22,7 @@
     [inline-test-runner <lib> -partition <file>] protocol, and {!exit} collects
     the selected partition, executes it through {!Runner.execute}, writes
     pending [.corrected] files into the sandbox, and terminates with the
-    promotion-protocol exit code (see {!inline_exit_code}; Law 11's scoped
-    deviation).
+    promotion-protocol exit code (see {!inline_exit_code}).
 
     {b Expect tests.} An expect test declares its [[%expect]] nodes up front
     ({!type:node}: per-node ids, exact payload locations, delimiters); the body
@@ -55,8 +54,7 @@
 
     Registration state is module-global by nature (module initializers run
     before any run record exists); everything {e per-run} — capture, results,
-    per-test expect state — lives in the run record and the per-test frames (Law
-    9). *)
+    per-test expect state — lives in the run record and the per-test frames. *)
 
 (** {1:locations Locations}
 
@@ -169,9 +167,9 @@ val add_expect_test :
     per-node reachability; everything a body raises — {!Failure.Check_failure},
     {!Failure.Skip_test}, {!Failure.Timeout}, fatal exceptions, and any other
     uncaught exception alike — propagates to the runner, and none of it is a
-    correction (Law 11): nodes reached before the exception still resolve, so
-    their corrections are recorded, but nothing is spliced at the trailing point
-    — a node inserted after a raising statement can never be reached on a future
+    correction: nodes reached before the exception still resolve, so their
+    corrections are recorded, but nothing is spliced at the trailing point — a
+    node inserted after a raising statement can never be reached on a future
     run, so such a correction could never converge under [dune promote]. The
     exception, its backtrace, and the test's captured output belong to the
     failure report. To pin an expected exception, catch and print it —
@@ -299,7 +297,7 @@ val exit : unit -> 'a
 
 val inline_exit_code : Runner.outcome -> int
 (** [inline_exit_code outcome] is the inline runner's exit code for [outcome] —
-    dune's promotion protocol, the scoped Law 11 deviation:
+    dune's promotion protocol, not the standalone runner's [0]/[1]/[2] contract:
 
     - [0] when the run passed, and also when nothing ran (an empty selection is
       an empty partition, not a filter typo);

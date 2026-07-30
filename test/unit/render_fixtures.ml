@@ -97,7 +97,7 @@ let body_teardown =
     Failure.with_phase Failure.Teardown (Failure.message "teardown exploded");
   ]
 
-(* ───── B-package fixtures (amendments B1/B12/B13) ─────
+(* B-package fixtures (amendments B1/B12/B13)
    Additions only: the values above feed byte-exact goldens. *)
 
 (* B1: same constructor, different message payloads — the message-diff case. *)

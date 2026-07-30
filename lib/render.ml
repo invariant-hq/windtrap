@@ -4,12 +4,12 @@
 
    The transcript layout (status lines, end-of-run failure blocks, slowest
    list) adapts windtrap v1's progress.ml, rebuilt over typed Failure
-   payloads and Diff data (RFC v3 Law 4).
+   payloads and Diff data — renderers project, never alter, run data.
   ---------------------------------------------------------------------------*)
 
 let spf = Printf.sprintf
 
-(* Layout constants — illustrative, not contract (RFC "The runner"). *)
+(* Layout constants — illustrative, not contract. *)
 let duration_column = 51
 let rule_width = 54
 let compact_row_width = 60 (* glyphs per compact row, v1's wrap *)
@@ -23,7 +23,7 @@ let seq_summary_threshold = 8 (* elements *)
 let seq_element_display = 40 (* code points, in the first-mismatch line *)
 let indent = "    "
 
-(* ───── Small helpers ───── *)
+(* Small helpers *)
 
 let rec take n = function
   | [] -> []
@@ -44,12 +44,12 @@ let property_case_desc ~examples ~case_index ~shrink_steps =
 let shell_quote s =
   "'" ^ String.concat "'\\''" (String.split_on_char '\'' s) ^ "'"
 
-(* ───── Command hints (D5 §1) ─────
+(* Command hints
 
    Every command hint completes the run's rerun spelling with CLI flags:
    the driver computes the invocation once at startup and threads it here —
    no print site hard-codes an invocation, so no hint can name a command
-   that would not re-run the suite (RFC Law 3). Under [`Mirrors] (the
+   that would not re-run the suite. Under [`Mirrors] (the
    inline runner, and the default) hints spell [WINDTRAP_*] environment
    prefixes to [dune runtest], the only interface that exists there. No
    color in any hint. *)
@@ -144,7 +144,7 @@ let source_line file n =
 (* Terminal surfaces print user-controlled names (test paths, suite names,
    fixture names) verbatim; a raw newline or control byte in one corrupts
    the layout — it splits the FAIL header, and the live tail's line-wise
-   erasure leaves residue (render/F-2). Escape C0 controls and DEL,
+   erasure leaves residue. Escape C0 controls and DEL,
    OCaml-style. ESC is left to the [ansi] policy: the sink strips escape
    sequences under [ansi:false] and passes them through under [ansi:true]
    (the documented payload contract). *)
@@ -166,7 +166,7 @@ let sanitize_name s =
     Buffer.contents buf
   end
 
-(* ───── Failure projections ───── *)
+(* Failure projections *)
 
 (* One line, no escape codes, bounded: headline material. Stripping comes
    first so truncation cannot leave a dangling partial sequence. *)
@@ -184,7 +184,7 @@ let headline (f : Failure.t) =
     | Failure.Equality
         { claim = Failure.Contains { needle; found_at; haystack_length; _ }; _ }
       -> (
-        (* The claim's own verdict, never a fake equality (D5 §2). *)
+        (* The claim's own verdict, never a fake equality. *)
         match found_at with
         | Some at ->
             spf "needle %s found at byte %d" (flat (spf "%S" needle)) at
@@ -200,7 +200,7 @@ let headline (f : Failure.t) =
         spf "expected exception %s, none raised" (flat e)
     | Failure.Raise { expected = None; actual = Some a; predicate; _ } ->
         (* [predicate] tells a raises_match rejection from an exception
-           nobody expected (D5 §5). *)
+           nobody expected. *)
         if predicate then
           spf "exception did not satisfy the predicate: %s" (flat a)
         else spf "uncaught exception: %s" (flat a)
@@ -218,7 +218,7 @@ let headline (f : Failure.t) =
         { rendered; case_index; shrink_steps; timed_out; examples; _ } ->
         let desc = property_case_desc ~examples ~case_index ~shrink_steps in
         let desc =
-          (* The shrink search hit the whole-test budget (D2): the mark
+          (* The shrink search hit the whole-test budget: the mark
              travels into the one-line summary too. *)
           match timed_out with
           | Some _ when not examples -> desc ^ ", timed out"
@@ -266,7 +266,7 @@ let marker_line s spans =
     Some (Buffer.contents buf)
   end
 
-(* Trailing whitespace on a changed hunk line, made visible (D5 §4): one
+(* Trailing whitespace on a changed hunk line, made visible: one
    [·] (U+00B7) per space and one [→] (U+2192) per tab, on both the ansi
    and plain paths — a color-only highlight would vanish on exactly the
    no-color sinks (pipes, JUnit bodies, annotations) where the difference
@@ -317,7 +317,7 @@ let pp_hunks ~ansi put ~ind hunks =
       ^ st `Faint
           (spf "\u{2026} (+%d more diff lines)" (total - max_diff_lines)))
 
-(* The element-grain summary line for two rendered sequences (amendment B7):
+(* The element-grain summary line for two rendered sequences:
    worth a line only from [seq_summary_threshold] elements up — below that
    the ordinary diff already reads at a glance. *)
 let seq_summary ~expected ~actual =
@@ -488,7 +488,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         actual = excerpt_text;
         _;
       } ->
-      (* Claim-aware containment (D5 §2): the block derives from the claim's
+      (* Claim-aware containment: the block derives from the claim's
          fields — needle, verdict, byte offset, marked occurrence — never a
          fake equality diff. [actual] is the stored haystack excerpt; labels
          pad to the [expected]/[actual] 10-column gutter. *)
@@ -566,7 +566,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                 haystack_length))
   | Failure.Equality
       { claim = Failure.Satisfies | Failure.Matches; expected; actual; _ } ->
-      (* Never diff or refine the claim sentence against the value (D5 §2):
+      (* Never diff or refine the claim sentence against the value:
          [expected] is a description, not a rendering. *)
       put_ind (st `Faint "expected" ^ "  " ^ expected);
       if String.contains actual '\n' then begin
@@ -590,7 +590,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       | Some e, Some a -> (
           match (same_constructor, expected_message, actual_message) with
           | true, Some em, Some am when not (String.equal em am) ->
-              (* Right constructor, wrong payload (amendment B1): diff the
+              (* Right constructor, wrong payload: diff the
                  messages instead of repeating the constructor twice. The
                  constructor's name is the rendering's prefix — Printexc
                  renders string-carrying exceptions as [Name("payload")]. *)
@@ -609,7 +609,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
           put_ind "but no exception was raised"
       | None, Some a ->
           (* [predicate] tells a raises_match rejection from a test body's
-             escape (D5 §5) — the two demand different reactions. *)
+             escape — the two demand different reactions. *)
           put_ind
             (if predicate then
                "raised exception does not satisfy the predicate:"
@@ -676,7 +676,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         put_block rendered
       end
       else put_ind (spf "counterexample (%s): %s" desc rendered);
-      (* The shrink search hit the whole-test budget (D2): the reported
+      (* The shrink search hit the whole-test budget: the reported
          counterexample is the best found within it. [%g] matches the
          runner's [timed out after %gs] phrase so timeout greps catch
          both. *)
@@ -690,7 +690,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       | None -> ());
       (match inner with
       | Some i ->
-          (* A tail-called check inside a law honestly has no site (D4): a
+          (* A tail-called check inside a law honestly has no site: a
              dangling "at:" with no location line would misread. *)
           put_ind
             (match i.Failure.loc with
@@ -709,14 +709,14 @@ let pp_failure ~ansi ?(excerpt = false) ?filter ?(invocation = `Mirrors) ppf f =
   pp_gen ~ansi ~excerpt ~filter ~commands:true ~invocation ~ind:indent ppf f
 
 (* Subtest entries are identified by their label riding the [msg] slot
-   (amendment B13, Run.subtest): the test's leaf name, the frozen path
+   (Run.subtest): the test's leaf name, the frozen path
    separator, then the sub-case path. *)
 let is_subtest_failure ~path (f : Failure.t) =
   match (List.rev path, f.Failure.msg) with
   | leaf :: _, Some msg -> String.starts_with ~prefix:(leaf ^ " \u{203a} ") msg
   | _, _ -> false
 
-(* ───── Renderer state ───── *)
+(* Renderer state *)
 
 type t = {
   out : Format.formatter;
@@ -727,7 +727,7 @@ type t = {
   tail_lines : int;
   slow_threshold : float; (* seconds; 0. disables the slow machinery *)
   invocation : invocation;
-      (* the hint context (D5 §1): every acceptance, replay, rerun, and
+      (* the hint context: every acceptance, replay, rerun, and
          prune line derives from the one value the driver computed at
          startup. *)
   row : Buffer.t; (* styled glyphs of the current compact row *)
@@ -797,7 +797,7 @@ let clear_live t =
     t.live_pending <- false
   end
 
-(* ───── The transcript ───── *)
+(* The transcript *)
 
 (* The header line, printed by [header] under [`Verbose] and by the first
    noteworthy event's flush under [`Compact] — from the recorded fields
@@ -951,7 +951,7 @@ let note t line =
 
 (* The label-distribution table (one producer, two placements): the failure
    blocks always show it; a passing property's prints under [`Verbose] —
-   the calibration view for collect/classify (D5 §7). *)
+   the calibration view for collect/classify. *)
 let pp_prop_stats t (s : Property.stats) =
   if s.collected <> [] then begin
     put t
@@ -982,7 +982,7 @@ let pp_prop_stats t (s : Property.stats) =
       s.coverage
   end
 
-(* Record-driven classification (amendment B12): a failing result that did
+(* Record-driven classification: a failing result that did
    not count is an excused expected failure — the runner's unexpected-pass
    synthesis arrives counted, so no failure message is ever inspected. *)
 let counted_failure (r : Run.result) =
@@ -1006,7 +1006,7 @@ let verbose_result t (r : Run.result) =
       | Some s when s.Property.collected <> [] -> pp_prop_stats t s
       | _ -> ())
   | Failure.Fail _ when not r.counted ->
-      (* An expected failure (amendment B12): informational and dim. *)
+      (* An expected failure: informational and dim. *)
       let suffix =
         match r.xfail with
         | Some { Test_tree.reason = Some reason } ->
@@ -1055,7 +1055,7 @@ let result t (r : Run.result) =
       verbose_result t r;
       Pp.flush t.out ()
 
-(* ───── End of run ───── *)
+(* End of run *)
 
 let labeled_rule t label =
   let w = min t.columns rule_width in
@@ -1115,7 +1115,7 @@ let pp_block t (r : Run.result) =
         failures;
       (* The test drew from [srandom] and failed: print the replay line —
          the root token is in the log exactly when a stochastic failure
-         needs replaying (D5 §6). A property failure already prints its own
+         needs replaying. A property failure already prints its own
          replay line from the same root; never two per block. *)
       (match r.srandom_root with
       | Some root
@@ -1232,7 +1232,7 @@ let slowest t results =
             timed))
   end
 
-(* ───── Coverage (RFC Law 12: run data, rendered late) ─────
+(* Coverage (run data, rendered late)
 
    The one place the coverage layout lives: [finish]'s inline line, the
    [WINDTRAP_COVERAGE]/[--coverage] report and full modes, and — through
@@ -1383,7 +1383,7 @@ let finish t ?coverage ~results ~duration () =
       ~excused:(List.length excused_results)
       ~subtests ~duration;
     (if failed > 0 then
-       (* The rerun hint derives from the stored invocation (D5 §1): under
+       (* The rerun hint derives from the stored invocation: under
           [`Mirrors] no hint prints — [--failed] has no environment mirror,
           and a hint that cannot be followed is worse than none. *)
        match t.invocation with
@@ -1393,7 +1393,7 @@ let finish t ?coverage ~results ~duration () =
     if t.mode = `Verbose then slowest t results
   end;
   (* The sibling fact rides the summary record (the driver read it at
-     snapshot time, aggregation design E6): siblings mean this number is
+     snapshot time): siblings mean this number is
      one executable's view of the code it links, and the project number
      is the merge — the line says so instead of posing as the total. *)
   (match coverage with

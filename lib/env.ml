@@ -8,7 +8,7 @@
    WINDTRAP_ALLOW_FOCUS / WINDTRAP_PRUNE / WINDTRAP_COVERAGE variables and
    the [force] update mode. *)
 
-(* ───── Parsing helpers ───── *)
+(* Parsing helpers *)
 
 (* An empty value counts as unset: it lets callers clear a variable in
    environments without unsetenv, and `VAR= cmd` reads as "not set". *)
@@ -35,7 +35,7 @@ let is_flagged name =
   | None -> false
   | Some s -> ( match parse_bool s with Some b -> b | None -> true)
 
-(* ───── Platform detection ───── *)
+(* Platform detection *)
 
 let inside_dune () = is_flagged "INSIDE_DUNE"
 let is_tty_stdout () = Unix.isatty Unix.stdout
@@ -46,7 +46,7 @@ let is_tty_stderr () = Unix.isatty Unix.stderr
 let term_dumb () =
   match get_raw "TERM" with Some "dumb" -> true | Some _ | None -> false
 
-(* ───── CI detection ───── *)
+(* CI detection *)
 
 type ci = Not_ci | Github_actions | Other_ci
 
@@ -58,7 +58,7 @@ let ci () =
 let in_ci () = ci () <> Not_ci
 let in_github_actions () = ci () = Github_actions
 
-(* ───── Color ───── *)
+(* Color *)
 
 type color_mode = Always | Never | Auto
 
@@ -85,7 +85,7 @@ let use_color_stderr () =
   resolve_color (color_mode ()) ~tty:(is_tty_stderr ())
     ~inside_dune:(inside_dune ()) ~term_dumb:(term_dumb ())
 
-(* ───── Run control ───── *)
+(* Run control *)
 
 let seed () = get_string "WINDTRAP_SEED"
 let filter () = get_string "WINDTRAP_FILTER"
@@ -120,7 +120,7 @@ let columns () =
 let tail_errors () = get_int "WINDTRAP_TAIL_ERRORS"
 let allow_focus () = is_truthy "WINDTRAP_ALLOW_FOCUS"
 
-(* ───── Snapshot control ───── *)
+(* Snapshot control *)
 
 type update = No_update | Update | Force_update
 
@@ -134,6 +134,6 @@ let update () =
 let prune () = is_truthy "WINDTRAP_PRUNE"
 let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 
-(* ───── Coverage ───── *)
+(* Coverage *)
 
 let coverage () = get_string "WINDTRAP_COVERAGE"

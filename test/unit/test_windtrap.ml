@@ -153,7 +153,7 @@ let failure_list = function
   | Some (Failure.Fail fs) -> fs
   | Some Failure.Pass | Some (Failure.Skip _) | None -> []
 
-(* ───── Ambient operations outside a run ───── *)
+(* Ambient operations outside a run *)
 
 let probe_fixture = fixture (fun () -> ())
 
@@ -200,7 +200,7 @@ let () =
       check "uncaught skip renders readably"
         (contains "why" (Printexc.to_string (Failure.Skip_test reason)))
 
-(* ───── Declaration surface ───── *)
+(* Declaration surface *)
 
 let () =
   let tree =
@@ -246,7 +246,7 @@ let () =
   check "slow pre-applies the slow tag" (Tag.mem Tag.slow (tags_of "big"));
   check "facade prop pre-applies the prop tag" (Tag.mem "prop" (tags_of "law"))
 
-(* ───── The verbs, end to end ───── *)
+(* The verbs, end to end *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -326,7 +326,7 @@ let () =
   check_int "all-skipped run exits 0" ~expected:0
     ~actual:outcome.Runner.exit_code
 
-(* ───── Brackets and fixtures ───── *)
+(* Brackets and fixtures *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -409,7 +409,7 @@ let () =
   check_int "release failure exits 1" ~expected:1
     ~actual:outcome.Runner.exit_code
 
-(* ───── Properties through the facade ───── *)
+(* Properties through the facade *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -496,7 +496,7 @@ let () =
         (contains "collect" rendered && contains "property" rendered)
   | _ -> check "collect outside a property fails the test" false
 
-(* ───── Captured output ───── *)
+(* Captured output *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -525,7 +525,7 @@ let () =
         (contains "--stream" message)
   | _ -> check "output () under --stream fails the test" false
 
-(* ───── Snapshots through the facade ───── *)
+(* Snapshots through the facade *)
 
 let with_project_root root f =
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
@@ -639,7 +639,7 @@ let () =
         (contains (Filename.concat "__snapshots__" "test_windtrap") path)
   | _ -> check "bracket snapshot accepted a baseline" false
 
-(* ───── Nested runs ───── *)
+(* Nested runs *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -652,7 +652,7 @@ let () =
         (contains "already active" rendered)
   | _ -> check "run inside a test body fails with a Raise payload" false
 
-(* ───── The B-package through the facade ─────
+(* The B-package through the facade
 
    Deep semantics live in test/check and test/structure; this block only
    proves the facade wiring: the new verbs raise their typed claims, the
@@ -735,7 +735,7 @@ let () =
     (List.mem "unexpected pass" outcome.Runner.failed_paths);
   check_int "b-package exit code" ~expected:1 ~actual:outcome.Runner.exit_code
 
-(* ───── B-package edges ─────
+(* B-package edges
 
    The corners the happy paths above do not reach: empty needles, a raising
    extractor, xfail composed with cases and with slow selection, scratch
@@ -886,7 +886,7 @@ let () =
       check "a filter does not perturb srandom" (first = third)
   | draws -> check_int "srandom draws" ~expected:3 ~actual:(List.length draws)
 
-(* ───── The exit guard, process level (D1) ───── *)
+(* The exit guard, process level (D1) *)
 
 (* The one implementation-behavior dependency of the exit guard: an
    exception raised by an [at_exit] function propagates out of
@@ -904,7 +904,7 @@ let () =
     check_contains "the test after the bomb still ran and failed"
       ~sub:"2 failed" transcript)
 
-(* ───── The run-entry guard reads the widened slot (D1) ───── *)
+(* The run-entry guard reads the widened slot (D1) *)
 
 let () =
   (* [run] refuses whenever the ambient slot is occupied — [Run.active],
@@ -927,7 +927,7 @@ let () =
   | exception _ ->
       check "run inside an active run raises Invalid_argument" false
 
-(* ───── The startup-computed invocation, process level (D5 §1) ───── *)
+(* The startup-computed invocation, process level (D5 §1) *)
 
 let () =
   if not Sys.win32 then (
@@ -953,7 +953,7 @@ let () =
     check "empty argv: no rerun hint (Mirrors has no --failed)"
       (not (contains "rerun failures only" mirrors)))
 
-(* ───── The xpass-string collision stays excused, process level (F4) ───── *)
+(* The xpass-string collision stays excused, process level (F4) *)
 
 let () =
   if not Sys.win32 then (
@@ -986,7 +986,7 @@ let () =
     check "collide verbose: summary counts one expected failure"
       (contains "1 expected failure in " verbose))
 
-(* ───── The focus warning, process level (testing/T3) ───── *)
+(* The focus warning, process level (testing/T3) *)
 
 let () =
   if not Sys.win32 then (
@@ -1008,6 +1008,6 @@ let () =
     let plain = spawn_focus_child "plain" in
     check "no focus, no warning" (not (contains "focus is active" plain)))
 
-(* ───── Summary ───── *)
+(* Summary *)
 
 let () = finish ()

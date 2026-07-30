@@ -10,7 +10,7 @@
  (modules pp)
  (libraries ppxlib ppx_windtrap))
 
-; ── Expansion goldens ──
+; Expansion goldens
 
 (rule
  (with-stdout-to
@@ -32,7 +32,7 @@
  (action
   (diff test_basic.expected test_basic.actual)))
 
-; ── Rejection diagnostics (mechanism (a) and misplacement errors) ──
+; Rejection diagnostics (mechanism (a) and misplacement errors)
 
 (rule
  (target reject_uncaught_exn.actual)
@@ -146,7 +146,7 @@
  (action
   (diff reject_pattern_attr.expected reject_pattern_attr.actual)))
 
-; ── Cookie drop modes (Jane Street protocol) ──
+; Cookie drop modes (Jane Street protocol)
 
 (rule
  (with-stdout-to

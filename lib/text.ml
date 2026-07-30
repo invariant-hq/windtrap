@@ -6,7 +6,7 @@
 (* Adapted from windtrap 0.1's lib/text.ml; [strip_ansi] and
    [ensure_trailing_newline] are new in v3. *)
 
-(* ───── Newlines ───── *)
+(* Newlines *)
 
 let normalize_newlines s =
   let len = String.length s in
@@ -37,7 +37,7 @@ let split_lines s =
   | "" :: rest -> List.rev rest
   | parts -> List.rev parts
 
-(* ───── UTF-8-aware operations ───── *)
+(* UTF-8-aware operations *)
 
 let length_utf8 s =
   let len = String.length s in
@@ -83,7 +83,7 @@ let truncate_bytes_utf8 max_bytes s =
     Printf.sprintf "%s... (truncated; %d bytes total)" (String.sub s 0 cut)
       (String.length s)
 
-(* ───── Search ───── *)
+(* Search *)
 
 (* Naive scan: patterns are assertion- and filter-sized. *)
 let first_occurrence ~pattern s =
@@ -101,7 +101,7 @@ let first_occurrence ~pattern s =
 
 let contains_substring ~pattern s = first_occurrence ~pattern s <> None
 
-(* ───── ANSI escapes ───── *)
+(* ANSI escapes *)
 
 let strip_ansi s =
   let len = String.length s in

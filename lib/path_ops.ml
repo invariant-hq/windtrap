@@ -10,7 +10,7 @@
 
 let file_exists path = try Sys.file_exists path with _ -> false
 
-(* ───── Project root ───── *)
+(* Project root *)
 
 let is_build_dir dir =
   String.starts_with ~prefix:"_build" (Filename.basename dir)
@@ -49,7 +49,7 @@ let project_root () =
 
 let default_log_dir () = Filename.concat (project_root ()) "_build/_tests"
 
-(* ───── Sandbox reconstruction ───── *)
+(* Sandbox reconstruction *)
 
 let normalize_sep s = String.map (fun c -> if c = '\\' then '/' else c) s
 
@@ -115,9 +115,9 @@ let reconstruct ~root file =
       Ok (anchor ^ "/" ^ String.concat "/" comps)
   | _ -> Error candidate
 
-(* ───── Display paths ───── *)
+(* Display paths *)
 
-(* Path shown in reports and command hints (D5 §8; ppx/F-6): build-sandbox
+(* Path shown in reports and command hints: build-sandbox
    and project-root prefixes stripped, then lexically normalized — interior
    ["."] and empty segments dropped ([".."] untouched), so the printed path
    is byte-equal across every producer of the line class, the library and
@@ -139,7 +139,7 @@ let display path =
       (String.length path - String.length prefix)
   else path
 
-(* ───── Path components ───── *)
+(* Path components *)
 
 (* Long names are truncated to 40 bytes plus a digest to stay within
    common filesystem limits while preserving uniqueness. *)
@@ -157,7 +157,7 @@ let sanitize_component s =
     let hash = Digest.to_hex (Digest.string out) in
     String.sub out 0 40 ^ "_" ^ hash
 
-(* ───── Filesystem helpers ───── *)
+(* Filesystem helpers *)
 
 let rec mkdir_p path =
   if path = "" || path = "." then ()

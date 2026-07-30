@@ -32,7 +32,7 @@ type 'a t = {
 
 exception Rejected
 
-(* ───── Printers ───── *)
+(* Printers *)
 
 let render_with pp value =
   try Format.asprintf "%a" pp value
@@ -77,7 +77,7 @@ let pp_quad pp_a pp_b pp_c pp_d ppf (a, b, c, d) =
   Format.fprintf ppf "@[<hov 1>(%a,@ %a,@ %a,@ %a)@]" pp_a a pp_b b pp_c c pp_d
     d
 
-(* ───── Shrink candidate sequences (donor: v1 prop/shrink.ml) ─────
+(* Shrink candidate sequences (adapted from windtrap v1's shrink module)
    Binary search toward a destination: emit [dest] first, then halve the
    remaining distance, converging on the sampled value without reaching
    it. Candidates stay between [dest] and the value, which is what keeps
@@ -130,7 +130,7 @@ let float_towards dest x () =
   in
   Seq.take 15 (steps dest) ()
 
-(* ───── Tree builders ───── *)
+(* Tree builders *)
 
 let rec tree_towards pp shrink x =
   Shrink_tree.make
@@ -177,7 +177,7 @@ let rec seq_list = function
 let label_trace name index inner =
   Label (Printf.sprintf "%s[%d]" name index, inner)
 
-(* ───── Provenance rendering ───── *)
+(* Provenance rendering *)
 
 let trace_budget = 200
 
@@ -253,7 +253,7 @@ let render_trace trace =
   (try sequence " " (flatten trace) with Exit -> Buffer.add_string buffer "…");
   Buffer.contents buffer
 
-(* ───── Numeric primitives ───── *)
+(* Numeric primitives *)
 
 let int =
   {
@@ -388,7 +388,7 @@ let float_range low high =
         (tree_towards pp_float (float_towards origin) value, state));
   }
 
-(* ───── Booleans, characters, strings ───── *)
+(* Booleans, characters, strings *)
 
 let bool =
   let leaf_false = { value = false; trace = draw_of pp_bool false } in
@@ -440,7 +440,7 @@ let char_range low high =
         (char_tree ~origin (low + Int64.to_int offset), state));
   }
 
-(* ───── Containers ───── *)
+(* Containers *)
 
 (* Combines element sample trees into a list sample tree; [structural]
    selects chunked structure shrinking (Shrink_tree.list) or element-wise
@@ -707,7 +707,7 @@ let quad a b c d =
           state ));
   }
 
-(* ───── Choice and structure ───── *)
+(* Choice and structure *)
 
 let constant value =
   {
@@ -810,7 +810,7 @@ let frequency weighted =
         (tree, state));
   }
 
-(* ───── Composition ───── *)
+(* Composition *)
 
 let map f gen =
   {
@@ -886,7 +886,7 @@ let ( let+ ) gen f = map f gen
 let ( and+ ) left right = pair left right
 let ( let* ) = bind
 
-(* ───── Engine interface ───── *)
+(* Engine interface *)
 
 let sample gen state = fst (gen.run state)
 let value s = s.value

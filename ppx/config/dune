@@ -1,5 +1,5 @@
-; The ambient Expect_test_config, as a top-level module (RFC compat
-; mechanism (b), matching ppx_expect): code generated for
+; The ambient Expect_test_config, as a top-level module (matching
+; ppx_expect): code generated for
 ; let%expect_test references the unqualified name Expect_test_config,
 ; so this library — pulled in automatically via the rewriter's
 ; ppx_runtime_libraries — must expose exactly that module. A user

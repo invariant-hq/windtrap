@@ -50,7 +50,7 @@ let contains needle haystack =
   in
   loop 0
 
-(* ───── Scratch and process helpers ───── *)
+(* Scratch and process helpers *)
 
 (* Hermeticity: absolute paths throughout, so the test behaves the same
    under dune's sandbox and by hand; scratch lives in a private temp
@@ -127,7 +127,7 @@ let capture ?(env = []) ?cwd exe args =
   let code = Sys.command command in
   (code, read_file out, read_file err)
 
-(* ───── The Law-12 budget (grep-based) ───── *)
+(* The Law-12 budget (grep-based) *)
 
 (* Law 12: core windtrap's entire coupling to the coverage runtime is the
    run-record snapshot plus its rendering, <= ~27 lines. Counted as the
@@ -163,7 +163,7 @@ let law12_budget =
        mentions)
     (mentions > 0 && mentions <= 27)
 
-(* ───── The inline line (seam end to end) ───── *)
+(* The inline line (seam end to end) *)
 
 let dump_counter = ref 0
 
@@ -235,7 +235,7 @@ let inline_line =
   check_contains "the report still renders after failures"
     ~needle:"coverage: 90.0% (9/10 points)" out
 
-(* ───── Report and full modes over a real source ───── *)
+(* Report and full modes over a real source *)
 
 (* Six lines of nine characters: block [i] is line [i + 1]'s text. Four
    of six blocks visited leaves lines 5-6 uncovered. *)
@@ -352,7 +352,7 @@ let report_full_modes =
   check_int "--help exits 0" ~expected:0 ~actual:code;
   check_contains "--help lists the coverage flag" ~needle:"--coverage MODE" out
 
-(* ───── A fake merged project for `windtrap coverage` ───── *)
+(* A fake merged project for `windtrap coverage` *)
 
 let foo_points =
   [|
@@ -402,7 +402,7 @@ let proj =
 let coverage_cmd ?cwd args =
   capture ~env:[ "WINDTRAP_COLOR=never" ] ?cwd windtrap_exe ("coverage" :: args)
 
-(* ───── The reporting command: merge, table, walk-up ───── *)
+(* The reporting command: merge, table, walk-up *)
 
 let reporting_command =
   test "the reporting command: merge, table, walk-up" @@ fun () ->
@@ -441,7 +441,7 @@ let reporting_command =
   check_contains "--show-uncovered shows the uncovered source"
     ~needle:"let c = 3" out
 
-(* ───── --min matrix ───── *)
+(* --min matrix *)
 
 let min_matrix =
   test "--min gates the merged percentage" @@ fun () ->
@@ -464,7 +464,7 @@ let min_matrix =
   check_contains "an out-of-range --min is a usage error"
     ~needle:"expected a percentage" err
 
-(* ───── --json ───── *)
+(* --json *)
 
 (* Minimal well-formedness walk: the artifact must parse as one JSON
    value with balanced structure — shape drift or a stray comma is a
@@ -585,7 +585,7 @@ let json_shape =
   check "--json --min keeps stdout pure JSON" (json_well_formed out);
   check_contains "--json --min moves the verdict to stderr" ~needle:"FAILED" err
 
-(* ───── Loud failures ───── *)
+(* Loud failures *)
 
 let loud_failures =
   test "failures are loud: no data, corrupt data, usage errors" @@ fun () ->
@@ -649,7 +649,7 @@ let loud_failures =
   check_int "windtrap --help exits 0" ~expected:0 ~actual:code;
   check_contains "windtrap --help lists the subcommand" ~needle:"coverage" out
 
-(* ───── --min boundaries ───── *)
+(* --min boundaries *)
 
 let min_boundaries =
   test "--min boundaries and spellings" @@ fun () ->
@@ -722,7 +722,7 @@ let min_boundaries =
   check_contains "the ok verdict prints the exact threshold too"
     ~needle:"minimum 72.22%: ok" out
 
-(* ───── Discovery and merge robustness ───── *)
+(* Discovery and merge robustness *)
 
 let discovery_robustness =
   test "discovery and merge robustness" @@ fun () ->
@@ -777,7 +777,7 @@ let discovery_robustness =
     ~needle:"coverage: 60.0% (3/5 points)" out;
   check_absent "the planted v1 file is never read" ~needle:"junk.coverage" err
 
-(* ───── Explicit PATH arguments are a contract (qa-jul29 F-3) ───── *)
+(* Explicit PATH arguments are a contract (qa-jul29 F-3) *)
 
 let explicit_path_contract =
   test "explicit PATH arguments are loud when invalid" @@ fun () ->
@@ -820,7 +820,7 @@ let explicit_path_contract =
   check_contains "an empty explicit directory is a no-data report"
     ~needle:"no .coverage files found" err
 
-(* ───── The staleness pass: orphaned and outdated dumps ───── *)
+(* The staleness pass: orphaned and outdated dumps *)
 
 (* The holes the @cover alias cannot see (aggregation design, E5): a
    dump whose executable was deleted (orphan — silently inflates the
@@ -957,7 +957,7 @@ let staleness_pass =
   check_contains "a malformed --stale names the vocabulary"
     ~needle:"include, exclude or fail" err
 
-(* ───── The inline line's sibling hint (aggregation design, E6) ───── *)
+(* The inline line's sibling hint (aggregation design, E6) *)
 
 let sibling_hint =
   test "the inline line's sibling hint" @@ fun () ->
@@ -1006,7 +1006,7 @@ let sibling_hint =
     ~needle:"(9/10 points, this executable) \u{00b7} project: dune build @cover"
     out
 
-(* ───── Raise attribution end to end (Law 14 as amended) ───── *)
+(* Raise attribution end to end (Law 14 as amended) *)
 
 (* The one genuinely instrumented path in this test: raise_child drives
    the covcli_fixture library - instrumented by the real PPX - through a
@@ -1070,7 +1070,7 @@ let raise_attribution =
                (List.length reports))
             false)
 
-(* ───── Law 12/13 rails: JUnit and uninstrumented modes ───── *)
+(* Law 12/13 rails: JUnit and uninstrumented modes *)
 
 let junit_rails =
   test "Law 12/13 rails: JUnit and uninstrumented modes" @@ fun () ->
@@ -1109,7 +1109,7 @@ let junit_rails =
   check_absent "full mode without instrumentation renders nothing"
     ~needle:"coverage:" out
 
-(* ───── The suite ───── *)
+(* The suite *)
 
 let () =
   run "coverage_cli"

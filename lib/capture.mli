@@ -8,7 +8,7 @@
     A {!t} value holds one run's capture state: the log-file layout, the run's
     identity inside the log directory, and the byte cursor that {!output}
     advances. The runner owns the value and threads it explicitly; this module
-    keeps no global state (Law 9).
+    keeps no global state.
 
     Capture is fd-level: {!with_capture} redirects file descriptors 1 and 2 with
     [dup2], so writes that bypass OCaml channels — C stubs, subprocesses
@@ -34,10 +34,10 @@
 
     Reports are bounded, files are not: the capture file holds the complete
     output, and {!output_tail} reads back only a bounded suffix as
-    {!type:Failure.tail} data (Law 5: a failing test's captured output appears
-    in its report, bounded, with the full-log path). {!type:limits} is also the
-    seam where file-level prefix + tail bounding would land — a deliberately
-    deferred extension. *)
+    {!type:Failure.tail} data — a failing test's captured output appears in its
+    report, bounded, with the full-log path. {!type:limits} is also the seam
+    where file-level prefix + tail bounding would land — a deliberately deferred
+    extension. *)
 
 (** {1:limits Retention limits} *)
 

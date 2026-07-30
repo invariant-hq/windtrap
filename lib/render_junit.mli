@@ -10,7 +10,7 @@
     [testcase] per result in execution order carrying its time; failures as
     [failure] elements whose text is the unstyled {!Render.pp_failure} block,
     replay and acceptance commands included; skips as [skipped] elements; a
-    failing test's captured tail as [system-out] (Law 5).
+    failing test's captured tail as [system-out].
 
     Two run features have no native JUnit form and map as follows:
 
@@ -31,8 +31,8 @@
       tail; with only subtest failures it carries no [failure] element of its
       own.
 
-    The renderer owns its transport's validity (Law 4 commentary): every emitted
-    field — names, messages, failure text, captured output — is ANSI-stripped
+    The renderer owns its transport's validity: every emitted field — names,
+    messages, failure text, captured output — is ANSI-stripped
     ({!Text.strip_ansi}), reduced to the XML 1.0 character range (bytes outside
     it, malformed UTF-8 included, become U+FFFD), and XML-escaped. No payload
     can make the document malformed.

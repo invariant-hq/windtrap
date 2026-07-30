@@ -38,7 +38,7 @@ let occurrences_of ~sub s =
 let check_contains name ~sub s = Windtrap.contains ~msg:name ~sub s
 let check_absent name ~sub s = not_contains ~msg:name ~sub s
 
-(* ───── Drivers ───── *)
+(* Drivers *)
 
 let with_renderer ?(ansi = false) ?mode ?live ?columns ?tail_lines
     ?slow_threshold ?invocation fn =
@@ -71,7 +71,7 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
-(* ───── The golden transcripts ─────
+(* The golden transcripts
 
    Reviewed against the RFC "The runner" transcript and the 0.2.0 output
    spec: per-test progress (one glyph in compact, one line with timing in
@@ -415,7 +415,7 @@ let test_no_tests () =
   in
   check_string "finish: empty run" ~expected:"no tests ran.\n" ~actual:t
 
-(* ───── The compact glyph row ───── *)
+(* The compact glyph row *)
 
 let test_glyph_vocabulary () =
   (* A counted failure first flushes the deferred transcript, so the
@@ -580,7 +580,7 @@ let test_note () =
   check_contains "note: the erasable notice is erased before the one-liner"
     ~sub:"releasing db\027[0m\r\027[2Ks: \027[32m1 passed" live
 
-(* ───── The noteworthy rule ───── *)
+(* The noteworthy rule *)
 
 let test_compact_green_one_liner () =
   let passes = [ Fixtures.result [ "a" ] Failure.Pass ] in
@@ -793,7 +793,7 @@ let test_verbose_slow_warnings () =
   in
   check_absent "verbose: slow-tagged tests warn nowhere" ~sub:"slow: " tagged
 
-(* ───── Failure projections ───── *)
+(* Failure projections *)
 
 let test_headline () =
   let h f = Render.headline f in
@@ -1046,7 +1046,7 @@ let test_excerpt () =
     ~sub:"does_not_exist.ml:2\n    expected"
     (failure_block ~excerpt:true gone)
 
-(* ───── Captured tail ───── *)
+(* Captured tail *)
 
 let tail_block ?tail_lines tail =
   let result =
@@ -1073,7 +1073,7 @@ let test_tail () =
     ~sub:"── captured output (last 1 line, 512 earlier bytes omitted) ──"
     (tail_block dropped)
 
-(* ───── Sequence summaries (amendment B7) ───── *)
+(* Sequence summaries (amendment B7) *)
 
 let render_testable w v = Testable.to_string w v
 
@@ -1206,7 +1206,7 @@ let test_sequence_summary_bounded_elements () =
     ~sub:("actual \"" ^ String.make 38 'x' ^ "...")
     b
 
-(* ───── Exception message diffs (amendment B1) ───── *)
+(* Exception message diffs (amendment B1) *)
 
 let test_raise_message_diff () =
   let b = failure_block Fixtures.raise_message_failure in
@@ -1249,7 +1249,7 @@ let test_raise_message_diff_guards () =
       \      Invalid_argument(\"nope\")"
     (failure_block predicate_miss)
 
-(* ───── Expected failures (amendment B12) ───── *)
+(* Expected failures (amendment B12) *)
 
 let test_xfail_line () =
   let line =
@@ -1364,7 +1364,7 @@ let test_xpass_is_loud () =
   check_contains "unexpected pass: reason in the failure block"
     ~sub:"expected to fail (issue #42), but the test passed" t
 
-(* ───── Subtest failures (amendment B13) ───── *)
+(* Subtest failures (amendment B13) *)
 
 let test_subtest_projection () =
   check "subtest entries recognized by their label"
@@ -1408,7 +1408,7 @@ let test_subtest_rendering () =
   check_contains "summary subtest count is singular"
     ~sub:"1 failed (1 subtest failure) in 0.1s." one
 
-(* ───── Property stats ───── *)
+(* Property stats *)
 
 let test_prop_stats () =
   let stats =
@@ -1443,7 +1443,7 @@ let test_prop_stats () =
   check_contains "prop stats: unsatisfied coverage"
     ~sub:"collision  4.0% (required 5.0%) — unsatisfied" b
 
-(* ───── Claim-aware containment (D5 §2) ───── *)
+(* Claim-aware containment (D5 §2) *)
 
 let not_contains_failure =
   Failure.containment ~found_at:10 ~expected:{|string not containing "secret"|}
@@ -1553,7 +1553,7 @@ let test_satisfies_no_refinement () =
   in
   check_absent "matches: no refinement either" ~sub:"~" matches
 
-(* ───── Trailing whitespace in hunks (D5 §4) ───── *)
+(* Trailing whitespace in hunks (D5 §4) *)
 
 let test_trailing_whitespace_hunks () =
   let b =
@@ -1594,7 +1594,7 @@ let test_trailing_whitespace_hunks () =
   check_contains "snapshot diffs visualize trailing whitespace too"
     ~sub:"- a\u{00B7}\n" snap
 
-(* ───── Uncaught exceptions (D5 §5) ───── *)
+(* Uncaught exceptions (D5 §5) *)
 
 let test_uncaught_wording () =
   let b = failure_block (Failure.raised ~actual:"Not_found" ()) in
@@ -1622,7 +1622,7 @@ let test_uncaught_wording () =
     ~sub:"expected an exception, but none was raised"
     (failure_block (Failure.raised ()))
 
-(* ───── Timed-out shrink searches (D2) ───── *)
+(* Timed-out shrink searches (D2) *)
 
 let test_timed_out_marker () =
   let f =
@@ -1644,7 +1644,7 @@ let test_timed_out_marker () =
   check_absent "no headline mark without a timeout" ~sub:"timed out"
     (Render.headline Fixtures.prop_failure)
 
-(* ───── Inner failures without a location (D4) ───── *)
+(* Inner failures without a location (D4) *)
 
 let test_inner_label_without_location () =
   let inner_no_loc = Failure.equality ~expected:"true" ~actual:"false" () in
@@ -1660,7 +1660,7 @@ let test_inner_label_without_location () =
   check_contains "a located inner failure keeps (at:)" ~sub:"which failed at:"
     located
 
-(* ───── Command hints per invocation (D5 §1) ───── *)
+(* Command hints per invocation (D5 §1) *)
 
 let test_hints_per_invocation () =
   let exe = `Exe "./_build/default/qa/x/t.exe" in
@@ -1713,7 +1713,7 @@ let test_rerun_hint_per_invocation () =
   in
   check_absent "no rerun hint on a green run" ~sub:"rerun failures only" green
 
-(* ───── The srandom replay line (D5 §6) ───── *)
+(* The srandom replay line (D5 §6) *)
 
 let test_srandom_replay_line () =
   let entry =
@@ -1770,7 +1770,7 @@ let test_srandom_replay_line () =
   in
   check_absent "no replay line without an srandom draw" ~sub:"replay:" plain
 
-(* ───── Verbose label distributions (D5 §7) ───── *)
+(* Verbose label distributions (D5 §7) *)
 
 let test_verbose_pass_labels () =
   let stats =
@@ -1818,7 +1818,7 @@ let test_verbose_pass_labels () =
   in
   check_absent "verbose: XFAIL lines print no table" ~sub:"labels (" excused
 
-(* ───── Name sanitization on terminal surfaces (render/F-2) ───── *)
+(* Name sanitization on terminal surfaces (render/F-2) *)
 
 let test_name_sanitization () =
   let hostile = [ "first\nhalf" ] in
@@ -1878,7 +1878,7 @@ let test_name_sanitization () =
   check_string "notes escape their fixture name" ~expected:"releasing d\\nb\n"
     ~actual:note
 
-(* ───── Source excerpts resolve against the project root (render/F-1) ───── *)
+(* Source excerpts resolve against the project root (render/F-1) *)
 
 let test_excerpt_project_root () =
   (* The recorded location is project-root-relative, exactly as __POS__
@@ -1895,7 +1895,7 @@ let test_excerpt_project_root () =
     ~sub:"1 \u{2502} (*---"
     (failure_block ~excerpt:true f)
 
-(* ───── Tree-wide summary dialect ─────
+(* Tree-wide summary dialect
 
    The meta harness (test/unit/harness.ml) prints its one-liner by hand;
    this pins its bytes to the renderer's with color forced: the same

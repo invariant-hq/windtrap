@@ -8,7 +8,7 @@ type t = { file : string; line : int; column : int }
 
 let of_pos (file, line, column, _end_column) = { file; line; column }
 
-(* ───── Backtrace-derived capture (provisional) ───── *)
+(* Backtrace-derived capture (provisional) *)
 
 (* Slots are classified by the compilation unit of their defname: the
    segment before the first '.' of [Printexc.Slot.name]. A wrapped
@@ -94,7 +94,7 @@ let capture () =
 let resolve ?pos () =
   match pos with Some p -> Some (of_pos p) | None -> capture ()
 
-(* ───── Observers ───── *)
+(* Observers *)
 
 let pp ppf loc = Format.fprintf ppf "%s:%d" loc.file loc.line
 let to_string loc = Format.asprintf "%a" pp loc

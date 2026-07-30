@@ -39,7 +39,7 @@ type t =
       xfail : xfail option;
     }
 
-(* ───── Declaration ───── *)
+(* Declaration *)
 
 let check_timeout = function
   | None -> ()
@@ -136,13 +136,13 @@ let cases ?pos ?(tags = []) ?timeout ?(retries = 0) ?name:name_of base inputs fn
       xfail = None;
     }
 
-(* ───── Expected failures (amendment B12) ───── *)
+(* Expected failures *)
 
 let xfail ?reason = function
   | Test t -> Test { t with xfail = Some { reason } }
   | Group g -> Group { g with xfail = Some { reason } }
 
-(* ───── Focus ───── *)
+(* Focus *)
 
 let rec node_has_focus = function
   | Test { focused; _ } -> focused
@@ -160,7 +160,7 @@ let focus_sites tests =
   in
   List.rev (List.fold_left node [] tests)
 
-(* ───── Flattening ───── *)
+(* Flattening *)
 
 type case = {
   path : string list;

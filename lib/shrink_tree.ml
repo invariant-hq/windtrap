@@ -3,8 +3,7 @@
   SPDX-License-Identifier: ISC
 
   Lazy rose trees for integrated shrinking (the QCheck2/Hedgehog design),
-  with memoized children and a power-of-two chunked list shrink. Adapted
-  from windtrap-next's shrink_tree.ml.
+  with memoized children and a power-of-two chunked list shrink.
   --------------------------------------------------------------------------*)
 
 type 'a t = { root : 'a; children : 'a t Seq.t }

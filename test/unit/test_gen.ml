@@ -81,7 +81,7 @@ let no_children tree =
   | Seq.Nil -> true
   | Seq.Cons _ -> false
 
-(* ───── Determinism ───── *)
+(* Determinism *)
 
 let same_seed_same_value_and_render () =
   let against : (string * (unit -> string * string)) list =
@@ -116,7 +116,7 @@ let different_indexes_vary () =
     "expected variety across indexes, got %d distinct of 20"
     (List.length distinct)
 
-(* ───── Integer generators ───── *)
+(* Integer generators *)
 
 let int_shrinks_to_zero () =
   let tree = find_sample Gen.int (fun v -> v <> 0) in
@@ -200,7 +200,7 @@ let int64_shrinks_to_zero () =
   let minimum, _ = minimize (fun _ -> true) tree in
   check (Int64.equal minimum 0L) "int64 minimized to %Ld" minimum
 
-(* ───── Float generators ───── *)
+(* Float generators *)
 
 let float_is_finite () =
   List.iter
@@ -253,7 +253,7 @@ let float_range_invalid_raises_at_sample_time () =
       | _ -> failf "float_range (%s) sampled successfully" name)
     cases
 
-(* ───── Booleans, characters, strings ───── *)
+(* Booleans, characters, strings *)
 
 let bool_shrinks_true_to_false () =
   let values = samples Gen.bool 100 in
@@ -387,7 +387,7 @@ let bytes_of_respects_size_and_character_generator () =
   let rendered = Gen.render gen (Shrink_tree.root tree) in
   check (starts_with "Bytes.of_string" rendered) "bytes_of rendered %S" rendered
 
-(* ───── Containers ───── *)
+(* Containers *)
 
 let list_shrinks_structurally () =
   let gen = Gen.(list int) in
@@ -484,7 +484,7 @@ let triple_and_quad_minimize_to_zeroes () =
   let minimum, _ = minimize (fun _ -> true) quad_tree in
   check (minimum = (0, 0, 0, 0)) "quad minimized elsewhere"
 
-(* ───── Choice and structure ───── *)
+(* Choice and structure *)
 
 let constant_is_a_leaf_and_asks_for_a_printer () =
   let gen = Gen.constant 42 in
@@ -649,7 +649,7 @@ let such_that_exhaustion_is_a_discard () =
   | exception Invalid_argument _ -> ()
   | _ -> failf "such_that ~max_tries:0 sampled successfully"
 
-(* ───── Composition and provenance ───── *)
+(* Composition and provenance *)
 
 let map_provenance_shows_the_underlying_draw () =
   let gen = Gen.map succ Gen.int in
@@ -779,7 +779,7 @@ let shape_provenance_matches_the_rfc_form () =
     "with_pp shape rendered %S"
     (Gen.render printed (Shrink_tree.root tree))
 
-(* ───── Printing totality ───── *)
+(* Printing totality *)
 
 let render_is_total_over_shrink_trees () =
   let check_gen : type a. string -> a Gen.t -> unit =
@@ -838,7 +838,7 @@ let render_value_reports_printer_presence () =
     (Gen.render_value (Gen.map succ Gen.int) 3 = None)
     "map kept a printer it cannot have"
 
-(* ───── Adversarial additions ───── *)
+(* Adversarial additions *)
 
 (* [find_sample] for generators whose sampling can legitimately discard. *)
 let find_sample_skipping_discards ?(max_index = 10_000) gen accept =

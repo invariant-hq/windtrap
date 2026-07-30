@@ -1,5 +1,4 @@
-; The expression-grade coverage instrumenter (RFC Laws 13-15; Law 14 as
-; amended 2026-07-28). Exposed as
+; The expression-grade coverage instrumenter. Exposed as
 ; ppx_windtrap's instrumentation backend (the (instrumentation.backend)
 ; stanza on the ppx_windtrap library names this rewriter); usable
 ; directly with (preprocess (pps ppx_windtrap.coverage)) too, which the

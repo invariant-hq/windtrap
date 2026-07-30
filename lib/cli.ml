@@ -7,7 +7,7 @@
    table that generates parsing, --help, and the env-mirror listing.
   ---------------------------------------------------------------------------*)
 
-(* ───── Parsed flags ───── *)
+(* Parsed flags *)
 
 type parsed = {
   filter : string option;
@@ -62,7 +62,7 @@ let empty =
     version = false;
   }
 
-(* ───── Errors ───── *)
+(* Errors *)
 
 type error =
   | Unknown_flag of string
@@ -78,7 +78,7 @@ let error_message = function
   | Extra_positional { filter; extra } ->
       Pp.str "unexpected argument '%s': the filter is already '%s'" extra filter
 
-(* ───── The flag table ───── *)
+(* The flag table *)
 
 type arg =
   | Flag of (parsed -> parsed)
@@ -420,7 +420,7 @@ let env_only =
     ("WINDTRAP_PROJECT_ROOT", "Project root for snapshot path resolution");
   ]
 
-(* ───── Parsing ───── *)
+(* Parsing *)
 
 let find_long name = List.find_opt (fun entry -> entry.long = name) table
 let find_short name = List.find_opt (fun entry -> entry.short = Some name) table
@@ -484,7 +484,7 @@ let parse argv =
   | [] -> Ok empty
   | _prog :: args -> parse_args empty args
 
-(* ───── Resolution ───── *)
+(* Resolution *)
 
 let first_some higher lower =
   match higher with Some _ -> higher | None -> lower
@@ -667,8 +667,8 @@ let resolve ?(overrides = empty) cli =
 
 (* The coverage mode resolves outside [resolve] because it is not run
    configuration: it is a rendering decision the facade's [run] applies
-   after the run record is complete (RFC Law 12 — the run's [config]
-   carries no coverage field). Same precedence and same loudness as the
+   after the run record is complete — the run's [config] carries no
+   coverage field. Same precedence and same loudness as the
    config mirrors: CLI beats [WINDTRAP_COVERAGE]; a malformed winning
    value is an error, never a silently defaulted mode. *)
 let coverage_mode (cli : parsed) =
@@ -684,7 +684,7 @@ let coverage_mode (cli : parsed) =
               invalid ~source:"WINDTRAP_COVERAGE" ~value
                 ~expected:coverage_expected))
 
-(* ───── Help ───── *)
+(* Help *)
 
 let usage ~prog =
   Pp.str "usage: %s [OPTIONS] [PATTERN]" (Filename.basename prog)

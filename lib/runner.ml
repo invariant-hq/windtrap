@@ -10,7 +10,7 @@
   ---------------------------------------------------------------------------*)
 
 (* The exit guard. Registered once per process (registration state, like
-   Run's fixture ids, is process identity, not run state — RFC Law 9);
+   Run's fixture ids, is process identity, not run state);
    per-run data flows through the ambient slot. Stdlib.at_exit runs each
    registered function at most once, so an interception consumes the
    registration: the guard re-arms itself before raising. Relies on
@@ -31,11 +31,11 @@ let install_exit_guard () =
     at_exit exit_guard
   end
 
-(* ───── Property tests ───── *)
+(* Property tests *)
 
 (* The channel between a [prop] body and the classifier below: the body
    always raises its engine outcome, the Body-phase guard of the same test
-   consumes it. Never installed in run state (RFC Law 9) and never visible
+   consumes it. Never installed in run state and never visible
    to user code — the raise happens after the user's law returned. *)
 exception Prop_outcome of Property.outcome
 
@@ -82,12 +82,12 @@ let gave_up_failure ?loc (stats : Property.stats) =
         cases passed)"
        stats.Property.discards stats.Property.cases)
 
-(* ───── The per-test boundary ───── *)
+(* The per-test boundary *)
 
 (* Root for the per-test global [Random] reseed: an arbitrary frozen
    constant, deliberately not the run's root seed — the property path never
    touches [Random], and [Random] users get a stream that depends on the
-   test's path only (RFC "The runner"). *)
+   test's path only. *)
 let random_reseed_root = 0x57696e6474726170L
 
 let with_isolated_random ~path fn =
@@ -141,7 +141,7 @@ let with_timeout limit fn =
 let timeout_failure ?loc limit =
   Failure.message ?loc (Pp.str "timed out after %gs" limit)
 
-(* ───── Expected failures (amendment B12) ───── *)
+(* Expected failures *)
 
 (* Whether a raw attempt outcome counts as failed for retries, --bail, the
    exit code, and the last-failed store, under the test's expectation: an
@@ -210,7 +210,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   in
   (* Run one phase, classifying everything non-fatal it raises. [Loc.delimit]
      bounds location capture: a tail-called assertion whose own frame is gone
-     yields no location here rather than the runner's caller (D4). *)
+     yields no location here rather than the runner's caller. *)
   let guard : type r. Failure.phase -> (unit -> r) -> r option =
    fun ph fn ->
     phase := ph;
@@ -231,7 +231,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
             (* Body and teardown outcomes are captured independently — one
                failure entry per phase, neither masking the other; teardown
                runs on every body outcome, skip and timeout included. Never
-               Fun.protect at this boundary (RFC "Resources"). *)
+               Fun.protect at this boundary. *)
             ignore (guard Failure.Body (fun () -> body resource));
             ignore (guard Failure.Teardown (fun () -> teardown resource)))
   in
@@ -246,10 +246,10 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
                 record_failure !phase
                   (timeout_failure ?loc:case.Test_tree.loc limit)))
   in
-  (* Scratch removal (amendment B9) runs after the attempt, outside the
+  (* Scratch removal runs after the attempt, outside the
      timeout window and the capture redirection, on every path where the
      runner regains control — only a fatal exception escapes the frame, and
-     it too passes through the cleanup (RFC Law 8). [remove_temp] never
+     it too passes through the cleanup. [remove_temp] never
      raises. *)
   (match
      Run.with_frame frame (fun () ->
@@ -278,7 +278,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   in
   (outcome, !prop_stats)
 
-(* Law 5: a failing test's report carries its bounded captured output — the
+(* A failing test's report carries its bounded captured output — the
    final attempt's, attached to the first failure entry. *)
 let attach_tail capture outcome =
   match outcome with
@@ -293,7 +293,7 @@ let split_last path =
   | [] -> ([], "unnamed") (* Test_tree.case paths are never empty *)
   | name :: rev_groups -> (List.rev rev_groups, name)
 
-(* ───── Events ───── *)
+(* Events *)
 
 type event =
   | Run_started of { run : Run.t; suite : string; total : int; selected : int }
@@ -353,7 +353,7 @@ let run_case ~on_event run (case : Test_tree.case) =
           srandom_root =
             (* The recorded attempt's draw record: [Some root] exactly when
                the test called [srandom], so its failure block can print the
-               replay line (D5 §6). *)
+               replay line. *)
             (if Run.srandom_used frame then Some config.Run.seed else None);
         }
       in
@@ -363,9 +363,9 @@ let run_case ~on_event run (case : Test_tree.case) =
   in
   attempt 1 0.
 
-(* ───── Selection ───── *)
+(* Selection *)
 
-(* Frozen root for --shard bucketing (amendment B14): buckets must be a pure
+(* Frozen root for --shard bucketing: buckets must be a pure
    function of the test's path — never of the run's seed — so they are
    stable across runs, machines, and suite composition. Frozen with
    Seed.derive; changing either silently repartitions every sharded CI
@@ -411,9 +411,9 @@ let duplicate_paths paths =
     paths
   |> List.sort_uniq String.compare
 
-(* ───── The last-failed store ───── *)
+(* The last-failed store *)
 
-(* The format is explicitly unstable (RFC "Auto-replay"): a magic first
+(* The format is explicitly unstable: a magic first
    line, then one String.escaped test path per line. Unrecognized content
    reads as empty; I/O errors are swallowed — the store only feeds
    [--failed], it must never fail a run. *)
@@ -467,7 +467,7 @@ let write_store path entries =
   | exception Sys_error _ -> ()
   | exception Unix.Unix_error _ -> ()
 
-(* ───── Startup errors ───── *)
+(* Startup errors *)
 
 type startup_error =
   | Duplicate_paths of string list
@@ -499,7 +499,7 @@ let startup_message = function
        baselines on a CI machine."
   | No_recorded_failures -> "no recorded failures match the current suite"
 
-(* ───── Outcomes ───── *)
+(* Outcomes *)
 
 type outcome = {
   run : Run.t;
@@ -619,7 +619,7 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
                          end)
                        selected
                    with exn ->
-                     (* Law 8: release on every path where the runner regains
+                     (* Release on every path where the runner regains
                         control. Test-level exceptions were classified inside
                         the boundary, so only a fatal exception or a raising
                         [on_event] observer reaches here: release best effort
@@ -634,7 +634,7 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
                       with _ -> ());
                      Printexc.raise_with_backtrace exn backtrace);
                   (* Releases run after the last test, outside any per-test
-                     timeout, including under --bail (RFC Law 8). *)
+                     timeout, including under --bail. *)
                   let release_failures = release ~on_event run in
                   Capture.link_latest capture;
                   let results = Run.results run in

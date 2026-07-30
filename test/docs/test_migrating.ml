@@ -48,7 +48,7 @@ let () =
 
 let with_temp_root f = Harness.with_temp_root ~prefix:"windtrap-migrating-" f
 
-(* ───── Stubs for the documents' fictional libraries ───── *)
+(* Stubs for the documents' fictional libraries *)
 
 type shape = Circle of float | Rect of float * float
 
@@ -99,7 +99,7 @@ end
 
 let store = ()
 
-(* ───── Migration reference: properties ───── *)
+(* Migration reference: properties *)
 
 (* Boolean laws (prop) *)
 let prop_rev =
@@ -137,7 +137,7 @@ let prop_area =
     gen_shape
     (fun s -> is_true (Float.compare (area s) 0. >= 0))
 
-(* ───── Migration reference: cases ───── *)
+(* Migration reference: cases *)
 
 let cases_indexed =
   cases "ports parse" [ 1; 80; 8080 ] (fun p -> ignore (require_ok (parse p)))
@@ -146,7 +146,7 @@ let cases_named =
   cases "ports parse" ~name:string_of_int [ 1; 80; 8080 ] (fun p ->
       ignore (require_ok (parse p)))
 
-(* ───── Migration reference: snapshots — and the guide's snapshot call
+(* Migration reference: snapshots — and the guide's snapshot call
    site.
 
    The guide spells the call [snapshot "help" (Cli.help ())] against a
@@ -162,7 +162,7 @@ let snap_report =
   let n = 42 in
   test "report" (fun () -> snapshot "report" (Printf.sprintf "%d rows" n))
 
-(* ───── Migration reference: the expect-string family ───── *)
+(* Migration reference: the expect-string family *)
 
 let greets_output =
   test "greets" (fun () ->
@@ -174,8 +174,8 @@ let greets_snapshot =
       greet ();
       snapshot "greeting" (output ()))
 
-(* ───── Migration reference: group hooks — and the guide's resources
-   example ───── *)
+(* Migration reference: group hooks — and the guide's resources
+   example *)
 
 let with_db = bracket ~setup:Db.connect ~teardown:Db.close
 
@@ -191,7 +191,7 @@ let server = fixture ~teardown:Server.stop Server.start
 let api =
   group "api" [ test "responds" (fun () -> is_true (Server.ping (server ()))) ]
 
-(* ───── Migration reference: testables ───── *)
+(* Migration reference: testables *)
 
 let point_structural = Testable.structural ~pp:Point.pp
 let point = Testable.make ~pp:Point.pp ~equal:Point.equal
@@ -206,7 +206,7 @@ let testable_tests =
       test "shape" (fun () -> equal shape (Circle 1.) (Circle 1.));
     ]
 
-(* ───── Migration reference: odds and ends ───── *)
+(* Migration reference: odds and ends *)
 
 let odds =
   group "odds"
@@ -218,8 +218,8 @@ let odds =
           raises (Invalid_argument "boom") (fun () -> invalid_arg "boom"));
     ]
 
-(* ───── Migration reference: exceptions, is_true residue, temp
-   lifecycles (the B-package rows) ───── *)
+(* Migration reference: exceptions, is_true residue, temp
+   lifecycles (the B-package rows) *)
 
 type addr = Tcp of int | Unix_socket of string
 
@@ -266,7 +266,7 @@ let b_package =
             { Point.x = 1; y = 2 } { Point.x = 1; y = 2 });
     ]
 
-(* ───── Migration reference: Gen renames ───── *)
+(* Migration reference: Gen renames *)
 
 let gen_renames =
   group "gen renames"
@@ -287,7 +287,7 @@ let gen_renames =
       prop "pure is kept" (Gen.pure 42) (fun n -> equal int 42 n);
     ]
 
-(* ───── RFC guide, "A failing assertion" (here with equal sides) ───── *)
+(* RFC guide, "A failing assertion" (here with equal sides) *)
 
 let sessions =
   test "sessions after login" (fun () ->
@@ -296,7 +296,7 @@ let sessions =
         [ ("alice", [ 1; 2; 3 ]); ("bob", [ 4 ]) ]
         (Sessions.all store))
 
-(* ───── Construction and execution ───── *)
+(* Construction and execution *)
 
 (* Snapshot-bearing and name-colliding trees only construct: baselines do
    not exist in this synthetic suite, and [cases_indexed]/[cases_named]
@@ -344,6 +344,6 @@ let () =
            (fun case -> case.Test_tree.path = [ "ports parse"; "8080" ])
            outcome.Runner.selected)
 
-(* ───── Summary ───── *)
+(* Summary *)
 
 let () = Harness.finish ()

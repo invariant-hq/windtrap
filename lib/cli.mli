@@ -160,10 +160,10 @@ val coverage_mode :
     {!parsed.coverage} when present, else the [WINDTRAP_COVERAGE] environment
     mirror, else [`Summary]. Resolved apart from {!resolve} because it is a
     rendering decision, not run configuration — {!Run.config} carries no
-    coverage field (Law 12), and enabling any mode never changes outcomes or
-    exit codes (Law 13). The caller applies it: [`Summary] renders the one-line
-    percentage when the run was instrumented, [`Report] and [`Full] add the
-    per-file detail, [`Off] renders nothing.
+    coverage field, and enabling any mode never changes outcomes or exit codes.
+    The caller applies it: [`Summary] renders the one-line percentage when the
+    run was instrumented, [`Report] and [`Full] add the per-file detail, [`Off]
+    renders nothing.
 
     Effects: reads the environment when {!parsed.coverage} is [None].
     [Error (Invalid_value _)] with source [WINDTRAP_COVERAGE] when the winning

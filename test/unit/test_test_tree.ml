@@ -32,7 +32,7 @@ let nop () = ()
 
 exception Boom
 
-(* ───── Construction and path derivation ───── *)
+(* Construction and path derivation *)
 
 let () =
   reg "flatten derives depth-first paths" @@ fun () ->
@@ -65,7 +65,7 @@ let () =
     ~expected:"alpha"
     ~actual:(T.path_to_string [ "alpha" ])
 
-(* ───── Declaration is inert; bodies run when invoked ───── *)
+(* Declaration is inert; bodies run when invoked *)
 
 let () =
   reg "declaration is inert; bodies run when invoked" @@ fun () ->
@@ -78,7 +78,7 @@ let () =
       check_int "flattened body runs on invocation" ~expected:1 ~actual:!ran
   | _ -> check "flattened body runs on invocation" false
 
-(* ───── Defaults ───── *)
+(* Defaults *)
 
 let () =
   reg "defaults" @@ fun () ->
@@ -102,7 +102,7 @@ let () =
       check_int "retries recorded" ~expected:3 ~actual:c.T.retries
   | _ -> check "timeout/retries flatten shape" false
 
-(* ───── Validation ───── *)
+(* Validation *)
 
 let () =
   reg "validation rejects bad retries and timeouts" @@ fun () ->
@@ -119,7 +119,7 @@ let () =
   expect_invalid_arg "bracket validates retries too" (fun () ->
       T.bracket ~retries:(-2) ~setup:nop ~teardown:ignore "t" ignore)
 
-(* ───── Tags ───── *)
+(* Tags *)
 
 let () =
   reg "tag inheritance" @@ fun () ->
@@ -145,7 +145,7 @@ let () =
         (Tag.mem Tag.slow c.T.tags && Tag.mem "x" c.T.tags)
   | _ -> check "slow flatten shape" false
 
-(* ───── Focus ───── *)
+(* Focus *)
 
 let () =
   reg "has_focus" @@ fun () ->
@@ -190,7 +190,7 @@ let () =
         ~expected:"test/fake_g.ml" ~actual:lg.Loc.file
   | _ -> check "focus_sites shape (declaration order, kinds, locs)" false
 
-(* ───── Declaration files ───── *)
+(* Declaration files *)
 
 let () =
   reg "?pos wins for the declaration file" @@ fun () ->
@@ -227,7 +227,7 @@ let () =
         | None -> false)
   | _ -> check "nested declaration-file shape" false
 
-(* ───── cases ───── *)
+(* cases *)
 
 let () =
   reg "cases derives indexed sub-paths" @@ fun () ->
@@ -284,7 +284,7 @@ let () =
   check "cases with no inputs flattens to nothing"
     (T.flatten [ T.cases "empty" [] ignore ] = [])
 
-(* ───── bracket ───── *)
+(* bracket *)
 
 let () =
   reg "bracket phases run in order with the resource" @@ fun () ->
@@ -353,7 +353,7 @@ let () =
       check "bracket records the declaration file" (c.T.file = Some "f.ml")
   | _ -> check "bracket metadata shape" false
 
-(* ───── xfail (amendment B12) ───── *)
+(* xfail (amendment B12) *)
 
 let () =
   reg "xfail defaults to None" @@ fun () ->
@@ -436,6 +436,6 @@ let () =
     (T.has_focus [ T.xfail (T.ftest "t" nop) ]
     && T.has_focus [ T.xfail (T.fgroup "g" []) ])
 
-(* ───── Suite ───── *)
+(* Suite *)
 
 let tests = List.rev !registered

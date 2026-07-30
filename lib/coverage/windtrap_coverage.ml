@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* ───── Points ───── *)
+(* Points *)
 
 type point = { start_ofs : int; end_ofs : int }
 
@@ -34,7 +34,7 @@ let validate ~file points counts =
           (Printf.sprintf "Windtrap_coverage: %s: negative count" file))
     counts
 
-(* ───── Collections ───── *)
+(* Collections *)
 
 type error =
   | Unknown_format of { path : string; header : string }
@@ -42,7 +42,7 @@ type error =
   | Corrupt of { path : string; reason : string }
   | Point_mismatch of { file : string }
 
-(* Hint copy is deliberate (aggregation design, E5): re-running never
+(* Hint copy is deliberate: re-running never
    removes a foreign-*named* file, so Unknown_format instructs deletion;
    Point_mismatch self-heals under a full instrumented re-run, so dune
    clean is only the fallback for orphaned files. *)
@@ -97,7 +97,7 @@ let merge a b =
           add t ~file ~points:entry.points ~counts:entry.counts))
     b (Ok a)
 
-(* ───── In-Process Registry ───── *)
+(* In-Process Registry *)
 
 (* Registrations keep the generated code's live counts arrays; [snapshot]
    copies. [register] guarantees same-file registrations carry equal point
@@ -117,7 +117,7 @@ let visit counts index =
   let count = counts.(index) in
   if count < max_int then counts.(index) <- count + 1
 
-(* ───── Serialization ───── *)
+(* Serialization *)
 
 type identity = { exe : string; digest : string }
 
@@ -275,7 +275,7 @@ let load path =
   | exception End_of_file ->
       Error (Corrupt { path; reason = "file changed while reading" })
 
-(* ───── Output Path and Identity ───── *)
+(* Output Path and Identity *)
 
 let hex_hash s = Digest.to_hex (Digest.string s)
 
@@ -283,7 +283,7 @@ let absolute path =
   if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
   else path
 
-(* The one root rule (aggregation design §3d): [Some (root, below)] when
+(* The one root rule: [Some (root, below)] when
    [path] has a [_build] component — [root] the parent of the topmost
    one, [below] the path under it with any [.sandbox/<digest>] prefix
    stripped, so sandboxed and direct runs agree. *)
@@ -320,7 +320,7 @@ let output_file ~exe =
   in
   Printf.sprintf "%s/_build/_coverage/windtrap-%s.coverage" root (hex_hash key)
 
-(* ───── At-Exit Dump ───── *)
+(* At-Exit Dump *)
 
 let dump_path : string option ref = ref None
 let dump_exe : string option ref = ref None
@@ -434,7 +434,7 @@ let register ~file ~points ~counts =
       | _ :: _ -> ());
       registrations := (file, points, counts) :: !registrations
 
-(* ───── Summaries ───── *)
+(* Summaries *)
 
 type summary = { visited : int; total : int }
 
@@ -462,7 +462,7 @@ let style s =
 let pp_summary ppf s =
   Format.fprintf ppf "%.1f%% (%d/%d points)" (percentage s) s.visited s.total
 
-(* ───── Extent -> Line Mapping ───── *)
+(* Extent -> Line Mapping *)
 
 (* Byte offsets at which each line starts, excluding the phantom line a
    trailing newline would open. Empty source has no lines. *)
@@ -516,7 +516,7 @@ let format_ranges ranges =
       if s = e then string_of_int s else Printf.sprintf "%d-%d" s e)
   |> String.concat ", "
 
-(* ───── Per-File Reports ───── *)
+(* Per-File Reports *)
 
 type file_report = {
   file : string;
@@ -588,7 +588,7 @@ let file_reports ?(source_roots = [ Filename.current_dir_name ]) t =
     t []
   |> List.rev
 
-(* ───── Excerpts ───── *)
+(* Excerpts *)
 
 type excerpt_line = { number : int; text : string; uncovered : bool }
 

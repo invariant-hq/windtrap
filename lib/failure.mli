@@ -11,13 +11,13 @@
     test's result is an {!outcome} carrying a failure {e list} — a body failure
     and a teardown failure are two entries, never merged.
 
-    Failures are data; renderers are projections (Law 4). Nothing here contains
-    ANSI styling, acceptance or replay command text, or any other rendered
-    transcript fragment: renderers derive all of those from the typed payloads.
-    The strings stored here are pp-rendered {e values} — the one thing that
-    cannot outlive the failure site — and every payload string is bounded at
-    construction with an explicit truncation marker stating the original size
-    (the bound is an implementation constant, currently 64 KiB).
+    Failures are data; renderers are projections. Nothing here contains ANSI
+    styling, acceptance or replay command text, or any other rendered transcript
+    fragment: renderers derive all of those from the typed payloads. The strings
+    stored here are pp-rendered {e values} — the one thing that cannot outlive
+    the failure site — and every payload string is bounded at construction with
+    an explicit truncation marker stating the original size (the bound is an
+    implementation constant, currently 64 KiB).
 
     Construct failures with {!equality}, {!containment}, {!raised}, {!snapshot},
     {!property}, and {!message}; the runner reclassifies with {!with_phase} and
@@ -50,8 +50,8 @@ type tail = {
       (** The per-test log file holding the full output, when capture wrote one.
       *)
 }
-(** The type for bounded captured-output tails (Law 5: a failing test's captured
-    output appears in its failure report, bounded, with the full-log path). *)
+(** The type for bounded captured-output tails: a failing test's captured output
+    appears in its failure report, bounded, with the full-log path. *)
 
 (** The type for snapshot failure states, as recorded by snapshot checking. See
     {!Snapshot.check} for how each state arises. *)
@@ -153,7 +153,7 @@ type kind =
   | Snapshot of { name : string; path : string; state : snapshot_state }
       (** A snapshot check failed. [name] is the snapshot name, [path] the
           resolved baseline path; both are stored unmodified — renderers derive
-          acceptance commands from them (Law 3). *)
+          acceptance commands from them. *)
   | Property of {
       rendered : string;
       case_index : int;
@@ -172,7 +172,7 @@ type kind =
           every other path: a timeout before any case has failed times out the
           whole test instead, so [timed_out] is never set when [examples] is
           [true]. [root] is the run's root seed — renderers derive the replay
-          line from it (Law 3); [count] is the effective case count when run
+          line from it; [count] is the effective case count when run
           configuration ([--prop-count] / [WINDTRAP_PROP_COUNT]) supplied it,
           and [None] when the declaration site fixed the count or the engine
           default applied — renderers restate it in the replay line exactly when
@@ -237,7 +237,7 @@ val recorded_backtrace : unit -> string option
 
     Constructors default [phase] to {!Body} and bound every payload string (see
     the module preamble); snapshot names and paths are stored unmodified because
-    renderers derive acceptance commands from them (Law 3).
+    renderers derive acceptance commands from them.
 
     None of them captures a location: pass [?loc:(Loc.resolve ?pos ())] at
     failure sites — {!Loc.resolve} is the one location rule — and omit [loc]

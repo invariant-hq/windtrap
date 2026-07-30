@@ -5,7 +5,7 @@
    File discovery adapts windtrap v1's bin/coverage_cmd.ml; the table and
    excerpt rendering moved into the library renderer (Render, via
    Windtrap.Private) so the in-process WINDTRAP_COVERAGE modes and this
-   command share one layout (RFC Law 12).
+   command share one layout.
   ---------------------------------------------------------------------------*)
 
 module Render = Windtrap.Private.Render
@@ -30,7 +30,7 @@ OPTIONS:
   -u, --show-uncovered  Also render uncovered source excerpts
   -h, --help            Print this help and exit|}
 
-(* ───── Flags ───── *)
+(* Flags *)
 
 type stale_mode = Exclude | Include | Fail
 
@@ -109,7 +109,7 @@ let parse_args args =
     }
     args
 
-(* ───── Discovery ───── *)
+(* Discovery *)
 
 let coverage_dir_of root =
   Filename.concat (Filename.concat root "_build") "_coverage"
@@ -118,7 +118,7 @@ let coverage_dir_of root =
    included) with a _build/_coverage directory — `dune exec windtrap`
    runs from wherever the user is in the checkout. Candidates inside a
    sandbox are never roots: planted garbage under _build/.sandbox must
-   not capture the scan (aggregation design, E2). *)
+   not capture the scan. *)
 let under_sandbox dir =
   String.map (function '\\' -> '/' | c -> c) dir
   |> String.split_on_char '/' |> List.mem ".sandbox"
@@ -133,7 +133,7 @@ let rec find_project_root dir =
     let parent = Filename.dirname dir in
     if parent = dir then None else find_project_root parent
 
-(* The root rule, shared with the runtime's dump path (Law 15): when the
+(* The root rule, shared with the runtime's dump path: when the
    current directory is inside a _build — a dune rule action, sandboxed
    or not — the root is the parent of the topmost _build component,
    unconditionally; only outside _build does the ancestor scan run. *)
@@ -189,7 +189,7 @@ let discover = function
       |> Result.map (fun files ->
           (List.sort_uniq String.compare files, [ "." ]))
 
-(* ───── The staleness pass (aggregation design, E5) ─────
+(* The staleness pass
 
    The @cover alias forces every stanza up to date before the aggregate
    runs, but "up to date" is not "re-run": the holes are dumps whose
@@ -315,7 +315,7 @@ let load_merged ~stale files =
               error;
             Error 1)
 
-(* ───── JSON ───── *)
+(* JSON *)
 
 let json_escape s =
   let buffer = Buffer.create (String.length s + 8) in
@@ -340,7 +340,7 @@ let json_ranges ranges =
   spf "[%s]"
     (String.concat "," (List.map (fun (a, b) -> spf "[%d,%d]" a b) ranges))
 
-(* The CI artifact (design §1c): summary + per-file visited/total/
+(* The CI artifact: summary + per-file visited/total/
    percentage + uncovered lines and ranges. Frozen keys; a file whose
    source is missing or stale reports empty uncovered arrays. *)
 let print_json ~source_roots collection =
@@ -367,7 +367,7 @@ let print_json ~source_roots collection =
     reports;
   Printf.printf " ] }\n%!"
 
-(* ───── The command ───── *)
+(* The command *)
 
 let report_table ~source_roots ~show_uncovered collection =
   let ansi =

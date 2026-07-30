@@ -8,10 +8,10 @@
     spans.
 
     [Diff] computes {e data} for renderers, never presentation: no styling, no
-    labels, no display truncation (Law 4 — those exist only in renderers).
-    Renderers call {!hunks} on multi-line payloads (snapshot contents, long pp
-    renderings) and {!refine} on a pair of differing lines or short renderings
-    to obtain the changed regions to highlight.
+    labels, no display truncation — those exist only in renderers. Renderers
+    call {!hunks} on multi-line payloads (snapshot contents, long pp renderings)
+    and {!refine} on a pair of differing lines or short renderings to obtain the
+    changed regions to highlight.
 
     Both functions are pure and guarded: above internal size bounds the result
     degrades — {!hunks} to a whole-region replacement, {!refine} to [None] — but

@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The [windtrap coverage] subcommand (RFC "Coverage", {e Reporting command}).
+(** The [windtrap coverage] subcommand: coverage reporting.
 
     Finds the [.coverage] files instrumented test executables wrote under
     [_build/_coverage] (resolving the project root as the runtime does — the

@@ -4,7 +4,7 @@
 
    The testsuites/testsuite/testcase structure adapts windtrap v1's
    progress.ml write_junit_xml, rebuilt over typed Failure payloads with
-   XML 1.0 field sanitization (RFC v3 Law 4 commentary).
+   XML 1.0 field sanitization — the renderer owns its transport's validity.
   ---------------------------------------------------------------------------*)
 
 let spf = Printf.sprintf
@@ -68,9 +68,9 @@ let failure_text ~filter ~invocation f =
     (fun ppf f -> Render.pp_failure ~ansi:false ~filter ~invocation ppf f)
     f
 
-(* One [Fail] outcome, projected: an excused expected failure (amendment
-   B12), or a counted failure with its entries partitioned into the test's
-   own and its subtests' (amendment B13). Classification is record-driven:
+(* One [Fail] outcome, projected: an excused expected failure, or a counted
+   failure with its entries partitioned into the test's own and its
+   subtests'. Classification is record-driven:
    a failing result that did not count is excused, and the annotation it
    carries names the expectation. *)
 type fail_case =
@@ -164,8 +164,8 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
       | Failure.Fail fs -> (
           match classify_fail r fs with
           | Excused { Test_tree.reason } ->
-              (* JUnit has no expected-failure state; the mapping (amendment
-                 B12) is a skip whose message names the expectation. *)
+              (* JUnit has no expected-failure state; the mapping is a skip
+                 whose message names the expectation. *)
               let message =
                 match reason with
                 | Some reason -> "expected failure: " ^ reason
@@ -178,7 +178,7 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
           | Counted { own; subtests } ->
               (* The parent testcase carries the test's own failures and its
                  captured tail; each subtest failure follows as a separate
-                 testcase under the parent's classname (amendment B13). *)
+                 testcase under the parent's classname. *)
               Buffer.add_string buf (open_case ^ ">\n");
               List.iter add_failure own;
               add_tail fs;

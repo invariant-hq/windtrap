@@ -12,11 +12,11 @@
     The runner emits these on standard output only under GitHub Actions
     ({!Env.in_github_actions}); this module never reads the environment.
 
-    The renderer owns its transport's validity (Law 4 commentary): annotation
-    messages are ANSI-stripped and percent-encode newlines as [%0A] (with
-    [%25]/[%0D] for [%] and CR), and command properties — [file], [line],
-    [title] — additionally encode [:] and [,] as [%3A] and [%2C], so no payload
-    can terminate or restructure a workflow command.
+    The renderer owns its transport's validity: annotation messages are
+    ANSI-stripped and percent-encode newlines as [%0A] (with [%25]/[%0D] for [%]
+    and CR), and command properties — [file], [line], [title] — additionally
+    encode [:] and [,] as [%3A] and [%2C], so no payload can terminate or
+    restructure a workflow command.
 
     Every function is pure and returns complete command lines, each ending in a
     newline, ready to write verbatim at column zero. *)

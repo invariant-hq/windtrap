@@ -7,16 +7,16 @@
   shrinking), and Failure (typed counterexamples).
   --------------------------------------------------------------------------*)
 
-(* ───── Discarding ───── *)
+(* Discarding *)
 
 exception Discard
 
 let assume condition = if not condition then raise Discard
 let reject () = raise Discard
 
-(* ───── Labelling context ─────
+(* Labelling context
 
-   One context per [run] invocation (RFC Law 9: nothing here is global).
+   One context per [run] invocation (nothing here is global).
    [case_collect]/[case_cover_hits] hold the current case's marks; they
    commit into [collect_counts]/[cover_hits] only when the case passes, so
    discarded and failing cases contribute nothing. [cover_requirements] is
@@ -70,7 +70,7 @@ let cover ctx ~label ~at_least condition =
     Hashtbl.replace ctx.case_cover_hits label ()
   end
 
-(* ───── Outcomes ───── *)
+(* Outcomes *)
 
 type cover_status = {
   label : string;
@@ -115,7 +115,7 @@ let stats_of ~cases ~discards ctx =
   in
   { cases; discards; collected = sorted_bindings ctx.collect_counts; coverage }
 
-(* ───── Running one case ─────
+(* Running one case
 
    [run_case] classifies one body invocation. Control exceptions are not
    re-raised here: the case loops re-raise them (with their backtrace) while
@@ -141,7 +141,7 @@ let run_case ctx body value =
       Control (control, Printexc.get_raw_backtrace ())
   | exception exn -> Failed (Exception (exn, Failure.recorded_backtrace ()))
 
-(* ───── Shrinking ─────
+(* Shrinking
 
    Greedy descent over the sample's shrink tree: move to the first candidate
    whose body run fails in the same way — assertion failures accept any
@@ -151,7 +151,7 @@ let run_case ctx body value =
    exception, so its siblings are unreachable). A [Failure.Timeout] raised
    anywhere in the search also stops it, at the last accepted node: the
    whole-test budget can end the search but never erase a counterexample
-   already found (D2). Candidate runs use a scratch context: their labels
+   already found. Candidate runs use a scratch context: their labels
    never pollute the committed tables. The accepted classification is
    captured during the descent, so the final inner failure needs no extra
    body run. *)
@@ -206,7 +206,7 @@ let shrink ~max_shrink ~body tree first_class =
   let tree, steps, cls = !best in
   (tree, steps, cls, !timed_out)
 
-(* ───── The engine ───── *)
+(* The engine *)
 
 let default_count = 100
 let default_max_shrink = 100

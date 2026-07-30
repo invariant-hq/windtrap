@@ -26,7 +26,7 @@ open Harness
 
 let () = init "ppx_runtime"
 
-(* ───── Temp roots and config ───── *)
+(* Temp roots and config *)
 
 let rec remove_tree path =
   match (Unix.lstat path).Unix.st_kind with
@@ -47,7 +47,7 @@ let with_temp_root f =
 let base_config ~log_dir () =
   { (Run.default_config ()) with Run.seed = 0x5eedL; log_dir }
 
-(* ───── Location helpers over synthetic source text ───── *)
+(* Location helpers over synthetic source text *)
 
 let find ?(from = 0) source pattern =
   let n = String.length pattern and h = String.length source in
@@ -101,7 +101,7 @@ let body_locs source =
   let stop = find source "@END" in
   (mk_loc source start stop, mk_loc source stop stop)
 
-(* ───── Scenario driver ───── *)
+(* Scenario driver *)
 
 let file = "scratch_ppx.ml"
 let test_path name = [ "Scratch_ppx"; name ]
@@ -144,7 +144,7 @@ let failure_list = function
 
 let is_pass = function Some Failure.Pass -> true | _ -> false
 
-(* ───── Normalization ───── *)
+(* Normalization *)
 
 let () =
   let n = Ppx_runtime.normalize in
@@ -167,7 +167,7 @@ let () =
     ~expected:(n "INT 1\nPLUS\n")
     ~actual:(n "\n    INT 1\n    PLUS\n  ")
 
-(* ───── Registration, grouping, partitions ───── *)
+(* Registration, grouping, partitions *)
 
 let zero_loc =
   { Ppx_runtime.line = 1; start_bol = 0; start_pos = 0; end_pos = 0 }
@@ -240,7 +240,7 @@ let () =
   in
   check "init is once-only" (paths = [ "A_file › t3" ])
 
-(* ───── Expect matching ───── *)
+(* Expect matching *)
 
 let () =
   (* A typical indented payload matches flat output; already-formatted
@@ -329,7 +329,7 @@ let () =
     | Some corrected -> contains "[%expect_exact {|a |}]" corrected
     | None -> false)
 
-(* ───── Correction goldens (mechanism (c): ppx_expect re-indentation) ───── *)
+(* Correction goldens (mechanism (c): ppx_expect re-indentation) *)
 
 let () =
   (* Multi-line: contents at node column + 2, closing delimiter at node
@@ -665,7 +665,7 @@ let () =
         ~expected:golden ~actual:corrected
   | None -> check "multi-line trailing correction recorded" false
 
-(* ───── Uncaught exceptions (design D3: never a correction) ───── *)
+(* Uncaught exceptions (design D3: never a correction) *)
 
 let () =
   (* Recipe-A shape (ppx/F-1): a tail [failwith]. No correction exists for
@@ -784,7 +784,7 @@ let () =
   check_int "recipe-B shape exits 1 on the second cycle too" ~expected:1
     ~actual:r2.exit_code
 
-(* ───── Per-node reachability (mechanism (d)) ───── *)
+(* Per-node reachability (mechanism (d)) *)
 
 let () =
   (* The 2+0 attack: one node reached twice, another never. An aggregate
@@ -896,7 +896,7 @@ let () =
   check_int "consistent repeated mismatch exits 0" ~expected:0
     ~actual:r.exit_code
 
-(* ───── Duplicate registrations (functor-instantiated tests) ───── *)
+(* Duplicate registrations (functor-instantiated tests) *)
 
 let () =
   (* ppx_expect runs a functor-duplicated test under one name; windtrap's
@@ -1017,7 +1017,7 @@ let () =
   check "passing duplicates record nothing" (corrected = None);
   check_int "passing duplicates exit 0" ~expected:0 ~actual:exit_code
 
-(* ───── The corrected-file style pass ───── *)
+(* The corrected-file style pass *)
 
 let () =
   (* {%expect|…|} shorthand: the correction rewrites the whole node and
@@ -1145,7 +1145,7 @@ let () =
   check "a matching file records no correction at all" (r.corrected = None);
   check "the matching test passes" (is_pass r.outcome)
 
-(* ───── Control exceptions: skip, assertions, --stream ───── *)
+(* Control exceptions: skip, assertions, --stream *)
 
 let () =
   let source =
@@ -1210,7 +1210,7 @@ let () =
     (r.corrected = None);
   check_int "reached-then-skip exits 0" ~expected:0 ~actual:r.exit_code
 
-(* ───── Amendment C2: skips against the promotion exit rule ───── *)
+(* Amendment C2: skips against the promotion exit rule *)
 
 let () =
   (* A skipped expect test is invisible to the exit protocol: it neither
@@ -1397,7 +1397,7 @@ let () =
        (failure_list r.outcome));
   check_int "--stream expect failure exits 1" ~expected:1 ~actual:r.exit_code
 
-(* ───── sanitize, run, and [%expect.output] ───── *)
+(* sanitize, run, and [%expect.output] *)
 
 let () =
   let sanitized = ref [] in
@@ -1500,7 +1500,7 @@ let () =
   | exception Invalid_argument _ ->
       check "expect outside an expect test raises" true
 
-(* ───── Exit-code matrix over whole runs ───── *)
+(* Exit-code matrix over whole runs *)
 
 let () =
   let exit_of ~register ~tweak_config () =
@@ -1546,7 +1546,7 @@ let () =
   check_int "matrix: covered mismatch + plain failure exits 1" ~expected:1
     ~actual:(exit_of ~register:mixed ~tweak_config:Fun.id ())
 
-(* ───── Corrections round-trip on a real temp source file ───── *)
+(* Corrections round-trip on a real temp source file *)
 
 let () =
   Ppx_runtime.reset ();
@@ -1622,7 +1622,7 @@ let () =
       check "flush clears the corrections table"
         (Ppx_runtime.flush_corrections () = []))
 
-(* ───── The ambient config module ───── *)
+(* The ambient config module *)
 
 let () =
   (* The default config is the identity in every component the runtime
@@ -1646,6 +1646,6 @@ let () =
     ~expected:"bb" ~actual:(Shadow.sanitize "ab");
   check "shadowed config keeps IO" (Shadow.IO.return true)
 
-(* ───── Summary ───── *)
+(* Summary *)
 
 let () = finish ()

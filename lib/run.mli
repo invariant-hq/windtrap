@@ -5,9 +5,9 @@
 
 (** The per-run record and the one ambient slot.
 
-    All mutable run state lives in one {!type:t} created per [run] invocation
-    (Law 9, "no global mutable per-run state"): the resolved {!type:config}, the
-    capture state, the snapshot registry, the fixture cache, accumulated
+    All mutable run state lives in one {!type:t} created per [run] invocation —
+    no global mutable per-run state: the resolved {!type:config}, the capture
+    state, the snapshot registry, the fixture cache, accumulated
     {!type:result}s, and the coverage seam field. Nothing here is a global; a
     later [run] in the same process builds a fresh record, which is what makes
     fixtures re-acquire and snapshot registries start empty.
@@ -33,7 +33,7 @@
 (** {1:config Configuration} *)
 
 type config = {
-  seed : Seed.seed;  (** The run's root seed (Law 7). *)
+  seed : Seed.seed;  (** The run's root seed. *)
   filter : string option;
       (** [-f]/positional/[WINDTRAP_FILTER]: run only tests whose path contains
           this substring. *)
@@ -150,11 +150,11 @@ val add_failure : frame -> Failure.t -> unit
 (** [add_failure frame failure] appends [failure] to the attempt's failure list.
     The runner records one entry per phase that failed, already classified with
     {!Failure.with_phase} — a body failure and a teardown failure are two
-    entries (Law 4: failures are data). A [failure] whose location is [None] —
-    its failing call sat in tail position, so {!Loc.capture} stopped at the
-    runner's delimiter — is recorded with the test's declaration location
-    instead, when the frame has one. Nested failures (a property failure's
-    [inner]) are left untouched. *)
+    entries (failures are data). A [failure] whose location is [None] — its
+    failing call sat in tail position, so {!Loc.capture} stopped at the runner's
+    delimiter — is recorded with the test's declaration location instead, when
+    the frame has one. Nested failures (a property failure's [inner]) are left
+    untouched. *)
 
 val failures : frame -> Failure.t list
 (** [failures frame] is the attempt's failures in the order they were added. *)
@@ -224,12 +224,12 @@ val current_test : unit -> string list
 val srandom : unit -> Random.State.t
 (** [srandom ()] is a fresh pseudo-random state seeded from the run's root seed
     and the executing test's path — precisely, from
-    [Seed.derive ~root ~path ~index:0] over the canonical joined path. Per Law 7
-    the seed is a pure function of the printed root token and the test's path:
-    replaying with [--seed] reproduces it, suite composition and filters never
-    perturb it, and renaming or regrouping the test intentionally re-keys it.
-    The derivation is frozen; the values drawn from the state additionally
-    follow the stdlib's [Random] algorithm, which the OCaml version pins.
+    [Seed.derive ~root ~path ~index:0] over the canonical joined path. The seed
+    is a pure function of the printed root token and the test's path: replaying
+    with [--seed] reproduces it, suite composition and filters never perturb it,
+    and renaming or regrouping the test intentionally re-keys it. The derivation
+    is frozen; the values drawn from the state additionally follow the stdlib's
+    [Random] algorithm, which the OCaml version pins.
 
     Every call within the same test returns an identically seeded state — draw
     all of a test's randomness from one state rather than calling twice.
@@ -265,10 +265,10 @@ val subtest : string -> (unit -> unit) -> unit
 
     Per-test temporary paths: created lazily under one scratch directory per
     test attempt, and removed by the runner after the test on every path where
-    it regains control (Law 8) — failure, skip, timeout, and a fatal exception
-    unwinding the run included — so tests never hand-roll temp lifecycles. Paths
-    are per attempt: a resource that must outlive the test (e.g. one acquired by
-    a {!fixture}) must not live in them. *)
+    it regains control — failure, skip, timeout, and a fatal exception unwinding
+    the run included — so tests never hand-roll temp lifecycles. Paths are per
+    attempt: a resource that must outlive the test (e.g. one acquired by a
+    {!fixture}) must not live in them. *)
 
 val temp_dir : ?prefix:string -> unit -> string
 (** [temp_dir ()] is a fresh empty directory for the executing test, created
@@ -293,9 +293,9 @@ val remove_temp : frame -> unit
 (** [remove_temp frame] recursively removes the scratch directory backing
     [frame]'s {!temp_dir}/{!temp_file} paths, when one was created. Runner-side:
     called after every attempt, on every path where the runner regains control
-    (Law 8). Best-effort — removal errors are ignored, never raised (the paths
-    live under the system temporary directory) — and idempotent; symbolic links
-    are removed, never followed. *)
+    Best-effort — removal errors are ignored, never raised (the paths live under
+    the system temporary directory) — and idempotent; symbolic links are
+    removed, never followed. *)
 
 (** {1:fixtures Fixtures} *)
 
@@ -340,8 +340,7 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
     releases.
 
     The runner calls this after the last test on every path where it regains
-    control — including under [--bail] — and outside any per-test timeout (Law
-    8). *)
+    control — including under [--bail] — and outside any per-test timeout. *)
 
 (** {1:results Results} *)
 
@@ -374,12 +373,12 @@ type result = {
   srandom_root : Seed.seed option;
       (** [Some root] — the run's root seed — iff the test called {!srandom} on
           its recorded attempt; [None] otherwise. Renderers print the replay
-          line of a failing stochastic test from it (Law 7). *)
+          line of a failing stochastic test from it. *)
 }
 (** The type for per-test results, as recorded by the runner after a test
-    completes. Renderers project the accumulated list (Law 4); the record
-    carries every fact rendering needs — outcome classification included — so no
-    consumer re-derives runner decisions from tables or messages. *)
+    completes. Renderers project the accumulated list; the record carries every
+    fact rendering needs — outcome classification included — so no consumer
+    re-derives runner decisions from tables or messages. *)
 
 val record : t -> result -> unit
 (** [record t result] appends [result] to the run's results. *)
@@ -389,10 +388,10 @@ val results : t -> result list
 
 (** {1:coverage Coverage seam}
 
-    Core windtrap's entire coverage coupling (Law 12): at run end the runner
-    snapshots in-process coverage — when instrumented code registered any — into
-    the field below, and renderers project it like any other run data. No other
-    coverage type or call appears in the core library. *)
+    Core windtrap's entire coverage coupling: at run end the runner snapshots
+    in-process coverage — when instrumented code registered any — into the field
+    below, and renderers project it like any other run data. No other coverage
+    type or call appears in the core library. *)
 
 type summary = {
   visited : int;  (** Instrumented blocks visited at least once. *)

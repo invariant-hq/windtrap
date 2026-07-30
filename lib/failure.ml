@@ -75,7 +75,7 @@ let () =
           "Exit_attempt (code under test called exit; intercepted by windtrap)"
     | _ -> None)
 
-(* ───── Boundary rules ───── *)
+(* Boundary rules *)
 
 let is_fatal = function
   | Sys.Break | Out_of_memory | Stack_overflow -> true
@@ -88,7 +88,7 @@ let recorded_backtrace () =
     match Printexc.get_backtrace () with "" -> None | bt -> Some bt
   else None
 
-(* ───── Bounds (implementation constants, not contract) ───── *)
+(* Bounds (implementation constants, not contract) *)
 
 (* Payload strings are pp-rendered values or user messages; past this many
    bytes they are cut with Text's explicit truncation marker. *)
@@ -115,7 +115,7 @@ let utf8_boundary_at_or_after s pos =
   in
   scan pos 3
 
-(* ───── Constructors ───── *)
+(* Constructors *)
 
 let make ?loc ?msg kind =
   { kind; phase = Body; loc; msg = cap_opt msg; output_tail = None }
@@ -193,7 +193,7 @@ let bound_snapshot_state = function
 
 let snapshot ?loc ~name ~path state =
   (* [name] and [path] are identities: renderers derive acceptance commands
-     from them (Law 3), so they are stored unmodified. *)
+     from them, so they are stored unmodified. *)
   make ?loc (Snapshot { name; path; state = bound_snapshot_state state })
 
 let property ?loc ?inner ?timed_out ?count ~rendered ~case_index ~shrink_steps
@@ -213,7 +213,7 @@ let property ?loc ?inner ?timed_out ?count ~rendered ~case_index ~shrink_steps
 
 let message ?loc text = make ?loc (Message (cap text))
 
-(* ───── Updating ───── *)
+(* Updating *)
 
 let with_phase phase t = { t with phase }
 let with_output_tail tail t = { t with output_tail = Some tail }
@@ -231,6 +231,6 @@ let tail ?log_path ?(omitted_bytes = 0) text =
       log_path;
     }
 
-(* ───── Per-test outcomes ───── *)
+(* Per-test outcomes *)
 
 type outcome = Pass | Fail of t list | Skip of string option

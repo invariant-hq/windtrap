@@ -25,7 +25,7 @@ let count_occurrences ~sub s =
   in
   go 0 0
 
-(* ───── Golden annotation ───── *)
+(* Golden annotation *)
 
 let expected_annotation =
   {|::error file=test/test_users.ml,line=31,title=Test failure%3A users › sessions after login::    test/test_users.ml:31%0A    expected  [("alice", [1; 2; 3]); ("bob", [4])]%0A    actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]%0A                                               ~~~~~~~~~~~~~~~~~~
@@ -39,7 +39,7 @@ let test_golden () =
   in
   check_string "golden ::error annotation" ~expected:expected_annotation ~actual
 
-(* ───── Encoding ───── *)
+(* Encoding *)
 
 let test_data_encoding () =
   let f = Failure.message "50% done\r\nnext: a,b" in
@@ -117,7 +117,7 @@ let test_ansi_stripped () =
   check_absent "ANSI stripped from annotations" ~sub:"\027" a;
   check_contains "stripped payload survives" ~sub:"green" a
 
-(* ───── Folding ───── *)
+(* Folding *)
 
 let test_groups () =
   check_string "group start" ~expected:"::group::mylib\n"
@@ -127,7 +127,7 @@ let test_groups () =
   check_string "group name newline encoded" ~expected:"::group::a%0Ab\n"
     ~actual:(Render_github.group_start "a\nb")
 
-(* ───── Expected failures and subtests (amendments B12/B13) ───── *)
+(* Expected failures and subtests (amendments B12/B13) *)
 
 let test_excused_filtered () =
   (* Classification is record-driven: an excused expected failure — a
@@ -162,7 +162,7 @@ let test_subtest_annotations () =
   check_contains "the subtest label leads the message"
     ~sub:"::    test/test_backend.ml:40%0A    contract › shape [0]%0A" block
 
-(* ───── Run-level annotations ───── *)
+(* Run-level annotations *)
 
 let test_annotations () =
   let block = Render_github.annotations Fixtures.results in

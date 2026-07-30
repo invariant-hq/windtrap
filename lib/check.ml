@@ -11,7 +11,7 @@ type pos = Loc.pos
 type 'a printer = Format.formatter -> 'a -> unit
 type 'a testable = 'a Testable.t
 
-(* ───── Failure construction ─────
+(* Failure construction
 
    Every failing verb builds one Failure.t and raises Check_failure. The
    location comes from Loc.resolve: [?pos] wins, else call-stack capture,
@@ -33,7 +33,7 @@ let fail_raise ?pos ?msg ?expected ?actual ?predicate ?backtrace
 
 let abstract = "<abstract>"
 
-(* ───── Comparisons ───── *)
+(* Comparisons *)
 
 let equal ?pos ?msg t expected actual =
   if not (Testable.equal t expected actual) then
@@ -50,7 +50,7 @@ let not_equal ?pos ?msg t a b =
     let rendered = Testable.to_string t a in
     fail_equality ?pos ?msg ~not_:true ~expected:rendered ~actual:rendered ()
 
-(* ───── Booleans ───── *)
+(* Booleans *)
 
 let is_true ?pos ?msg b =
   if not b then fail_equality ?pos ?msg ~expected:"true" ~actual:"false" ()
@@ -58,7 +58,7 @@ let is_true ?pos ?msg b =
 let is_false ?pos ?msg b =
   if b then fail_equality ?pos ?msg ~expected:"false" ~actual:"true" ()
 
-(* ───── String containment ───── *)
+(* String containment *)
 
 let fail_containment ?pos ?msg ?found_at ~expected ~needle ~haystack () =
   raise
@@ -82,7 +82,7 @@ let not_contains ?pos ?msg ~sub haystack =
         ~expected:(Pp.str "string not containing %S" sub)
         ~needle:sub ~haystack ()
 
-(* ───── Predicates ───── *)
+(* Predicates *)
 
 let satisfies ?pos ?msg t pred v =
   if not (pred v) then
@@ -90,7 +90,7 @@ let satisfies ?pos ?msg t pred v =
       ~expected:"value satisfying the predicate"
       ~actual:(Testable.to_string t v) ()
 
-(* ───── Unwrapping ───── *)
+(* Unwrapping *)
 
 let require_some ?pos ?msg = function
   | Some v -> v
@@ -122,7 +122,7 @@ let require_match ?pos ?msg ?pp extract v =
       fail_equality ?pos ?msg ~claim:Failure.Matches ~expected:"a match"
         ~actual:rendered ()
 
-(* ───── Exceptions ─────
+(* Exceptions
 
    The control exceptions are re-raised from inside the thunk: without the
    guard, a [raises] over code that itself calls [equal] would swallow the
@@ -200,7 +200,7 @@ module Exn = struct
     function Stdlib.Failure m -> ok m | _ -> false
 end
 
-(* ───── Escape hatches ───── *)
+(* Escape hatches *)
 
 let fail ?pos msg =
   raise (Failure.Check_failure (Failure.message ?loc:(Loc.resolve ?pos ()) msg))

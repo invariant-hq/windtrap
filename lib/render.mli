@@ -35,14 +35,14 @@
     streaming law holds as before — a kill after it leaves the header and the
     partial row in the pipe.
 
-    Renderers are projections (Law 4): everything printed derives from
-    {!Run.result} values and the typed {!Failure.t} payloads inside them.
-    Acceptance and replay command lines are composed here from snapshot names,
-    paths, and root seed tokens (Laws 3 and 7 — the replay line prints the
-    {e root} token only); diffs are computed here from the rendered values via
-    {!Diff}; styling is applied here through {!Pp} under the explicit [ansi]
-    decision made at {!create} — nothing reads the environment or the terminal.
-    A renderer never alters status, counts, or scheduling.
+    Renderers are projections: everything printed derives from {!Run.result}
+    values and the typed {!Failure.t} payloads inside them. Acceptance and
+    replay command lines are composed here from snapshot names, paths, and root
+    seed tokens (the replay line prints the {e root} token only); diffs are
+    computed here from the rendered values via {!Diff}; styling is applied here
+    through {!Pp} under the explicit [ansi] decision made at {!create} — nothing
+    reads the environment or the terminal. A renderer never alters status,
+    counts, or scheduling.
 
     The runner drives one {!type:t} through the run: {!header} once, then
     {!begin_test}/{!result} per test, then {!finish}. {!headline} and
@@ -70,7 +70,7 @@ type invocation = [ `Exe of string | `Mirrors ]
     exists and hints spell [WINDTRAP_*] environment prefixes to [dune runtest] —
     the inline runner's context, and the default. The driver computes it once at
     startup; every acceptance, replay, rerun, and prune line derives from it, so
-    no hint can name an invocation that would not re-run the suite (Law 3). *)
+    no hint can name an invocation that would not re-run the suite. *)
 
 val create :
   out:Format.formatter ->
@@ -279,8 +279,8 @@ val finish :
     [WINDTRAP_COVERAGE]/[--coverage] report modes and, through the facade's
     [Private], the [windtrap coverage] command over merged files — the inline
     report and the CI report cannot drift apart. Presentation only: the data
-    (percentages, uncovered lines, excerpt regions) is the coverage runtime's
-    (Law 12, run data rendered late). *)
+    (percentages, uncovered lines, excerpt regions) is the coverage runtime's —
+    run data, rendered late. *)
 
 val coverage_report :
   t ->
@@ -327,7 +327,7 @@ val pp_run_duration : float -> string
     The kind-by-kind projection of one {!Failure.t}, shared by the terminal
     failure blocks and the {!Render_junit} and {!Render_github} transports.
     Everything derives from the typed payload: no formatting happens at failure
-    sites (Law 4). *)
+    sites. *)
 
 val headline : Failure.t -> string
 (** [headline f] is a one-line, unstyled summary of [f]
@@ -393,9 +393,8 @@ val pp_failure :
       (unified diff against the baseline), unresolvable, duplicate (pointing at
       the first check: [first checked at <site>] when its site is known,
       [first checked by "<test>"] otherwise) — followed by the acceptance
-      command line for missing and mismatched baselines (Law 3), spelled from
-      the invocation: [accept: <exe> -u, then review with git diff] under
-      [`Exe],
+      command line for missing and mismatched baselines, spelled from the
+      invocation: [accept: <exe> -u, then review with git diff] under [`Exe],
       [accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff] under
       [`Mirrors];
     - property: the counterexample with its case index and shrink count — a
@@ -405,7 +404,7 @@ val pp_failure :
       [which failed at:] (recursively, without commands; [which failed with:]
       when the inner failure has no location), and — for seeded cases only,
       never explicit examples — the replay line built from the payload's root
-      seed (Law 7), spelled from the invocation:
+      seed, spelled from the invocation:
       [replay: <exe> --seed <root token> -f '<filter>'] under [`Exe],
       [replay: WINDTRAP_SEED=<root token> WINDTRAP_FILTER='<filter>' dune
        runtest] under [`Mirrors]. A config-sourced case count riding the payload

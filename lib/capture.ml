@@ -6,12 +6,11 @@
 (* Capture mechanics adapted from v1's lib/log_trap.ml (fd-level dup2
    redirection, formatter draining before descriptor restoration, symlink
    retry loops) and the live half of v1's lib/expect.ml (incremental
-   consumption). The bounded-tail reading keeps windtrap-next's
-   lib/capture_unix.mli retention *concept* (tail + exact drop count) in the
-   simple file-based design the v3 RFC mandates: the file is complete, only
-   the failure report is bounded. *)
+   consumption). Retention is bounded-tail (tail + exact drop count) over a
+   simple file-based design: the file is complete, only the failure report
+   is bounded. *)
 
-(* ── Retention limits ── *)
+(* Retention limits *)
 
 type limits = { tail_bytes : int }
 
@@ -22,7 +21,7 @@ let limits ~tail_bytes =
 let default_limits = { tail_bytes = 8_192 }
 let tail_bytes l = l.tail_bytes
 
-(* ── Capture state ── *)
+(* Capture state *)
 
 type enabled = {
   root : string; (* the log root, e.g. _build/_tests *)
@@ -40,7 +39,7 @@ type enabled = {
 type t = Disabled | Enabled of enabled
 
 (* Run ids are 8 base-36 characters (0-9, A-Z) — v1's format — drawn from one
-   OS-entropy word so no module-level PRNG state exists (RFC Law 9). *)
+   OS-entropy word so no module-level PRNG state exists. *)
 let generate_run_id () =
   let bytes = Bytes.create 8 in
   let v = ref (Seed.random ()) in
@@ -68,7 +67,7 @@ let disabled = Disabled
 let run_dir_of e = Filename.concat e.root (Filename.concat e.suite e.run_id)
 let run_dir = function Disabled -> None | Enabled e -> Some (run_dir_of e)
 
-(* ── Capturing ── *)
+(* Capturing *)
 
 (* C stdio buffers independently of OCaml channels: stubs calling printf
    without fflush would otherwise escape fd-level capture at consumption
@@ -167,7 +166,7 @@ let with_capture t ~groups ~test_name fn =
             drain_formatters)
         fn
 
-(* ── Reading captured output ── *)
+(* Reading captured output *)
 
 let with_file_in path f =
   match open_in_bin path with
@@ -237,7 +236,7 @@ let output_tail t =
           in
           with_file_in path read)
 
-(* ── Latest links ── *)
+(* Latest links *)
 
 (* Retry loops handle EINTR (interrupted syscall) and EEXIST (race with a
    concurrent run re-pointing the same link); other errors abandon the link —

@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* The `windtrap` binary: subcommand dispatch only. The one subcommand is
-   [coverage] (RFC "Coverage") — test executables are their own runners,
+   [coverage] — test executables are their own runners,
    so nothing else lives here. *)
 
 let usage =

@@ -6,7 +6,7 @@
 type 'a t = Format.formatter -> 'a -> unit
 type style = [ `Bold | `Faint | `Red | `Green | `Yellow | `Cyan | `White ]
 
-(* ───── Output ───── *)
+(* Output *)
 
 let str = Format.asprintf
 let pf = Format.fprintf
@@ -15,7 +15,7 @@ let epr fmt = Format.fprintf Format.err_formatter fmt
 let flush ppf () = Format.pp_print_flush ppf ()
 let to_string pp v = Format.asprintf "%a" pp v
 
-(* ───── Printers ───── *)
+(* Printers *)
 
 let string = Format.pp_print_string
 let int = Format.pp_print_int
@@ -25,7 +25,7 @@ let float = Format.pp_print_float
 let bool = Format.pp_print_bool
 let char = Format.pp_print_char
 
-(* ───── Combinators ───── *)
+(* Combinators *)
 
 let semi ppf () = Format.fprintf ppf ";@ "
 let comma ppf () = Format.fprintf ppf ",@ "
@@ -59,7 +59,7 @@ let result ~ok ~error ppf = function
 let pair pp_a pp_b ppf (a, b) = Format.fprintf ppf "(@[%a,@ %a@])" pp_a a pp_b b
 let brackets pp ppf v = Format.fprintf ppf "[@[%a@]]" pp v
 
-(* ───── Styling ───── *)
+(* Styling *)
 
 let code_of_style = function
   | `Bold -> "\027[1m"

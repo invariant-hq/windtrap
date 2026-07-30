@@ -19,12 +19,12 @@ let mem = String_set.mem
 let is_empty = String_set.is_empty
 let to_list = String_set.elements
 
-(* ───── Well-known tags ───── *)
+(* Well-known tags *)
 
 let slow = "slow"
 let disabled = "disabled"
 
-(* ───── Selection predicates ───── *)
+(* Selection predicates *)
 
 type predicate = { required : String_set.t; dropped : String_set.t }
 

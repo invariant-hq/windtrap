@@ -19,7 +19,7 @@ module Fixtures = Render_fixtures
 let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
 
-(* ───── Synthetic outcomes ───── *)
+(* Synthetic outcomes *)
 
 let make_run ?snapshots () =
   let snapshots =
@@ -51,7 +51,7 @@ let report ?(output = `Compact) ?(invocation = `Mirrors) outcome =
   Format.pp_print_flush out ();
   Buffer.contents buf
 
-(* ───── The snapshot/prune report ───── *)
+(* The snapshot/prune report *)
 
 let test_report_writes () =
   (* One [wrote] line per accepted baseline, paths spelled by
@@ -118,7 +118,7 @@ let test_report_orphan_hint () =
   check_string "no writes, no orphans, no prune: nothing prints" ~expected:""
     ~actual:(report (outcome ()))
 
-(* ───── The observer's header-seed policy ───── *)
+(* The observer's header-seed policy *)
 
 let test_observe_seed_policy () =
   let header ~seed =
@@ -137,7 +137,7 @@ let test_observe_seed_policy () =
   check_string "the inline runner's seedless header carries none"
     ~expected:"s: 2 tests\n" ~actual:(header ~seed:None)
 
-(* ───── The GitHub envelope ───── *)
+(* The GitHub envelope *)
 
 let test_github_envelope () =
   (* The producers print to captured stdout; [github:false] gates each.
@@ -191,7 +191,7 @@ let test_github_envelope_composed () =
   check "the annotation block follows the closed fold"
     (offset "\n::endgroup::\n" < offset "::error ")
 
-(* ───── The coverage seam ───── *)
+(* The coverage seam *)
 
 let test_coverage_seam () =
   let run = make_run () in

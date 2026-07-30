@@ -75,7 +75,7 @@ let check_contains name ~sub haystack =
       (fail_tag ~ansi:!ansi) name sub haystack
   end
 
-(* ───── Environment hygiene ─────
+(* Environment hygiene
 
    Empty means unset for every windtrap variable (Env's contract): the
    suites' scripted runs must not inherit ambient configuration. *)
@@ -118,7 +118,7 @@ let init name =
   clear_env ();
   Printexc.record_backtrace true
 
-(* ───── Temp roots ───── *)
+(* Temp roots *)
 
 let rec remove_tree path =
   match (Unix.lstat path).Unix.st_kind with
@@ -135,7 +135,7 @@ let with_temp_root ?(prefix = "windtrap-meta-") f =
   Unix.mkdir path 0o700;
   Fun.protect ~finally:(fun () -> remove_tree path) (fun () -> f path)
 
-(* ───── Summary ─────
+(* Summary
 
    One output dialect for the whole tree: the one-liner is the windtrap
    summary line with "checks" inserted — the harness counts assertions,

@@ -9,17 +9,17 @@
     declared with the constructors below — the declaration surface the facade
     re-exports. Declaring is pure data construction: no body, setup, or teardown
     runs until the runner executes the tree. There are no group hooks of any
-    kind — no user callback can run outside a test's exception boundary (Law 8)
-    — and {!bracket} stores its three closures unrun, so the runner captures
-    body and teardown outcomes independently.
+    kind — no user callback can run outside a test's exception boundary — and
+    {!bracket} stores its three closures unrun, so the runner captures body and
+    teardown outcomes independently.
 
     {b Paths.} A test is named by its {e path}: the names of its enclosing
     groups, root first, then its own name. {!flatten} derives every path;
     {!path_to_string} renders one as the canonical string that selection filters
-    match and per-case seed derivation hashes (Law 7 — the joined form is
-    frozen; renaming or regrouping a test intentionally re-keys its property
-    streams). Duplicate full paths are a startup error detected by the runner;
-    the tree only makes paths derivable.
+    match and per-case seed derivation hashes (the joined form is frozen;
+    renaming or regrouping a test intentionally re-keys its property streams).
+    Duplicate full paths are a startup error detected by the runner; the tree
+    only makes paths derivable.
 
     {b Declaration files.} Each test records the source file it was declared in,
     consumed by snapshot scoping ({!Snapshot.check}): a [snapshot] call without
@@ -51,8 +51,8 @@ type body =
       -> body
       (** A {!bracket} test, kept as three separate closures — never
           pre-composed — so the runner can run [teardown] iff [setup] succeeded,
-          on every outcome, and report body and teardown failures independently
-          (Law 8). *)
+          on every outcome, and report body and teardown failures independently.
+      *)
 
 (** {1:declaring Declaring tests}
 
@@ -205,4 +205,4 @@ val flatten : t list -> case list
 val path_to_string : string list -> string
 (** [path_to_string path] joins [path] with [" › "] — the canonical rendering
     matched by [-f]/[-e] filters and hashed by per-case seed derivation
-    ({!Seed.derive}). The separator is frozen (Law 7). *)
+    ({!Seed.derive}). The separator is frozen. *)

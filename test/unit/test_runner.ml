@@ -63,7 +63,7 @@ let busy_forever () =
     if !n > 1_000_000 then n := 1
   done
 
-(* ───── Boundary matrix: body x teardown ───── *)
+(* Boundary matrix: body x teardown *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -140,7 +140,7 @@ let () =
    | _ -> check "uncaught exception is a Raise failure" false);
   check "a failing suite exits 1" (outcome.Runner.exit_code = 1)
 
-(* ───── Timeouts (Unix only) ───── *)
+(* Timeouts (Unix only) *)
 
 let () =
   if not Sys.win32 then (
@@ -336,7 +336,7 @@ let () =
           (r.Run.outcome = Failure.Pass && r.Run.attempts = 3)
     | None -> check "flaky-table.0 recorded" false)
 
-(* ───── Retries ───── *)
+(* Retries *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -375,7 +375,7 @@ let () =
       check_int "skip used one attempt" ~expected:1 ~actual:r.Run.attempts
   | None -> check "skips recorded" false
 
-(* ───── Capture wiring: tails, per-attempt truncation, stream ───── *)
+(* Capture wiring: tails, per-attempt truncation, stream *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -429,7 +429,7 @@ let () =
         (f.Failure.output_tail = None)
   | _ -> check "stream: one failure" false
 
-(* ───── Global Random reseed ───── *)
+(* Global Random reseed *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -460,7 +460,7 @@ let () =
   check "the ambient Random state is restored after the run"
     (Random.int 1_000_000 = expected)
 
-(* ───── Selection ───── *)
+(* Selection *)
 
 let ran_names outcome =
   List.map
@@ -544,7 +544,7 @@ let () =
   check "focus_active is reported" outcome.Runner.focus_active;
   check "a focused run of passing tests exits 0" (outcome.Runner.exit_code = 0)
 
-(* ───── The CI focus guard ───── *)
+(* The CI focus guard *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -583,7 +583,7 @@ let () =
     [ ""; "false"; "0" ];
   clear_env ()
 
-(* ───── Exit codes ───── *)
+(* Exit codes *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -614,7 +614,7 @@ let () =
   @@ fun outcome ->
   check "all-skipped ratification" (outcome.Runner.exit_code = 0)
 
-(* ───── Expected failures (amendment B12) ───── *)
+(* Expected failures (amendment B12) *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -791,7 +791,7 @@ let () =
   expect_run "--failed reruns an unexpected pass" ~config:rerun tests
   @@ fun outcome -> check "xp reran" (ran_names outcome = [ "xp" ])
 
-(* ───── Sharding (amendment B14) ───── *)
+(* Sharding (amendment B14) *)
 
 let shard_names = [ "t-one"; "t-two"; "t-three"; "t-four"; "t-five" ]
 
@@ -916,7 +916,7 @@ let () =
       check "a malformed hand-built shard fails loudly" true
   | Ok _ | Error _ -> check "a malformed hand-built shard fails loudly" false
 
-(* ───── Test-body operations through the boundary (B9, B10, B13) ───── *)
+(* Test-body operations through the boundary (B9, B10, B13) *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1136,7 +1136,7 @@ let () =
                entries))
   | None -> check "prop-sub recorded" false
 
-(* ───── Fixture acquisition skips (amendment C1) ───── *)
+(* Fixture acquisition skips (amendment C1) *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1172,7 +1172,7 @@ let () =
   check "an unavailable optional resource does not turn the run red"
     (outcome.Runner.exit_code = 0 && outcome.Runner.release_failures = [])
 
-(* ───── Duplicate paths ───── *)
+(* Duplicate paths *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1207,7 +1207,7 @@ let () =
     | Runner.Duplicate_paths [ path ] -> contains "1" path
     | _ -> false)
 
-(* ───── Fixtures: release order, bail, release failures ───── *)
+(* Fixtures: release order, bail, release failures *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1321,7 +1321,7 @@ let () =
     (outcome.Runner.exit_code = 1
     && outcome_of outcome [ "acquires" ] = Some Failure.Pass)
 
-(* ───── Events and list-only ───── *)
+(* Events and list-only *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1352,7 +1352,7 @@ let () =
     && outcome.Runner.exit_code = 0);
   check "list-only: no events" (!events = [])
 
-(* ───── Property wiring ───── *)
+(* Property wiring *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1526,7 +1526,7 @@ let () =
         && contains "never" (message_of f))
   | _ -> check "under-covered: one failure" false
 
-(* ───── Nested runs ───── *)
+(* Nested runs *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1544,7 +1544,7 @@ let () =
         (contains "already active" actual)
   | _ -> check "a nested run fails the calling test" false
 
-(* ───── Snapshot guard and prune plumbing ───── *)
+(* Snapshot guard and prune plumbing *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1592,7 +1592,7 @@ let () =
         (refusal.Snapshot.not_update_run && not refusal.Snapshot.filtered)
   | _ -> check "check-mode prune is refused" false
 
-(* ───── The last-failed store ───── *)
+(* The last-failed store *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1675,7 +1675,7 @@ let () =
     [ Test_tree.test "new-test" (fun () -> ()) ]
     (function Runner.No_recorded_failures -> true | _ -> false)
 
-(* ───── The exit guard (D1) ───── *)
+(* The exit guard (D1) *)
 
 (* The frozen interception text (runner.mli, classification). *)
 let exit_message =
@@ -1838,7 +1838,7 @@ let () =
         | _ -> false)
   | _ -> check "exit-subtest: exactly one failure" false
 
-(* ───── Location capture at the boundary (D4) ───── *)
+(* Location capture at the boundary (D4) *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1860,7 +1860,7 @@ let () =
         (f.Failure.loc = Some (Loc.of_pos pos))
   | _ -> check "tail-loc: exactly one failure" false
 
-(* ───── srandom recording (D5 §6) ───── *)
+(* srandom recording (D5 §6) *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -1907,6 +1907,6 @@ let () =
         (r.Run.attempts = 2 && r.Run.srandom_root = Some config.Run.seed)
   | None -> check "flaky draw result present" false
 
-(* ───── Summary ───── *)
+(* Summary *)
 
 let () = finish ()

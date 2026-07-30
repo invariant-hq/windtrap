@@ -88,7 +88,7 @@ let () =
   let parent_dump = scratch "parent.coverage" in
   Unix.putenv "WINDTRAP_COVERAGE_FILE" parent_dump
 
-(* ───── Registry: register / visit / snapshot ───── *)
+(* Registry: register / visit / snapshot *)
 
 (* Runs [f] with [stderr] captured to a scratch file; returns what it
    wrote. The runtime's warnings end with [%!], so no flushing races. *)
@@ -244,7 +244,7 @@ let registry_tests =
           (not (contains "6000 6020" serialized)));
   ]
 
-(* ───── Collections: add / merge matrices ───── *)
+(* Collections: add / merge matrices *)
 
 let ab () =
   let t =
@@ -461,7 +461,7 @@ let collection_tests =
                   (Result.map fst (C.of_string empty_points_serialized)))));
   ]
 
-(* ───── Rejection of foreign and corrupt data ───── *)
+(* Rejection of foreign and corrupt data *)
 
 let rejection_tests =
   [
@@ -559,7 +559,7 @@ let rejection_tests =
         | Ok _ | Error _ -> check "loading a missing file is Unreadable" false);
   ]
 
-(* ───── Deterministic output filenames, the root rule, identities ───── *)
+(* Deterministic output filenames, the root rule, identities *)
 
 let filename_tests =
   [
@@ -618,7 +618,7 @@ let filename_tests =
           = C.output_file ~exe:"/w/p/_build/.sandbox/9f/default/test/a.exe"));
   ]
 
-(* ───── Extent -> line derivation ───── *)
+(* Extent -> line derivation *)
 
 let three_lines = "line one\nline two\nline three\n"
 (* offsets: line 1 = 0-8 (newline at 8), line 2 = 9-17, line 3 = 18-27 *)
@@ -680,7 +680,7 @@ let line_tests =
           ~actual:(C.format_ranges []));
   ]
 
-(* ───── Summaries ───── *)
+(* Summaries *)
 
 let summary_tests =
   [
@@ -704,7 +704,7 @@ let summary_tests =
           (C.style { C.visited = 59; total = 100 } = `Red));
   ]
 
-(* ───── Reports against real sources ───── *)
+(* Reports against real sources *)
 
 let write_source path contents =
   let rec mkdir_p dir =
@@ -803,7 +803,7 @@ let report_tests =
               ~actual:(List.length reports));
   ]
 
-(* ───── Excerpt regions ───── *)
+(* Excerpt regions *)
 
 let ten_lines =
   String.concat "" (List.init 10 (fun i -> Printf.sprintf "l%d\n" (i + 1)))
@@ -860,7 +860,7 @@ let excerpt_tests =
         | _ -> check "a trailing newline opens no phantom line" false);
   ]
 
-(* ───── The at_exit dump, end to end ───── *)
+(* The at_exit dump, end to end *)
 
 let child_expected counts =
   Printf.sprintf
@@ -934,7 +934,7 @@ let dump_tests =
           (not (Sys.file_exists child_file)));
   ]
 
-(* ───── The suite ───── *)
+(* The suite *)
 
 let () =
   run "coverage"

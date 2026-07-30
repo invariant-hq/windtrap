@@ -2,10 +2,10 @@
   Copyright (c) 2026 Thibaut Mattio. All rights reserved.
   SPDX-License-Identifier: ISC
 
-  Adapted from windtrap-next's atomic_file.ml: exclusive temporary creation,
-  EINTR-safe writes, and rename-based replacement are kept; the durability
-  (fsync) ceremony and the structured per-operation error catalogue are
-  dropped per the v3 RFC.
+  Exclusive temporary creation, EINTR-safe writes, and rename-based
+  replacement; no durability (fsync) ceremony and no structured
+  per-operation error catalogue — publication atomicity is the whole
+  contract.
   --------------------------------------------------------------------------*)
 
 let temp_prefix = ".tmp-"

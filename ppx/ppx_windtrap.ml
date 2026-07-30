@@ -3,8 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The ppx_windtrap rewriter: a location recorder and nothing more (RFC
-   Law 10). It rewrites [let%test] / [module%test] / [let%expect_test]
+(* The ppx_windtrap rewriter: a location recorder and nothing more.
+   It rewrites [let%test] / [module%test] / [let%expect_test]
    into registration calls, each [[%expect]] / [[%expect_exact]] node
    into [Ppx_runtime.expect ~id] with a declared node table, and
    [[%expect.output]] into [Ppx_runtime.expect_output ()]. Every
@@ -14,19 +14,22 @@
    Adapted from windtrap 0.1's ppx/ppx_windtrap.ml (extension surface,
    cookie handling) and rebased on the v3 Ppx_runtime contract: per-node
    ids with exact payload extents replace v1's per-call locations, and
-   the generated code references the ambient [Expect_test_config] (RFC
-   compat mechanism (b)). Node and location shapes follow upstream
-   ppx_expect's src/ppx_expect.ml at the pinned conformance commit
-   (test/conformance/NOTICE) where the RFC cites it.
+   the generated code references the ambient [Expect_test_config]
+   top-level module, matching ppx_expect (mechanism (b) below). Node and
+   location shapes follow upstream ppx_expect's src/ppx_expect.ml at the
+   pinned conformance commit (test/conformance/NOTICE).
 
-   Compat mechanism (a): expect-family attributes and extensions this
-   PPX does not implement are rejected at expansion time with a "not
-   supported by ppx_windtrap" error — never left unexpanded. *)
+   Two ppx_expect compatibility mechanisms live here: (a) expect-family
+   attributes and extensions this PPX does not implement are rejected at
+   expansion time with a "not supported by ppx_windtrap" error — never
+   left unexpanded; (b) generated code references the ambient
+   [Expect_test_config], so user code can shadow it exactly as with
+   ppx_expect. *)
 
 open Ppxlib
 open Ast_builder.Default
 
-(* ───── Jane Street cookies (inline-test drop modes) ───── *)
+(* Jane Street cookies (inline-test drop modes) *)
 
 type maybe_drop = Keep | Drop
 
@@ -63,7 +66,7 @@ let () =
 
 let maybe_drop items = match !maybe_drop_mode with Keep -> items | Drop -> []
 
-(* ───── The runtime path in generated code ───── *)
+(* The runtime path in generated code *)
 
 (* One place spells the path; generated references, constructors, and
    record fields all derive from it. *)
@@ -86,7 +89,7 @@ let runtime_record ~loc fields =
 let runtime_construct ~loc name arg =
   pexp_construct ~loc { txt = runtime_lid name; loc } arg
 
-(* ───── Locations as Ppx_runtime.loc expressions ───── *)
+(* Locations as Ppx_runtime.loc expressions *)
 
 (* Ppx_runtime.loc is byte offsets: start_pos/end_pos are pos_cnum,
    start_bol is pos_bol, line is 1-based pos_lnum (see
@@ -111,7 +114,7 @@ let point_loc_expr ~loc (p : Lexing.position) =
       ("end_pos", eint ~loc p.pos_cnum);
     ]
 
-(* ───── The expect-family compatibility envelope ───── *)
+(* The expect-family compatibility envelope *)
 
 (* Names ppx_expect claims that this PPX implements. Everything else in
    the family is rejected loudly (mechanism (a)). *)
@@ -159,7 +162,7 @@ let reject_leftovers =
       super#attribute attr
   end
 
-(* ───── Shared parsing: names and [@tags] ───── *)
+(* Shared parsing: names and [@tags] *)
 
 type test_name = Explicit of string | Anonymous
 
@@ -214,7 +217,7 @@ let test_name_string ~loc = function
 
 let tags_expr ~loc tags = elist ~loc (List.map (estring ~loc) tags)
 
-(* ───── let%expect_test ───── *)
+(* let%expect_test *)
 
 type expect_test_binding = {
   name : test_name;
@@ -383,7 +386,7 @@ let expect_test_extension =
       in
       maybe_drop [ [%stri let () = [%e call]] ])
 
-(* ───── let%test and module%test ───── *)
+(* let%test and module%test *)
 
 (* [mod_attributes] is the binding's attributes minus the consumed
    [@tags], kept on the rebuilt module — doc comments and [@@warning]
@@ -497,7 +500,7 @@ let test_extension =
               [%stri let () = [%e leave]];
             ])
 
-(* ───── Registration ───── *)
+(* Registration *)
 
 let () =
   Driver.register_transformation "ppx_windtrap"

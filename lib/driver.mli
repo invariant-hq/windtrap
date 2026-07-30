@@ -100,14 +100,14 @@ val report_snapshots :
     Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
     summary. *)
 
-(** {1:coverage The coverage seam (Law 12)} *)
+(** {1:coverage The coverage seam} *)
 
 val snapshot_coverage : Run.t -> Windtrap_coverage.t
 (** [snapshot_coverage run] snapshots in-process coverage at run end: when
     instrumented code registered any data, the summary is recorded into [run]
     ({!Run.set_coverage}) for renderers to project like any other run data.
-    Returns the collection for {!coverage_report}. The entire Law-12 coupling of
-    the core library lives here and in the renderers.
+    Returns the collection for {!coverage_report}. The core library's entire
+    coverage coupling lives here and in the renderers.
 
     The recorded summary carries the sibling fact ({!Run.summary.siblings}):
     whether other executables' [.coverage] dumps sit beside this process's dump

@@ -4,7 +4,8 @@
 
    Workflow-command emission adapts windtrap v1's progress.ml
    emit_github_annotation, rebuilt over typed Failure payloads with the
-   documented data and property percent-encodings (RFC v3 Law 4 commentary).
+   documented data and property percent-encodings — the renderer owns its
+   transport's validity.
   ---------------------------------------------------------------------------*)
 
 let spf = Printf.sprintf
@@ -65,8 +66,8 @@ let annotations ?invocation results =
   let buf = Buffer.create 256 in
   List.iter
     (fun (r : Run.result) ->
-      (* Counted failures only (the record's bit, amendment B12): an excused
-         expected failure did not fail the run and annotates nothing. *)
+      (* Counted failures only (the record's bit): an excused expected
+         failure did not fail the run and annotates nothing. *)
       match r.outcome with
       | Failure.Fail fs when r.counted ->
           List.iter

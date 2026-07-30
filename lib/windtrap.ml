@@ -8,12 +8,12 @@
    slot), and the [run] driver gluing Cli, Runner, and the renderers.
    Wiring only — semantics live in the modules below. *)
 
-(* ───── Public modules ───── *)
+(* Public modules *)
 
 module Testable = Testable
 module Gen = Gen
 
-(* ───── Internal modules (see [Private] in the .mli) ───── *)
+(* Internal modules (see [Private] in the .mli) *)
 
 module Private = struct
   module Atomic_file = Atomic_file
@@ -43,14 +43,14 @@ module Private = struct
   module Text = Text
 end
 
-(* ───── Types ───── *)
+(* Types *)
 
 type test = Test_tree.t
 type pos = string * int * int * int
 type 'a printer = Format.formatter -> 'a -> unit
 type 'a testable = 'a Testable.t
 
-(* ───── Declaring tests ───── *)
+(* Declaring tests *)
 
 let test = Test_tree.test
 let group = Test_tree.group
@@ -62,7 +62,7 @@ let xfail = Test_tree.xfail
 let bracket = Test_tree.bracket
 let fixture = Run.fixture
 
-(* ───── Assertions ───── *)
+(* Assertions *)
 
 let equal = Check.equal
 let not_equal = Check.not_equal
@@ -87,8 +87,8 @@ let skip = Check.skip
 (* Inside a run the control exceptions never reach uncaught-exception
    rendering: the runner's boundary consumes them. One escaping without a
    run (an assertion at module toplevel, a helper script) would print as an
-   opaque constructor; render the typed payload instead — a projection, per
-   Law 4, on the only path with no renderer downstream. *)
+   opaque constructor; render the typed payload instead — a projection on
+   the only path with no renderer downstream. *)
 let () =
   Printexc.register_printer (function
     | Failure.Check_failure failure ->
@@ -99,7 +99,7 @@ let () =
           ^ match reason with Some reason -> ": " ^ reason | None -> "")
     | _ -> None)
 
-(* ───── Testable instances ───── *)
+(* Testable instances *)
 
 let unit = Testable.unit
 let bool = Testable.bool
@@ -126,7 +126,7 @@ let pass = Testable.pass
 let of_equal = Testable.of_equal
 let contramap = Testable.contramap
 
-(* ───── Properties ───── *)
+(* Properties *)
 
 (* Facade [prop] tests carry this tag: it makes properties selectable
    ([--tag prop]) and lets [run] print the root seed in the header exactly
@@ -155,12 +155,12 @@ let classify label cond = Property.classify (prop_context "classify") label cond
 let cover ~label ~at_least cond =
   Property.cover (prop_context "cover") ~label ~at_least cond
 
-(* ───── Snapshots ───── *)
+(* Snapshots *)
 
 (* The scoping file is the caller's [~pos] file, else the enclosing test's
-   declaration file — never a backtrace frame at snapshot call time (RFC
-   "Snapshots", resolution rule): a snapshot reached through a helper in
-   another file must not relocate its baseline. *)
+   declaration file — never a backtrace frame at snapshot call time: a
+   snapshot reached through a helper in another file must not relocate its
+   baseline. *)
 let snapshot_check ?pos name actual =
   let frame = Run.current_frame () in
   let scope =
@@ -168,7 +168,7 @@ let snapshot_check ?pos name actual =
   in
   (* Site ladder: explicit pos, else surviving call frame, else the checking
      test's declaration — display and duplicate-identity data only; the
-     scope above never reads a frame (RFC "Snapshots"). *)
+     scope above never reads a frame. *)
   let loc =
     match Loc.resolve ?pos () with Some _ as l -> l | None -> Run.loc frame
   in
@@ -183,11 +183,11 @@ let snapshot ?pos name actual = snapshot_check ?pos name actual
 let snapshot_pp ?pos name pp value =
   snapshot_check ?pos name (Pp.to_string pp value)
 
-(* ───── Captured output ───── *)
+(* Captured output *)
 
 let output ?pos () = Capture.output ?pos (Run.capture (Run.current ()))
 
-(* ───── The running test ───── *)
+(* The running test *)
 
 let current_test = Run.current_test
 let subtest = Run.subtest
@@ -195,11 +195,11 @@ let srandom = Run.srandom
 let temp_dir = Run.temp_dir
 let temp_file = Run.temp_file
 
-(* ───── Running ───── *)
+(* Running *)
 
 let version = "3.0.0~dev"
 
-(* The hint context (D5 §1), computed once at startup and threaded to every
+(* The hint context, computed once at startup and threaded to every
    renderer and transport: under dune, a [dune exec] spelling of this
    executable — truthful for every dune invocation of every stanza kind,
    where [dune runtest] and [dune exec] are indistinguishable (both set
@@ -222,7 +222,7 @@ let print_cli_error ~prog error =
   Format.eprintf "%s@.%s@." (Cli.error_message error) (Cli.usage ~prog)
 
 let write_junit ~invocation ~suite ~duration ~results path =
-  (* Excused-aware (B12): an xfail excused failure emits as a skipped
+  (* Excused-aware: an xfail excused failure emits as a skipped
      testcase — the transport classifies from the result records, matching
      the run it did not fail; [invocation] keeps the hint bytes in failure
      bodies equal to the terminal block's. *)
@@ -245,7 +245,7 @@ let write_junit ~invocation ~suite ~duration ~results path =
    JUnit, and the process exit. *)
 let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
   let github = Env.in_github_actions () && not config.Run.list_only in
-  (* The one invocation every command hint derives from (D5 §1): computed
+  (* The one invocation every command hint derives from: computed
      here, at startup, and threaded to the renderer and both transports. *)
   let invocation = invocation_of ~inside_dune:(Env.inside_dune ()) argv in
   let renderer = Driver.renderer ~config ~mode:output ~invocation () in
@@ -305,7 +305,7 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
       exit outcome.Runner.exit_code
 
 let run ?(argv = Sys.argv) suite tests =
-  (* [Run.active], not [current_opt] (D1): the slot also holds the run
+  (* [Run.active], not [current_opt]: the slot also holds the run
      itself between attempts — a fixture release or an observer starting a
      nested run is refused like a test body would be. *)
   if Run.active () then
