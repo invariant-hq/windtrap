@@ -1,0 +1,14 @@
+bad_cwd: 1 test
+F
+──────────────────── failures (1) ────────────────────
+  FAIL  Inline_bad_cwd › stale payload
+    test/ppx/bad_cwd/inline_bad_cwd.ml:8
+    expected  stale payload
+    actual    fresh output
+    ── captured output (1 line) ──
+    fresh output
+    full log: <log>
+──────────────────────────────────────────────────────
+1 failed in <duration>s.
+Error: correction for test/ppx/bad_cwd/inline_bad_cwd.ml not written: <scratch>/inline_bad_cwd.ml: No such file or directory
+.corrected in scratch cwd: no

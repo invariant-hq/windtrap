@@ -75,15 +75,17 @@ let runtime_lid name =
 
 let runtime_fn ~loc name = pexp_ident ~loc { txt = runtime_lid name; loc }
 
-(* A record of a runtime-declared type: the first field is qualified so
-   the type resolves without warnings in any user warning regime. *)
+(* A record of a runtime-declared type: every field is qualified. A bare
+   field would resolve by type-directed disambiguation (Ppx_runtime is
+   never opened in user code, and [loc] names a field of several of its
+   record types), which is warning 42 — fatal in a user library compiled
+   with -w +a -warn-error +a. *)
 let runtime_record ~loc fields =
   match fields with
   | [] -> assert false
-  | (first, e) :: rest ->
+  | _ :: _ ->
       pexp_record ~loc
-        (({ txt = runtime_lid first; loc }, e)
-        :: List.map (fun (f, e) -> ({ txt = Lident f; loc }, e)) rest)
+        (List.map (fun (f, e) -> ({ txt = runtime_lid f; loc }, e)) fields)
         None
 
 let runtime_construct ~loc name arg =
@@ -287,7 +289,7 @@ let payload_expr ~loc = function
           [
             ("contents", estring ~loc contents);
             ("delimiter", delimiter_expr);
-            ("loc", compact_loc_expr ~loc literal_loc);
+            ("literal_loc", compact_loc_expr ~loc literal_loc);
           ]
       in
       [%expr Some [%e record]]

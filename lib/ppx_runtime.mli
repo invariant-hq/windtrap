@@ -84,10 +84,14 @@ type delimiter =
           (the corpus's corrected-quote shape). *)
   | Tag of string  (** [{tag|…|tag}] — corrections re-tag on conflict. *)
 
-type payload = { contents : string; delimiter : delimiter; loc : loc }
+type payload = { contents : string; delimiter : delimiter; literal_loc : loc }
 (** The type for expect payloads: the literal's [contents] as written, its
-    [delimiter], and the [loc] of the whole literal {e including} delimiters —
-    the exact range a correction overwrites. *)
+    [delimiter], and [literal_loc], the range of the whole literal {e including}
+    delimiters — the exact range a correction overwrites. The field is
+    deliberately not named [loc]: field names are unique across this module's
+    record types, so every field of a generated record literal resolves by its
+    qualified path alone, never by type-directed disambiguation — which is
+    warning 42, fatal in user code compiled with [-w +a -warn-error +a]. *)
 
 (** The type for node kinds: which extension the node was written as. *)
 type node_kind =
@@ -260,9 +264,12 @@ val flush_corrections : unit -> string list
 (** [flush_corrections ()] restores the module-load cwd, then writes
     [<basename>.corrected] there for every file with recorded corrections —
     dune's diff action expects the corrected file next to the copied source in
-    the sandbox — and clears the table. Returns the written file names. Files
-    whose source cannot be read are skipped (their corrections are dropped);
-    {!exit}'s exit code does not depend on the write succeeding. *)
+    the sandbox — and clears the table. Returns the written file names. A file
+    whose source cannot be read or whose target cannot be written is never
+    skipped silently: a line naming the source path and the reason is printed on
+    [stderr], and {!exit} then terminates nonzero — a failed expect test whose
+    correction never reached disk must not read as passed (see
+    {!inline_exit_code}). *)
 
 (** {1:protocol The runner protocol}
 
@@ -292,8 +299,12 @@ val exit : unit -> 'a
     [WINDTRAP_SLOW_THRESHOLD] tunes the slow warnings with ["slow"]-tagged tests
     exempt, and accepted baselines report their written paths project-root
     relative, one behavior across both runners (and GitHub annotations under
-    GitHub Actions); writes [.corrected] files; and exits with
-    {!inline_exit_code}. *)
+    GitHub Actions); writes [.corrected] files, naming each written one on
+    [stderr] (see {!correction_notice}); and exits with {!inline_exit_code} —
+    forced to [1] when any correction could not be written (see
+    {!flush_corrections}): dune's promotion diff can only surface corrections
+    that exist, so an unwritable one must fail the partition instead of exiting
+    [0] with nothing for the diff to catch. *)
 
 val inline_exit_code : Runner.outcome -> int
 (** [inline_exit_code outcome] is the inline runner's exit code for [outcome] —
@@ -302,17 +313,39 @@ val inline_exit_code : Runner.outcome -> int
     - [0] when the run passed, and also when nothing ran (an empty selection is
       an empty partition, not a filter typo);
     - [0] when {e every} failed test's failures are expect mismatches with
-      recorded corrections and no fixture release failed: dune's [progn] then
-      reaches the [diff?] action, which shows the diff and registers the
-      promotion;
+      recorded corrections and no fixture release failed: dune then reaches the
+      [diff?] step, which shows the diff and registers the promotion;
     - [1] otherwise: any assertion failure, uncaught exception, timeout,
       unreached expect node, or release failure. Corrections already recorded
-      are still written by {!flush_corrections} and surface on the next run.
+      are still written by {!flush_corrections}; under dune they are withheld
+      from promotion until a rerun in which every partition exits cleanly (see
+      {!correction_notice}).
+
+    The [0]-on-corrections case presumes the corrections reach disk: {!exit}
+    overrides this code to [1] when {!flush_corrections} could not write one,
+    because a failed expect test with no [.corrected] for dune to diff would
+    otherwise be recorded as passed.
 
     Skipped tests are invisible to this rule: a skip — in a plain or an expect
     test — neither forces [1] nor helps reach [0]. A run of skips and covered
     corrections exits [0]; a run of skips and one assertion failure exits [1];
     an all-skipped run exits [0]. *)
+
+val correction_notice : exit_code:int -> string list -> string option
+(** [correction_notice ~exit_code written] is the [stderr] notice for a runner
+    process that wrote the [.corrected] files [written] and is about to exit
+    with [exit_code], or [None] when [written] is empty. The first line —
+    [windtrap: wrote <files>] — prints whenever anything was written: dune runs
+    every partition of a library inside one action, and any partition's nonzero
+    exit fails the whole action, skips every diff step, and discards the sandbox
+    with all computed [.corrected] files in it, so this line is the only trace
+    of a computed correction that survives a sibling partition's failure. When
+    [exit_code] is nonzero a second, louder line explains that the corrections
+    just written are {e not} registered for promotion — dune withholds every
+    correction in the library until a rerun in which every inline-test process
+    exits cleanly — and names the way out: fix the failure, rerun, then
+    [dune promote]. {!exit} prints the notice after {!flush_corrections}, once
+    the exit code is settled. *)
 
 (** {1:seams Test seams} *)
 

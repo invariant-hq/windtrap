@@ -2,33 +2,33 @@ let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
     ~loc:{
            Ppx_windtrap_runtime.Ppx_runtime.line = 4;
-           start_bol = 122;
-           start_pos = 122;
-           end_pos = 162
+           Ppx_windtrap_runtime.Ppx_runtime.start_bol = 122;
+           Ppx_windtrap_runtime.Ppx_runtime.start_pos = 122;
+           Ppx_windtrap_runtime.Ppx_runtime.end_pos = 162
          } ~tags:[] "addition" (fun () -> assert ((1 + 1) = 2))
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
     ~loc:{
            Ppx_windtrap_runtime.Ppx_runtime.line = 5;
-           start_bol = 163;
-           start_pos = 163;
-           end_pos = 178
+           Ppx_windtrap_runtime.Ppx_runtime.start_bol = 163;
+           Ppx_windtrap_runtime.Ppx_runtime.start_pos = 163;
+           Ppx_windtrap_runtime.Ppx_runtime.end_pos = 178
          } ~tags:[] "line_5" (fun () -> ())
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
     ~loc:{
            Ppx_windtrap_runtime.Ppx_runtime.line = 6;
-           start_bol = 179;
-           start_pos = 179;
-           end_pos = 218
+           Ppx_windtrap_runtime.Ppx_runtime.start_bol = 179;
+           Ppx_windtrap_runtime.Ppx_runtime.start_pos = 179;
+           Ppx_windtrap_runtime.Ppx_runtime.end_pos = 218
          } ~tags:["slow"] "tagged" (fun () -> ())
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
     ~loc:{
            Ppx_windtrap_runtime.Ppx_runtime.line = 7;
-           start_bol = 219;
-           start_pos = 219;
-           end_pos = 263
+           Ppx_windtrap_runtime.Ppx_runtime.start_bol = 219;
+           Ppx_windtrap_runtime.Ppx_runtime.start_pos = 219;
+           Ppx_windtrap_runtime.Ppx_runtime.end_pos = 263
          } ~tags:["slow"; "io"] "multi" (fun () -> ())
 let () =
   Ppx_windtrap_runtime.Ppx_runtime.enter_group ~file:"./test_basic.ml"
@@ -40,9 +40,9 @@ module Outer =
       Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
         ~loc:{
                Ppx_windtrap_runtime.Ppx_runtime.line = 11;
-               start_bol = 310;
-               start_pos = 312;
-               end_pos = 355
+               Ppx_windtrap_runtime.Ppx_runtime.start_bol = 310;
+               Ppx_windtrap_runtime.Ppx_runtime.start_pos = 312;
+               Ppx_windtrap_runtime.Ppx_runtime.end_pos = 355
              } ~tags:[] "inner" (fun () -> assert ((helper + 1) = 42))
     let () =
       Ppx_windtrap_runtime.Ppx_runtime.enter_group ~file:"./test_basic.ml"
@@ -53,9 +53,9 @@ module Outer =
           Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
             ~loc:{
                    Ppx_windtrap_runtime.Ppx_runtime.line = 14;
-                   start_bol = 387;
-                   start_pos = 391;
-                   end_pos = 406
+                   Ppx_windtrap_runtime.Ppx_runtime.start_bol = 387;
+                   Ppx_windtrap_runtime.Ppx_runtime.start_pos = 391;
+                   Ppx_windtrap_runtime.Ppx_runtime.end_pos = 406
                  } ~tags:[] "line_14" (fun () -> ())
       end
     let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()
@@ -70,9 +70,9 @@ module Tagged =
       Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./test_basic.ml"
         ~loc:{
                Ppx_windtrap_runtime.Ppx_runtime.line = 19;
-               start_bol = 446;
-               start_pos = 448;
-               end_pos = 479
+               Ppx_windtrap_runtime.Ppx_runtime.start_bol = 446;
+               Ppx_windtrap_runtime.Ppx_runtime.start_pos = 448;
+               Ppx_windtrap_runtime.Ppx_runtime.end_pos = 479
              } ~tags:[] "in tagged group" (fun () -> ())
   end[@@warning "-60"]
 let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()

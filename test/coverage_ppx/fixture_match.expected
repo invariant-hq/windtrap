@@ -4,16 +4,34 @@ module Windtrap_cov_________fixture_match___ml =
     let ___windtrap_visit___ =
       let counts = Array.make 9 0 in
       Windtrap_coverage.register ~file:"./fixture_match.ml"
-        ~points:[|{ Windtrap_coverage.start_ofs = 150; end_ofs = 161 };
-                  { Windtrap_coverage.start_ofs = 173; end_ofs = 178
-                  };{ Windtrap_coverage.start_ofs = 166; end_ofs = 192 };
-                  { Windtrap_coverage.start_ofs = 204; end_ofs = 209
-                  };{ Windtrap_coverage.start_ofs = 197; end_ofs = 223 };
-                  { Windtrap_coverage.start_ofs = 133; end_ofs = 245
-                  };{ Windtrap_coverage.start_ofs = 284; end_ofs = 304 };
-                  { Windtrap_coverage.start_ofs = 269; end_ofs = 278
-                  };{ Windtrap_coverage.start_ofs = 265; end_ofs = 304 }|]
-        ~counts;
+        ~points:[|{
+                    Windtrap_coverage.start_ofs = 150;
+                    Windtrap_coverage.end_ofs = 161
+                  };{
+                      Windtrap_coverage.start_ofs = 173;
+                      Windtrap_coverage.end_ofs = 178
+                    };{
+                        Windtrap_coverage.start_ofs = 166;
+                        Windtrap_coverage.end_ofs = 192
+                      };{
+                          Windtrap_coverage.start_ofs = 204;
+                          Windtrap_coverage.end_ofs = 209
+                        };{
+                            Windtrap_coverage.start_ofs = 197;
+                            Windtrap_coverage.end_ofs = 223
+                          };{
+                              Windtrap_coverage.start_ofs = 133;
+                              Windtrap_coverage.end_ofs = 245
+                            };{
+                                Windtrap_coverage.start_ofs = 284;
+                                Windtrap_coverage.end_ofs = 304
+                              };{
+                                  Windtrap_coverage.start_ofs = 269;
+                                  Windtrap_coverage.end_ofs = 278
+                                };{
+                                    Windtrap_coverage.start_ofs = 265;
+                                    Windtrap_coverage.end_ofs = 304
+                                  }|] ~counts;
       (fun index -> Windtrap_coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =
       ___windtrap_visit___ point_index; result

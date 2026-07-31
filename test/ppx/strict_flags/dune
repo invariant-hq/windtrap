@@ -1,0 +1,25 @@
+; Strict-warning regression for the generated registration code: this
+; (inline_tests) library compiles its modules with -w +a -warn-error +a,
+; the harshest user regime, so every warning the PPX-generated code
+; provokes is a build failure here. The fixture exercises let%test,
+; module%test, and let%expect_test with every payload family (tagged,
+; quoted, exact, bare, output) so each generated record shape — loc,
+; payload, node — compiles with fully qualified fields: a field left to
+; type-directed disambiguation is fatal warning 42 under these flags.
+; The tests themselves pass; the regression is the build.
+
+; Quiet-on-green, as in ../inline: the generated runner runs once per
+; partition, and green partitions should not pay windtrap chrome.
+
+(env
+ (_
+  (env-vars
+   (WINDTRAP_QUIET 1))))
+
+(library
+ (name windtrap_test_ppx_strict)
+ (inline_tests)
+ (flags
+  (:standard -w +a -warn-error +a))
+ (preprocess
+  (pps ppx_windtrap)))

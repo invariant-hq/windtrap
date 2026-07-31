@@ -1,0 +1,39 @@
+; Wrong-verdict regression (spice dogfood): an inline partition whose
+; sources are unreadable from the runner's cwd must stay a loud failure.
+; runner_main.exe mirrors the inline_tests backend's generated runner
+; (the conformance corpus pattern); drive_bad_cwd.exe spawns it with the
+; protocol argv from a scratch directory that does not hold the copied
+; source, masks wall-clock durations and the scratch path, and records
+; the transcript and exit code. The committed goldens pin the failing
+; expect report, the stderr line naming the unwritable correction and
+; its reason, the absence of any .corrected in that cwd, and exit 1 —
+; before the fix this partition exited 0 with no .corrected, and dune
+; recorded it as PASSED.
+
+(executable
+ (name runner_main)
+ (modules runner_main inline_bad_cwd)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name drive_bad_cwd)
+ (modules drive_bad_cwd)
+ (libraries unix))
+
+(rule
+ (targets runner-log runner-exit)
+ (deps inline_bad_cwd.ml)
+ (action
+  (run ./drive_bad_cwd.exe runner %{dep:runner_main.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))

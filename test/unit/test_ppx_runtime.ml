@@ -88,7 +88,7 @@ let node_of source ~id ?(kind = Ppx_runtime.Expect) ~node_text ?payload () =
         {
           Ppx_runtime.contents;
           delimiter;
-          loc = mk_loc source pstart (pstart + String.length literal);
+          literal_loc = mk_loc source pstart (pstart + String.length literal);
         })
       payload
   in
@@ -1040,7 +1040,7 @@ let () =
             Ppx_runtime.contents = "old";
             delimiter = Ppx_runtime.Tag "";
             (* Shorthand syntax: the payload literal is the whole node. *)
-            loc = mk_loc source start (start + String.length literal);
+            literal_loc = mk_loc source start (start + String.length literal);
           };
     }
   in
@@ -1545,6 +1545,51 @@ let () =
   in
   check_int "matrix: covered mismatch + plain failure exits 1" ~expected:1
     ~actual:(exit_of ~register:mixed ~tweak_config:Fun.id ())
+
+(* The correction notice: the stderr trace of written .corrected files.
+   The wrote-line is unconditional (a sibling partition's failure makes
+   dune discard the sandbox, so this line is the only surviving trace of
+   a computed correction); the loud withheld-from-promotion line fires
+   only when the writing process itself exits nonzero. *)
+
+let () =
+  (match
+     Ppx_runtime.correction_notice ~exit_code:1 [ "a_mismatch.ml.corrected" ]
+   with
+  | None -> check "corrections + exit 1 produce a notice" false
+  | Some notice ->
+      check "corrections + exit 1 produce a notice" true;
+      check_contains "corrections + exit 1: the wrote line names the file"
+        ~sub:"windtrap: wrote a_mismatch.ml.corrected" notice;
+      check_contains "corrections + exit 1: the withheld notice fires"
+        ~sub:"1 correction written but NOT registered for promotion" notice;
+      check_contains "corrections + exit 1: the notice names the way out"
+        ~sub:"Fix that failure, rerun, then 'dune promote'." notice);
+  (match
+     Ppx_runtime.correction_notice ~exit_code:0 [ "a_mismatch.ml.corrected" ]
+   with
+  | None -> check "corrections + exit 0 produce a notice" false
+  | Some notice ->
+      check "corrections + exit 0 produce a notice" true;
+      check_contains "corrections + exit 0: the wrote line still prints"
+        ~sub:"windtrap: wrote a_mismatch.ml.corrected" notice;
+      check "corrections + exit 0: no withheld notice"
+        (match find notice "NOT registered" with
+        | _ -> false
+        | exception Invalid_argument _ -> true));
+  (match
+     Ppx_runtime.correction_notice ~exit_code:1
+       [ "a.ml.corrected"; "b.ml.corrected" ]
+   with
+  | None -> check "two corrections + exit 1 produce a notice" false
+  | Some notice ->
+      check_contains "two corrections: the wrote line lists both"
+        ~sub:"windtrap: wrote a.ml.corrected, b.ml.corrected" notice;
+      check_contains "two corrections: the count pluralizes"
+        ~sub:"2 corrections written but NOT registered" notice);
+  check "no corrections: no notice, whatever the exit code"
+    (Ppx_runtime.correction_notice ~exit_code:1 [] = None
+    && Ppx_runtime.correction_notice ~exit_code:0 [] = None)
 
 (* Corrections round-trip on a real temp source file *)
 

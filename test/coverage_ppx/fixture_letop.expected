@@ -4,12 +4,22 @@ module Windtrap_cov_________fixture_letop___ml =
     let ___windtrap_visit___ =
       let counts = Array.make 5 0 in
       Windtrap_coverage.register ~file:"./fixture_letop.ml"
-        ~points:[|{ Windtrap_coverage.start_ofs = 144; end_ofs = 147 };
-                  { Windtrap_coverage.start_ofs = 167; end_ofs = 173
-                  };{ Windtrap_coverage.start_ofs = 219; end_ofs = 224 };
-                  { Windtrap_coverage.start_ofs = 203; end_ofs = 224
-                  };{ Windtrap_coverage.start_ofs = 266; end_ofs = 272 }|]
-        ~counts;
+        ~points:[|{
+                    Windtrap_coverage.start_ofs = 144;
+                    Windtrap_coverage.end_ofs = 147
+                  };{
+                      Windtrap_coverage.start_ofs = 167;
+                      Windtrap_coverage.end_ofs = 173
+                    };{
+                        Windtrap_coverage.start_ofs = 219;
+                        Windtrap_coverage.end_ofs = 224
+                      };{
+                          Windtrap_coverage.start_ofs = 203;
+                          Windtrap_coverage.end_ofs = 224
+                        };{
+                            Windtrap_coverage.start_ofs = 266;
+                            Windtrap_coverage.end_ofs = 272
+                          }|] ~counts;
       (fun index -> Windtrap_coverage.visit counts index)
   end
 open Windtrap_cov_________fixture_letop___ml

@@ -56,7 +56,12 @@ let init argv =
 
 type loc = { line : int; start_bol : int; start_pos : int; end_pos : int }
 type delimiter = Quote | Tag of string
-type payload = { contents : string; delimiter : delimiter; loc : loc }
+
+(* [literal_loc], not [loc]: field names are unique across this module's
+   record types so generated record literals resolve every field by
+   qualified path alone — a collision would fall back to type-directed
+   disambiguation, fatal warning 42 under -w +a -warn-error +a. *)
+type payload = { contents : string; delimiter : delimiter; literal_loc : loc }
 type node_kind = Expect | Expect_exact
 type node = { id : int; kind : node_kind; loc : loc; payload : payload option }
 
@@ -426,8 +431,8 @@ let snode_of ~file:_ node =
   let shorthand =
     match node.payload with
     | Some p ->
-        p.loc.start_pos <= node.loc.start_pos
-        && p.loc.end_pos >= node.loc.end_pos
+        p.literal_loc.start_pos <= node.loc.start_pos
+        && p.literal_loc.end_pos >= node.loc.end_pos
     | None -> false
   in
   {
@@ -614,29 +619,44 @@ let read_file path =
     ~finally:(fun () -> close_in_noerr ic)
     (fun () -> really_input_string ic (in_channel_length ic))
 
-let flush_corrections () =
+(* One write attempt per file with recorded corrections. A file whose
+   source cannot be read or whose target cannot be written is a flush
+   failure: reported on stderr right here — a line naming the recorded
+   source path and the OS reason — never skipped silently, and returned
+   so the exit path can refuse to call the partition passed (a
+   correction dune never sees cannot surface through its promotion
+   diff). Returns the written target names and the failed sources. *)
+let flush_corrections_report () =
   Sys.chdir initial_dir;
   let files = Hashtbl.fold (fun file _ acc -> file :: acc) corrections [] in
-  let written =
-    List.filter_map
-      (fun file ->
-        match read_file (absolute_path file) with
-        | exception Sys_error _ -> None
-        | source -> (
-            match corrected_source ~file ~source with
-            | None -> None
-            | Some corrected ->
-                let target = Filename.basename file ^ ".corrected" in
-                let oc = open_out_bin target in
-                Fun.protect
-                  ~finally:(fun () -> close_out_noerr oc)
-                  (fun () -> output_string oc corrected);
-                Some target))
-      (List.sort compare files)
-  in
+  let written = ref [] and failed = ref [] in
+  List.iter
+    (fun file ->
+      let write () =
+        match
+          corrected_source ~file ~source:(read_file (absolute_path file))
+        with
+        | None -> ()
+        | Some corrected ->
+            let target = Filename.basename file ^ ".corrected" in
+            let oc = open_out_bin target in
+            Fun.protect
+              ~finally:(fun () -> close_out_noerr oc)
+              (fun () -> output_string oc corrected);
+            written := target :: !written
+      in
+      match write () with
+      | () -> ()
+      | exception Sys_error reason ->
+          Printf.eprintf "Error: correction for %s not written: %s\n%!" file
+            reason;
+          failed := file :: !failed)
+    (List.sort compare files);
   Hashtbl.reset corrections;
   Hashtbl.reset styled;
-  written
+  (List.rev !written, List.rev !failed)
+
+let flush_corrections () = fst (flush_corrections_report ())
 
 (* Coverage of failures by corrections (the exit protocol) *)
 
@@ -666,6 +686,36 @@ let inline_exit_code (outcome : Runner.outcome) =
         && outcome.Runner.release_failures = []
       then 0
       else 1
+
+(* The stderr trace of written corrections. Dune runs one sandboxed
+   action per library — every partition's runner concurrently, then the
+   per-file diff steps — and any nonzero runner exit fails the action,
+   skips every diff, and deletes the sandbox with all computed
+   .corrected files in it. No partition process can see a sibling's
+   corrections (the runs race in a shared sandbox), so the only trace
+   that survives a sibling's crash is a line each writing process
+   prints for itself: hence the unconditional "wrote" line. A process
+   that wrote corrections and itself exits nonzero adds the loud
+   explanation, because its own corrections are the ones its own exit
+   code just withheld. Under dune one partition is one file, so
+   [written] has at most one element; the plural-safe spelling keeps
+   by-hand multi-file runs honest. *)
+let correction_notice ~exit_code written =
+  match written with
+  | [] -> None
+  | files ->
+      let notice = Buffer.create 128 in
+      Printf.bprintf notice "windtrap: wrote %s\n" (String.concat ", " files);
+      let n = List.length files in
+      if exit_code <> 0 then
+        Printf.bprintf notice
+          "windtrap: %d correction%s written but NOT registered for promotion: \
+           a failure above is not an expect mismatch, and dune drops every \
+           correction in the library when any inline-test process fails. Fix \
+           that failure, rerun, then 'dune promote'.\n"
+          n
+          (if n = 1 then "" else "s");
+      Some (Buffer.contents notice)
 
 (* Expect-test execution *)
 
@@ -1049,8 +1099,19 @@ let run_inline_suite ~suite ~config ~coverage_mode tests =
       Driver.github_annotations ~github ~invocation:`Mirrors results;
       Format.pp_print_flush Format.std_formatter ();
       Format.pp_print_flush Format.err_formatter ();
-      ignore (flush_corrections () : string list);
-      inline_exit_code outcome
+      let written, unwritable = flush_corrections_report () in
+      (* The correction-coverage exit-0 downgrade presumes the correction
+         reached disk — dune's diff action can only surface corrections
+         that exist. A failed expect test whose correction was not
+         written must exit nonzero (the write failure was reported
+         above), or dune would record the partition as passed. *)
+      let code = if unwritable = [] then inline_exit_code outcome else 1 in
+      (match correction_notice ~exit_code:code written with
+      | None -> ()
+      | Some notice ->
+          output_string Stdlib.stderr notice;
+          flush Stdlib.stderr);
+      code
 
 let exit () =
   if not !am_test_runner then Stdlib.exit 0;

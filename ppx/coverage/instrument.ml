@@ -793,11 +793,15 @@ let runtime_initialization st ~file =
     Ast_builder.Default.pexp_array ~loc
       (List.rev_map
          (fun { key = _; start_ofs; end_ofs } ->
+           (* Every field qualified: a bare field would resolve by
+              type-directed disambiguation — warning 42, fatal in files
+              compiled with -w +a -warn-error +a. *)
            [%expr
              {
                Windtrap_coverage.start_ofs =
                  [%e Ast_builder.Default.eint ~loc start_ofs];
-               end_ofs = [%e Ast_builder.Default.eint ~loc end_ofs];
+               Windtrap_coverage.end_ofs =
+                 [%e Ast_builder.Default.eint ~loc end_ofs];
              }])
          st.rev_points)
   in

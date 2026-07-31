@@ -4,14 +4,28 @@ module Windtrap_cov_________fixture_class___ml =
     let ___windtrap_visit___ =
       let counts = Array.make 7 0 in
       Windtrap_coverage.register ~file:"./fixture_class.ml"
-        ~points:[|{ Windtrap_coverage.start_ofs = 378; end_ofs = 391 };
-                  { Windtrap_coverage.start_ofs = 411; end_ofs = 412
-                  };{ Windtrap_coverage.start_ofs = 429; end_ofs = 435 };
-                  { Windtrap_coverage.start_ofs = 321; end_ofs = 322
-                  };{ Windtrap_coverage.start_ofs = 466; end_ofs = 480 };
-                  { Windtrap_coverage.start_ofs = 486; end_ofs = 492
-                  };{ Windtrap_coverage.start_ofs = 458; end_ofs = 503 }|]
-        ~counts;
+        ~points:[|{
+                    Windtrap_coverage.start_ofs = 378;
+                    Windtrap_coverage.end_ofs = 391
+                  };{
+                      Windtrap_coverage.start_ofs = 411;
+                      Windtrap_coverage.end_ofs = 412
+                    };{
+                        Windtrap_coverage.start_ofs = 429;
+                        Windtrap_coverage.end_ofs = 435
+                      };{
+                          Windtrap_coverage.start_ofs = 321;
+                          Windtrap_coverage.end_ofs = 322
+                        };{
+                            Windtrap_coverage.start_ofs = 466;
+                            Windtrap_coverage.end_ofs = 480
+                          };{
+                              Windtrap_coverage.start_ofs = 486;
+                              Windtrap_coverage.end_ofs = 492
+                            };{
+                                Windtrap_coverage.start_ofs = 458;
+                                Windtrap_coverage.end_ofs = 503
+                              }|] ~counts;
       (fun index -> Windtrap_coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =
       ___windtrap_visit___ point_index; result
