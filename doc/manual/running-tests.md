@@ -130,6 +130,16 @@ moves the bar; `0` disables the warnings and the noteworthy trigger,
 so the row then appears on failures only. The slowest-tests list —
 diagnosis rather than signal — prints under `-v` only.
 
+Where the bar sits is a per-suite decision. Tests that do real IO —
+spawning subprocesses, driving a PTY, exercising a server end to
+end — legitimately spend seconds doing their job, and the default
+one-second threshold would flag every one of them. Choose
+deliberately: raise the bar with `--slow-threshold`
+(`WINDTRAP_SLOW_THRESHOLD`) when that pace is the suite's normal and
+every test should still run everywhere, or tag the tests `slow` when
+a fast loop may also drop them — the tag silences the warning *and*
+removes the test from `--quick` runs, so it trades noise for absence.
+
 `-v` (`WINDTRAP_VERBOSE`) prints one status line per test instead of
 the glyph, and a passing property that collected labels prints its
 label distribution under its `PASS` line — the calibration view for

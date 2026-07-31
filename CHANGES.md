@@ -202,7 +202,11 @@ the section below doubles as the migration reference from 0.1.0.
   corrections accepted via `dune promote`. Measured against Jane Street's
   pinned ppx_expect corpus: 33/36 supported cases byte-identical to
   upstream's corrections (91.7%), and 20/20 unsupported constructs rejected
-  with a loud error at the exact location.
+  with a loud error at the exact location. One formatting note: a correction
+  re-renders every `[%expect]` node of its file in the standard shape, so
+  the first promote of a file whose payloads carry other formatting — a
+  0.1.0 suite, hand-formatted blocks — reformats them all once; a file with
+  no corrections is never rewritten.
 - Coverage reporting: an inline percentage after the test results on
   instrumented runs, `--coverage`/`WINDTRAP_COVERAGE` modes (`summary`,
   `report`, `full`, `off`), and a `windtrap coverage` command that merges
@@ -215,6 +219,21 @@ the section below doubles as the migration reference from 0.1.0.
 
 ### Fixed
 
+- One crashing test no longer suppresses a library's expect corrections
+  silently: every inline-test process that writes a `.corrected` file names
+  it on stderr (`windtrap: wrote <file>.corrected`), and a process that
+  wrote corrections and still fails adds a loud notice that dune withholds
+  every correction in the library from `dune promote` until the failure is
+  fixed and the suite rerun.
+- A correction that cannot be written — source unreadable or target
+  unwritable — is no longer dropped silently: the runner prints
+  `Error: correction for <file> not written: <reason>` and the partition
+  exits 1, so a failed expect test can never be recorded as passed just
+  because its correction never reached disk.
+- PPX-generated code no longer relies on type-directed record
+  disambiguation, so inline-test libraries build clean under strict warning
+  sets (`(flags (:standard -w +a -warn-error +a))`) — adopting projects
+  need no `-w -42` workarounds in their `dune` files.
 - `Stdlib.exit` called from a test body, setup, teardown, or fixture
   release no longer terminates the process mid-run with the caller's exit
   code and no report: the attempt is intercepted and recorded as that

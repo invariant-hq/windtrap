@@ -152,11 +152,17 @@ $ dune promote
 Read every promoted diff as a code change: promotion is where bugs get
 blessed as expected output.
 
+The offer is perishable: dune rebuilds its pending-promotion set on
+every invocation, so `dune promote` (or `dune promote lib/parser.ml`
+to take one file) must directly follow the failing `dune runtest` —
+run any other dune command in between and the set is cleared, with
+nothing to promote until the next failing run records it again.
+
 Mechanics worth knowing:
 
 - `[%expect]` matches with ppx_expect's whitespace flexibility: lines
   are trimmed, blank edges dropped, and the block dedented before
-  comparison, so payload indentation never causes churn.
+  comparison, so payload indentation never causes a mismatch.
   `[%expect_exact {|…|}]` matches byte-for-byte.
 - A test may hold several `[%expect]` nodes; each consumes the output
   since the previous one. Every reached node records its result, so
@@ -169,6 +175,13 @@ Mechanics worth knowing:
   `equal` mismatch or a raise. To pin an expected exception, catch and
   print it: `(try boom () with e -> print_string (Printexc.to_string e));
   [%expect {| Failure("boom") |}]`.
+  Promotion is per-library, not per-file: dune registers corrections
+  only when every inline-test process of the library exits cleanly, so
+  one raising test anywhere in the library withholds `dune promote` for
+  *all* of the library's corrections — including other files'. The run
+  still tells you what was computed: each `windtrap: wrote
+  <file>.corrected` line names a correction that will be offered once
+  the failing test is fixed and the suite rerun.
 - Shadowing `Expect_test_config` tunes a whole file; the useful knob
   is `sanitize`, applied to every read of captured output:
 
@@ -204,8 +217,9 @@ numbers). Concretely:
 - Honored: `let%expect_test`, `[%expect]`, `[%expect_exact]`,
   `[%expect.output]`, `{%expect|…|}` string-extension syntax, quoted
   payloads, functor-duplicated tests, output from C stubs — with
-  corrections formatted as ppx_expect formats them, so first promote
-  produces no formatting churn.
+  corrections formatted exactly as ppx_expect formats them, so a suite
+  whose payloads already carry ppx_expect's shape sees no formatting
+  churn on first promote (the caveat below covers suites that don't).
 - Rejected loudly at expansion, with a diagnostic naming the
   construct: `[@@expect.uncaught_exn]`, `[%expect.unreachable]`,
   `[%expect.if_reached]`, `[%expectation]`. A monadic
@@ -221,6 +235,19 @@ numbers). Concretely:
     (try boom () with e -> print_string (Printexc.to_string e));
     [%expect {| Failure("boom") |}]
   ```
+
+The first-promote caveat: a correction rewrites its file's
+expectations wholesale. In a file with at least one correction, every
+`[%expect]` node of the file's resolved tests is re-rendered in the
+standard shape, not just the failing ones. Payloads already in
+ppx_expect's shape reproduce byte-identically — that is the no-churn
+case above; payloads that carry any other formatting — hand-formatted
+blocks, or a suite adopted from windtrap 0.1 — are canonicalized in
+the same diff. Expect the first promote after such an adoption to
+reformat whole files at once, and review that diff as one-time
+formatting plus the real changes. A file with no corrections is never
+rewritten, so a matching suite stays byte-stable whatever shape its
+payloads are in.
 
 ## Choosing
 
