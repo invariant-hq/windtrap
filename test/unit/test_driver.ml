@@ -29,7 +29,7 @@ let make_run ?snapshots () =
   in
   Run.create (Run.default_config ()) ~capture:Capture.disabled ~snapshots
 
-let outcome ?snapshots ?(orphans = []) ?pruned () =
+let outcome ?snapshots ?(orphans = []) ?pruned ?(release_failures = []) () =
   {
     Runner.run = make_run ?snapshots ();
     selected = [];
@@ -37,7 +37,7 @@ let outcome ?snapshots ?(orphans = []) ?pruned () =
     focus_active = false;
     bailed = false;
     failed_paths = [];
-    release_failures = [];
+    release_failures;
     orphans;
     pruned;
     duration = 0.1;
@@ -50,6 +50,43 @@ let report ?(output = `Compact) ?(invocation = `Mirrors) outcome =
   Driver.report_snapshots ~out ~output ~invocation outcome;
   Format.pp_print_flush out ();
   Buffer.contents buf
+
+(* Fixture release failures reach the sinks
+
+   Releases run after the last test, so their failures are not in
+   [Run.results] and every sink projects results — before
+   [results_with_releases] the run exited 1 while the terminal said
+   everything passed and the JUnit document reported failures="0". Law 8
+   requires body and release failures both to be reported. *)
+
+let release_failure name =
+  Failure.message (name ^ ": release raised Failure(\"boom\")")
+  |> Failure.with_phase Failure.Release
+
+let test_release_failures_reach_the_sinks () =
+  let clean = outcome () in
+  check "a clean run adds nothing"
+    (Driver.results_with_releases clean = Run.results clean.Runner.run);
+  let failed = outcome ~release_failures:[ release_failure "db" ] () in
+  match Driver.results_with_releases failed with
+  | [ r ] ->
+      check "the release failure is a counted failure" r.Run.counted;
+      check "it carries the Release phase"
+        (match r.Run.outcome with
+        | Failure.Fail [ f ] -> f.Failure.phase = Failure.Release
+        | _ -> false);
+      (* Renderers key off the path, so it must not read as a test. *)
+      check_string "it reports under its own path" ~expected:"fixture release"
+        ~actual:(Test_tree.path_to_string r.Run.path);
+      (* The run itself stays untouched: Runner decides "the whole suite
+         executed" by comparing the result count against the selected
+         count, and an extra row there disables orphans and --prune. *)
+      check "the run's own results are unchanged"
+        (Run.results failed.Runner.run = [])
+  | rs ->
+      check
+        (Printf.sprintf "expected one synthetic result, got %d" (List.length rs))
+        false
 
 (* The snapshot/prune report *)
 
@@ -228,4 +265,6 @@ let tests =
       test_github_envelope_composed;
     test "coverage seam: mode selection and the empty snapshot"
       test_coverage_seam;
+    test "fixture release failures reach the sinks"
+      test_release_failures_reach_the_sinks;
   ]

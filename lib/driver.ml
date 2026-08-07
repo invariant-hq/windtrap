@@ -168,6 +168,40 @@ let snapshot_coverage run =
   end;
   collection
 
+(* The path a release failure reports under. Not a test path — no test owns
+   a release — so it is a single component that cannot collide with one: a
+   declared path component may not contain the separator. *)
+let release_path = "fixture release"
+
+(* Fixture releases (Run.release_fixtures)
+
+   Releases run after the last test, so a release failure never enters
+   [Run.results] — [Runner] carries it beside them, and every sink projects
+   results. Give it one: a synthetic result per failure, built here so both
+   runners get the same thing and no sink has to learn a second shape.
+
+   Deliberately NOT recorded into the run. [Runner] decides "did the whole
+   suite execute" as [List.length results = total], and an extra row there
+   would silently disable orphan reporting and [--prune]. *)
+let release_results (outcome : Runner.outcome) =
+  List.map
+    (fun failure ->
+      {
+        Run.path = [ release_path ];
+        outcome = Failure.Fail [ failure ];
+        counted = true;
+        xfail = None;
+        slow_tagged = false;
+        duration = 0.;
+        attempts = 1;
+        prop_stats = None;
+        srandom_root = None;
+      })
+    outcome.Runner.release_failures
+
+let results_with_releases outcome =
+  Run.results outcome.Runner.run @ release_results outcome
+
 let coverage_summary ~coverage_mode run =
   match coverage_mode with
   | `Summary -> Run.coverage run
@@ -178,7 +212,13 @@ let coverage_report renderer ~coverage_mode run collection =
   | (`Report | `Full) as mode when Run.coverage run <> None ->
       (* Sources are recorded workspace-relative; under `dune runtest` the
          cwd is inside _build, so resolve them like snapshots do. *)
-      Render.coverage_report renderer
-        ~source_roots:[ Path_ops.project_root () ]
-        ~mode collection
+      (* Root discovery reads the cwd, which a test may have removed: the
+         report degrades to unresolved sources rather than raising out of
+         the reporting path after the tests are already done. *)
+      let source_roots =
+        match Path_ops.project_root () with
+        | root -> [ root ]
+        | exception Sys_error _ -> []
+      in
+      Render.coverage_report renderer ~source_roots ~mode collection
   | `Report | `Full | `Summary | `Off -> ()

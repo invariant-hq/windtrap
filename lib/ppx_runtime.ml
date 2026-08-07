@@ -1086,7 +1086,8 @@ let run_inline_suite ~suite ~config ~coverage_mode tests =
       prerr_endline (Runner.startup_message error);
       Runner.startup_exit_code error
   | Ok outcome ->
-      let results = Run.results outcome.Runner.run in
+      (* As the library runner: release failures are part of the verdict. *)
+      let results = Driver.results_with_releases outcome in
       let coverage_data = Driver.snapshot_coverage outcome.Runner.run in
       Render.finish renderer
         ?coverage:(Driver.coverage_summary ~coverage_mode outcome.Runner.run)

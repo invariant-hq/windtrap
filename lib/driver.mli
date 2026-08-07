@@ -127,6 +127,25 @@ val coverage_summary :
     the report modes print their own line ({!coverage_report}), and [`Off]
     prints nothing. *)
 
+(** {1:releases Fixture release failures} *)
+
+val results_with_releases : Runner.outcome -> Run.result list
+(** [results_with_releases outcome] is the run's results followed by one
+    synthetic result per fixture-release failure.
+
+    Releases run after the last test, so their failures never enter
+    {!Run.results} — {!Runner.outcome.release_failures} carries them beside it,
+    and every sink (terminal, JUnit, GitHub) projects results. This is the
+    projection: a [Fail] result at path ["fixture release"], counted, carrying
+    the failure with its [Release] phase and the fixture's declaration site. Law
+    8 requires body and release failures both to be reported; without this the
+    run exits [1] with a report that says everything passed.
+
+    The synthetic results are not recorded into the run, and must not be:
+    {!Runner} decides whether the whole suite executed by comparing the result
+    count against the selected count, so an extra row there would disable orphan
+    reporting and [--prune]. *)
+
 val coverage_report :
   Render.t ->
   coverage_mode:[ `Summary | `Report | `Full | `Off ] ->

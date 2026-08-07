@@ -275,7 +275,9 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
           outcome.Runner.selected;
         exit outcome.Runner.exit_code
       end;
-      let results = Run.results outcome.Runner.run in
+      (* Release failures ride with the results: they are part of the run's
+         verdict (they set the exit code), so every sink must see them. *)
+      let results = Driver.results_with_releases outcome in
       let duration = outcome.Runner.duration in
       let coverage_data = Driver.snapshot_coverage outcome.Runner.run in
       Render.finish renderer
