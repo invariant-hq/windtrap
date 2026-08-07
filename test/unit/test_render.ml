@@ -147,9 +147,7 @@ let expected_failures =
     which failed at:
       test/test_geo.ml:18
       expected  true
-                ~~~
       actual    false
-                ~~~~
     replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
 
   FAIL  db › insert
@@ -293,12 +291,15 @@ let test_ansi () =
   check_contains "ansi: pass glyph is green" ~sub:"\027[32m.\027[0m" c;
   check_contains "ansi: fail glyph is red" ~sub:"\027[31mF\027[0m" c;
   check_contains "ansi: skip glyph is yellow" ~sub:"\027[33mS\027[0m" c;
+  (* A pair that refines: ["true"]/["false"] marks 80% of a side, which the
+     noise rule declines — the styling has to be shown on a real span. *)
   let b =
     failure_block ~ansi:true
-      (Failure.equality ~expected:"true" ~actual:"false" ())
+      (Failure.equality ~expected:"the quick brown fox"
+         ~actual:"the quick brawn fox" ())
   in
-  check_contains "ansi: expected diff span green" ~sub:"\027[32mtru\027[0m" b;
-  check_contains "ansi: actual diff span red" ~sub:"\027[31mfals\027[0m" b
+  check_contains "ansi: expected diff span green" ~sub:"\027[32mo\027[0m" b;
+  check_contains "ansi: actual diff span red" ~sub:"\027[31ma\027[0m" b
 
 let test_live () =
   let t =

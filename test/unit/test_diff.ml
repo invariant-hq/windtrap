@@ -366,8 +366,10 @@ let refine_tests =
           ~actual:"abc" "e[] a[1+1]";
         check_refine "deletion marks only the expected side" ~expected:"abc"
           ~actual:"ac" "e[1+1] a[]";
-        check_refine "adjacent changes coalesce" ~expected:"abcd" ~actual:"axyd"
-          "e[1+2] a[1+2]";
+        (* In context: the bare "abcd"/"axyd" pair marks half of each side,
+           which the noise rule declines — see the coverage cases below. *)
+        check_refine "adjacent changes coalesce" ~expected:"the abcd end"
+          ~actual:"the axyd end" "e[5+2] a[5+2]";
         check_refine "separate changes stay separate" ~expected:"abcde"
           ~actual:"xbcdy" "e[0+1;4+1] a[0+1;4+1]";
         check_refine "repeated element at the difference boundary"
@@ -378,14 +380,22 @@ let refine_tests =
           ~actual:"xyz" "none";
         check_refine "growing from empty is noise" ~expected:"" ~actual:"abc"
           "none";
-        check_refine "exactly at the noise threshold still refines"
-          ~expected:"abcde" ~actual:"vwxye" "e[0+4] a[0+4]";
+        (* The noise rule, per side and strict: marking under half of both
+           sides refines, marking half of either declines. *)
+        check_refine "just under half refines" ~expected:"abcdef"
+          ~actual:"abxyef" "e[2+2] a[2+2]";
+        check_refine "half of both sides declines" ~expected:"abcd"
+          ~actual:"axyd" "none";
+        check_refine "half of one side declines" ~expected:"ab" ~actual:"axyz"
+          "none";
         (* é is 2 bytes; the changed span covers the whole sequence on both
            sides. *)
         check_refine "multi-byte characters are never split"
           ~expected:"h\xc3\xa9llo" ~actual:"h\xc3\xa4llo" "e[1+2] a[1+2]";
-        check_refine "multi-byte against single-byte" ~expected:"a\xc3\xa9"
-          ~actual:"aa" "e[1+2] a[1+1]");
+        (* Coverage counts code points, so the multi-byte side is judged the
+           same as its ASCII equivalent rather than penalised for its width. *)
+        check_refine "multi-byte against single-byte" ~expected:"aa\xc3\xa9zz"
+          ~actual:"aaazz" "e[2+2] a[2+1]");
     test "refinement: cell guard" (fun () ->
         (* Differing region above the cell guard: refinement declines, even
            though only two characters differ. *)

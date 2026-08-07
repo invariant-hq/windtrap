@@ -36,9 +36,20 @@ let myers_max_edits = 1_000
    is not attempted. *)
 let dp_cell_limit = 4_000_000
 
-(* When more than this fraction of the code points differ, a highlighted
-   refinement is noise rather than signal. *)
-let noise_threshold = 4. /. 5.
+(* A highlight earns its place by pointing at a small part of a mostly
+   shared value. Once half of a side is marked, it stops doing that: the
+   reader is looking at two values that differ, and scattering tildes over
+   them draws the eye to coincidental character alignments instead —
+   ["Some _"] against ["None"] marks [S], [m], [e ] against [N], [n], and
+   says nothing a plain pair of lines would not. Measured over the corpus in
+   examples/x-demo, every informative highlight marks 11-21% of its side and
+   every uninformative one marks 50% or more.
+
+   The bound is per side and strict, so an insertion that marks nothing on
+   the expected side still refines, and two two-character values (["13"] and
+   ["14"], marking half of each) do not — nobody needs a marker to find that
+   difference. *)
+let noise_threshold = 1. /. 2.
 
 (* Line splitting and common-outer stripping *)
 
@@ -375,18 +386,24 @@ let refine ~expected ~actual =
   else
     let equal_at i j = equal_abs (prefix + i) (prefix + j) in
     let script = wagner_fischer ~equal_at ma mb in
-    let ratio = float_of_int (List.length script) /. float_of_int (max na nb) in
-    if ratio > noise_threshold then None
+    let expected_indices, actual_indices =
+      List.fold_left
+        (fun (es, as_) cmd ->
+          match cmd with
+          | Del e -> ((prefix + e) :: es, as_)
+          | Ins a -> (es, (prefix + a) :: as_)
+          | Sub (e, a) -> ((prefix + e) :: es, (prefix + a) :: as_))
+        ([], []) script
+    in
+    let signal marked total =
+      total = 0 || float_of_int marked /. float_of_int total < noise_threshold
+    in
+    if
+      not
+        (signal (List.length expected_indices) na
+        && signal (List.length actual_indices) nb)
+    then None
     else
-      let expected_indices, actual_indices =
-        List.fold_left
-          (fun (es, as_) cmd ->
-            match cmd with
-            | Del e -> ((prefix + e) :: es, as_)
-            | Ins a -> (es, (prefix + a) :: as_)
-            | Sub (e, a) -> ((prefix + e) :: es, (prefix + a) :: as_))
-          ([], []) script
-      in
       Some
         {
           expected_spans = spans_of_indices ca (List.rev expected_indices);
@@ -645,41 +662,22 @@ let coalesce spans =
 (* A replaced pair is marked whole unless character refinement genuinely
    localizes the change inside it, which takes two conditions.
 
-   Coverage: refining ["None"] against ["Some 2"] clears the noise threshold
-   and returns three scattered marks — the very rendering element alignment
-   exists to avoid — while a long element differing in one word marks a small
-   fraction of itself and says something true. Half an element is the line.
-
-   Both sides marked: a replacement whose character delta is a pure insertion
-   ([5] becoming [55]) refines to marks on the actual side only, which is how
-   an inserted {e element} renders. Rather than make the two ambiguous, such a
-   pair is marked whole on both sides — the reader always sees both endpoints
-   of a change. *)
-let element_refine_coverage = 1. /. 2.
-
+   [refine] already declines when it would mark half a side or more, which
+   is what keeps ["None"] against ["Some 2"] from scattering three marks
+   through an element. What is left to decide here is one-sidedness: a
+   replacement whose character delta is a pure insertion ([5] becoming [55])
+   refines to marks on the actual side only, which is exactly how an inserted
+   {e element} renders. Rather than make the two ambiguous, such a pair is
+   marked whole on both sides — the reader always sees both endpoints of a
+   change. *)
 let refine_within ~expected ~actual (ee : span) (ea : span) =
   let sub s (sp : span) = String.sub s sp.start sp.length in
   let shift by spans =
     List.map (fun { start; length } -> { start = start + by; length }) spans
   in
-  (* Coverage is counted in code points, not bytes: the question is how much
-     of the element a reader sees marked, and a multi-byte element must not
-     be held to a stricter bar than its ASCII equivalent. *)
-  let covered s spans =
-    List.fold_left
-      (fun n { start; length } ->
-        n + Text.length_utf8 (String.sub s start length))
-      0 spans
-  in
-  let localized marked width =
-    marked > 0 && width > 0
-    && float_of_int marked /. float_of_int width <= element_refine_coverage
-  in
   let se = sub expected ee and sa = sub actual ea in
   match refine ~expected:se ~actual:sa with
-  | Some r
-    when localized (covered se r.expected_spans) (Text.length_utf8 se)
-         && localized (covered sa r.actual_spans) (Text.length_utf8 sa) ->
+  | Some r when r.expected_spans <> [] && r.actual_spans <> [] ->
       (shift ee.start r.expected_spans, shift ea.start r.actual_spans)
   | _ -> ([ ee ], [ ea ])
 

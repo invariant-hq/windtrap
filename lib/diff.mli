@@ -99,10 +99,13 @@ val refine : expected:string -> actual:string -> refinement option
     data under a renderer's [~~~] markers.
 
     [None] means highlighting would not help and the renderer should show the
-    two strings plain: the strings differ in more than a noise cutoff (currently
-    80%) of their code points, or their differing region exceeds an internal
-    size guard. Malformed UTF-8 is compared byte-faithfully, one
-    replacement-sized unit at a time, following {!String.get_utf_8_uchar}. *)
+    two strings plain: marking would cover half or more of a side's code points,
+    or the differing region exceeds an internal size guard. The coverage rule is
+    what a highlight is for — pointing at a small part of a mostly shared value.
+    Two values that merely differ get no marks, since tildes scattered over them
+    draw the eye to coincidental alignments rather than to a change. Malformed
+    UTF-8 is compared byte-faithfully, one replacement-sized unit at a time,
+    following {!String.get_utf_8_uchar}. *)
 
 (** {1:sequences Sequence elements}
 
