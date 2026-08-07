@@ -290,6 +290,20 @@ let test_ansi () =
   check_contains "ansi: pass glyph is green" ~sub:"\027[32m.\027[0m" c;
   check_contains "ansi: fail glyph is red" ~sub:"\027[31mF\027[0m" c;
   check_contains "ansi: skip glyph is yellow" ~sub:"\027[33mS\027[0m" c;
+  (* The summary counts wear the same colours as the glyphs above them —
+     one convention for the whole transcript, not two for the same run. *)
+  check_contains "ansi: summary skip count is yellow"
+    ~sub:"\027[33m1 skipped\027[0m" c;
+  check_contains "ansi: summary fail count is red"
+    ~sub:"\027[31m6 failed\027[0m" c;
+  (* The transcript fixture carries no excused result, so the faint count
+     gets its own run. *)
+  let x =
+    with_renderer ~ansi:true (fun r ->
+        Render.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
+  in
+  check_contains "ansi: summary excused count is faint"
+    ~sub:"\027[2m1 expected failure\027[0m" x;
   (* A pair that refines: ["true"]/["false"] marks 80% of a side, which the
      noise rule declines — the styling has to be shown on a real span. *)
   let b =

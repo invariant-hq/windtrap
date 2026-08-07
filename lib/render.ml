@@ -1214,13 +1214,18 @@ let summary_line t ~passed ~failed ~skipped ~excused ~subtests ~duration =
         ]
       else []
     in
+    (* The counts wear the glyph row's colours: the row and the summary
+       describe the same run, so one convention across both — green pass,
+       red fail, yellow skip, faint excused — beats two. *)
     let skipped_part =
-      if skipped > 0 then [ spf "%d skipped" skipped ] else []
+      if skipped > 0 then [ st t `Yellow (spf "%d skipped" skipped) ] else []
     in
     let excused_part =
       if excused > 0 then
         [
-          spf "%d expected failure%s" excused (if excused = 1 then "" else "s");
+          st t `Faint
+            (spf "%d expected failure%s" excused
+               (if excused = 1 then "" else "s"));
         ]
       else []
     in
