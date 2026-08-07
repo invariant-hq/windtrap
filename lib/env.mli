@@ -125,10 +125,13 @@ val slow_threshold : unit -> string option
     {!seed}'s. *)
 
 val prop_count : unit -> string option
-
-val max_shrink : unit -> string option
 (** [prop_count ()] is [WINDTRAP_PROP_COUNT], the number of generated cases per
     property, unparsed — the CLI layer owns validation, like {!seed}'s. *)
+
+val max_shrink : unit -> string option
+(** [max_shrink ()] is [WINDTRAP_MAX_SHRINK], the accepted shrink steps per
+    failing property, unparsed — validated by the CLI layer as {!prop_count} is.
+*)
 
 val shard : unit -> string option
 (** [shard ()] is [WINDTRAP_SHARD], a [k/n] shard selector, unparsed — the CLI

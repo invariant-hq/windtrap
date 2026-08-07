@@ -46,7 +46,14 @@ let float_exact ppf f =
         let s16 = Printf.sprintf "%.16g" f in
         if round_trips s16 then s16 else Printf.sprintf "%.17g" f
     in
-    Format.pp_print_string ppf s
+    (* [%g] drops the point on a whole value: [1.] renders as ["1"], which is
+       an int literal, not a float one. The whole reason to round-trip is
+       that a reader can paste the value back — into [~examples], into a
+       [let] — so it has to stay syntactically a float. *)
+    let is_float_syntax =
+      String.exists (fun c -> c = '.' || c = 'e' || c = 'E') s
+    in
+    Format.pp_print_string ppf (if is_float_syntax then s else s ^ ".")
 
 let bool = Format.pp_print_bool
 let char = Format.pp_print_char

@@ -284,12 +284,14 @@ let tests =
           ~expected:"1.5";
         check_prints "keeps the sign of negatives" T.float_exact (-1.5)
           ~expected:"-1.5";
-        check_prints "prints whole floats compactly" T.float_exact 1.0
-          ~expected:"1";
+        (* Whole values keep their point: ["1"] is an int literal, and this
+           witness renders values a reader may paste back. *)
+        check_prints "prints whole floats as floats" T.float_exact 1.0
+          ~expected:"1.";
         check_prints "prints 0.1 as written" T.float_exact 0.1 ~expected:"0.1";
-        check_prints "prints positive zero" T.float_exact 0. ~expected:"0";
+        check_prints "prints positive zero" T.float_exact 0. ~expected:"0.";
         check_prints "prints negative zero with its sign" T.float_exact (-0.)
-          ~expected:"-0";
+          ~expected:"-0.";
         check_prints "prints nan" T.float_exact Float.nan ~expected:"nan";
         check_prints "prints inf" T.float_exact Float.infinity ~expected:"inf";
         check_prints "prints -inf" T.float_exact Float.neg_infinity

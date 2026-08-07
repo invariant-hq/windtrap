@@ -79,9 +79,18 @@ val display_artifact : string -> string
 val sanitize_component : string -> string
 (** [sanitize_component s] is [s] as a safe single path component:
     alphanumerics, ['-'], ['_'] and ['.'] are kept, every other character
-    becomes ['_']. Empty strings, ["."] and [".."] become ["unnamed"]. Results
-    longer than 80 bytes are truncated to 40 bytes plus a digest suffix to stay
-    unique and within filesystem limits. *)
+    becomes ['_'].
+
+    The mapping is injective. A name it altered — and ["."], [".."], and the
+    empty string, which become ["unnamed"] — carries a short digest of [s] as
+    given, because the replacement alone is many-to-one: ["parse: empty"] and
+    ["parse, empty"] would otherwise name one file, and {!Capture} opens that
+    file [O_TRUNC]. A name it did not alter is returned unchanged, so ordinary
+    identifiers stay readable. The digest is of the original, so it is stable
+    across runs and independent of execution order.
+
+    Results longer than 80 bytes are truncated to 40 bytes plus a full digest,
+    to stay within filesystem limits. *)
 
 (** {1:fs Filesystem helpers} *)
 

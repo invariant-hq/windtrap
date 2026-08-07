@@ -41,7 +41,16 @@ let tests =
             Float.max_float;
             -0.;
           ];
-        equal ~msg:"float_exact keeps the sign of zero" string "-0"
+        (* [%g] drops the point on a whole value, and ["1"] is an int
+           literal: a counterexample exists to be pasted back, so the
+           rendering has to stay syntactically a float. *)
+        equal ~msg:"float_exact keeps whole values float-shaped" string "1."
+          (s Pp.float_exact 1.);
+        equal ~msg:"and negative whole values" string "-3."
+          (s Pp.float_exact (-3.));
+        equal ~msg:"exponent form needs no point" string "1e+300"
+          (s Pp.float_exact 1e300);
+        equal ~msg:"float_exact keeps the sign of zero" string "-0."
           (s Pp.float_exact (-0.));
         equal ~msg:"float_exact renders nan" string "nan"
           (s Pp.float_exact Float.nan);
