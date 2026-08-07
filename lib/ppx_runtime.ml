@@ -1015,11 +1015,25 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
   in
   let saved = !current_expect in
   current_expect := Some ctx;
+  (* Every expect failure is recorded below, after the body returns
+     ([resolve_trailing]/[resolve_nodes]). So anything the frame gains
+     during the body is something else — and [Run.subtest] records a
+     failure and carries on, so a body can return having already failed.
+     The protocol's covered bit is what tells dune the run's failures are
+     all promotable corrections; counting such a body as covered exits 0
+     and invites [dune promote] to bless output the assertion says is
+     wrong (Law 11: "masked assertion failures"). *)
+  let frame = Run.current_frame () in
+  let failures_before = List.length (Run.failures frame) in
   Fun.protect
     ~finally:(fun () -> current_expect := saved)
     (fun () ->
       match run body with
       | () ->
+          (* Read before resolution records any expect failure of its own. *)
+          let body_failed =
+            List.length (Run.failures frame) > failures_before
+          in
           (* Trailing output not matched by any node becomes an inserted
              node; then per-node reachability. *)
           let trailing_problem =
@@ -1029,7 +1043,8 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
             resolve_trailing ctx ~raw
           in
           let nodes_covered = resolve_nodes ctx ~check_reachability:true in
-          if (not trailing_problem) && not (had_problems ctx) then
+          if body_failed then record_covered `Not_covered
+          else if (not trailing_problem) && not (had_problems ctx) then
             record_covered `No_problem
           else if nodes_covered then record_covered `Covered
           else record_covered `Not_covered
