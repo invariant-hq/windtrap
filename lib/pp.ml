@@ -22,6 +22,32 @@ let int = Format.pp_print_int
 let int32 ppf n = Format.fprintf ppf "%ld" n
 let int64 ppf n = Format.fprintf ppf "%Ld" n
 let float = Format.pp_print_float
+
+(* Shortest decimal rendering that round-trips to the exact bits: 15
+   significant digits when they suffice, else 16, else 17 (always enough for
+   a double). [float] above is [%.12g], which does not round-trip — a value
+   printed with it is not the value that was there, so anything a reader is
+   expected to copy back (a property counterexample, a bit-exact witness)
+   must use this instead. Sign of zero survives; non-finite values render as
+   [nan], [inf], [-inf]. *)
+let float_exact ppf f =
+  if Float.is_nan f || not (Float.is_finite f) then
+    Format.pp_print_string ppf (Printf.sprintf "%g" f)
+  else
+    let round_trips s =
+      Int64.equal
+        (Int64.bits_of_float (float_of_string s))
+        (Int64.bits_of_float f)
+    in
+    let s15 = Printf.sprintf "%.15g" f in
+    let s =
+      if round_trips s15 then s15
+      else
+        let s16 = Printf.sprintf "%.16g" f in
+        if round_trips s16 then s16 else Printf.sprintf "%.17g" f
+    in
+    Format.pp_print_string ppf s
+
 let bool = Format.pp_print_bool
 let char = Format.pp_print_char
 

@@ -42,7 +42,12 @@ let draw_of pp value = Draw (lazy (render_with pp value))
 let pp_int = Format.pp_print_int
 let pp_int32 ppf n = Format.fprintf ppf "%ldl" n
 let pp_int64 ppf n = Format.fprintf ppf "%LdL" n
-let pp_float = Format.pp_print_float
+
+(* A counterexample is meant to be copied back into [~examples], so the
+   printed float has to be the float that failed: [%.12g] does not
+   round-trip, and the value a reader pastes back may not even reproduce
+   the failure. *)
+let pp_float = Pp.float_exact
 let pp_bool = Format.pp_print_bool
 let pp_char ppf c = Format.fprintf ppf "%C" c
 let pp_string ppf s = Format.fprintf ppf "%S" s

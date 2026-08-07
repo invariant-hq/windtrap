@@ -68,27 +68,9 @@ let nativeint =
 let pp_float ppf f = Pp.pf ppf "%g" f
 let is_nan f = FP_nan = classify_float f
 
-(* Shortest decimal rendering that round-trips to the exact bits: 15
-   significant digits when they suffice, else 16, else 17 (always enough for a
-   double). Sign of zero survives ([%g] keeps it; the round-trip check is on
-   bits, not IEEE equality). Non-finite values render as [%g] does: [nan],
-   [inf], [-inf]. *)
-let pp_float_exact ppf f =
-  if is_nan f || not (Float.is_finite f) then pp_float ppf f
-  else
-    let round_trips s =
-      Int64.equal
-        (Int64.bits_of_float (float_of_string s))
-        (Int64.bits_of_float f)
-    in
-    let s15 = Pp.str "%.15g" f in
-    let s =
-      if round_trips s15 then s15
-      else
-        let s16 = Pp.str "%.16g" f in
-        if round_trips s16 then s16 else Pp.str "%.17g" f
-    in
-    Pp.string ppf s
+(* The shortest round-tripping rendering, shared with [Gen] so a
+   counterexample and a bit-exact witness never disagree about a value. *)
+let pp_float_exact = Pp.float_exact
 
 (* Bit equality with all NaNs identified: NaN = NaN whatever the
    payloads, [0.] <> [-0.], an infinity equal only to an infinity of the same

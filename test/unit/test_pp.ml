@@ -18,6 +18,35 @@ let tests =
         equal ~msg:"int64" string "9007199254740993"
           (s Pp.int64 9007199254740993L);
         equal ~msg:"float keeps trailing dot" string "1." (s Pp.float 1.);
+        (* [float] is %.12g and does not round-trip; [float_exact] is what a
+           reader may copy back and get the same double — a property
+           counterexample pasted into [~examples], a bit-exact witness. *)
+        equal ~msg:"float loses the bits" string "0.3" (s Pp.float (0.1 +. 0.2));
+        equal ~msg:"float_exact keeps them" string "0.30000000000000004"
+          (s Pp.float_exact (0.1 +. 0.2));
+        List.iter
+          (fun f ->
+            let printed = s Pp.float_exact f in
+            is_true
+              ~msg:(Printf.sprintf "%s round-trips" printed)
+              (Int64.equal
+                 (Int64.bits_of_float (float_of_string printed))
+                 (Int64.bits_of_float f)))
+          [
+            0.1 +. 0.2;
+            1e300;
+            -1.0000111797990339e300;
+            Float.pi;
+            5e-324;
+            Float.max_float;
+            -0.;
+          ];
+        equal ~msg:"float_exact keeps the sign of zero" string "-0"
+          (s Pp.float_exact (-0.));
+        equal ~msg:"float_exact renders nan" string "nan"
+          (s Pp.float_exact Float.nan);
+        equal ~msg:"float_exact renders inf" string "inf"
+          (s Pp.float_exact Float.infinity);
         equal ~msg:"bool" string "true" (s Pp.bool true);
         equal ~msg:"char" string "x" (s Pp.char 'x'));
     test "str and pf agree with to_string" (fun () ->

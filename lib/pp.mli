@@ -56,7 +56,15 @@ val int64 : int64 t
 
 val float : float t
 (** [float] formats with {!Format.pp_print_float} (e.g. [1.] prints as ["1."]).
-*)
+    It is [%.12g], which does not round-trip. *)
+
+val float_exact : float t
+(** [float_exact] is the shortest decimal rendering that round-trips to the
+    exact bits — 15 significant digits, else 16, else 17. Use it wherever a
+    reader is expected to copy the value back and get the same double: a
+    property counterexample pasted into [~examples], a bit-exact witness.
+    Non-finite values render as [nan], [inf], [-inf], and the sign of zero
+    survives. *)
 
 val bool : bool t
 val char : char t
