@@ -568,7 +568,6 @@ let parse_sequence s =
    into highlight extents. Each side keeps its own cursor: after an
    unbalanced run the two indices legitimately diverge. *)
 let aligned_differences ~prefix ops =
-  let differing = ref 0 in
   let first = ref None in
   let pairs = ref [] in
   let ie = ref prefix and ia = ref prefix in
@@ -577,7 +576,6 @@ let aligned_differences ~prefix ops =
     let dels = List.rev !run_del and inss = List.rev !run_ins in
     let nd = List.length dels and ni = List.length inss in
     if nd + ni > 0 then begin
-      differing := !differing + max nd ni;
       (if !first = None then
          first :=
            match (dels, inss) with
@@ -622,7 +620,11 @@ let aligned_differences ~prefix ops =
           incr ia)
     ops;
   flush_run ();
-  (!differing, !first, List.rev !pairs)
+  (* [zip] emits exactly [max nd ni] pairs per run — a replacement for each
+     paired deletion/insertion, then the one-sided remainder — which is the
+     differing-element count. One list, not a list and a counter beside it. *)
+  let pairs = List.rev !pairs in
+  (List.length pairs, !first, pairs)
 
 (* Ascending, possibly touching extents to the coalesced, non-overlapping
    form the [span] contract requires of every list a renderer receives. *)
