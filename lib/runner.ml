@@ -16,14 +16,15 @@
    registration: the guard re-arms itself before raising. Relies on
    Stdlib.exit = do_at_exit (); sys_exit — an exception from an at_exit
    function propagates to exit's caller (pinned by the child-status
-   regression test). *)
-(* The pid that installed the guard. A forked child inherits [Run.active]
-   and the [at_exit] registration, so without this the child's [exit] is
-   intercepted too: instead of terminating, the child returns into the
-   runner, executes every remaining test, prints a second report, rewrites
-   the last-failed store and any JUnit file, and exits with the run's code
-   rather than its own — so a parent test asserting on the child's status
-   reads the wrong answer. The guard belongs to the process that armed it. *)
+   regression test).
+
+   It also belongs to the process that armed it. A forked child inherits
+   Run.active and the at_exit registration, so without the owning pid the
+   child's exit is intercepted too: instead of terminating, the child
+   returns into the runner, executes every remaining test, prints a second
+   report, rewrites the last-failed store and any JUnit file, and exits
+   with the run's code rather than its own — a parent test asserting on
+   the child's status then reads the wrong answer. *)
 let exit_guard_owner = ref None
 
 let owns_run () =
