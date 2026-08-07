@@ -88,7 +88,6 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
 ──────────────────────────────────────────────────────
 
 3 passed, 1 skipped, 1 expected failure, 4 failed in 0.00179s.
-rerun failures only: dune exec test/test_mylib.exe -- --failed
 ```
 
 | glyph | meaning |

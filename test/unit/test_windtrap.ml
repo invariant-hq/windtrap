@@ -58,7 +58,10 @@ let () =
         if argv0 = "" then [||]
         else [| argv0; "-o"; log_dir; "--color"; "never"; "-q" |]
       in
-      Windtrap.run ~argv "invsuite" [ test "boom" (fun () -> equal int 1 2) ]
+      (* A property, so the transcript carries a replay line: that is the
+         surviving hint the invocation spelling reaches. *)
+      Windtrap.run ~argv "invsuite"
+        [ prop "boom" Gen.int (fun _ -> equal int 1 2) ]
   | _ -> ()
 
 (* The xpass-collision child (F4): re-exec'd to run the facade's [run] on
@@ -940,18 +943,17 @@ let () =
       transcript
     in
     let standalone = spawn_invocation_child "standalone" in
-    check "standalone: rerun hint keeps argv0 verbatim"
-      (contains "rerun failures only: ./_build/default/qa/x/t.exe --failed"
-         standalone);
+    check "standalone: the hint keeps argv0 verbatim"
+      (contains "replay: ./_build/default/qa/x/t.exe --seed " standalone);
     let dune = spawn_invocation_child "dune" in
-    check "under dune: rerun hint is a dune exec spelling"
-      (contains "rerun failures only: dune exec " dune
-      && contains " -- --failed" dune);
+    check "under dune: the hint is a dune exec spelling"
+      (contains "replay: dune exec " dune && contains " -- --seed " dune);
     check "under dune: the spelling carries no /./ (render/F-3)"
       (not (contains "/./" dune));
     let mirrors = spawn_invocation_child "mirrors" in
-    check "empty argv: no rerun hint (Mirrors has no --failed)"
-      (not (contains "rerun failures only" mirrors)))
+    check "empty argv: the hint falls back to the environment mirrors"
+      (contains "replay: WINDTRAP_SEED=" mirrors
+      && not (contains "dune exec" mirrors)))
 
 (* The xpass-string collision stays excused, process level (F4) *)
 

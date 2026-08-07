@@ -38,7 +38,6 @@ F
 ──────────────────────────────────────────────────────
 
 1 failed in 0.000707s.
-rerun failures only: dune exec test/test_codec.exe -- --failed
 ```
 
 Not the 40-element list that first failed: the minimal one. The

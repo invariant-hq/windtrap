@@ -195,9 +195,6 @@ let () =
       check_contains "captured output appears in the failure report"
         ~sub:"ghost session" transcript;
       check_contains "summary counts both" ~sub:"1 passed, 1 failed" transcript;
-      check_contains "the rerun hint prints the exact command"
-        ~sub:"rerun failures only: dune exec test/main.exe -- --failed"
-        transcript;
       check "the run exits 1" (outcome.Runner.exit_code = 1)
 
 (* Summary *)

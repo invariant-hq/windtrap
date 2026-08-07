@@ -171,9 +171,7 @@ let expected_slow_warnings =
 
 |}
 
-let expected_summary =
-  {|4 passed, 1 skipped, 6 failed in 6.5s.
-rerun failures only: dune exec test/main.exe -- --failed
+let expected_summary = {|4 passed, 1 skipped, 6 failed in 6.5s.
 |}
 
 (* Verbose only: the slowest list is diagnosis, not signal. *)
@@ -1755,7 +1753,10 @@ let test_hints_per_invocation () =
     ~sub:"accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff"
     mirrors
 
-let test_rerun_hint_per_invocation () =
+(* [--failed] is an optimization, not a step, so no run advertises it. The
+   acceptance commands are the opposite case — they name a verb nobody can
+   guess — and stay under every mismatch (Law 3). *)
+let test_no_rerun_hint () =
   let failing =
     [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]
   in
@@ -1763,20 +1764,12 @@ let test_rerun_hint_per_invocation () =
     with_renderer ~invocation:(`Exe "dune exec qa/x/t.exe --") (fun r ->
         Render.finish r ~results:failing ~duration:0.1 ())
   in
-  check_contains "rerun hint spelled from the invocation"
-    ~sub:"rerun failures only: dune exec qa/x/t.exe -- --failed\n" exe;
+  check_absent "a failing run does not advertise --failed" ~sub:"--failed" exe;
+  check_contains "the summary is the last line" ~sub:"1 failed in 0.1s.\n" exe;
   let mirrors =
     with_renderer (fun r -> Render.finish r ~results:failing ~duration:0.1 ())
   in
-  check_absent "no rerun hint under Mirrors (no --failed mirror)"
-    ~sub:"rerun failures only" mirrors;
-  let green =
-    with_renderer ~invocation:(`Exe "exe") (fun r ->
-        Render.finish r
-          ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
-          ~duration:0.1 ())
-  in
-  check_absent "no rerun hint on a green run" ~sub:"rerun failures only" green
+  check_absent "nor under Mirrors" ~sub:"--failed" mirrors
 
 (* The srandom replay line (D5 §6) *)
 
@@ -2128,8 +2121,7 @@ let tests =
       test_inner_label_without_location;
     test "hints: accept and replay per invocation (D5 §1)"
       test_hints_per_invocation;
-    test "hints: rerun per invocation; absent under Mirrors"
-      test_rerun_hint_per_invocation;
+    test "hints: no run advertises --failed" test_no_rerun_hint;
     test "srandom replay line in failure blocks (D5 §6)"
       test_srandom_replay_line;
     test "verbose PASS prints the label table (D5 §7)" test_verbose_pass_labels;

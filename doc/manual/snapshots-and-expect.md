@@ -37,7 +37,6 @@ F
 ──────────────────────────────────────────────────────
 
 1 failed in 0.00109s.
-rerun failures only: dune exec test/test_mytool.exe -- --failed
 
 $ WINDTRAP_UPDATE=1 dune runtest
 mytool: 1 passed in 0.00122s.

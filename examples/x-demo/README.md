@@ -46,8 +46,8 @@ Read it top to bottom; every group is one tour stop.
   column, and the hint line naming the `slow` tag and the threshold
   knob. The tagged sibling (`nightly compaction`) earns no warning.
 - **Summary** — `67 passed, 1 skipped, 1 expected failure, 31 failed
-  (2 subtest failures) in …s.` and the rerun hint
-  `rerun failures only: dune exec examples/x-demo/main.exe -- --failed`.
+  (2 subtest failures) in …s.`, and nothing after it: no run advertises
+  `--failed`.
 
 ## 2. Live terminal surfaces
 

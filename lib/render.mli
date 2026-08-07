@@ -244,10 +244,6 @@ val finish :
       is prefixed with the suite name recorded by {!header}
       ([unit: 448 passed in 0.4s.]) — quiet prints no header, and nothing may
       print without a name;
-    - the rerun hint ([rerun failures only: <exe> --failed]) when tests counted
-      as failed and the invocation is [`Exe] — under [`Mirrors] no hint prints:
-      [--failed] has no environment mirror, and a hint that cannot be followed
-      is worse than none;
     - the slowest tests, on runs slow enough to care about — [`Verbose] only:
       the list is diagnosis, not signal;
     - the coverage line

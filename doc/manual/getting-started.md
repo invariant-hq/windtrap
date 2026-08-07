@@ -77,7 +77,6 @@ F
 ──────────────────────────────────────────────────────
 
 1 failed in 0.000781s.
-rerun failures only: dune exec test/test_mylib.exe -- --failed
 ```
 
 No `~pos` annotation, no printer boilerplate: the location comes from

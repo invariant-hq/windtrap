@@ -608,13 +608,15 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   | Failure.Equality
       { claim = Failure.Satisfies | Failure.Matches; expected; actual; _ } ->
       (* Never diff or refine the claim sentence against the value:
-         [expected] is a description, not a rendering. *)
-      put_ind (st `Faint "expected" ^ "  " ^ expected);
+         [expected] is a description, not a rendering. Colour still applies —
+         green and red mark which side is which, and that is as true of a
+         description as of a value. *)
+      put_ind (st `Faint "expected" ^ "  " ^ st `Green expected);
       if String.contains actual '\n' then begin
         put_ind (st `Faint "actual:");
-        put_block actual
+        put_block (st `Red actual)
       end
-      else put_ind (st `Faint "actual" ^ "    " ^ actual)
+      else put_ind (st `Faint "actual" ^ "    " ^ st `Red actual)
   | Failure.Equality { expected; actual; _ } ->
       pp_eq ~ansi put ~ind ~expected ~actual
   | Failure.Raise
@@ -643,10 +645,10 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
               put_ind (spf "raised %s with the wrong message:" ctor);
               pp_eq ~ansi put ~ind ~expected:(spf "%S" em) ~actual:(spf "%S" am)
           | _ ->
-              put_ind (st `Faint "expected exception" ^ "  " ^ e);
-              put_ind (st `Faint "raised            " ^ "  " ^ a))
+              put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
+              put_ind (st `Faint "raised            " ^ "  " ^ st `Red a))
       | Some e, None ->
-          put_ind (st `Faint "expected exception" ^ "  " ^ e);
+          put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
           put_ind "but no exception was raised"
       | None, Some a ->
           (* [predicate] tells a raises_match rejection from a test body's
@@ -655,7 +657,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             (if predicate then
                "raised exception does not satisfy the predicate:"
              else "uncaught exception:");
-          put_block a
+          put_block (st `Red a)
       | None, None -> put_ind "expected an exception, but none was raised");
       match backtrace with
       | Some bt ->
@@ -1471,13 +1473,11 @@ let finish t ?coverage ~results ~duration () =
     summary_line t ~passed ~failed ~skipped
       ~excused:(List.length excused_results)
       ~subtests ~duration;
-    (if failed > 0 then
-       (* The rerun hint derives from the stored invocation: under
-          [`Mirrors] no hint prints — [--failed] has no environment mirror,
-          and a hint that cannot be followed is worse than none. *)
-       match t.invocation with
-       | `Exe cmd -> put t (spf "rerun failures only: %s --failed" cmd)
-       | `Mirrors -> ());
+    (* No rerun hint. [--failed] is an optimization, not a step a reader has
+       to take, and a suite is meant to be fast enough that rerunning all of
+       it costs nothing — so advertising the flag under every failing run is
+       an ad, not a report. The acceptance commands stay: those name a verb
+       nobody can guess (Law 3), which is a different thing entirely. *)
     (* Diagnosis, not signal: the slowest list is verbose-only. *)
     if t.mode = `Verbose then slowest t results
   end;
