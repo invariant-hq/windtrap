@@ -55,14 +55,17 @@ let mask_summary_durations s =
   done;
   Buffer.contents b
 
-let find_sub line sub =
-  let n = String.length line and m = String.length sub in
+(* Offset of the first double-space run at or after [from] — the boundary
+   both maskers cut on, since every column in this transcript is separated
+   by two spaces. *)
+let gap_from line from =
+  let n = String.length line in
   let rec go i =
-    if i + m > n then None
-    else if String.equal (String.sub line i m) sub then Some i
+    if i + 1 >= n then None
+    else if line.[i] = ' ' && line.[i + 1] = ' ' then Some i
     else go (i + 1)
   in
-  go 0
+  go from
 
 (* The slow block's entries lead with a right-aligned duration column
    (["  1.3ms  <path>"]); the value and the alignment padding both vary with
@@ -78,12 +81,7 @@ let mask_slow_entry line =
   if start < 2 || start >= n || line.[start] < '0' || line.[start] > '9' then
     line
   else
-    let rec gap i =
-      if i + 1 >= n then None
-      else if line.[i] = ' ' && line.[i + 1] = ' ' then Some i
-      else gap (i + 1)
-    in
-    match gap start with
+    match gap_from line start with
     | Some i -> "  <duration>  " ^ String.sub line (i + 2) (n - i - 2)
     | None -> line
 
@@ -92,17 +90,10 @@ let mask_slow_entry line =
    first double-space run after the tag column is masked. *)
 let mask_verbose_timing line =
   let tag = "  PASS  " in
-  if String.starts_with ~prefix:tag line then begin
-    let n = String.length line in
-    let rec pad_start i =
-      if i + 1 >= n then None
-      else if line.[i] = ' ' && line.[i + 1] = ' ' then Some i
-      else pad_start (i + 1)
-    in
-    match pad_start (String.length tag) with
+  if String.starts_with ~prefix:tag line then
+    match gap_from line (String.length tag) with
     | Some i -> String.sub line 0 i ^ "  <duration>"
     | None -> line
-  end
   else line
 
 let mask s =
