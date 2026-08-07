@@ -80,7 +80,7 @@ Checklist for the blocks, in order:
 | `equal on strings` | char-level highlight: `o`→`a` and `s`→`ed` only |
 | `equal on a large array` | `arrays differ at 3 of 300 elements; first at [290]: expected 84100, actual 84101` above a tight unified hunk |
 | `not_equal …` | single line `both sides equal: [1; 2; 3]` |
-| `is_true hides the data` | bare `expected true / actual false` — the contrast for the next block |
+| `is_true hides the data` | `expected true / actual false` and nothing else — no value, just the collapsed boolean; the contrast for the next block |
 | `satisfies shows the data` | the `positive` msg, `expected value satisfying the predicate`, and `actual -3` — the data `is_true` hides; the claim sentence is never diffed against the value |
 | `contains …` | `needle "tempest" — not found` over the `haystack` line (the excerpt is the whole paragraph here; a partial excerpt earns a faint byte-range line) |
 | `not_contains …` | `needle "spice" — found at byte 20` with the occurrence marked `~~~~~` in the haystack (highlighted red instead when colors are on) |
