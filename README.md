@@ -77,9 +77,11 @@ For coverage, one inert stanza on the library under test:
 `satisfies`, `contains`, `not_contains`, `require_some`, `require_ok`,
 `require_error`, `require_match`, `raises`, `raises_match`, `fail`, `failf`,
 `skip`. Comparisons go through an `'a testable` (a printer and an equality),
-so every failure prints a structured diff of the two values — for every
-type, not just strings. The `require_*` verbs assert *and unwrap*, keeping
-the happy path short.
+so every failure prints both values and marks what changed — for every type,
+not just strings, and with no diff function to write. Lists and arrays are
+compared element by element, so a mark is a whole differing element rather
+than a character span running across one. The `require_*` verbs assert *and
+unwrap*, keeping the happy path short.
 
 **Property testing** — `prop` draws inputs from an `'a Gen.t`, runs an
 ordinary assertion body on each, and shrinks failures to a minimal
