@@ -92,7 +92,9 @@ descendant); select with `--tag`/`--exclude-tag`. `slow name fn` is
 `test` with the `"slow"` tag pre-applied, and `--quick` drops
 slow-tagged tests. Property tests carry `"prop"` automatically.
 
-`~timeout:60.` caps one test in seconds (setup, body, and teardown —
+`~timeout:60.` caps one test in seconds (setup and body share the
+window, and teardown is re-armed with what is left of it — or with a
+fresh window if they used it all, since cleanup still has to happen;
 and for properties, generation and shrinking too, see
 [Property testing](property-testing.md#notes); the runner's
 `--timeout` sets the default); `~retries:2` gives a failing test extra

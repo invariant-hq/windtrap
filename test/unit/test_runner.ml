@@ -249,6 +249,45 @@ let () =
     check "the run stayed green" (outcome.Runner.exit_code = 0))
 
 let () =
+  (* The timer is one-shot and [Failure.Timeout] is not fatal, so the body's
+     phase guard absorbs the alarm and [phases] goes on to teardown. Before
+     the window was re-armed there, a teardown that blocked after a body
+     timeout ran unbounded: the whole run hung with no output. Both phases
+     must time out, and both must be reported. *)
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let config = base_config ~log_dir:root () in
+    let spin s =
+      let t0 = Unix.gettimeofday () in
+      while Unix.gettimeofday () -. t0 < s do
+        ignore (Sys.opaque_identity 1)
+      done
+    in
+    let tests =
+      [
+        Test_tree.bracket ~timeout:0.2 "body then teardown"
+          ~setup:(fun () -> ())
+          ~teardown:(fun () -> spin 5.)
+          (fun () -> spin 5.);
+      ]
+    in
+    let started = Unix.gettimeofday () in
+    expect_run "a body timeout still bounds teardown" ~config tests
+    @@ fun outcome ->
+    let elapsed = Unix.gettimeofday () -. started in
+    (* Two windows of 0.2s, not ten seconds of spinning. *)
+    check "the run finished promptly" (elapsed < 3.0);
+    match outcome_of outcome [ "body then teardown" ] with
+    | Some (Failure.Fail failures) ->
+        let phases =
+          List.map (fun (f : Failure.t) -> f.Failure.phase) failures
+        in
+        check "the body timed out" (List.mem Failure.Body phases);
+        check "the teardown timed out too, rather than running unbounded"
+          (List.mem Failure.Teardown phases)
+    | _ -> check "the test failed" false)
+
+let () =
   (* D2: a timeout expiring during the shrink search ends the search at the
      last accepted node and reports the counterexample in hand, marked —
      the budget bounds wall time without erasing what the engine found. *)

@@ -21,12 +21,15 @@
     cannot perturb a test that consults [Random]), capture redirected into the
     test's log file ({!Capture.with_capture}, per-attempt truncation; a no-op
     under [--stream]), and a SIGALRM timeout arming the test's limit (else
-    [config.timeout]). The timeout window covers setup, body, and teardown
-    together; it is Unix-only (a documented no-op on Windows) and cannot
-    interrupt blocked C calls. The runner owns [SIGALRM] while a test with a
-    limit runs. After every attempt — outside the timeout window, on every path
-    where the runner regains control, a fatal exception included — the attempt's
-    scratch paths are removed ({!Run.remove_temp}).
+    [config.timeout]). The timeout window covers setup, body, and teardown:
+    setup and body share it, and it is re-armed before teardown for whatever
+    remains — or for a fresh limit when they consumed it, since a teardown
+    entered after a body timeout must still be bounded and must still run. It is
+    Unix-only (a documented no-op on Windows) and cannot interrupt blocked C
+    calls. The runner owns [SIGALRM] while a test with a limit runs. After every
+    attempt — outside the timeout window, on every path where the runner regains
+    control, a fatal exception included — the attempt's scratch paths are
+    removed ({!Run.remove_temp}).
 
     Outcomes are classified per phase: {!Failure.Check_failure} keeps its
     payload, {!Failure.Skip_test} skips the test, {!Failure.Timeout} becomes a

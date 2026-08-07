@@ -96,19 +96,31 @@ let with_isolated_random ~path fn =
     (Int64.to_int (Seed.derive ~root:random_reseed_root ~path ~index:0));
   Fun.protect ~finally:(fun () -> Random.set_state saved) fn
 
-(* One SIGALRM window arming [limit] seconds around setup + body + teardown.
+(* A SIGALRM window bounding setup + body + teardown, and the [renew] that
+   keeps it bounding them.
+
+   The timer is one-shot, so once it has fired the scope is unguarded — and
+   [Failure.Timeout] is not fatal, so the body's phase guard absorbs it and
+   [phases] goes on to run teardown. Without re-arming, a teardown that
+   blocks after a body timeout runs forever: the run hangs with no output,
+   which is precisely what the per-test limit exists to prevent. [renew]
+   re-arms for whatever remains of the limit, or for a fresh limit when the
+   earlier phases consumed it — cleanup is not optional, so it is given a
+   bounded window rather than none.
+
    This hand-rolls the cleanup instead of Fun.protect: the alarm can expire
    exactly as the scope exits and be delivered at a poll point inside the
    cleanup itself, and that late [Timeout] must be absorbed — never surface
    as [Finally_raised] or leak into caller code. The [armed] flag inertizes
-   the handler; [disarm] retries once around a delivery that interrupts it
-   (the one-shot timer fires at most once). *)
+   the handler; [disarm] retries once around a delivery that interrupts it. *)
 let with_timeout limit fn =
+  let no_renew () = () in
   match limit with
-  | None -> fn ()
-  | Some _ when Sys.win32 -> fn () (* documented no-op *)
+  | None -> fn no_renew
+  | Some _ when Sys.win32 -> fn no_renew (* documented no-op *)
   | Some limit -> (
       let armed = ref true in
+      let started = Clock.counter () in
       let previous_handler =
         Sys.signal Sys.sigalrm
           (Sys.Signal_handle
@@ -128,8 +140,14 @@ let with_timeout limit fn =
         | () -> ()
         | exception Failure.Timeout _ -> disarm ()
       in
+      let renew () =
+        if !armed then begin
+          let remaining = limit -. Clock.count_s started in
+          set_timer (if remaining > 0. then remaining else limit)
+        end
+      in
       set_timer limit;
-      match fn () with
+      match fn renew with
       | value ->
           disarm ();
           value
@@ -221,7 +239,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
         classify ph exn backtrace;
         None
   in
-  let phases () =
+  let phases renew =
     match case.Test_tree.body with
     | Test_tree.Body fn -> ignore (guard Failure.Body fn)
     | Test_tree.Bracket { setup; body; teardown } -> (
@@ -233,13 +251,16 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
                runs on every body outcome, skip and timeout included. Never
                Fun.protect at this boundary. *)
             ignore (guard Failure.Body (fun () -> body resource));
+            (* The body may have consumed the window — re-arm, or a blocking
+               teardown after a body timeout would run unbounded. *)
+            renew ();
             ignore (guard Failure.Teardown (fun () -> teardown resource)))
   in
   let boundary () =
     with_isolated_random ~path:(Test_tree.path_to_string case.Test_tree.path)
       (fun () ->
-        with_timeout limit (fun () ->
-            match phases () with
+        with_timeout limit (fun renew ->
+            match phases renew with
             | () -> ()
             | exception Failure.Timeout limit ->
                 (* The alarm fired between two phase guards. *)

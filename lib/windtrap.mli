@@ -83,7 +83,10 @@ type 'a testable = 'a Testable.t
     - [tags] name extra tags, unioned with enclosing groups' tags; select with
       [--tag]/[--exclude-tag].
     - [timeout] is the per-test limit in seconds, covering setup, body, and
-      teardown (defaults to the runner's [--timeout]).
+      teardown (defaults to the runner's [--timeout]). Setup and body share the
+      window; teardown is then given whatever is left of it, or a fresh window
+      if they consumed it — releasing a resource is not optional, so a body that
+      times out still gets bounded cleanup rather than none.
     - [retries] is the number of extra attempts given to a failing test
       (defaults to [0]).
 
