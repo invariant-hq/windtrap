@@ -123,8 +123,22 @@ let reconstruct ~root file =
    is byte-equal across every producer of the line class, the library and
    inline runners alike (dune runs tests with argv0 ["./t.exe"], whose
    concatenation would otherwise carry a ["/./"]). Best effort. *)
+(* Total, deliberately: root discovery reads the cwd, and a test that
+   chdirs into a directory it then removes makes [Sys.getcwd] raise. These
+   paths are printed from inside failure reports, where a raise would take
+   down the whole run after the tests are already done — the report shows an
+   absolute path rather than not showing up at all. *)
+let relative_to_root path =
+  match project_root () with
+  | exception Sys_error _ -> path
+  | root ->
+      let prefix = root ^ "/" in
+      if String.starts_with ~prefix path then
+        String.sub path (String.length prefix)
+          (String.length path - String.length prefix)
+      else path
+
 let display path =
-  let root = project_root () in
   let path = strip_build_prefix path in
   let path =
     match String.split_on_char '/' path with
@@ -133,11 +147,9 @@ let display path =
         String.concat "/"
           (first :: List.filter (fun seg -> seg <> "." && seg <> "") rest)
   in
-  let prefix = root ^ "/" in
-  if String.starts_with ~prefix path then
-    String.sub path (String.length prefix)
-      (String.length path - String.length prefix)
-  else path
+  relative_to_root path
+
+let display_artifact = relative_to_root
 
 (* Path components *)
 

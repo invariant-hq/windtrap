@@ -654,7 +654,8 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       let accept () = if commands then put_ind (accept_line invocation) in
       match state with
       | Failure.Missing { proposed } ->
-          put_ind (spf "snapshot %S: no baseline at %s" name path);
+          put_ind
+            (spf "snapshot %S: no baseline at %s" name (Path_ops.display path));
           let lines = Text.split_lines proposed in
           let n = List.length lines in
           put_ind (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
@@ -668,7 +669,8 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                   (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines)));
           accept ()
       | Failure.Mismatch { expected; actual } ->
-          put_ind (spf "snapshot %S: mismatch with %s" name path);
+          put_ind
+            (spf "snapshot %S: mismatch with %s" name (Path_ops.display path));
           pp_hunks ~ansi put ~ind (Diff.hunks ~expected ~actual ());
           accept ()
       | Failure.Unresolvable ->
@@ -677,7 +679,8 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                "snapshot %S: cannot resolve a source file \u{2014} pass \
                 ~pos:__POS__"
                name);
-          if path <> "" then put_ind (spf "unverified path: %s" path)
+          if path <> "" then
+            put_ind (spf "unverified path: %s" (Path_ops.display path))
       | Failure.Duplicate { first = Some first; _ } ->
           put_ind
             (spf "snapshot %S: duplicate name \u{2014} first checked at %s" name
@@ -1121,7 +1124,7 @@ let pp_tail t (tail : Failure.tail) =
     put t (indent ^ st t `Faint head);
     List.iter (fun l -> put t (indent ^ l)) shown;
     match tail.log_path with
-    | Some p -> put t (indent ^ "full log: " ^ p)
+    | Some p -> put t (indent ^ "full log: " ^ Path_ops.display_artifact p)
     | None -> ()
   end
 

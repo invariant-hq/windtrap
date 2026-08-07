@@ -61,6 +61,19 @@ val display : string -> string
     inline runners alike. Best effort: a path outside the root is returned
     normalized, otherwise unchanged. *)
 
+val display_artifact : string -> string
+(** [display_artifact path] is [path] with a leading {!project_root} prefix
+    removed and nothing else — the form for a path that names a real file under
+    [_build], such as a capture log. {!display} is wrong for those: its
+    [_build/<context>/] strip is there because dune shadow-copies {e sources}
+    under [_build], and applying it to a genuine build artifact yields a path
+    that does not open.
+
+    Total, as is {!display}: both read the cwd to find the root, and a test that
+    chdirs into a directory it then removes makes that raise. Since these are
+    printed from inside failure reports, they fall back to the path as given
+    rather than taking the run down after the tests have finished. *)
+
 (** {1:components Path components} *)
 
 val sanitize_component : string -> string
