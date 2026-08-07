@@ -106,6 +106,29 @@ let () =
       Windtrap.run ~argv "focussuite" suite
   | _ -> ()
 
+(* The release-failure child (driver, "fixture releases"): re-exec'd to run
+   the facade's [run] on a suite that touches a fixture whose teardown
+   raises. Releases run after the last test, so a release failure never
+   enters [Run.results] — only [Driver.results_with_releases] carries it to
+   the renderer and to JUnit. The one test passes, so a driver that
+   projected [Run.results] alone would print a clean transcript and count
+   zero JUnit failures while still exiting 1: exactly the defect. *)
+let leaky_release =
+  fixture ~teardown:(fun () -> failwith "release-boom") (fun () -> ())
+
+let () =
+  match Array.to_list Sys.argv with
+  | [ _; "--release-failure-child"; log_dir; junit ] ->
+      clear_env ();
+      Windtrap.run
+        ~argv:
+          [|
+            "release-child"; "-o"; log_dir; "--color"; "never"; "--junit"; junit;
+          |]
+        "releasesuite"
+        [ test "touches the fixture" (fun () -> leaky_release ()) ]
+  | _ -> ()
+
 (* Re-exec this executable with [args], returning its exit status and its
    standard output — plus its standard error when [merge_stderr] (the
    focus warning prints there). *)
@@ -987,6 +1010,35 @@ let () =
       (not (contains "  FAIL  collide" verbose));
     check "collide verbose: summary counts one expected failure"
       (contains "1 expected failure in " verbose))
+
+(* Release failures reach every sink, process level *)
+
+let () =
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let junit = Filename.concat root "junit.xml" in
+    let status, transcript =
+      spawn_child [ "--release-failure-child"; root; junit ]
+    in
+    (* The runner's own verdict is not the guard here: the exit code is 1
+       whether or not the failure was projected. What the projection buys
+       is that the reader is told — so assert the transcript and JUnit,
+       not just the code. *)
+    check "a failing fixture release exits 1" (status = Unix.WEXITED 1);
+    check_contains "the transcript carries a failure block for the release"
+      ~sub:"fixture release" transcript;
+    check_contains "the release failure names its cause" ~sub:"release-boom"
+      transcript;
+    check_contains "the summary counts the release failure" ~sub:"1 failed"
+      transcript;
+    check "the one real test is still reported as passing"
+      (contains "1 passed" transcript);
+    (* Raises if the child never wrote the file — a silently absent JUnit
+       report would let the two checks below pass vacuously. *)
+    let xml = In_channel.with_open_bin junit In_channel.input_all in
+    check_contains "JUnit counts the release failure" ~sub:"failures=\"1\"" xml;
+    check_contains "the JUnit case is the release's own path"
+      ~sub:"fixture release" xml)
 
 (* The focus warning, process level (testing/T3) *)
 

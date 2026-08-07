@@ -62,10 +62,17 @@ let tests =
           (F.all_even 20_000_000 = true);
         check "the && arm still answers" (F.all_even 3 = false));
     test "|| right arms that are not applications still compute" (fun () ->
-        (* The tail-call property itself is pinned on the expansion, in
-           test/coverage_ppx/fixture_cond.expected: OCaml 5 grows the main
-           fibre's stack on demand, so a lost tail call does not reliably
-           overflow here — this end-to-end check is for the results. *)
+        (* What this proves: each arm still computes the uninstrumented
+           result. What it does NOT prove: that the arm kept its tail call —
+           these return [true] whether or not the call was post-wrapped,
+           because OCaml 5 grows the main fibre's stack on demand and a lost
+           tail call does not reliably overflow at these depths. The
+           tail-call property is pinned byte-wise on the expansion, in
+           test/coverage_ppx/fixture_cond.expected, which carries one
+           function per shape the instrumenter's tail guard lists (let,
+           match, if, try, sequence, open, letmodule, letexception, letop,
+           constraint, coerce). Only the four with a fixture here are also
+           run. *)
         check "let arm" (F.or_let 3_000_000 = true);
         check "match arm" (F.or_match 3_000_000 = true);
         check "if arm" (F.or_if 3_000_000 = true);

@@ -140,6 +140,40 @@ let () =
    | _ -> check "uncaught exception is a Raise failure" false);
   check "a failing suite exits 1" (outcome.Runner.exit_code = 1)
 
+(* Backtrace recording *)
+
+(* [@inline never] so the raise site stays a frame of its own: an inlined
+   helper leaves no slot to name. *)
+let[@inline never] raise_from_helper () = raise Boom
+
+let () =
+  (* [execute] turns backtrace recording on for the run. The runtime records
+     nothing unless asked, and nothing tells a user to set OCAMLRUNPARAM=b,
+     so without that call an uncaught exception's report is the constructor
+     and the test's declaration line — never the raise site. Recording is
+     switched OFF first: whatever left it on (the harness, a previous run)
+     must not be what makes this pass. *)
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let restore = Printexc.backtrace_status () in
+  Printexc.record_backtrace false;
+  let tests =
+    [ Test_tree.test "deep raise" (fun () -> raise_from_helper ()) ]
+  in
+  expect_run "backtrace suite runs" ~config tests (fun outcome ->
+      check "the run turned recording on" (Printexc.backtrace_status ());
+      match failure_list (outcome_of outcome [ "deep raise" ]) with
+      | [ { Failure.kind = Failure.Raise { backtrace; _ }; _ } ] -> (
+          match backtrace with
+          | Some bt ->
+              check "the Raise payload carries a non-empty backtrace"
+                (String.trim bt <> "");
+              check "the backtrace names the function that raised"
+                (contains "raise_from_helper" bt)
+          | None -> check "the Raise payload carries a backtrace" false)
+      | _ -> check "deep raise: one Raise failure" false);
+  Printexc.record_backtrace restore
+
 (* Timeouts (Unix only) *)
 
 let () =

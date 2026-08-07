@@ -6,6 +6,8 @@
 open Windtrap
 module Path_ops = Windtrap.Private.Path_ops
 
+let is_hex = function '0' .. '9' | 'a' .. 'f' -> true | _ -> false
+
 let tests =
   [
     test "strip_build_prefix" (fun () ->
@@ -74,10 +76,17 @@ let tests =
           (Path_ops.sanitize_component "abc-1_2.x");
         (* A name the mapping altered carries a digest of the original:
            without it the mapping is many-to-one and two tests share one
-           capture log, which Capture opens O_TRUNC. *)
-        equal ~msg:"unsafe chars replaced, digest appended" string
-          "a_b_c-22ce5bc5"
-          (Path_ops.sanitize_component "a b/c");
+           capture log, which Capture opens O_TRUNC. The shape is the
+           contract, not the digest bytes — pinning the hex would break on
+           any digest change without catching a defect, and the injectivity
+           it stands for is asserted directly just below. *)
+        let altered = Path_ops.sanitize_component "a b/c" in
+        equal ~msg:"unsafe chars become underscores" string "a_b_c"
+          (String.sub altered 0 (min 5 (String.length altered)));
+        is_true ~msg:"a hex digest of the original is appended"
+          (String.length altered = 5 + 1 + 8
+          && altered.[5] = '-'
+          && String.for_all is_hex (String.sub altered 6 8));
         not_equal ~msg:"punctuation variants stay distinct" string
           (Path_ops.sanitize_component "parse: empty")
           (Path_ops.sanitize_component "parse, empty");

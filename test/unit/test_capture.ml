@@ -77,27 +77,38 @@ let test_fd_round_trip () =
   check_string "run_dir sits under log_dir/suite"
     ~expected:(Filename.concat root "suite")
     ~actual:(Filename.dirname run_dir);
-  let path =
-    Filename.concat
-      (concat_all run_dir [ "outer"; "inner" ])
-      (Path_ops.sanitize_component "my test" ^ ".output")
+  (* The layout is read off the filesystem, not rebuilt: naming the file
+     with [sanitize_component] would agree with any mapping whatsoever, so
+     it would assert nothing. That Capture routes components through the
+     sanitizer at all is [test_sanitized_layout]'s job; that the mapping
+     keeps distinct tests on distinct files is [test_name_collisions]'. *)
+  let group_dir = concat_all run_dir [ "outer"; "inner" ] in
+  let entries =
+    if Sys.is_directory group_dir then Array.to_list (Sys.readdir group_dir)
+    else []
   in
-  check
-    "log file exists at <log_dir>/<suite>/<run-id>/<groups...>/<test>.output"
-    (Sys.file_exists path);
-  if Sys.file_exists path then begin
-    let content = read_file path in
-    List.iter
-      (fun fragment ->
-        check ("file captures " ^ fragment) (contains content fragment))
-      [ "chan-out."; "chan-err."; "fmt-out."; "raw-out."; "sub-out." ];
-    (* Restored streams no longer feed the file. *)
-    let size_after = (Unix.stat path).Unix.st_size in
-    print_string "\n";
-    flush stdout;
-    check_int "post-capture writes do not reach the file" ~expected:size_after
-      ~actual:(Unix.stat path).Unix.st_size
-  end
+  let log_file =
+    match entries with
+    | [ name ] when Filename.check_suffix name ".output" -> Some name
+    | _ -> None
+  in
+  check "one .output file at <log_dir>/<suite>/<run-id>/<groups...>"
+    (log_file <> None);
+  match log_file with
+  | Some name ->
+      let path = Filename.concat group_dir name in
+      let content = read_file path in
+      List.iter
+        (fun fragment ->
+          check ("file captures " ^ fragment) (contains content fragment))
+        [ "chan-out."; "chan-err."; "fmt-out."; "raw-out."; "sub-out." ];
+      (* Restored streams no longer feed the file. *)
+      let size_after = (Unix.stat path).Unix.st_size in
+      print_string "\n";
+      flush stdout;
+      check_int "post-capture writes do not reach the file" ~expected:size_after
+        ~actual:(Unix.stat path).Unix.st_size
+  | None -> ()
 
 (* Incremental consumption *)
 
@@ -445,6 +456,35 @@ let test_sanitized_layout () =
   check "a slash in a group makes one component, not two"
     (not (Sys.file_exists (Filename.concat run_dir "a")))
 
+(* Distinct names, distinct files *)
+
+let test_name_collisions () =
+  (* Two names that differ only in punctuation map to the same readable
+     form ([parse__empty]): the sanitizer keeps them apart only because it
+     appends a digest of the original. Without it both attempts open one
+     path — and [with_capture] opens it O_TRUNC — so the second test erases
+     the first test's output while the first failure's tail still points at
+     the file. Asserted on the files themselves, since reconstructing the
+     names with the sanitizer would hold for any mapping at all. *)
+  with_temp_root @@ fun root ->
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  let log_of name =
+    Capture.with_capture cap ~groups:[] ~test_name:name (fun () ->
+        print_string ("output of " ^ name));
+    match Capture.output_tail cap with
+    | Some { Failure.log_path = Some path; _ } -> path
+    | _ -> ""
+  in
+  let colon = log_of "parse: empty" in
+  let comma = log_of "parse, empty" in
+  check "each attempt names its log file" (colon <> "" && comma <> "");
+  check "names differing only in punctuation get distinct log files"
+    (colon <> comma);
+  check_string "the first name's log still holds its own output"
+    ~expected:"output of parse: empty" ~actual:(read_file colon);
+  check_string "the second name's log holds its own output"
+    ~expected:"output of parse, empty" ~actual:(read_file comma)
+
 (* Run ids *)
 
 let is_base36 c = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')
@@ -592,6 +632,7 @@ let tests =
     test "invalid UTF-8 is kept verbatim" test_invalid_utf8_verbatim;
     test "per-attempt reset truncates the file" test_per_attempt_reset;
     test "sanitized layout" test_sanitized_layout;
+    test "punctuation variants get distinct log files" test_name_collisions;
     test "run ids" test_run_ids;
     test "latest links" test_link_latest;
     test "saved descriptors are close-on-exec"
