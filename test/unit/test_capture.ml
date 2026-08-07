@@ -78,7 +78,9 @@ let test_fd_round_trip () =
     ~expected:(Filename.concat root "suite")
     ~actual:(Filename.dirname run_dir);
   let path =
-    Filename.concat (concat_all run_dir [ "outer"; "inner" ]) "my_test.output"
+    Filename.concat
+      (concat_all run_dir [ "outer"; "inner" ])
+      (Path_ops.sanitize_component "my test" ^ ".output")
   in
   check
     "log file exists at <log_dir>/<suite>/<run-id>/<groups...>/<test>.output"

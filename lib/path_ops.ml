@@ -154,7 +154,15 @@ let display_artifact = relative_to_root
 (* Path components *)
 
 (* Long names are truncated to 40 bytes plus a digest to stay within
-   common filesystem limits while preserving uniqueness. *)
+   common filesystem limits while preserving uniqueness.
+
+   Any name the mapping altered also carries a digest, of the name as given.
+   Without it the mapping is many-to-one — ["parse: empty"] and
+   ["parse, empty"] both become [parse__empty] — and two tests then share
+   one capture log, which [Capture.with_capture] opens [O_TRUNC]: the second
+   test destroys the first test's output while the first test's failure
+   report still points at the file. The digest is of the original, so it is
+   stable across runs and independent of execution order. *)
 let sanitize_component s =
   let is_ok = function
     | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' | '.' -> true
@@ -162,12 +170,15 @@ let sanitize_component s =
   in
   let buf = Buffer.create (String.length s) in
   String.iter (fun c -> Buffer.add_char buf (if is_ok c then c else '_')) s;
-  let out = Buffer.contents buf in
-  let out = if out = "" || out = "." || out = ".." then "unnamed" else out in
+  let mapped = Buffer.contents buf in
+  let short = String.sub (Digest.to_hex (Digest.string s)) 0 8 in
+  let out =
+    if mapped = "" || mapped = "." || mapped = ".." then "unnamed-" ^ short
+    else if String.equal mapped s then mapped
+    else mapped ^ "-" ^ short
+  in
   if String.length out <= 80 then out
-  else
-    let hash = Digest.to_hex (Digest.string out) in
-    String.sub out 0 40 ^ "_" ^ hash
+  else String.sub out 0 40 ^ "_" ^ Digest.to_hex (Digest.string s)
 
 (* Filesystem helpers *)
 

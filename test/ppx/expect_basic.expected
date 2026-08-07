@@ -80,7 +80,7 @@ let () =
                 Ppx_windtrap_runtime.Ppx_runtime.start_bol = 255;
                 Ppx_windtrap_runtime.Ppx_runtime.start_pos = 255;
                 Ppx_windtrap_runtime.Ppx_runtime.end_pos = 523
-              }
+              } ~body_wrap:None
     ~trailing_loc:{
                     Ppx_windtrap_runtime.Ppx_runtime.line = 18;
                     Ppx_windtrap_runtime.Ppx_runtime.start_bol = 512;
@@ -136,7 +136,7 @@ let () =
                 Ppx_windtrap_runtime.Ppx_runtime.start_bol = 525;
                 Ppx_windtrap_runtime.Ppx_runtime.start_pos = 525;
                 Ppx_windtrap_runtime.Ppx_runtime.end_pos = 590
-              }
+              } ~body_wrap:None
     ~trailing_loc:{
                     Ppx_windtrap_runtime.Ppx_runtime.line = 22;
                     Ppx_windtrap_runtime.Ppx_runtime.start_bol = 570;
@@ -185,7 +185,7 @@ let () =
                 Ppx_windtrap_runtime.Ppx_runtime.start_bol = 592;
                 Ppx_windtrap_runtime.Ppx_runtime.start_pos = 592;
                 Ppx_windtrap_runtime.Ppx_runtime.end_pos = 677
-              }
+              } ~body_wrap:None
     ~trailing_loc:{
                     Ppx_windtrap_runtime.Ppx_runtime.line = 26;
                     Ppx_windtrap_runtime.Ppx_runtime.start_bol = 656;

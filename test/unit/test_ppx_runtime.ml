@@ -117,7 +117,7 @@ let run_scenario ?(sanitize = fun s -> s) ?(run = fun f -> f ())
   Ppx_runtime.reset ();
   let body_loc, trailing_loc = body_locs source in
   Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[] ~run ~sanitize ~nodes
-    ~body_loc ~trailing_loc name body;
+    ~body_loc ~body_wrap:None ~trailing_loc name body;
   let tests = Ppx_runtime.collect () in
   with_temp_root (fun log_dir ->
       let config = tweak_config (base_config ~log_dir ()) in
@@ -939,7 +939,7 @@ let run_duplicated ~source ~nodes ~name ~times body =
     Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[]
       ~run:(fun f -> f ())
       ~sanitize:(fun s -> s)
-      ~nodes ~body_loc ~trailing_loc name
+      ~nodes ~body_loc ~body_wrap:None ~trailing_loc name
       (fun () ->
         incr instance;
         body !instance)
@@ -1234,7 +1234,7 @@ let () =
     Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[]
       ~run:(fun f -> f ())
       ~sanitize:(fun s -> s)
-      ~nodes ~body_loc ~trailing_loc name
+      ~nodes ~body_loc ~body_wrap:None ~trailing_loc name
       (fun () -> ignore (Check.skip ~reason:"gated" ()))
   in
   (* The non-skip tests live in their own file: corrections are keyed per
@@ -1249,7 +1249,7 @@ let () =
     Ppx_runtime.add_expect_test ~file:other_file ~loc:body_loc ~tags:[]
       ~run:(fun f -> f ())
       ~sanitize:(fun s -> s)
-      ~nodes:[] ~body_loc ~trailing_loc name
+      ~nodes:[] ~body_loc ~body_wrap:None ~trailing_loc name
       (fun () -> print_string "trailing")
   in
   let run_partition register =
@@ -1539,7 +1539,7 @@ let () =
     Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[]
       ~run:(fun f -> f ())
       ~sanitize:(fun s -> s)
-      ~nodes:[] ~body_loc ~trailing_loc "t"
+      ~nodes:[] ~body_loc ~body_wrap:None ~trailing_loc "t"
       (fun () -> print_string "trailing");
     plain_fail ()
   in
@@ -1623,7 +1623,7 @@ let () =
       Ppx_runtime.add_expect_test ~file:temp ~loc:body_loc ~tags:[]
         ~run:(fun f -> f ())
         ~sanitize:(fun s -> s)
-        ~nodes ~body_loc ~trailing_loc "t"
+        ~nodes ~body_loc ~body_wrap:None ~trailing_loc "t"
         (fun () ->
           print_string "new\n";
           Ppx_runtime.expect ~id:0;

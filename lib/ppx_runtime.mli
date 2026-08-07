@@ -146,11 +146,19 @@ val add_expect_test :
   sanitize:(string -> string) ->
   nodes:node list ->
   body_loc:loc ->
+  body_wrap:int option ->
   trailing_loc:loc ->
   string ->
   (unit -> unit) ->
   unit
-(** [add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc
+(** [body_wrap] is [Some offset] when the body is a bare [match], [try] or
+    [function] — the offset of its first character. A trailing correction
+    sequences [;] onto the body, and after such a body that [;] binds to the
+    last arm, so the inserted node would land inside the arm: the offset lets
+    the patch parenthesize the body in the same edit. [None] for every other
+    shape.
+
+    [add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc
      ~trailing_loc name body] registers the [let%expect_test] test [name]. The
     generated call passes [run] and [sanitize] as [Expect_test_config.run] /
     [Expect_test_config.sanitize] — the {e ambient} names, so a user module

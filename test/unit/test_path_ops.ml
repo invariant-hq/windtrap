@@ -72,14 +72,29 @@ let tests =
     test "sanitize_component" (fun () ->
         equal ~msg:"safe name unchanged" string "abc-1_2.x"
           (Path_ops.sanitize_component "abc-1_2.x");
-        equal ~msg:"unsafe chars replaced" string "a_b_c"
+        (* A name the mapping altered carries a digest of the original:
+           without it the mapping is many-to-one and two tests share one
+           capture log, which Capture opens O_TRUNC. *)
+        equal ~msg:"unsafe chars replaced, digest appended" string
+          "a_b_c-22ce5bc5"
           (Path_ops.sanitize_component "a b/c");
-        equal ~msg:"empty becomes unnamed" string "unnamed"
-          (Path_ops.sanitize_component "");
-        equal ~msg:"dot becomes unnamed" string "unnamed"
+        not_equal ~msg:"punctuation variants stay distinct" string
+          (Path_ops.sanitize_component "parse: empty")
+          (Path_ops.sanitize_component "parse, empty");
+        is_true ~msg:"both still start with the readable form"
+          (String.starts_with ~prefix:"parse__empty"
+             (Path_ops.sanitize_component "parse: empty")
+          && String.starts_with ~prefix:"parse__empty"
+               (Path_ops.sanitize_component "parse, empty"));
+        not_equal ~msg:"empty and dot stay distinct" string
+          (Path_ops.sanitize_component "")
           (Path_ops.sanitize_component ".");
-        equal ~msg:"dotdot becomes unnamed" string "unnamed"
-          (Path_ops.sanitize_component "..");
+        is_true ~msg:"empty becomes unnamed"
+          (String.starts_with ~prefix:"unnamed-"
+             (Path_ops.sanitize_component ""));
+        is_true ~msg:"dotdot becomes unnamed"
+          (String.starts_with ~prefix:"unnamed-"
+             (Path_ops.sanitize_component ".."));
         let long = String.make 100 'a' in
         let sanitized = Path_ops.sanitize_component long in
         equal ~msg:"long names truncated with digest" int 73

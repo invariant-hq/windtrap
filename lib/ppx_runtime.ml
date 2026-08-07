@@ -453,7 +453,7 @@ let snode_of ~file:_ node =
 
 type correction =
   | Node_fix of string (* corrected contents for the node at this span *)
-  | Insert of { body_loc : loc; contents : string }
+  | Insert of { body_loc : loc; body_wrap : int option; contents : string }
 (* a trailing node inserted at the trailing point, plus the ";" at
    [body_loc]'s end *)
 
@@ -477,9 +477,9 @@ let record_node_fix ~file node ~contents =
     (Node_key (node.loc.start_pos, node.loc.end_pos))
     (Node_fix contents)
 
-let record_insert ~file ~body_loc ~trailing_loc ~contents =
+let record_insert ~file ~body_loc ~body_wrap ~trailing_loc ~contents =
   Hashtbl.replace (file_corrections file) (Insert_key trailing_loc.start_pos)
-    (Insert { body_loc; contents })
+    (Insert { body_loc; body_wrap; contents })
 
 (* Styled nodes per file: every node of a resolved expect test, span-keyed.
    Only consulted for files that also have recorded corrections. *)
@@ -562,25 +562,45 @@ let corrected_source ~file ~source =
                 node_patches :=
                   { start; stop; text = tag_payload ~tag:"" contents }
                   :: !node_patches
-          | Insert_key point, Insert { body_loc; contents } ->
+          | Insert_key point, Insert { body_loc; body_wrap; contents } ->
+              (* A bare [match]/[try]/[function] body takes parentheses in
+                 the same patch: otherwise the [;] below binds to its last
+                 arm and the inserted node lands inside that arm. *)
+              let open_paren =
+                match body_wrap with
+                | Some start -> [ { start; stop = start; text = "(" } ]
+                | None -> []
+              in
+              let close_paren =
+                match body_wrap with
+                | Some _ ->
+                    [
+                      {
+                        start = body_loc.end_pos;
+                        stop = body_loc.end_pos;
+                        text = ")";
+                      };
+                    ]
+                | None -> []
+              in
               insert_patches :=
-                ( {
-                    start = body_loc.end_pos;
-                    stop = body_loc.end_pos;
-                    text = ";";
-                  },
-                  {
-                    start = point;
-                    stop = point;
-                    text = render_insert ~body_loc contents;
-                  } )
+                (open_paren @ close_paren
+                @ [
+                    {
+                      start = body_loc.end_pos;
+                      stop = body_loc.end_pos;
+                      text = ";";
+                    };
+                    {
+                      start = point;
+                      stop = point;
+                      text = render_insert ~body_loc contents;
+                    };
+                  ])
                 :: !insert_patches
           | Node_key _, Insert _ | Insert_key _, Node_fix _ -> ())
         tbl;
-      let patches =
-        !node_patches
-        @ List.concat_map (fun (semi, ins) -> [ semi; ins ]) !insert_patches
-      in
+      let patches = !node_patches @ List.concat !insert_patches in
       if patches = [] then None
       else begin
         let patches =
@@ -754,6 +774,7 @@ type expect_ctx = {
   ctx_nodes : node array;
   ctx_results : reach list array; (* per node id, reverse reach order *)
   ctx_body_loc : loc;
+  ctx_body_wrap : int option;
   ctx_trailing_loc : loc;
 }
 
@@ -966,7 +987,7 @@ let resolve_trailing ctx ~raw =
   in
   let record contents =
     record_insert ~file:ctx.ctx_file ~body_loc:ctx.ctx_body_loc
-      ~trailing_loc:ctx.ctx_trailing_loc ~contents
+      ~body_wrap:ctx.ctx_body_wrap ~trailing_loc:ctx.ctx_trailing_loc ~contents
   in
   match (distinct_fails reaches, any_pass) with
   | [], _ -> false
@@ -995,8 +1016,8 @@ let resolve_trailing ctx ~raw =
            ~actual:cr ());
       true
 
-let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
-    =
+let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
+    ~trailing_loc body () =
   let nodes_array = Array.of_list nodes in
   Array.iteri
     (fun index node ->
@@ -1010,6 +1031,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
       ctx_nodes = nodes_array;
       ctx_results = Array.make (Array.length nodes_array) [];
       ctx_body_loc = body_loc;
+      ctx_body_wrap = body_wrap;
       ctx_trailing_loc = trailing_loc;
     }
   in
@@ -1072,13 +1094,14 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body ()
           record_covered `Not_covered;
           Printexc.raise_with_backtrace exn backtrace)
 
-let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc
+let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
     ~trailing_loc name body =
   note_partition file;
   let name = scoped_name ~file name in
   register ~file
     (Test_tree.test ~pos:(pos_of ~file loc) ~tags name
-       (run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~trailing_loc body))
+       (run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
+          ~trailing_loc body))
 
 (* The inline runner driver *)
 

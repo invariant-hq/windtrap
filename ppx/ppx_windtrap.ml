@@ -369,7 +369,20 @@ let expect_test_extension =
           loc_ghost = true;
         }
       in
+      (* A trailing correction sequences [;] onto the body. After a bare
+         [match] or [try] that [;] binds to the LAST ARM, so the inserted
+         [%expect] lands inside the arm instead of after the body: the
+         promoted file means something else and the correction never
+         converges. Such a body is parenthesized as part of the same patch,
+         which needs its own start offset — [body_loc] starts at the
+         extension point, not at the body. *)
       let loc = { ext_loc with loc_ghost = true } in
+      let body_wrap =
+        match binding.body.pexp_desc with
+        | Pexp_match _ | Pexp_try _ | Pexp_function _ ->
+            [%expr Some [%e eint ~loc binding.body.pexp_loc.loc_start.pos_cnum]]
+        | _ -> [%expr None]
+      in
       let call =
         pexp_apply ~loc
           (runtime_fn ~loc "add_expect_test")
@@ -381,6 +394,7 @@ let expect_test_extension =
             (Labelled "sanitize", [%expr Expect_test_config.sanitize]);
             (Labelled "nodes", elist ~loc nodes);
             (Labelled "body_loc", compact_loc_expr ~loc body_loc);
+            (Labelled "body_wrap", body_wrap);
             (Labelled "trailing_loc", point_loc_expr ~loc ext_loc.loc_end);
             (Nolabel, estring ~loc name);
             (Nolabel, [%expr fun () -> [%e body]]);

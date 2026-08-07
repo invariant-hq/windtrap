@@ -59,3 +59,15 @@ let%expect_test "output is consumed, not matched" =
 let%expect_test "sanitize applies ambient config" =
   print_string "plain";
   [%expect {| plain |}]
+
+(* A bare [match] body. A trailing correction sequences [;] onto the body,
+   and after a bare match that [;] binds to the last arm — the inserted
+   node would land inside the arm, so the promoted file would mean
+   something else and the correction would never converge. The ppx marks
+   such a body so the patch parenthesizes it in the same edit; this
+   fixture is that shape, already promoted. *)
+let%expect_test "bare match body takes parentheses" =
+  (match Some 1 with
+  | Some n -> Printf.printf "got %d\n" n
+  | None -> print_string "none\n");
+  [%expect {| got 1 |}]
