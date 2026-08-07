@@ -86,6 +86,7 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
   FAIL  parser › tokenize
     …(location, diff, captured output — the full blocks)…
 ──────────────────────────────────────────────────────
+
 3 passed, 1 skipped, 1 expected failure, 4 failed in 0.00179s.
 rerun failures only: dune exec test/test_mylib.exe -- --failed
 ```
@@ -120,6 +121,7 @@ mylib: 5 tests
 slow tests (1):
   1.31s  reindex
 (exempt with the "slow" tag, or raise --slow-threshold SECONDS)
+
 5 passed in 1.31s.
 ```
 

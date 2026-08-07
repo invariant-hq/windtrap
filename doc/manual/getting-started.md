@@ -75,6 +75,7 @@ F
     actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
                                      ~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~
 ──────────────────────────────────────────────────────
+
 1 failed in 0.000781s.
 rerun failures only: dune exec test/test_mylib.exe -- --failed
 ```

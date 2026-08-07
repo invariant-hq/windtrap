@@ -3,4 +3,5 @@ slow_knobs: 2 tests
 slow tests (1):
   <duration>  Inline_slow_knobs › untagged
 (exempt with the "slow" tag, or raise WINDTRAP_SLOW_THRESHOLD)
+
 2 passed in <duration>s.

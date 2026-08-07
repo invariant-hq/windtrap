@@ -36,6 +36,7 @@ F
       actual    []
     replay: dune exec test/test_codec.exe -- --seed s1:fdf792804ac422b3 -f 'decode inverts encode'
 ──────────────────────────────────────────────────────
+
 1 failed in 0.000707s.
 rerun failures only: dune exec test/test_codec.exe -- --failed
 ```

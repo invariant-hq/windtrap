@@ -35,6 +35,7 @@ F
       ┆   test     Run the tests
     accept: dune exec test/test_mytool.exe -- -u, then review with git diff
 ──────────────────────────────────────────────────────
+
 1 failed in 0.00109s.
 rerun failures only: dune exec test/test_mytool.exe -- --failed
 

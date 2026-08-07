@@ -115,11 +115,13 @@ let expected_failures =
     [debug] session table resize 2 -> 4
     [debug] carol: ghost session from pool reuse
     full log: _build/_tests/mylib/latest/users/sessions-after-login.output
+
   FAIL  parser › rejects empty
     test/test_parser.ml:12
     expected exception  Parse_error("empty")
     raised              Not_found
     Raised at Parser.parse in file "lib/parser.ml", line 40
+
   FAIL  cli › cli help
     test/test_cli.ml:9
     snapshot "help": no baseline at test/__snapshots__/test_cli/help.snap
@@ -128,6 +130,7 @@ let expected_failures =
       ┆ Commands:
       ┆   run
     accept: dune exec test/main.exe -- -u, then review with git diff
+
   FAIL  cli › snapshot drift
     test/test_cli.ml:14
     snapshot "version": mismatch with test/__snapshots__/test_cli/version.snap
@@ -137,6 +140,7 @@ let expected_failures =
     + line 2
       line three
     accept: dune exec test/main.exe -- -u, then review with git diff
+
   FAIL  geo › area non-negative
     test/test_geo.ml:17
     counterexample (case 12, shrunk 4 steps): Rect (2, 0)
@@ -147,12 +151,14 @@ let expected_failures =
       actual    false
                 ~~~~
     replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
+
   FAIL  db › insert
     test/test_db.ml:21
     body exploded
     [teardown]
     teardown exploded
 ──────────────────────────────────────────────────────
+
 |}
 
 (* The two second-plus passes are untagged in the fixture data, so they
@@ -164,6 +170,7 @@ let expected_slow_warnings =
   3.00s  slow › hash
   2.50s  slow › big sort
 (exempt with the "slow" tag, or raise --slow-threshold SECONDS)
+
 |}
 
 let expected_summary =
@@ -673,7 +680,7 @@ let test_compact_slow_trigger () =
        .\n\
        slow tests (1):\n\
       \  1.20s  t\n\
-       (exempt with the \"slow\" tag, or raise WINDTRAP_SLOW_THRESHOLD)\n\
+       (exempt with the \"slow\" tag, or raise WINDTRAP_SLOW_THRESHOLD)\n\n\
        1 passed in 1.2s.\n"
     ~actual:t;
   let at_threshold =
@@ -791,7 +798,7 @@ let test_verbose_slow_warnings () =
   check_contains "verbose: slow warning before the summary"
     ~sub:"slow tests (1):\n  1.50s  t\n(exempt with" t;
   check_contains "verbose: summary follows the hint"
-    ~sub:"WINDTRAP_SLOW_THRESHOLD)\n1 passed in 1.5s.\n" t;
+    ~sub:"WINDTRAP_SLOW_THRESHOLD)\n\n1 passed in 1.5s.\n" t;
   let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
     with_renderer ~mode:`Verbose (fun r ->

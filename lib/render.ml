@@ -1435,10 +1435,22 @@ let finish t ?coverage ~results ~duration () =
     close_row t;
     if failed > 0 then begin
       put t (st t `Faint (labeled_rule t (spf "failures (%d)" failed)));
-      List.iter (pp_block t) failed_results;
-      put t (st t `Faint (dashes (min t.columns rule_width)))
+      (* One blank line between blocks, none inside the run: a block is the
+         unit a reader scans for, and the only other break in this region —
+         between a block's location and its detail — must not read as loud
+         as the boundary between two failures. *)
+      List.iteri
+        (fun i r ->
+          if i > 0 then put t "";
+          pp_block t r)
+        failed_results;
+      put t (st t `Faint (dashes (min t.columns rule_width)));
+      put t ""
     end;
-    if t.mode <> `Quiet && slow_results <> [] then slow_warnings t slow_results;
+    if t.mode <> `Quiet && slow_results <> [] then begin
+      slow_warnings t slow_results;
+      put t ""
+    end;
     summary_line t ~passed ~failed ~skipped
       ~excused:(List.length excused_results)
       ~subtests ~duration;
