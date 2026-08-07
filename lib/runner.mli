@@ -37,6 +37,14 @@
     [Stack_overflow] re-raise after a best-effort fixture release, and any other
     exception becomes a {!Failure.Raise} failure carrying its backtrace.
 
+    {!execute} enables {!Printexc.record_backtrace} for the process and does not
+    restore it. The runtime keeps a backtrace only when asked, and without one a
+    raising test reports its constructor and its declaration line and nothing
+    else — no raise site. This is a process-wide setting, so it overrides a
+    deliberate [OCAMLRUNPARAM=b=0] or an explicit
+    [Printexc.record_backtrace false] in code under test; the cost is a fraction
+    of a microsecond per raise, scaling with stack depth.
+
     A user callback that calls [exit] does not terminate the process: the first
     {!execute} in a process registers a [Stdlib.at_exit] guard which, whenever
     an exit is attempted while a run is active ({!Run.active}), re-arms itself
@@ -47,8 +55,11 @@
       exit the process"]). An exit attempted during fixture release becomes a
     {!Failure.Release} failure like any raising teardown; one attempted from an
     [on_event] observer aborts the run like any raising observer. The guard is
-    inert while no run is active: exits before, after, and by the runner itself
-    pass through untouched.
+    inert in any process other than the one that armed it — a test that forks
+    and calls [exit] in the child terminates the child, which is what a test
+    spawning subprocesses expects, and the child does not inherit the run. It is
+    likewise inert while no run is active: exits before, after, and by the
+    runner itself pass through untouched.
 
     A {!Test_tree.bracket}'s stored closures run as data — setup, then body,
     then teardown iff setup succeeded, teardown on every body outcome including
