@@ -69,8 +69,8 @@ type invocation = [ `Exe of string | `Mirrors ]
     under dune and [argv.(0)], verbatim, standalone. [`Mirrors] means no CLI
     exists and hints spell [WINDTRAP_*] environment prefixes to [dune runtest] —
     the inline runner's context, and the default. The driver computes it once at
-    startup; every acceptance, replay, rerun, and prune line derives from it, so
-    no hint can name an invocation that would not re-run the suite. *)
+    startup; every acceptance, replay, and prune line derives from it, so no
+    hint can name an invocation that would not re-run the suite. *)
 
 val create :
   out:Format.formatter ->
@@ -92,12 +92,12 @@ val create :
       payload strings, test names, or captured output (a user [pp] or program
       that styles) are stripped; under [ansi:true] they pass through.
     - [mode], the verbosity level — one axis, each level a superset of the one
-      below. [`Quiet] ([--quiet]) prints the failure blocks, the summary, and
-      the rerun hint, nothing else. [`Compact] (the default) adds the header and
-      one glyph per test — deferred until the run proves noteworthy (the module
-      preamble; a green, healthy run is one named line). [`Verbose]
-      ([--verbose]) prints one status line per test instead of the glyph. Every
-      level prints the same failure blocks and the same summary line.
+      below. [`Quiet] ([--quiet]) prints the failure blocks and the summary,
+      nothing else. [`Compact] (the default) adds the header and one glyph per
+      test — deferred until the run proves noteworthy (the module preamble; a
+      green, healthy run is one named line). [`Verbose] ([--verbose]) prints one
+      status line per test instead of the glyph. Every level prints the same
+      failure blocks and the same summary line.
     - [live], whether {!begin_test} maintains a self-erasing progress display
       with terminal cursor controls. Pass the sink's TTY status; under
       [ansi:false] or [`Quiet] it is off regardless. Defaults to [false].
@@ -261,12 +261,12 @@ val finish :
       coverage modes: {!coverage_report} prints its own line, without the hint.
 
     Classification is record-driven, as {!result}: excused results — failing
-    results that did not count ([r.counted = false]) — leave the failure
-    section, the failed count, and the rerun hint: they did not fail the run,
-    and a summary that counted them red would contradict the exit code (their
-    stream lines already reported them as [XFAIL]). [slow_tagged] results are
-    exempt from the slow warnings and from keeping a deferred compact transcript
-    noteworthy; skips are exempt regardless.
+    results that did not count ([r.counted = false]) — leave the failure section
+    and the failed count alone: they did not fail the run, and a summary that
+    counted them red would contradict the exit code (their stream lines already
+    reported them as [XFAIL]). [slow_tagged] results are exempt from the slow
+    warnings and from keeping a deferred compact transcript noteworthy; skips
+    are exempt regardless.
 
     Failure blocks render each test's captured tail from the first
     {!Failure.tail} attached to its failures: the retained lines (at most

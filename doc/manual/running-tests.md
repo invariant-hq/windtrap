@@ -167,8 +167,8 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
 Verbose also keeps the slowest-tests list and prints the same slow
 warnings; it never defers — every line streams as it happens.
 
-`-q` (`WINDTRAP_QUIET`) prints the failure blocks, the summary, and
-the rerun hint, nothing else — no slow warnings, no coverage, no
+`-q` (`WINDTRAP_QUIET`) prints the failure blocks and the summary,
+nothing else — no slow warnings, no coverage, no
 snapshot notices. A green quiet run is the same named one-liner as the
 default level. `no tests ran.` still prints; it explains exit code 2.
 
@@ -183,10 +183,10 @@ Actions the same compact transcript sits inside a collapsed
 
 ## The feedback loop
 
-The last line of a failing run is the rerun command
-(`… --failed`); `--failed` reruns only what failed last time, `-x`
-stops at the first failure, and `-l` shows what a filter would select
-before you run it:
+The summary is the last line of a failing run — no run advertises a
+flag. `--failed` reruns only what failed last time, `-x` stops at the
+first failure, and `-l` shows what a filter would select before you
+run it:
 
 ```
 $ dune exec test/test_mylib.exe -- -l -f parser

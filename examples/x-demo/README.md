@@ -239,9 +239,9 @@ dune exec examples/x-demo/main.exe -- -q
 `-v`: one status line per test — `PASS name 0.1ms`, `SKIP … (no
 database in the demo environment)`, `XFAIL … (expected failure:
 issue #42)`, `FAIL` — streaming as they happen; same failure blocks
-and summary. `-q`: failure blocks, summary (prefixed `x-demo:`), and
-the rerun hint only — no header, glyphs, slow warnings, releasing
-note, or coverage. Levels change what prints, never outcomes.
+and summary. `-q`: failure blocks and summary (prefixed `x-demo:`)
+only — no header, glyphs, slow warnings, releasing note, or coverage.
+Levels change what prints, never outcomes.
 
 ## 8. Selection and exit codes
 
@@ -335,7 +335,7 @@ failure block bytes — acceptance hint included:
 
 ```
 ::group::x-demo
-  …the failure block, summary, and rerun hint as in a plain -q run…
+  …the failure block and summary as in a plain -q run…
 ::endgroup::
 ::error file=examples/x-demo/main.ml,line=311,title=Test failure%3A snapshots › usage text drifted from its baseline::    examples/x-demo/main.ml:311%0A    snapshot "usage": mismatch with …%0A…
 ```

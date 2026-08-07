@@ -105,7 +105,9 @@ printer plus an equality, composed like the type itself.
 Custom types are one line:
 `let point = Testable.make ~pp:Point.pp ~equal:Point.equal`.
 
-Every failure prints the exact command to rerun, replay, or accept it.
+Every failure that needs a command to resolve it prints that command:
+the acceptance line under a snapshot mismatch, the replay line under a
+property failure.
 From here: [Assertions](assertions.md) for the full verb set,
 [Property testing](property-testing.md), [Snapshots and expect
 tests](snapshots-and-expect.md), or [Running tests](running-tests.md)
