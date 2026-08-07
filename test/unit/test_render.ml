@@ -153,6 +153,7 @@ let expected_failures =
   FAIL  db › insert
     test/test_db.ml:21
     body exploded
+
     [teardown]
     teardown exploded
 ──────────────────────────────────────────────────────

@@ -1160,8 +1160,15 @@ let pp_block t (r : Run.result) =
         ("  " ^ st t `Red "FAIL" ^ "  "
         ^ st t `Bold (sanitize_name name)
         ^ st t `Faint attempts);
-      List.iter
-        (fun f ->
+      (* One test can fail more than once — sibling subtests, or a body and
+         its teardown, which report independently. Separate them, for the
+         same reason blocks are separated: without it the only break inside
+         a block falls between a failure's location and its detail, which
+         reads as a boundary where there is none and hides the one that is
+         actually there. *)
+      List.iteri
+        (fun i f ->
+          if i > 0 then put t "";
           pp_gen ~ansi:t.ansi ~excerpt:true ~filter:(Some name) ~commands:true
             ~invocation:t.invocation ~ind:indent t.out f)
         failures;
