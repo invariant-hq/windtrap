@@ -108,8 +108,9 @@ let expected_failures =
   FAIL  users › sessions after login
     test/test_users.ml:31
     expected  [("alice", [1; 2; 3]); ("bob", [4])]
+                                     ~~~~~~~~~~~~
     actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
-                                               ~~~~~~~~~~~~~~~~~~
+                                     ~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~
     ── captured output (last 2 lines, 12034 earlier bytes omitted) ──
     [debug] session table resize 2 -> 4
     [debug] carol: ghost session from pool reuse
@@ -142,6 +143,7 @@ let expected_failures =
     which failed at:
       test/test_geo.ml:18
       expected  true
+                ~~~
       actual    false
                 ~~~~
     replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
@@ -1215,7 +1217,9 @@ let test_raise_message_diff () =
   check_contains "raise: messages diffed as strings"
     ~sub:
       "expected  \"index 3 out of bounds\"\n\
-      \    actual    \"index 4 out of bounds\""
+      \                     ~\n\
+      \    actual    \"index 4 out of bounds\"\n\
+      \                     ~"
     b;
   check_contains "raise: marker under the changed span" ~sub:"~" b;
   check_absent "raise: constructor not repeated on both sides"

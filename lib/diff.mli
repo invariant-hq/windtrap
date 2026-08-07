@@ -22,7 +22,16 @@
     list or array renderings — the output of the [Testable] container printers —
     it compares them element by element, so renderers can state the first
     differing index and the mismatch count instead of leaving a hundred-element
-    diff to speak for itself. *)
+    diff to speak for itself.
+
+    Element grain outranks character grain wherever it applies. A character-
+    minimal edit script between two sequence renderings is free to mark a region
+    that spans the tail of one element, a separator, and the head of the next —
+    minimal in characters, meaningless to a reader — and on a shifted sequence
+    ([[1; 2; 3]] against [[2; 3; 4]]) it marks every element as changed. So
+    {!sequences} also carries the highlight ranges themselves, computed from the
+    element alignment, and renderers of a sequence rendering take their marks
+    from there rather than from {!refine}. *)
 
 (** {1:hunks Line hunks} *)
 
@@ -127,6 +136,14 @@ type seq_diff = {
       (** The bracket form both renderings used ([[…]] or [[|…|]]). *)
   expected_length : int;  (** Element count of the [expected] rendering. *)
   actual_length : int;  (** Element count of the [actual] rendering. *)
+  expected_spans : span list;
+      (** Byte ranges of [expected] to highlight, under the same contract as
+          {!refinement}: ascending, non-overlapping, coalesced, on code-point
+          boundaries. A range never crosses an element boundary — it is either a
+          whole non-aligned element or, when refinement localizes the change
+          inside a replaced one, a part of it. Empty iff [differing] is [0] and
+          the lengths agree. *)
+  actual_spans : span list;  (** As {!expected_spans}, for [actual]. *)
   differing : int;
       (** Differing elements under the element-grain alignment (the line-diff
           algorithm over canonical elements): each replaced pair counts once,

@@ -75,7 +75,7 @@ Checklist for the blocks, in order:
 
 | block | validate |
 | --- | --- |
-| `equal on nested structure` | expected/actual with the differing suffix highlighted (marker line `~~~` when colors are off) |
+| `equal on nested structure` | element-grain highlight: the changed element and the added one marked whole on each side, never a span crossing `;` (marker lines `~~~` under both sides when colors are off) |
 | `equal on strings` | char-level highlight: `o`→`a` and `s`→`ed` only |
 | `equal on a large array` | `arrays differ at 3 of 300 elements; first at [290]: expected 84100, actual 84101` above a tight unified hunk |
 | `not_equal …` | single line `both sides equal: [1; 2; 3]` |
@@ -271,8 +271,10 @@ and exits **2**.
 WINDTRAP_COLOR=never dune exec examples/x-demo/main.exe | cat -v
 ```
 
-Validate: **zero** escape bytes anywhere, and the string-diff
-highlight degrades to a `~~~` marker line under `actual`. Compare
+Validate: **zero** escape bytes anywhere, and every highlight degrades
+to a `~~~` marker line under its own side — both `expected` and
+`actual` carry one, since a deletion shows only on the expected side.
+Compare
 with the default (piped output under dune is still styled):
 
 ```sh

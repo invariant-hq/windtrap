@@ -147,7 +147,9 @@ let random_lines max_len alphabet =
 let spans l = List.map (fun s -> (s.Diff.start, s.Diff.length)) l
 
 let check_refine name ~expected ~actual pinned =
-  let show r =
+  (* Annotated: [seq_diff] carries same-named span fields, and being declared
+     later it wins type-directed disambiguation. *)
+  let show (r : Diff.refinement option) =
     let side l =
       String.concat ";"
         (List.map (fun (s, n) -> Printf.sprintf "%d+%d" s n) (spans l))
@@ -745,4 +747,86 @@ let sequence_tests =
         none "empty strings" (Diff.sequences ~expected:"" ~actual:""));
   ]
 
-let tests = hunk_tests @ refine_tests @ sequence_tests
+(* Element-grain highlight spans.
+
+   The law these pin: a span never crosses an element boundary. Character
+   refinement over the same renderings is free to do exactly that (and did,
+   before the spans existed) — [marks] below reads the marked substrings
+   back out, so a regression shows up as a fragment like ["; 5]); (\"carol\",
+   ["] instead of a whole element. *)
+
+let marks s spans =
+  String.concat "|"
+    (List.map (fun { Diff.start; length } -> String.sub s start length) spans)
+
+let check_marks name ~expected ~actual (pin_e, pin_a) =
+  let d = get name (Diff.sequences ~expected ~actual) in
+  check_string
+    (name ^ ": expected marks")
+    ~expected:pin_e
+    ~actual:(marks expected d.Diff.expected_spans);
+  check_string (name ^ ": actual marks") ~expected:pin_a
+    ~actual:(marks actual d.Diff.actual_spans)
+
+let span_tests =
+  [
+    test "spans: whole elements, never across a boundary" (fun () ->
+        check_marks "replacement" ~expected:"[1; 2; 3]" ~actual:"[1; 2; 4]"
+          ("3", "4");
+        check_marks "insertion" ~expected:"[1; 2; 3]" ~actual:"[1; 9; 2; 3]"
+          ("", "9");
+        check_marks "deletion" ~expected:"[1; 2; 3; 4]" ~actual:"[1; 3; 4]"
+          ("2", "");
+        (* The case a character-minimal script calls "everything changed". *)
+        check_marks "shift" ~expected:"[1; 2; 3; 4]" ~actual:"[2; 3; 4; 5]"
+          ("1", "5");
+        check_marks "append" ~expected:{|["alpha"; "beta"]|}
+          ~actual:{|["alpha"; "beta"; "gamma"]|} ("", {|"gamma"|});
+        check_marks "arrays" ~expected:"[|1; 2; 3|]" ~actual:"[|1; 5; 3|]"
+          ("2", "5"));
+    test "spans: nested elements stay whole" (fun () ->
+        check_marks "nested" ~expected:{|[("alice", [1; 2; 3]); ("bob", [4])]|}
+          ~actual:{|[("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]|}
+          ({|("bob", [4])|}, {|("bob", [4; 5])|("carol", [])|}));
+    test "spans: refinement inside a replaced element" (fun () ->
+        (* Localized and small: the mark narrows to the differing word. *)
+        check_marks "one word of a long element"
+          ~expected:{|["the quick brown fox"; "jumps over"; "the lazy dog"]|}
+          ~actual:{|["the quick brown fox"; "jumps over"; "the lazy cat"]|}
+          ("dog", "cat");
+        (* Scattered and broad: refining ["None"] against ["Some 2"] clears
+           the noise threshold but marks three quarters of the element, so
+           the whole element wins instead. *)
+        check_marks "scattered refinement is refused"
+          ~expected:"[Some 1; None; Some 3]" ~actual:"[Some 1; Some 2; Some 3]"
+          ("None", "Some 2");
+        (* A pure insertion inside a replaced element would mark the actual
+           side only, which is how an inserted element renders; both
+           endpoints are marked instead. *)
+        check_marks "one-sided refinement is refused" ~expected:"[4; 5; 6]"
+          ~actual:"[4; 55; 6]" ("5", "55"));
+    test "spans: no marks when the sequences agree" (fun () ->
+        let d =
+          get "layout only"
+            (Diff.sequences ~expected:"[1; 2]" ~actual:"[1;\n 2]")
+        in
+        check_int "differing" ~expected:0 ~actual:d.Diff.differing;
+        check "expected unmarked" (d.Diff.expected_spans = []);
+        check "actual unmarked" (d.Diff.actual_spans = []));
+    test "spans: obey the span contract" (fun () ->
+        (* Same invariants [refine] spans carry: ascending, disjoint,
+           non-empty, on code-point boundaries. *)
+        let e = {|["é"; "€"; "a"]|} and a = {|["é"; "x"; "b"]|} in
+        let d = get "utf8" (Diff.sequences ~expected:e ~actual:a) in
+        check "expected spans well-formed" (spans_ok e d.Diff.expected_spans);
+        check "actual spans well-formed" (spans_ok a d.Diff.actual_spans);
+        (* Both pairs refine to the differing code point inside the quotes:
+           coverage counts code points, so the multi-byte element is judged
+           the same as the ASCII one (1 of 3 either way). *)
+        check_string "utf8 expected marks" ~expected:"€|a"
+          ~actual:(marks e d.Diff.expected_spans);
+        check_string "utf8 actual marks" ~expected:"x|b"
+          ~actual:(marks a d.Diff.actual_spans));
+  ]
+
+let tests = hunk_tests @ refine_tests @ sequence_tests @ span_tests

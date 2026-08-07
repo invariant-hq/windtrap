@@ -360,6 +360,24 @@ let seq_summary ~expected ~actual =
              d.Diff.expected_length first)
   | _ -> None
 
+(* The marks under an equality's two renderings, at the coarsest grain that
+   applies: element alignment when both sides are sequence renderings that
+   actually differ as sequences, character refinement otherwise. Sequences
+   that parse but agree element-for-element differ only in the whitespace
+   their printer's box inserted — refinement is what shows that. *)
+let eq_spans ~expected ~actual =
+  let character () =
+    match Diff.refine ~expected ~actual with
+    | Some r -> Some (r.Diff.expected_spans, r.Diff.actual_spans)
+    | None -> None
+  in
+  match Diff.sequences ~expected ~actual with
+  | Some d
+    when d.Diff.differing > 0 || d.Diff.expected_length <> d.Diff.actual_length
+    ->
+      Some (d.Diff.expected_spans, d.Diff.actual_spans)
+  | _ -> character ()
+
 let pp_eq_detail ~ansi put ~ind ~expected ~actual =
   let st style s = Pp.styled_string ~ansi style s in
   if String.contains expected '\n' || String.contains actual '\n' then begin
@@ -381,24 +399,28 @@ let pp_eq_detail ~ansi put ~ind ~expected ~actual =
         pp_hunks ~ansi put ~ind hunks
   end
   else
-    let refined = Diff.refine ~expected ~actual in
-    match refined with
-    | Some r when ansi ->
+    let marked = eq_spans ~expected ~actual in
+    match marked with
+    | Some (es, as_) when ansi ->
         put
           (ind ^ st `Faint "expected" ^ "  "
-          ^ highlight ~ansi `Green expected r.Diff.expected_spans);
-        put
-          (ind ^ st `Faint "actual" ^ "    "
-          ^ highlight ~ansi `Red actual r.Diff.actual_spans)
-    | _ -> (
-        put (ind ^ st `Faint "expected" ^ "  " ^ expected);
-        put (ind ^ st `Faint "actual" ^ "    " ^ actual);
-        match refined with
-        | Some r when not ansi -> (
-            match marker_line actual r.Diff.actual_spans with
+          ^ highlight ~ansi `Green expected es);
+        put (ind ^ st `Faint "actual" ^ "    " ^ highlight ~ansi `Red actual as_)
+    | _ ->
+        (* Plain sinks carry the marks on their own line, under the side they
+           belong to. Both sides get one: element alignment makes a pure
+           deletion ordinary, and a deletion has nothing to show on the
+           actual side. *)
+        let side label pad s spans =
+          put (ind ^ st `Faint label ^ pad ^ s);
+          if not ansi then
+            match marker_line s spans with
             | Some m -> put (ind ^ "          " ^ m)
-            | None -> ())
-        | _ -> ())
+            | None -> ()
+        in
+        let es, as_ = match marked with Some p -> p | None -> ([], []) in
+        side "expected" "  " expected es;
+        side "actual" "    " actual as_
 
 let pp_eq ~ansi put ~ind ~expected ~actual =
   let st style s = Pp.styled_string ~ansi style s in

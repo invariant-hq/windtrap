@@ -45,8 +45,9 @@ let expected_small =
     <testcase name="users › sessions after login" classname="mylib.users" time="0.000">
       <failure message="expected [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4])], got [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4; 5]); (&quot;carol&quot;, [])]">    test/test_users.ml:31
     expected  [("alice", [1; 2; 3]); ("bob", [4])]
+                                     ~~~~~~~~~~~~
     actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
-                                               ~~~~~~~~~~~~~~~~~~
+                                     ~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~
 </failure>
       <system-out>[12034 earlier bytes omitted]
 [debug] session table resize 2 -&gt; 4
@@ -194,6 +195,7 @@ let subtest_golden =
       <failure message="contract › shape [0] — expected [1; 2], got [1; 3]">    test/test_backend.ml:40
     contract › shape [0]
     expected  [1; 2]
+                  ~
     actual    [1; 3]
                   ~
 </failure>
@@ -202,6 +204,7 @@ let subtest_golden =
       <failure message="contract › shape [2] — expected [1; 2], got [1; 3]">    test/test_backend.ml:40
     contract › shape [2]
     expected  [1; 2]
+                  ~
     actual    [1; 3]
                   ~
 </failure>

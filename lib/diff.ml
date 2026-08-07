@@ -346,214 +346,6 @@ let spans_of_indices cps indices =
   in
   go [] indices
 
-(* Sequence elements *)
-
-type mismatch = {
-  index : int;
-  expected : string option;
-  actual : string option;
-}
-
-type seq_diff = {
-  kind : [ `List | `Array ];
-  expected_length : int;
-  actual_length : int;
-  differing : int;
-  first : mismatch option;
-}
-
-exception Not_a_sequence
-
-let is_ws = function ' ' | '\n' | '\t' | '\r' -> true | _ -> false
-
-(* The canonical elements of the region [s.[first..last]] (inclusive): split
-   on top-level [';'], with whitespace runs outside string and character
-   literals collapsed to one space. Raises [Not_a_sequence] on anything the
-   conservative grammar cannot account for: unbalanced brackets, an
-   unterminated string, an empty element (as in ["[a;; b]"]). *)
-let canonical_elements s ~first ~last =
-  let buf = Buffer.create 32 in
-  let out = ref [] in
-  let depth = ref 0 in
-  let pending_ws = ref false in
-  let add c =
-    if !pending_ws then begin
-      if Buffer.length buf > 0 then Buffer.add_char buf ' ';
-      pending_ws := false
-    end;
-    Buffer.add_char buf c
-  in
-  let flush () =
-    if Buffer.length buf = 0 then raise_notrace Not_a_sequence;
-    out := Buffer.contents buf :: !out;
-    Buffer.clear buf;
-    pending_ws := false
-  in
-  (* Copies the [%C]-style char literal starting at [i] (its opening quote)
-     verbatim and returns the index of its closing quote, or [None] when no
-     literal shape matches — the quote is then an ordinary character. Shapes:
-     ['c'], ['\c'], and the four-character escapes ['\000'] / ['\xFF']. *)
-  let char_literal i =
-    let quote_at j = j <= last && s.[j] = '\'' in
-    let close j =
-      for k = i to j do
-        Buffer.add_char buf s.[k]
-      done;
-      Some j
-    in
-    if i + 1 > last then None
-    else if s.[i + 1] = '\\' then
-      if quote_at (i + 3) then close (i + 3)
-      else if quote_at (i + 5) then close (i + 5)
-      else None
-    else if quote_at (i + 2) then close (i + 2)
-    else None
-  in
-  let i = ref first in
-  while !i <= last do
-    (match s.[!i] with
-    | c when is_ws c -> pending_ws := true
-    | '"' ->
-        add '"';
-        let rec copy j =
-          if j > last then raise_notrace Not_a_sequence
-          else
-            match s.[j] with
-            | '\\' ->
-                if j + 1 > last then raise_notrace Not_a_sequence;
-                Buffer.add_char buf '\\';
-                Buffer.add_char buf s.[j + 1];
-                copy (j + 2)
-            | '"' ->
-                Buffer.add_char buf '"';
-                j
-            | c ->
-                Buffer.add_char buf c;
-                copy (j + 1)
-        in
-        i := copy (!i + 1)
-    | '\'' -> (
-        (* Collapsing must not reach inside a char literal (['\n'] would
-           otherwise lose its meaning), so literals copy verbatim. *)
-        if !pending_ws && Buffer.length buf > 0 then Buffer.add_char buf ' ';
-        pending_ws := false;
-        match char_literal !i with
-        | Some close -> i := close
-        | None -> Buffer.add_char buf '\'')
-    | ';' when !depth = 0 -> flush ()
-    | ('(' | '[' | '{') as c ->
-        incr depth;
-        add c
-    | (')' | ']' | '}') as c ->
-        decr depth;
-        if !depth < 0 then raise_notrace Not_a_sequence;
-        add c
-    | c -> add c);
-    incr i
-  done;
-  if !depth <> 0 then raise_notrace Not_a_sequence;
-  if Buffer.length buf > 0 then flush ()
-  else if !out <> [] then raise_notrace Not_a_sequence (* trailing ';' *);
-  Array.of_list (List.rev !out)
-
-(* [Some (kind, elements)] when [s] (outer whitespace aside) is a bracketed
-   sequence rendering; [None] otherwise. *)
-let parse_sequence s =
-  let n = String.length s in
-  let a = ref 0 and b = ref (n - 1) in
-  while !a < n && is_ws s.[!a] do
-    incr a
-  done;
-  while !b > !a && is_ws s.[!b] do
-    decr b
-  done;
-  if !b < !a + 1 || s.[!a] <> '[' || s.[!b] <> ']' then None
-  else
-    let kind, first, last =
-      if !b - !a >= 3 && s.[!a + 1] = '|' && s.[!b - 1] = '|' then
-        (`Array, !a + 2, !b - 2)
-      else (`List, !a + 1, !b - 1)
-    in
-    match canonical_elements s ~first ~last with
-    | elements -> Some (kind, elements)
-    | exception Not_a_sequence -> None
-
-(* Differences under the element-grain alignment: the line-diff machinery
-   run over the canonical element arrays, so a single inserted or removed
-   element is one difference, not a shifted disagreement at every later
-   index. Within a run of changes, [min d i] of the [d] deletions and [i]
-   insertions pair up as replacements and the rest are one-sided — [max d i]
-   differing elements in total. [first] is the first non-aligned element; it
-   sits after Keeps only, so its index reads the same on both sides (and on
-   the one side that carries a one-sided element). *)
-let aligned_differences ~prefix ops =
-  let differing = ref 0 in
-  let first = ref None in
-  let kept = ref prefix in
-  let run_del = ref [] and run_ins = ref [] in
-  let flush_run () =
-    let dels = List.rev !run_del and inss = List.rev !run_ins in
-    let nd = List.length dels and ni = List.length inss in
-    if nd + ni > 0 then begin
-      differing := !differing + max nd ni;
-      (if !first = None then
-         let index = !kept in
-         first :=
-           match (dels, inss) with
-           | e :: _, a :: _ ->
-               Some { index; expected = Some e; actual = Some a }
-           | e :: _, [] -> Some { index; expected = Some e; actual = None }
-           | [], a :: _ -> Some { index; expected = None; actual = Some a }
-           | [], [] -> None (* unreachable: nd + ni > 0 *));
-      run_del := [];
-      run_ins := []
-    end
-  in
-  List.iter
-    (function
-      | Keep _ ->
-          flush_run ();
-          incr kept
-      | Delete e -> run_del := e :: !run_del
-      | Insert a -> run_ins := a :: !run_ins)
-    ops;
-  flush_run ();
-  (!differing, !first)
-
-let sequences ~expected ~actual =
-  match (parse_sequence expected, parse_sequence actual) with
-  | Some (ke, ee), Some (ka, ea) when ke = ka ->
-      let ne = Array.length ee and na = Array.length ea in
-      let prefix = common_prefix_len ee ea in
-      let suffix = common_suffix_len ~prefix ee ea in
-      let me = ne - prefix - suffix and ma = na - prefix - suffix in
-      let ops =
-        if me = 0 && ma = 0 then []
-        else
-          let mid_e = Array.sub ee prefix me
-          and mid_a = Array.sub ea prefix ma in
-          match
-            if me + ma > myers_line_limit then None
-            else myers ~max_edits:myers_max_edits mid_e mid_a
-          with
-          | Some ops -> ops
-          | None ->
-              (* Size guard: complete, non-minimal fallback (as [hunks]) —
-                 one delete-all/insert-all run, counted as [max me ma]. *)
-              List.map (fun e -> Delete e) (Array.to_list mid_e)
-              @ List.map (fun a -> Insert a) (Array.to_list mid_a)
-      in
-      let differing, first = aligned_differences ~prefix ops in
-      Some
-        {
-          kind = ke;
-          expected_length = ne;
-          actual_length = na;
-          differing;
-          first;
-        }
-  | _ -> None
-
 let refine ~expected ~actual =
   let ca = code_points expected and cb = code_points actual in
   let na = Array.length ca and nb = Array.length cb in
@@ -595,3 +387,340 @@ let refine ~expected ~actual =
           expected_spans = spans_of_indices ca (List.rev expected_indices);
           actual_spans = spans_of_indices cb (List.rev actual_indices);
         }
+
+(* Sequence elements *)
+
+type mismatch = {
+  index : int;
+  expected : string option;
+  actual : string option;
+}
+
+type seq_diff = {
+  kind : [ `List | `Array ];
+  expected_length : int;
+  actual_length : int;
+  expected_spans : span list;
+  actual_spans : span list;
+  differing : int;
+  first : mismatch option;
+}
+
+(* An element as parsed: its canonical form (what the alignment compares)
+   and its byte range in the rendering it came from (what a highlight
+   marks). The two differ whenever the printer's box inserted whitespace
+   the canonical form collapsed. *)
+type element = { canonical : string; extent : span }
+
+exception Not_a_sequence
+
+let is_ws = function ' ' | '\n' | '\t' | '\r' -> true | _ -> false
+
+(* The canonical elements of the region [s.[first..last]] (inclusive): split
+   on top-level [';'], with whitespace runs outside string and character
+   literals collapsed to one space. Raises [Not_a_sequence] on anything the
+   conservative grammar cannot account for: unbalanced brackets, an
+   unterminated string, an empty element (as in ["[a;; b]"]). *)
+let canonical_elements s ~first ~last =
+  let buf = Buffer.create 32 in
+  let out = ref [] in
+  let depth = ref 0 in
+  let pending_ws = ref false in
+  (* The element's byte range, tracked alongside the canonical form: [from]
+     is its first non-whitespace byte and [upto] its last, so the extent
+     excludes the separator and the whitespace the canonicalization dropped. *)
+  let from = ref (-1) and upto = ref (-1) in
+  let mark j =
+    if !from < 0 then from := j;
+    upto := j
+  in
+  let add c =
+    if !pending_ws then begin
+      if Buffer.length buf > 0 then Buffer.add_char buf ' ';
+      pending_ws := false
+    end;
+    Buffer.add_char buf c
+  in
+  let flush () =
+    if Buffer.length buf = 0 then raise_notrace Not_a_sequence;
+    let extent = { start = !from; length = !upto - !from + 1 } in
+    out := { canonical = Buffer.contents buf; extent } :: !out;
+    Buffer.clear buf;
+    pending_ws := false;
+    from := -1;
+    upto := -1
+  in
+  (* Copies the [%C]-style char literal starting at [i] (its opening quote)
+     verbatim and returns the index of its closing quote, or [None] when no
+     literal shape matches — the quote is then an ordinary character. Shapes:
+     ['c'], ['\c'], and the four-character escapes ['\000'] / ['\xFF']. *)
+  let char_literal i =
+    let quote_at j = j <= last && s.[j] = '\'' in
+    let close j =
+      for k = i to j do
+        Buffer.add_char buf s.[k]
+      done;
+      Some j
+    in
+    if i + 1 > last then None
+    else if s.[i + 1] = '\\' then
+      if quote_at (i + 3) then close (i + 3)
+      else if quote_at (i + 5) then close (i + 5)
+      else None
+    else if quote_at (i + 2) then close (i + 2)
+    else None
+  in
+  let i = ref first in
+  while !i <= last do
+    (match s.[!i] with
+    | c when is_ws c -> pending_ws := true
+    | ';' when !depth = 0 -> flush ()
+    | '"' ->
+        mark !i;
+        add '"';
+        let rec copy j =
+          if j > last then raise_notrace Not_a_sequence
+          else
+            match s.[j] with
+            | '\\' ->
+                if j + 1 > last then raise_notrace Not_a_sequence;
+                Buffer.add_char buf '\\';
+                Buffer.add_char buf s.[j + 1];
+                copy (j + 2)
+            | '"' ->
+                Buffer.add_char buf '"';
+                j
+            | c ->
+                Buffer.add_char buf c;
+                copy (j + 1)
+        in
+        i := copy (!i + 1);
+        mark !i
+    | '\'' -> (
+        (* Collapsing must not reach inside a char literal (['\n'] would
+           otherwise lose its meaning), so literals copy verbatim. *)
+        mark !i;
+        if !pending_ws && Buffer.length buf > 0 then Buffer.add_char buf ' ';
+        pending_ws := false;
+        match char_literal !i with
+        | Some close ->
+            i := close;
+            mark !i
+        | None -> Buffer.add_char buf '\'')
+    | ('(' | '[' | '{') as c ->
+        mark !i;
+        incr depth;
+        add c
+    | (')' | ']' | '}') as c ->
+        mark !i;
+        decr depth;
+        if !depth < 0 then raise_notrace Not_a_sequence;
+        add c
+    | c ->
+        mark !i;
+        add c);
+    incr i
+  done;
+  if !depth <> 0 then raise_notrace Not_a_sequence;
+  if Buffer.length buf > 0 then flush ()
+  else if !out <> [] then raise_notrace Not_a_sequence (* trailing ';' *);
+  Array.of_list (List.rev !out)
+
+(* [Some (kind, elements)] when [s] (outer whitespace aside) is a bracketed
+   sequence rendering; [None] otherwise. *)
+let parse_sequence s =
+  let n = String.length s in
+  let a = ref 0 and b = ref (n - 1) in
+  while !a < n && is_ws s.[!a] do
+    incr a
+  done;
+  while !b > !a && is_ws s.[!b] do
+    decr b
+  done;
+  if !b < !a + 1 || s.[!a] <> '[' || s.[!b] <> ']' then None
+  else
+    let kind, first, last =
+      if !b - !a >= 3 && s.[!a + 1] = '|' && s.[!b - 1] = '|' then
+        (`Array, !a + 2, !b - 2)
+      else (`List, !a + 1, !b - 1)
+    in
+    match canonical_elements s ~first ~last with
+    | elements -> Some (kind, elements)
+    | exception Not_a_sequence -> None
+
+(* Differences under the element-grain alignment: the line-diff machinery
+   run over the canonical element arrays, so a single inserted or removed
+   element is one difference, not a shifted disagreement at every later
+   index. Within a run of changes, [min d i] of the [d] deletions and [i]
+   insertions pair up as replacements and the rest are one-sided — [max d i]
+   differing elements in total. [first] is the first non-aligned element; it
+   sits after Keeps only, so its index reads the same on both sides (and on
+   the one side that carries a one-sided element).
+
+   Alongside the count, the walk records the alignment itself as index
+   pairs — [(Some e, Some a)] a replacement, [(Some e, None)] a deletion,
+   [(None, Some a)] an insertion — which is what turns element positions
+   into highlight extents. Each side keeps its own cursor: after an
+   unbalanced run the two indices legitimately diverge. *)
+let aligned_differences ~prefix ops =
+  let differing = ref 0 in
+  let first = ref None in
+  let pairs = ref [] in
+  let ie = ref prefix and ia = ref prefix in
+  let run_del = ref [] and run_ins = ref [] in
+  let flush_run () =
+    let dels = List.rev !run_del and inss = List.rev !run_ins in
+    let nd = List.length dels and ni = List.length inss in
+    if nd + ni > 0 then begin
+      differing := !differing + max nd ni;
+      (if !first = None then
+         first :=
+           match (dels, inss) with
+           | (i, e) :: _, (_, a) :: _ ->
+               Some { index = i; expected = Some e; actual = Some a }
+           | (i, e) :: _, [] ->
+               Some { index = i; expected = Some e; actual = None }
+           | [], (j, a) :: _ ->
+               Some { index = j; expected = None; actual = Some a }
+           | [], [] -> None (* unreachable: nd + ni > 0 *));
+      (* Within a run, the first [min nd ni] deletions and insertions pair
+         up as replacements; whatever is left over is one-sided. *)
+      let rec zip ds is =
+        match (ds, is) with
+        | (i, _) :: dt, (j, _) :: it ->
+            pairs := (Some i, Some j) :: !pairs;
+            zip dt it
+        | (i, _) :: dt, [] ->
+            pairs := (Some i, None) :: !pairs;
+            zip dt []
+        | [], (j, _) :: it ->
+            pairs := (None, Some j) :: !pairs;
+            zip [] it
+        | [], [] -> ()
+      in
+      zip dels inss;
+      run_del := [];
+      run_ins := []
+    end
+  in
+  List.iter
+    (function
+      | Keep _ ->
+          flush_run ();
+          incr ie;
+          incr ia
+      | Delete e ->
+          run_del := (!ie, e) :: !run_del;
+          incr ie
+      | Insert a ->
+          run_ins := (!ia, a) :: !run_ins;
+          incr ia)
+    ops;
+  flush_run ();
+  (!differing, !first, List.rev !pairs)
+
+(* Ascending, possibly touching extents to the coalesced, non-overlapping
+   form the [span] contract requires of every list a renderer receives. *)
+let coalesce spans =
+  List.fold_left
+    (fun acc ({ start; length } as sp) ->
+      match acc with
+      | { start = s0; length = l0 } :: tl when s0 + l0 >= start ->
+          { start = s0; length = max (s0 + l0) (start + length) - s0 } :: tl
+      | _ -> sp :: acc)
+    []
+    (List.sort (fun a b -> compare a.start b.start) spans)
+  |> List.rev
+
+(* A replaced pair is marked whole unless character refinement genuinely
+   localizes the change inside it, which takes two conditions.
+
+   Coverage: refining ["None"] against ["Some 2"] clears the noise threshold
+   and returns three scattered marks — the very rendering element alignment
+   exists to avoid — while a long element differing in one word marks a small
+   fraction of itself and says something true. Half an element is the line.
+
+   Both sides marked: a replacement whose character delta is a pure insertion
+   ([5] becoming [55]) refines to marks on the actual side only, which is how
+   an inserted {e element} renders. Rather than make the two ambiguous, such a
+   pair is marked whole on both sides — the reader always sees both endpoints
+   of a change. *)
+let element_refine_coverage = 1. /. 2.
+
+let refine_within ~expected ~actual (ee : span) (ea : span) =
+  let sub s (sp : span) = String.sub s sp.start sp.length in
+  let shift by spans =
+    List.map (fun { start; length } -> { start = start + by; length }) spans
+  in
+  (* Coverage is counted in code points, not bytes: the question is how much
+     of the element a reader sees marked, and a multi-byte element must not
+     be held to a stricter bar than its ASCII equivalent. *)
+  let covered s spans =
+    List.fold_left
+      (fun n { start; length } ->
+        n + Text.length_utf8 (String.sub s start length))
+      0 spans
+  in
+  let localized marked width =
+    marked > 0 && width > 0
+    && float_of_int marked /. float_of_int width <= element_refine_coverage
+  in
+  let se = sub expected ee and sa = sub actual ea in
+  match refine ~expected:se ~actual:sa with
+  | Some r
+    when localized (covered se r.expected_spans) (Text.length_utf8 se)
+         && localized (covered sa r.actual_spans) (Text.length_utf8 sa) ->
+      (shift ee.start r.expected_spans, shift ea.start r.actual_spans)
+  | _ -> ([ ee ], [ ea ])
+
+let sequences ~expected ~actual =
+  match (parse_sequence expected, parse_sequence actual) with
+  | Some (ke, ee), Some (ka, ea) when ke = ka ->
+      let ne = Array.length ee and na = Array.length ea in
+      let canon = Array.map (fun e -> e.canonical) in
+      let ce = canon ee and ca = canon ea in
+      let prefix = common_prefix_len ce ca in
+      let suffix = common_suffix_len ~prefix ce ca in
+      let me = ne - prefix - suffix and ma = na - prefix - suffix in
+      let ops =
+        if me = 0 && ma = 0 then []
+        else
+          let mid_e = Array.sub ce prefix me
+          and mid_a = Array.sub ca prefix ma in
+          match
+            if me + ma > myers_line_limit then None
+            else myers ~max_edits:myers_max_edits mid_e mid_a
+          with
+          | Some ops -> ops
+          | None ->
+              (* Size guard: complete, non-minimal fallback (as [hunks]) —
+                 one delete-all/insert-all run, counted as [max me ma]. *)
+              List.map (fun e -> Delete e) (Array.to_list mid_e)
+              @ List.map (fun a -> Insert a) (Array.to_list mid_a)
+      in
+      let differing, first, pairs = aligned_differences ~prefix ops in
+      let e_spans, a_spans =
+        List.fold_left
+          (fun (es, as_) pair ->
+            match pair with
+            | Some i, Some j ->
+                let de, da =
+                  refine_within ~expected ~actual ee.(i).extent ea.(j).extent
+                in
+                (de @ es, da @ as_)
+            | Some i, None -> (ee.(i).extent :: es, as_)
+            | None, Some j -> (es, ea.(j).extent :: as_)
+            | None, None -> (es, as_))
+          ([], []) pairs
+      in
+      Some
+        {
+          kind = ke;
+          expected_length = ne;
+          actual_length = na;
+          differing;
+          first;
+          expected_spans = coalesce e_spans;
+          actual_spans = coalesce a_spans;
+        }
+  | _ -> None
