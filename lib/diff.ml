@@ -626,8 +626,11 @@ let aligned_differences ~prefix ops =
   let pairs = List.rev !pairs in
   (List.length pairs, !first, pairs)
 
-(* Ascending, possibly touching extents to the coalesced, non-overlapping
-   form the [span] contract requires of every list a renderer receives. *)
+(* Extents in any order to the ascending, non-overlapping form the [span]
+   contract requires of every list a renderer receives. Sorting is what makes
+   the caller's fold order irrelevant; merging is a belt-and-braces pass,
+   since element extents are separated by at least a [;] and refinement
+   inside one is already coalesced. *)
 let coalesce spans =
   List.fold_left
     (fun acc ({ start; length } as sp) ->
