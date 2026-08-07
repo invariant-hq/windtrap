@@ -177,7 +177,7 @@ let expected_slowest =
 slowest tests:
   3.00s  slow › hash
   2.50s  slow › big sort
-  18ms  geo › area non-negative
+   18ms  geo › area non-negative
   0.3ms  cli › cli help
   0.2ms  users › sessions after login
 |}

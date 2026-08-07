@@ -1265,19 +1265,28 @@ let slowest t results =
     List.fold_left (fun acc (r : Run.result) -> acc +. r.duration) 0. timed
   in
   if total >= slowest_threshold && List.length timed >= slowest_count then begin
+    let rendered =
+      List.map
+        (fun (r : Run.result) ->
+          ( pp_duration r.duration,
+            sanitize_name (Test_tree.path_to_string r.path) ))
+        (take slowest_count
+           (List.sort
+              (fun (a : Run.result) (b : Run.result) ->
+                Float.compare b.duration a.duration)
+              timed))
+    in
+    (* Same duration column as the slow-tests block, which prints a few
+       lines above this one in a verbose run: two lists of (duration, path)
+       that align differently read as a mistake. *)
+    let width =
+      List.fold_left (fun w (d, _) -> max w (String.length d)) 0 rendered
+    in
     put t "";
     put t (st t `Faint "slowest tests:");
     List.iter
-      (fun (r : Run.result) ->
-        put t
-          (st t `Faint
-             (spf "  %s  %s" (pp_duration r.duration)
-                (sanitize_name (Test_tree.path_to_string r.path)))))
-      (take slowest_count
-         (List.sort
-            (fun (a : Run.result) (b : Run.result) ->
-              Float.compare b.duration a.duration)
-            timed))
+      (fun (d, path) -> put t (st t `Faint (spf "  %*s  %s" width d path)))
+      rendered
   end
 
 (* Coverage (run data, rendered late)
