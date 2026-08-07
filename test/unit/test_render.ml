@@ -1245,10 +1245,11 @@ let test_sequence_summary_bounded_elements () =
          ~actual:(render_testable Testable.(list string) actual)
          ())
   in
-  (* The summary line shows a bounded excerpt (39 code points then an
-     ellipsis); the full element still appears in the detailed diff below. *)
+  (* The summary line shows a bounded excerpt: [seq_element_display] code
+     points including the ellipsis, which is inside the budget rather than
+     added to it. The full element still appears in the detailed diff. *)
   check_contains "sequence summary: long element truncated with an ellipsis"
-    ~sub:("actual \"" ^ String.make 38 'x' ^ "...")
+    ~sub:("actual \"" ^ String.make 36 'x' ^ "...")
     b
 
 (* Exception message diffs (amendment B1) *)

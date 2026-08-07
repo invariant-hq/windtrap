@@ -468,7 +468,10 @@ let () =
   in
   check "parsed booleans and values land in the config"
     (config.Run.quick && config.Run.bail = Some 2
-    && config.Run.log_dir = "custom-logs")
+    (* Absolutized at resolve time so a test that chdirs cannot move the
+       run's logs; the relative spelling is still what it ends with. *)
+    && Filename.is_relative config.Run.log_dir = false
+    && Filename.basename config.Run.log_dir = "custom-logs")
 
 (* Resolution: numeric limits stay validated past the parser *)
 

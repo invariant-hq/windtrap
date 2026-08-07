@@ -678,9 +678,21 @@ let resolve ?(overrides = empty) cli =
       columns = Env.columns ();
       tail_errors = Env.tail_errors ();
       log_dir =
-        Option.value
-          (first_some overrides.log_dir cli.log_dir)
-          ~default:defaults.Run.log_dir;
+        (* Resolved against the cwd once, here, before any test body runs.
+           A relative [-o DIR] otherwise follows the process around: a test
+           that chdirs sends the rest of the run's capture logs somewhere
+           else, or nowhere, and the failure reports point at paths that do
+           not exist. The default is already absolute. *)
+        (let dir =
+           Option.value
+             (first_some overrides.log_dir cli.log_dir)
+             ~default:defaults.Run.log_dir
+         in
+         if not (Filename.is_relative dir) then dir
+         else
+           match Sys.getcwd () with
+           | cwd -> Filename.concat cwd dir
+           | exception Sys_error _ -> dir);
       allow_focus = Env.allow_focus ();
     }
 

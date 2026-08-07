@@ -49,13 +49,20 @@ let length_utf8 s =
   in
   count 0 0
 
+(* The result is at most [max_chars] code points, ellipsis included. It used
+   to be [max_chars - 1] code points PLUS ["..."] — two over the bound it was
+   asked for — which is a display bound that does not bind: the live tail
+   sized to the terminal wrapped, and the erase that follows it then left
+   residue on the wrapped line. *)
 let truncate_utf8 max_chars s =
   let len = String.length s in
   if len <= max_chars || length_utf8 s <= max_chars then s
+  else if max_chars <= 3 then String.sub "..." 0 (max 0 max_chars)
   else
+    let keep = max_chars - 3 in
     let rec find_cut_point byte_pos char_count =
       if byte_pos >= len then byte_pos
-      else if char_count >= max_chars - 1 then byte_pos
+      else if char_count >= keep then byte_pos
       else
         let decode = String.get_utf_8_uchar s byte_pos in
         find_cut_point

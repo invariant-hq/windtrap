@@ -35,9 +35,12 @@ val length_utf8 : string -> int
 
 val truncate_utf8 : int -> string -> string
 (** [truncate_utf8 n s] is [s] when [s] holds at most [n] code points; otherwise
-    it is the first [n - 1] code points of [s] followed by ["..."]. When
-    [n <= 1] that prefix is empty, so a too-long [s] truncates to ["..."] alone.
-    Never splits a UTF-8 sequence. *)
+    it is the first [n - 3] code points of [s] followed by ["..."].
+
+    The result never exceeds [n] code points — the ellipsis is inside the bound,
+    not added to it — so a caller sizing a line to the terminal gets a line that
+    fits. For [n <= 3] a too-long [s] truncates to the first [n] characters of
+    ["..."]. Never splits a UTF-8 sequence. *)
 
 val truncate_bytes_utf8 : int -> string -> string
 (** [truncate_bytes_utf8 n s] is [s] when it is at most [n] bytes long;

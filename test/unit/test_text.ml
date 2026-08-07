@@ -49,15 +49,22 @@ let tests =
           (Text.truncate_utf8 5 "abc");
         equal ~msg:"exact length unchanged" string "abcde"
           (Text.truncate_utf8 5 "abcde");
-        equal ~msg:"long ascii truncated with ellipsis" string "abcd..."
+        (* The ellipsis is inside the bound: a display budget that the
+           result can exceed is not a budget, and the live tail sized to
+           the terminal wrapped because of it. *)
+        equal ~msg:"long ascii truncated with ellipsis" string "ab..."
           (Text.truncate_utf8 5 "abcdefgh");
+        equal ~msg:"the result never exceeds the budget" int 5
+          (Text.length_utf8 (Text.truncate_utf8 5 "abcdefgh"));
         equal ~msg:"multibyte within char budget unchanged" string "éé"
           (Text.truncate_utf8 3 "éé");
-        equal ~msg:"multibyte truncation keeps whole chars" string "éé..."
+        equal ~msg:"multibyte truncation keeps whole chars" string "..."
           (Text.truncate_utf8 3 "ééééé");
-        equal ~msg:"budget of one keeps only the marker" string "..."
+        equal ~msg:"multibyte truncation within a wider budget" string "éé..."
+          (Text.truncate_utf8 5 "éééééé");
+        equal ~msg:"budget of one keeps one marker char" string "."
           (Text.truncate_utf8 1 "abc");
-        equal ~msg:"budget of zero keeps only the marker" string "..."
+        equal ~msg:"budget of zero keeps nothing" string ""
           (Text.truncate_utf8 0 "abc");
         equal ~msg:"empty string fits any budget" string ""
           (Text.truncate_utf8 0 ""));
