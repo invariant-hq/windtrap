@@ -657,9 +657,9 @@ val run : ?argv:string array -> string -> test list -> unit
     failure, or any test not tagged ["slow"] exceeding the slow threshold
     ([--slow-threshold] seconds, [WINDTRAP_SLOW_THRESHOLD] mirror; default [1],
     [0] disables); a green, healthy run is exactly one line
-    ([mylib: 48 passed in 1.2s.]), and tests over the threshold earn a [slow: …]
-    warning before the summary. Levels change what prints, never outcomes or
-    exit codes.
+    ([mylib: 48 passed in 1.2s.]), and tests over the threshold are listed
+    slowest-first in a [slow tests (n):] block before the summary. Levels change
+    what prints, never outcomes or exit codes.
 
     Duplicate test paths, focused tests under [CI], and a snapshot update
     request under [CI] refuse the run before anything executes. Calling [run]

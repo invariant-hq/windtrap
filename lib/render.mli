@@ -225,14 +225,17 @@ val finish :
       the replay line spelled from the invocation with the test's path as the
       filter, then its bounded captured-output tail and full-log path, printed
       once per test) — when any test failed;
-    - the slow warnings (unless [`Quiet]): one faint-yellow line per completed
-      test over the slow threshold whose record is not [slow_tagged]
-      ([slow: parser › tokenize took 2.50s]), in execution order, then one faint
-      hint line naming the opt-outs (the ["slow"] tag,
-      [WINDTRAP_SLOW_THRESHOLD]). The duration shown and compared is
-      {!Run.result.duration} (attempts summed, as {!result}); a slow test that
-      also failed keeps its failure block and earns its one warning — the two
-      report different things. None print when the threshold is [0.];
+    - the slow warnings (unless [`Quiet]): a faint-yellow block over every
+      completed test past the slow threshold whose record is not [slow_tagged] —
+      a [slow tests (n):] heading, then one indented entry per test with the
+      duration in a right-aligned leading column ([  2.50s  parser › tokenize]),
+      slowest first — and one faint hint line naming the opt-outs: the ["slow"]
+      tag, and whichever threshold knob the [invocation] offers
+      ([--slow-threshold SECONDS] under [`Exe], [WINDTRAP_SLOW_THRESHOLD] under
+      [`Mirrors]). The duration shown and compared is {!Run.result.duration}
+      (attempts summed, as {!result}); a slow test that also failed keeps its
+      failure block and earns its one warning — the two report different things.
+      None print when the threshold is [0.];
     - the summary line ([46 passed, 2 failed in 1.2s.]) from [results] and
       [duration], the run's wall-clock seconds. Expected failures add their own
       segment ([44 passed, 2 expected failures in 1.2s.]), and counted failures
@@ -357,12 +360,15 @@ val pp_failure :
     not {!Failure.Body}) and location header, the [?msg] annotation, and the
     kind detail —
 
-    - equality: [expected]/[actual] with the changed spans highlighted
-      ({!Diff.refine}; under [ansi:false] a [~~~] marker line instead of color),
-      or a unified line diff ({!Diff.hunks}) when a rendered value spans several
-      lines. When both renderings parse as sequences of at least an internal
-      size threshold (currently 8 elements), a summary line states the
-      element-grain difference first
+    - equality: [expected]/[actual] with the changed spans highlighted (under
+      [ansi:false] a [~~~] marker line under each side instead of color — both,
+      since a deletion marks only the expected side), or a unified line diff
+      ({!Diff.hunks}) when a rendered value spans several lines. Marks come from
+      {!Diff.sequences} when both renderings parse as sequences that differ as
+      sequences — whole elements, never a span crossing an element boundary —
+      and from {!Diff.refine} otherwise. When both renderings parse as sequences
+      of at least an internal size threshold (currently 8 elements), a summary
+      line states the element-grain difference first
       ([lists differ at 3 of 100 elements; first at [37]: expected …, actual …]
       — {!Diff.sequences}), with a length form
       ([lists differ in length: expected 100 elements, actual 98]) when the
