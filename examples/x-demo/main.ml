@@ -249,8 +249,9 @@ let assertion_tests =
     test "an uncaught exception fails the test" (fun () ->
         (* Not an assertion: the body raises [Not_found] itself. The runner
            catches any exception at the test boundary; the location falls
-           back to the test's declaration site, and backtrace lines render
-           (faint) when the runtime records them (OCAMLRUNPARAM=b). *)
+           back to the test's declaration site, and the faint backtrace
+           lines print on every run — the runner records backtraces for the
+           process, so OCAMLRUNPARAM does not decide it. *)
         let sessions = Hashtbl.create 8 in
         Hashtbl.replace sessions "alice" 1;
         equal int 1 (Hashtbl.find sessions "bob");

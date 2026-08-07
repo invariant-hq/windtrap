@@ -93,7 +93,7 @@ Checklist for the blocks, in order:
 | `raises when nothing was raised` | `expected exception  Invalid_argument("negative length")` + `but no exception was raised` |
 | `raises_match …` | `raised exception does not satisfy the predicate:` + `Failure("stack underflow")` |
 | `raises_match when nothing was raised` | the single line `expected an exception, but none was raised` |
-| `an uncaught exception fails the test` | the body raises `Not_found` itself (no assertion); the runner catches it at the boundary and words it `uncaught exception:` + the rendered exception — distinct from `raises_match`'s predicate wording. Location falls back to the *test declaration* line. Rerun with `OCAMLRUNPARAM=b` to see the faint backtrace lines under the block |
+| `an uncaught exception fails the test` | the body raises `Not_found` itself (no assertion); the runner catches it at the boundary and words it `uncaught exception:` + the rendered exception — distinct from `raises_match`'s predicate wording. Location falls back to the *test declaration* line, and the faint backtrace lines print under the block on every run — the runner turns backtrace recording on for the process, so neither `OCAMLRUNPARAM=b` nor `b=0` changes what you see |
 | `fail marks unreachable branches` | the plain message |
 | `failf … (retried once)` | formatted message and `(attempt 2 of 2)` after the test name (`~retries:1`) |
 
@@ -195,7 +195,7 @@ In the default transcript's `runtime` group, validate:
 
 - `tokenizer trace precedes the failure` — the failure diff first,
   then `── captured output (last 10 of 14 lines) ──` and the
-  `full log: …/_build/_tests/x-demo/…/tokenizer_trace….output` path;
+  `full log: _build/_tests/x-demo/…/tokenizer_trace….output` path;
 - `backend contract` — two labeled sub-failures in one block
   (`… › disk` and the nested `… › s3 › auth`), the passing `memory`
   sibling still ran, and `(2 subtest failures)` in the summary;

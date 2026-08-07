@@ -213,7 +213,7 @@ log:
     PLUS
     INT 2
     EOF
-    full log: /home/dev/mytool/_build/_tests/mylib/JACOM9WP/parser/tokenize.output
+    full log: _build/_tests/mylib/JACOM9WP/parser/tokenize.output
 ```
 
 `WINDTRAP_TAIL_ERRORS` bounds the tail; `-o DIR` moves the log root.

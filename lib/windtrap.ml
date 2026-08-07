@@ -197,11 +197,16 @@ let temp_file = Run.temp_file
 
 (* Running *)
 
-(* Substituted by [dune subst], which the opam build runs in its [dev]
-   step, so a release tarball carries the tag's version — doc/dev/release.md:
-   "Bump nothing in source: the version comes from the git tag". A source
-   checkout has no substitution, and the watermark is still here: report
-   "dev" rather than a number that would be a lie either way. *)
+(* The watermark below is a dune substitution point. [dune-release distrib]
+   runs [dune subst] in the clone it archives, so the published tarball
+   already carries the tag's version before opam ever sees it —
+   doc/dev/release.md: "Bump nothing in source: the version comes from the
+   git tag". The opam build's own [["dune" "subst"] {dev}] step is not what
+   does it: [dev] is false for a release installed from opam-repository, so
+   that step only covers a pinned checkout. Every other source — a working
+   tree, a plain [git archive] — reaches this line unsubstituted, and the
+   watermark is still here: report "dev" rather than a number that would be a
+   lie either way. *)
 let version =
   let watermark = "%%VERSION%%" in
   if String.length watermark > 0 && watermark.[0] = '%' then "dev"

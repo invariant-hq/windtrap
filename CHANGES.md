@@ -80,9 +80,10 @@ runtest` for inline suites. `srandom` gives plain tests the same guarantee.
 
 **Expect tests you can move a ppx_expect suite onto.** We ran Jane Street's
 own ppx_expect corpus against `ppx_windtrap`: 33 of the 36 supported cases
-promote byte-identically to upstream's goldens, and all 20 unsupported
-constructs fail at expansion with an error naming the exact construct, rather
-than quietly doing something else.
+conform — 16 pass with no correction, and 17 produce corrections
+byte-identical to upstream's goldens — and all 20 unsupported constructs fail
+at expansion with an error naming the exact construct, rather than quietly
+doing something else.
 
 **Coverage without a second toolchain.** One inert `(instrumentation (backend
 ppx_windtrap))` stanza on the library under test; `dune runtest
@@ -301,13 +302,14 @@ of this identically to the library runner.
 **Expect tests.** `let%expect_test`, `[%expect]`, `[%expect_exact]`,
 `[%expect.output]`, `let%test`, and `module%test`, with corrections accepted
 via `dune promote`. Compatibility is measured against Jane Street's pinned
-ppx_expect corpus: 33/36 supported cases byte-identical to upstream's
-corrections (91.7%), and 20/20 unsupported constructs rejected with a loud
-error at the exact location. One formatting note: a correction re-renders
-every `[%expect]` node of its file in the standard shape, so the first
-promote of a file whose payloads carry other formatting — a 0.1.0 suite,
-hand-formatted blocks — reformats them all once. A file with no corrections
-is never rewritten.
+ppx_expect corpus: 33/36 supported cases match upstream byte for byte
+(91.7%) — 16 pass with no correction, and 17 produce corrections
+byte-identical to upstream's goldens — and 20/20 unsupported constructs
+rejected with a loud error at the exact location. One formatting note: a
+correction re-renders every `[%expect]` node of its file in the standard
+shape, so the first promote of a file whose payloads carry other formatting
+— a 0.1.0 suite, hand-formatted blocks — reformats them all once. A file
+with no corrections is never rewritten.
 
 **Coverage.** An inline percentage after the test results on instrumented
 runs, `--coverage`/`WINDTRAP_COVERAGE` modes (`summary`, `report`, `full`,
@@ -436,10 +438,16 @@ reports include the tail of the test's captured output
   leaves stale output exits nonzero, so dune withholds the library's
   corrections; otherwise `dune promote` would bless output the assertion had
   already rejected, and the real regression would surface a cycle later.
-- **A trailing `[%expect]` inserted after a bare `match` or `try` lands after
-  the body**, not inside its last arm: the body is parenthesized as part of
-  the same correction, so the promoted file means what the correction
-  intended and converges on the next run.
+- **A trailing `[%expect]` inserted after a body that ends in a `match`,
+  `try` or `function` lands after the body**, not inside its last arm: the
+  `;` the correction appends would otherwise bind to the last arm, where the
+  node runs on one branch only and the next run appends another beside it.
+  The body is parenthesized as part of the same correction, so the promoted
+  file means what the correction intended and converges on the next run. The
+  test is on the body's tail, not its head, so the common `let … in match …`
+  and `stmt; match …` shapes are covered too: the walk follows the tail
+  through `let`, `;`, `if`/`else`, `open`, `let module`, `let exception`,
+  `let*`, type annotations and a `fun`'s body.
 - **A missing snapshot baseline now fails**, with the proposed content and the
   acceptance command. 0.1.0 silently created the baseline and passed.
 - **Reading captured output under `--stream` now fails** with "this test

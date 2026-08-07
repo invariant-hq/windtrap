@@ -206,6 +206,14 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
     every path where the runner regains control (including [--bail]). A release
     failure is reported and fails the run.
 
+    Release runs {e outside} every per-test timeout: the tests are over, so
+    there is no window to inherit and no limit to fall back on. A [teardown]
+    that blocks hangs the run after the last result, where the same code under
+    {!bracket} would be cut short by the test's limit — give a [teardown] that
+    waits on the outside world its own deadline. Each release is announced
+    before it runs, naming the fixture's declaration site, so a hang is
+    attributable.
+
     Calling the accessor outside a run raises [Invalid_argument]. *)
 
 (** {1:assertions Assertions}

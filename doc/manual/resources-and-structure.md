@@ -45,6 +45,15 @@ during acquisition is cached: every test using the fixture skips with
 the same reason — the pattern for suites gated on an unavailable
 device (see the [cookbook](../cookbook.md)).
 
+Release happens after the last test, which puts it outside every
+per-test timeout: there is no window left to inherit and no limit to
+fall back on, so a `teardown` that blocks hangs the run after the last
+result — the same code in a `bracket` teardown would be cut short by
+the test's limit. Give a `teardown` that waits on the outside world
+its own deadline. Each release is announced before it runs
+(`releasing fixture (test/test_mytool.ml:12)`), so a hang names the
+fixture.
+
 ## Scratch paths: `temp_dir` and `temp_file`
 
 ```ocaml

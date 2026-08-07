@@ -42,8 +42,9 @@
     raising test reports its constructor and its declaration line and nothing
     else — no raise site. This is a process-wide setting, so it overrides a
     deliberate [OCAMLRUNPARAM=b=0] or an explicit
-    [Printexc.record_backtrace false] in code under test; the cost is a fraction
-    of a microsecond per raise, scaling with stack depth.
+    [Printexc.record_backtrace false] in code under test; the cost scales with
+    stack depth, measured at 0.04 microseconds per raise at ten frames and 2.8
+    at five hundred (0.01 and 0.34 with recording off).
 
     A user callback that calls [exit] does not terminate the process: the first
     {!execute} in a process registers a [Stdlib.at_exit] guard which, whenever

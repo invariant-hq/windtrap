@@ -26,7 +26,7 @@ F
     test/test_mytool.ml:18
       18 │   group "cli" [ test "cli help" (fun () -> snapshot "help" (help ())) ]
 
-    snapshot "help": no baseline at /home/dev/mytool/test/__snapshots__/test_mytool/help.snap
+    snapshot "help": no baseline at test/__snapshots__/test_mytool/help.snap
     proposed (5 lines):
       ┆ Usage: mytool [OPTIONS] COMMAND
       ┆
