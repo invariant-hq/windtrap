@@ -350,6 +350,43 @@ let rewrite_expect_body body =
   let body, (_, nodes_rev) = mapper#expression body (0, []) in
   (body, List.rev nodes_rev)
 
+(* Does a [;] appended to this expression bind to something inside it?
+
+   A trailing correction writes [<body>; [%expect ...]]. After a [match],
+   [try] or [function] the [;] joins the LAST ARM, so the node lands inside
+   that arm: it runs on one branch only, the promoted source means something
+   other than the correction intended, and the next run inserts another dead
+   node beside it — the correction never converges.
+
+   The hazard belongs to the expression the body ENDS with, not the one it
+   starts with. [let x = ... in match ...] and [stmt; match ...] are the
+   common shapes and both end in a match, so the walk descends every
+   construct that carries a tail and asks the same question there. Anything
+   that cannot swallow the [;] — an application, an ident, a constructor —
+   ends the walk. *)
+let rec swallows_semicolon e =
+  match e.pexp_desc with
+  | Pexp_match _ | Pexp_try _ -> true
+  (* [function p -> e | ...] has arms; [fun x -> e] does not, and its tail
+     is [e]. Both are Pexp_function since OCaml 5.2. *)
+  | Pexp_function (_, _, Pfunction_cases _) -> true
+  | Pexp_function (_, _, Pfunction_body body) -> swallows_semicolon body
+  | Pexp_let (_, _, body)
+  | Pexp_letmodule (_, _, body)
+  | Pexp_letexception (_, body)
+  | Pexp_open (_, body)
+  | Pexp_sequence (_, body)
+  | Pexp_constraint (body, _)
+  | Pexp_coerce (body, _, _) ->
+      swallows_semicolon body
+  | Pexp_letop { body; _ } -> swallows_semicolon body
+  | Pexp_ifthenelse (_, then_, else_) -> (
+      (* Without an [else] the [then] branch is the tail. *)
+      match else_ with
+      | Some e -> swallows_semicolon e
+      | None -> swallows_semicolon then_)
+  | _ -> false
+
 let expect_test_extension =
   Extension.V3.declare_inline "expect_test" Extension.Context.structure_item
     Ast_pattern.(pstr __)
@@ -378,10 +415,9 @@ let expect_test_extension =
          extension point, not at the body. *)
       let loc = { ext_loc with loc_ghost = true } in
       let body_wrap =
-        match binding.body.pexp_desc with
-        | Pexp_match _ | Pexp_try _ | Pexp_function _ ->
-            [%expr Some [%e eint ~loc binding.body.pexp_loc.loc_start.pos_cnum]]
-        | _ -> [%expr None]
+        if swallows_semicolon binding.body then
+          [%expr Some [%e eint ~loc binding.body.pexp_loc.loc_start.pos_cnum]]
+        else [%expr None]
       in
       let call =
         pexp_apply ~loc

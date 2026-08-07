@@ -60,14 +60,48 @@ let%expect_test "sanitize applies ambient config" =
   print_string "plain";
   [%expect {| plain |}]
 
-(* A bare [match] body. A trailing correction sequences [;] onto the body,
-   and after a bare match that [;] binds to the last arm — the inserted
-   node would land inside the arm, so the promoted file would mean
-   something else and the correction would never converge. The ppx marks
-   such a body so the patch parenthesizes it in the same edit; this
-   fixture is that shape, already promoted. *)
+(* Bodies whose TAIL swallows a [;]. A trailing correction sequences [;]
+   onto the body, and after a [match], [try] or [function] that [;] binds
+   to the last arm — the inserted node would land inside the arm, so the
+   promoted file would mean something else and the correction would never
+   converge, appending one more dead node per round.
+
+   The hazard belongs to what the body ends with, not what it starts with,
+   so all four shapes below need the parentheses: a body that merely ends
+   in a match is the common case ([let ... in match], [stmt; match]) and
+   was the one the first version of this guard missed. They are shown
+   already promoted; the promote-loop check in this directory rewrites
+   them from scratch. *)
 let%expect_test "bare match body takes parentheses" =
   (match Some 1 with
   | Some n -> Printf.printf "got %d\n" n
   | None -> print_string "none\n");
   [%expect {| got 1 |}]
+
+let%expect_test "a let ending in a match takes them too" =
+  (let x = Some 2 in
+   match x with
+   | Some n -> Printf.printf "let %d\n" n
+   | None -> print_string "none\n");
+  [%expect {| let 2 |}]
+
+let%expect_test "a sequence ending in a match takes them too" =
+  (print_string "before\n";
+   match Some 3 with
+   | Some n -> Printf.printf "seq %d\n" n
+   | None -> print_string "none\n");
+  [%expect {|
+    before
+    seq 3
+    |}]
+
+let%expect_test "a body ending in a try takes them too" =
+  (try raise Not_found with Not_found -> print_string "caught\n");
+  [%expect {| caught |}]
+
+(* And a body that cannot swallow the [;] is left alone — no parentheses
+   appear here, which is what keeps the common shape readable. *)
+let%expect_test "an ordinary body keeps its shape" =
+  let s = "plain\n" in
+  print_string s;
+  [%expect {| plain |}]
