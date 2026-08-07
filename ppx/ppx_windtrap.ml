@@ -387,6 +387,86 @@ let rec swallows_semicolon e =
       | None -> swallows_semicolon then_)
   | _ -> false
 
+(* The preprocessed source, read once per input file. [None] when it cannot
+   be read; see [already_delimited] for why the source is consulted at all
+   and what an unreadable one costs. *)
+let source_cache : (string, string option) Hashtbl.t = Hashtbl.create 1
+
+let source_of file =
+  match Hashtbl.find_opt source_cache file with
+  | Some cached -> cached
+  | None ->
+      let contents =
+        match open_in_bin file with
+        | ic ->
+            Fun.protect
+              ~finally:(fun () -> close_in_noerr ic)
+              (fun () -> Some (really_input_string ic (in_channel_length ic)))
+        | exception Sys_error _ -> None
+      in
+      Hashtbl.add source_cache file contents;
+      contents
+
+let is_ident_char = function
+  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '\'' -> true
+  | _ -> false
+
+(* Does the expression beginning at [start] carry its own delimiters?
+
+   OCaml's parser gives a delimited expression the location of the
+   DELIMITERS: [(match ... with ...)] parses to the same [Pexp_match] as the
+   bare form, with [pexp_loc] starting at the [(], and [begin match ... end]
+   likewise. Nothing in the AST tells the two apart, so the question is
+   answered from the source the parser read: without it, the wrap below
+   would insert a SECOND pair of parentheses around a body that already had
+   one, on every round that corrects.
+
+   One character can only answer for the whole body when the body's root is
+   the node that swallows the [;] — [root_swallows_semicolon] below is the
+   guard that decides whether this is asked at all, and states what goes
+   wrong when it is asked of anything else.
+
+   Best-effort, like every source read in this codebase: the file is a dune
+   dependency of the preprocessing action and the offsets are the ones the
+   runtime patches, so an unreadable source does not happen in practice — and
+   if it did, falling back to wrapping keeps today's behaviour, where a
+   redundant pair is cosmetic and a missing one strands the inserted node
+   inside a match arm. *)
+let already_delimited ~file (start : Lexing.position) =
+  match source_of file with
+  | None -> false
+  | Some source ->
+      let length = String.length source in
+      let off = start.pos_cnum in
+      let keyword kw =
+        let n = String.length kw in
+        off + n <= length
+        && String.equal (String.sub source off n) kw
+        && (off + n = length || not (is_ident_char source.[off + n]))
+      in
+      off >= 0 && off < length && (source.[off] = '(' || keyword "begin")
+
+(* Is the body ITSELF the node that swallows the semicolon?
+
+   [already_delimited] answers a question about the body's first character,
+   so it may only be consulted when that character can belong to the whole
+   body. For a root that swallows — [(match ... with ...)] — it does. For a
+   root that merely ENDS in one, the leading delimiter belongs to something
+   inside it: in
+
+     (print_string "pre"); match x with ... -> ...
+
+   the parentheses close after [print_string], and treating the body as
+   delimited would skip the wrap and strand the inserted node in the last
+   arm — the very defect the wrap exists to prevent. A body like
+   [(let x = 1 in match ...)] is genuinely delimited and gets a redundant
+   pair instead, which is the safe direction: a doubled pair is cosmetic,
+   a missing one changes what the promoted file means. *)
+let root_swallows_semicolon e =
+  match e.pexp_desc with
+  | Pexp_match _ | Pexp_try _ | Pexp_function (_, _, Pfunction_cases _) -> true
+  | _ -> false
+
 let expect_test_extension =
   Extension.V3.declare_inline "expect_test" Extension.Context.structure_item
     Ast_pattern.(pstr __)
@@ -412,10 +492,17 @@ let expect_test_extension =
          promoted file means something else and the correction never
          converges. Such a body is parenthesized as part of the same patch,
          which needs its own start offset — [body_loc] starts at the
-         extension point, not at the body. *)
+         extension point, not at the body. A body that already brought its
+         own delimiters keeps them: a second pair would say the same thing
+         twice, one pair deeper on every promoted round. *)
       let loc = { ext_loc with loc_ghost = true } in
       let body_wrap =
-        if swallows_semicolon binding.body then
+        if
+          swallows_semicolon binding.body
+          && not
+               (root_swallows_semicolon binding.body
+               && already_delimited ~file binding.body.pexp_loc.loc_start)
+        then
           [%expr Some [%e eint ~loc binding.body.pexp_loc.loc_start.pos_cnum]]
         else [%expr None]
       in

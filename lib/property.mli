@@ -167,8 +167,11 @@ val run :
     configuration (rather than the declaration site or the default) supplied it:
     the caller owns that provenance fact, and the engine stamps it on a
     failure's {!Failure.kind.Property} payload so replay hints can restate the
-    flag. Defaults: [count] is [100], [max_discard] is [2 * count] (clamped to
-    [max_int]), [max_shrink] is [100], [examples] is [[]].
+    flag. [max_shrink] needs no such companion — nothing but run configuration
+    sets it — so a supplied budget is stamped on the payload as it stands, for
+    the same reason: a replay under a different budget stops the descent
+    elsewhere. Defaults: [count] is [100], [max_discard] is [2 * count] (clamped
+    to [max_int]), [max_shrink] is [100], [examples] is [[]].
 
     {b Examples first.} The [examples] values run before any generation,
     unshrunk (they are already the reviewed minimal form), and are numbered

@@ -61,25 +61,33 @@ let accept_line = function
   | `Mirrors ->
       "accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff"
 
-(* [count] is a property failure's config-sourced case count
-   (Failure.kind.Property): the hint restates it — [--prop-count]/
-   [WINDTRAP_PROP_COUNT] — because replaying a late case needs at least as
-   many cases as the failing run generated; a declaration-site count needs
-   no flag and never reaches here. *)
-let replay_line ?count invocation ~seed ~filter =
+(* [count] and [max_shrink] are a property failure's config-sourced knobs
+   (Failure.kind.Property): the hint restates both — [--prop-count]/
+   [WINDTRAP_PROP_COUNT] because replaying a late case needs at least as
+   many cases as the failing run generated, [--max-shrink]/
+   [WINDTRAP_MAX_SHRINK] because a shrink search under a different budget
+   stops elsewhere and reports a different counterexample. A
+   declaration-site count needs no flag and never reaches here; neither
+   does an engine-default budget. *)
+let replay_line ?count ?max_shrink invocation ~seed ~filter =
   let token = Seed.to_string seed in
-  let flag = function Some n -> spf " --prop-count %d" n | None -> "" in
-  let env = function Some n -> spf " WINDTRAP_PROP_COUNT=%d" n | None -> "" in
+  let opt spelling = function
+    | Some n -> spf " %s %d" spelling n
+    | None -> ""
+  in
+  let mirror name = function Some n -> spf " %s=%d" name n | None -> "" in
+  let flags = opt "--prop-count" count ^ opt "--max-shrink" max_shrink in
+  let env =
+    mirror "WINDTRAP_PROP_COUNT" count ^ mirror "WINDTRAP_MAX_SHRINK" max_shrink
+  in
   match (invocation, filter) with
   | `Exe cmd, Some flt ->
-      spf "replay: %s --seed %s%s -f %s" cmd token (flag count)
-        (shell_quote flt)
-  | `Exe cmd, None -> spf "replay: %s --seed %s%s" cmd token (flag count)
+      spf "replay: %s --seed %s%s -f %s" cmd token flags (shell_quote flt)
+  | `Exe cmd, None -> spf "replay: %s --seed %s%s" cmd token flags
   | `Mirrors, Some flt ->
-      spf "replay: WINDTRAP_SEED=%s%s WINDTRAP_FILTER=%s dune runtest" token
-        (env count) (shell_quote flt)
-  | `Mirrors, None ->
-      spf "replay: WINDTRAP_SEED=%s%s dune runtest" token (env count)
+      spf "replay: WINDTRAP_SEED=%s%s WINDTRAP_FILTER=%s dune runtest" token env
+        (shell_quote flt)
+  | `Mirrors, None -> spf "replay: WINDTRAP_SEED=%s%s dune runtest" token env
 
 let pp_duration secs =
   if secs >= 60. then
@@ -726,6 +734,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         timed_out;
         root;
         count;
+        max_shrink;
         examples;
         inner;
       } ->
@@ -768,7 +777,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             ~ind:(ind ^ "  ") ppf i
       | None -> ());
       if commands && not examples then
-        put_ind (replay_line ?count invocation ~seed:root ~filter)
+        put_ind (replay_line ?count ?max_shrink invocation ~seed:root ~filter)
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m ->
       List.iter (fun line -> put_ind line) (Text.split_lines m)
@@ -1213,6 +1222,15 @@ let pp_block t (r : Run.result) =
       | Some tail -> pp_tail t tail
       | None -> ())
 
+(* The summary counts REPORTED RESULTS, which is not the header's count of
+   selected tests: a failing fixture release arrives as a synthetic result
+   after the header printed (Driver.release_results), so a one-test suite
+   whose release raises reads "1 test" above and "1 passed, 1 failed" below.
+   The two are answering different questions — what will run, what came
+   back — and the extra row names itself in the block directly above, under
+   a [release] phase tag. Dropping such a row from [failed] to make the
+   arithmetic close would be the real defect: the run failed, and the
+   summary would then disagree with the exit code. *)
 let summary_line t ~passed ~failed ~skipped ~excused ~subtests ~duration =
   (* Quiet prints no header, and neither does a compact run still deferred
      at the end (green and healthy, the one-line transcript): the summary

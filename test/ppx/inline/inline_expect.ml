@@ -99,6 +99,33 @@ let%expect_test "a body ending in a try takes them too" =
   (try raise Not_found with Not_found -> print_string "caught\n");
   [%expect {| caught |}]
 
+(* A body that already brought its own delimiters keeps them — one pair, not
+   two. The check behind that reads the source, so it may only be consulted
+   when the leading delimiter can belong to the WHOLE body: here it does,
+   because the body's root is the match itself. *)
+let%expect_test "an already-parenthesized body keeps one pair" =
+  (match Some 6 with
+  | Some n -> Printf.printf "paren %d\n" n
+  | None -> print_string "none\n");
+  [%expect {| paren 6 |}]
+
+(* And here it does not: the leading parenthesis closes after the FIRST
+   element of a sequence, so the body still needs its own pair. Reading the
+   first character alone would skip the wrap and strand the node in the last
+   arm — the defect the wrap exists to prevent, reachable for any body that
+   merely begins with a delimiter. The inner pair here is load-bearing (drop
+   it and the first match swallows the rest), which is what keeps this shape
+   visible: a formatter collapses a merely redundant one. *)
+let%expect_test "a body that only begins with a delimiter still gets one" =
+  ((match Some 7 with Some _ -> print_string "pre\n" | None -> ());
+   match Some 8 with
+   | Some n -> Printf.printf "seq-paren %d\n" n
+   | None -> print_string "none\n");
+  [%expect {|
+    pre
+    seq-paren 8
+    |}]
+
 (* And a body that cannot swallow the [;] is left alone — no parentheses
    appear here, which is what keeps the common shape readable. *)
 let%expect_test "an ordinary body keeps its shape" =

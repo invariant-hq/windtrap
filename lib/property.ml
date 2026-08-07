@@ -229,9 +229,16 @@ let inner_failure = function
   | Exception (exn, backtrace) ->
       Failure.raised ~actual:(Printexc.to_string exn) ?backtrace ()
 
-let run ?loc ?(count = default_count) ?config_count ?max_discard
-    ?(max_shrink = default_max_shrink) ?(examples = []) ~root ~path gen body =
+let run ?loc ?(count = default_count) ?config_count ?max_discard ?max_shrink
+    ?(examples = []) ~root ~path gen body =
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
+  (* The budget as the caller set it rides the failure payload, exactly as
+     [config_count] does: with no declaration-site spelling for it, a
+     supplied budget is always the run configuration's, and a replay under
+     the default budget would stop the descent elsewhere and report a
+     different counterexample. *)
+  let config_max_shrink = max_shrink in
+  let max_shrink = Option.value max_shrink ~default:default_max_shrink in
   if max_shrink < 0 then
     invalid_arg "Property.run: max_shrink must be non-negative";
   let max_discard =
@@ -252,8 +259,8 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard
       ?(shrink_exhausted = false) ~examples cls =
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
-        ?count:config_count ~rendered ~case_index ~shrink_steps
-        ~shrink_exhausted ~root ~examples ()
+        ?count:config_count ?max_shrink:config_max_shrink ~rendered ~case_index
+        ~shrink_steps ~shrink_exhausted ~root ~examples ()
     in
     Fail { failure; stats = stats () }
   in

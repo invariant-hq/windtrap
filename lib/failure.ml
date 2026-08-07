@@ -48,6 +48,7 @@ type kind =
       timed_out : float option;
       root : Seed.seed;
       count : int option;
+      max_shrink : int option;
       examples : bool;
       inner : t option;
     }
@@ -197,8 +198,8 @@ let snapshot ?loc ~name ~path state =
      from them, so they are stored unmodified. *)
   make ?loc (Snapshot { name; path; state = bound_snapshot_state state })
 
-let property ?loc ?inner ?timed_out ?count ~rendered ~case_index ~shrink_steps
-    ?(shrink_exhausted = false) ~root ~examples () =
+let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
+    ~shrink_steps ?(shrink_exhausted = false) ~root ~examples () =
   make ?loc
     (Property
        {
@@ -209,6 +210,7 @@ let property ?loc ?inner ?timed_out ?count ~rendered ~case_index ~shrink_steps
          timed_out;
          root;
          count;
+         max_shrink;
          examples;
          inner;
        })

@@ -167,6 +167,7 @@ type kind =
       timed_out : float option;
       root : Seed.seed;
       count : int option;
+      max_shrink : int option;
       examples : bool;
       inner : t option;
     }
@@ -183,10 +184,14 @@ type kind =
           and [None] when the declaration site fixed the count or the engine
           default applied — renderers restate it in the replay line exactly when
           present, because replaying a late case needs at least as many cases as
-          the failing run generated; [examples] is [true] when the case came
-          from the explicit examples list (such cases are never seeded or
-          shrunk); [inner] is the assertion failure raised by the property body
-          at the shrunk counterexample, when it was a {!Check_failure}. *)
+          the failing run generated; [max_shrink] is the shrink-step budget on
+          the same terms ([--max-shrink] / [WINDTRAP_MAX_SHRINK] supplied it,
+          [None] for the engine default), because a replay under a different
+          budget stops the descent elsewhere and reports a different
+          counterexample; [examples] is [true] when the case came from the
+          explicit examples list (such cases are never seeded or shrunk);
+          [inner] is the assertion failure raised by the property body at the
+          shrunk counterexample, when it was a {!Check_failure}. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
 
 and t = {
@@ -313,6 +318,7 @@ val property :
   ?inner:t ->
   ?timed_out:float ->
   ?count:int ->
+  ?max_shrink:int ->
   rendered:string ->
   case_index:int ->
   shrink_steps:int ->
@@ -322,8 +328,8 @@ val property :
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
-    {!Property} failure; see {!kind} for the payload semantics. [timed_out] and
-    [count] default to [None]. *)
+    {!Property} failure; see {!kind} for the payload semantics. [timed_out],
+    [count], and [max_shrink] default to [None]. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)

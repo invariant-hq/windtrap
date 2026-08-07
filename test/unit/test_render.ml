@@ -917,6 +917,29 @@ let test_property_projections () =
     ~sub:
       "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 -f 'late'"
     (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" counted);
+  (* The shrink budget rides the payload on the same terms and restates
+     itself for the same reason: a replay under a different budget stops the
+     descent at a different node, so the counterexample it prints is not the
+     one being replayed. An engine-default budget needs no flag. *)
+  let budgeted =
+    Failure.property ~count:1000 ~max_shrink:50 ~rendered:"0" ~case_index:499
+      ~shrink_steps:50 ~shrink_exhausted:true ~root:Fixtures.root
+      ~examples:false ()
+  in
+  check_contains "config-sourced budget: Mirrors replay restates the mirror"
+    ~sub:
+      "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_PROP_COUNT=1000 \
+       WINDTRAP_MAX_SHRINK=50 dune runtest"
+    (failure_block budgeted);
+  check_contains "config-sourced budget: Exe replay restates --max-shrink"
+    ~sub:
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 \
+       --max-shrink 50 -f 'late'"
+    (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" budgeted);
+  check_absent "engine-default budget: no flag" ~sub:"--max-shrink"
+    (failure_block ~invocation:(`Exe "./t.exe") Fixtures.prop_failure);
+  check_absent "engine-default budget: no mirror" ~sub:"WINDTRAP_MAX_SHRINK"
+    no_filter;
   let multi =
     failure_block
       (Failure.property ~rendered:"Rect\n  (2, 0)" ~case_index:3 ~shrink_steps:0
@@ -1723,6 +1746,41 @@ let test_timed_out_marker () =
   check_absent "no headline mark without a timeout" ~sub:"timed out"
     (Render.headline Fixtures.prop_failure)
 
+(* Spent shrink budgets (D2's other stopping condition)
+
+   The flag on the payload is not the report: a reader sees two strings —
+   the headline suffix and the detail line — and both say the same thing,
+   that "shrunk N steps" here is where the search stopped counting, not
+   where it converged. Pinned present and absent, because a mark that
+   printed unconditionally would call every converged search truncated. *)
+
+let test_budget_spent_marker () =
+  let f =
+    Failure.property ~shrink_exhausted:true ~rendered:"9" ~case_index:4
+      ~shrink_steps:50 ~root:Fixtures.root ~examples:false ()
+  in
+  let b = failure_block f in
+  check_contains "budget spent: detail line follows the counterexample"
+    ~sub:
+      "    counterexample (case 4, shrunk 50 steps): 9\n\
+      \    shrink budget of 50 steps spent; counterexample may not be minimal\n"
+    b;
+  check "budget spent: headline carries the mark"
+    (Render.headline f
+   = "property failed (case 4, shrunk 50 steps, budget spent): 9");
+  let plain = failure_block Fixtures.prop_failure in
+  check_absent "no detail line without a spent budget" ~sub:"shrink budget"
+    plain;
+  check_absent "no headline mark without a spent budget" ~sub:"budget spent"
+    (Render.headline Fixtures.prop_failure);
+  (* An example never shrinks, so neither mark applies to one. *)
+  let example =
+    Failure.property ~shrink_exhausted:true ~rendered:"9" ~case_index:0
+      ~shrink_steps:0 ~root:Fixtures.root ~examples:true ()
+  in
+  check_absent "an example carries no headline mark" ~sub:"budget spent"
+    (Render.headline example)
+
 (* Inner failures without a location (D4) *)
 
 let test_inner_label_without_location () =
@@ -2133,6 +2191,7 @@ let tests =
       test_trailing_whitespace_hunks;
     test "raise: uncaught wording (D5 §5)" test_uncaught_wording;
     test "property: timed-out shrink marker (D2)" test_timed_out_marker;
+    test "property: spent shrink budget marker (D2)" test_budget_spent_marker;
     test "property: inner label without a location (D4)"
       test_inner_label_without_location;
     test "hints: accept and replay per invocation (D5 §1)"

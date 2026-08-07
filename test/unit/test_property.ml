@@ -40,6 +40,11 @@ let shrink_exhausted (failure : Failure.t) =
   | Failure.Property { shrink_exhausted; _ } -> shrink_exhausted
   | _ -> failf "expected a Property failure kind"
 
+let payload_max_shrink (failure : Failure.t) =
+  match failure.Failure.kind with
+  | Failure.Property { max_shrink; _ } -> max_shrink
+  | _ -> failf "expected a Property failure kind"
+
 let expect_fail = function
   | Property.Fail { failure; stats } -> (failure, stats)
   | Property.Pass _ -> failf "expected Fail, got Pass"
@@ -789,12 +794,27 @@ let spent_shrink_budget_is_marked () =
            law ctx v))
   in
   check (shrink_exhausted failure) "a truncated search is marked";
+  (* The budget in force rides the payload for the reason the case count
+     does: replaying under a different one stops the descent at a different
+     node, so the printed command has to restate it. *)
+  check
+    (payload_max_shrink failure = Some 5)
+    "the budget in force rides the payload";
   let failure, _ =
     expect_fail
       (Property.run ~max_shrink:100_000 ~root ~path:"budget" big (fun ctx v ->
            law ctx v))
   in
-  check (not (shrink_exhausted failure)) "a converged search is not marked"
+  check (not (shrink_exhausted failure)) "a converged search is not marked";
+  check
+    (payload_max_shrink failure = Some 100_000)
+    "a budget that was never reached rides the payload all the same";
+  let failure, _ =
+    expect_fail (Property.run ~root ~path:"budget" big (fun ctx v -> law ctx v))
+  in
+  check
+    (payload_max_shrink failure = None)
+    "the engine default rides nothing: a replay needs no flag to reproduce it"
 
 let suite =
   [
