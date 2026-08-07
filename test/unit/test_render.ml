@@ -299,7 +299,23 @@ let test_ansi () =
          ~actual:"the quick brawn fox" ())
   in
   check_contains "ansi: expected diff span green" ~sub:"\027[32mo\027[0m" b;
-  check_contains "ansi: actual diff span red" ~sub:"\027[31ma\027[0m" b
+  check_contains "ansi: actual diff span red" ~sub:"\027[31ma\027[0m" b;
+  (* Refinement declined: each side is colored whole rather than losing its
+     color, so an equality failure reads the same way either way. *)
+  let d =
+    failure_block ~ansi:true
+      (Failure.equality ~expected:"true" ~actual:"false" ())
+  in
+  check_contains "ansi: a declined pair colors expected whole"
+    ~sub:"\027[32mtrue\027[0m" d;
+  check_contains "ansi: a declined pair colors actual whole"
+    ~sub:"\027[31mfalse\027[0m" d;
+  let plain =
+    failure_block (Failure.equality ~expected:"true" ~actual:"false" ())
+  in
+  check_absent "plain: a declined pair gets no marker line" ~sub:"~" plain;
+  check_contains "plain: a declined pair still shows both values"
+    ~sub:"expected  true\n    actual    false" plain
 
 let test_live () =
   let t =
@@ -1443,6 +1459,13 @@ let test_prop_stats () =
             hits = 4;
             satisfied = false;
           };
+          {
+            Property.label = "singleton";
+            required = 5.0;
+            actual = 9.0;
+            hits = 9;
+            satisfied = true;
+          };
         ];
     }
   in
@@ -1459,7 +1482,31 @@ let test_prop_stats () =
     ~sub:"labels (100 passing cases):" b;
   check_contains "prop stats: percentages" ~sub:"36.0%  empty" b;
   check_contains "prop stats: unsatisfied coverage"
-    ~sub:"collision  4.0% (required 5.0%) — unsatisfied" b
+    ~sub:"collision  4.0% (required 5.0%) — unsatisfied" b;
+  (* The list carries the satisfied requirement too — that is what it adds
+     over the failure headline, which names only the one that failed. *)
+  check_contains "prop stats: satisfied coverage listed alongside"
+    ~sub:"singleton  9.0% (required 5.0%)" b;
+  (* With a single requirement the list would only restate the headline, so
+     it does not print at all. *)
+  let single =
+    { stats with Property.coverage = [ List.hd stats.Property.coverage ] }
+  in
+  let b1 =
+    with_renderer (fun r ->
+        Render.finish r
+          ~results:
+            [
+              Fixtures.result [ "p" ]
+                (Failure.Fail [ Failure.message "coverage unsatisfied" ])
+                ~prop_stats:single;
+            ]
+          ~duration:0.01 ())
+  in
+  check_absent "prop stats: a lone requirement is not restated"
+    ~sub:"coverage requirements:" b1;
+  check_contains "prop stats: its labels still print"
+    ~sub:"labels (100 passing cases):" b1
 
 (* Claim-aware containment (D5 §2) *)
 

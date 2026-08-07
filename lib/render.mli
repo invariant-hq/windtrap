@@ -366,9 +366,14 @@ val pp_failure :
       ({!Diff.hunks}) when a rendered value spans several lines. Marks come from
       {!Diff.sequences} when both renderings parse as sequences that differ as
       sequences — whole elements, never a span crossing an element boundary —
-      and from {!Diff.refine} otherwise. When both renderings parse as sequences
-      of at least an internal size threshold (currently 8 elements), a summary
-      line states the element-grain difference first
+      and from {!Diff.refine} otherwise. When both decline, the two values share
+      too little for a partial mark to point at anything: under [ansi] each side
+      is colored whole (green and red are side colors, so this is the same
+      signal extended, not a different one), and under [ansi:false] the two
+      labelled values print alone — a full-width marker line would be exactly
+      the noise the decline exists to avoid. When both renderings parse as
+      sequences of at least an internal size threshold (currently 8 elements), a
+      summary line states the element-grain difference first
       ([lists differ at 3 of 100 elements; first at [37]: expected …, actual …]
       — {!Diff.sequences}), with a length form
       ([lists differ in length: expected 100 elements, actual 98]) when the

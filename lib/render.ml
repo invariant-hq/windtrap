@@ -407,6 +407,17 @@ let pp_eq_detail ~ansi put ~ind ~expected ~actual ~multiline seq =
           (ind ^ st `Faint "expected" ^ "  "
           ^ highlight ~ansi `Green expected es);
         put (ind ^ st `Faint "actual" ^ "    " ^ highlight ~ansi `Red actual as_)
+    | None when ansi ->
+        (* Refinement declined: the values share too little for a partial
+           mark to point at anything. Green and red are side colours, not
+           change markers, so colouring each side whole is the same signal
+           extended — and it keeps every equality failure reading the same
+           way instead of the colour appearing and vanishing on a threshold
+           the reader cannot see. Plain sinks show the two labelled values
+           and stop: a full-width [~~~] would be the noise the threshold
+           just removed. *)
+        put (ind ^ st `Faint "expected" ^ "  " ^ st `Green expected);
+        put (ind ^ st `Faint "actual" ^ "    " ^ st `Red actual)
     | _ ->
         (* Plain sinks carry the marks on their own line, under the side they
            belong to. Both sides get one: element alignment makes a pure
@@ -1004,7 +1015,13 @@ let pp_prop_stats t (s : Property.stats) =
         put t (indent ^ st t `Faint line))
       s.collected
   end;
-  if List.exists (fun c -> not c.Property.satisfied) s.coverage then begin
+  (* The failure headline already names the first unsatisfied requirement, so
+     with a single requirement this list restates it in different words. It
+     earns its place only when there are others to show alongside. *)
+  if
+    List.length s.coverage > 1
+    && List.exists (fun c -> not c.Property.satisfied) s.coverage
+  then begin
     put t (indent ^ "coverage requirements:");
     List.iter
       (fun (c : Property.cover_status) ->
