@@ -283,12 +283,17 @@ let code_points s =
   in
   go 0 []
 
-(* Byte-faithful code-point equality. *)
-let cp_equal sa (oa, la) sb (ob, lb) =
-  la = lb
-  &&
-  let rec eq k = k = la || (sa.[oa + k] = sb.[ob + k] && eq (k + 1)) in
-  eq 0
+(* Byte-faithful code-point equality.
+
+   The byte loop is a top-level function taking everything it needs, not a
+   local [let rec] closing over the offsets: [wagner_fischer] calls this once
+   per grid cell, and a closure capturing five locals was being allocated on
+   every one of them — ~8 minor words per cell, which dominated refinement's
+   allocation. *)
+let rec bytes_equal sa oa sb ob len k =
+  k = len || (sa.[oa + k] = sb.[ob + k] && bytes_equal sa oa sb ob len (k + 1))
+
+let cp_equal sa (oa, la) sb (ob, lb) = la = lb && bytes_equal sa oa sb ob la 0
 
 (* Standard Wagner-Fischer: cost grid, then backtrack to a minimal edit
    script (ascending element indices). [equal_at] compares middle-relative

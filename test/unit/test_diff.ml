@@ -903,5 +903,42 @@ let guard_tests =
           (d.Diff.expected_spans <> []));
   ]
 
+(* Refinement's allocation per grid cell.
+
+   [wagner_fischer] calls [cp_equal] once per cell, so anything [cp_equal]
+   allocates is multiplied by the grid. A local [let rec] closing over the
+   offsets used to put a closure there — ~8 minor words per cell, 194M words
+   for the sweep below, against 9M once the loop was lifted to a top-level
+   function. Timing is too machine-dependent to assert, but minor-word counts
+   are deterministic, so this pins the shape: per-cell allocation stays O(1)
+   words and well under the closure regime. The bound is loose on purpose —
+   it is here to catch a reintroduced per-cell allocation, not to freeze the
+   current figure. *)
+let alloc_tests =
+  [
+    test "refine allocates no closure per grid cell" (fun () ->
+        let sizes = [ (200, 20); (600, 3) ] in
+        let cells =
+          List.fold_left (fun acc (n, it) -> acc + (n * n * it)) 0 sizes
+        in
+        let before = Gc.minor_words () in
+        List.iter
+          (fun (n, iters) ->
+            let a = String.make n 'a' in
+            let b =
+              String.mapi (fun i c -> if i mod 10 = 0 then 'b' else c) a
+            in
+            for _ = 1 to iters do
+              ignore (Sys.opaque_identity (Diff.refine ~expected:a ~actual:b))
+            done)
+          sizes;
+        let words = Gc.minor_words () -. before in
+        let per_cell = words /. float_of_int cells in
+        check
+          (Printf.sprintf "per-cell minor words (%.2f) stays under 2" per_cell)
+          (per_cell < 2.));
+  ]
+
 let tests =
   hunk_tests @ refine_tests @ sequence_tests @ span_tests @ guard_tests
+  @ alloc_tests
