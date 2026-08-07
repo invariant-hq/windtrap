@@ -390,6 +390,9 @@ class instrumenter st =
                   | Pexp_let _ | Pexp_letmodule _ | Pexp_letexception _
                   | Pexp_open _ | Pexp_match _ | Pexp_try _ | Pexp_ifthenelse _
                   | Pexp_sequence _ | Pexp_letop _
+                  (* [(e : t)] and [(e :> t)] are transparent for tail calls,
+                     so the arm they wrap inherits the position too. *)
+                  | Pexp_constraint _ | Pexp_coerce _
                     when is_in_tail_position ->
                       traverse ~is_in_tail_position:true right
                   | _ ->

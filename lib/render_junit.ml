@@ -143,7 +143,7 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
             in
             let log =
               match tail.log_path with
-              | Some p -> spf "\nfull log: %s" p
+              | Some p -> spf "\nfull log: %s" (Path_ops.display_artifact p)
               | None -> ""
             in
             Buffer.add_string buf

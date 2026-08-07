@@ -198,7 +198,15 @@ let shrink ~max_shrink ~body tree first_class =
   let exhausted = ref false in
   (try
      let rec descend steps tree cls =
-       if steps >= max_shrink then exhausted := true
+       if steps >= max_shrink then begin
+         (* The budget stopped a LIVE descent only if there was somewhere
+            left to go. A search whose last accepted step landed exactly on
+            the budget, with no further candidate, had already converged —
+            reporting it as truncated would tell the reader the
+            counterexample may not be minimal when it is. *)
+         if first_accepted (Shrink_tree.children tree) <> None then
+           exhausted := true
+       end
        else
          match first_accepted (Shrink_tree.children tree) with
          | None -> ()
