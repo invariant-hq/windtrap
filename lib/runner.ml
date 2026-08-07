@@ -17,8 +17,22 @@
    Stdlib.exit = do_at_exit (); sys_exit — an exception from an at_exit
    function propagates to exit's caller (pinned by the child-status
    regression test). *)
+(* The pid that installed the guard. A forked child inherits [Run.active]
+   and the [at_exit] registration, so without this the child's [exit] is
+   intercepted too: instead of terminating, the child returns into the
+   runner, executes every remaining test, prints a second report, rewrites
+   the last-failed store and any JUnit file, and exits with the run's code
+   rather than its own — so a parent test asserting on the child's status
+   reads the wrong answer. The guard belongs to the process that armed it. *)
+let exit_guard_owner = ref None
+
+let owns_run () =
+  match !exit_guard_owner with
+  | Some pid -> pid = Unix.getpid ()
+  | None -> false
+
 let rec exit_guard () =
-  if Run.active () then begin
+  if owns_run () && Run.active () then begin
     at_exit exit_guard;
     raise Failure.Exit_attempt
   end
@@ -26,6 +40,7 @@ let rec exit_guard () =
 let exit_guard_installed = ref false
 
 let install_exit_guard () =
+  exit_guard_owner := Some (Unix.getpid ());
   if not !exit_guard_installed then begin
     exit_guard_installed := true;
     at_exit exit_guard
@@ -542,6 +557,13 @@ let release ~on_event run =
 
 let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
   install_exit_guard ();
+  (* An unexpected exception's report is only as useful as its backtrace,
+     and the runtime records one only when asked. Without this a test that
+     raises names the constructor and the test's declaration line and
+     nothing else — no raise site — unless the user knew to set
+     OCAMLRUNPARAM=b, which nothing tells them. Left on: the run owns the
+     process, and every raise site here already reads the raw backtrace. *)
+  Printexc.record_backtrace true;
   if Run.active () then
     invalid_arg
       "windtrap: run is already active — a test body cannot start another run";

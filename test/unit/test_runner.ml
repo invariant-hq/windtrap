@@ -249,6 +249,32 @@ let () =
     check "the run stayed green" (outcome.Runner.exit_code = 0))
 
 let () =
+  (* The exit guard belongs to the process that armed it. A forked child
+     inherits Run.active and the at_exit registration, so without the pid
+     check the child's [exit] was intercepted: it returned into the runner,
+     ran every remaining test, printed a second report, and exited with the
+     run's code instead of its own. *)
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let config = base_config ~log_dir:root () in
+    let child_status = ref (-1) in
+    let tests =
+      [
+        Test_tree.test "forks a child that exits 3" (fun () ->
+            match Unix.fork () with
+            | 0 -> exit 3
+            | pid -> (
+                let _, status = Unix.waitpid [] pid in
+                child_status :=
+                  match status with Unix.WEXITED c -> c | _ -> -1));
+      ]
+    in
+    expect_run "a forked child exits on its own terms" ~config tests
+    @@ fun outcome ->
+    check "the child's exit code reached the parent" (!child_status = 3);
+    check "the test passed" (outcome.Runner.exit_code = 0))
+
+let () =
   (* The timer is one-shot and [Failure.Timeout] is not fatal, so the body's
      phase guard absorbs the alarm and [phases] goes on to teardown. Before
      the window was re-armed there, a teardown that blocked after a body
