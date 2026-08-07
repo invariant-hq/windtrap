@@ -192,9 +192,14 @@ let shrink ~max_shrink ~body tree first_class =
      consumes a timeout — everywhere else it propagates to the runner. *)
   let best = ref (tree, 0, first_class) in
   let timed_out = ref None in
+  (* The budget stopping the descent is not the same as the descent
+     converging, and the two used to render identically — a truncated
+     search and a minimal counterexample both read "shrunk 100 steps". *)
+  let exhausted = ref false in
   (try
      let rec descend steps tree cls =
-       if steps < max_shrink then
+       if steps >= max_shrink then exhausted := true
+       else
          match first_accepted (Shrink_tree.children tree) with
          | None -> ()
          | Some (candidate, accepted) ->
@@ -204,7 +209,7 @@ let shrink ~max_shrink ~body tree first_class =
      descend 0 tree first_class
    with Failure.Timeout limit -> timed_out := Some limit);
   let tree, steps, cls = !best in
-  (tree, steps, cls, !timed_out)
+  (tree, steps, cls, !timed_out, !exhausted)
 
 (* The engine *)
 
@@ -235,11 +240,12 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard
   let cases = ref 0 in
   let discards = ref 0 in
   let stats () = stats_of ~cases:!cases ~discards:!discards ctx in
-  let fail ~rendered ~case_index ~shrink_steps ?timed_out ~examples cls =
+  let fail ~rendered ~case_index ~shrink_steps ?timed_out
+      ?(shrink_exhausted = false) ~examples cls =
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
-        ?count:config_count ~rendered ~case_index ~shrink_steps ~root ~examples
-        ()
+        ?count:config_count ~rendered ~case_index ~shrink_steps
+        ~shrink_exhausted ~root ~examples ()
     in
     Fail { failure; stats = stats () }
   in
@@ -310,11 +316,12 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard
               | Control (control, backtrace) ->
                   Printexc.raise_with_backtrace control backtrace
               | Failed cls ->
-                  let final_tree, steps, final_cls, timed_out =
+                  let final_tree, steps, final_cls, timed_out, exhausted =
                     shrink ~max_shrink ~body tree cls
                   in
                   let rendered = Gen.render gen (Shrink_tree.root final_tree) in
                   fail ~rendered ~case_index:attempts ~shrink_steps:steps
-                    ?timed_out ~examples:false final_cls)
+                    ?timed_out ~shrink_exhausted:exhausted ~examples:false
+                    final_cls)
       in
       generate ~passed:0 ~attempts:0

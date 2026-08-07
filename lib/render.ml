@@ -215,14 +215,26 @@ let headline (f : Failure.t) =
     | Failure.Snapshot { name; state = Failure.Duplicate _; _ } ->
         spf "snapshot %S: duplicate name" name
     | Failure.Property
-        { rendered; case_index; shrink_steps; timed_out; examples; _ } ->
+        {
+          rendered;
+          case_index;
+          shrink_steps;
+          shrink_exhausted;
+          timed_out;
+          examples;
+          _;
+        } ->
         let desc = property_case_desc ~examples ~case_index ~shrink_steps in
         let desc =
           (* The shrink search hit the whole-test budget: the mark
              travels into the one-line summary too. *)
           match timed_out with
           | Some _ when not examples -> desc ^ ", timed out"
-          | _ -> desc
+          | _ ->
+              (* Likewise the step budget: "shrunk 100 steps" alone reads
+                 as a converged search. *)
+              if shrink_exhausted && not examples then desc ^ ", budget spent"
+              else desc
         in
         spf "property failed (%s): %s" desc (flat rendered)
     | Failure.Message "" -> "(empty failure message)"
@@ -710,6 +722,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         rendered;
         case_index;
         shrink_steps;
+        shrink_exhausted;
         timed_out;
         root;
         count;
@@ -733,7 +746,16 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                "timed out after %gs while shrinking; counterexample may not be \
                 minimal"
                limit)
-      | None -> ());
+      | None ->
+          (* Same fact, different budget: the search stopped counting
+             rather than running out of candidates, so what is reported is
+             the best it reached. *)
+          if shrink_exhausted then
+            put_ind
+              (spf
+                 "shrink budget of %d steps spent; counterexample may not be \
+                  minimal"
+                 shrink_steps));
       (match inner with
       | Some i ->
           (* A tail-called check inside a law honestly has no site: a

@@ -66,6 +66,7 @@ type parsed = {
           the compact renderer flags the run and warns; must be non-negative,
           [0] disables. *)
   prop_count : int option;
+  max_shrink : int option;
       (** [--prop-count N]: generated cases per property; must be positive. *)
   output : [ `Quiet | `Verbose ] option;
       (** [-q]/[--quiet] parse as [Some `Quiet], [-v]/[--verbose] as

@@ -158,6 +158,12 @@ type kind =
       rendered : string;
       case_index : int;
       shrink_steps : int;
+      shrink_exhausted : bool;
+          (** [true] iff the shrink search stopped on its step budget rather
+              than converging. The two are otherwise indistinguishable in a
+              report — both read "shrunk N steps" — and they mean different
+              things: a converged search reports the minimal counterexample, an
+              exhausted one reports the best it reached. *)
       timed_out : float option;
       root : Seed.seed;
       count : int option;
@@ -310,6 +316,7 @@ val property :
   rendered:string ->
   case_index:int ->
   shrink_steps:int ->
+  ?shrink_exhausted:bool ->
   root:Seed.seed ->
   examples:bool ->
   unit ->

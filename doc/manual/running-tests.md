@@ -45,6 +45,7 @@ inventory. The ones that matter daily:
 | `-l`, `--list` | — | list the selection without running |
 | `--seed s1:…` | `WINDTRAP_SEED` | pin the root seed (replay) |
 | `--prop-count N` | `WINDTRAP_PROP_COUNT` | generated cases per property |
+| `--max-shrink N` | `WINDTRAP_MAX_SHRINK` | accepted shrink steps per failing property (default 100) |
 | `--timeout SECONDS` | `WINDTRAP_TIMEOUT` | default per-test limit |
 | `--slow-threshold SECONDS` | `WINDTRAP_SLOW_THRESHOLD` | warn when an untagged test exceeds SECONDS (default 1; 0 disables) |
 | `-u`, `--update` | `WINDTRAP_UPDATE` | accept snapshot changes (refused under CI) |

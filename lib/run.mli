@@ -69,6 +69,11 @@ type config = {
           noteworthy and warns (default [1.]; [0.] disables both). Invariant:
           finite and non-negative, validated by the CLI layer. *)
   prop_count : int option;  (** [--prop-count]: generated cases per property. *)
+  max_shrink : int option;
+      (** [--max-shrink]: accepted shrink steps per failing property. The
+          engine's default is 100; a search that spends the budget reports so,
+          because a truncated search and a converged one otherwise read alike.
+      *)
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   color : Env.color_mode;  (** [--color]/[WINDTRAP_COLOR]. *)
   columns : int option;

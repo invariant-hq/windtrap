@@ -35,6 +35,11 @@ let property_payload (failure : Failure.t) =
       (rendered, case_index, shrink_steps, timed_out, root, examples, inner)
   | _ -> failf "expected a Property failure kind"
 
+let shrink_exhausted (failure : Failure.t) =
+  match failure.Failure.kind with
+  | Failure.Property { shrink_exhausted; _ } -> shrink_exhausted
+  | _ -> failf "expected a Property failure kind"
+
 let expect_fail = function
   | Property.Fail { failure; stats } -> (failure, stats)
   | Property.Pass _ -> failf "expected Fail, got Pass"
@@ -772,6 +777,25 @@ let assume_and_reject_raise_discard () =
 
 (* Suite *)
 
+(* A search stopped by its step budget and one that converged both read
+   "shrunk N steps"; only the flag tells them apart, and without it a user
+   cannot know whether the reported counterexample is minimal. *)
+let spent_shrink_budget_is_marked () =
+  let big = Gen.list ~size:(Gen.int_range 300 400) Gen.int in
+  let law _ value = if List.length value < 60 then () else raise Exit in
+  let failure, _ =
+    expect_fail
+      (Property.run ~max_shrink:5 ~root ~path:"budget" big (fun ctx v ->
+           law ctx v))
+  in
+  check (shrink_exhausted failure) "a truncated search is marked";
+  let failure, _ =
+    expect_fail
+      (Property.run ~max_shrink:100_000 ~root ~path:"budget" big (fun ctx v ->
+           law ctx v))
+  in
+  check (not (shrink_exhausted failure)) "a converged search is not marked"
+
 let suite =
   [
     ("same inputs, same outcome", same_inputs_same_outcome);
@@ -840,6 +864,7 @@ let suite =
     ("count zero passes vacuously", count_zero_passes_vacuously);
     ("negative configuration is invalid", negative_configuration_is_invalid);
     ("assume and reject raise Discard", assume_and_reject_raise_discard);
+    ("a spent shrink budget is distinguishable", spent_shrink_budget_is_marked);
   ]
 
 let tests = List.map (fun (name, fn) -> Windtrap.test name fn) suite

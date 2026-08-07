@@ -70,8 +70,8 @@ let prop ?pos ?tags ?timeout ?count ?examples name gen law =
     in
     let path = Test_tree.path_to_string (Run.path frame) in
     let outcome =
-      Property.run ?loc ?count ?config_count ?examples ~root:config.Run.seed
-        ~path gen (fun context value ->
+      Property.run ?loc ?count ?config_count ?max_shrink:config.Run.max_shrink
+        ?examples ~root:config.Run.seed ~path gen (fun context value ->
           Run.with_prop_context frame context (fun () -> law value))
     in
     raise (Prop_outcome outcome)

@@ -26,6 +26,7 @@ type parsed = {
   timeout : float option;
   slow_threshold : float option;
   prop_count : int option;
+  max_shrink : int option;
   output : [ `Quiet | `Verbose ] option;
   junit : string option;
   color : Env.color_mode option;
@@ -53,6 +54,7 @@ let empty =
     timeout = None;
     slow_threshold = None;
     prop_count = None;
+    max_shrink = None;
     output = None;
     junit = None;
     color = None;
@@ -296,6 +298,13 @@ let table =
       arg = set_positive_int (fun acc n -> { acc with prop_count = Some n });
       doc = "Generated cases per property";
       mirror = Some "WINDTRAP_PROP_COUNT";
+    };
+    {
+      short = None;
+      long = "--max-shrink";
+      arg = set_positive_int (fun acc n -> { acc with max_shrink = Some n });
+      doc = "Accepted shrink steps per failing property";
+      mirror = Some "WINDTRAP_MAX_SHRINK";
     };
     {
       short = Some "-u";
@@ -588,6 +597,15 @@ let resolve ?(overrides = empty) cli =
     positive_int ~flag:"--prop-count" ~env:"WINDTRAP_PROP_COUNT" higher
       env_value
   in
+  let* max_shrink =
+    let higher = first_some overrides.max_shrink cli.max_shrink in
+    let* env_value =
+      env_numeric ~source:"WINDTRAP_MAX_SHRINK" ~parse:int_of_string_opt
+        ~expected:"a positive integer" (Env.max_shrink ()) higher
+    in
+    positive_int ~flag:"--max-shrink" ~env:"WINDTRAP_MAX_SHRINK" higher
+      env_value
+  in
   let* bail =
     positive_int ~flag:"--bail" ~env:"--bail" (* no environment mirror *)
       (first_some overrides.bail cli.bail)
@@ -651,6 +669,7 @@ let resolve ?(overrides = empty) cli =
       slow_threshold =
         Option.value slow_threshold ~default:defaults.Run.slow_threshold;
       prop_count;
+      max_shrink;
       junit = first_some overrides.junit cli.junit;
       color =
         Option.value

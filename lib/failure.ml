@@ -44,6 +44,7 @@ type kind =
       rendered : string;
       case_index : int;
       shrink_steps : int;
+      shrink_exhausted : bool;
       timed_out : float option;
       root : Seed.seed;
       count : int option;
@@ -197,13 +198,14 @@ let snapshot ?loc ~name ~path state =
   make ?loc (Snapshot { name; path; state = bound_snapshot_state state })
 
 let property ?loc ?inner ?timed_out ?count ~rendered ~case_index ~shrink_steps
-    ~root ~examples () =
+    ?(shrink_exhausted = false) ~root ~examples () =
   make ?loc
     (Property
        {
          rendered = cap rendered;
          case_index;
          shrink_steps;
+         shrink_exhausted;
          timed_out;
          root;
          count;
