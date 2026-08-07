@@ -211,6 +211,10 @@ let none name = function
 
 let render w v = Testable.to_string w v
 
+(* Every case below wants the default (spans computed); the [?spans] switch
+   and the guarded paths are exercised directly in [span_tests]. *)
+let sequences ~expected ~actual = Diff.sequences ~expected ~actual ()
+
 let hunk_tests =
   [
     test "pinned hunk cases" (fun () ->
@@ -478,7 +482,7 @@ let sequence_tests =
         in
         let d =
           get "first mismatch"
-            (Diff.sequences
+            (sequences
                ~expected:(render Testable.(list int) expected)
                ~actual:(render Testable.(list int) actual))
         in
@@ -501,7 +505,7 @@ let sequence_tests =
         actual.(4) <- 99.5;
         let d =
           get "arrays"
-            (Diff.sequences
+            (sequences
                ~expected:(render Testable.(array float_exact) expected)
                ~actual:(render Testable.(array float_exact) actual))
         in
@@ -529,9 +533,7 @@ let sequence_tests =
         check "wrap points differ"
           (String.length re <> String.length ra
           || re <> String.sub ra 0 (String.length re));
-        let d =
-          get "wrap-insensitive" (Diff.sequences ~expected:re ~actual:ra)
-        in
+        let d = get "wrap-insensitive" (sequences ~expected:re ~actual:ra) in
         check_int "wrap-insensitive differing" ~expected:1
           ~actual:d.Diff.differing;
         (match d.Diff.first with
@@ -555,7 +557,7 @@ let sequence_tests =
         in
         let re = render w expected and ra = render w actual in
         check "nested renderings actually wrap" (String.contains re '\n');
-        let d = get "nested wrap" (Diff.sequences ~expected:re ~actual:ra) in
+        let d = get "nested wrap" (sequences ~expected:re ~actual:ra) in
         check_int "nested wrap differing" ~expected:1 ~actual:d.Diff.differing;
         match d.Diff.first with
         | Some m ->
@@ -566,7 +568,7 @@ let sequence_tests =
            elements — one each — and the first is the first unmatched one. *)
         let d =
           get "length difference"
-            (Diff.sequences
+            (sequences
                ~expected:(render Testable.(list int) [ 1; 2; 3 ])
                ~actual:(render Testable.(list int) [ 1; 2; 3; 4; 5 ]))
         in
@@ -585,13 +587,13 @@ let sequence_tests =
         | None -> check "suffix-insertion first present" false);
         let d =
           get "empty vs one"
-            (Diff.sequences ~expected:"[]"
+            (sequences ~expected:"[]"
                ~actual:(render Testable.(list int) [ 7 ]))
         in
         check_int "empty length" ~expected:0 ~actual:d.Diff.expected_length;
         check_int "one length" ~expected:1 ~actual:d.Diff.actual_length;
         let d =
-          get "empty arrays" (Diff.sequences ~expected:"[||]" ~actual:"[||]")
+          get "empty arrays" (sequences ~expected:"[||]" ~actual:"[||]")
         in
         check "empty arrays kind" (d.Diff.kind = `Array);
         check_int "empty arrays differing" ~expected:0 ~actual:d.Diff.differing;
@@ -599,7 +601,7 @@ let sequence_tests =
            the renderer falls back rather than claiming a difference. *)
         let d =
           get "layout-only"
-            (Diff.sequences ~expected:"[1; 2; 3]" ~actual:"[1;\n 2;\n 3]")
+            (sequences ~expected:"[1; 2; 3]" ~actual:"[1;\n 2;\n 3]")
         in
         check_int "layout-only differing" ~expected:0 ~actual:d.Diff.differing;
         check "layout-only no first" (d.Diff.first = None));
@@ -609,8 +611,7 @@ let sequence_tests =
         let actual = [ ("a; b", [ 1; 2 ]); ("c", [ 4 ]) ] in
         let d =
           get "nested"
-            (Diff.sequences ~expected:(render w expected)
-               ~actual:(render w actual))
+            (sequences ~expected:(render w expected) ~actual:(render w actual))
         in
         check_int "separator inside %S string does not split" ~expected:2
           ~actual:d.Diff.expected_length;
@@ -624,7 +625,7 @@ let sequence_tests =
         let w = Testable.(list string) in
         let d =
           get "escaped quote"
-            (Diff.sequences
+            (sequences
                ~expected:(render w [ {|say "hi"; bye|}; "x" ])
                ~actual:(render w [ {|say "hi"; bye|}; "y" ]))
         in
@@ -638,7 +639,7 @@ let sequence_tests =
            backslash escape directly before an escaped quote mid-string. *)
         let d =
           get "escaped backslash"
-            (Diff.sequences
+            (sequences
                ~expected:(render w [ {|tail\|}; {|back\slash"|}; "b" ])
                ~actual:(render w [ {|tail\|}; {|back\slash"|}; "c" ]))
         in
@@ -655,8 +656,7 @@ let sequence_tests =
         let actual = [ '['; ';'; '\t'; '\'' ] in
         let d =
           get "char literals"
-            (Diff.sequences ~expected:(render w expected)
-               ~actual:(render w actual))
+            (sequences ~expected:(render w expected) ~actual:(render w actual))
         in
         check_int "char element count" ~expected:4
           ~actual:d.Diff.expected_length;
@@ -673,7 +673,7 @@ let sequence_tests =
            elements, never "10 of 10" from the positional shift (D5 §3). *)
         let d =
           get "shifted equal-length lists"
-            (Diff.sequences
+            (sequences
                ~expected:
                  (render Testable.(list int) (List.init 10 (fun i -> i + 1)))
                ~actual:
@@ -694,7 +694,7 @@ let sequence_tests =
         (* The mirror image: the unmatched element sits on the actual side. *)
         let d =
           get "actual-only first"
-            (Diff.sequences
+            (sequences
                ~expected:
                  (render Testable.(list int) (List.init 9 (fun i -> i + 2)))
                ~actual:
@@ -717,7 +717,7 @@ let sequence_tests =
         in
         let d =
           get "middle insertion"
-            (Diff.sequences
+            (sequences
                ~expected:(render Testable.(list int) expected)
                ~actual:(render Testable.(list int) actual))
         in
@@ -730,21 +730,18 @@ let sequence_tests =
               ~actual:m.Diff.actual
         | None -> check "middle insertion first present" false);
     test "sequences: conservative Nones" (fun () ->
-        none "plain scalars" (Diff.sequences ~expected:"true" ~actual:"false");
-        none "records" (Diff.sequences ~expected:"{x = 1}" ~actual:"{x = 2}");
-        none "kind mismatch"
-          (Diff.sequences ~expected:"[1; 2]" ~actual:"[|1; 2|]");
+        none "plain scalars" (sequences ~expected:"true" ~actual:"false");
+        none "records" (sequences ~expected:"{x = 1}" ~actual:"{x = 2}");
+        none "kind mismatch" (sequences ~expected:"[1; 2]" ~actual:"[|1; 2|]");
         none "one side not a sequence"
-          (Diff.sequences ~expected:"[1; 2]" ~actual:"boom");
+          (sequences ~expected:"[1; 2]" ~actual:"boom");
         none "unbalanced bracket in an element"
-          (Diff.sequences ~expected:"[1; (2]" ~actual:"[1; 3]");
+          (sequences ~expected:"[1; (2]" ~actual:"[1; 3]");
         none "unterminated string in an element"
-          (Diff.sequences ~expected:{|["a; b]|} ~actual:"[1]");
-        none "empty element"
-          (Diff.sequences ~expected:"[1;; 2]" ~actual:"[1; 2]");
-        none "trailing separator"
-          (Diff.sequences ~expected:"[1; 2;]" ~actual:"[1]");
-        none "empty strings" (Diff.sequences ~expected:"" ~actual:""));
+          (sequences ~expected:{|["a; b]|} ~actual:"[1]");
+        none "empty element" (sequences ~expected:"[1;; 2]" ~actual:"[1; 2]");
+        none "trailing separator" (sequences ~expected:"[1; 2;]" ~actual:"[1]");
+        none "empty strings" (sequences ~expected:"" ~actual:""));
   ]
 
 (* Element-grain highlight spans.
@@ -760,7 +757,7 @@ let marks s spans =
     (List.map (fun { Diff.start; length } -> String.sub s start length) spans)
 
 let check_marks name ~expected ~actual (pin_e, pin_a) =
-  let d = get name (Diff.sequences ~expected ~actual) in
+  let d = get name (sequences ~expected ~actual) in
   check_string
     (name ^ ": expected marks")
     ~expected:pin_e
@@ -807,8 +804,7 @@ let span_tests =
           ~actual:"[4; 55; 6]" ("5", "55"));
     test "spans: no marks when the sequences agree" (fun () ->
         let d =
-          get "layout only"
-            (Diff.sequences ~expected:"[1; 2]" ~actual:"[1;\n 2]")
+          get "layout only" (sequences ~expected:"[1; 2]" ~actual:"[1;\n 2]")
         in
         check_int "differing" ~expected:0 ~actual:d.Diff.differing;
         check "expected unmarked" (d.Diff.expected_spans = []);
@@ -817,7 +813,7 @@ let span_tests =
         (* Same invariants [refine] spans carry: ascending, disjoint,
            non-empty, on code-point boundaries. *)
         let e = {|["é"; "€"; "a"]|} and a = {|["é"; "x"; "b"]|} in
-        let d = get "utf8" (Diff.sequences ~expected:e ~actual:a) in
+        let d = get "utf8" (sequences ~expected:e ~actual:a) in
         check "expected spans well-formed" (spans_ok e d.Diff.expected_spans);
         check "actual spans well-formed" (spans_ok a d.Diff.actual_spans);
         (* Both pairs refine to the differing code point inside the quotes:
@@ -829,4 +825,83 @@ let span_tests =
           ~actual:(marks a d.Diff.actual_spans));
   ]
 
-let tests = hunk_tests @ refine_tests @ sequence_tests @ span_tests
+(* The guards on span computation.
+
+   Per-element refinement is the expensive half, and before the budget
+   existed each replaced pair got its own [dp_cell_limit], so a payload
+   [refine] declines in milliseconds took seconds here — 3.5s for 32
+   elements of 1900 characters, measured. These pin the three ways that
+   cannot happen: the caller can decline spans outright, the pairs share
+   one budget, and the size-guarded alignment carries no spans. *)
+
+let long_sequence k w ~salt =
+  let seed = ref salt in
+  let rnd () =
+    seed := ((!seed * 1103515245) + 12345) land 0x3FFFFFFF;
+    !seed
+  in
+  let word () = String.init w (fun _ -> Char.chr (97 + (rnd () mod 26))) in
+  "[" ^ String.concat "; " (List.init k (fun _ -> "\"" ^ word () ^ "\"")) ^ "]"
+
+let guard_tests =
+  [
+    test "spans: the caller can decline them" (fun () ->
+        let expected = "[1; 2; 3]" and actual = "[1; 2; 4]" in
+        let with_spans = get "with" (Diff.sequences ~expected ~actual ()) in
+        let without =
+          get "without" (Diff.sequences ~spans:false ~expected ~actual ())
+        in
+        (* Declining changes only the spans; every summary field is the
+           same, so a caller that will not display marks loses nothing. *)
+        check "summary is unaffected"
+          (without.Diff.differing = with_spans.Diff.differing
+          && without.Diff.expected_length = with_spans.Diff.expected_length
+          && without.Diff.actual_length = with_spans.Diff.actual_length
+          && without.Diff.first = with_spans.Diff.first);
+        check "declined spans are empty"
+          (without.Diff.expected_spans = [] && without.Diff.actual_spans = []);
+        check "requested spans are not" (with_spans.Diff.expected_spans <> []));
+    test "spans: replaced pairs share one refinement budget" (fun () ->
+        (* Every element replaced, each far too big to refine within the
+           shared budget: marks fall back to whole elements rather than
+           refining the leading pairs and marking the rest. *)
+        let expected = long_sequence 32 1900 ~salt:1
+        and actual = long_sequence 32 1900 ~salt:2 in
+        let d = get "over budget" (Diff.sequences ~expected ~actual ()) in
+        check_int "all elements differ" ~expected:32 ~actual:d.Diff.differing;
+        check_int "one mark per element (expected)" ~expected:32
+          ~actual:(List.length d.Diff.expected_spans);
+        check_int "one mark per element (actual)" ~expected:32
+          ~actual:(List.length d.Diff.actual_spans);
+        (* Whole elements: each mark spans its element's rendering, quotes
+           included, not some refined subset of it. *)
+        check "marks are whole elements"
+          (List.for_all
+             (fun { Diff.length; _ } -> length = 1902)
+             d.Diff.expected_spans);
+        check "spans still obey the contract"
+          (spans_ok expected d.Diff.expected_spans
+          && spans_ok actual d.Diff.actual_spans));
+    test "spans: a size-guarded alignment carries none" (fun () ->
+        (* Past the element-count guard the alignment degrades to one
+           delete-all/insert-all block. Its pairs are an artifact of the
+           fallback, so marking from them would report "everything changed"
+           — the exact failure element grain exists to prevent. *)
+        let seq n from =
+          "["
+          ^ String.concat "; " (List.init n (fun i -> string_of_int (from + i)))
+          ^ "]"
+        in
+        let expected = seq 1200 0 and actual = seq 1200 5000 in
+        let d = get "guarded" (Diff.sequences ~expected ~actual ()) in
+        check "guarded alignment reports no marks"
+          (d.Diff.expected_spans = [] && d.Diff.actual_spans = []);
+        (* Below the guard the same shape does carry marks. *)
+        let expected = seq 100 0 and actual = seq 100 5000 in
+        let d = get "unguarded" (Diff.sequences ~expected ~actual ()) in
+        check "an unguarded alignment does carry marks"
+          (d.Diff.expected_spans <> []));
+  ]
+
+let tests =
+  hunk_tests @ refine_tests @ sequence_tests @ span_tests @ guard_tests

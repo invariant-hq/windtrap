@@ -320,13 +320,12 @@ let pp_hunks ~ansi put ~ind hunks =
 (* The element-grain summary line for two rendered sequences:
    worth a line only from [seq_summary_threshold] elements up — below that
    the ordinary diff already reads at a glance. *)
-let seq_summary ~expected ~actual =
-  match Diff.sequences ~expected ~actual with
+let seq_summary seq =
+  match seq with
   | Some d
     when max d.Diff.expected_length d.Diff.actual_length
          >= seq_summary_threshold
-         && (d.Diff.differing > 0
-            || d.Diff.expected_length <> d.Diff.actual_length) ->
+         && d.Diff.differing > 0 ->
       let noun =
         match d.Diff.kind with `List -> "lists" | `Array -> "arrays"
       in
@@ -364,23 +363,25 @@ let seq_summary ~expected ~actual =
    applies: element alignment when both sides are sequence renderings that
    actually differ as sequences, character refinement otherwise. Sequences
    that parse but agree element-for-element differ only in the whitespace
-   their printer's box inserted — refinement is what shows that. *)
-let eq_spans ~expected ~actual =
+   their printer's box inserted — refinement is what shows that, and so it
+   is for a guarded sequence diff, whose empty spans say "no alignment was
+   computed", not "nothing differs". *)
+let eq_spans ~expected ~actual seq =
   let character () =
     match Diff.refine ~expected ~actual with
     | Some r -> Some (r.Diff.expected_spans, r.Diff.actual_spans)
     | None -> None
   in
-  match Diff.sequences ~expected ~actual with
+  match seq with
   | Some d
-    when d.Diff.differing > 0 || d.Diff.expected_length <> d.Diff.actual_length
-    ->
+    when d.Diff.differing > 0
+         && (d.Diff.expected_spans <> [] || d.Diff.actual_spans <> []) ->
       Some (d.Diff.expected_spans, d.Diff.actual_spans)
   | _ -> character ()
 
-let pp_eq_detail ~ansi put ~ind ~expected ~actual =
+let pp_eq_detail ~ansi put ~ind ~expected ~actual ~multiline seq =
   let st style s = Pp.styled_string ~ansi style s in
-  if String.contains expected '\n' || String.contains actual '\n' then begin
+  if multiline then begin
     match Diff.hunks ~expected ~actual () with
     | [] ->
         (* Line lists equal but bytes differ: the only such difference is a
@@ -399,7 +400,7 @@ let pp_eq_detail ~ansi put ~ind ~expected ~actual =
         pp_hunks ~ansi put ~ind hunks
   end
   else
-    let marked = eq_spans ~expected ~actual in
+    let marked = eq_spans ~expected ~actual seq in
     match marked with
     | Some (es, as_) when ansi ->
         put
@@ -445,10 +446,17 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
            the equality compares)")
   end
   else begin
-    (match seq_summary ~expected ~actual with
-    | Some line -> put (ind ^ line)
-    | None -> ());
-    pp_eq_detail ~ansi put ~ind ~expected ~actual
+    (* One sequence diff per failure, shared by the summary line and the
+       marks. Spans are only ever displayed on the single-line path, and
+       computing them is the expensive half (a bounded Wagner-Fischer over
+       the replaced elements), so the multi-line path — where [Diff.hunks]
+       does the showing — asks for the summary alone. *)
+    let multiline =
+      String.contains expected '\n' || String.contains actual '\n'
+    in
+    let seq = Diff.sequences ~spans:(not multiline) ~expected ~actual () in
+    (match seq_summary seq with Some line -> put (ind ^ line) | None -> ());
+    pp_eq_detail ~ansi put ~ind ~expected ~actual ~multiline seq
   end
 
 let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf

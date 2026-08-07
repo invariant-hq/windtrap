@@ -673,7 +673,31 @@ let refine_within ~expected ~actual (ee : span) (ea : span) =
       (shift ee.start r.expected_spans, shift ea.start r.actual_spans)
   | _ -> ([ ee ], [ ea ])
 
-let sequences ~expected ~actual =
+(* The whole call's refinement budget, in Wagner-Fischer cells.
+
+   [refine]'s [dp_cell_limit] bounds one call, which bounded a whole payload
+   back when a renderer refined the payload once. Refining per element pair
+   would multiply that bound by the element count, so the pairs share a
+   single budget instead, and it is the same one: total DP work per
+   [sequences] call stays at [dp_cell_limit], as it was before per-element
+   refinement existed.
+
+   The budget is spent all-or-nothing rather than first-come-first-served.
+   Draining it left to right would refine the leading elements and mark the
+   trailing ones whole — two grains in one report, with the boundary set by
+   nothing the reader can see. *)
+let refinement_fits pairs (ee : element array) (ea : element array) =
+  let cells (a : span) (b : span) = (a.length + 1) * (b.length + 1) in
+  let rec go budget = function
+    | [] -> true
+    | (Some i, Some j) :: rest ->
+        let cost = cells ee.(i).extent ea.(j).extent in
+        cost <= budget && go (budget - cost) rest
+    | _ :: rest -> go budget rest
+  in
+  go dp_cell_limit pairs
+
+let sequences ?(spans = true) ~expected ~actual () =
   match (parse_sequence expected, parse_sequence actual) with
   | Some (ke, ee), Some (ka, ea) when ke = ka ->
       let ne = Array.length ee and na = Array.length ea in
@@ -682,6 +706,7 @@ let sequences ~expected ~actual =
       let prefix = common_prefix_len ce ca in
       let suffix = common_suffix_len ~prefix ce ca in
       let me = ne - prefix - suffix and ma = na - prefix - suffix in
+      let guarded = ref false in
       let ops =
         if me = 0 && ma = 0 then []
         else
@@ -695,19 +720,31 @@ let sequences ~expected ~actual =
           | None ->
               (* Size guard: complete, non-minimal fallback (as [hunks]) —
                  one delete-all/insert-all run, counted as [max me ma]. *)
+              guarded := true;
               List.map (fun e -> Delete e) (Array.to_list mid_e)
               @ List.map (fun a -> Insert a) (Array.to_list mid_a)
       in
       let differing, first, pairs = aligned_differences ~prefix ops in
+      (* Under the size guard the run is one synthetic delete-all/insert-all
+         block, so the pairs it zips are an artifact of the fallback, not an
+         alignment anyone computed. Marking every element from them would
+         claim a precision that does not exist — exactly the "everything
+         changed" report element grain is here to prevent — so the guarded
+         path reports no marks and lets the renderer show both sides plain. *)
+      let refine_pairs =
+        spans && (not !guarded) && refinement_fits pairs ee ea
+      in
+      let pairs = if spans && not !guarded then pairs else [] in
       let e_spans, a_spans =
         List.fold_left
           (fun (es, as_) pair ->
             match pair with
-            | Some i, Some j ->
+            | Some i, Some j when refine_pairs ->
                 let de, da =
                   refine_within ~expected ~actual ee.(i).extent ea.(j).extent
                 in
                 (de @ es, da @ as_)
+            | Some i, Some j -> (ee.(i).extent :: es, ea.(j).extent :: as_)
             | Some i, None -> (ee.(i).extent :: es, as_)
             | None, Some j -> (es, ea.(j).extent :: as_)
             | None, None -> (es, as_))

@@ -141,8 +141,13 @@ type seq_diff = {
           {!refinement}: ascending, non-overlapping, coalesced, on code-point
           boundaries. A range never crosses an element boundary — it is either a
           whole non-aligned element or, when refinement localizes the change
-          inside a replaced one, a part of it. Empty iff [differing] is [0] and
-          the lengths agree. *)
+          inside a replaced one, a part of it.
+
+          Empty on its own whenever no expected-side element is non-aligned: a
+          pure insertion leaves this list empty while [differing] is positive.
+          Both lists are empty when [differing] is [0], when [spans] was
+          [false], and on the guarded path — so empty spans mean "no marks to
+          show", never "the sequences agree". *)
   actual_spans : span list;  (** As {!expected_spans}, for [actual]. *)
   differing : int;
       (** Differing elements under the element-grain alignment (the line-diff
@@ -156,8 +161,9 @@ type seq_diff = {
 }
 (** The type for element-grain comparisons of two rendered sequences. *)
 
-val sequences : expected:string -> actual:string -> seq_diff option
-(** [sequences ~expected ~actual] is the element-by-element comparison of the
+val sequences :
+  ?spans:bool -> expected:string -> actual:string -> unit -> seq_diff option
+(** [sequences ~expected ~actual ()] is the element-by-element comparison of the
     two renderings, or [None] when they do not both parse as sequence renderings
     of the same {!seq_diff.kind}.
 
@@ -165,4 +171,18 @@ val sequences : expected:string -> actual:string -> seq_diff option
     the printed values, not the witness's equality — exactly what a reader of
     the failure sees. A lossy element printer can therefore leave [differing] at
     [0] for unequal values; renderers fall back to their identical-rendering
-    explanation in that case. *)
+    explanation in that case.
+
+    [spans] (default [true]) asks for the highlight ranges. They are the
+    expensive half — a Wagner-Fischer pass over the replaced element pairs — and
+    a renderer that will not display marks (a caller taking the {!hunks} branch,
+    say) should pass [false] and read the summary fields alone.
+
+    Guarded, like {!hunks} and {!refine}, and by the same constant: the replaced
+    pairs share one [refine] cell budget for the whole call, so per-element
+    refinement cannot cost more in total than refining the payload once did.
+    Over budget, every non-aligned element is marked whole rather than some
+    pairs being refined and others not. Above an internal element count the
+    alignment itself degrades to a delete-all/insert-all block; that block is an
+    artifact of the guard rather than a computed alignment, so the result
+    carries no spans at all. *)
