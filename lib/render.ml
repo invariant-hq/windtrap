@@ -411,15 +411,15 @@ let pp_eq_detail ~ansi put ~ind ~expected ~actual ~multiline seq =
         (* Plain sinks carry the marks on their own line, under the side they
            belong to. Both sides get one: element alignment makes a pure
            deletion ordinary, and a deletion has nothing to show on the
-           actual side. *)
+           actual side. Reaching here under [ansi] means [eq_spans] found
+           nothing to mark, so both marker lines are empty anyway. *)
+        let es, as_ = match marked with Some p -> p | None -> ([], []) in
         let side label pad s spans =
           put (ind ^ st `Faint label ^ pad ^ s);
-          if not ansi then
-            match marker_line s spans with
-            | Some m -> put (ind ^ "          " ^ m)
-            | None -> ()
+          match marker_line s spans with
+          | Some m -> put (ind ^ "          " ^ m)
+          | None -> ()
         in
-        let es, as_ = match marked with Some p -> p | None -> ([], []) in
         side "expected" "  " expected es;
         side "actual" "    " actual as_
 
