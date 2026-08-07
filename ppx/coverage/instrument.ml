@@ -83,6 +83,14 @@ let has_off_attribute attributes =
             "coverage exclude_file is not allowed here.")
     false attributes
 
+(* [[@tail_mod_cons]] / [[@ocaml.tail_mod_cons]] on a binding: the calls in
+   its body sit in a position out-edge wrapping would destroy. *)
+let has_tmc_attribute attributes =
+  List.exists
+    (fun { attr_name = { txt; _ }; _ } ->
+      txt = "tail_mod_cons" || txt = "ocaml.tail_mod_cons")
+    attributes
+
 let has_exclude_file_attribute structure =
   List.exists
     (function
@@ -287,6 +295,23 @@ class instrumenter st =
        structures inherit the flag and restore it on exit. *)
     val mutable suppressed = false
 
+    (* Set while traversing the body of a [[@tail_mod_cons]] binding.
+
+       TMC rewrites calls that sit in a constructor argument of a tail
+       expression, which is a position out-edge wrapping destroys: wrapping
+       the call in [___windtrap_post_visit___] leaves the function with no
+       TMC-able call, and warning 71 is fatal under stock dune — so a
+       library with one TMC function simply fails to build under
+       [--instrument-with ppx_windtrap]. Under a non-fatal warning setting
+       it builds and the function silently becomes stack-consuming.
+
+       Out-edge points are given up inside such a body, exactly as they are
+       given up in ordinary tail position, for the same reason: Law 13 says
+       instrumentation may not change what a program means, and Law 14 makes
+       the tail guards part of the frozen model. Entry points are
+       unaffected. *)
+    val mutable in_tmc_body = false
+
     method! expression e =
       (* The [suppressed] check matters for expressions reached outside the
          [structure_item] dispatch below - module expressions such as
@@ -355,6 +380,18 @@ class instrumenter st =
                       traverse ~is_in_tail_position:true right
                   | (Pexp_send _ | Pexp_new _) when is_in_tail_position ->
                       traverse ~is_in_tail_position:true right
+                  (* Every shape below inherits tail position in its own
+                     sub-expressions, so a tail call can sit inside one.
+                     Demoting the arm to an [if] condition would traverse it
+                     with [is_in_tail_position:false] and post-wrap that
+                     call, taking it out of tail position — Stack_overflow
+                     under instrumentation only. The arm keeps its position
+                     and gives up its point, as the application case does. *)
+                  | Pexp_let _ | Pexp_letmodule _ | Pexp_letexception _
+                  | Pexp_open _ | Pexp_match _ | Pexp_try _ | Pexp_ifthenelse _
+                  | Pexp_sequence _ | Pexp_letop _
+                    when is_in_tail_position ->
+                      traverse ~is_in_tail_position:true right
                   | _ ->
                       let condition =
                         traverse ~is_in_tail_position:false right
@@ -406,7 +443,8 @@ class instrumenter st =
                 let all_arguments_labeled =
                   List.for_all (fun (label, _) -> label <> Nolabel) arguments
                 in
-                if is_in_tail_position || all_arguments_labeled then apply
+                if is_in_tail_position || in_tmc_body || all_arguments_labeled
+                then apply
                 else if is_trivial_function fn then apply
                 else begin
                   match successor with
@@ -426,7 +464,7 @@ class instrumenter st =
             | Pexp_send (obj, meth) ->
                 let obj_new = traverse ~is_in_tail_position:false obj in
                 let apply = Exp.send ~loc ~attrs obj_new meth in
-                if is_in_tail_position then apply
+                if is_in_tail_position || in_tmc_body then apply
                 else begin
                   match successor with
                   | `None -> instrument_expr ~at_end:true ~post:true apply
@@ -569,12 +607,15 @@ class instrumenter st =
                 let bindings =
                   List.map
                     (fun binding ->
-                      {
-                        binding with
-                        pvb_expr =
-                          traverse ~successor ~is_in_tail_position:false
-                            binding.pvb_expr;
-                      })
+                      let saved = in_tmc_body in
+                      if has_tmc_attribute binding.pvb_attributes then
+                        in_tmc_body <- true;
+                      let pvb_expr =
+                        traverse ~successor ~is_in_tail_position:false
+                          binding.pvb_expr
+                      in
+                      in_tmc_body <- saved;
+                      { binding with pvb_expr })
                     bindings
                 in
                 let body = traverse ~is_in_tail_position body in
@@ -732,8 +773,14 @@ class instrumenter st =
             List.map
               (fun binding ->
                 if has_off_attribute binding.pvb_attributes then binding
-                else
-                  { binding with pvb_expr = self#expression binding.pvb_expr })
+                else begin
+                  let saved = in_tmc_body in
+                  if has_tmc_attribute binding.pvb_attributes then
+                    in_tmc_body <- true;
+                  let pvb_expr = self#expression binding.pvb_expr in
+                  in_tmc_body <- saved;
+                  { binding with pvb_expr }
+                end)
               bindings
           in
           { si with pstr_desc = Pstr_value (rec_flag, bindings) }

@@ -61,6 +61,22 @@ let tests =
         check "deep tail recursion through a && right arm"
           (F.all_even 20_000_000 = true);
         check "the && arm still answers" (F.all_even 3 = false));
+    test "|| right arms that are not applications still compute" (fun () ->
+        (* The tail-call property itself is pinned on the expansion, in
+           test/coverage_ppx/fixture_cond.expected: OCaml 5 grows the main
+           fibre's stack on demand, so a lost tail call does not reliably
+           overflow here — this end-to-end check is for the results. *)
+        check "let arm" (F.or_let 3_000_000 = true);
+        check "match arm" (F.or_match 3_000_000 = true);
+        check "if arm" (F.or_if 3_000_000 = true);
+        check "try arm" (F.or_try 1_000_000 = true));
+    test "tail_mod_cons survives instrumentation" (fun () ->
+        (* If the attribute had been stripped this file would not compile;
+           if it were honoured but the call wrapped, this would overflow. *)
+        let n = 2_000_000 in
+        let xs = List.init n (fun i -> i) in
+        equal ~msg:"the TMC map is constant-stack and correct" int n
+          (List.length (F.tmc_map succ xs)));
     (* Evaluation order is untouched *)
     test "branch and guard evaluation order is untouched" (fun () ->
         let y, trace = F.order_witness true in

@@ -36,6 +36,31 @@ let rec pipe_down n = if n = 0 then 0 else n - 1 |> pipe_down
    and [&&]'s entry-sequenced right arm keeps its tail position. *)
 let rec any_odd n = if n <= 0 then false else n mod 2 = 1 || any_odd (n - 2)
 
+(* [||] right arms that are not bare applications. Each of these shapes
+   inherits tail position in its own sub-expressions, so the recursive call
+   inside is a tail call — and the arm used to be demoted to an [if]
+   condition, which traversed it out of tail position and post-wrapped the
+   call. Instrumented, these overflowed at the depths below. *)
+let rec or_let n =
+  n = 0
+  ||
+  let next = n - 1 in
+  or_let next
+
+let rec or_match n = n = 0 || match n with k -> or_match (k - 1)
+let rec or_if n = n = 0 || if n > 0 then or_if (n - 1) else false
+let rec or_try n = n = 0 || try or_try (n - 1) with Not_found -> false
+
+(* [[@tail_mod_cons]]: the recursive call sits in a constructor argument of
+   a tail expression, which is where TMC rewrites it. Out-edge wrapping
+   there leaves the function with no TMC-able call — warning 71, fatal
+   under stock dune, so an instrumented build of this file would not
+   compile at all — or, with the warning disabled, silently turns the
+   function stack-consuming. *)
+let[@tail_mod_cons] rec tmc_map f = function
+  | [] -> []
+  | x :: xs -> f x :: tmc_map f xs
+
 let rec all_even n =
   if n < 0 then false
   else if n = 0 then true

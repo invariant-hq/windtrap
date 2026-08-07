@@ -2,7 +2,7 @@
 module Windtrap_cov_________fixture_cond___ml =
   struct
     let ___windtrap_visit___ =
-      let counts = Array.make 10 0 in
+      let counts = Array.make 19 0 in
       Windtrap_coverage.register ~file:"./fixture_cond.ml"
         ~points:[|{
                     Windtrap_coverage.start_ofs = 398;
@@ -34,7 +34,47 @@ module Windtrap_cov_________fixture_cond___ml =
                                   };{
                                       Windtrap_coverage.start_ofs = 482;
                                       Windtrap_coverage.end_ofs = 493
-                                    }|] ~counts;
+                                    };{
+                                        Windtrap_coverage.start_ofs = 991;
+                                        Windtrap_coverage.end_ofs = 996
+                                      };{
+                                          Windtrap_coverage.start_ofs = 991;
+                                          Windtrap_coverage.end_ofs = 1037
+                                        };{
+                                            Windtrap_coverage.start_ofs =
+                                              1060;
+                                            Windtrap_coverage.end_ofs = 1065
+                                          };{
+                                              Windtrap_coverage.start_ofs =
+                                                1082;
+                                              Windtrap_coverage.end_ofs =
+                                                1103
+                                            };{
+                                                Windtrap_coverage.start_ofs =
+                                                  1060;
+                                                Windtrap_coverage.end_ofs =
+                                                  1103
+                                              };{
+                                                  Windtrap_coverage.start_ofs
+                                                    = 1122;
+                                                  Windtrap_coverage.end_ofs =
+                                                    1127
+                                                };{
+                                                    Windtrap_coverage.start_ofs
+                                                      = 1164;
+                                                    Windtrap_coverage.end_ofs
+                                                      = 1169
+                                                  };{
+                                                      Windtrap_coverage.start_ofs
+                                                        = 1145;
+                                                      Windtrap_coverage.end_ofs
+                                                        = 1158
+                                                    };{
+                                                        Windtrap_coverage.start_ofs
+                                                          = 1122;
+                                                        Windtrap_coverage.end_ofs
+                                                          = 1169
+                                                      }|] ~counts;
       (fun index -> Windtrap_coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =
       ___windtrap_visit___ point_index; result
@@ -63,3 +103,21 @@ let rec search p =
        if ___windtrap_post_visit___ 8 (p x)
        then (___windtrap_visit___ 7; true)
        else search p rest)
+let rec or_let n =
+  ___windtrap_visit___ 11;
+  if n = 0
+  then (___windtrap_visit___ 10; true)
+  else (let next = n - 1 in or_let next)
+let rec or_match n =
+  ___windtrap_visit___ 14;
+  if n = 0
+  then (___windtrap_visit___ 12; true)
+  else (match n with | k -> (___windtrap_visit___ 13; or_match (k - 1)))
+let rec or_if n =
+  ___windtrap_visit___ 18;
+  if n = 0
+  then (___windtrap_visit___ 15; true)
+  else
+    if n > 0
+    then (___windtrap_visit___ 17; or_if (n - 1))
+    else (___windtrap_visit___ 16; false)
