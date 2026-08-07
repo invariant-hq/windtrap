@@ -64,13 +64,28 @@ let find_sub line sub =
   in
   go 0
 
-(* [slow: <test> took <n>] — everything after [ took ] is the duration. *)
-let mask_slow_line line =
-  if String.starts_with ~prefix:"slow: " line then
-    match find_sub line " took " with
-    | Some i -> String.sub line 0 i ^ " took <duration>"
+(* The slow block's entries lead with a right-aligned duration column
+   (["  1.3ms  <path>"]); the value and the alignment padding both vary with
+   the measurement, so the column is masked whole. An entry is an indented
+   line whose first non-blank character is a digit — the verbose per-test
+   lines lead with their status tag instead, and the heading with a letter. *)
+let mask_slow_entry line =
+  let n = String.length line in
+  let rec skip_spaces i =
+    if i < n && line.[i] = ' ' then skip_spaces (i + 1) else i
+  in
+  let start = skip_spaces 0 in
+  if start < 2 || start >= n || line.[start] < '0' || line.[start] > '9' then
+    line
+  else
+    let rec gap i =
+      if i + 1 >= n then None
+      else if line.[i] = ' ' && line.[i + 1] = ' ' then Some i
+      else gap (i + 1)
+    in
+    match gap start with
+    | Some i -> "  <duration>  " ^ String.sub line (i + 2) (n - i - 2)
     | None -> line
-  else line
 
 (* Verbose per-test lines right-pad the name and end with the timing; both
    widths vary with the measured duration, so the whole tail from the
@@ -93,7 +108,7 @@ let mask_verbose_timing line =
 let mask s =
   String.concat "\n"
     (List.map
-       (fun line -> mask_verbose_timing (mask_slow_line line))
+       (fun line -> mask_verbose_timing (mask_slow_entry line))
        (String.split_on_char '\n' (mask_summary_durations s)))
 
 let scrubbed_environment extra =

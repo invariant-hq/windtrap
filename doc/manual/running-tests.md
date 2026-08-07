@@ -117,8 +117,9 @@ the summary:
 $ dune runtest
 mylib: 5 tests
 .....
-slow: reindex took 1.31s
-(mark slow tests with the "slow" tag, or set WINDTRAP_SLOW_THRESHOLD)
+slow tests (1):
+  1.31s  reindex
+(exempt with the "slow" tag, or raise --slow-threshold SECONDS)
 5 passed in 1.31s.
 ```
 

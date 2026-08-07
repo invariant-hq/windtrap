@@ -41,9 +41,10 @@ Read it top to bottom; every group is one tour stop.
   note after the last test, before the failure blocks.
 - **Failure blocks** (see section 3) — each with `file:line`, the
   source-line excerpt, and the kind-specific detail.
-- **Slow warning** — `slow: runtime › reindex … took 1.3xs` plus the
-  hint line naming the `slow` tag and `WINDTRAP_SLOW_THRESHOLD`. The
-  tagged sibling (`nightly compaction`) earns no warning.
+- **Slow warning** — a `slow tests (1):` heading, one indented entry
+  (`1.3xs  runtime › reindex …`) with the duration in its own leading
+  column, and the hint line naming the `slow` tag and the threshold
+  knob. The tagged sibling (`nightly compaction`) earns no warning.
 - **Summary** — `67 passed, 1 skipped, 1 expected failure, 31 failed
   (2 subtest failures) in …s.` and the rerun hint
   `rerun failures only: dune exec examples/x-demo/main.exe -- --failed`.

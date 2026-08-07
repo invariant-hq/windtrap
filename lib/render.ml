@@ -1211,22 +1211,40 @@ let summary_line t ~passed ~failed ~skipped ~excused ~subtests ~duration =
   end
 
 (* The slow warnings (spec: after the row and the failure blocks, before
-   the summary): one faint-yellow line per untagged test over the
-   threshold, in execution order, then one faint hint line naming the
-   opt-outs. *)
+   the summary): a labelled block in the shape of the failures block and
+   the slowest list, rather than bare lines at column zero — a heading
+   carrying the count, then one indented entry per test with the duration
+   in a right-aligned leading column, so the paths line up and the
+   durations can be read down. Slowest first: with several over the
+   threshold, the top one is the one worth acting on, and execution order
+   says nothing a reader wants here.
+
+   The hint names the interface the run actually has, like every other
+   hint — the inline runner has no CLI to offer a flag from. *)
 let slow_warnings t slow_results =
-  List.iter
-    (fun (r : Run.result) ->
-      put t
-        (st t `Faint
-           (st t `Yellow
-              (spf "slow: %s took %s"
-                 (sanitize_name (Test_tree.path_to_string r.path))
-                 (pp_duration r.duration)))))
-    slow_results;
+  let rendered =
+    List.map
+      (fun (r : Run.result) ->
+        (pp_duration r.duration, sanitize_name (Test_tree.path_to_string r.path)))
+      (List.sort
+         (fun (a : Run.result) (b : Run.result) ->
+           Float.compare b.duration a.duration)
+         slow_results)
+  in
+  (* [pp_duration] is ASCII, so byte length is display width. *)
+  let width =
+    List.fold_left (fun w (d, _) -> max w (String.length d)) 0 rendered
+  in
+  let warn s = put t (st t `Faint (st t `Yellow s)) in
+  warn (spf "slow tests (%d):" (List.length rendered));
+  List.iter (fun (d, path) -> warn (spf "  %*s  %s" width d path)) rendered;
   put t
     (st t `Faint
-       "(mark slow tests with the \"slow\" tag, or set WINDTRAP_SLOW_THRESHOLD)")
+       (match t.invocation with
+       | `Exe _ ->
+           "(exempt with the \"slow\" tag, or raise --slow-threshold SECONDS)"
+       | `Mirrors ->
+           "(exempt with the \"slow\" tag, or raise WINDTRAP_SLOW_THRESHOLD)"))
 
 let slowest t results =
   let timed =

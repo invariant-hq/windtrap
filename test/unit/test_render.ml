@@ -156,11 +156,14 @@ let expected_failures =
 |}
 
 (* The two second-plus passes are untagged in the fixture data, so they
-   earn the faint-yellow warnings and the one trailing opt-out hint. *)
+   earn the faint-yellow block and the one trailing opt-out hint. Slowest
+   first, durations right-aligned in their own column; the hint names the
+   flag because these transcripts run under an [`Exe] invocation. *)
 let expected_slow_warnings =
-  {|slow: slow › big sort took 2.50s
-slow: slow › hash took 3.00s
-(mark slow tests with the "slow" tag, or set WINDTRAP_SLOW_THRESHOLD)
+  {|slow tests (2):
+  3.00s  slow › hash
+  2.50s  slow › big sort
+(exempt with the "slow" tag, or raise --slow-threshold SECONDS)
 |}
 
 let expected_summary =
@@ -238,7 +241,7 @@ let test_quiet () =
   check_absent "quiet: no glyph row" ~sub:".FFFFFF" t;
   check_absent "quiet: no stream FAIL lines (no timings at all)" ~sub:"0.2ms" t;
   check_absent "quiet: no slowest" ~sub:"slowest tests:" t;
-  check_absent "quiet: no slow warnings" ~sub:"slow: " t;
+  check_absent "quiet: no slow warnings" ~sub:"slow tests (" t;
   check_contains "quiet: failure blocks survive"
     ~sub:"  FAIL  users › sessions after login\n" t;
   check_contains "quiet: failure rule survives" ~sub:"failures (6)" t;
@@ -273,10 +276,12 @@ let test_ansi () =
   check_contains "ansi: FAIL tag is red" ~sub:"\027[31mFAIL\027[0m" t;
   check_contains "ansi: PASS tag is green" ~sub:"\027[32mPASS\027[0m" t;
   check_absent "ansi: no marker line" ~sub:"~~~~" t;
-  check_contains "ansi: slow warning is faint yellow"
-    ~sub:"\027[2m\027[33mslow: slow › big sort took 2.50s\027[0m\027[0m" t;
+  check_contains "ansi: slow entry is faint yellow"
+    ~sub:"\027[2m\027[33m  2.50s  slow › big sort\027[0m\027[0m" t;
+  check_contains "ansi: slow heading is faint yellow"
+    ~sub:"\027[2m\027[33mslow tests (2):\027[0m\027[0m" t;
   check_contains "ansi: slow hint is faint"
-    ~sub:"\027[2m(mark slow tests with the \"slow\" tag" t;
+    ~sub:"\027[2m(exempt with the \"slow\" tag" t;
   let c = transcript ~ansi:true () in
   check_contains "ansi: pass glyph is green" ~sub:"\027[32m.\027[0m" c;
   check_contains "ansi: fail glyph is red" ~sub:"\027[31mF\027[0m" c;
@@ -666,8 +671,9 @@ let test_compact_slow_trigger () =
     ~expected:
       "s: 1 test\n\
        .\n\
-       slow: t took 1.20s\n\
-       (mark slow tests with the \"slow\" tag, or set WINDTRAP_SLOW_THRESHOLD)\n\
+       slow tests (1):\n\
+      \  1.20s  t\n\
+       (exempt with the \"slow\" tag, or raise WINDTRAP_SLOW_THRESHOLD)\n\
        1 passed in 1.2s.\n"
     ~actual:t;
   let at_threshold =
@@ -720,8 +726,7 @@ let test_slow_duration_semantics () =
   in
   check "a retried test is noteworthy on its summed duration"
     (String.starts_with ~prefix:"s: 1 test\n" t);
-  check_contains "the warning shows the summed duration"
-    ~sub:"slow: flaky took 1.20s" t;
+  check_contains "the warning shows the summed duration" ~sub:"  1.20s  flaky" t;
   (* A slow test that also fails: one block and one warning — they report
      different things — and the summary counts the failure once. *)
   let slow_fail =
@@ -738,7 +743,7 @@ let test_slow_duration_semantics () =
   check_contains "a slow failing test keeps its failure block"
     ~sub:"failures (1)" t;
   check_contains "the warning follows the blocks, before the summary"
-    ~sub:"slow: boom took 2.00s\n(mark slow tests" t;
+    ~sub:"slow tests (1):\n  2.00s  boom\n(exempt with" t;
   check_contains "the failure is counted once" ~sub:"1 failed in 2s." t;
   let occurrences ~sub s =
     let n = String.length sub in
@@ -750,7 +755,7 @@ let test_slow_duration_semantics () =
     go 0 0
   in
   check "exactly one warning line for the slow failure"
-    (occurrences ~sub:"slow: boom" t = 1)
+    (occurrences ~sub:"  2.00s  boom" t = 1)
 
 let test_slow_threshold_zero () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:5.0 in
@@ -784,7 +789,7 @@ let test_verbose_slow_warnings () =
   check_contains "verbose: header and status line stream as always"
     ~sub:"s: 1 test\n  PASS  t" t;
   check_contains "verbose: slow warning before the summary"
-    ~sub:"slow: t took 1.50s\n(mark slow tests" t;
+    ~sub:"slow tests (1):\n  1.50s  t\n(exempt with" t;
   check_contains "verbose: summary follows the hint"
     ~sub:"WINDTRAP_SLOW_THRESHOLD)\n1 passed in 1.5s.\n" t;
   let tagged_pass = { slow_pass with Run.slow_tagged = true } in
@@ -793,7 +798,8 @@ let test_verbose_slow_warnings () =
         Render.result r tagged_pass;
         Render.finish r ~results:[ tagged_pass ] ~duration:1.5 ())
   in
-  check_absent "verbose: slow-tagged tests warn nowhere" ~sub:"slow: " tagged
+  check_absent "verbose: slow-tagged tests warn nowhere" ~sub:"slow tests ("
+    tagged
 
 (* Failure projections *)
 
@@ -1872,7 +1878,7 @@ let test_name_sanitization () =
         Render.result r slow;
         Render.finish r ~results:[ slow ] ~duration:1.5 ())
   in
-  check_contains "slow warning escapes the newline" ~sub:{|slow: sl\now took|}
+  check_contains "slow warning escapes the newline" ~sub:{|  1.50s  sl\now|}
     warned;
   (* ESC is left to the ansi policy (stripped under ansi:false) — pinned in
      [test_ansi_hygiene]. *)
