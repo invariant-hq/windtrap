@@ -268,17 +268,31 @@ let load_merged ~stale files =
         | Include | Fail -> entries
         | Exclude -> List.filter (fun (_, _, v) -> v = Fresh) entries
       in
-      List.iter
-        (fun (path, _, v) ->
-          let action =
-            match stale with
-            | Exclude -> "excluding it (--stale=include overrides)"
-            | Include -> "including it anyway (--stale=include)"
-            | Fail -> "failing (--stale=fail)"
-          in
-          Printf.eprintf "windtrap coverage: %s; %s\n%!" (describe ~path v)
-            action)
+      (* Per-file detail is what a reader wants when a dump or two is
+         stale among many: it names the executable and the reason, and
+         the reader goes and looks. Forty of them is the same sentence
+         forty times, and it buries the one fact that matters — that no
+         instrumented run has happened since this build. So the detail
+         is capped; the [kept = []] branch below adds the summary and
+         the remedy, which is the case a reader reaches by simply
+         forgetting the instrumentation flag. *)
+      let detail_cap = 3 in
+      let flagged_count = List.length flagged in
+      List.iteri
+        (fun i (path, _, v) ->
+          if i < detail_cap then
+            let action =
+              match stale with
+              | Exclude -> "excluding it (--stale=include overrides)"
+              | Include -> "including it anyway (--stale=include)"
+              | Fail -> "failing (--stale=fail)"
+            in
+            Printf.eprintf "windtrap coverage: %s; %s\n%!" (describe ~path v)
+              action)
         flagged;
+      if flagged_count > detail_cap then
+        Printf.eprintf "windtrap coverage: ... and %d more like that\n%!"
+          (flagged_count - detail_cap);
       let any_stale =
         List.exists
           (fun (_, _, v) -> match v with Stale _ -> true | _ -> false)
@@ -295,11 +309,34 @@ let load_merged ~stale files =
            %!";
       if stale = Fail && flagged <> [] then Error 1
       else if kept = [] then begin
+        let orphans =
+          List.length
+            (List.filter
+               (fun (_, _, v) -> match v with Orphan _ -> true | _ -> false)
+               flagged)
+        in
+        let total = List.length flagged in
+        (* One sentence, not one per file. The commonest way to arrive
+           here is not a subtle staleness problem at all — it is running
+           the aggregate without the instrumentation flag, so the dumps
+           on disk describe binaries the current build replaced. Lead
+           with the remedy for that. *)
         Printf.eprintf
-          "windtrap coverage: every .coverage file is orphaned or stale\n\
-           Re-run the instrumented tests:\n\
+          "windtrap coverage: found %d .coverage file%s and every one is %s\n\
+          \  They were written by executables that no longer exist or have \
+           been rebuilt since.\n\
+          \  The usual cause is a build without the instrumentation flag.\n\
+           Re-run the instrumented tests, naming the backend your \
+           (instrumentation) stanza uses:\n\
           \  dune build @cover --force --instrument-with ppx_windtrap\n\
-           and delete leftovers of removed executables (or dune clean).\n";
+           (--stale=include reads them anyway; dune clean removes leftovers \
+           of deleted executables.)\n\
+           %!"
+          total
+          (if total = 1 then "" else "s")
+          (if orphans = total then "orphaned"
+           else if orphans = 0 then "stale"
+           else Printf.sprintf "stale or orphaned (%d orphaned)" orphans);
         Error 1
       end
       else

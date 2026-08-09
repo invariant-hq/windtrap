@@ -2,7 +2,16 @@
 ; shared instrumented library, two test executables each exercising
 ; their half, and the one rule that merges their .coverage dumps.
 ;
-;   dune build @examples/09-coverage-aggregation/cover --instrument-with ppx_windtrap
+;   dune build @examples/09-coverage-aggregation/example-cover \
+;     --instrument-with ppx_windtrap
+;
+; In your own project you would call this alias `cover`, which is the
+; name windtrap's inline coverage line tells readers to type and the name
+; windtrap's own root dune uses. It is `example-cover` HERE for one
+; reason: this example lives inside windtrap's tree, `@cover` is
+; recursive, and an alias called `cover` in a subdirectory would fire the
+; project aggregate a second time with a different --min every time
+; someone ran `dune build @cover` at the root.
 ;
 ; runs every stanza that is out of date, then aggregates. Plain
 ; `dune runtest` stays uninstrumented and coverage-free. (universe) is
@@ -27,9 +36,12 @@
  (libraries windtrap windtrap_example_aggregation))
 
 (rule
- (alias cover)
+ (alias example-cover)
  (deps
   (alias_rec runtest)
   (universe))
  (action
-  (run %{bin:windtrap} coverage --min 80)))
+  (setenv
+   WINDTRAP_COVERAGE_FILE
+   windtrap-reporter-self.coverage
+   (run %{bin:windtrap} coverage --min 80))))

@@ -957,7 +957,11 @@ let staleness_pass =
     ~needle:"--instrument-with" err;
   check_contains "the stale warning names the cached-run cause" ~needle:"cached"
     err;
-  check_contains "excluding everything is loud" ~needle:"orphaned or stale" err;
+  (* The summary names the count and the condition. It says which
+     condition rather than always "orphaned or stale", so the needle is
+     the part that holds for all three shapes; the orphan case below
+     pins its own wording. *)
+  check_contains "excluding everything is loud" ~needle:"and every one is" err;
   check_contains "the all-excluded remedy is a forced run"
     ~needle:"dune build @cover --force --instrument-with ppx_windtrap" err;
   let code, out, _ = coverage_cmd ~cwd:root [ "--stale=include" ] in

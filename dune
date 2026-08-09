@@ -37,13 +37,22 @@
 ; cannot run in a green suite — so chase the branches the report names,
 ; not the percentage.
 
+; WINDTRAP_COVERAGE_FILE points the REPORTER's own dump away from
+; _build/_coverage. bin/main.exe links the instrumented core, so merely
+; running `windtrap coverage` registers points and writes a dump — into
+; the very directory it just read, where it is stale from the next build
+; onwards and warns about itself forever.
+
 (rule
  (alias cover)
  (deps
   (alias_rec runtest)
   (universe))
  (action
-  (run %{bin:windtrap} coverage --min 87)))
+  (setenv
+   WINDTRAP_COVERAGE_FILE
+   windtrap-reporter-self.coverage
+   (run %{bin:windtrap} coverage --min 87))))
 
 ; Mutation has no gate and deliberately never will (Law 16e): the
 ; equivalent-mutant rate is a prediction until it is measured, so a

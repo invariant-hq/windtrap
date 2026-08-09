@@ -68,7 +68,20 @@ let scrubbed_environment extra =
   in
   Array.append
     (Array.of_list (List.filter keep (Array.to_list (Unix.environment ()))))
-    (Array.append [| "WINDTRAP_COLOR=never" |] extra)
+    (Array.append
+       [|
+         "WINDTRAP_COLOR=never";
+         (* The one driver that cannot answer this with
+            WINDTRAP_COVERAGE=off, because the coverage line IS what it
+            pins. lib/ carries an (instrumentation) stanza, so under
+            --instrument-with the runner this spawns links an
+            instrumented core and its line would report ~6900 points of
+            windtrap instead of covlib's three. Scope the child to the
+            fixture; the goldens then read the same instrumented or
+            not. *)
+         "WINDTRAP_COVERAGE_ONLY=test/ppx/inline_coverage/covlib.ml";
+       |]
+       extra)
 
 let run_once ~runner ~env ~log =
   let fd =

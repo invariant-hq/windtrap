@@ -50,6 +50,12 @@
     2
     (run
      %{ocaml_bin}/ocamlc
+     ; The golden is the compiler's diagnostic, so it must not depend on
+     ; whether the compiler felt like colourising: with -color auto the
+     ; captured bytes gain ANSI escapes under some build modes and not
+     ; others, and the diff then reports a change nobody made.
+     -color
+     never
      -stop-after
      typing
      -w

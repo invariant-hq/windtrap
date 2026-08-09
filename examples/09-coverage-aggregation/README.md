@@ -18,4 +18,9 @@ the denominator, not reported as 0%.
 One rule, once, produces it (`--min` makes the alias a CI gate; test runs
 themselves never fail on coverage):
 
-    dune build @examples/09-coverage-aggregation/cover --instrument-with ppx_windtrap
+    dune build @examples/09-coverage-aggregation/example-cover \
+      --instrument-with ppx_windtrap
+
+(In your own project you would name the alias `cover`; it is
+`example-cover` here only because this example sits inside windtrap's
+own tree, where `@cover` already means the project aggregate.)
