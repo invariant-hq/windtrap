@@ -940,6 +940,108 @@ let dump_tests =
           (not (Sys.file_exists child_file)));
   ]
 
+(* The registry as a state machine
+
+   Every test above states one fact about one call. The registry is a
+   process-global accumulator, though, and its contract is about
+   SEQUENCES: register then visit then snapshot, a file registered twice
+   with an equal table whose counts add, a point visited more than once
+   counting as visited once. Those are the shapes a table of single calls
+   cannot reach, and [stateful] is the tool for them — a drawn program of
+   calls, checked against a model, shrunk to the shortest one that
+   breaks.
+
+   Two things make the global registry testable this way. Each case mints
+   its own file-name prefix in [setup], so cases cannot see each other's
+   files; and the invariant reads the snapshot through
+   [Windtrap_coverage.filter] on that prefix, so it speaks about this
+   case's files and not about the instrumented windtrap core this
+   executable links under --instrument-with. The registry is never reset,
+   which is precisely why the scoping has to be real rather than
+   assumed. *)
+
+(* The system: this case's prefix, plus the live counts arrays the
+   runtime kept at registration — [visit] needs the very array that was
+   registered. *)
+type registry_sut = {
+  prefix : string;
+  mutable arrays : (int * int array) list; (* file index -> live counts *)
+}
+
+let registry_case = ref 0
+
+let registry_setup () =
+  incr registry_case;
+  { prefix = Printf.sprintf "stateful-%d/" !registry_case; arrays = [] }
+
+(* The model: per registered file, one flag per point. Immutable, because
+   the shrink search re-runs programs from the initial model. *)
+let visited_flags model = List.concat_map snd model
+let model_visited model = List.length (List.filter Fun.id (visited_flags model))
+let model_total model = List.length (visited_flags model)
+
+let file_of sut index = Printf.sprintf "%sf%d.ml" sut.prefix index
+
+let registry_commands =
+  [
+    (* Registering a file the model has not seen. A second registration
+       of the same file with a DIFFERENT table is dropped with a warning
+       — a different contract, pinned by its own test above — so [pre]
+       keeps the program on the modelled path. *)
+    command "register"
+      (Gen.pair (Gen.int_range 0 3) (Gen.int_range 1 4))
+      ~pre:(fun model (index, _) -> not (List.mem_assoc index model))
+      ~next:(fun model (index, points) ->
+        (index, List.init points (fun _ -> false)) :: model)
+      (fun _model (index, points) sut ->
+        let counts = Array.make points 0 in
+        let table =
+          Array.init points (fun i ->
+              { C.start_ofs = i * 10; end_ofs = (i * 10) + 9 })
+        in
+        C.register ~file:(file_of sut index) ~points:table ~counts;
+        sut.arrays <- (index, counts) :: sut.arrays);
+    (* Visiting a point of a registered file. Only legal once something
+       is registered, which is what [pre] says — and saying it is what
+       makes the generator produce visits at all rather than discarding
+       most of them. *)
+    command "visit"
+      (Gen.pair (Gen.int_range 0 3) (Gen.int_range 0 3))
+      ~pre:(fun model (index, point) ->
+        match List.assoc_opt index model with
+        | Some flags -> point < List.length flags
+        | None -> false)
+      ~next:(fun model (index, point) ->
+        List.map
+          (fun (i, flags) ->
+            if i <> index then (i, flags)
+            else (i, List.mapi (fun p f -> if p = point then true else f) flags))
+          model)
+      (fun _model (index, point) sut ->
+        match List.assoc_opt index sut.arrays with
+        | Some counts -> C.visit counts point
+        | None -> fail "the system lost a registered file the model kept");
+  ]
+
+let stateful_tests =
+  [
+    stateful "the registry accumulates what the program did"
+      ~model:[]
+      ~setup:registry_setup
+      ~invariant:(fun model sut ->
+        let scoped =
+          C.filter
+            (fun file -> String.starts_with ~prefix:sut.prefix file)
+            (C.snapshot ())
+        in
+        let summary = C.summary scoped in
+        check_int "points registered" ~expected:(model_total model)
+          ~actual:summary.C.total;
+        check_int "points visited at least once"
+          ~expected:(model_visited model) ~actual:summary.C.visited)
+      registry_commands;
+  ]
+
 (* The suite *)
 
 let () =
@@ -954,4 +1056,5 @@ let () =
       group "reports" report_tests;
       group "excerpts" excerpt_tests;
       group "dump" dump_tests;
+      group "sequences" stateful_tests;
     ]
