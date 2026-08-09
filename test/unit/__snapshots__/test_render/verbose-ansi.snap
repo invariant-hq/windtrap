@@ -1,0 +1,78 @@
+mylib: 11 tests (seed s1:7be1d2c904aa31f5)
+  [32mPASS[0m  math › addition                            [2m0.1ms[0m
+  [31mFAIL[0m  users › sessions after login               [2m0.2ms[0m
+  [31mFAIL[0m  parser › rejects empty                     [2m0.2ms[0m
+  [31mFAIL[0m  cli › cli help[2m — no baseline[0m               [2m0.3ms[0m
+  [31mFAIL[0m  cli › snapshot drift                       [2m0.2ms[0m
+  [31mFAIL[0m  geo › area non-negative                    [2m18ms[0m
+  [31mFAIL[0m  db › insert                                [2m0.2ms[0m
+  [32mPASS[0m  flaky › eventually                         [2m0.2ms (3 attempts)[0m
+  [32mPASS[0m  slow › big sort                            [2m2.50s[0m
+  [32mPASS[0m  slow › hash                                [2m3.00s[0m
+  [33mSKIP[0m  platform › windows paths[2m (unix only)[0m
+[2m──────────────────── failures (6) ────────────────────[0m
+  [31mFAIL[0m  [1musers › sessions after login[0m
+    [2mtest/test_users.ml:31[0m
+    [2mexpected[0m  [("alice", [1; 2; 3]); [32m("bob", [4])[0m]
+    [2mactual[0m    [("alice", [1; 2; 3]); [31m("bob", [4; 5])[0m; [31m("carol", [])[0m]
+    [2m── captured output (last 2 lines, 12034 earlier bytes omitted) ──[0m
+    [debug] session table resize 2 -> 4
+    [debug] carol: ghost session from pool reuse
+    full log: _build/_tests/mylib/latest/users/sessions-after-login.output
+
+  [31mFAIL[0m  [1mparser › rejects empty[0m
+    [2mtest/test_parser.ml:12[0m
+    [2mexpected exception[0m  [32mParse_error("empty")[0m
+    [2mraised            [0m  [31mNot_found[0m
+    [2mRaised at Parser.parse in file "lib/parser.ml", line 40[0m
+
+  [31mFAIL[0m  [1mcli › cli help[0m
+    [2mtest/test_cli.ml:9[0m
+    snapshot "help": no baseline at test/__snapshots__/test_cli/help.snap
+    proposed (3 lines):
+      [36m┆[0m Usage: mytool [OPTIONS] COMMAND
+      [36m┆[0m Commands:
+      [36m┆[0m   run
+    accept: dune exec test/main.exe -- -u, then review with git diff
+
+  [31mFAIL[0m  [1mcli › snapshot drift[0m
+    [2mtest/test_cli.ml:14[0m
+    snapshot "version": mismatch with test/__snapshots__/test_cli/version.snap
+    [2m@@ -1,3 +1,3 @@[0m
+      line one
+    [32m- line two[0m
+    [31m+ line 2[0m
+      line three
+    accept: dune exec test/main.exe -- -u, then review with git diff
+
+  [31mFAIL[0m  [1mgeo › area non-negative[0m
+    [2mtest/test_geo.ml:17[0m
+    counterexample (case 12, shrunk 4 steps): Rect (2, 0)
+    which failed at:
+      [2mtest/test_geo.ml:18[0m
+      [2mexpected[0m  [32mtrue[0m
+      [2mactual[0m    [31mfalse[0m
+    replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
+
+  [31mFAIL[0m  [1mdb › insert[0m
+    [2mtest/test_db.ml:21[0m
+    body exploded
+
+    [33m[teardown][0m
+    teardown exploded
+[2m──────────────────────────────────────────────────────[0m
+
+[2m[33mslow tests (2):[0m[0m
+[2m[33m  3.00s  slow › hash[0m[0m
+[2m[33m  2.50s  slow › big sort[0m[0m
+[2m(exempt with the "slow" tag, or raise --slow-threshold SECONDS)[0m
+
+4 passed, [33m1 skipped[0m, [31m6 failed[0m in 6.5s.
+
+[2mslowest tests:[0m
+[2m  3.00s  slow › hash[0m
+[2m  2.50s  slow › big sort[0m
+[2m   18ms  geo › area non-negative[0m
+[2m  0.3ms  cli › cli help[0m
+[2m  0.2ms  users › sessions after login[0m
+coverage: [32m87.2%[0m (312/358 points) · WINDTRAP_COVERAGE=report for detail

@@ -27,17 +27,13 @@ let count_occurrences ~sub s =
 
 (* Golden annotation *)
 
-let expected_annotation =
-  {|::error file=test/test_users.ml,line=31,title=Test failure%3A users › sessions after login::    test/test_users.ml:31%0A    expected  [("alice", [1; 2; 3]); ("bob", [4])]%0A                                     ~~~~~~~~~~~~%0A    actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]%0A                                     ~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~
-|}
-
 let test_golden () =
   let actual =
     Render_github.annotation
       ~path:[ "users"; "sessions after login" ]
       Fixtures.eq_failure
   in
-  check_string "golden ::error annotation" ~expected:expected_annotation ~actual
+  snapshot "annotation" actual
 
 (* Encoding *)
 

@@ -82,116 +82,16 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
    accept/replay commands, slow warnings, summary, rerun hint, slowest-5
    (verbose only), coverage line. The fixture run is noteworthy from its
    second result, so the compact transcript still opens with the header
-   and the glyph row — byte-identical to streaming from the start. *)
+   and the glyph row — byte-identical to streaming from the start.
 
-let expected_header = "mylib: 11 tests (seed s1:7be1d2c904aa31f5)\n"
+   These are snapshots, not string literals in this file. A transcript IS
+   an artifact — box-drawing rules, column alignment, a glyph row, ANSI
+   runs — and the reason to keep one is to read the diff when it changes.
+   As a literal it could only be reviewed by retyping it; as a baseline
+   under __snapshots__/ the review is `git diff` and the acceptance is
+   `dune exec test/unit/main.exe -- -u`. Read every accepted diff: this
+   is the whole of what a windtrap run prints. *)
 
-(* One glyph per fixture result: pass, six counted failures, three more
-   passes, one skip. The first pass buffers; the first counted failure
-   flushes the header and the accumulated row, then glyphs stream. *)
-let expected_glyph_row = ".FFFFFF...S\n"
-
-let expected_verbose_lines =
-  {|  PASS  math › addition                            0.1ms
-  FAIL  users › sessions after login               0.2ms
-  FAIL  parser › rejects empty                     0.2ms
-  FAIL  cli › cli help — no baseline               0.3ms
-  FAIL  cli › snapshot drift                       0.2ms
-  FAIL  geo › area non-negative                    18ms
-  FAIL  db › insert                                0.2ms
-  PASS  flaky › eventually                         0.2ms (3 attempts)
-  PASS  slow › big sort                            2.50s
-  PASS  slow › hash                                3.00s
-  SKIP  platform › windows paths (unix only)
-|}
-
-let expected_failures =
-  {|──────────────────── failures (6) ────────────────────
-  FAIL  users › sessions after login
-    test/test_users.ml:31
-    expected  [("alice", [1; 2; 3]); ("bob", [4])]
-                                     ~~~~~~~~~~~~
-    actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
-                                     ~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~
-    ── captured output (last 2 lines, 12034 earlier bytes omitted) ──
-    [debug] session table resize 2 -> 4
-    [debug] carol: ghost session from pool reuse
-    full log: _build/_tests/mylib/latest/users/sessions-after-login.output
-
-  FAIL  parser › rejects empty
-    test/test_parser.ml:12
-    expected exception  Parse_error("empty")
-    raised              Not_found
-    Raised at Parser.parse in file "lib/parser.ml", line 40
-
-  FAIL  cli › cli help
-    test/test_cli.ml:9
-    snapshot "help": no baseline at test/__snapshots__/test_cli/help.snap
-    proposed (3 lines):
-      ┆ Usage: mytool [OPTIONS] COMMAND
-      ┆ Commands:
-      ┆   run
-    accept: dune exec test/main.exe -- -u, then review with git diff
-
-  FAIL  cli › snapshot drift
-    test/test_cli.ml:14
-    snapshot "version": mismatch with test/__snapshots__/test_cli/version.snap
-    @@ -1,3 +1,3 @@
-      line one
-    - line two
-    + line 2
-      line three
-    accept: dune exec test/main.exe -- -u, then review with git diff
-
-  FAIL  geo › area non-negative
-    test/test_geo.ml:17
-    counterexample (case 12, shrunk 4 steps): Rect (2, 0)
-    which failed at:
-      test/test_geo.ml:18
-      expected  true
-      actual    false
-    replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
-
-  FAIL  db › insert
-    test/test_db.ml:21
-    body exploded
-
-    [teardown]
-    teardown exploded
-──────────────────────────────────────────────────────
-
-|}
-
-(* The two second-plus passes are untagged in the fixture data, so they
-   earn the faint-yellow block and the one trailing opt-out hint. Slowest
-   first, durations right-aligned in their own column; the hint names the
-   flag because these transcripts run under an [`Exe] invocation. *)
-let expected_slow_warnings =
-  {|slow tests (2):
-  3.00s  slow › hash
-  2.50s  slow › big sort
-(exempt with the "slow" tag, or raise --slow-threshold SECONDS)
-
-|}
-
-let expected_summary = {|4 passed, 1 skipped, 6 failed in 6.5s.
-|}
-
-(* Verbose only: the slowest list is diagnosis, not signal. *)
-let expected_slowest =
-  {|
-slowest tests:
-  3.00s  slow › hash
-  2.50s  slow › big sort
-   18ms  geo › area non-negative
-  0.3ms  cli › cli help
-  0.2ms  users › sessions after login
-|}
-
-let expected_coverage_line =
-  "coverage: 87.2% (312/358 points) · WINDTRAP_COVERAGE=report for detail\n"
-
-let expected_end = expected_failures ^ expected_slow_warnings ^ expected_summary
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
 let golden_coverage = { Run.visited = 312; total = 358; siblings = false }
@@ -200,11 +100,7 @@ let test_golden_compact () =
   let actual =
     transcript ~invocation:golden_invocation ~coverage:golden_coverage ()
   in
-  check_string "golden compact transcript (the default)"
-    ~expected:
-      (expected_header ^ expected_glyph_row ^ expected_end
-     ^ expected_coverage_line)
-    ~actual;
+  snapshot "compact" actual;
   check_absent "plain transcript has no escape codes" ~sub:"\027" actual
 
 let test_golden_verbose () =
@@ -212,12 +108,21 @@ let test_golden_verbose () =
     transcript ~mode:`Verbose ~invocation:golden_invocation
       ~coverage:golden_coverage ()
   in
-  check_string "golden verbose transcript"
-    ~expected:
-      (expected_header ^ expected_verbose_lines ^ expected_end
-     ^ expected_slowest ^ expected_coverage_line)
-    ~actual;
+  snapshot "verbose" actual;
   check_absent "plain transcript has no escape codes" ~sub:"\027" actual
+
+(* The coloured transcript, which had no golden at all: [test_ansi] pins
+   nine substrings, so every escape run BETWEEN them was unpinned — and a
+   colour bug is exactly a wrong byte next to a right one. Snapshotting
+   the whole thing costs one baseline and pins the escapes literally,
+   which is the only way to review them. *)
+let test_golden_ansi () =
+  let actual =
+    transcript ~ansi:true ~mode:`Verbose ~invocation:golden_invocation
+      ~coverage:golden_coverage ()
+  in
+  snapshot "verbose-ansi" actual;
+  check_contains "the ansi golden really is coloured" ~sub:"\027[" actual
 
 let test_coverage_line_siblings () =
   (* The sibling fact is payload, not filesystem (the driver reads it at
@@ -2398,7 +2303,7 @@ let test_mutation_report () =
   check_contains "the arm line follows the invocation"
     ~sub:
       "    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add dune runtest \
-       --instrument-with ppx_windtrap.mutate\n"
+       --force --instrument-with ppx_windtrap.mutate\n"
     (mutation_report rfc_report)
 
 let test_mutation_colors () =
@@ -2474,7 +2379,7 @@ let test_mutation_summary_forms () =
     ~sub:
       "mutants: 2 survived of 41 (this executable) \u{00b7} 37 killed, 4 \
        unreached in 1m44s (seed s1:7be1d2c904aa31f5) \u{00b7} project: dune \
-       build @mutants\n"
+       build @mutate\n"
     (mutation_report
        { rfc_report with Render.siblings = true; total = 41; killed = 37 })
 
@@ -2638,6 +2543,7 @@ let tests =
   [
     test "golden compact transcript (default)" test_golden_compact;
     test "golden verbose transcript (-v)" test_golden_verbose;
+    test "golden verbose transcript, coloured" test_golden_ansi;
     test "coverage line scopes itself on siblings" test_coverage_line_siblings;
     test "quiet mode (-q)" test_quiet;
     test "quiet green run is one line" test_quiet_green_run;

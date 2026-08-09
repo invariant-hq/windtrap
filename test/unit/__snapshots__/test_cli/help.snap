@@ -1,0 +1,72 @@
+mytests.exe - windtrap test runner
+
+usage: mytests.exe [OPTIONS] [PATTERN]
+
+A bare PATTERN runs only tests whose full path contains it (same as
+-f PATTERN). Under `dune runtest`, set options through their
+WINDTRAP_* environment mirrors instead.
+
+OPTIONS:
+  -f, --filter PATTERN          Run only tests whose path contains PATTERN
+  -e, --exclude PATTERN         Skip tests whose path contains PATTERN
+      --tag LABEL               Run only tests tagged LABEL (repeatable)
+      --exclude-tag LABEL       Skip tests tagged LABEL (repeatable)
+      --shard K/N               Run only the Kth of N deterministic path-hash buckets
+      --quick                   Skip slow-tagged tests
+      --failed                  Rerun only the last run's failures
+  -l, --list                    List selected tests without running them
+  -x, --fail-fast               Stop after the first failure (same as --bail 1)
+      --bail N                  Stop after N failures
+      --timeout SECONDS         Default per-test timeout in seconds
+      --slow-threshold SECONDS  Warn when an untagged test runs longer than SECONDS (0 disables)
+      --seed TOKEN              Root seed for property tests (s1:<16 hex>)
+      --prop-count N            Generated cases per property
+      --max-shrink N            Accepted shrink steps per failing property
+      --max-prop-count N        Ceiling on every property's case count
+      --max-discard N           Discarded cases tolerated per property (default 2x the count)
+  -u, --update                  Accept snapshot changes (refused under CI)
+      --prune                   Delete orphaned baselines after a full, clean update run
+      --strict-snapshots        Fail the run on a stale baseline left by a full, clean run
+  -s, --stream                  Stream test output instead of capturing it
+  -v, --verbose                 One status line per test
+  -q, --quiet                   Failures and summary only
+      --junit PATH              Also write a JUnit XML report to PATH
+      --color MODE              Color output: always, never or auto
+      --coverage MODE           Coverage output: summary, report, full or off
+  -o, --output DIR              Root directory for capture logs
+  -V, --version                 Print the version and exit
+  -h, --help                    Print this help and exit
+
+ENVIRONMENT:
+  WINDTRAP_FILTER            Mirror of --filter
+  WINDTRAP_EXCLUDE           Mirror of --exclude
+  WINDTRAP_TAG               Mirror of --tag
+  WINDTRAP_EXCLUDE_TAG       Mirror of --exclude-tag
+  WINDTRAP_SHARD             Mirror of --shard
+  WINDTRAP_FAILED            Mirror of --failed
+  WINDTRAP_BAIL              Mirror of --bail
+  WINDTRAP_TIMEOUT           Mirror of --timeout
+  WINDTRAP_SLOW_THRESHOLD    Mirror of --slow-threshold
+  WINDTRAP_SEED              Mirror of --seed
+  WINDTRAP_PROP_COUNT        Mirror of --prop-count
+  WINDTRAP_MAX_SHRINK        Mirror of --max-shrink
+  WINDTRAP_MAX_PROP_COUNT    Mirror of --max-prop-count
+  WINDTRAP_MAX_DISCARD       Mirror of --max-discard
+  WINDTRAP_UPDATE            Mirror of --update
+  WINDTRAP_PRUNE             Mirror of --prune
+  WINDTRAP_STRICT_SNAPSHOTS  Mirror of --strict-snapshots
+  WINDTRAP_STREAM            Mirror of --stream
+  WINDTRAP_VERBOSE           Mirror of --verbose
+  WINDTRAP_QUIET             Mirror of --quiet
+  WINDTRAP_JUNIT             Mirror of --junit
+  WINDTRAP_COLOR             Mirror of --color
+  WINDTRAP_COVERAGE          Mirror of --coverage
+  WINDTRAP_OUTPUT            Mirror of --output
+  WINDTRAP_ALLOW_FOCUS       Lift the CI guard on focused tests
+  WINDTRAP_COLUMNS           Terminal width override for reports
+  WINDTRAP_TAIL_ERRORS       Captured-output lines shown per failure
+  WINDTRAP_PROJECT_ROOT      Project root for snapshot path resolution
+  WINDTRAP_COVERAGE_ONLY     Source prefixes the coverage number covers
+  WINDTRAP_MUTATE            Mutation testing: 1, report or off
+  WINDTRAP_MUTATE_ARM        Arm one mutant, by identifier
+  WINDTRAP_MUTATE_LIMIT      Survivor blocks to print (0 for all)

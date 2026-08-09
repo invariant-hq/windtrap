@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="windtrap" tests="3" failures="3" errors="0" skipped="0" time="0.700">
+  <testsuite name="mylib" tests="3" failures="3" errors="0" skipped="0" time="0.700">
+    <testcase name="backend › contract" classname="mylib.backend" time="0.000">
+      <failure message="final check">    test/test_backend.ml:61
+    final check
+</failure>
+    </testcase>
+    <testcase name="contract › shape [0]" classname="mylib.backend" time="0.000">
+      <failure message="contract › shape [0] — expected [1; 2], got [1; 3]">    test/test_backend.ml:40
+    contract › shape [0]
+    expected  [1; 2]
+                  ~
+    actual    [1; 3]
+                  ~
+</failure>
+    </testcase>
+    <testcase name="contract › shape [2]" classname="mylib.backend" time="0.000">
+      <failure message="contract › shape [2] — expected [1; 2], got [1; 3]">    test/test_backend.ml:40
+    contract › shape [2]
+    expected  [1; 2]
+                  ~
+    actual    [1; 3]
+                  ~
+</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -323,6 +323,15 @@ let () =
 
 (* Help and usage *)
 
+(* --help is the CLI's whole user-facing surface and it had no golden:
+   the list below pins that each flag is MENTIONED, which a help text
+   could satisfy while its columns, ordering, wording and ENVIRONMENT
+   section drifted freely. The snapshot pins the bytes; the list stays,
+   because it says which flags must exist and reads as the contract. *)
+let () =
+  reg "help text, whole" @@ fun () ->
+  Windtrap.snapshot "help" (Cli.help ~prog:"/some/path/mytests.exe")
+
 let () =
   reg "help and usage text" @@ fun () ->
   let help = Cli.help ~prog:"/some/path/mytests.exe" in

@@ -37,36 +37,11 @@ let small_results =
       (Failure.Skip (Some "unix only"));
   ]
 
-let expected_small =
-  {|<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="windtrap" tests="3" failures="1" errors="0" skipped="1" time="1.234">
-  <testsuite name="mylib" tests="3" failures="1" errors="0" skipped="1" time="1.234">
-    <testcase name="math › addition" classname="mylib.math" time="0.000"/>
-    <testcase name="users › sessions after login" classname="mylib.users" time="0.000">
-      <failure message="expected [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4])], got [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4; 5]); (&quot;carol&quot;, [])]">    test/test_users.ml:31
-    expected  [("alice", [1; 2; 3]); ("bob", [4])]
-                                     ~~~~~~~~~~~~
-    actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
-                                     ~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~
-</failure>
-      <system-out>[12034 earlier bytes omitted]
-[debug] session table resize 2 -&gt; 4
-[debug] carol: ghost session from pool reuse
-
-full log: _build/_tests/mylib/latest/users/sessions-after-login.output</system-out>
-    </testcase>
-    <testcase name="platform › windows paths" classname="mylib.platform" time="0.000">
-      <skipped message="unix only"/>
-    </testcase>
-  </testsuite>
-</testsuites>
-|}
-
 let test_golden () =
   let actual =
     Render_junit.render ~suite:"mylib" ~results:small_results ~duration:1.234 ()
   in
-  check_string "golden JUnit document" ~expected:expected_small ~actual;
+  snapshot "document" actual;
   check_well_formed "golden document is well-formed" actual
 
 (* The full fixture run *)
@@ -182,44 +157,13 @@ let test_excused_as_skipped () =
 
 (* Subtests (amendment B13) *)
 
-let subtest_golden =
-  {|<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="windtrap" tests="3" failures="3" errors="0" skipped="0" time="0.700">
-  <testsuite name="mylib" tests="3" failures="3" errors="0" skipped="0" time="0.700">
-    <testcase name="backend › contract" classname="mylib.backend" time="0.000">
-      <failure message="final check">    test/test_backend.ml:61
-    final check
-</failure>
-    </testcase>
-    <testcase name="contract › shape [0]" classname="mylib.backend" time="0.000">
-      <failure message="contract › shape [0] — expected [1; 2], got [1; 3]">    test/test_backend.ml:40
-    contract › shape [0]
-    expected  [1; 2]
-                  ~
-    actual    [1; 3]
-                  ~
-</failure>
-    </testcase>
-    <testcase name="contract › shape [2]" classname="mylib.backend" time="0.000">
-      <failure message="contract › shape [2] — expected [1; 2], got [1; 3]">    test/test_backend.ml:40
-    contract › shape [2]
-    expected  [1; 2]
-                  ~
-    actual    [1; 3]
-                  ~
-</failure>
-    </testcase>
-  </testsuite>
-</testsuites>
-|}
-
 let test_subtests_as_testcases () =
   let doc =
     Render_junit.render ~suite:"mylib"
       ~results:[ Fixtures.subtest_result ]
       ~duration:0.7 ()
   in
-  check_string "subtest golden document" ~expected:subtest_golden ~actual:doc;
+  snapshot "subtests" doc;
   check_well_formed "subtest document is well-formed" doc
 
 let test_subtests_only () =
