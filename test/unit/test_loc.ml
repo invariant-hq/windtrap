@@ -108,11 +108,13 @@ let tests =
         equal ~msg:"to_string formats file:line" string "test/foo.ml:12"
           (Loc.to_string loc);
         is_true ~msg:"equal reflexive" (Loc.equal loc loc);
+        (* All three fields are load-bearing for site identity: snapshot
+           duplicate detection asks [equal] whether two checks are the same
+           site, and a field it ignored would merge distinct sites. *)
         is_false ~msg:"equal distinguishes columns"
           (Loc.equal loc (Loc.of_pos ("test/foo.ml", 12, 5, 9)));
-        is_true ~msg:"compare equal is 0" (Loc.compare loc loc = 0);
-        is_true ~msg:"compare orders by line"
-          (Loc.compare loc (Loc.of_pos ("test/foo.ml", 13, 0, 0)) < 0);
-        is_true ~msg:"compare orders by file first"
-          (Loc.compare loc (Loc.of_pos ("test/zzz.ml", 1, 0, 0)) < 0));
+        is_false ~msg:"equal distinguishes lines"
+          (Loc.equal loc (Loc.of_pos ("test/foo.ml", 13, 4, 9)));
+        is_false ~msg:"equal distinguishes files"
+          (Loc.equal loc (Loc.of_pos ("test/zzz.ml", 12, 4, 9))));
   ]

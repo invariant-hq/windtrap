@@ -104,15 +104,10 @@ let resolve ?pos () =
 
 (* Observers *)
 
+(* Not exported: nothing formats a location through [Format], and
+   [to_string] is the one spelling reports use. *)
 let pp ppf loc = Format.fprintf ppf "%s:%d" loc.file loc.line
 let to_string loc = Format.asprintf "%a" pp loc
 
 let equal a b =
   String.equal a.file b.file && a.line = b.line && a.column = b.column
-
-let compare a b =
-  let c = String.compare a.file b.file in
-  if c <> 0 then c
-  else
-    let c = Int.compare a.line b.line in
-    if c <> 0 then c else Int.compare a.column b.column

@@ -70,15 +70,11 @@ val own_unit : string -> bool
 
 (** {1:observers Observers} *)
 
-val pp : Format.formatter -> t -> unit
-(** [pp ppf loc] formats [loc] as ["file:line"] for reports. *)
-
 val to_string : t -> string
-(** [to_string loc] is {!pp} as a string. *)
+(** [to_string loc] is [loc] spelled ["file:line"] — the one form reports print
+    a location in. The column is deliberately absent: it is identity data (see
+    {!equal}), not something an editor jump needs. *)
 
 val equal : t -> t -> bool
-(** [equal a b] is structural equality, column included. *)
-
-val compare : t -> t -> int
-(** [compare a b] orders by file, then line, then column. Compatible with
-    {!equal}. *)
+(** [equal a b] is structural equality, column included — two checks on one line
+    are two distinct sites (snapshot duplicate detection turns on this). *)
