@@ -70,6 +70,12 @@ report text, so the terminal, JUnit and GitHub reports agree. Only a trailing
 run: a callback windtrap invoked keeps both itself and the frames below it, and
 a backtrace that never crossed your code is kept whole rather than emptied.
 
+**An unknown flag suggests the near miss.** `--fliter` now answers
+`unknown option '--fliter'; did you mean '--filter'?`. Transpositions count as
+one edit, since they are the typo people make; short flags get no suggestion,
+because any two of them are one edit apart and a confident wrong suggestion is
+worse than none.
+
 **An empty selection says why it is empty.** `no tests ran.` explained exit
 code 2 and nothing else, while the overwhelmingly common cause is a mistyped
 filter. It now names what narrowed the run and how many tests there were to

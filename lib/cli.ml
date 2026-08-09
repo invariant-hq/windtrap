@@ -74,14 +74,6 @@ type error =
   | Invalid_value of { source : string; value : string; expected : string }
   | Extra_positional of { filter : string; extra : string }
 
-let error_message = function
-  | Unknown_flag flag -> Pp.str "unknown option '%s'" flag
-  | Missing_value flag -> Pp.str "option '%s' requires an argument" flag
-  | Invalid_value { source; value; expected } ->
-      Pp.str "invalid value '%s' for %s: expected %s" value source expected
-  | Extra_positional { filter; extra } ->
-      Pp.str "unexpected argument '%s': the filter is already '%s'" extra filter
-
 (* The flag table *)
 
 type arg =
@@ -489,6 +481,74 @@ let table =
       mirror = None;
     };
   ]
+
+(* Did-you-mean
+
+   Damerau-Levenshtein over the long flag names, bounded. Transposition
+   counts as one edit because it is the typo people actually make:
+   plain Levenshtein scores [--juint] two from both [--junit] and
+   [--quiet], and the tie would be broken by table order.
+
+   Long names only, and only for an input that looks like one. Any two
+   short flags are one edit apart, so a suggestion for [-Z] would be
+   arbitrary — and a confident wrong suggestion is worse than none. *)
+
+let edit_distance a b =
+  let la = String.length a and lb = String.length b in
+  (* Three rows: the transposition case reads two rows back. *)
+  let rows = Array.make_matrix (la + 1) (lb + 1) 0 in
+  for i = 0 to la do
+    rows.(i).(0) <- i
+  done;
+  for j = 0 to lb do
+    rows.(0).(j) <- j
+  done;
+  for i = 1 to la do
+    for j = 1 to lb do
+      let substitution = if a.[i - 1] = b.[j - 1] then 0 else 1 in
+      let best =
+        min
+          (min (rows.(i).(j - 1) + 1) (rows.(i - 1).(j) + 1))
+          (rows.(i - 1).(j - 1) + substitution)
+      in
+      rows.(i).(j) <-
+        (if
+           i > 1 && j > 1
+           && a.[i - 1] = b.[j - 2]
+           && a.[i - 2] = b.[j - 1]
+         then min best (rows.(i - 2).(j - 2) + 1)
+         else best)
+    done
+  done;
+  rows.(la).(lb)
+
+let nearest_flag flag =
+  if not (String.starts_with ~prefix:"--" flag) then None
+  else
+    (* A third of the name, floor two: beyond that it is a different word,
+       not a slip. *)
+    let budget = max 2 (String.length flag / 3) in
+    let closer best entry =
+      let d = edit_distance flag entry.long in
+      match best with
+      | Some (_, best_d) when best_d <= d -> best
+      | _ when d <= budget -> Some (entry.long, d)
+      | _ -> best
+    in
+    Option.map fst (List.fold_left closer None table)
+
+let error_message = function
+  | Unknown_flag flag -> (
+      let base = Pp.str "unknown option '%s'" flag in
+      match nearest_flag flag with
+      | Some name -> Pp.str "%s; did you mean '%s'?" base name
+      | None -> base)
+  | Missing_value flag -> Pp.str "option '%s' requires an argument" flag
+  | Invalid_value { source; value; expected } ->
+      Pp.str "invalid value '%s' for %s: expected %s" value source expected
+  | Extra_positional { filter; extra } ->
+      Pp.str "unexpected argument '%s': the filter is already '%s'" extra filter
+
 
 (* Environment settings with no flag, listed by --help. *)
 let env_only =

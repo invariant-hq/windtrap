@@ -183,6 +183,39 @@ let () =
 (* Parsing: typed errors *)
 
 let () =
+  reg "unknown flags suggest the near miss" @@ fun () ->
+  let message args =
+    match parse args with
+    | Ok _ -> fail "expected a parse error"
+    | Error e -> Cli.error_message e
+  in
+  let suggests typo expected =
+    let m = message [ typo ] in
+    check
+      (Printf.sprintf "%s should suggest %s, got: %s" typo expected m)
+      (contains (Printf.sprintf "did you mean '%s'?" expected) m)
+  in
+  suggests "--fliter" "--filter";
+  suggests "--colour" "--color";
+  suggests "--tags" "--tag";
+  (* Transposition is one edit, not two: plain Levenshtein ties --juint
+     between --junit and --quiet, and the tie goes to table order. *)
+  suggests "--juint" "--junit";
+  let silent typo =
+    let m = message [ typo ] in
+    check
+      (Printf.sprintf "%s should suggest nothing, got: %s" typo m)
+      (not (contains "did you mean" m))
+  in
+  (* Too far to be a slip. *)
+  silent "--completely-different";
+  (* Any two short flags are one edit apart, so any suggestion would be
+     arbitrary; a confident wrong one is worse than none. *)
+  silent "-Z";
+  check "the bare error is still there"
+    (contains "unknown option '-Z'" (message [ "-Z" ]))
+
+let () =
   reg "typed parse errors" @@ fun () ->
   expect_error "unknown long flag" [ "--bogus" ] (function
     | Cli.Unknown_flag "--bogus" -> true
