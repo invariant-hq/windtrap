@@ -1667,6 +1667,91 @@ let () =
       check "flush clears the corrections table"
         (Ppx_runtime.flush_corrections () = []))
 
+(* reset: the seam every scenario above leans on *)
+
+(* Totality is a compile-time property: the runtime holds its state in one
+   record and [reset] assigns a fresh initial value — a record literal that
+   would not compile with a field left out — so no field can escape the
+   reset, and no test can watch one that has no seam. What is worth pinning
+   is the observable half, the cross-test contamination a hand-maintained
+   [reset] used to risk: whatever a synthetic suite leaves behind must be
+   invisible to the next one.
+
+   The rest is pinned above or has no seam here: a surviving styled
+   registry breaks the correction goldens and a surviving reach pool turns
+   the next scenario's plain correction into a CR block; the protocol's
+   runner mode, library name and [-list-partitions] flag are read only by
+   [exit], which terminates the process; and the executing-body slot is
+   [None] at rest on every path — the body wrapper restores it under
+   [Fun.protect]. *)
+let () =
+  let source = {x|let%expect_test "t" =
+  p ();
+  [%expect {| x |}]@END
+|x} in
+  let nodes =
+    [
+      node_of source ~id:0 ~node_text:"[%expect {| x |}]"
+        ~payload:("{| x |}", " x ", Ppx_runtime.Tag "")
+        ();
+    ]
+  in
+  (* Dirty everything a suite can dirty: a recorded correction with its
+     styled node and a covered path (the run), then a partition filter,
+     [init]'s once-guard, a name counter past 1, and an unclosed group. *)
+  let dirty =
+    run_scenario ~source ~nodes ~name:"t" (fun () ->
+        print_string "y";
+        Ppx_runtime.expect ~id:0)
+  in
+  check "reset fixture: the run recorded a correction" (dirty.corrected <> None);
+  check_int "reset fixture: the correction covers the failure" ~expected:0
+    ~actual:dirty.exit_code;
+  let nop () = () in
+  Ppx_runtime.init
+    [| "runner"; "inline-test-runner"; "lib"; "-partition"; "nowhere.ml" |];
+  Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
+  Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
+  Ppx_runtime.enter_group ~file ~tags:[] "unclosed";
+  Ppx_runtime.reset ();
+  check "reset forgets the partitions seen" (Ppx_runtime.partitions () = []);
+  check "reset clears the recorded corrections"
+    (Ppx_runtime.corrected_source ~file ~source = None);
+  (* One collect settles four fields at once — and it has to be the first
+     one after the reset, since [collect] clears the name counters itself.
+     A surviving group stack raises, a surviving registration shows up
+     beside "dup", a surviving name counter renames it "dup (3)", and a
+     surviving [-partition] filters it out entirely. *)
+  Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
+  check "reset drops the registry: groups, tests, name counters, partition"
+    (match Test_tree.flatten (Ppx_runtime.collect ()) with
+    | cases ->
+        List.map
+          (fun case -> Test_tree.path_to_string case.Test_tree.path)
+          cases
+        = [ "Scratch_ppx › dup" ]
+    | exception Invalid_argument _ -> false);
+  (* A stale covered path is the dangerous leak: it would tell
+     [inline_exit_code] that a failure it knows nothing about is a
+     promotable correction. Nothing records coverage for a [let%test], so a
+     plain failing test under the path the run above covered must exit with
+     the failure's own code. *)
+  Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "t" (fun () ->
+      failwith "boom");
+  let tests = Ppx_runtime.collect () in
+  with_temp_root (fun log_dir ->
+      match
+        Runner.execute ~config:(base_config ~log_dir ()) ~suite:"ppxrt" tests
+      with
+      | Error _ -> check "reset clears the covered paths" false
+      | Ok outcome ->
+          check_int "reset clears the covered paths" ~expected:1
+            ~actual:(Ppx_runtime.inline_exit_code outcome));
+  (* init's once-guard is cleared, so a fresh vector takes effect. *)
+  Ppx_runtime.init [| "runner"; "-partition"; "elsewhere.ml" |];
+  Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
+  check "reset clears init's once-guard" (Ppx_runtime.collect () = [])
+
 (* The ambient config module *)
 
 let () =

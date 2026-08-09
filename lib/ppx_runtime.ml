@@ -15,42 +15,10 @@
 
 (* Captured eagerly at module load, before any test runs: tests may chdir,
    and .corrected files must land where dune's diff action looks — next to
-   the copied source in the sandbox, the cwd the runner started in. *)
+   the copied source in the sandbox, the cwd the runner started in. It is
+   deliberately not part of [state] below: the module-load cwd is a fact
+   about the process, not run state, and [reset] must leave it standing. *)
 let initial_dir = Sys.getcwd ()
-
-(* Protocol state *)
-
-let initialized = ref false
-let am_test_runner = ref false
-let current_lib = ref None
-let partition = ref None
-let list_partitions_only = ref false
-
-let init argv =
-  if !initialized then ()
-  else begin
-    initialized := true;
-    let rec parse = function
-      | [] -> ()
-      | "inline-test-runner" :: lib :: rest ->
-          am_test_runner := true;
-          current_lib := Some lib;
-          parse rest
-      | "-partition" :: name :: rest ->
-          partition := Some name;
-          parse rest
-      | "-list-partitions" :: rest ->
-          list_partitions_only := true;
-          parse rest
-      | ("-source-tree-root" | "-diff-cmd") :: _value :: rest ->
-          (* Protocol arguments windtrap does not use: the value is consumed
-             (it may itself look like a flag — dune passes [-diff-cmd -])
-             and ignored. *)
-          parse rest
-      | _ :: rest -> parse rest
-    in
-    parse (Array.to_list argv)
-  end
 
 (* Locations and nodes *)
 
@@ -71,7 +39,11 @@ let loc_t ~file loc = { Loc.file; line = loc.line; column = column loc }
 let pos_of ~file loc : Loc.pos =
   (file, loc.line, column loc, loc.end_pos - loc.start_bol)
 
-(* Registration *)
+(* Run state *)
+
+(* The shapes the state is made of, gathered ahead of it so that it can be
+   one value; the code that builds and consumes each lives in its own
+   section below. *)
 
 module String_set = Set.Make (String)
 
@@ -84,12 +56,134 @@ type group_frame = {
   mutable children : Test_tree.t list;
 }
 
-let group_stack : group_frame list ref = ref []
-let top_level : (string * Test_tree.t) list ref = ref []
-let partitions_seen = ref String_set.empty
+(* A styled node: everything the writer needs to re-render one expect
+   node of a corrected file. Registered when the node's test resolves
+   (skips never register). *)
+type snode = {
+  s_kind : node_kind;
+  s_span : int * int;
+  s_col : int;
+  s_delim : delimiter;
+  s_shorthand : bool;
+  s_contents : string; (* original payload contents; "" when bare *)
+}
+
+type correction =
+  | Node_fix of string (* corrected contents for the node at this span *)
+  | Insert of { body_loc : loc; body_wrap : int option; contents : string }
+(* a trailing node inserted at the trailing point, plus the ";" at
+   [body_loc]'s end *)
+
+type correction_key =
+  | Node_key of int * int (* node span *)
+  | Insert_key of int (* trailing point *)
+
+type mismatch = { formatted : string; shown : string }
+type reach_result = Pass | Fail of mismatch
+
+(* One reach of a node: the sanitized output it consumed and the reconciled
+   result. [raw] is kept because the multiple-outputs CR block lists every
+   reach's raw output (ppx_expect's shape). *)
+type reach = { raw : string; result : reach_result }
+
+type expect_ctx = {
+  ctx_file : string;
+  ctx_sanitize : string -> string;
+  ctx_nodes : node array;
+  ctx_results : reach list array; (* per node id, reverse reach order *)
+  ctx_body_loc : loc;
+  ctx_body_wrap : int option;
+  ctx_trailing_loc : loc;
+}
+
+(* All the state this module keeps between calls, in one value.
+
+   Module-global it has to be: the generated module initializers register
+   as the test library loads, before any run record exists (see the .mli).
+   One value it has to be for [reset]'s sake — [reset] is the single
+   assignment [state := initial_state ()], and because [initial_state] is
+   a record literal a field added later cannot compile without an initial
+   value there, so no field can quietly escape the reset. Nothing outside
+   this record holds a piece of it: every use reaches the tables through
+   [!state], so replacing the record replaces them all. *)
+type state = {
+  (* Protocol: parsed by [init] out of the runner's argv, read by [exit]. *)
+  mutable initialized : bool; (* [init]'s once-guard *)
+  mutable am_test_runner : bool;
+  mutable current_lib : string option;
+  mutable partition : string option;
+  mutable list_partitions_only : bool;
+  (* Registration: filled by the generated module initializers, drained by
+     [collect]. [top_names] counts a file's top-level sibling names, for
+     duplicate renaming; a group's siblings are counted in its own frame. *)
+  mutable group_stack : group_frame list;
+  mutable top_level : (string * Test_tree.t) list;
+  mutable partitions_seen : String_set.t;
+  top_names : (string * string, int ref) Hashtbl.t;
+  (* Recorded while tests run. *)
+  corrections : (string, (correction_key, correction) Hashtbl.t) Hashtbl.t;
+  styled : (string, (int * int, snode) Hashtbl.t) Hashtbl.t;
+      (* per file: every node of a resolved expect test, span-keyed *)
+  node_pool : (string * int * int, reach list ref) Hashtbl.t;
+      (* merged reach histories, keyed (file, node span) *)
+  covered : (string list, bool) Hashtbl.t;
+      (* paths of failed tests whose failures are all corrected *)
+  mutable current_expect : expect_ctx option; (* the executing body, if any *)
+}
+
+let initial_state () : state =
+  {
+    initialized = false;
+    am_test_runner = false;
+    current_lib = None;
+    partition = None;
+    list_partitions_only = false;
+    group_stack = [];
+    top_level = [];
+    partitions_seen = String_set.empty;
+    top_names = Hashtbl.create 16;
+    corrections = Hashtbl.create 16;
+    styled = Hashtbl.create 16;
+    node_pool = Hashtbl.create 16;
+    covered = Hashtbl.create 16;
+    current_expect = None;
+  }
+
+let state = ref (initial_state ())
+
+(* Protocol arguments *)
+
+let init argv =
+  if !state.initialized then ()
+  else begin
+    !state.initialized <- true;
+    let rec parse = function
+      | [] -> ()
+      | "inline-test-runner" :: lib :: rest ->
+          !state.am_test_runner <- true;
+          !state.current_lib <- Some lib;
+          parse rest
+      | "-partition" :: name :: rest ->
+          !state.partition <- Some name;
+          parse rest
+      | "-list-partitions" :: rest ->
+          !state.list_partitions_only <- true;
+          parse rest
+      | ("-source-tree-root" | "-diff-cmd") :: _value :: rest ->
+          (* Protocol arguments windtrap does not use: the value is consumed
+             (it may itself look like a flag — dune passes [-diff-cmd -])
+             and ignored. *)
+          parse rest
+      | _ :: rest -> parse rest
+    in
+    parse (Array.to_list argv)
+  end
+
+(* Registration *)
 
 let note_partition file =
-  partitions_seen := String_set.add (Filename.basename file) !partitions_seen
+  !state.partitions_seen <-
+    String_set.add (Filename.basename file) !state.partitions_seen
 
 let module_name_of_file file =
   let base = Filename.basename file in
@@ -104,9 +198,9 @@ let module_name_of_file file =
    instantiated twice registers the same name and location twice.
    ppx_expect runs both; windtrap's runner requires unique full paths, so
    later duplicates get a " (2)", " (3)", … suffix — deterministic in
-   registration order — and both run. *)
-let top_names : (string * string, int ref) Hashtbl.t = Hashtbl.create 16
-
+   registration order — and both run. Top-level names are counted per
+   (module, name) in [state.top_names]; a group's siblings are counted in
+   the frame's own table, so the scopes cannot collide. *)
 let uniquify tbl key_of name =
   let rec fresh name =
     match Hashtbl.find_opt tbl (key_of name) with
@@ -120,13 +214,14 @@ let uniquify tbl key_of name =
   fresh name
 
 let scoped_name ~file name =
-  match !group_stack with
-  | [] -> uniquify top_names (fun n -> (module_name_of_file file, n)) name
+  match !state.group_stack with
+  | [] ->
+      uniquify !state.top_names (fun n -> (module_name_of_file file, n)) name
   | frame :: _ -> uniquify frame.group_names (fun n -> n) name
 
 let register ~file tree =
-  match !group_stack with
-  | [] -> top_level := (file, tree) :: !top_level
+  match !state.group_stack with
+  | [] -> !state.top_level <- (file, tree) :: !state.top_level
   | frame :: _ -> frame.children <- tree :: frame.children
 
 let add_test ~file ~loc ~tags name fn =
@@ -137,7 +232,7 @@ let add_test ~file ~loc ~tags name fn =
 let enter_group ~file ~tags name =
   note_partition file;
   let name = scoped_name ~file name in
-  group_stack :=
+  !state.group_stack <-
     {
       group_name = name;
       group_tags = tags;
@@ -145,13 +240,13 @@ let enter_group ~file ~tags name =
       group_names = Hashtbl.create 8;
       children = [];
     }
-    :: !group_stack
+    :: !state.group_stack
 
 let leave_group () =
-  match !group_stack with
+  match !state.group_stack with
   | [] -> invalid_arg "Ppx_runtime.leave_group: no group is open"
   | frame :: rest ->
-      group_stack := rest;
+      !state.group_stack <- rest;
       register ~file:frame.group_file
         (Test_tree.group ~tags:frame.group_tags frame.group_name
            (List.rev frame.children))
@@ -159,13 +254,13 @@ let leave_group () =
 (* Partition filtering happens at collection, not registration: init — which
    sets the partition — runs after the test modules have loaded. *)
 let collect () =
-  if !group_stack <> [] then
+  if !state.group_stack <> [] then
     invalid_arg "Ppx_runtime.collect: a module%test group was never closed";
-  let entries = List.rev !top_level in
-  top_level := [];
-  Hashtbl.reset top_names;
+  let entries = List.rev !state.top_level in
+  !state.top_level <- [];
+  Hashtbl.reset !state.top_names;
   let entries =
-    match !partition with
+    match !state.partition with
     | None -> entries
     | Some wanted ->
         List.filter
@@ -189,7 +284,7 @@ let collect () =
     (fun name -> Test_tree.group name (List.rev !(Hashtbl.find by_module name)))
     !order
 
-let partitions () = String_set.elements !partitions_seen
+let partitions () = String_set.elements !state.partitions_seen
 
 (* Normalization (ppx_expect's pretty-payload pipeline) *)
 
@@ -399,18 +494,6 @@ let render_quote_node ~name ~col contents =
     Buffer.contents buf
   end
 
-(* A styled node: everything the writer needs to re-render one expect
-   node of a corrected file. Registered when the node's test resolves
-   (skips never register). *)
-type snode = {
-  s_kind : node_kind;
-  s_span : int * int;
-  s_col : int;
-  s_delim : delimiter;
-  s_shorthand : bool;
-  s_contents : string; (* original payload contents; "" when bare *)
-}
-
 let render_node sn contents =
   let name = extension_name sn.s_kind in
   match (sn.s_shorthand, sn.s_delim) with
@@ -447,29 +530,17 @@ let snode_of ~file:_ node =
 
 (* The corrections table *)
 
-(* Everything recorded while tests run, keyed so that a node reached by
-   several registrations of the same test (functor instantiation) has one
-   slot that later resolutions replace, never duplicate. *)
-
-type correction =
-  | Node_fix of string (* corrected contents for the node at this span *)
-  | Insert of { body_loc : loc; body_wrap : int option; contents : string }
-(* a trailing node inserted at the trailing point, plus the ";" at
-   [body_loc]'s end *)
-
-type correction_key =
-  | Node_key of int * int (* node span *)
-  | Insert_key of int (* trailing point *)
-
-let corrections : (string, (correction_key, correction) Hashtbl.t) Hashtbl.t =
-  Hashtbl.create 16
+(* Everything recorded while tests run is keyed by [correction_key] so
+   that a node reached by several registrations of the same test (functor
+   instantiation) has one slot that later resolutions replace, never
+   duplicate. *)
 
 let file_corrections file =
-  match Hashtbl.find_opt corrections file with
+  match Hashtbl.find_opt !state.corrections file with
   | Some tbl -> tbl
   | None ->
       let tbl = Hashtbl.create 8 in
-      Hashtbl.add corrections file tbl;
+      Hashtbl.add !state.corrections file tbl;
       tbl
 
 let record_node_fix ~file node ~contents =
@@ -481,18 +552,15 @@ let record_insert ~file ~body_loc ~body_wrap ~trailing_loc ~contents =
   Hashtbl.replace (file_corrections file) (Insert_key trailing_loc.start_pos)
     (Insert { body_loc; body_wrap; contents })
 
-(* Styled nodes per file: every node of a resolved expect test, span-keyed.
-   Only consulted for files that also have recorded corrections. *)
-let styled : (string, (int * int, snode) Hashtbl.t) Hashtbl.t =
-  Hashtbl.create 16
-
+(* [state.styled] is only consulted for files that also have recorded
+   corrections. *)
 let register_styled ~file node =
   let tbl =
-    match Hashtbl.find_opt styled file with
+    match Hashtbl.find_opt !state.styled file with
     | Some tbl -> tbl
     | None ->
         let tbl = Hashtbl.create 16 in
-        Hashtbl.add styled file tbl;
+        Hashtbl.add !state.styled file tbl;
         tbl
   in
   let sn = snode_of ~file node in
@@ -512,7 +580,7 @@ let render_insert ~body_loc contents =
   else "\n" ^ spaces node_col ^ "[%expect " ^ payload ^ "]"
 
 let corrected_source ~file ~source =
-  match Hashtbl.find_opt corrections file with
+  match Hashtbl.find_opt !state.corrections file with
   | None -> None
   | Some tbl when Hashtbl.length tbl = 0 -> None
   | Some tbl ->
@@ -526,7 +594,7 @@ let corrected_source ~file ~source =
       (* Corrected nodes and, in the same corrected file, every other
          resolved node whose standardized rendering differs from its
          source — the style pass ppx_expect's corpus goldens include. *)
-      (match Hashtbl.find_opt styled file with
+      (match Hashtbl.find_opt !state.styled file with
       | None -> ()
       | Some nodes ->
           Hashtbl.iter
@@ -555,7 +623,7 @@ let corrected_source ~file ~source =
           match (key, correction) with
           | Node_key (start, stop), Node_fix contents ->
               if
-                match Hashtbl.find_opt styled file with
+                match Hashtbl.find_opt !state.styled file with
                 | Some nodes -> not (Hashtbl.mem nodes (start, stop))
                 | None -> true
               then
@@ -648,7 +716,9 @@ let read_file path =
    diff). Returns the written target names and the failed sources. *)
 let flush_corrections_report () =
   Sys.chdir initial_dir;
-  let files = Hashtbl.fold (fun file _ acc -> file :: acc) corrections [] in
+  let files =
+    Hashtbl.fold (fun file _ acc -> file :: acc) !state.corrections []
+  in
   let written = ref [] and failed = ref [] in
   List.iter
     (fun file ->
@@ -672,18 +742,19 @@ let flush_corrections_report () =
             reason;
           failed := file :: !failed)
     (List.sort compare files);
-  Hashtbl.reset corrections;
-  Hashtbl.reset styled;
+  (* Cleared in place, not by a fresh [state]: this is the flush's own
+     partial clear — the run's other state (reach pools, covered paths,
+     protocol) outlives it. *)
+  Hashtbl.reset !state.corrections;
+  Hashtbl.reset !state.styled;
   (List.rev !written, List.rev !failed)
 
 let flush_corrections () = fst (flush_corrections_report ())
 
 (* Coverage of failures by corrections (the exit protocol) *)
 
-(* Paths of failed tests whose every failure is an expect mismatch with a
-   recorded correction. Read by [inline_exit_code]. *)
-let covered : (string list, bool) Hashtbl.t = Hashtbl.create 16
-
+(* [state.covered] holds the paths of failed tests whose every failure is
+   an expect mismatch with a recorded correction. *)
 let inline_exit_code (outcome : Runner.outcome) =
   match outcome.Runner.exit_code with
   | 0 -> 0
@@ -698,7 +769,8 @@ let inline_exit_code (outcome : Runner.outcome) =
           (Run.results outcome.Runner.run)
       in
       let is_covered result =
-        Option.value ~default:false (Hashtbl.find_opt covered result.Run.path)
+        Option.value ~default:false
+          (Hashtbl.find_opt !state.covered result.Run.path)
       in
       if
         failed <> []
@@ -739,54 +811,31 @@ let correction_notice ~exit_code written =
 
 (* Expect-test execution *)
 
-type mismatch = { formatted : string; shown : string }
-type reach_result = Pass | Fail of mismatch
-
-(* One reach of a node: the sanitized output it consumed and the reconciled
-   result. [raw] is kept because the multiple-outputs CR block lists every
-   reach's raw output (ppx_expect's shape). *)
-type reach = { raw : string; result : reach_result }
-
-(* Merged reaches across every registration of the same node — a functor
-   containing an expect test instantiated twice registers its nodes twice
-   at the same span; ppx_expect accumulates both instances' results in one
-   per-location slot and corrects from the merged history. Keys are
-   (file, span); values are chronological. Bodies buffer reaches locally
-   and publish here only at resolution, so a skipped body's reaches are
-   never merged. *)
-let node_pool : (string * int * int, reach list ref) Hashtbl.t =
-  Hashtbl.create 16
-
-(* Pools store newest-first; [reaches] arrives chronological. *)
+(* [state.node_pool] merges reaches across every registration of the same
+   node — a functor containing an expect test instantiated twice registers
+   its nodes twice at the same span; ppx_expect accumulates both instances'
+   results in one per-location slot and corrects from the merged history.
+   Keys are (file, span); values are chronological. Bodies buffer reaches
+   locally and publish here only at resolution, so a skipped body's reaches
+   are never merged. Pools store newest-first; [reaches] arrives
+   chronological. *)
 let pool_publish key reaches =
-  match Hashtbl.find_opt node_pool key with
+  match Hashtbl.find_opt !state.node_pool key with
   | Some existing -> existing := List.rev_append reaches !existing
-  | None -> Hashtbl.add node_pool key (ref (List.rev reaches))
+  | None -> Hashtbl.add !state.node_pool key (ref (List.rev reaches))
 
 let pool_get key =
-  match Hashtbl.find_opt node_pool key with
+  match Hashtbl.find_opt !state.node_pool key with
   | Some reaches -> List.rev !reaches
   | None -> []
-
-type expect_ctx = {
-  ctx_file : string;
-  ctx_sanitize : string -> string;
-  ctx_nodes : node array;
-  ctx_results : reach list array; (* per node id, reverse reach order *)
-  ctx_body_loc : loc;
-  ctx_body_wrap : int option;
-  ctx_trailing_loc : loc;
-}
 
 let node_key ctx node = (ctx.ctx_file, node.loc.start_pos, node.loc.end_pos)
 
 let trailing_key ctx =
   (ctx.ctx_file, ctx.ctx_trailing_loc.start_pos, -1 (* not a node span *))
 
-let current_expect : expect_ctx option ref = ref None
-
 let require_ctx op =
-  match !current_expect with
+  match !state.current_expect with
   | Some ctx -> ctx
   | None ->
       invalid_arg
@@ -959,8 +1008,8 @@ let had_problems ctx =
 
 let record_covered value =
   let path = Run.path (Run.current_frame ()) in
-  if value = `No_problem then Hashtbl.remove covered path
-  else Hashtbl.replace covered path (value = `Covered)
+  if value = `No_problem then Hashtbl.remove !state.covered path
+  else Hashtbl.replace !state.covered path (value = `Covered)
 
 (* Trailing output, resolved like a node against the merged history: an
    instance with no trailing output is a passing reach, so a functor whose
@@ -1035,8 +1084,8 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
       ctx_trailing_loc = trailing_loc;
     }
   in
-  let saved = !current_expect in
-  current_expect := Some ctx;
+  let saved = !state.current_expect in
+  !state.current_expect <- Some ctx;
   (* Every expect failure is recorded below, after the body returns
      ([resolve_trailing]/[resolve_nodes]). So anything the frame gains
      during the body is something else — and [Run.subtest] records a
@@ -1048,7 +1097,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
   let frame = Run.current_frame () in
   let failures_before = List.length (Run.failures frame) in
   Fun.protect
-    ~finally:(fun () -> current_expect := saved)
+    ~finally:(fun () -> !state.current_expect <- saved)
     (fun () ->
       match run body with
       | () ->
@@ -1153,14 +1202,14 @@ let run_inline_suite ~suite ~config ~coverage_mode tests =
       code
 
 let exit () =
-  if not !am_test_runner then Stdlib.exit 0;
-  if !list_partitions_only then begin
+  if not !state.am_test_runner then Stdlib.exit 0;
+  if !state.list_partitions_only then begin
     List.iter print_endline (partitions ());
     Stdlib.exit 0
   end;
   let tests = collect () in
   if tests = [] then Stdlib.exit 0;
-  let suite = Option.value ~default:"inline tests" !current_lib in
+  let suite = Option.value ~default:"inline tests" !state.current_lib in
   match Cli.resolve Cli.empty with
   | Error error ->
       prerr_endline (Cli.error_message error);
@@ -1178,18 +1227,7 @@ let exit () =
 
 (* Test seams *)
 
-let reset () =
-  initialized := false;
-  am_test_runner := false;
-  current_lib := None;
-  partition := None;
-  list_partitions_only := false;
-  group_stack := [];
-  top_level := [];
-  Hashtbl.reset top_names;
-  partitions_seen := String_set.empty;
-  Hashtbl.reset corrections;
-  Hashtbl.reset styled;
-  Hashtbl.reset node_pool;
-  Hashtbl.reset covered;
-  current_expect := None
+(* Total by construction: [initial_state] is a record literal, so every
+   field of [state] — present and future — is given a fresh initial value
+   here. [initial_dir] is not state and is deliberately untouched. *)
+let reset () = state := initial_state ()

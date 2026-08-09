@@ -358,7 +358,15 @@ val correction_notice : exit_code:int -> string list -> string option
 (** {1:seams Test seams} *)
 
 val reset : unit -> unit
-(** [reset ()] clears all registration, partition, correction, and protocol
-    state, including {!init}'s once-guard — for this module's own test suite,
-    which registers synthetic suites repeatedly in one process. Never called by
-    generated code. *)
+(** [reset ()] restores {e every} piece of state this module keeps between calls
+    to its module-load value — registrations and open groups, the partitions
+    seen, the duplicate-name counters, recorded corrections and the nodes
+    {!corrected_source} re-renders with them, the merged per-node reach
+    histories, the covered paths {!inline_exit_code} reads, and the protocol
+    arguments including {!init}'s once-guard. The clearing is total by
+    construction, not by enumeration: the runtime holds that state in a single
+    record and [reset] assigns a fresh one. The module-load cwd is not run state
+    and survives (see {!flush_corrections}).
+
+    For this module's own test suite, which registers synthetic suites
+    repeatedly in one process. Never called by generated code. *)
