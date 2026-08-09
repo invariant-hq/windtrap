@@ -13,54 +13,102 @@ module Windtrap_mut_________fixture_chain___ml =
     let ___windtrap_armed___ =
       Windtrap_mutate.register ~file:"./fixture_chain.ml"
         ~sites:[|{
-                   line = 16;
+                   line = 19;
                    col = 18;
                    rewrite = "sub";
-                   span = (790, 799);
+                   span = (1036, 1045);
                    before = "(a + b) + c";
                    after = "(a + b) - c";
                    dismissed = None
                  };{
-                     line = 17;
+                     line = 20;
                      col = 18;
                      rewrite = "add";
-                     span = (818, 827);
+                     span = (1064, 1073);
                      before = "(a - b) - c";
                      after = "(a - b) + c";
                      dismissed = None
                    };{
-                       line = 18;
+                       line = 21;
                        col = 19;
                        rewrite = "fsub";
-                       span = (847, 858);
+                       span = (1093, 1104);
                        before = "(a +. b) +. c";
                        after = "(a +. b) -. c";
                        dismissed = None
                      };{
                          line = 22;
-                         col = 18;
-                         rewrite = "add";
-                         span = (996, 1005);
-                         before = "(a + b) - c";
-                         after = "(a + b) + c";
+                         col = 25;
+                         rewrite = "or";
+                         span = (1130, 1136);
+                         before = "b && c";
+                         after = "b || c";
                          dismissed = None
                        };{
-                           line = 22;
-                           col = 18;
+                           line = 31;
+                           col = 26;
                            rewrite = "sub";
-                           span = (996, 1001);
-                           before = "a + b";
-                           after = "a - b";
+                           span = (1632, 1643);
+                           before = "(a + b) + c";
+                           after = "(a + b) - c";
                            dismissed = None
                          };{
-                             line = 27;
+                             line = 32;
                              col = 23;
-                             rewrite = "le";
-                             span = (1224, 1233);
-                             before = "(a < b) < c";
-                             after = "(a < b) <= c";
+                             rewrite = "sub";
+                             span = (1667, 1678);
+                             before = "(a + b) + c";
+                             after = "(a + b) - c";
                              dismissed = None
-                           }|]
+                           };{
+                               line = 33;
+                               col = 31;
+                               rewrite = "or";
+                               span = (1710, 1716);
+                               before = "b && c";
+                               after = "b || c";
+                               dismissed = None
+                             };{
+                                 line = 39;
+                                 col = 23;
+                                 rewrite = "sub";
+                                 span = (1971, 1986);
+                                 before = "(a + b) + (c + d)";
+                                 after = "(a + b) - (c + d)";
+                                 dismissed = None
+                               };{
+                                   line = 39;
+                                   col = 31;
+                                   rewrite = "sub";
+                                   span = (1979, 1986);
+                                   before = "c + d";
+                                   after = "c - d";
+                                   dismissed = None
+                                 };{
+                                     line = 43;
+                                     col = 18;
+                                     rewrite = "add";
+                                     span = (2124, 2133);
+                                     before = "(a + b) - c";
+                                     after = "(a + b) + c";
+                                     dismissed = None
+                                   };{
+                                       line = 43;
+                                       col = 18;
+                                       rewrite = "sub";
+                                       span = (2124, 2129);
+                                       before = "a + b";
+                                       after = "a - b";
+                                       dismissed = None
+                                     };{
+                                         line = 48;
+                                         col = 23;
+                                         rewrite = "le";
+                                         span = (2352, 2361);
+                                         before = "(a < b) < c";
+                                         after = "(a < b) <= c";
+                                         dismissed = None
+                                       }|]
   end
 [@@@ocaml.text "/*"]
 let three a b c =
@@ -81,23 +129,68 @@ let floats a b c =
   if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 2
   then __windtrap_mut_2_l -. __windtrap_mut_2_r
   else __windtrap_mut_2_l +. __windtrap_mut_2_r
+let conn a b c =
+  if
+    a &&
+      (let __windtrap_mut_3_p = b in
+       (if
+          Stdlib.(<>) (__windtrap_mut_3_p : Stdlib.Bool.t)
+            (Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 3)
+        then c
+        else __windtrap_mut_3_p))
+  then 1
+  else 0
+let parens a b c =
+  ignore
+    (let __windtrap_mut_4_r = c in
+     let __windtrap_mut_4_l = a + b in
+     if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 4
+     then __windtrap_mut_4_l - __windtrap_mut_4_r
+     else __windtrap_mut_4_l + __windtrap_mut_4_r)
+let in_arg f a b c =
+  f
+    (let __windtrap_mut_5_r = c in
+     let __windtrap_mut_5_l = a + b in
+     if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 5
+     then __windtrap_mut_5_l - __windtrap_mut_5_r
+     else __windtrap_mut_5_l + __windtrap_mut_5_r)
+let conn_arg f a b c =
+  f
+    (a &&
+       (let __windtrap_mut_6_p = b in
+        if
+          Stdlib.(<>) (__windtrap_mut_6_p : Stdlib.Bool.t)
+            (Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 6)
+        then c
+        else __windtrap_mut_6_p))
+let siblings a b c d =
+  let __windtrap_mut_7_r =
+    let __windtrap_mut_8_r = d in
+    let __windtrap_mut_8_l = c in
+    if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 8
+    then __windtrap_mut_8_l - __windtrap_mut_8_r
+    else __windtrap_mut_8_l + __windtrap_mut_8_r in
+  let __windtrap_mut_7_l = a + b in
+  if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 7
+  then __windtrap_mut_7_l - __windtrap_mut_7_r
+  else __windtrap_mut_7_l + __windtrap_mut_7_r
 let mixed a b c =
-  let __windtrap_mut_3_r = c in
-  let __windtrap_mut_3_l =
-    let __windtrap_mut_4_r = b in
-    let __windtrap_mut_4_l = a in
-    if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 4
-    then __windtrap_mut_4_l - __windtrap_mut_4_r
-    else __windtrap_mut_4_l + __windtrap_mut_4_r in
-  if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 3
-  then __windtrap_mut_3_l + __windtrap_mut_3_r
-  else __windtrap_mut_3_l - __windtrap_mut_3_r
+  let __windtrap_mut_9_r = c in
+  let __windtrap_mut_9_l =
+    let __windtrap_mut_10_r = b in
+    let __windtrap_mut_10_l = a in
+    if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 10
+    then __windtrap_mut_10_l - __windtrap_mut_10_r
+    else __windtrap_mut_10_l + __windtrap_mut_10_r in
+  if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 9
+  then __windtrap_mut_9_l + __windtrap_mut_9_r
+  else __windtrap_mut_9_l - __windtrap_mut_9_r
 let chained a b c =
   if
-    let __windtrap_mut_5_r = c in
-    let __windtrap_mut_5_l = a < b in
-    (if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 5
-     then Stdlib.not (__windtrap_mut_5_r < __windtrap_mut_5_l)
-     else __windtrap_mut_5_l < __windtrap_mut_5_r)
+    let __windtrap_mut_11_r = c in
+    let __windtrap_mut_11_l = a < b in
+    (if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 11
+     then Stdlib.not (__windtrap_mut_11_r < __windtrap_mut_11_l)
+     else __windtrap_mut_11_l < __windtrap_mut_11_r)
   then 1
   else 0

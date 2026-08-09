@@ -198,9 +198,52 @@ type state = {
   mutable rev_sites : site list; (* most recently allocated first *)
   mutable count : int;
   seen : (int * int * string, unit) Hashtbl.t;
+  chained : (int * int, unit) Hashtbl.t;
+      (* Byte extents of nodes suppressed by the chain rule below, keyed
+         by extent because that is what identifies a node regardless of
+         how the parser located it. *)
 }
 
-let create_state () = { rev_sites = []; count = 0; seen = Hashtbl.create 64 }
+let create_state () =
+  {
+    rev_sites = [];
+    count = 0;
+    seen = Hashtbl.create 64;
+    chained = Hashtbl.create 16;
+  }
+
+(* [suppress_chain st name left] records [left] as chained when it is
+   itself an application of the operator [name] - that is, when [left] is
+   the inner node of a left-associative chain of one operator, as [a + b]
+   is in [a + b + c].
+
+   A chain of n operators of one family carries one mutant, not n-1, and
+   the outermost is the one kept: the traversal is top-down, so the outer
+   node allocates its site before this suppresses the inner one, and the
+   inner node in turn suppresses its own left operand, so the rule is
+   transitive along the whole chain.
+
+   Detecting the chain STRUCTURALLY, from the operator, is what makes the
+   population independent of layout. Keying it on the line and column
+   would happen to work for a bare chain - every node of [a + b + c]
+   starts at [a]'s byte - but OCaml's parser gives a parenthesized
+   expression a location that starts at its [(], so [f (a + b + c)] would
+   carry two mutants where [a + b + c] carries one. Parenthesizing an
+   expression must not change how many mutants it carries; a score whose
+   denominator moves when brackets are added is not a score. Keying it on
+   extent containment instead would be layout-independent but far too
+   broad: it would swallow a genuinely distinct inner site, such as the
+   [neg] on [a] inside the [neg] on [a && b]. *)
+let suppress_chain st name left =
+  match left.pexp_desc with
+  | Pexp_apply
+      ( { pexp_desc = Pexp_ident { txt = Lident inner; _ }; _ },
+        [ (Nolabel, _); (Nolabel, _) ] )
+    when String.equal inner name ->
+      Hashtbl.replace st.chained
+        (left.pexp_loc.loc_start.pos_cnum, left.pexp_loc.loc_end.pos_cnum)
+        ()
+  | _ -> ()
 
 (* [add_site st ~loc …] records a site, and is [Some index] when a guard
    must be emitted for it.
@@ -213,13 +256,8 @@ let create_state () = { rev_sites = []; count = 0; seen = Hashtbl.create 64 }
    - another site of this file already claims this line, column and
      rewrite. [<file>:<line>:<col>:<rewrite>] must name at most one site,
      and rewriters such as [[@@deriving]] duplicate non-ghost locations,
-     so a later collider is dropped rather than instrumented. This is
-     NOT only a generated-code concern: a left-associative chain of one
-     operator starts every one of its nodes at the same byte, so
-     [a + b + c] is [(a + b) + c], both nodes are [sub] at the column of
-     [a], and only the outer one survives. A chain of n operators of one
-     family therefore carries one mutant, not n-1. [fixture_chain] pins
-     it;
+     so a later collider is dropped rather than instrumented;
+   - the node was suppressed by the chain rule ([suppress_chain]);
    - the expression carries [[@mutate off]]. The site is catalogued, so
      [report] mode can list the dismissal with its reason, but the
      expression is left exactly as written: a dismissal that still
@@ -229,8 +267,9 @@ let add_site st ~(loc : Location.t) ~rewrite ~before ~after ~dismissed =
   else begin
     let line = loc.loc_start.pos_lnum
     and col = loc.loc_start.pos_cnum - loc.loc_start.pos_bol in
+    let extent = (loc.loc_start.pos_cnum, loc.loc_end.pos_cnum) in
     let key = (line, col, rewrite) in
-    if Hashtbl.mem st.seen key then None
+    if Hashtbl.mem st.chained extent || Hashtbl.mem st.seen key then None
     else begin
       Hashtbl.add st.seen key ();
       let index = st.count in
@@ -629,7 +668,8 @@ class instrumenter st capabilities module_name =
       | Con is_and -> (
           match binary e with
           | None -> assert false
-          | Some (_, operator, left, right) -> (
+          | Some (name, operator, left, right) -> (
+              suppress_chain st name left;
               let left = self#mutate `Bool left
               and right = self#mutate `Bool right in
               match index with
@@ -669,7 +709,8 @@ class instrumenter st capabilities module_name =
       | Ari (operator, replacement) -> (
           match binary e with
           | None -> assert false
-          | Some (_, _, left, right) -> (
+          | Some (name, _, left, right) -> (
+              suppress_chain st name left;
               let left = self#mutate `Ordinary left
               and right = self#mutate `Ordinary right in
               match index with
