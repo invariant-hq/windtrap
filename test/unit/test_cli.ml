@@ -522,6 +522,22 @@ let () =
   check "a valid CLI timeout leaves a malformed mirror unread"
     (config.Run.timeout = Some 2.0);
   clear_env ();
+  (* A mirror quotes the token as typed, exactly as its flag does: "-5.0"
+     is what the user wrote and "-5.0" is what the message must show, not
+     the shortest spelling of the float it parsed to. *)
+  Unix.putenv "WINDTRAP_TIMEOUT" "-5.0";
+  (match Cli.resolve Cli.empty with
+  | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
+      check "a mirror quotes the token as written" (value = "-5.0")
+  | Ok _ | Error _ -> check "a mirror quotes the token as written" false);
+  Unix.putenv "WINDTRAP_TIMEOUT" "1e400";
+  (match Cli.resolve Cli.empty with
+  | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
+      check "an overflowing token is quoted, not printed as 'inf'"
+        (value = "1e400")
+  | Ok _ | Error _ ->
+      check "an overflowing token is quoted, not printed as 'inf'" false);
+  clear_env ();
   (match
      Cli.resolve ~overrides:{ Cli.empty with Cli.bail = Some 0 } Cli.empty
    with

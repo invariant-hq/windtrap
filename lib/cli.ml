@@ -518,40 +518,38 @@ let output_level ?(overrides = empty) cli = resolve_output ~overrides cli
 (* [parse] validates command-line values, but programmatic overrides and the
    environment mirrors bypass it — WINDTRAP_TIMEOUT=-5 must not reach
    [Unix.setitimer]. [numeric] resolves one numeric knob across the three
-   layers ([over] programmatic, [cli], then [mirror]) and re-validates
-   whichever layer won, naming it as the error source: the variable for a
-   mirror, and the flag spelling for the layers above it — a programmatic
-   override has no typed flag to name, so [flag] stands in for it.
+   layers ([over] programmatic, [cli], then [mirror]).
 
    The mirror validates exactly like its flag (prop/F-4): when the
    environment is the winning layer — no programmatic or CLI value above it —
-   a token that does not [parse], or one that parses but fails [valid], is an
-   error naming the variable, exactly like the WINDTRAP_SEED and
-   WINDTRAP_SHARD paths, never a silently defaulted run. A losing layer stays
-   unparsed, so a valid CLI value shadows a malformed mirror. Tokens are
-   trimmed before parsing, matching the Env module's numeric convention.
+   a token that does not [parse], or one that parses outside [valid], is an
+   error naming the variable and quoting the token as written, exactly like
+   the WINDTRAP_SEED and WINDTRAP_SHARD paths and exactly like the flag's own
+   refusal, never a silently defaulted run. A losing layer stays unparsed, so
+   a valid CLI value shadows a malformed mirror. Tokens are trimmed before
+   parsing, matching the Env module's numeric convention.
 
-   [mirror] is [None] for a knob with no environment mirror ([--bail]): the
-   environment layer is then empty and only [flag] can ever name a bad
-   value. *)
+   What reaches the second check is therefore either a value the environment
+   already vouched for or one from a layer above it, and only the second can
+   fail: [parse] vouches for the CLI layer too, leaving the programmatic
+   override as the one value with no parser between it and the run. [flag]
+   names it, a programmatic argument having no typed flag of its own — and
+   [render] must spell it, there being no token to quote. [mirror] is [None]
+   for a knob with no environment mirror ([--bail]). *)
 let numeric ~flag ~mirror ~parse ~valid ~render ~expected ~over ~cli =
   let higher = first_some over cli in
   let* from_env =
     match mirror with
     | Some (var, Some raw) when Option.is_none higher -> (
-        match parse (String.trim raw) with
-        | Some v -> Ok (Some v)
-        | None -> invalid ~source:var ~value:raw ~expected)
+        let token = String.trim raw in
+        match parse token with
+        | Some v when valid v -> Ok (Some v)
+        | Some _ | None -> invalid ~source:var ~value:token ~expected)
     | Some _ | None -> Ok None
   in
   match first_some higher from_env with
   | Some v when not (valid v) ->
-      let source =
-        match mirror with
-        | Some (var, _) when Option.is_none higher -> var
-        | Some _ | None -> flag
-      in
-      invalid ~source ~value:(render v) ~expected
+      invalid ~source:flag ~value:(render v) ~expected
   | picked -> Ok picked
 
 let resolve ?(overrides = empty) cli =
