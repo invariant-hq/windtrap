@@ -4,7 +4,9 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Runner: the per-test boundary matrix (body x teardown x
-   timeout), classification, retries, capture-tail attachment, the global
+   timeout), the scoped boundary (cleanup owned by the scope, phase
+   attribution by how far the callback got, the call-back-exactly-once
+   contract), classification, retries, capture-tail attachment, the global
    Random reseed, selection (filters, tags, quick, focus, sharding, the CI
    guards), exit codes including the all-skipped ratification, expected
    failures (xfail), subtest and scratch-path cleanup through the boundary,
@@ -139,6 +141,117 @@ let () =
          (contains "Boom" actual)
    | _ -> check "uncaught exception is a Raise failure" false);
   check "a failing suite exits 1" (outcome.Runner.exit_code = 1)
+
+(* Scoped boundary: the scope owns cleanup, the runner owns attribution *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let log = ref [] in
+  let mark step = log := step :: !log in
+  let ran step = List.mem step !log in
+  (* The canonical scoper: acquire, call back, reclaim on both paths. The
+     resource it supplies is the test's own name. *)
+  let protecting name fn =
+    mark (name ^ ":acquire");
+    Fun.protect
+      ~finally:(fun () -> mark (name ^ ":release"))
+      (fun () -> fn name)
+  in
+  let scoped_test name scope body = Test_tree.scoped scope name body in
+  let tests =
+    [
+      scoped_test "pass" (protecting "pass") (fun r ->
+          mark "pass:body";
+          equal string "pass" r);
+      scoped_test "body fails" (protecting "body fails") (fun _ ->
+          Check.fail "body-boom");
+      scoped_test "body skips" (protecting "body skips") (fun _ ->
+          Check.skip ~reason:"later" ());
+      (* A scope that never calls back: the body did not run, so the test
+         cannot be green. *)
+      scoped_test "never calls back"
+        (fun _ -> mark "never calls back:acquire")
+        (fun () -> mark "never calls back:body");
+      scoped_test "acquire fails"
+        (fun _ -> raise Boom)
+        (fun () -> mark "acquire fails:body");
+      scoped_test "release fails"
+        (fun fn ->
+          fn ();
+          Check.fail "release-boom")
+        (fun () -> mark "release fails:body");
+      (* A release failure that replaces the body's exception: two entries,
+         as under bracket. *)
+      scoped_test "both fail"
+        (fun fn -> try fn () with _ -> Check.fail "release-boom")
+        (fun () -> Check.fail "body-boom");
+      (* A scope that swallows the body's failure must not make it green. *)
+      scoped_test "swallowed"
+        (fun fn -> try fn () with _ -> ())
+        (fun () -> Check.fail "body-boom");
+      (* Skipping instead of calling back is a skip, not a missing body. *)
+      scoped_test "scope skips"
+        (fun _ -> Check.skip ~reason:"no device" ())
+        (fun () -> mark "scope skips:body");
+      scoped_test "calls back twice"
+        (fun fn ->
+          fn ();
+          fn ())
+        (fun () -> mark "calls back twice:body");
+    ]
+  in
+  expect_run "scoped boundary matrix runs" ~config tests @@ fun outcome ->
+  check "pass: the test passed"
+    (outcome_of outcome [ "pass" ] = Some Failure.Pass);
+  check "pass: acquire, body and release ran in that order"
+    (List.filter (fun s -> String.starts_with ~prefix:"pass:" s) (List.rev !log)
+    = [ "pass:acquire"; "pass:body"; "pass:release" ]);
+  (let fs = failure_list (outcome_of outcome [ "body fails" ]) in
+   check "body fails: one Body failure" (phases_of fs = [ Failure.Body ]);
+   check "body fails: the exception reached the scope, which released"
+     (ran "body fails:release"));
+  check "body skips: the skip reaches the outcome"
+    (outcome_of outcome [ "body skips" ] = Some (Failure.Skip (Some "later")));
+  check "body skips: the scope released on the skip path"
+    (ran "body skips:release");
+  (let fs = failure_list (outcome_of outcome [ "never calls back" ]) in
+   match fs with
+   | [ f ] ->
+       check "never calls back: a Setup-phase failure"
+         (f.Failure.phase = Failure.Setup);
+       check "never calls back: the message names what went wrong"
+         (contains "without running the test body" (message_of f))
+   | _ -> check "never calls back: exactly one failure" false);
+  check "never calls back: the body did not run"
+    (not (ran "never calls back:body"));
+  (let fs = failure_list (outcome_of outcome [ "acquire fails" ]) in
+   check "acquire fails: one Setup failure" (phases_of fs = [ Failure.Setup ]));
+  check "acquire fails: the body did not run" (not (ran "acquire fails:body"));
+  (let fs = failure_list (outcome_of outcome [ "release fails" ]) in
+   check "release fails: one Teardown failure"
+     (phases_of fs = [ Failure.Teardown ]));
+  check "release fails: the body did run" (ran "release fails:body");
+  (let fs = failure_list (outcome_of outcome [ "both fail" ]) in
+   check "both fail: body and release entries, in order"
+     (phases_of fs = [ Failure.Body; Failure.Teardown ]));
+  (let fs = failure_list (outcome_of outcome [ "swallowed" ]) in
+   check "swallowed: a scope that eats the failure cannot make it green"
+     (phases_of fs = [ Failure.Body ]));
+  check "scope skips: the skip reaches the outcome"
+    (outcome_of outcome [ "scope skips" ]
+    = Some (Failure.Skip (Some "no device")));
+  check "scope skips: no missing-body failure was invented"
+    (not (ran "scope skips:body"));
+  (let fs = failure_list (outcome_of outcome [ "calls back twice" ]) in
+   match fs with
+   | [ f ] ->
+       check "calls back twice: the message states the contract"
+         (contains "exactly once" (message_of f))
+   | _ -> check "calls back twice: exactly one failure" false);
+  check_int "calls back twice: the body ran once" ~expected:1
+    ~actual:
+      (List.length (List.filter (fun s -> s = "calls back twice:body") !log))
 
 (* Backtrace recording *)
 
@@ -346,6 +459,55 @@ let () =
         check "the teardown timed out too, rather than running unbounded"
           (List.mem Failure.Teardown phases)
     | _ -> check "the test failed" false)
+
+let () =
+  (* A scope is one call, so the limit covers acquire, body and release
+     together. The runner re-arms the window as the body leaves the
+     callback: without that, a scope that blocks while reclaiming after a
+     body timeout would run unbounded, exactly as a bracket teardown
+     would. *)
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let config = base_config ~log_dir:root () in
+    let spin s =
+      let t0 = Unix.gettimeofday () in
+      while Unix.gettimeofday () -. t0 < s do
+        ignore (Sys.opaque_identity 1)
+      done
+    in
+    let released = ref false in
+    let tests =
+      [
+        Test_tree.scoped
+          (fun fn ->
+            Fun.protect ~finally:(fun () -> released := true) (fun () -> fn ()))
+          ~timeout:0.2 "body times out"
+          (fun () -> spin 5.);
+        Test_tree.scoped
+          (fun fn ->
+            fn ();
+            spin 5.)
+          ~timeout:0.2 "release times out"
+          (fun () -> ());
+      ]
+    in
+    let started = Unix.gettimeofday () in
+    expect_run "scoped timeout suite runs" ~config tests @@ fun outcome ->
+    let elapsed = Unix.gettimeofday () -. started in
+    (* Two windows of 0.2s, not ten seconds of spinning. *)
+    check "the run finished promptly" (elapsed < 3.0);
+    (match failure_list (outcome_of outcome [ "body times out" ]) with
+    | [ f ] ->
+        check "body times out: one Body timeout"
+          (f.Failure.phase = Failure.Body && contains "timed out" (message_of f))
+    | _ -> check "body times out: exactly one failure" false);
+    check "body times out: the scope still got to reclaim" !released;
+    match failure_list (outcome_of outcome [ "release times out" ]) with
+    | [ f ] ->
+        check "release times out: one Teardown timeout"
+          (f.Failure.phase = Failure.Teardown
+          && contains "timed out" (message_of f))
+    | _ -> check "release times out: exactly one failure" false)
 
 let () =
   (* D2: a timeout expiring during the shrink search ends the search at the

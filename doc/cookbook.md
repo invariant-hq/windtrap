@@ -75,19 +75,26 @@ Two facts to know:
 
 ## 3. Testing under Eio
 
-Windtrap has no Eio integration — an event loop per test is one line —
-but two contract points make the combination safe. The adapter every
-Eio suite writes (fragment; not compiled here):
+Windtrap has no Eio integration and needs none: `Eio_main.run` is
+already a scoping function, so `scoped` takes it directly (fragment;
+not compiled here):
 
 ```ocaml
 (* fragment: requires eio_main *)
-let with_eio fn () = Eio_main.run @@ fun env -> fn env ()
+let with_eio = scoped Eio_main.run
 
 let () =
   run "net"
-    [ test "connects" (with_eio (fun env () ->
-          equal string "pong" (Client.ping ~net:(Eio.Stdenv.net env)))) ]
+    [ with_eio "connects" (fun env ->
+          equal string "pong" (Client.ping ~net:(Eio.Stdenv.net env))) ]
 ```
+
+The same applies one level down: `scoped (fun fn -> Eio_main.run @@ fun
+env -> Eio.Switch.run @@ fun sw -> fn (env, sw))` hands the body an
+environment and a switch. `scoped` calls the scope once and reclaims
+nothing itself — cleanup is `Eio_main.run`'s, which it does on both
+paths, and the body's failure is re-raised through it so cancellation
+sees it ([Resources and structure](manual/resources-and-structure.md)).
 
 The guarantees the combination rests on:
 

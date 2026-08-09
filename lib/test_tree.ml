@@ -15,6 +15,7 @@ type body =
       teardown : 'r -> unit;
     }
       -> body
+  | Scoped : { scope : ('r -> unit) -> unit; body : 'r -> unit } -> body
 
 type xfail = { reason : string option }
 
@@ -89,6 +90,14 @@ let slow ?pos ?(tags = []) ?timeout ?retries name fn =
 let bracket ?pos ?tags ?timeout ?retries ~setup ~teardown name fn =
   make_test ?pos ?tags ?timeout ?retries ~focused:false name
     (Bracket { setup; body = fn; teardown })
+
+(* [scope] is positional and comes first so that [scoped Eio_main.run] is a
+   constructor with every optional argument still available: an optional is
+   erased by applying a positional argument that follows it, and here none
+   does. *)
+let scoped scope ?pos ?tags ?timeout ?retries name fn =
+  make_test ?pos ?tags ?timeout ?retries ~focused:false name
+    (Scoped { scope; body = fn })
 
 let make_group ?pos ?(tags = []) ~focused name children =
   (* Groups record a location (for focus sites) but no declaration file:

@@ -62,6 +62,7 @@ let slow = Test_tree.slow
 let cases = Test_tree.cases
 let xfail = Test_tree.xfail
 let bracket = Test_tree.bracket
+let scoped = Test_tree.scoped
 let fixture = Run.fixture
 
 (* Assertions *)

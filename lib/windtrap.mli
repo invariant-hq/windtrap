@@ -32,11 +32,12 @@
     Property tests use {!prop} over an ['a] {!Gen.t} generator; shrinking is
     integrated and every failure prints a replay command. Snapshot tests
     ({!snapshot}) compare against committed baselines under [__snapshots__/] and
-    print their acceptance command on mismatch. {!bracket} and {!fixture} scope
-    resources; {!temp_dir} and {!temp_file} give runner-cleaned scratch paths;
-    {!output} reads back the test's captured output; {!subtest} names sub-cases
-    inside a body and {!val:xfail} keeps known-bug reproductions in-tree without
-    a red run.
+    print their acceptance command on mismatch. Resources are scoped by
+    {!bracket} (one the setup returns), {!scoped} (one a callback receives) and
+    {!fixture} (one shared by the run); {!temp_dir} and {!temp_file} give
+    runner-cleaned scratch paths; {!output} reads back the test's captured
+    output; {!subtest} names sub-cases inside a body and {!val:xfail} keeps
+    known-bug reproductions in-tree without a red run.
 
     Runnable examples for each feature live under [examples/] in the
     distribution; [doc/cookbook.md] collects the recipes windtrap deliberately
@@ -88,7 +89,9 @@ type 'a testable = 'a Testable.t
       teardown (defaults to the runner's [--timeout]). Setup and body share the
       window; teardown is then given whatever is left of it, or a fresh window
       if they consumed it — releasing a resource is not optional, so a body that
-      times out still gets bounded cleanup rather than none.
+      times out still gets bounded cleanup rather than none. A {!scoped} test
+      spends the window on the whole scope call, re-armed on the same terms when
+      the body leaves the callback.
     - [retries] is the number of extra attempts given to a failing test
       (defaults to [0]).
 
@@ -110,8 +113,8 @@ val test :
 val group : ?pos:pos -> ?tags:string list -> string -> test list -> test
 (** [group name children] declares a group. Groups nest freely; [name] becomes a
     path component and [tags] extend every descendant's tags. Groups have no
-    hooks: scope resources with {!bracket} or {!fixture} instead, so no user
-    code ever runs outside a test's exception boundary. *)
+    hooks: scope resources with {!bracket}, {!scoped} or {!fixture} instead, so
+    no user code ever runs outside a test's exception boundary. *)
 
 val ftest :
   ?pos:pos ->
@@ -192,6 +195,72 @@ val bracket :
       let with_db = bracket ~setup:Db.connect ~teardown:Db.close
       let tests = [ with_db "count" (fun db -> equal int 0 (Db.count db)) ]
     ]} *)
+
+val scoped :
+  (('r -> unit) -> unit) ->
+  ?pos:pos ->
+  ?tags:string list ->
+  ?timeout:float ->
+  ?retries:int ->
+  string ->
+  ('r -> unit) ->
+  test
+(** [scoped scope name fn] declares a test whose resource is scoped by [scope]:
+    a function that acquires a resource, hands it to a callback, and reclaims it
+    when that callback returns. It is the shape most OCaml resources come in —
+    [Eio_main.run], [Eio.Switch.run], [In_channel.with_open_text path],
+    [Mutex.protect m] — and the one {!bracket} cannot express, because between
+    the acquire and the release there is no moment at which a resource can be
+    {e returned}.
+
+    {[
+      let with_eio = scoped Eio_main.run
+
+      let tests =
+        [
+          with_eio "reads the config" (fun env ->
+              let fs = Eio.Stdenv.fs env in
+              equal string "{}" Eio.Path.(load (fs / "config.json")));
+        ]
+    ]}
+
+    [scope] is positional and comes {e before} the optional arguments, so that a
+    partially applied constructor keeps them: [with_eio ~timeout:30. "slow" fn]
+    is well typed, because applying a positional argument erases only the
+    optionals declared before it.
+
+    The runner calls [scope] exactly once, and that call is all it does — which
+    makes the contract differ from {!bracket}'s on four points:
+
+    - {b Cleanup is [scope]'s, not windtrap's.} {!bracket} guarantees [teardown]
+      on every outcome; here windtrap guarantees nothing, because it never sees
+      the resource. A failure raised by [fn] — an assertion, a {!skip}, a
+      timeout — is recorded and then re-raised through [scope], so a scope that
+      cancels or cleans up on the exception path does so. Whether it does is
+      [scope]'s contract: [Eio_main.run] and anything built on [Fun.protect]
+      release on both paths, while [let r = acquire () in fn r; release r] leaks
+      whenever the body fails.
+    - {b The callback must be called exactly once.} A [scope] that returns
+      without calling it fails the test — a body that never ran is not a pass,
+      and silently green would be the worst outcome available here. A [scope]
+      that calls it twice runs the body on the first call only and fails the
+      test: one execution per test is what {!snapshot} registration, {!subtest}
+      labels and {!temp_dir} paths are keyed by. To repeat a body, use {!cases}
+      or [~retries].
+    - {b A [scope] that raises or skips instead of calling back} reports as that
+      failure or that skip, not as a missing body — the pattern for a suite
+      gated on a resource the machine does not have.
+    - {b Failures are attributed by how far the callback got.} What [fn] raises
+      is the body's own failure. What [scope] raises {e before} the callback is
+      a [[setup]] failure and what it raises {e after} the callback returned is
+      a [[teardown]] failure, so a scope that cannot acquire reads differently
+      from one that cannot release. A release failure that replaces the body's
+      exception is reported alongside it — two entries, as under {!bracket}.
+
+    [timeout] covers the whole [scope] call, acquisition and release included;
+    the runner re-arms the window when the body leaves the callback, so a
+    release that blocks after a body timeout is cut short rather than left to
+    hang the run. *)
 
 val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 (** [fixture ?teardown create] is an accessor for a run-scoped shared resource.
@@ -857,13 +926,13 @@ val run : ?argv:string array -> string -> test list -> unit
     request under [CI] refuse the run before anything executes. Calling [run]
     from inside a test body raises [Invalid_argument], failing the calling test.
 
-    Code under test that calls [exit] — from a body, setup, teardown, or fixture
-    release — does not terminate the runner: the exit attempt is intercepted and
-    recorded as that test's (or that release's) failure, and the run continues
-    to its own exit code — the runner owns the process exit. A handler that
-    catches all exceptions around the exiting call defeats the interception,
-    exactly as it would swallow an assertion failure; to assert on exit
-    behavior, run the exiting code in a subprocess. *)
+    Code under test that calls [exit] — from a body, a setup, a teardown, a
+    {!scoped} scope, or a fixture release — does not terminate the runner: the
+    exit attempt is intercepted and recorded as that test's (or that release's)
+    failure, and the run continues to its own exit code — the runner owns the
+    process exit. A handler that catches all exceptions around the exiting call
+    defeats the interception, exactly as it would swallow an assertion failure;
+    to assert on exit behavior, run the exiting code in a subprocess. *)
 
 (** {1:private Private} *)
 

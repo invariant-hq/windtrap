@@ -94,7 +94,8 @@ let env_tests =
 
 (* Recipe 3: the Eio guarantees
 
-   The [with_eio] adapter is a fragment (windtrap has no eio dependency);
+   The [scoped Eio_main.run] adapter is a fragment (windtrap has no eio
+   dependency; [scoped] itself is covered in test/unit);
    what the cookbook guarantees is that assertion failures are ordinary
    exceptions classified by identity, not catch site — storing one in a
    ref and re-raising it outside the assertion's dynamic extent keeps its

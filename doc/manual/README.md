@@ -15,7 +15,7 @@ are independent — go where your suite needs you:
 | [Property testing](property-testing.md) | `prop`, `Gen`, shrinking, seeds and replay, distribution checks |
 | [Stateful testing](stateful-testing.md) | `stateful`, `command`, models and preconditions, per-case systems, cost |
 | [Snapshots and expect tests](snapshots-and-expect.md) | File baselines, `[%expect]` + `dune promote`, adopting ppx_expect |
-| [Resources and structure](resources-and-structure.md) | `bracket`, `fixture`, temp paths, `cases`, tags, focus, `xfail` |
+| [Resources and structure](resources-and-structure.md) | `bracket`, `scoped`, `fixture`, temp paths, `cases`, tags, focus, `xfail` |
 | [Running tests](running-tests.md) | The CLI and its `WINDTRAP_*` mirrors, selection, sharding, CI output |
 | [Coverage](coverage.md) | The one-stanza setup, report modes, `windtrap coverage` |
 | [Cookbook](../cookbook.md) | Recipes windtrap deliberately does not absorb |

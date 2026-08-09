@@ -6,9 +6,11 @@
 (* Tests for Test_tree: inert construction, path derivation and the frozen
    separator, tag inheritance, focus propagation and sites, declaration-file
    capture (?pos preferred, backtrace fallback), cases naming, bracket kept
-   as three independent closures, and xfail annotation propagation
-   (innermost wins). The trees under test are inert data built with
-   [Test_tree] directly — never executed by the hosting runner. *)
+   as three independent closures, scoped kept as a scope and a body (with
+   the argument order that keeps its optionals through a partial
+   application), and xfail annotation propagation (innermost wins). The
+   trees under test are inert data built with [Test_tree] directly — never
+   executed by the hosting runner. *)
 
 open Windtrap
 open Windtrap.Private
@@ -117,7 +119,11 @@ let () =
   expect_invalid_arg "infinite timeout rejected" (fun () ->
       T.test ~timeout:Float.infinity "t" nop);
   expect_invalid_arg "bracket validates retries too" (fun () ->
-      T.bracket ~retries:(-2) ~setup:nop ~teardown:ignore "t" ignore)
+      T.bracket ~retries:(-2) ~setup:nop ~teardown:ignore "t" ignore);
+  expect_invalid_arg "scoped validates retries too" (fun () ->
+      T.scoped (fun fn -> fn ()) ~retries:(-2) "t" ignore);
+  expect_invalid_arg "scoped validates timeouts too" (fun () ->
+      T.scoped (fun fn -> fn ()) ~timeout:0. "t" ignore)
 
 (* Tags *)
 
@@ -246,7 +252,7 @@ let () =
     ~actual:(List.length !seen);
   List.iter
     (fun (c : T.case) ->
-      match c.T.body with T.Body fn -> fn () | T.Bracket _ -> ())
+      match c.T.body with T.Body fn -> fn () | T.Bracket _ | T.Scoped _ -> ())
     flat;
   check "each cases body receives its own input" (List.rev !seen = [ 1; 2; 3 ])
 
@@ -352,6 +358,60 @@ let () =
       check_int "bracket records retries" ~expected:2 ~actual:c.T.retries;
       check "bracket records the declaration file" (c.T.file = Some "f.ml")
   | _ -> check "bracket metadata shape" false
+
+(* scoped *)
+
+let () =
+  reg "scoped stores the scope and the body unrun" @@ fun () ->
+  let log = ref [] in
+  let mark step = log := step :: !log in
+  let tree =
+    T.scoped
+      (fun fn ->
+        mark "acquire";
+        fn 42;
+        mark "release")
+      "s"
+      (fun r -> mark (Printf.sprintf "body %d" r))
+  in
+  check "declaring a scoped test runs nothing" (!log = []);
+  match T.flatten [ tree ] with
+  | [ { T.body = T.Scoped { scope; body }; _ } ] ->
+      scope body;
+      check "the scope brackets the body around the resource it supplies"
+        (List.rev !log = [ "acquire"; "body 42"; "release" ])
+  | _ -> check "scoped flatten shape" false
+
+let () =
+  reg "scoped records its metadata" @@ fun () ->
+  match
+    T.flatten
+      [
+        T.scoped
+          (fun fn -> fn ())
+          ~pos:("f.ml", 1, 0, 0) ~tags:[ "eio" ] ~timeout:1.5 ~retries:2 "s"
+          ignore;
+      ]
+  with
+  | [ c ] ->
+      check "scoped records tags" (Tag.mem "eio" c.T.tags);
+      check "scoped records timeout" (c.T.timeout = Some 1.5);
+      check_int "scoped records retries" ~expected:2 ~actual:c.T.retries;
+      check "scoped records the declaration file" (c.T.file = Some "f.ml")
+  | _ -> check "scoped metadata shape" false
+
+let () =
+  (* [scope] precedes the optional arguments so that applying it does not
+     erase them: this block would not compile if it did, which is the whole
+     point of the argument order. *)
+  reg "a partially applied scoped keeps its optional arguments" @@ fun () ->
+  let with_unit = T.scoped (fun fn -> fn ()) in
+  match T.flatten [ with_unit ~tags:[ "eio" ] ~timeout:3. "s" ignore ] with
+  | [ c ] ->
+      check "the partial application still takes ~tags" (Tag.mem "eio" c.T.tags);
+      check "the partial application still takes ~timeout"
+        (c.T.timeout = Some 3.)
+  | _ -> check "partially applied scoped flatten shape" false
 
 (* xfail (amendment B12) *)
 

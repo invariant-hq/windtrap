@@ -1350,7 +1350,8 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
    behind rather than the outcome value. *)
 let run_declared_body tree =
   match (flattened tree).Test_tree.body with
-  | Test_tree.Bracket _ -> failf "the declared node is a bracket, not a test"
+  | Test_tree.Bracket _ | Test_tree.Scoped _ ->
+      failf "the declared node scopes a resource, not a plain test"
   | Test_tree.Body body -> (
       match body () with
       | () -> failf "the property body returned without an engine outcome"

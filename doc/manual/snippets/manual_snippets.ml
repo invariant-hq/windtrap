@@ -202,7 +202,21 @@ module Server = struct
   let ping server = server.running
 end
 
+(* A connection pool in the shape most OCaml resources come in: the
+   connection is handed to a callback and reclaimed when it returns, never
+   returned to the caller. *)
+module Pool = struct
+  type conn = { mutable rows : int; mutable open_ : bool }
+
+  let with_connection fn =
+    let conn = { rows = 0; open_ = true } in
+    Fun.protect ~finally:(fun () -> conn.open_ <- false) (fun () -> fn conn)
+
+  let count conn = conn.rows
+end
+
 let with_db = bracket ~setup:Db.connect ~teardown:Db.close
+let with_conn = scoped Pool.with_connection
 let server = fixture ~teardown:Server.stop Server.start
 let backends = [ ("list", 12); ("array", 12); ("bigarray", 12) ]
 
@@ -212,6 +226,7 @@ let resources =
       with_db "insert then get" (fun db ->
           Db.insert db "alice";
           equal int 1 (Db.count db));
+      with_conn "counts rows" (fun conn -> equal int 0 (Pool.count conn));
       test "responds" (fun () -> is_true (Server.ping (server ())));
       test "writes a config" (fun () ->
           let dir = temp_dir () in

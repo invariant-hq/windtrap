@@ -1,9 +1,11 @@
 # Resources and structure
 
 Windtrap has no group-level hooks — no user code ever runs outside a
-test's exception boundary. Resources are scoped by two constructors
-instead, and everything else here shapes the suite: table-driven
-tests, tags, focus, and known-bug bookkeeping.
+test's exception boundary. Resources are scoped by three constructors
+instead — one for a resource setup can return, one for a resource that
+is only ever handed to a callback, one shared by the whole run — and
+everything else here shapes the suite: table-driven tests, tags,
+focus, and known-bug bookkeeping.
 
 ## Per-test resources: `bracket`
 
@@ -23,6 +25,67 @@ let tests =
         equal int 1 (Db.count db));
   ]
 ```
+
+## Callback-scoped resources: `scoped`
+
+`bracket` needs a resource that setup can *return*. Most OCaml
+resources are never handed over that way — they are handed to a
+callback and reclaimed when it returns:
+
+```
+Eio_main.run @@ fun env -> ...
+Eio.Switch.run @@ fun sw -> ...
+In_channel.with_open_text path @@ fun ic -> ...
+Mutex.protect m @@ fun () -> ...
+```
+
+There is no moment inside such a function at which the resource could
+be returned, so no `~setup`/`~teardown` pair expresses it without
+threads or effects. `scoped scope name fn` takes the scoping function
+itself; windtrap calls it once, with a callback that runs the body:
+
+```ocaml
+let with_conn = scoped Pool.with_connection
+
+let tests =
+  [ with_conn "counts rows" (fun conn -> equal int 0 (Pool.count conn)) ]
+```
+
+The scope is positional and comes *before* the optional arguments, so
+a partially applied constructor keeps them:
+`with_conn ~timeout:30. "slow query" fn` is well typed.
+
+**Cleanup is the scope's, not windtrap's.** This is the one place the
+library promises less than `bracket` does. With `bracket`, windtrap
+calls `teardown` and guarantees it on every outcome. With `scoped`,
+windtrap never sees the resource: it records the body's failure — an
+assertion, a `skip`, a timeout — and re-raises it *through* the scope,
+so a scope that cancels or cleans up on the exception path does so.
+Whether it does is the scope's contract. `Eio_main.run` and anything
+built on `Fun.protect` reclaim on both paths;
+`let r = acquire () in fn r; release r` leaks whenever the body fails,
+and windtrap cannot fix that from the outside.
+
+**The callback must be called exactly once.** A scope that returns
+without calling it fails the test — a body that never ran is not a
+pass, and a silent green here would be the worst outcome available. A
+scope that calls it twice runs the body on the first call only and
+fails the test: one execution per test is what snapshot registration,
+`subtest` labels and scratch paths are keyed by (use `cases` or
+`~retries` to repeat a body). A scope that *skips* instead of calling
+back is a skip, not a missing body — the pattern for a suite gated on
+a resource the machine does not have.
+
+**Failures are attributed by how far the callback got.** What the body
+raises is the body's failure. What the scope raises before the
+callback is a `[setup]` failure and what it raises after the callback
+returned is a `[teardown]` failure, so a scope that cannot acquire
+reads differently from one that cannot release; a release failure that
+replaces the body's exception is reported alongside it, two entries,
+as under `bracket`. `~timeout` covers the whole scope call, and the
+window is re-armed as the body leaves the callback, so a release that
+blocks after a body timeout is cut short rather than left to hang the
+run.
 
 ## Run-scoped resources: `fixture`
 
@@ -103,8 +166,9 @@ slow-tagged tests. Property tests carry `"prop"` automatically.
 
 `~timeout:60.` caps one test in seconds (setup and body share the
 window, and teardown is re-armed with what is left of it — or with a
-fresh window if they used it all, since cleanup still has to happen;
-and for properties, generation and shrinking too, see
+fresh window if they used it all, since cleanup still has to happen; a
+`scoped` test spends the window on the whole scope call, re-armed on
+the same terms; and for properties, generation and shrinking too, see
 [Property testing](property-testing.md#notes); the runner's
 `--timeout` sets the default); `~retries:2` gives a failing test extra
 attempts — for the flaky-by-nature, not as a way of life.

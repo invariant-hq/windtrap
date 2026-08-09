@@ -322,8 +322,9 @@ let () =
       bracket
         ~setup:(fun () -> ())
         ~teardown:(fun () -> ())
-        "scoped"
+        "bracketed"
         (fun () -> ());
+      scoped (fun fn -> fn ()) "in a scope" (fun () -> ());
     ]
   in
   let cases_flat = Test_tree.flatten tree in
@@ -340,7 +341,8 @@ let () =
         "squares › squares.1";
         "named › 7";
         "law";
-        "scoped";
+        "bracketed";
+        "in a scope";
       ]);
   let tags_of path =
     match
@@ -433,6 +435,45 @@ let () =
   expect_run "all-skipped run" ~config suite @@ fun outcome ->
   check_int "all-skipped run exits 0" ~expected:0
     ~actual:outcome.Runner.exit_code
+
+(* Scopes, brackets and fixtures *)
+
+let () =
+  (* The facade export, end to end: a scoper of the shape most OCaml
+     resources come in, partially applied into a constructor exactly as the
+     interface advertises. *)
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let released = ref [] in
+  let with_conn =
+    scoped (fun fn ->
+        Fun.protect
+          ~finally:(fun () -> released := "conn" :: !released)
+          (fun () -> fn "conn"))
+  in
+  let suite =
+    [
+      with_conn "clean" (fun conn -> equal string "conn" conn);
+      with_conn ~tags:[ "net" ] "the body fails" (fun _ -> fail "body-boom");
+    ]
+  in
+  expect_run "scopes" ~config suite @@ fun outcome ->
+  check "the scope reclaimed on both the passing and the failing path"
+    (!released = [ "conn"; "conn" ]);
+  check "a scoped test passes when its body does"
+    (outcome_of outcome [ "clean" ] = Some Failure.Pass);
+  check "the partially applied constructor still takes ~tags"
+    (List.exists
+       (fun (c : Test_tree.case) ->
+         c.Test_tree.path = [ "the body fails" ]
+         && Tag.mem "net" c.Test_tree.tags)
+       (Test_tree.flatten suite));
+  match failure_list (outcome_of outcome [ "the body fails" ]) with
+  | [ f ] ->
+      check "the body's failure is the test's only failure"
+        (f.Failure.phase = Failure.Body)
+  | fs ->
+      check_int "scoped failure entries" ~expected:1 ~actual:(List.length fs)
 
 (* Brackets and fixtures *)
 

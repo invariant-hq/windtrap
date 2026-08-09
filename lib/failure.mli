@@ -32,8 +32,12 @@
     (constructors default to {!Body}). *)
 type phase =
   | Body  (** The test body. *)
-  | Setup  (** A [bracket]'s setup function. *)
-  | Teardown  (** A [bracket]'s teardown function. *)
+  | Setup
+      (** A [bracket]'s setup function, or a [scoped] test's scope before it
+          reached the body. *)
+  | Teardown
+      (** A [bracket]'s teardown function, or a [scoped] test's scope after the
+          body returned. *)
   | Release  (** A fixture release at end of run. *)
 
 type tail = {

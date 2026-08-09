@@ -21,15 +21,32 @@
     cannot perturb a test that consults [Random]), capture redirected into the
     test's log file ({!Capture.with_capture}, per-attempt truncation; a no-op
     under [--stream]), and a SIGALRM timeout arming the test's limit (else
-    [config.timeout]). The timeout window covers setup, body, and teardown:
-    setup and body share it, and it is re-armed before teardown for whatever
-    remains — or for a fresh limit when they consumed it, since a teardown
-    entered after a body timeout must still be bounded and must still run. It is
-    Unix-only (a documented no-op on Windows) and cannot interrupt blocked C
-    calls. The runner owns [SIGALRM] while a test with a limit runs. After every
-    attempt — outside the timeout window, on every path where the runner regains
-    control, a fatal exception included — the attempt's scratch paths are
-    removed ({!Run.remove_temp}).
+    [config.timeout]). The timeout window covers setup, body, and teardown (for
+    a scoped test, the whole scope call): setup and body share it, and it is
+    re-armed before teardown for whatever remains — or for a fresh limit when
+    they consumed it, since a teardown entered after a body timeout must still
+    be bounded and must still run. It is Unix-only (a documented no-op on
+    Windows) and cannot interrupt blocked C calls. The runner owns [SIGALRM]
+    while a test with a limit runs. After every attempt — outside the timeout
+    window, on every path where the runner regains control, a fatal exception
+    included — the attempt's scratch paths are removed ({!Run.remove_temp}).
+
+    {b Scoped tests.} A {!Test_tree.Scoped} node is one call the runner does not
+    control: [scope] acquires, invokes its callback, and reclaims on return. The
+    runner runs the body inside that callback and, after recording the body's
+    failure, re-raises it through [scope] — so a scope that cancels or cleans up
+    on the exception path still sees it, and a scope that swallows it still
+    fails the test. What [scope] raises on its own is attributed by how far the
+    callback got: {!Failure.Setup} before it was entered, {!Failure.Teardown}
+    after it returned, so a scope that cannot acquire reads differently from one
+    that cannot release. The callback must be entered exactly once: a [scope]
+    that returns without entering it fails the test — a body that never ran is
+    not a pass — unless it raised or skipped instead, in which case that failure
+    or skip is the whole story; a second entry is refused rather than served,
+    because one execution per test is what snapshot registration, subtest labels
+    and scratch paths are keyed by. The timeout window covers the whole [scope]
+    call and is re-armed as the body leaves the callback, on the same terms as a
+    bracket teardown.
 
     Outcomes are classified per phase: {!Failure.Check_failure} keeps its
     payload, {!Failure.Skip_test} skips the test, {!Failure.Timeout} becomes a

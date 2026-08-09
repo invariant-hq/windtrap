@@ -11,7 +11,8 @@
     runs until the runner executes the tree. There are no group hooks of any
     kind — no user callback can run outside a test's exception boundary — and
     {!bracket} stores its three closures unrun, so the runner captures body and
-    teardown outcomes independently.
+    teardown outcomes independently. {!scoped} stores a scoping function and a
+    body for resources that are only ever handed to a callback.
 
     {b Paths.} A test is named by its {e path}: the names of its enclosing
     groups, root first, then its own name. {!flatten} derives every path;
@@ -53,6 +54,13 @@ type body =
           pre-composed — so the runner can run [teardown] iff [setup] succeeded,
           on every outcome, and report body and teardown failures independently.
       *)
+  | Scoped : { scope : ('r -> unit) -> unit; body : 'r -> unit } -> body
+      (** A {!scoped} test: [scope] is a caller-supplied scoping function and
+          [body] the callback it is expected to invoke exactly once. The two are
+          kept apart for the same reason {!Bracket}'s three are, but the runner
+          has less to promise here: acquisition and release are one call it does
+          not control, so it can only run [body] inside [scope] and attribute
+          what comes out. *)
 
 (** {1:declaring Declaring tests}
 
@@ -64,7 +72,8 @@ type body =
     - [tags] are extra tag names for the node, unioned with ancestors' tags at
       {!flatten} time. Defaults to [[]].
     - [timeout] is the per-test limit in seconds, covering setup, body, and
-      teardown. Defaults to the runner's default timeout.
+      teardown — for {!scoped}, the whole [scope] call. Defaults to the runner's
+      default timeout.
     - [retries] is the number of extra attempts the runner gives a failing test.
       Defaults to [0].
 
@@ -147,6 +156,34 @@ val bracket :
     on it iff [setup] succeeded — on every outcome, including skip and timeout.
     The three closures are stored unrun (see {!type:body}); partial application
     ([let with_db = bracket ~setup ~teardown]) builds reusable constructors. *)
+
+val scoped :
+  (('r -> unit) -> unit) ->
+  ?pos:Loc.pos ->
+  ?tags:string list ->
+  ?timeout:float ->
+  ?retries:int ->
+  string ->
+  ('r -> unit) ->
+  t
+(** [scoped scope name fn] declares a test whose resource is scoped by [scope] —
+    a function that acquires, calls back, and releases on return
+    ([Eio_main.run], [Eio.Switch.run], [In_channel.with_open_text path]). The
+    runner calls [scope] once, with a callback that runs [fn] on the resource;
+    it does not release anything itself, because [scope] already does.
+
+    [scope] is positional and precedes the optional arguments so that
+    [scoped Eio_main.run] is itself a constructor with [?pos], [?tags],
+    [?timeout] and [?retries] intact — applying a positional argument only
+    erases the optionals declared {e before} it.
+
+    The runner records what the callback saw (see {!Runner}): a failure raised
+    by [fn] is recorded and then re-raised through [scope], so a [scope] that
+    cancels or cleans up on exception still does; anything [scope] raises before
+    the callback is a {!Failure.Setup} entry and anything it raises after the
+    callback returned is a {!Failure.Teardown} entry; a [scope] that returns
+    without ever calling back fails the test rather than passing it, and one
+    that calls back twice runs the body once and fails the test. *)
 
 val xfail : ?reason:string -> t -> t
 (** [xfail t] marks [t] — and, through a group, every test under it — as

@@ -276,6 +276,78 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
         classify ph exn backtrace;
         None
   in
+  (* A scoping function owns acquisition, the body and release in one call,
+     so the runner cannot bracket the three the way it brackets [Bracket] —
+     it can only run the body inside the callback and attribute whatever
+     escapes.
+
+     The body's failure is recorded where it happens and then re-raised
+     through [scope]: a scope that cancels or cleans up on the exception
+     path still sees it, and a scope that swallows it cannot turn a failed
+     test green. Anything else escaping is the scope's own, attributed by
+     how far the callback got — [Setup] before it, [Teardown] after it
+     returned.
+
+     Calling back exactly once is the contract. Zero calls means the body
+     never ran, which must not report as a pass; a second call is refused
+     rather than served, because one execution is the unit everything else
+     is keyed by (snapshot registration, subtest labels, scratch paths). *)
+  let scoped : type r.
+      renew:(unit -> unit) -> ((r -> unit) -> unit) -> (r -> unit) -> unit =
+   fun ~renew scope body ->
+    let entries = ref 0 in
+    let body_left = ref false in
+    let body_exn = ref None in
+    let scope_raised = ref false in
+    let callback resource =
+      incr entries;
+      if !entries = 1 then begin
+        phase := Failure.Body;
+        match Loc.delimit (fun () -> body resource) with
+        | () ->
+            body_left := true;
+            phase := Failure.Teardown;
+            renew ()
+        | exception exn when not (Failure.is_fatal exn) ->
+            let backtrace = Printexc.get_raw_backtrace () in
+            body_left := true;
+            body_exn := Some exn;
+            classify Failure.Body exn backtrace;
+            phase := Failure.Teardown;
+            (* The body may have consumed the window; the scope's release
+               still has to be bounded. *)
+            renew ();
+            Printexc.raise_with_backtrace exn backtrace
+      end
+    in
+    phase := Failure.Setup;
+    (match Loc.delimit (fun () -> scope callback) with
+    | () -> ()
+    | exception exn when not (Failure.is_fatal exn) ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        scope_raised := true;
+        (* The body's own exception on its way out is already recorded. *)
+        if not (match !body_exn with Some e -> e == exn | None -> false) then
+          classify
+            (if !entries = 0 then Failure.Setup
+             else if !body_left then Failure.Teardown
+             else Failure.Body)
+            exn backtrace);
+    (* A scope that raised — or skipped — instead of calling back has
+       already said what happened; only a clean return needs explaining. *)
+    if !entries = 0 && not !scope_raised then
+      record_failure Failure.Setup
+        (Failure.message ?loc:case.Test_tree.loc
+           "the scope returned without running the test body — a scope must \
+            call its callback exactly once")
+    else if !entries > 1 then
+      record_failure Failure.Body
+        (Failure.message ?loc:case.Test_tree.loc
+           (Pp.str
+              "the scope called its callback %d times — a scope must call it \
+               exactly once; the test body ran on the first call only"
+              !entries))
+  in
   let phases renew =
     match case.Test_tree.body with
     | Test_tree.Body fn -> ignore (guard Failure.Body fn)
@@ -292,6 +364,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
                teardown after a body timeout would run unbounded. *)
             renew ();
             ignore (guard Failure.Teardown (fun () -> teardown resource)))
+    | Test_tree.Scoped { scope; body } -> scoped ~renew scope body
   in
   let boundary () =
     with_isolated_random ~path:(Test_tree.path_to_string case.Test_tree.path)
