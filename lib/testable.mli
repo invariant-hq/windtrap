@@ -23,14 +23,29 @@
 
 type 'a t
 (** The type for witnesses over values of type ['a]: a printer and an equality,
-    both total. *)
+    both total. The equality is applied [expected] first, [actual] second — see
+    {!make} before writing an asymmetric one. *)
 
 (** {1:constructors Constructors} *)
 
 val make :
   pp:(Format.formatter -> 'a -> unit) -> equal:('a -> 'a -> bool) -> 'a t
 (** [make ~pp ~equal] is a witness comparing with [equal] and printing with
-    [pp]. Both must be total over the values the tests exercise. *)
+    [pp]. Both must be total over the values the tests exercise.
+
+    {b [equal] receives [expected] first, [actual] second.} The equality verbs
+    apply it in their own argument order ([Check.equal t expected actual] calls
+    [equal expected actual]), so an asymmetric [equal] treats the two sides
+    differently — and the side it favours is fixed by the caller's spelling, not
+    by anything visible in the witness.
+
+    Prefer a symmetric [equal], especially for tolerances. A relative tolerance
+    scaled by its {e second} argument scales by the computed value, so a wrong
+    answer that is large buys itself a proportionally large tolerance and the
+    assertion quietly stops testing anything. {!float_rel} is the worked
+    example: it scales by [Float.max (abs_float a) (abs_float b)], which is
+    symmetric by construction. Wrapping a library's [allclose] — most of which
+    are asymmetric in exactly this way — needs the same treatment. *)
 
 val structural : pp:(Format.formatter -> 'a -> unit) -> 'a t
 (** [structural ~pp] is [make ~pp] with polymorphic structural equality
@@ -89,7 +104,9 @@ val pp : 'a t -> Format.formatter -> 'a -> unit
 (** [pp w ppf v] formats [v] with [w]'s printer. *)
 
 val equal : 'a t -> 'a -> 'a -> bool
-(** [equal w a b] is [true] iff [w]'s equality considers [a] and [b] equal. *)
+(** [equal w a b] is [true] iff [w]'s equality considers [a] and [b] equal. The
+    verbs pass [expected] as [a] and [actual] as [b]; a witness whose equality
+    is asymmetric therefore treats the two sides differently (see {!make}). *)
 
 val to_string : 'a t -> 'a -> string
 (** [to_string w v] is [v] printed with [w]'s printer as a string — the

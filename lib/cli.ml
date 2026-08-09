@@ -28,6 +28,7 @@ type parsed = {
   prop_count : int option;
   max_shrink : int option;
   max_discard : int option;
+  max_prop_count : int option;
   output : [ `Quiet | `Verbose ] option;
   junit : string option;
   color : Env.color_mode option;
@@ -57,6 +58,7 @@ let empty =
     prop_count = None;
     max_shrink = None;
     max_discard = None;
+    max_prop_count = None;
     output = None;
     junit = None;
     color = None;
@@ -348,6 +350,16 @@ let table =
       doc = "Accepted shrink steps per failing property";
       mirror =
         mirrored "WINDTRAP_MAX_SHRINK" trimmed (fun p -> p.max_shrink = None);
+    };
+    {
+      short = None;
+      long = "--max-prop-count";
+      arg =
+        set_positive_int (fun acc n -> { acc with max_prop_count = Some n });
+      doc = "Ceiling on every property's case count";
+      mirror =
+        mirrored "WINDTRAP_MAX_PROP_COUNT" trimmed (fun p ->
+            p.max_prop_count = None);
     };
     {
       short = None;
@@ -724,6 +736,10 @@ let resolve ?(overrides = empty) cli =
     positive_int ~flag:"--max-shrink"
       (first_some overrides.max_shrink below.max_shrink)
   in
+  let* max_prop_count =
+    positive_int ~flag:"--max-prop-count"
+      (first_some overrides.max_prop_count below.max_prop_count)
+  in
   let* max_discard =
     (* Non-negative, not positive: zero is a coherent budget — "tolerate no
        discards" — and the engine already accepted it. *)
@@ -778,6 +794,7 @@ let resolve ?(overrides = empty) cli =
       prop_count;
       max_shrink;
       max_discard;
+      max_prop_count;
       junit = first_some overrides.junit below.junit;
       color =
         Option.value

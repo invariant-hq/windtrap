@@ -89,6 +89,16 @@ let pp_point ppf { x; y } = Format.fprintf ppf "(%d, %d)" x y
 let point = Testable.make ~pp:pp_point ~equal:( = )
 ```
 
+`equal` is applied **expected first, actual second** — `equal t x y`
+calls your equality as `equal x y`. That only matters if yours is not
+symmetric, and where it matters most is tolerances: a relative
+tolerance that scales by its *second* argument scales by the computed
+value, so a wrong answer that is large buys itself a proportionally
+large tolerance and the assertion silently stops testing anything.
+Windtrap's own `float_rel` scales by
+`Float.max (abs_float a) (abs_float b)` — symmetric by construction.
+Most libraries' `allclose` is not; wrap it accordingly.
+
 `Testable.structural ~pp` uses `( = )` for you; `Testable.of_module`
 takes a module with the conventional `t`/`pp`/`equal` trio;
 `of_equal` compares without printing (failures show `<abstract>` —

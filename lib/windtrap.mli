@@ -70,7 +70,9 @@ module Testable = Testable
 type 'a testable = 'a Testable.t
 (** The type for assertion witnesses: how {!equal} and kin compare values of
     type ['a] and render them in failure reports. A witness is a printer and an
-    equality, both total. See {!section-testables}. *)
+    equality, both total; the equality is applied to [expected] first and
+    [actual] second, which matters as soon as it is not symmetric — see
+    {!Testable.make}. See {!section-testables}. *)
 
 (** {1:declaring Declaring tests}
 

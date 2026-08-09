@@ -27,6 +27,13 @@ usually sits *under* such a composition, and a printer there survives into the
 enclosing generator's provenance, so `<from: of_list[1]>` becomes
 `<from: Green>`.
 
+**`--max-prop-count` (`WINDTRAP_MAX_PROP_COUNT`), a ceiling on case counts.**
+`--prop-count` loses to a pinned `~count`, which is right for raising one but
+left no way down: a file pinning `~count:500` on a dozen properties could not
+be smoke-run quickly. The ceiling applies to whichever count won, engine
+default included, and a capped run reports its count as config-sourced so the
+replay hint restates a `--prop-count` that reproduces it.
+
 **`~max_discard`, `--max-discard`, `WINDTRAP_MAX_DISCARD`.** The property
 engine has always had a discard budget — twice the effective case count — but
 nothing exposed it, while `--max-shrink` sat right beside it in the CLI. A law

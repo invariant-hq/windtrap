@@ -148,6 +148,11 @@ type outcome =
 
 (** {1:running Running} *)
 
+val default_count : int
+(** [default_count] is the generated-case count when none is supplied ([100]).
+    Exposed so a caller applying a ceiling can cap the default too, without
+    duplicating it. *)
+
 val run :
   ?loc:Loc.t ->
   ?count:[ `Declared of int | `Config of int ] ->

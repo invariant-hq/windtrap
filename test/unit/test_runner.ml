@@ -1492,6 +1492,38 @@ let () =
       | _ -> check "failing property yields a Property failure" false)
   | None -> check "never-holds recorded" false
 
+(* [--prop-count] can only raise a pinned count — the declaration site
+   wins — so lowering one for a local smoke run needs its own knob. The
+   ceiling applies to whichever count won, the engine default included. *)
+let () =
+  with_temp_root @@ fun root ->
+  let config =
+    {
+      (base_config ~log_dir:root ()) with
+      Run.prop_count = Some 50;
+      max_prop_count = Some 3;
+    }
+  in
+  let tests =
+    [
+      Runner.prop ~count:40 "declared above the ceiling" Gen.int (fun _ -> ());
+      Runner.prop ~count:2 "declared below the ceiling" Gen.int (fun _ -> ());
+      Runner.prop "config count above the ceiling" Gen.int (fun _ -> ());
+    ]
+  in
+  expect_run "prop-count ceiling suite runs" ~config tests @@ fun outcome ->
+  let cases name =
+    match result_of outcome [ name ] with
+    | Some { Run.prop_stats = Some stats; _ } -> stats.Property.cases
+    | _ -> -1
+  in
+  check_int "a pinned count above the ceiling is lowered" ~expected:3
+    ~actual:(cases "declared above the ceiling");
+  check_int "a pinned count below the ceiling is untouched" ~expected:2
+    ~actual:(cases "declared below the ceiling");
+  check_int "the config count is capped too" ~expected:3
+    ~actual:(cases "config count above the ceiling")
+
 let () =
   with_temp_root @@ fun root ->
   let config =
