@@ -1,0 +1,66 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_off_edges___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_off_edges.ml"
+        ~sites:[|{
+                   line = 15;
+                   col = 4;
+                   rewrite = "ge";
+                   span = (704, 715);
+                   before = "want > 16";
+                   after = "want >= 16";
+                   dismissed =
+                     (Some
+                        "a \"quoted\" reason,\nspanning lines \\ containing a backslash")
+                 };{
+                     line = 30;
+                     col = 10;
+                     rewrite = "sub";
+                     span = (1360, 1365);
+                     before = "a + b";
+                     after = "a - b";
+                     dismissed = None
+                   };{
+                       line = 39;
+                       col = 16;
+                       rewrite = "sub";
+                       span = (1722, 1727);
+                       before = "a + b";
+                       after = "a - b";
+                       dismissed = None
+                     }|]
+  end
+[@@@ocaml.text "/*"]
+let quoted want =
+  if ((want > 16)
+    [@mutate
+      off "a \"quoted\" reason,\nspanning lines \\ containing a backslash"])
+  then want
+  else 16
+let coarse a b = ((match a with | 0 -> b | n -> n + b)
+  [@mutate off "not a site"])
+let local a b =
+  let s =
+    let __windtrap_mut_1_r = b in
+    let __windtrap_mut_1_l = a in
+    if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 1
+    then __windtrap_mut_1_l - __windtrap_mut_1_r
+    else __windtrap_mut_1_l + __windtrap_mut_1_r[@@mutate off "ignored here"] in
+  s
+type t = int[@@mutate off]
+let after a b =
+  let __windtrap_mut_2_r = b in
+  let __windtrap_mut_2_l = a in
+  if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 2
+  then __windtrap_mut_2_l - __windtrap_mut_2_r
+  else __windtrap_mut_2_l + __windtrap_mut_2_r

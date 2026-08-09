@@ -1,0 +1,42 @@
+; The mutation instrumenter, exposed as the dune instrumentation backend
+; selected by --instrument-with ppx_windtrap.mutate.
+;
+; ONE library, naming ITSELF in (instrumentation.backend). Dune resolves
+; --instrument-with <name> by looking up the library called <name> and
+; reading its (instrumentation.backend) field; it does not object to that
+; field naming the library that carries it. The RFC flagged this as an
+; open question, so it was settled empirically before the shape was
+; committed to: test/mutate_ppx/integration/ carries a library with the
+; plain (instrumentation (backend ppx_windtrap.mutate)) stanza, and
+;
+;   dune exec --instrument-with ppx_windtrap.mutate \
+;     test/mutate_ppx/integration/test_registration.exe
+;
+; grows the catalogue by that library's mutants - which it cannot do
+; unless the backend resolved. The fallback the RFC named - a shell
+; library carrying the field plus a separate rewriter library, the split
+; ppx/dune + ppx/coverage/dune use - is therefore not needed here.
+; Coverage is split for a different reason: its backend hangs off
+; ppx_windtrap, whose OTHER job is the inline-test rewriter, and a
+; library cannot be both a rewriter and a backend declaration for a
+; DIFFERENT rewriter.
+;
+; ppx_runtime_libraries makes every instrumented library link the
+; windtrap.mutate runtime the generated code calls - and nothing else:
+; instrumented user code must never pull the windtrap core into its
+; closure.
+;
+; The library is also usable directly with (preprocess (pps
+; ppx_windtrap.mutate)), which is what the golden expansion tests and the
+; integration check under test/mutate_ppx use.
+
+(library
+ (name windtrap_mutate_ppx)
+ (public_name ppx_windtrap.mutate)
+ (kind ppx_rewriter)
+ (libraries ppxlib)
+ (ppx_runtime_libraries windtrap.mutate)
+ (instrumentation.backend
+  (ppx ppx_windtrap.mutate))
+ (preprocess
+  (pps ppxlib.metaquot)))

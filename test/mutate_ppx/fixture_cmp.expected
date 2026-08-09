@@ -1,0 +1,158 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_cmp___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_cmp.ml"
+        ~sites:[|{
+                   line = 7;
+                   col = 19;
+                   rewrite = "le";
+                   span = (310, 315);
+                   before = "a < b";
+                   after = "a <= b";
+                   dismissed = None
+                 };{
+                     line = 8;
+                     col = 21;
+                     rewrite = "lt";
+                     span = (351, 357);
+                     before = "a <= b";
+                     after = "a < b";
+                     dismissed = None
+                   };{
+                       line = 11;
+                       col = 8;
+                       rewrite = "ge";
+                       span = (397, 402);
+                       before = "a > b";
+                       after = "a >= b";
+                       dismissed = None
+                     };{
+                         line = 15;
+                         col = 39;
+                         rewrite = "gt";
+                         span = (460, 466);
+                         before = "a >= b";
+                         after = "a > b";
+                         dismissed = None
+                       };{
+                           line = 16;
+                           col = 18;
+                           rewrite = "neq";
+                           span = (499, 504);
+                           before = "a = b";
+                           after = "a <> b";
+                           dismissed = None
+                         };{
+                             line = 17;
+                             col = 21;
+                             rewrite = "eq";
+                             span = (540, 546);
+                             before = "a <> b";
+                             after = "a = b";
+                             dismissed = None
+                           };{
+                               line = 20;
+                               col = 21;
+                               rewrite = "or";
+                               span = (648, 666);
+                               before = "(x >= lo) && (x <= hi)";
+                               after = "(x >= lo) || (x <= hi)";
+                               dismissed = None
+                             };{
+                                 line = 20;
+                                 col = 21;
+                                 rewrite = "gt";
+                                 span = (648, 655);
+                                 before = "x >= lo";
+                                 after = "x > lo";
+                                 dismissed = None
+                               };{
+                                   line = 20;
+                                   col = 32;
+                                   rewrite = "lt";
+                                   span = (659, 666);
+                                   before = "x <= hi";
+                                   after = "x < hi";
+                                   dismissed = None
+                                 }|]
+  end
+[@@@ocaml.text "/*"]
+let below a b =
+  if
+    let __windtrap_mut_0_r = b in
+    let __windtrap_mut_0_l = a in
+    (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 0
+     then Stdlib.not (__windtrap_mut_0_r < __windtrap_mut_0_l)
+     else __windtrap_mut_0_l < __windtrap_mut_0_r)
+  then 1
+  else 0
+let at_most a b =
+  if
+    let __windtrap_mut_1_r = b in
+    let __windtrap_mut_1_l = a in
+    (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 1
+     then Stdlib.not (__windtrap_mut_1_r <= __windtrap_mut_1_l)
+     else __windtrap_mut_1_l <= __windtrap_mut_1_r)
+  then 1
+  else 0
+let above a b =
+  while
+    let __windtrap_mut_2_r = b in
+    let __windtrap_mut_2_l = a in
+    if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 2
+    then Stdlib.not (__windtrap_mut_2_r > __windtrap_mut_2_l)
+    else __windtrap_mut_2_l > __windtrap_mut_2_r do () done
+let at_least a b =
+  match a with
+  | _ when
+      let __windtrap_mut_3_r = b in
+      let __windtrap_mut_3_l = a in
+      if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 3
+      then Stdlib.not (__windtrap_mut_3_r >= __windtrap_mut_3_l)
+      else __windtrap_mut_3_l >= __windtrap_mut_3_r -> 1
+  | _ -> 0
+let same a b =
+  if
+    let __windtrap_mut_4_p = a = b in
+    (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 4
+     then Stdlib.not __windtrap_mut_4_p
+     else __windtrap_mut_4_p)
+  then 1
+  else 0
+let differs a b =
+  if
+    let __windtrap_mut_5_p = a <> b in
+    (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 5
+     then Stdlib.not __windtrap_mut_5_p
+     else __windtrap_mut_5_p)
+  then 1
+  else 0
+let window lo hi x =
+  let __windtrap_mut_6_p =
+    let __windtrap_mut_7_r = lo in
+    let __windtrap_mut_7_l = x in
+    if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 7
+    then Stdlib.not (__windtrap_mut_7_r >= __windtrap_mut_7_l)
+    else __windtrap_mut_7_l >= __windtrap_mut_7_r in
+  if
+    Stdlib.(<>) (__windtrap_mut_6_p : Stdlib.Bool.t)
+      (Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 6)
+  then
+    let __windtrap_mut_8_r = hi in
+    let __windtrap_mut_8_l = x in
+    (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 8
+     then Stdlib.not (__windtrap_mut_8_r <= __windtrap_mut_8_l)
+     else __windtrap_mut_8_l <= __windtrap_mut_8_r)
+  else __windtrap_mut_6_p
+let ok a b = a < b
+let count a b = List.length (List.filter (fun x -> x < a) b)

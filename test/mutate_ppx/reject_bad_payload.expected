@@ -1,0 +1,4 @@
+File "./reject_bad_payload.ml", line 1, characters 18-33:
+1 | let f n = (n + 1) [@mutate bogus]
+                      ^^^^^^^^^^^^^^^
+Error: Bad payload in mutate attribute.

@@ -1,0 +1,103 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_chain___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_chain.ml"
+        ~sites:[|{
+                   line = 16;
+                   col = 18;
+                   rewrite = "sub";
+                   span = (790, 799);
+                   before = "(a + b) + c";
+                   after = "(a + b) - c";
+                   dismissed = None
+                 };{
+                     line = 17;
+                     col = 18;
+                     rewrite = "add";
+                     span = (818, 827);
+                     before = "(a - b) - c";
+                     after = "(a - b) + c";
+                     dismissed = None
+                   };{
+                       line = 18;
+                       col = 19;
+                       rewrite = "fsub";
+                       span = (847, 858);
+                       before = "(a +. b) +. c";
+                       after = "(a +. b) -. c";
+                       dismissed = None
+                     };{
+                         line = 22;
+                         col = 18;
+                         rewrite = "add";
+                         span = (996, 1005);
+                         before = "(a + b) - c";
+                         after = "(a + b) + c";
+                         dismissed = None
+                       };{
+                           line = 22;
+                           col = 18;
+                           rewrite = "sub";
+                           span = (996, 1001);
+                           before = "a + b";
+                           after = "a - b";
+                           dismissed = None
+                         };{
+                             line = 27;
+                             col = 23;
+                             rewrite = "le";
+                             span = (1224, 1233);
+                             before = "(a < b) < c";
+                             after = "(a < b) <= c";
+                             dismissed = None
+                           }|]
+  end
+[@@@ocaml.text "/*"]
+let three a b c =
+  let __windtrap_mut_0_r = c in
+  let __windtrap_mut_0_l = a + b in
+  if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 0
+  then __windtrap_mut_0_l - __windtrap_mut_0_r
+  else __windtrap_mut_0_l + __windtrap_mut_0_r
+let minus a b c =
+  let __windtrap_mut_1_r = c in
+  let __windtrap_mut_1_l = a - b in
+  if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 1
+  then __windtrap_mut_1_l + __windtrap_mut_1_r
+  else __windtrap_mut_1_l - __windtrap_mut_1_r
+let floats a b c =
+  let __windtrap_mut_2_r = c in
+  let __windtrap_mut_2_l = a +. b in
+  if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 2
+  then __windtrap_mut_2_l -. __windtrap_mut_2_r
+  else __windtrap_mut_2_l +. __windtrap_mut_2_r
+let mixed a b c =
+  let __windtrap_mut_3_r = c in
+  let __windtrap_mut_3_l =
+    let __windtrap_mut_4_r = b in
+    let __windtrap_mut_4_l = a in
+    if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 4
+    then __windtrap_mut_4_l - __windtrap_mut_4_r
+    else __windtrap_mut_4_l + __windtrap_mut_4_r in
+  if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 3
+  then __windtrap_mut_3_l + __windtrap_mut_3_r
+  else __windtrap_mut_3_l - __windtrap_mut_3_r
+let chained a b c =
+  if
+    let __windtrap_mut_5_r = c in
+    let __windtrap_mut_5_l = a < b in
+    (if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 5
+     then Stdlib.not (__windtrap_mut_5_r < __windtrap_mut_5_l)
+     else __windtrap_mut_5_l < __windtrap_mut_5_r)
+  then 1
+  else 0

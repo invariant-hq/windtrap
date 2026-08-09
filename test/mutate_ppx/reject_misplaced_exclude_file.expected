@@ -1,0 +1,4 @@
+File "./reject_misplaced_exclude_file.ml", line 2, characters 2-26:
+2 |   [@@@mutate exclude_file]
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+Error: mutate exclude_file is not allowed here.

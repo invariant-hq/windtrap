@@ -1,0 +1,3 @@
+[@@@mutate exclude_file]
+let sum a b = a + b
+let ordered a b = if a < b then 1 else 0

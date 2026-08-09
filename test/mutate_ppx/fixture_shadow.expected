@@ -1,0 +1,58 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_shadow___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_shadow.ml"
+        ~sites:[|{
+                   line = 16;
+                   col = 21;
+                   rewrite = "le";
+                   span = (641, 646);
+                   before = "a < b";
+                   after = "a <= b";
+                   dismissed = None
+                 };{
+                     line = 17;
+                     col = 15;
+                     rewrite = "or";
+                     span = (676, 682);
+                     before = "a && b";
+                     after = "a || b";
+                     dismissed = None
+                   }|]
+  end
+[@@@ocaml.text "/*"]
+module Vec =
+  struct
+    type t = {
+      x: int ;
+      y: int }
+    let (+) a b = { x = (a.x + b.x); y = (a.y + b.y) }
+  end
+let move a b = Vec.(+) a b
+let ordered a b =
+  if
+    let __windtrap_mut_0_r = b in
+    let __windtrap_mut_0_l = a in
+    (if Windtrap_mut_________fixture_shadow___ml.___windtrap_armed___ 0
+     then Stdlib.not (__windtrap_mut_0_r < __windtrap_mut_0_l)
+     else __windtrap_mut_0_l < __windtrap_mut_0_r)
+  then 1
+  else 0
+let both a b =
+  let __windtrap_mut_1_p = a in
+  if
+    Stdlib.(<>) (__windtrap_mut_1_p : Stdlib.Bool.t)
+      (Windtrap_mut_________fixture_shadow___ml.___windtrap_armed___ 1)
+  then b
+  else __windtrap_mut_1_p
+let untouched a b = a - b

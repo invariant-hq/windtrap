@@ -1,0 +1,79 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_assert___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_assert.ml"
+        ~sites:[|{
+                   line = 7;
+                   col = 2;
+                   rewrite = "sub";
+                   span = (258, 263);
+                   before = "a + b";
+                   after = "a - b";
+                   dismissed = None
+                 };{
+                     line = 17;
+                     col = 21;
+                     rewrite = "or";
+                     span = (698, 719);
+                     before = "(a < b) && (assert false)";
+                     after = "(a < b) || (assert false)";
+                     dismissed = None
+                   };{
+                       line = 17;
+                       col = 21;
+                       rewrite = "le";
+                       span = (698, 703);
+                       before = "a < b";
+                       after = "a <= b";
+                       dismissed = None
+                     };{
+                         line = 25;
+                         col = 4;
+                         rewrite = "not";
+                         span = (1041, 1066);
+                         before = "assert (a < b); a > b";
+                         after = "not (assert (a < b); a > b)";
+                         dismissed = None
+                       }|]
+  end
+[@@@ocaml.text "/*"]
+let checked a b =
+  assert (a < b);
+  (let __windtrap_mut_0_r = b in
+   let __windtrap_mut_0_l = a in
+   if Windtrap_mut_________fixture_assert___ml.___windtrap_armed___ 0
+   then __windtrap_mut_0_l - __windtrap_mut_0_r
+   else __windtrap_mut_0_l + __windtrap_mut_0_r)
+let conjunction a b = assert (a && b)
+let arithmetic a b = assert ((a + b) > 0)
+let as_condition () = if assert false then 1 else 0
+let as_operand a b =
+  let __windtrap_mut_1_p =
+    let __windtrap_mut_2_r = b in
+    let __windtrap_mut_2_l = a in
+    if Windtrap_mut_________fixture_assert___ml.___windtrap_armed___ 2
+    then Stdlib.not (__windtrap_mut_2_r < __windtrap_mut_2_l)
+    else __windtrap_mut_2_l < __windtrap_mut_2_r in
+  if
+    Stdlib.(<>) (__windtrap_mut_1_p : Stdlib.Bool.t)
+      (Windtrap_mut_________fixture_assert___ml.___windtrap_armed___ 1)
+  then assert false
+  else __windtrap_mut_1_p
+let sequenced a b =
+  if
+    let __windtrap_mut_3_p = assert (a < b); a > b in
+    (if Windtrap_mut_________fixture_assert___ml.___windtrap_armed___ 3
+     then Stdlib.not __windtrap_mut_3_p
+     else __windtrap_mut_3_p)
+  then 1
+  else 0

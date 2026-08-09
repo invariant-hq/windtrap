@@ -1,0 +1,183 @@
+(* The integration check. An instrumented library must compile, register
+   its catalogue at module load, be observationally the original program
+   with nothing armed, and actually change behaviour when a mutant is
+   armed.
+
+   It passes either way: under a plain build the catalogue holds only the
+   [Forced] and [No_guard] modules (which are preprocessed with the
+   instrumenter directly), and under
+   [--instrument-with ppx_windtrap.mutate] it also holds [Stanza]'s,
+   which is what proves the backend is selectable by that name. *)
+
+let baseline () =
+  Printf.sprintf "%d %d %.1f %b %b %b %b %d %d %d %d %b"
+    (Windtrap_mutate_forced.Forced.sum 2 3)
+    (Windtrap_mutate_forced.Forced.diff 9 4)
+    (Windtrap_mutate_forced.Forced.fsum 1.5 2.5)
+    (Windtrap_mutate_forced.Forced.both true false)
+    (Windtrap_mutate_forced.Forced.either false true)
+    (Windtrap_mutate_forced.Forced.window 0 10 5)
+    (Windtrap_mutate_forced.Forced.chain true true false)
+    (Windtrap_mutate_forced.Forced.below 1 2)
+    (Windtrap_mutate_forced.Forced.same 1 1)
+    (Windtrap_mutate_forced.Forced.at_least 3 3)
+    (Windtrap_mutate_forced.Forced.scaled 2 3)
+    (Windtrap_mutate_forced.Forced.search (fun x -> x > 2) [ 1; 2; 3 ])
+
+(* The behaviour battery. A golden proves the instrumenter emits what it
+   emits; only running an armed program proves that what it emits means
+   the rewrite the report names. [with_mutant ~rewrite ~before f] finds
+   the single mutant of [Oracle] with that rendering, arms it, runs [f],
+   and disarms - failing loudly if the mutant is not unique, which is
+   also what keeps the [before] renderings under test. *)
+
+let oracle_mutants () =
+  List.filter
+    (fun (m : Windtrap_mutate.mutant) ->
+      Filename.basename m.id.file = "oracle.ml")
+    (Windtrap_mutate.catalogue ())
+
+let with_mutant ~rewrite ~before f =
+  let matching =
+    List.filter
+      (fun (m : Windtrap_mutate.mutant) ->
+        m.id.rewrite = rewrite && m.before = before)
+      (oracle_mutants ())
+  in
+  (match matching with
+  | [ m ] -> (
+      match Windtrap_mutate.arm (Windtrap_mutate.selector_of_mutant m) with
+      | Ok _ -> ()
+      | Error e -> Format.kasprintf failwith "%a" Windtrap_mutate.pp_arm_error e
+      )
+  | [] ->
+      Format.kasprintf failwith "no %s mutant renders as %S in oracle.ml"
+        rewrite before
+  | _ ->
+      Format.kasprintf failwith "%d %s mutants render as %S in oracle.ml"
+        (List.length matching) rewrite before);
+  f ();
+  Windtrap_mutate.disarm ()
+
+let check name condition =
+  if not condition then Format.kasprintf failwith "behaviour check: %s" name
+
+let behaviour () =
+  let module O = Windtrap_mutate_forced.Oracle in
+  (* Disarmed, every one of these is the original program. *)
+  check "neg disarmed" (O.neg_pick true = 1);
+  check "cmp disarmed" (O.cmp_lt 2 2 = 0 && O.cmp_le 2 2 = 1);
+  check "con disarmed" ((not (O.con_and false true)) && O.con_or true false);
+  check "ari disarmed" (O.ari_add 5 3 = 8 && O.ari_sub 5 3 = 2);
+  (* [neg]: the condition, and only the condition, is negated. *)
+  with_mutant ~rewrite:"not" ~before:"flag" (fun () ->
+      check "neg armed true" (O.neg_pick true = 0);
+      check "neg armed false" (O.neg_pick false = 1));
+  (* [cmp]: each armed arm is the relation the report names, checked at
+     the boundary where it and the original disagree, and agreeing with
+     the original everywhere else. *)
+  with_mutant ~rewrite:"le" ~before:"a < b" (fun () ->
+      check "a < b -> a <= b" (O.cmp_lt 2 2 = 1 && O.cmp_lt 3 2 = 0));
+  with_mutant ~rewrite:"lt" ~before:"a <= b" (fun () ->
+      check "a <= b -> a < b" (O.cmp_le 2 2 = 0 && O.cmp_le 1 2 = 1));
+  with_mutant ~rewrite:"ge" ~before:"a > b" (fun () ->
+      check "a > b -> a >= b" (O.cmp_gt 2 2 = 1 && O.cmp_gt 1 2 = 0));
+  with_mutant ~rewrite:"gt" ~before:"a >= b" (fun () ->
+      check "a >= b -> a > b" (O.cmp_ge 2 2 = 0 && O.cmp_ge 3 2 = 1));
+  with_mutant ~rewrite:"neq" ~before:"a = b" (fun () ->
+      check "a = b -> a <> b" (O.cmp_eq 2 2 = 0 && O.cmp_eq 1 2 = 1));
+  with_mutant ~rewrite:"eq" ~before:"a <> b" (fun () ->
+      check "a <> b -> a = b" (O.cmp_ne 2 2 = 1 && O.cmp_ne 1 2 = 0));
+  (* [con]: the whole four-row truth table of each connective, since the
+     encoding expresses both through one branch and a row transcribed
+     backwards would still pass a test that only checked one input. *)
+  with_mutant ~rewrite:"or" ~before:"a && b" (fun () ->
+      check "&& -> ||"
+        (O.con_and true true && O.con_and true false && O.con_and false true
+        && not (O.con_and false false)));
+  with_mutant ~rewrite:"and" ~before:"a || b" (fun () ->
+      check "|| -> &&"
+        (O.con_or true true
+        && (not (O.con_or true false))
+        && (not (O.con_or false true))
+        && not (O.con_or false false)));
+  (* [ari]: the four operators, on operands that make each direction
+     visible. *)
+  with_mutant ~rewrite:"sub" ~before:"a + b" (fun () ->
+      check "+ -> -" (O.ari_add 5 3 = 2));
+  with_mutant ~rewrite:"add" ~before:"a - b" (fun () ->
+      check "- -> +" (O.ari_sub 5 3 = 8));
+  with_mutant ~rewrite:"fsub" ~before:"a +. b" (fun () ->
+      check "+. -> -." (O.ari_fadd 5. 3. = 2.));
+  with_mutant ~rewrite:"fadd" ~before:"a -. b" (fun () ->
+      check "-. -> +." (O.ari_fsub 5. 3. = 8.));
+  (* Evaluation order and multiplicity. Both operand-binding encodings
+     evaluate each operand exactly once, right to left, armed or not. *)
+  let order name run =
+    ignore (run ());
+    check name (O.record () = [ "r"; "l" ])
+  in
+  order "cmp order disarmed" (fun () -> O.cmp_order 1 2);
+  order "ari order disarmed" (fun () -> O.ari_order 1 2);
+  with_mutant ~rewrite:"le" ~before:"(note \"l\" a) < (note \"r\" b)" (fun () ->
+      order "cmp order armed" (fun () -> O.cmp_order 1 2));
+  with_mutant ~rewrite:"sub" ~before:"(note \"l\" a) + (note \"r\" b)"
+    (fun () -> order "ari order armed" (fun () -> O.ari_order 1 2));
+  (* Short-circuiting: the right operand runs exactly when the connective
+     in force says it does, and never twice. *)
+  let shortcut name a b expected =
+    ignore (O.con_short a b);
+    check name (O.record () = if expected then [ "r" ] else [])
+  in
+  shortcut "&& skips b on false" false true false;
+  shortcut "&& runs b on true" true true true;
+  with_mutant ~rewrite:"or" ~before:"a && (note \"r\" b)" (fun () ->
+      shortcut "|| runs b on false" false true true;
+      shortcut "|| skips b on true" true true false)
+
+let () =
+  behaviour ();
+  let catalogue = Windtrap_mutate.catalogue () in
+  assert (Windtrap_mutate.armed () = None);
+  List.iter
+    (fun (m : Windtrap_mutate.mutant) ->
+      assert (List.mem m.id.rewrite Windtrap_mutate.rewrites);
+      assert (m.id.line >= 1);
+      assert (m.id.col >= 0);
+      assert (fst m.span <= snd m.span);
+      assert (m.before <> "");
+      assert (m.after <> ""))
+    catalogue;
+  (* Referenced so the linker keeps them: registration happens at module
+     load, and the linker drops modules a binary never mentions. *)
+  assert (Windtrap_mutate_forced.No_guard.cap 20 = 20);
+  assert (Windtrap_mutate_stanza.Stanza.apply Add 2 3 = 5);
+  assert (Windtrap_mutate_stanza.Stanza.clamp 0 10 42 = 10);
+  let forced =
+    List.filter
+      (fun (m : Windtrap_mutate.mutant) ->
+        Filename.basename m.id.file = "forced.ml")
+      catalogue
+  in
+  assert (forced <> []);
+  (* Arming changes what the program computes, and disarming puts it back
+     exactly. Every mutant is tried rather than one named by position, so
+     the check does not rot when the fixture is edited. *)
+  let unarmed = baseline () in
+  let changed =
+    List.filter
+      (fun (m : Windtrap_mutate.mutant) ->
+        (match Windtrap_mutate.arm (Windtrap_mutate.selector_of_mutant m) with
+        | Ok _ -> ()
+        | Error e ->
+            Format.kasprintf failwith "%a" Windtrap_mutate.pp_arm_error e);
+        let armed = baseline () in
+        Windtrap_mutate.disarm ();
+        assert (baseline () = unarmed);
+        armed <> unarmed)
+      forced
+  in
+  assert (changed <> []);
+  assert (Windtrap_mutate.armed () = None);
+  Printf.printf "mutants: %d (forced: %d, %d of them observable here)\n"
+    (List.length catalogue) (List.length forced) (List.length changed)

@@ -1,0 +1,109 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_neg___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_neg.ml"
+        ~sites:[|{
+                   line = 8;
+                   col = 23;
+                   rewrite = "not";
+                   span = (416, 420);
+                   before = "flag";
+                   after = "not flag";
+                   dismissed = None
+                 };{
+                     line = 9;
+                     col = 23;
+                     rewrite = "not";
+                     span = (458, 462);
+                     before = "flag";
+                     after = "not flag";
+                     dismissed = None
+                   };{
+                       line = 12;
+                       col = 8;
+                       rewrite = "not";
+                       span = (518, 526);
+                       before = "ready ()";
+                       after = "not (ready ())";
+                       dismissed = None
+                     };{
+                         line = 16;
+                         col = 39;
+                         rewrite = "not";
+                         span = (589, 592);
+                         before = "p y";
+                         after = "not (p y)";
+                         dismissed = None
+                       };{
+                           line = 20;
+                           col = 20;
+                           rewrite = "not";
+                           span = (757, 779);
+                           before = "if a then b else false";
+                           after = "not (if a then b else false)";
+                           dismissed = None
+                         };{
+                             line = 20;
+                             col = 23;
+                             rewrite = "not";
+                             span = (760, 761);
+                             before = "a";
+                             after = "not a";
+                             dismissed = None
+                           }|]
+  end
+[@@@ocaml.text "/*"]
+let pick flag x y =
+  if
+    let __windtrap_mut_0_p = flag in
+    (if Windtrap_mut_________fixture_neg___ml.___windtrap_armed___ 0
+     then Stdlib.not __windtrap_mut_0_p
+     else __windtrap_mut_0_p)
+  then x
+  else y
+let announce flag =
+  if
+    let __windtrap_mut_1_p = flag in
+    (if Windtrap_mut_________fixture_neg___ml.___windtrap_armed___ 1
+     then Stdlib.not __windtrap_mut_1_p
+     else __windtrap_mut_1_p)
+  then print_string "on"
+let drain ready step =
+  while
+    let __windtrap_mut_2_p = ready () in
+    if Windtrap_mut_________fixture_neg___ml.___windtrap_armed___ 2
+    then Stdlib.not __windtrap_mut_2_p
+    else __windtrap_mut_2_p do step () done
+let classify p x =
+  match x with
+  | y when
+      let __windtrap_mut_3_p = p y in
+      if Windtrap_mut_________fixture_neg___ml.___windtrap_armed___ 3
+      then Stdlib.not __windtrap_mut_3_p
+      else __windtrap_mut_3_p -> "yes"
+  | _ -> "no"
+let nested a b =
+  if
+    let __windtrap_mut_4_p =
+      if
+        let __windtrap_mut_5_p = a in
+        (if Windtrap_mut_________fixture_neg___ml.___windtrap_armed___ 5
+         then Stdlib.not __windtrap_mut_5_p
+         else __windtrap_mut_5_p)
+      then b
+      else false in
+    (if Windtrap_mut_________fixture_neg___ml.___windtrap_armed___ 4
+     then Stdlib.not __windtrap_mut_4_p
+     else __windtrap_mut_4_p)
+  then 1
+  else 0

@@ -1,0 +1,116 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_nesting___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_nesting.ml"
+        ~sites:[|{
+                   line = 6;
+                   col = 23;
+                   rewrite = "or";
+                   span = (249, 255);
+                   before = "b && c";
+                   after = "b || c";
+                   dismissed = None
+                 };{
+                     line = 7;
+                     col = 18;
+                     rewrite = "or";
+                     span = (274, 282);
+                     before = "a && b";
+                     after = "a || b";
+                     dismissed = None
+                   };{
+                       line = 8;
+                       col = 30;
+                       rewrite = "and";
+                       span = (318, 326);
+                       before = "c || d";
+                       after = "c && d";
+                       dismissed = None
+                     };{
+                         line = 11;
+                         col = 20;
+                         rewrite = "le";
+                         span = (422, 427);
+                         before = "a < b";
+                         after = "a <= b";
+                         dismissed = None
+                       };{
+                           line = 12;
+                           col = 20;
+                           rewrite = "or";
+                           span = (462, 468);
+                           before = "a && b";
+                           after = "a || b";
+                           dismissed = None
+                         };{
+                             line = 13;
+                             col = 18;
+                             rewrite = "not";
+                             span = (501, 502);
+                             before = "a";
+                             after = "not a";
+                             dismissed = None
+                           }|]
+  end
+[@@@ocaml.text "/*"]
+let chain a b c =
+  a &&
+    (let __windtrap_mut_0_p = b in
+     if
+       Stdlib.(<>) (__windtrap_mut_0_p : Stdlib.Bool.t)
+         (Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 0)
+     then c
+     else __windtrap_mut_0_p)
+let mixed a b c =
+  (let __windtrap_mut_1_p = a in
+   if
+     Stdlib.(<>) (__windtrap_mut_1_p : Stdlib.Bool.t)
+       (Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 1)
+   then b
+   else __windtrap_mut_1_p) || c
+let deep a b c d =
+  a ||
+    (b &&
+       (let __windtrap_mut_2_p = c in
+        if
+          Stdlib.(=) (__windtrap_mut_2_p : Stdlib.Bool.t)
+            (Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 2)
+        then d
+        else __windtrap_mut_2_p))
+let by_cmp a b =
+  if
+    let __windtrap_mut_3_r = b in
+    let __windtrap_mut_3_l = a in
+    (if Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 3
+     then Stdlib.not (__windtrap_mut_3_r < __windtrap_mut_3_l)
+     else __windtrap_mut_3_l < __windtrap_mut_3_r)
+  then 1
+  else 0
+let by_con a b =
+  if
+    let __windtrap_mut_4_p = a in
+    (if
+       Stdlib.(<>) (__windtrap_mut_4_p : Stdlib.Bool.t)
+         (Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 4)
+     then b
+     else __windtrap_mut_4_p)
+  then 1
+  else 0
+let by_neg a =
+  if
+    let __windtrap_mut_5_p = a in
+    (if Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 5
+     then Stdlib.not __windtrap_mut_5_p
+     else __windtrap_mut_5_p)
+  then 1
+  else 0

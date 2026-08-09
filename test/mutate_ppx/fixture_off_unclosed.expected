@@ -1,0 +1,36 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_off_unclosed___ml =
+  struct
+    type site = Windtrap_mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      span: (int * int) ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_mutate.register ~file:"./fixture_off_unclosed.ml"
+        ~sites:[|{
+                   line = 17;
+                   col = 18;
+                   rewrite = "sub";
+                   span = (645, 650);
+                   before = "a + b";
+                   after = "a - b";
+                   dismissed = None
+                 }|]
+  end
+[@@@ocaml.text "/*"]
+module Quiet = struct [@@@mutate off]
+                      let hidden a b = a + b end
+let visible a b =
+  let __windtrap_mut_0_r = b in
+  let __windtrap_mut_0_l = a in
+  if Windtrap_mut_________fixture_off_unclosed___ml.___windtrap_armed___ 0
+  then __windtrap_mut_0_l - __windtrap_mut_0_r
+  else __windtrap_mut_0_l + __windtrap_mut_0_r
+[@@@mutate off]
+let suppressed a b = a + b
+let also_suppressed a b = if a && b then 1 else 0
