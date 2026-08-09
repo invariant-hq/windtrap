@@ -517,34 +517,42 @@ let output_level ?(overrides = empty) cli = resolve_output ~overrides cli
 
 (* [parse] validates command-line values, but programmatic overrides and the
    environment mirrors bypass it — WINDTRAP_TIMEOUT=-5 must not reach
-   [Unix.setitimer]. [checked ~flag ~env] re-validates the value the
-   precedence picked, naming the winning layer as the error source (the flag
-   spelling stands in for a programmatic override — there is no typed flag
-   to name). *)
-let checked ~flag ~env ~valid ~render ~expected value env_value =
-  match first_some value env_value with
+   [Unix.setitimer]. [numeric] resolves one numeric knob across the three
+   layers ([over] programmatic, [cli], then [mirror]) and re-validates
+   whichever layer won, naming it as the error source: the variable for a
+   mirror, and the flag spelling for the layers above it — a programmatic
+   override has no typed flag to name, so [flag] stands in for it.
+
+   The mirror validates exactly like its flag (prop/F-4): when the
+   environment is the winning layer — no programmatic or CLI value above it —
+   a token that does not [parse], or one that parses but fails [valid], is an
+   error naming the variable, exactly like the WINDTRAP_SEED and
+   WINDTRAP_SHARD paths, never a silently defaulted run. A losing layer stays
+   unparsed, so a valid CLI value shadows a malformed mirror. Tokens are
+   trimmed before parsing, matching the Env module's numeric convention.
+
+   [mirror] is [None] for a knob with no environment mirror ([--bail]): the
+   environment layer is then empty and only [flag] can ever name a bad
+   value. *)
+let numeric ~flag ~mirror ~parse ~valid ~render ~expected ~over ~cli =
+  let higher = first_some over cli in
+  let* from_env =
+    match mirror with
+    | Some (var, Some raw) when Option.is_none higher -> (
+        match parse (String.trim raw) with
+        | Some v -> Ok (Some v)
+        | None -> invalid ~source:var ~value:raw ~expected)
+    | Some _ | None -> Ok None
+  in
+  match first_some higher from_env with
   | Some v when not (valid v) ->
-      let source = if value = None then env else flag in
+      let source =
+        match mirror with
+        | Some (var, _) when Option.is_none higher -> var
+        | Some _ | None -> flag
+      in
       invalid ~source ~value:(render v) ~expected
   | picked -> Ok picked
-
-(* Numeric mirrors validate like their flags (prop/F-4): when the
-   environment is the winning layer — no programmatic or CLI value above it
-   — a token that does not parse is an error naming the variable, exactly
-   like the WINDTRAP_SEED and WINDTRAP_SHARD paths, never a silently
-   defaulted run. A losing layer stays unread, so a valid CLI value shadows
-   a malformed mirror. Tokens are trimmed before parsing, matching the Env
-   module's numeric convention. *)
-let env_numeric ~source ~parse ~expected raw higher =
-  match higher with
-  | Some _ -> Ok None
-  | None -> (
-      match raw with
-      | None -> Ok None
-      | Some value -> (
-          match parse (String.trim value) with
-          | Some v -> Ok (Some v)
-          | None -> invalid ~source ~value ~expected))
 
 let resolve ?(overrides = empty) cli =
   let pick over_field cli_field env_field =
@@ -563,53 +571,41 @@ let resolve ?(overrides = empty) cli =
             | Error _ ->
                 invalid ~source:"WINDTRAP_SEED" ~value ~expected:seed_expected))
   in
+  let seconds ~flag ~mirror ~valid ~expected ~over ~cli =
+    numeric ~flag ~mirror ~parse:float_of_string_opt ~valid
+      ~render:(Pp.str "%g") ~expected ~over ~cli
+  in
+  let positive_int ~flag ~mirror ~over ~cli =
+    numeric ~flag ~mirror ~parse:int_of_string_opt
+      ~valid:(fun n -> n > 0)
+      ~render:string_of_int ~expected:"a positive integer" ~over ~cli
+  in
   let* timeout =
-    let higher = first_some overrides.timeout cli.timeout in
-    let* env_value =
-      env_numeric ~source:"WINDTRAP_TIMEOUT" ~parse:float_of_string_opt
-        ~expected:"a positive number" (Env.timeout ()) higher
-    in
-    checked ~flag:"--timeout" ~env:"WINDTRAP_TIMEOUT"
+    seconds ~flag:"--timeout"
+      ~mirror:(Some ("WINDTRAP_TIMEOUT", Env.timeout ()))
       ~valid:(fun t -> Float.is_finite t && t > 0.)
-      ~render:(Pp.str "%g") ~expected:"a positive number" higher env_value
+      ~expected:"a positive number" ~over:overrides.timeout ~cli:cli.timeout
   in
   let* slow_threshold =
-    let higher = first_some overrides.slow_threshold cli.slow_threshold in
-    let* env_value =
-      env_numeric ~source:"WINDTRAP_SLOW_THRESHOLD" ~parse:float_of_string_opt
-        ~expected:"a non-negative number" (Env.slow_threshold ()) higher
-    in
-    checked ~flag:"--slow-threshold" ~env:"WINDTRAP_SLOW_THRESHOLD"
+    seconds ~flag:"--slow-threshold"
+      ~mirror:(Some ("WINDTRAP_SLOW_THRESHOLD", Env.slow_threshold ()))
       ~valid:(fun t -> Float.is_finite t && t >= 0.)
-      ~render:(Pp.str "%g") ~expected:"a non-negative number" higher env_value
-  in
-  let positive_int ~flag ~env value env_value =
-    checked ~flag ~env
-      ~valid:(fun n -> n > 0)
-      ~render:string_of_int ~expected:"a positive integer" value env_value
+      ~expected:"a non-negative number" ~over:overrides.slow_threshold
+      ~cli:cli.slow_threshold
   in
   let* prop_count =
-    let higher = first_some overrides.prop_count cli.prop_count in
-    let* env_value =
-      env_numeric ~source:"WINDTRAP_PROP_COUNT" ~parse:int_of_string_opt
-        ~expected:"a positive integer" (Env.prop_count ()) higher
-    in
-    positive_int ~flag:"--prop-count" ~env:"WINDTRAP_PROP_COUNT" higher
-      env_value
+    positive_int ~flag:"--prop-count"
+      ~mirror:(Some ("WINDTRAP_PROP_COUNT", Env.prop_count ()))
+      ~over:overrides.prop_count ~cli:cli.prop_count
   in
   let* max_shrink =
-    let higher = first_some overrides.max_shrink cli.max_shrink in
-    let* env_value =
-      env_numeric ~source:"WINDTRAP_MAX_SHRINK" ~parse:int_of_string_opt
-        ~expected:"a positive integer" (Env.max_shrink ()) higher
-    in
-    positive_int ~flag:"--max-shrink" ~env:"WINDTRAP_MAX_SHRINK" higher
-      env_value
+    positive_int ~flag:"--max-shrink"
+      ~mirror:(Some ("WINDTRAP_MAX_SHRINK", Env.max_shrink ()))
+      ~over:overrides.max_shrink ~cli:cli.max_shrink
   in
+  (* [--bail] is the one numeric knob with no environment mirror. *)
   let* bail =
-    positive_int ~flag:"--bail" ~env:"--bail" (* no environment mirror *)
-      (first_some overrides.bail cli.bail)
-      None
+    positive_int ~flag:"--bail" ~mirror:None ~over:overrides.bail ~cli:cli.bail
   in
   let* shard =
     (* Like WINDTRAP_SEED, a malformed winning token is an error, because a
