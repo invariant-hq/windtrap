@@ -17,12 +17,11 @@ let tests =
         equal ~msg:"int32" string "5" (s Pp.int32 5l);
         equal ~msg:"int64" string "9007199254740993"
           (s Pp.int64 9007199254740993L);
-        equal ~msg:"float keeps trailing dot" string "1." (s Pp.float 1.);
-        (* [float] is %.12g and does not round-trip; [float_exact] is what a
+        (* [float_exact] is the only float printer here: what it renders, a
            reader may copy back and get the same double — a property
-           counterexample pasted into [~examples], a bit-exact witness. *)
-        equal ~msg:"float loses the bits" string "0.3" (s Pp.float (0.1 +. 0.2));
-        equal ~msg:"float_exact keeps them" string "0.30000000000000004"
+           counterexample pasted into [~examples], a bit-exact witness. A
+           fixed-precision rendering would print 0.3 for this value. *)
+        equal ~msg:"float_exact keeps the bits" string "0.30000000000000004"
           (s Pp.float_exact (0.1 +. 0.2));
         List.iter
           (fun f ->
@@ -56,8 +55,7 @@ let tests =
           (s Pp.float_exact Float.nan);
         equal ~msg:"float_exact renders inf" string "inf"
           (s Pp.float_exact Float.infinity);
-        equal ~msg:"bool" string "true" (s Pp.bool true);
-        equal ~msg:"char" string "x" (s Pp.char 'x'));
+        equal ~msg:"bool" string "true" (s Pp.bool true));
     test "str and pf agree with to_string" (fun () ->
         equal ~msg:"str formats like sprintf" string "a=1 b=two"
           (Pp.str "a=%d b=%s" 1 "two");
@@ -70,8 +68,10 @@ let tests =
     test "combinators" (fun () ->
         equal ~msg:"list with default semi separator" string "1; 2; 3"
           (s (Pp.list Pp.int) [ 1; 2; 3 ]);
-        equal ~msg:"list with comma separator" string "1, 2"
-          (s (Pp.list ~sep:Pp.comma Pp.int) [ 1; 2 ]);
+        (* [?sep] is honored, not merely accepted: [Testable] passes an
+           explicit separator for every container instance it builds. *)
+        equal ~msg:"list honors a caller's separator" string "1|2"
+          (s (Pp.list ~sep:(fun ppf () -> Pp.pf ppf "|") Pp.int) [ 1; 2 ]);
         equal ~msg:"singleton list has no separator" string "9"
           (s (Pp.list Pp.int) [ 9 ]);
         equal ~msg:"empty list is empty" string "" (s (Pp.list Pp.int) []);
@@ -87,40 +87,23 @@ let tests =
           (s (Pp.pair Pp.int Pp.string) (1, "x"));
         equal ~msg:"brackets" string "[1; 2]"
           (s (Pp.brackets (Pp.list Pp.int)) [ 1; 2 ]));
-    test "styled is the identity without ansi and wraps with it" (fun () ->
-        equal ~msg:"styled ~ansi:false is the identity" string "hi"
-          (s (Pp.styled ~ansi:false `Red Pp.string) "hi");
-        equal ~msg:"styled ~ansi:true wraps in escape codes" string
-          "\027[31mhi\027[0m"
-          (s (Pp.styled ~ansi:true `Red Pp.string) "hi");
-        equal ~msg:"styled bold code" string "\027[1mb\027[0m"
-          (s (Pp.styled ~ansi:true `Bold Pp.string) "b");
+    test "styled_string is the identity without ansi and wraps with it"
+      (fun () ->
         equal ~msg:"styled_string ~ansi:false is the identity" string "plain"
           (Pp.styled_string ~ansi:false `Green "plain");
         equal ~msg:"styled_string ~ansi:true wraps" string "\027[32mok\027[0m"
           (Pp.styled_string ~ansi:true `Green "ok");
+        (* Each style's code, on the surface renderers reach for: a style is
+           picked by name at the call site, so a swapped code is a silently
+           wrong color rather than a failure. *)
+        equal ~msg:"red code" string "\027[31mhi\027[0m"
+          (Pp.styled_string ~ansi:true `Red "hi");
+        equal ~msg:"bold code" string "\027[1mb\027[0m"
+          (Pp.styled_string ~ansi:true `Bold "b");
         (* Styling nothing is nothing: report lines are assembled from
            optional fragments, and an empty one must not leave an open code
            and its reset behind. *)
         equal ~msg:"styled_string ~ansi:true leaves the empty string bare"
           string ""
           (Pp.styled_string ~ansi:true `Faint ""));
-    test "styling does not change line breaking" (fun () ->
-        (* Zero-width escapes: styling must not perturb Format's line breaking.
-           With a margin of 10, "aaaa bbbb" breaks identically styled or not
-           (escape codes are printed at width 0). *)
-        let render ~ansi =
-          let b = Buffer.create 32 in
-          let ppf = Format.formatter_of_buffer b in
-          Format.pp_set_margin ppf 10;
-          Format.fprintf ppf "@[<hv>%a@ %a@]"
-            (Pp.styled ~ansi `Red Pp.string)
-            "aaaa"
-            (Pp.styled ~ansi `Green Pp.string)
-            "bbbb";
-          Format.pp_print_flush ppf ();
-          Buffer.contents b
-        in
-        let strip = Windtrap.Private.Text.strip_ansi in
-        equal string (render ~ansi:false) (strip (render ~ansi:true)));
   ]

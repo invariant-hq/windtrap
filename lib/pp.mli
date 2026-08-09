@@ -5,15 +5,21 @@
 
 (** Formatting helpers and explicit ANSI styling.
 
-    A minimal substitute for [Fmt] built on {!Stdlib.Format}: short aliases for
-    common formatting operations, composable printers, and ANSI styling that is
-    explicit at every call site.
+    A small [Fmt]-shaped layer over {!Stdlib.Format} holding what this library
+    actually prints with: short aliases, composable printers, and ANSI styling
+    that is explicit at every call site. It is not a general-purpose printing
+    toolbox — an entry here earns its place by having a caller.
 
     Styling discipline: failure payloads store plain strings rendered with
-    {!to_string}; only renderers call {!styled} or {!styled_string}, passing
-    their own [~ansi] decision (derived from the environment's color detection).
-    No global state controls styling, so a printer used to build failure data
-    can never leak escape codes into it. *)
+    {!to_string}; only renderers call {!styled_string}, passing their own
+    [~ansi] decision (derived from the environment's color detection). No global
+    state controls styling, so a printer used to build failure data can never
+    leak escape codes into it.
+
+    Output discipline likewise: there is no printer here that writes to a
+    standard channel. A sink is always a parameter — {!pf}'s formatter,
+    [Render.create]'s [~out] — so a run's transcript has one destination that
+    its caller chose. *)
 
 (** {1:types Types} *)
 
@@ -21,7 +27,7 @@ type 'a t = Format.formatter -> 'a -> unit
 (** The type for printers of values of type ['a]. *)
 
 type style = [ `Bold | `Faint | `Red | `Green | `Yellow | `Cyan | `White ]
-(** The type for ANSI styles understood by {!styled} and {!styled_string}. *)
+(** The type for ANSI styles understood by {!styled_string}. *)
 
 (** {1:output Output} *)
 
@@ -30,12 +36,6 @@ val str : ('a, Format.formatter, unit, string) format4 -> 'a
 
 val pf : Format.formatter -> ('a, Format.formatter, unit) format -> 'a
 (** [pf ppf fmt ...] formats to [ppf]. Equivalent to {!Format.fprintf}. *)
-
-val pr : ('a, Format.formatter, unit) format -> 'a
-(** [pr fmt ...] formats to standard output. Equivalent to {!Format.printf}. *)
-
-val epr : ('a, Format.formatter, unit) format -> 'a
-(** [epr fmt ...] formats to standard error. Equivalent to {!Format.eprintf}. *)
 
 val flush : Format.formatter -> unit -> unit
 (** [flush ppf ()] flushes [ppf]. *)
@@ -54,20 +54,18 @@ val int : int t
 val int32 : int32 t
 val int64 : int64 t
 
-val float : float t
-(** [float] formats with {!Format.pp_print_float} (e.g. [1.] prints as ["1."]).
-    It is [%.12g], which does not round-trip. *)
-
 val float_exact : float t
 (** [float_exact] is the shortest decimal rendering that round-trips to the
-    exact bits — 15 significant digits, else 16, else 17. Use it wherever a
-    reader is expected to copy the value back and get the same double: a
-    property counterexample pasted into [~examples], a bit-exact witness.
-    Non-finite values render as [nan], [inf], [-inf], and the sign of zero
-    survives. *)
+    exact bits — 15 significant digits, else 16, else 17. It is the only float
+    printer here, deliberately: everything this library prints a float into is
+    something a reader may copy back and expect the same double — a property
+    counterexample pasted into [~examples], a bit-exact witness — and a
+    fixed-precision rendering is not the value that was there. A caller wanting
+    a compact, lossy spelling asks for it at the call site, as {!Testable}'s
+    [%g] instances do. Non-finite values render as [nan], [inf], [-inf], and the
+    sign of zero survives. *)
 
 val bool : bool t
-val char : char t
 
 (** {1:combinators Combinators} *)
 
@@ -93,24 +91,24 @@ val brackets : 'a t -> 'a t
 (** [brackets pp] wraps the output of [pp] in square brackets. *)
 
 val semi : unit t
-(** [semi] formats ["; "] with a break hint. *)
-
-val comma : unit t
-(** [comma] formats [", "] with a break hint. *)
+(** [semi] formats ["; "] with a break hint. It is {!list}'s default; a caller
+    wanting another separator passes its own [?sep]. *)
 
 (** {1:styling Styling}
 
-    Renderer-side only. Both functions take the ANSI decision explicitly; with
-    [~ansi:false] they are the identity, so the same rendering code serves color
-    and monochrome transports.
+    Renderer-side only, and a single function: the ANSI decision is taken
+    explicitly, and with [~ansi:false] it is the identity, so the same rendering
+    code serves color and monochrome transports.
 
-    Styles do not nest: the reset that closes an inner [styled] also ends any
-    enclosing style. Style sibling fragments, not containers. *)
+    Styles do not nest: the reset that closes one style also ends any enclosing
+    style. Style sibling fragments, not containers.
 
-val styled : ansi:bool -> style -> 'a t -> 'a t
-(** [styled ~ansi s pp] is [pp] wrapped in the escape codes for [s] when [ansi]
-    is [true], and [pp] unchanged otherwise. Escape codes are emitted as
-    zero-width pretty-printing tokens and do not perturb line breaking. *)
+    Styled output is plain bytes, not zero-width tokens, so it is not
+    width-transparent: a caller laying out columns measures with
+    {!Text.strip_ansi} and {!Text.length_utf8} rather than letting {!Format}
+    count. That is what the renderer does — it emits whole lines through a bare
+    ["%s"] and does its own truncation — and it is why a styled ['a t]
+    combinator would buy nothing here. *)
 
 val styled_string : ansi:bool -> style -> string -> string
 (** [styled_string ~ansi s str] is [str] wrapped in the escape codes for [s]

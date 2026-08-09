@@ -10,8 +10,6 @@ type style = [ `Bold | `Faint | `Red | `Green | `Yellow | `Cyan | `White ]
 
 let str = Format.asprintf
 let pf = Format.fprintf
-let pr fmt = Format.fprintf Format.std_formatter fmt
-let epr fmt = Format.fprintf Format.err_formatter fmt
 let flush ppf () = Format.pp_print_flush ppf ()
 let to_string pp v = Format.asprintf "%a" pp v
 
@@ -21,15 +19,16 @@ let string = Format.pp_print_string
 let int = Format.pp_print_int
 let int32 ppf n = Format.fprintf ppf "%ld" n
 let int64 ppf n = Format.fprintf ppf "%Ld" n
-let float = Format.pp_print_float
 
 (* Shortest decimal rendering that round-trips to the exact bits: 15
    significant digits when they suffice, else 16, else 17 (always enough for
-   a double). [float] above is [%.12g], which does not round-trip — a value
-   printed with it is not the value that was there, so anything a reader is
-   expected to copy back (a property counterexample, a bit-exact witness)
-   must use this instead. Sign of zero survives; non-finite values render as
-   [nan], [inf], [-inf]. *)
+   a double). This is the module's only float printer, deliberately: a value
+   printed at a fixed precision is not the value that was there, and
+   everything this library prints a float into is something a reader is
+   expected to copy back (a property counterexample pasted into [~examples],
+   a bit-exact witness). A caller that wants a compact, lossy rendering asks
+   for it at the call site, as [Testable]'s [%g] instances do. Sign of zero
+   survives; non-finite values render as [nan], [inf], [-inf]. *)
 let float_exact ppf f =
   if Float.is_nan f || not (Float.is_finite f) then
     Format.pp_print_string ppf (Printf.sprintf "%g" f)
@@ -56,12 +55,10 @@ let float_exact ppf f =
     Format.pp_print_string ppf (if is_float_syntax then s else s ^ ".")
 
 let bool = Format.pp_print_bool
-let char = Format.pp_print_char
 
 (* Combinators *)
 
 let semi ppf () = Format.fprintf ppf ";@ "
-let comma ppf () = Format.fprintf ppf ",@ "
 
 let list ?(sep = semi) pp ppf l =
   (* The box gives the separators' break hints a known size; without it a
@@ -104,16 +101,6 @@ let code_of_style = function
   | `White -> "\027[37m"
 
 let reset = "\027[0m"
-
-let styled ~ansi style pp ppf v =
-  if not ansi then pp ppf v
-  else begin
-    (* Escape codes print at width 0 so Format's line breaking is not
-       perturbed by the invisible bytes. *)
-    Format.pp_print_as ppf 0 (code_of_style style);
-    pp ppf v;
-    Format.pp_print_as ppf 0 reset
-  end
 
 (* An empty payload is returned bare: wrapping it would emit an open code
    and its reset with nothing between them — invisible, but real bytes on
