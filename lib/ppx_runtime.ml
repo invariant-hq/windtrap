@@ -129,6 +129,9 @@ type state = {
   covered : (string list, bool) Hashtbl.t;
       (* paths of failed tests whose failures are all corrected *)
   mutable current_expect : expect_ctx option; (* the executing body, if any *)
+  mutable read_only : bool;
+      (* Law 16(d): while a mutant is armed, checking records no
+         correction and reports no coverage of a failure by one. *)
 }
 
 let initial_state () : state =
@@ -147,9 +150,40 @@ let initial_state () : state =
     node_pool = Hashtbl.create 16;
     covered = Hashtbl.create 16;
     current_expect = None;
+    read_only = false;
   }
 
 let state = ref (initial_state ())
+
+(* Armed processes (Law 16d)
+
+   Two things a process that is about to run with a mutant armed owes this
+   module, and they are always owed together:
+
+   Read-only checking. The two correction recorders and the exit
+   protocol's coverage bit are the whole of the correction path's write
+   side, so silencing them is what makes an armed [%expect] mismatch a
+   plain failure: nothing is recorded, so [flush_corrections] finds
+   nothing to write and [inline_exit_code] sees no failure covered by a
+   correction. Checking, matching and failure reporting are untouched.
+   Nothing ever turns it back off — a process that arms stays read-only
+   for its life.
+
+   Clearing the cross-run tables. A forked mutation child inherits the
+   parent dry run's merged reach histories; left in place they would
+   resolve the child's first mismatch against the PARENT's outputs and
+   report ppx_expect's "test ran multiple times" CR block instead of the
+   mismatch that killed the mutant. Registration and the protocol
+   arguments are deliberately kept: the child runs the tests the parent
+   registered. *)
+
+let enter_armed () =
+  !state.read_only <- true;
+  Hashtbl.reset !state.corrections;
+  Hashtbl.reset !state.styled;
+  Hashtbl.reset !state.node_pool;
+  Hashtbl.reset !state.covered;
+  !state.current_expect <- None
 
 (* Protocol arguments *)
 
@@ -544,13 +578,15 @@ let file_corrections file =
       tbl
 
 let record_node_fix ~file node ~contents =
-  Hashtbl.replace (file_corrections file)
-    (Node_key (node.loc.start_pos, node.loc.end_pos))
-    (Node_fix contents)
+  if not !state.read_only then
+    Hashtbl.replace (file_corrections file)
+      (Node_key (node.loc.start_pos, node.loc.end_pos))
+      (Node_fix contents)
 
 let record_insert ~file ~body_loc ~body_wrap ~trailing_loc ~contents =
-  Hashtbl.replace (file_corrections file) (Insert_key trailing_loc.start_pos)
-    (Insert { body_loc; body_wrap; contents })
+  if not !state.read_only then
+    Hashtbl.replace (file_corrections file) (Insert_key trailing_loc.start_pos)
+      (Insert { body_loc; body_wrap; contents })
 
 (* [state.styled] is only consulted for files that also have recorded
    corrections. *)
@@ -1007,9 +1043,13 @@ let had_problems ctx =
     ctx.ctx_nodes
 
 let record_covered value =
-  let path = Run.path (Run.current_frame ()) in
-  if value = `No_problem then Hashtbl.remove !state.covered path
-  else Hashtbl.replace !state.covered path (value = `Covered)
+  (* Under read-only checking there is no correction for dune to promote,
+     so no failure may be reported as covered by one. *)
+  if !state.read_only then ()
+  else
+    let path = Run.path (Run.current_frame ()) in
+    if value = `No_problem then Hashtbl.remove !state.covered path
+    else Hashtbl.replace !state.covered path (value = `Covered)
 
 (* Trailing output, resolved like a node against the merged history: an
    instance with no trailing output is a passing reach, so a functor whose
@@ -1168,36 +1208,45 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
    correction protocol. *)
 let run_inline_suite ~suite ~config ~coverage_mode ~output tests =
   match
-    Driver.execute_and_report ~invocation:`Mirrors ~seed:None ~selection:None
-      ~github:(Env.in_github_actions ()) ~output ~coverage_mode ~config ~suite
-      tests
+    (* The mutation seam: one call at run entry, in place of the driver's
+       (see [Mutate_loop]). A mutation run's exit code is its own and never
+       reports a test outcome, so [Reported] skips the correction protocol
+       entirely: dune's promotion protocol is not what a mutation run is
+       for, and Law 16(d) has already stopped every correction it could
+       have recorded. *)
+    Mutate_loop.execute_and_report ~armed:enter_armed ~invocation:`Mirrors
+      ~seed:None ~selection:None ~github:(Env.in_github_actions ()) ~output
+      ~coverage_mode ~config ~suite tests
   with
-  | Error error ->
-      (* The message is already on stderr; this runner returns the code
+  | Mutate_loop.Reported code -> code
+  | Mutate_loop.Ran result -> (
+      match result with
+      | Error error ->
+          (* The message is already on stderr; this runner returns the code
          for [exit] to combine with the correction protocol. *)
-      Runner.startup_exit_code error
-  | Ok (outcome, results) ->
-      (* An inline partition is a suite like any other, and WINDTRAP_JUNIT
+          Runner.startup_exit_code error
+      | Ok (outcome, results) ->
+          (* An inline partition is a suite like any other, and WINDTRAP_JUNIT
          is the only spelling that reaches it — the protocol has no CLI. It
          writes its own file under the directory form, which is what makes
          a report per partition possible at all. *)
-      Option.iter
-        (Driver.write_junit ~invocation:`Mirrors ~suite
-           ~duration:outcome.Runner.duration ~results)
-        config.Run.junit;
-      let written, unwritable = flush_corrections_report () in
-      (* The correction-coverage exit-0 downgrade presumes the correction
+          Option.iter
+            (Driver.write_junit ~invocation:`Mirrors ~suite
+               ~duration:outcome.Runner.duration ~results)
+            config.Run.junit;
+          let written, unwritable = flush_corrections_report () in
+          (* The correction-coverage exit-0 downgrade presumes the correction
          reached disk — dune's diff action can only surface corrections
          that exist. A failed expect test whose correction was not
          written must exit nonzero (the write failure was reported
          above), or dune would record the partition as passed. *)
-      let code = if unwritable = [] then inline_exit_code outcome else 1 in
-      (match correction_notice ~exit_code:code written with
-      | None -> ()
-      | Some notice ->
-          output_string Stdlib.stderr notice;
-          flush Stdlib.stderr);
-      code
+          let code = if unwritable = [] then inline_exit_code outcome else 1 in
+          (match correction_notice ~exit_code:code written with
+          | None -> ()
+          | Some notice ->
+              output_string Stdlib.stderr notice;
+              flush Stdlib.stderr);
+          code)
 
 let exit () =
   if not !state.am_test_runner then Stdlib.exit 0;

@@ -333,10 +333,18 @@ let coverage_report renderer ~coverage_mode run collection =
    warning, .corrected flushing, the exit — is the caller's, and so are
    the invocation context, the GitHub gating decision, and the listing a
    [--list] run prints. *)
-let execute_and_report ~invocation ~seed ~selection ~github ~output
-    ~coverage_mode ~config ~suite tests =
+let execute_and_report ?(on_event = fun (_ : Runner.event) -> ()) ~invocation
+    ~seed ~selection ~github ~output ~coverage_mode ~config ~suite tests =
   let renderer = renderer ~config ~mode:output ~invocation () in
-  let on_event = observe renderer ~seed ~selection in
+  (* [Runner.execute]'s [?on_event] has one slot and the transcript owns
+     it. A second subscriber composes here rather than replacing it, in a
+     fixed order — transcript first — so no caller can drop the run's own
+     output by subscribing, and none can reorder it. *)
+  let transcript = observe renderer ~seed ~selection in
+  let on_event event =
+    transcript event;
+    on_event event
+  in
   github_start ~github suite;
   match Runner.execute ~on_event ~config ~suite tests with
   | Error error ->

@@ -234,7 +234,18 @@ let version =
    where [dune runtest] and [dune exec] are indistinguishable (both set
    INSIDE_DUNE); standalone, argv0 verbatim, exactly as the user typed it.
    An embedder passing [~argv:[||]] gets [`Mirrors] — the fixed dune
-   wording. *)
+   wording.
+
+   The dune spelling carries [--instrument-with ppx_windtrap.mutate] when
+   this executable has mutants registered, and the flag precedes the
+   target because dune requires it there. A binary with mutants was
+   necessarily built with the backend, so that is the signal: without the
+   flag, the [arm] line of every survivor block would tell dune to rebuild
+   the target UNINSTRUMENTED, and the command that is supposed to resolve
+   the finding would arm nothing. Every other hint spelled from this
+   context — [--failed], [-u], the replay line — gains it too, which is
+   right for the same reason: re-running the suite without the flag
+   rebuilds a different binary. *)
 let invocation_of ~inside_dune argv : Render.invocation =
   let argv0 = if Array.length argv > 0 then argv.(0) else "" in
   if argv0 = "" then `Mirrors
@@ -243,7 +254,12 @@ let invocation_of ~inside_dune argv : Render.invocation =
       if Filename.is_relative argv0 then Filename.concat (Sys.getcwd ()) argv0
       else argv0
     in
-    `Exe ("dune exec " ^ Path_ops.display absolute ^ " --")
+    let backend =
+      if Mutate_loop.instrumented () then
+        "--instrument-with ppx_windtrap.mutate "
+      else ""
+    in
+    `Exe ("dune exec " ^ backend ^ Path_ops.display absolute ^ " --")
   end
   else `Exe argv0
 
@@ -275,37 +291,47 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
     in
     if has_props then Some config.Run.seed else None
   in
+  (* The mutation seam: one call at run entry, in place of the driver's.
+     Without a mutation backend and without the variables it is exactly
+     [Driver.execute_and_report] — same transcript, same bytes, same cost;
+     with them it wraps the run on both sides (an armed mutant is
+     announced before any output, the discovery line follows the summary,
+     and the loop forks after the dry run) and may take the process over. *)
   match
-    Driver.execute_and_report ~invocation ~seed
+    Mutate_loop.execute_and_report ~armed:Ppx_runtime.enter_armed ~invocation
+      ~seed
       ~selection:(Driver.selection_description config)
       ~github ~output ~coverage_mode ~config ~suite tests
   with
-  | Error error ->
-      (* The message is already on stderr; this runner owns the exit. *)
-      exit (Runner.startup_exit_code error)
-  | Ok (outcome, results) ->
-      if config.Run.list_only then begin
-        List.iter
-          (fun case ->
-            print_endline (Test_tree.path_to_string case.Test_tree.path))
-          outcome.Runner.selected;
-        exit outcome.Runner.exit_code
-      end;
-      Option.iter
-        (Driver.write_junit ~invocation ~suite
-           ~duration:outcome.Runner.duration ~results)
-        config.Run.junit;
-      if
-        outcome.Runner.focus_active
-        && outcome.Runner.exit_code = 0
-        && not (Env.in_ci ())
-      then
-        Format.eprintf
-          "warning: focus is active (ftest/fgroup) — %d of %d tests ran; \
-           remove the focus before committing@."
-          (List.length outcome.Runner.selected)
-          outcome.Runner.total;
-      exit outcome.Runner.exit_code
+  | Mutate_loop.Reported code -> exit code
+  | Mutate_loop.Ran result -> (
+      match result with
+      | Error error ->
+          (* The message is already on stderr; this runner owns the exit. *)
+          exit (Runner.startup_exit_code error)
+      | Ok (outcome, results) ->
+          if config.Run.list_only then begin
+            List.iter
+              (fun case ->
+                print_endline (Test_tree.path_to_string case.Test_tree.path))
+              outcome.Runner.selected;
+            exit outcome.Runner.exit_code
+          end;
+          Option.iter
+            (Driver.write_junit ~invocation ~suite
+               ~duration:outcome.Runner.duration ~results)
+            config.Run.junit;
+          if
+            outcome.Runner.focus_active
+            && outcome.Runner.exit_code = 0
+            && not (Env.in_ci ())
+          then
+            Format.eprintf
+              "warning: focus is active (ftest/fgroup) — %d of %d tests ran; \
+               remove the focus before committing@."
+              (List.length outcome.Runner.selected)
+              outcome.Runner.total;
+          exit outcome.Runner.exit_code)
 
 let run ?(argv = Sys.argv) suite tests =
   (* [Run.active], not [current_opt]: the slot also holds the run

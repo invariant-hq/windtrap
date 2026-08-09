@@ -160,6 +160,28 @@ let focus_sites tests =
   in
   List.rev (List.fold_left node [] tests)
 
+(* Narrowing
+
+   The tree is filtered, never rebuilt: a surviving test keeps its node
+   verbatim, so its path, tags, focus flag, declaration site and body are
+   the ones the unpruned run would have used — which is what keeps
+   per-case seed derivation (over the path) and snapshot scoping (over the
+   declaration file) identical between a full run and a narrowed one. A
+   group that loses every descendant disappears with them rather than
+   contributing an empty path component. *)
+
+let prune keep tests =
+  let rec node ~rev_groups = function
+    | Test t ->
+        if keep (List.rev (t.name :: rev_groups)) then Some (Test t) else None
+    | Group g -> (
+        let rev_groups = g.name :: rev_groups in
+        match List.filter_map (node ~rev_groups) g.children with
+        | [] -> None
+        | children -> Some (Group { g with children }))
+  in
+  List.filter_map (node ~rev_groups:[]) tests
+
 (* Flattening *)
 
 type case = {

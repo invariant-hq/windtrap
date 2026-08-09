@@ -355,6 +355,44 @@ val correction_notice : exit_code:int -> string list -> string option
     [dune promote]. {!exit} prints the notice after {!flush_corrections}, once
     the exit code is settled. *)
 
+(** {1:armed Armed processes}
+
+    The mutation subsystem's one reach into this module's behaviour (Law 16d).
+    It reaches in to stop a write, never to start one. *)
+
+val enter_armed : unit -> unit
+(** [enter_armed ()] puts this module into the state a process with a mutant
+    armed requires, and does not come back out — a process that arms stays armed
+    for its life. Two things, always needed together:
+
+    - {b Checking becomes read-only.} An [[%expect]] or [[%expect_exact]]
+      mismatch is a plain failure: no correction is recorded, so
+      {!flush_corrections} writes no [.corrected] file and finds nothing to name
+      on [stderr], and no failed test is recorded as covered by a correction, so
+      {!inline_exit_code} never downgrades a failing run to [0] on dune's
+      promotion protocol. Matching, normalization, per-node reachability and the
+      failures they report are unchanged. An armed mutant changes program output
+      on purpose, and a run that rewrote the source tree from mutated output
+      would violate Law 1 outright.
+    - {b The cross-run tables are cleared}: recorded corrections, the
+      styled-writer registry, the merged per-node reach histories and the
+      covered paths. A forked mutation child inherits the parent dry run's reach
+      histories, and its first mismatch would otherwise resolve against the
+      {e parent's} outputs as ppx_expect's "test ran multiple times" CR block
+      instead of as the mismatch that killed the mutant. Registration, the
+      protocol arguments and the duplicate-name counters are kept: the child
+      runs the tests the parent registered.
+
+    Snapshots need no counterpart. {!Snapshot.resolve_mode} maps
+    {!Env.No_update} to {!Snapshot.Check} and writing is reachable only under
+    {!Snapshot.Update}, so an armed run's [update = No_update] already makes
+    snapshot checking read-only by construction.
+
+    The mutation loop calls it in every process that has a mutant armed — each
+    forked child, and an interactive [WINDTRAP_MUTATE_ARM] run — and reaches it
+    as an argument rather than a dependency, because this module sits {e above}
+    the loop (see {!Mutate_loop.execute_and_report}'s [~armed]). *)
+
 (** {1:seams Test seams} *)
 
 val reset : unit -> unit

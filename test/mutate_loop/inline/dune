@@ -1,0 +1,13 @@
+; Law 16(d), through the runner it exists for: an inline (ppx) partition
+; with a mutant armed must report an [%expect] mismatch as a plain
+; failure and write no .corrected. runner_main.exe mirrors the
+; inline_tests backend's generated runner; ../test_mutate_loop.exe spawns
+; it with the protocol argv, once unarmed and once armed, and checks the
+; sandbox for correction files afterwards.
+
+(executable
+ (name runner_main)
+ (modules runner_main inline_armed)
+ (libraries windtrap ppx_windtrap.runtime mutate_loop_subject)
+ (preprocess
+  (pps ppx_windtrap)))

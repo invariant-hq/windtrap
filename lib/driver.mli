@@ -215,6 +215,7 @@ val coverage_report :
 (** {1:spine The execute-and-report spine} *)
 
 val execute_and_report :
+  ?on_event:(Runner.event -> unit) ->
   invocation:Render.invocation ->
   seed:Seed.seed option ->
   selection:string option ->
@@ -244,6 +245,16 @@ val execute_and_report :
     reasons are documented there. In particular this function does {e not} call
     {!selection_description} itself — an inline partition emptied by a mirror is
     not a mistyped filter.
+
+    [on_event] is a {e second} subscriber to {!Runner.execute}'s single
+    [?on_event] slot, composed here after {!observe} rather than replacing it —
+    replacing it would silently delete the run's whole transcript. The order is
+    fixed here and not the caller's: the transcript sees every event first.
+    Defaults to ignoring. It is subject to {!Runner.execute}'s observer
+    contract: it cannot alter status, counts or scheduling, and if it raises the
+    run aborts with that exception, so a subscriber must be total. The mutation
+    loop subscribes with it to build its reach map while the dry run prints its
+    ordinary output.
 
     {!github_annotations} runs {e after} {!github_end}, deliberately: an
     [::error::] block written inside the [::group::] envelope folds away with

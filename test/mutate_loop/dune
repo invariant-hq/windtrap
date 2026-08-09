@@ -1,0 +1,41 @@
+; The mutation loop, driven end to end through a real forking process —
+; the shape the six test/ppx/*/drive_*.ml harnesses established, because
+; a loop that forks cannot be observed from inside its own image.
+;
+; [subject] is preprocessed with the instrumenter directly rather than
+; through the (instrumentation) stanza, so the mutants exist in an
+; ordinary [dune runtest] build and the suite needs no --instrument-with
+; to be meaningful. [suite_main] is the executable under test:
+; test_mutate_loop spawns it once per scenario with a scrubbed
+; environment and asserts on what it printed, what it exited with, and
+; what it left in _build/_mutants.
+
+(library
+ (name mutate_loop_subject)
+ (modules subject)
+ (preprocess
+  (pps ppx_windtrap.mutate)))
+
+(executable
+ (name suite_main)
+ (modules suite_main)
+ (libraries windtrap windtrap_mutate mutate_loop_subject unix))
+
+; The control: a suite that links no instrumented module, so the seam has
+; to decline by name instead of reporting nothing.
+
+(executable
+ (name plain_main)
+ (modules plain_main)
+ (libraries windtrap))
+
+(test
+ (name test_mutate_loop)
+ (modules test_mutate_loop)
+ (libraries windtrap windtrap_mutate unix)
+ (deps
+  suite_main.exe
+  plain_main.exe
+  inline/runner_main.exe
+  inline/inline_armed.ml
+  runaway/runaway_main.exe))

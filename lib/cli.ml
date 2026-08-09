@@ -561,7 +561,6 @@ let error_message = function
   | Extra_positional { filter; extra } ->
       Pp.str "unexpected argument '%s': the filter is already '%s'" extra filter
 
-
 (* Environment settings with no flag, listed by --help. *)
 let env_only =
   [
@@ -569,6 +568,9 @@ let env_only =
     ("WINDTRAP_COLUMNS", "Terminal width override for reports");
     ("WINDTRAP_TAIL_ERRORS", "Captured-output lines shown per failure");
     ("WINDTRAP_PROJECT_ROOT", "Project root for snapshot path resolution");
+    ("WINDTRAP_MUTATE", "Mutation testing: 1, report or off");
+    (Windtrap_mutate.arm_variable, "Arm one mutant, by identifier");
+    ("WINDTRAP_MUTATE_LIMIT", "Survivor blocks to print (0 for all)");
   ]
 
 (* Parsing *)
@@ -830,6 +832,55 @@ let resolve ?(overrides = empty) cli =
 let coverage_mode (cli : parsed) =
   let* below = layers ~overrides:empty cli in
   Ok (Option.value below.coverage ~default:`Summary)
+
+(* The mutation knobs
+
+   Environment only, and deliberately so: the inline runner's argument
+   parser accepts dune's inline-test protocol and nothing else, so a flag
+   would exist for half the users. They resolve apart from [resolve] for
+   the reason [coverage_mode] does — none of them is run configuration and
+   nothing in the runner may read them — but with the same loudness: an
+   unrecognized value is an error naming the variable, never a silently
+   defaulted mode. WINDTRAP_MUTATE's truthy and falsy spellings come from
+   [Env]'s shared boolean reader, so it accepts exactly what every other
+   boolean variable accepts, plus [report]. The variable a mutant
+   identifier travels in is the runtime's own constant, so the roster
+   above, this reader and the report's [arm] line cannot name three
+   different variables. *)
+
+type mutation = {
+  mode : [ `Off | `Loop | `Report ];
+  arm : string option;
+  limit : int;
+}
+
+let default_mutate_limit = 10
+
+let mutation () =
+  let* mode =
+    match Env.get_string "WINDTRAP_MUTATE" with
+    | None -> Ok `Off
+    | Some value -> (
+        if String.lowercase_ascii (String.trim value) = "report" then Ok `Report
+        else
+          match Env.get_bool "WINDTRAP_MUTATE" with
+          | Some true -> Ok `Loop
+          | Some false -> Ok `Off
+          | None ->
+              invalid ~source:"WINDTRAP_MUTATE" ~value
+                ~expected:"1, report or off")
+  in
+  let* limit =
+    match Env.get_string "WINDTRAP_MUTATE_LIMIT" with
+    | None -> Ok default_mutate_limit
+    | Some value -> (
+        match int_of_string_opt (String.trim value) with
+        | Some n when n >= 0 -> Ok n
+        | _ ->
+            invalid ~source:"WINDTRAP_MUTATE_LIMIT" ~value
+              ~expected:"a non-negative integer (0 prints every survivor)")
+  in
+  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable; limit }
 
 (* One invocation, one resolution call. Both drivers want all three
    answers and neither wants three error paths to reach them, so the three

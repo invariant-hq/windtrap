@@ -194,6 +194,37 @@ val coverage_mode :
     any {e other} winning mirror is reported here too; callers resolve the
     configuration first and exit on that error, which is where it belongs. *)
 
+type mutation = {
+  mode : [ `Off | `Loop | `Report ];
+      (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
+          truthy spellings), [`Report] for [report], [`Off] for a falsy spelling
+          or an unset variable. *)
+  arm : string option;
+      (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
+          {!Windtrap_mutate.selector_of_string} owns that grammar and reports
+          its own errors. [None] when the variable is unset or empty. *)
+  limit : int;
+      (** [WINDTRAP_MUTATE_LIMIT]: survivor blocks to print, [0] for all.
+          Defaults to [10]. *)
+}
+(** The type for the mutation knobs, which are environment variables only: the
+    inline runner's argument parser accepts dune's inline-test protocol and
+    nothing else, so a flag would exist for half the users. *)
+
+val mutation : unit -> (mutation, error) result
+(** [mutation ()] reads the three mutation variables. Resolved apart from
+    {!resolve} like {!coverage_mode}, and for the same reason — none of them is
+    run configuration, and nothing in the runner may read them — with the same
+    loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] or
+    [WINDTRAP_MUTATE_LIMIT] when its value is not one the variable accepts,
+    never a silently defaulted mode.
+
+    [WINDTRAP_MUTATE_JOBS] and [WINDTRAP_MUTATE_TIMEOUT] are specified but do
+    not ship yet, and are deliberately not read here: a knob that is read and
+    ignored is worse than one that is not read.
+
+    Effects: reads the environment. *)
+
 val output_level :
   ?overrides:parsed -> parsed -> [ `Quiet | `Compact | `Verbose ]
 (** [output_level ~overrides cli] is the terminal verbosity level: the first

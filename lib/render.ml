@@ -1679,6 +1679,36 @@ let mutation_summary t (m : mutation) =
        | None -> "")
        (if m.siblings then " \u{00b7} project: dune build @mutants" else ""))
 
+(* The discovery line, and the two lines an armed run is owed.
+
+   The discovery line is the mutation half of the coverage line's
+   discoverability shape: what the instrumentation found, then the one
+   spelling that asks it to do something. It is a summary line, so it
+   follows the coverage line's rule and stays out of a quiet transcript;
+   the armed announcement does not, because Law 16(b) makes it the
+   guarantee that a run whose output does not say so has no mutant
+   armed. *)
+
+let mutation_discovery t ~mutants ~files =
+  if t.mode <> `Quiet && mutants > 0 then begin
+    clear_live t;
+    close_row t;
+    put t
+      (spf "mutants: %d in %d file%s \u{00b7} WINDTRAP_MUTATE=1 to test them"
+         mutants files
+         (if files = 1 then "" else "s"))
+  end
+
+let mutation_armed t ~id ~before ~after =
+  clear_live t;
+  close_row t;
+  put t (spf "mutant %s armed: %s \u{2192} %s" (st t `Bold id) before after)
+
+let mutation_killed t =
+  clear_live t;
+  close_row t;
+  put t (st t `Green "mutant killed.")
+
 let mutation_report t (m : mutation) =
   clear_live t;
   close_row t;

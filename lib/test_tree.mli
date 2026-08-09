@@ -177,6 +177,26 @@ val focus_sites : t list -> ([ `Ftest | `Fgroup ] * Loc.t option) list
     (["focused tests committed (ftest at test/test_users.ml:31, …)"]) and the
     runner's out-of-CI warning. *)
 
+(** {1:narrowing Narrowing} *)
+
+val prune : (string list -> bool) -> t list -> t list
+(** [prune keep tests] is [tests] with every leaf test whose full path [keep]
+    rejects removed, and every group thereby left empty removed with it. Pure:
+    bodies are not run.
+
+    Surviving nodes are kept verbatim, so their paths, tags, focus flags,
+    declaration sites and bodies are exactly the ones an unpruned run would use
+    — per-case seed derivation ({!Seed.derive} over the path) and snapshot
+    scoping (over the declaration file) are therefore identical between a full
+    run and a narrowed one.
+
+    This is not a second selection layer: {!Runner.execute} selects with the
+    filters, tags, shard and allowlist of its {!Run.config}, and nothing in this
+    module reads a configuration. It exists for a caller that already holds the
+    exact set of paths it wants to execute and cannot spell that set as a
+    substring filter — the mutation loop's children, which run one mutant's
+    reaching tests. *)
+
 (** {1:flattening Flattening} *)
 
 type case = {

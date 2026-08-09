@@ -399,6 +399,29 @@ val coverage_report :
     it is a defect report about a named test. Presentation only — the ordering,
     the cap, the witness lists and every count are the loop's. *)
 
+val mutation_discovery : t -> mutants:int -> files:int -> unit
+(** [mutation_discovery t ~mutants ~files] prints the discovery line
+    ([mutants: 187 in 4 files · WINDTRAP_MUTATE=1 to test them]): what an
+    instrumented build that was not asked to mutate anything found, and the one
+    spelling that asks it to test them. The caller prints it after {!finish},
+    where the coverage line sits — it is the same discoverability shape, and it
+    follows the same rule of printing nothing under [`Quiet]. Prints nothing
+    when [mutants] is [0]: a build with no mutant has nothing to offer. *)
+
+val mutation_armed : t -> id:string -> before:string -> after:string -> unit
+(** [mutation_armed t ~id ~before ~after] prints the armed announcement
+    ([mutant lib/calc.ml:9:12:add armed: a - b → a + b]). Law 16(b) makes it
+    normative: a process with a mutant armed says so before any other output, so
+    a run whose output does not say so has none. Prints in every mode, [`Quiet]
+    included — it is the guarantee, not a stream trimming. *)
+
+val mutation_killed : t -> unit
+(** [mutation_killed t] prints [mutant killed.] — the line that closes the
+    arm-and-watch loop, printed after the transcript of a run whose armed mutant
+    made a test fail. Nothing is printed for an armed mutant that survived: the
+    transcript's own green summary already says so. Prints in every mode, as
+    {!mutation_armed} does. *)
+
 type witness = {
   test : string;
       (** The test's full path, as {!Test_tree.path_to_string} spells it
@@ -447,7 +470,12 @@ type mutation = {
       (** How many mutants are unreached. Not the number of lines: one line can
           carry several. *)
   killed : int;  (** How many mutants were killed. *)
-  total : int;  (** The population: every mutant in the catalogue. *)
+  total : int;
+      (** The population: every mutant the run could test — the catalogue
+          {e minus} the mutants dismissed by [[@mutate off]], which the reader
+          took out of scope and which no remedy applies to. It is therefore
+          [killed + survivors_total + unreached_total], which is what the
+          summary line reads as. *)
   duration : float option;
       (** The mutation run's wall-clock seconds, [None] for a merge, which ran
           nothing. *)
