@@ -18,11 +18,12 @@
     a difference is never silently reported as absent. The guards and the
     refinement noise cutoff are implementation constants, not contract.
 
-    {!sequences} is the third grain: when both renderings parse as OCaml-style
-    list or array renderings — the output of the [Testable] container printers —
-    it compares them element by element, so renderers can state the first
-    differing index and the mismatch count instead of leaving a hundred-element
-    diff to speak for itself.
+    {!sequences} is the third grain: when both renderings read back as
+    OCaml-style list or array renderings — the output of the [Testable]
+    container printers, recovered by {!Rendered_seq} — it compares them element
+    by element, so renderers can state the first differing index and the
+    mismatch count instead of leaving a hundred-element diff to speak for
+    itself.
 
     Element grain outranks character grain wherever it applies. A character-
     minimal edit script between two sequence renderings is free to mark a region
@@ -110,13 +111,12 @@ val refine : expected:string -> actual:string -> refinement option
 (** {1:sequences Sequence elements}
 
     Element-grain comparison of two {e rendered} sequences. The inputs are the
-    payload strings of an equality failure, not the original values: parsing
-    recognizes the source-like renderings the [Testable] [list], [array], and
-    [slist] printers produce — [[e1; e2; …]] and [[|e1; e2; …|]] — including the
-    line breaks their compacting boxes insert in long renderings. Anything else
-    — and any rendering this conservative parser cannot account for, such as
-    unbalanced brackets inside a custom printer's output — yields [None], never
-    a wrong element count. *)
+    payload strings of an equality failure, not the original values: the
+    elements are recovered from the printed text by {!Rendered_seq}, which reads
+    the source-like renderings the [Testable] [list], [array], and [slist]
+    printers produce — [[e1; e2; …]] and [[|e1; e2; …|]] — including the line
+    breaks their compacting boxes insert in long renderings. Anything that
+    reader declines yields [None], never a wrong element count. *)
 
 type mismatch = {
   index : int;
@@ -130,9 +130,9 @@ type mismatch = {
 }
 (** The type for the first differing element under the alignment. Both sides
     present is a replacement; one side [None] is an element without a
-    counterpart. Element strings are canonical: whitespace runs outside string
-    and character literals collapse to a single space, so an element compares
-    and prints the same wherever the rendering's line breaks fell. *)
+    counterpart. Element strings are {!Rendered_seq.element.canonical}, so an
+    element compares and prints the same wherever the rendering's line breaks
+    fell. *)
 
 type seq_diff = {
   kind : [ `List | `Array ];
@@ -167,8 +167,9 @@ type seq_diff = {
 val sequences :
   ?spans:bool -> expected:string -> actual:string -> unit -> seq_diff option
 (** [sequences ~expected ~actual ()] is the element-by-element comparison of the
-    two renderings, or [None] when they do not both parse as sequence renderings
-    of the same {!seq_diff.kind}.
+    two renderings, or [None] when {!Rendered_seq.parse} declines either of them
+    or they are not the same {!seq_diff.kind}. As there, [None] means the
+    comparison could not be made — never that the sequences agree.
 
     Elements are compared as canonical strings (see {!mismatch}), which follows
     the printed values, not the witness's equality — exactly what a reader of

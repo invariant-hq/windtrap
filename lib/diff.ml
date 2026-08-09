@@ -275,7 +275,11 @@ let hunks ?(context = 3) ~expected ~actual () =
 
 (* Character refinement (adapted from v1 lib/distance.ml) *)
 
-type span = { start : int; length : int }
+(* One notion of byte range in the library: [Rendered_seq] defines it because
+   it is the lower layer, and a sequence element's extent is already a span
+   in every sense the renderers care about. The equation keeps the two from
+   needing a conversion. *)
+type span = Rendered_seq.extent = { start : int; length : int }
 type refinement = { expected_spans : span list; actual_spans : span list }
 
 (* Middle-relative minimal edit commands; indices are element positions. *)
@@ -410,7 +414,10 @@ let refine ~expected ~actual =
           actual_spans = spans_of_indices cb (List.rev actual_indices);
         }
 
-(* Sequence elements *)
+(* Sequence elements: alignment only. Recovering the elements from a
+   rendering is [Rendered_seq]'s job — it shares nothing with Myers or
+   Wagner-Fischer — while the alignment below is exactly [myers] and
+   [common_prefix_len] run at element grain, so it stays here. *)
 
 type mismatch = {
   index : int;
@@ -427,148 +434,6 @@ type seq_diff = {
   differing : int;
   first : mismatch option;
 }
-
-(* An element as parsed: its canonical form (what the alignment compares)
-   and its byte range in the rendering it came from (what a highlight
-   marks). The two differ whenever the printer's box inserted whitespace
-   the canonical form collapsed. *)
-type element = { canonical : string; extent : span }
-
-exception Not_a_sequence
-
-let is_ws = function ' ' | '\n' | '\t' | '\r' -> true | _ -> false
-
-(* The canonical elements of the region [s.[first..last]] (inclusive): split
-   on top-level [';'], with whitespace runs outside string and character
-   literals collapsed to one space. Raises [Not_a_sequence] on anything the
-   conservative grammar cannot account for: unbalanced brackets, an
-   unterminated string, an empty element (as in ["[a;; b]"]). *)
-let canonical_elements s ~first ~last =
-  let buf = Buffer.create 32 in
-  let out = ref [] in
-  let depth = ref 0 in
-  let pending_ws = ref false in
-  (* The element's byte range, tracked alongside the canonical form: [from]
-     is its first non-whitespace byte and [upto] its last, so the extent
-     excludes the separator and the whitespace the canonicalization dropped. *)
-  let from = ref (-1) and upto = ref (-1) in
-  let mark j =
-    if !from < 0 then from := j;
-    upto := j
-  in
-  let add c =
-    if !pending_ws then begin
-      if Buffer.length buf > 0 then Buffer.add_char buf ' ';
-      pending_ws := false
-    end;
-    Buffer.add_char buf c
-  in
-  let flush () =
-    if Buffer.length buf = 0 then raise_notrace Not_a_sequence;
-    let extent = { start = !from; length = !upto - !from + 1 } in
-    out := { canonical = Buffer.contents buf; extent } :: !out;
-    Buffer.clear buf;
-    pending_ws := false;
-    from := -1;
-    upto := -1
-  in
-  (* Copies the [%C]-style char literal starting at [i] (its opening quote)
-     verbatim and returns the index of its closing quote, or [None] when no
-     literal shape matches — the quote is then an ordinary character. Shapes:
-     ['c'], ['\c'], and the four-character escapes ['\000'] / ['\xFF']. *)
-  let char_literal i =
-    let quote_at j = j <= last && s.[j] = '\'' in
-    let close j =
-      for k = i to j do
-        Buffer.add_char buf s.[k]
-      done;
-      Some j
-    in
-    if i + 1 > last then None
-    else if s.[i + 1] = '\\' then
-      if quote_at (i + 3) then close (i + 3)
-      else if quote_at (i + 5) then close (i + 5)
-      else None
-    else if quote_at (i + 2) then close (i + 2)
-    else None
-  in
-  let i = ref first in
-  while !i <= last do
-    (match s.[!i] with
-    | c when is_ws c -> pending_ws := true
-    | ';' when !depth = 0 -> flush ()
-    | '"' ->
-        mark !i;
-        add '"';
-        let rec copy j =
-          if j > last then raise_notrace Not_a_sequence
-          else
-            match s.[j] with
-            | '\\' ->
-                if j + 1 > last then raise_notrace Not_a_sequence;
-                Buffer.add_char buf '\\';
-                Buffer.add_char buf s.[j + 1];
-                copy (j + 2)
-            | '"' ->
-                Buffer.add_char buf '"';
-                j
-            | c ->
-                Buffer.add_char buf c;
-                copy (j + 1)
-        in
-        i := copy (!i + 1);
-        mark !i
-    | '\'' -> (
-        (* Collapsing must not reach inside a char literal (['\n'] would
-           otherwise lose its meaning), so literals copy verbatim. *)
-        mark !i;
-        if !pending_ws && Buffer.length buf > 0 then Buffer.add_char buf ' ';
-        pending_ws := false;
-        match char_literal !i with
-        | Some close ->
-            i := close;
-            mark !i
-        | None -> Buffer.add_char buf '\'')
-    | ('(' | '[' | '{') as c ->
-        mark !i;
-        incr depth;
-        add c
-    | (')' | ']' | '}') as c ->
-        mark !i;
-        decr depth;
-        if !depth < 0 then raise_notrace Not_a_sequence;
-        add c
-    | c ->
-        mark !i;
-        add c);
-    incr i
-  done;
-  if !depth <> 0 then raise_notrace Not_a_sequence;
-  if Buffer.length buf > 0 then flush ()
-  else if !out <> [] then raise_notrace Not_a_sequence (* trailing ';' *);
-  Array.of_list (List.rev !out)
-
-(* [Some (kind, elements)] when [s] (outer whitespace aside) is a bracketed
-   sequence rendering; [None] otherwise. *)
-let parse_sequence s =
-  let n = String.length s in
-  let a = ref 0 and b = ref (n - 1) in
-  while !a < n && is_ws s.[!a] do
-    incr a
-  done;
-  while !b > !a && is_ws s.[!b] do
-    decr b
-  done;
-  if !b < !a + 1 || s.[!a] <> '[' || s.[!b] <> ']' then None
-  else
-    let kind, first, last =
-      if !b - !a >= 3 && s.[!a + 1] = '|' && s.[!b - 1] = '|' then
-        (`Array, !a + 2, !b - 2)
-      else (`List, !a + 1, !b - 1)
-    in
-    match canonical_elements s ~first ~last with
-    | elements -> Some (kind, elements)
-    | exception Not_a_sequence -> None
 
 (* Differences under the element-grain alignment: the line-diff machinery
    run over the canonical element arrays, so a single inserted or removed
@@ -694,23 +559,28 @@ let refine_within ~expected ~actual (ee : span) (ea : span) =
    Draining it left to right would refine the leading elements and mark the
    trailing ones whole — two grains in one report, with the boundary set by
    nothing the reader can see. *)
-let refinement_fits pairs (ee : element array) (ea : element array) =
+let refinement_fits pairs (xe : span array) (xa : span array) =
   let cells (a : span) (b : span) = (a.length + 1) * (b.length + 1) in
   let rec go budget = function
     | [] -> true
     | (Some i, Some j) :: rest ->
-        let cost = cells ee.(i).extent ea.(j).extent in
+        let cost = cells xe.(i) xa.(j) in
         cost <= budget && go (budget - cost) rest
     | _ :: rest -> go budget rest
   in
   go dp_cell_limit pairs
 
+(* The two projections of a parsed element, taken once: the canonical forms
+   the alignment compares, and the extents the marks are built from. *)
+let canonicals = Array.map (fun (e : Rendered_seq.element) -> e.canonical)
+let extents = Array.map (fun (e : Rendered_seq.element) -> e.extent)
+
 let sequences ?(spans = true) ~expected ~actual () =
-  match (parse_sequence expected, parse_sequence actual) with
+  match (Rendered_seq.parse expected, Rendered_seq.parse actual) with
   | Some (ke, ee), Some (ka, ea) when ke = ka ->
       let ne = Array.length ee and na = Array.length ea in
-      let canon = Array.map (fun e -> e.canonical) in
-      let ce = canon ee and ca = canon ea in
+      let ce = canonicals ee and ca = canonicals ea in
+      let xe = extents ee and xa = extents ea in
       let prefix = common_prefix_len ce ca in
       let suffix = common_suffix_len ~prefix ce ca in
       let me = ne - prefix - suffix and ma = na - prefix - suffix in
@@ -740,7 +610,7 @@ let sequences ?(spans = true) ~expected ~actual () =
          changed" report element grain is here to prevent — so the guarded
          path reports no marks and lets the renderer show both sides plain. *)
       let refine_pairs =
-        spans && (not !guarded) && refinement_fits pairs ee ea
+        spans && (not !guarded) && refinement_fits pairs xe xa
       in
       let pairs = if spans && not !guarded then pairs else [] in
       let e_spans, a_spans =
@@ -748,13 +618,11 @@ let sequences ?(spans = true) ~expected ~actual () =
           (fun (es, as_) pair ->
             match pair with
             | Some i, Some j when refine_pairs ->
-                let de, da =
-                  refine_within ~expected ~actual ee.(i).extent ea.(j).extent
-                in
+                let de, da = refine_within ~expected ~actual xe.(i) xa.(j) in
                 (de @ es, da @ as_)
-            | Some i, Some j -> (ee.(i).extent :: es, ea.(j).extent :: as_)
-            | Some i, None -> (ee.(i).extent :: es, as_)
-            | None, Some j -> (es, ea.(j).extent :: as_)
+            | Some i, Some j -> (xe.(i) :: es, xa.(j) :: as_)
+            | Some i, None -> (xe.(i) :: es, as_)
+            | None, Some j -> (es, xa.(j) :: as_)
             | None, None -> (es, as_))
           ([], []) pairs
       in

@@ -46,8 +46,11 @@ derivation), `Shrink_tree` (memoized lazy rose trees).
 
 Data: `Failure` (failure-as-data: typed kinds, phase, location,
 output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions),
-`Testable`, `Diff` (diff *data*: Myers hunks + refinement spans, no
-styling).
+`Testable`, `Rendered_seq` (a conservative reader from a printed
+`[…]`/`[|…|]` back to its elements and their byte extents — the
+structure the witness waist deliberately does not carry), `Diff` (diff
+*data*: Myers hunks, refinement spans, and the element-grain alignment
+over `Rendered_seq`'s output; no styling).
 
 Verbs and engines: `Check` (the sixteen verbs, pure, no run-state
 dependency), `Gen`, `Property` (the case loop: examples-first, derived

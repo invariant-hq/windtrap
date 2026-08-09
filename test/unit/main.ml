@@ -29,6 +29,7 @@ let () =
       Windtrap.group "atomic_file" Test_atomic_file.tests;
       Windtrap.group "testable" Test_testable.tests;
       Windtrap.group "failure" Test_failure.tests;
+      Windtrap.group "rendered_seq" Test_rendered_seq.tests;
       Windtrap.group "diff" Test_diff.tests;
       Windtrap.group "check" Test_check.tests;
       Windtrap.group "gen" Test_gen.tests;

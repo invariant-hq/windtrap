@@ -22,6 +22,7 @@
   test_atomic_file
   test_testable
   test_failure
+  test_rendered_seq
   test_diff
   test_check
   test_gen
