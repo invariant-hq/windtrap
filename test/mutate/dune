@@ -1,0 +1,18 @@
+; A windtrap suite over the mutation runtime. The runtime's independence
+; from the windtrap core is a property of lib/mutate; the suite itself
+; dogfoods windtrap. arm_child stands in for an instrumented executable,
+; exercising registration, arming from WINDTRAP_MUTATE_ARM, the runaway
+; budget and the atomic verdict write end to end in a separate process.
+; Nothing here writes under _build/_mutants: every path the suite writes
+; to lives in a private scratch directory removed at exit.
+
+(executable
+ (name arm_child)
+ (modules arm_child)
+ (libraries windtrap_mutate))
+
+(test
+ (name test_mutate)
+ (modules test_mutate)
+ (libraries windtrap windtrap_mutate unix)
+ (deps arm_child.exe))
