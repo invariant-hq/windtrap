@@ -60,6 +60,9 @@ let trim_trailing_slashes s =
   let i = last_non_slash (String.length s - 1) in
   if i < 0 then s else String.sub s 0 (i + 1)
 
+(* Not exported: [reconstruct] and [display] are the two ways out of this
+   module, and both prove or relativize the result. A bare strip is the
+   unproven guess the module header refuses to hand out. *)
 let strip_build_prefix path =
   let p = normalize_sep path in
   let comps = String.split_on_char '/' p in
@@ -190,27 +193,3 @@ let rec mkdir_p path =
     if parent <> path then mkdir_p parent;
     try Unix.mkdir path 0o770 with Unix.Unix_error (Unix.EEXIST, _, _) -> ()
   end
-
-(* On Unix, prefer getpwuid over $HOME since $HOME can be overridden. On
-   Windows, getpwuid is unavailable so $HOME is the only option. *)
-let home_directory () =
-  if Sys.win32 then Sys.getenv_opt "HOME"
-  else
-    try Some (Unix.getpwuid (Unix.getuid ())).Unix.pw_dir
-    with Not_found | Unix.Unix_error _ -> Sys.getenv_opt "HOME"
-
-let collapse_home path =
-  match home_directory () with
-  | None -> path
-  | Some home ->
-      let home = trim_trailing_slashes home in
-      let n = String.length home in
-      (* The prefix must end at a component boundary: "/home/user2" is
-         not under "/home/user". [n > 1] keeps a degenerate "/" home
-         from collapsing every absolute path. *)
-      if
-        n > 1
-        && String.starts_with ~prefix:home path
-        && (String.length path = n || path.[n] = '/' || path.[n] = '\\')
-      then "~" ^ String.sub path n (String.length path - n)
-      else path

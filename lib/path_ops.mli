@@ -32,34 +32,34 @@ val default_log_dir : unit -> string
 
 (** {1:reconstruction Sandbox reconstruction} *)
 
-val strip_build_prefix : string -> string
-(** [strip_build_prefix path] removes a [_build/<context>/] segment from [path],
-    if any: everything up to the first [_build] component and the context
-    component after it is dropped from that point (a leading absolute prefix
-    before [_build] is kept). Separators are normalized to ['/']. A trailing
-    [_build] with no context component is kept. For example,
-    [strip_build_prefix "/w/_build/default/test/t.ml"] is ["/w/test/t.ml"]. *)
-
 val reconstruct : root:string -> string -> (string, string) result
 (** [reconstruct ~root file] maps the compile-time source path [file] to an
-    absolute path under [root]: strips any [_build/<context>/] segment, resolves
+    absolute path under [root]: strips a [_build/<context>/] segment, resolves
     relative paths against [root], and lexically normalizes [.] , [..] and
     repeated separators. It is [Ok abs] only when [abs] is proven to lie
     strictly under [root]; otherwise [Error candidate], where [candidate] is the
     unproven path for the error report. [root] must be absolute. The proof is
     lexical: symlinks are not resolved, and the target need not exist (update
-    mode creates it). *)
+    mode creates it).
+
+    The strip is of the {e first} [_build] component and the context component
+    after it, keeping any absolute prefix before it and normalizing separators
+    to ['/']: ["/w/_build/default/test/t.ml"] resolves as ["/w/test/t.ml"]
+    would. A [_build] with no component after it is not a sandbox prefix and is
+    kept. There is no export for the strip alone: a reconstruction that is not
+    proven to lie under the root is exactly what this module refuses to hand
+    out. *)
 
 (** {1:display Display paths} *)
 
 val display : string -> string
-(** [display path] is [path] as printed in reports and command hints: any
-    [_build/<context>/] segment stripped ({!strip_build_prefix}), interior ["."]
-    and empty segments dropped ([".."] untouched), and a leading {!project_root}
-    prefix removed — so the printed path is project-root relative and
-    byte-identical across every producer of the line class, the library and
-    inline runners alike. Best effort: a path outside the root is returned
-    normalized, otherwise unchanged. *)
+(** [display path] is [path] as printed in reports and command hints: a
+    [_build/<context>/] segment stripped as {!reconstruct} strips it, interior
+    ["."] and empty segments dropped ([".."] untouched), and a leading
+    {!project_root} prefix removed — so the printed path is project-root
+    relative and byte-identical across every producer of the line class, the
+    library and inline runners alike. Best effort: a path outside the root is
+    returned normalized, otherwise unchanged. *)
 
 val display_artifact : string -> string
 (** [display_artifact path] is [path] with a leading {!project_root} prefix
@@ -101,9 +101,3 @@ val file_exists : string -> bool
 val mkdir_p : string -> unit
 (** [mkdir_p path] creates [path] and any missing parents with permissions
     [0o770]. Does nothing for components that already exist. *)
-
-val collapse_home : string -> string
-(** [collapse_home path] replaces a leading home-directory prefix of [path] with
-    ["~"] for display. The prefix must end at a path-component boundary:
-    ["/home/user2"] is not under the home directory ["/home/user"]. [path]
-    unchanged when the home directory is unknown or not such a prefix. *)

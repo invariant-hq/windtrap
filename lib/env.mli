@@ -12,11 +12,10 @@
     variables: every [WINDTRAP_*] mirror of a runner flag is declared beside
     that flag in {!Cli}'s table and read through {!get_string}, {!get_bool} and
     {!split_comma} from there, which is what stops a mirror from parsing or
-    validating differently from the flag it mirrors. Two further lookups live
+    validating differently from the flag it mirrors. One further lookup lives
     elsewhere by design: the coverage runtime reads its own
     [WINDTRAP_COVERAGE_FILE] (windtrap links the coverage library, not the
-    reverse, so it cannot depend on this module), and {!Path_ops} consults
-    [HOME] as a platform fallback when resolving the home directory.
+    reverse, so it cannot depend on this module).
 
     Readers are plain functions that re-read the environment on every call;
     nothing is cached. A variable set to the empty string counts as unset.

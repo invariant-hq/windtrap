@@ -10,24 +10,6 @@ let is_hex = function '0' .. '9' | 'a' .. 'f' -> true | _ -> false
 
 let tests =
   [
-    test "strip_build_prefix" (fun () ->
-        equal ~msg:"relative path unchanged" string "test/foo.ml"
-          (Path_ops.strip_build_prefix "test/foo.ml");
-        equal ~msg:"strips _build and context" string "test/foo.ml"
-          (Path_ops.strip_build_prefix "_build/default/test/foo.ml");
-        equal ~msg:"strips under absolute prefix" string "/w/test/foo.ml"
-          (Path_ops.strip_build_prefix "/w/_build/default/test/foo.ml");
-        equal ~msg:"other contexts stripped too" string "/w/test/foo.ml"
-          (Path_ops.strip_build_prefix "/w/_build/release.x/test/foo.ml");
-        (* The old suite named this contract but tested a single-_build
-           input; this input actually exercises it. *)
-        equal ~msg:"only the first _build segment is stripped" string
-          "/w/a/_build/ctx/b.ml"
-          (Path_ops.strip_build_prefix "/w/_build/default/a/_build/ctx/b.ml");
-        equal ~msg:"trailing _build without context kept" string "a/_build"
-          (Path_ops.strip_build_prefix "a/_build");
-        equal ~msg:"backslashes normalized" string "w/test/foo.ml"
-          (Path_ops.strip_build_prefix "w\\_build\\default\\test\\foo.ml"));
     test "reconstruct proves containment under the root" (fun () ->
         let path = result string string in
         let ok input = Path_ops.reconstruct ~root:"/proj" input in
@@ -192,25 +174,6 @@ let tests =
             write (Filename.concat deep_sandbox "dune-project");
             equal ~msg:"decoy marker in a nested sandbox is ignored" string
               proj_phys (root_from deep_sandbox)));
-    test "collapse_home" (fun () ->
-        let home =
-          try (Unix.getpwuid (Unix.getuid ())).Unix.pw_dir
-          with _ -> ( try Sys.getenv "HOME" with Not_found -> "")
-        in
-        if home = "" then skip ~reason:"no home directory" ()
-        else begin
-          equal ~msg:"home prefix collapses" string "~/x/y"
-            (Path_ops.collapse_home (Filename.concat home "x/y"));
-          equal ~msg:"home itself collapses" string "~"
-            (Path_ops.collapse_home home);
-          (* A sibling directory that merely starts with the home path is
-             not under the home directory. *)
-          let sibling = home ^ "xyz/f" in
-          equal ~msg:"sibling prefix directory unchanged" string sibling
-            (Path_ops.collapse_home sibling);
-          equal ~msg:"non-home path unchanged" string "/nonexistent/x"
-            (Path_ops.collapse_home "/nonexistent/x")
-        end);
     test "display spells report paths project-root relative" (fun () ->
         (* The one producer of [wrote]/hint path spellings for both the
            library and inline runners (D5 §8; ppx/F-6). *)
@@ -227,4 +190,22 @@ let tests =
         equal ~msg:"path outside the root normalized, not relativized" string
           "/elsewhere/a/t.exe"
           (Path_ops.display "/elsewhere/./a//t.exe"));
+    test "display strips exactly one _build sandbox prefix" (fun () ->
+        (* The [_build/<context>/] rule [display] and [reconstruct] share.
+           It has no export of its own, so the cases that neither the plain
+           [display] nor the [reconstruct] test reaches are pinned here,
+           through the surface that prints them. *)
+        let root = Path_ops.project_root () in
+        equal ~msg:"any context is stripped, not just default" string
+          "qa/x/t.exe"
+          (Path_ops.display (root ^ "/_build/release.x/qa/x/t.exe"));
+        equal ~msg:"only the first _build segment is stripped" string
+          "a/_build/ctx/b.ml"
+          (Path_ops.display (root ^ "/_build/default/a/_build/ctx/b.ml"));
+        equal ~msg:"trailing _build without a context is kept" string "a/_build"
+          (Path_ops.display (root ^ "/a/_build"));
+        equal ~msg:"a path with no _build is left alone" string "qa/x/t.exe"
+          (Path_ops.display "qa/x/t.exe");
+        equal ~msg:"backslashes normalized" string "w/test/foo.ml"
+          (Path_ops.display "w\\_build\\default\\test\\foo.ml"));
   ]
