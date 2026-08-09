@@ -125,9 +125,20 @@ let windtrap_vars =
     "WINDTRAP_QUIET";
     "WINDTRAP_VERBOSE";
     "WINDTRAP_PROJECT_ROOT";
+    "WINDTRAP_COVERAGE_ONLY";
   ]
 
-let clear_env () = List.iter (fun var -> Unix.putenv var "") windtrap_vars
+(* Unset is neutral for every variable above but one. lib/ carries an
+   (instrumentation) stanza, so under `--instrument-with` these suites
+   link an instrumented core, and WINDTRAP_COVERAGE's default — `summary`
+   — appends an inline coverage line about that core to every run they
+   drive. Every suite here pins transcripts byte for byte and none of
+   them measures coverage, so its neutral value is [off], not absent.
+   Cleared here rather than by the dune action because the suites'
+   re-exec'd children call this directly, before [init]. *)
+let clear_env () =
+  List.iter (fun var -> Unix.putenv var "") windtrap_vars;
+  Unix.putenv "WINDTRAP_COVERAGE" "off"
 
 let init name =
   suite := name;

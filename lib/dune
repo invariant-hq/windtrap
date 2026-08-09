@@ -9,6 +9,15 @@
  (name windtrap)
  (public_name windtrap)
  (libraries unix clock windtrap_coverage windtrap_mutate)
+ ; Windtrap measures its own coverage. The backend is spelled
+ ; `ppx_windtrap.coverage`, not the `ppx_windtrap` the manual shows
+ ; users: that name resolves to the inline-test rewriter, whose
+ ; ppx_runtime_libraries would put ppx_windtrap.runtime — and through it
+ ; this very library — into its own closure, which is a dependency cycle.
+ ; See ppx/coverage/dune. Inert without --instrument-with: a plain
+ ; `dune runtest` builds and runs exactly as before.
+ (instrumentation
+  (backend ppx_windtrap.coverage))
  (foreign_stubs
   (language c)
   (names capture_stubs)))

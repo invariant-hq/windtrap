@@ -97,6 +97,8 @@ let merge a b =
           add t ~file ~points:entry.points ~counts:entry.counts))
     b (Ok a)
 
+let filter keep t = File_map.filter (fun file _ -> keep file) t
+
 (* In-Process Registry *)
 
 (* Registrations keep the generated code's live counts arrays; [snapshot]

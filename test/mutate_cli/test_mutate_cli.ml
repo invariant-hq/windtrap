@@ -358,6 +358,14 @@ let two_executables =
    the count; what is counted is the lines of the remaining lib/*.ml{,i}
    that name either. Growth past the cap is a law violation, not a test
    to update. *)
+(* An instrumented build leaves dune's ppx output beside each source as
+   <module>.pp.ml, and those files are nothing but generated calls into
+   the runtime. The law is about the coupling a maintainer WRITES, so
+   counting them would make the budget a function of whether the tree
+   happened to be built with --instrument-with. *)
+let is_preprocessed name =
+  Filename.check_suffix (Filename.remove_extension name) ".pp"
+
 let law12_budget =
   test "the Law-12 mutation budget stays under the cap" @@ fun () ->
   let lib_dir =
@@ -367,6 +375,7 @@ let law12_budget =
     Sys.readdir lib_dir |> Array.to_list
     |> List.filter (fun name ->
         (Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
+        && (not (is_preprocessed name))
         && not (String.starts_with ~prefix:"mutate_loop." name))
     |> List.sort String.compare
   in

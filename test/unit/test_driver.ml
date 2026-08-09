@@ -320,15 +320,18 @@ let test_coverage_seam () =
     (Driver.coverage_summary ~coverage_mode:`Off run = None);
   check "Summary without a recorded snapshot is None"
     (Driver.coverage_summary ~coverage_mode:`Summary (make_run ()) = None);
-  (* This executable is not instrumented: the seam snapshot is empty and
-     must record nothing — the no-op path both runners share on
-     uninstrumented runs. *)
+  (* The seam's whole contract, stated so that it holds whether or not
+     this executable is instrumented — under `--instrument-with` the core
+     it tests is, and then the registry is emphatically not empty. The
+     no-op path (nothing registered, nothing recorded) is the left-to-
+     right reading under a plain `dune runtest`; the right-to-left one is
+     what an instrumented run exercises. Asserting the equivalence keeps
+     one test honest in both worlds instead of two tests each true in
+     one. *)
   let fresh = make_run () in
   let collection = Driver.snapshot_coverage fresh in
-  check "no registrations: the snapshot is empty"
-    (Windtrap_coverage.is_empty collection);
-  check "no registrations: nothing recorded on the run"
-    (Run.coverage fresh = None)
+  check "the seam records on the run exactly when it snapshotted something"
+    (Windtrap_coverage.is_empty collection = (Run.coverage fresh = None))
 
 let tests =
   [

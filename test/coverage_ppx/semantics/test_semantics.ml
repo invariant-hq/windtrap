@@ -32,13 +32,22 @@ module F = Covsem_fixtures
 let check name cond = is_true ~msg:name cond
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
 
-let visited () =
-  (Windtrap_coverage.summary (Windtrap_coverage.snapshot ())).visited
+(* Every claim below is about the fixture library, and the registry is the
+   whole process: under `--instrument-with` this executable links an
+   instrumented windtrap core, whose thousands of points would drown the
+   fixture's twenty. Scope once, here, and the suite says the same thing
+   instrumented or not. *)
+let fixture_snapshot () =
+  Windtrap_coverage.filter
+    (fun file -> Filename.basename file = "covsem_fixtures.ml")
+    (Windtrap_coverage.snapshot ())
+
+let visited () = (Windtrap_coverage.summary (fixture_snapshot ())).visited
 
 let tests =
   [
     test "registration happens at module load, before any call" (fun () ->
-        let s = Windtrap_coverage.snapshot () in
+        let s = fixture_snapshot () in
         check "fixtures registered at load" (not (Windtrap_coverage.is_empty s));
         let summary = Windtrap_coverage.summary s in
         check "no point visited before any call" (summary.visited = 0);
@@ -214,7 +223,7 @@ let tests =
     (* The visit calls counted; a raising path lowers the % *)
     test "the visit calls counted; a raising path lowers the percentage"
       (fun () ->
-        let s = Windtrap_coverage.snapshot () in
+        let s = fixture_snapshot () in
         let summary = Windtrap_coverage.summary s in
         check "points were visited" (summary.visited > 0);
         check "visited never exceeds total" (summary.visited <= summary.total);

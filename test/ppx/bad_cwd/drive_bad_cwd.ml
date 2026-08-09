@@ -105,7 +105,7 @@ let scrubbed_environment () =
   in
   Array.append
     (Array.of_list (List.filter keep (Array.to_list (Unix.environment ()))))
-    [| "WINDTRAP_SLOW_THRESHOLD=0"; "WINDTRAP_COLOR=never" |]
+    [| "WINDTRAP_SLOW_THRESHOLD=0"; "WINDTRAP_COLOR=never"; "WINDTRAP_COVERAGE=off" |]
 
 let () =
   match Sys.argv with

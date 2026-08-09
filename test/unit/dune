@@ -52,7 +52,15 @@
  (modules harness)
  (libraries windtrap unix))
 
+; WINDTRAP_COVERAGE=off: these four assert on transcripts byte for byte,
+; and lib/ is instrumented — under `--instrument-with` every run they
+; drive would append an inline coverage line about the core, which is
+; not what any of them is measuring. The at_exit dump still writes, so
+; their coverage still reaches `dune build @cover`.
+
 (tests
  (names test_run test_runner test_ppx_runtime test_windtrap)
  (modules test_run test_runner test_ppx_runtime test_windtrap)
- (libraries windtrap unix harness))
+ (libraries windtrap unix harness)
+ (action
+  (setenv WINDTRAP_COVERAGE off (run %{test}))))

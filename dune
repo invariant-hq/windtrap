@@ -1,0 +1,48 @@
+; Project-level instrumentation aliases — the two workflows windtrap
+; tells its users to adopt, adopted here. Both are opt-in: neither is
+; attached to @default or @runtest, and a plain `dune runtest` stays
+; uninstrumented, zero-overhead and free of coverage and mutation output.
+;
+;   dune build @cover  --instrument-with ppx_windtrap.coverage
+;   dune build @mutate --instrument-with ppx_windtrap.mutate
+;
+; Why an alias and not a script: `.coverage` and `.mutants` files are
+; written by test executables at exit and are not declarable dependencies,
+; so nothing can express "after every suite has run". (alias_rec runtest)
+; forces every stanza in the tree up to date first, and (universe) makes
+; the milliseconds-cheap aggregate re-run on every build — without it the
+; action caches against nothing and silently goes stale. This is the
+; shape examples/09-coverage-aggregation documents, one level up.
+;
+; The backend spelled here is `ppx_windtrap.coverage`, not the
+; `ppx_windtrap` the manual shows users: only the former keeps the
+; windtrap core out of an instrumented library's closure, and lib/ — the
+; core itself — cannot use the latter at all. See ppx/coverage/dune.
+
+; --min 87 is the measured baseline (89.5% at the time of writing) less a
+; couple of points of headroom, not a round number picked in advance. It
+; ratchets: raise it when the margin is comfortable, and never lower it to
+; make a red build green. The remaining gap is not all reachable —
+; mutate_loop's Windows-decline paths and capture's C-stub error branches
+; cannot run in a green suite — so chase the branches the report names,
+; not the percentage.
+
+(rule
+ (alias cover)
+ (deps
+  (alias_rec runtest)
+  (universe))
+ (action
+  (run %{bin:windtrap} coverage --min 87)))
+
+; Mutation has no gate and deliberately never will (Law 16e): the
+; equivalent-mutant rate is a prediction until it is measured, so a
+; survivor is a reading list, not a build failure.
+
+(rule
+ (alias mutate)
+ (deps
+  (alias_rec runtest)
+  (universe))
+ (action
+  (run %{bin:windtrap} mutate)))

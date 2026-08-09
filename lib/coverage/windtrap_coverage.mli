@@ -128,10 +128,24 @@ val merge : t -> t -> (t, error) result
     shared file's point tables differ — merging is loud, never silently wrong.
 *)
 
+val filter : (string -> bool) -> t -> t
+(** [filter keep t] is [t] with only the files whose name satisfies [keep].
+
+    The registry {!snapshot} reads is process-global: every instrumented library
+    linked into an executable is in it, whether or not it is the code under
+    test. A caller that means to speak about {e particular} files — a run scoped
+    by [WINDTRAP_COVERAGE_ONLY], a test asserting on its own fixture's counts —
+    narrows with this rather than assuming the process contains nothing else.
+    That assumption holds only until a second instrumented library is linked,
+    which is why windtrap's own suites cannot make it: the core they test is
+    itself instrumented. *)
+
 val snapshot : unit -> t
 (** [snapshot ()] is a collection copying the current in-process counts;
     {!empty} when nothing registered. Later {!visit}s do not affect the returned
-    value. The runner calls this at run end for the inline summary. *)
+    value. The runner calls this at run end for the inline summary.
+
+    This is the whole process; {!filter} narrows it. *)
 
 (** {1:ondisk Coverage files}
 

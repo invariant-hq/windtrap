@@ -290,10 +290,24 @@ let coverage_has_siblings () =
               && Filename.concat dir entry <> path)
             entries)
 
+(* WINDTRAP_COVERAGE_ONLY: the source prefixes this run's number is about.
+   Applied HERE, at the one seam, so the inline line and the report modes
+   cannot disagree about what was counted — and not to the .coverage dump,
+   which the runtime writes whole because it is what `windtrap coverage`
+   merges. Prefix matching, not globbing: the registry's file names are
+   the paths the instrumenter recorded, and a prefix is the one predicate
+   a reader can apply by eye. *)
+let coverage_scope () =
+  match Env.coverage_only () with
+  | [] -> Fun.id
+  | prefixes ->
+      Windtrap_coverage.filter (fun file ->
+          List.exists (fun prefix -> String.starts_with ~prefix file) prefixes)
+
 let snapshot_coverage run =
   (* When instrumented code registered in-process coverage, snapshot it
      into the run record; renderers project it like any other run data. *)
-  let collection = Windtrap_coverage.snapshot () in
+  let collection = coverage_scope () (Windtrap_coverage.snapshot ()) in
   if not (Windtrap_coverage.is_empty collection) then begin
     let s = Windtrap_coverage.summary collection in
     Run.set_coverage run

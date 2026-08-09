@@ -136,6 +136,19 @@ val project_root : unit -> string option
 (** [project_root ()] is [WINDTRAP_PROJECT_ROOT], overriding project-root
     discovery. *)
 
+val coverage_only : unit -> string list
+(** [coverage_only ()] is [WINDTRAP_COVERAGE_ONLY] split on commas: the source
+    path prefixes the run's coverage number is allowed to speak about, or [[]]
+    (unset) for all of them.
+
+    The in-process coverage registry holds every instrumented library linked
+    into the executable, so a run that depends on an instrumented library
+    reports {e its} points too and the percentage stops being a statement about
+    the code under test. Naming a prefix scopes the inline line and the report
+    modes back to it. The [.coverage] dump is deliberately {e not} scoped: the
+    file is the raw material [windtrap coverage] merges across executables, and
+    narrowing it would lose data no later step can recover. *)
+
 (** {1:snapshots Snapshot update modes} *)
 
 (** The type for snapshot update modes, from [-u] or [WINDTRAP_UPDATE]. *)

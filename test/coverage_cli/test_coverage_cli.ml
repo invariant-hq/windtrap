@@ -137,6 +137,14 @@ let capture ?(env = []) ?cwd exe args =
    move behind the shared driver's interface (lib/driver.mli names the
    collection type in two signatures) — the seam itself is still the same
    one snapshot read into the run record. *)
+(* An instrumented build leaves dune's ppx output beside each source as
+   <module>.pp.ml, and those files are nothing but generated calls into
+   the runtime. The law is about the coupling a maintainer WRITES, so
+   counting them would make the budget a function of whether the tree
+   happened to be built with --instrument-with. *)
+let is_preprocessed name =
+  Filename.check_suffix (Filename.remove_extension name) ".pp"
+
 let law12_budget =
   test "the Law-12 budget stays under the cap" @@ fun () ->
   let lib_dir =
@@ -145,7 +153,8 @@ let law12_budget =
   let sources =
     Sys.readdir lib_dir |> Array.to_list
     |> List.filter (fun name ->
-        Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
+        (Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
+        && not (is_preprocessed name))
     |> List.sort String.compare
   in
   check "lib sources are visible to the budget check" (sources <> []);
@@ -171,13 +180,46 @@ let dump_counter = ref 0
    inline line's project hint) must stay inert here, so the default
    single-executable line shape is what these tests pin. The dedicated
    sibling tests below plant neighbors deliberately. *)
+(* The value the caller bound to [name], if any: the child's own
+   CHILD_FILE overrides, read back so the scope below follows it. *)
+let bound_value env name =
+  let prefix = name ^ "=" in
+  List.find_map
+    (fun binding ->
+      if String.starts_with ~prefix binding then
+        Some
+          (String.sub binding (String.length prefix)
+             (String.length binding - String.length prefix))
+      else None)
+    env
+
+(* Every assertion about a child's inline line is an assertion about the
+   child's own synthetic registration. The child links the windtrap core,
+   which under --instrument-with is itself instrumented and carries
+   thousands of points, so the run is scoped to the one file the child
+   registers. The DUMP is deliberately left whole — it is what `windtrap
+   coverage` merges — and the assertions that read it scope themselves
+   with [C.filter]. *)
 let child ?(env = []) ?(args = []) () =
   incr dump_counter;
   let dump = scratch (Printf.sprintf "dump-%d/self.coverage" !dump_counter) in
+  let only = Option.value (bound_value env "CHILD_FILE") ~default:"lib/fake.ml" in
   let code, out, err =
-    capture ~env:(("WINDTRAP_COVERAGE_FILE=" ^ dump) :: env) child_exe args
+    capture
+      ~env:
+        (("WINDTRAP_COVERAGE_FILE=" ^ dump)
+        :: ("WINDTRAP_COVERAGE_ONLY=" ^ only)
+        :: env)
+      child_exe args
   in
   (code, out, err, dump)
+
+(* A dump read back for assertions: scoped to the file the test planted,
+   for the same reason the run is. *)
+let dump_of ?(only = "lib/fake.ml") path =
+  match C.load path with
+  | Error _ -> None
+  | Ok (t, id) -> Some (C.filter (fun file -> file = only) t, id)
 
 let inline_line =
   test "the inline line: thresholds, hint, quiet, off, exit codes" @@ fun () ->
@@ -224,7 +266,12 @@ let inline_line =
   check_int "uninstrumented child exits 0" ~expected:0 ~actual:code;
   check_absent "an uninstrumented run has no coverage line" ~needle:"coverage:"
     out;
-  check "an uninstrumented run writes no dump" (not (Sys.file_exists dump));
+  (* "Writes no dump of its own": the file may exist anyway, because
+     under `--instrument-with` the windtrap core this child links
+     registers and dumps. What must be true either way is that the child
+     contributed nothing to it. *)
+  check "an uninstrumented run contributes nothing to the dump"
+    (match dump_of dump with None -> true | Some (t, _) -> C.is_empty t);
   (* Law 13: coverage never changes outcomes or exit codes. *)
   let code, out, _, _ =
     child
@@ -242,11 +289,12 @@ let inline_line =
 let child_source =
   "line1----\nline2----\nline3----\nline4----\nline5----\nline6----\n"
 
+let child_src_path = scratch "child-src.ml"
+
 let child_src_env =
-  let path = scratch "child-src.ml" in
-  write_file path child_source;
+  write_file child_src_path child_source;
   [
-    "CHILD_FILE=" ^ path;
+    "CHILD_FILE=" ^ child_src_path;
     "CHILD_TOTAL=6";
     "CHILD_VISITED=4";
     "CHILD_LINE_LEN=10";
@@ -269,8 +317,8 @@ let report_full_modes =
     ~needle:"uncovered: 5-6" out;
   check_absent "report mode paints no excerpts" ~needle:"\u{258c}" out;
   (* The at_exit dump of the same run feeds the reporting command. *)
-  (match C.load dump with
-  | Ok (t, exe) ->
+  (match dump_of ~only:child_src_path dump with
+  | Some (t, exe) ->
       let s = C.summary t in
       check "the dump agrees with the inline summary"
         (s.C.visited = 4 && s.C.total = 6);
@@ -281,7 +329,7 @@ let report_full_modes =
               C.exe = C.exe_identity ~exe:child_exe;
               digest = Digest.to_hex (Digest.file child_exe);
             })
-  | Error _ -> check "the dump agrees with the inline summary" false);
+  | None -> check "the dump agrees with the inline summary" false);
   let _, out, _, _ =
     child
       ~env:("WINDTRAP_COVERAGE=full" :: child_src_env)
@@ -973,7 +1021,12 @@ let sibling_hint =
   (* A re-run sees only its own previous dump: still no sibling. *)
   let _, out, _ =
     capture
-      ~env:[ "WINDTRAP_COVERAGE_FILE=" ^ dump; "CHILD_VISITED=9" ]
+      ~env:
+        [
+          "WINDTRAP_COVERAGE_FILE=" ^ dump;
+          "WINDTRAP_COVERAGE_ONLY=lib/fake.ml";
+          "CHILD_VISITED=9";
+        ]
       child_exe [ "--color"; "never" ]
   in
   check_contains "the process's own previous dump is not a sibling"
@@ -984,7 +1037,12 @@ let sibling_hint =
     "content is irrelevant to detection\n";
   let _, out, _ =
     capture
-      ~env:[ "WINDTRAP_COVERAGE_FILE=" ^ dump; "CHILD_VISITED=9" ]
+      ~env:
+        [
+          "WINDTRAP_COVERAGE_FILE=" ^ dump;
+          "WINDTRAP_COVERAGE_ONLY=lib/fake.ml";
+          "CHILD_VISITED=9";
+        ]
       child_exe [ "--color"; "never" ]
   in
   check_contains "a sibling scopes the line to this executable"
@@ -999,7 +1057,12 @@ let sibling_hint =
     "still irrelevant\n";
   let _, out, _ =
     capture
-      ~env:[ "WINDTRAP_COVERAGE_FILE=" ^ dump; "CHILD_VISITED=9" ]
+      ~env:
+        [
+          "WINDTRAP_COVERAGE_FILE=" ^ dump;
+          "WINDTRAP_COVERAGE_ONLY=lib/fake.ml";
+          "CHILD_VISITED=9";
+        ]
       child_exe [ "--color"; "never" ]
   in
   check_contains "many siblings render the same scoped line"
@@ -1019,17 +1082,21 @@ let raise_attribution =
   test "raise attribution end to end" @@ fun () ->
   incr dump_counter;
   let dump = scratch (Printf.sprintf "dump-%d.coverage" !dump_counter) in
+  let fixture = "test/coverage_cli/covcli_fixture.ml" in
   let code, out, _ =
     capture
-      ~env:[ "WINDTRAP_COVERAGE_FILE=" ^ dump ]
+      ~env:
+        [
+          "WINDTRAP_COVERAGE_FILE=" ^ dump; "WINDTRAP_COVERAGE_ONLY=" ^ fixture;
+        ]
       raise_child_exe [ "--color"; "never" ]
   in
   check_int "the raise child exits 0" ~expected:0 ~actual:code;
   check_contains "the inline line counts the unreached out-edge: 2/3, not 100%"
     ~needle:"coverage: 66.7% (2/3 points)" out;
-  match C.load dump with
-  | Error _ -> check "the raise child's dump loads" false
-  | Ok (t, _) -> (
+  match dump_of ~only:fixture dump with
+  | None -> check "the raise child's dump loads" false
+  | Some (t, _) -> (
       let s = C.summary t in
       check "exactly one point - the out-edge - is unvisited"
         (s.C.total = 3 && s.C.visited = 2);

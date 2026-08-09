@@ -107,6 +107,15 @@ let tail_errors () = get_int "WINDTRAP_TAIL_ERRORS"
 let allow_focus () = is_truthy "WINDTRAP_ALLOW_FOCUS"
 let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 
+(* Which files the run's own coverage number speaks about. The registry is
+   process-global — every instrumented library linked into the executable
+   is in it, including ones the reader did not write — so a percentage over
+   all of it can be a number about somebody else's code. *)
+let coverage_only () =
+  match get_string "WINDTRAP_COVERAGE_ONLY" with
+  | None -> []
+  | Some s -> split_comma s
+
 (* Snapshot update modes
 
    The one mirror still parsed here, because its vocabulary is wider than

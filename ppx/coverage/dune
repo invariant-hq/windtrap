@@ -1,11 +1,39 @@
-; The expression-grade coverage instrumenter. Exposed as
-; ppx_windtrap's instrumentation backend (the (instrumentation.backend)
-; stanza on the ppx_windtrap library names this rewriter); usable
-; directly with (preprocess (pps ppx_windtrap.coverage)) too, which the
-; semantics tests rely on. ppx_runtime_libraries makes every
-; instrumented library link the windtrap.coverage runtime the generated
-; code calls - and nothing else: instrumented user code must never pull
-; the windtrap core into its closure.
+; The expression-grade coverage instrumenter. Reachable as a dune
+; instrumentation backend under two names, and the difference between
+; them is load-bearing:
+;
+; - `--instrument-with ppx_windtrap` resolves the (instrumentation.backend)
+;   field on the ppx_windtrap library. That library's OTHER job is the
+;   inline-test rewriter, so it carries
+;   (ppx_runtime_libraries ppx_windtrap.runtime ppx_windtrap.config) — and
+;   dune adds a rewriter's ppx_runtime_libraries to everything it
+;   preprocesses, instrumentation included. An instrumented library
+;   therefore links the windtrap CORE, not just the coverage runtime.
+;
+; - `--instrument-with ppx_windtrap.coverage` resolves the field below,
+;   on the rewriter itself, whose only runtime library is
+;   windtrap.coverage. That is the form this file's last paragraph
+;   promises, and the only one a library UNDER the core can use: adding
+;   the first spelling to lib/dune is a dependency cycle
+;   (windtrap -> ppx_windtrap.runtime -> ppx_windtrap -> windtrap), which
+;   is how the difference was found.
+;
+; ppx_windtrap.mutate settles the same question the same way and its dune
+; file argues the self-naming pattern at length: dune resolves
+; --instrument-with <name> by reading the (instrumentation.backend) field
+; of the library called <name>, and does not object to that field naming
+; the library that carries it.
+;
+; Both spellings stay: the first is what the manual documents and what
+; every published example uses, the second is what keeps the core out of
+; an instrumented library's closure. Prefer the second in new code.
+;
+; The rewriter is also usable directly with
+; (preprocess (pps ppx_windtrap.coverage)), which the semantics tests
+; rely on. ppx_runtime_libraries makes every instrumented library link
+; the windtrap.coverage runtime the generated code calls - and nothing
+; else: instrumented user code must never pull the windtrap core into its
+; closure.
 
 (library
  (name windtrap_coverage_ppx)
@@ -13,5 +41,7 @@
  (kind ppx_rewriter)
  (libraries ppxlib)
  (ppx_runtime_libraries windtrap.coverage)
+ (instrumentation.backend
+  (ppx ppx_windtrap.coverage))
  (preprocess
   (pps ppxlib.metaquot)))

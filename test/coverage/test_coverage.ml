@@ -81,12 +81,17 @@ let scratch_dir =
 let scratch path = Filename.concat scratch_dir path
 
 (* The parent's own at_exit dump must not land in the project's
-   _build/_coverage: point it at scratch before the first register below.
-   The path is resolved at first registration, so later putenv calls (the
-   child tests) do not move it. *)
-let () =
-  let parent_dump = scratch "parent.coverage" in
-  Unix.putenv "WINDTRAP_COVERAGE_FILE" parent_dump
+   _build/_coverage. The destination is resolved at the FIRST
+   registration in the process, and under `--instrument-with` that is a
+   windtrap core module's, at library load — before this file's
+   initializer runs. So the override is set by the dune action
+   (WINDTRAP_COVERAGE_FILE=test_coverage.coverage, resolved against the
+   action's directory) and not by a putenv here, which would be too late
+   to move it and would silently do nothing.
+
+   Later putenv calls (the child tests) do not move it either, for the
+   same reason: the path is resolved once. *)
+let parent_dump_name = "test_coverage.coverage"
 
 (* Registry: register / visit / snapshot *)
 
@@ -139,7 +144,8 @@ let registry_tests =
            in-process (the runner's sibling detection reads it at render
            time). *)
         check "dump_destination is the resolved override path"
-          (C.dump_destination () = Some (scratch "parent.coverage")));
+          (Option.map Filename.basename (C.dump_destination ())
+          = Some parent_dump_name));
     test "visit saturates at max_int" (fun () ->
         let counts = [| max_int - 1 |] in
         C.register ~file:"reg_sat.ml" ~points:[| pt 7000 7010 |] ~counts;

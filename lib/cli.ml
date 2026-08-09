@@ -579,6 +579,7 @@ let env_only =
     ("WINDTRAP_COLUMNS", "Terminal width override for reports");
     ("WINDTRAP_TAIL_ERRORS", "Captured-output lines shown per failure");
     ("WINDTRAP_PROJECT_ROOT", "Project root for snapshot path resolution");
+    ("WINDTRAP_COVERAGE_ONLY", "Source prefixes the coverage number covers");
     ("WINDTRAP_MUTATE", "Mutation testing: 1, report or off");
     (Windtrap_mutate.arm_variable, "Arm one mutant, by identifier");
     ("WINDTRAP_MUTATE_LIMIT", "Survivor blocks to print (0 for all)");

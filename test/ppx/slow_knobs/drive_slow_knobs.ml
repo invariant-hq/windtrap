@@ -116,7 +116,7 @@ let scrubbed_environment extra =
   Array.append
     (Array.of_list (List.filter keep (Array.to_list (Unix.environment ()))))
     (Array.append
-       [| "WINDTRAP_SLOW_THRESHOLD=0.000000001"; "WINDTRAP_COLOR=never" |]
+       [| "WINDTRAP_SLOW_THRESHOLD=0.000000001"; "WINDTRAP_COLOR=never"; "WINDTRAP_COVERAGE=off" |]
        extra)
 
 let run_once ~runner ~env ~log =

@@ -7,6 +7,13 @@
 ; inline coverage line out of runtest: the suite's synthetic in-process
 ; registrations would render a meaningless percentage on every green
 ; run.
+;
+; WINDTRAP_COVERAGE_FILE points this executable's OWN at_exit dump at a
+; name inside the action's directory, so it never lands in the project's
+; _build/_coverage. It is set here rather than by a putenv in the test
+; because the destination is resolved at the first registration in the
+; process — and under `--instrument-with` that is a windtrap core
+; module's, at library load, before any of the test's own code runs.
 
 (executable
  (name dump_child)
@@ -22,4 +29,7 @@
   (setenv
    WINDTRAP_COVERAGE
    off
-   (run %{test}))))
+   (setenv
+    WINDTRAP_COVERAGE_FILE
+    test_coverage.coverage
+    (run %{test})))))
