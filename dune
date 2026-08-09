@@ -59,28 +59,12 @@
 ; equivalent-mutant rate is a prediction until it is measured, so a
 ; survivor is a reading list, not a build failure.
 ;
-; A whole-core loop does not currently finish: among the core's ~1000
-; mutants there is at least one whose child blocks rather than spins, and
-; the runtime's runaway hit-count budget cannot catch a child that has
-; stopped hitting sites at all. Narrow the selection until the per-mutant
-; deadline lands — this one reaches 852 of the 984 mutants in under three
-; minutes and does not hang:
+; lib/ is NOT mutation-instrumented yet — see lib/dune and
+; doc/dev/testing.md — so today this merges the verdicts of the tree's
+; own mutation fixtures. Produce one with:
 ;
-;   WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
-;     test/unit/main.exe -- -f p
+;   WINDTRAP_MUTATE=1 dune exec test/mutate_loop/suite_main.exe
 ;
-; The selection must match some path_ops tests or the forced-fail check
-; turns it away; see doc/dev/testing.md.
-
-; NOTE the missing (alias_rec runtest), which the cover alias above has.
-; It would be actively destructive here. Running the suite is how a
-; coverage dump comes into existence, so cover depends on it; a mutation
-; verdict is written only by a run that was ASKED to test its mutants,
-; and an ordinary `dune runtest` in front of the merge would rebuild
-; every test executable UNINSTRUMENTED — invalidating the very verdicts
-; this rule exists to read, which then all report as stale. So @mutate
-; merges what previous mutation runs left and runs nothing itself.
-
 (rule
  (alias mutate)
  (deps

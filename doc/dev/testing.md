@@ -127,128 +127,105 @@ drivers in their scrubbed child environments.
 
 ## Mutation of windtrap by windtrap
 
-`lib/` also carries `(instrumentation (backend ppx_windtrap.mutate))`.
+**Not enabled yet, and the reason is worth reading before anyone tries
+again.** `lib/` carries no `(instrumentation (backend
+ppx_windtrap.mutate))` stanza. Six modules — `runner`, `run`, `driver`,
+`mutate_loop`, `ppx_runtime`, `windtrap` — already carry
+`[@@@mutate exclude_file]` for when it does: they are the machinery a
+mutation run uses to judge mutants, so a mutant there is armed inside
+the process meant to detect it and the failure mode is a hang rather
+than a survivor. That much is settled.
 
-```
-WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
-  test/unit/main.exe -- -f p          # run the loop, write a verdict
-dune build @mutate                    # merge the verdicts and report
-```
+What is not settled is the rest of the tree. Instrumenting the core
+breaks the mutation suites *by construction*:
 
-Two steps, per executable, and they do not collapse into one alias the
-way coverage's do. A `.coverage` dump is written by any instrumented run
-as a side effect, so `@cover` can both run and merge. A `.mutants`
-verdict only exists if a suite was *asked* to test its mutants —
-`WINDTRAP_MUTATE=1` takes the process over and runs the fork loop — and
-`@mutate` deliberately depends on nothing: putting `(alias_rec runtest)`
-in front of the merge would rebuild every test executable
-*uninstrumented*, which invalidates the very verdicts the merge is about
-to read. It runs nothing and reports what previous runs left.
+- `test/mutate_loop/plain_main.exe` is the deliberate **zero-mutant
+  control** — "a suite that links no instrumented module, so the seam has
+  to decline by name". An instrumented core gives it 984.
+- `test/mutate_loop/suite_main.exe` is a controlled fixture of **exactly
+  five** mutants, and every count, ordering and verdict assertion is
+  written against those five. It becomes 989, and the loop would
+  genuinely fork 989 children.
 
-Do not reach for `WINDTRAP_MUTATE=1 dune build @runtest`: that sets the
-variable for every test action at once, so every instrumented executable
-starts its own loop, including the whole-core one below that does not
-finish.
+Coverage's answer does not transfer. Coverage is passive — it records,
+so pollution is a *reporting* problem and `filter` /
+`WINDTRAP_COVERAGE_ONLY` narrow what is reported without changing the
+run. Mutation is active: the loop reads the catalogue and forks per
+mutant, so the behaviour under test *is* the catalogue and no reporting
+filter can rescue it.
 
-Six modules opt out with `[@@@mutate exclude_file]`: `runner`, `run`,
-`driver`, `mutate_loop`, `ppx_runtime` and `windtrap`. They are the
-machinery a mutation run uses to judge mutants, so a mutant there is
-armed inside the process that is supposed to detect it, and the failure
-mode is not a false survivor but a hang or a corrupted verdict — a
-mutated bail counter or timeout does not fail the reaching tests, it
-stops them from finishing. Coverage still measures those files; only
-mutation is off.
+**The prerequisite is a loop-level file scope** — a way to tell a run
+which mutants to consider. That is a feature in its own right, not
+scaffolding: mutation is expensive and "mutate only this file" is
+standard in the field. With it, `suite_main.exe` scoped to `subject.ml`
+has a genuine catalogue of five again rather than a simulation of one,
+and `lib/` can carry the stanza. The one case it cannot fully rescue is
+`plain_main.exe`, which would then *behave* uninstrumented rather than
+*be* uninstrumented — a real if small loss of fidelity in the control.
 
-There is no gate and there deliberately will not be one (Law 16e): the
-equivalent-mutant rate is a prediction until it is measured, so a
-survivor is a reading list, not a build failure. Expect survivors to
-cluster where assertions are weakest — a boolean `check` kills fewer
-mutants than a typed `equal`, which is the same finding as the habit
-above, arriving from the other direction.
+### What a measured run looked like
 
-**Mutating the core does not work end to end yet.** The stanza and the
-exclusions are in place and `dune runtest` is unaffected, but a whole-core run
-does not finish. A narrowed one does, and produces a real score. Both
-are measured.
-
-*A whole-core run hangs.* `WINDTRAP_MUTATE=1` over `test/unit/main.exe`
-offers 984 mutants; the loop gets past the forced-fail check and then
-reaches a mutant whose child neither fails nor terminates — observed
-directly, one child at 1m41s of CPU and climbing while the parent
-waited. That is a mutant which *blocks* rather than spins, and the
-runtime's runaway hit-count budget cannot catch it, because a blocked
-child has stopped hitting instrumented sites at all. Only the whole-loop
-deadline can end the run, and it can name just whichever mutant was in
-flight. An earlier run, before the exclusions, aborted exactly that way
-on `lib/runner.ml:385:19:fsub`.
-
-*A narrowed run works, if the selection includes the `path_ops` tests.*
-The measured recipe, and the one to use:
+Recorded here because it is the argument for finishing the work, not
+because it reproduces from a checkout today. With the stanza temporarily
+in place, `test/unit/main.exe` offered 984 mutants in 24 files, and
 
 ```
 WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
   test/unit/main.exe -- -f p
 ```
 
-409 of 602 tests, 852 of the 984 mutants reached, **656 killed and 196
-survived in 2m51s — a 77.0% kill rate**, the project's first measured
-mutation score. No hang: the mutant that blocks a whole-core run is
-reached only by tests this selection leaves out.
-
-The `-f` is not arbitrary and the rule is worth knowing. The loop's
-forced-fail check arms whichever mutant the most tests reach and refuses
-to start if nothing fails. For nearly every selection that mutant is
-`lib/path_ops.ml:175:48:not` — `sanitize_component`, which every test
-reaches through its log directory — and only the `path_ops` tests assert
-on a sanitized name. So a selection must match some `path_ops` tests to
-get past the check: `-f p` does, `-f seed`, `-f text`, `-f diff` and
-`-f tag` do not, and abort with a message whose first suggestion (the
-library was not instrumented) is the wrong one here.
-
-**A narrowed run's survivors are relative to its selection**, and that
-has to be said before any of them is believed. A mutant is reported as
-surviving when no *selected* test killed it; a test the filter left out
-may kill it anyway. Confirm before acting, by arming it against the
-whole suite:
+reached 852 of them: **657 killed, 195 survived in 2m51s.** Two of the
+first three survivors held up when armed against the whole suite:
 
 ```
-WINDTRAP_MUTATE_ARM=lib/path_ops.ml:183:5:lt \
-  dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
+lib/path_ops.ml:183:5:lt   (String.length out) <= 80  ->  < 80
+lib/property.ml:258:17:ge  count > (max_int / 2)      ->  >=
 ```
 
-Green means it really does survive; red means the narrow run misled you.
-Of the first three survivors this looked worth chasing, that check
-killed one:
+Untested boundaries on lines every one of which is *covered* — the class
+of defect coverage cannot see. The third did not hold, and that is the
+other lesson: **a narrowed run's survivors are relative to its
+selection.** `lib/seed.ml:101:5:lt` was reported as surviving and is in
+fact killed by the `seed` tests, which `-f p` excludes. Any survivor
+from a narrowed run has to be confirmed by arming it against the whole
+suite before it is believed.
+
+Two further limits were measured and are unchanged by the revert:
+
+- A whole-core run does not finish. It passes the forced-fail check and
+  then reaches a mutant whose child *blocks* rather than spins —
+  observed at 1m41s of CPU while the parent waited. The runaway
+  hit-count budget cannot catch a child that has stopped hitting sites,
+  so only the whole-loop deadline can end the run, and it can name just
+  whichever mutant was in flight. The per-mutant deadline
+  `Mutate_loop`'s interface already scopes out is what fixes this.
+- The forced-fail check arms only the single most-reached mutant and
+  refuses to start if it survives. For nearly every selection that is
+  `lib/path_ops.ml:175:48:not`, killed only by the `path_ops` tests — so
+  `-f seed`, `-f text`, `-f diff` and `-f tag` were all turned away with
+  a message whose first suggestion (the library was not instrumented) is
+  the wrong one there.
+
+### What does work today
+
+The tree's own mutation fixtures, which need no flag because
+`subject.ml` is preprocessed with `(pps ppx_windtrap.mutate)`
+unconditionally:
 
 ```
-lib/path_ops.ml:183:5:lt   (String.length out) <= 80  ->  < 80   survives
-lib/property.ml:258:17:ge  count > (max_int / 2)      ->  >=     survives
-lib/seed.ml:101:5:lt       (Int64.compare bound 0L) <= 0 -> < 0  KILLED by the
-                                                                 seed tests,
-                                                                 which -f p
-                                                                 excludes
+WINDTRAP_MUTATE=1 dune exec test/mutate_loop/suite_main.exe
+dune build @mutate                    # merge verdicts, report
 ```
 
-The two that hold are untested boundaries reached by dozens of tests —
-the class of defect coverage cannot see, since every one of those lines
-is covered. The one that did not is the reason the score is a reading
-list and not a number to quote.
+`@mutate` deliberately depends on nothing. Putting `(alias_rec runtest)`
+in front of the merge — which is right for `@cover`, since running the
+suite is how a coverage dump comes to exist — would rebuild every test
+executable *uninstrumented* and invalidate the verdicts the merge is
+about to read.
 
-- The exclusions above. Without them the blocking mutants were in the
-  scheduler itself, which is unarguable.
-- The deadline estimate. It was `3 × (reaching-test time) + 5s`, a sum
-  of *test* times that ignores the fork and module initialization every
-  child pays before its first test. For a suite of millisecond tests
-  that omission is the entire cost, so the budget collapsed to its 60s
-  floor while the loop genuinely needed minutes. It now charges the dry
-  run's own wall time once per mutant.
-
-What is still missing is the per-mutant deadline that `Mutate_loop`'s
-interface already names as out of this slice: a select loop, a session,
-and a process-group kill. That is what unblocks the whole-core run.
-Second, and cheaper: the forced-fail check should consider more than the
-single most-reached mutant before concluding nothing is armable, so that
-a selection not containing the `path_ops` tests is not turned away.
+There is no gate and there deliberately will not be one (Law 16e): the
+equivalent-mutant rate is a prediction until it is measured, so a
+survivor is a reading list, not a build failure.
 
 ## Golden transcripts are snapshots
 
