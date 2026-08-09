@@ -207,6 +207,10 @@ module Exn = struct
   let failure ?substring ?exact =
     let ok = message_check ?substring ?exact () in
     function Stdlib.Failure m -> ok m | _ -> false
+
+  let sys_error ?substring ?exact =
+    let ok = message_check ?substring ?exact () in
+    function Sys_error m -> ok m | _ -> false
 end
 
 (* Escape hatches *)

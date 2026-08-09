@@ -650,6 +650,17 @@ let tests =
         check
           "Exn.failure: rejects Invalid_argument even with a matching message"
           (not (Check.Exn.failure (Invalid_argument "x")));
+        (* The third message-carrying exception [raises] diffs by message:
+           [Exn] covering only two of the three was arbitrary. *)
+        check "Exn.sys_error: matches the constructor"
+          (Check.Exn.sys_error (Sys_error "x"));
+        check "Exn.sys_error: rejects other exceptions"
+          (not (Check.Exn.sys_error (Stdlib.Failure "x")));
+        check "Exn.sys_error: ~substring matches inside the message"
+          (Check.Exn.sys_error ~substring:"No such file"
+             (Sys_error "nope.txt: No such file or directory"));
+        check "Exn.sys_error: ~exact requires the whole message"
+          (not (Check.Exn.sys_error ~exact:"nope" (Sys_error "nope.txt")));
         check "Exn.invalid_arg: ~substring matches inside the message"
           (Check.Exn.invalid_arg ~substring:"unhandled op"
              (Invalid_argument "step: unhandled op HALT"));

@@ -17,6 +17,11 @@ rendered output, serialized documents and logs diff line by line. Equality is
 unchanged, byte for byte: trailing whitespace and a missing final newline
 still fail, and the diff marks them.
 
+**`Exn.sys_error`.** `raises` diffs three exceptions by message —
+`Invalid_argument`, `Failure`, `Sys_error` — but `Exn` offered predicates for
+only the first two, so `raises_match` on a `Sys_error` message needed a
+hand-written predicate. The set is now complete.
+
 ### Changed
 
 **Backtraces stop at your code.** Under every backtrace windtrap records sit

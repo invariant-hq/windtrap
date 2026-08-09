@@ -187,6 +187,12 @@ module Exn : sig
   val failure : ?substring:string -> ?exact:string -> exn -> bool
   (** [failure e] is [true] iff [e] is [Failure m] and [m] satisfies the
       constraint, if any. *)
+
+  val sys_error : ?substring:string -> ?exact:string -> exn -> bool
+  (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] satisfies the
+      constraint, if any. Completes the set: these three are exactly the
+      message-carrying exceptions {!raises} diffs by message rather than by
+      rendering (see [exn_message]). *)
 end
 
 (** {1:escapes Escape hatches} *)
