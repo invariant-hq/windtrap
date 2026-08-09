@@ -45,6 +45,11 @@ let payload_max_shrink (failure : Failure.t) =
   | Failure.Property { max_shrink; _ } -> max_shrink
   | _ -> failf "expected a Property failure kind"
 
+let payload_count (failure : Failure.t) =
+  match failure.Failure.kind with
+  | Failure.Property { count; _ } -> count
+  | _ -> failf "expected a Property failure kind"
+
 let expect_fail = function
   | Property.Fail { failure; stats } -> (failure, stats)
   | Property.Pass _ -> failf "expected Fail, got Pass"
@@ -149,7 +154,7 @@ let examples_run_first_in_order () =
   let body _ x = seen := x :: !seen in
   let stats =
     expect_pass
-      (Property.run ~root ~path:"examples order" ~count:3
+      (Property.run ~root ~path:"examples order" ~count:(`Declared 3)
          ~examples:[ 1000; 2000 ] (Gen.int_range 0 5) body)
   in
   let order = List.rev !seen in
@@ -202,8 +207,9 @@ let failing_example_without_printer_renders_placeholder () =
 let discarding_example_is_counted_and_skipped () =
   let stats =
     expect_pass
-      (Property.run ~root ~path:"example discard" ~count:2 ~examples:[ 1; 2; 3 ]
-         (Gen.int_range 0 9) (fun _ x -> Property.assume (x <> 2)))
+      (Property.run ~root ~path:"example discard" ~count:(`Declared 2)
+         ~examples:[ 1; 2; 3 ] (Gen.int_range 0 9) (fun _ x ->
+           Property.assume (x <> 2)))
   in
   check (stats.Property.cases >= 4) "examples 1 and 3 plus 2 generated pass";
   check (stats.Property.discards >= 1) "the discarded example must be counted"
@@ -212,7 +218,7 @@ let examples_count_in_coverage_denominator () =
   let body ctx x = Property.cover ctx ~label:"zero" ~at_least:60.0 (x = 0) in
   let stats =
     expect_pass
-      (Property.run ~root ~path:"examples cover" ~count:2
+      (Property.run ~root ~path:"examples cover" ~count:(`Declared 2)
          ~examples:[ 0; 0; 0; 0 ] (Gen.constant 1) body)
   in
   check (stats.Property.cases = 6) "4 examples + 2 generated cases";
@@ -225,8 +231,8 @@ let examples_count_in_coverage_denominator () =
 let assume_exhaustion_gives_up () =
   let stats =
     expect_gave_up
-      (Property.run ~root ~path:"give up" ~count:10 Gen.int (fun _ _ ->
-           Property.reject ()))
+      (Property.run ~root ~path:"give up" ~count:(`Declared 10) Gen.int
+         (fun _ _ -> Property.reject ()))
   in
   check (stats.Property.cases = 0) "no case can pass";
   check
@@ -239,7 +245,8 @@ let generation_rejection_gives_up () =
   let gen = Gen.such_that (fun _ -> false) Gen.int in
   let stats =
     expect_gave_up
-      (Property.run ~root ~path:"gen give up" ~count:3 gen (fun _ _ -> incr ran))
+      (Property.run ~root ~path:"gen give up" ~count:(`Declared 3) gen
+         (fun _ _ -> incr ran))
   in
   check (!ran = 0) "the body must never run when generation rejects";
   check
@@ -255,8 +262,8 @@ let explicit_max_discard_bounds_discards () =
   in
   let stats =
     expect_gave_up
-      (Property.run ~root ~path:"max discard" ~count:5 ~max_discard:7
-         (Gen.int_range 0 9) body)
+      (Property.run ~root ~path:"max discard" ~count:(`Declared 5)
+         ~max_discard:7 (Gen.int_range 0 9) body)
   in
   check (!attempts = 8) "the discard exceeding the budget gives up, got %d"
     !attempts;
@@ -265,8 +272,8 @@ let explicit_max_discard_bounds_discards () =
 let max_discard_zero_gives_up_on_first_discard () =
   let stats =
     expect_gave_up
-      (Property.run ~root ~path:"no discards" ~count:5 ~max_discard:0 Gen.int
-         (fun _ _ -> Property.reject ()))
+      (Property.run ~root ~path:"no discards" ~count:(`Declared 5)
+         ~max_discard:0 Gen.int (fun _ _ -> Property.reject ()))
   in
   check (stats.Property.cases = 0) "no case can pass";
   check
@@ -275,16 +282,16 @@ let max_discard_zero_gives_up_on_first_discard () =
   (* A property that never discards is unaffected by a zero budget. *)
   let stats =
     expect_pass
-      (Property.run ~root ~path:"no discards pass" ~count:5 ~max_discard:0
-         Gen.int (fun _ _ -> ()))
+      (Property.run ~root ~path:"no discards pass" ~count:(`Declared 5)
+         ~max_discard:0 Gen.int (fun _ _ -> ()))
   in
   check (stats.Property.cases = 5) "all cases must pass under a zero budget"
 
 let discarding_examples_consume_the_budget () =
   let stats =
     expect_gave_up
-      (Property.run ~root ~path:"example budget" ~count:3 ~max_discard:2
-         ~examples:[ 1; 1; 1 ] (Gen.constant 0) (fun _ x ->
+      (Property.run ~root ~path:"example budget" ~count:(`Declared 3)
+         ~max_discard:2 ~examples:[ 1; 1; 1 ] (Gen.constant 0) (fun _ x ->
            Property.assume (x <> 1)))
   in
   check (stats.Property.cases = 0) "every example must discard";
@@ -299,8 +306,9 @@ let budget_is_checked_before_the_count_goal () =
      has already exceeded [max_discard = 0]. *)
   let stats =
     expect_gave_up
-      (Property.run ~root ~path:"budget first" ~count:0 ~max_discard:0
-         ~examples:[ 1 ] (Gen.constant 0) (fun _ _ -> Property.reject ()))
+      (Property.run ~root ~path:"budget first" ~count:(`Declared 0)
+         ~max_discard:0 ~examples:[ 1 ] (Gen.constant 0) (fun _ _ ->
+           Property.reject ()))
   in
   check
     (stats.Property.discards = 1)
@@ -310,8 +318,8 @@ let budget_is_checked_before_the_count_goal () =
 let passing_examples_do_not_consume_the_budget () =
   let stats =
     expect_pass
-      (Property.run ~root ~path:"pass no budget" ~count:3 ~max_discard:0
-         ~examples:[ 1; 2; 3 ] (Gen.constant 0) (fun _ _ -> ()))
+      (Property.run ~root ~path:"pass no budget" ~count:(`Declared 3)
+         ~max_discard:0 ~examples:[ 1; 2; 3 ] (Gen.constant 0) (fun _ _ -> ()))
   in
   check (stats.Property.cases = 6) "3 examples + 3 generated cases must pass";
   check (stats.Property.discards = 0) "nothing discards"
@@ -320,8 +328,8 @@ let mixed_discards_still_pass () =
   (* Half the space discards; the budget of 2 * count absorbs it. *)
   let stats =
     expect_pass
-      (Property.run ~root ~path:"mixed discards" ~count:20 (Gen.int_range 0 9)
-         (fun _ x -> Property.assume (x mod 2 = 0)))
+      (Property.run ~root ~path:"mixed discards" ~count:(`Declared 20)
+         (Gen.int_range 0 9) (fun _ x -> Property.assume (x mod 2 = 0)))
   in
   check (stats.Property.cases = 20) "count cases must pass";
   check (stats.Property.discards > 0) "odd draws must discard"
@@ -334,7 +342,8 @@ let classify_partitions_cases () =
     Property.classify ctx "odd" (x mod 2 <> 0)
   in
   let stats =
-    expect_pass (Property.run ~root ~path:"classify" ~count:50 Gen.int body)
+    expect_pass
+      (Property.run ~root ~path:"classify" ~count:(`Declared 50) Gen.int body)
   in
   check (stats.Property.cases = 50) "all cases pass";
   let total = List.fold_left (fun acc (_, n) -> acc + n) 0 stats.collected in
@@ -350,7 +359,9 @@ let collect_counts_each_case_once () =
     Property.collect ctx "case"
   in
   let stats =
-    expect_pass (Property.run ~root ~path:"collect once" ~count:10 Gen.int body)
+    expect_pass
+      (Property.run ~root ~path:"collect once" ~count:(`Declared 10) Gen.int
+         body)
   in
   match stats.Property.collected with
   | [ ("case", 10) ] -> ()
@@ -363,8 +374,8 @@ let discarded_cases_do_not_commit_labels () =
   in
   let stats =
     expect_pass
-      (Property.run ~root ~path:"discard labels" ~count:10 (Gen.int_range 0 9)
-         body)
+      (Property.run ~root ~path:"discard labels" ~count:(`Declared 10)
+         (Gen.int_range 0 9) body)
   in
   match stats.Property.collected with
   | [ ("attempt", 10) ] ->
@@ -389,7 +400,8 @@ let shrink_runs_do_not_pollute_tables () =
 let cover_satisfied_passes () =
   let body ctx _ = Property.cover ctx ~label:"all" ~at_least:100.0 true in
   let stats =
-    expect_pass (Property.run ~root ~path:"cover pass" ~count:25 Gen.int body)
+    expect_pass
+      (Property.run ~root ~path:"cover pass" ~count:(`Declared 25) Gen.int body)
   in
   match stats.Property.coverage with
   | [
@@ -403,7 +415,8 @@ let cover_unsatisfied_fails_at_end () =
   let body ctx x = Property.cover ctx ~label:"zero" ~at_least:50.0 (x = 0) in
   let stats =
     expect_coverage_failed
-      (Property.run ~root ~path:"cover fail" ~count:10 (Gen.constant 1) body)
+      (Property.run ~root ~path:"cover fail" ~count:(`Declared 10)
+         (Gen.constant 1) body)
   in
   check (stats.Property.cases = 10) "the full case count must still pass";
   match stats.Property.coverage with
@@ -419,7 +432,8 @@ let cover_registers_even_when_condition_is_false () =
   in
   let stats =
     expect_coverage_failed
-      (Property.run ~root ~path:"cover register" ~count:10 (Gen.constant 0) body)
+      (Property.run ~root ~path:"cover register" ~count:(`Declared 10)
+         (Gen.constant 0) body)
   in
   match stats.Property.coverage with
   | [ { Property.label = "never"; hits = 0; satisfied = false; _ } ] -> ()
@@ -740,7 +754,7 @@ let huge_count_does_not_overflow_the_budget () =
      rather than wrap negative and give up before running any case. *)
   let outcome =
     Property.run ~root ~path:"huge count"
-      ~count:((max_int / 2) + 1)
+      ~count:(`Declared ((max_int / 2) + 1))
       (Gen.constant 0)
       (fun _ _ -> Check.fail "stop at the first case")
   in
@@ -751,8 +765,8 @@ let count_zero_passes_vacuously () =
   let ran = ref 0 in
   let stats =
     expect_pass
-      (Property.run ~root ~path:"count zero" ~count:0 Gen.int (fun _ _ ->
-           incr ran))
+      (Property.run ~root ~path:"count zero" ~count:(`Declared 0) Gen.int
+         (fun _ _ -> incr ran))
   in
   check (!ran = 0) "no generated case may run";
   check (stats.Property.cases = 0) "no case passed";
@@ -765,7 +779,8 @@ let negative_configuration_is_invalid () =
     | _ -> failf "negative configuration must raise Invalid_argument"
   in
   invalid (fun () ->
-      Property.run ~root ~path:"bad" ~count:(-1) Gen.int (fun _ _ -> ()));
+      Property.run ~root ~path:"bad" ~count:(`Declared (-1)) Gen.int (fun _ _ ->
+          ()));
   invalid (fun () ->
       Property.run ~root ~path:"bad" ~max_discard:(-1) Gen.int (fun _ _ -> ()));
   invalid (fun () ->
@@ -814,6 +829,27 @@ let spent_shrink_budget_is_marked () =
   in
   check
     (payload_max_shrink failure = None)
+    "the engine default rides nothing: a replay needs no flag to reproduce it"
+
+(* The count and its provenance are one argument, so the engine can never be
+   handed a number without being told whether a replay needs the flag. *)
+let count_provenance_decides_the_payload () =
+  let body _ _ = failf "always" in
+  let run_with count =
+    let failure, _ =
+      expect_fail
+        (Property.run ?count ~root ~path:"count provenance" Gen.int body)
+    in
+    payload_count failure
+  in
+  check
+    (run_with (Some (`Config 7)) = Some 7)
+    "a config-sourced count rides the payload: the hint must restate the flag";
+  check
+    (run_with (Some (`Declared 7)) = None)
+    "a declared count rides nothing: the declaration site replays by itself";
+  check
+    (run_with None = None)
     "the engine default rides nothing: a replay needs no flag to reproduce it"
 
 let suite =
@@ -885,6 +921,8 @@ let suite =
     ("negative configuration is invalid", negative_configuration_is_invalid);
     ("assume and reject raise Discard", assume_and_reject_raise_discard);
     ("a spent shrink budget is distinguishable", spent_shrink_budget_is_marked);
+    ( "count provenance decides the payload",
+      count_provenance_decides_the_payload );
   ]
 
 let tests = List.map (fun (name, fn) -> Windtrap.test name fn) suite

@@ -150,8 +150,7 @@ type outcome =
 
 val run :
   ?loc:Loc.t ->
-  ?count:int ->
-  ?config_count:int ->
+  ?count:[ `Declared of int | `Config of int ] ->
   ?max_discard:int ->
   ?max_shrink:int ->
   ?examples:'a list ->
@@ -163,15 +162,20 @@ val run :
 (** [run ~root ~path gen body] checks [body] over [gen] and returns the
     {!outcome}. [path] is the test's path in the suite; [root] is the run's root
     seed. [loc] is the property's declaration site, stamped on the failure when
-    one is produced. [config_count], default [None], is [count] again when run
-    configuration (rather than the declaration site or the default) supplied it:
-    the caller owns that provenance fact, and the engine stamps it on a
-    failure's {!Failure.kind.Property} payload so replay hints can restate the
-    flag. [max_shrink] needs no such companion — nothing but run configuration
-    sets it — so a supplied budget is stamped on the payload as it stands, for
-    the same reason: a replay under a different budget stops the descent
-    elsewhere. Defaults: [count] is [100], [max_discard] is [2 * count] (clamped
-    to [max_int]), [max_shrink] is [100], [examples] is [[]].
+    one is produced.
+
+    [count] is the number of generated cases {e and} where that number came
+    from, one argument because neither fact is usable without the other:
+    [`Declared n] is a count written at the property's declaration site, which
+    replays by itself, and [`Config n] is one supplied by run configuration,
+    which the engine stamps on a failure's {!Failure.kind.Property} payload so
+    replay hints can restate the flag. Omitted, the engine's default applies and
+    stamps nothing — a replay needs no flag to reproduce it. [max_shrink] needs
+    no such pairing: nothing but run configuration sets it, so a supplied budget
+    is always config-sourced and is stamped on the payload as it stands, for the
+    same reason — a replay under a different budget stops the descent elsewhere.
+    Defaults: [count] is [100], [max_discard] is [2 * count] (clamped to
+    [max_int]), [max_shrink] is [100], [examples] is [[]].
 
     {b Examples first.} The [examples] values run before any generation,
     unshrunk (they are already the reviewed minimal form), and are numbered

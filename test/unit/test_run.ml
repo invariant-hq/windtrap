@@ -215,8 +215,8 @@ let () =
 let get_prop_context () =
   let captured = ref None in
   (match
-     Property.run ~root:1L ~path:"ctx" ~count:1 (Gen.constant ()) (fun ctx () ->
-         captured := Some ctx)
+     Property.run ~root:1L ~path:"ctx" ~count:(`Declared 1) (Gen.constant ())
+       (fun ctx () -> captured := Some ctx)
    with
   | Property.Pass _ -> ()
   | _ -> failwith "property context scaffolding run failed");

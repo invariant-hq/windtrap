@@ -229,17 +229,27 @@ let inner_failure = function
   | Exception (exn, backtrace) ->
       Failure.raised ~actual:(Printexc.to_string exn) ?backtrace ()
 
-let run ?loc ?(count = default_count) ?config_count ?max_discard ?max_shrink
-    ?(examples = []) ~root ~path gen body =
+let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
+    body =
+  (* The case count and where it came from are one argument, because neither
+     fact is usable without the other: a config-sourced count rides the
+     failure payload so the replay hint can restate the flag, a
+     declaration-site count replays by itself, and the engine default needs
+     no hint at all. *)
+  let count, config_count =
+    match count with
+    | None -> (default_count, None)
+    | Some (`Declared n) -> (n, None)
+    | Some (`Config n) -> (n, Some n)
+  in
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
-  (* The budget as the caller set it rides the failure payload, exactly as
-     [config_count] does: with no declaration-site spelling for it, a
-     supplied budget is always the run configuration's, and a replay under
-     the default budget would stop the descent elsewhere and report a
-     different counterexample. *)
-  let config_max_shrink = max_shrink in
-  let max_shrink = Option.value max_shrink ~default:default_max_shrink in
-  if max_shrink < 0 then
+  (* [max_shrink] carries its provenance in its own option, and needs no
+     companion: with no declaration-site spelling for it, a supplied budget
+     is always the run configuration's, so it rides the payload as it stands
+     — a replay under the default budget would stop the descent elsewhere
+     and report a different counterexample. *)
+  let shrink_budget = Option.value max_shrink ~default:default_max_shrink in
+  if shrink_budget < 0 then
     invalid_arg "Property.run: max_shrink must be non-negative";
   let max_discard =
     match max_discard with
@@ -259,8 +269,8 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard ?max_shrink
       ?(shrink_exhausted = false) ~examples ?(printerless = false) cls =
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
-        ?count:config_count ?max_shrink:config_max_shrink ~rendered ~case_index
-        ~shrink_steps ~shrink_exhausted ~root ~examples ~printerless ()
+        ?count:config_count ?max_shrink ~rendered ~case_index ~shrink_steps
+        ~shrink_exhausted ~root ~examples ~printerless ()
     in
     Fail { failure; stats = stats () }
   in
@@ -332,7 +342,7 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard ?max_shrink
                   Printexc.raise_with_backtrace control backtrace
               | Failed cls ->
                   let final_tree, steps, final_cls, timed_out, exhausted =
-                    shrink ~max_shrink ~body tree cls
+                    shrink ~max_shrink:shrink_budget ~body tree cls
                   in
                   let rendered = Gen.render gen (Shrink_tree.root final_tree) in
                   fail ~rendered ~case_index:attempts ~shrink_steps:steps
