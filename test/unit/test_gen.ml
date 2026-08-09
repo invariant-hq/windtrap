@@ -1521,4 +1521,76 @@ let suite =
     ("provenance truncation respects UTF-8", provenance_truncation_respects_utf8);
   ]
 
-let tests = List.map (fun (name, fn) -> test name fn) suite
+(* The generator laws, as properties
+
+   Everything above walks a generator by hand: [samples] and
+   [find_sample] draw from fixed seeds and [minimize] re-implements the
+   shrink search. That is deliberate for the tests that must pin an exact
+   candidate order or a specific distribution — but it pins behaviour at
+   those seeds and says nothing about the rest of the space, and it never
+   goes through [Property], so a bug in how Gen and the case loop fit
+   together is invisible to it.
+
+   The laws below are universally quantified statements, which is what
+   [prop] is. They are also the only tests in this file that exercise the
+   engine end to end: draw, run the body, and — when one breaks —
+   shrink through the real search and print a replayable seed. That is
+   the property engine testing itself with the property engine, which is
+   the point.
+
+   Each generator is built so the law is checkable from the drawn value
+   alone: bounds are drawn first and the value drawn inside them with
+   [bind], so a counterexample carries its own parameters. *)
+
+(* [lo, hi, v] with [lo <= hi] and [v] drawn from [int_range lo hi]. *)
+let in_range_triple =
+  (* [with_pp] on every [map]/[bind] result below: those combinators drop
+     the printer by construction, and an unprintable counterexample makes
+     a failing law unreadable. *)
+  Gen.with_pp
+    (fun ppf (lo, hi, v) -> Format.fprintf ppf "(%d, %d, %d)" lo hi v)
+    (Gen.bind
+       (Gen.pair (Gen.int_range (-1000) 1000) (Gen.int_range (-1000) 1000))
+       (fun (a, b) ->
+         let lo = min a b and hi = max a b in
+         Gen.map (fun v -> (lo, hi, v)) (Gen.int_range lo hi)))
+
+let law_tests =
+  [
+    prop "int_range draws inside its bounds" in_range_triple
+      (fun (lo, hi, v) ->
+        is_true
+          ~msg:(Printf.sprintf "%d <= %d <= %d" lo v hi)
+          (lo <= v && v <= hi));
+    (* such_that's contract is about candidates as much as draws, and the
+       shrink search is what visits candidates — so a violation here is
+       reported only because the body runs under the engine. *)
+    prop "such_that draws satisfy the predicate"
+      (Gen.such_that (fun n -> n mod 3 = 0) (Gen.int_range (-300) 300))
+      (fun n -> equal ~msg:"divisible by three" int 0 (n mod 3));
+    prop "list_exact draws the requested length"
+      (Gen.with_pp
+         (fun ppf (n, xs) ->
+           Format.fprintf ppf "(%d, [%s])" n
+             (String.concat "; " (List.map string_of_int xs)))
+         (Gen.bind (Gen.int_range 0 32) (fun n ->
+              Gen.map (fun xs -> (n, xs)) (Gen.list_exact n Gen.int))))
+      (fun (n, xs) -> equal ~msg:"length" int n (List.length xs));
+    prop "option is Some or None and never raises" (Gen.option Gen.int)
+      (fun o ->
+        is_true ~msg:"total" (match o with None -> true | Some _ -> true));
+    (* Printing must be total: a counterexample that cannot be rendered
+       is a failure the reader never sees. This is the one law whose
+       violation would corrupt the report itself. *)
+    prop "every drawn value renders"
+      (Gen.pair Gen.string (Gen.list Gen.int))
+      (fun (s, xs) ->
+        match
+          Gen.render_value (Gen.pair Gen.string (Gen.list Gen.int)) (s, xs)
+        with
+        | Some rendered ->
+            is_true ~msg:"rendering is non-empty" (String.length rendered > 0)
+        | None -> fail "a pair of printable generators has no printer");
+  ]
+
+let tests = List.map (fun (name, fn) -> test name fn) suite @ law_tests

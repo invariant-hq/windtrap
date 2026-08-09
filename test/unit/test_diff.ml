@@ -949,6 +949,52 @@ let alloc_tests =
           (per_cell < 2.));
   ]
 
+(* The patch law, as a property
+
+   Every hunk test above states the law over one hand-written pair, and
+   three of them apply the hunks back to check it. The law itself is
+   universally quantified — for ANY two texts, applying the hunks to the
+   expected lines reconstructs the actual lines exactly — and a diff
+   algorithm is precisely the kind of code whose bugs live in the input
+   shapes nobody thought to write down: a run of identical lines, a
+   deletion that meets the end of the file, two regions exactly
+   [2 * context] apart, an empty side.
+
+   Lines are drawn from a three-letter alphabet on purpose. Distinct
+   random strings almost never match, and a diff over inputs with no
+   common lines exercises none of the alignment; a tiny alphabet makes
+   collisions, runs and near-misses the common case. *)
+
+let line_gen = Gen.of_list [ "a"; "b"; "c" ]
+
+(* [with_pp] because [map] drops the printer, and a counterexample that
+   renders as "<from: ([], [of_list[0]])>" is a counterexample the reader
+   cannot use. Found by breaking this property on purpose and reading
+   what it printed. *)
+let text_gen =
+  Gen.with_pp
+    (fun ppf t -> Format.fprintf ppf "%S" t)
+    (Gen.map text_of_lines (Gen.list ~size:(Gen.int_range 0 12) line_gen))
+
+let law_tests =
+  [
+    prop "hunks applied to expected reconstruct actual"
+      ~count:500
+      (Gen.pair text_gen text_gen)
+      (fun (expected, actual) ->
+        let hs = Diff.hunks ~expected ~actual () in
+        match apply_hunks (split_lines expected) hs with
+        | patched ->
+            equal ~msg:"the patch reconstructs actual" (list string)
+              (split_lines actual) patched
+        | exception Bad_patch reason -> failf "the hunks do not apply: %s" reason);
+    (* Identical texts must produce no hunk at all: a diff that reports a
+       change where there is none is the failure mode that makes every
+       other report untrustworthy. *)
+    prop "identical texts have no hunks" text_gen (fun t ->
+        equal ~msg:"no hunks" int 0 (List.length (Diff.hunks ~expected:t ~actual:t ())));
+  ]
+
 let tests =
   hunk_tests @ refine_tests @ sequence_tests @ span_tests @ guard_tests
-  @ alloc_tests
+  @ alloc_tests @ law_tests
