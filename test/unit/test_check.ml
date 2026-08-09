@@ -343,6 +343,69 @@ let tests =
             check_string "is_some: expected side" ~expected:"Some _"
               ~actual:expected;
             check_string "is_some: actual side" ~expected:"None" ~actual));
+    (* The verbs [is_true (n > 0)] stands in for: the comparison there
+       consumes both numbers, so its failure can only say true/false. *)
+    test "ordering: bound is the claim, value is the value" (fun () ->
+        passes "greater: pass" (fun () -> Check.greater Testable.int ~than:0 1);
+        predicate_payload "greater: fail payload"
+          (fun () -> Check.greater Testable.int ~than:0 0)
+          (fun (claim, value) ->
+            check_string "greater: claim names the bound"
+              ~expected:"greater than 0" ~actual:claim;
+            check_string "greater: value is the value" ~expected:"0"
+              ~actual:value);
+        (* Strictness, at the boundary, in both directions. *)
+        passes "greater_equal: equal passes" (fun () ->
+            Check.greater_equal Testable.int ~than:3 3);
+        predicate_payload "greater: equal fails"
+          (fun () -> Check.greater Testable.int ~than:3 3)
+          (fun (claim, _) ->
+            check_string "greater: strict" ~expected:"greater than 3"
+              ~actual:claim);
+        passes "less: pass" (fun () -> Check.less Testable.int ~than:10 9);
+        predicate_payload "less: equal fails"
+          (fun () -> Check.less Testable.int ~than:10 10)
+          (fun (claim, value) ->
+            check_string "less: claim" ~expected:"less than 10" ~actual:claim;
+            check_string "less: value" ~expected:"10" ~actual:value);
+        passes "less_equal: equal passes" (fun () ->
+            Check.less_equal Testable.int ~than:10 10);
+        predicate_payload "less_equal: above fails"
+          (fun () -> Check.less_equal Testable.int ~than:10 11)
+          (fun (claim, _) ->
+            check_string "less_equal: claim"
+              ~expected:"less than or equal to 10" ~actual:claim);
+        (* Renderings come from the witness, so the report speaks the
+           reader's type, not int. *)
+        predicate_payload "ordering renders through the witness"
+          (fun () -> Check.greater Testable.string ~than:"m" "a")
+          (fun (claim, value) ->
+            check_string "string bound is quoted"
+              ~expected:{|greater than "m"|} ~actual:claim;
+            check_string "string value is quoted" ~expected:{|"a"|}
+              ~actual:value));
+    test "ordering: a witness without one says so" (fun () ->
+        (* A programmer error, not a test failure: reported where it is
+           made, naming the fix. *)
+        let unordered = Testable.make ~pp:Format.pp_print_int ~equal:Int.equal in
+        let raised =
+          match Check.greater unordered ~than:0 1 with
+          | () -> None
+          | exception Invalid_argument m -> Some m
+        in
+        match raised with
+        | None -> fail "an unordered witness was accepted"
+        | Some m ->
+            check "names the verb"
+              (Windtrap.Private.Text.contains_substring ~pattern:"Check.greater"
+                 m);
+            check "names the fix"
+              (Windtrap.Private.Text.contains_substring
+                 ~pattern:"Testable.with_order" m);
+            (* [Printexc] renders the payload with %S, so a non-ASCII dash
+               would reach the reader as decimal bytes. *)
+            check "stays ASCII"
+              (String.for_all (fun c -> Char.code c < 128) m));
     test "satisfies" (fun () ->
         let calls = ref 0 in
         passes "satisfies: pass" (fun () ->

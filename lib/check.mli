@@ -5,7 +5,7 @@
 
 (** The assertion verbs.
 
-    Nineteen verbs and the {!Exn} predicates, each verb raising one structured
+    Twenty-three verbs and the {!Exn} predicates, each verb raising one structured
     failure: a failing verb constructs a single {!Failure.t} — a typed kind, an
     optional location, the [?msg] annotation when given — and raises
     {!Failure.Check_failure}. Verbs never print, never diff, and never touch run
@@ -100,6 +100,36 @@ val satisfies :
     [t]'s equality is not consulted. [pred] must be total; it runs on every
     call, the printer only on failure. Use [?msg] to name the predicate:
     [satisfies ~msg:"positive" Testable.int (fun n -> n > 0) n]. *)
+
+(** {1:ordering Ordering}
+
+    The verbs [is_true (n > 0)] stands in for. A comparison consumes both
+    numbers and yields a boolean, so its failure can only say
+    [expected true / actual false]; these keep the bound as the claim and the
+    value as the value, and read [expected greater than 0 / actual 0].
+
+    The ordering comes from the witness ({!Testable.with_order}), which is what
+    keeps the call shorter than the [is_true] it replaces. Every base-type
+    witness carries one. A witness that does not raises [Invalid_argument] at
+    the call — a programmer error, reported where it is made, inside the running
+    test's boundary. *)
+
+val greater : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [greater t ~than:bound v] is [()] iff [v] is strictly greater than [bound]
+    under [t]'s ordering. Otherwise it raises {!Failure.Check_failure} with a
+    {!Failure.Predicate} payload whose claim names [bound] and whose value is
+    [v], both rendered by [t]'s printer. *)
+
+val greater_equal :
+  ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [greater_equal t ~than:bound v] is {!greater} with equality allowed. *)
+
+val less : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [less t ~than:bound v] is [()] iff [v] is strictly less than [bound] under
+    [t]'s ordering. *)
+
+val less_equal : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [less_equal t ~than:bound v] is {!less} with equality allowed. *)
 
 (** {1:options Options}
 

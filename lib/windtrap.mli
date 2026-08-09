@@ -6,7 +6,7 @@
 (** One library for all your OCaml tests.
 
     Windtrap runs unit, property, and snapshot tests from one flat surface:
-    declare tests with {!test} and {!group}, assert with the nineteen verbs
+    declare tests with {!test} and {!group}, assert with the Twenty-three verbs
     ({!equal}, {!require_some}, {!raises}, ...), and hand the suite to {!run}:
 
     {[
@@ -220,7 +220,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:assertions Assertions}
 
-    Nineteen verbs and the {!Exn} predicates. Each verb raises one structured
+    Twenty-three verbs and the {!Exn} predicates. Each verb raises one structured
     failure that the runner catches at the test boundary; the failure records
     the call site ([?pos], else a best-effort call-stack capture) and the
     optional [?msg] annotation. Expected precedes actual, always. An assertion
@@ -254,6 +254,26 @@ val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
     failure prints the element it wanted and the whole list — the data an
     [is_true (List.mem x xs)] would have thrown away. For a byte substring of a
     string, use {!contains}. *)
+
+val greater : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [greater t ~than:bound v] asserts that [v] is strictly greater than [bound]
+    under [t]'s ordering. The failure prints the bound it wanted and the value
+    it got — [expected greater than 0 / actual 0] — where [is_true (v > 0)]
+    could only print [true] against [false].
+
+    The ordering comes from the witness: every base-type witness carries one,
+    and {!Testable.with_order} attaches one to your own. A witness without an
+    ordering raises [Invalid_argument], failing the test that asked. *)
+
+val greater_equal :
+  ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [greater_equal] is {!greater} with equality allowed. *)
+
+val less : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [less t ~than:bound v] asserts that [v] is strictly less than [bound]. *)
+
+val less_equal : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [less_equal] is {!less} with equality allowed. *)
 
 val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
 (** [is_none o] asserts that [o] is [None]. On [Some v] the failure renders [v]

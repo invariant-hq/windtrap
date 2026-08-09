@@ -1,6 +1,6 @@
 # Assertions
 
-Nineteen verbs, one design rule: a failure must print the data that
+Twenty-three verbs, one design rule: a failure must print the data that
 would let you fix the bug without adding a `Printf`. Every checking
 verb takes optional `?msg` (an annotation shown in the report) and
 `?pos` (a `__POS__` override for the automatic call-stack location);
@@ -164,6 +164,36 @@ mem int 42 [ 2; 3; 5 ]
 expected  a list containing 42
 actual    [2; 3; 5]
 ```
+
+## Ordering
+
+A comparison consumes both numbers and hands back a boolean, so
+`is_true (n > 0)` can only fail with `expected true / actual false` —
+the number is gone. The ordering verbs keep the bound as the claim and
+the value as the value:
+
+```ocaml
+greater int ~than:0 (Source.omitted_bytes c)
+```
+
+```
+expected  greater than 0
+actual    0
+```
+
+`greater_equal`, `less` and `less_equal` complete the set, all with
+`~than`. The ordering comes from the witness, which is what keeps the
+call shorter than the `is_true` it replaces; every base-type witness
+carries one. Give your own an order with `Testable.with_order`:
+
+```ocaml
+let version = Testable.of_module (module Version)
+              |> Testable.with_order Version.compare
+```
+
+Containers deliberately carry no ordering — a lexicographic order over
+a list or a pair is a choice, not a fact — and a witness without one
+raises `Invalid_argument` naming the fix.
 
 ## Options
 

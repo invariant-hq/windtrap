@@ -9,6 +9,19 @@ codes. New entries go at the top of their section.
 
 ### Added
 
+**Ordering assertions: `greater`, `greater_equal`, `less`, `less_equal`.** A
+comparison consumes both operands and yields a boolean, so `is_true (n > 0)`
+can only fail with `expected true / actual false` — the number the reader needs
+is gone by then. These keep the bound as the claim and the value as the value:
+`expected greater than 0 / actual 0`. The ordering comes from the witness, so
+the call is shorter than the `is_true` it replaces; every base-type witness
+carries one, `Testable.with_order` attaches one to your own, and a witness
+without one raises `Invalid_argument` naming the fix. Containers deliberately
+carry none: a lexicographic order over a list is a choice, not a fact.
+
+**`Testable.with_order`.** Attaches an ordering to a witness, the way
+`Gen.with_pp` attaches a printer. `Testable.order` reads it back.
+
 **Stateful testing: `stateful`, `command`, `call`.** A property checks a law
 over one value; a cache, a queue, a pool or a cursor needs one over a
 *sequence of calls*. A command bundles four facts in one place — how to draw

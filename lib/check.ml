@@ -105,6 +105,58 @@ let satisfies ?pos ?msg t pred v =
     fail_predicate ?pos ?msg ~claim:"value satisfying the predicate"
       (Testable.to_string t v)
 
+(* Ordering
+
+   [is_true (n > 0)] is the shape these replace, and its failure says
+   [expected true / actual false] — the comparison consumed the number.
+   Here the bound is the claim and the value is the value, so the report
+   reads [expected greater than 0 / actual 0].
+
+   The ordering comes from the witness ([Testable.with_order]) rather than
+   an argument, which is what keeps the call shorter than the [is_true] it
+   replaces. A witness without one is a programmer error reported where it
+   is made, naming the fix. *)
+
+let ordering verb t =
+  match Testable.order t with
+  | Some compare -> compare
+  | None ->
+      invalid_arg
+        (* Plain ASCII: [Printexc.to_string] renders the payload with [%S],
+           which would escape a dash of any other kind into decimal bytes. *)
+        (Pp.str
+           "Check.%s: this witness carries no ordering; attach one with \
+            Testable.with_order"
+           verb)
+
+let greater ?pos ?msg t ~than value =
+  let compare = ordering "greater" t in
+  if compare value than <= 0 then
+    fail_predicate ?pos ?msg
+      ~claim:(Pp.str "greater than %s" (Testable.to_string t than))
+      (Testable.to_string t value)
+
+let greater_equal ?pos ?msg t ~than value =
+  let compare = ordering "greater_equal" t in
+  if compare value than < 0 then
+    fail_predicate ?pos ?msg
+      ~claim:(Pp.str "greater than or equal to %s" (Testable.to_string t than))
+      (Testable.to_string t value)
+
+let less ?pos ?msg t ~than value =
+  let compare = ordering "less" t in
+  if compare value than >= 0 then
+    fail_predicate ?pos ?msg
+      ~claim:(Pp.str "less than %s" (Testable.to_string t than))
+      (Testable.to_string t value)
+
+let less_equal ?pos ?msg t ~than value =
+  let compare = ordering "less_equal" t in
+  if compare value than > 0 then
+    fail_predicate ?pos ?msg
+      ~claim:(Pp.str "less than or equal to %s" (Testable.to_string t than))
+      (Testable.to_string t value)
+
 (* Options
 
    The shape assertions, for when the value is not wanted: a witness would
