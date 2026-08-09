@@ -94,6 +94,36 @@ let selection_description (config : Run.config) =
       let rest = List.filteri (fun i _ -> i < List.length many - 1) many in
       Some (String.concat ", " rest ^ " and " ^ last)
 
+(* JUnit
+
+   One process per suite is the normal case under `dune runtest` — a
+   process per (test) stanza, and one per inline-test library — so a single
+   fixed path would have every suite overwrite the last, silently. A value
+   naming an [.xml] file stays exactly that, for the one-process
+   invocations `--junit` was written for; anything else is a directory, and
+   each suite writes its own report into it for CI to glob. *)
+let junit_path ~suite target =
+  if Filename.check_suffix target ".xml" then target
+  else
+    Filename.concat target (Path_ops.sanitize_component suite ^ ".xml")
+
+let write_junit ~invocation ~suite ~duration ~results target =
+  let path = junit_path ~suite target in
+  let document = Render_junit.render ~invocation ~suite ~results ~duration () in
+  match
+    (* The directory form has to exist before the first suite writes into
+       it, and nothing else creates it. *)
+    if path != target then Path_ops.mkdir_p (Filename.dirname path);
+    Atomic_file.write ~path document
+  with
+  | () -> ()
+  | exception Sys_error message ->
+      Format.eprintf "warning: could not write JUnit report: %s@." message
+  | exception Unix.Unix_error (error, _, _) ->
+      Format.eprintf "warning: could not write JUnit report to %s: %s@."
+        (Path_ops.display path)
+        (Unix.error_message error)
+
 (* The event observer *)
 
 let observe renderer ~seed ~selection = function

@@ -61,6 +61,33 @@ val selection_description : Run.config -> string option
     selection can say why it is empty; the phrasing of that sentence is
     {!Render}'s, the configuration behind it is the driver's. *)
 
+val junit_path : suite:string -> string -> string
+(** [junit_path ~suite target] is the file [suite]'s JUnit report is written
+    to. A [target] naming an [.xml] file is that file; anything else is a
+    directory, and the report lands at [<target>/<suite>.xml] with [suite] made
+    filename-safe ({!Path_ops.sanitize_component}).
+
+    The two forms exist because [--junit] and [WINDTRAP_JUNIT] are asked in
+    different situations. A flag on one executable is one suite and one file.
+    The mirror is read under [dune runtest], which starts a process per [(test)]
+    stanza and per inline-test library, and a single fixed path would have each
+    silently overwrite the last. *)
+
+val write_junit :
+  invocation:Render.invocation ->
+  suite:string ->
+  duration:float ->
+  results:Run.result list ->
+  string ->
+  unit
+(** [write_junit ~invocation ~suite ~duration ~results target] writes [suite]'s
+    JUnit report to {!junit_path}, creating the directory when [target] is one.
+    A report that cannot be written is a warning on standard error, never a
+    failed run: the report is a CI convenience, not the run's verdict.
+
+    Shared with the inline runner, so an inline partition writes its report on
+    the same terms as a standalone suite. *)
+
 val observe :
   Render.t ->
   seed:Seed.seed option ->

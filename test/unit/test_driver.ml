@@ -276,4 +276,23 @@ let tests =
       test_coverage_seam;
     test "fixture release failures reach the sinks"
       test_release_failures_reach_the_sinks;
+    (* One process per suite is the normal case under `dune runtest`, so a
+       single fixed path would have each suite overwrite the last. The
+       [.xml] suffix is what tells the two intents apart. *)
+    test "junit_path: a file stays a file, anything else is a directory"
+      (fun () ->
+        check_string "an .xml target is used verbatim" ~expected:"reports/r.xml"
+          ~actual:(Driver.junit_path ~suite:"mylib" "reports/r.xml");
+        check_string "a directory target gets one file per suite"
+          ~expected:(Filename.concat "reports" "mylib.xml")
+          ~actual:(Driver.junit_path ~suite:"mylib" "reports");
+        check_string "two suites, one directory, two files"
+          ~expected:(Filename.concat "reports" "parser.xml")
+          ~actual:(Driver.junit_path ~suite:"parser" "reports");
+        (* A suite name is not a filename until it is made one. *)
+        let awkward = Driver.junit_path ~suite:"a/b c" "reports" in
+        check "a suite name never escapes its directory"
+          (Filename.dirname awkward = "reports");
+        check "and never keeps a path separator"
+          (not (String.contains (Filename.basename awkward) '/')));
   ]

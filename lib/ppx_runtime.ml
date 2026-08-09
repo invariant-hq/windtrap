@@ -1176,7 +1176,15 @@ let run_inline_suite ~suite ~config ~coverage_mode ~output tests =
       (* The message is already on stderr; this runner returns the code
          for [exit] to combine with the correction protocol. *)
       Runner.startup_exit_code error
-  | Ok (outcome, _results) ->
+  | Ok (outcome, results) ->
+      (* An inline partition is a suite like any other, and WINDTRAP_JUNIT
+         is the only spelling that reaches it — the protocol has no CLI. It
+         writes its own file under the directory form, which is what makes
+         a report per partition possible at all. *)
+      Option.iter
+        (Driver.write_junit ~invocation:`Mirrors ~suite
+           ~duration:outcome.Runner.duration ~results)
+        config.Run.junit;
       let written, unwritable = flush_corrections_report () in
       (* The correction-coverage exit-0 downgrade presumes the correction
          reached disk — dune's diff action can only surface corrections

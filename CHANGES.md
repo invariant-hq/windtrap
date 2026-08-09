@@ -91,6 +91,14 @@ at `-l`. A suite that declares nothing says that instead, and a shard that drew
 an empty bucket names the shard, so neither reads as a typo. Exit codes are
 unchanged.
 
+**JUnit reports survive `dune runtest`.** `WINDTRAP_JUNIT` named one file, but
+`dune runtest` starts a process per `(test)` stanza and per inline-test library
+— so suites silently overwrote each other's report, and inline partitions
+dropped it entirely. A target ending in `.xml` is still that exact file, for
+the single-process invocations `--junit` was written for; anything else is a
+directory, and every suite writes `<dir>/<suite>.xml` into it, inline
+partitions included. Point CI at `_build/junit/*.xml`.
+
 **One meaning for green, on both diff paths.** The unified-diff path coloured
 `- expected` red and `+ actual` green — the diff tool's convention, and the
 inverse of what every other block does and of what the 0.2.0 notes promise

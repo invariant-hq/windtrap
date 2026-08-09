@@ -239,22 +239,6 @@ let invocation_of ~inside_dune argv : Render.invocation =
 let print_cli_error ~prog error =
   Format.eprintf "%s@.%s@." (Cli.error_message error) (Cli.usage ~prog)
 
-let write_junit ~invocation ~suite ~duration ~results path =
-  (* Excused-aware: an xfail excused failure emits as a skipped
-     testcase — the transport classifies from the result records, matching
-     the run it did not fail; [invocation] keeps the hint bytes in failure
-     bodies equal to the terminal block's. *)
-  let document = Render_junit.render ~invocation ~suite ~results ~duration () in
-  match
-    let channel = open_out path in
-    Fun.protect
-      ~finally:(fun () -> close_out channel)
-      (fun () -> output_string channel document)
-  with
-  | () -> ()
-  | exception Sys_error message ->
-      Format.eprintf "warning: could not write JUnit report: %s@." message
-
 (* The thin library driver: [Driver.execute_and_report] writes the whole
    transcript, shared byte-for-byte with the inline (ppx) runner. What is
    legitimately this runner's own stays visible here: the parsed-CLI
@@ -297,8 +281,8 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
         exit outcome.Runner.exit_code
       end;
       Option.iter
-        (write_junit ~invocation ~suite ~duration:outcome.Runner.duration
-           ~results)
+        (Driver.write_junit ~invocation ~suite
+           ~duration:outcome.Runner.duration ~results)
         config.Run.junit;
       if
         outcome.Runner.focus_active

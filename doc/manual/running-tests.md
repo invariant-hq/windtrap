@@ -246,10 +246,22 @@ update requests refuse to start before anything executes
 (`WINDTRAP_ALLOW_FOCUS=1` / `WINDTRAP_UPDATE=force` override
 deliberately).
 
-- **JUnit**: `--junit PATH` (`WINDTRAP_JUNIT`) also writes a JUnit
-  XML report — point your CI's test-report ingestion at it. Under
-  `dune runtest`, which is where most CI runs a suite from, the mirror
-  is how you reach it: `WINDTRAP_JUNIT=_build/junit.xml dune runtest`.
+- **JUnit**: `--junit PATH` (`WINDTRAP_JUNIT`) also writes a JUnit XML
+  report. A target ending in `.xml` is that exact file; anything else
+  is a **directory**, and each suite writes `<dir>/<suite>.xml` into
+  it. The two forms exist because the two spellings are asked in
+  different situations: a flag on one executable is one suite and one
+  file, while `dune runtest` starts a process per `(test)` stanza and
+  per inline-test library, and a single fixed path would have each
+  silently overwrite the last. So in CI:
+
+  ```sh
+  WINDTRAP_JUNIT=_build/junit dune runtest
+  ```
+
+  and point ingestion at `_build/junit/*.xml`. Inline (`ppx_windtrap`)
+  partitions write their reports there too — the mirror is the only
+  spelling that reaches them, since the inline protocol has no CLI.
 - **GitHub Actions**: under GitHub Actions (`CI` and `GITHUB_ACTIONS`
   both set, as Actions sets them), failures are additionally emitted
   as workflow annotations — they appear inline on the PR diff with no

@@ -151,7 +151,7 @@ automatic GitHub Actions annotations on failures.
   -s, --stream             Stream test output instead of capturing it
   -v, --verbose            One status line per test
   -q, --quiet              Failures and summary only
-      --junit PATH         Also write a JUnit XML report to PATH
+      --junit PATH         Also write a JUnit XML report (PATH.xml, or a directory)
       --color MODE         Color output: always, never or auto
       --coverage MODE      Coverage output: summary, report, full or off
   -o, --output DIR         Root directory for capture logs
