@@ -129,6 +129,48 @@ let () =
         [ test "touches the fixture" (fun () -> leaky_release ()) ]
   | _ -> ()
 
+(* The strict-snapshots child (snapshots, [--strict-snapshots]): re-exec'd
+   to run the facade's [run] on a green one-test suite that leaves one
+   stale baseline beside the one it checks. The run is full and clean, so
+   the stale file is a verdict: the child must exit 1, and — the part a
+   runner-level test cannot see — the transcript must say so, because a
+   run that exits 1 under "1 passed" is the defect, not the feature. *)
+let strict_scope = ("src/a.ml", 1, 0, 0)
+
+let write_baseline root name contents =
+  let path = Filename.concat root ("src/__snapshots__/a/" ^ name ^ ".snap") in
+  Path_ops.mkdir_p (Filename.dirname path);
+  Out_channel.with_open_bin path (fun oc ->
+      Out_channel.output_string oc contents)
+
+let () =
+  match Array.to_list Sys.argv with
+  | [ _; "--strict-snapshots-child"; root; junit ] ->
+      clear_env ();
+      (* After [clear_env], which owns this variable. Baselines resolve
+         under the project root, so the throwaway root is the project. *)
+      Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+      write_baseline root "kept" "hello\n";
+      write_baseline root "gone" "no test claims me\n";
+      Windtrap.run
+        ~argv:
+          [|
+            "strict-child";
+            "-o";
+            Filename.concat root "_logs";
+            "--color";
+            "never";
+            "--junit";
+            junit;
+            "--strict-snapshots";
+          |]
+        "strictsuite"
+        [
+          test "checks its baseline" (fun () ->
+              snapshot ~pos:strict_scope "kept" "hello\n");
+        ]
+  | _ -> ()
+
 (* The list-only child (driver, [--list]): re-exec'd to run the facade's
    [run] on a two-test suite with [-l]. A list run selects and stops —
    [Driver.execute_and_report] projects nothing, the driver prints the
@@ -1097,6 +1139,45 @@ let () =
     check_contains "JUnit counts the release failure" ~sub:"failures=\"1\"" xml;
     check_contains "the JUnit case is the release's own path"
       ~sub:"fixture release" xml)
+
+(* --strict-snapshots reaches every sink, process level *)
+
+let occurrences ~sub s =
+  let n = String.length sub in
+  let rec count i acc =
+    if i + n > String.length s then acc
+    else if String.sub s i n = sub then count (i + n) (acc + 1)
+    else count (i + 1) acc
+  in
+  if n = 0 then 0 else count 0 0
+
+let () =
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let junit = Filename.concat root "junit.xml" in
+    let status, transcript =
+      spawn_child ~merge_stderr:true [ "--strict-snapshots-child"; root; junit ]
+    in
+    check "a stale baseline under --strict-snapshots exits 1"
+      (status = Unix.WEXITED 1);
+    check_contains "the transcript carries a failure block for it"
+      ~sub:"stale baselines" transcript;
+    check_contains "the block names the offending file"
+      ~sub:"stale baseline: src/__snapshots__/a/gone.snap" transcript;
+    check_contains "and the way out" ~sub:"remove stale baselines: " transcript;
+    check_contains "the summary counts it" ~sub:"1 passed, 1 failed" transcript;
+    (* One printing: the advisory block below the summary stands down
+       when the failure block already carried the same lines. *)
+    check "the stale line is printed exactly once"
+      (occurrences ~sub:"stale baseline: src/__snapshots__/a/gone.snap"
+         transcript
+      = 1);
+    check "the checked baseline is not called stale"
+      (not (contains "kept.snap" transcript));
+    let xml = In_channel.with_open_bin junit In_channel.input_all in
+    check_contains "JUnit counts the stale baselines" ~sub:"failures=\"1\"" xml;
+    check_contains "the JUnit case is the verdict's own path"
+      ~sub:"stale baselines" xml)
 
 (* The focus warning, process level (testing/T3) *)
 

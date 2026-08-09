@@ -704,6 +704,20 @@ val cover : label:string -> at_least:float -> bool -> unit
     [WINDTRAP_UPDATE=1 dune runtest] for inline suites — then review with
     [git diff]. A green run always means "matched a committed baseline".
 
+    A baseline whose test was deleted or renamed is {e stale}. Only a full,
+    clean run can say so — the whole declared suite executed, nothing filtered,
+    focused, bailed, skipped or failed — because only such a run knows every
+    name the suite claims; after one, stale baselines are listed
+    ([stale baseline: <path>]) with the command that removes them.
+    [--prune]/[WINDTRAP_PRUNE=1] deletes them after a full, clean update run,
+    and [--strict-snapshots]/[WINDTRAP_STRICT_SNAPSHOTS=1] fails the run on them
+    (exit [1], paths and way out in the failure block) — the flag that asserts
+    the stored baselines are exactly the set the suite checks, so adding or
+    removing a case cannot pass unnoticed. It is off by default, and the two
+    compose in that order: [--prune] deletes, [--strict-snapshots] judges what
+    survived. After any other run both are silently inapplicable, because a
+    filtered run cannot tell a stale baseline from one it did not select.
+
     Baselines are invisible to dune's dependency tracking; add
     [(deps (glob_files_rec __snapshots__/** ))] to the test stanza so editing a
     baseline re-triggers [dune runtest]. *)

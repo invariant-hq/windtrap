@@ -1723,6 +1723,115 @@ let () =
         (refusal.Snapshot.not_update_run && not refusal.Snapshot.filtered)
   | _ -> check "check-mode prune is refused" false
 
+(* Stale baselines: reporting, --strict-snapshots, and --prune
+
+   The registry the runner builds resolves scopes under
+   [Path_ops.project_root], so a throwaway root goes in
+   WINDTRAP_PROJECT_ROOT and the tests snapshot with an explicit [~pos]
+   under it. Orphan scans only see directories the run consulted, so every
+   scenario checks one live baseline and leaves a second, unclaimed one
+   beside it. *)
+
+let write_file path contents =
+  Path_ops.mkdir_p (Filename.dirname path);
+  let oc = open_out_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_out_noerr oc)
+    (fun () -> output_string oc contents)
+
+(* [<root>/src/__snapshots__/a/<name>.snap], the frozen layout for a
+   snapshot scoped to "src/a.ml". *)
+let baseline root name =
+  Filename.concat root ("src/__snapshots__/a/" ^ name ^ ".snap")
+
+let scope_pos = ("src/a.ml", 1, 0, 0)
+
+(* One suite, two tests, one live baseline and one stale file. *)
+let stale_suite root =
+  write_file (baseline root "kept") "hello\n";
+  write_file (baseline root "gone") "who checks me\n";
+  [
+    Test_tree.test "t1" (fun () ->
+        Windtrap.snapshot ~pos:scope_pos "kept" "hello\n");
+    Test_tree.test "t2" (fun () -> ());
+  ]
+
+let () =
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let base = base_config ~log_dir:(Filename.concat root "_logs") () in
+  let suite = stale_suite root in
+  (* Default: advisory. The run is green and the stale file survives. *)
+  expect_run "a stale baseline is advisory by default" ~config:base suite
+  @@ fun outcome ->
+  check "the stale baseline is reported"
+    (outcome.Runner.orphans = [ baseline root "gone" ]);
+  check "but the run still passes" (outcome.Runner.exit_code = 0);
+  (* --strict-snapshots: the same run, now a failure. *)
+  let strict = { base with Run.strict_snapshots = true } in
+  expect_run "--strict-snapshots fails on a stale baseline" ~config:strict suite
+  @@ fun outcome ->
+  check "the stale baseline is still named"
+    (outcome.Runner.orphans = [ baseline root "gone" ]);
+  check "and the run exits 1" (outcome.Runner.exit_code = 1);
+  check "no test counted as failed" (outcome.Runner.failed_paths = []);
+  check "the stale file was not deleted"
+    (Sys.file_exists (baseline root "gone"));
+  (* The verdict inherits the orphan gate: a filtered run cannot tell
+     "stale" from "not selected", so it says nothing and fails nothing. *)
+  let filtered = { strict with Run.filter = Some "t1" } in
+  expect_run "--strict-snapshots is inapplicable after a filtered run"
+    ~config:filtered suite
+  @@ fun outcome ->
+  check "a filtered run reports no orphans" (outcome.Runner.orphans = []);
+  check "and stays green" (outcome.Runner.exit_code = 0);
+  (* Same for a run that did not finish clean: one failing test is enough. *)
+  let dirty = [ Test_tree.test "boom" (fun () -> Check.fail "boom") ] @ suite in
+  expect_run "--strict-snapshots is inapplicable after a failing run"
+    ~config:strict dirty
+  @@ fun outcome ->
+  check "an unclean run reports no orphans" (outcome.Runner.orphans = []);
+  check "and fails for its own reason"
+    (outcome.Runner.exit_code = 1 && outcome.Runner.failed_paths = [ "boom" ]);
+  clear_env ()
+
+(* --prune deletes, --strict-snapshots judges what survived: deletion
+   first, so the two together mean "remove them, and fail if you could
+   not". *)
+let () =
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let base = base_config ~log_dir:(Filename.concat root "_logs") () in
+  let suite = stale_suite root in
+  (* Refused prune (this is not an update run): nothing is deleted, so the
+     strict verdict still fires and the refusal still explains itself. *)
+  let refused = { base with Run.prune = true; strict_snapshots = true } in
+  expect_run "a refused --prune leaves the strict failure standing"
+    ~config:refused suite
+  @@ fun outcome ->
+  check "the refusal is reported"
+    (match outcome.Runner.pruned with
+    | Some (Error r) -> r.Snapshot.not_update_run
+    | _ -> false);
+  check "the survivor is still stale"
+    (outcome.Runner.orphans = [ baseline root "gone" ]);
+  check "and the run exits 1" (outcome.Runner.exit_code = 1);
+  (* Granted prune: the deletion happens first, so there is nothing left
+     to fail on and the run is green under the same flag. *)
+  let granted = { refused with Run.update = Env.Force_update } in
+  expect_run "a granted --prune disarms --strict-snapshots" ~config:granted
+    suite
+  @@ fun outcome ->
+  check "the stale baseline was deleted"
+    (outcome.Runner.pruned = Some (Ok [ baseline root "gone" ]));
+  check "so nothing is reported stale" (outcome.Runner.orphans = []);
+  check "the file is gone" (not (Sys.file_exists (baseline root "gone")));
+  check "and the run is green" (outcome.Runner.exit_code = 0);
+  check "the live baseline survived" (Sys.file_exists (baseline root "kept"));
+  clear_env ()
+
 (* The last-failed store *)
 
 let () =

@@ -88,9 +88,8 @@
     Skips are unaffected. Each recorded result carries the decision
     ({!Run.result.counted}) and the annotation ({!Run.result.xfail}): renderers
     distinguish an expected failure ([Fail], not counted) from an unexpected
-    pass ([Fail], counted) from the record alone. For snapshot-orphan reporting
-    and [--prune] gating, {e every} [Fail] result — expected or not — makes the
-    run unclean.
+    pass ([Fail], counted) from the record alone. For baseline maintenance
+    (below), {e every} [Fail] result — expected or not — makes the run unclean.
 
     {b Selection.} A test runs iff its path contains [config.filter] (when set),
     does not contain [config.exclude] (when set), its tags satisfy
@@ -110,6 +109,20 @@
     test may move it between buckets. Sharding composes with every other
     selection layer (the bucket applies to the already-filtered set), and an
     empty shard exits [2] like any empty selection.
+
+    {b Baseline maintenance.} A run that executed the whole declared suite with
+    nothing filtered, focused, bailed, skipped or failed — and only such a run —
+    knows the full set of baseline names the suite claims, so only such a run
+    may say that a stored baseline is stale ({!Snapshot.orphans}). The three
+    consumers of that set share the gate: {!outcome.orphans} reports it,
+    [--prune] deletes it ({!Snapshot.prune} refuses on the same facts, with
+    every blocker named), and [--strict-snapshots] fails the run on it. They
+    compose in that order — a granted prune deletes first and
+    [--strict-snapshots] judges what survived, so the two together mean "remove
+    them, and fail if you could not". After any other run the set is empty and
+    all three are silently inapplicable: a filtered run cannot tell a stale
+    baseline from one this invocation did not select, and a check that guessed
+    would fail correct suites.
 
     {b The last-failed store} lives at [<log_dir>/<suite>/.last-failed], written
     atomically ({!Atomic_file}) after every executing run. Its format is
@@ -220,20 +233,24 @@ type outcome = {
       (** {!Failure.Release}-phase failures from end-of-run fixture teardowns,
           in release order. Any entry makes {!outcome.exit_code} [1]. *)
   orphans : string list;
-      (** Stale baselines ({!Snapshot.orphans}), reported only after a full,
+      (** Baselines still stale when the run ended ({!Snapshot.orphans}, minus
+          whatever a granted [--prune] deleted), reported only after a full,
           clean run — no filters, focus, bail, skips, or failures — and [[]]
-          otherwise. Reporting never deletes. *)
+          otherwise. Reporting never deletes; the deletions are
+          {!outcome.pruned}. Nonempty under [config.strict_snapshots] makes
+          {!outcome.exit_code} [1]. *)
   pruned : (string list, Snapshot.prune_refusal) result option;
       (** [Some] iff [config.prune] requested pruning: the deleted paths, or the
           refusal for renderers to explain. [None] otherwise. *)
   duration : float;  (** Wall-clock seconds from startup checks to release. *)
   exit_code : int;
-      (** [1] when any test counted as failed ({!outcome.failed_paths} nonempty)
-          or any release failed; else [2] when no test executed (empty suite or
-          empty selection — the filter-typo case); else [0] — a nonempty
-          selection whose every test skipped is deliberate and exits [0], and so
-          does a run whose only failures were expected ([xfail]). List-only runs
-          exit [0]. *)
+      (** [1] when any test counted as failed ({!outcome.failed_paths}
+          nonempty), any release failed, or [config.strict_snapshots] is set and
+          {!outcome.orphans} is nonempty; else [2] when no test executed (empty
+          suite or empty selection — the filter-typo case); else [0] — a
+          nonempty selection whose every test skipped is deliberate and exits
+          [0], and so does a run whose only failures were expected ([xfail]).
+          List-only runs exit [0]. *)
 }
 (** The type for completed runs: everything renderers project and the facade
     needs to exit. *)

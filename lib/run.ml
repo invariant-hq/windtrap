@@ -19,6 +19,7 @@ type config = {
   stream : bool;
   update : Env.update;
   prune : bool;
+  strict_snapshots : bool;
   timeout : float option;
   slow_threshold : float;
   prop_count : int option;
@@ -48,6 +49,7 @@ let default_config () =
     stream = false;
     update = Env.No_update;
     prune = false;
+    strict_snapshots = false;
     timeout = None;
     slow_threshold = 1.0;
     prop_count = None;

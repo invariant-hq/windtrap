@@ -30,17 +30,19 @@ let check_string name ~expected ~actual = equal ~msg:name string expected actual
 
 (* Synthetic outcomes *)
 
-let make_run ?snapshots () =
+let make_run ?config ?snapshots () =
   let snapshots =
     match snapshots with
     | Some s -> s
     | None -> Snapshot.create ~mode:Snapshot.Check ()
   in
-  Run.create (Run.default_config ()) ~capture:Capture.disabled ~snapshots
+  let config = Option.value config ~default:(Run.default_config ()) in
+  Run.create config ~capture:Capture.disabled ~snapshots
 
-let outcome ?snapshots ?(orphans = []) ?pruned ?(release_failures = []) () =
+let outcome ?config ?snapshots ?(orphans = []) ?pruned ?(release_failures = [])
+    () =
   {
-    Runner.run = make_run ?snapshots ();
+    Runner.run = make_run ?config ?snapshots ();
     selected = [];
     total = 0;
     focus_active = false;
@@ -164,6 +166,71 @@ let test_report_orphan_hint () =
   check_string "no writes, no orphans, no prune: nothing prints" ~expected:""
     ~actual:(report (outcome ()))
 
+(* The --strict-snapshots verdict
+
+   [Runner] already folded it into the exit code; what this pins is that
+   the verdict also reaches the sinks that project results, and that the
+   same lines are printed exactly once. Without the row the run exits 1
+   under a summary saying every test passed — the defect
+   [results_with_releases] exists to prevent, in a second place. *)
+
+let strict_config () =
+  { (Run.default_config ()) with Run.strict_snapshots = true }
+
+let test_strict_snapshots_row () =
+  let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
+  let lines =
+    String.concat "\n"
+      (List.map
+         (fun p -> Printf.sprintf "stale baseline: %s" (Path_ops.display p))
+         orphans
+      @ [ "remove stale baselines: ./t.exe -u --prune" ])
+  in
+  let strict = outcome ~config:(strict_config ()) ~orphans () in
+  (match Driver.stale_baseline_results ~invocation:(`Exe "./t.exe") strict with
+  | [ r ] ->
+      check "the stale-baselines row is a counted failure" r.Run.counted;
+      check_string "it reports under its own path" ~expected:"stale baselines"
+        ~actual:(Test_tree.path_to_string r.Run.path);
+      check_string "it names the files and the way out" ~expected:lines
+        ~actual:
+          (match r.Run.outcome with
+          | Failure.Fail [ { Failure.kind = Failure.Message m; _ } ] -> m
+          | _ -> "<not a single message failure>")
+  | rs ->
+      check
+        (Printf.sprintf "expected one stale row, got %d" (List.length rs))
+        false);
+  (* One printing: the advisory block stands down when the failure block
+     already carried the same lines. *)
+  check_string "the advisory block stands down under the flag" ~expected:""
+    ~actual:(report ~invocation:(`Exe "./t.exe") strict);
+  (* A refused prune still explains itself — the failure says what is
+     stale, the refusal says why nothing was deleted. *)
+  let refusal =
+    {
+      Snapshot.not_update_run = true;
+      filtered = false;
+      skipped = 0;
+      failed = 0;
+      focused = 0;
+    }
+  in
+  check_string "a refused prune keeps its explanation"
+    ~expected:
+      "prune refused: the run was not an update run (-u / WINDTRAP_UPDATE=1)\n"
+    ~actual:
+      (report ~invocation:(`Exe "./t.exe")
+         (outcome ~config:(strict_config ()) ~orphans ~pruned:(Error refusal) ()));
+  (* Off by default, and inapplicable with nothing stale. *)
+  check "no row without the flag"
+    (Driver.stale_baseline_results ~invocation:`Mirrors (outcome ~orphans ())
+    = []);
+  check "no row with nothing stale"
+    (Driver.stale_baseline_results ~invocation:`Mirrors
+       (outcome ~config:(strict_config ()) ())
+    = [])
+
 (* The observer's header-seed policy *)
 
 let test_observe_seed_policy () =
@@ -268,6 +335,8 @@ let tests =
     test "snapshot report: wrote lines and the quiet gate" test_report_writes;
     test "snapshot report: prune lines and refusals" test_report_prune;
     test "snapshot report: orphan hints per invocation" test_report_orphan_hint;
+    test "snapshot report: the --strict-snapshots verdict"
+      test_strict_snapshots_row;
     test "observer: header-seed policy" test_observe_seed_policy;
     test "github envelope: bytes and gating" test_github_envelope;
     test "github envelope: composed around a transcript"

@@ -175,6 +175,63 @@ let explain_prune_refusal (refusal : Snapshot.prune_refusal) =
   in
   "prune refused: " ^ String.concat "; " blockers
 
+(* The one producer of the stale-baseline lines. [stale_lines] names the
+   offending files; a refused [--prune] stops there, because its blockers
+   replace the way out. Everywhere else the removal hint follows, spelled —
+   like every other command hint — from the run's startup-computed
+   invocation. Both spellings feed the advisory block below and the
+   [--strict-snapshots] failure that block becomes, so the two cannot
+   drift. *)
+let stale_lines orphans =
+  List.map (fun path -> Pp.str "stale baseline: %s" (display_path path)) orphans
+
+let stale_lines_with_hint ~invocation orphans =
+  let command =
+    match (invocation : Render.invocation) with
+    | `Exe cmd -> cmd ^ " -u --prune"
+    | `Mirrors -> "WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
+  in
+  stale_lines orphans @ [ Pp.str "remove stale baselines: %s" command ]
+
+(* [--strict-snapshots] is a verdict, so it needs a row in the results every
+   sink projects — the same reason fixture-release failures get one (see
+   [release_results]). Without it the run exits 1 under a summary that says
+   every test passed. The row carries the stale lines themselves, and
+   [report_snapshots] then drops its advisory copy: one printing, one
+   producer. Its path is one component, like a release failure's, so it
+   cannot collide with a declared test path. *)
+let stale_path = "stale baselines"
+
+(* The verdict itself: [Runner] already folded it into the exit code, and
+   this is the one place that re-derives it, for the two sinks that project
+   results rather than the outcome. *)
+let stale_is_fatal (outcome : Runner.outcome) =
+  (Run.config outcome.Runner.run).Run.strict_snapshots
+  && outcome.Runner.orphans <> []
+
+let stale_baseline_results ~invocation (outcome : Runner.outcome) =
+  if not (stale_is_fatal outcome) then []
+  else
+    [
+      {
+        Run.path = [ stale_path ];
+        outcome =
+          Failure.Fail
+            [
+              Failure.message
+                (String.concat "\n"
+                   (stale_lines_with_hint ~invocation outcome.Runner.orphans));
+            ];
+        counted = true;
+        xfail = None;
+        slow_tagged = false;
+        duration = 0.;
+        attempts = 1;
+        prop_stats = None;
+        srandom_root = None;
+      };
+    ]
+
 let report_snapshots ~out ~output ~invocation (outcome : Runner.outcome) =
   if output <> `Quiet then begin
     let writes = Snapshot.writes (Run.snapshots outcome.Runner.run) in
@@ -187,33 +244,23 @@ let report_snapshots ~out ~output ~invocation (outcome : Runner.outcome) =
         in
         Format.fprintf out "wrote %s (%s)@." (display_path path) status)
       writes;
+    let put lines = List.iter (Format.fprintf out "%s@.") lines in
+    (* Under [--strict-snapshots] the same lines already rode into the
+       failure section on the stale-baselines row: naming the files twice,
+       ten lines apart, is noise, not emphasis. *)
+    let advisory =
+      if stale_is_fatal outcome then [] else outcome.Runner.orphans
+    in
     match outcome.Runner.pruned with
     | Some (Ok deleted) ->
-        List.iter
-          (fun path -> Format.fprintf out "pruned %s@." (display_path path))
-          deleted
+        put (List.map (fun p -> Pp.str "pruned %s" (display_path p)) deleted)
     | Some (Error refusal) ->
-        List.iter
-          (fun path ->
-            Format.fprintf out "stale baseline: %s@." (display_path path))
-          outcome.Runner.orphans;
+        put (stale_lines advisory);
         Format.fprintf out "%s@." (explain_prune_refusal refusal)
     | None -> (
-        match outcome.Runner.orphans with
+        match advisory with
         | [] -> ()
-        | orphans ->
-            List.iter
-              (fun path ->
-                Format.fprintf out "stale baseline: %s@." (display_path path))
-              orphans;
-            (* The prune hint derives from the same startup-computed
-               invocation as every other command hint. *)
-            let command =
-              match (invocation : Render.invocation) with
-              | `Exe cmd -> cmd ^ " -u --prune"
-              | `Mirrors -> "WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
-            in
-            Format.fprintf out "remove stale baselines: %s@." command)
+        | orphans -> put (stale_lines_with_hint ~invocation orphans))
   end
 
 (* The coverage seam *)
@@ -357,10 +404,13 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ()) ~invocation
          caller prints the listing it asked for. *)
       Ok (outcome, [])
   | Ok outcome ->
-      (* Release failures ride with the results: they are part of the
-         run's verdict (they set the exit code), so every sink must see
-         them. *)
-      let results = results_with_releases outcome in
+      (* Release failures and a strict stale-baseline verdict ride with the
+         results: both are part of the run's verdict (both set the exit
+         code), so every sink must see them. *)
+      let results =
+        results_with_releases outcome
+        @ stale_baseline_results ~invocation outcome
+      in
       let coverage_data = snapshot_coverage outcome.Runner.run in
       Render.finish renderer
         ?coverage:(coverage_summary ~coverage_mode outcome.Runner.run)

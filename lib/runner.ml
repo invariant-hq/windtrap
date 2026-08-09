@@ -670,11 +670,18 @@ let update_last_failed path ~full ~results ~failed_paths =
   in
   write_store path (failed_paths @ survivors)
 
-(* Stale-baseline reporting and [--prune], which gate on the same facts about
-   how much of the suite really ran. Orphans are reported only after a full,
-   clean run; [Snapshot.prune] is handed those facts to refuse or explain.
-   Every recorded [Fail] counts here, expected or not: an [xfail] body did not
-   complete, so its snapshots may be stale. Reporting never deletes. *)
+(* Stale-baseline reporting, [--prune] and [--strict-snapshots], which gate on
+   the same facts about how much of the suite really ran. Orphans are reported
+   only after a full, clean run; [Snapshot.prune] is handed those facts to
+   refuse or explain. Every recorded [Fail] counts here, expected or not: an
+   [xfail] body did not complete, so its snapshots may be stale. Reporting
+   never deletes.
+
+   The reported set is what is stale when the run ENDS, so [--prune] and
+   [--strict-snapshots] compose in the only order that makes both useful:
+   deletion first, judgement on what survived it. A granted prune leaves
+   nothing to fail on; a refused one leaves everything, and the refusal
+   already says why. *)
 let snapshot_maintenance (config : Run.config) snapshots ~full ~results
     ~focused_count =
   let count_outcomes accepts =
@@ -698,6 +705,12 @@ let snapshot_maintenance (config : Run.config) snapshots ~full ~results
         (Snapshot.prune snapshots ~filtered:(not full) ~skipped ~failed
            ~focused:focused_count)
     else None
+  in
+  let orphans =
+    match pruned with
+    | Some (Ok deleted) ->
+        List.filter (fun path -> not (List.mem path deleted)) orphans
+    | Some (Error _) | None -> orphans
   in
   (orphans, pruned)
 
@@ -779,8 +792,14 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
     let orphans, pruned =
       snapshot_maintenance config snapshots ~full ~results ~focused_count
     in
+    (* [--strict-snapshots] turns the advisory report into a verdict. It
+       rides on [orphans], so it inherits that field's gate for free: a run
+       that was not full and clean computed no orphans, and a check that
+       cannot tell "stale" from "not selected this time" must not fail
+       anything. *)
+    let stale_baselines = config.Run.strict_snapshots && orphans <> [] in
     let exit_code =
-      if failed_paths <> [] || release_failures <> [] then 1
+      if failed_paths <> [] || release_failures <> [] || stale_baselines then 1
       else if results = [] then 2
       else 0
     in

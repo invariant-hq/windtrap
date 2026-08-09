@@ -62,6 +62,12 @@ type config = {
   prune : bool;
       (** [--prune]/[WINDTRAP_PRUNE]: delete orphaned baselines after a full,
           clean update run. *)
+  strict_snapshots : bool;
+      (** [--strict-snapshots]/[WINDTRAP_STRICT_SNAPSHOTS]: a baseline still
+          stale at the end of a full, clean run fails the run
+          ({!Runner.outcome.orphans}). Off by default; inapplicable — never a
+          failure — after a run that was not full and clean, which is the same
+          gate stale-baseline reporting sits behind. *)
   timeout : float option;  (** [--timeout]: default per-test limit, seconds. *)
   slow_threshold : float;
       (** [--slow-threshold]/[WINDTRAP_SLOW_THRESHOLD]: seconds a test not

@@ -13,11 +13,11 @@
     drift apart byte-wise. The five producers are renderer construction
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
     ({!github_start}, {!github_end}, {!github_annotations}), the snapshot/prune
-    report ({!report_snapshots}), and the coverage seam ({!snapshot_coverage},
-    {!coverage_summary}, {!coverage_report}); {!execute_and_report} is the order
-    they run in, around {!Runner.execute}. A runner that composed them itself
-    would be free to get that order wrong, which is the same drift by another
-    route.
+    report ({!report_snapshots} and {!stale_baseline_results}), and the coverage
+    seam ({!snapshot_coverage}, {!coverage_summary}, {!coverage_report});
+    {!execute_and_report} is the order they run in, around {!Runner.execute}. A
+    runner that composed them itself would be free to get that order wrong,
+    which is the same drift by another route.
 
     What the runners legitimately do {e not} share stays visible at their call
     sites, as an argument to {!execute_and_report} or a line in the thin
@@ -150,6 +150,12 @@ val report_snapshots :
     ([<exe> -u --prune] under [`Exe],
     [WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest] under [`Mirrors]).
 
+    The stale-baseline lines are dropped when {!stale_baseline_results} already
+    carried them into the failure section — under [--strict-snapshots] they are
+    the failure, and naming the files twice in one transcript is noise. A prune
+    refusal's explanation still prints: it says why the deletion did not happen,
+    which the failure does not.
+
     Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
     summary. *)
 
@@ -179,6 +185,22 @@ val coverage_summary :
     {!Render.finish}: the recorded snapshot under [`Summary], [None] otherwise —
     the report modes print their own line ({!coverage_report}), and [`Off]
     prints nothing. *)
+
+val stale_baseline_results :
+  invocation:Render.invocation -> Runner.outcome -> Run.result list
+(** [stale_baseline_results ~invocation outcome] is the one-row projection of a
+    [--strict-snapshots] verdict: a counted [Fail] result at path
+    ["stale baselines"] whose message is exactly the [stale baseline: <path>]
+    lines and the removal hint {!report_snapshots} would otherwise print — when
+    [config.strict_snapshots] is set and {!Runner.outcome.orphans} is nonempty,
+    the same condition {!Runner.execute} turned into exit code [1]. [[]]
+    otherwise, which includes every run that was not full and clean: such a run
+    computes no orphans, so the check is silently inapplicable.
+
+    It exists for the reason {!results_with_releases} does — the verdict must
+    reach the sinks that project results, or the run exits [1] under a summary
+    that says every test passed — and it is not recorded into the run for the
+    same reason either. *)
 
 (** {1:releases Fixture release failures} *)
 
@@ -231,14 +253,16 @@ val execute_and_report :
     writes the run's whole report on standard output, composing the producers
     above in the one order both runners use: {!val:renderer} and {!observe},
     {!github_start}, {!Runner.execute}, then — for a run that happened —
-    {!results_with_releases}, {!snapshot_coverage}, {!Render.finish} (its
-    [?coverage] from {!coverage_summary}), {!coverage_report},
-    {!report_snapshots}, {!github_end}, {!github_annotations}, and a flush of
-    both standard formatters.
+    {!results_with_releases} and {!stale_baseline_results},
+    {!snapshot_coverage}, {!Render.finish} (its [?coverage] from
+    {!coverage_summary}), {!coverage_report}, {!report_snapshots},
+    {!github_end}, {!github_annotations}, and a flush of both standard
+    formatters.
 
     [Ok (outcome, results)] carries the outcome and the results
-    {e as the sinks saw them} — {!Run.results} plus the synthetic release rows —
-    for the caller's own transports and exit code.
+    {e as the sinks saw them} — {!Run.results} plus the synthetic release rows
+    and the [--strict-snapshots] stale-baselines row — for the caller's own
+    transports and exit code.
 
     [seed] and [selection] are {!observe}'s two header policies, passed through
     rather than derived: the runners genuinely disagree about both, and the

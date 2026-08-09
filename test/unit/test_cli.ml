@@ -75,6 +75,7 @@ let () =
       "-s";
       "-u";
       "--prune";
+      "--strict-snapshots";
       "--seed";
       "s1:00000000000000ff";
       "--timeout";
@@ -100,6 +101,7 @@ let () =
       check "stream" (p.Cli.stream = Some true);
       check "update" (p.Cli.update = Some Env.Update);
       check "prune" (p.Cli.prune = Some true);
+      check "strict_snapshots" (p.Cli.strict_snapshots = Some true);
       check "seed" (p.Cli.seed = Some 0xffL);
       check "timeout" (p.Cli.timeout = Some 2.5);
       check "prop_count" (p.Cli.prop_count = Some 50);
@@ -344,6 +346,7 @@ let () =
       "--prop-count";
       "--update";
       "--prune";
+      "--strict-snapshots";
       "--stream";
       "--verbose";
       "--quiet";
@@ -361,6 +364,7 @@ let () =
       "WINDTRAP_SHARD";
       "WINDTRAP_UPDATE";
       "WINDTRAP_PRUNE";
+      "WINDTRAP_STRICT_SNAPSHOTS";
       "WINDTRAP_QUIET";
       "WINDTRAP_VERBOSE";
       "WINDTRAP_SLOW_THRESHOLD";
@@ -395,7 +399,9 @@ let () =
     ((not config.Run.quick)
     && (not config.Run.failed_only)
     && (not config.Run.list_only) && (not config.Run.stream)
-    && (not config.Run.prune) && not config.Run.allow_focus);
+    && (not config.Run.prune)
+    && (not config.Run.strict_snapshots)
+    && not config.Run.allow_focus);
   check "default: update off" (config.Run.update = Env.No_update);
   check "default: no bail/timeout/prop-count/junit"
     (config.Run.bail = None && config.Run.timeout = None
@@ -453,6 +459,28 @@ let () =
   check "WINDTRAP_UPDATE=1" (config.Run.update = Env.Update);
   clear_env ()
 
+(* --strict-snapshots turns the stale-baseline report into a verdict, so
+   it is the one snapshot knob a suite can leave permanently on in CI: the
+   default must stay off, and a falsy mirror must stay off too — an
+   accidental "on" fails suites that legitimately carry unchecked
+   baselines. *)
+let () =
+  reg "strict-snapshots resolution" @@ fun () ->
+  clear_env ();
+  check "off by default" (not (resolve Cli.empty).Run.strict_snapshots);
+  Unix.putenv "WINDTRAP_STRICT_SNAPSHOTS" "1";
+  check "WINDTRAP_STRICT_SNAPSHOTS=1" (resolve Cli.empty).Run.strict_snapshots;
+  Unix.putenv "WINDTRAP_STRICT_SNAPSHOTS" "0";
+  check "a falsy mirror leaves it off"
+    (not (resolve Cli.empty).Run.strict_snapshots);
+  check "the flag beats a falsy mirror"
+    (resolve { Cli.empty with Cli.strict_snapshots = Some true })
+      .Run.strict_snapshots;
+  clear_env ();
+  check "the help line says what the flag does"
+    (contains "--strict-snapshots" (Cli.help ~prog:"t.exe")
+    && contains "Fail the run on a stale baseline" (Cli.help ~prog:"t.exe"))
+
 let () =
   reg "seed precedence and malformed env seeds" @@ fun () ->
   clear_env ();
@@ -473,6 +501,7 @@ let () =
   clear_env ();
   Unix.putenv "WINDTRAP_STREAM" "1";
   Unix.putenv "WINDTRAP_PRUNE" "yes";
+  Unix.putenv "WINDTRAP_STRICT_SNAPSHOTS" "1";
   Unix.putenv "WINDTRAP_TIMEOUT" "1.5";
   Unix.putenv "WINDTRAP_PROP_COUNT" "7";
   Unix.putenv "WINDTRAP_MAX_SHRINK" "40";
@@ -483,6 +512,7 @@ let () =
   let config = resolve Cli.empty in
   check "WINDTRAP_STREAM" config.Run.stream;
   check "WINDTRAP_PRUNE" config.Run.prune;
+  check "WINDTRAP_STRICT_SNAPSHOTS" config.Run.strict_snapshots;
   check "WINDTRAP_TIMEOUT" (config.Run.timeout = Some 1.5);
   check "WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
   check "WINDTRAP_MAX_SHRINK" (config.Run.max_shrink = Some 40);
@@ -517,12 +547,12 @@ let () =
   reg "WINDTRAP_MAX_DISCARD" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_MAX_DISCARD" "500";
-  check "WINDTRAP_MAX_DISCARD"
-    ((resolve Cli.empty).Run.max_discard = Some 500);
+  check "WINDTRAP_MAX_DISCARD" ((resolve Cli.empty).Run.max_discard = Some 500);
   (* Zero is a meaningful budget — "tolerate no discards" — so this knob
      is non-negative where --prop-count and --max-shrink are positive. *)
   Unix.putenv "WINDTRAP_MAX_DISCARD" "0";
-  check "a zero budget is accepted" ((resolve Cli.empty).Run.max_discard = Some 0);
+  check "a zero budget is accepted"
+    ((resolve Cli.empty).Run.max_discard = Some 0);
   Unix.putenv "WINDTRAP_MAX_DISCARD" "-1";
   (match Cli.resolve Cli.empty with
   | Ok _ -> check "a negative budget is rejected" false
@@ -553,9 +583,11 @@ let () =
   (* A losing layer stays unread: a valid flag shadows a malformed mirror. *)
   Unix.putenv "WINDTRAP_BAIL" "not-a-number";
   (match Cli.resolve { Cli.empty with Cli.bail = Some 2 } with
-  | Ok config -> check "a valid flag shadows a malformed mirror" (config.Run.bail = Some 2)
+  | Ok config ->
+      check "a valid flag shadows a malformed mirror" (config.Run.bail = Some 2)
   | Error e ->
-      check ("malformed mirror leaked past the flag: " ^ Cli.error_message e)
+      check
+        ("malformed mirror leaked past the flag: " ^ Cli.error_message e)
         false);
   clear_env ()
 

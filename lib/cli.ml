@@ -22,6 +22,7 @@ type parsed = {
   stream : bool option;
   update : Env.update option;
   prune : bool option;
+  strict_snapshots : bool option;
   seed : Seed.seed option;
   timeout : float option;
   slow_threshold : float option;
@@ -52,6 +53,7 @@ let empty =
     stream = None;
     update = None;
     prune = None;
+    strict_snapshots = None;
     seed = None;
     timeout = None;
     slow_threshold = None;
@@ -389,6 +391,15 @@ let table =
       arg = Flag (fun acc -> { acc with prune = Some true });
       doc = "Delete orphaned baselines after a full, clean update run";
       mirror = mirrored "WINDTRAP_PRUNE" Truthy (fun p -> p.prune = None);
+    };
+    {
+      short = None;
+      long = "--strict-snapshots";
+      arg = Flag (fun acc -> { acc with strict_snapshots = Some true });
+      doc = "Fail the run on a stale baseline left by a full, clean run";
+      mirror =
+        mirrored "WINDTRAP_STRICT_SNAPSHOTS" Truthy (fun p ->
+            p.strict_snapshots = None);
     };
     {
       short = Some "-s";
@@ -790,6 +801,10 @@ let resolve ?(overrides = empty) cli =
           ~default:Env.No_update;
       prune =
         Option.value (first_some overrides.prune below.prune) ~default:false;
+      strict_snapshots =
+        Option.value
+          (first_some overrides.strict_snapshots below.strict_snapshots)
+          ~default:false;
       timeout;
       slow_threshold =
         Option.value slow_threshold ~default:defaults.Run.slow_threshold;
