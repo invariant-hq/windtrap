@@ -158,9 +158,9 @@ mutants than a typed `equal`, which is the same finding as the habit
 above, arriving from the other direction.
 
 **Mutating the core does not work end to end yet.** The stanza and the
-exclusions are in place and `dune runtest` is unaffected, but neither a
-whole-core run nor a narrowed one currently produces a score, for two
-different reasons. Both are measured.
+exclusions are in place and `dune runtest` is unaffected, but a whole-core run
+does not finish. A narrowed one does, and produces a real score. Both
+are measured.
 
 *A whole-core run hangs.* `WINDTRAP_MUTATE=1` over `test/unit/main.exe`
 offers 984 mutants; the loop gets past the forced-fail check and then
@@ -173,16 +173,41 @@ deadline can end the run, and it can name just whichever mutant was in
 flight. An earlier run, before the exclusions, aborted exactly that way
 on `lib/runner.ml:385:19:fsub`.
 
-*A narrowed run refuses to start.* `-f seed`, `-f text`, `-f diff` and
-`-f testable` all abort in the forced-fail check on
-`lib/path_ops.ml:175:48:not`, the mutant the most tests reach. That is
-the check doing its job rather than a bug: the mutant is not equivalent
-— it inverts `sanitize_component`'s character test — it simply is not
-killed, because no test in those selections asserts on a sanitized log
-or JUnit name. The whole suite does kill it, which is why only the
-narrow runs stop there. Worth knowing when reading the message: it leads
-with "the library under test was not built with --instrument-with", the
-commonest cause in general but the wrong one here.
+*A narrowed run works, if the selection includes the `path_ops` tests.*
+The measured recipe, and the one to use:
+
+```
+WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
+  test/unit/main.exe -- -f p
+```
+
+409 of 602 tests, 852 of the 984 mutants reached, **656 killed and 196
+survived in 2m51s — a 77.0% kill rate**, the project's first measured
+mutation score. No hang: the mutant that blocks a whole-core run is
+reached only by tests this selection leaves out.
+
+The `-f` is not arbitrary and the rule is worth knowing. The loop's
+forced-fail check arms whichever mutant the most tests reach and refuses
+to start if nothing fails. For nearly every selection that mutant is
+`lib/path_ops.ml:175:48:not` — `sanitize_component`, which every test
+reaches through its log directory — and only the `path_ops` tests assert
+on a sanitized name. So a selection must match some `path_ops` tests to
+get past the check: `-f p` does, `-f seed`, `-f text`, `-f diff` and
+`-f tag` do not, and abort with a message whose first suggestion (the
+library was not instrumented) is the wrong one here.
+
+The survivors are worth reading rather than counting. The first run
+named, among others:
+
+```
+SURVIVED  lib/seed.ml:101:5:lt      (Int64.compare bound 0L) <= 0  →  < 0
+SURVIVED  lib/property.ml:258:17:ge  count > (max_int / 2)  →  count >= (max_int / 2)
+SURVIVED  lib/path_ops.ml:183:5:lt   (String.length out) <= 80  →  < 80
+```
+
+Three untested boundaries, each reached by dozens of tests. That is the
+class of defect coverage cannot see: every one of those lines is
+covered.
 
 Two things were fixed on the way to learning all that, and both are
 worth keeping regardless of when the rest lands:
@@ -198,9 +223,10 @@ worth keeping regardless of when the rest lands:
 
 What is still missing is the per-mutant deadline that `Mutate_loop`'s
 interface already names as out of this slice: a select loop, a session,
-and a process-group kill. That unblocks the whole-core run. The narrowed
-run wants something else — the forced-fail check to consider more than
-the single most-reached mutant before concluding nothing is armable.
+and a process-group kill. That is what unblocks the whole-core run.
+Second, and cheaper: the forced-fail check should consider more than the
+single most-reached mutant before concluding nothing is armable, so that
+a selection not containing the `path_ops` tests is not turned away.
 
 ## Golden transcripts are snapshots
 

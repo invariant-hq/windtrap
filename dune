@@ -61,9 +61,15 @@
 ; A whole-core loop does not currently finish: among the core's ~1000
 ; mutants there is at least one whose child blocks rather than spins, and
 ; the runtime's runaway hit-count budget cannot catch a child that has
-; stopped hitting sites at all. The loop runs to its whole-loop deadline
-; and aborts. Narrow the selection (-f) until the per-mutant deadline
-; lands; see doc/dev/testing.md.
+; stopped hitting sites at all. Narrow the selection until the per-mutant
+; deadline lands — this one reaches 852 of the 984 mutants in under three
+; minutes and does not hang:
+;
+;   WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
+;     test/unit/main.exe -- -f p
+;
+; The selection must match some path_ops tests or the forced-fail check
+; turns it away; see doc/dev/testing.md.
 
 (rule
  (alias mutate)
