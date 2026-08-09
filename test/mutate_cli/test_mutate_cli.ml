@@ -434,7 +434,7 @@ let merge_report =
     ~needle:"dismiss  ((a - b) [@mutate off \"reason\"])" out;
   check_contains "the arm line names this mutant"
     ~needle:
-      "arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest \
+      "arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force \
        --instrument-with ppx_windtrap.mutate"
     out;
   (* Witnesses union across the two executables that reached it. *)
@@ -682,7 +682,7 @@ let staleness =
   check_contains "a stale file's remedy is the forced re-run"
     ~needle:"a forced run rewrites stale verdicts" err;
   check_contains "and the re-run is spelled in full"
-    ~needle:"dune build @mutants --force --instrument-with ppx_windtrap.mutate"
+    ~needle:"dune build @mutate --force --instrument-with ppx_windtrap.mutate"
     err;
   check_absent "no deletion is asked for where nothing is orphaned"
     ~needle:"delete the orphaned files" err;
@@ -703,7 +703,7 @@ let staleness =
   check_contains "the all-stale message states the situation"
     ~needle:"every .mutants file is orphaned or stale" err;
   check_contains "and names the re-run"
-    ~needle:"dune build @mutants --force --instrument-with ppx_windtrap.mutate"
+    ~needle:"dune build @mutate --force --instrument-with ppx_windtrap.mutate"
     err
 
 (* Loud failures and usage *)

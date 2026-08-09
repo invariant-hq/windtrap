@@ -9,6 +9,64 @@ codes. New entries go at the top of their section.
 
 ### Added
 
+**Mutation testing: the `ppx_windtrap.mutate` backend, `WINDTRAP_MUTATE`, and
+`windtrap mutate`.** Coverage answers *did this line run*. It cannot answer
+*would anything fail if this line were wrong*, and that is the question a
+suite exists to answer — a test that calls `Calc.sub 10 4` and asserts the
+result is positive covers the subtraction and does not test it. A second,
+independently opt-in instrumentation backend compiles every mutant of a
+library into the binary behind an inert guard, and **the test executable
+becomes its own mutation runner**: `WINDTRAP_MUTATE=1` turns the run you
+already make into a mutation run, which executes the suite once as a dry run —
+proving it green and recording, per mutant, exactly which tests evaluated it —
+then forks itself once per reached mutant and runs only those tests.
+
+```
+─────────────────── survivors (1) ────────────────────
+
+  SURVIVED  lib/calc.ml:9:11:add   a - b  →  a + b
+      9 │   | Sub -> a - b
+
+    2 tests ran this line and none failed when it changed:
+      sub › of a negative         test/test_calc.ml:16
+      sub › of two positives      test/test_calc.ml:15
+
+    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:9:11:add dune exec …
+    dismiss  ((a - b) [@mutate off "reason"])
+
+──────────────────────────────────────────────────────
+
+unreached (2) — no test evaluates these
+   lib/calc.ml   14
+
+mutants: 1 survived of 5 · 2 killed, 2 unreached in 17ms (seed s1:c18ab9d…)
+```
+
+A survivor is a failure block because a survivor *is* a failure — a defect
+report about named tests — and naming the tests that ran the line and did not
+fail is what turns a score into a work item; windtrap has it for free because
+it owns the runner and the per-test boundary. `WINDTRAP_MUTATE_ARM` arms one
+mutant in one process, announced on the first line, so the argument for
+mutation testing can be watched happening on your own suite. Mutants no test
+evaluates are their own list with their own remedy — *write a test*, not
+strengthen one — and neither finding needs the coverage backend enabled.
+Four operators ship (`neg`, `cmp`, `con`, `ari`), and an equivalent mutant is
+dismissed in the source with `[@mutate off "reason"]` in the four spellings
+the coverage attribute already uses; there is no suppression database and
+windtrap will never write the attribute for you.
+
+Because a library is normally covered by several test executables, each run
+also writes a verdict file under `_build/_mutants` and `windtrap mutate`
+merges them under **killed anywhere wins** — a mutant one suite kills and
+another merely reaches is killed, and reporting the second suite's view alone
+is a false survivor, which is the failure mode that makes people stop running
+mutation tools. There is no gate: a mutation run exits 0 whatever it finds,
+and 1 only when it could not produce a number at all. No catalogue, no cache,
+no configuration file, **no new dependency**, and `lib/windtrap.mli` is
+unchanged. See [the manual chapter](doc/manual/mutation.md); the laws that
+contain it are Laws 11–13, 15 and the new Law 16 in
+[`doc/dev/architecture.md`](doc/dev/architecture.md).
+
 **`starts_with` and `ends_with`.** `contains ~sub` existed and its prefix and
 suffix counterparts did not, so string-shape assertions fell back to
 `is_true (String.starts_with ~prefix p s)` — a boolean, with the string gone.

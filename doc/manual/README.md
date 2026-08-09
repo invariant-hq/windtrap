@@ -1,9 +1,10 @@
 # Windtrap manual
 
 One library for all your OCaml tests: unit, property, snapshot, and
-expect tests from one flat API, plus coverage. This manual is the
-long-form companion to the API reference in `lib/windtrap.mli` — the
-reference is the contract; these chapters show the workflows.
+expect tests from one flat API, plus coverage and mutation testing. This
+manual is the long-form companion to the API reference in
+`lib/windtrap.mli` — the reference is the contract; these chapters show
+the workflows.
 
 Read [Getting started](getting-started.md) first. After that, chapters
 are independent — go where your suite needs you:
@@ -18,6 +19,7 @@ are independent — go where your suite needs you:
 | [Resources and structure](resources-and-structure.md) | `bracket`, `scoped`, `fixture`, temp paths, `cases`, tags, focus, `xfail` |
 | [Running tests](running-tests.md) | The CLI and its `WINDTRAP_*` mirrors, selection, sharding, CI output |
 | [Coverage](coverage.md) | The one-stanza setup, report modes, `windtrap coverage` |
+| [Mutation testing](mutation.md) | The second backend, survivors and their witnesses, arming one mutant, `windtrap mutate` |
 | [Cookbook](../cookbook.md) | Recipes windtrap deliberately does not absorb |
 
 Every OCaml snippet in these chapters is compiled by a mirror — those

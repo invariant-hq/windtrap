@@ -2,9 +2,10 @@
 
 **One library for all your OCaml tests.**
 
-Unit tests, property-based tests, snapshot tests, expect tests, and code
-coverage — in a single package with one flat API. No need to glue together
-Alcotest + QCheck + ppx_expect + Bisect_ppx + custom snapshot code.
+Unit tests, property-based tests, snapshot tests, expect tests, code
+coverage, and mutation testing — in a single package with one flat API. No
+need to glue together Alcotest + QCheck + ppx_expect + Bisect_ppx + custom
+snapshot code.
 
 ```ocaml
 open Windtrap
@@ -38,7 +39,8 @@ header, the per-test glyph row, and the full failure blocks.
 opam install windtrap
 ```
 
-For inline expect tests and code coverage, also install the PPX:
+For inline expect tests, code coverage, and mutation testing, also install
+the PPX:
 
 ```
 opam install ppx_windtrap
@@ -62,13 +64,16 @@ For inline expect tests:
   (pps ppx_windtrap)))
 ```
 
-For coverage, one inert stanza on the library under test:
+For coverage and mutation testing, one inert stanza each on the library
+under test:
 
 ```lisp
 (library
  (name mylib)
  (instrumentation
-  (backend ppx_windtrap)))
+  (backend ppx_windtrap))
+ (instrumentation
+  (backend ppx_windtrap.mutate)))
 ```
 
 ## Features
@@ -127,6 +132,18 @@ reproductions in-tree without a red run.
 `dune runtest --instrument-with ppx_windtrap` for an inline percentage
 after the results, `WINDTRAP_COVERAGE=report` for per-file detail, and
 `dune exec windtrap -- coverage --min 80` (or `--json`) to gate CI.
+
+**Mutation testing** — the second inert stanza,
+`(instrumentation (backend ppx_windtrap.mutate))`, makes the test
+executable its own mutation runner: `WINDTRAP_MUTATE=1` turns the run you
+already make into a mutation run, which forks once per mutant and prints
+every survivor as a failure block naming the line, the rewrite, and *the
+tests that ran that line and did not fail when it changed*. Copy the
+block's `arm` line to watch one mutant live through your green suite, and
+dismiss an equivalent one in the source with `[@mutate off "reason"]`.
+`dune exec windtrap -- mutate` merges the several test executables that
+cover a library, because a mutant one suite kills and another merely
+reaches is killed and an unmerged report would call it a survivor.
 
 **Test runner** — filtering by name and tag, `--failed` reruns, `--shard
 K/N` for CI partitioning, fail-fast, deterministic seeds, JUnit XML, and

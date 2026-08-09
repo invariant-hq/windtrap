@@ -35,7 +35,7 @@ OPTIONS:
    and it is the alias recipe from the manual with --force, which is
    load-bearing: a mutation run is not a cached artifact. *)
 let rerun =
-  "  WINDTRAP_MUTATE=1 dune build @mutants --force --instrument-with \
+  "  WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with \
    ppx_windtrap.mutate"
 
 (* Flags *)

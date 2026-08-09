@@ -1608,7 +1608,11 @@ let arm_command t id =
   match t.invocation with
   | `Exe cmd -> spf "%s=%s %s" Windtrap_mutate.arm_variable id cmd
   | `Mirrors ->
-      spf "%s=%s dune runtest --instrument-with ppx_windtrap.mutate"
+      (* [--force] is not decoration. Dune does not key an action's digest
+         on an ambient variable it was not told about, so a warm tree
+         replays the cached run and the arming silently does nothing —
+         a hint that appears to work and does not is worse than none. *)
+      spf "%s=%s dune runtest --force --instrument-with ppx_windtrap.mutate"
         Windtrap_mutate.arm_variable id
 
 let pad_to width s = String.make (max 0 (width - Text.length_utf8 s)) ' '
@@ -1677,7 +1681,7 @@ let mutation_summary t (m : mutation) =
        (match m.seed with
        | Some s -> spf " (seed %s)" (Seed.to_string s)
        | None -> "")
-       (if m.siblings then " \u{00b7} project: dune build @mutants" else ""))
+       (if m.siblings then " \u{00b7} project: dune build @mutate" else ""))
 
 (* The discovery line, and the two lines an armed run is owed.
 

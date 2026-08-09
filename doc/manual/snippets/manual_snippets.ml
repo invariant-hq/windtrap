@@ -252,5 +252,40 @@ let resources =
       slow "big input" ~timeout:60. (fun () -> is_true true);
     ]
 
+(* ───── mutation.md ───── *)
+
+module Arith = struct
+  type op = Add | Sub | Mul | Div
+
+  let apply op a b =
+    match op with
+    | Add -> a + b
+    | Sub -> a - b
+    | Mul -> a * b
+    | Div -> if b = 0 then invalid_arg "division by zero" else a / b
+
+  (* The equivalent mutant the chapter dismisses: [>] and [>=] agree at
+     the boundary, so no test can tell them apart. *)
+  let cap want =
+    if (want > 16) [@mutate off "both arms yield 16 at the boundary"] then want
+    else 16
+end
+
+open Arith
+
+let mutation =
+  group "mutation"
+    [
+      (* The weak assertion a survivor block sends you to, and the one
+         that kills the mutant. *)
+      group "before"
+        [ test "of two positives" (fun () -> is_true (apply Sub 10 4 > 0)) ];
+      group "after"
+        [ test "of two positives" (fun () -> equal int 6 (apply Sub 10 4)) ];
+      test "the boundary is the same either way" (fun () ->
+          equal int 16 (cap 16));
+    ]
+
 let () =
-  run "manual" [ getting_started; assertions; properties; snapshots; resources ]
+  run "manual"
+    [ getting_started; assertions; properties; snapshots; resources; mutation ]

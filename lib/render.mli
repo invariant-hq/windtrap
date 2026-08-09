@@ -518,7 +518,7 @@ val mutation_report : t -> mutation -> unit
       no failure count, so a report with nothing to say is {e one} line. Under
       [m.siblings] the total is scoped and the merge named
       ([mutants: 2 survived of 41 (this executable) · … · project: dune build
-        @mutants]), in coverage's wording rather than a second one.
+        @mutate]), in coverage's wording rather than a second one.
 
     Prints in every mode, [`Quiet] included: quiet keeps the failure blocks and
     the summary, and a mutation report is both. *)
