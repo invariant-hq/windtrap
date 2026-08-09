@@ -45,14 +45,18 @@
     step, keeps it as the program's last call, and records the command, the
     step, the phase and the original exception. Executing a poisoned program
     runs the prefix and then fails, in the assertion class, naming all four; the
-    search therefore minimises the specification bug. The exceptions that do
-    escape are exactly the ones {!execute} refuses to convert (see {!execute}).
-    For most of them escaping is right: they are statements about the run, not
-    about this program. Two are not, and they are why [~pre] and [~next] must
-    neither assert nor discard — a {!Failure.Check_failure} or a
-    {!Property.Discard} raised in either escapes into the generator, where the
-    case reports [<generator raised before producing a value>] with the
-    exception's constructor and none of its payload. Check in a body, where the
+    search therefore minimises the specification bug.
+
+    Only three things escape repair, and all three are about the {e run} rather
+    than about the model: {!Failure.Timeout}, {!Failure.Exit_attempt}, and the
+    three {!Failure.is_fatal} exceptions. Everything else poisons — including
+    {!Failure.Check_failure}, {!Failure.Skip_test} and {!Property.Discard},
+    which {!execute} does {e not} convert when a body raises them. The asymmetry
+    is deliberate: a body runs on the program that was drawn, where an assertion
+    is the point, a skip means the run is unsupported and [assume] declines a
+    case. Repair runs at generation time over states nothing may ever execute,
+    and there none of the three means what it says — each is the model being
+    written wrong, which is what poisoning reports. Assert in a body, where the
     report is made for it. *)
 
 (** {1:commands Commands} *)
@@ -64,6 +68,7 @@ type ('model, 'sut) command
     different types. *)
 
 val command :
+  ?pos:Loc.pos ->
   ?pre:('model -> 'arg -> bool) ->
   string ->
   'arg Gen.t ->
@@ -93,9 +98,18 @@ val command :
       is checked only by [stateful]'s [?invariant].
 
     [name] identifies the command in reports and nowhere else; newlines in it
-    are replaced by spaces so that a step stays one row. *)
+    are replaced by spaces so that a step stays one row.
+
+    [pos] is the declaration site, defaulting to a best-effort capture here
+    rather than at the failure. A body is idiomatically one assertion in tail
+    position, whose frame is gone by the time it raises, so a capture there
+    answers [None] and the step reports no location at all; the command's own
+    site is both available and the line a reader wants. It fills in only where
+    the assertion recorded none — a body that did keep its own site keeps it,
+    being nearer the failure. *)
 
 val call :
+  ?pos:Loc.pos ->
   ?pre:('model -> bool) ->
   string ->
   next:('model -> 'model) ->

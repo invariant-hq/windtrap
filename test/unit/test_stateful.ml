@@ -567,9 +567,11 @@ let control_spec exn phase =
    to poison, so these escape the generator unchanged from [~pre] and from
    [~next] alike. *)
 let control_exceptions_escape_pre_and_next_unconverted () =
+  (* Repair's partition is narrower than a body's: only what is about the
+     run escapes. [Skip_test], [Check_failure] and [Discard] are about the
+     model here, and poison — see the test below. *)
   let cases =
     [
-      ("Skip_test", Failure.Skip_test (Some "why"));
       ("Timeout", Failure.Timeout 0.5);
       ("Exit_attempt", Failure.Exit_attempt);
       ("Sys.Break", Sys.Break);
@@ -590,47 +592,87 @@ let control_exceptions_escape_pre_and_next_unconverted () =
         [ (`Pre, "~pre"); (`Next, "~next") ])
     cases
 
-(* The documented trap, encoded as the current behaviour: [Check_failure]
-   and [Discard] are in the propagating set, so a [~pre] that asserts or
-   discards escapes into the generator, where the engine reports
-   [<generator raised before producing a value>] with the constructor and
-   none of the payload. Under review — this test pins what happens today. *)
-let check_failure_and_discard_from_pre_escape_the_generator () =
-  let asserted = Failure.equality ~expected:"1" ~actual:"2" () in
+(* The failing step points at the command. A body is idiomatically one
+   assertion in tail position, and under the runner's [Loc.delimit] barrier
+   nothing is capturable when it raises — so the failure arrives with no
+   location and the command's own site fills it. A body that did record a
+   site keeps it, being nearer the failure. Both halves raise the payload
+   directly rather than through [Check], whose capture succeeds outside a
+   run and would hide the case this exists to pin. *)
+let a_failing_step_points_at_its_command () =
+  let site = ("declared.ml", 42, 7, 11) in
+  let executed ?loc () =
+    let spec =
+      [
+        Stateful.call ~pos:site "boom" ~next:Fun.id (fun _ () ->
+            raise
+              (Failure.Check_failure
+                 (Failure.equality ?loc ~expected:"1" ~actual:"2" ())));
+      ]
+    in
+    let program =
+      Gen.value
+        (Shrink_tree.root
+           (Gen.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0)))
+    in
+    expect_check_failure "a located step" (fun () ->
+        Stateful.execute ~setup:(fun () -> ()) program)
+  in
+  (match (executed ()).Failure.loc with
+  | Some loc ->
+      check
+        (loc.Loc.file = "declared.ml" && loc.Loc.line = 42)
+        "the step was located at %s" (Loc.to_string loc)
+  | None -> failf "a locationless step reported no location");
+  let own = Loc.of_pos ("body.ml", 9, 0, 4) in
+  match (executed ~loc:own ()).Failure.loc with
+  | Some loc ->
+      check (loc.Loc.file = "body.ml")
+        "the body's own site was overwritten by %s" (Loc.to_string loc)
+  | None -> failf "the body-located step reported no location"
+
+(* The three exceptions a body treats as control, which repair does not:
+   at generation time an assertion, a skip and a discard are all the model
+   being written wrong, so each poisons and the report names the command,
+   the step and the phase instead of losing the payload inside the
+   generator. *)
+let assertions_skips_and_discards_from_pre_poison () =
   let cases =
     [
       ( "Check_failure",
-        Failure.Check_failure asserted,
+        Failure.Check_failure (Failure.equality ~expected:"1" ~actual:"2" ()),
         "windtrap assertion failure" );
+      ("Skip_test", Failure.Skip_test (Some "why"), "windtrap skip: why");
       ("Discard", Property.Discard, "Discard");
     ]
   in
   List.iter
     (fun (label, exn, needle) ->
       let gen = Stateful.program ~steps:4 ~model:0 (control_spec exn `Pre) in
-      (match Gen.sample gen (state 0) with
-      | exception raised ->
-          check (raised = exn) "%s from ~pre came back as %s" label
-            (Printexc.to_string raised)
-      | _ -> failf "%s from ~pre was swallowed" label);
-      let outcome =
-        Property.run ~count:(`Declared 5) ~root ~path:"trap" gen (fun _ _ -> ())
+      (* It reaches the program rather than the generator: sampling
+         succeeds, where before it raised. *)
+      let program =
+        match Gen.sample gen (state 0) with
+        | exception raised ->
+            failf "%s from ~pre escaped the generator as %s" label
+              (Printexc.to_string raised)
+        | tree -> Gen.value (Shrink_tree.root tree)
       in
-      let failure, _ = expect_fail outcome in
-      let rendered, _, shrink_steps, _, inner = property_payload failure in
+      let kept = names program in
+      let total = List.length kept in
+      check (total > 0) "%s from ~pre produced an empty program" label;
+      let failure =
+        expect_check_failure label (fun () ->
+            Stateful.execute ~setup:(fun () -> ()) program)
+      in
       check
-        (rendered = "<generator raised before producing a value>")
-        "%s from ~pre rendered %S" label rendered;
-      check (shrink_steps = 0) "%s from ~pre shrank %d steps" label shrink_steps;
-      match inner with
-      | Some inner ->
-          (* [raised_actual] itself pins the loss: the inner failure is a
-             Raise payload carrying a stringified exception, not the typed
-             payload the assertion built, so nothing diffs. *)
-          check
-            (contains needle (raised_actual inner))
-            "the report did not name %s: %S" label (raised_actual inner)
-      | None -> failf "%s from ~pre reported no inner failure" label)
+        (failure_msg failure
+        = Pp.str "step %d of %d: raiser \u{2014} ~pre raised" total total)
+        "%s from ~pre was labelled %S" label (failure_msg failure);
+      check
+        (contains needle (raised_actual failure))
+        "%s from ~pre did not name the exception: %S" label
+        (raised_actual failure))
     cases
 
 (* The same partition inside a body, where the executor rather than repair
@@ -1568,8 +1610,10 @@ let suite =
       a_poisoned_program_carries_the_declaration_site );
     ( "control exceptions escape ~pre and ~next unconverted",
       control_exceptions_escape_pre_and_next_unconverted );
-    ( "Check_failure and Discard from ~pre escape the generator",
-      check_failure_and_discard_from_pre_escape_the_generator );
+    ( "a failing step points at its command",
+      a_failing_step_points_at_its_command );
+    ( "assertions, skips and discards from ~pre poison",
+      assertions_skips_and_discards_from_pre_poison );
     ( "control exceptions escape a body unconverted",
       control_exceptions_escape_a_body_unconverted );
     ("teardown runs on every path", teardown_runs_on_every_path);

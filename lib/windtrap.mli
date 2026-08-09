@@ -474,8 +474,8 @@ module Gen = Gen
     - numeric — {!Gen.int}, {!Gen.nat}, {!Gen.small_int}, {!Gen.int_range},
       {!Gen.int32}, {!Gen.int64}, {!Gen.float}, {!Gen.float_any},
       {!Gen.float_range};
-    - base — {!Gen.bool}, {!Gen.char}, {!Gen.char_range}, {!Gen.string},
-      {!Gen.string_of}, {!Gen.bytes}, {!Gen.bytes_of};
+    - base — {!Gen.unit}, {!Gen.bool}, {!Gen.char}, {!Gen.char_range},
+      {!Gen.string}, {!Gen.string_of}, {!Gen.bytes}, {!Gen.bytes_of};
     - containers — {!Gen.list}, {!Gen.array}, {!Gen.option}, {!Gen.result},
       {!Gen.pair}, {!Gen.triple}, {!Gen.quad};
     - choice — {!Gen.constant} (alias {!Gen.pure}), {!Gen.of_list},
@@ -532,12 +532,13 @@ val prop :
     run header prints the root seed token when the suite declares any. *)
 
 type ('model, 'sut) command
-(** The type for one operation of a system under test: how to draw its
-    argument, when it is legal, what it does to the model, and what it does to
-    the system — four facts in one value, so adding an operation touches one
-    place. Build with {!command} or {!val-call}. *)
+(** The type for one operation of a system under test: how to draw its argument,
+    when it is legal, what it does to the model, and what it does to the system
+    — four facts in one value, so adding an operation touches one place. Build
+    with {!command} or {!val-call}. *)
 
 val command :
+  ?pos:pos ->
   ?pre:('model -> 'arg -> bool) ->
   string ->
   'arg Gen.t ->
@@ -547,8 +548,8 @@ val command :
 (** [command name gen ~next body] declares an operation named [name] whose
     argument comes from [gen], which moves the model as [next] says, and which
     runs [body]. The body calls the real system and asserts with the ordinary
-    verbs, so a result is produced and checked in one expression and never
-    needs a type of its own.
+    verbs, so a result is produced and checked in one expression and never needs
+    a type of its own.
 
     Every function takes the model first, then the argument, then (for [body])
     the system. [body] sees the {e pre-state} — the model before its own
@@ -565,6 +566,11 @@ val command :
     model frozen, every other operation's precondition unsatisfiable, and the
     test vacuously green. Read-only operations say so with [~next:Fun.const].
 
+    [pos] is the command's declaration site, and it is what a failing step
+    points at: a body is idiomatically one assertion in tail position, which
+    leaves no frame to capture, so without it the step would report no location
+    at all.
+
     [pre] and [next] must be pure and total, and ['model] must be persistent:
     the model trajectory is folded three times per case — when the program is
     drawn, when it runs, and when a counterexample prints — and the three must
@@ -572,6 +578,7 @@ val command :
     operation and step, not as a counterexample. *)
 
 val call :
+  ?pos:pos ->
   ?pre:('model -> bool) ->
   string ->
   next:('model -> 'model) ->
@@ -600,11 +607,10 @@ val stateful :
     numbered step per line, the step that broke, and the ordinary
     expected/actual diff.
 
-    [setup] runs once per generated case {e and once per shrink candidate} —
-    the search re-runs the program, so a shared system would make it
-    meaningless — and [teardown] releases on every path. [temp_dir] is
-    test-scoped and the wrong tool here: [setup] should mint its own path and
-    [teardown] remove it.
+    [setup] runs once per generated case {e and once per shrink candidate} — the
+    search re-runs the program, so a shared system would make it meaningless —
+    and [teardown] releases on every path. [temp_dir] is test-scoped and the
+    wrong tool here: [setup] should mint its own path and [teardown] remove it.
 
     [invariant] runs on the fresh system before the first call and after every
     call. An operation whose body asserts nothing is checked only by it: bodies
@@ -614,14 +620,14 @@ val stateful :
     call was made in.
 
     [steps] is how many calls are {e drawn} per case (default [20]);
-    preconditions remove some, so a program has at most [steps] calls.
-    Shrinking removes calls and simplifies their arguments; it never
-    substitutes one operation for another. Cost scales with [steps] and
-    [count] and, on a failing test, with [--max-shrink] — a system that costs a
-    syscall per call wants all three lowered.
+    preconditions remove some, so a program has at most [steps] calls. Shrinking
+    removes calls and simplifies their arguments; it never substitutes one
+    operation for another. Cost scales with [steps] and [count] and, on a
+    failing test, with [--max-shrink] — a system that costs a syscall per call
+    wants all three lowered.
 
-    Stateful tests carry the tags ["prop"] and ["stateful"], so [--tag prop]
-    and [--tag stateful] both select them, and — like {!prop} — they have no
+    Stateful tests carry the tags ["prop"] and ["stateful"], so [--tag prop] and
+    [--tag stateful] both select them, and — like {!prop} — they have no
     [retries]: a program replays deterministically from the root seed. *)
 
 val assume : bool -> unit

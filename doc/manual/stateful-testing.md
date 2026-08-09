@@ -95,7 +95,8 @@ F
       [0]     4  push 1
       [0; 1]  5  pop
       [1]     6  pop
-    which failed with:
+    which failed at:
+      test/test_bounded_queue.ml:14
       step 6 of 6: pop
       expected  1
       actual    0
@@ -122,14 +123,15 @@ in that block are the design:
   `expected 1, actual 0` is the ordinary `equal int` failure, with its
   diff, its testable, and everything else assertions give you.
 
-There is no `file:line` under `which failed with:` here, and that is
-not a defect in the report: the body's own stack frame is gone by the
-time `equal` raises — the assertion is the body's tail call — and
-windtrap prints no location rather than a wrong one. Any statement
-after the assertion — a trailing `; ()` will do — brings the line
-back. The locator that always holds is `step 6 of 6: pop`: a command's
-name is its identity in the report and nowhere else, and `-f` filters
-test paths, not commands.
+The `file:line` under `which failed at:` is the failing *command's*
+declaration — `call "pop"`, not the `stateful` line above it, and not
+the assertion. A body is idiomatically one assertion in tail position,
+whose stack frame is gone by the time it raises, so windtrap has no
+site to capture there; the command records its own when you declare it,
+which is the line you want anyway. Pass `~pos:__POS__` to `command` or
+`call` to override it. The locator that always holds is
+`step 6 of 6: pop`: a command's name is its identity in the report and
+nowhere else, and `-f` filters test paths, not commands.
 
 `shrunk 6 steps` is the search's work, and the last step is the failing
 one once it converges — deleting a call after the failure never stops
