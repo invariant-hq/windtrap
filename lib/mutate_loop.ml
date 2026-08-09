@@ -3,6 +3,18 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+
+(* Not mutated. This module is part of the machinery a mutation run uses
+   to judge mutants — the scheduler, the ambient run state, the reporting
+   spine, the loop itself — so a mutant here is armed inside the process
+   that is supposed to detect it. The failure mode is not a false
+   survivor but a hang or a corrupted verdict: a mutated bail counter or
+   timeout does not fail the reaching tests, it stops them from
+   finishing. Coverage still measures these files; only mutation is off.
+   Everything below the scheduler — the verbs, the generators, the
+   diffing, the renderers — is mutated. *)
+[@@@mutate exclude_file]
+
 (* The parent of a mutation run: dry run, probe, forced-fail check, fork
    loop, verdict file, report. The runtime below (Windtrap_mutate) owns
    the catalogue, the arming slot, the reach counters and the file format;
@@ -407,9 +419,10 @@ let decode_verdict ~paths line =
    this slice buys the runtime's runaway hit-count budget covering the
    common case — a mutant that spins — for a quarter of the code. The cost
    is that an expiry cannot say WHICH mutant hung, only which was in
-   flight. The budget is the specified per-mutant formula applied to the
-   whole loop: three times what the dry run says the loop should cost,
-   plus five seconds, never under a minute. *)
+   flight. The budget is computed by the caller: three times the reaching
+   tests' own time, plus the dry run's wall time once per mutant for the
+   fork and module initialization every child pays, plus five seconds,
+   never under a minute. *)
 let with_deadline seconds fn =
   let expired = ref false in
   if seconds <= 0. || not (Float.is_finite seconds) then fn expired
@@ -863,9 +876,30 @@ let loop renderer spine ~(config : Run.config) ~limit tests =
                   (reaching_tests reach mutant))
               0. ordered
           in
+          (* Every child pays for a fork and a whole process's module
+             initialization before it runs its first reaching test, and
+             [expected] — a sum of TEST times — does not include a
+             second of that. For a suite of fast tests the omission is
+             the entire cost: windtrap's own core offers 1225 mutants
+             whose reaching tests take about a millisecond each, so
+             [3 * expected + 5] collapsed to the 60s floor while the
+             loop genuinely needed minutes, and the run aborted naming
+             whichever mutant happened to be in flight.
+
+             The dry run just measured that fixed cost, for free: it is
+             one whole in-process run of this same suite, so it bounds
+             what any single child can spend on startup plus tests.
+             Charging it per mutant makes the deadline scale with the
+             population, which is the thing that was missing; it is
+             generous, because a child runs a subset of the tests, and
+             generous is the right side to err on for a guard whose job
+             is catching a hang rather than pacing the loop. *)
+          let per_child = Float.max 0.01 (Unix.gettimeofday () -. started) in
           let outcome =
             with_deadline
-              (Float.max 60. ((3. *. expected) +. 5.))
+              (Float.max 60.
+                 ((3. *. expected) +. 5.
+                 +. (per_child *. float_of_int (List.length ordered))))
               (fun expired ->
                 let scratch = scratch_root () in
                 Fun.protect

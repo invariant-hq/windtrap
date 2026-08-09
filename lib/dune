@@ -18,6 +18,14 @@
  ; `dune runtest` builds and runs exactly as before.
  (instrumentation
   (backend ppx_windtrap.coverage))
+ ; And windtrap mutates itself. Six modules opt out with
+ ; [@@@mutate exclude_file] — the scheduler, the ambient run state, the
+ ; reporting spine, the loop — because a mutant there is armed inside the
+ ; process that is supposed to judge it, and the failure mode is a hang
+ ; rather than a survivor. Both backends are inert without their flag,
+ ; and the two are independent: --instrument-with takes one or the other.
+ (instrumentation
+  (backend ppx_windtrap.mutate))
  (foreign_stubs
   (language c)
   (names capture_stubs)))

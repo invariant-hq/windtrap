@@ -3,6 +3,18 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+
+(* Not mutated. This module is part of the machinery a mutation run uses
+   to judge mutants — the scheduler, the ambient run state, the reporting
+   spine, the loop itself — so a mutant here is armed inside the process
+   that is supposed to detect it. The failure mode is not a false
+   survivor but a hang or a corrupted verdict: a mutated bail counter or
+   timeout does not fail the reaching tests, it stops them from
+   finishing. Coverage still measures these files; only mutation is off.
+   Everything below the scheduler — the verbs, the generators, the
+   diffing, the renderers — is mutated. *)
+[@@@mutate exclude_file]
+
 (* The ordinary-OCaml half of ppx_windtrap. Protocol and sandbox mechanics
    (argv sniffing, partitions, .corrected files written to the module-load
    cwd) adapted from windtrap v1's lib/ppx_runtime.ml; payload matching,

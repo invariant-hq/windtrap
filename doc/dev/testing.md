@@ -7,7 +7,7 @@ suites honest. `dune runtest` runs everything; scope with a directory
 
 ## Layout
 
-Seven directories under `test/`:
+Eleven directories under `test/`:
 
 - `unit` — the library suite, flat: one `test_<module>.ml` per `lib/`
   module, aggregated into a single windtrap-run executable
@@ -20,10 +20,17 @@ Seven directories under `test/`:
   run, so each is a plain executable over the shared hand-rolled
   `harness.ml` (a local check counter, exit nonzero on any failure):
   the machinery being tested cannot be trusted to report its own bugs.
+  The cost is real and worth knowing: those checks get no diffs, no
+  filtering, no JUnit, and no per-test timing.
 - `conformance` — the ppx_expect conformance corpus (below).
 - `coverage`, `coverage_cli`, `coverage_ppx` — the coverage runtime,
   the `windtrap coverage` reporting command, and the instrumenter,
   including its semantics-preservation suite (below).
+- `mutate`, `mutate_cli`, `mutate_loop`, `mutate_ppx` — the same four
+  jobs for mutation: the runtime, the `windtrap mutate` reporting
+  command, the fork loop driven end to end through a real spawned
+  process, and the instrumenter's expansion goldens. The family
+  deliberately mirrors the coverage one.
 - `docs` — compiled documentation (below).
 - `ppx` — PPX rewriting goldens (`.expected` files diffed against the
   driver's output, rejects included) and the inline-runner fixtures
@@ -44,6 +51,166 @@ Three kinds of compiled documentation run in the tree:
 
 `examples/` are real test executables wired into runtest; they double
 as the run-and-exit path coverage the in-process suites cannot give.
+
+## Which kind of test for which job
+
+Match the test kind to the shape of the thing's contract, not to the
+size of the module.
+
+| The contract is… | Use | Because |
+| --- | --- | --- |
+| An algebraic law over a large domain | `prop` | The law *is* the spec, and integrated shrinking makes the counterexample free |
+| A finite table of interesting inputs | `cases` | One named, individually selectable sub-test per row |
+| Bytes a human reads | `snapshot` | The value *is* the artifact; review is `git diff`, not retyping |
+| Bytes produced next to the assertion | `let%expect_test` | Output sits inline with the call that made it |
+| A mutable object with an operation vocabulary | `stateful` | Sequences are where the bugs are |
+| Generated code | golden `.expected` + `dune promote` | It is a compiler; byte-exact expansion is the contract |
+| Semantics preservation under a rewrite | a real instrumented library, compared with the uninstrumented answer | Tail calls, laziness and effect order are invisible in an AST diff |
+| Process-level behaviour | a subprocess driver | A forking loop cannot be observed from inside its own image |
+| The runner itself | in-process `Runner.execute` with synthetic configs | Only the scheduler genuinely cannot judge itself |
+| An external compatibility claim | a vendored upstream corpus | Regenerating goldens from our own output makes the bar circular |
+
+Two habits to avoid. `let check name cond = is_true ~msg:name cond` is
+still the most-copied idiom in the suite and it is the wrong one: at
+every one of those call sites two values were in scope and both were
+thrown away, so the failure prints `expected true / actual false` where
+a typed verb would have printed the values and marked the difference.
+Reach for `equal` with a witness, or `satisfies` for a genuine
+predicate over one value. Likewise `failf` where a verb would do: a
+formatted sentence is not a diff.
+
+## Coverage of windtrap by windtrap
+
+`lib/` carries an `(instrumentation (backend ppx_windtrap.coverage))`
+stanza, inert without the flag — a plain `dune runtest` is
+uninstrumented and free.
+
+```
+dune build @cover --instrument-with ppx_windtrap.coverage
+```
+
+runs every suite and merges their dumps through `windtrap coverage`,
+gated at `--min 87` against a measured baseline. The gate ratchets:
+raise it when the margin is comfortable, never lower it to make a red
+build green. Not all of the remaining gap is reachable — `mutate_loop`'s
+Windows-decline paths and `capture`'s C-stub error branches cannot run
+in a green suite — so chase the branches the report names, not the
+percentage.
+
+**The backend is spelled `ppx_windtrap.coverage`, not the
+`ppx_windtrap` the manual shows users.** Both resolve the same
+rewriter, but the `ppx_windtrap` spelling carries
+`(ppx_runtime_libraries ppx_windtrap.runtime ppx_windtrap.config)`
+because that library's other job is the inline-test rewriter, and dune
+adds a rewriter's runtime libraries to everything it preprocesses —
+instrumentation included. An instrumented library therefore links the
+windtrap *core*. For `lib/` that is a dependency cycle and the build
+refuses; for a user it is a closure they did not ask for. See
+`ppx/coverage/dune`.
+
+Self-hosting has one consequence worth internalizing: **the coverage
+registry is process-global, and windtrap's own suites can no longer
+assume they are the only thing in it.** Two seams exist for that, and a
+new test that reads coverage should use one:
+
+- `Windtrap_coverage.filter` narrows a collection to chosen files;
+- `WINDTRAP_COVERAGE_ONLY` scopes a whole *run*'s number to source
+  prefixes, applied once at `Driver.snapshot_coverage` so the inline
+  line and the report modes cannot disagree. The `.coverage` dump is
+  deliberately not scoped — it is what `windtrap coverage` merges.
+
+A suite that pins a transcript byte for byte must set
+`WINDTRAP_COVERAGE=off`. Unset is *not* neutral once the core is
+instrumented: the default appends an inline coverage line to every run.
+The meta harness does this in `clear_env`, and the ppx transcript
+drivers in their scrubbed child environments.
+
+## Mutation of windtrap by windtrap
+
+`lib/` also carries `(instrumentation (backend ppx_windtrap.mutate))`.
+
+```
+WINDTRAP_MUTATE=1 dune build @runtest --instrument-with ppx_windtrap.mutate
+dune build @mutate
+```
+
+Unlike coverage, the two steps do not collapse into one alias. A
+`.coverage` dump is written by any instrumented run as a side effect; a
+`.mutants` verdict only exists if a suite was *asked* to test its
+mutants, which is what `WINDTRAP_MUTATE=1` does — it takes the process
+over and runs the fork loop. `@mutate` merges whatever previous runs
+left behind.
+
+Six modules opt out with `[@@@mutate exclude_file]`: `runner`, `run`,
+`driver`, `mutate_loop`, `ppx_runtime` and `windtrap`. They are the
+machinery a mutation run uses to judge mutants, so a mutant there is
+armed inside the process that is supposed to detect it, and the failure
+mode is not a false survivor but a hang or a corrupted verdict — a
+mutated bail counter or timeout does not fail the reaching tests, it
+stops them from finishing. Coverage still measures those files; only
+mutation is off.
+
+There is no gate and there deliberately will not be one (Law 16e): the
+equivalent-mutant rate is a prediction until it is measured, so a
+survivor is a reading list, not a build failure. Expect survivors to
+cluster where assertions are weakest — a boolean `check` kills fewer
+mutants than a typed `equal`, which is the same finding as the habit
+above, arriving from the other direction.
+
+**Mutating the core does not work end to end yet.** The stanza and the
+exclusions are in place and `dune runtest` is unaffected, but neither a
+whole-core run nor a narrowed one currently produces a score, for two
+different reasons. Both are measured.
+
+*A whole-core run hangs.* `WINDTRAP_MUTATE=1` over `test/unit/main.exe`
+offers 984 mutants; the loop gets past the forced-fail check and then
+reaches a mutant whose child neither fails nor terminates — observed
+directly, one child at 1m41s of CPU and climbing while the parent
+waited. That is a mutant which *blocks* rather than spins, and the
+runtime's runaway hit-count budget cannot catch it, because a blocked
+child has stopped hitting instrumented sites at all. Only the whole-loop
+deadline can end the run, and it can name just whichever mutant was in
+flight. An earlier run, before the exclusions, aborted exactly that way
+on `lib/runner.ml:385:19:fsub`.
+
+*A narrowed run refuses to start.* `-f seed`, `-f text`, `-f diff` and
+`-f testable` all abort in the forced-fail check on
+`lib/path_ops.ml:175:48:not`, the mutant the most tests reach. That is
+the check doing its job rather than a bug: the mutant is not equivalent
+— it inverts `sanitize_component`'s character test — it simply is not
+killed, because no test in those selections asserts on a sanitized log
+or JUnit name. The whole suite does kill it, which is why only the
+narrow runs stop there. Worth knowing when reading the message: it leads
+with "the library under test was not built with --instrument-with", the
+commonest cause in general but the wrong one here.
+
+Two things were fixed on the way to learning all that, and both are
+worth keeping regardless of when the rest lands:
+
+- The exclusions above. Without them the blocking mutants were in the
+  scheduler itself, which is unarguable.
+- The deadline estimate. It was `3 × (reaching-test time) + 5s`, a sum
+  of *test* times that ignores the fork and module initialization every
+  child pays before its first test. For a suite of millisecond tests
+  that omission is the entire cost, so the budget collapsed to its 60s
+  floor while the loop genuinely needed minutes. It now charges the dry
+  run's own wall time once per mutant.
+
+What is still missing is the per-mutant deadline that `Mutate_loop`'s
+interface already names as out of this slice: a select loop, a session,
+and a process-group kill. That unblocks the whole-core run. The narrowed
+run wants something else — the forced-fail check to consider more than
+the single most-reached mutant before concluding nothing is armable.
+
+## Golden transcripts are snapshots
+
+The renderer's goldens live under `test/unit/__snapshots__/`, not as
+string literals in the test source: a transcript is an artifact, and the
+point of keeping one is to read the diff when it changes. Accept with
+`dune exec test/unit/main.exe -- -u` and review with `git diff`. The
+coloured transcript (`verbose-ansi.snap`) pins escape sequences
+literally — never strip ANSI to compare it, or the comparison is not
+about the thing that broke.
 
 ## The ppx_expect conformance corpus
 
@@ -117,6 +284,24 @@ they are upstream's bytes and are never promoted from windtrap output
 (see above).
 
 Windtrap's own snapshot baselines and `[%expect]` payloads (examples,
-manual snippets, `test/ppx/inline`) follow the user-facing workflows:
-`WINDTRAP_UPDATE=1 dune runtest` and `dune promote`, reviewed with
-`git diff`.
+manual snippets, `test/unit/__snapshots__`, `test/ppx/inline`) follow the
+user-facing workflows: `WINDTRAP_UPDATE=1 dune runtest` and
+`dune promote`, reviewed with `git diff`.
+
+## CI
+
+`.github/workflows/build.yml` runs `dune build @runtest` on Linux, macOS
+and Windows with `WINDTRAP_JUNIT` pointing at an absolute directory (one
+report per suite; a relative path would scatter them through the build
+tree), and uploads the reports. Failures annotate the diff by
+themselves — the runner detects GitHub Actions and emits `::error`
+lines.
+
+A separate Linux-only job runs `dune build @cover`: the coverage number
+is a property of the test suite, not of the OS, and instrumented builds
+are slower.
+
+`--shard` is deliberately unused. The suite is about half a minute, so
+sharding would buy nothing and cost a matrix dimension; exercising a
+flag is not a reason to complicate CI, and `test_runner` already covers
+it.
