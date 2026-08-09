@@ -19,6 +19,16 @@ still fail, and the diff marks them.
 
 ### Changed
 
+**Backtraces stop at your code.** Under every backtrace windtrap records sit
+its own frames — the callback delimiter, the attempt guard, the verb that
+raised. They name none of your code and they were the majority of a short one:
+a `raises` failure printed two lines, half of it `Windtrap__Check.raises`, and
+an uncaught exception printed five, three of them machinery. The trailing run
+of windtrap frames is now dropped, in the one place a raw backtrace becomes
+report text, so the terminal, JUnit and GitHub reports agree. Only a trailing
+run: a callback windtrap invoked keeps both itself and the frames below it, and
+a backtrace that never crossed your code is kept whole rather than emptied.
+
 **A printerless counterexample names its remedy.** A generator built with
 `map` or `bind` carries no printer, so its counterexample renders as the draws
 the value came from (`<from: ("a", 90)>`) — informative, but it never said what

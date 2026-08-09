@@ -93,7 +93,7 @@ Checklist for the blocks, in order:
 | `raises when nothing was raised` | `expected exception  Invalid_argument("negative length")` + `but no exception was raised` |
 | `raises_match …` | `raised exception does not satisfy the predicate:` + `Failure("stack underflow")` |
 | `raises_match when nothing was raised` | the single line `expected an exception, but none was raised` |
-| `an uncaught exception fails the test` | the body raises `Not_found` itself (no assertion); the runner catches it at the boundary and words it `uncaught exception:` + the rendered exception — distinct from `raises_match`'s predicate wording. Location falls back to the *test declaration* line, and the faint backtrace lines print under the block on every run — the runner turns backtrace recording on for the process, so neither `OCAMLRUNPARAM=b` nor `b=0` changes what you see |
+| `an uncaught exception fails the test` | the body raises `Not_found` itself (no assertion); the runner catches it at the boundary and words it `uncaught exception:` + the rendered exception — distinct from `raises_match`'s predicate wording. Location falls back to the *test declaration* line, and the faint backtrace lines print under the block on every run — the runner turns backtrace recording on for the process, so neither `OCAMLRUNPARAM=b` nor `b=0` changes what you see. Exactly two frames: the raise site in `hashtbl.ml` and the demo's own line. The delimiter and runner frames below them are windtrap's own trailing run and are trimmed — if you see a `Windtrap__` frame at the bottom of any block, the trim regressed |
 | `fail marks unreachable branches` | the plain message |
 | `failf … (retried once)` | formatted message and `(attempt 2 of 2)` after the test name (`~retries:1`) |
 

@@ -84,11 +84,56 @@ let is_fatal = function
   | Sys.Break | Out_of_memory | Stack_overflow -> true
   | _ -> false
 
+(* Below the deepest frame of the reader's own code sit windtrap's: the
+   delimiter the runner wraps callbacks in, the attempt guard, the verb that
+   raised. They are the same handful of lines under every failure, they name
+   none of the reader's code, and on a short backtrace they outnumber it.
+   Drop that trailing run.
+
+   Only a trailing run. A user callback invoked by windtrap — a [bracket]
+   teardown, a property body, a [such_that] predicate — sits below windtrap
+   frames and above more of them, and both it and the machinery it names
+   have to survive. A backtrace that is windtrap's all the way up is kept
+   whole: it means the raise never crossed user code, and trimming would
+   leave the reader nothing at all. *)
+let backtrace_to_string raw =
+  let whole () = Printexc.raw_backtrace_to_string raw in
+  match Printexc.backtrace_slots raw with
+  | None -> whole ()
+  | Some slots ->
+      (* A slot without a debug name cannot be proven to be ours, so it
+         ends the run — the same "no guess" rule [Loc.capture] follows. *)
+      let rec deepest_foreign i =
+        if i < 0 then -1
+        else
+          match Printexc.Slot.name slots.(i) with
+          | Some name when Loc.own_unit name -> deepest_foreign (i - 1)
+          | Some _ | None -> i
+      in
+      let keep = deepest_foreign (Array.length slots - 1) in
+      if keep < 0 || keep = Array.length slots - 1 then whole ()
+      else begin
+        let buffer = Buffer.create 256 in
+        (* Formatted at its original index: [Slot.format] words position 0
+           as "Raised at" and the rest as "Called from", and dropping a
+           suffix leaves every kept frame's position unchanged. *)
+        for i = 0 to keep do
+          match Printexc.Slot.format i slots.(i) with
+          | Some line ->
+              Buffer.add_string buffer line;
+              Buffer.add_char buffer '\n'
+          | None -> ()
+        done;
+        Buffer.contents buffer
+      end
+
 (* The backtrace of the most recently raised exception, when the runtime
    recorded one. Read before anything else can raise. *)
 let recorded_backtrace () =
   if Printexc.backtrace_status () then
-    match Printexc.get_backtrace () with "" -> None | bt -> Some bt
+    match backtrace_to_string (Printexc.get_raw_backtrace ()) with
+    | "" -> None
+    | bt -> Some bt
   else None
 
 (* Bounds (implementation constants, not contract) *)

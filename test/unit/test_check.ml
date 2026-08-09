@@ -498,7 +498,32 @@ let tests =
                 check "raises: backtrace present with recording on"
                   (match backtrace with
                   | Some s -> String.length s > 0
-                  | None -> false))));
+                  | None -> false));
+            (* [Check.raises] catches the exception, so the frames below the
+               thunk are windtrap's own — the trailing run
+               [Failure.backtrace_to_string] drops. Here that run is the
+               whole of the backtrace bar the raise site, which is why an
+               untrimmed report read half machinery. *)
+            raise_payload "raises: the backtrace stops at the reader's code"
+              (fun () ->
+                Check.raises Not_found (fun () -> raise (Payload (2, "b"))))
+              (fun (_, _, backtrace) ->
+                let lines =
+                  match backtrace with
+                  | Some s ->
+                      List.filter
+                        (fun l -> String.length l > 0)
+                        (Windtrap.Private.Text.split_lines s)
+                  | None -> []
+                in
+                check "raises: backtrace is non-empty" (lines <> []);
+                check "raises: no windtrap frame survives"
+                  (not
+                     (List.exists
+                        (fun l ->
+                          Windtrap.Private.Text.contains_substring
+                            ~pattern:"Windtrap__" l)
+                        lines)))));
     test "raises and raises_match: the control-exception re-raise guard"
       (fun () ->
         (* An assertion failing inside the thunk reports itself: the guard

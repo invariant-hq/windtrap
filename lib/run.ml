@@ -282,7 +282,7 @@ let subtest name fn =
       let backtrace = Printexc.get_raw_backtrace () in
       let failure =
         Failure.raised ~actual:(Printexc.to_string exn)
-          ~backtrace:(Printexc.raw_backtrace_to_string backtrace)
+          ~backtrace:(Failure.backtrace_to_string backtrace)
           ()
       in
       add_failure frame (relabel frame failure);

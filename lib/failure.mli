@@ -244,11 +244,26 @@ val is_fatal : exn -> bool
     sites re-raise these instead of recording a failure: an interrupt or a
     resource exhaustion must stop the run, not fail one test. *)
 
+val backtrace_to_string : Printexc.raw_backtrace -> string
+(** [backtrace_to_string raw] is [raw] rendered for a report — the one
+    conversion, so that nothing reaches a payload through
+    {!Printexc.raw_backtrace_to_string} directly and the terminal, JUnit and
+    GitHub reports show the same frames.
+
+    It is {!Printexc.raw_backtrace_to_string} minus the trailing run of
+    windtrap's own frames ({!Loc.own_unit}): the delimiter, the attempt guard
+    and the raising verb sit under every backtrace windtrap records, name none
+    of the reader's code, and on a short one outnumber it. Only a trailing run —
+    a user callback windtrap invoked keeps both itself and the frames below it —
+    and a backtrace that never crossed user code is kept whole rather than
+    emptied. Frames keep their original positions, so the first line still reads
+    ["Raised at"]. *)
+
 val recorded_backtrace : unit -> string option
-(** [recorded_backtrace ()] is the backtrace of the most recently raised
-    exception when the runtime recorded one, and [None] when backtrace recording
-    is off or the recorded backtrace is empty. Read it before anything else can
-    raise. *)
+(** [recorded_backtrace ()] is {!backtrace_to_string} of the most recently
+    raised exception's backtrace when the runtime recorded one, and [None] when
+    backtrace recording is off or the recorded backtrace is empty. Read it
+    before anything else can raise. *)
 
 (** {1:constructors Constructors}
 

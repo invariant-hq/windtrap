@@ -16,16 +16,24 @@ let of_pos (file, line, column, _end_column) = { file; line; column }
    stdlib module is "Stdlib__Foo" or "Stdlib", and stdlib internals are
    "CamlinternalFoo". A slot without a name cannot be proven to be user
    code, so it is skipped: no location rather than a wrong one. *)
-let internal_unit name =
-  let unit_name =
-    match String.index_opt name '.' with
-    | Some i -> String.sub name 0 i
-    | None -> name
-  in
+let unit_of name =
+  match String.index_opt name '.' with
+  | Some i -> String.sub name 0 i
+  | None -> name
+
+(* Windtrap's own units, and only those: the alias unit, its wrapped
+   modules, and the coverage runtime. The test matches whole unit names
+   rather than a bare "Windtrap" prefix, so a user library called
+   [Windtrap_helpers] stays foreign. *)
+let own_unit name =
+  let unit_name = unit_of name in
   unit_name = "Windtrap"
   || String.starts_with ~prefix:"Windtrap__" unit_name
   || unit_name = "Windtrap_coverage"
-  || unit_name = "Stdlib"
+
+let internal_unit name =
+  let unit_name = unit_of name in
+  own_unit name || unit_name = "Stdlib"
   || String.starts_with ~prefix:"Stdlib__" unit_name
   || String.starts_with ~prefix:"Camlinternal" unit_name
 

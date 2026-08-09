@@ -59,6 +59,15 @@ val resolve : ?pos:pos -> unit -> t option
 (** [resolve ?pos ()] is [Some (of_pos p)] when [pos] is [Some p], and
     [capture ()] otherwise — the one location rule for every failure site. *)
 
+val own_unit : string -> bool
+(** [own_unit defname] is [true] iff the compilation unit of [defname] — a
+    {!Printexc.Slot} debug name such as ["Windtrap__Check.raises"] — is one of
+    windtrap's own: the [Windtrap] alias unit, a [Windtrap__]-wrapped module, or
+    the coverage runtime. Whole unit names are matched, so a user library named
+    [Windtrap_helpers] is not windtrap's. Backtrace rendering uses it to drop
+    the runner's own trailing frames; {!capture} uses the wider notion that also
+    covers the standard library. *)
+
 (** {1:observers Observers} *)
 
 val pp : Format.formatter -> t -> unit

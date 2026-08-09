@@ -19,6 +19,24 @@ let has ~needle haystack =
 
 let loc_of file line = Loc.of_pos (file, line, 0, 0)
 
+(* Top-level and never inlined, so the backtrace-trimming test can name each
+   frame of this file. [through_delimit] puts a windtrap frame between two
+   of them, which is the interior run the trim must not touch. *)
+let[@inline never] raise_not_found () = raise Not_found
+
+let[@inline never] through_delimit () =
+  Loc.delimit (fun () -> raise_not_found ())
+
+(* The deepest frame: the last non-empty line, since a rendered backtrace
+   ends with a newline. *)
+let last_line s =
+  let rec first_nonempty = function
+    | "" :: rest -> first_nonempty rest
+    | line :: _ -> line
+    | [] -> ""
+  in
+  first_nonempty (List.rev (Windtrap.Private.Text.split_lines s))
+
 (* [containment_parts f k] projects a containment failure's shape: the
    stored excerpt ([actual]) and the [Contains] claim fields. *)
 let containment_parts name (f : F.t) k =
@@ -450,6 +468,33 @@ let tests =
            with F.Skip_test r -> r = Some "no docker");
         check "Timeout: carries the limit"
           (try raise (F.Timeout 2.5) with F.Timeout t -> t = 2.5));
+    (* Only a *trailing* run of windtrap frames goes. Here the exception is
+       caught in this file, so the deepest frame is the reader's and there
+       is no trailing run at all: the two [Loc.delimit] frames the raise
+       passed through are interior, and every one of them must survive —
+       user code windtrap invoked sits between them. The trailing case,
+       where windtrap itself catches, is pinned in test_check.ml. *)
+    test "backtrace_to_string: keeps interior own frames" (fun () ->
+        let raw =
+          match Loc.delimit (fun () -> through_delimit ()) with
+          | () -> assert false
+          | exception Not_found -> Printexc.get_raw_backtrace ()
+        in
+        let whole = Printexc.raw_backtrace_to_string raw in
+        let trimmed = F.backtrace_to_string raw in
+        check "premise: the raise passed through the delimiter"
+          (has ~needle:"Windtrap__Loc.delimit" whole);
+        check "premise: the deepest frame is the reader's"
+          (has ~needle:"Test_failure" (last_line whole));
+        check_string "nothing is trimmed" ~expected:whole ~actual:trimmed;
+        check "the raise site survives"
+          (has ~needle:"Test_failure.raise_not_found" trimmed);
+        check "the first frame still reads as the raise site"
+          (String.starts_with ~prefix:"Raised at" trimmed);
+        (* [recorded_backtrace] reads [None] only from an empty raw
+           backtrace — never because trimming emptied a real one. *)
+        check_string "an empty raw backtrace renders empty" ~expected:""
+          ~actual:(F.backtrace_to_string (Printexc.get_callstack 0)));
     test "is_fatal: exactly the never-swallowed exceptions" (fun () ->
         check "Sys.Break is fatal" (F.is_fatal Sys.Break);
         check "Out_of_memory is fatal" (F.is_fatal Out_of_memory);
