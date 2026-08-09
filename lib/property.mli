@@ -91,6 +91,14 @@ val cover : context -> label:string -> at_least:float -> bool -> unit
     Thresholds are evaluated once, at the end of a run that completes its case
     count: unsatisfied requirements make the outcome {!Coverage_failed}.
 
+    {b The requirement registers on the first call, not at declaration}, so a
+    [cover] the run never reaches registers nothing and cannot fail: an empty
+    requirement table is a satisfied one. For a plain property the body always
+    runs and the distinction is invisible, but a [cover] guarding
+    {e "this code path is reached at all"} must sit somewhere that executes
+    unconditionally — placing it inside the branch it is meant to police makes
+    it vacuous exactly when it should fire.
+
     Raises [Invalid_argument] if [at_least] is not in \[[0.];[100.]\] (NaN
     included) or if [label] was already registered in this run with a different
     threshold. The engine treats an [Invalid_argument] from the body like any

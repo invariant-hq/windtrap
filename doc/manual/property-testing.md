@@ -74,8 +74,8 @@ shrinking, *and* printing, inseparably:
 
 - numeric: `int`, `nat`, `small_int`, `int_range`, `int32`, `int64`,
   `float`, `float_any`, `float_range`
-- base: `bool`, `char`, `char_range`, `string`, `string_of ?size char`,
-  `bytes`, `bytes_of`
+- base: `unit`, `bool`, `char`, `char_range`, `string`,
+  `string_of ?size char`, `bytes`, `bytes_of`
 - containers: `list ?size`, `array ?size`, `option`, `result`, `pair`,
   `triple`, `quad`
 - choice: `constant`/`pure`, `of_list`, `one_of`, `frequency`,

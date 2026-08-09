@@ -91,6 +91,14 @@ counterexample; shrinking is integrated, there is never a shrink function to
 write. `~examples` pins regressions, `~count` sets the case count, and
 every failure prints an exact replay command with its `s1:` seed token.
 
+**Stateful testing** — `stateful` checks a law over *sequences* of calls
+against a model. A `command` bundles how to draw its argument, when it is
+legal, what it does to the model and what it does to the real thing, and its
+body asserts with the ordinary verbs — a result is produced and checked in
+one expression, so there is no result type to declare and no `show_cmd` to
+write. Failures print the shrunk program one numbered step per line, the
+model each call was made in, and the step that broke.
+
 **Snapshot testing** — `snapshot "name" value` compares against a committed
 baseline under `__snapshots__/`. Checking is read-only: a mismatch or a
 missing baseline fails with a diff and the acceptance command. Accept with
