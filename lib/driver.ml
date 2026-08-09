@@ -3,11 +3,12 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The producers both runners compose a run's reporting from: one producer
-   per transcript line class, so the facade's [run] and the inline (ppx)
-   runner cannot drift apart byte-wise. Differences between the runners are
-   parameters here or visible lines in the thin drivers — never forks of a
-   producer. *)
+(* A run's whole reporting, and the producers it is composed from: one
+   producer per transcript line class and one order they run in
+   ([execute_and_report], at the bottom), so the facade's [run] and the
+   inline (ppx) runner cannot drift apart byte-wise. Differences between
+   the runners are parameters here or visible lines in the thin drivers —
+   never forks of a producer, and never a second composition order. *)
 
 (* Path shown in [wrote]/[pruned]/hint lines: the shared [Path_ops.display]
    spelling, so the line classes stay byte-equal to the manual's transcripts
@@ -97,8 +98,8 @@ let selection_description (config : Run.config) =
 
 let observe renderer ~seed ~selection = function
   | Runner.Run_started { run = _; suite; total; selected } ->
-      Render.header renderer ~suite ~tests:selected ~declared:total
-        ?selection ~seed ()
+      Render.header renderer ~suite ~tests:selected ~declared:total ?selection
+        ~seed ()
   | Runner.Test_started { path } -> Render.begin_test renderer ~path
   | Runner.Test_finished result -> Render.result renderer result
   | Runner.Fixture_release { name } ->
@@ -281,3 +282,59 @@ let coverage_report renderer ~coverage_mode run collection =
       in
       Render.coverage_report renderer ~source_roots ~mode collection
   | `Report | `Full | `Summary | `Off -> ()
+
+(* The execute-and-report spine *)
+
+(* The producers above answer "who writes this line"; this answers "in
+   what order", which is the other half of the same doctrine — two
+   runners composing the same producers differently drift exactly as
+   badly as two runners forking one. So the order lives here once: build
+   the renderer and the observer, open the GitHub envelope, run the
+   suite, and project the run into every sink.
+
+   What the callers keep is what genuinely differs. The two header
+   policies stay parameters, because the runners really do disagree:
+   [seed] (the root seed iff the suite declares property tests, [None]
+   inline) and [selection] (the description an empty run explains itself
+   with, [None] inline — see the .mli). The [Error] arm prints the
+   startup message here and hands the error back, because the library
+   runner exits on it while the inline runner folds its code into dune's
+   promotion protocol. Everything after the report — JUnit, the focus
+   warning, .corrected flushing, the exit — is the caller's, and so are
+   the invocation context, the GitHub gating decision, and the listing a
+   [--list] run prints. *)
+let execute_and_report ~invocation ~seed ~selection ~github ~output
+    ~coverage_mode ~config ~suite tests =
+  let renderer = renderer ~config ~mode:output ~invocation () in
+  let on_event = observe renderer ~seed ~selection in
+  github_start ~github suite;
+  match Runner.execute ~on_event ~config ~suite tests with
+  | Error error ->
+      github_end ~github;
+      prerr_endline (Runner.startup_message error);
+      Error error
+  | Ok outcome when config.Run.list_only ->
+      (* Nothing ran, so there is nothing to project: [Runner.execute]
+         applied the startup checks and the selection and stopped. The
+         caller prints the listing it asked for. *)
+      Ok (outcome, [])
+  | Ok outcome ->
+      (* Release failures ride with the results: they are part of the
+         run's verdict (they set the exit code), so every sink must see
+         them. *)
+      let results = results_with_releases outcome in
+      let coverage_data = snapshot_coverage outcome.Runner.run in
+      Render.finish renderer
+        ?coverage:(coverage_summary ~coverage_mode outcome.Runner.run)
+        ~results ~duration:outcome.Runner.duration ();
+      coverage_report renderer ~coverage_mode outcome.Runner.run coverage_data;
+      report_snapshots ~out:Format.std_formatter ~output ~invocation outcome;
+      github_end ~github;
+      (* After [github_end], deliberately: an ::error:: block written
+         inside the ::group:: envelope folds away with the transcript,
+         and the annotations are the part a reviewer must see without
+         unfolding anything. *)
+      github_annotations ~github ~invocation results;
+      Format.pp_print_flush Format.std_formatter ();
+      Format.pp_print_flush Format.err_formatter ();
+      Ok (outcome, results)

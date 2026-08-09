@@ -1154,39 +1154,29 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
 
 (* The inline runner driver *)
 
-(* The thin inline driver: composed from Driver's shared producers — one
-   behavior, both runners (ppx/F-4). The inline protocol has no CLI, so the
+(* The thin inline driver: [Driver.execute_and_report] writes the whole
+   transcript, shared byte-for-byte with the library runner (one behavior,
+   both runners — ppx/F-4). The inline protocol has no CLI, so the
    WINDTRAP_* mirrors are the CLI: WINDTRAP_QUIET/WINDTRAP_VERBOSE pick the
    verbosity level and WINDTRAP_COVERAGE the coverage mode (both resolved in
    [exit], beside the config, by the one [Cli.settings] call). What is
    legitimately this runner's own stays visible here: the [`Mirrors] hint
-   context, the seedless header, and the returned exit code that [exit]
-   combines with the correction protocol. *)
+   context, the seedless and selectionless header (a mirror empties every
+   partition it narrows, and [inline_exit_code] passes those runs — they
+   are not the mistyped filter the sentence diagnoses), the .corrected
+   files, and the returned exit code that [exit] combines with the
+   correction protocol. *)
 let run_inline_suite ~suite ~config ~coverage_mode ~output tests =
-  let github = Env.in_github_actions () in
-  let renderer = Driver.renderer ~config ~mode:output ~invocation:`Mirrors () in
-  let on_event = Driver.observe renderer ~seed:None ~selection:None in
-  Driver.github_start ~github suite;
-  match Runner.execute ~on_event ~config ~suite tests with
+  match
+    Driver.execute_and_report ~invocation:`Mirrors ~seed:None ~selection:None
+      ~github:(Env.in_github_actions ()) ~output ~coverage_mode ~config ~suite
+      tests
+  with
   | Error error ->
-      Driver.github_end ~github;
-      prerr_endline (Runner.startup_message error);
+      (* The message is already on stderr; this runner returns the code
+         for [exit] to combine with the correction protocol. *)
       Runner.startup_exit_code error
-  | Ok outcome ->
-      (* As the library runner: release failures are part of the verdict. *)
-      let results = Driver.results_with_releases outcome in
-      let coverage_data = Driver.snapshot_coverage outcome.Runner.run in
-      Render.finish renderer
-        ?coverage:(Driver.coverage_summary ~coverage_mode outcome.Runner.run)
-        ~results ~duration:outcome.Runner.duration ();
-      Driver.coverage_report renderer ~coverage_mode outcome.Runner.run
-        coverage_data;
-      Driver.report_snapshots ~out:Format.std_formatter ~output
-        ~invocation:`Mirrors outcome;
-      Driver.github_end ~github;
-      Driver.github_annotations ~github ~invocation:`Mirrors results;
-      Format.pp_print_flush Format.std_formatter ();
-      Format.pp_print_flush Format.err_formatter ();
+  | Ok (outcome, _results) ->
       let written, unwritable = flush_corrections_report () in
       (* The correction-coverage exit-0 downgrade presumes the correction
          reached disk — dune's diff action can only surface corrections

@@ -3,26 +3,30 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Shared driver wiring: the producers both runners compose a run's reporting
-    from.
+(** Shared driver wiring: a run's whole reporting, and the producers it is
+    composed from.
 
     Two thin drivers exist — the facade's [run] and the inline (ppx) runner
     ([Ppx_runtime]) — and one behavior serves both (the "one behavior, both
     runners" doctrine): every transcript line class has exactly one producer
-    here, so the two runners cannot drift apart byte-wise. The five producers
-    are renderer construction ({!val:renderer}), the event observer
-    ({!observe}), the GitHub envelope ({!github_start}, {!github_end},
-    {!github_annotations}), the snapshot/prune report ({!report_snapshots}), and
-    the coverage seam ({!snapshot_coverage}, {!coverage_summary},
-    {!coverage_report}).
+    here, and they are composed in exactly one order, so the two runners cannot
+    drift apart byte-wise. The five producers are renderer construction
+    ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
+    ({!github_start}, {!github_end}, {!github_annotations}), the snapshot/prune
+    report ({!report_snapshots}), and the coverage seam ({!snapshot_coverage},
+    {!coverage_summary}, {!coverage_report}); {!execute_and_report} is the order
+    they run in, around {!Runner.execute}. A runner that composed them itself
+    would be free to get that order wrong, which is the same drift by another
+    route.
 
     What the runners legitimately do {e not} share stays visible at their call
-    sites, as a parameter here or a line in the thin drivers: the invocation
-    context ([`Exe] vs [`Mirrors]), the header seed policy ({!observe}'s [seed]
-    — the inline runner always passes [None]), the output-level and
-    coverage-mode resolution sources (parsed CLI vs the [WINDTRAP_*] mirrors of
-    [Cli.empty]), GitHub gating, list-only handling, JUnit, and the exit
-    discipline. This module never decides them.
+    sites, as an argument to {!execute_and_report} or a line in the thin
+    drivers: the invocation context ([`Exe] vs [`Mirrors]), the two header
+    policies ([seed] and [selection] — the inline runner passes [None] for
+    both), the output-level and coverage-mode resolution sources (parsed CLI vs
+    the [WINDTRAP_*] mirrors of [Cli.empty]), the GitHub gating decision, the
+    [--list] listing, JUnit, the correction protocol, and the exit discipline.
+    This module never decides them.
 
     This module sits below both drivers: it depends only on the runner, the
     renderers, and the environment — never on [Cli] resolution or either driver.
@@ -69,9 +73,18 @@ val observe :
     ([releasing <name>]) on [Fixture_release]. [selection] rides along to the
     header ({!selection_description}), unprinted unless the run selects nothing.
 
-    [seed] is the header's seed, the one policy difference between the runners'
-    observers: the facade passes the root seed iff the suite declares property
-    tests; the inline runner always passes [None]. *)
+    [seed] and [selection] are the two policy differences between the runners'
+    observers, and the inline runner passes [None] for both.
+
+    - [seed] is the header's seed: the facade passes the root seed iff the suite
+      declares property tests.
+    - [selection] is what an empty run explains itself with: the facade passes
+      {!selection_description}. The inline runner deliberately does not. Under
+      [dune runtest] a [WINDTRAP_FILTER] narrows {e every} partition, and the
+      ones it empties are not typos — {!Ppx_runtime.inline_exit_code} exits [0]
+      on them for exactly that reason — so the sentence would be a paragraph of
+      noise per partition on a working command; and its second line offers [-l],
+      which the inline protocol does not have. *)
 
 (** {1:github The GitHub envelope}
 
@@ -171,3 +184,56 @@ val coverage_report :
     no-op otherwise. Sources are recorded workspace-relative, so they resolve
     against {!Path_ops.project_root} — under [dune runtest] the cwd is inside
     [_build], where the recorded paths never open. *)
+
+(** {1:spine The execute-and-report spine} *)
+
+val execute_and_report :
+  invocation:Render.invocation ->
+  seed:Seed.seed option ->
+  selection:string option ->
+  github:bool ->
+  output:[ `Quiet | `Compact | `Verbose ] ->
+  coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
+  config:Run.config ->
+  suite:string ->
+  Test_tree.t list ->
+  (Runner.outcome * Run.result list, Runner.startup_error) result
+(** [execute_and_report ~invocation ~seed ~selection ~github ~output
+     ~coverage_mode ~config ~suite tests] runs [tests] as suite [suite] and
+    writes the run's whole report on standard output, composing the producers
+    above in the one order both runners use: {!val:renderer} and {!observe},
+    {!github_start}, {!Runner.execute}, then — for a run that happened —
+    {!results_with_releases}, {!snapshot_coverage}, {!Render.finish} (its
+    [?coverage] from {!coverage_summary}), {!coverage_report},
+    {!report_snapshots}, {!github_end}, {!github_annotations}, and a flush of
+    both standard formatters.
+
+    [Ok (outcome, results)] carries the outcome and the results
+    {e as the sinks saw them} — {!Run.results} plus the synthetic release rows —
+    for the caller's own transports and exit code.
+
+    [seed] and [selection] are {!observe}'s two header policies, passed through
+    rather than derived: the runners genuinely disagree about both, and the
+    reasons are documented there. In particular this function does {e not} call
+    {!selection_description} itself — an inline partition emptied by a mirror is
+    not a mistyped filter.
+
+    {!github_annotations} runs {e after} {!github_end}, deliberately: an
+    [::error::] block written inside the [::group::] envelope folds away with
+    the transcript, and annotations are the part a reviewer must see without
+    unfolding anything.
+
+    A [config.list_only] run reports nothing and is [Ok (outcome, [])]:
+    {!Runner.execute} applied the startup checks and the selection without
+    running a test, so there is no run to project — the caller prints the
+    listing.
+
+    [Error error] is a refused startup: {!github_end} has closed the envelope
+    and {!Runner.startup_message} is already on [stderr], so all the caller
+    decides is what to do with {!Runner.startup_exit_code} — the library runner
+    exits on it, the inline runner folds it into dune's promotion protocol.
+
+    Effects: the union of the producers' — reads the environment, writes the
+    transcript on [Format.std_formatter] and the GitHub envelope on standard
+    output, and everything {!Runner.execute} itself does (capture logs, the
+    last-failed store, accepted baselines, the exit guard). *)

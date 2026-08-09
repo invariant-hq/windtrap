@@ -3,14 +3,23 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Driver: the shared producers both runners compose a run's
-   reporting from. Byte parity between the facade's [run] and the inline
-   (ppx) runner is construction — one producer per line class — so the
-   pins live here, once, instead of comparing two drivers' transcripts:
-   the snapshot/prune report's line classes under both invocations and
-   the quiet gate, the observer's header-seed policy (the one observer
-   difference between the runners), the GitHub envelope's gating, and
-   the coverage seam's mode selection. *)
+(* Tests for Driver: the producers a run's reporting is composed from.
+   Byte parity between the facade's [run] and the inline (ppx) runner is
+   construction — one producer per line class, and one order they run in
+   ([execute_and_report]) — so the pins live here, once, instead of
+   comparing two drivers' transcripts: the snapshot/prune report's line
+   classes under both invocations and the quiet gate, the observer's
+   header policies (the seed and the selection description, the two the
+   runners disagree about), the GitHub envelope's gating, and the
+   coverage seam's mode selection.
+
+   [execute_and_report] itself is not pinned here: it calls
+   [Runner.execute], which refuses to nest inside the run this suite is
+   part of. Its composition is pinned at process level instead — the
+   facade's children in test_windtrap.ml (the listing, the empty
+   selection, the focus warning, JUnit, release failures) and the ppx
+   runner fixtures under test/ppx/ — plus the envelope-order test
+   below. *)
 
 open Windtrap
 open Windtrap.Private

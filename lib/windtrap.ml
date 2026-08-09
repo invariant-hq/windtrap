@@ -255,18 +255,20 @@ let write_junit ~invocation ~suite ~duration ~results path =
   | exception Sys_error message ->
       Format.eprintf "warning: could not write JUnit report: %s@." message
 
-(* The thin library driver: composed from Driver's shared producers — one
-   producer per transcript line class, shared with the inline (ppx) runner.
-   What is legitimately this runner's own stays visible here: the parsed-CLI
-   resolution sources, the argv-computed invocation, the property-aware
-   header seed, GitHub gating minus list-only runs, list-only handling,
-   JUnit, and the process exit. *)
+(* The thin library driver: [Driver.execute_and_report] writes the whole
+   transcript, shared byte-for-byte with the inline (ppx) runner. What is
+   legitimately this runner's own stays visible here: the parsed-CLI
+   resolution sources, the argv-computed invocation, the two header
+   policies (the property-aware seed and the selection description),
+   GitHub gating minus list-only runs, the listing itself, JUnit, the
+   focus warning, and the process exit. *)
 let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
+  (* A listing is not a transcript: it must not be folded into a
+     ::group:: section, so it drops out of the gating decision here. *)
   let github = Env.in_github_actions () && not config.Run.list_only in
   (* The one invocation every command hint derives from: computed
      here, at startup, and threaded to the renderer and both transports. *)
   let invocation = invocation_of ~inside_dune:(Env.inside_dune ()) argv in
-  let renderer = Driver.renderer ~config ~mode:output ~invocation () in
   (* Header-seed policy: the root seed iff the suite declares property
      tests — selection never changes it, so the token stays stable across
      filtered runs. The inline runner always passes [None]. *)
@@ -278,17 +280,15 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
     in
     if has_props then Some config.Run.seed else None
   in
-  let on_event =
-    Driver.observe renderer ~seed
+  match
+    Driver.execute_and_report ~invocation ~seed
       ~selection:(Driver.selection_description config)
-  in
-  Driver.github_start ~github suite;
-  match Runner.execute ~on_event ~config ~suite tests with
+      ~github ~output ~coverage_mode ~config ~suite tests
+  with
   | Error error ->
-      Driver.github_end ~github;
-      prerr_endline (Runner.startup_message error);
+      (* The message is already on stderr; this runner owns the exit. *)
       exit (Runner.startup_exit_code error)
-  | Ok outcome ->
+  | Ok (outcome, results) ->
       if config.Run.list_only then begin
         List.iter
           (fun case ->
@@ -296,22 +296,9 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
           outcome.Runner.selected;
         exit outcome.Runner.exit_code
       end;
-      (* Release failures ride with the results: they are part of the run's
-         verdict (they set the exit code), so every sink must see them. *)
-      let results = Driver.results_with_releases outcome in
-      let duration = outcome.Runner.duration in
-      let coverage_data = Driver.snapshot_coverage outcome.Runner.run in
-      Render.finish renderer
-        ?coverage:(Driver.coverage_summary ~coverage_mode outcome.Runner.run)
-        ~results ~duration ();
-      Driver.coverage_report renderer ~coverage_mode outcome.Runner.run
-        coverage_data;
-      Driver.report_snapshots ~out:Format.std_formatter ~output ~invocation
-        outcome;
-      Driver.github_end ~github;
-      Driver.github_annotations ~github ~invocation results;
       Option.iter
-        (write_junit ~invocation ~suite ~duration ~results)
+        (write_junit ~invocation ~suite ~duration:outcome.Runner.duration
+           ~results)
         config.Run.junit;
       if
         outcome.Runner.focus_active
@@ -323,8 +310,6 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
            remove the focus before committing@."
           (List.length outcome.Runner.selected)
           outcome.Runner.total;
-      Format.pp_print_flush Format.std_formatter ();
-      Format.pp_print_flush Format.err_formatter ();
       exit outcome.Runner.exit_code
 
 let run ?(argv = Sys.argv) suite tests =

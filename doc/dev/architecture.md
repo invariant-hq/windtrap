@@ -72,9 +72,24 @@ declarative flag table → parse, `--help`, and the environment layer:
 each flag's mirror is declared beside it and read through the flag's
 own parser, so a variable cannot accept what its flag rejects),
 `Render` /
-`Render_junit` / `Render_github`, `Ppx_runtime` (inline-test protocol,
-expect matching, `.corrected` assembly), `Expect_test_config` (the
-ambient config expect tests reference), and the facade `Windtrap`.
+`Render_junit` / `Render_github`, `Driver` (a run's whole reporting:
+one producer per transcript line class and one order they run in —
+`execute_and_report` — around `Runner.execute`), `Ppx_runtime`
+(inline-test protocol, expect matching, `.corrected` assembly),
+`Expect_test_config` (the ambient config expect tests reference), and
+the facade `Windtrap`.
+
+Two thin drivers sit on top of `Driver` and nothing else sits between
+them and it: the facade's `run` and `Ppx_runtime.exit`. Each resolves
+one invocation (`Cli.settings`), calls `execute_and_report`, and adds
+only what is genuinely its own — the argv-derived invocation, the
+property-aware header seed, the selection description, GitHub gating,
+the `--list` listing, JUnit, the focus warning and the process exit on
+one side; the fixed `` `Mirrors `` invocation, a header with neither
+seed nor selection, `.corrected` flushing and dune's promotion exit
+code on the other. **A transcript line either comes from a `Driver`
+producer or it is a driver's own line, named as such.** That is what
+keeps the two runners byte-identical.
 
 The cycle-avoidance rule is load-bearing: subsystem modules operate on
 explicit state values (`Capture.output st`, `Snapshot.check st …`);

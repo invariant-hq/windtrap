@@ -129,6 +129,46 @@ let () =
         [ test "touches the fixture" (fun () -> leaky_release ()) ]
   | _ -> ()
 
+(* The list-only child (driver, [--list]): re-exec'd to run the facade's
+   [run] on a two-test suite with [-l]. A list run selects and stops —
+   [Driver.execute_and_report] projects nothing, the driver prints the
+   selection — so the whole transcript must be the paths and nothing
+   else: no header, no glyph row, no summary line. *)
+let () =
+  match Array.to_list Sys.argv with
+  | [ _; "--list-child"; log_dir ] ->
+      clear_env ();
+      Windtrap.run
+        ~argv:[| "list-child"; "-o"; log_dir; "--color"; "never"; "-l" |]
+        "listsuite"
+        [
+          group "outer" [ test "picked" (fun () -> is_true true) ];
+          test "other" (fun () -> is_true true);
+        ]
+  | _ -> ()
+
+(* The empty-selection child (driver, [Driver.selection_description]):
+   re-exec'd to run the facade's [run] with a filter that matches nothing.
+   The description is the library runner's own header policy — the inline
+   runner passes [None] — so it reaches the renderer through the driver's
+   call and nowhere else. The pin is the whole transcript: the sentence
+   naming the filter and the denominator, and the [-l] hint under it. *)
+let () =
+  match Array.to_list Sys.argv with
+  | [ _; "--empty-child"; log_dir ] ->
+      clear_env ();
+      Windtrap.run
+        ~argv:
+          [|
+            "empty-child"; "-o"; log_dir; "--color"; "never"; "-f"; "zzznope";
+          |]
+        "emptysuite"
+        [
+          test "picked" (fun () -> is_true true);
+          test "other" (fun () -> is_true true);
+        ]
+  | _ -> ()
+
 (* Re-exec this executable with [args], returning its exit status and its
    standard output — plus its standard error when [merge_stderr] (the
    focus warning prints there). *)
@@ -1001,6 +1041,33 @@ let () =
       (not (contains "  FAIL  collide" verbose));
     check "collide verbose: summary counts one expected failure"
       (contains "1 expected failure in " verbose))
+
+(* A list-only run prints the selection and nothing else, process level *)
+
+let () =
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let status, transcript =
+      spawn_child ~merge_stderr:true [ "--list-child"; root ]
+    in
+    check "a list run exits 0" (status = Unix.WEXITED 0);
+    check_string "the transcript is the selection, in declaration order"
+      ~expected:"outer \u{203a} picked\nother\n" ~actual:transcript)
+
+(* An empty selection says why it is empty, process level *)
+
+let () =
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let status, transcript =
+      spawn_child ~merge_stderr:true [ "--empty-child"; root ]
+    in
+    check "an empty selection exits 2" (status = Unix.WEXITED 2);
+    check_string "the summary names the filter, the count, and the way out"
+      ~expected:
+        "emptysuite: no tests ran: filter \"zzznope\" matched none of 2 tests.\n\
+         (list the suite's tests with -l)\n"
+      ~actual:transcript)
 
 (* Release failures reach every sink, process level *)
 
