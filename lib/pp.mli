@@ -115,4 +115,8 @@ val styled : ansi:bool -> style -> 'a t -> 'a t
 val styled_string : ansi:bool -> style -> string -> string
 (** [styled_string ~ansi s str] is [str] wrapped in the escape codes for [s]
     when [ansi] is [true], and [str] unchanged otherwise. For building styled
-    strings outside a formatter. *)
+    strings outside a formatter.
+
+    An empty [str] is returned bare under [ansi] too: styling nothing is
+    nothing, and lines assembled from optional fragments would otherwise carry
+    an open code and its reset with nothing between them. *)

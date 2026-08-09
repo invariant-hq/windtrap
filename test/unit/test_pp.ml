@@ -98,7 +98,13 @@ let tests =
         equal ~msg:"styled_string ~ansi:false is the identity" string "plain"
           (Pp.styled_string ~ansi:false `Green "plain");
         equal ~msg:"styled_string ~ansi:true wraps" string "\027[32mok\027[0m"
-          (Pp.styled_string ~ansi:true `Green "ok"));
+          (Pp.styled_string ~ansi:true `Green "ok");
+        (* Styling nothing is nothing: report lines are assembled from
+           optional fragments, and an empty one must not leave an open code
+           and its reset behind. *)
+        equal ~msg:"styled_string ~ansi:true leaves the empty string bare"
+          string ""
+          (Pp.styled_string ~ansi:true `Faint ""));
     test "styling does not change line breaking" (fun () ->
         (* Zero-width escapes: styling must not perturb Format's line breaking.
            With a margin of 10, "aaaa bbbb" breaks identically styled or not

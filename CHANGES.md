@@ -29,6 +29,11 @@ report text, so the terminal, JUnit and GitHub reports agree. Only a trailing
 run: a callback windtrap invoked keeps both itself and the frames below it, and
 a backtrace that never crossed your code is kept whole rather than emptied.
 
+**No empty ANSI spans.** Styling an empty string emitted an open code and its
+reset with nothing between them, so every styled `FAIL` header carried a stray
+`ESC[2mESC[0m` from its empty attempt suffix. Invisible on a terminal, but real
+bytes for anything diffing or parsing a transcript.
+
 **A printerless counterexample names its remedy.** A generator built with
 `map` or `bind` carries no printer, so its counterexample renders as the draws
 the value came from (`<from: ("a", 90)>`) — informative, but it never said what

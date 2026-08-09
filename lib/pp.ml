@@ -115,5 +115,10 @@ let styled ~ansi style pp ppf v =
     Format.pp_print_as ppf 0 reset
   end
 
+(* An empty payload is returned bare: wrapping it would emit an open code
+   and its reset with nothing between them — invisible, but real bytes on
+   lines that are assembled from optional fragments (the attempt suffix on
+   a FAIL header is empty on all but a retried test). *)
 let styled_string ~ansi style s =
-  if not ansi then s else code_of_style style ^ s ^ reset
+  if (not ansi) || String.length s = 0 then s
+  else code_of_style style ^ s ^ reset
