@@ -263,7 +263,9 @@ Validate: `--failed` runs exactly 31 tests, all `F`; the three
 `--shard K/3` buckets partition the 100 tests (28/36/36, stable across
 machines); the all-green selection is the healthy-run surface —
 exactly one line, `x-demo: 41 passed in …s (seed s1:…).`, no header,
-no glyphs, exit **0**; the bogus filter prints `x-demo: no tests ran.`
+no glyphs, exit **0**; the bogus filter prints `x-demo: no tests
+ran: filter "no such test" matched none of 100 tests.` with the `-l`
+hint under it
 and exits **2**.
 
 ## 9. Color and raw bytes

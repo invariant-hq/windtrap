@@ -162,7 +162,7 @@ let test_observe_seed_policy () =
     let buf = Buffer.create 64 in
     let out = Format.formatter_of_buffer buf in
     let renderer = Render.create ~out ~ansi:false ~mode:`Verbose () in
-    Driver.observe renderer ~seed
+    Driver.observe renderer ~seed ~selection:None
       (Runner.Run_started
          { run = make_run (); suite = "s"; total = 2; selected = 2 });
     Format.pp_print_flush out ();
@@ -208,7 +208,7 @@ let test_github_envelope_composed () =
   let renderer =
     Render.create ~out:Format.std_formatter ~ansi:false ~mode:`Verbose ()
   in
-  Driver.observe renderer ~seed:None
+  Driver.observe renderer ~seed:None ~selection:None
     (Runner.Run_started
        { run = make_run (); suite = "mylib"; total = 1; selected = 1 });
   Format.pp_print_flush Format.std_formatter ();

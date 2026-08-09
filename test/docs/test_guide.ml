@@ -172,7 +172,7 @@ let () =
   in
   let on_event = function
     | Runner.Run_started { suite; selected; _ } ->
-        Render.header renderer ~suite ~tests:selected ~seed:None
+        Render.header renderer ~suite ~tests:selected ~seed:None ()
     | Runner.Test_started { path } -> Render.begin_test renderer ~path
     | Runner.Test_finished result -> Render.result renderer result
     | Runner.Fixture_release _ -> ()

@@ -174,7 +174,9 @@ warnings; it never defers — every line streams as it happens.
 `-q` (`WINDTRAP_QUIET`) prints the failure blocks and the summary,
 nothing else — no slow warnings, no coverage, no
 snapshot notices. A green quiet run is the same named one-liner as the
-default level. `no tests ran.` still prints; it explains exit code 2.
+default level. The empty-selection line still prints — it names what
+matched nothing and how many tests there were, and explains exit
+code 2.
 
 The level decides *what* prints; the sink only decides color and the
 live tail. Piped output — redirects, CI logs — has the same shape,

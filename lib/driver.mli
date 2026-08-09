@@ -50,11 +50,24 @@ val renderer :
 
 (** {1:observer The event observer} *)
 
-val observe : Render.t -> seed:Seed.seed option -> Runner.event -> unit
-(** [observe renderer ~seed event] streams [event] through [renderer]: the
-    header on [Run_started], the live tail on [Test_started], the per-test
-    progress mark on [Test_finished], and the release notice
-    ([releasing <name>]) on [Fixture_release].
+val selection_description : Run.config -> string option
+(** [selection_description config] describes what narrows the run — the filter,
+    exclusion, tags, [--quick], [--failed], the shard — in the spelling the
+    reader typed, or [None] when nothing narrows it. It exists so an empty
+    selection can say why it is empty; the phrasing of that sentence is
+    {!Render}'s, the configuration behind it is the driver's. *)
+
+val observe :
+  Render.t ->
+  seed:Seed.seed option ->
+  selection:string option ->
+  Runner.event ->
+  unit
+(** [observe renderer ~seed ~selection event] streams [event] through
+    [renderer]: the header on [Run_started], the live tail on [Test_started],
+    the per-test progress mark on [Test_finished], and the release notice
+    ([releasing <name>]) on [Fixture_release]. [selection] rides along to the
+    header ({!selection_description}), unprinted unless the run selects nothing.
 
     [seed] is the header's seed, the one policy difference between the runners'
     observers: the facade passes the root seed iff the suite declares property

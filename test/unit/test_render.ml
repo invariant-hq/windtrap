@@ -55,7 +55,7 @@ let with_renderer ?(ansi = false) ?mode ?live ?columns ?tail_lines
 let transcript ?ansi ?mode ?live ?invocation ?coverage
     ?(seed = Some Fixtures.root) () =
   with_renderer ?ansi ?mode ?live ?invocation (fun r ->
-      Render.header r ~suite:"mylib" ~tests:(List.length Fixtures.results) ~seed;
+      Render.header r ~suite:"mylib" ~tests:(List.length Fixtures.results) ~seed ();
       List.iter
         (fun (res : Run.result) ->
           Render.begin_test r ~path:res.path;
@@ -257,7 +257,7 @@ let test_quiet () =
 let test_quiet_green_run () =
   let t =
     with_renderer ~mode:`Quiet (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r (Fixtures.result [ "t" ] Failure.Pass);
         Render.finish r
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
@@ -333,7 +333,7 @@ let test_ansi () =
 let test_live () =
   let t =
     with_renderer ~ansi:true ~mode:`Verbose ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Render.begin_test r ~path:[ "math"; "addition" ];
         Render.result r (List.hd Fixtures.results))
   in
@@ -342,7 +342,7 @@ let test_live () =
   check_contains "live: cursor clear emitted" ~sub:"\r\027[2K" t;
   let plain =
     with_renderer ~ansi:false ~mode:`Verbose ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Render.begin_test r ~path:[ "math"; "addition" ])
   in
   check_absent "live: off without ansi" ~sub:"Running" plain
@@ -354,7 +354,7 @@ let test_live_compact_tail () =
      blank. *)
   let t =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Render.begin_test r ~path:[ "math"; "addition" ];
         Render.result r (List.hd Fixtures.results);
         Render.begin_test r ~path:[ "users"; "sessions after login" ])
@@ -371,7 +371,7 @@ let test_live_compact_tail () =
      and its erasure re-prints the row, as always. *)
   let flushed =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Render.result r
           (Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "b" ]));
         Render.begin_test r ~path:[ "math"; "addition" ];
@@ -381,7 +381,7 @@ let test_live_compact_tail () =
     ~sub:"\r\027[2K\027[31mF\027[0m" flushed;
   let plain =
     with_renderer ~ansi:false ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
         Render.begin_test r ~path:[ "math"; "addition" ])
   in
   check_absent "compact tail: off without ansi" ~sub:"[1/2]" plain
@@ -389,19 +389,19 @@ let test_live_compact_tail () =
 let test_header_forms () =
   let one =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None)
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ())
   in
   check_string "header: singular, no seed" ~expected:"s: 1 test\n" ~actual:one;
   let zero =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"s" ~tests:0 ~seed:None)
+        Render.header r ~suite:"s" ~tests:0 ~seed:None ())
   in
   check_string "header: zero tests" ~expected:"s: 0 tests\n" ~actual:zero;
   (* Compact defers the header until the run proves noteworthy; the same
      line then prints from the recorded fields (the golden transcripts pin
      the flushed form). *)
   let deferred =
-    with_renderer (fun r -> Render.header r ~suite:"s" ~tests:1 ~seed:None)
+    with_renderer (fun r -> Render.header r ~suite:"s" ~tests:1 ~seed:None ())
   in
   check_string "header: compact defers until noteworthy" ~expected:""
     ~actual:deferred
@@ -454,10 +454,42 @@ let test_create_validation () =
          Render.create ~out:ppf ~ansi:false ~slow_threshold:Float.nan ()))
 
 let test_no_tests () =
+  (* No header, so no selection and no declared count: nothing to say
+     beyond the fact. *)
   let t =
     with_renderer (fun r -> Render.finish r ~results:[] ~duration:0.01 ())
   in
-  check_string "finish: empty run" ~expected:"no tests ran.\n" ~actual:t
+  check_string "finish: empty run" ~expected:"no tests ran.\n" ~actual:t;
+  (* A suite that declares nothing is not a mistyped filter. *)
+  let declares_none =
+    with_renderer (fun r ->
+        Render.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
+        Render.finish r ~results:[] ~duration:0.01 ())
+  in
+  check_string "empty suite names itself as the cause"
+    ~expected:"mylib: no tests ran: the suite declares none.\n"
+    ~actual:declares_none;
+  (* A selection that matched nothing names itself and the denominator,
+     and points at the way to see what there was. *)
+  let filtered =
+    with_renderer (fun r ->
+        Render.header r ~suite:"mylib" ~tests:0 ~declared:48
+          ~selection:{|filter "parsr"|} ~seed:None ();
+        Render.finish r ~results:[] ~duration:0.01 ())
+  in
+  check_string "empty selection names the selection and the total"
+    ~expected:
+      "mylib: no tests ran: filter \"parsr\" matched none of 48 tests.\n\
+       (list the suite's tests with -l)\n"
+    ~actual:filtered;
+  let singular =
+    with_renderer (fun r ->
+        Render.header r ~suite:"mylib" ~tests:0 ~declared:1
+          ~selection:"tag \"slow\"" ~seed:None ();
+        Render.finish r ~results:[] ~duration:0.01 ())
+  in
+  check_contains "one declared test is not \"1 tests\""
+    ~sub:"matched none of 1 test." singular
 
 (* The compact glyph row *)
 
@@ -511,7 +543,7 @@ let test_glyph_wrap () =
   let run ~header n =
     let rs = results n in
     with_renderer (fun r ->
-        if header then Render.header r ~suite:"s" ~tests:(n + 1) ~seed:None;
+        if header then Render.header r ~suite:"s" ~tests:(n + 1) ~seed:None ();
         List.iter (Render.result r) rs;
         Render.finish r ~results:rs ~duration:0.01 ())
   in
@@ -543,7 +575,7 @@ let test_glyph_row_before_failures () =
   in
   let t =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None;
+        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
         List.iter (Render.result r) results;
         Render.finish r ~results ~duration:0.01 ())
   in
@@ -560,7 +592,7 @@ let test_note () =
      position. *)
   let green =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None;
+        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
         Render.result r (Fixtures.result [ "a" ] Failure.Pass);
         Render.result r (Fixtures.result [ "b" ] Failure.Pass);
         Render.note r "releasing db";
@@ -582,7 +614,7 @@ let test_note () =
       ]
     in
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None;
+        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
         Render.result r (List.nth results 0);
         Render.note r "releasing db";
         Render.result r (List.nth results 1);
@@ -592,7 +624,7 @@ let test_note () =
     ~sub:"s: 2 tests\n.\nreleasing db\nF\n" noteworthy;
   let flushed =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None;
+        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
         Render.result r
           (Fixtures.result [ "a" ] (Failure.Fail [ Failure.message "x" ]));
         Render.result r (Fixtures.result [ "b" ] Failure.Pass);
@@ -611,7 +643,7 @@ let test_note () =
   check_string "note: suppressed under quiet" ~expected:"" ~actual:quiet;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None;
+        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
         Render.result r (Fixtures.result [ "a" ] Failure.Pass);
         Render.begin_test r ~path:[ "b" ];
         Render.note r "releasing db";
@@ -630,7 +662,7 @@ let test_compact_green_one_liner () =
   let passes = [ Fixtures.result [ "a" ] Failure.Pass ] in
   let named =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:1 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:1 ~seed:None ();
         List.iter (Render.result r) passes;
         Render.finish r ~results:passes ~duration:1.2 ())
   in
@@ -638,7 +670,7 @@ let test_compact_green_one_liner () =
     ~expected:"mylib: 1 passed in 1.2s.\n" ~actual:named;
   let seeded =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:1 ~seed:(Some Fixtures.root);
+        Render.header r ~suite:"mylib" ~tests:1 ~seed:(Some Fixtures.root) ();
         List.iter (Render.result r) passes;
         Render.finish r ~results:passes ~duration:1.2 ())
   in
@@ -654,7 +686,7 @@ let test_compact_green_one_liner () =
       ]
     in
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:3 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:3 ~seed:None ();
         Render.result r (List.nth results 0);
         Render.result r (List.nth results 1);
         Render.result r (List.nth results 2);
@@ -666,11 +698,13 @@ let test_compact_green_one_liner () =
     ~actual:segments;
   let empty =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:0 ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:0 ~seed:None ();
         Render.finish r ~results:[] ~duration:0.01 ())
   in
+  (* [~declared] defaults to [~tests], which is 0 here: the suite really
+     does declare nothing. *)
   check_string "empty compact selection: one named line, no header"
-    ~expected:"mylib: no tests ran.\n" ~actual:empty
+    ~expected:"mylib: no tests ran: the suite declares none.\n" ~actual:empty
 
 let test_compact_flush_streams_after () =
   (* The buffered rows commit on the first noteworthy event; subsequent
@@ -682,7 +716,7 @@ let test_compact_flush_streams_after () =
     Format.pp_print_flush ppf ();
     Buffer.contents buf
   in
-  Render.header r ~suite:"s" ~tests:4 ~seed:None;
+  Render.header r ~suite:"s" ~tests:4 ~seed:None ();
   Render.result r (Fixtures.result [ "a" ] Failure.Pass);
   Render.result r (Fixtures.result [ "b" ] Failure.Pass);
   check_string "before the flush nothing is committed" ~expected:""
@@ -699,7 +733,7 @@ let test_compact_slow_trigger () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:1.2 in
   let t =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r slow_pass;
         Render.finish r ~results:[ slow_pass ] ~duration:1.2 ())
   in
@@ -722,7 +756,7 @@ let test_compact_slow_trigger () =
   let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r tagged_pass;
         Render.finish r ~results:[ tagged_pass ] ~duration:1.2 ())
   in
@@ -731,7 +765,7 @@ let test_compact_slow_trigger () =
   let skip = Fixtures.result [ "t" ] (Failure.Skip None) ~duration:2.0 in
   let skipped =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r skip;
         Render.finish r ~results:[ skip ] ~duration:2.0 ())
   in
@@ -741,7 +775,7 @@ let test_compact_slow_trigger () =
      duration still counts against the threshold when untagged. *)
   let excused_fast =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r Fixtures.excused_result;
         Render.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
   in
@@ -757,7 +791,7 @@ let test_slow_duration_semantics () =
   in
   let t =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r retried;
         Render.finish r ~results:[ retried ] ~duration:1.2 ())
   in
@@ -773,7 +807,7 @@ let test_slow_duration_semantics () =
   in
   let t =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r slow_fail;
         Render.finish r ~results:[ slow_fail ] ~duration:2.0 ())
   in
@@ -798,7 +832,7 @@ let test_slow_threshold_zero () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:5.0 in
   let t =
     with_renderer ~slow_threshold:0.0 (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r slow_pass;
         Render.finish r ~results:[ slow_pass ] ~duration:5.0 ())
   in
@@ -807,7 +841,7 @@ let test_slow_threshold_zero () =
   let still_flushes =
     let fail = Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "x" ]) in
     with_renderer ~slow_threshold:0.0 (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r fail)
   in
   check_string "threshold 0 still flushes on a counted failure"
@@ -819,7 +853,7 @@ let test_verbose_slow_warnings () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:1.5 in
   let t =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r slow_pass;
         Render.finish r ~results:[ slow_pass ] ~duration:1.5 ())
   in
@@ -1400,7 +1434,7 @@ let test_excused_collision () =
   check_absent "collision record: no loud FAIL line" ~sub:"  FAIL  " verbose;
   let summary =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r collide;
         Render.finish r ~results:[ collide ] ~duration:0.1 ())
   in
@@ -1983,7 +2017,7 @@ let test_name_sanitization () =
     block;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"vnames" ~tests:2 ~seed:None;
+        Render.header r ~suite:"vnames" ~tests:2 ~seed:None ();
         Render.begin_test r ~path:hostile)
   in
   check_contains "live tail escapes the newline" ~sub:{|first\nhalf|} live;
@@ -1991,7 +2025,7 @@ let test_name_sanitization () =
   (* Suite names: header, deferred one-liner, quiet summary prefix. *)
   let named =
     with_renderer ~mode:`Quiet (fun r ->
-        Render.header r ~suite:"my\tsuite" ~tests:1 ~seed:None;
+        Render.header r ~suite:"my\tsuite" ~tests:1 ~seed:None ();
         Render.result r (Fixtures.result [ "t" ] Failure.Pass);
         Render.finish r
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
@@ -2001,14 +2035,14 @@ let test_name_sanitization () =
     named;
   let header =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"a\x07b" ~tests:1 ~seed:None)
+        Render.header r ~suite:"a\x07b" ~tests:1 ~seed:None ())
   in
   check_contains "header escapes control bytes" ~sub:{|a\x07b: 1 test|} header;
   (* Slow warnings and the slowest list share the treatment. *)
   let slow = Fixtures.result [ "sl\now" ] Failure.Pass ~duration:1.5 in
   let warned =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None;
+        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
         Render.result r slow;
         Render.finish r ~results:[ slow ] ~duration:1.5 ())
   in
@@ -2070,7 +2104,7 @@ let test_summary_dialect () =
   in
   let transcript ~results ~duration =
     with_renderer ~ansi:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:(List.length results) ~seed:None;
+        Render.header r ~suite:"mylib" ~tests:(List.length results) ~seed:None ();
         List.iter (fun res -> Render.result r res) results;
         Render.finish r ~results ~duration ())
   in

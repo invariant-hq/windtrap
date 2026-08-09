@@ -124,7 +124,15 @@ val create :
 
 (** {1:transcript The transcript} *)
 
-val header : t -> suite:string -> tests:int -> seed:Seed.seed option -> unit
+val header :
+  t ->
+  suite:string ->
+  tests:int ->
+  ?declared:int ->
+  ?selection:string ->
+  seed:Seed.seed option ->
+  unit ->
+  unit
 (** [header t ~suite ~tests ~seed] records and, under [`Verbose], prints the run
     header ([mylib: 48 tests (seed s1:…)]). Under [`Compact] the line is
     deferred: the first noteworthy event prints it (see {!result}), and a green,
@@ -135,7 +143,15 @@ val header : t -> suite:string -> tests:int -> seed:Seed.seed option -> unit
     [seed] is shown when given; the runner passes the root seed iff the suite
     declares property tests — selection never changes it, so the token is stable
     across filtered runs — and [tests] is the number of selected tests, which
-    also scales the live line's [[k/n]] counter. *)
+    also scales the live line's [[k/n]] counter.
+
+    [declared] is how many tests the suite declares before selection (defaulting
+    to [tests]) and [selection] describes the active selection in the caller's
+    words (["filter \"parser\""], ["shard 3/8"], [None] when nothing narrows the
+    run). Neither is printed by the header: they are what lets the summary say
+    {e why} nothing ran when a selection comes back empty, instead of a bare
+    ["no tests ran."]. The description belongs to the caller because the
+    configuration does — this module only phrases it. *)
 
 val begin_test : t -> path:string list -> unit
 (** [begin_test t ~path] shows the test at [path] on the live progress display,

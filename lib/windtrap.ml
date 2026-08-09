@@ -278,7 +278,10 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
     in
     if has_props then Some config.Run.seed else None
   in
-  let on_event = Driver.observe renderer ~seed in
+  let on_event =
+    Driver.observe renderer ~seed
+      ~selection:(Driver.selection_description config)
+  in
   Driver.github_start ~github suite;
   match Runner.execute ~on_event ~config ~suite tests with
   | Error error ->

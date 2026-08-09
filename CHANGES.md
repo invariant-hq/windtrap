@@ -70,6 +70,14 @@ report text, so the terminal, JUnit and GitHub reports agree. Only a trailing
 run: a callback windtrap invoked keeps both itself and the frames below it, and
 a backtrace that never crossed your code is kept whole rather than emptied.
 
+**An empty selection says why it is empty.** `no tests ran.` explained exit
+code 2 and nothing else, while the overwhelmingly common cause is a mistyped
+filter. It now names what narrowed the run and how many tests there were to
+narrow — `no tests ran: filter "parsr" matched none of 48 tests.` — and points
+at `-l`. A suite that declares nothing says that instead, and a shard that drew
+an empty bucket names the shard, so neither reads as a typo. Exit codes are
+unchanged.
+
 **No empty ANSI spans.** Styling an empty string emitted an open code and its
 reset with nothing between them, so every styled `FAIL` header carried a stray
 `ESC[2mESC[0m` from its empty attempt suffix. Invisible on a terminal, but real

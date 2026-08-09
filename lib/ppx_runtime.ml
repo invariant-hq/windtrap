@@ -1165,7 +1165,7 @@ let run_inline_suite ~suite ~config ~coverage_mode tests =
   let output = Cli.output_level Cli.empty in
   let github = Env.in_github_actions () in
   let renderer = Driver.renderer ~config ~mode:output ~invocation:`Mirrors () in
-  let on_event = Driver.observe renderer ~seed:None in
+  let on_event = Driver.observe renderer ~seed:None ~selection:None in
   Driver.github_start ~github suite;
   match Runner.execute ~on_event ~config ~suite tests with
   | Error error ->

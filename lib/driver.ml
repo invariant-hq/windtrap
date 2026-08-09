@@ -35,11 +35,70 @@ let renderer ~config ~mode ~invocation () =
     ?tail_lines:(Option.map (Int.max 0) config.Run.tail_errors)
     ~slow_threshold:config.Run.slow_threshold ~invocation ()
 
+(* What narrowed the run, in the words the reader typed. Used only to
+   explain an empty selection: a bare "no tests ran." names neither the
+   filter that matched nothing nor how many tests there were to match. The
+   description is built here, not in Render, because the configuration is
+   the driver's to know — Render only phrases the sentence. *)
+(* Quoted for the reader, not for OCaml: [%S] would escape the [\u{203a}]
+   of a test path into decimal bytes, and this string is meant to be read
+   and retyped. Control characters are escaped because a raw newline in a
+   filter would break the report's layout. *)
+let quote s =
+  let escaped =
+    String.concat ""
+      (List.map
+         (fun c ->
+           match c with
+           | '"' -> "\\\""
+           | '\\' -> "\\\\"
+           | '\n' -> "\\n"
+           | '\t' -> "\\t"
+           | '\r' -> "\\r"
+           | c when c < ' ' || c = '\127' -> Pp.str "\\x%02x" (Char.code c)
+           | c -> String.make 1 c)
+         (List.init (String.length s) (String.get s)))
+  in
+  "\"" ^ escaped ^ "\""
+
+let selection_description (config : Run.config) =
+  let quoted values = String.concat ", " (List.map quote values) in
+  let parts =
+    List.concat
+      [
+        (match config.Run.filter with
+        | Some f -> [ Pp.str "filter %s" (quote f) ]
+        | None -> []);
+        (match config.Run.exclude with
+        | Some e -> [ Pp.str "exclusion %s" (quote e) ]
+        | None -> []);
+        (match config.Run.tags with
+        | [] -> []
+        | ts -> [ Pp.str "tag %s" (quoted ts) ]);
+        (match config.Run.exclude_tags with
+        | [] -> []
+        | ts -> [ Pp.str "excluded tag %s" (quoted ts) ]);
+        (if config.Run.quick then [ "--quick" ] else []);
+        (if config.Run.failed_only then [ "--failed" ] else []);
+        (match config.Run.shard with
+        | Some (k, n) -> [ Pp.str "shard %d/%d" k n ]
+        | None -> []);
+      ]
+  in
+  match parts with
+  | [] -> None
+  | [ one ] -> Some one
+  | many ->
+      let last = List.nth many (List.length many - 1) in
+      let rest = List.filteri (fun i _ -> i < List.length many - 1) many in
+      Some (String.concat ", " rest ^ " and " ^ last)
+
 (* The event observer *)
 
-let observe renderer ~seed = function
-  | Runner.Run_started { run = _; suite; total = _; selected } ->
-      Render.header renderer ~suite ~tests:selected ~seed
+let observe renderer ~seed ~selection = function
+  | Runner.Run_started { run = _; suite; total; selected } ->
+      Render.header renderer ~suite ~tests:selected ~declared:total
+        ?selection ~seed ()
   | Runner.Test_started { path } -> Render.begin_test renderer ~path
   | Runner.Test_finished result -> Render.result renderer result
   | Runner.Fixture_release { name } ->

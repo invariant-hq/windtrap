@@ -812,6 +812,14 @@ type t = {
   mutable total_tests : int;
   mutable seen : int;
   mutable live_pending : bool;
+  mutable declared : int option;
+      (* tests the suite declares, before selection — the denominator the
+         empty-selection message needs; [total_tests] is what survived.
+         [None] until [header] runs: an embedder that renders results
+         without one gets the bare wording rather than a guess. *)
+  mutable selection : string option;
+      (* the active selection, described by the driver (which owns the
+         config), used only to say why nothing ran. *)
   mutable suite : string option;
       (* recorded by [header] even in quiet mode: quiet prints no header, so
          its one-line summary carries the suite name instead — nothing may
@@ -844,6 +852,8 @@ let create ~out ~ansi ?(mode = `Compact) ?(live = false)
     total_tests = 0;
     seen = 0;
     live_pending = false;
+    declared = None;
+    selection = None;
     suite = None;
     seed = None;
   }
@@ -884,8 +894,10 @@ let header_line t =
            (if t.total_tests = 1 then "" else "s")
            seed_part)
 
-let header t ~suite ~tests ~seed =
+let header t ~suite ~tests ?declared ?selection ~seed () =
   t.total_tests <- tests;
+  t.declared <- Some (Option.value declared ~default:tests);
+  t.selection <- selection;
   t.suite <- Some suite;
   t.seed <- seed;
   match t.mode with
@@ -1234,8 +1246,27 @@ let summary_line t ~passed ~failed ~skipped ~excused ~subtests ~duration =
     | Some suite when named -> sanitize_name suite ^ ": "
     | _ -> ""
   in
-  if passed + failed + skipped + excused = 0 then
-    put t (prefix ^ "no tests ran.")
+  if passed + failed + skipped + excused = 0 then begin
+    (* Exit 2 either way, but the two causes call for different sentences:
+       a suite with nothing in it is not a mistyped filter, and neither is
+       a shard that legitimately drew an empty bucket. Naming the selection
+       and the denominator is what turns a dead end into a next step. *)
+    let reason =
+      match (t.declared, t.selection) with
+      | Some 0, _ -> Some "the suite declares none"
+      | Some declared, Some selection ->
+          Some
+            (spf "%s matched none of %d test%s" selection declared
+               (if declared = 1 then "" else "s"))
+      | Some _, None | None, _ -> None
+    in
+    match reason with
+    | None -> put t (prefix ^ "no tests ran.")
+    | Some reason ->
+        put t (spf "%sno tests ran: %s." prefix reason);
+        if t.declared <> Some 0 then
+          put t (st t `Faint "(list the suite's tests with -l)")
+  end
   else begin
     let passed_part =
       if passed > 0 || (failed = 0 && skipped = 0 && excused = 0) then
