@@ -23,6 +23,12 @@ let seq_summary_threshold = 8 (* elements *)
 let seq_element_display = 40 (* code points, in the first-mismatch line *)
 let indent = "    "
 
+(* Gap between a survivor witness's name and its declaration site. Wide,
+   like the verbose status line's duration column and unlike the tight
+   table gutters: test names vary enough in length that a two-space gap
+   reads as a ragged wall. *)
+let witness_gap = 6
+
 (* Small helpers *)
 
 let rec take n = function
@@ -1413,6 +1419,11 @@ let pct_styled t (s : Windtrap_coverage.summary) =
     (Windtrap_coverage.style s :> Pp.style)
     (spf "%.1f%%" (Windtrap_coverage.percentage s))
 
+(* Line numbers as ranges ([88-94, 121]) — one dialect for the coverage
+   table's uncovered lists and the mutation report's unreached list. *)
+let ranges lines =
+  Windtrap_coverage.format_ranges (Windtrap_coverage.collapse_ranges lines)
+
 let coverage_line t ?(note = "") ?hint (s : Windtrap_coverage.summary) =
   let note = if note = "" then "" else ", " ^ note in
   let hint = match hint with None -> "" | Some h -> " \u{00b7} " ^ h in
@@ -1420,36 +1431,83 @@ let coverage_line t ?(note = "") ?hint (s : Windtrap_coverage.summary) =
     (spf "coverage: %s (%d/%d points%s)%s" (pct_styled t s) s.visited s.total
        note hint)
 
+(* Source excerpts (subsystem-neutral)
+
+   One gutter renderer, one record, two subsystems: coverage draws the
+   uncovered regions of a file, mutation draws the one line a survivor
+   rewrites. Law 12 — a second copy of this block is exactly the drift
+   [bin/dune]'s own comment says the coverage command's structure exists
+   to prevent. *)
+
+type excerpt = {
+  file : string;
+  heading : string option;
+  source : string;
+  marked_lines : int list;
+}
+
+let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
+  (match e.heading with
+  | None -> ()
+  | Some h ->
+      put t "";
+      put t (spf "%s \u{2014} %s" e.file h);
+      put t "");
+  (* Regions become plain rows at the boundary: a number, a mark, a text.
+     Everything below draws those, so the layout knows nothing about the
+     runtime that computed the regions. *)
+  let row (l : Windtrap_coverage.excerpt_line) =
+    (l.number, l.uncovered, l.text)
+  in
+  let regions =
+    List.map (List.map row)
+      (Windtrap_coverage.excerpts ~context ~source:e.source e.marked_lines)
+  in
+  let width =
+    match number_width with
+    | Some w -> w
+    | None ->
+        List.fold_left
+          (List.fold_left (fun w (n, _, _) ->
+               max w (String.length (string_of_int n))))
+          4 regions
+  in
+  (* The marker rides inside [margin] rather than beside it, so a marked
+     row's escape sequence opens at column zero exactly as it always
+     has — the coverage transcript is byte-frozen, escapes included. *)
+  let gutter marked =
+    if not marker then margin
+    else if marked then st t `Red (margin ^ "\u{258c}")
+    else margin ^ " "
+  in
+  let separator =
+    (if marker then margin ^ " " else margin)
+    ^ "\u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}"
+  in
+  List.iteri
+    (fun i region ->
+      if i > 0 then put t separator;
+      List.iter
+        (fun (n, marked, text) ->
+          put t (rstrip (spf "%s%*d \u{2502} %s" (gutter marked) width n text)))
+        region)
+    regions
+
 (* One source-excerpt block: file heading, then each uncovered region with
    a gutter marker on the uncovered lines and [·····] between regions. *)
 let coverage_excerpts t (r : Windtrap_coverage.file_report) =
   match r.source with
   | Some source when r.uncovered_lines <> [] ->
-      put t "";
-      put t
-        (spf "%s \u{2014} %s (%d/%d)" r.file (pct_styled t r.summary)
-           r.summary.visited r.summary.total);
-      put t "";
-      let regions = Windtrap_coverage.excerpts ~source r.uncovered_lines in
-      let number_width =
-        List.fold_left
-          (List.fold_left (fun w (l : Windtrap_coverage.excerpt_line) ->
-               max w (String.length (string_of_int l.number))))
-          4 regions
-      in
-      List.iteri
-        (fun i region ->
-          if i > 0 then put t "   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}";
-          List.iter
-            (fun (l : Windtrap_coverage.excerpt_line) ->
-              let gutter =
-                if l.uncovered then st t `Red "  \u{258c}" else "   "
-              in
-              put t
-                (rstrip
-                   (spf "%s%*d \u{2502} %s" gutter number_width l.number l.text)))
-            region)
-        regions
+      excerpt t
+        {
+          file = r.file;
+          heading =
+            Some
+              (spf "%s (%d/%d)" (pct_styled t r.summary) r.summary.visited
+                 r.summary.total);
+          source;
+          marked_lines = r.uncovered_lines;
+        }
   | _ -> ()
 
 let coverage_report t ?source_roots ~mode collection =
@@ -1481,9 +1539,7 @@ let coverage_report t ?source_roots ~mode collection =
           if r.stale then
             "stale: the source changed \u{2014} re-run the instrumented tests"
           else if r.uncovered_lines <> [] then
-            "uncovered: "
-            ^ Windtrap_coverage.format_ranges
-                (Windtrap_coverage.collapse_ranges r.uncovered_lines)
+            "uncovered: " ^ ranges r.uncovered_lines
           else if r.uncovered_extents <> [] then "(source not found)"
           else ""
         in
@@ -1495,6 +1551,201 @@ let coverage_report t ?source_roots ~mode collection =
       reports;
     if mode = `Full then List.iter (coverage_excerpts t) reports
   end
+
+(* Mutation (run data, rendered late)
+
+   A survivor is a failure block: the same 54-column labelled rule, the
+   same [  VERB  subject] head row, the same excerpt row, the same red —
+   because a survivor is a defect report about a named test. No second
+   failure vocabulary is invented here, and no ordering, no cap and no
+   witness list is decided here: the loop hands over what it measured and
+   this projects it. *)
+
+type witness = { test : string; loc : Loc.t option }
+
+type survivor = {
+  file : string;
+  line : int;
+  col : int;
+  rewrite : string;
+  before : string;
+  after : string;
+  source : string option;
+  witnesses : witness list;
+}
+
+type unreached = { file : string; lines : int list }
+
+type mutation = {
+  survivors : survivor list;
+  survivors_total : int;
+  unreached : unreached list;
+  unreached_total : int;
+  killed : int;
+  total : int;
+  duration : float option;
+  seed : Seed.seed option;
+  siblings : bool;
+}
+
+let mutant_id (s : survivor) =
+  Windtrap_mutate.id_to_string
+    {
+      Windtrap_mutate.file = s.file;
+      line = s.line;
+      col = s.col;
+      rewrite = s.rewrite;
+    }
+
+(* The command that arms this one mutant, in the invocation's spelling —
+   the variable's name comes from the runtime, so the report and the
+   runtime cannot disagree about what to type. Under [`Mirrors] the
+   instrumentation flag is part of the spelling: arming needs a build
+   that carries the mutants, and a bare [dune runtest] builds one that
+   does not, so the plain mirror would name a command that cannot do
+   what its line says. *)
+let arm_command t id =
+  match t.invocation with
+  | `Exe cmd -> spf "%s=%s %s" Windtrap_mutate.arm_variable id cmd
+  | `Mirrors ->
+      spf "%s=%s dune runtest --instrument-with ppx_windtrap.mutate"
+        Windtrap_mutate.arm_variable id
+
+let pad_to width s = String.make (max 0 (width - Text.length_utf8 s)) ' '
+
+let survivor_block t ~id_width ~witness_width ~number_width (s : survivor) =
+  let id = mutant_id s in
+  put t
+    ("  " ^ st t `Red "SURVIVED" ^ "  " ^ st t `Bold id ^ pad_to id_width id
+   ^ "   " ^ s.before ^ "  \u{2192}  " ^ s.after);
+  (* Best-effort, as every excerpt is: a survivor whose source the loop
+     could not read still names its line in the head row. *)
+  (match s.source with
+  | Some source ->
+      excerpt t ~context:0 ~marker:false ~margin:(indent ^ "  ") ~number_width
+        { file = s.file; heading = None; source; marked_lines = [ s.line ] }
+  | None -> ());
+  put t "";
+  (* The sentence that is the product. A survivor always names at least
+     one test (an unreached mutant is a different finding with a different
+     remedy), so the empty case cannot arise from a verdict. *)
+  (match s.witnesses with
+  | [] -> ()
+  | witnesses ->
+      let n = List.length witnesses in
+      put t
+        (indent
+        ^
+        if n = 1 then "1 test ran this line and did not fail when it changed:"
+        else spf "%d tests ran this line and none failed when it changed:" n);
+      List.iter
+        (fun w ->
+          let name = sanitize_name w.test in
+          let loc = match w.loc with Some l -> Loc.to_string l | None -> "" in
+          put t
+            (rstrip
+               (indent ^ "  " ^ name ^ pad_to witness_width name
+              ^ st t `Faint loc)))
+        witnesses;
+      put t "");
+  (* No color in either hint, as everywhere else, and both are one line a
+     reader copies whole. *)
+  put t (indent ^ spf "%-9s%s" "arm" (arm_command t id));
+  put t (indent ^ spf "%-9s((%s) [@mutate off \"reason\"])" "dismiss" s.before)
+
+let mutation_summary t (m : mutation) =
+  let survived =
+    let text = spf "%d survived" m.survivors_total in
+    st t (if m.survivors_total = 0 then `Green else `Red) text
+  in
+  (* Zero terms are omitted, the way a passing suite prints no failure
+     count: a run with nothing to report is one line. *)
+  let terms =
+    (if m.killed > 0 then [ spf "%d killed" m.killed ] else [])
+    @
+    if m.unreached_total > 0 then
+      [ st t `Yellow (spf "%d unreached" m.unreached_total) ]
+    else []
+  in
+  put t
+    (spf "mutants: %s of %d%s%s%s%s%s" survived m.total
+       (if m.siblings then " (this executable)" else "")
+       (if terms = [] then "" else " \u{00b7} " ^ String.concat ", " terms)
+       (match m.duration with
+       | Some d -> spf " in %s" (pp_duration d)
+       | None -> "")
+       (match m.seed with
+       | Some s -> spf " (seed %s)" (Seed.to_string s)
+       | None -> "")
+       (if m.siblings then " \u{00b7} project: dune build @mutants" else ""))
+
+let mutation_report t (m : mutation) =
+  clear_live t;
+  close_row t;
+  if m.survivors <> [] then begin
+    let shown = List.length m.survivors in
+    (* The cap is in the label so nobody thinks they saw everything. *)
+    let label =
+      if shown < m.survivors_total then
+        spf "survivors (%d of %d)" shown m.survivors_total
+      else spf "survivors (%d)" m.survivors_total
+    in
+    let id_width =
+      List.fold_left
+        (fun w s -> max w (Text.length_utf8 (mutant_id s)))
+        0 m.survivors
+    in
+    (* One column across the whole report, not one per block: the
+       locations are meant to be read down. *)
+    let witness_width =
+      List.fold_left
+        (fun w (s : survivor) ->
+          List.fold_left
+            (fun w (wit : witness) ->
+              max w (Text.length_utf8 (sanitize_name wit.test)))
+            w s.witnesses)
+        0 m.survivors
+      + witness_gap
+    in
+    let number_width =
+      List.fold_left
+        (fun w (s : survivor) -> max w (String.length (string_of_int s.line)))
+        1 m.survivors
+    in
+    put t "";
+    put t (st t `Faint (labeled_rule t label));
+    put t "";
+    List.iteri
+      (fun i s ->
+        if i > 0 then put t "";
+        survivor_block t ~id_width ~witness_width ~number_width s)
+      m.survivors;
+    put t "";
+    put t (st t `Faint (dashes (min t.columns rule_width)))
+  end;
+  if m.unreached <> [] then begin
+    put t "";
+    put t
+      (st t `Faint
+         (spf "unreached (%d) \u{2014} no test evaluates these"
+            m.unreached_total));
+    (* One compact line per file, in the shape of the coverage table's
+       file column: an unreached mutant is a gap, not a block. *)
+    let file_width =
+      List.fold_left
+        (fun w (u : unreached) -> max w (Text.length_utf8 u.file))
+        0 m.unreached
+    in
+    List.iter
+      (fun (u : unreached) ->
+        put t
+          (rstrip
+             (spf "   %s%s   %s" u.file (pad_to file_width u.file)
+                (ranges u.lines))))
+      m.unreached
+  end;
+  if m.survivors <> [] || m.unreached <> [] then put t "";
+  mutation_summary t m
 
 let finish t ?coverage ~results ~duration () =
   clear_live t;

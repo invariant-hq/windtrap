@@ -55,7 +55,9 @@ let with_renderer ?(ansi = false) ?mode ?live ?columns ?tail_lines
 let transcript ?ansi ?mode ?live ?invocation ?coverage
     ?(seed = Some Fixtures.root) () =
   with_renderer ?ansi ?mode ?live ?invocation (fun r ->
-      Render.header r ~suite:"mylib" ~tests:(List.length Fixtures.results) ~seed ();
+      Render.header r ~suite:"mylib"
+        ~tests:(List.length Fixtures.results)
+        ~seed ();
       List.iter
         (fun (res : Run.result) ->
           Render.begin_test r ~path:res.path;
@@ -1754,8 +1756,7 @@ let test_trailing_whitespace_hunks () =
   check_contains "span path: actual side is red" ~sub:"\027[31ma\027[0m" spans;
   let hunks =
     failure_block ~ansi:true
-      (Failure.equality ~expected:"keep\nexpected\n" ~actual:"keep\nactual\n"
-         ())
+      (Failure.equality ~expected:"keep\nexpected\n" ~actual:"keep\nactual\n" ())
   in
   check_contains "hunk path: expected side is green too"
     ~sub:"\027[32m- expected\027[0m" hunks;
@@ -2103,6 +2104,433 @@ let test_excerpt_project_root () =
     ~sub:"1 \u{2502} (*---"
     (failure_block ~excerpt:true f)
 
+(* The shared excerpt projection (Law 12)
+
+   One gutter renderer serves coverage and mutation. These pin the bytes
+   coverage has always printed — the three-column gutter, the number
+   right-aligned in at least four, the [│] rule, [·····] between regions,
+   trailing spaces stripped — and the marker's escape sequence opening at
+   column zero, which is where a green-vs-plain inconsistency would hide
+   from a stripped-output review. *)
+
+let excerpt_source =
+  String.concat ""
+    (List.init 12 (fun i -> Printf.sprintf "line %d  \n" (i + 1)))
+
+let test_shared_excerpt () =
+  let render ?ansi ?context ?marker ?margin ?number_width e =
+    with_renderer ?ansi (fun r ->
+        Render.excerpt r ?context ?marker ?margin ?number_width e)
+  in
+  let coverage =
+    {
+      Render.file = "lib/eval.ml";
+      heading = Some "75.0% (111/148)";
+      source = excerpt_source;
+      marked_lines = [ 2; 9 ];
+    }
+  in
+  check_string "coverage excerpt: heading, gutter, regions, separator"
+    ~expected:
+      "\n\
+       lib/eval.ml \u{2014} 75.0% (111/148)\n\n\
+      \      1 \u{2502} line 1\n\
+      \  \u{258c}   2 \u{2502} line 2\n\
+      \      3 \u{2502} line 3\n\
+      \   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}\n\
+      \      8 \u{2502} line 8\n\
+      \  \u{258c}   9 \u{2502} line 9\n\
+      \     10 \u{2502} line 10\n"
+    ~actual:(render coverage);
+  (* The regression this guards: styling that starts after the margin
+     looks identical once the escapes are stripped. *)
+  check_contains "coverage excerpt: the marker's escape opens at column zero"
+    ~sub:"\027[31m  \u{258c}\027[0m   2 \u{2502} line 2"
+    (render ~ansi:true coverage);
+  check_absent "coverage excerpt: no escape after the margin" ~sub:"  \027[31m"
+    (render ~ansi:true coverage);
+  (* A block whose head row already named the file, whose excerpt is its
+     marked line, and which sits under an indent: no heading, no marker
+     column, its own margin and its own number column. *)
+  check_string "in-block excerpt: no heading, no marker column"
+    ~expected:"      12 \u{2502} line 12\n"
+    ~actual:
+      (render ~context:0 ~marker:false ~margin:"      " ~number_width:2
+         {
+           Render.file = "lib/eval.ml";
+           heading = None;
+           source = excerpt_source;
+           marked_lines = [ 12 ];
+         });
+  check_string "excerpt: a marked line outside the source draws nothing"
+    ~expected:""
+    ~actual:
+      (render ~context:0
+         {
+           Render.file = "lib/eval.ml";
+           heading = None;
+           source = excerpt_source;
+           marked_lines = [ 99 ];
+         })
+
+(* The coverage detail block, escape for escape
+
+   Coverage's rendered bytes are frozen, and the shared projection above
+   had to leave every one of them where it was. The difference a review
+   over stripped output cannot see is *where* an escape opens: a marker
+   spelled [margin ^ red "▌"] prints the same glyphs as [red (margin ^
+   "▌")]. So this drives the real [coverage_report] over a real
+   collection and pins the plain bytes whole, then pins that colour adds
+   escapes and nothing else, and that the marker's escape opens at column
+   zero. *)
+
+let coverage_fixture_lines =
+  List.init 12 (fun i -> Printf.sprintf "let v%d = %d" (i + 1) (i + 1))
+
+let coverage_fixture_source = String.concat "\n" coverage_fixture_lines ^ "\n"
+
+(* The half-open byte extent of one 1-based line of the fixture. *)
+let coverage_fixture_extent n =
+  let rec go i offset = function
+    | [] -> invalid_arg "coverage_fixture_extent"
+    | line :: rest ->
+        if i = n then (offset, offset + String.length line)
+        else go (i + 1) (offset + String.length line + 1) rest
+  in
+  go 1 0 coverage_fixture_lines
+
+(* One instrumented file in the coverage runtime's own on-disk format,
+   parsed by the runtime rather than fabricated behind it. Four of the
+   eight points are never visited, and they fall into three runs of
+   lines — so the block carries two [·····] separators and a region
+   clipped against the top of the file. *)
+let coverage_fixture_collection ~file =
+  let points =
+    [ (1, 0); (3, 1); (5, 0); (6, 0); (8, 1); (10, 1); (11, 0); (12, 1) ]
+  in
+  let dump =
+    String.concat "\n"
+      ([
+         "windtrap-coverage-v3";
+         "1";
+         Printf.sprintf "%d %s" (String.length file) file;
+         string_of_int (List.length points);
+       ]
+      @ List.map
+          (fun (line, count) ->
+            let first, last = coverage_fixture_extent line in
+            Printf.sprintf "%d %d %d" first last count)
+          points)
+    ^ "\n"
+  in
+  match Windtrap_coverage.of_string dump with
+  | Ok (collection, _) -> collection
+  | Error _ -> failwith "the coverage fixture does not parse"
+
+let expected_coverage_report =
+  "coverage: 50.0% (4/8 points)\n\
+  \   50.0%  4/8  lib/fake.ml   uncovered: 1, 5-6, 11\n\n\
+   lib/fake.ml \u{2014} 50.0% (4/8)\n\n\
+  \  \u{258c}   1 \u{2502} let v1 = 1\n\
+  \      2 \u{2502} let v2 = 2\n\
+  \   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}\n\
+  \      4 \u{2502} let v4 = 4\n\
+  \  \u{258c}   5 \u{2502} let v5 = 5\n\
+  \  \u{258c}   6 \u{2502} let v6 = 6\n\
+  \      7 \u{2502} let v7 = 7\n\
+  \   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}\n\
+  \     10 \u{2502} let v10 = 10\n\
+  \  \u{258c}  11 \u{2502} let v11 = 11\n\
+  \     12 \u{2502} let v12 = 12\n"
+
+let test_coverage_report_bytes () =
+  let root = temp_dir () in
+  let file = "lib/fake.ml" in
+  Path_ops.mkdir_p (Filename.concat root "lib");
+  let oc = open_out (Filename.concat root file) in
+  output_string oc coverage_fixture_source;
+  close_out oc;
+  let collection = coverage_fixture_collection ~file in
+  let render ?ansi () =
+    with_renderer ?ansi (fun r ->
+        Render.coverage_report r ~source_roots:[ root ] ~mode:`Full collection)
+  in
+  let plain = render () and colored = render ~ansi:true () in
+  check_string "coverage report: the frozen bytes, full mode"
+    ~expected:expected_coverage_report ~actual:plain;
+  check_string "coverage report: colour adds escapes and nothing else"
+    ~expected:plain ~actual:(Text.strip_ansi colored);
+  check_contains "coverage report: the marker's escape opens at column zero"
+    ~sub:"\027[31m  \u{258c}\027[0m   5 \u{2502} let v5 = 5" colored;
+  check_absent "coverage report: the marker is not styled past the margin"
+    ~sub:"  \027[31m\u{258c}" colored;
+  check_contains "coverage report: the table percentage is styled with its pad"
+    ~sub:"  \027[31m 50.0%\027[0m  4/8  lib/fake.ml" colored;
+  check_string "coverage report: report mode stops before the excerpts"
+    ~expected:
+      "coverage: 50.0% (4/8 points)\n\
+      \   50.0%  4/8  lib/fake.ml   uncovered: 1, 5-6, 11\n"
+    ~actual:
+      (with_renderer (fun r ->
+           Render.coverage_report r ~source_roots:[ root ] ~mode:`Report
+             collection))
+
+(* The mutation report (RFC §Asking, byte for byte)
+
+   The survivor block is the ordinary failure block: the same 54-column
+   labelled rule, the same [  VERB  subject] head row, the same excerpt
+   row. The fixture is the RFC's worked example, with the seed token the
+   one the shared fixtures carry. *)
+
+let calc_source =
+  String.concat "\n"
+    (List.init 11 (fun i ->
+         match i + 1 with
+         | 9 -> "  | Sub -> a - b"
+         | 11 ->
+             "  | Div -> if b = 0 then invalid_arg \"division by zero\" else a \
+              / b"
+         | n -> Printf.sprintf "(* line %d *)" n))
+  ^ "\n"
+
+let witness test file line =
+  { Render.test; loc = Some { Loc.file; line; column = 0 } }
+
+let rfc_report =
+  {
+    Render.survivors =
+      [
+        {
+          Render.file = "lib/calc.ml";
+          line = 9;
+          col = 12;
+          rewrite = "add";
+          before = "a - b";
+          after = "a + b";
+          source = Some calc_source;
+          witnesses =
+            [
+              witness "calc \u{203a} sub of two positives" "test/test_calc.ml"
+                14;
+              witness "calc \u{203a} sub to zero" "test/test_calc.ml" 19;
+              witness "eval \u{203a} Sub node" "test/test_eval.ml" 31;
+            ];
+        };
+        {
+          Render.file = "lib/calc.ml";
+          line = 11;
+          col = 15;
+          rewrite = "neq";
+          before = "b = 0";
+          after = "b <> 0";
+          source = Some calc_source;
+          witnesses =
+            [
+              witness "calc \u{203a} div by zero raises" "test/test_calc.ml" 24;
+            ];
+        };
+      ];
+    survivors_total = 2;
+    unreached =
+      [
+        { Render.file = "lib/calc.ml"; lines = [ 52; 61 ] };
+        { Render.file = "lib/lexer.ml"; lines = [ 14; 96 ] };
+      ];
+    unreached_total = 4;
+    killed = 181;
+    total = 187;
+    duration = Some 104.;
+    seed = Some Fixtures.root;
+    siblings = false;
+  }
+
+let mutation_report ?ansi ?mode ?invocation m =
+  with_renderer ?ansi ?mode ?invocation (fun r -> Render.mutation_report r m)
+
+let expected_rfc_report =
+  {|
+─────────────────── survivors (2) ────────────────────
+
+  SURVIVED  lib/calc.ml:9:12:add    a - b  →  a + b
+       9 │   | Sub -> a - b
+
+    3 tests ran this line and none failed when it changed:
+      calc › sub of two positives      test/test_calc.ml:14
+      calc › sub to zero               test/test_calc.ml:19
+      eval › Sub node                  test/test_eval.ml:31
+
+    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
+    dismiss  ((a - b) [@mutate off "reason"])
+
+  SURVIVED  lib/calc.ml:11:15:neq   b = 0  →  b <> 0
+      11 │   | Div -> if b = 0 then invalid_arg "division by zero" else a / b
+
+    1 test ran this line and did not fail when it changed:
+      calc › div by zero raises        test/test_calc.ml:24
+
+    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:11:15:neq dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
+    dismiss  ((b = 0) [@mutate off "reason"])
+
+──────────────────────────────────────────────────────
+
+unreached (4) — no test evaluates these
+   lib/calc.ml    52, 61
+   lib/lexer.ml   14, 96
+
+mutants: 2 survived of 187 · 181 killed, 4 unreached in 1m44s (seed s1:7be1d2c904aa31f5)
+|}
+
+let arm_invocation =
+  `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe"
+
+let test_mutation_report () =
+  check_string "the worked survivor report, byte for byte"
+    ~expected:expected_rfc_report
+    ~actual:(mutation_report ~invocation:arm_invocation rfc_report);
+  (* A survivor is a failure block, and quiet keeps failure blocks and
+     the summary — a mutation report is both. *)
+  check_string "quiet keeps the whole report" ~expected:expected_rfc_report
+    ~actual:(mutation_report ~mode:`Quiet ~invocation:arm_invocation rfc_report);
+  (* Without a CLI the arm line mirrors the variable onto dune runtest,
+     as every other hint does — and carries the instrumentation flag,
+     because a build without the backend has no mutant to arm and the
+     line would name a command that cannot do what it says. *)
+  check_contains "the arm line follows the invocation"
+    ~sub:
+      "    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add dune runtest \
+       --instrument-with ppx_windtrap.mutate\n"
+    (mutation_report rfc_report)
+
+let test_mutation_colors () =
+  let out = mutation_report ~ansi:true ~invocation:arm_invocation rfc_report in
+  check_contains "SURVIVED wears the failure red, the identifier the bold"
+    ~sub:"  \027[31mSURVIVED\027[0m  \027[1mlib/calc.ml:9:12:add\027[0m" out;
+  check_contains "the witness location is faint"
+    ~sub:"\027[2mtest/test_calc.ml:14\027[0m" out;
+  check_contains "the survivor count is red, the unreached count yellow"
+    ~sub:
+      "mutants: \027[31m2 survived\027[0m of 187 \u{00b7} 181 killed, \
+       \027[33m4 unreached\027[0m in 1m44s"
+    out;
+  (* The section furniture is faint, as the failure rules are, and the
+     rows it introduces are not — pinned together so a style that leaked
+     from the heading onto the list fails here. *)
+  check_contains "the rules and the unreached heading are faint, the rows plain"
+    ~sub:
+      "\027[2munreached (4) \u{2014} no test evaluates these\027[0m\n\
+      \   lib/calc.ml    52, 61\n"
+    out;
+  check_contains "the labelled rule is faint" ~sub:"\027[2m\u{2500}" out;
+  (* No color in any hint, as everywhere else in the transcript — pinned
+     by the whole line, so a hint that went missing fails too. *)
+  let line ~sub =
+    match List.filter (has ~sub) (String.split_on_char '\n' out) with
+    | l :: _ -> l
+    | [] -> "\u{ab}no line matching " ^ sub ^ "\u{bb}"
+  in
+  check_string "the arm hint carries no color"
+    ~expected:
+      "    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:11:15:neq dune exec \
+       --instrument-with ppx_windtrap.mutate test/test_calc.exe"
+    ~actual:(line ~sub:"arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:11:15");
+  check_string "the dismiss hint carries no color"
+    ~expected:"    dismiss  ((b = 0) [@mutate off \"reason\"])"
+    ~actual:(line ~sub:"dismiss  ((b = 0)")
+
+let test_mutation_summary_forms () =
+  let clean =
+    {
+      rfc_report with
+      Render.survivors = [];
+      survivors_total = 0;
+      unreached = [];
+      unreached_total = 0;
+      killed = 187;
+      duration = Some 101.;
+    }
+  in
+  check_string "a report with nothing to say is one line"
+    ~expected:
+      "mutants: 0 survived of 187 \u{00b7} 187 killed in 1m41s (seed \
+       s1:7be1d2c904aa31f5)\n"
+    ~actual:(mutation_report clean);
+  check_string "zero terms are omitted, and so is an absent seed"
+    ~expected:"mutants: 0 survived of 0 in 0.0ms\n"
+    ~actual:
+      (mutation_report
+         {
+           clean with
+           Render.killed = 0;
+           total = 0;
+           duration = Some 0.;
+           seed = None;
+         });
+  check_string "a merge ran nothing and times nothing"
+    ~expected:"mutants: 0 survived of 187 \u{00b7} 187 killed\n"
+    ~actual:(mutation_report { clean with Render.duration = None; seed = None });
+  (* Siblings: this executable's view, pointing at the merge, in
+     coverage's wording. *)
+  check_contains "siblings scope the total and name the merge"
+    ~sub:
+      "mutants: 2 survived of 41 (this executable) \u{00b7} 37 killed, 4 \
+       unreached in 1m44s (seed s1:7be1d2c904aa31f5) \u{00b7} project: dune \
+       build @mutants\n"
+    (mutation_report
+       { rfc_report with Render.siblings = true; total = 41; killed = 37 })
+
+let test_mutation_sections () =
+  (* The cap is in the label so nobody thinks they saw everything. *)
+  let capped =
+    {
+      rfc_report with
+      Render.survivors = [ List.hd rfc_report.Render.survivors ];
+      survivors_total = 37;
+    }
+  in
+  check_contains "the cap is named in the rule label"
+    ~sub:"survivors (1 of 37) " (mutation_report capped);
+  (* Each finding stands alone: unreached without survivors, and
+     survivors without unreached. *)
+  let unreached_only =
+    { rfc_report with Render.survivors = []; survivors_total = 0; killed = 183 }
+  in
+  check_string "unreached alone: no rule, no blocks"
+    ~expected:
+      "\n\
+       unreached (4) \u{2014} no test evaluates these\n\
+      \   lib/calc.ml    52, 61\n\
+      \   lib/lexer.ml   14, 96\n\n\
+       mutants: 0 survived of 187 \u{00b7} 183 killed, 4 unreached in 1m44s \
+       (seed s1:7be1d2c904aa31f5)\n"
+    ~actual:(mutation_report unreached_only);
+  check_absent "survivors alone: no unreached heading" ~sub:"unreached"
+    (mutation_report ~invocation:arm_invocation
+       { rfc_report with Render.unreached = []; unreached_total = 0 });
+  (* Consecutive lines collapse into ranges, in coverage's dialect. *)
+  check_contains "unreached lines collapse into ranges"
+    ~sub:"   lib/calc.ml   52-54, 61\n"
+    (mutation_report
+       {
+         unreached_only with
+         Render.unreached =
+           [ { Render.file = "lib/calc.ml"; lines = [ 52; 53; 54; 61 ] } ];
+       });
+  (* An unreadable source drops the excerpt row and nothing else. *)
+  let sourceless =
+    {
+      rfc_report with
+      Render.survivors =
+        List.map
+          (fun (s : Render.survivor) -> { s with Render.source = None })
+          rfc_report.Render.survivors;
+    }
+  in
+  check_absent "an unreadable source drops the excerpt row" ~sub:"\u{2502}"
+    (mutation_report sourceless);
+  check_contains "an unreadable source keeps the head row"
+    ~sub:"  SURVIVED  lib/calc.ml:9:12:add"
+    (mutation_report sourceless)
+
 (* Tree-wide summary dialect
 
    The meta harness (test/unit/harness.ml) prints its one-liner by hand;
@@ -2134,7 +2562,8 @@ let test_summary_dialect () =
   in
   let transcript ~results ~duration =
     with_renderer ~ansi:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:(List.length results) ~seed:None ();
+        Render.header r ~suite:"mylib" ~tests:(List.length results) ~seed:None
+          ();
         List.iter (fun res -> Render.result r res) results;
         Render.finish r ~results ~duration ())
   in
@@ -2279,5 +2708,11 @@ let tests =
     test "terminal name sanitization (render/F-2)" test_name_sanitization;
     test "excerpts resolve against the project root (render/F-1)"
       test_excerpt_project_root;
+    test "the shared excerpt projection (Law 12)" test_shared_excerpt;
+    test "the coverage report's frozen bytes" test_coverage_report_bytes;
+    test "mutation: the worked survivor report" test_mutation_report;
+    test "mutation: the block wears the failure colours" test_mutation_colors;
+    test "mutation: summary line forms" test_mutation_summary_forms;
+    test "mutation: sections stand alone" test_mutation_sections;
     test "tree-wide summary dialect (harness parity)" test_summary_dialect;
   ]

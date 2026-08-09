@@ -288,6 +288,65 @@ val finish :
     {!Failure.tail} attached to its failures: the retained lines (at most
     [tail_lines]), what was omitted, and the tail's [log_path]. *)
 
+(** {1:excerpts Source excerpts}
+
+    The one gutter renderer, shared by every subsystem that shows source: the
+    right-aligned line number, the [│] rule, the source text, the region marker,
+    and the [·····] between regions live here and nowhere else. Two subsystems
+    may not own two copies of one renderer — coverage's file blocks and
+    mutation's survivor blocks are two projections of {!type:excerpt}, not two
+    layouts. *)
+
+type excerpt = {
+  file : string;
+      (** The source file the lines come from. Printed on the heading line and
+          nowhere else, so it is unused — and may be anything — when [heading]
+          is [None]. *)
+  heading : string option;
+      (** What follows ["<file> — "] on the heading line — coverage's styled
+          percentage and point counts. [None] prints no heading and no blank
+          lines around it, for an excerpt that sits inside a block whose head
+          row already named the file. *)
+  source : string;  (** The file's text, as read. *)
+  marked_lines : int list;
+      (** The 1-based lines the excerpt is about: what the regions are built
+          around, and what the marker column points at. Lines outside [source]
+          are ignored. *)
+}
+(** The type for one source-excerpt block: which lines of which file to show,
+    and what to call them. Subsystem-neutral — the data is the caller's, the
+    layout is this module's. *)
+
+val excerpt :
+  t ->
+  ?context:int ->
+  ?marker:bool ->
+  ?margin:string ->
+  ?number_width:int ->
+  excerpt ->
+  unit
+(** [excerpt t e] prints [e]'s heading, when it has one, then one region per run
+    of [e.marked_lines], each line as [<margin><marker><number> │ <text>] with
+    trailing spaces stripped, and [·····] between regions. With:
+
+    - [context], the lines shown around each marked line. Defaults to [1]; [0]
+      shows the marked lines alone.
+    - [marker], whether marked lines carry the red [▌] gutter. Defaults to
+      [true]. Pass [false] for an excerpt that {e is} its marked lines, where a
+      marker on every row would mark nothing; the column then disappears rather
+      than printing blank.
+    - [margin], the left margin every row carries. Defaults to ["  "], which
+      with the marker column is coverage's three-column gutter; a block that
+      indents (a survivor's excerpt sits under a four-space indent) passes its
+      own.
+    - [number_width], the width the line numbers are right-aligned in. Defaults
+      to the widest number in this excerpt, floored at [4]. A caller aligning
+      several excerpts against each other passes the width it computed across
+      all of them.
+
+    A marked line outside [source] contributes no region; an excerpt left with
+    no region prints its heading, if it has one, and nothing else. *)
+
 (** {1:coverage Coverage}
 
     The coverage detail projection: one layout serving the in-process
@@ -327,6 +386,114 @@ val coverage_report :
     Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
     summary, and the coverage report is neither. The caller prints it after
     {!finish}, having withheld [finish]'s [coverage] argument. *)
+
+(** {1:mutation Mutation}
+
+    The mutation report: the survivor blocks, the unreached list, and the one
+    summary line. One layout serving the mutation loop's in-process report and,
+    through the facade's [Private], the [windtrap mutate] command over merged
+    verdict files — the interactive report and the CI report cannot drift apart.
+
+    A survivor is a failure block, not a new vocabulary: the same labelled rule,
+    the same [  VERB  subject] head row, the same excerpt row, and red, because
+    it is a defect report about a named test. Presentation only — the ordering,
+    the cap, the witness lists and every count are the loop's. *)
+
+type witness = {
+  test : string;
+      (** The test's full path, as {!Test_tree.path_to_string} spells it
+          ([calc › sub of two positives]). *)
+  loc : Loc.t option;  (** Where the test is declared, when it is known. *)
+}
+(** The type for survivor witnesses: a test that evaluated the mutated line and
+    did not fail when it changed. *)
+
+type survivor = {
+  file : string;  (** The mutated source file. *)
+  line : int;  (** 1-based line of the mutated expression. *)
+  col : int;  (** 0-based column of the mutated expression. *)
+  rewrite : string;  (** The replacement's name ([add], [neq], …). *)
+  before : string;  (** The original expression's source text. *)
+  after : string;  (** The armed expression's source text. *)
+  source : string option;
+      (** The mutated file's text, when the loop could read it; the excerpt row
+          is dropped when it could not, as every excerpt is best-effort. *)
+  witnesses : witness list;
+      (** The tests that ran the line and did not fail. Never empty for a
+          verdict — a mutant no test evaluated is {e unreached}, a different
+          finding with a different remedy — so the block always names someone to
+          go and strengthen. Complete, never truncated: the sentence above the
+          list counts this list, so a caller that dropped witnesses would print
+          a count no reader could reconcile with what follows it. *)
+}
+(** The type for one survived mutant, as the report shows it. *)
+
+type unreached = {
+  file : string;  (** The source file. *)
+  lines : int list;  (** Its unreached mutants' 1-based lines, sorted. *)
+}
+(** The type for one line of the unreached list: the mutants of one file that no
+    test evaluates. *)
+
+type mutation = {
+  survivors : survivor list;
+      (** The survivor blocks to print, in the order they print — ordered by
+          witness count descending and already capped by the loop. *)
+  survivors_total : int;
+      (** How many mutants survived. Greater than [List.length survivors] when
+          the cap dropped blocks, and the label says so. *)
+  unreached : unreached list;  (** The unreached list, ordered by file. *)
+  unreached_total : int;
+      (** How many mutants are unreached. Not the number of lines: one line can
+          carry several. *)
+  killed : int;  (** How many mutants were killed. *)
+  total : int;  (** The population: every mutant in the catalogue. *)
+  duration : float option;
+      (** The mutation run's wall-clock seconds, [None] for a merge, which ran
+          nothing. *)
+  seed : Seed.seed option;  (** The run's root seed, when it had one. *)
+  siblings : bool;
+      (** [true] when other executables' verdict files sat beside this one's:
+          the numbers are then one executable's view of the code it links, and
+          the summary line scopes itself and points at the merge instead of
+          posing as the total. *)
+}
+(** The type for a whole mutation report. Every field is measured, not derived
+    here: this module orders nothing and counts nothing. *)
+
+val mutation_report : t -> mutation -> unit
+(** [mutation_report t m] prints [m]:
+
+    - the survivor section, when [m.survivors] is not empty — the labelled rule
+      ([survivors (2)], or [survivors (10 of 37)] when the cap dropped blocks),
+      then one block per survivor separated by a blank line, then the closing
+      rule. A block is the head row
+      ([  SURVIVED  lib/calc.ml:9:12:add    a - b  →  a + b], the identifier
+      column aligned across the report), the excerpt row for the mutated line,
+      the sentence that is the product
+      ([3 tests ran this line and none failed when it changed:], singular
+      [1 test ran this line and did not fail when it changed:]) with one
+      indented line per witness — name and declaration site, in columns aligned
+      across the report — and the [arm] and [dismiss] lines. [arm] is the
+      command that arms this one mutant, spelled from the [invocation] and from
+      the runtime's own variable name — under [`Mirrors] it carries
+      [--instrument-with ppx_windtrap.mutate], because a build without the
+      backend has no mutant to arm; [dismiss] is the attribute to paste,
+      [((a - b) [@mutate off "reason"])];
+    - the unreached list, when [m.unreached] is not empty — a heading carrying
+      the mutant count ([unreached (4) — no test evaluates these]) and one
+      compact line per file with its lines as ranges, in the shape coverage's
+      per-file report uses;
+    - the summary line
+      ([mutants: 2 survived of 187 · 181 killed, 4 unreached in 1m44s (seed
+        s1:…)]). Terms that are zero are omitted, the way a passing suite prints
+      no failure count, so a report with nothing to say is {e one} line. Under
+      [m.siblings] the total is scoped and the merge named
+      ([mutants: 2 survived of 41 (this executable) · … · project: dune build
+        @mutants]), in coverage's wording rather than a second one.
+
+    Prints in every mode, [`Quiet] included: quiet keeps the failure blocks and
+    the summary, and a mutation report is both. *)
 
 (** {1:durations Durations} *)
 

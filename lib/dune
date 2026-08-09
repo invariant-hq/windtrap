@@ -1,12 +1,14 @@
 ; windtrap_coverage is the coverage seam's data source: the runner
-; snapshots in-process coverage at run end for the inline summary. The
-; dependency points downward only — windtrap_coverage never links
-; windtrap.
+; snapshots in-process coverage at run end for the inline summary.
+; windtrap_mutate is the mutation seam's: Render spells mutant
+; identifiers and the arming variable with the runtime's own functions,
+; so the report and the runtime cannot disagree about what to type. Both
+; dependencies point downward only — neither runtime links windtrap.
 
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix clock windtrap_coverage)
+ (libraries unix clock windtrap_coverage windtrap_mutate)
  (foreign_stubs
   (language c)
   (names capture_stubs)))
