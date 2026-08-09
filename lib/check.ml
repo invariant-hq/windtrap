@@ -88,12 +88,42 @@ let not_contains ?pos ?msg ~sub haystack =
         ~claim:(Pp.str "string not containing %S" sub)
         ~needle:sub ~haystack ()
 
+(* Membership is containment over a witnessed element type, so it cannot
+   reuse [Failure.Containment] — that payload is byte offsets into a
+   haystack. The claim sentence names the element, the value is the list
+   the reader has to look at. *)
+let mem ?pos ?msg t x xs =
+  if not (List.exists (Testable.equal t x) xs) then
+    fail_predicate ?pos ?msg
+      ~claim:(Pp.str "a list containing %s" (Testable.to_string t x))
+      (Testable.to_string (Testable.list t) xs)
+
 (* Predicates *)
 
 let satisfies ?pos ?msg t pred v =
   if not (pred v) then
     fail_predicate ?pos ?msg ~claim:"value satisfying the predicate"
       (Testable.to_string t v)
+
+(* Options
+
+   The shape assertions, for when the value is not wanted: a witness would
+   be a printer and an equality for a type these never compare, so they take
+   the same optional printer the unwrapping verbs do — "render the branch
+   you did not want" — and nothing more. *)
+
+let is_none ?pos ?msg ?pp = function
+  | None -> ()
+  | Some v ->
+      let rendered =
+        match pp with Some pp -> Pp.to_string pp v | None -> abstract
+      in
+      fail_equality ?pos ?msg ~expected:"None" ~actual:("Some " ^ rendered) ()
+
+(* No [?pp]: the failing side is [None], which has nothing to render. *)
+let is_some ?pos ?msg = function
+  | Some _ -> ()
+  | None -> fail_equality ?pos ?msg ~expected:"Some _" ~actual:"None" ()
 
 (* Unwrapping *)
 

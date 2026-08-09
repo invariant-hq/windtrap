@@ -17,6 +17,17 @@ rendered output, serialized documents and logs diff line by line. Equality is
 unchanged, byte for byte: trailing whitespace and a missing final newline
 still fail, and the diff marks them.
 
+**`is_none`, `is_some`, and `mem` — three verbs, nineteen in all.** Asserting
+that an option is `None` meant `equal (option t) None x`, which demands a
+witness — a printer *and* an equality — for a type the assertion never
+compares; call sites degenerated to `equal (option pass) None x` when no
+printer was at hand. `is_none ?pp` takes the optional printer the `require_*`
+verbs already take ("render the branch you did not want") and nothing else.
+`is_some` is the presence-only assertion, so checking presence no longer means
+discarding a `require_some` result. `mem t x xs` is containment one type up
+from `contains`: the failure shows the element you wanted and the list you got,
+where `is_true (List.mem x xs)` showed `false`.
+
 **`Exn.sys_error`.** `raises` diffs three exceptions by message —
 `Invalid_argument`, `Failure`, `Sys_error` — but `Exn` offered predicates for
 only the first two, so `raises_match` on a `Sys_error` message needed a

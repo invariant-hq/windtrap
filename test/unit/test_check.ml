@@ -290,6 +290,59 @@ let tests =
                 check "not_contains: haystack_length is the full byte length"
                   (haystack_length = String.length haystack)
             | None -> check "not_contains: the occurrence is recorded" false));
+    test "mem" (fun () ->
+        let calls = ref 0 in
+        passes "mem: pass" (fun () -> Check.mem (counting_int calls) 2 [ 1; 2 ]);
+        check "mem: pass path never renders" (!calls = 0);
+        passes "mem: the witness equality decides, not (=)" (fun () ->
+            Check.mem (Testable.float 0.5) 1.0 [ 9.0; 1.2 ]);
+        predicate_payload "mem: fail payload"
+          (fun () -> Check.mem Testable.int 42 [ 2; 3; 5 ])
+          (fun (claim, value) ->
+            check_string "mem: claim names the element"
+              ~expected:"a list containing 42" ~actual:claim;
+            check_string "mem: value is the whole list" ~expected:"[2; 3; 5]"
+              ~actual:value);
+        predicate_payload "mem: empty list still shows both sides"
+          (fun () -> Check.mem Testable.string "a" [])
+          (fun (claim, value) ->
+            check_string "mem: claim renders the element with the witness"
+              ~expected:{|a list containing "a"|} ~actual:claim;
+            check_string "mem: empty list renders as []" ~expected:"[]"
+              ~actual:value));
+    test "is_none and is_some" (fun () ->
+        passes "is_none: pass" (fun () -> Check.is_none None);
+        passes "is_some: pass" (fun () -> Check.is_some (Some 1));
+        (* The point of the verb: no witness is demanded for a type it
+           never compares, and the rejected value still prints. *)
+        equality_payload "is_none: fail renders Some v with ?pp"
+          (fun () -> Check.is_none ~pp:Format.pp_print_int (Some 7))
+          (fun (expected, actual, not_) ->
+            check_string "is_none: expected side" ~expected:"None"
+              ~actual:expected;
+            check_string "is_none: actual side names the constructor"
+              ~expected:"Some 7" ~actual;
+            check "is_none: not a negated equality" (not not_));
+        equality_payload "is_none: fail without ?pp"
+          (fun () -> Check.is_none (Some 7))
+          (fun (_, actual, _) ->
+            check_string "is_none: rejected value is <abstract>"
+              ~expected:"Some <abstract>" ~actual);
+        let calls = ref 0 in
+        let counting ppf n =
+          incr calls;
+          Format.pp_print_int ppf n
+        in
+        passes "is_none: pass path never renders" (fun () ->
+            Check.is_none ~pp:counting None);
+        check "is_none: printer stayed unused" (!calls = 0);
+        equality_payload "is_some: fail payload"
+          (fun () -> Check.is_some (None : int option))
+          (fun (expected, actual, _) ->
+            (* Same payload as [require_some]'s: one wording for one claim. *)
+            check_string "is_some: expected side" ~expected:"Some _"
+              ~actual:expected;
+            check_string "is_some: actual side" ~expected:"None" ~actual));
     test "satisfies" (fun () ->
         let calls = ref 0 in
         passes "satisfies: pass" (fun () ->

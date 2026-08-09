@@ -5,7 +5,7 @@
 
 (** The assertion verbs.
 
-    Sixteen verbs and the {!Exn} predicates, each verb raising one structured
+    Nineteen verbs and the {!Exn} predicates, each verb raising one structured
     failure: a failing verb constructs a single {!Failure.t} — a typed kind, an
     optional location, the [?msg] annotation when given — and raises
     {!Failure.Check_failure}. Verbs never print, never diff, and never touch run
@@ -80,6 +80,16 @@ val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
     [sub], the byte offset of its first occurrence, and a bounded excerpt of [s]
     around that occurrence. *)
 
+val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
+(** [mem t x xs] is [()] iff [xs] has an element equal to [x] under [t].
+    Otherwise it raises {!Failure.Check_failure} with a {!Failure.Predicate}
+    payload whose claim names [x] and whose value is [xs], both rendered by
+    [t]'s printer — the data an [is_true (List.mem x xs)] would have thrown
+    away. Elements are rendered only on failure.
+
+    Membership over bytes is {!contains}; this is membership over a witnessed
+    element type, so the two cannot share a payload. *)
+
 (** {1:predicates Predicates} *)
 
 val satisfies :
@@ -90,6 +100,25 @@ val satisfies :
     [t]'s equality is not consulted. [pred] must be total; it runs on every
     call, the printer only on failure. Use [?msg] to name the predicate:
     [satisfies ~msg:"positive" Testable.int (fun n -> n > 0) n]. *)
+
+(** {1:options Options}
+
+    The shape assertions, for when the value is not wanted. They take the same
+    optional printer the unwrapping verbs do rather than a {!Testable.t}: a
+    witness carries an equality these never consult, and demanding one for a
+    type the assertion does not inspect is what drives call sites to
+    [equal (option pass) None x]. *)
+
+val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
+(** [is_none o] is [()] iff [o] is [None]. On [Some v] it raises
+    {!Failure.Check_failure} comparing [None] against [Some <v>], with [v]
+    rendered by [pp] when given and as [<abstract>] otherwise; the printer runs
+    only on failure. *)
+
+val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
+(** [is_some o] is [()] iff [o] is [Some _] — {!require_some} for callers that
+    want the assertion and not the value, instead of discarding it. There is no
+    [?pp]: the failing side is [None], which has nothing to render. *)
 
 (** {1:unwrapping Unwrapping}
 

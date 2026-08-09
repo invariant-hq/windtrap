@@ -6,7 +6,7 @@
 (** One library for all your OCaml tests.
 
     Windtrap runs unit, property, and snapshot tests from one flat surface:
-    declare tests with {!test} and {!group}, assert with the sixteen verbs
+    declare tests with {!test} and {!group}, assert with the nineteen verbs
     ({!equal}, {!require_some}, {!raises}, ...), and hand the suite to {!run}:
 
     {[
@@ -218,7 +218,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:assertions Assertions}
 
-    Sixteen verbs and the {!Exn} predicates. Each verb raises one structured
+    Nineteen verbs and the {!Exn} predicates. Each verb raises one structured
     failure that the runner catches at the test boundary; the failure records
     the call site ([?pos], else a best-effort call-stack capture) and the
     optional [?msg] annotation. Expected precedes actual, always. An assertion
@@ -246,6 +246,25 @@ val satisfies :
     printer — the data a bare {!is_true} would hide — and [?msg] names the
     predicate: [satisfies ~msg:"positive" int (fun n -> n > 0) n]. [pred] must
     be total; the printer runs only on failure. *)
+
+val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
+(** [mem t x xs] asserts that [xs] has an element equal to [x] under [t]. The
+    failure prints the element it wanted and the whole list — the data an
+    [is_true (List.mem x xs)] would have thrown away. For a byte substring of a
+    string, use {!contains}. *)
+
+val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
+(** [is_none o] asserts that [o] is [None]. On [Some v] the failure renders [v]
+    with [pp] when given and as [<abstract>] otherwise.
+
+    It takes a printer, not an ['a] {!type:testable}: the assertion never
+    compares the value, and demanding a witness for a type it does not inspect
+    is what turns call sites into [equal (option pass) None x]. *)
+
+val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
+(** [is_some o] asserts that [o] is [Some _] — {!require_some} for callers that
+    want the assertion and not the value. No [?pp]: the failing side is [None].
+*)
 
 val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] asserts that [s] contains [sub] as a byte substring (the

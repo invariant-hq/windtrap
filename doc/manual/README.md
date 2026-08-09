@@ -11,7 +11,7 @@ are independent — go where your suite needs you:
 | Chapter | What it covers |
 | --- | --- |
 | [Getting started](getting-started.md) | Install, first suite, first failure — five minutes |
-| [Assertions](assertions.md) | The sixteen verbs, testables, `Exn` predicates, failure output |
+| [Assertions](assertions.md) | The nineteen verbs, testables, `Exn` predicates, failure output |
 | [Property testing](property-testing.md) | `prop`, `Gen`, shrinking, seeds and replay, distribution checks |
 | [Snapshots and expect tests](snapshots-and-expect.md) | File baselines, `[%expect]` + `dune promote`, adopting ppx_expect |
 | [Resources and structure](resources-and-structure.md) | `bracket`, `fixture`, temp paths, `cases`, tags, focus, `xfail` |

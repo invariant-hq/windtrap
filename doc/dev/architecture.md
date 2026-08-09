@@ -54,7 +54,7 @@ structure the witness waist deliberately does not carry), `Diff` (diff
 *data*: Myers hunks, refinement spans, and the element-grain alignment
 over `Rendered_seq`'s output; no styling).
 
-Verbs and engines: `Check` (the sixteen verbs, pure, no run-state
+Verbs and engines: `Check` (the nineteen verbs, pure, no run-state
 dependency), `Gen`, `Property` (the case loop: examples-first, derived
 per-case seeds, discard/give-up, shrink search, collect tables).
 

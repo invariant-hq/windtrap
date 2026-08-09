@@ -1,6 +1,6 @@
 # Assertions
 
-Sixteen verbs, one design rule: a failure must print the data that
+Nineteen verbs, one design rule: a failure must print the data that
 would let you fix the bug without adding a `Printf`. Every checking
 verb takes optional `?msg` (an annotation shown in the report) and
 `?pos` (a `__POS__` override for the automatic call-stack location);
@@ -141,6 +141,35 @@ there is one, instead of printing `false`:
 contains ~sub:"user=alice" log;
 not_contains ~sub:"secret" log
 ```
+
+`mem` is the same idea one type up — membership in a list, through a
+witness, so the failure shows the element you wanted and the list you
+got rather than a bare `false`:
+
+```ocaml
+mem int 42 [ 2; 3; 5 ]
+```
+
+```
+expected  a list containing 42
+actual    [2; 3; 5]
+```
+
+## Options
+
+Asserting an option's *shape* needs no witness: `is_none` and
+`is_some` never compare the value, so they take the same optional
+printer the `require_*` verbs do — print the branch you did not want:
+
+```ocaml
+is_none ~pp:User.pp (Store.find store "nobody");
+is_some (Store.find store "alice")
+```
+
+Without `~pp` the rejected value renders as `<abstract>`, which is
+often all you need. Reach for `require_some` when you want the value
+too; `is_some` exists so that asserting presence alone does not mean
+discarding a result.
 
 ## Exceptions
 
