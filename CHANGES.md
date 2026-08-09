@@ -17,6 +17,14 @@ rendered output, serialized documents and logs diff line by line. Equality is
 unchanged, byte for byte: trailing whitespace and a missing final newline
 still fail, and the diff marks them.
 
+**`WINDTRAP_JUNIT`, `WINDTRAP_BAIL`, `WINDTRAP_FAILED`, `WINDTRAP_OUTPUT`.**
+Under `dune runtest` the environment mirrors *are* the CLI, and these four
+flags had none — so `--junit`, which the CI guide recommends, could not be
+reached from the command CI actually runs, and neither could the
+`--bail`/`--failed` feedback loop. They mirror like the rest, with the same
+precedence (programmatic > CLI > env > default) and the same rule for a
+malformed value: a usage error naming the *variable*, never a silent default.
+
 **`is_none`, `is_some`, and `mem` — three verbs, nineteen in all.** Asserting
 that an option is `None` meant `equal (option t) None x`, which demands a
 witness — a printer *and* an equality — for a type the assertion never

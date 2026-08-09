@@ -251,7 +251,7 @@ let table =
       long = "--failed";
       arg = Flag (fun acc -> { acc with failed_only = Some true });
       doc = "Rerun only the last run's failures";
-      mirror = None;
+      mirror = mirrored "WINDTRAP_FAILED" Truthy (fun p -> p.failed_only = None);
     };
     {
       short = Some "-l";
@@ -272,7 +272,7 @@ let table =
       long = "--bail";
       arg = set_positive_int (fun acc n -> { acc with bail = Some n });
       doc = "Stop after N failures";
-      mirror = None;
+      mirror = mirrored "WINDTRAP_BAIL" trimmed (fun p -> p.bail = None);
     };
     {
       short = None;
@@ -398,7 +398,7 @@ let table =
               (fun ~source:_ acc value -> Ok { acc with junit = Some value });
           };
       doc = "Also write a JUnit XML report to PATH";
-      mirror = None;
+      mirror = mirrored "WINDTRAP_JUNIT" verbatim (fun p -> p.junit = None);
     };
     {
       short = None;
@@ -449,7 +449,7 @@ let table =
               (fun ~source:_ acc value -> Ok { acc with log_dir = Some value });
           };
       doc = "Root directory for capture logs";
-      mirror = None;
+      mirror = mirrored "WINDTRAP_OUTPUT" verbatim (fun p -> p.log_dir = None);
     };
     {
       short = Some "-V";

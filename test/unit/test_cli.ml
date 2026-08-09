@@ -459,6 +459,55 @@ let () =
   check "WINDTRAP_EXCLUDE" (config.Run.exclude = Some "skipme");
   clear_env ()
 
+(* The mirrors that only existed as flags. Under `dune runtest` the mirrors
+   *are* the CLI, so a flag without one is a documented feature no dune user
+   can reach — `--junit`, which the CI guide recommends, most of all. *)
+let () =
+  reg "env-only settings: the CI and feedback-loop mirrors" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_BAIL" "3";
+  Unix.putenv "WINDTRAP_FAILED" "1";
+  Unix.putenv "WINDTRAP_JUNIT" "reports/junit.xml";
+  Unix.putenv "WINDTRAP_OUTPUT" "custom-logs";
+  let config = resolve Cli.empty in
+  check "WINDTRAP_BAIL" (config.Run.bail = Some 3);
+  check "WINDTRAP_FAILED" config.Run.failed_only;
+  check "WINDTRAP_JUNIT" (config.Run.junit = Some "reports/junit.xml");
+  (* Absolutized like [-o], for the same reason: a test that chdirs must
+     not move the rest of the run's logs. *)
+  check "WINDTRAP_OUTPUT"
+    (Filename.is_relative config.Run.log_dir = false
+    && Filename.basename config.Run.log_dir = "custom-logs");
+  clear_env ()
+
+let () =
+  reg "the new mirrors lose to their flags" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_BAIL" "3";
+  Unix.putenv "WINDTRAP_JUNIT" "from-env.xml";
+  let config =
+    resolve { Cli.empty with Cli.bail = Some 1; junit = Some "from-cli.xml" }
+  in
+  check "flag beats WINDTRAP_BAIL" (config.Run.bail = Some 1);
+  check "flag beats WINDTRAP_JUNIT" (config.Run.junit = Some "from-cli.xml");
+  (* A malformed mirror is a usage error naming the *variable* — the
+     WINDTRAP_PROP_COUNT rule, not a silent default. *)
+  clear_env ();
+  Unix.putenv "WINDTRAP_BAIL" "0";
+  (match Cli.resolve Cli.empty with
+  | Ok _ -> check "WINDTRAP_BAIL=0 is rejected" false
+  | Error e ->
+      check "the error names the variable, not the flag"
+        (contains "WINDTRAP_BAIL" (Cli.error_message e)));
+  (* A losing layer stays unread: a valid flag shadows a malformed mirror. *)
+  Unix.putenv "WINDTRAP_BAIL" "not-a-number";
+  (match Cli.resolve { Cli.empty with Cli.bail = Some 2 } with
+  | Ok config -> check "a valid flag shadows a malformed mirror" (config.Run.bail = Some 2)
+  | Error e ->
+      check ("malformed mirror leaked past the flag: " ^ Cli.error_message e)
+        false);
+  clear_env ()
+
 let () =
   reg "parsed values land in the config" @@ fun () ->
   clear_env ();

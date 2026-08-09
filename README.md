@@ -157,10 +157,11 @@ automatic GitHub Actions annotations on failures.
   -h, --help               Print this help and exit
 ```
 
-Selection, seed, snapshot, and output options have `WINDTRAP_*`
-environment mirrors — under `dune runtest` the mirrors *are* the CLI
-(e.g. `WINDTRAP_FILTER=parser dune runtest`). Run with `--help` for the
-full inventory.
+Every option that changes what a run does or reports has a `WINDTRAP_*`
+environment mirror — under `dune runtest` the mirrors *are* the CLI
+(e.g. `WINDTRAP_FILTER=parser dune runtest`, or
+`WINDTRAP_JUNIT=_build/junit.xml dune runtest` in CI). Run with
+`--help` for the full inventory.
 
 ## Documentation
 

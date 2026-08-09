@@ -41,7 +41,7 @@ inventory. The ones that matter daily:
 | `--tag L` / `--exclude-tag L` | `WINDTRAP_TAG` / `WINDTRAP_EXCLUDE_TAG` | select by tag (repeatable; env takes commas) |
 | `--quick` | — | skip `slow`-tagged tests |
 | `-x` / `--bail N` | — | stop after the first / N failures |
-| `--failed` | — | rerun only the last run's failures |
+| `--failed` | `WINDTRAP_FAILED` | rerun only the last run's failures |
 | `-l`, `--list` | — | list the selection without running |
 | `--seed s1:…` | `WINDTRAP_SEED` | pin the root seed (replay) |
 | `--prop-count N` | `WINDTRAP_PROP_COUNT` | generated cases per property |
@@ -53,7 +53,10 @@ inventory. The ones that matter daily:
 | `-s`, `--stream` | `WINDTRAP_STREAM` | stream output instead of capturing |
 | `-v`, `--verbose` | `WINDTRAP_VERBOSE` | one status line per test |
 | `-q`, `--quiet` | `WINDTRAP_QUIET` | failures and summary only |
-| `--color MODE` / `--junit PATH` | `WINDTRAP_COLOR` (color) | color and JUnit output |
+| `-x`, `--fail-fast` / `--bail N` | `WINDTRAP_BAIL` | stop after the first / after N failures |
+| `--color MODE` | `WINDTRAP_COLOR` | color output |
+| `--junit PATH` | `WINDTRAP_JUNIT` | also write a JUnit XML report |
+| `-o`, `--output DIR` | `WINDTRAP_OUTPUT` | root directory for capture logs |
 
 Precedence is programmatic (`?argv`) > CLI > environment > default.
 A test's path is its group names then its own, joined with `" › "`;
@@ -239,8 +242,10 @@ update requests refuse to start before anything executes
 (`WINDTRAP_ALLOW_FOCUS=1` / `WINDTRAP_UPDATE=force` override
 deliberately).
 
-- **JUnit**: `--junit PATH` also writes a JUnit XML report — point
-  your CI's test-report ingestion at it.
+- **JUnit**: `--junit PATH` (`WINDTRAP_JUNIT`) also writes a JUnit
+  XML report — point your CI's test-report ingestion at it. Under
+  `dune runtest`, which is where most CI runs a suite from, the mirror
+  is how you reach it: `WINDTRAP_JUNIT=_build/junit.xml dune runtest`.
 - **GitHub Actions**: under GitHub Actions (`CI` and `GITHUB_ACTIONS`
   both set, as Actions sets them), failures are additionally emitted
   as workflow annotations — they appear inline on the PR diff with no
