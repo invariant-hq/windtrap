@@ -30,13 +30,12 @@ let fail_predicate ?pos ?msg ~claim value =
     (Failure.Check_failure
        (Failure.predicate ?loc:(Loc.resolve ?pos ()) ?msg ~claim value))
 
-let fail_raise ?pos ?msg ?expected ?actual ?predicate ?backtrace
-    ?same_constructor ?expected_message ?actual_message () =
+let fail_raise ?pos ?msg ?expected ?actual ?predicate ?backtrace ?message_diff
+    () =
   raise
     (Failure.Check_failure
        (Failure.raised ?loc:(Loc.resolve ?pos ()) ?msg ?expected ?actual
-          ?predicate ?backtrace ?same_constructor ?expected_message
-          ?actual_message ()))
+          ?predicate ?backtrace ?message_diff ()))
 
 let abstract = "<abstract>"
 
@@ -134,21 +133,31 @@ let require_match ?pos ?msg ?pp extract v =
    assertion failure and report "wrong exception" instead of the real
    error (v1's guard). *)
 
-(* The exception's message payload, for the stdlib's string-carrying
-   exceptions — the enrichment that lets renderers diff messages instead of
-   near-identical renderings. ([Stdlib.Failure] is qualified for the reader:
-   windtrap's [Failure] module shadows only the module namespace, not the
-   exception constructor.) *)
+(* The exception's constructor name and message payload, for the stdlib's
+   string-carrying exceptions — the only ones whose message a renderer can
+   diff. ([Stdlib.Failure] is qualified for the reader: windtrap's [Failure]
+   module shadows only the module namespace, not the exception
+   constructor.) *)
 let exn_message = function
-  | Invalid_argument m | Stdlib.Failure m | Sys_error m -> Some m
+  | Invalid_argument m -> Some ("Invalid_argument", m)
+  | Stdlib.Failure m -> Some ("Failure", m)
+  | Sys_error m -> Some ("Sys_error", m)
+  | _ -> None
+
+(* The message diff, when the two exceptions differ only in their message:
+   here, where both exceptions are in hand, the constructor is named rather
+   than recovered from a rendering. *)
+let message_diff expected_exn raised =
+  match (exn_message expected_exn, exn_message raised) with
+  | Some (constructor, expected_message), Some (ctor, actual_message)
+    when String.equal constructor ctor
+         && not (String.equal expected_message actual_message) ->
+      Some { Failure.constructor; expected_message; actual_message }
   | _ -> None
 
 let raises ?pos ?msg expected_exn fn =
   match fn () with
-  | _ ->
-      fail_raise ?pos ?msg
-        ~expected:(Printexc.to_string expected_exn)
-        ?expected_message:(exn_message expected_exn) ()
+  | _ -> fail_raise ?pos ?msg ~expected:(Printexc.to_string expected_exn) ()
   | exception
       ((Failure.Check_failure _ | Failure.Skip_test _ | Failure.Timeout _) as e)
     ->
@@ -156,17 +165,12 @@ let raises ?pos ?msg expected_exn fn =
   | exception raised ->
       let backtrace = Failure.recorded_backtrace () in
       if raised <> expected_exn then
-        (* Equality already ruled out, so same constructor means "right
-           exception, wrong payload" — recorded for the message diff. *)
-        let same_constructor =
-          Printexc.exn_slot_id raised = Printexc.exn_slot_id expected_exn
-        in
         fail_raise ?pos ?msg
           ~expected:(Printexc.to_string expected_exn)
           ~actual:(Printexc.to_string raised)
-          ?backtrace ~same_constructor
-          ?expected_message:(exn_message expected_exn)
-          ?actual_message:(exn_message raised) ()
+          ?backtrace
+          ?message_diff:(message_diff expected_exn raised)
+          ()
 
 let raises_match ?pos ?msg pred fn =
   match fn () with
@@ -180,7 +184,7 @@ let raises_match ?pos ?msg pred fn =
       if not (pred raised) then
         fail_raise ?pos ?msg ~predicate:true
           ~actual:(Printexc.to_string raised)
-          ?backtrace ?actual_message:(exn_message raised) ()
+          ?backtrace ()
 
 module Exn = struct
   (* The message constraint resolves once, when the predicate is built:

@@ -388,12 +388,13 @@ val pp_failure :
       ([(excerpt: bytes 0-8191 of a 20006-byte haystack)]). The claim
       description never prints: the verdict says more than the sentence would;
     - raise: expected and raised exceptions, and the recorded backtrace. When
-      both exceptions share their constructor and both carry a message payload
-      ({!Failure.kind}), the block diffs the {e messages} instead of repeating
-      the constructor ([raised Invalid_argument with the wrong message:]
-      followed by the two quoted messages with changed spans highlighted, as for
-      equality). A payload with no expected side splits on its [predicate] flag:
-      a [raises_match] rejection renders
+      the payload carries a {!Failure.message_diff} — the failure site decided
+      the two exceptions differ only in their message — the block diffs the
+      {e messages} instead of repeating the constructor
+      ([raised Invalid_argument with the wrong message:] followed by the two
+      quoted messages with changed spans highlighted, as for equality). A
+      payload with no expected side splits on its [predicate] flag: a
+      [raises_match] rejection renders
       [raised exception does not satisfy the predicate:], and an exception
       nobody expected — a test body's escape — renders [uncaught exception:],
       each followed by the rendered exception and the recorded backtrace;

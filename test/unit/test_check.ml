@@ -75,15 +75,17 @@ let raise_payload name f k =
       k (expected, actual, backtrace)
   | _ -> fail (name ^ ": kind is Raise")
 
-(* Enrichment variant: [k] gets the message-diff fields (B1). *)
-let raise_enrichment name f k =
+(* Enrichment variant: [k] gets the recorded message diff (B1). *)
+let raise_message_diff name f k =
   match caught name f with
-  | {
-   F.kind = F.Raise { same_constructor; expected_message; actual_message; _ };
-   _;
-  } ->
-      k (same_constructor, expected_message, actual_message)
+  | { F.kind = F.Raise { message_diff; _ }; _ } -> k message_diff
   | _ -> fail (name ^ ": kind is Raise")
+
+(* The diff as a flat string, so a wrong one is legible in the report. *)
+let describe_message_diff = function
+  | None -> "none"
+  | Some { F.constructor; expected_message; actual_message } ->
+      Printf.sprintf "%s: %S -> %S" constructor expected_message actual_message
 
 (* A witness that counts printer calls, to pin down when rendering runs. *)
 let counting_int calls =
@@ -598,55 +600,44 @@ let tests =
             check "raises_match: expected side stays absent" (expected = None);
             check "raises_match: rejected exception rendered"
               (match actual with Some _ -> true | None -> false)));
-    test "raises: the message-diff enrichment" (fun () ->
-        raise_enrichment "raises: same constructor, different message"
+    test "raises: the message diff" (fun () ->
+        raise_message_diff "raises: same constructor, different message"
           (fun () ->
             Check.raises (Invalid_argument "index 3") (fun () ->
                 invalid_arg "index 4"))
-          (fun (same_constructor, expected_message, actual_message) ->
-            check "raises: same_constructor recorded" same_constructor;
-            check "raises: expected message extracted"
-              (expected_message = Some "index 3");
-            check "raises: actual message extracted"
-              (actual_message = Some "index 4"));
-        raise_enrichment "raises: different constructors"
+          (fun diff ->
+            check_string "raises: the diff names the shared constructor"
+              ~expected:{|Invalid_argument: "index 3" -> "index 4"|}
+              ~actual:(describe_message_diff diff));
+        raise_message_diff "raises: different constructors"
           (fun () -> Check.raises Not_found (fun () -> failwith "boom"))
-          (fun (same_constructor, expected_message, actual_message) ->
-            check "raises: same_constructor is false across constructors"
-              (not same_constructor);
-            check "raises: Not_found has no message to extract"
-              (expected_message = None);
-            check "raises: raised Failure message still extracted"
-              (actual_message = Some "boom"));
-        raise_enrichment "raises: same user constructor, non-string payload"
+          (fun diff ->
+            check_string "raises: constructors that differ have no message diff"
+              ~expected:"none"
+              ~actual:(describe_message_diff diff));
+        raise_message_diff "raises: same user constructor, non-string payload"
           (fun () ->
             Check.raises (Payload (1, "x")) (fun () -> raise (Payload (1, "y"))))
-          (fun (same_constructor, expected_message, actual_message) ->
-            check "raises: user exceptions still compare constructors"
-              same_constructor;
-            check "raises: no message extraction for user exceptions"
-              (expected_message = None && actual_message = None));
-        raise_enrichment "raises: nothing raised keeps the expected message"
+          (fun diff ->
+            check_string "raises: no diff without extractable messages"
+              ~expected:"none"
+              ~actual:(describe_message_diff diff));
+        raise_message_diff "raises: nothing raised"
           (fun () -> Check.raises (Stdlib.Failure "boom") (fun () -> 1))
-          (fun (same_constructor, expected_message, actual_message) ->
-            check "raises: same_constructor is false when nothing was raised"
-              (not same_constructor);
-            check "raises: expected message extracted without a raise"
-              (expected_message = Some "boom");
-            check "raises: no actual message without a raise"
-              (actual_message = None));
-        raise_enrichment "raises_match: rejected exception's message extracted"
+          (fun diff ->
+            check_string "raises: nothing raised leaves nothing to diff"
+              ~expected:"none"
+              ~actual:(describe_message_diff diff));
+        raise_message_diff "raises_match: rejected exception"
           (fun () ->
             Check.raises_match
               (fun _ -> false)
               (fun () -> raise (Sys_error "no such file")))
-          (fun (same_constructor, expected_message, actual_message) ->
-            check "raises_match: no constructor comparison for predicates"
-              (not same_constructor);
-            check "raises_match: no expected message for predicates"
-              (expected_message = None);
-            check "raises_match: rejected message extracted"
-              (actual_message = Some "no such file")));
+          (fun diff ->
+            check_string
+              "raises_match: a predicate has no expected side to diff"
+              ~expected:"none"
+              ~actual:(describe_message_diff diff)));
     test "Exn predicates" (fun () ->
         check "Exn.invalid_arg: matches the constructor"
           (Check.Exn.invalid_arg (Invalid_argument "x"));

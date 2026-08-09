@@ -1316,23 +1316,21 @@ let test_raise_message_diff () =
     colored
 
 let test_raise_message_diff_guards () =
-  (* Different constructors keep the two-line rendering. *)
+  (* No recorded diff means both exceptions print, whatever their
+     constructors: the option is the whole of the renderer's decision. *)
   let b = failure_block Fixtures.raise_failure in
   check_contains "raise: different constructors unchanged"
     ~sub:"expected exception" b;
-  (* Same constructor but a hand-built failure with equal messages: nothing
-     to diff, keep the plain rendering. *)
-  let equal_messages =
-    Failure.raised ~expected:{|Failure("boom")|} ~actual:{|Failure("boom")|}
-      ~same_constructor:true ~expected_message:"boom" ~actual_message:"boom" ()
+  let no_diff =
+    Failure.raised ~expected:{|Failure("boom")|} ~actual:{|Failure("boom!")|} ()
   in
-  check_contains "raise: equal messages keep the plain form"
-    ~sub:"expected exception"
-    (failure_block equal_messages);
-  (* raises_match's enriched payload still prints the raised exception. *)
+  check_contains "raise: same constructor without a diff keeps the plain form"
+    ~sub:"expected exception" (failure_block no_diff);
+  check_absent "raise: no message diff without the payload"
+    ~sub:"with the wrong message" (failure_block no_diff);
+  (* raises_match's payload still prints the raised exception. *)
   let predicate_miss =
-    Failure.raised ~actual:{|Invalid_argument("nope")|} ~actual_message:"nope"
-      ~predicate:true ()
+    Failure.raised ~actual:{|Invalid_argument("nope")|} ~predicate:true ()
   in
   check_contains "raises_match: actually-raised exception printed"
     ~sub:

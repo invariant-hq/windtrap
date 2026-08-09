@@ -124,7 +124,13 @@ let tests =
          | None -> check "msg kept" false);
         let f =
           F.raised ~expected:big ~actual:big ~backtrace:big
-            ~expected_message:big ~actual_message:big ()
+            ~message_diff:
+              {
+                F.constructor = big;
+                expected_message = big;
+                actual_message = big;
+              }
+            ()
         in
         check "raise payloads are bounded"
           (match f.F.kind with
@@ -133,15 +139,16 @@ let tests =
                 expected = Some e;
                 actual = Some a;
                 backtrace = Some b;
-                expected_message = Some em;
-                actual_message = Some am;
+                message_diff =
+                  Some { F.constructor; expected_message; actual_message };
                 _;
               } ->
               String.length e < 200_000
               && String.length a < 200_000
               && String.length b < 200_000
-              && String.length em < 200_000
-              && String.length am < 200_000
+              && String.length constructor < 200_000
+              && String.length expected_message < 200_000
+              && String.length actual_message < 200_000
           | _ -> false);
         let f =
           F.property ~rendered:big ~case_index:0 ~shrink_steps:0 ~root:1L
@@ -160,9 +167,8 @@ let tests =
                 expected = None;
                 actual = None;
                 backtrace = None;
-                same_constructor = false;
-                expected_message = None;
-                actual_message = None;
+                predicate = false;
+                message_diff = None;
               } ->
               true
           | _ -> false);
@@ -183,16 +189,26 @@ let tests =
           | _ -> false);
         let f =
           F.raised ~expected:{|Invalid_argument("a")|}
-            ~actual:{|Invalid_argument("b")|} ~same_constructor:true
-            ~expected_message:"a" ~actual_message:"b" ()
+            ~actual:{|Invalid_argument("b")|}
+            ~message_diff:
+              {
+                F.constructor = "Invalid_argument";
+                expected_message = "a";
+                actual_message = "b";
+              }
+            ()
         in
-        check "message-diff enrichment stored"
+        check "message diff stored"
           (match f.F.kind with
           | F.Raise
               {
-                same_constructor = true;
-                expected_message = Some "a";
-                actual_message = Some "b";
+                message_diff =
+                  Some
+                    {
+                      F.constructor = "Invalid_argument";
+                      expected_message = "a";
+                      actual_message = "b";
+                    };
                 _;
               } ->
               true

@@ -144,9 +144,11 @@ val raises : ?pos:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
     then records the expected exception alone — or when it raises a different
     exception, the payload then carrying both exceptions rendered by
     [Printexc.to_string], the raised one's backtrace when the runtime recorded
-    one, and the message-diff enrichment ([same_constructor] and the extracted
-    messages; see {!Failure.kind}) so a wrong-message failure reads as a message
-    diff, not two near-identical renderings.
+    one, and — when the two exceptions share their constructor and differ only
+    in a message payload — a {!Failure.message_diff}, so a wrong-message failure
+    reads as a message diff rather than two near-identical renderings. The verb
+    holds the exceptions themselves, so it names the shared constructor instead
+    of leaving a renderer to guess it from a rendering.
 
     Structural equality compares the exception's constructor and payload with
     [Stdlib.( = )]; a payload it cannot compare (a functional value) makes the
@@ -160,9 +162,8 @@ val raises_match :
     [pred] rejects the raised exception; a predicate has no rendering, so the
     payload's expected side is absent, but its [predicate] flag is set —
     distinguishing the rejection from an uncaught exception (see
-    {!Failure.kind}) — and the rejected exception is carried rendered (with its
-    extracted message, when it has one). [pred] must be total. {!Exn} provides
-    the common predicates:
+    {!Failure.kind}) — and the rejected exception is carried rendered. [pred]
+    must be total. {!Exn} provides the common predicates:
 
     {[
       raises_match (Exn.invalid_arg ~substring:"unhandled op") (fun () ->

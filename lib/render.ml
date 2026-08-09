@@ -634,46 +634,33 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         put_block (st `Red value)
       end
       else put_ind (st `Faint "actual" ^ "    " ^ st `Red value)
-  | Failure.Raise
-      {
-        expected;
-        actual;
-        predicate;
-        backtrace;
-        same_constructor;
-        expected_message;
-        actual_message;
-      } -> (
-      (match (expected, actual) with
-      | Some e, Some a -> (
-          match (same_constructor, expected_message, actual_message) with
-          | true, Some em, Some am when not (String.equal em am) ->
-              (* Right constructor, wrong payload: diff the
-                 messages instead of repeating the constructor twice. The
-                 constructor's name is the rendering's prefix — Printexc
-                 renders string-carrying exceptions as [Name("payload")]. *)
-              let ctor =
-                match String.index_opt e '(' with
-                | Some j when j > 0 -> String.sub e 0 j
-                | _ -> "the expected exception"
-              in
-              put_ind (spf "raised %s with the wrong message:" ctor);
-              pp_eq ~ansi put ~ind ~expected:(spf "%S" em) ~actual:(spf "%S" am)
-          | _ ->
+  | Failure.Raise { expected; actual; predicate; backtrace; message_diff } -> (
+      (match message_diff with
+      | Some { Failure.constructor; expected_message; actual_message } ->
+          (* Right constructor, wrong payload: diff the messages instead of
+             repeating the constructor twice. The failure site named the
+             constructor; this one decision is the whole of the field. *)
+          put_ind (spf "raised %s with the wrong message:" constructor);
+          pp_eq ~ansi put ~ind
+            ~expected:(spf "%S" expected_message)
+            ~actual:(spf "%S" actual_message)
+      | None -> (
+          match (expected, actual) with
+          | Some e, Some a ->
               put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
-              put_ind (st `Faint "raised            " ^ "  " ^ st `Red a))
-      | Some e, None ->
-          put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
-          put_ind "but no exception was raised"
-      | None, Some a ->
-          (* [predicate] tells a raises_match rejection from a test body's
-             escape — the two demand different reactions. *)
-          put_ind
-            (if predicate then
-               "raised exception does not satisfy the predicate:"
-             else "uncaught exception:");
-          put_block (st `Red a)
-      | None, None -> put_ind "expected an exception, but none was raised");
+              put_ind (st `Faint "raised            " ^ "  " ^ st `Red a)
+          | Some e, None ->
+              put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
+              put_ind "but no exception was raised"
+          | None, Some a ->
+              (* [predicate] tells a raises_match rejection from a test
+                 body's escape — the two demand different reactions. *)
+              put_ind
+                (if predicate then
+                   "raised exception does not satisfy the predicate:"
+                 else "uncaught exception:");
+              put_block (st `Red a)
+          | None, None -> put_ind "expected an exception, but none was raised"));
       match backtrace with
       | Some bt ->
           List.iter (fun l -> put_ind (st `Faint l)) (Text.split_lines bt)

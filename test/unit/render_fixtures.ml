@@ -105,9 +105,14 @@ let raise_message_failure =
   Failure.raised
     ~loc:(loc "test/test_bounds.ml" 8)
     ~expected:{|Invalid_argument("index 3 out of bounds")|}
-    ~actual:{|Invalid_argument("index 4 out of bounds")|} ~same_constructor:true
-    ~expected_message:"index 3 out of bounds"
-    ~actual_message:"index 4 out of bounds" ()
+    ~actual:{|Invalid_argument("index 4 out of bounds")|}
+    ~message_diff:
+      {
+        Failure.constructor = "Invalid_argument";
+        expected_message = "index 3 out of bounds";
+        actual_message = "index 4 out of bounds";
+      }
+    ()
 
 (* B12: an xfail annotation, an excused failing result (annotated, not
    counted), and the runner's synthesized unexpected-pass result (annotated

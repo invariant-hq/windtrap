@@ -12,6 +12,12 @@ type snapshot_state =
   | Unresolvable
   | Duplicate of { first : Loc.t option; first_test : string }
 
+type message_diff = {
+  constructor : string;
+  expected_message : string;
+  actual_message : string;
+}
+
 type kind =
   | Equality of { expected : string; actual : string; not_ : bool }
   | Containment of {
@@ -28,9 +34,7 @@ type kind =
       actual : string option;
       predicate : bool;
       backtrace : string option;
-      same_constructor : bool;
-      expected_message : string option;
-      actual_message : string option;
+      message_diff : message_diff option;
     }
   | Snapshot of { name : string; path : string; state : snapshot_state }
   | Property of {
@@ -208,8 +212,15 @@ let containment ?loc ?msg ?found_at ~claim ~needle ~haystack () =
 let predicate ?loc ?msg ~claim value =
   make ?loc ?msg (Predicate { claim = cap claim; value = cap value })
 
+let bound_message_diff { constructor; expected_message; actual_message } =
+  {
+    constructor = cap constructor;
+    expected_message = cap expected_message;
+    actual_message = cap actual_message;
+  }
+
 let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace
-    ?(same_constructor = false) ?expected_message ?actual_message () =
+    ?message_diff () =
   make ?loc ?msg
     (Raise
        {
@@ -217,9 +228,7 @@ let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace
          actual = cap_opt actual;
          predicate;
          backtrace = cap_opt backtrace;
-         same_constructor;
-         expected_message = cap_opt expected_message;
-         actual_message = cap_opt actual_message;
+         message_diff = Option.map bound_message_diff message_diff;
        })
 
 let bound_snapshot_state = function

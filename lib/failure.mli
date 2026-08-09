@@ -69,6 +69,20 @@ type snapshot_state =
           is that check's site when one is known, [first_test] the test that
           made it. The failure's own [loc] is the second check's site. *)
 
+type message_diff = {
+  constructor : string;
+      (** The exception constructor both sides share, named where the exceptions
+          themselves were in hand — never recovered from a rendering. *)
+  expected_message : string;  (** The expected exception's message payload. *)
+  actual_message : string;  (** The raised exception's message payload. *)
+}
+(** The type for a right-constructor, wrong-message exception failure: both
+    exceptions carry the same constructor, both carry a message payload (the
+    stdlib's string-carrying exceptions: [Invalid_argument], [Failure],
+    [Sys_error]), and the two messages differ. It is recorded only when all
+    three hold, because that conjunction is the only question a renderer asks of
+    it; a renderer therefore branches on the option and nothing else. *)
+
 (** The type for typed failure payloads. Never a stringly key-value bag: each
     assertion family has its own case, and renderers pattern match on it. *)
 type kind =
@@ -119,9 +133,7 @@ type kind =
       actual : string option;
       predicate : bool;
       backtrace : string option;
-      same_constructor : bool;
-      expected_message : string option;
-      actual_message : string option;
+      message_diff : message_diff option;
     }
       (** An exception assertion failed. [expected] is the rendered expected
           exception (or a predicate description), [None] when the assertion only
@@ -129,15 +141,11 @@ type kind =
           exception, [None] when nothing was raised; [backtrace] is the raised
           exception's backtrace when one was recorded.
 
-          The remaining fields let renderers diff exception {e messages}:
-          [same_constructor] is [true] iff both exceptions were present and
-          raised with the same exception constructor (payloads aside);
-          [expected_message]/[actual_message] are the corresponding exception's
-          message payload when it carries one (the stdlib's string-carrying
-          exceptions: [Invalid_argument], [Failure], [Sys_error]). When
-          [same_constructor] is [true] and both messages are present, a renderer
-          can diff the messages instead of repeating the constructor in both
-          renderings.
+          [message_diff] is [Some _] exactly when the failure is a
+          right-constructor, wrong-message one and a renderer can therefore diff
+          the messages instead of repeating the constructor in both renderings;
+          see {!type:message_diff}. It is [None] on every other path, so a
+          renderer decides on the option alone.
 
           [predicate] is [true] iff the assertion was [raises_match]: an
           exception was raised and a user predicate rejected it. [false] with no
@@ -315,14 +323,13 @@ val raised :
   ?actual:string ->
   ?predicate:bool ->
   ?backtrace:string ->
-  ?same_constructor:bool ->
-  ?expected_message:string ->
-  ?actual_message:string ->
+  ?message_diff:message_diff ->
   unit ->
   t
 (** [raised ()] is a {!Raise} failure. All payload fields default to absent
-    ([same_constructor] and [predicate] to [false]); see {!kind} for what each
-    one means. *)
+    ([predicate] to [false]); see {!kind} for what each one means. Pass
+    [message_diff] only when it holds — the failure site owns that decision,
+    having the exceptions themselves. *)
 
 val snapshot : ?loc:Loc.t -> name:string -> path:string -> snapshot_state -> t
 (** [snapshot ~name ~path state] is a {!Snapshot} failure for the snapshot
