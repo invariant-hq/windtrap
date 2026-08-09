@@ -145,10 +145,17 @@ let rec tree_towards pp shrink x =
 let rec plain_towards shrink x =
   Shrink_tree.make ~root:x ~children:(Seq.map (plain_towards shrink) (shrink x))
 
-(* Rewrite every node's provenance to the printed value; applied whenever a
-   generator owns a printer. *)
+(* The printer's claim on provenance, and the only place it is exercised: a
+   generator that owns a printer rewrites every node's trace to that node's
+   printed value, a printerless one keeps whatever structural trace its
+   combinator built. Every combinator that can derive a printer ends in
+   this, so the "composition cannot lose the printer" contract has one
+   implementation. *)
 let renormalize pp tree =
-  Shrink_tree.map (fun s -> { s with trace = draw_of pp s.value }) tree
+  match pp with
+  | None -> tree
+  | Some pp ->
+      Shrink_tree.map (fun s -> { s with trace = draw_of pp s.value }) tree
 
 (* [Shrink_tree.bind] for candidate re-generation ([bind], [one_of], sized
    [list]): [f] runs a generator, so forcing a shrink candidate can raise
@@ -453,20 +460,16 @@ let char_range low high =
    candidates would violate). *)
 let list_of_trees pp ~structural trees =
   let base = if structural then Shrink_tree.list trees else seq_list trees in
-  let combine =
-    match pp with
-    | Some pp ->
-        fun samples ->
-          let value = List.map (fun s -> s.value) samples in
-          { value; trace = draw_of pp value }
-    | None ->
-        fun samples ->
-          {
-            value = List.map (fun s -> s.value) samples;
-            trace = Items (List.map (fun s -> s.trace) samples);
-          }
+  let tree =
+    Shrink_tree.map
+      (fun samples ->
+        {
+          value = List.map (fun s -> s.value) samples;
+          trace = Items (List.map (fun s -> s.trace) samples);
+        })
+      base
   in
-  Shrink_tree.map combine base
+  renormalize pp tree
 
 let sample_elements gen count state =
   let rec loop remaining trees state =
@@ -508,20 +511,17 @@ let list ?size gen =
 let array ?size gen =
   let base = list ?size gen in
   let pp = Option.map pp_array gen.pp in
-  let combine =
-    match pp with
-    | Some pp ->
-        fun s ->
-          let value = Array.of_list s.value in
-          { value; trace = draw_of pp value }
-    | None -> fun s -> { value = Array.of_list s.value; trace = s.trace }
-  in
   {
     pp;
     run =
       (fun state ->
         let tree, state = base.run state in
-        (Shrink_tree.map combine tree, state));
+        let tree =
+          Shrink_tree.map
+            (fun s -> { value = Array.of_list s.value; trace = s.trace })
+            tree
+        in
+        (renormalize pp tree, state));
   }
 
 let string_of ?size char_gen =
@@ -568,35 +568,27 @@ let bytes = bytes_of char
 
 let option gen =
   let pp = Option.map pp_option gen.pp in
-  let none =
-    match pp with
-    | Some pp -> { value = None; trace = draw_of pp None }
-    | None -> { value = None; trace = Draw (lazy "None") }
-  in
-  let some =
-    match pp with
-    | Some pp ->
-        fun s ->
-          let value = Some s.value in
-          { value; trace = draw_of pp value }
-    | None -> fun s -> { value = Some s.value; trace = Label ("Some", s.trace) }
+  let none = { value = None; trace = Draw (lazy "None") } in
+  let some s = { value = Some s.value; trace = Label ("Some", s.trace) } in
+  let rec wrap tree =
+    Shrink_tree.make
+      ~root:(some (Shrink_tree.root tree))
+      ~children:
+        (Seq.cons (Shrink_tree.leaf none)
+           (Seq.map wrap (Shrink_tree.children tree)))
   in
   {
     pp;
     run =
       (fun state ->
-        let choice, state = Seed.below ~bound:100L state in
-        if choice < 15L then (Shrink_tree.leaf none, state)
-        else
-          let tree, state = gen.run state in
-          let rec wrap tree =
-            Shrink_tree.make
-              ~root:(some (Shrink_tree.root tree))
-              ~children:
-                (Seq.cons (Shrink_tree.leaf none)
-                   (Seq.map wrap (Shrink_tree.children tree)))
-          in
-          (wrap tree, state));
+        let tree, state =
+          let choice, state = Seed.below ~bound:100L state in
+          if choice < 15L then (Shrink_tree.leaf none, state)
+          else
+            let tree, state = gen.run state in
+            (wrap tree, state)
+        in
+        (renormalize pp tree, state));
   }
 
 let result ok err =
@@ -606,22 +598,22 @@ let result ok err =
     | _ -> None
   in
   let wrap constructor label s =
-    let value = constructor s.value in
-    match pp with
-    | Some pp -> { value; trace = draw_of pp value }
-    | None -> { value; trace = Label (label, s.trace) }
+    { value = constructor s.value; trace = Label (label, s.trace) }
   in
   {
     pp;
     run =
       (fun state ->
-        let choice, state = Seed.below ~bound:100L state in
-        if choice < 25L then
-          let tree, state = err.run state in
-          (Shrink_tree.map (wrap (fun e -> Error e) "Error") tree, state)
-        else
-          let tree, state = ok.run state in
-          (Shrink_tree.map (wrap (fun v -> Ok v) "Ok") tree, state));
+        let tree, state =
+          let choice, state = Seed.below ~bound:100L state in
+          if choice < 25L then
+            let tree, state = err.run state in
+            (Shrink_tree.map (wrap (fun e -> Error e) "Error") tree, state)
+          else
+            let tree, state = ok.run state in
+            (Shrink_tree.map (wrap (fun v -> Ok v) "Ok") tree, state)
+        in
+        (renormalize pp tree, state));
   }
 
 let pair left right =
@@ -630,15 +622,8 @@ let pair left right =
     | Some pp_a, Some pp_b -> Some (pp_pair pp_a pp_b)
     | _ -> None
   in
-  let combine =
-    match pp with
-    | Some pp ->
-        fun (a, b) ->
-          let value = (a.value, b.value) in
-          { value; trace = draw_of pp value }
-    | None ->
-        fun (a, b) ->
-          { value = (a.value, b.value); trace = Tuple [ a.trace; b.trace ] }
+  let combine (a, b) =
+    { value = (a.value, b.value); trace = Tuple [ a.trace; b.trace ] }
   in
   {
     pp;
@@ -646,7 +631,10 @@ let pair left right =
       (fun state ->
         let left_tree, state = left.run state in
         let right_tree, state = right.run state in
-        (Shrink_tree.map combine (Shrink_tree.pair left_tree right_tree), state));
+        let tree =
+          Shrink_tree.map combine (Shrink_tree.pair left_tree right_tree)
+        in
+        (renormalize pp tree, state));
   }
 
 let triple a b c =
@@ -655,18 +643,11 @@ let triple a b c =
     | Some pp_a, Some pp_b, Some pp_c -> Some (pp_triple pp_a pp_b pp_c)
     | _ -> None
   in
-  let combine =
-    match pp with
-    | Some pp ->
-        fun (sa, (sb, sc)) ->
-          let value = (sa.value, sb.value, sc.value) in
-          { value; trace = draw_of pp value }
-    | None ->
-        fun (sa, (sb, sc)) ->
-          {
-            value = (sa.value, sb.value, sc.value);
-            trace = Tuple [ sa.trace; sb.trace; sc.trace ];
-          }
+  let combine (sa, (sb, sc)) =
+    {
+      value = (sa.value, sb.value, sc.value);
+      trace = Tuple [ sa.trace; sb.trace; sc.trace ];
+    }
   in
   {
     pp;
@@ -675,8 +656,10 @@ let triple a b c =
         let ta, state = a.run state in
         let tb, state = b.run state in
         let tc, state = c.run state in
-        ( Shrink_tree.map combine (Shrink_tree.pair ta (Shrink_tree.pair tb tc)),
-          state ));
+        let tree =
+          Shrink_tree.map combine (Shrink_tree.pair ta (Shrink_tree.pair tb tc))
+        in
+        (renormalize pp tree, state));
   }
 
 let quad a b c d =
@@ -686,18 +669,11 @@ let quad a b c d =
         Some (pp_quad pp_a pp_b pp_c pp_d)
     | _ -> None
   in
-  let combine =
-    match pp with
-    | Some pp ->
-        fun (sa, (sb, (sc, sd))) ->
-          let value = (sa.value, sb.value, sc.value, sd.value) in
-          { value; trace = draw_of pp value }
-    | None ->
-        fun (sa, (sb, (sc, sd))) ->
-          {
-            value = (sa.value, sb.value, sc.value, sd.value);
-            trace = Tuple [ sa.trace; sb.trace; sc.trace; sd.trace ];
-          }
+  let combine (sa, (sb, (sc, sd))) =
+    {
+      value = (sa.value, sb.value, sc.value, sd.value);
+      trace = Tuple [ sa.trace; sb.trace; sc.trace; sd.trace ];
+    }
   in
   {
     pp;
@@ -707,9 +683,11 @@ let quad a b c d =
         let tb, state = b.run state in
         let tc, state = c.run state in
         let td, state = d.run state in
-        ( Shrink_tree.map combine
-            (Shrink_tree.pair ta (Shrink_tree.pair tb (Shrink_tree.pair tc td))),
-          state ));
+        let tree =
+          Shrink_tree.map combine
+            (Shrink_tree.pair ta (Shrink_tree.pair tb (Shrink_tree.pair tc td)))
+        in
+        (renormalize pp tree, state));
   }
 
 (* Choice and structure *)
@@ -772,10 +750,7 @@ let one_of gens =
                   { s with trace = label_trace "one_of" branch s.trace })
                 inner)
         in
-        let tree =
-          match pp with Some pp -> renormalize pp tree | None -> tree
-        in
-        (tree, state));
+        (renormalize pp tree, state));
   }
 
 let frequency weighted =
@@ -809,10 +784,7 @@ let frequency weighted =
             (fun s -> { s with trace = label_trace "frequency" index s.trace })
             tree
         in
-        let tree =
-          match pp with Some pp -> renormalize pp tree | None -> tree
-        in
-        (tree, state));
+        (renormalize pp tree, state));
   }
 
 (* Composition *)
@@ -879,8 +851,9 @@ let such_that ?(max_tries = 100) keep gen =
   }
 
 let with_pp pp gen =
+  let pp = Some pp in
   {
-    pp = Some pp;
+    pp;
     run =
       (fun state ->
         let tree, state = gen.run state in
