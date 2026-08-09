@@ -536,6 +536,48 @@ let startup_message = function
        baselines on a CI machine."
   | No_recorded_failures -> "no recorded failures match the current suite"
 
+(* Startup
+
+   Everything a run must clear before a single test executes. The order is
+   contractual — duplicate paths, the CI focus guard, the snapshot CI guard,
+   the [--failed] store — because a suite that trips two of them must always
+   be told about the same one. Between them the checks also decide the two
+   values the rest of the run reads out of them: the snapshot mode and the
+   [--failed] allowlist ([None] when [--failed] was not asked for, and never
+   [Some []] — an allowlist matching nothing is the refusal above it). *)
+
+let ( let* ) = Result.bind
+
+let startup (config : Run.config) ~suite ~focus_active tests paths =
+  let in_ci = Env.in_ci () in
+  let* () =
+    match duplicate_paths paths with
+    | [] -> Ok ()
+    | duplicates -> Error (Duplicate_paths duplicates)
+  in
+  let* () =
+    if focus_active && in_ci && not config.Run.allow_focus then
+      Error (Focused_in_ci (Test_tree.focus_sites tests))
+    else Ok ()
+  in
+  let* mode =
+    match Snapshot.resolve_mode ~ci:in_ci config.Run.update with
+    | Snapshot.Refused_in_ci -> Error Update_refused_in_ci
+    | Snapshot.Mode mode -> Ok mode
+  in
+  let* allowlist =
+    if not config.Run.failed_only then Ok None
+    else
+      match
+        List.filter
+          (fun path -> List.mem path paths)
+          (read_store (store_path config ~suite))
+      with
+      | [] -> Error No_recorded_failures
+      | entries -> Ok (Some entries)
+  in
+  Ok (mode, allowlist)
+
 (* Outcomes *)
 
 type outcome = {
@@ -555,6 +597,88 @@ type outcome = {
 let release ~on_event run =
   Run.release_fixtures run ~announce:(fun name ->
       on_event (Fixture_release { name }))
+
+(* Runs the selected tests one at a time in declaration order, stopping once
+   [--bail]'s budget is spent. Returns whether it bailed and the paths that
+   counted as failed (see [counts_failed]) in execution order: what [--bail],
+   the exit code, and the store react to, never a recorded outcome alone —
+   expected [xfail] failures are recorded but never accumulate here. *)
+let drive ~on_event run selected =
+  let config = Run.config run in
+  let bailed = ref false in
+  let rev_failed = ref [] in
+  (try
+     List.iter
+       (fun case ->
+         if not !bailed then begin
+           let _result, failed = run_case ~on_event run case in
+           if failed then
+             rev_failed :=
+               Test_tree.path_to_string case.Test_tree.path :: !rev_failed;
+           match config.Run.bail with
+           | Some limit when List.length !rev_failed >= limit -> bailed := true
+           | Some _ | None -> ()
+         end)
+       selected
+   with exn ->
+     (* Release on every path where the runner regains control. Test-level
+        exceptions were classified inside the boundary, so only a fatal
+        exception or a raising [on_event] observer reaches here: release best
+        effort — announcements swallowed too, a teardown must not be lost to
+        an observer that keeps raising — then the exception wins. *)
+     let backtrace = Printexc.get_raw_backtrace () in
+     let announce name =
+       try on_event (Fixture_release { name }) with _ -> ()
+     in
+     (try ignore (Run.release_fixtures run ~announce) with _ -> ());
+     Printexc.raise_with_backtrace exn backtrace);
+  (!bailed, List.rev !rev_failed)
+
+(* Rewrites the last-failed store at [path] with this run's failures. Entries
+   for tests a partial run never reached survive; only a [full] run — one that
+   executed the entire declared suite — drops entries whose paths no longer
+   exist. *)
+let update_last_failed path ~full ~results ~failed_paths =
+  let survivors =
+    if full then []
+    else
+      let executed =
+        List.map (fun r -> Test_tree.path_to_string r.Run.path) results
+      in
+      List.filter (fun entry -> not (List.mem entry executed)) (read_store path)
+  in
+  write_store path (failed_paths @ survivors)
+
+(* Stale-baseline reporting and [--prune], which gate on the same facts about
+   how much of the suite really ran. Orphans are reported only after a full,
+   clean run; [Snapshot.prune] is handed those facts to refuse or explain.
+   Every recorded [Fail] counts here, expected or not: an [xfail] body did not
+   complete, so its snapshots may be stale. Reporting never deletes. *)
+let snapshot_maintenance (config : Run.config) snapshots ~full ~results
+    ~focused_count =
+  let count_outcomes accepts =
+    List.length (List.filter (fun r -> accepts r.Run.outcome) results)
+  in
+  let failed =
+    count_outcomes (function
+      | Failure.Fail _ -> true
+      | Failure.Pass | Failure.Skip _ -> false)
+  in
+  let skipped =
+    count_outcomes (function
+      | Failure.Skip _ -> true
+      | Failure.Pass | Failure.Fail _ -> false)
+  in
+  let clean = full && skipped = 0 && failed = 0 && focused_count = 0 in
+  let orphans = if clean then Snapshot.orphans snapshots else [] in
+  let pruned =
+    if config.Run.prune then
+      Some
+        (Snapshot.prune snapshots ~filtered:(not full) ~skipped ~failed
+           ~focused:focused_count)
+    else None
+  in
+  (orphans, pruned)
 
 let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
   install_exit_guard ();
@@ -582,182 +706,74 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
     List.map (fun case -> Test_tree.path_to_string case.Test_tree.path) cases
   in
   let focus_active = Test_tree.has_focus tests in
-  let in_ci = Env.in_ci () in
-  match duplicate_paths paths with
-  | _ :: _ as duplicates -> Error (Duplicate_paths duplicates)
-  | [] -> (
-      if focus_active && in_ci && not config.Run.allow_focus then
-        Error (Focused_in_ci (Test_tree.focus_sites tests))
-      else
-        match Snapshot.resolve_mode ~ci:in_ci config.Run.update with
-        | Snapshot.Refused_in_ci -> Error Update_refused_in_ci
-        | Snapshot.Mode mode -> (
-            let allowlist =
-              if config.Run.failed_only then
-                let recorded = read_store (store_path config ~suite) in
-                Some (List.filter (fun p -> List.mem p paths) recorded)
-              else None
-            in
-            match allowlist with
-            | Some [] -> Error No_recorded_failures
-            | _ ->
-                let predicate = selection_predicate config in
-                let selected =
-                  List.filter
-                    (case_selected config ~predicate ~allowlist ~focus_active)
-                    cases
-                in
-                if config.Run.list_only then
-                  Ok
-                    {
-                      run =
-                        Run.create config ~capture:Capture.disabled
-                          ~snapshots:(Snapshot.create ~mode ());
-                      selected;
-                      total;
-                      focus_active;
-                      bailed = false;
-                      failed_paths = [];
-                      release_failures = [];
-                      orphans = [];
-                      pruned = None;
-                      duration = Clock.count_s started;
-                      exit_code = 0;
-                    }
-                else
-                  let capture =
-                    if config.Run.stream then Capture.disabled
-                    else Capture.create ~log_dir:config.Run.log_dir ~suite ()
-                  in
-                  let snapshots = Snapshot.create ~mode () in
-                  let run = Run.create config ~capture ~snapshots in
-                  (* The executing span: everything from the first event to
-                     the completed outcome runs with the slot marked, so the
-                     exit guard covers fixture release, observers, and store
-                     maintenance — not only test attempts. On the fatal path
-                     the protect empties the slot before the exception leaves
-                     [execute], so the guard is inert during fatal
-                     termination. *)
-                  Run.with_active run @@ fun () ->
-                  on_event
-                    (Run_started
-                       { run; suite; total; selected = List.length selected });
-                  let bailed = ref false in
-                  (* Effective failures (see [counts_failed]): what --bail,
-                     the exit code, and the store react to. Expected [xfail]
-                     failures are recorded but never accumulate here. *)
-                  let rev_failed = ref [] in
-                  (try
-                     List.iter
-                       (fun case ->
-                         if not !bailed then begin
-                           let _result, failed = run_case ~on_event run case in
-                           if failed then
-                             rev_failed :=
-                               Test_tree.path_to_string case.Test_tree.path
-                               :: !rev_failed;
-                           match config.Run.bail with
-                           | Some limit when List.length !rev_failed >= limit ->
-                               bailed := true
-                           | Some _ | None -> ()
-                         end)
-                       selected
-                   with exn ->
-                     (* Release on every path where the runner regains
-                        control. Test-level exceptions were classified inside
-                        the boundary, so only a fatal exception or a raising
-                        [on_event] observer reaches here: release best effort
-                        — announcements swallowed too, a teardown must not be
-                        lost to an observer that keeps raising — then the
-                        exception wins. *)
-                     let backtrace = Printexc.get_raw_backtrace () in
-                     let announce name =
-                       try on_event (Fixture_release { name }) with _ -> ()
-                     in
-                     (try ignore (Run.release_fixtures run ~announce)
-                      with _ -> ());
-                     Printexc.raise_with_backtrace exn backtrace);
-                  (* Releases run after the last test, outside any per-test
-                     timeout, including under --bail. *)
-                  let release_failures = release ~on_event run in
-                  Capture.link_latest capture;
-                  let results = Run.results run in
-                  let executed =
-                    List.map
-                      (fun r -> Test_tree.path_to_string r.Run.path)
-                      results
-                  in
-                  let failed_paths = List.rev !rev_failed in
-                  (* Recorded [Fail] outcomes, expected or not: snapshot
-                     orphan reporting and --prune gate on them — an xfail
-                     body did not complete, so its snapshots may be stale. *)
-                  let raw_failed_count =
-                    List.length
-                      (List.filter
-                         (fun r ->
-                           match r.Run.outcome with
-                           | Failure.Fail _ -> true
-                           | Failure.Pass | Failure.Skip _ -> false)
-                         results)
-                  in
-                  let skipped_count =
-                    List.length
-                      (List.filter
-                         (fun r ->
-                           match r.Run.outcome with
-                           | Failure.Skip _ -> true
-                           | Failure.Pass | Failure.Fail _ -> false)
-                         results)
-                  in
-                  (* A full run executed the entire declared suite: only such
-                     a run may drop store entries for tests that no longer
-                     exist, report orphans, or prune. *)
-                  let full = (not !bailed) && List.length results = total in
-                  let survivors =
-                    if full then []
-                    else
-                      List.filter
-                        (fun p -> not (List.mem p executed))
-                        (read_store (store_path config ~suite))
-                  in
-                  write_store (store_path config ~suite)
-                    (failed_paths @ survivors);
-                  let focused_count =
-                    List.length
-                      (List.filter (fun case -> case.Test_tree.focused) cases)
-                  in
-                  let clean =
-                    full && skipped_count = 0 && raw_failed_count = 0
-                    && focused_count = 0
-                  in
-                  let orphans =
-                    if clean then Snapshot.orphans snapshots else []
-                  in
-                  let pruned =
-                    if config.Run.prune then
-                      Some
-                        (Snapshot.prune snapshots ~filtered:(not full)
-                           ~skipped:skipped_count ~failed:raw_failed_count
-                           ~focused:focused_count)
-                    else None
-                  in
-                  let any_failure =
-                    failed_paths <> [] || release_failures <> []
-                  in
-                  let exit_code =
-                    if any_failure then 1 else if results = [] then 2 else 0
-                  in
-                  Ok
-                    {
-                      run;
-                      selected;
-                      total;
-                      focus_active;
-                      bailed = !bailed;
-                      failed_paths;
-                      release_failures;
-                      orphans;
-                      pruned;
-                      duration = Clock.count_s started;
-                      exit_code;
-                    }))
+  let* mode, allowlist = startup config ~suite ~focus_active tests paths in
+  let predicate = selection_predicate config in
+  let selected =
+    List.filter (case_selected config ~predicate ~allowlist ~focus_active) cases
+  in
+  let snapshots = Snapshot.create ~mode () in
+  if config.Run.list_only then
+    Ok
+      {
+        run = Run.create config ~capture:Capture.disabled ~snapshots;
+        selected;
+        total;
+        focus_active;
+        bailed = false;
+        failed_paths = [];
+        release_failures = [];
+        orphans = [];
+        pruned = None;
+        duration = Clock.count_s started;
+        exit_code = 0;
+      }
+  else
+    let capture =
+      if config.Run.stream then Capture.disabled
+      else Capture.create ~log_dir:config.Run.log_dir ~suite ()
+    in
+    let run = Run.create config ~capture ~snapshots in
+    (* The executing span: everything from the first event to the completed
+       outcome runs with the slot marked, so the exit guard covers fixture
+       release, observers, and store maintenance — not only test attempts. On
+       the fatal path the protect empties the slot before the exception leaves
+       [execute], so the guard is inert during fatal termination. *)
+    Run.with_active run @@ fun () ->
+    on_event
+      (Run_started { run; suite; total; selected = List.length selected });
+    let bailed, failed_paths = drive ~on_event run selected in
+    (* Releases run after the last test, outside any per-test timeout,
+       including under --bail. *)
+    let release_failures = release ~on_event run in
+    Capture.link_latest capture;
+    let results = Run.results run in
+    (* A full run executed the entire declared suite: only such a run may drop
+       store entries for tests that no longer exist, report orphans, or
+       prune. *)
+    let full = (not bailed) && List.length results = total in
+    update_last_failed (store_path config ~suite) ~full ~results ~failed_paths;
+    let focused_count =
+      List.length (List.filter (fun case -> case.Test_tree.focused) cases)
+    in
+    let orphans, pruned =
+      snapshot_maintenance config snapshots ~full ~results ~focused_count
+    in
+    let exit_code =
+      if failed_paths <> [] || release_failures <> [] then 1
+      else if results = [] then 2
+      else 0
+    in
+    Ok
+      {
+        run;
+        selected;
+        total;
+        focus_active;
+        bailed;
+        failed_paths;
+        release_failures;
+        orphans;
+        pruned;
+        duration = Clock.count_s started;
+        exit_code;
+      }
