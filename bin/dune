@@ -1,12 +1,13 @@
 ; The windtrap reporting binary — the third and last home of coverage
-; code. One subcommand, `coverage`: find and merge the
-; .coverage files under _build/_coverage, render the per-file table and
-; excerpts, gate with --min, export --json. The table and excerpt layout
-; live in the library renderer (reached through Windtrap.Private), so the
-; in-process WINDTRAP_COVERAGE modes and this command cannot drift.
+; code, and the same for mutation. Two subcommands, `coverage` and
+; `mutate`: find and merge the .coverage files under _build/_coverage or
+; the .mutants verdict files under _build/_mutants, and render. Both
+; layouts live in the library renderer (reached through Windtrap.Private),
+; so the in-process WINDTRAP_COVERAGE and WINDTRAP_MUTATE modes and these
+; commands cannot drift. Neither command runs a test or drives a build.
 
 (executable
  (name main)
  (public_name windtrap)
  (package windtrap)
- (libraries windtrap windtrap_coverage))
+ (libraries windtrap windtrap_coverage windtrap_mutate))

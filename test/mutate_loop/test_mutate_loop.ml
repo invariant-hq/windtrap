@@ -408,9 +408,10 @@ let verdict_file_tests =
             is_true ~msg:"the writer identity is recorded" (identity <> None);
             let rendered =
               List.map
-                (fun (id, verdict) ->
-                  (M.id_to_string id, Format.asprintf "%a" M.pp_verdict verdict))
-                (M.verdicts verdicts)
+                (fun (r : M.record) ->
+                  ( M.id_to_string r.M.id,
+                    Format.asprintf "%a" M.pp_verdict r.M.verdict ))
+                (M.records verdicts)
             in
             equal ~msg:"one verdict per mutant" int 4 (List.length rendered);
             let killed =
@@ -477,9 +478,10 @@ let crash_tests =
         | Ok (verdicts, _) ->
             let rendered =
               List.map
-                (fun (id, verdict) ->
-                  (M.id_to_string id, Format.asprintf "%a" M.pp_verdict verdict))
-                (M.verdicts verdicts)
+                (fun (r : M.record) ->
+                  ( M.id_to_string r.M.id,
+                    Format.asprintf "%a" M.pp_verdict r.M.verdict ))
+                (M.records verdicts)
             in
             equal ~msg:"the crash is named as a crash" (list string)
               [ "killed (crash)" ]
@@ -750,8 +752,9 @@ let runaway_tests =
             equal ~msg:"killed by the test the guard failed" (list string)
               [ "killed by counts down to zero" ]
               (List.map
-                 (fun (_, v) -> Format.asprintf "%a" M.pp_verdict v)
-                 (M.verdicts verdicts)));
+                 (fun (r : M.record) ->
+                   Format.asprintf "%a" M.pp_verdict r.M.verdict)
+                 (M.records verdicts)));
   ]
 
 (* The control: no instrumented module in the executable at all. *)

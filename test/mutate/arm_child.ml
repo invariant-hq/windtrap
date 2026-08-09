@@ -78,7 +78,7 @@ let positives ns =
    observed in a process no test has bumped the epoch of. *)
 let () = ignore (less 1 2 : bool)
 
-let announce = function
+let announce : M.mutant option -> unit = function
   | None -> print_string "armed: none\n"
   | Some m ->
       Printf.printf "armed: %s %s -> %s\n" (M.id_to_string m.M.id) m.M.before
@@ -131,7 +131,16 @@ let () =
       let id =
         { M.file = "lib/child.ml"; line = 3; col = 10; rewrite = "lt" }
       in
-      let t = M.add M.empty id (M.survived [ [ "child"; "less" ] ]) in
+      let t =
+        M.add M.empty
+          {
+            M.id;
+            span = (80, 85);
+            before = "l < r";
+            after = "not (r < l)";
+            verdict = M.survived [ [ "child"; "less" ] ];
+          }
+      in
       M.save ?identity:(M.writer_identity ~exe:Sys.executable_name) path t
   | _ ->
       prerr_endline

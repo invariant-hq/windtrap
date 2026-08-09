@@ -1,0 +1,45 @@
+; The `windtrap mutate` reporting command, end to end. Two subjects:
+; synthetic .mutants files written with the runtime's own serializer,
+; which pin the merge, discovery, the explicit-PATH contract, the
+; staleness pass and every exit code without needing the instrumenter;
+; and one real scenario — two instrumented executables that disagree
+; about one library, each running its own mutation loop and writing its
+; own verdict file, which is the case the command exists for. bin/main.exe
+; is driven as a subprocess over both. A windtrap suite (see test/mutate).
+; The lib/ globs feed the Law-12 budget check: the test counts the core's
+; mutation-runtime mentions and fails when the seam grows past its cap.
+
+(test
+ (name test_mutate_cli)
+ (modules test_mutate_cli)
+ (libraries windtrap windtrap_mutate unix)
+ (deps
+  ../../bin/main.exe
+  pins_add.exe
+  pins_sub.exe
+  calc.ml
+  (glob_files ../../lib/*.ml)
+  (glob_files ../../lib/*.mli)))
+
+; The library under mutation, instrumented unconditionally with (pps ...)
+; rather than through an (instrumentation) stanza, so the mutants exist in
+; an ordinary `dune runtest` build and the scenario needs no
+; --instrument-with to be meaningful. calc.ml is also a test dep: the
+; scenario replants it in a scratch project so the survivor excerpt
+; resolves.
+
+(library
+ (name mutcli_fixture)
+ (modules calc)
+ (preprocess
+  (pps ppx_windtrap.mutate)))
+
+(executable
+ (name pins_add)
+ (modules pins_add)
+ (libraries windtrap mutcli_fixture))
+
+(executable
+ (name pins_sub)
+ (modules pins_sub)
+ (libraries windtrap mutcli_fixture))

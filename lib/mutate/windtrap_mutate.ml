@@ -553,25 +553,65 @@ module Id_map = Map.Make (struct
   let compare = compare_id
 end)
 
-type t = verdict Id_map.t
+type record = {
+  id : id;
+  span : int * int;
+  before : string;
+  after : string;
+  verdict : verdict;
+}
+
+let record_of_mutant (m : mutant) verdict =
+  { id = m.id; span = m.span; before = m.before; after = m.after; verdict }
+
+(* The rendering a record carries beside its verdict. Stored apart from
+   the identifier because the identifier is the map's key: a value that
+   repeated it could disagree with it. *)
+type rendering = { r_span : int * int; r_before : string; r_after : string }
+
+(* Two files describing one mutant are expected to agree here, and can
+   disagree only across builds of one source - where the data says
+   nothing about which build the reader is looking at. So the choice is
+   made for determinism: a total order, smaller wins, which is what keeps
+   [add] and [merge] commutative and associative. *)
+let compare_rendering a b =
+  let c = Int.compare (fst a.r_span) (fst b.r_span) in
+  if c <> 0 then c
+  else
+    let c = Int.compare (snd a.r_span) (snd b.r_span) in
+    if c <> 0 then c
+    else
+      let c = String.compare a.r_before b.r_before in
+      if c <> 0 then c else String.compare a.r_after b.r_after
+
+type t = (rendering * verdict) Id_map.t
 
 let empty = Id_map.empty
 let is_empty = Id_map.is_empty
 
-let add t id verdict =
+let record_of id (r, verdict) =
+  { id; span = r.r_span; before = r.r_before; after = r.r_after; verdict }
+
+let add t r =
   let verdict =
-    match verdict with
+    match r.verdict with
     | Survived s -> survived (s.witness :: s.others)
-    | Killed _ | Unreached -> verdict
+    | Killed _ | Unreached -> r.verdict
   in
-  Id_map.update id
+  let rendering = { r_span = r.span; r_before = r.before; r_after = r.after } in
+  Id_map.update r.id
     (function
-      | None -> Some verdict | Some prior -> Some (merge_verdict prior verdict))
+      | None -> Some (rendering, verdict)
+      | Some (prior, prior_verdict) ->
+          Some
+            ( (if compare_rendering prior rendering <= 0 then prior
+               else rendering),
+              merge_verdict prior_verdict verdict ))
     t
 
-let find t id = Id_map.find_opt id t
-let verdicts t = Id_map.bindings t
-let merge a b = Id_map.fold (fun id verdict acc -> add acc id verdict) b a
+let find t id = Option.map (record_of id) (Id_map.find_opt id t)
+let records t = List.map (fun (id, v) -> record_of id v) (Id_map.bindings t)
+let merge a b = Id_map.fold (fun id v acc -> add acc (record_of id v)) b a
 
 (* Serialization *)
 
@@ -617,9 +657,12 @@ let to_string ?identity t =
       Printf.bprintf buffer "exe %s %d %s\n" digest (String.length exe) exe);
   Printf.bprintf buffer "%d\n" (Id_map.cardinal t);
   Id_map.iter
-    (fun id verdict ->
-      Printf.bprintf buffer "%d %s %d %d %d %s " (String.length id.file) id.file
-        id.line id.col (String.length id.rewrite) id.rewrite;
+    (fun id (r, verdict) ->
+      Printf.bprintf buffer "%d %s %d %d %d %s %d %d %d %s %d %s "
+        (String.length id.file) id.file id.line id.col
+        (String.length id.rewrite) id.rewrite (fst r.r_span) (snd r.r_span)
+        (String.length r.r_before) r.r_before (String.length r.r_after)
+        r.r_after;
       add_verdict buffer verdict;
       Buffer.add_char buffer '\n')
     t;
@@ -758,7 +801,14 @@ let of_string ?(path = "<string>") s =
         let id = { file; line; col; rewrite } in
         if Id_map.mem id !result then
           parse_fail "duplicate record for %s" (id_to_string id);
-        result := add !result id (read_verdict ())
+        let first = read_nat "span start" in
+        let last = read_nat "span end" in
+        if first > last then parse_fail "inverted span %d-%d" first last;
+        let before = read_name "before" in
+        let after = read_name "after" in
+        let verdict = read_verdict () in
+        result :=
+          add !result { id; span = (first, last); before; after; verdict }
       done;
       skip_ws ();
       if !pos <> len then parse_fail "trailing data at offset %d" !pos;

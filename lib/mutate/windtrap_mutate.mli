@@ -63,8 +63,8 @@ val pp_id : Format.formatter -> id -> unit
 val compare_id : id -> id -> int
 (** [compare_id a b] orders identifiers lexicographically by [file], then
     [line], then [col], then [rewrite]. This is the order {!catalogue},
-    {!verdicts} and {!to_string} use, so equal collections serialize
-    identically. *)
+    {!records} and {!to_string} use, so equal collections serialize identically.
+*)
 
 val equal_id : id -> id -> bool
 (** [equal_id a b] is [compare_id a b = 0]. *)
@@ -424,7 +424,15 @@ val pp_verdict : Format.formatter -> verdict -> unit
     first line; {!of_string} and {!load} reject any other header loudly, and
     cross-version compatibility is not promised. The magic line may be followed
     by the writing executable's {!type:identity}, which the merge uses to
-    exclude verdicts whose executable was deleted or rebuilt since the run. *)
+    exclude verdicts whose executable was deleted or rebuilt since the run.
+
+    A file is {b self-describing}: each {!type:record} carries not only the
+    mutant's identifier and verdict but the span and the [before]/[after]
+    renderings the report draws it with. The catalogue does not travel — it
+    lives inside the instrumented binary, which the merging command never links
+    — so a record naming only an identifier would produce a project-level report
+    strictly worse than the per-executable one it replaces. It is also what lets
+    a report outlive the executable that produced it. *)
 
 (** The type for verdict-file errors. All are recoverable: the reporting command
     prints them via {!pp_error} and exits nonzero. There is no mismatch error
@@ -444,32 +452,59 @@ val pp_error : Format.formatter -> error -> unit
 (** [pp_error ppf e] formats a human-readable message for [e], including the
     likely fix. *)
 
+type record = {
+  id : id;  (** The mutant's identifier. *)
+  span : int * int;
+      (** The mutated expression's half-open byte extent, as in {!type:mutant}.
+      *)
+  before : string;  (** The original expression's source text. *)
+  after : string;  (** The armed expression's source text. *)
+  verdict : verdict;  (** What the run made of the mutant. *)
+}
+(** The type for one verdict-file record: a mutant, as much of it as a report
+    needs to draw, and its verdict. A mutant dismissed by [[@mutate off]] has no
+    record: it is never forked and never receives a verdict. *)
+
+val record_of_mutant : mutant -> verdict -> record
+(** [record_of_mutant m v] is [m]'s record with verdict [v] — the identifier,
+    span and renderings of [m], which is what the loop holds when a child
+    reports. [m.dismissed] is dropped, having no meaning for a mutant that was
+    tested. *)
+
 type t
-(** The type for verdict collections: a finite map from {!type:id} to
-    {!type:verdict}. Immutable. *)
+(** The type for verdict collections: a finite map from {!type:id} to its
+    {!type:record}. Immutable. *)
 
 val empty : t
-(** [empty] is the collection with no verdicts. *)
+(** [empty] is the collection with no records. *)
 
 val is_empty : t -> bool
-(** [is_empty t] is [true] iff [t] holds no verdicts. *)
+(** [is_empty t] is [true] iff [t] holds no records. *)
 
-val add : t -> id -> verdict -> t
-(** [add t id v] is [t] with [v] recorded for [id], combined with any verdict
-    already there through {!merge_verdict}. Survivor witnesses are sorted and
-    deduplicated, so equal collections serialize identically however they were
-    built. *)
+val add : t -> record -> t
+(** [add t r] is [t] with [r] recorded, combined with any record already under
+    [r.id]: the verdicts through {!merge_verdict}, and the renderings by keeping
+    the lexicographically smaller [(span, before, after)] of the two.
 
-val find : t -> id -> verdict option
-(** [find t id] is [id]'s verdict in [t], [None] when [t] has none. *)
+    Two records for one identifier are expected to agree on the rendering, and
+    can disagree only if they came from different builds of one source — where
+    nothing in the data says which build the reader is looking at. The rule is
+    therefore picked for determinism rather than for cleverness: it keeps {!add}
+    and {!merge} commutative, associative and idempotent, so a report never
+    depends on the order the files happened to be read in. Survivor witnesses
+    are sorted and deduplicated for the same reason. *)
 
-val verdicts : t -> (id * verdict) list
-(** [verdicts t] is [t]'s bindings ordered by {!compare_id}. *)
+val find : t -> id -> record option
+(** [find t id] is [id]'s record in [t], [None] when [t] has none. *)
+
+val records : t -> record list
+(** [records t] is [t]'s records ordered by {!compare_id}. *)
 
 val merge : t -> t -> t
-(** [merge a b] is the union of [a] and [b], combining shared identifiers with
-    {!merge_verdict}. Commutative, associative and idempotent, with {!empty} as
-    its unit. *)
+(** [merge a b] is the union of [a] and [b], combining shared identifiers as
+    {!add} does. Commutative, associative and idempotent, with {!empty} as its
+    unit — so merging any number of verdict files in any order gives one answer.
+*)
 
 type identity = { exe : string; digest : string }
 (** The type for verdict-file writer identities: [exe] is the writing
@@ -533,10 +568,11 @@ val of_string : ?path:string -> string -> (t * identity option, error) result
     the recorded writer identity, [None] when [s] carries none. [path], used in
     errors, defaults to ["<string>"]. Errors: [Unknown_format] for a foreign
     header, [Corrupt] for truncated or invalid data — a negative or oversized
-    count, a line that is not 1-based, a rewrite outside {!rewrites}, an unknown
-    verdict tag, a survivor naming no test, a duplicate identifier, a malformed
-    identity line, or trailing garbage. Nothing is repaired and nothing is
-    guessed: a file this module cannot read exactly is not read at all.
+    count, a line that is not 1-based, a rewrite outside {!rewrites}, an
+    inverted span, an unknown verdict tag, a survivor naming no test, a
+    duplicate identifier, a malformed identity line, or trailing garbage.
+    Nothing is repaired and nothing is guessed: a file this module cannot read
+    exactly is not read at all.
 
     Round trip: [of_string (to_string ?identity t)] is [Ok (t, identity)]. *)
 

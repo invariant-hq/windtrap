@@ -531,15 +531,18 @@ let witness_locations tests =
     (Test_tree.flatten tests);
   table
 
-let survivor_of ~locations (mutant : M.mutant) witnesses : Render.survivor =
+(* From the verdict record, not from the catalogue: the record carries
+   the renderings precisely so that this projection is the same one
+   [windtrap mutate] makes over a file it did not write. *)
+let survivor_of ~locations (r : M.record) witnesses : Render.survivor =
   {
-    Render.file = mutant.M.id.M.file;
-    line = mutant.M.id.M.line;
-    col = mutant.M.id.M.col;
-    rewrite = mutant.M.id.M.rewrite;
-    before = mutant.M.before;
-    after = mutant.M.after;
-    source = read_source mutant.M.id.M.file;
+    Render.file = r.M.id.M.file;
+    line = r.M.id.M.line;
+    col = r.M.id.M.col;
+    rewrite = r.M.id.M.rewrite;
+    before = r.M.before;
+    after = r.M.after;
+    source = read_source r.M.id.M.file;
     witnesses =
       List.map
         (fun path ->
@@ -705,7 +708,7 @@ let run_mutant ~armed ~expired ~scratch ~index ~config ~suite ~paths ~budget
 let run_children ~armed ~expired ~scratch ~config ~suite ~reach ~ordered tests =
   let verdicts = ref M.empty in
   let record (mutant : M.mutant) verdict =
-    verdicts := M.add !verdicts mutant.M.id verdict
+    verdicts := M.add !verdicts (M.record_of_mutant mutant verdict)
   in
   let rec go index = function
     | [] -> Ok !verdicts
@@ -758,18 +761,15 @@ let write_verdicts verdicts =
 let print_report renderer ~limit ~population ~unreached ~verdicts ~duration
     ~seed ~siblings tests =
   let locations = witness_locations tests in
-  let mutant_of id =
-    List.find_opt (fun (m : M.mutant) -> M.equal_id m.M.id id) population
-  in
-  let bindings = M.verdicts verdicts in
+  let records = M.records verdicts in
   let survivors =
     List.filter_map
-      (fun (id, verdict) ->
-        match (verdict, mutant_of id) with
-        | M.Survived { witness; others }, Some mutant ->
-            Some (survivor_of ~locations mutant (witness :: others))
-        | _ -> None)
-      bindings
+      (fun (r : M.record) ->
+        match r.M.verdict with
+        | M.Survived { witness; others } ->
+            Some (survivor_of ~locations r (witness :: others))
+        | M.Killed _ | M.Unreached -> None)
+      records
   in
   (* Ordered by reaching-test count descending: the survivor the most
      tests watched is the one whose block a reader can act on soonest.
@@ -787,8 +787,9 @@ let print_report renderer ~limit ~population ~unreached ~verdicts ~duration
   let killed =
     List.length
       (List.filter
-         (fun (_, v) -> match v with M.Killed _ -> true | _ -> false)
-         bindings)
+         (fun (r : M.record) ->
+           match r.M.verdict with M.Killed _ -> true | _ -> false)
+         records)
   in
   Render.mutation_report renderer
     {
@@ -884,7 +885,8 @@ let loop renderer spine ~(config : Run.config) ~limit tests =
           | Ok reported ->
               let verdicts =
                 List.fold_left
-                  (fun acc (m : M.mutant) -> M.add acc m.M.id M.Unreached)
+                  (fun acc (m : M.mutant) ->
+                    M.add acc (M.record_of_mutant m M.Unreached))
                   reported unreached
               in
               let path = write_verdicts verdicts in
