@@ -130,16 +130,25 @@ drivers in their scrubbed child environments.
 `lib/` also carries `(instrumentation (backend ppx_windtrap.mutate))`.
 
 ```
-WINDTRAP_MUTATE=1 dune build @runtest --instrument-with ppx_windtrap.mutate
-dune build @mutate
+WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
+  test/unit/main.exe -- -f p          # run the loop, write a verdict
+dune build @mutate                    # merge the verdicts and report
 ```
 
-Unlike coverage, the two steps do not collapse into one alias. A
-`.coverage` dump is written by any instrumented run as a side effect; a
-`.mutants` verdict only exists if a suite was *asked* to test its
-mutants, which is what `WINDTRAP_MUTATE=1` does — it takes the process
-over and runs the fork loop. `@mutate` merges whatever previous runs
-left behind.
+Two steps, per executable, and they do not collapse into one alias the
+way coverage's do. A `.coverage` dump is written by any instrumented run
+as a side effect, so `@cover` can both run and merge. A `.mutants`
+verdict only exists if a suite was *asked* to test its mutants —
+`WINDTRAP_MUTATE=1` takes the process over and runs the fork loop — and
+`@mutate` deliberately depends on nothing: putting `(alias_rec runtest)`
+in front of the merge would rebuild every test executable
+*uninstrumented*, which invalidates the very verdicts the merge is about
+to read. It runs nothing and reports what previous runs left.
+
+Do not reach for `WINDTRAP_MUTATE=1 dune build @runtest`: that sets the
+variable for every test action at once, so every instrumented executable
+starts its own loop, including the whole-core one below that does not
+finish.
 
 Six modules opt out with `[@@@mutate exclude_file]`: `runner`, `run`,
 `driver`, `mutate_loop`, `ppx_runtime` and `windtrap`. They are the
@@ -196,21 +205,34 @@ get past the check: `-f p` does, `-f seed`, `-f text`, `-f diff` and
 `-f tag` do not, and abort with a message whose first suggestion (the
 library was not instrumented) is the wrong one here.
 
-The survivors are worth reading rather than counting. The first run
-named, among others:
+**A narrowed run's survivors are relative to its selection**, and that
+has to be said before any of them is believed. A mutant is reported as
+surviving when no *selected* test killed it; a test the filter left out
+may kill it anyway. Confirm before acting, by arming it against the
+whole suite:
 
 ```
-SURVIVED  lib/seed.ml:101:5:lt      (Int64.compare bound 0L) <= 0  →  < 0
-SURVIVED  lib/property.ml:258:17:ge  count > (max_int / 2)  →  count >= (max_int / 2)
-SURVIVED  lib/path_ops.ml:183:5:lt   (String.length out) <= 80  →  < 80
+WINDTRAP_MUTATE_ARM=lib/path_ops.ml:183:5:lt \
+  dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
 ```
 
-Three untested boundaries, each reached by dozens of tests. That is the
-class of defect coverage cannot see: every one of those lines is
-covered.
+Green means it really does survive; red means the narrow run misled you.
+Of the first three survivors this looked worth chasing, that check
+killed one:
 
-Two things were fixed on the way to learning all that, and both are
-worth keeping regardless of when the rest lands:
+```
+lib/path_ops.ml:183:5:lt   (String.length out) <= 80  ->  < 80   survives
+lib/property.ml:258:17:ge  count > (max_int / 2)      ->  >=     survives
+lib/seed.ml:101:5:lt       (Int64.compare bound 0L) <= 0 -> < 0  KILLED by the
+                                                                 seed tests,
+                                                                 which -f p
+                                                                 excludes
+```
+
+The two that hold are untested boundaries reached by dozens of tests —
+the class of defect coverage cannot see, since every one of those lines
+is covered. The one that did not is the reason the score is a reading
+list and not a number to quote.
 
 - The exclusions above. Without them the blocking mutants were in the
   scheduler itself, which is unarguable.

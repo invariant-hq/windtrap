@@ -34,9 +34,14 @@ OPTIONS:
 (* The re-run, spelled once. Every remedy this command prints names it,
    and it is the alias recipe from the manual with --force, which is
    load-bearing: a mutation run is not a cached artifact. *)
+(* The remedy is a RUN, not this alias: @mutate merges verdicts and runs
+   nothing, because an ordinary `dune runtest` in front of the merge would
+   rebuild the executables uninstrumented and invalidate the very files it
+   is about to read. A verdict comes from a suite asked to test its
+   mutants. *)
 let rerun =
-  "  WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with \
-   ppx_windtrap.mutate"
+  "  WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
+   <test executable> --"
 
 (* Flags *)
 
@@ -207,11 +212,23 @@ let load_merged files =
       let entries = List.rev entries in
       let kept = List.filter (fun (_, _, f) -> f = Fresh) entries in
       let excluded = List.filter (fun (_, _, f) -> f <> Fresh) entries in
-      List.iter
-        (fun (path, _, f) ->
-          Printf.eprintf "windtrap mutate: %s; excluding it\n%!"
-            (describe ~path f))
+      (* Per-file detail is what a reader wants when a verdict or two is
+         stale among many: it names the executable and the reason. When
+         every file is excluded it is the same sentence N times, and it
+         buries the one fact that matters — that no mutation run has
+         happened since this build. Cap it; the [kept = []] branch below
+         carries the summary and both remedies. *)
+      let detail_cap = 3 in
+      let excluded_count = List.length excluded in
+      List.iteri
+        (fun i (path, _, f) ->
+          if i < detail_cap then
+            Printf.eprintf "windtrap mutate: %s; excluding it\n%!"
+              (describe ~path f))
         excluded;
+      if excluded_count > detail_cap then
+        Printf.eprintf "windtrap mutate: ... and %d more like that\n%!"
+          (excluded_count - detail_cap);
       (* Two exclusions, two remedies, and they are not interchangeable.
          A forced run rewrites a stale verdict; nothing rewrites an
          orphan, whose executable no longer exists — the file is a
@@ -232,11 +249,29 @@ let load_merged files =
              %!"
       end;
       if kept = [] then begin
+        let orphans =
+          List.length
+            (List.filter
+               (fun (_, _, f) ->
+                 match f with Orphan _ -> true | Fresh | Stale _ -> false)
+               excluded)
+        in
         Printf.eprintf
-          "windtrap mutate: every .mutants file is orphaned or stale\n\
+          "windtrap mutate: found %d .mutants file%s and every one is %s\n\
+          \  A verdict is written only by a run asked to test its mutants, \
+           and it is\n\
+          \  invalidated by any later build of the executable that wrote it \
+           — an\n\
+          \  ordinary `dune runtest` is enough.\n\
            Re-run the mutation tests:\n\
            %s\n\
-           and delete leftovers of removed executables.\n"
+           and delete leftovers of removed executables.\n\
+           %!"
+          excluded_count
+          (if excluded_count = 1 then "" else "s")
+          (if orphans = excluded_count then "orphaned"
+           else if orphans = 0 then "stale"
+           else Printf.sprintf "stale or orphaned (%d orphaned)" orphans)
           rerun;
         Error 1
       end

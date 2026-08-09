@@ -5,7 +5,8 @@
 ;
 ;   dune build @cover --instrument-with ppx_windtrap.coverage
 ;
-;   WINDTRAP_MUTATE=1 dune build @runtest --instrument-with ppx_windtrap.mutate
+;   WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
+;     test/unit/main.exe -- -f p
 ;   dune build @mutate
 ;
 ; The two are not symmetric, and the asymmetry is the runtimes'. Coverage
@@ -71,10 +72,21 @@
 ; The selection must match some path_ops tests or the forced-fail check
 ; turns it away; see doc/dev/testing.md.
 
+; NOTE the missing (alias_rec runtest), which the cover alias above has.
+; It would be actively destructive here. Running the suite is how a
+; coverage dump comes into existence, so cover depends on it; a mutation
+; verdict is written only by a run that was ASKED to test its mutants,
+; and an ordinary `dune runtest` in front of the merge would rebuild
+; every test executable UNINSTRUMENTED — invalidating the very verdicts
+; this rule exists to read, which then all report as stale. So @mutate
+; merges what previous mutation runs left and runs nothing itself.
+
 (rule
  (alias mutate)
  (deps
-  (alias_rec runtest)
   (universe))
  (action
-  (run %{bin:windtrap} mutate)))
+  (setenv
+   WINDTRAP_COVERAGE_FILE
+   windtrap-reporter-self.coverage
+   (run %{bin:windtrap} mutate))))

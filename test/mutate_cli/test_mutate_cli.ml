@@ -682,7 +682,7 @@ let staleness =
   check_contains "a stale file's remedy is the forced re-run"
     ~needle:"a forced run rewrites stale verdicts" err;
   check_contains "and the re-run is spelled in full"
-    ~needle:"dune build @mutate --force --instrument-with ppx_windtrap.mutate"
+    ~needle:"WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate"
     err;
   check_absent "no deletion is asked for where nothing is orphaned"
     ~needle:"delete the orphaned files" err;
@@ -701,9 +701,9 @@ let staleness =
   check_contains "and says it did not write the file"
     ~needle:"not written by the executable now at" err;
   check_contains "the all-stale message states the situation"
-    ~needle:"every .mutants file is orphaned or stale" err;
+    ~needle:"and every one is stale" err;
   check_contains "and names the re-run"
-    ~needle:"dune build @mutate --force --instrument-with ppx_windtrap.mutate"
+    ~needle:"WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate"
     err
 
 (* Loud failures and usage *)

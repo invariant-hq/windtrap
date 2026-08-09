@@ -31,6 +31,20 @@ let read_file path =
 
 (* Masks the digits of every [in <seconds>s] duration token:
    ["1 failed in 0.0021s."] becomes ["1 failed in <duration>s."]. *)
+(* The mutation discovery line, dropped
+
+   lib/ carries an (instrumentation (backend ppx_windtrap.mutate)) stanza,
+   so under --instrument-with every run this driver spawns ends with
+   "mutants: N in M files ...". That line is a true statement about the
+   build and it is not what this golden is about — the golden pins the
+   RUNNER's transcript. There is no environment knob for it on purpose
+   (WINDTRAP_MUTATE=off still announces; test/mutate_loop pins that), so
+   the driver drops it here rather than the run suppressing it. *)
+let drop_discovery s =
+  String.split_on_char '\n' s
+  |> List.filter (fun line -> not (String.starts_with ~prefix:"mutants: " line))
+  |> String.concat "\n"
+
 let mask_durations s =
   let n = String.length s in
   let b = Buffer.create n in
@@ -157,7 +171,7 @@ let () =
       let transcript =
         replace ~pattern:scratch ~by:"<scratch>"
           (replace ~pattern:scratch_resolved ~by:"<scratch>"
-             (mask_full_log (mask_durations (read_file log))))
+             (drop_discovery (mask_full_log (mask_durations (read_file log)))))
       in
       write_file log
         (transcript

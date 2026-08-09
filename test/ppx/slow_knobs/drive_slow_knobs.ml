@@ -96,11 +96,18 @@ let mask_verbose_timing line =
     | None -> line
   else line
 
+(* The mutation discovery line is dropped for the same reason the
+   durations are masked: lib/ carries an (instrumentation (backend
+   ppx_windtrap.mutate)) stanza, so under --instrument-with every spawned
+   run ends with "mutants: N in M files ...". True, and not what this
+   golden is about. There is no environment knob for it on purpose —
+   WINDTRAP_MUTATE=off still announces, which test/mutate_loop pins. *)
 let mask s =
   String.concat "\n"
-    (List.map
-       (fun line -> mask_verbose_timing (mask_slow_entry line))
-       (String.split_on_char '\n' (mask_summary_durations s)))
+    (List.filter (fun line -> not (String.starts_with ~prefix:"mutants: " line))
+       (List.map
+          (fun line -> mask_verbose_timing (mask_slow_entry line))
+          (String.split_on_char '\n' (mask_summary_durations s))))
 
 let scrubbed_environment extra =
   let dropped name =
