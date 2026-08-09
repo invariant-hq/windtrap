@@ -32,9 +32,24 @@
       It counts the mutants the loop would test, so a site dismissed by
       [[@mutate off]] is offered nowhere and appears in no denominator. Adding
       the backend never makes a test run longer than it was.
-    - [WINDTRAP_MUTATE_ARM] set: one mutant armed for the whole process, the
-      announcement first (Law 16b), read-only checking (Law 16d), and
-      [mutant killed.] after a transcript that failed.
+    - [WINDTRAP_MUTATE_ARM] set and naming a site {e this} executable
+      catalogues: one mutant armed for the whole process, the announcement first
+      (Law 16b), read-only checking (Law 16d), and [mutant killed.] after a
+      transcript that failed.
+    - [WINDTRAP_MUTATE_ARM] set and naming a file this executable catalogues no
+      site in ({!Windtrap_mutate.Uncatalogued}): the ordinary run, plus one line
+      on [stderr] saying this binary holds no such mutant. It is {e not} a
+      refusal, and that is the difference between the report's headline remedy
+      working and failing. One identifier is armed across a whole project at
+      once —
+      [WINDTRAP_MUTATE_ARM=<id> dune runtest --instrument-with
+       ppx_windtrap.mutate], since no single binary can be named by a command
+      that links none — so in a project with several [(test)] stanzas the
+      identifier reaches every instrumented executable, and all but one of them
+      were built from other sources. Exiting [1] there would fail the build
+      {e because} the one binary that has the mutant armed it correctly. Nothing
+      is hidden by running on: an executable holding none of that file's sites
+      produces no verdict about them either way.
     - [WINDTRAP_MUTATE=1] (or [report]): the loop below, which takes the process
       over and reports on its own.
 
@@ -66,16 +81,18 @@
 
     {b Not in this slice.} Per-mutant deadlines, process groups and
     [WINDTRAP_MUTATE_JOBS]: the deadline is one whole-loop [Unix.setitimer],
-    complemented by the runtime's runaway hit-count budget, at the cost of
-    naming {e which} mutant hung. [report] mode's dismissed, not-armable and
-    timeout tables are likewise later, so [report] currently runs the loop and
-    prints the default report — and with no not-armable table, a site the dry
-    run only evaluated {e outside} a test (module initialization, a fixture
-    release) is listed as unreached rather than as not armable. Both are "no
-    test evaluates this" and neither is forked, so the score is right and only
-    the remedy the reader is offered is imprecise; {!Windtrap_mutate}'s reach
-    protocol already separates the two, and the table is what is missing.
-    Mutation needs [Unix.fork] and therefore declines by name on Windows.
+    complemented by the runtime's runaway hit-count budget. It costs the
+    per-mutant granularity, not the diagnosis — an expiry still names the mutant
+    it was on, and aborts the run rather than scoring it. [report] mode's
+    dismissed, not-armable and timeout tables are likewise later, so [report]
+    currently runs the loop and prints the default report — and with no
+    not-armable table, a site the dry run only evaluated {e outside} a test
+    (module initialization, a fixture release) is listed as unreached rather
+    than as not armable. Both are "no test evaluates this" and neither is
+    forked, so the score is right and only the remedy the reader is offered is
+    imprecise; {!Windtrap_mutate}'s reach protocol already separates the two,
+    and the table is what is missing. Mutation needs [Unix.fork] and therefore
+    declines by name on Windows.
 
     {b Exit codes} (Law 16e): [0] when the loop completed, {e whatever it found}
     — a survivor never fails a build in this release — and [1] when it refused
@@ -127,10 +144,22 @@ val execute_and_report :
     forked child before its first test, and once in the parent under
     [WINDTRAP_MUTATE_ARM]; it is never called by a run that arms nothing.
 
-    An unrecognized [WINDTRAP_MUTATE] or [WINDTRAP_MUTATE_LIMIT], and asking for
-    the loop and an armed mutant at once, are refusals: the message names the
-    variable and the result is [Reported 1]. A refusal is never a silently
-    defaulted run.
+    An unrecognized [WINDTRAP_MUTATE] or [WINDTRAP_MUTATE_LIMIT], asking for the
+    loop and an armed mutant at once, and a [WINDTRAP_MUTATE_ARM] that is
+    malformed, ambiguous, or {!Windtrap_mutate.Unmatched} within a file this
+    executable catalogues, are refusals: the message names the variable or the
+    candidates and the result is [Reported 1]. A refusal is never a silently
+    defaulted run. The one arming failure that is not a refusal is
+    {!Windtrap_mutate.Uncatalogued}, above.
+
+    Inside the loop, arming stays strict: each forked child arms a mutant the
+    parent took from {e this} binary's own catalogue, through the byte span
+    {!Windtrap_mutate.selector_of_mutant} gives it, so a child that fails to arm
+    has hit a bug — it reports an error line, which aborts the whole run without
+    a score, rather than running a green suite with nothing armed and calling
+    the result a survivor. The leniency above is about a project-level
+    instruction from outside the process, and reaches no further than the one
+    place that reads it.
 
     Effects: the union of {!Driver.execute_and_report}'s and, under the loop,
     [fork]/[waitpid]/[pipe]/[setitimer], one scratch log directory per run

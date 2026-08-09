@@ -128,6 +128,18 @@ let mutant_named rewrite =
       failf "no %S mutant in the catalogue: %s" rewrite
         (String.concat ", " (Lazy.force catalogue))
 
+(* A real identifier of this executable's own catalogue with its line
+   moved off every site: the file is one the binary was built from, so
+   the identifier is stale rather than another binary's, and it is the
+   case that must still refuse. Derived from the catalogue so that it
+   cannot accidentally become a valid site. *)
+let stale_id () =
+  let id = mutant_named "add" in
+  match String.split_on_char ':' id with
+  | [ file; _line; col; rewrite ] ->
+      String.concat ":" [ file; "999"; col; rewrite ]
+  | _ -> failf "unexpected identifier %S" id
+
 (* The [arm] line's variable binding, lifted out of a report exactly as a
    reader would copy it: from [WINDTRAP_MUTATE_ARM=] to the following
    space. Pasting it back is the only test of the hint that can fail when
@@ -456,8 +468,7 @@ let verdict_file_tests =
             equal ~msg:"exit code" int 0 code;
             says ~msg:"the total is scoped to what this executable links" out
               "mutants: 1 survived of 4 (this executable)";
-            says ~msg:"and the merge is named" out
-              "project: dune build @mutants"));
+            says ~msg:"and the merge is named" out "project: dune build @mutate"));
   ]
 
 let crash_tests =
@@ -556,11 +567,19 @@ let refusal_tests =
         equal ~msg:"exit code" int 1 code;
         says ~msg:"both variables named" err "WINDTRAP_MUTATE and ";
         says ~msg:"the arming variable" err M.arm_variable);
-    test "an unmatched armed identifier is refused with its candidates"
+    test
+      "an armed identifier stale within a file this build catalogues is refused"
       (fun () ->
-        let code, _, err = spawn [ M.arm_variable ^ "=subject.ml:999:0:add" ] in
+        (* The other side of the leniency below: the executable WAS built
+           from subject.ml, so an identifier naming a position no site of
+           it occupies is wrong or stale, and running green on it is how a
+           silently ignored arming becomes a false survivor. *)
+        let code, out, err = spawn [ M.arm_variable ^ "=" ^ stale_id () ] in
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the identifier" err "subject.ml:999:0:add");
+        says ~msg:"the identifier" err (stale_id ());
+        says ~msg:"the diagnosis" err "no such mutation site";
+        says ~msg:"the file's real sites are named" err (mutant_named "add");
+        denies ~msg:"and the suite did not run" out "calc: ");
   ]
 
 let armed_tests =
@@ -757,6 +776,66 @@ let runaway_tests =
                  (M.records verdicts)));
   ]
 
+(* One identifier, every executable — the report's own remedy
+
+   The report tells the reader to arm a survivor with
+   [WINDTRAP_MUTATE_ARM=<id> dune runtest --instrument-with
+   ppx_windtrap.mutate], because a command that links no test executable
+   has no single binary to name. That runs EVERY instrumented executable
+   with the variable set, and windtrap's own lib/ is covered by seven. So
+   the scenario here is the real one: one identifier handed to two
+   executables built from disjoint sources — suite_main from subject.ml,
+   runaway_main from spinner.ml — once to the binary that holds the
+   mutant and once to a binary that does not. Both must be usable answers
+   to one command, or dune fails the build BECAUSE the one binary that
+   has the mutant armed it correctly. *)
+
+let cross_executable_tests =
+  [
+    test "an identifier this executable holds no site of lets it run green"
+      (fun () ->
+        let id = mutant_named "add" in
+        let code, out, err =
+          spawn ~exe:runaway_exe [ M.arm_variable ^ "=" ^ id ]
+        in
+        equal ~msg:"exit code (this binary is not the one it is about)" int 0
+          code;
+        says ~msg:"the suite ran, ordinarily" out "spin: 1 passed";
+        denies ~msg:"and armed nothing" out " armed: ";
+        says ~msg:"it says whose mutant it is not" err
+          "not this executable's mutant";
+        says ~msg:"naming the identifier it declined" err id;
+        equal ~msg:"and says it exactly once" int 1
+          (List.length
+             (List.filter
+                (fun line -> has_sub line "not this executable's mutant")
+                (String.split_on_char '\n' err))));
+    test "the same identifier still arms the executable that does hold it"
+      (fun () ->
+        (* The pair is the point: one command, one identifier, and the
+           binary that catalogues the site does the work while its
+           siblings stand down. Asserted beside the decline so that a
+           change making every executable decline cannot pass. *)
+        let id = mutant_named "add" in
+        let code, out, _ = spawn [ M.arm_variable ^ "=" ^ id ] in
+        equal ~msg:"the mutant made a test fail" int 1 code;
+        says ~msg:"it armed the named mutant" out
+          ("mutant " ^ id ^ " armed: a - b \u{2192} a + b"));
+    test "a declining executable still takes the ordinary instrumented path"
+      (fun () ->
+        (* Declining is not arming: nothing is armed, so the process is
+           observationally the original program and owes no read-only
+           checking. The discovery line is the proof that it took the
+           ordinary instrumented path rather than a hushed one. *)
+        let id = mutant_named "add" in
+        let code, out, _ =
+          spawn ~exe:runaway_exe [ M.arm_variable ^ "=" ^ id ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        says ~msg:"the discovery line, as on any unarmed instrumented run" out
+          "mutants: 1 in 1 file");
+  ]
+
 (* The control: no instrumented module in the executable at all. *)
 
 let plain_exe = Filename.concat exe_dir "plain_main.exe"
@@ -776,14 +855,26 @@ let uninstrumented_tests =
         says ~msg:"the suite still ran" out "plain: 1 passed";
         says ~msg:"the diagnosis" err "links no instrumented module";
         says ~msg:"the fix" err "--instrument-with ppx_windtrap.mutate");
-    test "an armed identifier no build can match is refused, not ignored"
+    test "an armed identifier declines by name and leaves the run alone"
       (fun () ->
-        let code, _, err =
+        (* An uninstrumented executable is the commonest sibling of all:
+           under [WINDTRAP_MUTATE_ARM=<id> dune runtest] every (test)
+           stanza in the project gets the variable, and most of them
+           catalogue nothing. Exiting 1 here would fail the build for the
+           one executable that armed the mutant correctly. *)
+        let code, out, err =
           spawn ~exe:plain_exe [ M.arm_variable ^ "=lib/absent.ml:1:0:add" ]
         in
-        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"exit code" int 0 code;
+        says ~msg:"the suite ran exactly as it would unarmed" out
+          "plain: 1 passed";
+        denies ~msg:"nothing armed" out " armed: ";
+        denies ~msg:"and no discovery line, there being nothing to discover" out
+          "mutants:";
         says ~msg:"the identifier" err "lib/absent.ml:1:0:add";
-        says ~msg:"the diagnosis" err "no such mutation site");
+        says ~msg:"the diagnosis" err "not this executable's mutant";
+        says ~msg:"and the misconfiguration it could still be" err
+          "--instrument-with ppx_windtrap.mutate");
     test "a misspelled knob is loud even where there is nothing to mutate"
       (fun () ->
         let code, _, err = spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=perhaps" ] in
@@ -803,6 +894,7 @@ let () =
       group "crash" crash_tests;
       group "refusals" refusal_tests;
       group "armed" armed_tests;
+      group "one identifier, several executables" cross_executable_tests;
       group "read-only checking" read_only_tests;
       group "runaway budget" runaway_tests;
       group "uninstrumented" uninstrumented_tests;

@@ -205,19 +205,40 @@ val selector_of_mutant : mutant -> selector
 (** {1:arming Arming}
 
     At most one mutant is armed per process. Arming is loud: an identifier that
-    matches nothing, or matches more than one site, is an error naming the
+    matches more than one site, or that names a site of a file this executable
+    {e does} catalogue and matches none of them, is an error naming the
     candidates and never a silent no-op — a silently ignored arming turns a
-    green run into a false survivor. *)
+    green run into a false survivor.
+
+    The one case that is not a mistake is {!Uncatalogued}, and it is separated
+    from {!Unmatched} here because only the registry can tell the two apart. One
+    identifier is normally handed to {e every} test executable of a project at
+    once — [WINDTRAP_MUTATE_ARM=<id> dune runtest] is the spelling the report
+    prints, because a command that links no test executable has no single binary
+    to name — and in a project with several [(test)] stanzas most of those
+    executables were built from other sources entirely. Such an executable holds
+    no such mutant, produces no verdict, and hides nothing by running on.
+    Whether that is worth refusing over is the caller's decision — the mutation
+    loop makes it, and lets such a run proceed — but only this module can say
+    which of the two cases the identifier is in. *)
 
 (** The type for arming errors. All are recoverable: the loop prints them via
-    {!pp_arm_error} and refuses to start. *)
+    {!pp_arm_error}, and refuses to start on all but {!Uncatalogued}. *)
 type arm_error =
   | Malformed of { spec : string; reason : string }
       (** [spec] is not a mutant identifier; [reason] says why. *)
+  | Uncatalogued of { selector : selector }
+      (** This executable catalogues no site at all in [selector]'s file, so the
+          identifier is about some other binary — or about no binary, if nothing
+          was built with the mutation backend. Nothing is armed and nothing is
+          concealed: an executable that catalogues none of a file's sites cannot
+          produce a verdict about them either way. *)
   | Unmatched of { selector : selector; candidates : mutant list }
-      (** No site in this executable matches [selector]. [candidates] are the
-          mutants of the named file, empty when the executable links no
-          instrumented module for it. *)
+      (** [selector]'s file is catalogued here, but no site in it matches the
+          line, column and rewrite (or the byte span). [candidates] are that
+          file's mutants and are never empty — the empty case is
+          {!Uncatalogued}. This is a wrong or stale identifier: the caller
+          believes it named a mutant of {e this} executable and it did not. *)
   | Ambiguous of { selector : selector; candidates : mutant list }
       (** [selector] matches more than one site; [candidates] lists them, one
           entry per site. Usually they differ in span and the byte-offset
@@ -246,11 +267,14 @@ val selector_of_string : string -> (selector, arm_error) result
     for every [id] this module produces. *)
 
 val arm : ?budget:int -> selector -> (mutant, arm_error) result
-(** [arm sel] arms the single mutant [sel] names and is that mutant; any
-    previously armed mutant is disarmed first, whether or not [sel] resolves.
-    From then on the guard of that site — and of every module registering an
-    equal table for its file — answers [true]. At most one mutant is armed per
-    process, so this is the only way the answer is ever [true].
+(** [arm sel] arms the single mutant [sel] names and is that mutant, and is
+    {!Uncatalogued} when this executable holds no site of [sel]'s file at all,
+    {!Unmatched} when it holds that file's sites but none [sel] names, and
+    {!Ambiguous} when [sel] names several. Any previously armed mutant is
+    disarmed first, whether or not [sel] resolves. From then on the guard of
+    that site — and of every module registering an equal table for its file —
+    answers [true]. At most one mutant is armed per process, so this is the only
+    way the answer is ever [true].
 
     [budget] caps the armed site's reach count: the guard raises {!Runaway} on
     the evaluation that would take the count past [budget]. The count is the
@@ -270,8 +294,11 @@ val arm : ?budget:int -> selector -> (mutant, arm_error) result
 val arm_from_env : ?budget:int -> unit -> (mutant option, arm_error) result
 (** [arm_from_env ()] is [Ok None] when {!arm_variable} is unset or empty, and
     otherwise {!arm}s the selector it holds, as [Ok (Some m)]. Parse and
-    resolution failures are reported, never ignored. [budget] is as in {!arm}.
-*)
+    resolution failures are reported, never ignored — including {!Uncatalogued},
+    which is reported as the error it is a case of and left to the caller to
+    read as "not mine" rather than turned into [Ok None] here: a process that
+    ran with nothing armed and a process that was never asked to arm anything
+    print different things. [budget] is as in {!arm}. *)
 
 val disarm : unit -> unit
 (** [disarm ()] clears the armed mutant and the runaway budget. The guard is
@@ -356,9 +383,11 @@ type witness = string list
 (** The type for test paths: the names from the run root inwards, e.g.
     [["calc"; "arithmetic"; "adds"]]. *)
 
-(** The type for kill causes. Crash and timeout count as killed but are named
-    separately in the report: divergence is a detected behaviour change and a
-    reader is owed the chance to disbelieve it. *)
+(** The type for kill causes. All three count as killed — divergence is a
+    detected behaviour change — but they are recorded apart rather than
+    collapsed, because a reader is owed the chance to disbelieve a kill that no
+    assertion made. The distinction lives in the verdict file; the report of
+    this release carries one killed count and does not yet break it out. *)
 type cause =
   | Failed of witness  (** The test whose failure killed the mutant. *)
   | Crashed  (** The child died without reporting a verdict. *)

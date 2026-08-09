@@ -126,6 +126,15 @@ let windtrap_vars =
     "WINDTRAP_VERBOSE";
     "WINDTRAP_PROJECT_ROOT";
     "WINDTRAP_COVERAGE_ONLY";
+    (* The mutation knobs are read by every windtrap run, instrumented or
+       not, and one of them is meant to be set for a WHOLE project at
+       once: [WINDTRAP_MUTATE_ARM=<id> dune runtest] is the remedy every
+       survivor block prints. A suite that spawns a child and pins its
+       transcript byte for byte inherits that variable unless it is
+       named here. *)
+    "WINDTRAP_MUTATE";
+    "WINDTRAP_MUTATE_ARM";
+    "WINDTRAP_MUTATE_LIMIT";
   ]
 
 (* Unset is neutral for every variable above but one. lib/ carries an

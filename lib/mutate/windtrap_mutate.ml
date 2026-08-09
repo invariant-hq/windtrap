@@ -236,6 +236,7 @@ let selector_of_mutant m =
 
 type arm_error =
   | Malformed of { spec : string; reason : string }
+  | Uncatalogued of { selector : selector }
   | Unmatched of { selector : selector; candidates : mutant list }
   | Ambiguous of { selector : selector; candidates : mutant list }
 
@@ -265,10 +266,10 @@ let pp_arm_error ppf = function
         "%S is not a mutant identifier: %s; expected \
          <file>:<line>:<col>:<rewrite> or <file>:<first>-<last>:<rewrite>"
         spec reason
-  | Unmatched { selector; candidates = [] } ->
+  | Uncatalogued { selector } ->
       Format.fprintf ppf
-        "%a: no such mutation site; this executable links no instrumented \
-         module for %s (is the library under test built with --instrument-with \
+        "%a: not this executable's mutant; it catalogues no site in %s (if you \
+         expected one, is the library under test built with --instrument-with \
          ppx_windtrap.mutate?)"
         pp_selector selector (selector_file selector)
   | Unmatched { selector; candidates } ->
@@ -396,12 +397,23 @@ let arm ?budget selector =
       List.sort_uniq compare_mutant
         (List.map (fun (entry, i) -> site_mutant entry i) slots) )
   with
-  | _, [] ->
+  | _, [] -> (
+      (* The two ways an identifier can name nothing here, which are not
+         the same failure and must not carry the same name. A file this
+         executable catalogues no site in is a file it was not built
+         from: the identifier is about some other binary, and there is
+         nothing in this one to hide. A file it DOES catalogue, at a
+         position or span no site occupies, is a wrong or stale
+         identifier - the caller believes it named a mutant of this
+         binary and it did not. Only the registry can tell them apart,
+         so it is told here, in the answer, rather than left for a
+         caller to re-derive from an empty candidate list. *)
       let file = selector_file selector in
-      let candidates =
+      match
         List.filter (fun m -> String.equal m.id.file file) (catalogue ())
-      in
-      Error (Unmatched { selector; candidates })
+      with
+      | [] -> Error (Uncatalogued { selector })
+      | candidates -> Error (Unmatched { selector; candidates }))
   | None, [ mutant ] ->
       (* Every entry matching one mutant is armed: the same source file
          compiled into two modules must not leave one copy disarmed, or a

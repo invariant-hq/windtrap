@@ -922,6 +922,29 @@ let discovery_mode renderer spine ~config tests =
 
 let arm_mode renderer spine ~(config : Run.config) tests =
   match M.arm_from_env () with
+  | Error (M.Uncatalogued _ as error) ->
+      (* Not a refusal. One identifier is handed to every test
+         executable at once — the report's own remedy is
+         [WINDTRAP_MUTATE_ARM=<id> dune runtest --instrument-with
+         ppx_windtrap.mutate], because a command that links no test
+         executable has no single binary to name — and in a project with
+         several (test) stanzas most of them were built from other
+         sources. An executable that catalogues no site of the named file
+         is simply not the one the identifier is about: exiting 1 here
+         would fail the build for every sibling of the binary that armed
+         the mutant correctly, which is the report's headline advice
+         reporting failure when it works. Said once, on stderr, and
+         nothing is concealed by running on: no verdict is produced here
+         either way. A stale or misspelled identifier still names a
+         catalogued file, comes back [Unmatched] below, and still
+         refuses.
+
+         What follows is the run this process would have made with the
+         variable unset: the discovery line prints nothing when there is
+         nothing to discover, so an uninstrumented sibling is left with
+         its ordinary transcript and one line of stderr. *)
+      note "%s" (Format.asprintf "%a" M.pp_arm_error error);
+      discovery_mode renderer spine ~config tests
   | Error error ->
       Format.eprintf "%a@." M.pp_arm_error error;
       Reported 1
@@ -962,8 +985,10 @@ let execute_and_report ~armed ~invocation ~seed ~selection ~github ~output
   (* A listing is not a run: nothing executes, so there is nothing to
      observe, announce or mutate. Everything else goes through the knobs,
      instrumented or not — a variable the user set and misspelled must be
-     loud in every build, and an identifier that names no mutant comes
-     back [Unmatched] with no candidates, which is the whole diagnosis. *)
+     loud in every build, and an identifier that names a site of a file
+     this build does catalogue and matches none of them comes back
+     [Unmatched] with the file's candidates, which is the whole
+     diagnosis. *)
   if config.Run.list_only then Ran (drive spine ~config tests)
   else
     match Cli.mutation () with

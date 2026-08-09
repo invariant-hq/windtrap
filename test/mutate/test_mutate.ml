@@ -470,17 +470,49 @@ let registry_tests =
 
 let arming_tests =
   [
-    test "arming a file the executable does not link names no candidate"
+    test "arming a file the executable catalogues no site in is Uncatalogued"
       (fun () ->
+        (* Not [Unmatched]: one identifier is armed across a whole
+           project at once, and an executable built from other sources
+           is not the one it is about. The caller reads this case as
+           "not mine" and runs on, so it must be a case of its own and
+           not an [Unmatched] whose candidate list happens to be
+           empty. *)
         match
           M.arm
             (M.By_position (id ~file:"t/absent.ml" ~line:1 ~col:0 ~rewrite:"lt"))
         with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
-        | Error (M.Unmatched { candidates = []; _ }) -> ()
-        | Error e ->
-            failf "expected Unmatched with no candidates, got %a" M.pp_arm_error
-              e);
+        | Error (M.Uncatalogued { selector } as e) ->
+            equal ~msg:"the selector is returned whole" string
+              "t/absent.ml:1:0:lt"
+              (Format.asprintf "%a" M.pp_selector selector);
+            let rendered = Format.asprintf "%a" M.pp_arm_error e in
+            contains ~msg:"the message says whose mutant it is not"
+              ~sub:"not this executable's mutant" rendered;
+            contains ~msg:"and keeps the misconfiguration diagnosis"
+              ~sub:"--instrument-with ppx_windtrap.mutate" rendered
+        | Error e -> failf "expected Uncatalogued, got %a" M.pp_arm_error e);
+    test "a catalogued file with no matching site is Unmatched, never declined"
+      (fun () ->
+        (* The other half of the distinction: this executable WAS built
+           from the file, so the identifier is wrong or stale rather
+           than someone else's, and a caller must refuse on it. *)
+        register_only ~file:"t/stale.ml"
+          ~sites:[| site ~line:5 ~col:3 ~rewrite:"lt" ~span:(50, 55) () |];
+        match
+          M.arm
+            (M.By_span
+               { file = "t/stale.ml"; first = 90; last = 95; rewrite = "lt" })
+        with
+        | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
+        | Error (M.Unmatched { candidates; _ }) ->
+            equal ~msg:"the file's sites are named" (list string)
+              [ "t/stale.ml:5:3:lt" ]
+              (List.map
+                 (fun (m : M.mutant) -> M.id_to_string m.M.id)
+                 candidates)
+        | Error e -> failf "expected Unmatched, got %a" M.pp_arm_error e);
     test "arming a wrong position in a known file lists the file's sites"
       (fun () ->
         register_only ~file:"t/near.ml"
