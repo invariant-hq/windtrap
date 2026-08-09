@@ -27,6 +27,13 @@ let get_int name =
   Option.bind (get_raw name) (fun s -> int_of_string_opt (String.trim s))
 
 let get_string = get_raw
+
+(* Comma-separated lists (WINDTRAP_TAG and its kind): trimmed items, empties
+   dropped, so `a, b ,,c ` reads as the three labels it obviously means. *)
+let split_comma s =
+  String.split_on_char ',' s |> List.map String.trim
+  |> List.filter (fun s -> s <> "")
+
 let is_truthy name = Option.value ~default:false (get_bool name)
 
 (* Set-and-not-falsy: `CI=false` must not count as CI. *)
@@ -85,33 +92,12 @@ let use_color_stderr () =
   resolve_color (color_mode ()) ~tty:(is_tty_stderr ())
     ~inside_dune:(inside_dune ()) ~term_dumb:(term_dumb ())
 
-(* Run control *)
+(* Settings with no command-line flag
 
-let seed () = get_string "WINDTRAP_SEED"
-let filter () = get_string "WINDTRAP_FILTER"
-let exclude () = get_string "WINDTRAP_EXCLUDE"
-
-let split_comma s =
-  String.split_on_char ',' s |> List.map String.trim
-  |> List.filter (fun s -> s <> "")
-
-let comma_list name =
-  match get_string name with Some s -> split_comma s | None -> []
-
-let tags () = comma_list "WINDTRAP_TAG"
-let exclude_tags () = comma_list "WINDTRAP_EXCLUDE_TAG"
-
-(* Like [seed]: raw tokens, the CLI layer owns validation — a malformed
-   winning mirror must be a loud usage error, never a silent default
-   (prop/F-4). *)
-let timeout () = get_string "WINDTRAP_TIMEOUT"
-let slow_threshold () = get_string "WINDTRAP_SLOW_THRESHOLD"
-let prop_count () = get_string "WINDTRAP_PROP_COUNT"
-let max_shrink () = get_string "WINDTRAP_MAX_SHRINK"
-let shard () = get_string "WINDTRAP_SHARD"
-let stream () = get_bool "WINDTRAP_STREAM"
-let verbose () = get_bool "WINDTRAP_VERBOSE"
-let quiet () = get_bool "WINDTRAP_QUIET"
+   The flag mirrors are not here: each is declared beside its flag in
+   [Cli]'s table and read through the generic readers above, which is what
+   keeps a mirror from parsing differently from the flag it mirrors. What
+   remains are the variables no flag can set. *)
 
 let columns () =
   match get_int "WINDTRAP_COLUMNS" with
@@ -120,8 +106,12 @@ let columns () =
 
 let tail_errors () = get_int "WINDTRAP_TAIL_ERRORS"
 let allow_focus () = is_truthy "WINDTRAP_ALLOW_FOCUS"
+let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 
-(* Snapshot control *)
+(* Snapshot update modes
+
+   The one mirror still parsed here, because its vocabulary is wider than
+   its flag's: [-u] cannot spell [force]. *)
 
 type update = No_update | Update | Force_update
 
@@ -131,10 +121,3 @@ let update () =
   | Some s -> (
       if String.lowercase_ascii (String.trim s) = "force" then Force_update
       else match parse_bool s with Some true -> Update | _ -> No_update)
-
-let prune () = is_truthy "WINDTRAP_PRUNE"
-let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
-
-(* Coverage *)
-
-let coverage () = get_string "WINDTRAP_COVERAGE"

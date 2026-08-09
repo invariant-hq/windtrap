@@ -13,6 +13,17 @@
     mirrors {e are} the CLI), and {!help} renders the flag and variable
     inventory.
 
+    A flag's mirror is declared in that table beside the flag, and its value is
+    applied through the flag's own parser, so the two cannot drift: a variable
+    accepts exactly what its flag accepts, refuses exactly what its flag
+    refuses, with the same [expected] wording, and differs only in naming the
+    variable rather than the flag as the source of a bad value. {!Env} is
+    consulted for the reading, not for the inventory — the settings it still
+    owns outright are the ones no flag can set ([WINDTRAP_ALLOW_FOCUS],
+    [WINDTRAP_COLUMNS], [WINDTRAP_TAIL_ERRORS], [WINDTRAP_PROJECT_ROOT]) and the
+    two vocabularies wider than their flag's ([WINDTRAP_UPDATE]'s [force],
+    [WINDTRAP_COLOR]'s lenient fall back to {!Env.Auto}).
+
     Nothing in this module prints or exits: parse and resolution failures are
     returned as a typed {!type:error} — the caller renders {!error_message} and
     exits [2] — and [--help]/[--version] come back as flags on {!type:parsed}
@@ -143,19 +154,23 @@ val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
 
     [Error (Invalid_value _)] with source [WINDTRAP_SEED] when the seed falls
     through to a malformed environment token; a well-formed [overrides] or [cli]
-    seed leaves the variable unread. [WINDTRAP_SHARD] and the numeric mirrors
-    [WINDTRAP_TIMEOUT], [WINDTRAP_PROP_COUNT], and [WINDTRAP_SLOW_THRESHOLD] are
-    treated the same way: a token in the winning layer that does not parse is an
-    error naming the variable, never silently ignored — a misread shard would
-    silently rerun the whole suite in every bucket, and a misread count or limit
-    would silently run with the default. The winning [timeout], [prop_count],
-    and [bail] must be positive ([timeout] finite as well), the winning
-    [slow_threshold] must be finite and non-negative, and the winning [shard]
-    must satisfy [1 <= K <= N]: {!parse} already rejects such values on the
-    command line, and a violation arriving through an environment mirror or a
-    programmatic override is [Error (Invalid_value _)] naming that source —
-    never a config that detonates mid-run. {!parsed.help} and {!parsed.version}
-    are ignored — acting on them is the caller's job. *)
+    seed leaves the variable unparsed. [WINDTRAP_SHARD] and the numeric mirrors
+    [WINDTRAP_TIMEOUT], [WINDTRAP_SLOW_THRESHOLD], [WINDTRAP_PROP_COUNT] and
+    [WINDTRAP_MAX_SHRINK] are treated the same way, and by the same code: a
+    mirror is read through its flag's parser, so a value the flag would reject
+    is an error naming the variable, never silently ignored — a misread shard
+    would silently rerun the whole suite in every bucket, and a misread count or
+    limit would silently run with the default. A mirror whose flag a higher
+    layer already decided is not even parsed.
+
+    The winning [timeout], [prop_count], [max_shrink] and [bail] must be
+    positive ([timeout] finite as well), the winning [slow_threshold] must be
+    finite and non-negative, and the winning [shard] must satisfy [1 <= K <= N].
+    {!parse} and the mirrors enforce this already, each naming its own source; a
+    violation that arrives through [overrides] — the one layer with no parser
+    between it and the run — is [Error (Invalid_value _)] naming the flag
+    spelling, never a config that detonates mid-run. {!parsed.help} and
+    {!parsed.version} are ignored — acting on them is the caller's job. *)
 
 val coverage_mode :
   parsed -> ([ `Summary | `Report | `Full | `Off ], error) result
@@ -170,7 +185,10 @@ val coverage_mode :
 
     Effects: reads the environment when {!parsed.coverage} is [None].
     [Error (Invalid_value _)] with source [WINDTRAP_COVERAGE] when the winning
-    environment value is not one of [summary], [report], [full], [off]. *)
+    environment value is not one of [summary], [report], [full], [off]. It
+    builds the same environment layer {!resolve} does, so a malformed value in
+    any {e other} winning mirror is reported here too; callers resolve the
+    configuration first and exit on that error, which is where it belongs. *)
 
 val output_level :
   ?overrides:parsed -> parsed -> [ `Quiet | `Compact | `Verbose ]
@@ -185,7 +203,10 @@ val output_level :
     at every level.
 
     Effects: reads the environment when no layer above it decides. Never errors:
-    unparseable boolean values count as unset. *)
+    unparseable boolean values count as unset, and a malformed value in some
+    other mirror — which stops the shared environment layer short — leaves the
+    level at what the layers above the environment say, the caller's {!resolve}
+    having reported that error already. *)
 
 (** {1:help Help} *)
 

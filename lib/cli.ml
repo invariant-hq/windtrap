@@ -89,17 +89,49 @@ type arg =
       set : source:string -> parsed -> string -> (parsed, error) result;
     }
 
+(* How a mirror's raw value is spelled. Every reader but [Own] turns it
+   into tokens the flag's own [arg] consumes, which is what keeps a mirror
+   from validating differently from the flag it mirrors: same parser, same
+   range check, same [expected] text, only the error source differs.
+
+   [Token] is the whole value as one token, shaped — [Fun.id] where it is
+   read as written, [String.trim] for the numeric tokens. [Comma] is one
+   token per comma-separated item, trimmed, empties dropped. [Truthy] is a
+   boolean spelling: a truthy value applies a value-less flag. [Own] is a
+   vocabulary the variable owns and [Env] parses — WINDTRAP_UPDATE's
+   [force], WINDTRAP_COLOR's silent fall back to [Auto]. *)
+type reader =
+  | Token of (string -> string)
+  | Comma
+  | Truthy
+  | Own of (parsed -> parsed)
+
+(* A flag's WINDTRAP_* environment mirror, declared beside the flag it
+   mirrors. [absent p] is [true] while no layer above the environment has
+   decided this flag's field; it carries the precedence law for the mirror.
+   A mirror whose flag already lost is never even parsed, so a valid
+   [--timeout] shadows a malformed WINDTRAP_TIMEOUT instead of tripping over
+   it; and because the layer is folded in table order, the first mirror to
+   write a field keeps it — which is exactly the documented
+   WINDTRAP_VERBOSE-over-WINDTRAP_QUIET tie-break. Additive fields ([--tag],
+   [--exclude-tag]) are never closed: every layer contributes. *)
+type mirror = { var : string; reader : reader; absent : parsed -> bool }
+
 type entry = {
   short : string option;
   long : string;
   arg : arg;
   doc : string;
-  mirror : string option; (* WINDTRAP_* environment mirror, for --help *)
+  mirror : mirror option;
 }
 
 let invalid ~source ~value ~expected =
   Error (Invalid_value { source; value; expected })
 
+let mirrored var reader absent = Some { var; reader; absent }
+let verbatim = Token Fun.id
+let trimmed = Token String.trim
+let additive _ = true
 let set_string set = Value { metavar = "PATTERN"; set }
 
 let set_positive_int store =
@@ -152,7 +184,7 @@ let table =
         set_string (fun ~source:_ acc value ->
             Ok { acc with filter = Some value });
       doc = "Run only tests whose path contains PATTERN";
-      mirror = Some "WINDTRAP_FILTER";
+      mirror = mirrored "WINDTRAP_FILTER" verbatim (fun p -> p.filter = None);
     };
     {
       short = Some "-e";
@@ -161,7 +193,7 @@ let table =
         set_string (fun ~source:_ acc value ->
             Ok { acc with exclude = Some value });
       doc = "Skip tests whose path contains PATTERN";
-      mirror = Some "WINDTRAP_EXCLUDE";
+      mirror = mirrored "WINDTRAP_EXCLUDE" verbatim (fun p -> p.exclude = None);
     };
     {
       short = None;
@@ -175,7 +207,7 @@ let table =
                 Ok { acc with tags = acc.tags @ [ value ] });
           };
       doc = "Run only tests tagged LABEL (repeatable)";
-      mirror = Some "WINDTRAP_TAG";
+      mirror = mirrored "WINDTRAP_TAG" Comma additive;
     };
     {
       short = None;
@@ -189,7 +221,7 @@ let table =
                 Ok { acc with exclude_tags = acc.exclude_tags @ [ value ] });
           };
       doc = "Skip tests tagged LABEL (repeatable)";
-      mirror = Some "WINDTRAP_EXCLUDE_TAG";
+      mirror = mirrored "WINDTRAP_EXCLUDE_TAG" Comma additive;
     };
     {
       short = None;
@@ -205,7 +237,7 @@ let table =
                 | None -> invalid ~source ~value ~expected:shard_expected);
           };
       doc = "Run only the Kth of N deterministic path-hash buckets";
-      mirror = Some "WINDTRAP_SHARD";
+      mirror = mirrored "WINDTRAP_SHARD" verbatim (fun p -> p.shard = None);
     };
     {
       short = None;
@@ -257,7 +289,7 @@ let table =
                 | _ -> invalid ~source ~value ~expected:"a positive number");
           };
       doc = "Default per-test timeout in seconds";
-      mirror = Some "WINDTRAP_TIMEOUT";
+      mirror = mirrored "WINDTRAP_TIMEOUT" trimmed (fun p -> p.timeout = None);
     };
     {
       short = None;
@@ -274,7 +306,9 @@ let table =
                 | _ -> invalid ~source ~value ~expected:"a non-negative number");
           };
       doc = "Warn when an untagged test runs longer than SECONDS (0 disables)";
-      mirror = Some "WINDTRAP_SLOW_THRESHOLD";
+      mirror =
+        mirrored "WINDTRAP_SLOW_THRESHOLD" trimmed (fun p ->
+            p.slow_threshold = None);
     };
     {
       short = None;
@@ -290,42 +324,51 @@ let table =
                 | Error _ -> invalid ~source ~value ~expected:seed_expected);
           };
       doc = "Root seed for property tests (s1:<16 hex>)";
-      mirror = Some "WINDTRAP_SEED";
+      mirror = mirrored "WINDTRAP_SEED" verbatim (fun p -> p.seed = None);
     };
     {
       short = None;
       long = "--prop-count";
       arg = set_positive_int (fun acc n -> { acc with prop_count = Some n });
       doc = "Generated cases per property";
-      mirror = Some "WINDTRAP_PROP_COUNT";
+      mirror =
+        mirrored "WINDTRAP_PROP_COUNT" trimmed (fun p -> p.prop_count = None);
     };
     {
       short = None;
       long = "--max-shrink";
       arg = set_positive_int (fun acc n -> { acc with max_shrink = Some n });
       doc = "Accepted shrink steps per failing property";
-      mirror = Some "WINDTRAP_MAX_SHRINK";
+      mirror =
+        mirrored "WINDTRAP_MAX_SHRINK" trimmed (fun p -> p.max_shrink = None);
     };
     {
       short = Some "-u";
       long = "--update";
       arg = Flag (fun acc -> { acc with update = Some Env.Update });
       doc = "Accept snapshot changes (refused under CI)";
-      mirror = Some "WINDTRAP_UPDATE";
+      mirror =
+        mirrored "WINDTRAP_UPDATE"
+          (Own
+             (fun acc ->
+               match Env.update () with
+               | Env.No_update -> acc
+               | mode -> { acc with update = Some mode }))
+          (fun p -> p.update = None);
     };
     {
       short = None;
       long = "--prune";
       arg = Flag (fun acc -> { acc with prune = Some true });
       doc = "Delete orphaned baselines after a full, clean update run";
-      mirror = Some "WINDTRAP_PRUNE";
+      mirror = mirrored "WINDTRAP_PRUNE" Truthy (fun p -> p.prune = None);
     };
     {
       short = Some "-s";
       long = "--stream";
       arg = Flag (fun acc -> { acc with stream = Some true });
       doc = "Stream test output instead of capturing it";
-      mirror = Some "WINDTRAP_STREAM";
+      mirror = mirrored "WINDTRAP_STREAM" Truthy (fun p -> p.stream = None);
     };
     {
       (* One verbosity axis, three levels: -q ⊂ default ⊂ -v. Both flags
@@ -335,14 +378,14 @@ let table =
       long = "--verbose";
       arg = Flag (fun acc -> { acc with output = Some `Verbose });
       doc = "One status line per test";
-      mirror = Some "WINDTRAP_VERBOSE";
+      mirror = mirrored "WINDTRAP_VERBOSE" Truthy (fun p -> p.output = None);
     };
     {
       short = Some "-q";
       long = "--quiet";
       arg = Flag (fun acc -> { acc with output = Some `Quiet });
       doc = "Failures and summary only";
-      mirror = Some "WINDTRAP_QUIET";
+      mirror = mirrored "WINDTRAP_QUIET" Truthy (fun p -> p.output = None);
     };
     {
       short = None;
@@ -373,7 +416,10 @@ let table =
                 | _ -> invalid ~source ~value ~expected:"always, never or auto");
           };
       doc = "Color output: always, never or auto";
-      mirror = Some "WINDTRAP_COLOR";
+      mirror =
+        mirrored "WINDTRAP_COLOR"
+          (Own (fun acc -> { acc with color = Some (Env.color_mode ()) }))
+          (fun p -> p.color = None);
     };
     {
       short = None;
@@ -389,7 +435,8 @@ let table =
                 | None -> invalid ~source ~value ~expected:coverage_expected);
           };
       doc = "Coverage output: summary, report, full or off";
-      mirror = Some "WINDTRAP_COVERAGE";
+      mirror =
+        mirrored "WINDTRAP_COVERAGE" verbatim (fun p -> p.coverage = None);
     };
     {
       short = Some "-o";
@@ -498,177 +545,152 @@ let parse argv =
 let first_some higher lower =
   match higher with Some _ -> higher | None -> lower
 
-(* The environment layer of the output level. Within the layer verbose
-   wins over quiet — the variables carry no order to make last-one-wins
-   meaningful, so the tie-break is fixed and documented. *)
-let env_output () =
-  match (Env.verbose (), Env.quiet ()) with
-  | Some true, _ -> Some `Verbose
-  | _, Some true -> Some `Quiet
-  | _, _ -> None
+(* The environment layer, folded out of the same table that drives parsing
+   and [--help]: every WINDTRAP_* mirror is read here and nowhere else, and
+   every value reaches [parsed] through its flag's own [arg]. That is what
+   makes a mirror incapable of drifting from its flag — WINDTRAP_SHARD=9/2
+   fails exactly as [--shard 9/2] does, because it runs the same [set], with
+   the variable named as the source instead of the flag.
 
-let resolve_output ~overrides cli =
-  match first_some overrides.output (first_some cli.output (env_output ())) with
+   [layers ~overrides cli] is [cli] with each mirror filled into the fields
+   neither [overrides] nor an earlier entry closed: the CLI and environment
+   layers already merged, for the caller to lay the programmatic layer over.
+   A malformed value in a mirror that wins is [Error] naming the variable,
+   and the fold stops there — never a silently defaulted run. *)
+let layers ~overrides cli =
+  let contribute acc entry mirror raw =
+    let apply acc token =
+      let* acc = acc in
+      match entry.arg with
+      | Flag set -> Ok (set acc)
+      | Value { set; _ } -> set ~source:mirror.var acc token
+    in
+    match mirror.reader with
+    | Own read -> Ok (read acc)
+    | Token shape -> apply (Ok acc) (shape raw)
+    | Comma -> List.fold_left apply (Ok acc) (Env.split_comma raw)
+    | Truthy ->
+        if Env.get_bool mirror.var = Some true then apply (Ok acc) raw
+        else Ok acc
+  in
+  List.fold_left
+    (fun acc entry ->
+      let* acc = acc in
+      match entry.mirror with
+      | Some mirror when mirror.absent overrides && mirror.absent acc -> (
+          match Env.get_string mirror.var with
+          | Some raw -> contribute acc entry mirror raw
+          | None -> Ok acc)
+      | Some _ | None -> Ok acc)
+    (Ok cli) table
+
+let output_level ?(overrides = empty) cli =
+  (* [layers] stops at the first malformed mirror, which may well be one the
+     output level does not depend on. The caller resolves the configuration
+     first and exits on that error, so the layers above the environment are
+     answer enough when the fold did not finish. *)
+  let below = Result.value (layers ~overrides cli) ~default:cli in
+  match first_some overrides.output below.output with
   | Some `Quiet -> `Quiet
   | Some `Verbose -> `Verbose
   | None -> `Compact
 
-let output_level ?(overrides = empty) cli = resolve_output ~overrides cli
-
-(* [parse] validates command-line values, but programmatic overrides and the
-   environment mirrors bypass it — WINDTRAP_TIMEOUT=-5 must not reach
-   [Unix.setitimer]. [numeric] resolves one numeric knob across the three
-   layers ([over] programmatic, [cli], then [mirror]).
-
-   The mirror validates exactly like its flag (prop/F-4): when the
-   environment is the winning layer — no programmatic or CLI value above it —
-   a token that does not [parse], or one that parses outside [valid], is an
-   error naming the variable and quoting the token as written, exactly like
-   the WINDTRAP_SEED and WINDTRAP_SHARD paths and exactly like the flag's own
-   refusal, never a silently defaulted run. A losing layer stays unparsed, so
-   a valid CLI value shadows a malformed mirror. Tokens are trimmed before
-   parsing, matching the Env module's numeric convention.
-
-   What reaches the second check is therefore either a value the environment
-   already vouched for or one from a layer above it, and only the second can
-   fail: [parse] vouches for the CLI layer too, leaving the programmatic
-   override as the one value with no parser between it and the run. [flag]
-   names it, a programmatic argument having no typed flag of its own — and
-   [render] must spell it, there being no token to quote. [mirror] is [None]
-   for a knob with no environment mirror ([--bail]). *)
-let numeric ~flag ~mirror ~parse ~valid ~render ~expected ~over ~cli =
-  let higher = first_some over cli in
-  let* from_env =
-    match mirror with
-    | Some (var, Some raw) when Option.is_none higher -> (
-        let token = String.trim raw in
-        match parse token with
-        | Some v when valid v -> Ok (Some v)
-        | Some _ | None -> invalid ~source:var ~value:token ~expected)
-    | Some _ | None -> Ok None
-  in
-  match first_some higher from_env with
+(* [parse] checks every value the command line offers and the mirror readers
+   check every value the environment offers, each naming its own source. A
+   programmatic override goes through neither — [overrides] is a record the
+   caller fills in directly — so the value the precedence picks is checked
+   once more before it reaches the run: WINDTRAP_TIMEOUT=-5 must not reach
+   [Unix.setitimer], and neither may a [-5.] written in OCaml. Only an
+   override can fail here, which is why the source is always [flag]: the
+   flag spelling is the nearest thing to a name a programmatic argument
+   has. *)
+let checked ~flag ~valid ~render ~expected value =
+  match value with
   | Some v when not (valid v) ->
       invalid ~source:flag ~value:(render v) ~expected
   | picked -> Ok picked
 
 let resolve ?(overrides = empty) cli =
-  let pick over_field cli_field env_field =
-    first_some over_field (first_some cli_field env_field)
-  in
+  let* below = layers ~overrides cli in
   let defaults = Run.default_config () in
-  let* seed =
-    match first_some overrides.seed cli.seed with
-    | Some seed -> Ok seed
-    | None -> (
-        match Env.seed () with
-        | None -> Ok defaults.Run.seed
-        | Some value -> (
-            match Seed.of_string value with
-            | Ok seed -> Ok seed
-            | Error _ ->
-                invalid ~source:"WINDTRAP_SEED" ~value ~expected:seed_expected))
+  let seconds ~flag ~valid ~expected value =
+    checked ~flag ~valid ~render:(Pp.str "%g") ~expected value
   in
-  let seconds ~flag ~mirror ~valid ~expected ~over ~cli =
-    numeric ~flag ~mirror ~parse:float_of_string_opt ~valid
-      ~render:(Pp.str "%g") ~expected ~over ~cli
-  in
-  let positive_int ~flag ~mirror ~over ~cli =
-    numeric ~flag ~mirror ~parse:int_of_string_opt
+  let positive_int ~flag value =
+    checked ~flag
       ~valid:(fun n -> n > 0)
-      ~render:string_of_int ~expected:"a positive integer" ~over ~cli
+      ~render:string_of_int ~expected:"a positive integer" value
   in
   let* timeout =
     seconds ~flag:"--timeout"
-      ~mirror:(Some ("WINDTRAP_TIMEOUT", Env.timeout ()))
       ~valid:(fun t -> Float.is_finite t && t > 0.)
-      ~expected:"a positive number" ~over:overrides.timeout ~cli:cli.timeout
+      ~expected:"a positive number"
+      (first_some overrides.timeout below.timeout)
   in
   let* slow_threshold =
     seconds ~flag:"--slow-threshold"
-      ~mirror:(Some ("WINDTRAP_SLOW_THRESHOLD", Env.slow_threshold ()))
       ~valid:(fun t -> Float.is_finite t && t >= 0.)
-      ~expected:"a non-negative number" ~over:overrides.slow_threshold
-      ~cli:cli.slow_threshold
+      ~expected:"a non-negative number"
+      (first_some overrides.slow_threshold below.slow_threshold)
   in
   let* prop_count =
     positive_int ~flag:"--prop-count"
-      ~mirror:(Some ("WINDTRAP_PROP_COUNT", Env.prop_count ()))
-      ~over:overrides.prop_count ~cli:cli.prop_count
+      (first_some overrides.prop_count below.prop_count)
   in
   let* max_shrink =
     positive_int ~flag:"--max-shrink"
-      ~mirror:(Some ("WINDTRAP_MAX_SHRINK", Env.max_shrink ()))
-      ~over:overrides.max_shrink ~cli:cli.max_shrink
+      (first_some overrides.max_shrink below.max_shrink)
   in
-  (* [--bail] is the one numeric knob with no environment mirror. *)
   let* bail =
-    positive_int ~flag:"--bail" ~mirror:None ~over:overrides.bail ~cli:cli.bail
+    positive_int ~flag:"--bail" (first_some overrides.bail below.bail)
   in
   let* shard =
-    (* Like WINDTRAP_SEED, a malformed winning token is an error, because a
-       silently ignored shard reruns the whole suite in every bucket. *)
-    let env_shard () =
-      match Env.shard () with
-      | None -> Ok None
-      | Some value -> (
-          match shard_of_string value with
-          | Some shard -> Ok (Some shard)
-          | None ->
-              invalid ~source:"WINDTRAP_SHARD" ~value ~expected:shard_expected)
-    in
-    match first_some overrides.shard cli.shard with
+    match first_some overrides.shard below.shard with
     | Some (k, n) when not (1 <= k && k <= n) ->
-        (* Programmatic overrides bypass [parse]'s validation. *)
         invalid ~source:"--shard" ~value:(Pp.str "%d/%d" k n)
           ~expected:shard_expected
-    | Some _ as shard -> Ok shard
-    | None -> env_shard ()
+    | picked -> Ok picked
   in
-  let env_update =
-    match Env.update () with Env.No_update -> None | u -> Some u
-  and env_flag read = if read () then Some true else None in
   Ok
     {
-      Run.seed;
-      filter = pick overrides.filter cli.filter (Env.filter ());
-      exclude = pick overrides.exclude cli.exclude (Env.exclude ());
-      tags = overrides.tags @ cli.tags @ Env.tags ();
-      exclude_tags =
-        overrides.exclude_tags @ cli.exclude_tags @ Env.exclude_tags ();
+      Run.seed =
+        Option.value
+          (first_some overrides.seed below.seed)
+          ~default:defaults.Run.seed;
+      filter = first_some overrides.filter below.filter;
+      exclude = first_some overrides.exclude below.exclude;
+      tags = overrides.tags @ below.tags;
+      exclude_tags = overrides.exclude_tags @ below.exclude_tags;
       shard;
-      quick = Option.value (first_some overrides.quick cli.quick) ~default:false;
+      quick =
+        Option.value (first_some overrides.quick below.quick) ~default:false;
       failed_only =
         Option.value
-          (first_some overrides.failed_only cli.failed_only)
+          (first_some overrides.failed_only below.failed_only)
           ~default:false;
       list_only =
         Option.value
-          (first_some overrides.list_only cli.list_only)
+          (first_some overrides.list_only below.list_only)
           ~default:false;
       bail;
       stream =
-        Option.value
-          (pick overrides.stream cli.stream (Env.stream ()))
-          ~default:false;
+        Option.value (first_some overrides.stream below.stream) ~default:false;
       update =
         Option.value
-          (pick overrides.update cli.update env_update)
+          (first_some overrides.update below.update)
           ~default:Env.No_update;
       prune =
-        Option.value
-          (pick overrides.prune cli.prune (env_flag Env.prune))
-          ~default:false;
+        Option.value (first_some overrides.prune below.prune) ~default:false;
       timeout;
       slow_threshold =
         Option.value slow_threshold ~default:defaults.Run.slow_threshold;
       prop_count;
       max_shrink;
-      junit = first_some overrides.junit cli.junit;
+      junit = first_some overrides.junit below.junit;
       color =
         Option.value
-          (first_some overrides.color cli.color)
-          ~default:(Env.color_mode ());
+          (first_some overrides.color below.color)
+          ~default:defaults.Run.color;
       columns = Env.columns ();
       tail_errors = Env.tail_errors ();
       log_dir =
@@ -679,7 +701,7 @@ let resolve ?(overrides = empty) cli =
            not exist. The default is already absolute. *)
         (let dir =
            Option.value
-             (first_some overrides.log_dir cli.log_dir)
+             (first_some overrides.log_dir below.log_dir)
              ~default:defaults.Run.log_dir
          in
          if not (Filename.is_relative dir) then dir
@@ -693,21 +715,12 @@ let resolve ?(overrides = empty) cli =
 (* The coverage mode resolves outside [resolve] because it is not run
    configuration: it is a rendering decision the facade's [run] applies
    after the run record is complete — the run's [config] carries no
-   coverage field. Same precedence and same loudness as the
-   config mirrors: CLI beats [WINDTRAP_COVERAGE]; a malformed winning
-   value is an error, never a silently defaulted mode. *)
+   coverage field. Same precedence and same loudness as the config mirrors,
+   because it is the same environment layer: CLI beats [WINDTRAP_COVERAGE];
+   a malformed winning value is an error, never a silently defaulted mode. *)
 let coverage_mode (cli : parsed) =
-  match cli.coverage with
-  | Some mode -> Ok mode
-  | None -> (
-      match Env.coverage () with
-      | None -> Ok `Summary
-      | Some value -> (
-          match coverage_of_string value with
-          | Some mode -> Ok mode
-          | None ->
-              invalid ~source:"WINDTRAP_COVERAGE" ~value
-                ~expected:coverage_expected))
+  let* below = layers ~overrides:empty cli in
+  Ok (Option.value below.coverage ~default:`Summary)
 
 (* Help *)
 
@@ -740,7 +753,7 @@ let help ~prog =
   let mirror_rows =
     List.filter_map
       (fun e ->
-        Option.map (fun v -> (v, Pp.str "Mirror of %s" e.long)) e.mirror)
+        Option.map (fun m -> (m.var, Pp.str "Mirror of %s" e.long)) e.mirror)
       table
     @ env_only
   in

@@ -5,13 +5,21 @@
 
 (** Environment variable reading and platform detection.
 
-    Every environment variable the core library consults is read here, so this
-    interface is its inventory. Two lookups live elsewhere by design: the
-    coverage runtime reads its own [WINDTRAP_COVERAGE_FILE] (windtrap links the
-    coverage library, not the reverse, so it cannot depend on this module), and
-    {!Path_ops} consults [HOME] as a platform fallback when resolving the home
-    directory. Readers are plain functions that re-read the environment on every
-    call; nothing is cached. A variable set to the empty string counts as unset.
+    This module owns {e how} the environment is read: the generic typed readers
+    below, the value vocabularies they share (booleans, comma-separated lists,
+    colour modes, snapshot update modes), platform and CI detection, and the few
+    settings that have no command-line flag. It is not the inventory of
+    variables: every [WINDTRAP_*] mirror of a runner flag is declared beside
+    that flag in {!Cli}'s table and read through {!get_string}, {!get_bool} and
+    {!split_comma} from there, which is what stops a mirror from parsing or
+    validating differently from the flag it mirrors. Two further lookups live
+    elsewhere by design: the coverage runtime reads its own
+    [WINDTRAP_COVERAGE_FILE] (windtrap links the coverage library, not the
+    reverse, so it cannot depend on this module), and {!Path_ops} consults
+    [HOME] as a platform fallback when resolving the home directory.
+
+    Readers are plain functions that re-read the environment on every call;
+    nothing is cached. A variable set to the empty string counts as unset.
 
     Boolean variables accept [1], [true], [yes], [y], [on] and their negations,
     case-insensitively; unparseable values count as unset. The presence-style
@@ -22,6 +30,31 @@
     Precedence (programmatic > CLI > env > default) is resolved by the CLI
     layer, which is why most readers return an [option] rather than a default.
 *)
+
+(** {1:readers Readers}
+
+    The typed lookups every variable goes through, named rather than mirrored: a
+    caller passes the variable's name, so one reader serves any number of
+    variables. *)
+
+val get_string : string -> string option
+(** [get_string var] is the value of [var], or [None] when it is unset or empty.
+    Unparsed: a caller that owns a format ([WINDTRAP_SEED]'s token,
+    [WINDTRAP_SHARD]'s [k/n]) validates it and reports failure naming [var],
+    rather than reading a silent default out of a typo. *)
+
+val get_bool : string -> bool option
+(** [get_bool var] is [var] read as a boolean, [None] when it is unset, empty,
+    or spelled in no accepted way. The value is trimmed before parsing. *)
+
+val get_int : string -> int option
+(** [get_int var] is [var] read as a decimal integer, [None] when it is unset or
+    does not parse. The value is trimmed before parsing. *)
+
+val split_comma : string -> string list
+(** [split_comma value] splits [value] on commas, trims each item and drops the
+    empty ones — the spelling the repeatable flags take in one variable, e.g.
+    [WINDTRAP_TAG="a, b ,,c "] is [["a"; "b"; "c"]]. *)
 
 (** {1:platform Platform detection} *)
 
@@ -89,66 +122,10 @@ val use_color_stderr : unit -> bool
 (** [use_color_stderr ()] is {!resolve_color} of {!color_mode} for standard
     error. *)
 
-(** {1:run Run control}
+(** {1:standalone Settings with no flag}
 
-    Environment mirrors of runner CLI flags; under [dune runtest] these are the
-    CLI. *)
-
-val seed : unit -> string option
-(** [seed ()] is [WINDTRAP_SEED], the root seed token (["s1:<16 hex>"]),
-    unparsed — the seed module owns the format. *)
-
-val filter : unit -> string option
-(** [filter ()] is [WINDTRAP_FILTER], a substring pattern selecting tests by
-    full path. *)
-
-val exclude : unit -> string option
-(** [exclude ()] is [WINDTRAP_EXCLUDE], a substring pattern excluding tests by
-    full path. *)
-
-val tags : unit -> string list
-(** [tags ()] is [WINDTRAP_TAG] split on commas, trimmed, empties dropped. [[]]
-    when unset. *)
-
-val exclude_tags : unit -> string list
-(** [exclude_tags ()] is [WINDTRAP_EXCLUDE_TAG] split like {!tags}. *)
-
-val timeout : unit -> string option
-(** [timeout ()] is [WINDTRAP_TIMEOUT], the default per-test timeout in seconds,
-    unparsed — the CLI layer owns validation, like {!seed}'s: a malformed
-    winning value is a usage error naming the variable, never a silent default.
-*)
-
-val slow_threshold : unit -> string option
-(** [slow_threshold ()] is [WINDTRAP_SLOW_THRESHOLD], the slow-test reporting
-    threshold in seconds, unparsed — the CLI layer owns validation, like
-    {!seed}'s. *)
-
-val prop_count : unit -> string option
-(** [prop_count ()] is [WINDTRAP_PROP_COUNT], the number of generated cases per
-    property, unparsed — the CLI layer owns validation, like {!seed}'s. *)
-
-val max_shrink : unit -> string option
-(** [max_shrink ()] is [WINDTRAP_MAX_SHRINK], the accepted shrink steps per
-    failing property, unparsed — validated by the CLI layer as {!prop_count} is.
-*)
-
-val shard : unit -> string option
-(** [shard ()] is [WINDTRAP_SHARD], a [k/n] shard selector, unparsed — the CLI
-    layer owns validation, like {!seed}'s. *)
-
-val stream : unit -> bool option
-(** [stream ()] is [WINDTRAP_STREAM]: stream test output instead of capturing
-    it. *)
-
-val verbose : unit -> bool option
-(** [verbose ()] is [WINDTRAP_VERBOSE], requesting the [`Verbose] output level.
-    The CLI layer resolves the level; within the environment layer [verbose]
-    wins over [quiet]. *)
-
-val quiet : unit -> bool option
-(** [quiet ()] is [WINDTRAP_QUIET], requesting the [`Quiet] output level. See
-    {!verbose} for the tie-break. *)
+    The variables no runner flag can set, and which therefore have no entry in
+    {!Cli}'s table to be read from. *)
 
 val columns : unit -> int option
 (** [columns ()] is [WINDTRAP_COLUMNS], a terminal width override. Non-positive
@@ -162,9 +139,13 @@ val allow_focus : unit -> bool
 (** [allow_focus ()] is [true] iff [WINDTRAP_ALLOW_FOCUS] is truthy. Lifts the
     CI guard on focused tests. *)
 
-(** {1:snapshots Snapshot control} *)
+val project_root : unit -> string option
+(** [project_root ()] is [WINDTRAP_PROJECT_ROOT], overriding project-root
+    discovery. *)
 
-(** The type for snapshot update modes, from [WINDTRAP_UPDATE]. *)
+(** {1:snapshots Snapshot update modes} *)
+
+(** The type for snapshot update modes, from [-u] or [WINDTRAP_UPDATE]. *)
 type update =
   | No_update  (** Check against baselines (the default). *)
   | Update  (** Accept mismatches, refused when {!in_ci}. *)
@@ -173,18 +154,6 @@ type update =
 val update : unit -> update
 (** [update ()] parses [WINDTRAP_UPDATE]: truthy values are {!Update}, [force]
     (case-insensitively) is {!Force_update}, anything else (including unset) is
-    {!No_update}. *)
-
-val prune : unit -> bool
-(** [prune ()] is [true] iff [WINDTRAP_PRUNE] is truthy: delete orphaned
-    baselines on a full, unfiltered update run. *)
-
-val project_root : unit -> string option
-(** [project_root ()] is [WINDTRAP_PROJECT_ROOT], overriding project-root
-    discovery. *)
-
-(** {1:coverage Coverage} *)
-
-val coverage : unit -> string option
-(** [coverage ()] is the raw value of [WINDTRAP_COVERAGE] (e.g. [report],
-    [full]); the coverage layer owns the value vocabulary. *)
+    {!No_update}. The vocabulary is the variable's own — the [-u] flag it
+    mirrors has no way to spell [force] — so, unlike the mirrors read through
+    {!get_string}, it is parsed here and the CLI layer defers to it. *)

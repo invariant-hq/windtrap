@@ -38,7 +38,9 @@ They never merge again (that was v1's mistake).
 
 Foundation (no internal deps beyond each other): `Pp` (style-aware
 Format helpers), `Text` (newline/UTF-8/substring utilities), `Env`
-(every environment variable, CI/TTY detection), `Tag`, `Loc` (`pos` +
+(how the environment is read — typed readers, value vocabularies,
+CI/TTY detection, the settings with no flag; the `WINDTRAP_*` mirrors
+themselves are declared in `Cli`'s table), `Tag`, `Loc` (`pos` +
 backtrace-derived source attribution), `Path_ops` (project root,
 sandbox reconstruction, log dirs), `Atomic_file` (temp+rename writes),
 `Seed` (SplitMix64, `s1:` tokens, `mix(root, path, index)`
@@ -66,7 +68,10 @@ Drive and render: `Run` (THE run record and the one ambient slot),
 `Runner` (sequential executor: selection, per-test boundary, timeout
 via SIGALRM, retries, fixture release, the last-failed store, the exit
 guard, Law 11 exit codes; emits typed events, prints nothing), `Cli` (one
-declarative flag table → parse + env-mirror resolution), `Render` /
+declarative flag table → parse, `--help`, and the environment layer:
+each flag's mirror is declared beside it and read through the flag's
+own parser, so a variable cannot accept what its flag rejects),
+`Render` /
 `Render_junit` / `Render_github`, `Ppx_runtime` (inline-test protocol,
 expect matching, `.corrected` assembly), `Expect_test_config` (the
 ambient config expect tests reference), and the facade `Windtrap`.

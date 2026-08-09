@@ -12,40 +12,47 @@ module Env = Windtrap.Private.Env
 let set = Unix.putenv
 let clear name = Unix.putenv name ""
 
+(* The readers are generic over the variable name — a mirror is named in
+   [Cli]'s flag table, not here — so each test names a real variable and
+   exercises the reader its mirror uses. *)
+let string_of = Env.get_string
+let bool_of = Env.get_bool
+
 let tests =
   [
     test "empty value reads as unset" (fun () ->
         clear "WINDTRAP_FILTER";
-        equal (option string) None (Env.filter ());
+        equal (option string) None (string_of "WINDTRAP_FILTER");
         set "WINDTRAP_FILTER" "users";
         equal ~msg:"set value is returned" (option string) (Some "users")
-          (Env.filter ());
+          (string_of "WINDTRAP_FILTER");
         clear "WINDTRAP_FILTER";
         clear "WINDTRAP_EXCLUDE";
-        equal ~msg:"exclude unset" (option string) None (Env.exclude ());
+        equal ~msg:"exclude unset" (option string) None
+          (string_of "WINDTRAP_EXCLUDE");
         set "WINDTRAP_EXCLUDE" "slow suite";
         equal ~msg:"exclude set" (option string) (Some "slow suite")
-          (Env.exclude ());
+          (string_of "WINDTRAP_EXCLUDE");
         clear "WINDTRAP_EXCLUDE");
     cases "truthy bool spellings" [ "1"; "true"; "TRUE"; "yes"; "Y"; "on" ]
       (fun v ->
         set "WINDTRAP_STREAM" v;
-        equal (option bool) (Some true) (Env.stream ());
+        equal (option bool) (Some true) (bool_of "WINDTRAP_STREAM");
         clear "WINDTRAP_STREAM");
     cases "falsy bool spellings" [ "0"; "false"; "no"; "N"; "off"; "OFF" ]
       (fun v ->
         set "WINDTRAP_STREAM" v;
-        equal (option bool) (Some false) (Env.stream ());
+        equal (option bool) (Some false) (bool_of "WINDTRAP_STREAM");
         clear "WINDTRAP_STREAM");
     test "bool parsing edges" (fun () ->
         set "WINDTRAP_STREAM" "bogus";
         equal ~msg:"unparseable bool reads as unset" (option bool) None
-          (Env.stream ());
+          (bool_of "WINDTRAP_STREAM");
         set "WINDTRAP_STREAM" " true ";
         equal ~msg:"bool value is trimmed" (option bool) (Some true)
-          (Env.stream ());
+          (bool_of "WINDTRAP_STREAM");
         clear "WINDTRAP_STREAM";
-        equal ~msg:"stream unset" (option bool) None (Env.stream ()));
+        equal ~msg:"stream unset" (option bool) None (bool_of "WINDTRAP_STREAM"));
     test "numeric readers" (fun () ->
         set "WINDTRAP_COLUMNS" "100";
         equal ~msg:"columns parses" (option int) (Some 100) (Env.columns ());
@@ -62,72 +69,42 @@ let tests =
         equal ~msg:"tail_errors parses" (option int) (Some 25)
           (Env.tail_errors ());
         clear "WINDTRAP_TAIL_ERRORS");
-    test "numeric mirrors are passed through unparsed, like the seed" (fun () ->
+    test "value mirrors are passed through unparsed, like the seed" (fun () ->
         (* The CLI layer owns validation (prop/F-4): a malformed winning
            token must reach it verbatim so it can error naming the
            variable, never vanish into a silent default. *)
         set "WINDTRAP_PROP_COUNT" "500";
         equal ~msg:"prop_count raw" (option string) (Some "500")
-          (Env.prop_count ());
+          (string_of "WINDTRAP_PROP_COUNT");
         set "WINDTRAP_PROP_COUNT" "1O0";
         equal ~msg:"malformed prop_count is passed through" (option string)
-          (Some "1O0") (Env.prop_count ());
+          (Some "1O0")
+          (string_of "WINDTRAP_PROP_COUNT");
         clear "WINDTRAP_PROP_COUNT";
-        equal ~msg:"prop_count unset" (option string) None (Env.prop_count ());
+        equal ~msg:"prop_count unset" (option string) None
+          (string_of "WINDTRAP_PROP_COUNT");
         set "WINDTRAP_TIMEOUT" "2.5";
-        equal ~msg:"timeout raw" (option string) (Some "2.5") (Env.timeout ());
+        equal ~msg:"timeout raw" (option string) (Some "2.5")
+          (string_of "WINDTRAP_TIMEOUT");
         set "WINDTRAP_TIMEOUT" "soon";
         equal ~msg:"malformed timeout is passed through" (option string)
-          (Some "soon") (Env.timeout ());
+          (Some "soon")
+          (string_of "WINDTRAP_TIMEOUT");
         clear "WINDTRAP_TIMEOUT";
-        equal ~msg:"timeout unset" (option string) None (Env.timeout ());
-        set "WINDTRAP_SLOW_THRESHOLD" "0.5";
-        equal ~msg:"slow_threshold raw" (option string) (Some "0.5")
-          (Env.slow_threshold ());
-        set "WINDTRAP_SLOW_THRESHOLD" "fast";
-        equal ~msg:"malformed slow_threshold is passed through" (option string)
-          (Some "fast") (Env.slow_threshold ());
-        clear "WINDTRAP_SLOW_THRESHOLD";
-        equal ~msg:"slow_threshold unset" (option string) None
-          (Env.slow_threshold ());
-        set "WINDTRAP_SHARD" "2/4";
-        equal ~msg:"shard raw" (option string) (Some "2/4") (Env.shard ());
-        set "WINDTRAP_SHARD" "5/2";
-        equal ~msg:"malformed shard is passed through" (option string)
-          (Some "5/2") (Env.shard ());
-        clear "WINDTRAP_SHARD";
-        equal ~msg:"shard unset" (option string) None (Env.shard ()));
-    test "output-level mirrors parse as booleans" (fun () ->
-        clear "WINDTRAP_VERBOSE";
-        clear "WINDTRAP_QUIET";
-        equal ~msg:"verbose unset" (option bool) None (Env.verbose ());
-        equal ~msg:"quiet unset" (option bool) None (Env.quiet ());
-        set "WINDTRAP_VERBOSE" "1";
-        equal ~msg:"verbose truthy" (option bool) (Some true) (Env.verbose ());
-        set "WINDTRAP_QUIET" "on";
-        equal ~msg:"quiet truthy" (option bool) (Some true) (Env.quiet ());
-        set "WINDTRAP_QUIET" "off";
-        equal ~msg:"quiet falsy" (option bool) (Some false) (Env.quiet ());
-        set "WINDTRAP_VERBOSE" "maybe";
-        equal ~msg:"unparseable verbose reads as unset" (option bool) None
-          (Env.verbose ());
-        clear "WINDTRAP_VERBOSE";
-        clear "WINDTRAP_QUIET");
-    test "seed is passed through unparsed" (fun () ->
+        equal ~msg:"timeout unset" (option string) None
+          (string_of "WINDTRAP_TIMEOUT");
         set "WINDTRAP_SEED" "s1:7be1d2c904aa31f5";
-        equal (option string) (Some "s1:7be1d2c904aa31f5") (Env.seed ());
+        equal ~msg:"seed raw" (option string) (Some "s1:7be1d2c904aa31f5")
+          (string_of "WINDTRAP_SEED");
         clear "WINDTRAP_SEED";
-        equal ~msg:"seed unset" (option string) None (Env.seed ()));
-    test "tag lists split on commas, trim, and drop empties" (fun () ->
-        set "WINDTRAP_TAG" "a, b ,,c ";
+        equal ~msg:"seed unset" (option string) None (string_of "WINDTRAP_SEED"));
+    test "comma lists split, trim, and drop empties" (fun () ->
         equal ~msg:"tags split and trimmed" (list string) [ "a"; "b"; "c" ]
-          (Env.tags ());
-        clear "WINDTRAP_TAG";
-        equal ~msg:"tags default to empty" (list string) [] (Env.tags ());
-        set "WINDTRAP_EXCLUDE_TAG" "slow";
-        equal ~msg:"exclude_tags split" (list string) [ "slow" ]
-          (Env.exclude_tags ());
-        clear "WINDTRAP_EXCLUDE_TAG");
+          (Env.split_comma "a, b ,,c ");
+        equal ~msg:"a lone label is a one-item list" (list string) [ "slow" ]
+          (Env.split_comma "slow");
+        equal ~msg:"separators alone are no labels" (list string) []
+          (Env.split_comma " , "));
     test "update mode: 1/truthy, force, everything else off" (fun () ->
         clear "WINDTRAP_UPDATE";
         is_true ~msg:"update unset is No_update" (Env.update () = Env.No_update);
@@ -147,23 +124,14 @@ let tests =
         is_true ~msg:"unknown update value is No_update"
           (Env.update () = Env.No_update);
         clear "WINDTRAP_UPDATE");
-    test "flag variables" (fun () ->
-        clear "WINDTRAP_PRUNE";
-        is_false ~msg:"prune defaults to false" (Env.prune ());
-        set "WINDTRAP_PRUNE" "1";
-        is_true ~msg:"prune 1 is true" (Env.prune ());
-        clear "WINDTRAP_PRUNE";
+    test "settings with no flag" (fun () ->
         clear "WINDTRAP_ALLOW_FOCUS";
         is_false ~msg:"allow_focus defaults to false" (Env.allow_focus ());
         set "WINDTRAP_ALLOW_FOCUS" "1";
         is_true ~msg:"allow_focus 1 is true" (Env.allow_focus ());
+        set "WINDTRAP_ALLOW_FOCUS" "nonsense";
+        is_false ~msg:"an unparseable allow_focus is false" (Env.allow_focus ());
         clear "WINDTRAP_ALLOW_FOCUS";
-        clear "WINDTRAP_COVERAGE";
-        equal ~msg:"coverage unset" (option string) None (Env.coverage ());
-        set "WINDTRAP_COVERAGE" "report";
-        equal ~msg:"coverage raw value" (option string) (Some "report")
-          (Env.coverage ());
-        clear "WINDTRAP_COVERAGE";
         set "WINDTRAP_PROJECT_ROOT" "/tmp/proj";
         equal ~msg:"project_root passed through" (option string)
           (Some "/tmp/proj") (Env.project_root ());

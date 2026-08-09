@@ -395,13 +395,16 @@ let () =
   reg "tags are additive across layers" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_TAG" "e1, e2";
+  Unix.putenv "WINDTRAP_EXCLUDE_TAG" "x1 ,, x2 ";
   let config =
     resolve
-      ~overrides:{ Cli.empty with Cli.tags = [ "o" ] }
-      { Cli.empty with Cli.tags = [ "c" ] }
+      ~overrides:{ Cli.empty with Cli.tags = [ "o" ]; exclude_tags = [ "xo" ] }
+      { Cli.empty with Cli.tags = [ "c" ]; exclude_tags = [ "xc" ] }
   in
   check "tags are additive across layers, overrides first"
     (config.Run.tags = [ "o"; "c"; "e1"; "e2" ]);
+  check "exclude tags are additive too, commas split and trimmed"
+    (config.Run.exclude_tags = [ "xo"; "xc"; "x1"; "x2" ]);
   clear_env ()
 
 let () =
@@ -439,6 +442,7 @@ let () =
   Unix.putenv "WINDTRAP_PRUNE" "yes";
   Unix.putenv "WINDTRAP_TIMEOUT" "1.5";
   Unix.putenv "WINDTRAP_PROP_COUNT" "7";
+  Unix.putenv "WINDTRAP_MAX_SHRINK" "40";
   Unix.putenv "WINDTRAP_ALLOW_FOCUS" "1";
   Unix.putenv "WINDTRAP_COLUMNS" "100";
   Unix.putenv "WINDTRAP_TAIL_ERRORS" "3";
@@ -448,6 +452,7 @@ let () =
   check "WINDTRAP_PRUNE" config.Run.prune;
   check "WINDTRAP_TIMEOUT" (config.Run.timeout = Some 1.5);
   check "WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
+  check "WINDTRAP_MAX_SHRINK" (config.Run.max_shrink = Some 40);
   check "WINDTRAP_ALLOW_FOCUS" config.Run.allow_focus;
   check "WINDTRAP_COLUMNS" (config.Run.columns = Some 100);
   check "WINDTRAP_TAIL_ERRORS" (config.Run.tail_errors = Some 3);
@@ -561,6 +566,36 @@ let () =
   check "WINDTRAP_COLOR fills the default" (config.Run.color = Env.Never);
   let config = resolve { Cli.empty with Cli.color = Some Env.Always } in
   check "--color beats WINDTRAP_COLOR" (config.Run.color = Env.Always);
+  clear_env ()
+
+(* Resolution: the coverage mode *)
+
+let () =
+  reg "coverage mode resolution" @@ fun () ->
+  clear_env ();
+  let mode cli =
+    match Cli.coverage_mode cli with
+    | Ok mode -> mode
+    | Error error ->
+        check ("coverage_mode succeeds: " ^ Cli.error_message error) false;
+        `Summary
+  in
+  check "default coverage mode is summary" (mode Cli.empty = `Summary);
+  Unix.putenv "WINDTRAP_COVERAGE" "REPORT";
+  check "WINDTRAP_COVERAGE fills an absent flag, case-insensitively"
+    (mode Cli.empty = `Report);
+  check "--coverage beats WINDTRAP_COVERAGE"
+    (mode { Cli.empty with Cli.coverage = Some `Off } = `Off);
+  Unix.putenv "WINDTRAP_COVERAGE" "loads";
+  (match Cli.coverage_mode Cli.empty with
+  | Error
+      (Cli.Invalid_value { source = "WINDTRAP_COVERAGE"; value = "loads"; _ })
+    ->
+      check "a malformed winning coverage mode errors with its source" true
+  | Ok _ | Error _ ->
+      check "a malformed winning coverage mode errors with its source" false);
+  check "a CLI coverage mode leaves a malformed mirror unread"
+    (mode { Cli.empty with Cli.coverage = Some `Full } = `Full);
   clear_env ()
 
 (* Resolution: the output level *)
