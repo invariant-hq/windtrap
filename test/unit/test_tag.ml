@@ -6,28 +6,22 @@
 open Windtrap
 module Tag = Windtrap.Private.Tag
 
-let tags = slist string compare
-
 let tests =
   [
     test "tag sets" (fun () ->
         is_true ~msg:"empty has no tags" (Tag.is_empty Tag.empty);
-        equal ~msg:"empty to_list" tags [] (Tag.to_list Tag.empty);
+        is_false ~msg:"a populated set is not empty"
+          (Tag.is_empty (Tag.of_list [ "a" ]));
         is_true ~msg:"of_list mem" (Tag.mem "a" (Tag.of_list [ "a"; "b" ]));
         is_false ~msg:"mem absent" (Tag.mem "c" (Tag.of_list [ "a"; "b" ]));
-        is_true ~msg:"add" (Tag.mem "x" (Tag.add "x" Tag.empty));
-        equal ~msg:"of_list dedups and sorts" (list string) [ "a"; "b" ]
-          (Tag.to_list (Tag.of_list [ "b"; "a"; "b" ]));
-        equal ~msg:"union combines" (list string) [ "a"; "b" ]
-          (Tag.to_list (Tag.union (Tag.of_list [ "a" ]) (Tag.of_list [ "b" ])));
-        equal ~msg:"union dedups" (list string) [ "a" ]
-          (Tag.to_list (Tag.union (Tag.of_list [ "a" ]) (Tag.of_list [ "a" ])));
+        let u = Tag.union (Tag.of_list [ "a" ]) (Tag.of_list [ "b" ]) in
+        is_true ~msg:"union keeps the left side" (Tag.mem "a" u);
+        is_true ~msg:"union keeps the right side" (Tag.mem "b" u);
+        is_false ~msg:"union invents nothing" (Tag.mem "c" u);
+        is_true ~msg:"union with empty is identity"
+          (Tag.mem "a" (Tag.union Tag.empty (Tag.of_list [ "a" ])));
         equal ~msg:"well-known slow" string "slow" Tag.slow;
         equal ~msg:"well-known disabled" string "disabled" Tag.disabled);
-    test "accept_all accepts anything" (fun () ->
-        is_true ~msg:"accepts empty" (Tag.accepts Tag.accept_all Tag.empty);
-        is_true ~msg:"accepts anything"
-          (Tag.accepts Tag.accept_all (Tag.of_list [ "disabled"; "slow" ])));
     test "default_predicate drops disabled only" (fun () ->
         is_true ~msg:"accepts untagged"
           (Tag.accepts Tag.default_predicate Tag.empty);
@@ -39,29 +33,38 @@ let tests =
           (Tag.accepts Tag.default_predicate
              (Tag.of_list [ "a"; Tag.disabled ])));
     test "require and drop semantics" (fun () ->
-        let p = Tag.require "net" Tag.accept_all in
+        let p = Tag.require "net" Tag.default_predicate in
         is_false ~msg:"require rejects missing tag" (Tag.accepts p Tag.empty);
         is_true ~msg:"require accepts present tag"
           (Tag.accepts p (Tag.of_list [ "net" ]));
         is_true ~msg:"require accepts superset"
           (Tag.accepts p (Tag.of_list [ "net"; "x" ]));
-        let p = Tag.require "a" (Tag.require "b" Tag.accept_all) in
+        let p = Tag.require "a" (Tag.require "b" Tag.default_predicate) in
         is_false ~msg:"multiple requires need all"
           (Tag.accepts p (Tag.of_list [ "a" ]));
         is_true ~msg:"multiple requires satisfied"
           (Tag.accepts p (Tag.of_list [ "a"; "b" ]));
-        let p = Tag.drop Tag.slow Tag.accept_all in
+        let p = Tag.drop Tag.slow Tag.default_predicate in
         is_false ~msg:"drop rejects tagged"
           (Tag.accepts p (Tag.of_list [ "slow" ]));
         is_true ~msg:"drop accepts untagged"
           (Tag.accepts p (Tag.of_list [ "fast" ])));
+    test "refining does not lift the default disabled drop" (fun () ->
+        is_false ~msg:"--tag keeps disabled dropped"
+          (Tag.accepts
+             (Tag.require "net" Tag.default_predicate)
+             (Tag.of_list [ "net"; Tag.disabled ]));
+        is_false ~msg:"--exclude-tag keeps disabled dropped"
+          (Tag.accepts
+             (Tag.drop "db" Tag.default_predicate)
+             (Tag.of_list [ Tag.disabled ])));
     test "last flag wins when a tag is both required and dropped" (fun () ->
-        let p = Tag.drop "x" (Tag.require "x" Tag.accept_all) in
+        let p = Tag.drop "x" (Tag.require "x" Tag.default_predicate) in
         is_false ~msg:"drop after require rejects the tag"
           (Tag.accepts p (Tag.of_list [ "x" ]));
         is_true ~msg:"drop after require does not still require it"
           (Tag.accepts p Tag.empty);
-        let p = Tag.require "x" (Tag.drop "x" Tag.accept_all) in
+        let p = Tag.require "x" (Tag.drop "x" Tag.default_predicate) in
         is_true ~msg:"require after drop accepts the tag"
           (Tag.accepts p (Tag.of_list [ "x" ]));
         is_false ~msg:"require after drop still requires it"

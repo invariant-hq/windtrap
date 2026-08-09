@@ -25,9 +25,6 @@ val empty : t
 val of_list : string list -> t
 (** [of_list names] is the set of the tags in [names]. *)
 
-val add : string -> t -> t
-(** [add name tags] is [tags] with [name] added. *)
-
 val union : t -> t -> t
 (** [union parent child] is the union of both sets — a test's effective tags
     given its ancestry. *)
@@ -37,9 +34,6 @@ val mem : string -> t -> bool
 
 val is_empty : t -> bool
 (** [is_empty tags] is [true] iff [tags] has no elements. *)
-
-val to_list : t -> string list
-(** [to_list tags] is the elements of [tags] in increasing order. *)
 
 (** {1:known Well-known tags} *)
 
@@ -56,17 +50,17 @@ val disabled : string
     A predicate holds a set of required tags and a set of dropped tags. A tag
     set is accepted when it contains every required tag and none of the dropped
     ones. A tag cannot be both required and dropped: adding it to one set
-    removes it from the other, so the last flag wins. *)
+    removes it from the other, so the last flag wins.
+
+    Selection starts from {!default_predicate} and refines it with {!require}
+    and {!drop}, one call per flag. *)
 
 type predicate
 (** The type for tag selection predicates. *)
 
-val accept_all : predicate
-(** [accept_all] accepts every tag set. *)
-
 val default_predicate : predicate
-(** [default_predicate] is {!accept_all} with {!disabled} dropped — the runner's
-    starting point. *)
+(** [default_predicate] requires nothing and drops {!disabled} — the runner's
+    starting point, before any [--tag]/[--exclude-tag]/[--quick] flag. *)
 
 val require : string -> predicate -> predicate
 (** [require name p] is [p] requiring [name]; [name] is no longer dropped. *)

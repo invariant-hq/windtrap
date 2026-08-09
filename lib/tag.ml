@@ -13,11 +13,9 @@ type t = String_set.t
 
 let empty = String_set.empty
 let of_list = String_set.of_list
-let add = String_set.add
 let union = String_set.union
 let mem = String_set.mem
 let is_empty = String_set.is_empty
-let to_list = String_set.elements
 
 (* Well-known tags *)
 
@@ -28,11 +26,10 @@ let disabled = "disabled"
 
 type predicate = { required : String_set.t; dropped : String_set.t }
 
-let accept_all = { required = String_set.empty; dropped = String_set.empty }
-
-(* Tests tagged "disabled" are skipped without any explicit flag. *)
+(* Tests tagged "disabled" are skipped without any explicit flag: the
+   runner's starting predicate requires nothing and drops that one tag. *)
 let default_predicate =
-  { accept_all with dropped = String_set.singleton disabled }
+  { required = String_set.empty; dropped = String_set.singleton disabled }
 
 let require name p =
   {
