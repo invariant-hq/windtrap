@@ -49,6 +49,7 @@ let pp_int64 ppf n = Format.fprintf ppf "%LdL" n
    the failure. *)
 let pp_float = Pp.float_exact
 let pp_bool = Format.pp_print_bool
+let pp_unit ppf () = Format.pp_print_string ppf "()"
 let pp_char ppf c = Format.fprintf ppf "%C" c
 let pp_string ppf s = Format.fprintf ppf "%S" s
 let pp_bytes ppf b = Format.fprintf ppf "Bytes.of_string %S" (Bytes.to_string b)
@@ -400,7 +401,16 @@ let float_range low high =
         (tree_towards pp_float (float_towards origin) value, state));
   }
 
-(* Booleans, characters, strings *)
+(* Unit, booleans, characters, strings *)
+
+(* [pure ()] generates the same value and prints nothing, and a printerless
+   leaf forfeits the printer — and the provenance — of every composition
+   above it, the one cost a leaf of a type with exactly one value never has
+   to impose. One value means one leaf, built like [bool]'s, and drawing it
+   consumes no randomness, so the state passes through. *)
+let unit =
+  let only = { value = (); trace = draw_of pp_unit () } in
+  { pp = Some pp_unit; run = (fun state -> (Shrink_tree.leaf only, state)) }
 
 let bool =
   let leaf_false = { value = false; trace = draw_of pp_bool false } in
@@ -454,22 +464,21 @@ let char_range low high =
 
 (* Containers *)
 
+(* One node of a list tree: the element values, and their traces grouped as
+   one [Items] so provenance keeps the list shape. *)
+let list_sample samples =
+  {
+    value = List.map (fun s -> s.value) samples;
+    trace = Items (List.map (fun s -> s.trace) samples);
+  }
+
 (* Combines element sample trees into a list sample tree; [structural]
    selects chunked structure shrinking (Shrink_tree.list) or element-wise
    only (seq_list, for explicit size generators whose constraint structural
    candidates would violate). *)
 let list_of_trees pp ~structural trees =
   let base = if structural then Shrink_tree.list trees else seq_list trees in
-  let tree =
-    Shrink_tree.map
-      (fun samples ->
-        {
-          value = List.map (fun s -> s.value) samples;
-          trace = Items (List.map (fun s -> s.trace) samples);
-        })
-      base
-  in
-  renormalize pp tree
+  renormalize pp (Shrink_tree.map list_sample base)
 
 let sample_elements gen count state =
   let rec loop remaining trees state =
@@ -882,6 +891,62 @@ let ( and+ ) left right = pair left right
 let ( let* ) = bind
 
 (* Engine interface *)
+
+(* [keep] answers about values, but the pass that runs before assembly must
+   act on element *trees*, so the mask is walked against whichever list
+   produced it — trees before assembly, samples at every node after. A mask
+   of the wrong length is a caller error, reported where every other
+   malformed argument is: at sample time for the drawn list, at forcing
+   time for a candidate. *)
+let survivors keep value_of items =
+  let rec select flags items =
+    match (flags, items) with
+    | [], [] -> []
+    | true :: flags, item :: items -> item :: select flags items
+    | false :: flags, _ :: items -> select flags items
+    | _ ->
+        invalid_arg "Gen.list_exact: ~keep returned a mask of the wrong length"
+  in
+  select (keep (List.map value_of items)) items
+
+(* A fixed draw count with [list]'s default-size move set, plus a mask no
+   combinator outside this module can express: [sample] hands back a tree
+   but no successor state, so nothing else can sequence [count] draws or
+   drop element trees before assembly. [?keep] therefore runs in two
+   passes, doing different work in each. The pass before assembly decides
+   which element trees exist at all, so a dropped element contributes no
+   subtree and nothing below can restore it — nor the values it would have
+   shrunk to, which is the case masking on top of an assembled tree gets
+   wrong in both directions: a candidate that deletes an element the mask
+   was already dropping equals its parent, and one that reduces a dropped
+   element into a kept one is longer than its parent. The cascade decides
+   which survivors a given candidate keeps, so a deletion or a reduction
+   that invalidates a later element drops it in the same candidate.
+   [Shrink_tree.map] reaches the root as well as every descendant, so the
+   root is masked by both passes — which is why the interface requires
+   [keep] to be idempotent, and what makes the root a fixed point of it. *)
+let list_exact ?keep count gen =
+  let pp = Option.map pp_list gen.pp in
+  {
+    pp;
+    run =
+      (fun state ->
+        if count < 0 then invalid_arg "Gen.list_exact: negative count";
+        let trees, state = sample_elements gen count state in
+        match keep with
+        | None -> (list_of_trees pp ~structural:true trees, state)
+        | Some keep ->
+            let trees =
+              survivors keep (fun tree -> (Shrink_tree.root tree).value) trees
+            in
+            let tree =
+              Shrink_tree.map
+                (fun samples ->
+                  list_sample (survivors keep (fun s -> s.value) samples))
+                (Shrink_tree.list trees)
+            in
+            (renormalize pp tree, state));
+  }
 
 let sample gen state = fst (gen.run state)
 let value s = s.value

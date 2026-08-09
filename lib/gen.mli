@@ -120,7 +120,13 @@ val float_range : float -> float -> float t
     Sampling raises [Invalid_argument] if [high < low], if either bound is not
     finite, or if [high -. low] overflows to infinity. *)
 
-(** {1:base Booleans, characters, strings} *)
+(** {1:base Unit, booleans, characters, strings} *)
+
+val unit : unit t
+(** [unit] generates [()], with no shrink candidates, and prints [()]. It is not
+    [pure ()]: {!pure} without [?pp] carries no printer, so a composition over
+    it — a variant arm for a nullary operation, say — loses both its own printer
+    and, under {!map} or {!bind}, the provenance that would stand in for one. *)
 
 val bool : bool t
 (** [bool] generates [true] or [false] with equal probability. [true] shrinks to
@@ -314,6 +320,47 @@ val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
     Low-level API for the property engine and windtrap's own tests. The facade
     re-exports it with the rest of this module — public, but advanced: beyond
     the frozen value stream ({!Seed}) it carries no stability promise. *)
+
+val list_exact : ?keep:('a list -> bool list) -> int -> 'a t -> 'a list t
+(** [list_exact n gen] generates a list of exactly [n] [gen] values and shrinks
+    it with {!list}'s default-size move set — the empty list, then removal of
+    contiguous chunks of descending power-of-two length, then elements
+    individually, left to right. [n] fixes the {e drawn} length only: no
+    candidate is longer than the root, every shorter length down to the empty
+    list is reachable, and reducing an element preserves the length it was
+    given. Use it where [list ~size:(constant n)] would fix the same drawn
+    length but offer element-wise shrinking only, with no move that shortens the
+    list.
+
+    [keep values] is a mask as long as [values]; an element flagged [false] is
+    dropped. It runs on the drawn values {e before} the tree is assembled, so a
+    dropped element contributes no subtree: no candidate anywhere holds it, or a
+    value it would have shrunk to, and the root is a fixed point of the mask
+    rather than [n] elements long. It then runs on every node of the assembled
+    tree, so an element that a deletion or a reduction elsewhere invalidates is
+    dropped in the same candidate — which can leave a candidate shorter than the
+    structural move that produced it. That is how a {e state-dependent}
+    well-formedness condition (the calls of a command sequence a precondition
+    admits, the unique keys of an association list) holds at every node, where
+    {!such_that} would drop a rejected candidate with its whole subtree and
+    [assume] would spend the property engine's discard budget.
+
+    [keep] must be total and idempotent.
+
+    - {b Total.} It is handed the drawn list, the sublists the search reaches,
+      and the empty list. An exception escapes {!sample} at the root; on a
+      candidate it is memoized on that node and swallowed by the engine's
+      candidate loop, which abandons the remaining siblings and reports as
+      converged a search that stopped early.
+    - {b Idempotent.} The second pass rewrites the root along with the
+      candidates, so a mask that drops from a list it has already accepted drops
+      from the root twice.
+
+    The printer derives from [gen]'s, exactly as {!list}'s does.
+
+    Sampling raises [Invalid_argument] if [n < 0], or if [keep] returns a mask
+    whose length is not that of the list it was given — at sample time for the
+    drawn list, at forcing time for a candidate. *)
 
 exception Rejected
 (** Raised by {!sample} when a {!such_that} filter exhausts its [max_tries]

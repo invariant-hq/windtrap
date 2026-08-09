@@ -24,6 +24,11 @@ let starts_with prefix text = String.starts_with ~prefix text
 let contains needle haystack =
   Windtrap.Private.Text.contains_substring ~pattern:needle haystack
 
+let show_ints values =
+  "[" ^ String.concat "; " (List.map string_of_int values) ^ "]"
+
+let show_int_lists lists = String.concat " " (List.map show_ints lists)
+
 (* One fixed root for the whole suite; per-test streams come from indexes.
    Everything below is deterministic across runs and machines. *)
 let root = 0x00c0ffee1234abcdL
@@ -253,7 +258,37 @@ let float_range_invalid_raises_at_sample_time () =
       | _ -> failf "float_range (%s) sampled successfully" name)
     cases
 
-(* Booleans, characters, strings *)
+(* Unit, booleans, characters, strings *)
+
+let unit_generates_and_prints_parentheses () =
+  let tree = Gen.sample Gen.unit (state 0) in
+  check (no_children tree) "unit has shrink candidates";
+  check (Gen.prints Gen.unit) "unit reports no printer";
+  let rendered = Gen.render Gen.unit (Shrink_tree.root tree) in
+  check (rendered = "()") "unit rendered %S" rendered;
+  check (Gen.render_value Gen.unit () = Some "()") "unit lost its printer";
+  (* Why it is not [pure ()]: a deriving composition over [pure ()] has no
+     printer to derive from. *)
+  let paired = Gen.(pair unit nat) in
+  let tree = Gen.sample paired (state 1) in
+  let (), n = root_value tree in
+  let rendered = Gen.render paired (Shrink_tree.root tree) in
+  check
+    (rendered = Printf.sprintf "((), %d)" n)
+    "pair over unit rendered %S" rendered;
+  let bare = Gen.(pair (pure ()) nat) in
+  check (not (Gen.prints bare)) "pair over [pure ()] claims a printer";
+  (* And the shape a nullary variant arm actually takes: [map] derives no
+     printer either way, so what a counterexample shows is the leaf's
+     provenance — which [pure ()] does not record. *)
+  let arm = Gen.map (fun () -> `Pop) Gen.unit in
+  let rendered = Gen.render arm (Shrink_tree.root (Gen.sample arm (state 2))) in
+  check (rendered = "<from: ()>") "map over unit rendered %S" rendered;
+  let bare = Gen.map (fun () -> `Pop) (Gen.pure ()) in
+  let rendered =
+    Gen.render bare (Shrink_tree.root (Gen.sample bare (state 2)))
+  in
+  check (rendered = "<no printer>") "map over [pure ()] rendered %S" rendered
 
 let bool_shrinks_true_to_false () =
   let values = samples Gen.bool 100 in
@@ -420,6 +455,257 @@ let list_negative_size_raises_at_sample_time () =
   match Gen.sample gen (state 0) with
   | exception Invalid_argument _ -> ()
   | _ -> failf "negative size sampled successfully"
+
+let list_exact_draws_exactly_n () =
+  let gen = Gen.list_exact 7 Gen.nat in
+  for index = 0 to 9 do
+    let tree = Gen.sample gen (state index) in
+    let drawn = List.length (root_value tree) in
+    check (drawn = 7) "list_exact 7 drew %d elements" drawn;
+    (* Only the drawn length is fixed: shrinking removes elements, so no
+       candidate is longer. *)
+    explore ~limit:200 tree (fun l ->
+        check
+          (List.length l <= 7)
+          "list_exact candidate has length %d" (List.length l))
+  done;
+  let tree = Gen.sample (Gen.list_exact 0 Gen.nat) (state 0) in
+  check (root_value tree = []) "list_exact 0 drew a non-empty list";
+  check (no_children tree) "list_exact 0 has shrink candidates"
+
+(* The whole point of [list_exact] over [list ~size:(constant n)]: the
+   structural move set — the empty list, then contiguous chunk removals at
+   descending power-of-two sizes — instead of element-wise shrinking only.
+   The expectation is rebuilt here from the documented rule, so the test
+   pins the whole prefix rather than a sample of it. *)
+let list_exact_shrinks_with_the_structural_move_set () =
+  let distinct l = List.length (List.sort_uniq compare l) = 5 in
+  let gen = Gen.list_exact 5 Gen.int in
+  let tree = find_sample gen distinct in
+  let root = root_value tree in
+  let without first size =
+    List.filteri (fun index _ -> index < first || index >= first + size) root
+  in
+  (* Chunk sizes descend from the largest power of two strictly below 5;
+     starts are non-overlapping and a chunk running past the end is not
+     offered. *)
+  let rec removals size first acc =
+    if size = 0 then List.rev acc
+    else if first + size <= 5 then
+      removals size (first + size) (without first size :: acc)
+    else removals (size / 2) 0 acc
+  in
+  let expected = [] :: removals 4 0 [] in
+  let candidates =
+    List.of_seq (Seq.map root_value (Shrink_tree.children tree))
+  in
+  let structural =
+    List.filteri (fun i _ -> i < List.length expected) candidates
+  in
+  check (structural = expected) "structural candidates of %s were %s, not %s"
+    (show_ints root)
+    (show_int_lists structural)
+    (show_int_lists expected);
+  let minimum, _ = minimize (fun _ -> true) tree in
+  check (minimum = []) "list_exact minimized to a %d-element list"
+    (List.length minimum);
+  let sized = Gen.(list ~size:(constant 5) int) in
+  let sized_tree = find_sample sized distinct in
+  check
+    (Seq.for_all
+       (fun child -> List.length (root_value child) = 5)
+       (Shrink_tree.children sized_tree))
+    "the ?size path offered a shorter candidate"
+
+(* [?keep] masks the drawn values before the tree is assembled, so a dropped
+   element contributes no subtree at all. Observable three ways: the root is
+   the unmasked draw filtered — same seed, same draws; no immediate candidate
+   equals its parent, which masking on top of an assembled tree produces by
+   deleting an element the mask already dropped; and, for a mask that is not
+   closed under shrinking, no candidate anywhere is longer than the root,
+   which masking on top produces by reducing a dropped element into a kept
+   one. *)
+let list_exact_keep_masks_the_drawn_values () =
+  let even n = n mod 2 = 0 in
+  let element = Gen.int_range 0 9 in
+  let masked = Gen.list_exact ~keep:(List.map even) 6 element in
+  let drawn = Gen.list_exact 6 element in
+  for index = 0 to 9 do
+    let root = root_value (Gen.sample masked (state index)) in
+    let unmasked = root_value (Gen.sample drawn (state index)) in
+    check
+      (root = List.filter even unmasked)
+      "masked root %s is not the even elements of %s" (show_ints root)
+      (show_ints unmasked)
+  done;
+  let tree = find_sample masked (fun l -> l <> [] && List.length l < 6) in
+  let root = root_value tree in
+  Seq.iter
+    (fun child ->
+      check
+        (root_value child <> root)
+        "a candidate of %s equals its parent" (show_ints root))
+    (Shrink_tree.children tree);
+  (* [n < 50] is not closed under shrinking: a dropped element's own
+     candidates run toward [0], where the mask keeps them, so masking on top
+     of an assembled tree would restore a dropped element as a reduced one —
+     a candidate longer than the root. *)
+  let gen =
+    Gen.list_exact ~keep:(List.map (fun n -> n < 50)) 6 (Gen.int_range 0 99)
+  in
+  let shortened = ref 0 in
+  for index = 0 to 9 do
+    let tree = Gen.sample gen (state index) in
+    let bound = List.length (root_value tree) in
+    if bound < 6 then incr shortened;
+    explore ~limit:200 tree (fun l ->
+        check
+          (List.length l <= bound)
+          "a candidate of length %d exceeds the masked root's %d"
+          (List.length l) bound)
+  done;
+  check (!shortened > 0) "the mask dropped nothing in 10 draws — vacuous"
+
+(* And [?keep] runs again on every candidate: reducing an element can
+   invalidate it, and the cascade drops it in the same candidate. *)
+let list_exact_keep_reapplies_to_every_candidate () =
+  let big n = n >= 5 in
+  let gen = Gen.list_exact ~keep:(List.map big) 5 (Gen.int_range 0 9) in
+  for index = 0 to 9 do
+    let tree = Gen.sample gen (state index) in
+    explore ~limit:300 tree (fun l ->
+        List.iter
+          (fun n -> check (big n) "a candidate kept the dropped element %d" n)
+          l)
+  done;
+  (* Not vacuous: every element's first candidate is [0], which the mask
+     drops — so reducing the head yields the tail, the same list the
+     single-element chunk removal already yields, and the tail appears
+     twice. Without the cascade the reduction would yield [0 :: tail]. *)
+  let tree = find_sample gen (fun l -> List.length l >= 2) in
+  let root = root_value tree in
+  let candidates =
+    List.of_seq (Seq.map root_value (Shrink_tree.children tree))
+  in
+  let tails =
+    List.length (List.filter (fun l -> l = List.tl root) candidates)
+  in
+  check (tails >= 2)
+    "the head's reduction was not re-masked: %d candidates of %s equal %s" tails
+    (show_ints root)
+    (show_ints (List.tl root))
+
+(* [keep] is caller code that the shrink search runs, so it obeys the same
+   rule as every other callback here: once per tree node, memoized, never
+   again when a search revisits the branch. The two calls the root pays are
+   the pass before assembly and the cascade's rewrite of the root. *)
+let list_exact_keep_runs_once_per_node () =
+  let calls = ref 0 in
+  let keep values =
+    incr calls;
+    List.map (fun n -> n < 50) values
+  in
+  let gen = Gen.list_exact ~keep 4 (Gen.int_range 0 99) in
+  let tree = Gen.sample gen (state 0) in
+  check (!calls = 2) "sampling called ~keep %d times, not twice" !calls;
+  let children = List.of_seq (Shrink_tree.children tree) in
+  let expected = 2 + List.length children in
+  check (!calls = expected)
+    "forcing %d candidates called ~keep %d times, not %d" (List.length children)
+    !calls expected;
+  let before = !calls in
+  List.iter (fun child -> ignore (root_value child)) children;
+  ignore (List.of_seq (Shrink_tree.children tree));
+  check (!calls = before) "re-forcing the same nodes called ~keep %d more times"
+    (!calls - before)
+
+(* The masks a state-dependent repair actually produces at the edges: one
+   that admits no call at all, and a zero-length draw. Both must be defined
+   and neither may leave a candidate behind. *)
+let list_exact_keep_degenerate_masks () =
+  let drop_all = Gen.list_exact ~keep:(List.map (fun _ -> false)) 5 Gen.nat in
+  let tree = Gen.sample drop_all (state 0) in
+  check
+    (root_value tree = [])
+    "a mask dropping everything left %s"
+    (show_ints (root_value tree));
+  check (no_children tree) "an emptied masked list has shrink candidates";
+  (* At [n = 0] the mask still runs, on the empty list, both times. *)
+  let lengths = ref [] in
+  let keep values =
+    lengths := List.length values :: !lengths;
+    List.map (fun _ -> true) values
+  in
+  let tree = Gen.sample (Gen.list_exact ~keep 0 Gen.nat) (state 0) in
+  check (root_value tree = []) "list_exact 0 drew a non-empty list";
+  check
+    (!lengths = [ 0; 0 ])
+    "~keep saw lists of lengths %s at n = 0" (show_ints !lengths)
+
+(* A dropped element leaves no provenance either: the mask selects element
+   samples, traces included, so every node of a printerless list_exact
+   renders exactly its own surviving draws. The element generator is
+   [map]ped to make the list printerless, which is what puts the draws on
+   screen; the mask drops on reduction, so candidates below the root have
+   something to drop. *)
+let list_exact_keep_drops_the_provenance_too () =
+  let element = Gen.map Fun.id (Gen.int_range 0 9) in
+  let gen = Gen.list_exact ~keep:(List.map (fun n -> n >= 5)) 6 element in
+  check
+    (not (Gen.prints gen))
+    "a printerless element generator derived a printer";
+  let tree = find_sample gen (fun l -> List.length l >= 2) in
+  let visited = ref 0 in
+  let rec go tree =
+    if !visited >= 200 then raise_notrace Exit;
+    incr visited;
+    let node = Shrink_tree.root tree in
+    let rendered = Gen.render gen node in
+    let expected = "<from: " ^ show_ints (Gen.value node) ^ ">" in
+    check (rendered = expected) "a node rendered %S, not %S" rendered expected;
+    Seq.iter go (Shrink_tree.children tree)
+  in
+  (try go tree with Exit -> ());
+  check (!visited >= 20) "only %d nodes carried provenance" !visited
+
+let list_exact_wrong_length_mask_raises () =
+  let gen = Gen.list_exact ~keep:(fun _ -> []) 3 Gen.nat in
+  (match Gen.sample gen (state 0) with
+  | exception Invalid_argument _ -> ()
+  | _ -> failf "a wrong-length mask sampled successfully");
+  (* Right at the root, wrong on a candidate: the error surfaces where the
+     candidate is forced, like any other malformed generator argument. *)
+  let late =
+    Gen.list_exact
+      ~keep:(fun values ->
+        if List.length values = 3 then [ true; true; true ] else [])
+      3 Gen.nat
+  in
+  let tree = Gen.sample late (state 0) in
+  match Seq.iter (fun _ -> ()) (Shrink_tree.children tree) with
+  | exception Invalid_argument _ -> ()
+  | () -> failf "a wrong-length mask on a candidate did not raise"
+
+let list_exact_negative_count_raises_at_sample_time () =
+  match Gen.sample (Gen.list_exact (-1) Gen.nat) (state 0) with
+  | exception Invalid_argument _ -> ()
+  | _ -> failf "list_exact (-1) sampled successfully"
+
+let list_exact_printer_derives_from_the_element_generator () =
+  let gen = Gen.list_exact 3 Gen.nat in
+  check
+    (Gen.render_value gen [ 1; 2 ] = Some "[1; 2]")
+    "list_exact lost the element printer";
+  let tree = Gen.sample gen (state 0) in
+  let rendered = Gen.render gen (Shrink_tree.root tree) in
+  check (starts_with "[" rendered) "list_exact rendered %S" rendered;
+  check
+    (Gen.prints (Gen.list_exact ~keep:(List.map (fun _ -> true)) 3 Gen.nat))
+    "a masked list_exact lost the element printer";
+  let printerless = Gen.list_exact 3 (Gen.constant 5) in
+  check
+    (Gen.render_value printerless [ 5 ] = None)
+    "list_exact derived a printer from a printerless element generator"
 
 let array_shrinks_to_empty () =
   let gen = Gen.(array nat) in
@@ -1126,6 +1412,7 @@ let suite =
     ("float_range stays in bounds", float_range_stays_in_bounds);
     ( "float_range invalid raises at sample time",
       float_range_invalid_raises_at_sample_time );
+    ("unit generates and prints ()", unit_generates_and_prints_parentheses);
     ("bool shrinks true to false", bool_shrinks_true_to_false);
     ("char is uniform and shrinks to 'a'", char_is_uniform_and_shrinks_to_a);
     ( "char_range stays in bounds and shrinks toward 'a'",
@@ -1150,6 +1437,22 @@ let suite =
       list_with_size_keeps_length_in_bounds );
     ( "list negative size raises at sample time",
       list_negative_size_raises_at_sample_time );
+    ("list_exact draws exactly n", list_exact_draws_exactly_n);
+    ( "list_exact shrinks with the structural move set",
+      list_exact_shrinks_with_the_structural_move_set );
+    ( "list_exact ?keep masks the drawn values",
+      list_exact_keep_masks_the_drawn_values );
+    ( "list_exact ?keep re-applies to every candidate",
+      list_exact_keep_reapplies_to_every_candidate );
+    ("list_exact ?keep runs once per node", list_exact_keep_runs_once_per_node);
+    ("list_exact ?keep degenerate masks", list_exact_keep_degenerate_masks);
+    ( "list_exact ?keep drops the provenance too",
+      list_exact_keep_drops_the_provenance_too );
+    ("list_exact wrong-length mask raises", list_exact_wrong_length_mask_raises);
+    ( "list_exact negative count raises at sample time",
+      list_exact_negative_count_raises_at_sample_time );
+    ( "list_exact printer derives from the element generator",
+      list_exact_printer_derives_from_the_element_generator );
     ("array shrinks to empty", array_shrinks_to_empty);
     ("option offers None first", option_offers_none_first);
     ("result generates both constructors", result_generates_both_constructors);
