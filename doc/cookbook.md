@@ -3,7 +3,7 @@
 Recipes for needs windtrap deliberately does not absorb: each is a few
 lines of ordinary OCaml over the public surface, and keeping them out of
 the API keeps the API small. Every recipe here compiles — each is
-mirrored as a test in `test/facade/test_cookbook.ml`, so a recipe that
+mirrored as a test in `test/docs/test_cookbook.ml`, so a recipe that
 rots breaks the build. Code blocks that would need a dependency windtrap
 does not have (Eio) are marked as fragments; their *guarantees* are
 tested instead.

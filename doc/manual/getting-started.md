@@ -109,7 +109,8 @@ Every failure that needs a command to resolve it prints that command:
 the acceptance line under a snapshot mismatch, the replay line under a
 property failure.
 From here: [Assertions](assertions.md) for the full verb set,
-[Property testing](property-testing.md), [Snapshots and expect
+[Property testing](property-testing.md) and [Stateful
+testing](stateful-testing.md), [Snapshots and expect
 tests](snapshots-and-expect.md), or [Running tests](running-tests.md)
 for the CLI. Runnable versions of each chapter's code live under
 `examples/` in the distribution.
