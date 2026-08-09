@@ -36,6 +36,7 @@ let () =
       Windtrap.group "capture" Test_capture.tests;
       Windtrap.group "property" Test_property.tests;
       Windtrap.group "snapshot" Test_snapshot.tests;
+      Windtrap.group "stateful" Test_stateful.tests;
       Windtrap.group "test_tree" Test_test_tree.tests;
       Windtrap.group "render" Test_render.tests;
       Windtrap.group "render_junit" Test_render_junit.tests;

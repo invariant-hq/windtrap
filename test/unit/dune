@@ -29,6 +29,7 @@
   test_capture
   test_property
   test_snapshot
+  test_stateful
   test_test_tree
   render_fixtures
   xml_check
