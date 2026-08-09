@@ -9,6 +9,49 @@ codes. New entries go at the top of their section.
 
 ### Added
 
+**Stateful testing: `stateful`, `command`, `call`.** A property checks a law
+over one value; a cache, a queue, a pool or a cursor needs one over a
+*sequence of calls*. A command bundles four facts in one place — how to draw
+its argument, when it is legal, what it does to the model, and what it does to
+the real thing — and its body calls the system and asserts with the ordinary
+verbs. Because a result is produced and checked in one expression it never
+crosses a boundary, so there is no result type to declare, no witness registry
+and no `show_cmd`: the library derives the printer and there is no shrinker to
+write, as everywhere else.
+
+```
+counterexample (case 0, shrunk 5 steps):
+  2 calls, last: pop
+  []   1  push 0
+  [0]  2  pop
+which failed with:
+  invariant after step 2 of 2: pop
+  expected  0
+  actual    1
+```
+
+Programs draw at a fixed length, are repaired against the model so an illegal
+call is removed rather than skipped — the program you read is the program that
+ran — and shrink by deleting calls and reducing arguments, never by
+substituting one command for another. `~setup` builds a fresh system per case
+*and per shrink candidate*, `?teardown` releases on every path without ever
+masking the failure you were shown, `?invariant` checks the state that no
+single command owns, and `?pp_model` prints the model each call was made in. A
+`~pre` or `~next` that raises is reported as a specification failure naming the
+command and step, rather than escaping into the generator and silently ending
+the shrink search. See [the manual chapter](doc/manual/stateful-testing.md) and
+[`examples/10-stateful`](examples/10-stateful).
+
+**`Gen.unit` and `Gen.list_exact`.** `unit` closes the last gap in the
+primitive vocabulary: `Gen.pure ()` carries no provenance, so a nullary draw
+built on it renders as nothing. `list_exact` draws a fixed number of elements
+and still shrinks structurally — the empty list, chunk removals, then element
+reduction — which no existing spelling gave: `list`'s default length averages
+365, and `?size` buys a bound by degrading length shrinking to prefix
+truncation. Its `?keep` mask normalizes the drawn roots before the shrink tree
+is built and again on every candidate, so well-formedness is restored by a
+total function rather than by a filter that would prune whole subtrees.
+
 **`text`, a string witness that prints verbatim.** `string` renders with `%S`
 — quoted, escaped, on one line — which buries the difference between two
 multi-line values in `\n` soup. `text` prints the same string unescaped, and
