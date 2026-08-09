@@ -30,7 +30,55 @@ jobs:
       - name: Install OCaml dependencies
         run: opam install . --deps-only --with-test
 
+      # The plain run, on all three platforms: uninstrumented, which is
+      # what a user's `dune runtest` is. WINDTRAP_JUNIT is the environment
+      # mirror of --junit; under `dune runtest` the mirrors ARE the CLI,
+      # and windtrap's own CI is the obvious place to say so. The value is
+      # a directory (anything not ending in .xml is), so each of the ~30
+      # suites writes its own report instead of overwriting one file — and
+      # it is ABSOLUTE, because dune runs each test action in that test's
+      # own build directory and a relative path would scatter reports
+      # through the tree.
       - name: Build and test
         run: |
           opam exec -- dune build
           opam exec -- dune build @runtest
+        env:
+          WINDTRAP_JUNIT: ${{ github.workspace }}/_junit
+
+      # Failures are already annotated on the diff: the runner detects
+      # GitHub Actions and emits ::error lines by itself. The JUnit files
+      # are for the run summary and for anything that consumes them.
+      - name: Upload JUnit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.os }}
+          path: _junit
+          if-no-files-found: ignore
+
+  # Coverage of windtrap by windtrap, on one platform: the number is a
+  # property of the test suite, not of the OS, and instrumented builds are
+  # slower. The gate lives in the `cover` alias (--min 87), so this job
+  # fails exactly when the project's own coverage drops.
+  coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout tree
+        uses: actions/checkout@v4
+
+      - name: Set-up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5
+
+      - name: Install OCaml dependencies
+        run: opam install . --deps-only --with-test
+
+      # ppx_windtrap.coverage, not ppx_windtrap: only that spelling keeps
+      # the windtrap core out of an instrumented library's closure, and
+      # lib/ — the core itself — cannot use the other one at all. See
+      # ppx/coverage/dune.
+      - name: Coverage
+        run: opam exec -- dune build @cover --instrument-with ppx_windtrap.coverage
