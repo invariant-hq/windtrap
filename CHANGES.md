@@ -17,6 +17,16 @@ rendered output, serialized documents and logs diff line by line. Equality is
 unchanged, byte for byte: trailing whitespace and a missing final newline
 still fail, and the diff marks them.
 
+### Changed
+
+**A printerless counterexample names its remedy.** A generator built with
+`map` or `bind` carries no printer, so its counterexample renders as the draws
+the value came from (`<from: ("a", 90)>`) — informative, but it never said what
+to do about it, while the no-draws case (`<no printer — add Gen.with_pp>`) said
+it inside the rendering. The advice now lives in one place, a line under the
+counterexample, and covers every printerless shape including `~examples`
+values; the renderings themselves are just renderings (`<no printer>`).
+
 ## [0.2.0] - 2026-08-07
 
 Windtrap 0.2.0 is a ground-up rewrite around three commitments: **declaring a

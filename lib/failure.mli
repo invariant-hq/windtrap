@@ -169,6 +169,12 @@ type kind =
       count : int option;
       max_shrink : int option;
       examples : bool;
+      printerless : bool;
+          (** [true] iff the generator carries no printer, so [rendered] is a
+              placeholder — the draws the value came from, or [<example k>] —
+              rather than the value. Renderers name the remedy ([Gen.with_pp])
+              exactly once, under the counterexample, instead of each
+              placeholder shape carrying its own advice. *)
       inner : t option;
     }
       (** A property failed. [rendered] is the printed (shrunk) counterexample;
@@ -325,11 +331,13 @@ val property :
   ?shrink_exhausted:bool ->
   root:Seed.seed ->
   examples:bool ->
+  ?printerless:bool ->
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
     {!Property} failure; see {!kind} for the payload semantics. [timed_out],
-    [count], and [max_shrink] default to [None]. *)
+    [count], and [max_shrink] default to [None], and [printerless] to [false] —
+    the caller states that [rendered] is a placeholder, since only it knows. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)

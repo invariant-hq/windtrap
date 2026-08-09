@@ -491,10 +491,14 @@ let constant_is_a_leaf_and_asks_for_a_printer () =
   let tree = Gen.sample gen (state 0) in
   check (root_value tree = 42) "constant produced %d" (root_value tree);
   check (no_children tree) "constant has shrink candidates";
+  (* The rendering says what it is; naming the remedy is the report's job,
+     driven by [prints] — so the advice appears once, whichever of the
+     printerless shapes the engine produced. *)
   check
-    (Gen.render gen (Shrink_tree.root tree) = "<no printer — add Gen.with_pp>")
+    (Gen.render gen (Shrink_tree.root tree) = "<no printer>")
     "constant rendered %S"
     (Gen.render gen (Shrink_tree.root tree));
+  check (not (Gen.prints gen)) "constant reports a printer";
   check (Gen.render_value gen 42 = None) "constant has a printer"
 
 let pure_is_constant () =

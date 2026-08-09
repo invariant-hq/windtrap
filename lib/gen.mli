@@ -317,13 +317,20 @@ val sample : 'a t -> Seed.state -> 'a sample Shrink_tree.t
 val value : 'a sample -> 'a
 (** [value s] is the generated (or shrunk) value of [s]. *)
 
+val prints : 'a t -> bool
+(** [prints gen] is [true] iff [gen] carries a printer, attached with {!with_pp}
+    or derived from its components — that is, iff {!render} yields the value
+    rather than its provenance. The property engine records it on a failure so
+    the report can name the remedy ({!with_pp}) once, instead of each
+    printerless rendering carrying its own advice. *)
+
 val render : 'a t -> 'a sample -> string
 (** [render gen s] is the counterexample text for [s]: the attached or derived
-    printer's output when [gen] has one, otherwise the bounded shrunk-draw
-    provenance [<from: ...>], or [<no printer — add Gen.with_pp>] when no draw
-    was recorded. Provenance output is truncated with an ellipsis beyond roughly
-    200 bytes, never splitting a UTF-8 sequence. Never raises: a printer that
-    raises renders as [<printer raised ...>]. *)
+    printer's output when {!prints} holds, otherwise the bounded shrunk-draw
+    provenance [<from: ...>], or [<no printer>] when no draw was recorded.
+    Provenance output is truncated with an ellipsis beyond roughly 200 bytes,
+    never splitting a UTF-8 sequence. Never raises: a printer that raises
+    renders as [<printer raised ...>]. *)
 
 val render_value : 'a t -> 'a -> string option
 (** [render_value gen v] is [Some text], [v] rendered by [gen]'s attached or

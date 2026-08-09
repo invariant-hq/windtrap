@@ -114,7 +114,18 @@ let gen_shape =
 
 Composite generators (`list`, `pair`, …) derive their printing from
 their components, so `Gen.(list string)` counterexamples print as the
-list you expect without any `with_pp`.
+list you expect without any `with_pp`. `map` and `bind` cannot: no
+printer for the result type can be inferred from the one they consume.
+Such a counterexample falls back to the draws it came from, and the
+report says what is missing:
+
+```
+counterexample (case 2, shrunk 2 steps): <from: ("a", 90)>
+(this generator has no printer — attach one with Gen.with_pp to see the value)
+```
+
+The provenance is still enough to replay, and often enough to read.
+Attach `with_pp` when it is not.
 
 ## Regressions worth keeping: `~examples`
 

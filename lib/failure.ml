@@ -50,6 +50,7 @@ type kind =
       count : int option;
       max_shrink : int option;
       examples : bool;
+      printerless : bool;
       inner : t option;
     }
   | Message of string
@@ -199,7 +200,8 @@ let snapshot ?loc ~name ~path state =
   make ?loc (Snapshot { name; path; state = bound_snapshot_state state })
 
 let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
-    ~shrink_steps ?(shrink_exhausted = false) ~root ~examples () =
+    ~shrink_steps ?(shrink_exhausted = false) ~root ~examples
+    ?(printerless = false) () =
   make ?loc
     (Property
        {
@@ -212,6 +214,7 @@ let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
          count;
          max_shrink;
          examples;
+         printerless;
          inner;
        })
 

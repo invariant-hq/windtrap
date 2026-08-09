@@ -736,6 +736,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         count;
         max_shrink;
         examples;
+        printerless;
         inner;
       } ->
       let desc = property_case_desc ~examples ~case_index ~shrink_steps in
@@ -744,6 +745,14 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         put_block rendered
       end
       else put_ind (spf "counterexample (%s): %s" desc rendered);
+      (* The line above is a placeholder, not the value. Say so once, here,
+         where the reader is looking at it — whichever placeholder shape the
+         engine produced. *)
+      if printerless then
+        put_ind
+          (st `Faint
+             "(this generator has no printer \u{2014} attach one with \
+              Gen.with_pp to see the value)");
       (* The shrink search hit the whole-test budget: the reported
          counterexample is the best found within it. [%g] matches the
          runner's [timed out after %gs] phrase so timeout greps catch

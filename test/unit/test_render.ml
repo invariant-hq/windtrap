@@ -894,6 +894,26 @@ let test_property_projections () =
   check_absent "example: no replay line (examples always replay)" ~sub:"replay:"
     b;
   check_absent "example: no seed token" ~sub:"WINDTRAP_SEED" b;
+  (* A printerless counterexample is a placeholder, and the block says so
+     once — under the counterexample, whichever placeholder shape the engine
+     produced ([<from: ...>], [<no printer>], [<example k>]). A printing
+     generator must never draw the advice. *)
+  let printerless =
+    Failure.property ~rendered:"<from: (\"a\", 60000)>" ~case_index:19
+      ~shrink_steps:9 ~root:Fixtures.root ~examples:false ~printerless:true ()
+  in
+  let hint = "attach one with Gen.with_pp" in
+  check_contains "printerless: names the remedy" ~sub:hint
+    (failure_block printerless);
+  check_contains "printerless: keeps the provenance rendering"
+    ~sub:"counterexample (case 19, shrunk 9 steps): <from: (\"a\", 60000)>"
+    (failure_block printerless);
+  check_absent "printerless: advice is not repeated" ~sub:"add Gen.with_pp>"
+    (failure_block printerless);
+  check_absent "printing generator: no remedy line" ~sub:hint
+    (failure_block example);
+  check_absent "printing generator: no remedy line either" ~sub:hint
+    (failure_block Fixtures.prop_failure);
   let no_filter = failure_block Fixtures.prop_failure in
   check_contains "replay without filter: seed only"
     ~sub:"replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest" no_filter;

@@ -256,11 +256,11 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard ?max_shrink
   let discards = ref 0 in
   let stats () = stats_of ~cases:!cases ~discards:!discards ctx in
   let fail ~rendered ~case_index ~shrink_steps ?timed_out
-      ?(shrink_exhausted = false) ~examples cls =
+      ?(shrink_exhausted = false) ~examples ?(printerless = false) cls =
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
         ?count:config_count ?max_shrink:config_max_shrink ~rendered ~case_index
-        ~shrink_steps ~shrink_exhausted ~root ~examples ()
+        ~shrink_steps ~shrink_exhausted ~root ~examples ~printerless ()
     in
     Fail { failure; stats = stats () }
   in
@@ -279,14 +279,14 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard ?max_shrink
         | Control (control, backtrace) ->
             Printexc.raise_with_backtrace control backtrace
         | Failed cls ->
-            let rendered =
+            let rendered, printerless =
               match Gen.render_value gen value with
-              | Some text -> text
-              | None -> Printf.sprintf "<example %d>" (index + 1)
+              | Some text -> (text, false)
+              | None -> (Printf.sprintf "<example %d>" (index + 1), true)
             in
             Some
               (fail ~rendered ~case_index:index ~shrink_steps:0 ~examples:true
-                 cls))
+                 ~printerless cls))
   in
   match run_examples 0 examples with
   | Some outcome -> outcome
@@ -337,6 +337,7 @@ let run ?loc ?(count = default_count) ?config_count ?max_discard ?max_shrink
                   let rendered = Gen.render gen (Shrink_tree.root final_tree) in
                   fail ~rendered ~case_index:attempts ~shrink_steps:steps
                     ?timed_out ~shrink_exhausted:exhausted ~examples:false
+                    ~printerless:(not (Gen.prints gen))
                     final_cls)
       in
       generate ~passed:0 ~attempts:0

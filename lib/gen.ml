@@ -895,7 +895,12 @@ let ( let* ) = bind
 
 let sample gen state = fst (gen.run state)
 let value s = s.value
-let no_printer_message = "<no printer — add Gen.with_pp>"
+let prints gen = Option.is_some gen.pp
+
+(* The remedy is not spelled here: a printerless counterexample says what it
+   is, and the report says once — under the counterexample, whatever the
+   printerless shape — what to do about it. *)
+let no_printer_message = "<no printer>"
 
 let render gen s =
   match gen.pp with
