@@ -17,11 +17,18 @@ type 'a testable = 'a Testable.t
    location comes from Loc.resolve: [?pos] wins, else call-stack capture,
    else none. Payload strings are bounded by the Failure constructors. *)
 
-let fail_equality ?pos ?msg ?not_ ?claim ~expected ~actual () =
+let fail_equality ?pos ?msg ?not_ ~expected ~actual () =
   raise
     (Failure.Check_failure
-       (Failure.equality ?loc:(Loc.resolve ?pos ()) ?msg ?not_ ?claim ~expected
-          ~actual ()))
+       (Failure.equality ?loc:(Loc.resolve ?pos ()) ?msg ?not_ ~expected ~actual
+          ()))
+
+(* Shared by [satisfies] and [require_match]: the claim sentence is the
+   whole of the difference between them. *)
+let fail_predicate ?pos ?msg ~claim value =
+  raise
+    (Failure.Check_failure
+       (Failure.predicate ?loc:(Loc.resolve ?pos ()) ?msg ~claim value))
 
 let fail_raise ?pos ?msg ?expected ?actual ?predicate ?backtrace
     ?same_constructor ?expected_message ?actual_message () =
@@ -60,10 +67,10 @@ let is_false ?pos ?msg b =
 
 (* String containment *)
 
-let fail_containment ?pos ?msg ?found_at ~expected ~needle ~haystack () =
+let fail_containment ?pos ?msg ?found_at ~claim ~needle ~haystack () =
   raise
     (Failure.Check_failure
-       (Failure.containment ?loc:(Loc.resolve ?pos ()) ?msg ?found_at ~expected
+       (Failure.containment ?loc:(Loc.resolve ?pos ()) ?msg ?found_at ~claim
           ~needle ~haystack ()))
 
 let contains ?pos ?msg ~sub haystack =
@@ -71,7 +78,7 @@ let contains ?pos ?msg ~sub haystack =
   | Some _ -> ()
   | None ->
       fail_containment ?pos ?msg
-        ~expected:(Pp.str "string containing %S" sub)
+        ~claim:(Pp.str "string containing %S" sub)
         ~needle:sub ~haystack ()
 
 let not_contains ?pos ?msg ~sub haystack =
@@ -79,16 +86,15 @@ let not_contains ?pos ?msg ~sub haystack =
   | None -> ()
   | Some found_at ->
       fail_containment ?pos ?msg ~found_at
-        ~expected:(Pp.str "string not containing %S" sub)
+        ~claim:(Pp.str "string not containing %S" sub)
         ~needle:sub ~haystack ()
 
 (* Predicates *)
 
 let satisfies ?pos ?msg t pred v =
   if not (pred v) then
-    fail_equality ?pos ?msg ~claim:Failure.Satisfies
-      ~expected:"value satisfying the predicate"
-      ~actual:(Testable.to_string t v) ()
+    fail_predicate ?pos ?msg ~claim:"value satisfying the predicate"
+      (Testable.to_string t v)
 
 (* Unwrapping *)
 
@@ -119,8 +125,7 @@ let require_match ?pos ?msg ?pp extract v =
       let rendered =
         match pp with Some pp -> Pp.to_string pp v | None -> abstract
       in
-      fail_equality ?pos ?msg ~claim:Failure.Matches ~expected:"a match"
-        ~actual:rendered ()
+      fail_predicate ?pos ?msg ~claim:"a match" rendered
 
 (* Exceptions
 

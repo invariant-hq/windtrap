@@ -1565,10 +1565,10 @@ let test_prop_stats () =
   check_contains "prop stats: its labels still print"
     ~sub:"labels (100 passing cases):" b1
 
-(* Claim-aware containment (D5 §2) *)
+(* Containment blocks (D5 §2) *)
 
 let not_contains_failure =
-  Failure.containment ~found_at:10 ~expected:{|string not containing "secret"|}
+  Failure.containment ~found_at:10 ~claim:{|string not containing "secret"|}
     ~needle:"secret" ~haystack:"0123456789secret-end" ()
 
 let test_containment_block () =
@@ -1591,7 +1591,7 @@ let test_containment_block () =
   (* contains: needle absent, bounded head excerpt of a huge haystack. *)
   let haystack = String.make 20_006 'a' in
   let contains_failure =
-    Failure.containment ~expected:{|string containing "NOPE"|} ~needle:"NOPE"
+    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
       ~haystack ()
   in
   let b = failure_block contains_failure in
@@ -1606,7 +1606,7 @@ let test_containment_block () =
 
 let test_containment_multiline () =
   let f =
-    Failure.containment ~expected:{|string containing "user=bob"|}
+    Failure.containment ~claim:{|string containing "user=bob"|}
       ~needle:"user=bob" ~haystack:"line one\nline two user=alice\nline three"
       ()
   in
@@ -1623,7 +1623,7 @@ let test_containment_multiline () =
   (* A found occurrence in a multi-line excerpt highlights on its line
      under ansi; without color the block prints unmarked. *)
   let found =
-    Failure.containment ~found_at:9 ~expected:{|string not containing "secret"|}
+    Failure.containment ~found_at:9 ~claim:{|string not containing "secret"|}
       ~needle:"secret" ~haystack:"line one\nsecret here\nline three" ()
   in
   let colored = failure_block ~ansi:true found in
@@ -1636,7 +1636,7 @@ let test_containment_headlines () =
   check "headline: not_contains names the offset"
     (Render.headline not_contains_failure = {|needle "secret" found at byte 10|});
   let contains_failure =
-    Failure.containment ~expected:{|string containing "NOPE"|} ~needle:"NOPE"
+    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
       ~haystack:(String.make 20_006 'a') ()
   in
   check "headline: contains names the haystack size"
@@ -1646,18 +1646,14 @@ let test_containment_headlines () =
 let test_satisfies_no_refinement () =
   (* The claim sentence is a description, not a rendering: never diff or
      refine the two (D5 §2). *)
-  let f =
-    Failure.equality ~claim:Failure.Satisfies
-      ~expected:"value satisfying the predicate" ~actual:"-3" ()
-  in
+  let f = Failure.predicate ~claim:"value satisfying the predicate" "-3" in
   let b = failure_block f in
   check_contains "satisfies: two label lines"
     ~sub:"    expected  value satisfying the predicate\n    actual    -3\n" b;
   check_absent "satisfies: no marker line against the claim" ~sub:"~" b;
   let multi =
     failure_block
-      (Failure.equality ~claim:Failure.Satisfies
-         ~expected:"value satisfying the predicate" ~actual:"[0; 1;\n 2]" ())
+      (Failure.predicate ~claim:"value satisfying the predicate" "[0; 1;\n 2]")
   in
   check_contains "satisfies: multi-line value prints in block form"
     ~sub:
@@ -1669,9 +1665,7 @@ let test_satisfies_no_refinement () =
   check_absent "satisfies: no unified diff against the claim"
     ~sub:"--- expected" multi;
   let matches =
-    failure_block
-      (Failure.equality ~claim:Failure.Matches ~expected:"a match"
-         ~actual:"Error \"boom\"" ())
+    failure_block (Failure.predicate ~claim:"a match" "Error \"boom\"")
   in
   check_absent "matches: no refinement either" ~sub:"~" matches
 

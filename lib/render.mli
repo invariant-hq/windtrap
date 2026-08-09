@@ -375,17 +375,18 @@ val pp_failure :
       ([lists differ in length: expected 100 elements, actual 98]) when the
       counts differ. A difference the diff cannot show is stated in words:
       renderings that are byte-equal (a printer lossier than the equality), or
-      that differ only by a trailing newline. Claims other than {!Failure.Equal}
-      never diff the claim description against the value: {!Failure.Satisfies}
-      and {!Failure.Matches} print the description and the rendered value
-      without refinement, and {!Failure.Contains} prints the needle with its
-      verdict ([needle "secret" — found at byte 10] /
-      [needle "NOPE" — not found]), then the stored haystack excerpt —
-      occurrence highlighted, or marked with a [~~~] line without color — and,
-      when the excerpt is partial, one faint line stating the excerpted byte
-      range and the haystack's total size
-      ([(excerpt: bytes 0-8191 of a 20006-byte haystack)]);
+      that differ only by a trailing newline;
     - negated equality: the value printed once ([both sides equal: <v>]);
+    - predicate ([satisfies], [require_match]): the claim description and the
+      rendered value under the [expected]/[actual] labels, never diffed or
+      refined against each other — a description is not a rendering;
+    - containment ([contains], [not_contains]): the needle with its verdict
+      ([needle "secret" — found at byte 10] / [needle "NOPE" — not found]), then
+      the stored haystack excerpt — occurrence highlighted, or marked with a
+      [~~~] line without color — and, when the excerpt is partial, one faint
+      line stating the excerpted byte range and the haystack's total size
+      ([(excerpt: bytes 0-8191 of a 20006-byte haystack)]). The claim
+      description never prints: the verdict says more than the sentence would;
     - raise: expected and raised exceptions, and the recorded backtrace. When
       both exceptions share their constructor and both carry a message payload
       ({!Failure.kind}), the block diffs the {e messages} instead of repeating

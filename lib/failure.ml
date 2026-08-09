@@ -12,24 +12,17 @@ type snapshot_state =
   | Unresolvable
   | Duplicate of { first : Loc.t option; first_test : string }
 
-type claim =
-  | Equal
-  | Contains of {
+type kind =
+  | Equality of { expected : string; actual : string; not_ : bool }
+  | Containment of {
+      claim : string;
       needle : string;
       found_at : int option;
       haystack_length : int;
+      excerpt : string;
       excerpt_offset : int;
     }
-  | Satisfies
-  | Matches
-
-type kind =
-  | Equality of {
-      expected : string;
-      actual : string;
-      not_ : bool;
-      claim : claim;
-    }
+  | Predicate of { claim : string; value : string }
   | Raise of {
       expected : string option;
       actual : string option;
@@ -170,15 +163,11 @@ let utf8_boundary_at_or_after s pos =
 let make ?loc ?msg kind =
   { kind; phase = Body; loc; msg = cap_opt msg; output_tail = None }
 
-let equality ?loc ?msg ?(not_ = false) ?(claim = Equal) ~expected ~actual () =
-  (* Renderers rely on negation and claim refinement never combining (see
-     the [kind] doc); reject the combination where it would be built. *)
-  if not_ && claim <> Equal then
-    invalid_arg "Failure.equality: not_ applies only to the Equal claim";
+let equality ?loc ?msg ?(not_ = false) ~expected ~actual () =
   make ?loc ?msg
-    (Equality { expected = cap expected; actual = cap actual; not_; claim })
+    (Equality { expected = cap expected; actual = cap actual; not_ })
 
-(* The bounded haystack window stored as a containment failure's [actual]:
+(* The bounded haystack window stored as a containment failure's [excerpt]:
    around the match when there is one, the head otherwise. Both cuts land on
    UTF-8 code-point boundaries, so the window may exceed the limit by the up
    to three bytes needed to complete a sequence. *)
@@ -199,27 +188,25 @@ let excerpt_window ~found_at haystack =
     in
     (start, String.sub haystack start (stop - start))
 
-let containment ?loc ?msg ?found_at ~expected ~needle ~haystack () =
+let containment ?loc ?msg ?found_at ~claim ~needle ~haystack () =
   (match found_at with
   | Some i when i < 0 || i > String.length haystack ->
       invalid_arg "Failure.containment: found_at is outside the haystack"
   | Some _ | None -> ());
   let excerpt_offset, excerpt = excerpt_window ~found_at haystack in
   make ?loc ?msg
-    (Equality
+    (Containment
        {
-         expected = cap expected;
-         actual = excerpt;
-         not_ = false;
-         claim =
-           Contains
-             {
-               needle = cap needle;
-               found_at;
-               haystack_length = String.length haystack;
-               excerpt_offset;
-             };
+         claim = cap claim;
+         needle = cap needle;
+         found_at;
+         haystack_length = String.length haystack;
+         excerpt;
+         excerpt_offset;
        })
+
+let predicate ?loc ?msg ~claim value =
+  make ?loc ?msg (Predicate { claim = cap claim; value = cap value })
 
 let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace
     ?(same_constructor = false) ?expected_message ?actual_message () =

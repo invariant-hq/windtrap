@@ -51,13 +51,23 @@ let equality_payload name f k =
       k (expected, actual, not_)
   | _ -> fail (name ^ ": kind is Equality")
 
-(* Claim-aware variant: [k] gets the description sides and the claim. *)
-let claim_payload name f k =
+(* [k] gets the claim description and the containment payload. *)
+let containment_payload name f k =
   match caught name f with
-  | { F.kind = F.Equality { expected; actual; not_; claim }; _ } ->
-      check (name ^ ": not_ is false for refined claims") (not not_);
-      k (expected, actual, claim)
-  | _ -> fail (name ^ ": kind is Equality")
+  | {
+   F.kind =
+     F.Containment
+       { claim; needle; found_at; haystack_length; excerpt; excerpt_offset };
+   _;
+  } ->
+      k (claim, excerpt, needle, found_at, haystack_length, excerpt_offset)
+  | _ -> fail (name ^ ": kind is Containment")
+
+(* [k] gets the claim description and the rejected value. *)
+let predicate_payload name f k =
+  match caught name f with
+  | { F.kind = F.Predicate { claim; value }; _ } -> k (claim, value)
+  | _ -> fail (name ^ ": kind is Predicate")
 
 let raise_payload name f k =
   match caught name f with
@@ -123,9 +133,9 @@ let tests =
         check "equal: default phase is Body" (fl.F.phase = F.Body);
         check "equal: default msg is None" (fl.F.msg = None);
         check "equal: no output tail at the site" (fl.F.output_tail = None);
-        check "equal: claim is Equal"
+        check "equal: kind is a plain, un-negated equality"
           (match fl.F.kind with
-          | F.Equality { claim = F.Equal; _ } -> true
+          | F.Equality { not_ = false; _ } -> true
           | _ -> false);
         let calls = ref 0 in
         passes "equal: pass path returns" (fun () ->
@@ -189,72 +199,63 @@ let tests =
             Check.contains ~sub:"" "");
         passes "contains: needle equal to the haystack" (fun () ->
             Check.contains ~sub:"hello" "hello");
-        claim_payload "contains: fail payload"
+        containment_payload "contains: fail payload"
           (fun () -> Check.contains ~sub:"zz" "hello world")
-          (fun (expected, actual, claim) ->
-            check_string "contains: expected describes the claim"
-              ~expected:{|string containing "zz"|} ~actual:expected;
+          (fun ( claim,
+                 excerpt,
+                 needle,
+                 found_at,
+                 haystack_length,
+                 excerpt_offset )
+             ->
+            check_string "contains: claim describes the assertion"
+              ~expected:{|string containing "zz"|} ~actual:claim;
             check_string "contains: small haystack stored whole"
-              ~expected:"hello world" ~actual;
-            match claim with
-            | F.Contains { needle; found_at; haystack_length; excerpt_offset }
-              ->
-                check_string "contains: needle stored verbatim" ~expected:"zz"
-                  ~actual:needle;
-                check "contains: found_at is None when the needle is absent"
-                  (found_at = None);
-                check "contains: haystack_length is the full byte length"
-                  (haystack_length = String.length "hello world");
-                check "contains: excerpt starts at the head" (excerpt_offset = 0)
-            | _ -> check "contains: claim is Contains" false);
+              ~expected:"hello world" ~actual:excerpt;
+            check_string "contains: needle stored verbatim" ~expected:"zz"
+              ~actual:needle;
+            check "contains: found_at is None when the needle is absent"
+              (found_at = None);
+            check "contains: haystack_length is the full byte length"
+              (haystack_length = String.length "hello world");
+            check "contains: excerpt starts at the head" (excerpt_offset = 0));
         (* A huge haystack: the payload stores a bounded head excerpt, not
-           the whole string; the claim records what the excerpt covers. *)
+           the whole string, and records what the excerpt covers. *)
         let haystack =
           String.concat ""
             (List.init 4_000 (fun i -> Printf.sprintf "%07d\n" i))
         in
-        claim_payload "contains: huge haystack excerpts the head"
+        containment_payload "contains: huge haystack excerpts the head"
           (fun () -> Check.contains ~sub:"needle" haystack)
-          (fun (_, actual, claim) ->
+          (fun (_, excerpt, _, found_at, haystack_length, excerpt_offset) ->
             check "contains: excerpt is bounded"
-              (String.length actual < String.length haystack
-              && String.length actual <= 8_195);
+              (String.length excerpt < String.length haystack
+              && String.length excerpt <= 8_195);
             check "contains: excerpt is a prefix of the haystack"
-              (String.sub haystack 0 (String.length actual) = actual);
-            match claim with
-            | F.Contains
-                { found_at = None; haystack_length; excerpt_offset = 0 } ->
-                check "contains: haystack_length survives excerpting"
-                  (haystack_length = String.length haystack)
-            | _ -> check "contains: head-excerpt claim shape" false));
+              (String.sub haystack 0 (String.length excerpt) = excerpt);
+            check "contains: a head excerpt is not a window"
+              (found_at = None && excerpt_offset = 0);
+            check "contains: haystack_length survives excerpting"
+              (haystack_length = String.length haystack)));
     test "not_contains" (fun () ->
         passes "not_contains: pass on an absent needle" (fun () ->
             Check.not_contains ~sub:"zz" "hello");
-        claim_payload "not_contains: fail payload"
+        containment_payload "not_contains: fail payload"
           (fun () -> Check.not_contains ~sub:"NEEDLE" "abcNEEDLEdef")
-          (fun (expected, actual, claim) ->
-            check_string "not_contains: expected describes the claim"
-              ~expected:{|string not containing "NEEDLE"|} ~actual:expected;
+          (fun (claim, excerpt, _, found_at, _, _) ->
+            check_string "not_contains: claim describes the assertion"
+              ~expected:{|string not containing "NEEDLE"|} ~actual:claim;
             check_string "not_contains: small haystack stored whole"
-              ~expected:"abcNEEDLEdef" ~actual;
-            match claim with
-            | F.Contains { found_at = Some 3; _ } -> ()
-            | F.Contains { found_at; _ } ->
-                check
-                  (Printf.sprintf "not_contains: found_at is Some 3, got %s"
-                     (match found_at with
-                     | Some i -> string_of_int i
-                     | None -> "None"))
-                  false
-            | _ -> check "not_contains: claim is Contains" false);
+              ~expected:"abcNEEDLEdef" ~actual:excerpt;
+            check_string "not_contains: found_at is the occurrence offset"
+              ~expected:"Some 3"
+              ~actual:
+                (match found_at with
+                | Some i -> Printf.sprintf "Some %d" i
+                | None -> "None"));
         check "not_contains: empty needle always fails"
           (match outcome (fun () -> Check.not_contains ~sub:"" "anything") with
-          | Failed
-              {
-                F.kind =
-                  F.Equality { claim = F.Contains { found_at = Some 0; _ }; _ };
-                _;
-              } ->
+          | Failed { F.kind = F.Containment { found_at = Some 0; _ }; _ } ->
               true
           | _ -> false);
         (* A match deep in a huge haystack: the excerpt windows around the
@@ -265,52 +266,51 @@ let tests =
             (List.init 3_000 (fun i -> Printf.sprintf "%07d\n" i))
         in
         let haystack = filler ^ "NEEDLE" ^ filler in
-        claim_payload "not_contains: deep match windows the excerpt"
+        containment_payload "not_contains: deep match windows the excerpt"
           (fun () -> Check.not_contains ~sub:"NEEDLE" haystack)
-          (fun (_, actual, claim) ->
+          (fun (_, excerpt, _, found_at, haystack_length, excerpt_offset) ->
             check "not_contains: excerpt is bounded"
-              (String.length actual <= 8_195);
-            match claim with
-            | F.Contains
-                { found_at = Some i; excerpt_offset; haystack_length; _ } ->
+              (String.length excerpt <= 8_195);
+            match found_at with
+            | Some i ->
                 check "not_contains: found_at is the real offset"
                   (i = String.length filler);
                 check "not_contains: excerpt is cut from around the match"
                   (excerpt_offset > 0 && excerpt_offset <= i);
                 check "not_contains: excerpt is the recorded window"
-                  (String.sub haystack excerpt_offset (String.length actual)
-                  = actual);
+                  (String.sub haystack excerpt_offset (String.length excerpt)
+                  = excerpt);
                 check "not_contains: the match is inside the window"
                   (let rel = i - excerpt_offset in
                    rel >= 0
-                   && rel + String.length "NEEDLE" <= String.length actual
-                   && String.sub actual rel (String.length "NEEDLE") = "NEEDLE");
+                   && rel + String.length "NEEDLE" <= String.length excerpt
+                   && String.sub excerpt rel (String.length "NEEDLE") = "NEEDLE");
                 check "not_contains: haystack_length is the full byte length"
                   (haystack_length = String.length haystack)
-            | _ -> check "not_contains: windowed claim shape" false));
+            | None -> check "not_contains: the occurrence is recorded" false));
     test "satisfies" (fun () ->
         let calls = ref 0 in
         passes "satisfies: pass" (fun () ->
             Check.satisfies (counting_int calls) (fun n -> n > 0) 3);
         check "satisfies: pass path never renders" (!calls = 0);
-        claim_payload "satisfies: fail payload"
+        predicate_payload "satisfies: fail payload"
           (fun () -> Check.satisfies Testable.int (fun n -> n > 0) (-4))
-          (fun (expected, actual, claim) ->
-            check_string "satisfies: expected describes the claim"
-              ~expected:"value satisfying the predicate" ~actual:expected;
+          (fun (claim, value) ->
+            (* The claim sentence is what tells the predicate verbs apart. *)
+            check_string "satisfies: claim describes the assertion"
+              ~expected:"value satisfying the predicate" ~actual:claim;
             check_string "satisfies: rejected value rendered by the witness"
-              ~expected:"-4" ~actual;
-            check "satisfies: claim is Satisfies" (claim = F.Satisfies));
+              ~expected:"-4" ~actual:value);
         let calls = ref 0 in
         ignore
           (outcome (fun () ->
                Check.satisfies (counting_int calls) (fun _ -> false) 9));
         check "satisfies: fail path renders the value once" (!calls = 1);
-        claim_payload "satisfies: renders with the witness printer"
+        predicate_payload "satisfies: renders with the witness printer"
           (fun () -> Check.satisfies Testable.string (fun _ -> false) "a b")
-          (fun (_, actual, _) ->
+          (fun (_, value) ->
             check_string "satisfies: string renders with %S" ~expected:{|"a b"|}
-              ~actual);
+              ~actual:value);
         (* The witness's equality plays no part: an always-raising equality
            is never consulted. *)
         let explosive =
@@ -323,15 +323,15 @@ let tests =
            ~pp] supplies the witness, and the failure carries the rendered
            value instead of a hand-formatted message. *)
         let pp_div ppf (a, b) = Format.fprintf ppf "%d / %d" a b in
-        claim_payload "satisfies: printer-only witness (is_true migration)"
+        predicate_payload "satisfies: printer-only witness (is_true migration)"
           (fun () ->
             Check.satisfies ~msg:"quotient is non-negative"
               (Testable.structural ~pp:pp_div)
               (fun (a, b) -> a / b >= 0)
               (-7, 2))
-          (fun (_, actual, _) ->
+          (fun (_, value) ->
             check_string "satisfies: rendered by the caller's printer"
-              ~expected:"-7 / 2" ~actual));
+              ~expected:"-7 / 2" ~actual:value));
     test "require_some, require_ok, require_error" (fun () ->
         check "require_some: unwraps the payload"
           (Check.require_some (Some 42) = 42);
@@ -378,23 +378,23 @@ let tests =
     test "require_match" (fun () ->
         check "require_match: unwraps the matched payload"
           (Check.require_match tcp (`Tcp 8080) = 8080);
-        claim_payload "require_match: fail payload without pp"
+        predicate_payload "require_match: fail payload without pp"
           (fun () -> ignore (Check.require_match tcp (`Unix "/tmp/sock")))
-          (fun (expected, actual, claim) ->
-            check_string "require_match: expected describes the claim"
-              ~expected:"a match" ~actual:expected;
+          (fun (claim, value) ->
+            (* The claim sentence is what tells the predicate verbs apart. *)
+            check_string "require_match: claim describes the assertion"
+              ~expected:"a match" ~actual:claim;
             check_string "require_match: scrutinee prints <abstract> without pp"
-              ~expected:"<abstract>" ~actual;
-            check "require_match: claim is Matches" (claim = F.Matches));
+              ~expected:"<abstract>" ~actual:value);
         let pp ppf = function
           | `Tcp p -> Format.fprintf ppf "tcp:%d" p
           | `Unix path -> Format.fprintf ppf "unix:%s" path
         in
-        claim_payload "require_match: pp renders the scrutinee"
+        predicate_payload "require_match: pp renders the scrutinee"
           (fun () -> ignore (Check.require_match ~pp tcp (`Unix "/tmp/sock")))
-          (fun (_, actual, _) ->
+          (fun (_, value) ->
             check_string "require_match: rendered scrutinee"
-              ~expected:"unix:/tmp/sock" ~actual);
+              ~expected:"unix:/tmp/sock" ~actual:value);
         let calls = ref 0 in
         let pp ppf n =
           incr calls;
@@ -421,18 +421,18 @@ let tests =
           (Check.require_match reserved
              (Check.require_error (Error (`Reserved "state")))
           = "state");
-        claim_payload
+        predicate_payload
           "require_match: the poly-variant rejection is its own failure"
           (fun () ->
             ignore
               (Check.require_match reserved
                  (Check.require_error (Error (`Redirect "https://cb")))))
-          (fun (_, actual, claim) ->
-            check "require_match: composed failure keeps the Matches claim"
-              (claim = F.Matches);
+          (fun (claim, value) ->
+            check_string "require_match: composed failure keeps the match claim"
+              ~expected:"a match" ~actual:claim;
             check_string
               "require_match: composed scrutinee is abstract without pp"
-              ~expected:"<abstract>" ~actual));
+              ~expected:"<abstract>" ~actual:value));
     test "raises: structural equality and payload shapes" (fun () ->
         passes "raises: pass on the exact exception" (fun () ->
             Check.raises Not_found (fun () -> raise Not_found));

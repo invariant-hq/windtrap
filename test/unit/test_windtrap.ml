@@ -717,28 +717,20 @@ let () =
   in
   expect_run "b-package" ~config suite @@ fun outcome ->
   (match failure_list (outcome_of outcome [ "satisfies" ]) with
-  | [
-   {
-     Failure.kind = Failure.Equality { claim = Failure.Satisfies; actual; _ };
-     _;
-   };
-  ] ->
-      check "satisfies renders the rejected value" (actual = "0")
-  | _ -> check "satisfies carries a Satisfies claim" false);
+  | [ { Failure.kind = Failure.Predicate { claim; value }; _ } ] ->
+      check "satisfies renders the rejected value" (value = "0");
+      (* The claim sentence is what tells the two predicate verbs apart. *)
+      check "satisfies names the predicate claim"
+        (claim = "value satisfying the predicate")
+  | _ -> check "satisfies carries a Predicate payload" false);
   (match failure_list (outcome_of outcome [ "contains" ]) with
-  | [
-   {
-     Failure.kind =
-       Failure.Equality { claim = Failure.Contains { needle; _ }; _ };
-     _;
-   };
-  ] ->
+  | [ { Failure.kind = Failure.Containment { needle; _ }; _ } ] ->
       check "contains carries the needle" (needle = "needle")
-  | _ -> check "contains carries a Contains claim" false);
+  | _ -> check "contains carries a Containment payload" false);
   (match failure_list (outcome_of outcome [ "require_match" ]) with
-  | [ { Failure.kind = Failure.Equality { claim = Failure.Matches; _ }; _ } ] ->
-      check "require_match carries a Matches claim" true
-  | _ -> check "require_match carries a Matches claim" false);
+  | [ { Failure.kind = Failure.Predicate { claim; _ }; _ } ] ->
+      check "require_match names the match claim" (claim = "a match")
+  | _ -> check "require_match carries a Predicate payload" false);
   check "Exn predicates satisfy raises_match"
     (outcome_of outcome [ "exn predicate" ] = Some Failure.Pass);
   (match failure_list (outcome_of outcome [ "subtests" ]) with
@@ -784,13 +776,12 @@ let () =
   check "the empty needle is contained in every string"
     (outcome_of outcome [ "empty needle contained" ] = Some Failure.Pass);
   match failure_list (outcome_of outcome [ "empty needle not_contains" ]) with
-  | [ { Failure.kind = Failure.Equality { claim = Failure.Contains _; _ }; _ } ]
-    ->
+  | [ { Failure.kind = Failure.Containment _; _ } ] ->
       check "not_contains with an empty needle always fails" true
   | _ -> check "not_contains with an empty needle always fails" false
 
 (* A raising extractor propagates unchanged out of [require_match]: the
-   test fails with the extractor's exception, not a Matches claim. *)
+   test fails with the extractor's exception, not a match failure. *)
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in

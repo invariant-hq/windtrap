@@ -69,26 +69,26 @@ val is_false : ?pos:pos -> ?msg:string -> bool -> unit
 val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] is [()] iff [s] contains [sub] as a byte substring; the
     empty needle is contained in every string. Otherwise it raises
-    {!Failure.Check_failure} with a {!Failure.Contains} claim carrying [sub] and
-    a bounded excerpt of [s]'s head (see {!Failure.containment} for the excerpt
-    policy). *)
+    {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
+    [sub] and a bounded excerpt of [s]'s head (see {!Failure.containment} for
+    the excerpt policy). *)
 
 val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [not_contains ~sub s] is [()] iff [s] does {e not} contain [sub] as a byte
     substring — so it always fails when [sub] is empty. Otherwise it raises
-    {!Failure.Check_failure} with a {!Failure.Contains} claim carrying [sub],
-    the byte offset of its first occurrence, and a bounded excerpt of [s] around
-    that occurrence. *)
+    {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
+    [sub], the byte offset of its first occurrence, and a bounded excerpt of [s]
+    around that occurrence. *)
 
 (** {1:predicates Predicates} *)
 
 val satisfies :
   ?pos:pos -> ?msg:string -> 'a testable -> ('a -> bool) -> 'a -> unit
 (** [satisfies t pred v] is [()] iff [pred v]. Otherwise it raises
-    {!Failure.Check_failure} with a {!Failure.Satisfies} claim carrying [v]
-    rendered by [t]'s printer — [t]'s equality is not consulted. [pred] must be
-    total; it runs on every call, the printer only on failure. Use [?msg] to
-    name the predicate:
+    {!Failure.Check_failure} with a {!Failure.Predicate} payload whose claim is
+    ["value satisfying the predicate"], carrying [v] rendered by [t]'s printer —
+    [t]'s equality is not consulted. [pred] must be total; it runs on every
+    call, the printer only on failure. Use [?msg] to name the predicate:
     [satisfies ~msg:"positive" Testable.int (fun n -> n > 0) n]. *)
 
 (** {1:unwrapping Unwrapping}
@@ -125,10 +125,10 @@ val require_match :
         require_match ~pp:Uri.pp (function Tcp p -> Some p | _ -> None) addr
     ]}
 
-    On [None] it raises {!Failure.Check_failure} with a {!Failure.Matches} claim
-    carrying [v] rendered by [pp] when given and as [<abstract>] otherwise; the
-    printer runs only on failure. An exception raised by [extract] propagates
-    unchanged. *)
+    On [None] it raises {!Failure.Check_failure} with a {!Failure.Predicate}
+    payload whose claim is ["a match"], carrying [v] rendered by [pp] when given
+    and as [<abstract>] otherwise; the printer runs only on failure. An
+    exception raised by [extract] propagates unchanged. *)
 
 (** {1:exceptions Exceptions}
 

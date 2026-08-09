@@ -38,18 +38,13 @@ let last_line s =
   first_nonempty (List.rev (Windtrap.Private.Text.split_lines s))
 
 (* [containment_parts f k] projects a containment failure's shape: the
-   stored excerpt ([actual]) and the [Contains] claim fields. *)
+   stored excerpt and the haystack bookkeeping. *)
 let containment_parts name (f : F.t) k =
   match f.F.kind with
-  | F.Equality
-      {
-        actual;
-        not_ = false;
-        claim = F.Contains { needle; found_at; haystack_length; excerpt_offset };
-        _;
-      } ->
-      k (actual, needle, found_at, haystack_length, excerpt_offset)
-  | _ -> check (name ^ ": Equality kind with a Contains claim") false
+  | F.Containment
+      { needle; found_at; haystack_length; excerpt; excerpt_offset; _ } ->
+      k (excerpt, needle, found_at, haystack_length, excerpt_offset)
+  | _ -> check (name ^ ": Containment kind") false
 
 let big = String.make 200_000 'a'
 
@@ -62,15 +57,13 @@ let tests =
         let f = F.equality ~expected:"1" ~actual:"2" () in
         check "kind payload"
           (match f.F.kind with
-          | F.Equality
-              { expected = "1"; actual = "2"; not_ = false; claim = F.Equal } ->
-              true
+          | F.Equality { expected = "1"; actual = "2"; not_ = false } -> true
           | _ -> false);
         check "default phase is Body" (f.F.phase = F.Body);
         check "default loc is None" (f.F.loc = None);
         check "default msg is None" (f.F.msg = None);
         check "default output_tail is None" (f.F.output_tail = None));
-    test "equality constructor: loc, msg, not_, claim stored" (fun () ->
+    test "equality constructor: loc, msg, not_ stored" (fun () ->
         let loc = loc_of "test/t.ml" 12 in
         let f =
           F.equality ~loc ~msg:"ids" ~not_:true ~expected:"3" ~actual:"3" ()
@@ -80,28 +73,23 @@ let tests =
           | F.Equality { not_ = true; _ } -> true
           | _ -> false);
         check "loc stored" (f.F.loc = Some loc);
-        check "msg stored" (f.F.msg = Some "ids");
-        let f = F.equality ~claim:F.Satisfies ~expected:"a" ~actual:"b" () in
-        check "claim stored"
+        check "msg stored" (f.F.msg = Some "ids"));
+    test "predicate constructor" (fun () ->
+        let loc = loc_of "test/t.ml" 7 in
+        let f = F.predicate ~loc ~msg:"positive" ~claim:"a match" "None" in
+        check "claim and value stored"
           (match f.F.kind with
-          | F.Equality { claim = F.Satisfies; _ } -> true
-          | _ -> false));
-    test "equality constructor: not_ never pairs with a refined claim"
-      (fun () ->
-        (* The kind doc promises renderers that [not_] never pairs with a
-           refined claim; the constructor is where that invariant is
-           enforced. *)
-        raises_match ~msg:"not_ with a refined claim is rejected"
-          Exn.invalid_arg (fun () ->
-            F.equality ~not_:true ~claim:F.Matches ~expected:"a" ~actual:"a" ());
-        check "explicit ~not_:false with a refined claim is fine"
-          (match
-             F.equality ~not_:false ~claim:F.Satisfies ~expected:"a" ~actual:"b"
-               ()
-           with
-          | { F.kind = F.Equality { claim = F.Satisfies; not_ = false; _ }; _ }
-            ->
-              true
+          | F.Predicate { claim = "a match"; value = "None" } -> true
+          | _ -> false);
+        check "loc stored" (f.F.loc = Some loc);
+        check "msg stored" (f.F.msg = Some "positive");
+        let f = F.predicate ~claim:big big in
+        check "claim and value are bounded"
+          (match f.F.kind with
+          | F.Predicate { claim; value } ->
+              String.length claim < 200_000
+              && String.length value < 200_000
+              && has ~needle:"truncated" value
           | _ -> false));
     test "payload bounding" (fun () ->
         (let f = F.equality ~expected:big ~actual:"2" () in
@@ -211,7 +199,7 @@ let tests =
           | _ -> false));
     test "containment constructor: small haystack" (fun () ->
         let f =
-          F.containment ~expected:"desc" ~needle:"zz" ~haystack:"hello world" ()
+          F.containment ~claim:"desc" ~needle:"zz" ~haystack:"hello world" ()
         in
         containment_parts "small haystack" f
           (fun (excerpt, needle, found_at, haystack_length, excerpt_offset) ->
@@ -224,13 +212,13 @@ let tests =
               ~actual:haystack_length;
             check_int "whole haystack starts at 0" ~expected:0
               ~actual:excerpt_offset);
-        check "expected description stored"
+        check "claim description stored"
           (match f.F.kind with
-          | F.Equality { expected = "desc"; _ } -> true
+          | F.Containment { claim = "desc"; _ } -> true
           | _ -> false));
     test "containment constructor: excerpt windows" (fun () ->
         let f =
-          F.containment ~expected:"d" ~needle:"n" ~haystack:big_haystack ()
+          F.containment ~claim:"d" ~needle:"n" ~haystack:big_haystack ()
         in
         containment_parts "head window" f
           (fun (excerpt, _, _, haystack_length, excerpt_offset) ->
@@ -245,7 +233,7 @@ let tests =
               ~actual:haystack_length);
         let found_at = 20_000 in
         let f =
-          F.containment ~expected:"d" ~needle:"0002" ~haystack:big_haystack
+          F.containment ~claim:"d" ~needle:"0002" ~haystack:big_haystack
             ~found_at ()
         in
         containment_parts "centered window" f
@@ -263,8 +251,8 @@ let tests =
            end. *)
         let found_at = String.length big_haystack - 5 in
         let f =
-          F.containment ~expected:"d" ~needle:"x" ~haystack:big_haystack
-            ~found_at ()
+          F.containment ~claim:"d" ~needle:"x" ~haystack:big_haystack ~found_at
+            ()
         in
         containment_parts "window near the end" f
           (fun (excerpt, _, _, haystack_length, excerpt_offset) ->
@@ -274,7 +262,7 @@ let tests =
            odd window offset or length would mean a split UTF-8 sequence. *)
         let s = String.concat "" (List.init 10_000 (fun _ -> "\xc3\xa9")) in
         let f =
-          F.containment ~expected:"d" ~needle:"\xc3\xa9" ~haystack:s
+          F.containment ~claim:"d" ~needle:"\xc3\xa9" ~haystack:s
             ~found_at:9_999 ()
         in
         containment_parts "utf-8 window" f
@@ -286,24 +274,22 @@ let tests =
     test "containment constructor: found_at validation and bounding" (fun () ->
         raises_match ~msg:"negative found_at rejected" Exn.invalid_arg
           (fun () ->
-            F.containment ~expected:"d" ~needle:"n" ~haystack:"abc"
-              ~found_at:(-1) ());
+            F.containment ~claim:"d" ~needle:"n" ~haystack:"abc" ~found_at:(-1)
+              ());
         raises_match ~msg:"found_at past the end rejected" Exn.invalid_arg
           (fun () ->
-            F.containment ~expected:"d" ~needle:"n" ~haystack:"abc" ~found_at:4
-              ());
+            F.containment ~claim:"d" ~needle:"n" ~haystack:"abc" ~found_at:4 ());
         check "found_at at the end accepted (empty-needle case)"
           (match
-             F.containment ~expected:"d" ~needle:"" ~haystack:"abc" ~found_at:3
-               ()
+             F.containment ~claim:"d" ~needle:"" ~haystack:"abc" ~found_at:3 ()
            with
           | _ -> true
           | exception Invalid_argument _ -> false);
-        let f = F.containment ~expected:big ~needle:big ~haystack:"abc" () in
+        let f = F.containment ~claim:big ~needle:big ~haystack:"abc" () in
         check "needle and description are bounded"
           (match f.F.kind with
-          | F.Equality { expected; claim = F.Contains { needle; _ }; _ } ->
-              String.length expected < 200_000
+          | F.Containment { claim; needle; _ } ->
+              String.length claim < 200_000
               && String.length needle < 200_000
               && has ~needle:"truncated" needle
           | _ -> false));

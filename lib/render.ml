@@ -189,10 +189,10 @@ let headline (f : Failure.t) =
     match f.kind with
     | Failure.Equality { not_ = true; expected; _ } ->
         spf "both sides equal: %s" (flat expected)
-    | Failure.Equality
-        { claim = Failure.Contains { needle; found_at; haystack_length; _ }; _ }
-      -> (
-        (* The claim's own verdict, never a fake equality. *)
+    | Failure.Equality { expected; actual; _ } ->
+        spf "expected %s, got %s" (flat expected) (flat actual)
+    | Failure.Containment { needle; found_at; haystack_length; _ } -> (
+        (* The containment verdict, never a fake equality. *)
         match found_at with
         | Some at ->
             spf "needle %s found at byte %d" (flat (spf "%S" needle)) at
@@ -200,8 +200,8 @@ let headline (f : Failure.t) =
             spf "needle %s not found (%d-byte haystack)"
               (flat (spf "%S" needle))
               haystack_length)
-    | Failure.Equality { expected; actual; _ } ->
-        spf "expected %s, got %s" (flat expected) (flat actual)
+    | Failure.Predicate { claim; value } ->
+        spf "expected %s, got %s" (flat claim) (flat value)
     | Failure.Raise { expected = Some e; actual = Some a; _ } ->
         spf "expected exception %s, raised %s" (flat e) (flat a)
     | Failure.Raise { expected = Some e; actual = None; _ } ->
@@ -542,16 +542,14 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         put_block expected
       end
       else put_ind (spf "both sides equal: %s" expected)
-  | Failure.Equality
-      {
-        claim =
-          Failure.Contains { needle; found_at; haystack_length; excerpt_offset };
-        actual = excerpt_text;
-        _;
-      } ->
-      (* Claim-aware containment: the block derives from the claim's
-         fields — needle, verdict, byte offset, marked occurrence — never a
-         fake equality diff. [actual] is the stored haystack excerpt; labels
+  | Failure.Equality { expected; actual; _ } ->
+      pp_eq ~ansi put ~ind ~expected ~actual
+  | Failure.Containment
+      { needle; found_at; haystack_length; excerpt; excerpt_offset; claim = _ }
+    ->
+      (* The block derives from the containment payload — needle, verdict,
+         byte offset, marked occurrence — never a fake equality diff; the
+         claim sentence is a description and stays out of the block. Labels
          pad to the [expected]/[actual] 10-column gutter. *)
       let verdict =
         match found_at with
@@ -567,16 +565,16 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         | Some at ->
             let start = at - excerpt_offset in
             let length =
-              min (String.length needle) (String.length excerpt_text - start)
+              min (String.length needle) (String.length excerpt - start)
             in
             if start >= 0 && length > 0 then Some { Diff.start; length }
             else None
       in
-      (if String.contains excerpt_text '\n' then begin
+      (if String.contains excerpt '\n' then begin
          (* Block form (the [both sides equal:] precedent): no unified diff,
             no markers; under [ansi] the occurrence highlights on its line. *)
          put_ind (st `Faint "haystack:");
-         let lines = Text.split_lines excerpt_text in
+         let lines = Text.split_lines excerpt in
          let offsets =
            (* Byte offset of each line's first byte within the excerpt. *)
            let rec go acc off = function
@@ -606,39 +604,36 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
          | Some span when ansi ->
              put_ind
                (st `Faint "haystack" ^ "  "
-               ^ highlight ~ansi `Red excerpt_text [ span ])
+               ^ highlight ~ansi `Red excerpt [ span ])
          | occurrence -> (
-             put_ind (st `Faint "haystack" ^ "  " ^ excerpt_text);
+             put_ind (st `Faint "haystack" ^ "  " ^ excerpt);
              match occurrence with
              | Some span -> (
-                 match marker_line excerpt_text [ span ] with
+                 match marker_line excerpt [ span ] with
                  | Some m -> put (ind ^ "          " ^ m)
                  | None -> ())
              | None -> ()));
       (* State what was omitted, iff the excerpt is partial. *)
       if
         excerpt_offset > 0
-        || excerpt_offset + String.length excerpt_text < haystack_length
+        || excerpt_offset + String.length excerpt < haystack_length
       then
         put_ind
           (st `Faint
              (spf "(excerpt: bytes %d-%d of a %d-byte haystack)" excerpt_offset
-                (excerpt_offset + String.length excerpt_text - 1)
+                (excerpt_offset + String.length excerpt - 1)
                 haystack_length))
-  | Failure.Equality
-      { claim = Failure.Satisfies | Failure.Matches; expected; actual; _ } ->
-      (* Never diff or refine the claim sentence against the value:
-         [expected] is a description, not a rendering. Colour still applies —
-         green and red mark which side is which, and that is as true of a
-         description as of a value. *)
-      put_ind (st `Faint "expected" ^ "  " ^ st `Green expected);
-      if String.contains actual '\n' then begin
+  | Failure.Predicate { claim; value } ->
+      (* Never diff or refine the claim sentence against the value: [claim]
+         is a description, not a rendering. Colour still applies — green and
+         red mark which side is which, and that is as true of a description
+         as of a value. *)
+      put_ind (st `Faint "expected" ^ "  " ^ st `Green claim);
+      if String.contains value '\n' then begin
         put_ind (st `Faint "actual:");
-        put_block (st `Red actual)
+        put_block (st `Red value)
       end
-      else put_ind (st `Faint "actual" ^ "    " ^ st `Red actual)
-  | Failure.Equality { expected; actual; _ } ->
-      pp_eq ~ansi put ~ind ~expected ~actual
+      else put_ind (st `Faint "actual" ^ "    " ^ st `Red value)
   | Failure.Raise
       {
         expected;

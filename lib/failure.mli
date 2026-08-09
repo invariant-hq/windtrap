@@ -19,11 +19,11 @@
     an explicit truncation marker stating the original size (the bound is an
     implementation constant, currently 64 KiB).
 
-    Construct failures with {!equality}, {!containment}, {!raised}, {!snapshot},
-    {!property}, and {!message}; the runner reclassifies with {!with_phase} and
-    attaches captured output with {!with_output_tail}. Assertion verbs raise
-    {!Check_failure}; {!Skip_test}, {!Timeout}, and {!Exit_attempt} are the
-    other control exceptions the runner understands. *)
+    Construct failures with {!equality}, {!containment}, {!predicate},
+    {!raised}, {!snapshot}, {!property}, and {!message}; the runner reclassifies
+    with {!with_phase} and attaches captured output with {!with_output_tail}.
+    Assertion verbs raise {!Check_failure}; {!Skip_test}, {!Timeout}, and
+    {!Exit_attempt} are the other control exceptions the runner understands. *)
 
 (** {1:types Types} *)
 
@@ -69,57 +69,51 @@ type snapshot_state =
           is that check's site when one is known, [first_test] the test that
           made it. The failure's own [loc] is the second check's site. *)
 
-(** The type for the claim an {!Equality} failure asserted. Every claim projects
-    through [expected]/[actual] — a renderer that knows no claim beyond {!Equal}
-    still renders truthfully from those two strings; the other cases carry the
-    machine-readable payload that lets a claim-aware renderer word and excerpt
-    the failure precisely. *)
-type claim =
-  | Equal
-      (** A plain (in)equality: [equal], [not_equal], the boolean verbs, and the
-          unwrapping verbs. [expected] and [actual] are pp-rendered values or
-          constructor descriptions (["Some _"], ["Error <abstract>"]). *)
-  | Contains of {
+(** The type for typed failure payloads. Never a stringly key-value bag: each
+    assertion family has its own case, and renderers pattern match on it. *)
+type kind =
+  | Equality of { expected : string; actual : string; not_ : bool }
+      (** A plain (in)equality failed: [equal], [not_equal], the boolean verbs,
+          and the unwrapping verbs. [expected] and [actual] are the pp-rendered
+          values or constructor descriptions (["Some _"], ["Error <abstract>"]),
+          expected first (v1's order). [not_] is [true] for a negated assertion
+          ([not_equal]): both strings then render the same value and renderers
+          print it once. *)
+  | Containment of {
+      claim : string;
+          (** A one-line description of what was asserted
+              ([string containing "eof"]). A description, not a rendering:
+              renderers state it, they never diff it against the haystack. *)
       needle : string;
           (** The needle, verbatim (bounded like every payload string). *)
       found_at : int option;
           (** The byte offset of the needle's first occurrence in the haystack:
               [None] for a failed [contains] (the needle does not occur),
-              [Some _] for a failed [not_contains] (it does). This field, not
-              [not_], records which of the two verbs failed. *)
+              [Some _] for a failed [not_contains] (it does). This field records
+              which of the two verbs failed. *)
       haystack_length : int;  (** The haystack's total byte length. *)
+      excerpt : string;
+          (** A bounded window of the haystack: around the first occurrence when
+              [found_at] is [Some _], its head otherwise. Bounded by an
+              implementation constant (currently 8 KiB) and cut on UTF-8
+              code-point boundaries. *)
       excerpt_offset : int;
-          (** The byte offset of the stored excerpt ([actual]) within the
-              haystack; renderers derive the omitted byte counts on either side
-              from it together with [haystack_length]. *)
-    }
-      (** A containment assertion ([contains]/[not_contains]) failed. [actual]
-          is a bounded excerpt of the haystack — around the first occurrence
-          when [found_at] is [Some _], the head otherwise — and [expected] is a
-          one-line description of the claim. *)
-  | Satisfies
-      (** A [satisfies] assertion failed: [actual] is the rendered value the
-          predicate rejected; [expected] is a one-line description. *)
-  | Matches
-      (** A [require_match] assertion failed: [actual] is the rendered scrutinee
-          (or ["<abstract>"] without a printer); [expected] is a one-line
-          description. *)
+          (** The byte offset of [excerpt] within the haystack; renderers derive
+              the omitted byte counts on either side from it together with
+              [haystack_length]. *)
+    }  (** A containment assertion ([contains]/[not_contains]) failed. *)
+  | Predicate of { claim : string; value : string }
+      (** A [satisfies] or [require_match] assertion failed. [claim] is a
+          one-line description of what was demanded
+          (["value satisfying the predicate"], ["a match"]), [value] the
+          rendered value that failed it (the rejected value, or the scrutinee no
+          pattern matched — ["<abstract>"] without a printer).
 
-(** The type for typed failure payloads. Never a stringly key-value bag: each
-    assertion family has its own case, and renderers pattern match on it. *)
-type kind =
-  | Equality of {
-      expected : string;
-      actual : string;
-      not_ : bool;
-      claim : claim;
-    }
-      (** A comparison assertion failed. [expected] and [actual] are the
-          pp-rendered values, expected first (v1's order). [not_] is [true] for
-          a negated assertion ([not_equal]): both strings then render the same
-          value and renderers print it once ([not_] is never [true] for a claim
-          other than {!Equal}). [claim] refines the payload with the assertion
-          family; see {!type:claim}. *)
+          The two verbs share one case deliberately: their payloads have the
+          same shape, and every renderer words them the same way, because the
+          difference between them {e is} the claim sentence and that is already
+          in the payload. Splitting the case would only make renderers rejoin
+          it. *)
   | Raise of {
       expected : string option;
       actual : string option;
@@ -279,40 +273,40 @@ val equality :
   ?loc:Loc.t ->
   ?msg:string ->
   ?not_:bool ->
-  ?claim:claim ->
   expected:string ->
   actual:string ->
   unit ->
   t
 (** [equality ~expected ~actual ()] is an {!Equality} failure over the two
-    rendered values. [not_] defaults to [false] and [claim] to {!Equal}.
-    Containment claims are built with {!containment}, which owns the excerpt
-    policy — never with this constructor.
-
-    Raises [Invalid_argument] if [not_] is [true] with a claim other than
-    {!Equal}: negation and claim refinement never combine (see {!kind}). *)
+    rendered values; [not_] defaults to [false]. Containment and predicate
+    failures are not equalities: build them with {!containment} — which owns the
+    excerpt policy — and {!predicate}. *)
 
 val containment :
   ?loc:Loc.t ->
   ?msg:string ->
   ?found_at:int ->
-  expected:string ->
+  claim:string ->
   needle:string ->
   haystack:string ->
   unit ->
   t
-(** [containment ~expected ~needle ~haystack ()] is an {!Equality} failure whose
-    claim is {!Contains}: [expected] is the claim's one-line description and the
-    stored [actual] is a bounded excerpt of [haystack] — a window around
-    [found_at] when given (the failed-[not_contains] case), the head of
-    [haystack] otherwise (the failed-[contains] case). The excerpt is cut on
-    UTF-8 code-point boundaries and bounded by an implementation constant
-    (currently 8 KiB, the captured-output tail bound); the claim records the
+(** [containment ~claim ~needle ~haystack ()] is a {!Containment} failure
+    storing [claim] and [needle] as given and a bounded excerpt of [haystack] —
+    a window around [found_at] when given (the failed-[not_contains] case), the
+    head of [haystack] otherwise (the failed-[contains] case). The excerpt is
+    cut on UTF-8 code-point boundaries and bounded by an implementation constant
+    (currently 8 KiB, the captured-output tail bound); the failure records the
     excerpt's offset and the haystack's total length so renderers can state what
     was omitted.
 
     Raises [Invalid_argument] if [found_at] is negative or past the end of
     [haystack]. *)
+
+val predicate : ?loc:Loc.t -> ?msg:string -> claim:string -> string -> t
+(** [predicate ~claim value] is a {!Predicate} failure: [claim] describes in one
+    line what the assertion demanded, [value] is the rendered value that failed
+    it. *)
 
 val raised :
   ?loc:Loc.t ->
