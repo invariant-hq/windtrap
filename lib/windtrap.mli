@@ -6,7 +6,7 @@
 (** One library for all your OCaml tests.
 
     Windtrap runs unit, property, and snapshot tests from one flat surface:
-    declare tests with {!test} and {!group}, assert with the Twenty-three verbs
+    declare tests with {!test} and {!group}, assert with the Twenty-five verbs
     ({!equal}, {!require_some}, {!raises}, ...), and hand the suite to {!run}:
 
     {[
@@ -220,7 +220,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:assertions Assertions}
 
-    Twenty-three verbs and the {!Exn} predicates. Each verb raises one structured
+    Twenty-five verbs and the {!Exn} predicates. Each verb raises one structured
     failure that the runner catches at the test boundary; the failure records
     the call site ([?pos], else a best-effort call-stack capture) and the
     optional [?msg] annotation. Expected precedes actual, always. An assertion
@@ -248,6 +248,15 @@ val satisfies :
     printer — the data a bare {!is_true} would hide — and [?msg] names the
     predicate: [satisfies ~msg:"positive" int (fun n -> n > 0) n]. [pred] must
     be total; the printer runs only on failure. *)
+
+val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+(** [starts_with ~affix s] asserts that [s] begins with [affix]. The failure
+    prints the affix and a bounded excerpt of [s], and when [affix] occurs
+    elsewhere in [s] it says where — "not there at all" and "there, but not at
+    the start" are different bugs. *)
+
+val ends_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+(** [ends_with ~affix s] asserts that [s] ends with [affix]. *)
 
 val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
 (** [mem t x xs] asserts that [xs] has an element equal to [x] under [t]. The

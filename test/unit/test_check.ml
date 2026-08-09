@@ -290,6 +290,45 @@ let tests =
                 check "not_contains: haystack_length is the full byte length"
                   (haystack_length = String.length haystack)
             | None -> check "not_contains: the occurrence is recorded" false));
+    test "starts_with and ends_with" (fun () ->
+        let path = "sessions/ghost/session.json" in
+        passes "starts_with: pass" (fun () ->
+            Check.starts_with ~affix:"sessions/" path);
+        passes "ends_with: pass" (fun () ->
+            Check.ends_with ~affix:".json" path);
+        (* The empty affix bounds both ends of every string. *)
+        passes "starts_with: empty affix" (fun () ->
+            Check.starts_with ~affix:"" path);
+        passes "ends_with: empty affix" (fun () ->
+            Check.ends_with ~affix:"" path);
+        passes "starts_with: the whole string" (fun () ->
+            Check.starts_with ~affix:path path);
+        (* Absent: same verdict a [contains] would give, because the reason
+           is the same — the affix is nowhere in the string. *)
+        containment_payload "starts_with: affix absent"
+          (fun () -> Check.starts_with ~affix:"users/" path)
+          (fun (claim, _, needle, found_at, _, _) ->
+            check_string "claim names the relation"
+              ~expected:{|string starting with "users/"|} ~actual:claim;
+            check_string "needle is the affix" ~expected:"users/" ~actual:needle;
+            check "no occurrence to report" (found_at = None));
+        (* Present but misplaced: the offset is the whole point, and it is
+           a report only these verbs can produce — [contains] passes here. *)
+        containment_payload "starts_with: affix present elsewhere"
+          (fun () -> Check.starts_with ~affix:"ghost" path)
+          (fun (_, _, _, found_at, _, _) ->
+            check "the misplaced occurrence is located" (found_at = Some 9));
+        containment_payload "ends_with: affix present elsewhere"
+          (fun () -> Check.ends_with ~affix:"session" path)
+          (fun (claim, _, _, found_at, _, _) ->
+            check_string "claim names the relation"
+              ~expected:{|string ending with "session"|} ~actual:claim;
+            check "located at its first occurrence" (found_at = Some 0));
+        (* A suffix that overruns the string is absent, not a crash. *)
+        containment_payload "ends_with: affix longer than the haystack"
+          (fun () -> Check.ends_with ~affix:"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" "ab")
+          (fun (_, _, _, found_at, _, _) ->
+            check "nothing located" (found_at = None)));
     test "mem" (fun () ->
         let calls = ref 0 in
         passes "mem: pass" (fun () -> Check.mem (counting_int calls) 2 [ 1; 2 ]);

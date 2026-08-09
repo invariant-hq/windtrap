@@ -9,6 +9,13 @@ codes. New entries go at the top of their section.
 
 ### Added
 
+**`starts_with` and `ends_with`.** `contains ~sub` existed and its prefix and
+suffix counterparts did not, so string-shape assertions fell back to
+`is_true (String.starts_with ~prefix p s)` — a boolean, with the string gone.
+These carry the containment payload, so an affix that is present but in the
+wrong place is reported with its offset and marked in the haystack, which is
+the case `contains` cannot even fail on.
+
 **Ordering assertions: `greater`, `greater_equal`, `less`, `less_equal`.** A
 comparison consumes both operands and yields a boolean, so `is_true (n > 0)`
 can only fail with `expected true / actual false` — the number the reader needs

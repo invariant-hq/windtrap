@@ -5,7 +5,7 @@
 
 (** The assertion verbs.
 
-    Twenty-three verbs and the {!Exn} predicates, each verb raising one structured
+    Twenty-five verbs and the {!Exn} predicates, each verb raising one structured
     failure: a failing verb constructs a single {!Failure.t} — a typed kind, an
     optional location, the [?msg] annotation when given — and raises
     {!Failure.Check_failure}. Verbs never print, never diff, and never touch run
@@ -79,6 +79,17 @@ val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
     {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
     [sub], the byte offset of its first occurrence, and a bounded excerpt of [s]
     around that occurrence. *)
+
+val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+(** [starts_with ~affix s] is [()] iff [s] begins with [affix]. Otherwise it
+    raises {!Failure.Check_failure} with a {!Failure.Containment} payload
+    carrying [affix], a bounded excerpt of [s], and — when [affix] occurs
+    somewhere in [s] — the offset of that occurrence, so a report distinguishes
+    "not there at all" from "there, but not at the start". *)
+
+val ends_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+(** [ends_with ~affix s] is [()] iff [s] ends with [affix]; the payload is
+    {!starts_with}'s. *)
 
 val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
 (** [mem t x xs] is [()] iff [xs] has an element equal to [x] under [t].

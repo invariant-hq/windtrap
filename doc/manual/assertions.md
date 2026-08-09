@@ -1,6 +1,6 @@
 # Assertions
 
-Twenty-three verbs, one design rule: a failure must print the data that
+Twenty-five verbs, one design rule: a failure must print the data that
 would let you fix the bug without adding a `Printf`. Every checking
 verb takes optional `?msg` (an annotation shown in the report) and
 `?pos` (a `__POS__` override for the automatic call-stack location);
@@ -150,6 +150,17 @@ there is one, instead of printing `false`:
 ```ocaml
 contains ~sub:"user=alice" log;
 not_contains ~sub:"secret" log
+```
+
+`starts_with ~affix` and `ends_with ~affix` demand a position as well
+as presence. When the affix is nowhere in the string they report what
+`contains` would — the reason is the same — but when it is present in
+the wrong place they say where, and mark it:
+
+```
+needle    "ghost" — found at byte 9
+haystack  sessions/ghost/session.json
+                   ~~~~~
 ```
 
 `mem` is the same idea one type up — membership in a list, through a

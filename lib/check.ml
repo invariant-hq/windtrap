@@ -88,6 +88,26 @@ let not_contains ?pos ?msg ~sub haystack =
         ~claim:(Pp.str "string not containing %S" sub)
         ~needle:sub ~haystack ()
 
+(* Prefix and suffix are containment with a position demanded. Reporting
+   the affix's first occurrence when there is one is the whole value here:
+   "not found" and "found, but at byte 12" are different bugs, and the
+   second is the one a reader would otherwise stare at a long string to
+   discover. *)
+
+let starts_with ?pos ?msg ~affix haystack =
+  if not (String.starts_with ~prefix:affix haystack) then
+    fail_containment ?pos ?msg
+      ?found_at:(Text.first_occurrence ~pattern:affix haystack)
+      ~claim:(Pp.str "string starting with %S" affix)
+      ~needle:affix ~haystack ()
+
+let ends_with ?pos ?msg ~affix haystack =
+  if not (String.ends_with ~suffix:affix haystack) then
+    fail_containment ?pos ?msg
+      ?found_at:(Text.first_occurrence ~pattern:affix haystack)
+      ~claim:(Pp.str "string ending with %S" affix)
+      ~needle:affix ~haystack ()
+
 (* Membership is containment over a witnessed element type, so it cannot
    reuse [Failure.Containment] — that payload is byte offsets into a
    haystack. The claim sentence names the element, the value is the list
