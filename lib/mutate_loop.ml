@@ -27,7 +27,11 @@ module M = Windtrap_mutate
 let spf = Printf.sprintf
 
 (* The catalogue is complete only after module initialization, which is
-   why it is read lazily rather than at this module's own load time. *)
+   why it is read lazily rather than at this module's own load time.
+
+   The catalogue is already scoped by WINDTRAP_MUTATE_ONLY: the runtime
+   applies it at registration, so an out-of-scope file is not in the
+   registry at all and its guard is inert. Nothing to filter here. *)
 let catalogue = lazy (M.catalogue ())
 let instrumented () = Lazy.force catalogue <> []
 

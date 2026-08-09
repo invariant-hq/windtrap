@@ -127,105 +127,112 @@ drivers in their scrubbed child environments.
 
 ## Mutation of windtrap by windtrap
 
-**Not enabled yet, and the reason is worth reading before anyone tries
-again.** `lib/` carries no `(instrumentation (backend
-ppx_windtrap.mutate))` stanza. Six modules — `runner`, `run`, `driver`,
-`mutate_loop`, `ppx_runtime`, `windtrap` — already carry
-`[@@@mutate exclude_file]` for when it does: they are the machinery a
-mutation run uses to judge mutants, so a mutant there is armed inside
-the process meant to detect it and the failure mode is a hang rather
-than a survivor. That much is settled.
-
-What is not settled is the rest of the tree. Instrumenting the core
-breaks the mutation suites *by construction*:
-
-- `test/mutate_loop/plain_main.exe` is the deliberate **zero-mutant
-  control** — "a suite that links no instrumented module, so the seam has
-  to decline by name". An instrumented core gives it 984.
-- `test/mutate_loop/suite_main.exe` is a controlled fixture of **exactly
-  five** mutants, and every count, ordering and verdict assertion is
-  written against those five. It becomes 989, and the loop would
-  genuinely fork 989 children.
-
-Coverage's answer does not transfer. Coverage is passive — it records,
-so pollution is a *reporting* problem and `filter` /
-`WINDTRAP_COVERAGE_ONLY` narrow what is reported without changing the
-run. Mutation is active: the loop reads the catalogue and forks per
-mutant, so the behaviour under test *is* the catalogue and no reporting
-filter can rescue it.
-
-**The prerequisite is a loop-level file scope** — a way to tell a run
-which mutants to consider. That is a feature in its own right, not
-scaffolding: mutation is expensive and "mutate only this file" is
-standard in the field. With it, `suite_main.exe` scoped to `subject.ml`
-has a genuine catalogue of five again rather than a simulation of one,
-and `lib/` can carry the stanza. The one case it cannot fully rescue is
-`plain_main.exe`, which would then *behave* uninstrumented rather than
-*be* uninstrumented — a real if small loss of fidelity in the control.
-
-### What a measured run looked like
-
-Recorded here because it is the argument for finishing the work, not
-because it reproduces from a checkout today. With the stanza temporarily
-in place, `test/unit/main.exe` offered 984 mutants in 24 files, and
+`lib/` carries `(instrumentation (backend ppx_windtrap.mutate))`, inert
+without the flag. Mutate one file at a time:
 
 ```
-WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
-  test/unit/main.exe -- -f p
+WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
+  dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
+dune build @mutate                     # merge verdicts and report
 ```
 
-reached 852 of them: **657 killed, 195 survived in 2m51s.** Two of the
-first three survivors held up when armed against the whole suite:
+Measured: 190 mutants in `diff.ml`, **155 killed and 28 survived in
+41s** — an 84.7% kill rate for that file, with the whole suite running
+against each mutant and no test filter needed.
 
-```
-lib/path_ops.ml:183:5:lt   (String.length out) <= 80  ->  < 80
-lib/property.ml:258:17:ge  count > (max_int / 2)      ->  >=
-```
+Six modules opt out with `[@@@mutate exclude_file]`: `runner`, `run`,
+`driver`, `mutate_loop`, `ppx_runtime` and `windtrap`. They are the
+machinery a mutation run uses to judge mutants, so a mutant there is
+armed inside the process meant to detect it, and the failure mode is a
+hang rather than a survivor — the first whole-core run aborted on
+`lib/runner.ml:385:19:fsub`. Coverage still measures those files.
 
-Untested boundaries on lines every one of which is *covered* — the class
-of defect coverage cannot see. The third did not hold, and that is the
-other lesson: **a narrowed run's survivors are relative to its
-selection.** `lib/seed.ml:101:5:lt` was reported as surviving and is in
-fact killed by the `seed` tests, which `-f p` excludes. Any survivor
-from a narrowed run has to be confirmed by arming it against the whole
-suite before it is believed.
+### WINDTRAP_MUTATE_ONLY, and why it is not coverage's filter
 
-Two further limits were measured and are unchanged by the revert:
+The scope is applied by the **runtime, at registration** — an
+out-of-scope file never enters the registry and its guard is inert.
+That is deliberate and it is the difference between the two features.
+Coverage is passive: it records, so pollution is a reporting problem and
+`WINDTRAP_COVERAGE_ONLY` narrows what is *reported* without changing the
+run. Mutation is active: the loop forks once per mutant, so a scope that
+only narrowed the report would still cost the whole afternoon. Narrowing
+the registry narrows the work.
 
-- A whole-core run does not finish. It passes the forced-fail check and
-  then reaches a mutant whose child *blocks* rather than spins —
-  observed at 1m41s of CPU while the parent waited. The runaway
-  hit-count budget cannot catch a child that has stopped hitting sites,
-  so only the whole-loop deadline can end the run, and it can name just
-  whichever mutant was in flight. The per-mutant deadline
-  `Mutate_loop`'s interface already scopes out is what fixes this.
+It also makes one equivalence true, and the tree depends on it: **an
+executable with nothing in scope is indistinguishable from an
+uninstrumented one** — empty catalogue, no discovery line, and the seam
+declines by name. Without that, instrumenting the core would destroy the
+mutation suites by construction rather than by accident:
+
+- `test/mutate_loop/plain_main.exe` is the deliberate zero-mutant
+  control. An instrumented core gives it 984.
+- `test/mutate_loop/suite_main.exe` is a controlled fixture of exactly
+  five mutants, and every count, ordering and verdict assertion is
+  written against those five.
+
+Both name their scope (`test/mutate_loop/`), so they keep a *genuine*
+catalogue rather than a simulated one. `test/mutate_cli`'s two-executable
+scenario names `test/mutate_cli/calc.ml` for the same reason, and the
+meta harness sets a scope no file can match so a pinned transcript never
+grows a discovery line.
+
+Two suites cannot use the scope, because they test the registry itself
+with synthetic file names that deliberately look real (`lib/calc.ml`).
+They tell their own registrations from the process's by **time** rather
+than by shape: whatever is in the catalogue at their module load — after
+the library's, before any test's — is not theirs.
+`test/mutate/test_mutate.ml` and `test/mutate_ppx/semantics` both do
+this, and it needs no maintenance when a test adds a name.
+
+### What still does not work
+
+A run with **no** scope does not finish. It passes the forced-fail check
+and then reaches a mutant whose child *blocks* rather than spins —
+observed at 1m41s of CPU while the parent waited. The runaway hit-count
+budget cannot catch a child that has stopped hitting sites, so only the
+whole-loop deadline can end the run, and it can name just whichever
+mutant was in flight. The per-mutant deadline `Mutate_loop`'s interface
+already scopes out is the fix; scoping by file is the way around it
+today, and it is the better habit regardless.
+
+Two smaller sharp edges, both measured:
+
 - The forced-fail check arms only the single most-reached mutant and
-  refuses to start if it survives. For nearly every selection that is
-  `lib/path_ops.ml:175:48:not`, killed only by the `path_ops` tests — so
-  `-f seed`, `-f text`, `-f diff` and `-f tag` were all turned away with
-  a message whose first suggestion (the library was not instrumented) is
-  the wrong one there.
+  refuses to start if it survives. Scoped by file this rarely bites; it
+  did for every `-f`-narrowed run, where the most-reached mutant is
+  `lib/path_ops.ml:175:48:not`, killed only by the `path_ops` tests.
+  Its message leads with "the library was not built with
+  --instrument-with", which is the commonest cause in general and the
+  wrong one there.
+- **A narrowed run's survivors are relative to its selection.** A mutant
+  is reported as surviving when no *selected* test killed it. Confirm
+  before believing it, by arming it against the whole suite:
 
-### What does work today
+  ```
+  WINDTRAP_MUTATE_ARM=lib/path_ops.ml:183:5:lt \
+    dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
+  ```
 
-The tree's own mutation fixtures, which need no flag because
-`subject.ml` is preprocessed with `(pps ppx_windtrap.mutate)`
-unconditionally:
+  Green means it really survives. Of the first three that looked worth
+  chasing, this killed one: `lib/seed.ml:101:5:lt` is caught by the
+  `seed` tests, which the `-f p` selection excluded. The two that held
+  are untested boundaries on lines that are fully *covered* — the class
+  of defect coverage cannot see:
 
-```
-WINDTRAP_MUTATE=1 dune exec test/mutate_loop/suite_main.exe
-dune build @mutate                    # merge verdicts, report
-```
+  ```
+  lib/path_ops.ml:183:5:lt   (String.length out) <= 80  ->  < 80
+  lib/property.ml:258:17:ge  count > (max_int / 2)      ->  >=
+  ```
+
+There is no gate and there deliberately will not be one (Law 16e): the
+equivalent-mutant rate is a prediction until it is measured, so a
+survivor is a reading list, not a build failure.
 
 `@mutate` deliberately depends on nothing. Putting `(alias_rec runtest)`
 in front of the merge — which is right for `@cover`, since running the
 suite is how a coverage dump comes to exist — would rebuild every test
 executable *uninstrumented* and invalidate the verdicts the merge is
 about to read.
-
-There is no gate and there deliberately will not be one (Law 16e): the
-equivalent-mutant rate is a prediction until it is measured, so a
-survivor is a reading list, not a build failure.
 
 ## Golden transcripts are snapshots
 

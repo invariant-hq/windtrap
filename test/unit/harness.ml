@@ -135,6 +135,7 @@ let windtrap_vars =
     "WINDTRAP_MUTATE";
     "WINDTRAP_MUTATE_ARM";
     "WINDTRAP_MUTATE_LIMIT";
+    "WINDTRAP_MUTATE_ONLY";
   ]
 
 (* Unset is neutral for every variable above but one. lib/ carries an
@@ -147,7 +148,14 @@ let windtrap_vars =
    re-exec'd children call this directly, before [init]. *)
 let clear_env () =
   List.iter (fun var -> Unix.putenv var "") windtrap_vars;
-  Unix.putenv "WINDTRAP_COVERAGE" "off"
+  Unix.putenv "WINDTRAP_COVERAGE" "off";
+  (* And mutation's equivalent. There is no "off" that silences the
+     discovery line — WINDTRAP_MUTATE=off still announces, which
+     test/mutate_loop pins as "off is off" — so the neutral value is a
+     scope no source file can match: an executable with no mutant in
+     scope is indistinguishable from an uninstrumented one, discovery
+     line included. *)
+  Unix.putenv "WINDTRAP_MUTATE_ONLY" "::no-such-source-prefix::"
 
 let init name =
   suite := name;

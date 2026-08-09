@@ -149,6 +149,20 @@ val coverage_only : unit -> string list
     file is the raw material [windtrap coverage] merges across executables, and
     narrowing it would lose data no later step can recover. *)
 
+val mutate_only : unit -> string list
+(** [mutate_only ()] is [WINDTRAP_MUTATE_ONLY] split on commas: the source path
+    prefixes whose mutants a run will consider, or [[]] (unset) for all of them.
+
+    This is not coverage's reporting filter with a different name. The loop
+    forks once per mutant, so narrowing the catalogue narrows the {e work}: an
+    executable whose mutants all fall outside the prefixes has nothing to test
+    and behaves exactly as an uninstrumented one, discovery line included.
+    Mutation runs are expensive and a whole-project catalogue is rarely what a
+    reader wants to spend an afternoon on; naming a file or a directory is how
+    they spend it on the code they are actually working on. Explicit arming
+    ({!Windtrap_mutate.arm_variable}) ignores the scope — asking for one mutant
+    by name is already as narrow as it gets. *)
+
 (** {1:snapshots Snapshot update modes} *)
 
 (** The type for snapshot update modes, from [-u] or [WINDTRAP_UPDATE]. *)

@@ -59,11 +59,11 @@
 ; equivalent-mutant rate is a prediction until it is measured, so a
 ; survivor is a reading list, not a build failure.
 ;
-; lib/ is NOT mutation-instrumented yet — see lib/dune and
-; doc/dev/testing.md — so today this merges the verdicts of the tree's
-; own mutation fixtures. Produce one with:
+; Mutate one file at a time — the loop forks once per mutant, and
+; WINDTRAP_MUTATE_ONLY narrows the work rather than the report:
 ;
-;   WINDTRAP_MUTATE=1 dune exec test/mutate_loop/suite_main.exe
+;   WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
+;     dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
 ;
 (rule
  (alias mutate)

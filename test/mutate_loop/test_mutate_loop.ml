@@ -57,10 +57,28 @@ let environment bindings =
     | Some value -> [ name ^ "=" ^ value ]
     | None -> []
   in
+  (* The scope that keeps this suite's fixtures controlled. Under
+     --instrument-with the children link a mutation-instrumented windtrap
+     core, and every count here — five sites, a zero-mutant control, the
+     reach map, the verdict file — is written against this directory's
+     own fixtures: subject.ml, runaway/spinner.ml, inline/inline_armed.ml.
+     Naming them does not simulate the old catalogue.
+     WINDTRAP_MUTATE_ONLY narrows what the runtime REGISTERS, so the
+     children genuinely have those mutants and plain_main genuinely has
+     none.
+
+     Omitted when the caller sets it, because [getenv] answers with the
+     first match and a default listed first would silently win over the
+     scenario's own. *)
+  let sets name = List.exists (String.starts_with ~prefix:(name ^ "=")) bindings in
+  let default_scope =
+    if sets "WINDTRAP_MUTATE_ONLY" then []
+    else [ "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
+  in
   Array.of_list
     (List.concat_map inherited [ "PATH"; "HOME"; "TMPDIR"; "LANG"; "LC_ALL" ]
     @ [ "WINDTRAP_COLOR=never"; "WINDTRAP_SLOW_THRESHOLD=0" ]
-    @ bindings)
+    @ default_scope @ bindings)
 
 let counter = ref 0
 
@@ -207,6 +225,37 @@ let discovery_tests =
         let code, out, _ = spawn [ "WINDTRAP_MUTATE=off" ] in
         equal ~msg:"exit code" int 0 code;
         says ~msg:"still discovers" out "mutants: 4 in 1 file");
+    (* WINDTRAP_MUTATE_ONLY narrows the registry, not the report, and the
+       two consequences below are what the rest of this tree relies on:
+       a scope that matches nothing leaves an executable
+       indistinguishable from an uninstrumented one, and a scope that
+       matches keeps the fixture's own catalogue whole. Every other
+       scenario in this file passes the directory scope through
+       [environment], so without this test the feature would only ever be
+       exercised incidentally. *)
+    test "a scope that matches nothing makes a build look uninstrumented"
+      (fun () ->
+        let code, out, err =
+          spawn [ "WINDTRAP_MUTATE_ONLY=::no-such-source::" ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        denies ~msg:"no discovery line" out "mutants:";
+        (* And the seam declines by name rather than reporting nothing,
+           which is the uninstrumented contract. *)
+        let code, _, err' =
+          spawn
+            [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=::no-such-source::" ]
+        in
+        equal ~msg:"asking it to mutate exits 1" int 1 code;
+        says ~msg:"declines by name" err'
+          "links no instrumented module";
+        denies ~msg:"nothing on stderr for the unarmed run" err "mutants:");
+    test "a scope that matches keeps the whole fixture catalogue" (fun () ->
+        let code, out, _ =
+          spawn [ "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        says ~msg:"the fixture's four, undiminished" out "mutants: 4 in 1 file");
   ]
 
 let loop_tests =

@@ -162,6 +162,29 @@ let family (m : M.mutant) =
   | "add" | "sub" | "fadd" | "fsub" -> "ari"
   | other -> "unexpected:" ^ other
 
+(* The registry is process-global. Under --instrument-with the windtrap
+   core this executable links is itself mutation-instrumented, and its
+   sites drain into the same window as the fixtures'. Every claim in this
+   suite is about the three fixture sources, so the drain is read through
+   this rather than raw — the same discipline the coverage twin applies
+   to its snapshot. Basenames, because the fixtures' recorded paths are
+   this directory's and the baseline library's are one directory down;
+   the path assertions below still check the whole path. *)
+let fixture_sources =
+  [ "covsem_fixtures.ml"; "mutsem_order.ml"; "mutsem_boom.ml" ]
+
+let drain_fixtures () =
+  List.filter
+    (fun (r : M.reached) ->
+      List.mem (Filename.basename r.M.mutant.M.id.M.file) fixture_sources)
+    (M.drain ())
+
+let fixture_catalogue () =
+  List.filter
+    (fun (m : M.mutant) ->
+      List.mem (Filename.basename m.M.id.M.file) fixture_sources)
+    (M.catalogue ())
+
 (* [reached f] is [f]'s result and the mutants its evaluation reached,
    as (rewrite, hits) pairs in catalogue order. The drain before the
    epoch bump discards whatever earlier tests marked. *)
@@ -169,7 +192,7 @@ let reached f =
   ignore (M.drain ());
   M.next_epoch ();
   let v = f () in
-  let rs = M.drain () in
+  let rs = drain_fixtures () in
   (v, List.map (fun (r : M.reached) -> (r.mutant.id.rewrite, r.hits)) rs)
 
 let reach = list (pair string int)
@@ -178,7 +201,7 @@ let tests =
   [
     (* {1 Registration and inertness} *)
     test "registration happens at module load, before any call" (fun () ->
-        let catalogue = M.catalogue () in
+        let catalogue = fixture_catalogue () in
         check "the fixtures registered at load" (catalogue <> []);
         check "nothing is armed" (M.armed () = None);
         (* The mutation dialect of coverage's "no point visited before any
@@ -189,7 +212,7 @@ let tests =
         equal ~msg:"no site was evaluated before the first call" reach []
           (List.map
              (fun (r : M.reached) -> (r.mutant.id.rewrite, r.hits))
-             (M.drain ()));
+             (drain_fixtures ()));
         (* Exactly the three instrumented sources register, each once.
            Whole PATHS, not basenames: the baseline library compiles
            files of the same three names one directory down, so a
@@ -224,7 +247,7 @@ let tests =
            check for them could be read but never observed false, and a
            test that cannot fail is a comment with a runtime cost. What is
            left below is what the runtime does not police. *)
-        let catalogue = M.catalogue () in
+        let catalogue = fixture_catalogue () in
         List.iter
           (fun (m : M.mutant) ->
             check "the before rendering is non-empty" (m.before <> "");

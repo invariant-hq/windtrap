@@ -116,6 +116,14 @@ let coverage_only () =
   | None -> []
   | Some s -> split_comma s
 
+(* Which mutants a run considers at all. Unlike coverage's, this is not a
+   reporting filter: the loop forks once per mutant in the catalogue, so
+   narrowing the catalogue narrows the WORK. *)
+let mutate_only () =
+  match get_string "WINDTRAP_MUTATE_ONLY" with
+  | None -> []
+  | Some s -> split_comma s
+
 (* Snapshot update modes
 
    The one mirror still parsed here, because its vocabulary is wider than

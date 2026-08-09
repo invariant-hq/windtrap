@@ -168,8 +168,43 @@ let site_mutant entry i =
    [int -> bool] because the generated code binds it unconditionally. *)
 let inert (_ : int) = false
 
+(* WINDTRAP_MUTATE_ONLY: which files this process has mutants in at all.
+
+   Applied at REGISTRATION, not at reporting, and the difference is the
+   whole point. A mutation run forks once per mutant, so a scope that
+   only narrowed the report would still spend the afternoon; narrowing
+   the registry narrows the work, leaves the guard inert for everything
+   out of scope (so not even reaches are counted for code nobody is
+   mutating), and makes an executable with nothing in scope
+   indistinguishable from an uninstrumented one — which is what lets a
+   fixture keep a controlled catalogue inside a tree whose own core is
+   instrumented.
+
+   Read once, at the first registration, because registrations run at
+   module load and a value that changed halfway through would give one
+   executable two different mutation surfaces. Stdlib only: this library
+   must not pull the windtrap core in, so it cannot use Env. *)
+let scope_variable = "WINDTRAP_MUTATE_ONLY"
+
+let scope =
+  lazy
+    (match Sys.getenv_opt scope_variable with
+    | None | Some "" -> []
+    | Some value ->
+        String.split_on_char ',' value
+        |> List.map String.trim
+        |> List.filter (fun s -> s <> ""))
+
+let in_scope file =
+  match Lazy.force scope with
+  | [] -> true
+  | prefixes ->
+      List.exists (fun prefix -> String.starts_with ~prefix file) prefixes
+
 let register ~file ~sites =
   validate ~file sites;
+  if not (in_scope file) then inert
+  else
   match List.find_opt (fun e -> String.equal e.file file) !registry with
   | Some prior when not (sites_equal prior.sites sites) ->
       (* Two incompatible instrumentations of one source file are linked

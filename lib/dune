@@ -18,17 +18,20 @@
  ; `dune runtest` builds and runs exactly as before.
  (instrumentation
   (backend ppx_windtrap.coverage))
- ; No mutation stanza here yet, deliberately. Six modules already carry
- ; [@@@mutate exclude_file] for when there is one, but instrumenting the
- ; core for mutation breaks the mutation suites by construction rather
- ; than by accident: test/mutate_loop's plain_main.exe is a ZERO-mutant
- ; control and suite_main.exe a controlled fixture of exactly five, and
- ; an instrumented core gives them 984 more. Coverage's answer — filter
- ; the report — cannot help, because the loop's behaviour IS the
- ; catalogue: suite_main would fork 989 children. The prerequisite is a
- ; loop-level file scope, so a run can be told which mutants to consider;
- ; then the fixtures get a genuine catalogue of five again and lib/ can
- ; carry the stanza. See doc/dev/testing.md.
+ ; And windtrap mutates itself. Six modules opt out with
+ ; [@@@mutate exclude_file] — the scheduler, the ambient run state, the
+ ; reporting spine, the loop — because a mutant there is armed inside the
+ ; process that is supposed to judge it, and the failure mode is a hang
+ ; rather than a survivor.
+ ;
+ ; This stanza is only safe because of WINDTRAP_MUTATE_ONLY. The tree's
+ ; own mutation suites are built on controlled catalogues — a zero-mutant
+ ; control executable, a fixture of exactly five sites — and an
+ ; instrumented core would otherwise hand them 984 more. They name their
+ ; scope, so they keep a GENUINE catalogue rather than a simulated one.
+ ; See doc/dev/testing.md.
+ (instrumentation
+  (backend ppx_windtrap.mutate))
  (foreign_stubs
   (language c)
   (names capture_stubs)))

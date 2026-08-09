@@ -26,6 +26,33 @@ module M = Windtrap_mutate
 let selector_t = Testable.structural ~pp:M.pp_selector
 let verdict_t = Testable.structural ~pp:M.pp_verdict
 
+(* This suite's own registrations, told apart from the process's
+
+   The registry is global and this executable links windtrap, which under
+   --instrument-with is itself mutation-instrumented: about a thousand
+   sites in lib/ register at library load, before a line of this file
+   runs. Every assertion below is about the synthetic files these tests
+   register, and the synthetic names deliberately look like real ones
+   ("lib/calc.ml"), so they cannot be told apart by shape.
+
+   They can be told apart by TIME. Whatever is in the catalogue at this
+   module's load — after the library's, before any test's — is not this
+   suite's. Capturing it costs one list and needs no maintenance when a
+   test adds a name. *)
+let foreign_files =
+  List.map (fun (m : M.mutant) -> m.M.id.M.file) (M.catalogue ())
+
+let mine file = not (List.mem file foreign_files)
+
+(* [M.drain ()] and [M.catalogue ()], restricted to this suite's files.
+   The raw drain must still happen — draining is what closes a window —
+   so these filter the result rather than skipping the call. *)
+let drain () =
+  List.filter (fun (r : M.reached) -> mine r.M.mutant.M.id.M.file) (M.drain ())
+
+let catalogue () =
+  List.filter (fun (m : M.mutant) -> mine m.M.id.M.file) (M.catalogue ())
+
 let pp_mutant ppf (m : M.mutant) =
   Format.fprintf ppf "%a[%d-%d]%s" M.pp_id m.M.id (fst m.M.span) (snd m.M.span)
     (match m.M.dismissed with None -> "" | Some r -> " off:" ^ r)
@@ -73,7 +100,7 @@ let register_only ~file ~sites =
 (* A fresh observation window: the previous test's residue is dropped and
    a new epoch opened, so a drain here reports only what this test did. *)
 let fresh () =
-  ignore (M.drain ());
+  ignore (drain ());
   M.next_epoch ()
 
 let ok_error name = function
@@ -259,9 +286,9 @@ let registry_tests =
               hits = 1;
             };
           ]
-          (M.drain ());
+          (drain ());
         equal ~msg:"draining twice yields nothing" (list reached_t) []
-          (M.drain ()));
+          (drain ()));
     test "epochs partition evaluations into per-test windows" (fun () ->
         let g =
           M.register ~file:"t/epoch.ml"
@@ -282,27 +309,27 @@ let registry_tests =
         ignore (g 1);
         equal ~msg:"window 1 sees both" (list string)
           [ "t/epoch.ml:1:0:lt"; "t/epoch.ml:2:0:or" ]
-          (ids (M.drain ()));
+          (ids (drain ()));
         (* Window 2 touches only the second: the first must not reappear
            merely because it was evaluated earlier. *)
         M.next_epoch ();
         ignore (g 1);
         equal ~msg:"window 2 sees only what it touched" (list string)
           [ "t/epoch.ml:2:0:or" ]
-          (ids (M.drain ()));
+          (ids (drain ()));
         (* Window 3 touches the first again: an old epoch stamp must not
            suppress it. *)
         M.next_epoch ();
         ignore (g 0);
         equal ~msg:"window 3 sees the site again" (list string)
           [ "t/epoch.ml:1:0:lt" ]
-          (ids (M.drain ())));
+          (ids (drain ())));
     test "hits are counted per window, not cumulatively" (fun () ->
         let g =
           M.register ~file:"t/hits.ml"
             ~sites:[| site ~line:1 ~col:0 ~rewrite:"eq" ~span:(0, 5) () |]
         in
-        let hits () = List.map (fun (r : M.reached) -> r.M.hits) (M.drain ()) in
+        let hits () = List.map (fun (r : M.reached) -> r.M.hits) (drain ()) in
         fresh ();
         ignore (g 0);
         ignore (g 0);
@@ -321,11 +348,11 @@ let registry_tests =
             ~sites:[| site ~line:1 ~col:0 ~rewrite:"not" ~span:(0, 5) () |]
         in
         fresh ();
-        equal ~msg:"the test window is empty" (list reached_t) [] (M.drain ());
+        equal ~msg:"the test window is empty" (list reached_t) [] (drain ());
         ignore (g 0);
         (* Between tests. *)
         equal ~msg:"the teardown evaluation is still observed" (list int) [ 1 ]
-          (List.map (fun (r : M.reached) -> r.M.hits) (M.drain ())));
+          (List.map (fun (r : M.reached) -> r.M.hits) (drain ())));
     test "reset_reach zeroes counts and opens a fresh window" (fun () ->
         let g =
           M.register ~file:"t/reset.ml"
@@ -336,10 +363,10 @@ let registry_tests =
         ignore (g 0);
         ignore (g 0);
         M.reset_reach ();
-        equal ~msg:"the dirty list is emptied" (list reached_t) [] (M.drain ());
+        equal ~msg:"the dirty list is emptied" (list reached_t) [] (drain ());
         ignore (g 0);
         equal ~msg:"counting restarts from zero" (list int) [ 1 ]
-          (List.map (fun (r : M.reached) -> r.M.hits) (M.drain ())));
+          (List.map (fun (r : M.reached) -> r.M.hits) (drain ())));
     test "the catalogue is sorted and free of link-order dependence" (fun () ->
         register_only ~file:"t/cat_b.ml"
           ~sites:
@@ -354,7 +381,7 @@ let registry_tests =
             (fun (m : M.mutant) ->
               String.length m.M.id.M.file > 6
               && String.sub m.M.id.M.file 0 6 = "t/cat_")
-            (M.catalogue ())
+            (catalogue ())
         in
         equal ~msg:"catalogue order" (list string)
           [ "t/cat_a.ml:4:0:sub"; "t/cat_b.ml:1:2:and"; "t/cat_b.ml:9:2:or" ]
@@ -374,7 +401,7 @@ let registry_tests =
           ]
           (List.filter
              (fun (m : M.mutant) -> m.M.id.M.file = "t/dismiss.ml")
-             (M.catalogue ())));
+             (catalogue ())));
     test "an index outside the site table raises" (fun () ->
         let g =
           M.register ~file:"t/bounds.ml"
@@ -403,13 +430,13 @@ let registry_tests =
           (List.length
              (List.filter
                 (fun (m : M.mutant) -> m.M.id.M.file = "t/twice.ml")
-                (M.catalogue ())));
+                (catalogue ())));
         fresh ();
         ignore (g1 0);
         ignore (g2 0);
         ignore (g2 0);
         equal ~msg:"drained once, with the hits added" (list int) [ 3 ]
-          (List.map (fun (r : M.reached) -> r.M.hits) (M.drain ()));
+          (List.map (fun (r : M.reached) -> r.M.hits) (drain ()));
         (* Both copies must arm: leaving one disarmed would report a false
            survivor for code reached through it. *)
         let armed =
@@ -428,7 +455,7 @@ let registry_tests =
         M.disarm ();
         is_false ~msg:"disarm clears the first copy" (g1 0);
         is_false ~msg:"disarm clears the second copy" (g2 0);
-        ignore (M.drain ()));
+        ignore (drain ()));
     test "a conflicting registration warns and yields an inert guard" (fun () ->
         let sites = [| site ~line:1 ~col:0 ~rewrite:"lt" ~span:(0, 5) () |] in
         register_only ~file:"t/conflict.ml" ~sites;
@@ -456,14 +483,14 @@ let registry_tests =
         fresh ();
         is_false ~msg:"the dropped guard is inert" (g 0);
         equal ~msg:"the dropped guard reports no reach" (list reached_t) []
-          (M.drain ());
+          (drain ());
         equal ~msg:"the first table is the one catalogued" (list string)
           [ "t/conflict.ml:1:0:lt" ]
           (List.map
              (fun (m : M.mutant) -> M.id_to_string m.M.id)
              (List.filter
                 (fun (m : M.mutant) -> m.M.id.M.file = "t/conflict.ml")
-                (M.catalogue ()))));
+                (catalogue ()))));
   ]
 
 (* Arming *)
@@ -574,7 +601,7 @@ let arming_tests =
         is_false ~msg:"the first site stays disarmed" (g 0);
         is_true ~msg:"the second site is armed" (g 1);
         M.disarm ();
-        ignore (M.drain ()));
+        ignore (drain ()));
     test "two sites no identifier can tell apart are ambiguous, not arbitrary"
       (fun () ->
         (* Same line, column, rewrite {e and} span: what a location-
@@ -616,7 +643,7 @@ let arming_tests =
         fresh ();
         is_false ~msg:"the first site stays disarmed" (g 0);
         is_false ~msg:"the second site stays disarmed" (g 1);
-        ignore (M.drain ()));
+        ignore (drain ()));
     test "a refused arming disarms whatever was armed before" (fun () ->
         let g =
           M.register ~file:"t/refuse.ml"
@@ -641,7 +668,7 @@ let arming_tests =
         | Error _ -> ());
         is_false ~msg:"the previous mutant is no longer armed" (g 0);
         is_none ~msg:"armed () is None" (M.armed ());
-        ignore (M.drain ()));
+        ignore (drain ()));
     test "arming a second mutant disarms the first, budget included" (fun () ->
         (* At most one mutant is armed per process (Law 16b), and the two
            live in different files - so this bites the disarm [arm] does
@@ -684,7 +711,7 @@ let arming_tests =
           is_true ~msg:"the second is armed, without an inherited budget" (gb 0)
         done;
         M.disarm ();
-        ignore (M.drain ()));
+        ignore (drain ()));
     test "the runaway budget fires on the evaluation that exceeds it" (fun () ->
         let g =
           M.register ~file:"t/runaway.ml"
@@ -719,7 +746,7 @@ let arming_tests =
                 }));
         M.disarm ();
         is_false ~msg:"a disarmed site has no budget to exceed" (g 0);
-        ignore (M.drain ()));
+        ignore (drain ()));
     test "reset_reach restores the budget headroom a fork consumed" (fun () ->
         (* The child inherits the dry run's accumulated counts; without
            the reset its very first evaluation would look like a runaway. *)
@@ -745,7 +772,7 @@ let arming_tests =
           (function M.Runaway _ -> true | _ -> false)
           (fun () -> g 0);
         M.disarm ();
-        ignore (M.drain ()));
+        ignore (drain ()));
     test "a non-positive budget is a programmer error" (fun () ->
         List.iter
           (fun n ->
@@ -787,7 +814,7 @@ let arming_tests =
         | Error e -> failf "expected Malformed, got %a" M.pp_arm_error e);
         Unix.putenv M.arm_variable "";
         M.disarm ();
-        ignore (M.drain ()));
+        ignore (drain ()));
   ]
 
 (* The verdict lattice *)

@@ -302,7 +302,16 @@ let two_executables =
   in
   let add = at "let add" and sub = at "let sub" and shared = at "let shared" in
   let loop name =
-    capture ~cwd:root ~env:[ "WINDTRAP_MUTATE=1" ]
+    (* The scope keeps this scenario's catalogue the fixture's. Under
+       --instrument-with these executables link a mutation-instrumented
+       windtrap core, and the claim under test — two executables that
+       disagree about ONE library merge to the truth — is about calc.ml's
+       mutants, not about the core's thousand. *)
+    capture ~cwd:root
+      ~env:
+        [
+          "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_cli/calc.ml";
+        ]
       ~exe:(Filename.concat root (Filename.concat "_build/default/test" name))
       []
   in

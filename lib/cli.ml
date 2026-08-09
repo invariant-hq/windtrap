@@ -583,6 +583,7 @@ let env_only =
     ("WINDTRAP_MUTATE", "Mutation testing: 1, report or off");
     (Windtrap_mutate.arm_variable, "Arm one mutant, by identifier");
     ("WINDTRAP_MUTATE_LIMIT", "Survivor blocks to print (0 for all)");
+    ("WINDTRAP_MUTATE_ONLY", "Source prefixes whose mutants a run considers");
   ]
 
 (* Parsing *)

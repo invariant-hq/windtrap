@@ -256,6 +256,23 @@ val arm_variable : string
     {!arm_from_env} reads. Deliberately not ["WINDTRAP_MUTANT"]: two variables
     differing by two characters and meaning unrelated things is a defect. *)
 
+val scope_variable : string
+(** [scope_variable] is ["WINDTRAP_MUTATE_ONLY"]: a comma-separated list of
+    source path prefixes limiting which files this process has mutants in.
+
+    Applied at {!register}, not at reporting. A mutation run forks once per
+    mutant, so a scope that only narrowed the report would still cost the whole
+    run; narrowing the registry narrows the work, leaves the guard inert for
+    every out-of-scope file (their reaches are not even counted), and makes an
+    executable with nothing in scope indistinguishable from an uninstrumented
+    one — {!catalogue} is empty and the seam declines by name. Because
+    registration happens at module load, the variable is read once, at the first
+    one; setting it later in the process changes nothing.
+
+    Consequently it also bounds {!arm}: a mutant of a file out of scope was
+    never registered, so it cannot be armed. Scoping a run is a statement about
+    what that run's mutation surface {e is}, not a view over a larger one. *)
+
 val selector_of_string : string -> (selector, arm_error) result
 (** [selector_of_string s] parses either spelling of a mutant identifier. It is
     [Error (Malformed _)] if [s] has the wrong shape, if a number is missing or
