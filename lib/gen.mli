@@ -20,13 +20,32 @@
     {b Printing.} A counterexample renders with the generator's printer, and
     printers derive by composition — the law is:
     {e a composite generator prints exactly when all of its components print}.
+
+    {b The law stops at {!map} and {!bind}.} They cannot derive a printer,
+    because none for the result type can be inferred from the argument's — and
+    that is not a corner case: [let+], [and+] and [let*] {e are} [map] and
+    [bind], so the idiomatic spelling
+
+    {[
+      let* shape = gen_shape in
+      let+ a = gen_f32 shape and+ b = gen_f32 shape in
+      (a, b)
+    ]}
+
+    is printerless however well its components print. Expect to attach
+    {!with_pp} at the top of any generator written this way; the alternative is
+    to keep the composition inside the deriving combinators ({!pair}, {!list},
+    {!one_of}, ...), which do carry printers through.
+
     Primitives print out of the box — {!string_of} and {!bytes_of} always print,
     quoted, whatever their character generator; {!list}, {!array}, {!option},
     {!result}, {!pair}, {!triple}, {!quad}, {!one_of}, and {!frequency} derive
     their printer from their components' printers; {!map}, {!bind}, and {!sized}
-    produce printerless generators because no printer for the result type can be
-    inferred, and {!constant}, {!pure}, and {!of_list} carry none because their
-    values are arbitrary. {!such_that} keeps its generator's printer. A
+    produce printerless generators as above, and {!constant}, {!pure}, and
+    {!of_list} print only when given [?pp], because their values are arbitrary.
+    Those two are worth passing: they are the leaves that most often sit under a
+    composition, and a printer there survives into the provenance of a
+    printerless generator above. {!such_that} keeps its generator's printer. A
     printerless counterexample renders as the underlying primitive draws that
     produced it — bounded, in generation order, with choice combinators
     labelling their branch, for example [<from: one_of[1] (2., 0.)>] — and the
@@ -197,21 +216,25 @@ val quad : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
 
 (** {1:choice Choice and structure} *)
 
-val constant : 'a -> 'a t
-(** [constant v] always generates [v], with no shrink candidates and no printer.
-    Attach {!with_pp} when [v] should print in counterexamples of enclosing
-    generators. *)
+val constant : ?pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a t
+(** [constant v] always generates [v], with no shrink candidates. Its values are
+    arbitrary, so no printer can be inferred — supply one with [?pp] and the
+    generator prints like a primitive, both on its own and inside the provenance
+    of any printerless generator above it. Without [?pp] it prints nothing, and
+    a composition built over it can only be rescued by {!with_pp} at the top. *)
 
-val pure : 'a -> 'a t
+val pure : ?pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a t
 (** [pure] is {!constant}. *)
 
-val of_list : 'a list -> 'a t
+val of_list : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a t
 (** [of_list values] generates a value of [values], each with equal probability.
     Candidates shrink toward the head: the first candidate of any value is the
     head of [values], then values at intermediate positions — order [values]
-    with the simplest value first. Like {!constant}, the result has no printer;
-    counterexamples render the chosen position, as in [<from: of_list[3]>],
-    until {!with_pp} attaches one.
+    with the simplest value first.
+
+    Like {!constant}, its values are arbitrary and it takes [?pp] for the same
+    reason. Without one, counterexamples render the chosen position, as in
+    [<from: of_list[3]>].
 
     Sampling raises [Invalid_argument] if [values] is empty. *)
 

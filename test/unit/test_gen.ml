@@ -524,6 +524,40 @@ let of_list_picks_uniformly_and_shrinks_toward_head () =
   check (rendered = "<from: of_list[2]>") "of_list rendered %S" rendered;
   check (Gen.render_value gen 20 = None) "of_list has a printer"
 
+(* The printerless leaves take [?pp] because they are what sits under a
+   [map]/[bind] composition, and [map]/[bind] can derive nothing. A printer
+   here is not merely used when the leaf renders directly: [renormalize]
+   collapses the leaf's provenance to the printed value, so it survives
+   into the [<from: ...>] of any printerless generator above it — which is
+   the only way such a composition prints anything useful at all. *)
+let leaf_printers_survive_a_printerless_composition () =
+  let pp = Format.pp_print_int in
+  let gen = Gen.of_list ~pp [ 10; 20; 30 ] in
+  check (Gen.prints gen) "of_list ?pp reports no printer";
+  let tree = find_sample gen (fun v -> v = 30) in
+  let rendered = Gen.render gen (Shrink_tree.root tree) in
+  check (rendered = "30") "of_list ?pp rendered %S, not the value" rendered;
+  check
+    (Gen.render_value gen 20 = Some "20")
+    "of_list ?pp does not render a bare value";
+  (* A [map] above it stays printerless — nothing can be inferred — but its
+     provenance now names the value instead of the choice index. *)
+  let mapped = Gen.map (fun v -> (v, ())) gen in
+  check (not (Gen.prints mapped)) "map claimed a printer";
+  let mapped_tree = find_sample mapped (fun (v, ()) -> v = 30) in
+  let mapped_rendered = Gen.render mapped (Shrink_tree.root mapped_tree) in
+  check
+    (mapped_rendered = "<from: 30>")
+    "the leaf's printer did not reach the enclosing provenance: %S"
+    mapped_rendered;
+  let c = Gen.constant ~pp 7 in
+  check (Gen.prints c) "constant ?pp reports no printer";
+  let c_rendered = Gen.render c (Shrink_tree.root (Gen.sample c (state 0))) in
+  check (c_rendered = "7") "constant ?pp rendered %S" c_rendered;
+  (* Without [?pp] the old behaviour, unchanged: position, not value. *)
+  let bare = Gen.of_list [ 10; 20; 30 ] in
+  check (not (Gen.prints bare)) "of_list without ?pp claims a printer"
+
 let of_list_singleton_is_a_leaf_and_empty_raises () =
   let tree = Gen.sample (Gen.of_list [ `Only ]) (state 0) in
   check (root_value tree = `Only) "of_list singleton produced another value";
@@ -1123,6 +1157,8 @@ let suite =
     ("triple and quad minimize to zeroes", triple_and_quad_minimize_to_zeroes);
     ( "constant is a leaf and asks for a printer",
       constant_is_a_leaf_and_asks_for_a_printer );
+    ( "leaf printers survive a printerless composition",
+      leaf_printers_survive_a_printerless_composition );
     ("pure is constant", pure_is_constant);
     ( "of_list picks uniformly and shrinks toward the head",
       of_list_picks_uniformly_and_shrinks_toward_head );

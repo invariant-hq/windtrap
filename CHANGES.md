@@ -17,6 +17,16 @@ rendered output, serialized documents and logs diff line by line. Equality is
 unchanged, byte for byte: trailing whitespace and a missing final newline
 still fail, and the diff marks them.
 
+**`Gen.constant ?pp` and `Gen.of_list ?pp`.** `map` and `bind` cannot derive a
+printer — no printer for the result type can be inferred — and `let+`, `and+`
+and `let*` *are* `map` and `bind`, so the idiomatic way to build a generator
+loses printing however well its parts print. That is now stated plainly in the
+`Gen` overview, naming the binding operators, instead of being buried in
+`map`'s own entry. And the two printerless leaves take a printer: they are what
+usually sits *under* such a composition, and a printer there survives into the
+enclosing generator's provenance, so `<from: of_list[1]>` becomes
+`<from: Green>`.
+
 **`~max_discard`, `--max-discard`, `WINDTRAP_MAX_DISCARD`.** The property
 engine has always had a discard budget — twice the effective case count — but
 nothing exposed it, while `--max-shrink` sat right beside it in the CLI. A law

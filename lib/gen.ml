@@ -692,25 +692,42 @@ let quad a b c d =
 
 (* Choice and structure *)
 
-let constant value =
+(* The printerless leaves. Their values are arbitrary, so no printer can
+   be inferred — but the caller usually has one, and these two sit under
+   more compositions than anything else: a [map] or [bind] above them is
+   printerless already, and its provenance is only as readable as the
+   draws underneath. Taking [?pp] here is what lets a composition keep
+   printing without a [with_pp] wrapped around the whole thing. *)
+let constant ?pp value =
   {
-    pp = None;
-    run = (fun state -> (Shrink_tree.leaf { value; trace = Empty }, state));
+    pp;
+    run =
+      (fun state ->
+        let trace =
+          match pp with Some pp -> draw_of pp value | None -> Empty
+        in
+        (Shrink_tree.leaf { value; trace }, state));
   }
 
 let pure = constant
 
-let of_list values =
+let of_list ?pp values =
   let values = Array.of_list values in
   {
-    pp = None;
+    pp;
     run =
       (fun state ->
         let count = Array.length values in
         if count = 0 then invalid_arg "Gen.of_list: empty list";
         let index, state = Seed.below ~bound:(Int64.of_int count) state in
         let choose index =
-          { value = values.(index); trace = label_trace "of_list" index Empty }
+          {
+            value = values.(index);
+            trace =
+              (match pp with
+              | Some pp -> draw_of pp values.(index)
+              | None -> label_trace "of_list" index Empty);
+          }
         in
         let index_tree = plain_towards (int_towards 0) (Int64.to_int index) in
         (Shrink_tree.map choose index_tree, state));
