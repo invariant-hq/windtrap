@@ -326,9 +326,17 @@ let pp_hunks ~ansi put ~ind hunks =
                h.actual_start h.actual_count));
       List.iter
         (function
+          (* Green is the expected side and red the actual one, here as
+             everywhere else — not the diff tool's red-for-removed. One
+             transcript shows both this path and the span path, often for
+             the same run, and a colour that means "expected" on one line
+             and "actual" three lines down is worse than unusual. The
+             [---]/[+++] header and the [-]/[+] sigils already say which
+             side is which, so the colour is free to carry the report's
+             own meaning. *)
           | Diff.Keep s -> emit (ind ^ "  " ^ s)
-          | Diff.Delete s -> emit (ind ^ st `Red ("- " ^ show_trailing_ws s))
-          | Diff.Insert s -> emit (ind ^ st `Green ("+ " ^ show_trailing_ws s)))
+          | Diff.Delete s -> emit (ind ^ st `Green ("- " ^ show_trailing_ws s))
+          | Diff.Insert s -> emit (ind ^ st `Red ("+ " ^ show_trailing_ws s)))
         h.lines)
     hunks;
   if total > max_diff_lines then

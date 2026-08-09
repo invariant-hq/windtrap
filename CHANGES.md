@@ -91,6 +91,16 @@ at `-l`. A suite that declares nothing says that instead, and a shard that drew
 an empty bucket names the shard, so neither reads as a typo. Exit codes are
 unchanged.
 
+**One meaning for green, on both diff paths.** The unified-diff path coloured
+`- expected` red and `+ actual` green — the diff tool's convention, and the
+inverse of what every other block does and of what the 0.2.0 notes promise
+("green is the expected side and red the actual one, on every block that shows
+both"). A transcript shows both paths routinely, so green meant "expected" on a
+one-line failure and "actual" three lines later; adopting `text` makes a reader
+hit the pair constantly, which is what surfaced it. The colours are swapped;
+the `--- expected` / `+++ actual` header and the `-`/`+` sigils carry the diff
+convention on their own, which is why they can.
+
 **No empty ANSI spans.** Styling an empty string emitted an open code and its
 reset with nothing between them, so every styled `FAIL` header carried a stray
 `ESC[2mESC[0m` from its empty attempt suffix. Invisible on a terminal, but real

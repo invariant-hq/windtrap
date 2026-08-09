@@ -1731,8 +1731,38 @@ let test_trailing_whitespace_hunks () =
       (Failure.equality ~expected:"line one \nline two"
          ~actual:"line one\nline two" ())
   in
-  check_contains "ansi path carries the same glyph inside the red span"
-    ~sub:"\027[31m- line one\u{00B7}\027[0m" colored;
+  check_contains "ansi path carries the same glyph inside the expected span"
+    ~sub:"\027[32m- line one\u{00B7}\027[0m" colored;
+  (* One meaning for green, across both diff paths.
+
+     A transcript routinely shows both — a short value marks its spans,
+     a multi-line one emits hunks — and until [text] made the multi-line
+     path ordinary, nobody hit them side by side often enough to notice
+     that green meant "expected" on one and "actual" on the other. The
+     [-]/[+] sigils carry the diff convention; the colour carries the
+     report's. Pin both here so they cannot drift apart again. *)
+  let spans =
+    (* Long enough that refinement marks a span rather than colouring the
+       whole side — the marked-span case is the one that pairs with a hunk
+       in the same transcript. *)
+    failure_block ~ansi:true
+      (Failure.equality ~expected:"the quick brown fox"
+         ~actual:"the quick brawn fox" ())
+  in
+  check_contains "span path: expected side is green" ~sub:"\027[32mo\027[0m"
+    spans;
+  check_contains "span path: actual side is red" ~sub:"\027[31ma\027[0m" spans;
+  let hunks =
+    failure_block ~ansi:true
+      (Failure.equality ~expected:"keep\nexpected\n" ~actual:"keep\nactual\n"
+         ())
+  in
+  check_contains "hunk path: expected side is green too"
+    ~sub:"\027[32m- expected\027[0m" hunks;
+  check_contains "hunk path: actual side is red too"
+    ~sub:"\027[31m+ actual\027[0m" hunks;
+  check_absent "hunk path: no diff-tool colouring survives"
+    ~sub:"\027[31m- expected" hunks;
   (* Snapshot mismatch diffs share pp_hunks — the single producer. *)
   let snap =
     failure_block
