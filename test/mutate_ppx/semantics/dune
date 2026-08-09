@@ -1,0 +1,121 @@
+; Law 16(a), enforced: with nothing armed, a mutation-instrumented
+; program is observationally identical to an uninstrumented one - same
+; evaluation order, tail-call status, laziness, outcomes, counts and exit
+; code. The method is the coverage semantics suite's
+; (test/coverage_ppx/semantics/), with the coverage-registry assertions
+; replaced by mutate-registry ones and one addition the coverage suite
+; does not need: a SECOND compilation of the same sources with the
+; rewriter switched off, so that every claim of "identical" is checked
+; against a real uninstrumented twin rather than against an expectation
+; someone could edit to match a defect.
+;
+; covsem_fixtures.ml is the coverage suite's fixture source, shared by
+; copy_files as the RFC specifies (plain copy_files, not copy_files#, so
+; that the file name the instrumenter records - and every mutant
+; identifier built from it - names a file that exists in this build
+; rather than one two directories away). It is frozen: read it, never
+; edit it. mutsem_order.ml is the mutation-specific addition, and it is
+; the one that settles the instrumenter's unproven claim that its
+; right-to-left operand binding "matches the order the compiler already
+; uses". mutsem_boom.ml is the third, and the only one the suite does
+; not run: it exists to be run by the exit-code executables below, and
+; to be catalogued here so that they are known to be comparing an
+; instrumented program with a plain one.
+;
+; Nothing here sets an environment variable. The mutation runtime writes
+; no file unless asked, installs no at_exit handler, and arms nothing
+; unless WINDTRAP_MUTATE_ARM is read explicitly - which no executable in
+; this directory does. That is itself part of what Law 16(a) claims, so
+; the absence of a setenv is deliberate: an inert runtime should need no
+; muzzling.
+
+(copy_files
+ (files ../../coverage_ppx/semantics/covsem_fixtures.ml))
+
+; The instrumented half. The rewriter is applied unconditionally through
+; (pps), as the coverage suite does, so no --instrument-with flag is
+; needed for the law to be checked on every runtest.
+
+(library
+ (name mutsem_fixtures)
+ (modules covsem_fixtures mutsem_order mutsem_boom)
+ (preprocess
+  (pps ppx_windtrap.mutate)))
+
+; The suite is itself UNINSTRUMENTED, so its own definitions - and the
+; baseline library it links - are the uninstrumented side of every
+; comparison.
+
+(test
+ (name test_semantics)
+ (modules test_semantics)
+ (libraries windtrap windtrap.mutate mutsem_fixtures mutsem_baseline))
+
+; The runtime-only link contract (Law 12, interchange contract): this
+; executable lists mutsem_fixtures alone - no windtrap, no
+; windtrap.mutate - and must still build and run, because
+; ppx_runtime_libraries on the rewriter injects the mutation runtime the
+; generated preamble calls, and nothing pulls the windtrap core in.
+
+(test
+ (name test_linkonly)
+ (modules test_linkonly)
+ (libraries mutsem_fixtures))
+
+; The exit-code half of Law 16(a). mutsem_boom.ml is compiled twice, as a
+; module of each library above; the two one-line executables below run
+; the two copies of its [main], and BOTH outputs are diffed against the
+; same committed golden, so the copies are pinned to each other and to a
+; text a reviewer has read. with-accepted-exit-codes 2 is the exit-status
+; assertion: OCaml's status for an uncaught exception, which an
+; instrumented build must not change.
+;
+; The code under test is in the libraries rather than in the executables
+; on purpose. A program that must print the same bytes whether or not it
+; is instrumented cannot certify from its own output which of the two it
+; is, so the certification comes from the registry - and the registry
+; only sees what test_semantics links. Keeping mutsem_boom.ml in
+; mutsem_fixtures puts it under that suite's "exactly these three sources
+; registered" assertion and under its module coercion; an executable with
+; its own (preprocess) field would have gone silently vacuous the day the
+; field was dropped.
+;
+; OCAMLRUNPARAM is emptied so no backtrace is printed: a backtrace names
+; the source path, the two copies live in different directories, and one
+; shared golden would then be impossible for a reason that has nothing to
+; do with the law.
+
+(executable
+ (name mutsem_exit)
+ (modules mutsem_exit)
+ (libraries mutsem_fixtures))
+
+(rule
+ (with-outputs-to
+  exit_instrumented.actual
+  (setenv
+   OCAMLRUNPARAM
+   ""
+   (with-accepted-exit-codes
+    2
+    (run %{dep:mutsem_exit.exe})))))
+
+(rule
+ (with-outputs-to
+  exit_plain.actual
+  (setenv
+   OCAMLRUNPARAM
+   ""
+   (with-accepted-exit-codes
+    2
+    (run %{dep:baseline/mutsem_exit.exe})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff mutsem_exit.expected exit_instrumented.actual)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff mutsem_exit.expected exit_plain.actual)))

@@ -1,0 +1,39 @@
+; The uninstrumented twin: the same three sources as ../dune compiles,
+; with no rewriter at all. Nothing here may name a preprocessor - that
+; is the entire point of the directory, and the reason it is a
+; directory: two libraries cannot claim the same module name in one.
+;
+; Because all three copies come from one source, no comparison in
+; test_semantics.ml can drift. Adding a witness to mutsem_order.ml adds
+; it to both sides at once, and a witness that exists on only one side
+; is a build error rather than a silently skipped check.
+;
+; If a (preprocess) field ever appeared here, test_semantics.ml would not
+; compile: the rewriter names its generated module after the source path,
+; so an instrumented baseline grows a module the instrumented copy does
+; not have and the `module type of' coercions fail. That, and not a
+; count of registered files, is what makes the twin's uninstrumentedness
+; a checked property rather than a comment.
+
+(copy_files
+ (files ../../../coverage_ppx/semantics/covsem_fixtures.ml))
+
+(copy_files
+ (files ../mutsem_order.ml))
+
+(copy_files
+ (files ../mutsem_boom.ml))
+
+(library
+ (name mutsem_baseline)
+ (modules covsem_fixtures mutsem_order mutsem_boom))
+
+; The plain half of the exit-code pair; ../dune runs it and diffs its
+; output against the same golden the instrumented copy is diffed against.
+; mutsem_exit.ml is written out here rather than copied: it differs from
+; ../mutsem_exit.ml in exactly the token the pair exists to measure.
+
+(executable
+ (name mutsem_exit)
+ (modules mutsem_exit)
+ (libraries mutsem_baseline))

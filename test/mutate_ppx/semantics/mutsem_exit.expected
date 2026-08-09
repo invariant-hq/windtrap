@@ -1,0 +1,2 @@
+computed 41
+Fatal error: exception Failure("the instrumented program raises")
