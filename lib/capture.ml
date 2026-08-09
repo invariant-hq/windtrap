@@ -10,24 +10,12 @@
    simple file-based design: the file is complete, only the failure report
    is bounded. *)
 
-(* Retention limits *)
-
-type limits = { tail_bytes : int }
-
-let limits ~tail_bytes =
-  if tail_bytes < 0 then invalid_arg "Capture.limits: tail_bytes is negative";
-  { tail_bytes }
-
-let default_limits = { tail_bytes = 8_192 }
-let tail_bytes l = l.tail_bytes
-
 (* Capture state *)
 
 type enabled = {
   root : string; (* the log root, e.g. _build/_tests *)
   suite : string; (* sanitized suite component *)
   run_id : string;
-  limits : limits;
   mutable current : string option;
       (* The current test's log file: set by [with_capture] and kept after it
          returns so the runner can read the attempt's output post-mortem;
@@ -52,13 +40,12 @@ let generate_run_id () =
   done;
   Bytes.to_string bytes
 
-let create ?(limits = default_limits) ~log_dir ~suite () =
+let create ~log_dir ~suite () =
   Enabled
     {
       root = log_dir;
       suite = Path_ops.sanitize_component suite;
       run_id = generate_run_id ();
-      limits;
       current = None;
       consumed = 0;
     }
@@ -224,7 +211,9 @@ let output_tail t =
           drain_formatters ();
           let read ic =
             let len = in_channel_length ic in
-            let want = min len e.limits.tail_bytes in
+            (* Failure.tail owns the report bound; reading exactly that many
+               final bytes fills a report without loading the whole log. *)
+            let want = min len Failure.tail_bytes in
             let start = len - want in
             seek_in ic start;
             let s = really_input_string ic want in

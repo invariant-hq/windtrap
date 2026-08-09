@@ -371,13 +371,18 @@ val with_output_tail : tail -> t -> t
     tail. *)
 
 val tail : ?log_path:string -> ?omitted_bytes:int -> string -> tail
-(** [tail text] is a bounded {!tail} retaining the final bytes of [text]: at
-    most the implementation bound (currently 8 KiB), cut so the retained suffix
-    never starts inside a UTF-8 sequence. Bytes cut here are added to
-    [omitted_bytes], which records bytes the capture layer already dropped
-    before calling (defaults to [0]).
+(** [tail text] is a bounded {!tail} retaining the final {!tail_bytes} bytes of
+    [text], cut so the retained suffix never starts inside a UTF-8 sequence.
+    Bytes cut here are added to [omitted_bytes], which records bytes the capture
+    layer already dropped before calling (defaults to [0]).
 
     Raises [Invalid_argument] if [omitted_bytes < 0]. *)
+
+val tail_bytes : int
+(** [tail_bytes] is the number of final bytes {!tail} retains (currently 8 KiB).
+    Readers of captured output size their reads by it: a reader supplying fewer
+    bytes silently under-fills a report, and one supplying more has the excess
+    discarded here. *)
 
 (** {1:outcomes Per-test outcomes} *)
 

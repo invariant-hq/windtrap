@@ -33,31 +33,9 @@
     comparing against silence.
 
     Reports are bounded, files are not: the capture file holds the complete
-    output, and {!output_tail} reads back only a bounded suffix as
-    {!type:Failure.tail} data — a failing test's captured output appears in its
-    report, bounded, with the full-log path. {!type:limits} is also the seam
-    where file-level prefix + tail bounding would land — a deliberately deferred
-    extension. *)
-
-(** {1:limits Retention limits} *)
-
-type limits
-(** The type for report-side retention limits. In windtrap 3.0 the limits bound
-    what failure reports carry ({!output_tail}); the capture file itself is
-    never bounded. *)
-
-val limits : tail_bytes:int -> limits
-(** [limits ~tail_bytes] retains at most [tail_bytes] of a test's final output
-    bytes in its failure report.
-
-    Raises [Invalid_argument] if [tail_bytes < 0]. *)
-
-val default_limits : limits
-(** [default_limits] is [limits ~tail_bytes:8_192], matching the bound
-    {!Failure.tail} applies to report payloads. *)
-
-val tail_bytes : limits -> int
-(** [tail_bytes limits] is the retained-suffix quota in bytes. *)
+    output, and {!output_tail} reads back only {!Failure.tail_bytes} final bytes
+    as {!type:Failure.tail} data — a failing test's captured output appears in
+    its report, bounded, with the full-log path. *)
 
 (** {1:state Capture state} *)
 
@@ -67,7 +45,7 @@ type t
     Enabled values are mutable (the current test's file and the consumption
     cursor) and not thread-safe; the runner is sequential. *)
 
-val create : ?limits:limits -> log_dir:string -> suite:string -> unit -> t
+val create : log_dir:string -> suite:string -> unit -> t
 (** [create ~log_dir ~suite ()] is enabled capture state writing under
     [log_dir/<suite>/<run-id>] where:
 
@@ -76,7 +54,6 @@ val create : ?limits:limits -> log_dir:string -> suite:string -> unit -> t
     - [<run-id>] is a fresh 8-character base-36 identifier drawn from
       operating-system entropy ({!Seed.random}), distinguishing concurrent and
       successive runs of the same suite.
-    - [limits] bounds {!output_tail}. Defaults to {!default_limits}.
 
     Nothing is written until {!with_capture} runs a test. *)
 
@@ -147,13 +124,12 @@ val output_tail : t -> Failure.tail option
     test has been captured. The runner attaches it to failures with
     {!Failure.with_output_tail}.
 
-    The tail retains at most the state's {!tail_bytes} final bytes, read without
-    loading the rest of the file; bytes before the retained suffix are counted
-    in [omitted_bytes], and [log_path] is the capture file holding the complete
-    output. A cut that lands inside a UTF-8 sequence is moved past it (the
-    skipped bytes count as omitted; a best effort — invalid UTF-8 is kept
-    verbatim). The {!Failure.tail} constructor further bounds the text by its
-    own constant, so a larger [tail_bytes] cannot bloat reports. *)
+    The tail retains at most {!Failure.tail_bytes} final bytes — the bound
+    reports carry — read without loading the rest of the file; bytes before the
+    retained suffix are counted in [omitted_bytes], and [log_path] is the
+    capture file holding the complete output. A cut that lands inside a UTF-8
+    sequence is moved past it (the skipped bytes count as omitted; a best effort
+    — invalid UTF-8 is kept verbatim). *)
 
 (** {1:links Latest links} *)
 

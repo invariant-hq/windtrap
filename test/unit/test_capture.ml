@@ -268,150 +268,121 @@ let test_disabled () =
          0));
   check "output raises at the call site inside a streamed body" !saw
 
-(* Bounded tails *)
+(* Bounded tails.
 
-let test_limits_validation () =
-  check_int "limits observer" ~expected:5
-    ~actual:(Capture.tail_bytes (Capture.limits ~tail_bytes:5));
-  check_int "default limits retain 8 KiB" ~expected:8_192
-    ~actual:(Capture.tail_bytes Capture.default_limits);
-  check "negative tail_bytes is a programmer error"
-    (match Capture.limits ~tail_bytes:(-1) with
-    | _ -> false
-    | exception Invalid_argument _ -> true)
+   The bound is [Failure.tail_bytes] — no per-state knob to dial down — so
+   every case below has to overrun 8 KiB for real, and the expectations are
+   computed from the bound rather than written out. Where the cut lands
+   inside a UTF-8 sequence is a property of the payload's character width
+   against that fixed bound: 8192 is a multiple of 2 and 4 but not of 3, so
+   a run of three-byte scalars is what puts the cut mid-sequence. *)
+
+let bound = Failure.tail_bytes
+
+(* The tail of the last attempt, or a failed check and a stand-in. *)
+let tail_of name cap =
+  match Capture.output_tail cap with
+  | Some tail -> tail
+  | None ->
+      check ("tail present (" ^ name ^ ")") false;
+      Failure.tail ""
+
+let capture_string cap ~test_name payload =
+  Capture.with_capture cap ~groups:[] ~test_name (fun () ->
+      print_string payload);
+  tail_of test_name cap
 
 let test_bounded_tail () =
   with_temp_root @@ fun root ->
-  let limits = Capture.limits ~tail_bytes:64 in
-  let cap = Capture.create ~limits ~log_dir:root ~suite:"s" () in
-  let payload =
-    String.init 300 (fun i -> Char.chr (Char.code 'a' + (i mod 26)))
-  in
-  Capture.with_capture cap ~groups:[] ~test_name:"big" (fun () ->
-      print_string payload);
-  (match Capture.output_tail cap with
-  | None -> check "tail present (big)" false
-  | Some tail -> (
-      check_string "tail is exactly the final tail_bytes"
-        ~expected:(String.sub payload 236 64)
-        ~actual:tail.Failure.text;
-      check_int "omitted_bytes counts everything before the tail" ~expected:236
-        ~actual:tail.Failure.omitted_bytes;
-      match tail.Failure.log_path with
-      | Some p ->
-          check_string "the log file holds the complete output"
-            ~expected:payload ~actual:(read_file p)
-      | None -> check "log_path present" false));
-  (* Output exactly at the bound is complete: no cut, no skip. *)
-  let exact = String.sub payload 0 64 in
-  Capture.with_capture cap ~groups:[] ~test_name:"exact" (fun () ->
-      print_string exact);
-  (match Capture.output_tail cap with
-  | None -> check "tail present (exact)" false
-  | Some tail ->
-      check_string "output at exactly tail_bytes is retained whole"
-        ~expected:exact ~actual:tail.Failure.text;
-      check_int "output at exactly tail_bytes omits nothing" ~expected:0
-        ~actual:tail.Failure.omitted_bytes);
-  (* Output below the bound is complete. *)
-  Capture.with_capture cap ~groups:[] ~test_name:"small" (fun () ->
-      print_string "tiny");
-  match Capture.output_tail cap with
-  | None -> check "tail present (small)" false
-  | Some tail ->
-      check_string "small output is retained whole" ~expected:"tiny"
-        ~actual:tail.Failure.text;
-      check_int "small output omits nothing" ~expected:0
-        ~actual:tail.Failure.omitted_bytes
-
-let test_zero_tail_bytes () =
-  with_temp_root @@ fun root ->
-  let limits = Capture.limits ~tail_bytes:0 in
-  let cap = Capture.create ~limits ~log_dir:root ~suite:"s" () in
-  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
-      print_string "dropped");
-  match Capture.output_tail cap with
-  | None -> check "tail present (zero bound)" false
-  | Some tail ->
-      check_string "zero bound retains nothing" ~expected:""
-        ~actual:tail.Failure.text;
-      check_int "zero bound omits everything" ~expected:7
-        ~actual:tail.Failure.omitted_bytes
-
-let test_default_limits_bound () =
-  with_temp_root @@ fun root ->
   let cap = Capture.create ~log_dir:root ~suite:"s" () in
-  let payload =
-    String.init 20_000 (fun i -> Char.chr (Char.code 'a' + (i mod 26)))
+  let letters n =
+    String.init n (fun i -> Char.chr (Char.code 'a' + (i mod 26)))
   in
-  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
-      print_string payload);
-  match Capture.output_tail cap with
-  | None -> check "tail present (default limits)" false
-  | Some tail ->
-      check_int "default bound retains the final 8 KiB" ~expected:8_192
-        ~actual:(String.length tail.Failure.text);
-      check_string "the retained text is the payload's suffix"
-        ~expected:(String.sub payload (20_000 - 8_192) 8_192)
-        ~actual:tail.Failure.text;
-      check_int "omitted + retained accounts for every byte" ~expected:20_000
-        ~actual:(tail.Failure.omitted_bytes + String.length tail.Failure.text)
+  let payload = letters (bound + 3_000) in
+  let tail = capture_string cap ~test_name:"big" payload in
+  check_string "tail is exactly the final tail_bytes"
+    ~expected:(String.sub payload 3_000 bound)
+    ~actual:tail.Failure.text;
+  check_int "omitted_bytes counts everything before the tail" ~expected:3_000
+    ~actual:tail.Failure.omitted_bytes;
+  check_int "omitted + retained accounts for every byte"
+    ~expected:(String.length payload)
+    ~actual:(tail.Failure.omitted_bytes + String.length tail.Failure.text);
+  (match tail.Failure.log_path with
+  | Some p ->
+      check_string "the log file holds the complete output" ~expected:payload
+        ~actual:(read_file p)
+  | None -> check "log_path present" false);
+  (* Output exactly at the bound is complete: no cut, no skip. *)
+  let exact = letters bound in
+  let tail = capture_string cap ~test_name:"exact" exact in
+  check_string "output at exactly tail_bytes is retained whole" ~expected:exact
+    ~actual:tail.Failure.text;
+  check_int "output at exactly tail_bytes omits nothing" ~expected:0
+    ~actual:tail.Failure.omitted_bytes;
+  (* Output below the bound is complete. *)
+  let tail = capture_string cap ~test_name:"small" "tiny" in
+  check_string "small output is retained whole" ~expected:"tiny"
+    ~actual:tail.Failure.text;
+  check_int "small output omits nothing" ~expected:0
+    ~actual:tail.Failure.omitted_bytes
+
+let repeat n s = String.concat "" (List.init n (fun _ -> s))
 
 let test_utf8_boundary () =
   with_temp_root @@ fun root ->
-  let limits = Capture.limits ~tail_bytes:33 in
-  let cap = Capture.create ~limits ~log_dir:root ~suite:"s" () in
-  (* 100 copies of the 2-byte "é": a 33-byte suffix starts mid-sequence. *)
-  let payload = String.concat "" (List.init 100 (fun _ -> "\xC3\xA9")) in
-  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
-      print_string payload);
-  match Capture.output_tail cap with
-  | None -> check "tail present (utf8)" false
-  | Some tail ->
-      check_int "the mid-sequence byte is skipped" ~expected:32
-        ~actual:(String.length tail.Failure.text);
-      check "the tail starts on a UTF-8 boundary"
-        (String.length tail.Failure.text > 0
-        && Char.code tail.Failure.text.[0] land 0xC0 <> 0x80);
-      check_int "the skipped byte counts as omitted" ~expected:168
-        ~actual:tail.Failure.omitted_bytes;
-      check_string "the tail is whole characters"
-        ~expected:(String.concat "" (List.init 16 (fun _ -> "\xC3\xA9")))
-        ~actual:tail.Failure.text
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  (* Three-byte scalars: the bound is not a multiple of 3, so the suffix
+     read starts one byte past a lead and two continuation bytes go. *)
+  let euro = "\xE2\x82\xAC" in
+  let chars = (bound / 3) + 100 in
+  let payload = repeat chars euro in
+  let cut = String.length payload - bound in
+  check_int "the payload puts the cut one byte past a lead" ~expected:1
+    ~actual:(cut mod 3);
+  let tail = capture_string cap ~test_name:"t" payload in
+  check_int "the mid-sequence bytes are skipped" ~expected:(bound - 2)
+    ~actual:(String.length tail.Failure.text);
+  check "the tail starts on a UTF-8 boundary"
+    (String.length tail.Failure.text > 0
+    && Char.code tail.Failure.text.[0] land 0xC0 <> 0x80);
+  check_int "the skipped bytes count as omitted" ~expected:(cut + 2)
+    ~actual:tail.Failure.omitted_bytes;
+  check_string "the tail is whole characters"
+    ~expected:(repeat ((bound - 2) / 3) euro)
+    ~actual:tail.Failure.text
 
 let test_utf8_max_skip () =
   with_temp_root @@ fun root ->
-  let limits = Capture.limits ~tail_bytes:7 in
-  let cap = Capture.create ~limits ~log_dir:root ~suite:"s" () in
-  (* 10 copies of a 4-byte scalar: a 7-byte suffix starts one byte after a
-     lead, so three continuation bytes must be skipped — the maximum. *)
-  let payload = String.concat "" (List.init 10 (fun _ -> "\xF0\x9F\x92\xA9")) in
-  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
-      print_string payload);
-  match Capture.output_tail cap with
-  | None -> check "tail present (max skip)" false
-  | Some tail ->
-      check_string "three continuation bytes are skipped"
-        ~expected:"\xF0\x9F\x92\xA9" ~actual:tail.Failure.text;
-      check_int "the three skipped bytes count as omitted" ~expected:36
-        ~actual:tail.Failure.omitted_bytes
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
+  (* Four-byte scalars would align with the bound exactly; the trailing
+     one-byte 'z' shifts the run so the suffix starts one byte after a lead
+     and three continuation bytes must be skipped — the maximum. *)
+  let pile = "\xF0\x9F\x92\xA9" in
+  let payload = repeat ((bound / 4) + 10) pile ^ "z" in
+  let cut = String.length payload - bound in
+  check_int "the payload puts the cut one byte past a lead" ~expected:1
+    ~actual:(cut mod 4);
+  let tail = capture_string cap ~test_name:"t" payload in
+  check_string "three continuation bytes are skipped"
+    ~expected:(String.sub payload (cut + 3) (bound - 3))
+    ~actual:tail.Failure.text;
+  check "the tail starts on a UTF-8 boundary"
+    (Char.code tail.Failure.text.[0] land 0xC0 <> 0x80);
+  check_int "the three skipped bytes count as omitted" ~expected:(cut + 3)
+    ~actual:tail.Failure.omitted_bytes
 
 let test_invalid_utf8_verbatim () =
   with_temp_root @@ fun root ->
-  let limits = Capture.limits ~tail_bytes:8 in
-  let cap = Capture.create ~limits ~log_dir:root ~suite:"s" () in
+  let cap = Capture.create ~log_dir:root ~suite:"s" () in
   (* Continuation-byte flood: no lead within reach, so nothing is skipped and
      the suffix is kept verbatim. *)
-  let payload = String.make 64 '\x80' in
-  Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
-      print_string payload);
-  match Capture.output_tail cap with
-  | None -> check "tail present (invalid utf8)" false
-  | Some tail ->
-      check_string "invalid UTF-8 is kept verbatim"
-        ~expected:(String.make 8 '\x80') ~actual:tail.Failure.text;
-      check_int "no extra bytes counted omitted" ~expected:56
-        ~actual:tail.Failure.omitted_bytes
+  let payload = String.make (bound + 56) '\x80' in
+  let tail = capture_string cap ~test_name:"t" payload in
+  check_string "invalid UTF-8 is kept verbatim"
+    ~expected:(String.make bound '\x80') ~actual:tail.Failure.text;
+  check_int "no extra bytes counted omitted" ~expected:56
+    ~actual:tail.Failure.omitted_bytes
 
 (* Per-attempt reset *)
 
@@ -623,10 +594,7 @@ let tests =
       test_setup_failure_isolation;
     test "a failed cleanup drain still restores" test_drain_failure_restores;
     test "Disabled (--stream) behavior" test_disabled;
-    test "limits validation" test_limits_validation;
     test "bounded tails with drop counts" test_bounded_tail;
-    test "zero tail_bytes retains nothing" test_zero_tail_bytes;
-    test "default limits retain the final 8 KiB" test_default_limits_bound;
     test "tail cut lands on a UTF-8 boundary" test_utf8_boundary;
     test "tail cut skips up to three continuation bytes" test_utf8_max_skip;
     test "invalid UTF-8 is kept verbatim" test_invalid_utf8_verbatim;

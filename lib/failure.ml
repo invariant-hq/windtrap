@@ -136,7 +136,9 @@ let recorded_backtrace () =
     | bt -> Some bt
   else None
 
-(* Bounds (implementation constants, not contract) *)
+(* Bounds. Implementation constants, not contract — except [tail_bytes],
+   which the .mli exposes because capture-side readers must size their
+   reads by it. *)
 
 (* Payload strings are pp-rendered values or user messages; past this many
    bytes they are cut with Text's explicit truncation marker. *)
@@ -144,11 +146,11 @@ let value_limit = 65_536
 
 (* Captured-output tails retain at most this many final bytes; the cut is
    recorded in [omitted_bytes], not as a marker inside the text. *)
-let tail_limit = 8_192
+let tail_bytes = 8_192
 
 (* Haystack excerpts in containment failures reuse the tail bound: enough
    context to read, small enough to store on every failure. *)
-let excerpt_limit = tail_limit
+let excerpt_limit = tail_bytes
 let cap s = Text.truncate_bytes_utf8 value_limit s
 let cap_opt o = Option.map cap o
 
@@ -274,9 +276,9 @@ let tail ?log_path ?(omitted_bytes = 0) text =
   if omitted_bytes < 0 then
     invalid_arg "Failure.tail: omitted_bytes is negative";
   let len = String.length text in
-  if len <= tail_limit then { text; omitted_bytes; log_path }
+  if len <= tail_bytes then { text; omitted_bytes; log_path }
   else
-    let cut = utf8_boundary_at_or_after text (len - tail_limit) in
+    let cut = utf8_boundary_at_or_after text (len - tail_bytes) in
     {
       text = String.sub text cut (len - cut);
       omitted_bytes = omitted_bytes + cut;
