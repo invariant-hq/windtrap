@@ -360,6 +360,13 @@ val char : char testable
 val string : string testable
 (** [string] prints with [%S]: quoted, escaped, on one line. *)
 
+val text : string testable
+(** [text] prints verbatim — no quotes, no escapes, newlines kept — so failures
+    diff it line by line instead of showing two escaped one-liners with the
+    difference buried in [\\n] soup. Use it for multi-line text (rendered
+    output, serialized documents, logs) and {!string} for single-line values,
+    where the quotes distinguish [""], [" "] and ["\t"]. *)
+
 val bytes : bytes testable
 val int : int testable
 val int32 : int32 testable

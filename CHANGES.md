@@ -5,6 +5,18 @@ performance, and anything that changes the public surface. That surface is
 `lib/windtrap.mli`, the CLI and `WINDTRAP_*` contract, and the runner's exit
 codes. New entries go at the top of their section.
 
+## [Unreleased]
+
+### Added
+
+**`text`, a string witness that prints verbatim.** `string` renders with `%S`
+— quoted, escaped, on one line — which buries the difference between two
+multi-line values in `\n` soup. `text` prints the same string unescaped, and
+because the rendering spans lines it takes the report's unified-diff path, so
+rendered output, serialized documents and logs diff line by line. Equality is
+unchanged, byte for byte: trailing whitespace and a missing final newline
+still fail, and the diff marks them.
+
 ## [0.2.0] - 2026-08-07
 
 Windtrap 0.2.0 is a ground-up rewrite around three commitments: **declaring a

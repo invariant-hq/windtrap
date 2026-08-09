@@ -105,6 +105,7 @@ let unit = Testable.unit
 let bool = Testable.bool
 let char = Testable.char
 let string = Testable.string
+let text = Testable.text
 let bytes = Testable.bytes
 let int = Testable.int
 let int32 = Testable.int32

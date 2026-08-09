@@ -52,6 +52,12 @@ let bool = { pp = Pp.bool; equal = Bool.equal }
 let char = { pp = (fun ppf c -> Pp.pf ppf "%C" c); equal = Char.equal }
 let string = { pp = (fun ppf s -> Pp.pf ppf "%S" s); equal = String.equal }
 
+(* Verbatim, so a multi-line value keeps its newlines and its failure reaches
+   the renderer's unified-diff path instead of two escaped one-liners.
+   [string] keeps [%S] because on a single line the quotes are what tell
+   [""], [" "] and ["\t"] apart. *)
+let text = { pp = Pp.string; equal = String.equal }
+
 let bytes =
   {
     pp = (fun ppf b -> Pp.pf ppf "%S" (Bytes.to_string b));

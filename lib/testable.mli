@@ -108,6 +108,17 @@ val char : char t
 val string : string t
 (** [string] prints with [%S]: quoted, with escapes, on one line. *)
 
+val text : string t
+(** [text] is {!string} printed verbatim: no quotes, no escapes, newlines kept.
+    Because the rendering spans lines, failures diff it line by line — a unified
+    diff naming the changed lines — where {!string} would show two escaped
+    one-liners with the difference buried in [\\n] soup. It is the witness for
+    multi-line text: rendered output, serialized documents, logs.
+
+    Prefer {!string} for single-line values, where the quotes are what
+    distinguish [""], [" "] and ["\t"]. Trailing whitespace stays visible under
+    [text] regardless: the diff marks it. *)
+
 val bytes : bytes t
 val int : int t
 val int32 : int32 t

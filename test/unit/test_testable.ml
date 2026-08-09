@@ -71,6 +71,7 @@ let tests =
           ~expected:"\"hello\"";
         check_prints "prints string escapes" T.string "a\nb"
           ~expected:"\"a\\nb\"";
+        check_prints "prints text verbatim" T.text "hello" ~expected:"hello";
         check_prints "prints bytes quoted" T.bytes (Bytes.of_string "hi")
           ~expected:"\"hi\"";
         check_prints "prints int" T.int 42 ~expected:"42";
@@ -125,6 +126,25 @@ let tests =
         check_prints "contramap prints the image, not the original"
           (T.contramap String.length T.int)
           "abc" ~expected:"3");
+    (* [text] exists for one reason: its rendering keeps the newlines, and a
+       rendering that spans lines is exactly what sends Render down the
+       unified-diff path instead of marking spans in an escaped one-liner.
+       Pin that property here, at the witness, so the two ends of the
+       contract cannot drift apart. *)
+    test "text: renders verbatim, where string escapes" (fun () ->
+        let doc = "alpha\nbeta\n" in
+        check_prints "keeps newlines" T.text doc ~expected:"alpha\nbeta\n";
+        is_true ~msg:"the rendering spans lines"
+          (String.contains (T.to_string T.text doc) '\n');
+        check_prints "string collapses the same value to one escaped line"
+          T.string doc ~expected:"\"alpha\\nbeta\\n\"";
+        is_false ~msg:"string's rendering never spans lines"
+          (String.contains (T.to_string T.string doc) '\n');
+        check_prints "no quotes around the empty value" T.text "" ~expected:"";
+        (* Byte equality, like [string]: the differences [text] renders
+           without escapes are still differences it reports. *)
+        check_differ "trailing space is a difference" T.text "a" "a ";
+        check_differ "trailing newline is a difference" T.text "a" "a\n");
     test "equality: base types" (fun () ->
         check_equal "unit equal" T.unit () ();
         check_equal "bool equal" T.bool true true;
@@ -139,6 +159,8 @@ let tests =
         check_differ "char differs" T.char 'a' 'b';
         check_equal "string equal" T.string "hello" "hello";
         check_differ "string differs" T.string "hello" "world";
+        check_equal "text equal" T.text "a\nb" "a\nb";
+        check_differ "text differs" T.text "a\nb" "a\nc";
         check_equal "bytes equal" T.bytes (Bytes.of_string "a")
           (Bytes.of_string "a");
         check_differ "bytes differ" T.bytes (Bytes.of_string "a")

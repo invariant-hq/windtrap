@@ -27,6 +27,8 @@ inventory:
 
 - `unit`, `bool`, `char`, `string`, `bytes`, `int`, `int32`, `int64`,
   `nativeint`
+- `text` — a string printed verbatim rather than with `%S`; see
+  [Multi-line strings](#multi-line-strings) below
 - floats: `float eps` (absolute tolerance), `float_rel ~rel ~abs`
   (combined tolerance), `float_exact` (bit-for-bit; the only witness
   under which NaN equals NaN — use it to assert a function returns NaN)
@@ -37,6 +39,46 @@ inventory:
   multiset difference, never the incidental arrival order
 - `pass` — everything equal; ignores a component: `pair string pass`
 - `not_equal t a b` is the negation; its failure prints the value once
+
+## Multi-line strings
+
+`string` prints with `%S` — quoted, escaped, on one line — which is
+what you want for a single-line value, where the quotes are what tell
+`""`, `" "` and `"\t"` apart. It is the wrong shape for text that
+spans lines: the difference ends up buried in `\n` soup.
+
+```
+expected  "{\n  \"version\": \"1.2.0\",\n  \"deps\": [\"a\", \"b\"]\n}\n"
+                                 ~                             ~
+actual    "{\n  \"version\": \"1.3.0\",\n  \"deps\": [\"a\", \"c\"]\n}\n"
+                                 ~                             ~
+```
+
+`text` prints the same string verbatim. The rendering keeps its
+newlines, and a rendering that spans lines is diffed line by line:
+
+```ocaml
+equal text expected actual
+```
+
+```
+--- expected
++++ actual
+@@ -1,4 +1,4 @@
+  {
+-   "version": "1.2.0",
+-   "deps": ["a", "b"]
++   "version": "1.3.0",
++   "deps": ["a", "c"]
+  }
+```
+
+Equality is unchanged — byte for byte, as with `string` — so a
+trailing space or a missing final newline is still a failure; the
+diff marks trailing whitespace with `·` so you can see which. Reach
+for `text` for rendered output, serialized documents, and logs. When
+the expected side is long enough that you would rather not write it
+out inline, that is what [snapshots](snapshots-and-expect.md) are for.
 
 Custom types need a printer and an equality:
 
