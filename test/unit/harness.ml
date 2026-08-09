@@ -24,8 +24,17 @@ let count = ref 0
 
 (* The ANSI decision, captured by [init] before it clears the
    environment — the same resolution the windtrap suites make
-   (WINDTRAP_COLOR, terminal status, INSIDE_DUNE). *)
+   (WINDTRAP_COLOR, terminal status, INSIDE_DUNE). Composed here, from
+   [Env.resolve_color] and the three inputs, exactly as [Driver.renderer]
+   composes it: nothing in windtrap resolves colour for a sink it did not
+   name, and a harness that took a shortcut would be the one place where
+   the decision could drift from the renderer's. *)
 let ansi = ref false
+
+let resolve_ansi () =
+  let module Env = Windtrap.Private.Env in
+  Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
+    ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
 
 (* The check lines' FAIL tag, ansi-explicit (like [summary_line]) so
    test_render's dialect test can pin its bytes against the renderer's
@@ -119,7 +128,7 @@ let init name =
   (* Resolve color before [clear_env] wipes WINDTRAP_COLOR and
      INSIDE_DUNE: the decision must match what a windtrap suite in the
      same runtest invocation decides. *)
-  ansi := Windtrap.Private.Env.use_color_stdout ();
+  ansi := resolve_ansi ();
   clear_env ();
   Printexc.record_backtrace true
 

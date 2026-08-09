@@ -63,34 +63,30 @@ val inside_dune : unit -> bool
     [dune runtest]). *)
 
 val is_tty_stdout : unit -> bool
-(** [is_tty_stdout ()] is [true] iff standard output is a terminal. *)
-
-val is_tty_stderr : unit -> bool
-(** [is_tty_stderr ()] is [true] iff standard error is a terminal. *)
+(** [is_tty_stdout ()] is [true] iff standard output is a terminal. Standard
+    error has no counterpart: nothing in windtrap styles it. *)
 
 val term_dumb : unit -> bool
 (** [term_dumb ()] is [true] iff [TERM] is set to exactly [dumb] — the
     conventional "no escape sequences" terminal. Disables ANSI styling in
     {!Auto} mode and gates the renderer's live tail off. *)
 
-(** {1:ci CI detection} *)
+(** {1:ci CI detection}
 
-(** The type for detected CI environments. *)
-type ci =
-  | Not_ci  (** [CI] is unset or falsy. *)
-  | Github_actions  (** [CI] and [GITHUB_ACTIONS] are both set. *)
-  | Other_ci  (** [CI] is set but [GITHUB_ACTIONS] is not. *)
-
-val ci : unit -> ci
-(** [ci ()] is the detected CI environment. [CI] set to a falsy value ([0],
-    [false], ...) counts as {!Not_ci}. *)
+    Two predicates rather than a detected-environment value: nothing in the
+    library distinguishes one CI from another beyond GitHub Actions, and both
+    answers come from one classification, so a [GITHUB_ACTIONS] without a [CI]
+    cannot answer them inconsistently. *)
 
 val in_ci : unit -> bool
-(** [in_ci ()] is [true] iff {!ci} is not {!Not_ci}. Gates focused-test commits,
-    snapshot update refusal, and GitHub annotations. *)
+(** [in_ci ()] is [true] iff [CI] is set to anything but a falsy spelling ([0],
+    [false], ...). Gates focused-test commits, snapshot update refusal, and
+    GitHub annotations. *)
 
 val in_github_actions : unit -> bool
-(** [in_github_actions ()] is [true] iff {!ci} is {!Github_actions}. *)
+(** [in_github_actions ()] is [true] iff {!in_ci} and [GITHUB_ACTIONS] is
+    likewise set: the workflow variable alone, without [CI], is not GitHub
+    Actions. *)
 
 (** {1:color Color} *)
 
@@ -111,15 +107,13 @@ val resolve_color :
     is [false], and [Auto] is [(tty || inside_dune) && not term_dumb] (dune
     captures output but renders escape codes back to the user; a dumb terminal —
     {!term_dumb} — renders none, so [Auto] never styles it, while an explicit
-    [Always] still wins). Pure; shared with the [--color] flag. *)
+    [Always] still wins). Pure; shared with the [--color] flag.
 
-val use_color_stdout : unit -> bool
-(** [use_color_stdout ()] is {!resolve_color} of {!color_mode} for standard
-    output. *)
-
-val use_color_stderr : unit -> bool
-(** [use_color_stderr ()] is {!resolve_color} of {!color_mode} for standard
-    error. *)
+    This is the whole of the colour decision: there is no reader that resolves
+    it for a sink of its own choosing. A caller passes the mode that won its own
+    precedence — [Run.config]'s for the runner, {!color_mode} for a command with
+    no [--color] flag — together with the sink's terminal status, so the ANSI
+    decision is always made where the sink is known. *)
 
 (** {1:standalone Settings with no flag}
 

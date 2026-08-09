@@ -139,20 +139,22 @@ let tests =
     test "CI detection: CI must be set and not falsy" (fun () ->
         clear "CI";
         clear "GITHUB_ACTIONS";
-        is_true ~msg:"no CI" (Env.ci () = Env.Not_ci);
-        is_false ~msg:"in_ci false" (Env.in_ci ());
+        is_false ~msg:"no CI" (Env.in_ci ());
+        is_false ~msg:"no GitHub Actions" (Env.in_github_actions ());
         set "CI" "true";
-        is_true ~msg:"CI alone is Other_ci" (Env.ci () = Env.Other_ci);
         is_true ~msg:"in_ci true" (Env.in_ci ());
-        is_false ~msg:"not github actions" (Env.in_github_actions ());
+        is_false ~msg:"CI alone is not GitHub Actions"
+          (Env.in_github_actions ());
         set "GITHUB_ACTIONS" "true";
-        is_true ~msg:"CI plus GITHUB_ACTIONS" (Env.ci () = Env.Github_actions);
-        is_true ~msg:"in_github_actions true" (Env.in_github_actions ());
+        is_true ~msg:"CI plus GITHUB_ACTIONS" (Env.in_github_actions ());
         set "CI" "false";
-        is_true ~msg:"CI=false does not count as CI" (Env.ci () = Env.Not_ci);
+        is_false ~msg:"CI=false does not count as CI" (Env.in_ci ());
+        is_false ~msg:"GITHUB_ACTIONS without CI is not GitHub Actions"
+          (Env.in_github_actions ());
         set "CI" "woodpecker";
-        is_true ~msg:"non-boolean CI value counts as set"
-          (Env.ci () = Env.Github_actions);
+        is_true ~msg:"non-boolean CI value counts as set" (Env.in_ci ());
+        is_true ~msg:"a non-boolean CI still resolves GitHub Actions"
+          (Env.in_github_actions ());
         clear "CI";
         clear "GITHUB_ACTIONS");
     test "INSIDE_DUNE" (fun () ->
@@ -203,13 +205,11 @@ let tests =
         is_true ~msg:"always beats a dumb terminal"
           (Env.resolve_color Env.Always ~tty:true ~inside_dune:false
              ~term_dumb:true);
-        (* End-to-end for the modes that do not depend on the actual tty. *)
-        set "WINDTRAP_COLOR" "never";
-        is_false ~msg:"use_color_stdout honors never" (Env.use_color_stdout ());
-        is_false ~msg:"use_color_stderr honors never" (Env.use_color_stderr ());
-        set "WINDTRAP_COLOR" "always";
-        is_true ~msg:"use_color_stdout honors always" (Env.use_color_stdout ());
-        is_true ~msg:"use_color_stderr honors always" (Env.use_color_stderr ());
+        (* Composing the two — a mode read from the environment applied to
+           a named sink — is the caller's job, not this module's:
+           [Driver.renderer] does it for the runner and [coverage_cmd] for
+           the coverage command, and both are pinned end to end by child
+           runs that pass --color and compare bytes. *)
         clear "WINDTRAP_COLOR");
     test "TERM=dumb detection" (fun () ->
         let saved = try Sys.getenv "TERM" with Not_found -> "" in

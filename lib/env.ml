@@ -46,14 +46,18 @@ let is_flagged name =
 
 let inside_dune () = is_flagged "INSIDE_DUNE"
 let is_tty_stdout () = Unix.isatty Unix.stdout
-let is_tty_stderr () = Unix.isatty Unix.stderr
 
 (* TERM=dumb is the near-universal "no escape sequences" convention (git,
    cargo, Emacs M-x shell); the exact spelling, like git's check. *)
 let term_dumb () =
   match get_raw "TERM" with Some "dumb" -> true | Some _ | None -> false
 
-(* CI detection *)
+(* CI detection
+
+   The three-way value is not exported: no caller wants to tell [Other_ci]
+   from [Github_actions] except through the two predicates below, and
+   deriving both from one classification is what keeps a GITHUB_ACTIONS
+   without a CI from counting as GitHub Actions. *)
 
 type ci = Not_ci | Github_actions | Other_ci
 
@@ -78,19 +82,14 @@ let color_mode () =
       | _ -> Auto)
   | None -> Auto
 
+(* Pure, and the only colour decision this module makes: a caller names
+   the sink by passing its terminal status, so nothing here sniffs the
+   environment on a renderer's behalf. *)
 let resolve_color mode ~tty ~inside_dune ~term_dumb =
   match mode with
   | Always -> true
   | Never -> false
   | Auto -> (tty || inside_dune) && not term_dumb
-
-let use_color_stdout () =
-  resolve_color (color_mode ()) ~tty:(is_tty_stdout ())
-    ~inside_dune:(inside_dune ()) ~term_dumb:(term_dumb ())
-
-let use_color_stderr () =
-  resolve_color (color_mode ()) ~tty:(is_tty_stderr ())
-    ~inside_dune:(inside_dune ()) ~term_dumb:(term_dumb ())
 
 (* Settings with no command-line flag
 
