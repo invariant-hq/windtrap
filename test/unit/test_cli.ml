@@ -481,6 +481,24 @@ let () =
   clear_env ()
 
 let () =
+  reg "WINDTRAP_MAX_DISCARD" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_MAX_DISCARD" "500";
+  check "WINDTRAP_MAX_DISCARD"
+    ((resolve Cli.empty).Run.max_discard = Some 500);
+  (* Zero is a meaningful budget — "tolerate no discards" — so this knob
+     is non-negative where --prop-count and --max-shrink are positive. *)
+  Unix.putenv "WINDTRAP_MAX_DISCARD" "0";
+  check "a zero budget is accepted" ((resolve Cli.empty).Run.max_discard = Some 0);
+  Unix.putenv "WINDTRAP_MAX_DISCARD" "-1";
+  (match Cli.resolve Cli.empty with
+  | Ok _ -> check "a negative budget is rejected" false
+  | Error e ->
+      check "the error names the variable"
+        (contains "WINDTRAP_MAX_DISCARD" (Cli.error_message e)));
+  clear_env ()
+
+let () =
   reg "the new mirrors lose to their flags" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_BAIL" "3";

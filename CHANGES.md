@@ -17,6 +17,13 @@ rendered output, serialized documents and logs diff line by line. Equality is
 unchanged, byte for byte: trailing whitespace and a missing final newline
 still fail, and the diff marks them.
 
+**`~max_discard`, `--max-discard`, `WINDTRAP_MAX_DISCARD`.** The property
+engine has always had a discard budget — twice the effective case count — but
+nothing exposed it, while `--max-shrink` sat right beside it in the CLI. A law
+with a genuinely rare precondition had no way to buy more attempts, and the
+only signal was the give-up failure quoting a budget you could not change. The
+declaration site wins over the flag, as `~count` does.
+
 **`WINDTRAP_JUNIT`, `WINDTRAP_BAIL`, `WINDTRAP_FAILED`, `WINDTRAP_OUTPUT`.**
 Under `dune runtest` the environment mirrors *are* the CLI, and these four
 flags had none — so `--junit`, which the CI guide recommends, could not be

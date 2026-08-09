@@ -144,6 +144,7 @@ automatic GitHub Actions annotations on failures.
       --seed TOKEN         Root seed for property tests (s1:<16 hex>)
       --prop-count N       Generated cases per property
       --max-shrink N       Accepted shrink steps per failing property
+      --max-discard N      Discarded cases tolerated per property (default 2x the count)
   -u, --update             Accept snapshot changes (refused under CI)
       --prune              Delete orphaned baselines after a full, clean update run
   -s, --stream             Stream test output instead of capturing it

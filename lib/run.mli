@@ -70,6 +70,7 @@ type config = {
           finite and non-negative, validated by the CLI layer. *)
   prop_count : int option;  (** [--prop-count]: generated cases per property. *)
   max_shrink : int option;
+  max_discard : int option;
       (** [--max-shrink]: accepted shrink steps per failing property. The
           engine's default is 100; a search that spends the budget reports so,
           because a truncated search and a converged one otherwise read alike.

@@ -126,6 +126,7 @@ val prop :
   ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
+  ?max_discard:int ->
   ?examples:'a list ->
   string ->
   'a Gen.t ->

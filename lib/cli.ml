@@ -27,6 +27,7 @@ type parsed = {
   slow_threshold : float option;
   prop_count : int option;
   max_shrink : int option;
+  max_discard : int option;
   output : [ `Quiet | `Verbose ] option;
   junit : string option;
   color : Env.color_mode option;
@@ -55,6 +56,7 @@ let empty =
     slow_threshold = None;
     prop_count = None;
     max_shrink = None;
+    max_discard = None;
     output = None;
     junit = None;
     color = None;
@@ -143,6 +145,19 @@ let set_positive_int store =
           match int_of_string_opt value with
           | Some n when n > 0 -> Ok (store acc n)
           | _ -> invalid ~source ~value ~expected:"a positive integer");
+    }
+
+(* A discard budget of [0] is meaningful — "tolerate no discards at all" —
+   so this knob is non-negative where the others are positive. *)
+let set_non_negative_int store =
+  Value
+    {
+      metavar = "N";
+      set =
+        (fun ~source acc value ->
+          match int_of_string_opt value with
+          | Some n when n >= 0 -> Ok (store acc n)
+          | _ -> invalid ~source ~value ~expected:"a non-negative integer");
     }
 
 let seed_expected = "an s1: token with 16 lowercase hexadecimal digits"
@@ -341,6 +356,14 @@ let table =
       doc = "Accepted shrink steps per failing property";
       mirror =
         mirrored "WINDTRAP_MAX_SHRINK" trimmed (fun p -> p.max_shrink = None);
+    };
+    {
+      short = None;
+      long = "--max-discard";
+      arg = set_non_negative_int (fun acc n -> { acc with max_discard = Some n });
+      doc = "Discarded cases tolerated per property (default 2x the count)";
+      mirror =
+        mirrored "WINDTRAP_MAX_DISCARD" trimmed (fun p -> p.max_discard = None);
     };
     {
       short = Some "-u";
@@ -641,6 +664,14 @@ let resolve ?(overrides = empty) cli =
     positive_int ~flag:"--max-shrink"
       (first_some overrides.max_shrink below.max_shrink)
   in
+  let* max_discard =
+    (* Non-negative, not positive: zero is a coherent budget — "tolerate no
+       discards" — and the engine already accepted it. *)
+    checked ~flag:"--max-discard"
+      ~valid:(fun n -> n >= 0)
+      ~render:string_of_int ~expected:"a non-negative integer"
+      (first_some overrides.max_discard below.max_discard)
+  in
   let* bail =
     positive_int ~flag:"--bail" (first_some overrides.bail below.bail)
   in
@@ -686,6 +717,7 @@ let resolve ?(overrides = empty) cli =
         Option.value slow_threshold ~default:defaults.Run.slow_threshold;
       prop_count;
       max_shrink;
+      max_discard;
       junit = first_some overrides.junit below.junit;
       color =
         Option.value

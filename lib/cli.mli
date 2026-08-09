@@ -79,6 +79,7 @@ type parsed = {
   prop_count : int option;
       (** [--prop-count N]: generated cases per property; must be positive. *)
   max_shrink : int option;
+  max_discard : int option;
       (** [--max-shrink N]: accepted shrink steps per failing property; must be
           positive. *)
   output : [ `Quiet | `Verbose ] option;

@@ -23,6 +23,7 @@ type config = {
   slow_threshold : float;
   prop_count : int option;
   max_shrink : int option;
+  max_discard : int option;
   junit : string option;
   color : Env.color_mode;
   columns : int option;
@@ -50,6 +51,7 @@ let default_config () =
     slow_threshold = 1.0;
     prop_count = None;
     max_shrink = None;
+    max_discard = None;
     junit = None;
     color = Env.Auto;
     columns = None;

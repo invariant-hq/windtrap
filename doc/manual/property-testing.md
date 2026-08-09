@@ -162,6 +162,19 @@ structural — nonempty lists, sorted input — constrain the generator
 instead (`Gen.such_that`, or a generator correct by construction).
 `reject ()` discards unconditionally.
 
+The budget is twice the effective `~count`, and `~max_discard` raises
+it where a precondition is genuinely rare:
+
+```ocaml
+prop ~count:500 ~max_discard:1500 "…" gen law
+```
+
+`--max-discard N` (`WINDTRAP_MAX_DISCARD`) sets it for a whole run;
+the declaration site wins, as with `~count`. Giving up is a failure,
+not a silent pass on however few cases got through — so a budget that
+is too small shows up red rather than as a property that quietly
+tested nothing.
+
 ## Is the generator testing anything? `collect`, `classify`, `cover`
 
 A property that never fails may just never reach the interesting

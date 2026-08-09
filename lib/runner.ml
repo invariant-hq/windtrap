@@ -55,7 +55,7 @@ let install_exit_guard () =
    to user code — the raise happens after the user's law returned. *)
 exception Prop_outcome of Property.outcome
 
-let prop ?pos ?tags ?timeout ?count ?examples name gen law =
+let prop ?pos ?tags ?timeout ?count ?max_discard ?examples name gen law =
   let loc = Loc.resolve ?pos () in
   let body () =
     let frame = Run.current_frame () in
@@ -71,7 +71,13 @@ let prop ?pos ?tags ?timeout ?count ?examples name gen law =
     in
     let path = Test_tree.path_to_string (Run.path frame) in
     let outcome =
-      Property.run ?loc ?count ?max_shrink:config.Run.max_shrink ?examples
+      (* Declaration site wins over the run's knob, as [count] does: a
+         property that needs a wider budget says so where it is written. *)
+      let max_discard =
+        match max_discard with Some _ -> max_discard | None -> config.Run.max_discard
+      in
+      Property.run ?loc ?count ?max_shrink:config.Run.max_shrink ?max_discard
+        ?examples
         ~root:config.Run.seed ~path gen (fun context value ->
           Run.with_prop_context frame context (fun () -> law value))
     in
