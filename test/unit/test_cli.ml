@@ -727,6 +727,64 @@ let () =
        { Cli.empty with Cli.output = Some `Verbose }
     = `Quiet)
 
+(* Resolution: the one call both drivers make *)
+
+let settings ?overrides parsed =
+  match Cli.settings ?overrides parsed with
+  | Ok settings -> settings
+  | Error error ->
+      check "settings succeeds" false;
+      Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
+      {
+        Cli.config = Run.default_config ();
+        coverage_mode = `Summary;
+        output_level = `Compact;
+      }
+
+let () =
+  reg "settings resolves the three layers in one call" @@ fun () ->
+  clear_env ();
+  (* A pinned seed keeps the two configurations comparable: an absent one
+     is drawn fresh on every [resolve]. *)
+  Unix.putenv "WINDTRAP_SEED" "s1:0123456789abcdef";
+  let cli = { Cli.empty with Cli.filter = Some "geo" } in
+  let s = settings cli in
+  check "the config field is [resolve]'s" (s.Cli.config = resolve cli);
+  check "the coverage field defaults to summary" (s.Cli.coverage_mode = `Summary);
+  check "the level field defaults to compact" (s.Cli.output_level = `Compact);
+  Unix.putenv "WINDTRAP_COVERAGE" "report";
+  Unix.putenv "WINDTRAP_QUIET" "1";
+  let s = settings Cli.empty in
+  check "WINDTRAP_COVERAGE reaches the coverage field"
+    (s.Cli.coverage_mode = `Report);
+  check "WINDTRAP_QUIET reaches the level field" (s.Cli.output_level = `Quiet);
+  let s =
+    settings
+      ~overrides:
+        { Cli.empty with Cli.output = Some `Verbose; Cli.quick = Some true }
+      Cli.empty
+  in
+  check "overrides reach the config field" s.Cli.config.Run.quick;
+  check "overrides reach the level field" (s.Cli.output_level = `Verbose);
+  clear_env ()
+
+let () =
+  reg "settings reports the configuration error" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_COVERAGE" "sideways";
+  (match Cli.settings Cli.empty with
+  | Error (Cli.Invalid_value { source = "WINDTRAP_COVERAGE"; _ }) ->
+      check "a malformed coverage mirror is an error" true
+  | Ok _ | Error _ -> check "a malformed coverage mirror is an error" false);
+  clear_env ();
+  Unix.putenv "WINDTRAP_SEED" "garbage";
+  (match Cli.settings Cli.empty with
+  | Error (Cli.Invalid_value { source = "WINDTRAP_SEED"; _ }) ->
+      check "a malformed seed mirror is an error naming the variable" true
+  | Ok _ | Error _ ->
+      check "a malformed seed mirror is an error naming the variable" false);
+  clear_env ()
+
 (* Resolution: --slow-threshold and WINDTRAP_SLOW_THRESHOLD *)
 
 let () =

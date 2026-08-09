@@ -831,6 +831,26 @@ let coverage_mode (cli : parsed) =
   let* below = layers ~overrides:empty cli in
   Ok (Option.value below.coverage ~default:`Summary)
 
+(* One invocation, one resolution call. Both drivers want all three
+   answers and neither wants three error paths to reach them, so the three
+   resolvers compose here — in the order the drivers used to spell out,
+   which is load-bearing: [resolve] is the layer that draws a fresh root
+   seed and the layer whose error the caller is meant to report, so when
+   the environment layer is malformed the reported error stays the
+   configuration's. The three stay separate values in the result:
+   coverage and verbosity are rendering decisions, and folding either
+   into [Run.config] would let a display choice reach the runner. *)
+type settings = {
+  config : Run.config;
+  coverage_mode : [ `Summary | `Report | `Full | `Off ];
+  output_level : [ `Quiet | `Compact | `Verbose ];
+}
+
+let settings ?(overrides = empty) cli =
+  let* config = resolve ~overrides cli in
+  let* coverage_mode = coverage_mode cli in
+  Ok { config; coverage_mode; output_level = output_level ~overrides cli }
+
 (* Help *)
 
 let usage ~prog =

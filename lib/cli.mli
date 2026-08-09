@@ -6,12 +6,14 @@
 (** Command-line and environment resolution into the run configuration.
 
     One declarative flag table drives everything here: {!parse} reads an
-    argument vector into a {!type:parsed} record of raw flag values, {!resolve}
+    argument vector into a {!type:parsed} record of raw flag values, {!settings}
     merges programmatic overrides, parsed flags, and the [WINDTRAP_*]
-    environment mirrors into a {!Run.config} with the precedence
-    {e programmatic > CLI > env > default} (under [dune runtest] the environment
-    mirrors {e are} the CLI), and {!help} renders the flag and variable
-    inventory.
+    environment mirrors into a {!Run.config} and the two rendering decisions
+    kept out of it — with the precedence {e programmatic > CLI > env > default}
+    (under [dune runtest] the environment mirrors {e are} the CLI) — and {!help}
+    renders the flag and variable inventory. {!settings} is the one call a
+    driver makes; {!resolve}, {!coverage_mode} and {!output_level} are its
+    layers, documented and testable on their own.
 
     A flag's mirror is declared in that table beside the flag, and its value is
     applied through the flag's own parser, so the two cannot drift: a variable
@@ -209,6 +211,33 @@ val output_level :
     other mirror — which stops the shared environment layer short — leaves the
     level at what the layers above the environment say, the caller's {!resolve}
     having reported that error already. *)
+
+type settings = {
+  config : Run.config;  (** The run configuration ({!resolve}). *)
+  coverage_mode : [ `Summary | `Report | `Full | `Off ];
+      (** The coverage rendering mode ({!coverage_mode}). *)
+  output_level : [ `Quiet | `Compact | `Verbose ];
+      (** The terminal verbosity level ({!output_level}). *)
+}
+(** The type for everything one invocation resolves to. Three fields, not one
+    configuration: the two rendering decisions stay {e out} of {!Run.config},
+    because neither can change outcomes or exit codes and nothing in the runner
+    may read them. *)
+
+val settings : ?overrides:parsed -> parsed -> (settings, error) result
+(** [settings ~overrides cli] is {!resolve}, {!coverage_mode} and
+    {!output_level} in one call — what a driver needs from one invocation, with
+    one error to render instead of three. Resolution runs in that order, so a
+    malformed environment layer is reported as {!resolve} reports it (the caller
+    prints that error and exits [2]), and the fresh root seed {!resolve} may
+    draw is drawn exactly once.
+
+    [overrides] is the programmatic layer {!resolve} and {!output_level} take
+    (defaults to {!empty}); the coverage mode has no programmatic layer and
+    comes from [cli] and [WINDTRAP_COVERAGE] alone.
+
+    Effects: the union of the three — reads the environment, and draws a fresh
+    root seed when no layer provides one. *)
 
 (** {1:help Help} *)
 

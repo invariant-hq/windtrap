@@ -1157,12 +1157,12 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
 (* The thin inline driver: composed from Driver's shared producers — one
    behavior, both runners (ppx/F-4). The inline protocol has no CLI, so the
    WINDTRAP_* mirrors are the CLI: WINDTRAP_QUIET/WINDTRAP_VERBOSE pick the
-   verbosity level and WINDTRAP_COVERAGE the coverage mode (resolved in
-   [exit], beside the config). What is legitimately this runner's own stays
-   visible here: the [`Mirrors] hint context, the seedless header, and the
-   returned exit code that [exit] combines with the correction protocol. *)
-let run_inline_suite ~suite ~config ~coverage_mode tests =
-  let output = Cli.output_level Cli.empty in
+   verbosity level and WINDTRAP_COVERAGE the coverage mode (both resolved in
+   [exit], beside the config, by the one [Cli.settings] call). What is
+   legitimately this runner's own stays visible here: the [`Mirrors] hint
+   context, the seedless header, and the returned exit code that [exit]
+   combines with the correction protocol. *)
+let run_inline_suite ~suite ~config ~coverage_mode ~output tests =
   let github = Env.in_github_actions () in
   let renderer = Driver.renderer ~config ~mode:output ~invocation:`Mirrors () in
   let on_event = Driver.observe renderer ~seed:None ~selection:None in
@@ -1210,20 +1210,17 @@ let exit () =
   let tests = collect () in
   if tests = [] then Stdlib.exit 0;
   let suite = Option.value ~default:"inline tests" !state.current_lib in
-  match Cli.resolve Cli.empty with
+  (* The WINDTRAP_* mirrors, resolved in the one call the library runner
+     makes (minus the flags the inline protocol lacks): an invalid value in
+     any of them is a refusal, never a silently defaulted run. *)
+  match Cli.settings Cli.empty with
   | Error error ->
       prerr_endline (Cli.error_message error);
       Stdlib.exit 2
-  | Ok config -> (
-      (* The WINDTRAP_COVERAGE mirror, resolved like the library runner
-         resolves it (minus the flag the inline protocol lacks): an invalid
-         value is a refusal, never silently ignored. *)
-      match Cli.coverage_mode Cli.empty with
-      | Error error ->
-          prerr_endline (Cli.error_message error);
-          Stdlib.exit 2
-      | Ok coverage_mode ->
-          Stdlib.exit (run_inline_suite ~suite ~config ~coverage_mode tests))
+  | Ok { Cli.config; coverage_mode; output_level } ->
+      Stdlib.exit
+        (run_inline_suite ~suite ~config ~coverage_mode ~output:output_level
+           tests)
 
 (* Test seams *)
 

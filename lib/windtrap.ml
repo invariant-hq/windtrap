@@ -341,7 +341,7 @@ let run ?(argv = Sys.argv) suite tests =
   | Error error ->
       print_cli_error ~prog error;
       exit 2
-  | Ok parsed ->
+  | Ok parsed -> (
       if parsed.Cli.help then begin
         print_string (Cli.help ~prog);
         exit 0
@@ -350,19 +350,10 @@ let run ?(argv = Sys.argv) suite tests =
         Printf.printf "windtrap %s\n" version;
         exit 0
       end;
-      let config =
-        match Cli.resolve parsed with
-        | Ok config -> config
-        | Error error ->
-            print_cli_error ~prog error;
-            exit 2
-      in
-      let coverage_mode =
-        match Cli.coverage_mode parsed with
-        | Ok mode -> mode
-        | Error error ->
-            print_cli_error ~prog error;
-            exit 2
-      in
-      let output = Cli.output_level parsed in
-      run_suite ~argv ~suite ~config ~coverage_mode ~output tests
+      match Cli.settings parsed with
+      | Error error ->
+          print_cli_error ~prog error;
+          exit 2
+      | Ok { Cli.config; coverage_mode; output_level } ->
+          run_suite ~argv ~suite ~config ~coverage_mode ~output:output_level
+            tests)
