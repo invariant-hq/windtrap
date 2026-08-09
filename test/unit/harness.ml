@@ -78,7 +78,10 @@ let check_contains name ~sub haystack =
 (* Environment hygiene
 
    Empty means unset for every windtrap variable (Env's contract): the
-   suites' scripted runs must not inherit ambient configuration. *)
+   suites' scripted runs must not inherit ambient configuration. The list
+   must name every variable the runner reads — one missing entry is one
+   setting the suites silently take from whoever is running them, so keep
+   it against the ENVIRONMENT section of `--help`. *)
 
 let windtrap_vars =
   [
@@ -92,6 +95,8 @@ let windtrap_vars =
     "WINDTRAP_SEED";
     "WINDTRAP_TIMEOUT";
     "WINDTRAP_PROP_COUNT";
+    "WINDTRAP_MAX_SHRINK";
+    "WINDTRAP_COVERAGE";
     "WINDTRAP_STREAM";
     "WINDTRAP_UPDATE";
     "WINDTRAP_PRUNE";
