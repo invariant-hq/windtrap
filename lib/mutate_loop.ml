@@ -767,6 +767,27 @@ let run_children ~armed ~expired ~scratch ~config ~suite ~reach ~ordered tests =
 
 (* The report *)
 
+(* Whether the run's selection narrows the suite: a path or tag
+   selection, a shard, a [--failed] rerun, or an in-source focus (the
+   runner's own finding, so the two cannot disagree about what focus
+   means). A narrowed run's verdicts are relative to its selection — a
+   mutant only deselected tests reach records Unreached, a survivor
+   survived only the selection — and the file format carries no
+   partial-run marking, so a written file would stand in the project
+   merge as this executable's whole answer until the next full run.
+   WINDTRAP_MUTATE_ONLY is deliberately not here: the scope narrows which
+   mutants exist, not which tests judge them, so an ONLY-scoped run's
+   records are project-true for this executable, merely narrower. *)
+let narrows_suite ~(config : Run.config) ~focus =
+  config.Run.filter <> None
+  || config.Run.exclude <> None
+  || config.Run.tags <> []
+  || config.Run.exclude_tags <> []
+  || config.Run.quick
+  || config.Run.shard <> None
+  || config.Run.failed_only
+  || focus
+
 let write_verdicts verdicts =
   let exe = Sys.executable_name in
   let path = M.output_file ~exe in
@@ -840,12 +861,27 @@ let loop renderer spine ~(config : Run.config) ~limit tests =
         refuse
           "the dry run is red. Mutation scores a passing suite; a score over a \
            failing one is not a score"
-      else if Lazy.force catalogue = [] then
-        refuse
-          "this executable links no instrumented module, so there is nothing \
-           to mutate. Build it with --instrument-with ppx_windtrap.mutate, or \
-           add an (instrumentation (backend ppx_windtrap.mutate)) stanza to \
-           the library under test"
+      else if Lazy.force catalogue = [] then (
+        (* The runtime applies the scope at registration, so a value
+           matching nothing leaves the same empty catalogue a missing
+           backend does — a refusal blaming instrumentation would send the
+           reader to rebuild a build that is fine. The runtime read the
+           variable itself, at module load; [Env] reads the same process's
+           environment, so its answer is the value registration saw. *)
+        match Env.mutate_only () with
+        | [] ->
+            refuse
+              "this executable links no instrumented module, so there is \
+               nothing to mutate. Build it with --instrument-with \
+               ppx_windtrap.mutate, or add an (instrumentation (backend \
+               ppx_windtrap.mutate)) stanza to the library under test"
+        | prefixes ->
+            refuse
+              "%s=%s left no mutants in this executable's catalogue — the \
+               prefix matches no instrumented file, or the matched files have \
+               no mutation sites"
+              M.scope_variable
+              (String.concat "," prefixes))
       else
         let population =
           List.filter
@@ -899,6 +935,9 @@ let loop renderer spine ~(config : Run.config) ~limit tests =
              generous is the right side to err on for a guard whose job
              is catching a hang rather than pacing the loop. *)
           let per_child = Float.max 0.01 (Unix.gettimeofday () -. started) in
+          let narrowed =
+            narrows_suite ~config ~focus:outcome.Runner.focus_active
+          in
           let outcome =
             with_deadline
               (Float.max 60.
@@ -927,10 +966,17 @@ let loop renderer spine ~(config : Run.config) ~limit tests =
                     M.add acc (M.record_of_mutant m M.Unreached))
                   reported unreached
               in
-              let path = write_verdicts verdicts in
+              (* A narrowed run's verdicts are never persisted — and the
+                 previous file is left alone, never deleted: the run says
+                 so instead, after the report it still prints in full. *)
+              let path =
+                if narrowed then M.output_file ~exe:Sys.executable_name
+                else write_verdicts verdicts
+              in
               print_report renderer ~limit ~population ~unreached ~verdicts
                 ~duration:(Unix.gettimeofday () -. started)
                 ~seed:config.Run.seed ~siblings:(has_siblings path) tests;
+              if narrowed then Render.mutation_not_saved renderer;
               flush_descriptors ();
               Reported 0)
 
@@ -1002,13 +1048,26 @@ let arm_mode renderer spine ~(config : Run.config) tests =
         ~id:(M.id_to_string mutant.M.id)
         ~before:mutant.M.before ~after:mutant.M.after;
       flush_descriptors ();
+      (* After arming, so the closing line counts the run's own
+         evaluations and not module initialization's — that window ran
+         before the arming and evaluated nothing mutated. *)
+      M.reset_reach ();
       let result = drive spine ~config tests in
       (* [killed_by], not [exit_code <> 0]: a filter that matched nothing
          exits 2, and announcing [mutant killed.] there would report a
-         selection mistake as a detected behaviour change (Law 16c). *)
+         selection mistake as a detected behaviour change (Law 16c). A
+         completed run that killed nothing gets the other half of the
+         verdict: green alone cannot tell "the tests prove nothing about
+         this site" from "no selected test ran the line", so the closing
+         line says which — except on exit 2, where the run made no claim
+         about the mutant at all. *)
       (match result with
       | Ok (outcome, _) when killed_by outcome ->
           Render.mutation_killed renderer
+      | Ok (outcome, _) when outcome.Runner.exit_code <> 2 -> (
+          match M.armed_hits () with
+          | 0 -> Render.mutation_not_evaluated renderer
+          | hits -> Render.mutation_survived renderer ~hits)
       | Ok _ | Error _ -> ());
       flush_descriptors ();
       Ran result

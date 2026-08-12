@@ -418,9 +418,32 @@ val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 val mutation_killed : t -> unit
 (** [mutation_killed t] prints [mutant killed.] — the line that closes the
     arm-and-watch loop, printed after the transcript of a run whose armed mutant
-    made a test fail. Nothing is printed for an armed mutant that survived: the
-    transcript's own green summary already says so. Prints in every mode, as
-    {!mutation_armed} does. *)
+    made a test fail. Prints in every mode, as {!mutation_armed} does. *)
+
+val mutation_survived : t -> hits:int -> unit
+(** [mutation_survived t ~hits] prints
+    [mutant survived: the armed site was evaluated 3 time(s) and no test
+     failed.] — the closing line of an armed run that completed green with the
+    site evaluated [hits] times. Its counterpart {!mutation_not_evaluated} is
+    what makes it a claim: without the pair, "the tests prove nothing" and "the
+    tests never ran the line" would both be a silent green transcript. Prints in
+    every mode, as {!mutation_armed} does. *)
+
+val mutation_not_evaluated : t -> unit
+(** [mutation_not_evaluated t] prints
+    [mutant not evaluated: no selected test ran the site.] — the closing line of
+    an armed run that completed without evaluating the armed site: the run says
+    nothing about the mutant, and the reader's fix is the selection, not the
+    tests. Prints in every mode, as {!mutation_armed} does. *)
+
+val mutation_not_saved : t -> unit
+(** [mutation_not_saved t] prints
+    [verdicts not saved: this run's selection narrows the suite, …] — the line a
+    mutation run whose selection narrowed the suite prints in place of writing
+    its verdict file: the file carries no partial-run marking, so a narrowed
+    run's selection-relative verdicts would stand in the project merge as the
+    executable's whole answer. Prints in every mode: it qualifies what the run
+    just did not persist. *)
 
 type witness = {
   test : string;

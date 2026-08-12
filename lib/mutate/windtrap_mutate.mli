@@ -325,6 +325,15 @@ val armed : unit -> mutant option
 (** [armed ()] is the currently armed mutant, [None] when none is. A process
     whose [armed ()] is [None] is observationally the original program. *)
 
+val armed_hits : unit -> int
+(** [armed_hits ()] is how many times the armed site has been evaluated since
+    the last {!reset_reach} — the same count {!arm}'s [budget] caps, summed over
+    every module registering the site's file — and [0] when nothing is armed. It
+    is what lets a run that armed a mutant and stayed green tell "the tests
+    prove nothing about this site" from "no test ran it": a caller wanting the
+    run's own count calls {!reset_reach} after arming, as the loop's children
+    do. *)
+
 exception Runaway of { id : id; hits : int; budget : int }
 (** Raised by the guard when the armed site [id] has been evaluated [hits] times
     since the last {!reset_reach} and [hits > budget]. It escapes into the

@@ -404,6 +404,15 @@ let disarm () =
 
 let armed () = !armed_mutant
 
+(* The guard counts hits whether or not it answers [true], so the armed
+   site's count is on the same arrays the reach map reads. Summed over the
+   slots because the same source compiled into two modules arms together,
+   and each copy counts its own evaluations. *)
+let armed_hits () =
+  List.fold_left
+    (fun acc (entry, i) -> saturating_add acc entry.reach.(i))
+    0 !armed_slots
+
 let arm ?budget selector =
   (match budget with
   | Some n when n <= 0 ->

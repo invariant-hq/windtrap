@@ -247,7 +247,15 @@ let discovery_tests =
             [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=::no-such-source::" ]
         in
         equal ~msg:"asking it to mutate exits 1" int 1 code;
-        says ~msg:"declines by name" err'
+        (* The build is instrumented and fine; the scope is what emptied
+           the catalogue, so the refusal must name it — blaming
+           instrumentation would send the reader to rebuild. *)
+        says ~msg:"declines by naming the scope, value included" err'
+          "WINDTRAP_MUTATE_ONLY=::no-such-source:: left no mutants";
+        says ~msg:"and both causes an empty scoped catalogue has" err'
+          "matches no instrumented file, or the matched files have no \
+           mutation sites";
+        denies ~msg:"never the missing-backend diagnosis" err'
           "links no instrumented module";
         denies ~msg:"nothing on stderr for the unarmed run" err "mutants:");
     test "a scope that matches keeps the whole fixture catalogue" (fun () ->
@@ -409,7 +417,11 @@ let reach_tests =
         says ~msg:"the dry run's five tests" out "calc: 5 passed";
         says ~msg:"and the loop scored them" out "mutants: 1 survived of 4";
         says ~msg:"over the same witnesses as the untagged suite" out
-          "2 tests ran this line and none failed when it changed:");
+          "2 tests ran this line and none failed when it changed:";
+        (* A tag selection is a selection: the run is not the suite's
+           default predicate, so its verdicts stay in the process. *)
+        says ~msg:"and a tag-selected run persists nothing" out
+          "verdicts not saved");
   ]
 
 (* Law 16(e): a mutation child leaves through [Unix._exit] and nothing
@@ -497,6 +509,43 @@ let verdict_file_tests =
             says ~msg:"the survivor names its witnesses"
               (snd (List.hd survived))
               "widen > widen is nonzero");
+    test "a narrowed run reports in full but persists nothing" (fun () ->
+        (try Sys.remove verdict_path with Sys_error _ -> ());
+        let code, out, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
+        equal ~msg:"the full run's exit code" int 0 code;
+        denies ~msg:"a full run saves without comment" out "verdicts not saved";
+        let saved = read_file verdict_path in
+        is_true ~msg:"and wrote the file" (saved <> "");
+        (* The selection reaches only [sub], whose mutant dies, so the
+           loop completes — and its verdicts call [widen] unreached, which
+           is exactly the selection-relative record that must not
+           overwrite the full run's survivor. The harness's default
+           WINDTRAP_MUTATE_ONLY scope is in force here too, so this is
+           also the combined case: a filter skips the write even where
+           the scope alone would still save. *)
+        let code, out, err =
+          spawn ~args:[ "-f"; "calc" ] [ "WINDTRAP_MUTATE=1" ]
+        in
+        equal ~msg:"the narrowed run still completes" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        says ~msg:"and still reports" out "mutants: 0 survived of 4";
+        says ~msg:"but says what it did not persist" out
+          "verdicts not saved: this run's selection narrows the suite, and a \
+           partial run's verdicts would stand in the project merge as the \
+           whole.";
+        equal ~msg:"the canonical file is byte-identical" text saved
+          (read_file verdict_path));
+    test "an ONLY-scoped run still writes: its records are project-true"
+      (fun () ->
+        (try Sys.remove verdict_path with Sys_error _ -> ());
+        let code, out, _ =
+          spawn
+            [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
+        in
+        equal ~msg:"exit code" int 0 code;
+        denies ~msg:"the scope narrows the mutants, not the tests" out
+          "verdicts not saved";
+        is_true ~msg:"so the file was written" (Sys.file_exists verdict_path));
     test
       "a verdict file beside this one's scopes the summary and names the merge"
       (fun () ->
@@ -645,21 +694,33 @@ let armed_tests =
           ("mutant " ^ mutant_named "add" ^ " armed: a - b \u{2192} a + b")
           first;
         says ~msg:"the failure block" out "FAIL";
-        says ~msg:"the closing line" out "mutant killed.");
+        says ~msg:"the closing line" out "mutant killed.";
+        denies ~msg:"a kill is the whole verdict" out "mutant survived";
+        denies ~msg:"and the site was plainly evaluated" out
+          "mutant not evaluated");
     test "an armed run whose selection matched nothing claims no kill"
       (fun () ->
         (* [mutant killed.] is a verdict, and a verdict is never an exit
            code (Law 16c): a filter that matched nothing exits 2, which
            says something about the filter and nothing about the
-           mutant. *)
+           mutant — so neither of the other closing lines may print
+           either. *)
         let code, out, _ =
           spawn ~args:[ "-f"; "no-such-test" ]
             [ M.arm_variable ^ "=" ^ mutant_named "add" ]
         in
         equal ~msg:"the runner's own 'nothing ran' code" int 2 code;
         says ~msg:"the mutant was still announced" out " armed: ";
-        denies ~msg:"but nothing died" out "mutant killed.");
-    test "an armed mutant that survives says so by staying quiet" (fun () ->
+        denies ~msg:"but nothing died" out "mutant killed.";
+        denies ~msg:"no survivor claim over a run that made none" out
+          "mutant survived";
+        denies ~msg:"and no not-evaluated claim either" out
+          "mutant not evaluated");
+    test "an armed mutant that survives says so, with the evaluation count"
+      (fun () ->
+        (* Both weak tests run the armed line once each, so the count is a
+           claim: a closing line that miscounted, or that printed on a
+           run that never evaluated the site, fails here. *)
         let code, out, _ =
           spawn
             [
@@ -670,7 +731,46 @@ let armed_tests =
         equal ~msg:"exit code" int 0 code;
         says ~msg:"the announcement" out "armed: a + b \u{2192} a - b";
         says ~msg:"the suite still passed" out "calc: 2 passed";
+        says ~msg:"the closing line disambiguates the green" out
+          "mutant survived: the armed site was evaluated 2 time(s) and no \
+           test failed.";
         denies ~msg:"nothing killed" out "mutant killed.");
+    test "an armed run whose selection never ran the site says so" (fun () ->
+        (* The other green: the suite passed and proved nothing, because
+           the selection deselected every test that reaches the line. The
+           two endings are what make an armed run's green readable at
+           all — without them this transcript and the survivor's are the
+           same bytes. *)
+        let code, out, _ =
+          spawn ~args:[ "-f"; "calc" ]
+            [ M.arm_variable ^ "=" ^ List.nth (Lazy.force catalogue) 1 ]
+        in
+        equal ~msg:"the selected tests passed" int 0 code;
+        says ~msg:"the mutant was announced" out "armed: a + b \u{2192} a - b";
+        says ~msg:"the closing line blames the selection" out
+          "mutant not evaluated: no selected test ran the site.";
+        denies ~msg:"no kill" out "mutant killed.";
+        denies ~msg:"and no survivor claim" out "mutant survived");
+    test "a site evaluated only before arming counts as not evaluated"
+      (fun () ->
+        (* [boundary]'s module initialization evaluates [orphan] before
+           anything is armed, so that window ran the ORIGINAL expression:
+           billing it to the run would print a survivor count over
+           evaluations the mutant never saw. The closing count starts at
+           the arming. *)
+        let code, out, _ =
+          spawn
+            [
+              "MUTATE_FIXTURE=boundary";
+              M.arm_variable ^ "=" ^ List.nth (Lazy.force catalogue) 2;
+            ]
+        in
+        equal ~msg:"the suite passed" int 0 code;
+        says ~msg:"the mutant was announced" out "armed: a + b \u{2192} a - b";
+        says ~msg:"and the module-load window is not billed to the run" out
+          "mutant not evaluated: no selected test ran the site.";
+        denies ~msg:"no survivor claim over an unarmed window" out
+          "mutant survived");
   ]
 
 (* Law 16(d), through the runner it exists for.
@@ -851,6 +951,11 @@ let cross_executable_tests =
           code;
         says ~msg:"the suite ran, ordinarily" out "spin: 1 passed";
         denies ~msg:"and armed nothing" out " armed: ";
+        (* The closing-line trio belongs to a run that armed a mutant; a
+           binary that declined made no claim a closing line could
+           report. *)
+        denies ~msg:"so no closing line judges the run" out "mutant not evaluated";
+        denies ~msg:"nor claims a survivor" out "mutant survived";
         says ~msg:"it says whose mutant it is not" err
           "not this executable's mutant";
         says ~msg:"naming the identifier it declined" err id;
@@ -899,11 +1004,19 @@ let uninstrumented_tests =
         says ~msg:"the ordinary summary" out "plain: 1 passed";
         denies ~msg:"and nothing else" out "mutants:");
     test "asking a build with no mutants to mutate declines by name" (fun () ->
-        let code, out, err = spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=1" ] in
+        (* An empty binding is unset to the runtime and to Env alike, so
+           this is the no-scope refusal — the harness's default scope
+           would otherwise turn it into the scoped one, whose message
+           blames the scope rather than the missing backend. *)
+        let code, out, err =
+          spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=" ]
+        in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the suite still ran" out "plain: 1 passed";
         says ~msg:"the diagnosis" err "links no instrumented module";
-        says ~msg:"the fix" err "--instrument-with ppx_windtrap.mutate");
+        says ~msg:"the fix" err "--instrument-with ppx_windtrap.mutate";
+        denies ~msg:"no scope was set, so none is blamed" err
+          "WINDTRAP_MUTATE_ONLY");
     test "an armed identifier declines by name and leaves the run alone"
       (fun () ->
         (* An uninstrumented executable is the commonest sibling of all:

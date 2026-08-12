@@ -1713,6 +1713,29 @@ let mutation_killed t =
   close_row t;
   put t (st t `Green "mutant killed.")
 
+let mutation_survived t ~hits =
+  clear_live t;
+  close_row t;
+  put t
+    (st t `Red
+       (spf
+          "mutant survived: the armed site was evaluated %d time(s) and no \
+           test failed."
+          hits))
+
+let mutation_not_evaluated t =
+  clear_live t;
+  close_row t;
+  put t (st t `Yellow "mutant not evaluated: no selected test ran the site.")
+
+let mutation_not_saved t =
+  clear_live t;
+  close_row t;
+  put t
+    (st t `Yellow
+       "verdicts not saved: this run's selection narrows the suite, and a \
+        partial run's verdicts would stand in the project merge as the whole.")
+
 let mutation_report t (m : mutation) =
   clear_live t;
   close_row t;

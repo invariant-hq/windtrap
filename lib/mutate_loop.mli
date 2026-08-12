@@ -34,8 +34,14 @@
       the backend never makes a test run longer than it was.
     - [WINDTRAP_MUTATE_ARM] set and naming a site {e this} executable
       catalogues: one mutant armed for the whole process, the announcement first
-      (Law 16b), read-only checking (Law 16d), and [mutant killed.] after a
-      transcript that failed.
+      (Law 16b), read-only checking (Law 16d), and one closing line after the
+      transcript — [mutant killed.] when a test failed, and otherwise
+      [mutant survived: …] or [mutant not evaluated: …] by whether the armed
+      site was evaluated, because a green transcript alone cannot tell "the
+      tests prove nothing about this site" from "no selected test ran the
+      line". A run that exited [2] gets no closing line: a selection that
+      matched nothing says something about the filter and nothing about the
+      mutant (Law 16c).
     - [WINDTRAP_MUTATE_ARM] set and naming a file this executable catalogues no
       site in ({!Windtrap_mutate.Uncatalogued}): the ordinary run, plus one line
       on [stderr] saying this binary holds no such mutant. It is {e not} a
@@ -77,7 +83,15 @@
       code cannot tell a killed mutant from a survivor.
     + {b Report.} One verdict file under [_build/_mutants] (so [windtrap mutate]
       can merge the several test executables that cover one library) and the
-      report through {!Render.mutation_report}.
+      report through {!Render.mutation_report}. A run whose selection narrows
+      the suite — a filter, an exclude, a tag selection, a shard, [--quick],
+      [--failed], or an in-source focus — still completes and reports, but
+      writes no verdict file and says so in one line: its verdicts are relative
+      to the selection, the file carries no partial-run marking, and a written
+      one would stand in the project merge as this executable's whole answer.
+      [WINDTRAP_MUTATE_ONLY] does not narrow: it changes which mutants exist,
+      not which tests judge them, so a scoped run's records are project-true for
+      this executable and still write.
 
     {b Not in this slice.} Per-mutant deadlines, process groups and
     [WINDTRAP_MUTATE_JOBS]: the deadline is one whole-loop [Unix.setitimer],
