@@ -184,12 +184,15 @@ val prop :
 
 (** The type for progress events, emitted in execution order. Renderers observe
     them to stream one line per test and to attribute a hanging fixture release;
-    they receive only data already decided — no observer can alter status,
-    counts, or scheduling. *)
+    they receive only data already decided — immutable projections (counts,
+    identities, recorded results), never the live run record — so no observer
+    can alter status, counts, or scheduling. The run handle belongs to whoever
+    owns the session: the driver reads it off the returned {!type:outcome},
+    never off an event. *)
 type event =
-  | Run_started of { run : Run.t; suite : string; total : int; selected : int }
+  | Run_started of { suite : string; total : int; selected : int }
       (** Startup checks passed; [selected] of the suite's [total] tests are
-          about to run under the (fresh, still result-less) record [run]. *)
+          about to run. *)
   | Test_started of { path : string list }
       (** The test at [path] is about to run its first attempt. *)
   | Test_finished of Run.result
@@ -305,3 +308,43 @@ val execute :
     only a hand-built configuration can trip this. If [on_event] raises, the run
     aborts with that exception — after a best-effort fixture release, like a
     fatal exception. *)
+
+(** {1:staged Staged execution}
+
+    {!execute}, in two halves: what a run decides before any test executes, as a
+    value, and the execution of that decision. The staged form exists for
+    callers that must hold the refusal/run fork open across their own work — the
+    mutation loop's forked children ({!Driver.plan}/{!Driver.execute}, the
+    exported seam) — and for nothing else: a driver that composed the halves
+    itself would be free to put something between them, which is the drift
+    {!Driver.execute_and_report} exists to close. *)
+
+type plan
+(** The type for planned runs: the startup checks passed and the selection is
+    made, but nothing has executed. A plan is made for immediate use — execute
+    it once, promptly, in the process and run-state it was planned in; it holds
+    the run's start time, so a shelved plan bills its shelf time to the run's
+    duration. *)
+
+val plan :
+  config:Run.config ->
+  suite:string ->
+  Test_tree.t list ->
+  (plan, startup_error) result
+(** [plan ~config ~suite tests] is {!execute}'s deciding half: the startup
+    checks (in their contractual order) and the selection over [tests], and
+    [Error error] on a refused run — exactly when {!execute} would refuse.
+
+    Effects: {!execute}'s process-wide preliminaries (the exit-guard
+    registration, [Printexc.record_backtrace true]) and the startup checks'
+    reads (the [CI] variable, the [--failed] store). Raises [Invalid_argument]
+    as {!execute} does — an active run, a malformed [config.shard]. *)
+
+val execute_plan : ?on_event:(event -> unit) -> plan -> outcome
+(** [execute_plan plan] is {!execute}'s running half: runs [plan]'s selection as
+    the module preamble describes and is the completed {!type:outcome} — the
+    refusals were [plan]'s, so none remain. [on_event] observes progress under
+    the same contract as {!execute}'s, a [config.list_only] plan executes
+    nothing, and the effects are {!execute}'s.
+
+    Raises [Invalid_argument] when a run is already active. *)

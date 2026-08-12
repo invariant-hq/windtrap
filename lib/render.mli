@@ -315,6 +315,37 @@ val finish :
     {!Failure.tail} attached to its failures: the retained lines (at most
     [tail_lines]), what was omitted, and the tail's [log_path]. *)
 
+(** {1:snapshots The snapshot/prune report} *)
+
+val report_snapshots :
+  t ->
+  orphans:string list ->
+  pruned:(string list, Snapshot.prune_refusal) result option ->
+  Run.t ->
+  unit
+(** [report_snapshots t ~orphans ~pruned run] prints the run's baseline
+    maintenance lines on [t]'s sink: one [wrote <path> (new|updated)] line per
+    accepted baseline ({!Snapshot.writes} over [run]'s registry, paths spelled
+    by {!Path_ops.display} — the one producer for both runners), then either the
+    [pruned <path>] lines of a granted [--prune], or the
+    [stale baseline: <path>] lines with the prune refusal's explanation, or the
+    stale-baseline lines with the removal hint spelled from [t]'s invocation
+    ({!stale_lines_with_hint} — the line class the [--strict-snapshots] failure
+    block shares). [orphans] and [pruned] are the outcome's baseline-maintenance
+    facts ([Runner.outcome]'s fields of the same names).
+
+    The stale-baseline lines are dropped when [run] carries the
+    {!Run.Stale_baselines} verdict row, which took the same lines into the
+    failure section — under [--strict-snapshots] they are the failure, and
+    naming the files twice in one transcript is noise. A prune refusal's
+    explanation still prints: it says why the deletion did not happen, which the
+    failure does not.
+
+    Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
+    summary. The driver calls it after {!finish}, when the transcript is
+    settled: lines go straight to the sink, outside the compact row and deferral
+    machinery. *)
+
 (** {1:excerpts Source excerpts}
 
     The one gutter renderer, shared by every subsystem that shows source: the
@@ -746,8 +777,9 @@ val stale_lines : string list -> string list
 (** [stale_lines orphans] is one [stale baseline: <path>] line per orphan, in
     order, paths spelled by {!Path_ops.display}. The one producer of the
     stale-baseline line class: the [--strict-snapshots] failure block renders
-    the {!Failure.Stale_baselines} payload with it, and {!Driver}'s advisory
-    snapshot report prints the same lines, so the two surfaces cannot drift. *)
+    the {!Failure.Stale_baselines} payload with it, and the advisory snapshot
+    report ({!report_snapshots}) prints the same lines, so the two surfaces
+    cannot drift. *)
 
 val stale_lines_with_hint :
   invocation:invocation -> string list -> string list

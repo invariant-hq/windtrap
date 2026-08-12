@@ -317,10 +317,19 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~render ~output tests =
      announced before any output, the discovery line follows the summary,
      and the loop forks after the dry run) and may take the process over. *)
   match
-    Mutate_loop.execute_and_report ~armed:Ppx_runtime.enter_armed ~invocation
-      ~seed
-      ~selection:(Driver.selection_description config)
-      ~github ~output ~coverage_mode ~render ~config ~suite tests
+    Mutate_loop.execute_and_report ~armed:Ppx_runtime.enter_armed
+      {
+        Driver.invocation;
+        seed;
+        selection = Driver.selection_description config;
+        github;
+        output;
+        coverage_mode;
+        render;
+        config;
+        suite;
+      }
+      tests
   with
   | Mutate_loop.Reported code -> exit code
   | Mutate_loop.Ran result -> (

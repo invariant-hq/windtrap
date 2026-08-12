@@ -1228,9 +1228,19 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
        entirely: dune's promotion protocol is not what a mutation run is
        for, and Law 16(d) has already stopped every correction it could
        have recorded. *)
-    Mutate_loop.execute_and_report ~armed:enter_armed ~invocation:`Mirrors
-      ~seed:None ~selection:None ~github:(Env.in_github_actions ()) ~output
-      ~coverage_mode ~render ~config ~suite tests
+    Mutate_loop.execute_and_report ~armed:enter_armed
+      {
+        Driver.invocation = `Mirrors;
+        seed = None;
+        selection = None;
+        github = Env.in_github_actions ();
+        output;
+        coverage_mode;
+        render;
+        config;
+        suite;
+      }
+      tests
   with
   | Mutate_loop.Reported code -> code
   | Mutate_loop.Ran result -> (

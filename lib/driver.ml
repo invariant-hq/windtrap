@@ -19,13 +19,25 @@
    producer per transcript line class and one order they run in
    ([execute_and_report], at the bottom), so the facade's [run] and the
    inline (ppx) runner cannot drift apart byte-wise. Differences between
-   the runners are parameters here or visible lines in the thin drivers —
+   the runners are spine fields or visible lines in the thin drivers —
    never forks of a producer, and never a second composition order. *)
 
-(* Path shown in [wrote]/[pruned]/hint lines: the shared [Path_ops.display]
-   spelling, so the line classes stay byte-equal to the manual's transcripts
-   across both runners. *)
-let display_path = Path_ops.display
+(* The spine record: everything [execute_and_report] consumes beyond the
+   tree — one value, so the four places that run a suite (the two thin
+   drivers, the mutation loop's dry run, its armed re-run) cannot drift in
+   what they pass. The runners' legitimate differences are field values,
+   decided at the thin drivers and visible there. *)
+type t = {
+  invocation : Render.invocation;
+  seed : Seed.seed option;
+  selection : string option;
+  github : bool;
+  output : [ `Quiet | `Compact | `Verbose ];
+  coverage_mode : [ `Summary | `Report | `Full | `Off ];
+  render : Render.settings;
+  config : Run.config;
+  suite : string;
+}
 
 (* Renderer construction *)
 
@@ -139,7 +151,7 @@ let write_junit ~invocation ~suite ~duration ~results target =
 (* The event observer *)
 
 let observe renderer ~seed ~selection = function
-  | Runner.Run_started { run = _; suite; total; selected } ->
+  | Runner.Run_started { suite; total; selected } ->
       Render.header renderer ~suite ~tests:selected ~declared:total ?selection
         ~seed ()
   | Runner.Test_started { path } -> Render.begin_test renderer ~path
@@ -162,69 +174,6 @@ let github_annotations ~github ~invocation results =
      demands action, and these did not fail the run — the transport
      classifies from the result records. *)
   if github then print_string (Render_github.annotations ~invocation results)
-
-(* The snapshot/prune report *)
-
-let explain_prune_refusal (refusal : Snapshot.prune_refusal) =
-  let blockers =
-    List.concat
-      [
-        (if refusal.Snapshot.not_update_run then
-           [ "the run was not an update run (-u / WINDTRAP_UPDATE=1)" ]
-         else []);
-        (if refusal.Snapshot.filtered then [ "a filter narrowed the run" ]
-         else []);
-        (if refusal.Snapshot.skipped > 0 then
-           [ Pp.str "%d selected test(s) skipped" refusal.Snapshot.skipped ]
-         else []);
-        (if refusal.Snapshot.failed > 0 then
-           [ Pp.str "%d selected test(s) failed" refusal.Snapshot.failed ]
-         else []);
-        (if refusal.Snapshot.focused > 0 then
-           [ Pp.str "%d test(s) are focused" refusal.Snapshot.focused ]
-         else []);
-      ]
-  in
-  "prune refused: " ^ String.concat "; " blockers
-
-(* Whether the runner recorded the [--strict-snapshots] verdict row: the
-   row is the verdict, so the advisory block below reads the recorded fact
-   instead of re-deriving the runner's decision from configuration. *)
-let stale_row_recorded (outcome : Runner.outcome) =
-  List.exists
-    (fun (r : Run.result) -> r.Run.subject = Run.Stale_baselines)
-    (Run.results outcome.Runner.run)
-
-let report_snapshots ~out ~output ~invocation (outcome : Runner.outcome) =
-  if output <> `Quiet then begin
-    let writes = Snapshot.writes (Run.snapshots outcome.Runner.run) in
-    List.iter
-      (fun (path, status) ->
-        let status =
-          match status with
-          | Snapshot.Created -> "new"
-          | Snapshot.Updated -> "updated"
-        in
-        Format.fprintf out "wrote %s (%s)@." (display_path path) status)
-      writes;
-    let put lines = List.iter (Format.fprintf out "%s@.") lines in
-    (* Under [--strict-snapshots] the same lines already rode into the
-       failure section on the stale-baselines row: naming the files twice,
-       ten lines apart, is noise, not emphasis. *)
-    let advisory =
-      if stale_row_recorded outcome then [] else outcome.Runner.orphans
-    in
-    match outcome.Runner.pruned with
-    | Some (Ok deleted) ->
-        put (List.map (fun p -> Pp.str "pruned %s" (display_path p)) deleted)
-    | Some (Error refusal) ->
-        put (Render.stale_lines advisory);
-        Format.fprintf out "%s@." (explain_prune_refusal refusal)
-    | None -> (
-        match advisory with
-        | [] -> ()
-        | orphans -> put (Render.stale_lines_with_hint ~invocation orphans))
-  end
 
 (* The coverage seam *)
 
@@ -303,6 +252,17 @@ let coverage_report renderer ~coverage_mode run collection =
       Render.coverage_report renderer ~source_roots ~mode collection
   | `Report | `Full | `Summary | `Off -> ()
 
+(* The staged internals *)
+
+(* Deciding and running, as two calls, for the one caller population that
+   needs the seam: a mutation child runs a session with no reporting —
+   stdout on /dev/null, the verdict on a pipe — and these two calls are
+   that session. Everything that reports goes through
+   [execute_and_report] below, which composes [Runner.execute] whole. *)
+
+let plan (t : t) tests = Runner.plan ~config:t.config ~suite:t.suite tests
+let execute ?on_event plan = Runner.execute_plan ?on_event plan
+
 (* The execute-and-report spine *)
 
 (* The producers above answer "who writes this line"; this answers "in
@@ -313,7 +273,7 @@ let coverage_report renderer ~coverage_mode run collection =
    suite, and project the run into every sink.
 
    What the callers keep is what genuinely differs. The two header
-   policies stay parameters, because the runners really do disagree:
+   policies stay spine fields, because the runners really do disagree:
    [seed] (the root seed iff the suite declares property tests, [None]
    inline) and [selection] (the description an empty run explains itself
    with, [None] inline — see the .mli). The [Error] arm prints the
@@ -323,9 +283,19 @@ let coverage_report renderer ~coverage_mode run collection =
    warning, .corrected flushing, the exit — is the caller's, and so are
    the invocation context, the GitHub gating decision, and the listing a
    [--list] run prints. *)
-let execute_and_report ?(on_event = fun (_ : Runner.event) -> ()) ~invocation
-    ~seed ~selection ~github ~output ~coverage_mode ~render ~config ~suite tests
-    =
+let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
+    ({
+       invocation;
+       seed;
+       selection;
+       github;
+       output;
+       coverage_mode;
+       render;
+       config;
+       suite;
+     } :
+      t) tests =
   let renderer = renderer ~render ~mode:output ~invocation () in
   (* [Runner.execute]'s [?on_event] has one slot and the transcript owns
      it. A second subscriber composes here rather than replacing it, in a
@@ -358,7 +328,8 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ()) ~invocation
         ?coverage:(coverage_summary ~coverage_mode outcome.Runner.run)
         ~results ~duration:outcome.Runner.duration ();
       coverage_report renderer ~coverage_mode outcome.Runner.run coverage_data;
-      report_snapshots ~out:Format.std_formatter ~output ~invocation outcome;
+      Render.report_snapshots renderer ~orphans:outcome.Runner.orphans
+        ~pruned:outcome.Runner.pruned outcome.Runner.run;
       github_end ~github;
       (* After [github_end], deliberately: an ::error:: block written
          inside the ::group:: envelope folds away with the transcript,

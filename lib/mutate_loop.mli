@@ -159,24 +159,16 @@ type run =
           exits with this code. *)
 
 val execute_and_report :
-  armed:(unit -> unit) ->
-  invocation:Render.invocation ->
-  seed:Seed.seed option ->
-  selection:string option ->
-  github:bool ->
-  output:[ `Quiet | `Compact | `Verbose ] ->
-  coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
-  render:Render.settings ->
-  config:Run.config ->
-  suite:string ->
-  Test_tree.t list ->
-  run
-(** [execute_and_report ~armed ~invocation … tests] is the mutation-aware run
-    entry: {!Driver.execute_and_report} with the same arguments and the same
+  armed:(unit -> unit) -> Driver.t -> Test_tree.t list -> run
+(** [execute_and_report ~armed spine tests] is the mutation-aware run entry:
+    {!Driver.execute_and_report} over the same spine record with the same
     meaning, wrapped in whichever of the modes above this process is in. In an
     uninstrumented build, in a [--list] run, and whenever the environment asks
-    for nothing, it is exactly [Ran (Driver.execute_and_report … tests)] — same
-    transcript, same bytes, same cost.
+    for nothing, it is exactly [Ran (Driver.execute_and_report spine tests)] —
+    same transcript, same bytes, same cost. The loop threads [spine] whole,
+    replacing [spine.config] per child (the pruned selection, the child's own
+    log directory, read-only checking); the children run through
+    {!Driver.plan}/{!Driver.execute} — a session with no reporting.
 
     [armed] is what a process about to run with a mutant armed owes the inline
     (ppx) runtime — {!Ppx_runtime.enter_armed}, which turns checking read-only

@@ -2577,6 +2577,144 @@ let test_summary_dialect () =
   check_string "harness monochrome FAIL tag is bare" ~expected:"FAIL"
     ~actual:(Harness.fail_tag ~ansi:false)
 
+(* The snapshot/prune report
+
+   The advisory baseline-maintenance lines the driver prints after
+   [finish] — a projection of run data, so every transcript byte leaves
+   through the renderer (Law 4). One producer for both runners: the line
+   classes under both invocations and the quiet gate are pinned here. *)
+
+let make_run ?snapshots () =
+  let snapshots =
+    match snapshots with
+    | Some s -> s
+    | None -> Snapshot.create ~mode:Snapshot.Check ()
+  in
+  Run.create (Run.default_config ()) ~capture:Capture.disabled ~snapshots
+
+let snapshot_report ?mode ?invocation ?(orphans = []) ?pruned run =
+  with_renderer ?mode ?invocation (fun r ->
+      Render.report_snapshots r ~orphans ~pruned run)
+
+let test_snapshot_report_writes () =
+  (* One [wrote] line per accepted baseline, paths spelled by
+     [Path_ops.display] — the one producer for both runners (ppx/F-6). *)
+  let root = temp_dir () in
+  let snapshots = Snapshot.create ~root ~mode:Snapshot.Update () in
+  Snapshot.check snapshots ~test:"t" ~scope:(Some "qa/x.ml") ~name:"greeting"
+    "hello\n";
+  let written =
+    match Snapshot.writes snapshots with
+    | [ (path, Snapshot.Created) ] -> path
+    | _ -> failf "expected exactly one Created write"
+  in
+  check_string "wrote line: Path_ops.display spelling, (new) status"
+    ~expected:(Printf.sprintf "wrote %s (new)\n" (Path_ops.display written))
+    ~actual:(snapshot_report (make_run ~snapshots ()));
+  check_string "quiet prints no maintenance lines" ~expected:""
+    ~actual:(snapshot_report ~mode:`Quiet (make_run ~snapshots ()))
+
+let test_snapshot_report_prune () =
+  check_string "granted prune: one line per deleted baseline"
+    ~expected:
+      (Printf.sprintf "pruned %s\npruned %s\n"
+         (Path_ops.display "/tmp/a.snap")
+         (Path_ops.display "/tmp/b.snap"))
+    ~actual:
+      (snapshot_report
+         ~pruned:(Ok [ "/tmp/a.snap"; "/tmp/b.snap" ])
+         (make_run ()));
+  let refusal =
+    {
+      Snapshot.not_update_run = true;
+      filtered = false;
+      skipped = 0;
+      failed = 2;
+      focused = 0;
+    }
+  in
+  check_string "refused prune: stale lines then the explanation"
+    ~expected:
+      (Printf.sprintf
+         "stale baseline: %s\n\
+          prune refused: the run was not an update run (-u / \
+          WINDTRAP_UPDATE=1); 2 selected test(s) failed\n"
+         (Path_ops.display "/tmp/stale.snap"))
+    ~actual:
+      (snapshot_report ~orphans:[ "/tmp/stale.snap" ] ~pruned:(Error refusal)
+         (make_run ()))
+
+let test_snapshot_report_orphan_hint () =
+  (* The removal hint is spelled from the invocation — the one hint-context
+     difference between the runners. *)
+  let orphans = [ "/tmp/stale.snap" ] in
+  let expected_stale =
+    Printf.sprintf "stale baseline: %s\n" (Path_ops.display "/tmp/stale.snap")
+  in
+  check_string "orphans under Exe: hint completes the executable"
+    ~expected:(expected_stale ^ "remove stale baselines: ./t.exe -u --prune\n")
+    ~actual:
+      (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans (make_run ()));
+  check_string "orphans under Mirrors: hint spells the environment prefixes"
+    ~expected:
+      (expected_stale
+     ^ "remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest\n"
+      )
+    ~actual:(snapshot_report ~invocation:`Mirrors ~orphans (make_run ()));
+  check_string "no writes, no orphans, no prune: nothing prints" ~expected:""
+    ~actual:(snapshot_report (make_run ()))
+
+(* The --strict-snapshots verdict
+
+   The runner records the verdict as a result row ({!Run.Stale_baselines};
+   pinned at runner level in test_runner.ml), so the same stale lines reach
+   the failure section of every sink. What this pins is the report's side
+   of the bargain: the advisory block stands down when the run carries the
+   row — one printing — while a prune refusal keeps its explanation. *)
+
+let strict_run ~orphans =
+  let run = make_run () in
+  Run.record run
+    {
+      Run.path = [ "stale baselines" ];
+      subject = Run.Stale_baselines;
+      outcome = Failure.Fail [ Failure.stale_baselines orphans ];
+      counted = true;
+      xfail = None;
+      slow_tagged = false;
+      duration = 0.;
+      attempts = 1;
+      prop_stats = None;
+      srandom_root = None;
+    };
+  run
+
+let test_strict_snapshots_report () =
+  let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
+  (* One printing: the advisory block stands down when the failure block
+     already carried the same lines on the recorded row. *)
+  check_string "the advisory block stands down under the flag" ~expected:""
+    ~actual:
+      (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans
+         (strict_run ~orphans));
+  (* A refused prune still explains itself — the failure says what is
+     stale, the refusal says why nothing was deleted. *)
+  let refusal =
+    {
+      Snapshot.not_update_run = true;
+      filtered = false;
+      skipped = 0;
+      failed = 0;
+      focused = 0;
+    }
+  in
+  check_string "a refused prune keeps its explanation"
+    ~expected:
+      "prune refused: the run was not an update run (-u / WINDTRAP_UPDATE=1)\n"
+    ~actual:
+      (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans
+         ~pruned:(Error refusal) (strict_run ~orphans))
+
 let tests =
   [
     test "golden compact transcript (default)" test_golden_compact;
@@ -2655,6 +2793,13 @@ let tests =
     test "excerpts resolve against the project root (render/F-1)"
       test_excerpt_project_root;
     test "the shared excerpt projection (Law 12)" test_shared_excerpt;
+    test "snapshot report: wrote lines and the quiet gate"
+      test_snapshot_report_writes;
+    test "snapshot report: prune lines and refusals" test_snapshot_report_prune;
+    test "snapshot report: orphan hints per invocation"
+      test_snapshot_report_orphan_hint;
+    test "snapshot report: the advisory stands down under --strict-snapshots"
+      test_strict_snapshots_report;
     test "the coverage report's frozen bytes" test_coverage_report_bytes;
     test "mutation: the worked survivor report" test_mutation_report;
     test "mutation: the block wears the failure colours" test_mutation_colors;

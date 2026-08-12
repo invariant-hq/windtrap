@@ -8,19 +8,19 @@
 
     Two thin drivers exist — the facade's [run] and the inline (ppx) runner
     ([Ppx_runtime]) — and one behavior serves both (the "one behavior, both
-    runners" doctrine): every transcript line class has exactly one producer
-    here, and they are composed in exactly one order, so the two runners cannot
-    drift apart byte-wise. The five producers are renderer construction
+    runners" doctrine): every transcript line class has exactly one producer,
+    and they are composed in exactly one order, so the two runners cannot drift
+    apart byte-wise. The five producers are renderer construction
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
     ({!github_start}, {!github_end}, {!github_annotations}), the snapshot/prune
-    report ({!report_snapshots}), and the coverage seam ({!snapshot_coverage},
-    {!coverage_summary}, {!coverage_report}); {!execute_and_report} is the order
-    they run in, around {!Runner.execute}. A runner that composed them itself
-    would be free to get that order wrong, which is the same drift by another
-    route.
+    report ({!Render.report_snapshots} — every transcript byte leaves through a
+    renderer), and the coverage seam ({!snapshot_coverage}, {!coverage_summary},
+    {!coverage_report}); {!execute_and_report} is the order they run in, around
+    {!Runner.execute}. A runner that composed them itself would be free to get
+    that order wrong, which is the same drift by another route.
 
     What the runners legitimately do {e not} share stays visible at their call
-    sites, as an argument to {!execute_and_report} or a line in the thin
+    sites, as a field of the spine record ({!type:t}) or a line in the thin
     drivers: the invocation context ([`Exe] vs [`Mirrors]), the two header
     policies ([seed] and [selection] — the inline runner passes [None] for
     both), the output-level and coverage-mode resolution sources (parsed CLI vs
@@ -31,6 +31,39 @@
     This module sits below both drivers: it depends only on the runner, the
     renderers, and the environment — never on [Cli] resolution or either driver.
 *)
+
+(** {1:record The spine record} *)
+
+type t = {
+  invocation : Render.invocation;
+      (** The hint context every command hint derives from, computed once at
+          startup ({!Render.type-invocation}). *)
+  seed : Seed.seed option;
+      (** The header's seed: the facade passes the root seed iff the suite
+          declares property tests; the inline runner passes [None] ({!observe}).
+      *)
+  selection : string option;
+      (** What an empty run explains itself with: the facade passes
+          {!selection_description}; the inline runner passes [None]
+          ({!observe}). *)
+  github : bool;
+      (** The GitHub gating decision ({!Env.in_github_actions}, minus list-only
+          runs in the facade). *)
+  output : [ `Quiet | `Compact | `Verbose ];  (** The resolved output level. *)
+  coverage_mode : [ `Summary | `Report | `Full | `Off ];
+      (** The resolved coverage mode ({!coverage_summary}, {!coverage_report}).
+      *)
+  render : Render.settings;
+      (** The presentation knobs the run's renderer is built from
+          ({!val:renderer}). *)
+  config : Run.config;  (** What the runner reads. *)
+  suite : string;  (** The suite name. *)
+}
+(** The type for run spines: everything {!execute_and_report} consumes beyond
+    the tree, as one value — so every place that runs a suite passes the same
+    record, and a knob cannot silently drop out of one call site. The thin
+    drivers build it once at run entry; the mutation loop threads it whole,
+    replacing [config] per child. *)
 
 (** {1:renderer Renderer construction} *)
 
@@ -133,34 +166,6 @@ val github_annotations :
     {!Render_github.annotations} block for [results] — after {!github_end}, so
     annotations are never folded away. *)
 
-(** {1:snapshots The snapshot/prune report} *)
-
-val report_snapshots :
-  out:Format.formatter ->
-  output:[ `Quiet | `Compact | `Verbose ] ->
-  invocation:Render.invocation ->
-  Runner.outcome ->
-  unit
-(** [report_snapshots ~out ~output ~invocation outcome] prints the run's
-    baseline maintenance lines on [out]: one [wrote <path> (new|updated)] line
-    per accepted baseline ({!Snapshot.writes}, paths spelled by
-    {!Path_ops.display} — the one producer for both runners), then either the
-    [pruned <path>] lines of a granted [--prune], or the
-    [stale baseline: <path>] lines with the prune refusal's explanation, or the
-    stale-baseline lines with the removal hint spelled from [invocation]
-    ({!Render.stale_lines_with_hint} — the line class the [--strict-snapshots]
-    failure block shares).
-
-    The stale-baseline lines are dropped when the runner recorded the
-    {!Run.Stale_baselines} verdict row, which carries the same lines into the
-    failure section — under [--strict-snapshots] they are the failure, and
-    naming the files twice in one transcript is noise. A prune refusal's
-    explanation still prints: it says why the deletion did not happen, which the
-    failure does not.
-
-    Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
-    summary. *)
-
 (** {1:coverage The coverage seam} *)
 
 val snapshot_coverage : Run.t -> Windtrap_coverage.t
@@ -201,30 +206,45 @@ val coverage_report :
     against {!Path_ops.project_root} — under [dune runtest] the cwd is inside
     [_build], where the recorded paths never open. *)
 
+(** {1:staged Staged internals}
+
+    The run lifecycle in two halves — decide, then run — for the one caller
+    population that needs the seam: mutation children, which run a session with
+    no reporting (standard descriptors on [/dev/null], the verdict on a pipe).
+    Drivers use {!execute_and_report}, always: it is the sole composition that
+    also reports, and a driver that composed the halves itself would be free to
+    put something between them — the same drift by another route. *)
+
+val plan : t -> Test_tree.t list -> (Runner.plan, Runner.startup_error) result
+(** [plan t tests] is {!Runner.plan} over [t]'s [config] and [suite]: the
+    startup checks and the selection, and [Error error] on a refused run —
+    exactly when {!execute_and_report} would refuse. Only [t.config] and
+    [t.suite] are consulted; the reporting fields are along for the ride, so a
+    child plans with the spine it was handed, [config] swapped for its own. *)
+
+val execute : ?on_event:(Runner.event -> unit) -> Runner.plan -> Runner.outcome
+(** [execute plan] is {!Runner.execute_plan}: runs [plan]'s selection and is the
+    completed outcome, reporting {e nothing} — no renderer, no envelope, no
+    snapshot report. [on_event] observes progress under {!Runner.execute}'s
+    observer contract: it receives immutable projections, and if it raises the
+    run aborts with that exception. Execute a plan once, promptly, in the
+    process and run-state it was planned in ({!Runner.type-plan}). *)
+
 (** {1:spine The execute-and-report spine} *)
 
 val execute_and_report :
   ?on_event:(Runner.event -> unit) ->
-  invocation:Render.invocation ->
-  seed:Seed.seed option ->
-  selection:string option ->
-  github:bool ->
-  output:[ `Quiet | `Compact | `Verbose ] ->
-  coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
-  render:Render.settings ->
-  config:Run.config ->
-  suite:string ->
+  t ->
   Test_tree.t list ->
   (Runner.outcome, Runner.startup_error) result
-(** [execute_and_report ~invocation ~seed ~selection ~github ~output
-     ~coverage_mode ~render ~config ~suite tests] runs [tests] as suite [suite]
-    — [config] is what the runner reads, [render] the presentation knobs the
-    run's renderer is built from ({!val:renderer}) — and writes the run's whole
-    report on standard output, composing the producers above in the one order
-    both runners use: {!val:renderer} and {!observe}, {!github_start},
-    {!Runner.execute}, then — for a run that happened — {!snapshot_coverage},
-    {!Render.finish} (its [?coverage] from {!coverage_summary}) over
-    {!Run.results}, {!coverage_report}, {!report_snapshots}, {!github_end},
+(** [execute_and_report t tests] runs [tests] as suite [t.suite] — [t.config] is
+    what the runner reads, [t.render] the presentation knobs the run's renderer
+    is built from ({!val:renderer}) — and writes the run's whole report on
+    standard output, composing the producers above in the one order both runners
+    use: {!val:renderer} and {!observe}, {!github_start}, {!Runner.execute},
+    then — for a run that happened — {!snapshot_coverage}, {!Render.finish} (its
+    [?coverage] from {!coverage_summary}) over {!Run.results},
+    {!coverage_report}, {!Render.report_snapshots}, {!github_end},
     {!github_annotations}, and a flush of both standard formatters.
 
     [Ok outcome] is {!Runner.execute}'s outcome, reported. {!Run.results} is the
@@ -232,11 +252,11 @@ val execute_and_report :
     ({!Run.type-subject}) — so a caller's own transport (JUnit) reads the same
     rows the terminal showed.
 
-    [seed] and [selection] are {!observe}'s two header policies, passed through
-    rather than derived: the runners genuinely disagree about both, and the
-    reasons are documented there. In particular this function does {e not} call
-    {!selection_description} itself — an inline partition emptied by a mirror is
-    not a mistyped filter.
+    [t.seed] and [t.selection] are {!observe}'s two header policies, passed
+    through rather than derived: the runners genuinely disagree about both, and
+    the reasons are documented there. In particular this function does {e not}
+    call {!selection_description} itself — an inline partition emptied by a
+    mirror is not a mistyped filter.
 
     [on_event] is a {e second} subscriber to {!Runner.execute}'s single
     [?on_event] slot, composed here after {!observe} rather than replacing it —
@@ -253,7 +273,7 @@ val execute_and_report :
     the transcript, and annotations are the part a reviewer must see without
     unfolding anything.
 
-    A [config.list_only] run reports nothing: {!Runner.execute} applied the
+    A [t.config.list_only] run reports nothing: {!Runner.execute} applied the
     startup checks and the selection without running a test, so there is no run
     to project — the caller prints the listing.
 
@@ -261,6 +281,13 @@ val execute_and_report :
     and {!Runner.startup_message} is already on [stderr], so all the caller
     decides is what to do with {!Runner.startup_exit_code} — the library runner
     exits on it, the inline runner folds it into dune's promotion protocol.
+
+    Reporting state must be flushed or fork-inert at fork points: everything
+    here reports through [Format.std_formatter] and the standard descriptors,
+    and a caller that forks mid-run (the mutation loop) must flush both
+    formatters and both descriptors before every fork, or buffered transcript
+    bytes duplicate into the child. Nothing here holds hidden buffers beyond the
+    formatters.
 
     Effects: the union of the producers' — reads the environment, writes the
     transcript on [Format.std_formatter] and the GitHub envelope on standard

@@ -7,11 +7,12 @@
    Byte parity between the facade's [run] and the inline (ppx) runner is
    construction — one producer per line class, and one order they run in
    ([execute_and_report]) — so the pins live here, once, instead of
-   comparing two drivers' transcripts: the snapshot/prune report's line
-   classes under both invocations and the quiet gate, the observer's
-   header policies (the seed and the selection description, the two the
-   runners disagree about), the GitHub envelope's gating, and the
-   coverage seam's mode selection.
+   comparing two drivers' transcripts: the observer's header policies
+   (the seed and the selection description, the two the runners disagree
+   about), the GitHub envelope's gating, and the coverage seam's mode
+   selection. The snapshot/prune report is [Render.report_snapshots] —
+   every transcript byte leaves through a renderer — and its line classes
+   are pinned in test_render.ml.
 
    [execute_and_report] itself is not pinned here: it calls
    [Runner.execute], which refuses to nest inside the run this suite is
@@ -28,7 +29,7 @@ module Fixtures = Render_fixtures
 let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
 
-(* Synthetic outcomes *)
+(* Synthetic runs *)
 
 let make_run ?config ?snapshots () =
   let snapshots =
@@ -39,147 +40,6 @@ let make_run ?config ?snapshots () =
   let config = Option.value config ~default:(Run.default_config ()) in
   Run.create config ~capture:Capture.disabled ~snapshots
 
-let outcome ?config ?snapshots ?run ?(orphans = []) ?pruned () =
-  let run =
-    match run with Some run -> run | None -> make_run ?config ?snapshots ()
-  in
-  {
-    Runner.run;
-    selected = [];
-    total = 0;
-    focus_active = false;
-    bailed = false;
-    failed_paths = [];
-    orphans;
-    pruned;
-    duration = 0.1;
-    exit_code = 0;
-  }
-
-let report ?(output = `Compact) ?(invocation = `Mirrors) outcome =
-  let buf = Buffer.create 256 in
-  let out = Format.formatter_of_buffer buf in
-  Driver.report_snapshots ~out ~output ~invocation outcome;
-  Format.pp_print_flush out ();
-  Buffer.contents buf
-
-(* The snapshot/prune report *)
-
-let test_report_writes () =
-  (* One [wrote] line per accepted baseline, paths spelled by
-     [Path_ops.display] — the one producer for both runners (ppx/F-6). *)
-  let root = temp_dir () in
-  let snapshots = Snapshot.create ~root ~mode:Snapshot.Update () in
-  Snapshot.check snapshots ~test:"t" ~scope:(Some "qa/x.ml") ~name:"greeting"
-    "hello\n";
-  let written =
-    match Snapshot.writes snapshots with
-    | [ (path, Snapshot.Created) ] -> path
-    | _ -> failf "expected exactly one Created write"
-  in
-  check_string "wrote line: Path_ops.display spelling, (new) status"
-    ~expected:(Printf.sprintf "wrote %s (new)\n" (Path_ops.display written))
-    ~actual:(report (outcome ~snapshots ()));
-  check_string "quiet prints no maintenance lines" ~expected:""
-    ~actual:(report ~output:`Quiet (outcome ~snapshots ()))
-
-let test_report_prune () =
-  let deleted = outcome ~pruned:(Ok [ "/tmp/a.snap"; "/tmp/b.snap" ]) () in
-  check_string "granted prune: one line per deleted baseline"
-    ~expected:
-      (Printf.sprintf "pruned %s\npruned %s\n"
-         (Path_ops.display "/tmp/a.snap")
-         (Path_ops.display "/tmp/b.snap"))
-    ~actual:(report deleted);
-  let refusal =
-    {
-      Snapshot.not_update_run = true;
-      filtered = false;
-      skipped = 0;
-      failed = 2;
-      focused = 0;
-    }
-  in
-  check_string "refused prune: stale lines then the explanation"
-    ~expected:
-      (Printf.sprintf
-         "stale baseline: %s\n\
-          prune refused: the run was not an update run (-u / \
-          WINDTRAP_UPDATE=1); 2 selected test(s) failed\n"
-         (Path_ops.display "/tmp/stale.snap"))
-    ~actual:
-      (report
-         (outcome ~orphans:[ "/tmp/stale.snap" ] ~pruned:(Error refusal) ()))
-
-let test_report_orphan_hint () =
-  (* The removal hint is spelled from the invocation — the one hint-context
-     difference between the runners. *)
-  let stale = outcome ~orphans:[ "/tmp/stale.snap" ] () in
-  let expected_stale =
-    Printf.sprintf "stale baseline: %s\n" (Path_ops.display "/tmp/stale.snap")
-  in
-  check_string "orphans under Exe: hint completes the executable"
-    ~expected:(expected_stale ^ "remove stale baselines: ./t.exe -u --prune\n")
-    ~actual:(report ~invocation:(`Exe "./t.exe") stale);
-  check_string "orphans under Mirrors: hint spells the environment prefixes"
-    ~expected:
-      (expected_stale
-     ^ "remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest\n"
-      )
-    ~actual:(report ~invocation:`Mirrors stale);
-  check_string "no writes, no orphans, no prune: nothing prints" ~expected:""
-    ~actual:(report (outcome ()))
-
-(* The --strict-snapshots verdict
-
-   The runner records the verdict as a result row ({!Run.Stale_baselines};
-   pinned at runner level in test_runner.ml), so the same stale lines reach
-   the failure section of every sink. What this pins is the report's side
-   of the bargain: the advisory block stands down when the run carries the
-   row — one printing — while a prune refusal keeps its explanation. *)
-
-let strict_run ~orphans =
-  let run = make_run () in
-  Run.record run
-    {
-      Run.path = [ "stale baselines" ];
-      subject = Run.Stale_baselines;
-      outcome = Failure.Fail [ Failure.stale_baselines orphans ];
-      counted = true;
-      xfail = None;
-      slow_tagged = false;
-      duration = 0.;
-      attempts = 1;
-      prop_stats = None;
-      srandom_root = None;
-    };
-  run
-
-let test_strict_snapshots_report () =
-  let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
-  (* One printing: the advisory block stands down when the failure block
-     already carried the same lines on the recorded row. *)
-  let strict = outcome ~run:(strict_run ~orphans) ~orphans () in
-  check_string "the advisory block stands down under the flag" ~expected:""
-    ~actual:(report ~invocation:(`Exe "./t.exe") strict);
-  (* A refused prune still explains itself — the failure says what is
-     stale, the refusal says why nothing was deleted. *)
-  let refusal =
-    {
-      Snapshot.not_update_run = true;
-      filtered = false;
-      skipped = 0;
-      failed = 0;
-      focused = 0;
-    }
-  in
-  check_string "a refused prune keeps its explanation"
-    ~expected:
-      "prune refused: the run was not an update run (-u / WINDTRAP_UPDATE=1)\n"
-    ~actual:
-      (report ~invocation:(`Exe "./t.exe")
-         (outcome ~run:(strict_run ~orphans) ~orphans ~pruned:(Error refusal) ()))
-
 (* The observer's header-seed policy *)
 
 let test_observe_seed_policy () =
@@ -188,8 +48,7 @@ let test_observe_seed_policy () =
     let out = Format.formatter_of_buffer buf in
     let renderer = Render.create ~out ~ansi:false ~mode:`Verbose () in
     Driver.observe renderer ~seed ~selection:None
-      (Runner.Run_started
-         { run = make_run (); suite = "s"; total = 2; selected = 2 });
+      (Runner.Run_started { suite = "s"; total = 2; selected = 2 });
     Format.pp_print_flush out ();
     Buffer.contents buf
   in
@@ -234,8 +93,7 @@ let test_github_envelope_composed () =
     Render.create ~out:Format.std_formatter ~ansi:false ~mode:`Verbose ()
   in
   Driver.observe renderer ~seed:None ~selection:None
-    (Runner.Run_started
-       { run = make_run (); suite = "mylib"; total = 1; selected = 1 });
+    (Runner.Run_started { suite = "mylib"; total = 1; selected = 1 });
   Format.pp_print_flush Format.std_formatter ();
   Driver.github_end ~github:true;
   Driver.github_annotations ~github:true ~invocation:`Mirrors
@@ -284,11 +142,6 @@ let test_coverage_seam () =
 
 let tests =
   [
-    test "snapshot report: wrote lines and the quiet gate" test_report_writes;
-    test "snapshot report: prune lines and refusals" test_report_prune;
-    test "snapshot report: orphan hints per invocation" test_report_orphan_hint;
-    test "snapshot report: the advisory stands down under --strict-snapshots"
-      test_strict_snapshots_report;
     test "observer: header-seed policy" test_observe_seed_policy;
     test "github envelope: bytes and gating" test_github_envelope;
     test "github envelope: composed around a transcript"

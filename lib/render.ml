@@ -112,11 +112,11 @@ let replay_line ?count ?max_shrink invocation ~seed ~filter =
 
 (* The one producer of the stale-baseline lines, shared by the
    [--strict-snapshots] failure block ({!Failure.Stale_baselines}, below)
-   and the driver's advisory snapshot report: one spelling, so the failure
-   section and the advisory block cannot drift. [stale_lines] names the
-   offending files; everywhere a way out applies, the removal hint follows,
-   spelled — like every other command hint — from the run's
-   startup-computed invocation. *)
+   and the advisory snapshot report ([report_snapshots], at the bottom):
+   one spelling, so the failure section and the advisory block cannot
+   drift. [stale_lines] names the offending files; everywhere a way out
+   applies, the removal hint follows, spelled — like every other command
+   hint — from the run's startup-computed invocation. *)
 let stale_lines orphans =
   List.map
     (fun path -> spf "stale baseline: %s" (Path_ops.display path))
@@ -2189,3 +2189,70 @@ let finish t ?coverage ~results ~duration () =
       else coverage_line t ~hint:"WINDTRAP_COVERAGE=report for detail" s
   | _ -> ());
   Pp.flush t.out ()
+
+(* The snapshot/prune report *)
+
+let explain_prune_refusal (refusal : Snapshot.prune_refusal) =
+  let blockers =
+    List.concat
+      [
+        (if refusal.Snapshot.not_update_run then
+           [ "the run was not an update run (-u / WINDTRAP_UPDATE=1)" ]
+         else []);
+        (if refusal.Snapshot.filtered then [ "a filter narrowed the run" ]
+         else []);
+        (if refusal.Snapshot.skipped > 0 then
+           [ spf "%d selected test(s) skipped" refusal.Snapshot.skipped ]
+         else []);
+        (if refusal.Snapshot.failed > 0 then
+           [ spf "%d selected test(s) failed" refusal.Snapshot.failed ]
+         else []);
+        (if refusal.Snapshot.focused > 0 then
+           [ spf "%d test(s) are focused" refusal.Snapshot.focused ]
+         else []);
+      ]
+  in
+  "prune refused: " ^ String.concat "; " blockers
+
+(* Whether the runner recorded the [--strict-snapshots] verdict row: the
+   row is the verdict, so the advisory block below reads the recorded fact
+   instead of re-deriving the runner's decision from configuration. *)
+let stale_row_recorded run =
+  List.exists
+    (fun (r : Run.result) -> r.Run.subject = Run.Stale_baselines)
+    (Run.results run)
+
+(* Printed after [finish], so the transcript is settled: plain lines on
+   the sink, never through [put] or the deferral machinery — a green
+   compact run's one-line transcript is already committed, and rerouting
+   these lines through the row/deferral paths would change their bytes. *)
+let report_snapshots t ~orphans ~pruned run =
+  if t.mode <> `Quiet then begin
+    let writes = Snapshot.writes (Run.snapshots run) in
+    List.iter
+      (fun (path, status) ->
+        let status =
+          match status with
+          | Snapshot.Created -> "new"
+          | Snapshot.Updated -> "updated"
+        in
+        Format.fprintf t.out "wrote %s (%s)@." (Path_ops.display path) status)
+      writes;
+    let put_lines lines = List.iter (Format.fprintf t.out "%s@.") lines in
+    (* Under [--strict-snapshots] the same lines already rode into the
+       failure section on the stale-baselines row: naming the files twice,
+       ten lines apart, is noise, not emphasis. *)
+    let advisory = if stale_row_recorded run then [] else orphans in
+    match pruned with
+    | Some (Ok deleted) ->
+        put_lines
+          (List.map (fun p -> spf "pruned %s" (Path_ops.display p)) deleted)
+    | Some (Error refusal) ->
+        put_lines (stale_lines advisory);
+        Format.fprintf t.out "%s@." (explain_prune_refusal refusal)
+    | None -> (
+        match advisory with
+        | [] -> ()
+        | orphans ->
+            put_lines (stale_lines_with_hint ~invocation:t.invocation orphans))
+  end

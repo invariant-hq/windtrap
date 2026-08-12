@@ -438,8 +438,12 @@ let split_last path =
 
 (* Events *)
 
+(* Payloads are immutable projections: counts, identities, recorded
+   results — never the live run record. The run handle belongs to whoever
+   owns the session (the driver reads it off the outcome); an observer
+   holds only data already decided. *)
 type event =
-  | Run_started of { run : Run.t; suite : string; total : int; selected : int }
+  | Run_started of { suite : string; total : int; selected : int }
   | Test_started of { path : string list }
   | Test_finished of Run.result
   | Fixture_release of { name : string }
@@ -685,6 +689,62 @@ let startup (config : Run.config) ~suite ~focus_active tests paths =
   in
   Ok (mode, allowlist)
 
+(* Plans
+
+   The staged half of [execute]: everything a run decides before a single
+   test runs — the process checks, the startup checks, the selection — as
+   a value, so a caller that must separate deciding from running (the
+   mutation loop's forked children) does it through the same code path
+   [execute] composes. The clock starts here: a run's duration has always
+   included its own startup. *)
+
+type plan = {
+  config : Run.config;
+  suite : string;
+  selected : Test_tree.case list;
+  total : int;
+  focus_active : bool;
+  focused : int; (* focused cases in the declared suite, before selection *)
+  mode : Snapshot.mode;
+  started : Clock.counter;
+}
+
+let plan ~config ~suite tests : (plan, startup_error) result =
+  install_exit_guard ();
+  (* An unexpected exception's report is only as useful as its backtrace,
+     and the runtime records one only when asked. Without this a test that
+     raises names the constructor and the test's declaration line and
+     nothing else — no raise site — unless the user knew to set
+     OCAMLRUNPARAM=b, which nothing tells them. Left on: the run owns the
+     process, and every raise site here already reads the raw backtrace. *)
+  Printexc.record_backtrace true;
+  if Run.active () then
+    invalid_arg
+      "windtrap: run is already active — a test body cannot start another run";
+  (* The CLI layer validates every layer it resolves; only a hand-built
+     configuration can carry a malformed shard, and it must fail loudly
+     before selection divides by N. *)
+  (match config.Run.shard with
+  | Some (k, n) when k < 1 || n < k ->
+      invalid_arg "windtrap: shard must be K/N with 1 <= K <= N"
+  | Some _ | None -> ());
+  let started = Clock.counter () in
+  let cases = Test_tree.flatten tests in
+  let total = List.length cases in
+  let paths =
+    List.map (fun case -> Test_tree.path_to_string case.Test_tree.path) cases
+  in
+  let focus_active = Test_tree.has_focus tests in
+  let* mode, allowlist = startup config ~suite ~focus_active tests paths in
+  let predicate = selection_predicate config in
+  let selected =
+    List.filter (case_selected config ~predicate ~allowlist ~focus_active) cases
+  in
+  let focused =
+    List.length (List.filter (fun case -> case.Test_tree.focused) cases)
+  in
+  Ok { config; suite; selected; total; focus_active; focused; mode; started }
+
 (* Outcomes *)
 
 type outcome = {
@@ -824,52 +884,26 @@ let snapshot_maintenance (config : Run.config) snapshots ~full ~results
   in
   (orphans, pruned)
 
-let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
-  install_exit_guard ();
-  (* An unexpected exception's report is only as useful as its backtrace,
-     and the runtime records one only when asked. Without this a test that
-     raises names the constructor and the test's declaration line and
-     nothing else — no raise site — unless the user knew to set
-     OCAMLRUNPARAM=b, which nothing tells them. Left on: the run owns the
-     process, and every raise site here already reads the raw backtrace. *)
-  Printexc.record_backtrace true;
+let execute_plan ?(on_event = fun _ -> ())
+    ({ config; suite; selected; total; focus_active; focused; mode; started } :
+      plan) : outcome =
   if Run.active () then
     invalid_arg
       "windtrap: run is already active — a test body cannot start another run";
-  (* The CLI layer validates every layer it resolves; only a hand-built
-     configuration can carry a malformed shard, and it must fail loudly
-     before selection divides by N. *)
-  (match config.Run.shard with
-  | Some (k, n) when k < 1 || n < k ->
-      invalid_arg "windtrap: shard must be K/N with 1 <= K <= N"
-  | Some _ | None -> ());
-  let started = Clock.counter () in
-  let cases = Test_tree.flatten tests in
-  let total = List.length cases in
-  let paths =
-    List.map (fun case -> Test_tree.path_to_string case.Test_tree.path) cases
-  in
-  let focus_active = Test_tree.has_focus tests in
-  let* mode, allowlist = startup config ~suite ~focus_active tests paths in
-  let predicate = selection_predicate config in
-  let selected =
-    List.filter (case_selected config ~predicate ~allowlist ~focus_active) cases
-  in
   let snapshots = Snapshot.create ~mode () in
   if config.Run.list_only then
-    Ok
-      {
-        run = Run.create config ~capture:Capture.disabled ~snapshots;
-        selected;
-        total;
-        focus_active;
-        bailed = false;
-        failed_paths = [];
-        orphans = [];
-        pruned = None;
-        duration = Clock.count_s started;
-        exit_code = 0;
-      }
+    {
+      run = Run.create config ~capture:Capture.disabled ~snapshots;
+      selected;
+      total;
+      focus_active;
+      bailed = false;
+      failed_paths = [];
+      orphans = [];
+      pruned = None;
+      duration = Clock.count_s started;
+      exit_code = 0;
+    }
   else
     let capture =
       if config.Run.stream then Capture.disabled
@@ -882,8 +916,7 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
        the fatal path the protect empties the slot before the exception leaves
        [execute], so the guard is inert during fatal termination. *)
     Run.with_active run @@ fun () ->
-    on_event
-      (Run_started { run; suite; total; selected = List.length selected });
+    on_event (Run_started { suite; total; selected = List.length selected });
     let bailed, executed, failed_paths = drive ~on_event run selected in
     (* Releases run after the last test, outside any per-test timeout,
        including under --bail. A failure here is part of the run's verdict,
@@ -908,12 +941,9 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
     let full = (not bailed) && executed = total in
     update_last_failed (store_path config ~suite) ~full ~results:test_results
       ~failed_paths;
-    let focused_count =
-      List.length (List.filter (fun case -> case.Test_tree.focused) cases)
-    in
     let orphans, pruned =
       snapshot_maintenance config snapshots ~full ~results:test_results
-        ~focused_count
+        ~focused_count:focused
     in
     (* [--strict-snapshots] turns the advisory report into a verdict. It
        rides on [orphans], so it inherits that field's gate for free: a run
@@ -931,16 +961,18 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
       else if executed = 0 then 2
       else 0
     in
-    Ok
-      {
-        run;
-        selected;
-        total;
-        focus_active;
-        bailed;
-        failed_paths;
-        orphans;
-        pruned;
-        duration = Clock.count_s started;
-        exit_code;
-      }
+    {
+      run;
+      selected;
+      total;
+      focus_active;
+      bailed;
+      failed_paths;
+      orphans;
+      pruned;
+      duration = Clock.count_s started;
+      exit_code;
+    }
+
+let execute ?on_event ~config ~suite tests =
+  Result.map (execute_plan ?on_event) (plan ~config ~suite tests)
