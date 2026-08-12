@@ -27,7 +27,7 @@ let show_ints values = show_names (List.map string_of_int values)
    Everything below is deterministic across runs and machines. *)
 let root = 0x00c0ffee1234abcdL
 let state index = Seed.make (Seed.derive ~root ~path:"test_stateful" ~index)
-let root_value tree = Gen.value (Shrink_tree.root tree)
+let root_value tree = Shrink_tree.root tree
 let program_at gen index = root_value (Gen.sample gen (state index))
 let names = Stateful.command_names
 
@@ -611,9 +611,8 @@ let a_failing_step_points_at_its_command () =
       ]
     in
     let program =
-      Gen.value
-        (Shrink_tree.root
-           (Gen.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0)))
+      Shrink_tree.root
+        (Gen.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0))
     in
     expect_check_failure "a located step" (fun () ->
         Stateful.execute ~setup:(fun () -> ()) program)
@@ -656,7 +655,7 @@ let assertions_skips_and_discards_from_pre_poison () =
         | exception raised ->
             failf "%s from ~pre escaped the generator as %s" label
               (Printexc.to_string raised)
-        | tree -> Gen.value (Shrink_tree.root tree)
+        | tree -> Shrink_tree.root tree
       in
       let kept = names program in
       let total = List.length kept in

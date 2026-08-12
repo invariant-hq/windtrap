@@ -9,25 +9,9 @@
   windtrap's own, built over Seed (SplitMix64) and Shrink_tree.
   --------------------------------------------------------------------------*)
 
-(* Provenance: the primitive draws behind a generated value, kept lazy so a
-   passing case never renders anything. [Chain] is generation order (bind),
-   [Label] a choice combinator's branch, [Tuple]/[Items] grouping. A
-   generator that owns a printer collapses its provenance to one [Draw] of
-   the printed value, which is how enclosing printerless generators keep
-   showing it (the "composition cannot lose the printer" contract). *)
-type trace =
-  | Empty
-  | Draw of string Lazy.t
-  | Label of string * trace
-  | Tuple of trace list
-  | Items of trace list
-  | Chain of trace * trace
-
-type 'a sample = { value : 'a; trace : trace }
-
 type 'a t = {
   pp : (Format.formatter -> 'a -> unit) option;
-  run : Seed.state -> 'a sample Shrink_tree.t * Seed.state;
+  run : Seed.state -> 'a Shrink_tree.t * Seed.state;
 }
 
 exception Rejected
@@ -38,7 +22,6 @@ let render_with pp value =
   try Format.asprintf "%a" pp value
   with exn -> Printf.sprintf "<printer raised %s>" (Printexc.to_string exn)
 
-let draw_of pp value = Draw (lazy (render_with pp value))
 let pp_int = Format.pp_print_int
 let pp_int32 ppf n = Format.fprintf ppf "%ldl" n
 let pp_int64 ppf n = Format.fprintf ppf "%LdL" n
@@ -138,25 +121,8 @@ let float_towards dest x () =
 
 (* Tree builders *)
 
-let rec tree_towards pp shrink x =
-  Shrink_tree.make
-    ~root:{ value = x; trace = draw_of pp x }
-    ~children:(Seq.map (tree_towards pp shrink) (shrink x))
-
-let rec plain_towards shrink x =
-  Shrink_tree.make ~root:x ~children:(Seq.map (plain_towards shrink) (shrink x))
-
-(* The printer's claim on provenance, and the only place it is exercised: a
-   generator that owns a printer rewrites every node's trace to that node's
-   printed value, a printerless one keeps whatever structural trace its
-   combinator built. Every combinator that can derive a printer ends in
-   this, so the "composition cannot lose the printer" contract has one
-   implementation. *)
-let renormalize pp tree =
-  match pp with
-  | None -> tree
-  | Some pp ->
-      Shrink_tree.map (fun s -> { s with trace = draw_of pp s.value }) tree
+let rec tree_towards shrink x =
+  Shrink_tree.make ~root:x ~children:(Seq.map (tree_towards shrink) (shrink x))
 
 (* [Shrink_tree.bind] for candidate re-generation ([bind], [one_of], sized
    [list]): [f] runs a generator, so forcing a shrink candidate can raise
@@ -184,87 +150,8 @@ let rec seq_list = function
   | [] -> Shrink_tree.leaf []
   | tree :: trees ->
       Shrink_tree.map
-        (fun (s, ss) -> s :: ss)
+        (fun (v, vs) -> v :: vs)
         (Shrink_tree.pair tree (seq_list trees))
-
-let label_trace name index inner =
-  Label (Printf.sprintf "%s[%d]" name index, inner)
-
-(* Provenance rendering *)
-
-let trace_budget = 200
-
-let flatten trace =
-  let rec go acc = function
-    | Empty -> acc
-    | Chain (a, b) -> go (go acc b) a
-    | t -> t :: acc
-  in
-  go [] trace
-
-let render_trace trace =
-  let buffer = Buffer.create 64 in
-  let remaining = ref trace_budget in
-  let emit text =
-    if !remaining <= 0 then raise_notrace Exit;
-    let length = String.length text in
-    if length <= !remaining then (
-      Buffer.add_string buffer text;
-      remaining := !remaining - length)
-    else
-      (* Never split a UTF-8 sequence: if the first excluded byte is a
-         continuation byte, back off to the sequence's lead byte. On
-         non-UTF-8 printer output this only shortens the cut. *)
-      let cut = ref !remaining in
-      while !cut > 0 && Char.code text.[!cut] land 0xC0 = 0x80 do
-        decr cut
-      done;
-      Buffer.add_string buffer (String.sub text 0 !cut);
-      remaining := 0;
-      raise_notrace Exit
-  in
-  let rec item = function
-    | Empty | Chain _ -> assert false (* flattened away *)
-    | Draw text -> emit (Lazy.force text)
-    | Label (label, inner) -> (
-        match flatten inner with
-        | [] -> emit label
-        | [ single ] ->
-            emit label;
-            emit " ";
-            item single
-        | parts ->
-            emit label;
-            emit " (";
-            sequence " " parts;
-            emit ")")
-    | Tuple traces ->
-        emit "(";
-        groups ", " traces;
-        emit ")"
-    | Items traces ->
-        emit "[";
-        groups "; " traces;
-        emit "]"
-  and sequence separator = function
-    | [] -> ()
-    | [ part ] -> item part
-    | part :: parts ->
-        item part;
-        emit separator;
-        sequence separator parts
-  and group trace =
-    match flatten trace with [] -> emit "_" | parts -> sequence " " parts
-  and groups separator = function
-    | [] -> ()
-    | [ trace ] -> group trace
-    | trace :: traces ->
-        group trace;
-        emit separator;
-        groups separator traces
-  in
-  (try sequence " " (flatten trace) with Exit -> Buffer.add_string buffer "…");
-  Buffer.contents buffer
 
 (* Numeric primitives *)
 
@@ -274,7 +161,7 @@ let int =
     run =
       (fun state ->
         let word, state = Seed.bits64 state in
-        (tree_towards pp_int (int_towards 0) (Int64.to_int word), state));
+        (tree_towards (int_towards 0) (Int64.to_int word), state));
   }
 
 (* v1's stratified distribution: 50% below 10, 25% below 100, 20% below
@@ -296,7 +183,7 @@ let nat =
     run =
       (fun state ->
         let value, state = sample_nat state in
-        (tree_towards pp_int (int_towards 0) value, state));
+        (tree_towards (int_towards 0) value, state));
   }
 
 let small_int =
@@ -307,7 +194,7 @@ let small_int =
         let sign, state = Seed.below ~bound:2L state in
         let magnitude, state = sample_nat state in
         let value = if Int64.equal sign 1L then -magnitude else magnitude in
-        (tree_towards pp_int (int_towards 0) value, state));
+        (tree_towards (int_towards 0) value, state));
   }
 
 let int_range low high =
@@ -328,7 +215,7 @@ let int_range low high =
             let offset, state = Seed.below ~bound:(Int64.succ span) state in
             (Int64.to_int (Int64.add low64 offset), state)
         in
-        (tree_towards pp_int (int_towards origin) value, state));
+        (tree_towards (int_towards origin) value, state));
   }
 
 let int32 =
@@ -337,7 +224,7 @@ let int32 =
     run =
       (fun state ->
         let word, state = Seed.bits64 state in
-        (tree_towards pp_int32 (int32_towards 0l) (Int64.to_int32 word), state));
+        (tree_towards (int32_towards 0l) (Int64.to_int32 word), state));
   }
 
 let int64 =
@@ -346,7 +233,7 @@ let int64 =
     run =
       (fun state ->
         let word, state = Seed.bits64 state in
-        (tree_towards pp_int64 (int64_towards 0L) word, state));
+        (tree_towards (int64_towards 0L) word, state));
   }
 
 let float_any =
@@ -356,7 +243,7 @@ let float_any =
       (fun state ->
         let word, state = Seed.bits64 state in
         let value = Int64.float_of_bits word in
-        (tree_towards pp_float (float_towards 0.0) value, state));
+        (tree_towards (float_towards 0.0) value, state));
   }
 
 let float =
@@ -372,7 +259,7 @@ let float =
           if Float.is_finite value then (value, state) else finite state
         in
         let value, state = finite state in
-        (tree_towards pp_float (float_towards 0.0) value, state));
+        (tree_towards (float_towards 0.0) value, state));
   }
 
 let float_range low high =
@@ -398,22 +285,20 @@ let float_range low high =
            closed range. [value < low] cannot happen: the addend is
            non-negative and [low] is representable. *)
         let value = if value > high then high else value in
-        (tree_towards pp_float (float_towards origin) value, state));
+        (tree_towards (float_towards origin) value, state));
   }
 
 (* Unit, booleans, characters, strings *)
 
 (* [pure ()] generates the same value and prints nothing, and a printerless
-   leaf forfeits the printer — and the provenance — of every composition
-   above it, the one cost a leaf of a type with exactly one value never has
-   to impose. One value means one leaf, built like [bool]'s, and drawing it
-   consumes no randomness, so the state passes through. *)
+   leaf forfeits the derived printer of every composition above it, the one
+   cost a leaf of a type with exactly one value never has to impose. One
+   value means one leaf, built like [bool]'s, and drawing it consumes no
+   randomness, so the state passes through. *)
 let unit =
-  let only = { value = (); trace = draw_of pp_unit () } in
-  { pp = Some pp_unit; run = (fun state -> (Shrink_tree.leaf only, state)) }
+  { pp = Some pp_unit; run = (fun state -> (Shrink_tree.leaf (), state)) }
 
 let bool =
-  let leaf_false = { value = false; trace = draw_of pp_bool false } in
   {
     pp = Some pp_bool;
     run =
@@ -421,17 +306,15 @@ let bool =
         let bit, state = Seed.below ~bound:2L state in
         let tree =
           if Int64.equal bit 1L then
-            Shrink_tree.make
-              ~root:{ value = true; trace = draw_of pp_bool true }
-              ~children:(Seq.return (Shrink_tree.leaf leaf_false))
-          else Shrink_tree.leaf leaf_false
+            Shrink_tree.make ~root:true
+              ~children:(Seq.return (Shrink_tree.leaf false))
+          else Shrink_tree.leaf false
         in
         (tree, state));
   }
 
 let rec char_tree ~origin code =
-  Shrink_tree.make
-    ~root:{ value = Char.chr code; trace = draw_of pp_char (Char.chr code) }
+  Shrink_tree.make ~root:(Char.chr code)
     ~children:(Seq.map (char_tree ~origin) (int_towards origin code))
 
 let char =
@@ -464,22 +347,6 @@ let char_range low high =
 
 (* Containers *)
 
-(* One node of a list tree: the element values, and their traces grouped as
-   one [Items] so provenance keeps the list shape. *)
-let list_sample samples =
-  {
-    value = List.map (fun s -> s.value) samples;
-    trace = Items (List.map (fun s -> s.trace) samples);
-  }
-
-(* Combines element sample trees into a list sample tree; [structural]
-   selects chunked structure shrinking (Shrink_tree.list) or element-wise
-   only (seq_list, for explicit size generators whose constraint structural
-   candidates would violate). *)
-let list_of_trees pp ~structural trees =
-  let base = if structural then Shrink_tree.list trees else seq_list trees in
-  renormalize pp (Shrink_tree.map list_sample base)
-
 let sample_elements gen count state =
   let rec loop remaining trees state =
     if remaining = 0 then (List.rev trees, state)
@@ -499,7 +366,7 @@ let list ?size gen =
           (fun state ->
             let length, state = sample_nat state in
             let trees, state = sample_elements gen length state in
-            (list_of_trees pp ~structural:true trees, state));
+            (Shrink_tree.list trees, state));
       }
   | Some size_gen ->
       {
@@ -510,9 +377,9 @@ let list ?size gen =
             let fresh, state = Seed.split state in
             let tree =
               rebind size_tree (fun size ->
-                  if size.value < 0 then invalid_arg "Gen.list: negative size";
-                  let trees, _ = sample_elements gen size.value fresh in
-                  list_of_trees pp ~structural:false trees)
+                  if size < 0 then invalid_arg "Gen.list: negative size";
+                  let trees, _ = sample_elements gen size fresh in
+                  seq_list trees)
             in
             (tree, state));
       }
@@ -525,12 +392,7 @@ let array ?size gen =
     run =
       (fun state ->
         let tree, state = base.run state in
-        let tree =
-          Shrink_tree.map
-            (fun s -> { value = Array.of_list s.value; trace = s.trace })
-            tree
-        in
-        (renormalize pp tree, state));
+        (Shrink_tree.map Array.of_list tree, state));
   }
 
 let string_of ?size char_gen =
@@ -548,12 +410,7 @@ let string_of ?size char_gen =
     run =
       (fun state ->
         let tree, state = base.run state in
-        ( Shrink_tree.map
-            (fun s ->
-              let value = implode s.value in
-              { value; trace = draw_of pp_string value })
-            tree,
-          state ));
+        (Shrink_tree.map implode tree, state));
   }
 
 let string = string_of char
@@ -565,39 +422,28 @@ let bytes_of ?size char_gen =
     run =
       (fun state ->
         let tree, state = base.run state in
-        ( Shrink_tree.map
-            (fun s ->
-              let value = Bytes.of_string s.value in
-              { value; trace = draw_of pp_bytes value })
-            tree,
-          state ));
+        (Shrink_tree.map Bytes.of_string tree, state));
   }
 
 let bytes = bytes_of char
 
 let option gen =
   let pp = Option.map pp_option gen.pp in
-  let none = { value = None; trace = Draw (lazy "None") } in
-  let some s = { value = Some s.value; trace = Label ("Some", s.trace) } in
+  let none = Shrink_tree.leaf None in
   let rec wrap tree =
     Shrink_tree.make
-      ~root:(some (Shrink_tree.root tree))
-      ~children:
-        (Seq.cons (Shrink_tree.leaf none)
-           (Seq.map wrap (Shrink_tree.children tree)))
+      ~root:(Some (Shrink_tree.root tree))
+      ~children:(Seq.cons none (Seq.map wrap (Shrink_tree.children tree)))
   in
   {
     pp;
     run =
       (fun state ->
-        let tree, state =
-          let choice, state = Seed.below ~bound:100L state in
-          if choice < 15L then (Shrink_tree.leaf none, state)
-          else
-            let tree, state = gen.run state in
-            (wrap tree, state)
-        in
-        (renormalize pp tree, state));
+        let choice, state = Seed.below ~bound:100L state in
+        if choice < 15L then (none, state)
+        else
+          let tree, state = gen.run state in
+          (wrap tree, state));
   }
 
 let result ok err =
@@ -606,23 +452,17 @@ let result ok err =
     | Some pp_ok, Some pp_err -> Some (pp_result pp_ok pp_err)
     | _ -> None
   in
-  let wrap constructor label s =
-    { value = constructor s.value; trace = Label (label, s.trace) }
-  in
   {
     pp;
     run =
       (fun state ->
-        let tree, state =
-          let choice, state = Seed.below ~bound:100L state in
-          if choice < 25L then
-            let tree, state = err.run state in
-            (Shrink_tree.map (wrap (fun e -> Error e) "Error") tree, state)
-          else
-            let tree, state = ok.run state in
-            (Shrink_tree.map (wrap (fun v -> Ok v) "Ok") tree, state)
-        in
-        (renormalize pp tree, state));
+        let choice, state = Seed.below ~bound:100L state in
+        if choice < 25L then
+          let tree, state = err.run state in
+          (Shrink_tree.map (fun e -> Error e) tree, state)
+        else
+          let tree, state = ok.run state in
+          (Shrink_tree.map (fun v -> Ok v) tree, state));
   }
 
 let pair left right =
@@ -631,19 +471,13 @@ let pair left right =
     | Some pp_a, Some pp_b -> Some (pp_pair pp_a pp_b)
     | _ -> None
   in
-  let combine (a, b) =
-    { value = (a.value, b.value); trace = Tuple [ a.trace; b.trace ] }
-  in
   {
     pp;
     run =
       (fun state ->
         let left_tree, state = left.run state in
         let right_tree, state = right.run state in
-        let tree =
-          Shrink_tree.map combine (Shrink_tree.pair left_tree right_tree)
-        in
-        (renormalize pp tree, state));
+        (Shrink_tree.pair left_tree right_tree, state));
   }
 
 let triple a b c =
@@ -651,12 +485,6 @@ let triple a b c =
     match (a.pp, b.pp, c.pp) with
     | Some pp_a, Some pp_b, Some pp_c -> Some (pp_triple pp_a pp_b pp_c)
     | _ -> None
-  in
-  let combine (sa, (sb, sc)) =
-    {
-      value = (sa.value, sb.value, sc.value);
-      trace = Tuple [ sa.trace; sb.trace; sc.trace ];
-    }
   in
   {
     pp;
@@ -666,9 +494,11 @@ let triple a b c =
         let tb, state = b.run state in
         let tc, state = c.run state in
         let tree =
-          Shrink_tree.map combine (Shrink_tree.pair ta (Shrink_tree.pair tb tc))
+          Shrink_tree.map
+            (fun (va, (vb, vc)) -> (va, vb, vc))
+            (Shrink_tree.pair ta (Shrink_tree.pair tb tc))
         in
-        (renormalize pp tree, state));
+        (tree, state));
   }
 
 let quad a b c d =
@@ -677,12 +507,6 @@ let quad a b c d =
     | Some pp_a, Some pp_b, Some pp_c, Some pp_d ->
         Some (pp_quad pp_a pp_b pp_c pp_d)
     | _ -> None
-  in
-  let combine (sa, (sb, (sc, sd))) =
-    {
-      value = (sa.value, sb.value, sc.value, sd.value);
-      trace = Tuple [ sa.trace; sb.trace; sc.trace; sd.trace ];
-    }
   in
   {
     pp;
@@ -693,30 +517,22 @@ let quad a b c d =
         let tc, state = c.run state in
         let td, state = d.run state in
         let tree =
-          Shrink_tree.map combine
+          Shrink_tree.map
+            (fun (va, (vb, (vc, vd))) -> (va, vb, vc, vd))
             (Shrink_tree.pair ta (Shrink_tree.pair tb (Shrink_tree.pair tc td)))
         in
-        (renormalize pp tree, state));
+        (tree, state));
   }
 
 (* Choice and structure *)
 
 (* The printerless leaves. Their values are arbitrary, so no printer can
    be inferred — but the caller usually has one, and these two sit under
-   more compositions than anything else: a [map] or [bind] above them is
-   printerless already, and its provenance is only as readable as the
-   draws underneath. Taking [?pp] here is what lets a composition keep
-   printing without a [with_pp] wrapped around the whole thing. *)
+   more compositions than anything else. Taking [?pp] here is what lets a
+   deriving combinator ([pair], [list], [one_of], ...) built over them
+   keep its printer without a [with_pp] wrapped around the whole thing. *)
 let constant ?pp value =
-  {
-    pp;
-    run =
-      (fun state ->
-        let trace =
-          match pp with Some pp -> draw_of pp value | None -> Empty
-        in
-        (Shrink_tree.leaf { value; trace }, state));
-  }
+  { pp; run = (fun state -> (Shrink_tree.leaf value, state)) }
 
 let pure = constant
 
@@ -729,25 +545,14 @@ let of_list ?pp values =
         let count = Array.length values in
         if count = 0 then invalid_arg "Gen.of_list: empty list";
         let index, state = Seed.below ~bound:(Int64.of_int count) state in
-        let choose index =
-          {
-            value = values.(index);
-            trace =
-              (match pp with
-              | Some pp -> draw_of pp values.(index)
-              | None -> label_trace "of_list" index Empty);
-          }
-        in
-        let index_tree = plain_towards (int_towards 0) (Int64.to_int index) in
-        (Shrink_tree.map choose index_tree, state));
+        let index_tree = tree_towards (int_towards 0) (Int64.to_int index) in
+        (Shrink_tree.map (fun index -> values.(index)) index_tree, state));
   }
 
 (* A choice combinator whose branches all print derives its printer (the
    doc law: a composite prints exactly when all its components print).
    Branches generate the same type, so their printers are expected to
-   agree; the first branch's is used, and [renormalize] keeps direct
-   rendering and provenance inside enclosing printerless generators
-   consistent with it. *)
+   agree; the first branch's is used. *)
 let derived_branch_pp gens =
   if
     Array.length gens > 0
@@ -767,16 +572,11 @@ let one_of gens =
         let index, state = Seed.below ~bound:(Int64.of_int count) state in
         let index = Int64.to_int index in
         let fresh, state = Seed.split state in
-        let index_tree = plain_towards (int_towards 0) index in
+        let index_tree = tree_towards (int_towards 0) index in
         let tree =
-          rebind index_tree (fun branch ->
-              let inner, _ = gens.(branch).run fresh in
-              Shrink_tree.map
-                (fun s ->
-                  { s with trace = label_trace "one_of" branch s.trace })
-                inner)
+          rebind index_tree (fun branch -> fst (gens.(branch).run fresh))
         in
-        (renormalize pp tree, state));
+        (tree, state));
   }
 
 let frequency weighted =
@@ -800,17 +600,10 @@ let frequency weighted =
         let pick = Int64.to_int pick in
         let rec choose index consumed =
           let weight, gen = weighted.(index) in
-          if pick < consumed + weight then (index, gen)
+          if pick < consumed + weight then gen
           else choose (index + 1) (consumed + weight)
         in
-        let index, gen = choose 0 0 in
-        let tree, state = gen.run state in
-        let tree =
-          Shrink_tree.map
-            (fun s -> { s with trace = label_trace "frequency" index s.trace })
-            tree
-        in
-        (renormalize pp tree, state));
+        (choose 0 0).run state);
   }
 
 (* Composition *)
@@ -821,8 +614,7 @@ let map f gen =
     run =
       (fun state ->
         let tree, state = gen.run state in
-        ( Shrink_tree.map (fun s -> { value = f s.value; trace = s.trace }) tree,
-          state ));
+        (Shrink_tree.map f tree, state));
   }
 
 let bind gen f =
@@ -832,18 +624,7 @@ let bind gen f =
       (fun state ->
         let outer, state = gen.run state in
         let fresh, state = Seed.split state in
-        let tree =
-          rebind outer (fun s ->
-              let inner, _ = (f s.value).run fresh in
-              Shrink_tree.map
-                (fun inner_sample ->
-                  {
-                    value = inner_sample.value;
-                    trace = Chain (s.trace, inner_sample.trace);
-                  })
-                inner)
-        in
-        (tree, state));
+        (rebind outer (fun v -> fst ((f v).run fresh)), state));
   }
 
 let sized f = bind nat f
@@ -853,8 +634,7 @@ let rec filter_tree keep tree =
     ~children:
       (Seq.filter_map
          (fun child ->
-           if keep (Shrink_tree.root child).value then
-             Some (filter_tree keep child)
+           if keep (Shrink_tree.root child) then Some (filter_tree keep child)
            else None)
          (Shrink_tree.children tree))
 
@@ -869,23 +649,13 @@ let such_that ?(max_tries = 100) keep gen =
           else
             let fresh, state = Seed.split state in
             let tree, _ = gen.run fresh in
-            if keep (Shrink_tree.root tree).value then
-              (filter_tree keep tree, state)
+            if keep (Shrink_tree.root tree) then (filter_tree keep tree, state)
             else attempt (tries - 1) state
         in
         attempt max_tries state);
   }
 
-let with_pp pp gen =
-  let pp = Some pp in
-  {
-    pp;
-    run =
-      (fun state ->
-        let tree, state = gen.run state in
-        (renormalize pp tree, state));
-  }
-
+let with_pp pp gen = { gen with pp = Some pp }
 let ( let+ ) gen f = map f gen
 let ( and+ ) left right = pair left right
 let ( let* ) = bind
@@ -894,7 +664,7 @@ let ( let* ) = bind
 
 (* [keep] answers about values, but the pass that runs before assembly must
    act on element *trees*, so the mask is walked against whichever list
-   produced it — trees before assembly, samples at every node after. A mask
+   produced it — trees before assembly, values at every node after. A mask
    of the wrong length is a caller error, reported where every other
    malformed argument is: at sample time for the drawn list, at forcing
    time for a candidate. *)
@@ -934,22 +704,18 @@ let list_exact ?keep count gen =
         if count < 0 then invalid_arg "Gen.list_exact: negative count";
         let trees, state = sample_elements gen count state in
         match keep with
-        | None -> (list_of_trees pp ~structural:true trees, state)
+        | None -> (Shrink_tree.list trees, state)
         | Some keep ->
-            let trees =
-              survivors keep (fun tree -> (Shrink_tree.root tree).value) trees
-            in
+            let trees = survivors keep Shrink_tree.root trees in
             let tree =
               Shrink_tree.map
-                (fun samples ->
-                  list_sample (survivors keep (fun s -> s.value) samples))
+                (fun values -> survivors keep Fun.id values)
                 (Shrink_tree.list trees)
             in
-            (renormalize pp tree, state));
+            (tree, state));
   }
 
 let sample gen state = fst (gen.run state)
-let value s = s.value
 let prints gen = Option.is_some gen.pp
 
 (* The remedy is not spelled here: a printerless counterexample says what it
@@ -957,12 +723,9 @@ let prints gen = Option.is_some gen.pp
    printerless shape — what to do about it. *)
 let no_printer_message = "<no printer>"
 
-let render gen s =
+let render gen v =
   match gen.pp with
-  | Some pp -> render_with pp s.value
-  | None ->
-      let body = render_trace s.trace in
-      if String.length body = 0 then no_printer_message
-      else "<from: " ^ body ^ ">"
+  | Some pp -> render_with pp v
+  | None -> no_printer_message
 
 let render_value gen v = Option.map (fun pp -> render_with pp v) gen.pp

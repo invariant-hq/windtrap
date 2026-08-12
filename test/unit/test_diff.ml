@@ -968,9 +968,9 @@ let alloc_tests =
 let line_gen = Gen.of_list [ "a"; "b"; "c" ]
 
 (* [with_pp] because [map] drops the printer, and a counterexample that
-   renders as "<from: ([], [of_list[0]])>" is a counterexample the reader
-   cannot use. Found by breaking this property on purpose and reading
-   what it printed. *)
+   renders as "<no printer>" is a counterexample the reader cannot use.
+   Found by breaking this property on purpose and reading what it
+   printed. *)
 let text_gen =
   Gen.with_pp
     (fun ppf t -> Format.fprintf ppf "%S" t)

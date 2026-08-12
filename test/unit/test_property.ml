@@ -80,9 +80,7 @@ let expect_coverage_failed = function
 (* The value generated for case [index] of [path] under [root], as the engine
    derives it — used to predict and replay engine streams. *)
 let value_at gen ~root ~path ~index =
-  Gen.value
-    (Shrink_tree.root
-       (Gen.sample gen (Seed.make (Seed.derive ~root ~path ~index))))
+  Shrink_tree.root (Gen.sample gen (Seed.make (Seed.derive ~root ~path ~index)))
 
 (* Search for a root whose first failing generated case satisfies
    [first_ok] — keeps same-kind shrink tests deterministic without
@@ -611,17 +609,22 @@ let skip_candidate_is_rejected_during_shrink () =
       check (timed_out = None)
         "a rejected skipping candidate must not mark the failure timed out"
 
-let printerless_counterexample_uses_provenance () =
+let printerless_counterexample_renders_placeholder () =
   let printerless = Gen.map (fun x -> x * 2) (Gen.int_range 0 50) in
   let failure, _ =
     expect_fail
-      (Property.run ~root ~path:"provenance" printerless (fun _ x ->
+      (Property.run ~root ~path:"placeholder" printerless (fun _ x ->
            Check.is_true (x < 10)))
   in
   let rendered, _, _, _, _, _, _ = property_payload failure in
   check
-    (String.length rendered >= 6 && String.sub rendered 0 6 = "<from:")
-    "a printerless counterexample renders its shrunk draws, got %S" rendered
+    (rendered = "<no printer>")
+    "a printerless counterexample renders the placeholder, got %S" rendered;
+  match failure.Failure.kind with
+  | Failure.Property { printerless; _ } ->
+      check printerless
+        "a printerless counterexample must carry the printerless flag"
+  | _ -> failf "expected a Property failure kind"
 
 (* Timeout vs the shrink search (D2) *)
 
@@ -910,8 +913,8 @@ let suite =
       timeout_during_generation_escapes_unchanged );
     ( "skip during generation escapes unchanged",
       skip_during_generation_escapes_unchanged );
-    ( "printerless counterexample uses provenance",
-      printerless_counterexample_uses_provenance );
+    ( "printerless counterexample renders the placeholder",
+      printerless_counterexample_renders_placeholder );
     ("msg and loc are preserved", msg_and_loc_are_preserved);
     ("generator crash is a failure", generator_crash_is_a_failure);
     ("control exceptions propagate", control_exceptions_propagate);

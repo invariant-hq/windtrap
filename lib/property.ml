@@ -166,7 +166,7 @@ let same_kind original candidate =
 let shrink ~max_shrink ~body tree first_class =
   let scratch = make_context () in
   let accept candidate_tree =
-    let value = Gen.value (Shrink_tree.root candidate_tree) in
+    let value = Shrink_tree.root candidate_tree in
     match run_case scratch body value with
     | Control ((Failure.Timeout _ as timeout), backtrace) ->
         (* The per-test alarm fired inside a candidate: a fact about the
@@ -330,7 +330,7 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
                 ~case_index:attempts ~shrink_steps:0 ~examples:false
                 (Exception (exn, backtrace))
           | tree -> (
-              match run_case ctx body (Gen.value (Shrink_tree.root tree)) with
+              match run_case ctx body (Shrink_tree.root tree) with
               | Passed ->
                   commit_case ctx;
                   incr cases;

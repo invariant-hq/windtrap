@@ -6,7 +6,7 @@
 (* Tests for Gen: determinism under fixed seeds, distribution smoke tests,
    integrated-shrinking invariants (candidates satisfy generator
    constraints), greedy-shrink termination and minima, and printing
-   totality including shrunk-draw provenance. *)
+   totality including the printerless placeholder. *)
 
 open Windtrap
 module Seed = Windtrap.Private.Seed
@@ -21,9 +21,6 @@ let check condition format =
 
 let starts_with prefix text = String.starts_with ~prefix text
 
-let contains needle haystack =
-  Windtrap.Private.Text.contains_substring ~pattern:needle haystack
-
 let show_ints values =
   "[" ^ String.concat "; " (List.map string_of_int values) ^ "]"
 
@@ -33,7 +30,7 @@ let show_int_lists lists = String.concat " " (List.map show_ints lists)
    Everything below is deterministic across runs and machines. *)
 let root = 0x00c0ffee1234abcdL
 let state index = Seed.make (Seed.derive ~root ~path:"test_gen" ~index)
-let root_value tree = Gen.value (Shrink_tree.root tree)
+let root_value tree = Shrink_tree.root tree
 
 let samples gen count =
   List.init count (fun index -> root_value (Gen.sample gen (state index)))
@@ -277,18 +274,7 @@ let unit_generates_and_prints_parentheses () =
     (rendered = Printf.sprintf "((), %d)" n)
     "pair over unit rendered %S" rendered;
   let bare = Gen.(pair (pure ()) nat) in
-  check (not (Gen.prints bare)) "pair over [pure ()] claims a printer";
-  (* And the shape a nullary variant arm actually takes: [map] derives no
-     printer either way, so what a counterexample shows is the leaf's
-     provenance — which [pure ()] does not record. *)
-  let arm = Gen.map (fun () -> `Pop) Gen.unit in
-  let rendered = Gen.render arm (Shrink_tree.root (Gen.sample arm (state 2))) in
-  check (rendered = "<from: ()>") "map over unit rendered %S" rendered;
-  let bare = Gen.map (fun () -> `Pop) (Gen.pure ()) in
-  let rendered =
-    Gen.render bare (Shrink_tree.root (Gen.sample bare (state 2)))
-  in
-  check (rendered = "<no printer>") "map over [pure ()] rendered %S" rendered
+  check (not (Gen.prints bare)) "pair over [pure ()] claims a printer"
 
 let bool_shrinks_true_to_false () =
   let values = samples Gen.bool 100 in
@@ -642,32 +628,6 @@ let list_exact_keep_degenerate_masks () =
     (!lengths = [ 0; 0 ])
     "~keep saw lists of lengths %s at n = 0" (show_ints !lengths)
 
-(* A dropped element leaves no provenance either: the mask selects element
-   samples, traces included, so every node of a printerless list_exact
-   renders exactly its own surviving draws. The element generator is
-   [map]ped to make the list printerless, which is what puts the draws on
-   screen; the mask drops on reduction, so candidates below the root have
-   something to drop. *)
-let list_exact_keep_drops_the_provenance_too () =
-  let element = Gen.map Fun.id (Gen.int_range 0 9) in
-  let gen = Gen.list_exact ~keep:(List.map (fun n -> n >= 5)) 6 element in
-  check
-    (not (Gen.prints gen))
-    "a printerless element generator derived a printer";
-  let tree = find_sample gen (fun l -> List.length l >= 2) in
-  let visited = ref 0 in
-  let rec go tree =
-    if !visited >= 200 then raise_notrace Exit;
-    incr visited;
-    let node = Shrink_tree.root tree in
-    let rendered = Gen.render gen node in
-    let expected = "<from: " ^ show_ints (Gen.value node) ^ ">" in
-    check (rendered = expected) "a node rendered %S, not %S" rendered expected;
-    Seq.iter go (Shrink_tree.children tree)
-  in
-  (try go tree with Exit -> ());
-  check (!visited >= 20) "only %d nodes carried provenance" !visited
-
 let list_exact_wrong_length_mask_raises () =
   let gen = Gen.list_exact ~keep:(fun _ -> []) 3 Gen.nat in
   (match Gen.sample gen (state 0) with
@@ -807,16 +767,14 @@ let of_list_picks_uniformly_and_shrinks_toward_head () =
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = 10) "of_list minimized to %d, not the head" minimum;
   let rendered = Gen.render gen (Shrink_tree.root tree) in
-  check (rendered = "<from: of_list[2]>") "of_list rendered %S" rendered;
+  check (rendered = "<no printer>") "of_list rendered %S" rendered;
   check (Gen.render_value gen 20 = None) "of_list has a printer"
 
-(* The printerless leaves take [?pp] because they are what sits under a
-   [map]/[bind] composition, and [map]/[bind] can derive nothing. A printer
-   here is not merely used when the leaf renders directly: [renormalize]
-   collapses the leaf's provenance to the printed value, so it survives
-   into the [<from: ...>] of any printerless generator above it — which is
-   the only way such a composition prints anything useful at all. *)
-let leaf_printers_survive_a_printerless_composition () =
+(* The printerless leaves take [?pp] because they are what most often sits
+   at the bottom of a composition, and one printerless leaf forfeits the
+   derived printer of everything built over it with the deriving
+   combinators. *)
+let leaf_printers_feed_the_derivation_law () =
   let pp = Format.pp_print_int in
   let gen = Gen.of_list ~pp [ 10; 20; 30 ] in
   check (Gen.prints gen) "of_list ?pp reports no printer";
@@ -826,21 +784,25 @@ let leaf_printers_survive_a_printerless_composition () =
   check
     (Gen.render_value gen 20 = Some "20")
     "of_list ?pp does not render a bare value";
-  (* A [map] above it stays printerless — nothing can be inferred — but its
-     provenance now names the value instead of the choice index. *)
+  (* The leaf's printer feeds the deriving combinators above it... *)
+  let listed = Gen.list gen in
+  check (Gen.prints listed) "list over of_list ?pp derived no printer";
+  check
+    (Gen.render_value listed [ 10; 20 ] = Some "[10; 20]")
+    "list over of_list ?pp does not render";
+  (* ...but not [map]/[bind], which can derive nothing. *)
   let mapped = Gen.map (fun v -> (v, ())) gen in
   check (not (Gen.prints mapped)) "map claimed a printer";
   let mapped_tree = find_sample mapped (fun (v, ()) -> v = 30) in
   let mapped_rendered = Gen.render mapped (Shrink_tree.root mapped_tree) in
   check
-    (mapped_rendered = "<from: 30>")
-    "the leaf's printer did not reach the enclosing provenance: %S"
-    mapped_rendered;
+    (mapped_rendered = "<no printer>")
+    "map over a printed leaf rendered %S" mapped_rendered;
   let c = Gen.constant ~pp 7 in
   check (Gen.prints c) "constant ?pp reports no printer";
   let c_rendered = Gen.render c (Shrink_tree.root (Gen.sample c (state 0))) in
   check (c_rendered = "7") "constant ?pp rendered %S" c_rendered;
-  (* Without [?pp] the old behaviour, unchanged: position, not value. *)
+  (* Without [?pp] the leaf prints nothing at all. *)
   let bare = Gen.of_list [ 10; 20; 30 ] in
   check (not (Gen.prints bare)) "of_list without ?pp claims a printer"
 
@@ -868,9 +830,9 @@ let one_of_picks_all_branches_and_shrinks_to_earlier () =
     (root_value (first_child tree) = `A)
     "one_of branch 1 did not shrink to branch 0";
   let rendered = Gen.render gen (Shrink_tree.root tree) in
-  check (rendered = "<from: one_of[1]>") "one_of rendered %S" rendered
+  check (rendered = "<no printer>") "one_of rendered %S" rendered
 
-let frequency_respects_weights_and_labels () =
+let frequency_respects_weights () =
   let gen = Gen.(frequency [ (1, constant `A); (3, constant `B) ]) in
   let values = samples gen 400 in
   let count v = List.length (List.filter (fun x -> x = v) values) in
@@ -880,7 +842,7 @@ let frequency_respects_weights_and_labels () =
     "weight-3 branch not dominant (%d vs %d)" (count `B) (count `A);
   let tree = find_sample gen (fun v -> v = `B) in
   let rendered = Gen.render gen (Shrink_tree.root tree) in
-  check (rendered = "<from: frequency[1]>") "frequency rendered %S" rendered
+  check (rendered = "<no printer>") "frequency rendered %S" rendered
 
 (* The Gen doc law: a composite prints exactly when all its components
    print — including the choice combinators. *)
@@ -899,8 +861,8 @@ let one_of_over_printed_branches_derives_printer () =
     (Gen.render gen (Shrink_tree.root child) = string_of_int (root_value child))
     "a shrunk printed one_of candidate rendered %S"
     (Gen.render gen (Shrink_tree.root child));
-  (* The derived printer feeds enclosing generators, both derived pps and
-     printerless provenance: composition cannot lose the printer. *)
+  (* The derived printer feeds enclosing deriving combinators — but not
+     [map], which can derive nothing. *)
   let paired = Gen.(pair gen nat) in
   let tree = Gen.sample paired (state 0) in
   let a, b = root_value tree in
@@ -911,8 +873,7 @@ let one_of_over_printed_branches_derives_printer () =
   let mapped = Gen.map Fun.id gen in
   let tree = Gen.sample mapped (state 1) in
   check
-    (Gen.render mapped (Shrink_tree.root tree)
-    = Printf.sprintf "<from: %d>" (root_value tree))
+    (Gen.render mapped (Shrink_tree.root tree) = "<no printer>")
     "map over a printed one_of rendered %S"
     (Gen.render mapped (Shrink_tree.root tree))
 
@@ -973,22 +934,18 @@ let such_that_exhaustion_is_a_discard () =
   | exception Invalid_argument _ -> ()
   | _ -> failf "such_that ~max_tries:0 sampled successfully"
 
-(* Composition and provenance *)
+(* Composition *)
 
-let map_provenance_shows_the_underlying_draw () =
+let map_renders_the_placeholder () =
   let gen = Gen.map succ Gen.int in
   let tree = Gen.sample gen (state 1) in
   let rendered = Gen.render gen (Shrink_tree.root tree) in
-  check
-    (rendered = Printf.sprintf "<from: %d>" (root_value tree - 1))
-    "mapped int rendered %S for %d" rendered (root_value tree);
-  (* Provenance follows shrinking: a candidate renders its own draws. *)
+  check (rendered = "<no printer>") "mapped int rendered %S" rendered;
+  (* Candidates render the same placeholder. *)
   let tree = find_sample gen (fun v -> v <> 1) in
   let child = first_child tree in
   let rendered = Gen.render gen (Shrink_tree.root child) in
-  check
-    (rendered = Printf.sprintf "<from: %d>" (root_value child - 1))
-    "shrunk mapped int rendered %S for %d" rendered (root_value child)
+  check (rendered = "<no printer>") "shrunk mapped int rendered %S" rendered
 
 let bind_keeps_inner_constraints_while_shrinking () =
   let gen =
@@ -1007,13 +964,11 @@ let bind_keeps_inner_constraints_while_shrinking () =
   check (minimum = [ 0 ]) "bound list minimized to length %d"
     (List.length minimum)
 
-let bind_provenance_chains_draws () =
+let bind_renders_the_placeholder () =
   let gen = Gen.(bind nat (fun n -> constant n)) in
   let tree = Gen.sample gen (state 4) in
   let rendered = Gen.render gen (Shrink_tree.root tree) in
-  check
-    (rendered = Printf.sprintf "<from: %d>" (root_value tree))
-    "bind rendered %S for %d" rendered (root_value tree)
+  check (rendered = "<no printer>") "bind rendered %S" rendered
 
 let letops_compose () =
   let gen =
@@ -1025,7 +980,7 @@ let letops_compose () =
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = 0) "let+/and+ sum minimized to %d" minimum
 
-let with_pp_attaches_and_survives_map () =
+let with_pp_attaches_a_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let inner = Gen.with_pp custom (Gen.map succ Gen.int) in
   let tree = Gen.sample inner (state 5) in
@@ -1036,34 +991,30 @@ let with_pp_attaches_and_survives_map () =
   check
     (Gen.render_value inner 7 = Some "N=7")
     "with_pp did not expose the printer";
-  (* Mapping over a printed generator keeps the printed form in the
-     provenance: composition cannot lose the printer. *)
+  (* A [map] above it is printerless again: it can derive nothing, and only
+     another [with_pp] at the top restores printing. *)
   let outer = Gen.map (fun n -> -n) inner in
-  let tree = Gen.sample outer (state 6) in
-  let rendered = Gen.render outer (Shrink_tree.root tree) in
-  check
-    (rendered = Printf.sprintf "<from: N=%d>" (-root_value tree))
-    "mapped with_pp rendered %S for %d" rendered (root_value tree)
+  let rendered =
+    Gen.render outer (Shrink_tree.root (Gen.sample outer (state 6)))
+  in
+  check (rendered = "<no printer>") "mapped with_pp rendered %S" rendered
 
-let mixed_one_of_provenance_keeps_branch_printer () =
+let mixed_one_of_derives_no_printer () =
   (* One branch prints, one does not: the choice cannot derive a printer,
-     and provenance keeps the printed branch's rendering inside its label. *)
+     whichever branch produced the value. *)
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let gen = Gen.(one_of [ with_pp custom (constant 5); constant 9 ]) in
   check (Gen.render_value gen 5 = None) "a mixed one_of derived a printer";
   let printed = find_sample gen (fun v -> v = 5) in
   let rendered = Gen.render gen (Shrink_tree.root printed) in
-  check
-    (rendered = "<from: one_of[0] N=5>")
-    "labelled printed branch rendered %S" rendered;
+  check (rendered = "<no printer>") "printed branch rendered %S" rendered;
   let printerless = find_sample gen (fun v -> v = 9) in
   let rendered = Gen.render gen (Shrink_tree.root printerless) in
-  check
-    (rendered = "<from: one_of[1]>")
-    "labelled printerless branch rendered %S" rendered
+  check (rendered = "<no printer>") "printerless branch rendered %S" rendered
 
-(* The RFC's shape example, without [with_pp]: the counterexample renders
-   as labelled primitive draws. *)
+(* The RFC's shape example: [map] under each branch makes the choice
+   printerless, and only [with_pp] at the top makes counterexamples
+   readable. *)
 type shape = Circle of float | Rect of float * float
 
 let shape_gen =
@@ -1076,21 +1027,12 @@ let shape_gen =
           (pair (float_range 0.0 100.0) (float_range 0.0 100.0));
       ])
 
-let shape_provenance_matches_the_rfc_form () =
+let shape_generator_prints_only_with_pp () =
   let rect_tree =
     find_sample shape_gen (function Rect _ -> true | Circle _ -> false)
   in
   let rendered = Gen.render shape_gen (Shrink_tree.root rect_tree) in
-  check
-    (starts_with "<from: one_of[1] (" rendered && contains ", " rendered)
-    "Rect provenance rendered %S" rendered;
-  let circle_tree =
-    find_sample shape_gen (function Circle _ -> true | Rect _ -> false)
-  in
-  let rendered = Gen.render shape_gen (Shrink_tree.root circle_tree) in
-  check
-    (starts_with "<from: one_of[0] " rendered)
-    "Circle provenance rendered %S" rendered;
+  check (rendered = "<no printer>") "bare shape rendered %S" rendered;
   let pp_shape ppf = function
     | Circle r -> Format.fprintf ppf "Circle %g" r
     | Rect (w, h) -> Format.fprintf ppf "Rect (%g, %g)" w h
@@ -1140,18 +1082,6 @@ let raising_printer_is_contained () =
         (starts_with "<printer raised" rendered)
         "render_value let the exception through: %S" rendered
   | None -> failf "with_pp lost its printer"
-
-let provenance_is_bounded () =
-  let gen = Gen.(map (fun l -> l) (list ~size:(constant 300) nat)) in
-  let tree = Gen.sample gen (state 0) in
-  let rendered = Gen.render gen (Shrink_tree.root tree) in
-  check
-    (String.length rendered <= 250)
-    "provenance rendered %d bytes" (String.length rendered);
-  check
-    (String.length rendered >= 3
-    && String.sub rendered (String.length rendered - 4) 4 = "…>")
-    "truncated provenance does not end with an ellipsis: %S" rendered
 
 let render_value_reports_printer_presence () =
   check (Gen.render_value Gen.int 42 = Some "42") "int printer missing";
@@ -1221,34 +1151,6 @@ let frequency_zero_weight_branch_is_never_chosen () =
   List.iter
     (fun v -> check (v = `B) "frequency chose a zero-weight branch")
     (samples gen 100)
-
-(* Structural validity only: correct lead/continuation shapes, no overlong or
-   surrogate analysis — enough to detect a truncation that splits a char. *)
-let is_valid_utf8 text =
-  let length = String.length text in
-  let rec go index =
-    if index >= length then true
-    else
-      let byte = Char.code text.[index] in
-      if byte < 0x80 then go (index + 1)
-      else
-        let width =
-          if byte land 0xE0 = 0xC0 then 2
-          else if byte land 0xF0 = 0xE0 then 3
-          else if byte land 0xF8 = 0xF0 then 4
-          else 0
-        in
-        if width = 0 || index + width > length then false
-        else
-          let continuation offset =
-            Char.code text.[index + offset] land 0xC0 = 0x80
-          in
-          continuation 1
-          && (width < 3 || continuation 2)
-          && (width < 4 || continuation 3)
-          && go (index + width)
-  in
-  go 0
 
 (* The doc's shrink order for [of_list], pinned exactly: the value at
    position 2 offers the head first, then the intermediate position, and the
@@ -1322,9 +1224,8 @@ let such_that_over_sized_string_keeps_both_constraints () =
       "the greedy minimum must sit on the predicate boundary, got %S" minimum
   done
 
-(* An explicit [with_pp] must win over B6's derived printer everywhere: when
-   the choice renders directly and inside the provenance of an enclosing
-   printerless generator (no resurrection of the derived printer). *)
+(* An explicit [with_pp] must win over the derived choice printer, and a
+   [map] above the override is printerless like any other. *)
 let with_pp_overrides_derived_choice_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let overridden = Gen.(with_pp custom (one_of [ int_range 0 9; nat ])) in
@@ -1340,9 +1241,8 @@ let with_pp_overrides_derived_choice_printer () =
   let mapped = Gen.map Fun.id overridden in
   let tree = Gen.sample mapped (state 1) in
   check
-    (Gen.render mapped (Shrink_tree.root tree)
-    = Printf.sprintf "<from: N=%d>" (root_value tree))
-    "the derived printer resurfaced in provenance: %S"
+    (Gen.render mapped (Shrink_tree.root tree) = "<no printer>")
+    "map over the override rendered %S"
     (Gen.render mapped (Shrink_tree.root tree))
 
 (* The B5 evidence shape (lpath test_lpath.ml:88-95): identifier characters
@@ -1371,22 +1271,6 @@ let evidence_shaped_identifier_generator_composes () =
   check
     (minimum = "a" || minimum = "-")
     "identifier minimized to %S, not a single boundary char" minimum
-
-let provenance_truncation_respects_utf8 () =
-  List.iter
-    (fun pad ->
-      (* [pad] shifts the byte at which the budget cuts, so at least one case
-         lands the cut inside a two-byte character. *)
-      let wide ppf _ =
-        Format.pp_print_string ppf
-          (pad ^ String.concat "" (List.init 200 (fun _ -> "é")))
-      in
-      let gen = Gen.(map Fun.id (with_pp wide nat)) in
-      let tree = Gen.sample gen (state 0) in
-      let rendered = Gen.render gen (Shrink_tree.root tree) in
-      check (is_valid_utf8 rendered)
-        "truncated provenance (pad %S) is not valid UTF-8: %S" pad rendered)
-    [ ""; "x" ]
 
 let suite =
   [
@@ -1446,8 +1330,6 @@ let suite =
       list_exact_keep_reapplies_to_every_candidate );
     ("list_exact ?keep runs once per node", list_exact_keep_runs_once_per_node);
     ("list_exact ?keep degenerate masks", list_exact_keep_degenerate_masks);
-    ( "list_exact ?keep drops the provenance too",
-      list_exact_keep_drops_the_provenance_too );
     ("list_exact wrong-length mask raises", list_exact_wrong_length_mask_raises);
     ( "list_exact negative count raises at sample time",
       list_exact_negative_count_raises_at_sample_time );
@@ -1460,8 +1342,8 @@ let suite =
     ("triple and quad minimize to zeroes", triple_and_quad_minimize_to_zeroes);
     ( "constant is a leaf and asks for a printer",
       constant_is_a_leaf_and_asks_for_a_printer );
-    ( "leaf printers survive a printerless composition",
-      leaf_printers_survive_a_printerless_composition );
+    ( "leaf printers feed the derivation law",
+      leaf_printers_feed_the_derivation_law );
     ("pure is constant", pure_is_constant);
     ( "of_list picks uniformly and shrinks toward the head",
       of_list_picks_uniformly_and_shrinks_toward_head );
@@ -1472,8 +1354,7 @@ let suite =
       one_of_picks_all_branches_and_shrinks_to_earlier );
     ( "one_of over printed branches derives a printer",
       one_of_over_printed_branches_derives_printer );
-    ( "frequency respects weights and labels",
-      frequency_respects_weights_and_labels );
+    ("frequency respects weights", frequency_respects_weights);
     ( "frequency over printed branches derives a printer",
       frequency_over_printed_branches_derives_printer );
     ( "frequency invalid raises at sample time",
@@ -1482,20 +1363,17 @@ let suite =
     ( "such_that filters generation and shrinking",
       such_that_filters_generation_and_shrinking );
     ("such_that exhaustion is a discard", such_that_exhaustion_is_a_discard);
-    ( "map provenance shows the underlying draw",
-      map_provenance_shows_the_underlying_draw );
+    ("map renders the placeholder", map_renders_the_placeholder);
     ( "bind keeps inner constraints while shrinking",
       bind_keeps_inner_constraints_while_shrinking );
-    ("bind provenance chains draws", bind_provenance_chains_draws);
+    ("bind renders the placeholder", bind_renders_the_placeholder);
     ("letops compose", letops_compose);
-    ("with_pp attaches and survives map", with_pp_attaches_and_survives_map);
-    ( "mixed one_of provenance keeps branch printer",
-      mixed_one_of_provenance_keeps_branch_printer );
-    ( "shape provenance matches the RFC form",
-      shape_provenance_matches_the_rfc_form );
+    ("with_pp attaches a printer", with_pp_attaches_a_printer);
+    ("mixed one_of derives no printer", mixed_one_of_derives_no_printer);
+    ( "shape generator prints only with_pp",
+      shape_generator_prints_only_with_pp );
     ("render is total over shrink trees", render_is_total_over_shrink_trees);
     ("raising printer is contained", raising_printer_is_contained);
-    ("provenance is bounded", provenance_is_bounded);
     ( "render_value reports printer presence",
       render_value_reports_printer_presence );
     ( "rejected bind candidates are skipped",
@@ -1518,7 +1396,6 @@ let suite =
       with_pp_overrides_derived_choice_printer );
     ( "evidence-shaped identifier generator composes",
       evidence_shaped_identifier_generator_composes );
-    ("provenance truncation respects UTF-8", provenance_truncation_respects_utf8);
   ]
 
 (* The generator laws, as properties
