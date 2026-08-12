@@ -28,12 +28,16 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | everything below; links `unix`, `windtrap.clock`, `windtrap.coverage` and `windtrap.mutate` (the two Law-12 seams) only — all three sublibraries are in-package, so Law 10's no-third-party-weight posture is untouched |
+| library `windtrap` | `lib/` | the kernel: declaration tree, checking, property engine, snapshots, capture, the run/driver spine, renderers, CLI, the client facades and the registry; links `unix`, `windtrap.clock`, `windtrap.gen`, `windtrap.coverage` and `windtrap.mutate` only — all in-package, so Law 10's no-third-party-weight posture is untouched |
+| `windtrap.gen` | `lib/gen/` | deterministic generation with integrated shrinking: `Gen`, `Seed`, `Shrink_tree`; zero library dependencies, usable without the runner |
+| `windtrap.stateful` | `lib/stateful/` | model-based testing: `Windtrap_stateful`'s `command` vocabulary and `stateful`, over `windtrap` + `windtrap.gen` |
+| `windtrap.mutation` | `lib/mutation/` | the mutation loop — dry run, reach map, fork supervision, verdicts, report — a `Windtrap_driver` client that installs itself into `Registry` at load; linking it is the arming act (`-linkall`) |
+| `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation runtimes share; stdlib only |
 | `windtrap.clock` | `lib/clock/` | monotonic clock C stubs; the runner's timing source for per-test durations and the run total |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
 | `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map, `.mutants` verdict files; stdlib only, for the same reason |
-| binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`) and `mutate` (merge verdicts, report the survivors that survived everywhere) |
-| package `ppx_windtrap` | `ppx/`, `ppx/coverage/`, `ppx/mutate/` | the expect/inline PPX and the two instrumentation backends, `ppx_windtrap` and `ppx_windtrap.mutate`; the only unit that sees ppxlib |
+| binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`) and `mutate` (merge verdicts, report the survivors that survived everywhere); shared discovery and staleness in `data_files` |
+| package `ppx_windtrap` | `ppx/` | the expect/inline PPX, the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`) over shared scaffolding (`ppx/scaffold/`), and the expect runtime itself — `Ppx_runtime` (`ppx/runtime/`) and the ambient `Expect_test_config` (`ppx/config/`) — the only unit that sees ppxlib |
 
 ## Module graph (`lib/`)
 
@@ -43,9 +47,10 @@ Format helpers), `Text` (newline/UTF-8/substring utilities), `Env`
 CI/TTY detection, the settings with no flag; the `WINDTRAP_*` mirrors
 themselves are declared in `Cli`'s table), `Tag`, `Loc` (`pos` +
 backtrace-derived source attribution), `Path_ops` (project root,
-sandbox reconstruction, log dirs), `Atomic_file` (temp+rename writes),
-`Seed` (SplitMix64, `s1:` tokens, `mix(root, path, index)`
-derivation), `Shrink_tree` (memoized lazy rose trees).
+sandbox reconstruction, log dirs), `Atomic_file` (temp+rename writes). `Seed` (SplitMix64, `s1:` tokens,
+`mix(root, path, index)` derivation) and `Shrink_tree` (memoized lazy
+rose trees) live in `windtrap.gen` since the repartition; thin alias
+units keep their core spellings for `Property` and the test seams.
 
 Data: `Failure` (failure-as-data: typed kinds, phase, location,
 output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions),
@@ -56,8 +61,11 @@ structure the witness waist deliberately does not carry), `Diff` (diff
 over `Rendered_seq`'s output; no styling).
 
 Verbs and engines: `Check` (the Twenty-five verbs, pure, no run-state
-dependency), `Gen`, `Property` (the case loop: examples-first, derived
-per-case seeds, discard/give-up, shrink search, collect tables).
+dependency), `Gen` (an alias to `windtrap.gen`'s module — the witness
+itself lives in the standalone library), `Property` (the case loop:
+examples-first, derived per-case seeds, discard/give-up, shrink search,
+collect tables). Model-based testing composes on `Property` from
+outside: `windtrap.stateful` is a client, not a resident.
 
 Subsystems (each owns a state *type*; the state *instances* live in
 `Run`): `Capture` (fd-level dup2 capture into per-test log files, C
@@ -65,35 +73,48 @@ stdio flushing), `Snapshot` (name-keyed baselines, read-only checking,
 atomic acceptance, orphan tracking), `Test_tree` (the declaration
 tree: tests, groups, focus, xfail, flatten).
 
-Drive and render: `Run` (THE run record and the one ambient slot),
-`Runner` (sequential executor: selection, per-test boundary, timeout
-via SIGALRM, retries, fixture release, the last-failed store, the exit
-guard, Law 11 exit codes; emits typed events, prints nothing), `Cli` (one
-declarative flag table → parse, `--help`, and the environment layer:
-each flag's mirror is declared beside it and read through the flag's
-own parser, so a variable cannot accept what its flag rejects),
-`Render` /
-`Render_junit` / `Render_github`, `Driver` (a run's whole reporting:
-one producer per transcript line class and one order they run in —
-`execute_and_report` — around `Runner.execute`), `Mutate_loop` (the
-mutation seam: the dry run and its reach map, the determinism probe,
-the forced-fail check, the fork loop, the admission machine that rules
-a selection test by test, the verdict file and the report —
-it *wraps* `Driver.execute_and_report` rather than sitting beside it,
-because a mutation run must announce an armed mutant before any other
-output and fork after the dry run, which brackets the run on both
-sides), `Ppx_runtime` (inline-test protocol, expect matching,
-`.corrected` assembly), `Expect_test_config` (the ambient config expect
-tests reference), and the facade `Windtrap`.
+Drive and render: `Run` (THE run record and the one ambient slot; a
+result row carries its `subject` — test, fixture release, or the
+stale-baselines verdict — so every sink projects the one recorded
+list), `Runner` (sequential executor: `plan` stages the startup checks
+and selection, `execute_plan` runs the plan, `execute` is literally
+their composition; per-test boundary, timeout via SIGALRM, retries,
+fixture release, the last-failed store, the exit guard, Law 11 exit
+codes; emits typed events with immutable payloads, prints nothing),
+`Cli` (one declarative item table — flags and flagless settings — →
+one resolution pass producing `Run.config` and `Render.settings`,
+`--help`, and the environment layer: each flag's mirror is declared
+beside it and read through the flag's own parser, so a variable cannot
+accept what its flag rejects; `Env` remains the readers and platform
+detection consumed below `Run`), `Render` / `Render_junit` /
+`Render_github` (`Render` also owns the subsystem-neutral
+report-section vocabulary: instrumentation reports arrive as section
+data, and `Render` names no instrumentation runtime), `Driver` (the
+spine: `Driver.t` is the record of one invocation's reporting inputs,
+`execute_and_report` the one order every driver shares, and
+`plan`/`execute` the staged halves for mutation-child-style callers),
+`Registry` (the one interceptor slot and the Law-16d armed hooks), the
+two client facades `Windtrap_driver` (what a thing that runs suites
+may use) and `Windtrap_testkit` (what code inside a test may use) —
+together the Law-12 referent — and the facade `Windtrap`. The mutation
+loop and the expect runtime are clients, not residents: `Mutate_loop`
+(the dry run and its reach map, the determinism probe, the forced-fail
+check, the fork loop, the admission machine, the verdict file and the
+report) lives in `windtrap.mutation` and *brackets*
+`Driver.execute_and_report` — a mutation run must announce an armed
+mutant before any other output and fork after the dry run — while
+`Ppx_runtime` (inline-test protocol, expect matching, `.corrected`
+assembly) and the ambient `Expect_test_config` live in `ppx_windtrap`.
 
-Two thin drivers sit on top of `Mutate_loop.execute_and_report` — which
-in every uninstrumented build and every `--list` run *is*
-`Driver.execute_and_report`, same transcript, same bytes, and which in
-an instrumented build the environment asked nothing of adds the one
-discovery line and nothing else — and nothing else sits between them
-and it: the facade's `run` and `Ppx_runtime.exit`. Each resolves
-one invocation (`Cli.settings`), calls `execute_and_report`, and adds
-only what is genuinely its own — the argv-derived invocation, the
+Two thin drivers sit on top of `Driver.execute_and_report` and nothing
+else sits between them and it: the facade's `run` (in core) and
+`Ppx_runtime.exit` (in `ppx_windtrap`, through the facades). Each
+resolves one invocation (`Cli.settings`), consults `Registry` — a
+mutation run is the interceptor `windtrap.mutation` installed at load,
+which in every uninstrumented build and every `--list` run *is*
+`Driver.execute_and_report`, same transcript, same bytes; with no
+interceptor installed the call is the plain spine — and adds
+only what is genuinely its own: the argv-derived invocation, the
 property-aware header seed, the selection description, GitHub gating,
 the `--list` listing, JUnit, the focus warning and the process exit on
 one side; the fixed `` `Mirrors `` invocation, a header with neither
@@ -120,25 +141,32 @@ escapes `open Windtrap`.
 Two instrumentation subsystems, each in the same four places and no
 others (Law 12): an instrumenter inside `ppx_windtrap`, a stdlib-only
 runtime sub-library, one `windtrap` reporting subcommand that merges and
-renders but never runs tests or drives a build, and at most one core
-module that drives it.
+renders but never runs tests or drives a build, and — outside the
+core — at most one driver or observer that is a client of the named
+facades.
 
 - **Coverage** — `ppx/coverage/`, `lib/coverage/`, `bin/coverage_cmd.ml`,
-  no core module. Its entire coupling is one summary snapshot read into
-  the run record at run end and rendered like any other run data.
+  no driver. Its entire coupling is one summary snapshot read into
+  the run record at run end and rendered, as section data, like any
+  other run data.
 - **Mutation** — `ppx/mutate/`, `lib/mutate/`, `bin/mutate_cmd.ml`, and
-  `lib/mutate_loop.ml(i)`. Its coupling is one dispatch call at run
-  entry (the two thin drivers call `Mutate_loop.execute_and_report` in
-  place of `Driver.execute_and_report`), one *composed* observer on
-  `Runner.execute`'s existing `?on_event` hook — never a replacement for
-  the transcript's — and one read-only flag on the expect correction
-  path, `Ppx_runtime.enter_armed`, passed in as an argument rather than
-  called, since `Ppx_runtime` sits above `Mutate_loop`.
+  the out-of-core driver `windtrap.mutation` (`lib/mutation/`), a
+  `Windtrap_driver` client. Its coupling is the `Registry` interceptor
+  it installs at load — linking the library is the arming act; the two
+  thin drivers consult the slot and otherwise call
+  `Driver.execute_and_report` — one *composed* observer on
+  `Runner.execute`'s existing `?on_event` hook — never a replacement
+  for the transcript's — and the Law-16d armed hooks, which
+  `Ppx_runtime` registers at load: firing them clears the inline
+  runtime's cross-run tables and revokes the corrections licence.
 
-No instrumentation type appears in `windtrap.mli`, and neither subsystem
-owns a copy of the other's layout: the source-excerpt renderer is one
-function in `Render` over a subsystem-neutral record, which coverage's
-per-file report and mutation's survivor blocks both project into.
+No instrumentation type appears in `windtrap.mli`, and neither
+subsystem owns a copy of the other's layout — nor does `Render` name
+either runtime: reports arrive as the subsystem-neutral section
+vocabulary (rows, hints, source excerpts), which coverage's per-file
+report and mutation's survivor blocks both project into, spelling
+mutant identifiers and arm variables with the runtime's own functions
+at the builder site.
 
 ## The Laws
 
@@ -202,23 +230,28 @@ them reopens the design**.
     stated by Law 16(e); it never reports a test outcome.**
     *Prevents:* filter typos reading as green CI; masked assertion
     failures.
-12. **Instrumentation is contained.** Each instrumentation subsystem
-    lives in exactly an instrumenter inside `ppx_windtrap`, a
-    stdlib-only runtime sub-library (the RFC allowed stdlib+unix;
-    neither shipped library needs unix), one `windtrap` reporting
+12. **Instrumentation is contained, and the containment is typed.**
+    Each instrumentation subsystem lives in exactly an instrumenter
+    inside `ppx_windtrap`, a stdlib-only runtime sub-library (the RFC
+    allowed stdlib+unix; neither shipped library needs unix; the shared
+    dump-file protocol is `windtrap.instr`), one `windtrap` reporting
     subcommand that merges and renders but never runs tests or drives a
-    build, and at most one core module that drives it — coverage needs
-    none; mutation's is `lib/mutate_loop.ml`. Core windtrap's coupling
-    to each is one dispatch call per run — coverage's summary snapshot
-    at run end, mutation's at run entry — plus, for mutation alone, one
-    read-only flag on the expect correction path (Law 16d). Per-test
+    build, and — outside the core — at most one driver or observer that
+    is a client of the named facades (`Windtrap_driver`,
+    `Windtrap_testkit`): coverage needs none; mutation's is
+    `windtrap.mutation`, installed through the one `Registry` slot,
+    where linking the library is the arming act. Core windtrap's
+    coupling to each is one read per run — coverage's summary snapshot
+    at run end, mutation's interceptor consult at run entry. Per-test
     observation uses only the existing `Runner.execute ?on_event` hook,
-    which cannot alter status, counts, or scheduling, and reads only its
-    own subsystem's runtime. **No instrumentation type appears in
-    `windtrap.mli`.** Two subsystems may not own two copies of one
-    renderer: shared layout lives in `Render` behind a
-    subsystem-neutral record. *Prevents:* instrumentation metastasizing
-    through the framework; two divergent source-excerpt renderers.
+    which receives immutable payloads and cannot alter status, counts,
+    or scheduling, and reads only its own subsystem's runtime. **No
+    instrumentation type appears in `windtrap.mli`, and `Render` names
+    no instrumentation runtime:** report data arrives as the
+    subsystem-neutral section vocabulary, so shared layout has one home
+    and two subsystems cannot own two copies of one renderer.
+    *Prevents:* instrumentation metastasizing through the framework;
+    two divergent source-excerpt renderers.
 13. **Coverage never changes what programs or tests mean.**
     Instrumentation is entry-sequencing only — it must never alter
     tail-call status, laziness compilation, or evaluation order — and
@@ -262,7 +295,11 @@ them reopens the design**.
 16. **A mutant changes meaning only in a forked child, only when armed,
     and only in a build that asked for it.**
     (a) *Inert by default.* Mutation arrives through its own opt-in
-    dune instrumentation backend. A build without it is byte-identical
+    dune instrumentation backend, and its runner through its own
+    library: `WINDTRAP_MUTATE` is answered by the interceptor
+    `windtrap.mutation` installs into `Registry` at load, so linking
+    that library is the arming act and a binary without it has no
+    mutation runner. A build without the backend is byte-identical
     to one without windtrap; with it and without `WINDTRAP_MUTATE`, the
     instrumented code is observationally identical to uninstrumented
     code — same evaluation order, tail-call status, laziness, outcomes,

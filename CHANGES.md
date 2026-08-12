@@ -188,6 +188,30 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
+**Stateful testing moves to `windtrap.stateful`.** The `command` type and the
+`command`/`call`/`stateful` constructors leave `Windtrap` for the sublibrary's
+`Windtrap_stateful`, same contracts, same failure reports: add
+`windtrap.stateful` to the test stanza's libraries and `open
+Windtrap_stateful`. The core no longer carries model-based testing in every
+test binary's closure.
+
+**A mutation run is a linked library.** The mutation loop leaves the core for
+`windtrap.mutation`; add it to the test stanza's libraries —
+`(libraries … windtrap windtrap.mutation)` — and linking it is the wiring.
+Inline (`ppx_windtrap`) suites get it through the runtime automatically.
+Builds without the backend, and runs without `WINDTRAP_MUTATE`, are unchanged.
+
+**Generation stands alone as `windtrap.gen`.** `Gen`, and the seed and
+shrink-tree machinery under it, now live in a sublibrary with zero
+dependencies — deterministic generation with integrated shrinking, usable
+without the runner. `Windtrap.Gen` is unchanged: same module, same docs, now
+an alias.
+
+**A printerless counterexample says `<no printer>`.** Property failures for
+generators without a printer no longer reconstruct a `<from: …>` provenance
+string from the generation path; the report says `<no printer>` and, as
+before, names `Gen.with_pp` as the remedy.
+
 **Backtraces stop at your code.** Under every backtrace windtrap records sit
 its own frames — the callback delimiter, the attempt guard, the verb that
 raised. They name none of your code and they were the majority of a short one:
