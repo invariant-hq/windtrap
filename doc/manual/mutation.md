@@ -34,7 +34,8 @@ any other output, so a run whose output does not say so has none. And
 **nothing is catalogued on disk**: the mutants are a data literal
 compiled into the binary, so a catalogue cannot go stale against the
 code it describes. Only verdicts touch disk, under `_build/_mutants`,
-deterministically named per executable and overwritten on re-run.
+deterministically named per executable and overwritten on re-run — by a
+run that judged the whole suite, never by a narrowed one.
 
 ## Asking
 
@@ -82,11 +83,13 @@ Copy the `arm` line. It arms that one mutant in this one process:
 $ WINDTRAP_MUTATE_ARM=lib/calc.ml:9:11:add dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
 mutant lib/calc.ml:9:11:add armed: a - b → a + b
 calc: 7 passed in 0.00116s.
+mutant survived: the armed site was evaluated 2 time(s) and no test failed.
 ```
 
-Seven green with subtraction turned into addition. That pair of lines is
-the entire argument for mutation testing, made on your own suite in a
-few seconds. Open `test/test_calc.ml:15`; it says
+Seven green with subtraction turned into addition, and the closing line
+says the tests ran that line twice while it was wrong. Those three lines
+are the entire argument for mutation testing, made on your own suite in
+a few seconds. Open `test/test_calc.ml:15`; it says
 
 ```ocaml
 test "of two positives" (fun () -> is_true (apply Sub 10 4 > 0));
@@ -122,6 +125,25 @@ otherwise — it exits 1 because a test failed — except that checking is
 read-only while a mutant is armed: a snapshot or `[%expect]` mismatch is
 a plain failure, no `.corrected` is written, and dune's promotion
 protocol is not consulted.
+
+Green needs a closing line too, because green has two meanings and they
+ask for opposite work. A completed run that killed nothing ends in
+exactly one of
+
+```
+mutant survived: the armed site was evaluated 2 time(s) and no test failed.
+mutant not evaluated: no selected test ran the site.
+```
+
+— *your tests watched this change and said nothing*, or *no test you
+selected ran the line at all*, the second a statement about the
+selection and not about the tests. Without the pair the two transcripts
+are the same bytes. The count starts at the arming, so a site evaluated
+during module initialization is not billed to the run: that window ran
+the original expression, and counting it would claim a survivor over
+evaluations the mutant never saw. A run that exited 2 gets no closing
+line at all — a selection that matched nothing says something about the
+filter and nothing about the mutant.
 
 An identifier that names a file this executable catalogues but matches no
 site in it, or matches more than one, is refused with the candidates
@@ -269,40 +291,83 @@ rebuilt since the run is excluded with a warning and, unlike coverage's
 no longer earns, and a false kill hides a live defect where a false
 survivor merely wastes time.
 
-The alias is the `@cover` recipe ([Coverage](coverage.md)) with one word
-changed. Add one rule, once, at the project root:
+One run feeds the merge nothing: the one that narrowed its own suite.
+Selecting tests — `-f`/`-e`, a tag selection, `--quick`, `--shard`,
+`--failed`, or an in-source `ftest`/`fgroup` — makes every verdict
+relative to that selection: a mutant only deselected tests reach is
+recorded *unreached*, and a survivor survived the selection rather than
+the suite. The file format carries no partial-run marking, so a written
+one would stand in the project merge as this executable's whole answer
+until the next full run. Such a run therefore completes, reports in full,
+leaves any existing verdict file exactly where it was, and says what it
+did not do:
+
+```
+verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
+```
+
+`WINDTRAP_MUTATE_ONLY` (below) is deliberately *not* one of those
+selections. It changes which mutants exist, not which tests judge them,
+so a scoped run's records are project-true for this executable — merely
+fewer of them — and it writes.
+
+The alias is the `@cover` recipe ([Coverage](coverage.md)) minus its
+first dependency. Add one rule, once, at the project root:
 
 ```lisp
 (rule
- (alias mutants)
- (deps
-  (alias_rec runtest)
-  (universe))
- (action
-  (run %{bin:windtrap} mutate)))
+ (alias mutate)
+ (deps (universe))
+ (action (run %{bin:windtrap} mutate)))
 ```
 
-and in CI:
+`@cover` both runs and merges, because coverage accumulates as a side
+effect of running: an instrumented suite writes its `.coverage` dump at
+exit whatever it was asked to do. A verdict exists only if a suite was
+*asked* to test its mutants — `WINDTRAP_MUTATE=1` takes the process over
+and runs the fork loop — so `(alias_rec runtest)` in front of this merge
+would not produce one. It would do worse than nothing: a plain
+`dune build @mutate` would rebuild every test executable
+*uninstrumented*, and the verdicts the merge was about to read are keyed
+to the binaries that wrote them, so they would be excluded as stale.
+`@mutate` merges what previous runs left, and on its own correctly
+reports that it found nothing. Running is the other half, and it is
+yours to scope: the loop forks once per mutant, so on a real library you
+name the file you are working on and pay for that file alone:
+
+```
+$ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/calc.ml \
+    dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
+$ dune build @mutate
+```
+
+In CI, where the whole catalogue is the point, the two halves are two
+steps:
 
 ```yaml
-- run: WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+- run: WINDTRAP_MUTATE=1 dune build @runtest --force --instrument-with ppx_windtrap.mutate
+- run: dune build @mutate
 ```
 
 `(universe)` is load-bearing for the same reason it is for coverage: the
 verdict files are not declarable dependencies, so it makes the
-milliseconds-cheap merge re-run on every build. `--force` is required and
-is not a wart — a mutation run is not a cached artifact, and dune would
-otherwise treat a `runtest` action whose declared inputs have not changed
-as already done.
+milliseconds-cheap merge re-run on every build. `--force` on the running
+half is required and is not a wart — a mutation run is not a cached
+artifact, and dune would otherwise treat a `runtest` action whose
+declared inputs have not changed as already done. Note which run this
+puts under the selection rule above: a CI job that shards or filters its
+suite writes no verdicts at all, so the step that mutates has to be the
+step that runs everything.
 
 **A survivor never fails a build in this release.** A mutation run exits
 0 whatever it finds, and 1 only when it could not produce a number at
 all: a red or empty dry run, a suite that disagrees with itself between
 runs, instrumentation that is not actually armed, a deadline it overran,
-or a supervision error, each with its own message. It never exits 2. A
-gate over an uncalibrated number is how a tool earns a reputation for
-lying, and the equivalent-mutant rate here is a prediction until it is
-measured.
+or a supervision error, each with its own message. It never exits 2 —
+that code belongs to the runner, and an armed run can still produce it
+by selecting no test at all. A gate over an uncalibrated number is how a
+tool earns a reputation for lying, and the equivalent-mutant rate here
+is a prediction until it is measured.
 
 ## What it costs
 
@@ -323,16 +388,25 @@ the *answer* right, not the bill. Nothing is parallel in this release.
 
 There is no per-mutant deadline. The whole loop runs under one —
 `max(60 s, 3 × the work the dry run's per-test timings predict for it
-+ 5 s)` — and overrunning it aborts the run, naming the mutant it was
-on. What catches a mutant that spins without consuming wall clock is a
-separate per-site budget on how often the armed line may be evaluated,
-set from the hit count the dry run measured there: a child that blows it
++ the dry run's own wall clock once per forked mutant + 5 s)` — and
+overrunning it aborts the run, naming the mutant it was on. The middle
+term is the one that matters on a fast suite: every child pays a fork
+and a whole process's module initialization before its first test, and a
+sum of *test* times does not include a second of it. The dry run
+measured that fixed cost for free — it is one whole in-process run of
+this same suite — so charging it per mutant is what makes the deadline
+scale with the population. It over-counts, since a child runs a subset
+of the tests, and generous is the right side to err on for a guard whose
+job is catching a hang rather than pacing the loop. What catches a
+mutant that spins without consuming wall clock is a separate per-site
+budget on how often the armed line may be evaluated, set from the hit
+count the dry run measured there: a child that blows it
 dies, and its mutant is scored *killed*, as is a child that crashes.
 Mutation needs `Unix.fork`, so it declines by name on Windows.
 
 ## Knobs
 
-Three environment variables, and no flag on any runner: the inline
+Four environment variables, and no flag on any runner: the inline
 runner's argument parser accepts only dune's inline-test protocol, so a
 flag would exist for half the users. An unrecognized value is an error
 naming the variable, never a silently defaulted mode.
@@ -341,19 +415,43 @@ naming the variable, never a silently defaulted mode.
 | --- | --- | --- |
 | `WINDTRAP_MUTATE` | `1` / `report` / `off` | `off` |
 | `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
+| `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
 | `WINDTRAP_MUTATE_LIMIT` | survivor blocks to print, `0` for all | `10` |
 
-All three are read by the test executable and by nothing else. Survivor
-blocks are ordered by reaching-test count descending; a run's own report
-caps them at `WINDTRAP_MUTATE_LIMIT` and prints the cap in the rule
-label (`survivors (10 of 37)`) so nobody thinks they saw everything,
-while `windtrap mutate` caps nothing — a project report a reader cannot
-page past would send them back to the per-executable one. The unreached
-list is never capped either. `report` mode runs the same loop and
-prints the same report today — the dismissed, not-armable and timeout
-tables it will add are not in this release — and `WINDTRAP_MUTATE_JOBS`
-and `WINDTRAP_MUTATE_TIMEOUT` are specified but deliberately not read,
-because a knob that is read and ignored is worse than one that is not.
+All four are read by the test executable and by nothing else.
+
+`WINDTRAP_MUTATE_ONLY=lib/calc.ml,lib/eval.ml` is how a real project is
+mutated: one file, or one directory, at a time. It is not coverage's
+reporting filter under another name. The runtime applies it **at
+registration**, so a file outside the prefixes never enters the
+catalogue and its guard stays inert — and because the loop forks once
+per mutant, narrowing the catalogue narrows the *work*, which a filter
+over the report would not. That makes an executable with nothing in
+scope indistinguishable from an uninstrumented one, discovery line
+included, and asking such a run to mutate refuses by naming the scope
+rather than the build, because the build is fine:
+
+```
+windtrap mutate: WINDTRAP_MUTATE_ONLY=lib/nosuch.ml left no mutants in this executable's catalogue — the prefix matches no instrumented file, or the matched files have no mutation sites
+```
+
+The same registration-time cut bounds `WINDTRAP_MUTATE_ARM`: a mutant of
+an out-of-scope file was never registered, so it cannot be armed.
+Scoping a run states what that run's mutation surface *is*, rather than
+offering a view over a larger one — which is also why it does not count
+as narrowing the suite, and why a scoped run still writes its verdicts.
+
+Survivor blocks are ordered by reaching-test count descending; a run's
+own report caps them at `WINDTRAP_MUTATE_LIMIT` and prints the cap in
+the rule label (`survivors (10 of 37)`) so nobody thinks they saw
+everything, while `windtrap mutate` caps nothing — a project report a
+reader cannot page past would send them back to the per-executable one.
+The unreached list is never capped either. `report` mode runs the same
+loop and prints the same report today — the dismissed, not-armable and
+timeout tables it will add are not in this release — and
+`WINDTRAP_MUTATE_JOBS` and `WINDTRAP_MUTATE_TIMEOUT` are specified but
+deliberately not read, because a knob that is read and ignored is worse
+than one that is not.
 Asking for the loop and an armed mutant at once is a refusal, not a
 guess: the loop arms each mutant itself, so an armed parent would mutate
 its own dry run.

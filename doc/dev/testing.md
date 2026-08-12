@@ -161,8 +161,13 @@ the registry narrows the work.
 It also makes one equivalence true, and the tree depends on it: **an
 executable with nothing in scope is indistinguishable from an
 uninstrumented one** — empty catalogue, no discovery line, and the seam
-declines by name. Without that, instrumenting the core would destroy the
-mutation suites by construction rather than by accident:
+declines by name. The equivalence stops at the refusal text: asking such
+a run to mutate names the scope and its value (`WINDTRAP_MUTATE_ONLY=…
+left no mutants in this executable's catalogue`), never the
+missing-backend diagnosis, which would send the reader to rebuild a
+build that is fine. Without the equivalence, instrumenting the core
+would destroy the mutation suites by construction rather than by
+accident:
 
 - `test/mutate_loop/plain_main.exe` is the deliberate zero-mutant
   control. An instrumented core gives it 984.
@@ -205,15 +210,22 @@ Two smaller sharp edges, both measured:
   --instrument-with", which is the commonest cause in general and the
   wrong one there.
 - **A narrowed run's survivors are relative to its selection.** A mutant
-  is reported as surviving when no *selected* test killed it. Confirm
-  before believing it, by arming it against the whole suite:
+  is reported as surviving when no *selected* test killed it. Such a run
+  now keeps that to itself — a selection (`-f`, `-e`, tags, `--quick`,
+  `--shard`, `--failed`, an in-source focus) reports in full but writes
+  no verdict file and prints `verdicts not saved: …`, so `@mutate` never
+  merges a partial answer. `WINDTRAP_MUTATE_ONLY` is not such a
+  selection and still writes. Confirm a narrowed survivor before
+  believing it, by arming it against the whole suite:
 
   ```
   WINDTRAP_MUTATE_ARM=lib/path_ops.ml:183:5:lt \
     dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
   ```
 
-  Green means it really survives. Of the first three that looked worth
+  `mutant survived: …` means it really survives —
+  `mutant not evaluated: …` means the run proved nothing and the arming
+  needs a wider selection. Of the first three that looked worth
   chasing, this killed one: `lib/seed.ml:101:5:lt` is caught by the
   `seed` tests, which the `-f p` selection excluded. The two that held
   are untested boundaries on lines that are fully *covered* — the class

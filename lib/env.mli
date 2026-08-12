@@ -159,9 +159,11 @@ val mutate_only : unit -> string list
     and behaves exactly as an uninstrumented one, discovery line included.
     Mutation runs are expensive and a whole-project catalogue is rarely what a
     reader wants to spend an afternoon on; naming a file or a directory is how
-    they spend it on the code they are actually working on. Explicit arming
-    ({!Windtrap_mutate.arm_variable}) ignores the scope — asking for one mutant
-    by name is already as narrow as it gets. *)
+    they spend it on the code they are actually working on. The scope binds at
+    registration, so it also bounds explicit arming
+    ({!Windtrap_mutate.arm_variable}): a mutant of an out-of-scope file was
+    never registered and cannot be armed — the scope states what the run's
+    mutation surface {e is}, not a view over a larger one. *)
 
 (** {1:snapshots Snapshot update modes} *)
 
