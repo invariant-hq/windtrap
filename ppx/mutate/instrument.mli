@@ -267,10 +267,11 @@
     The attribute grammar is the coverage one, spelled [mutate], so a user who
     has met one has met both: [[@mutate off]] on an expression, [[@@mutate off]]
     on a value or module binding, [[@@@mutate off]] / [[@@@mutate on]] around a
-    region, [[@@@mutate exclude_file]] for a file. Each takes an optional reason
-    string — [[@mutate off "both arms yield 16 at the boundary"]] — which lands
-    in the site table's [dismissed] field and prints in the report, so a
-    dismissal is reviewable rather than merely obeyed.
+    region, [[@@@mutate exclude_file]] for a file. The [off] spellings — and
+    only those — take an optional reason string,
+    [[@mutate off "both arms yield 16 at the boundary"]], which lands in the
+    site table's [dismissed] field and prints in the report, so a dismissal is
+    reviewable rather than merely obeyed.
 
     [[@mutate off]] on an expression leaves that expression exactly as written,
     including everything inside it, and catalogues the site it suppressed with
@@ -295,11 +296,11 @@
     - [[@@mutate off]] on any other structure item — a type, an [external], an
       [include] — does nothing.
 
-    Both are pinned by [fixture_off_edges], so that the day the coverage
-    attribute layer is factored out and shared, the change is visible rather
-    than silent. A [[@@@mutate off]] that is never closed suppresses the rest of
-    its enclosing structure and is not an error: an unbalanced region is a
-    file-scoped decision, not a mistake the pass can distinguish from one.
+    Both are pinned by [fixture_off_edges], so a drift in the attribute layer —
+    now shared with the coverage instrumenter — is visible rather than silent. A
+    [[@@@mutate off]] that is never closed suppresses the rest of its enclosing
+    structure and is not an error: an unbalanced region is a file-scoped
+    decision, not a mistake the pass can distinguish from one.
 
     {1:generated The generated preamble}
 

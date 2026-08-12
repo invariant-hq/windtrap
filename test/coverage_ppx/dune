@@ -177,3 +177,20 @@
  (alias runtest)
  (action
   (diff reject_misplaced_on.expected reject_misplaced_on.actual)))
+
+; [off "reason"] is mutate's extension to the shared attribute grammar;
+; the coverage instantiation must keep rejecting it.
+
+(rule
+ (target reject_off_reason.actual)
+ (action
+  (with-outputs-to
+   reject_off_reason.actual
+   (with-accepted-exit-codes
+    1
+    (run ./pp.exe --impl %{dep:reject_off_reason.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_off_reason.expected reject_off_reason.actual)))

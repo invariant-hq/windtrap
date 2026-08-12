@@ -36,69 +36,20 @@
 
 open Ppxlib
 open Ast_builder.Default
+module Shared = Windtrap_ppx_scaffold
 
-(* The [mutate] attributes, mirroring the coverage attribute grammar
-   exactly - [[@mutate off]] on an expression, [[@@mutate off]] on a
+(* The [mutate] attributes: the shared exclusion grammar, the coverage
+   spelling - [[@mutate off]] on an expression, [[@@mutate off]] on a
    value or module binding, [[@@@mutate off]]/[[@@@mutate on]] around a
    region, [[@@@mutate exclude_file]] for a file - plus an optional
    reason string, which lands in the site table's [dismissed] field so a
-   dismissal is reviewable rather than merely obeyed. *)
+   dismissal is reviewable rather than merely obeyed. [off_reason attrs]
+   is [Some reason] when [attrs] carries [[@mutate off]]; [reason] is
+   [""] when none was given. *)
 
-type directive = No_directive | Off of string | On | Exclude_file
-
-let recognize_mutate_attribute { attr_name; attr_payload; attr_loc } =
-  if not (String.equal attr_name.txt "mutate") then No_directive
-  else
-    let bad () =
-      Location.raise_errorf ~loc:attr_loc "Bad payload in mutate attribute."
-    in
-    match attr_payload with
-    | PStr [ { pstr_desc = Pstr_eval (payload, _); _ } ] -> (
-        match payload.pexp_desc with
-        | Pexp_ident { txt = Lident "off"; _ } -> Off ""
-        | Pexp_ident { txt = Lident "on"; _ } -> On
-        | Pexp_ident { txt = Lident "exclude_file"; _ } -> Exclude_file
-        | Pexp_apply
-            ( { pexp_desc = Pexp_ident { txt = Lident "off"; _ }; _ },
-              [
-                ( Nolabel,
-                  {
-                    pexp_desc = Pexp_constant (Pconst_string (reason, _, _));
-                    _;
-                  } );
-              ] ) ->
-            Off reason
-        | _ -> bad ())
-    | _ -> bad ()
-
-(* [off_reason attrs] is [Some reason] when [attrs] carries
-   [[@mutate off]]; [reason] is [""] when none was given. Folds rather
-   than short-circuits so every attribute is error-checked. *)
-let off_reason attributes =
-  List.fold_left
-    (fun found attribute ->
-      match recognize_mutate_attribute attribute with
-      | No_directive -> found
-      | Off reason -> Some reason
-      | On ->
-          Location.raise_errorf ~loc:attribute.attr_loc
-            "mutate on is not allowed here."
-      | Exclude_file ->
-          Location.raise_errorf ~loc:attribute.attr_loc
-            "mutate exclude_file is not allowed here.")
-    None attributes
-
-let has_off_attribute attributes = off_reason attributes <> None
-
-let has_exclude_file_attribute structure =
-  List.exists
-    (function
-      | { pstr_desc = Pstr_attribute attribute; _ } -> (
-          match recognize_mutate_attribute attribute with
-          | Exclude_file -> true
-          | No_directive | Off _ | On -> false)
-      | _ -> false)
-    structure
+let grammar = Shared.grammar ~namespace:"mutate" ~reasons:true
+let off_reason attributes = Shared.off_reason grammar attributes
+let has_off_attribute attributes = Shared.has_off_attribute grammar attributes
 
 (* File-level exclusions *)
 
@@ -394,24 +345,12 @@ let render_negation ~loc expression =
    nested guards would shadow each other. *)
 let binder index role = Printf.sprintf "__windtrap_mut_%d_%s" index role
 
-(* The generated module is named after the file so that each compilation
-   unit calls its own guard - two files could otherwise collide when one
-   includes another. It is referenced qualified rather than opened: it
-   must declare the site record's type to name that record's fields
-   without type-directed disambiguation (see [runtime_initialization]),
-   and opening a module that carries a record type would put labels named
-   [line], [col], [span], [before] and [after] into the user's scope. *)
-let generated_module_name ~file =
-  let buffer = Buffer.create (String.length file + 16) in
-  Buffer.add_string buffer "Windtrap_mut___";
-  String.iter
-    (function
-      | ('A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_') as c ->
-          Buffer.add_char buffer c
-      | _ -> Buffer.add_string buffer "___")
-    file;
-  Buffer.contents buffer
-
+(* Guards name the generated module QUALIFIED rather than through an
+   [open]: it must declare the site record's type to name that record's
+   fields without type-directed disambiguation (see
+   [runtime_initialization]), and opening a module that carries a record
+   type would put labels named [line], [col], [span], [before] and
+   [after] into the user's scope. *)
 let armed ~loc ~module_name index =
   pexp_apply ~loc
     (pexp_ident ~loc
@@ -532,19 +471,6 @@ let ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
     let [%p pvar ~loc l] = [%e left] in
     if [%e armed ~loc ~module_name index] then [%e armed_arm] else [%e disarmed]]
 
-(* [lazy] applied to a trivial syntactic value compiles as already
-   forced, so a guard under such a [lazy] would change the compilation of
-   the [lazy] itself. Coverage's predicate, verbatim; the subtree is left
-   alone. *)
-let rec is_trivial_syntactic_value e =
-  match e.pexp_desc with
-  | Pexp_function _ | Pexp_poly _ | Pexp_ident _ | Pexp_constant _
-  | Pexp_construct (_, None) ->
-      true
-  | Pexp_constraint (inner, _) | Pexp_coerce (inner, _, _) ->
-      is_trivial_syntactic_value inner
-  | _ -> false
-
 (* Traversal *)
 
 (* The context an expression is looked at in:
@@ -573,7 +499,7 @@ let shape_of capabilities (context : context) e =
   let loc = e.pexp_loc in
   match e.pexp_desc with
   | Pexp_assert _ -> None
-  | Pexp_lazy body when is_trivial_syntactic_value body -> None
+  | Pexp_lazy body when Shared.is_trivial_syntactic_value body -> None
   | _ -> (
       match binary e with
       | Some (name, operator, left, right) -> (
@@ -729,7 +655,10 @@ class instrumenter st capabilities module_name =
          anything under it breaks typing in exactly the arms where it
          appears. The whole subtree is left alone. *)
       | Pexp_assert _ -> e
-      | Pexp_lazy body when is_trivial_syntactic_value body -> e
+      (* A [lazy] on a trivial syntactic value compiles as already
+         forced; a guard under it would change the compilation of the
+         [lazy] itself. The subtree is left alone. *)
+      | Pexp_lazy body when Shared.is_trivial_syntactic_value body -> e
       | Pexp_ifthenelse (condition, then_, else_) ->
           {
             e with
@@ -788,19 +717,19 @@ class instrumenter st capabilities module_name =
     method! structure_item si =
       match si.pstr_desc with
       | Pstr_attribute attribute ->
-          (match recognize_mutate_attribute attribute with
-          | No_directive -> ()
-          | Off _ ->
+          (match Shared.recognize grammar attribute with
+          | `None -> ()
+          | `Off _ ->
               if suppressed then
                 Location.raise_errorf ~loc:attribute.attr_loc
                   "Mutation is already off.";
               suppressed <- true
-          | On ->
+          | `On ->
               if not suppressed then
                 Location.raise_errorf ~loc:attribute.attr_loc
                   "Mutation is already on.";
               suppressed <- false
-          | Exclude_file ->
+          | `Exclude_file ->
               Location.raise_errorf ~loc:attribute.attr_loc
                 "mutate exclude_file is not allowed here.");
           si
@@ -874,7 +803,7 @@ class instrumenter st capabilities module_name =
    where they could shadow the user's own or make the user's records
    ambiguous. *)
 let runtime_initialization st ~file ~module_name =
-  let loc = { (Location.in_file file) with loc_ghost = true } in
+  let loc = Shared.ghost_loc ~file in
   let site_type =
     [%stri
       type site = Windtrap_mutate.site = {
@@ -913,33 +842,20 @@ let runtime_initialization st ~file ~module_name =
         Windtrap_mutate.register ~file:[%e estring ~loc file]
           ~sites:[%e sites_table]]
   in
-  let generated_module =
-    Ast_helper.Str.module_ ~loc
-      (Ast_helper.Mb.mk ~loc
-         { txt = Some module_name; loc }
-         (Ast_helper.Mod.structure ~loc [ site_type; armed_binding ]))
-  in
-  let stop_comment = [%stri [@@@ocaml.text "/*"]] in
-  [ stop_comment; generated_module; stop_comment ]
+  Shared.preamble ~loc ~module_name ~opened:false [ site_type; armed_binding ]
 
 (* Entry point *)
 
-let always_ignore_paths = [ "//toplevel//"; "(stdin)" ]
-let always_ignore_basenames = [ ".ocamlinit"; "topfind" ]
-
 let transform_impl_file ctxt ast =
   let file = Expansion_context.Base.input_name ctxt in
-  let excluded =
-    List.mem file always_ignore_paths
-    || List.mem (Filename.basename file) always_ignore_basenames
-    || has_exclude_file_attribute ast
-    || file_declares_inline_tests ast
-  in
-  if excluded then ast
+  if Shared.excluded_file grammar ~file ast || file_declares_inline_tests ast
+  then ast
   else
     let st = create_state () in
     let capabilities = capabilities_of_structure ast in
-    let module_name = generated_module_name ~file in
+    let module_name =
+      Shared.mangled_module_name ~prefix:"Windtrap_mut___" ~file
+    in
     let instrumented =
       (new instrumenter st capabilities module_name)#structure ast
     in

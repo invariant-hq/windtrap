@@ -1,0 +1,18 @@
+; The scaffolding shared by the two whole-file instrumenters
+; (ppx/coverage and ppx/mutate): the exclusion-attribute grammar, the
+; lazy trivial-value guard, module-name mangling, the generated preamble
+; frame, and the entry filter. The traversals themselves stay separate -
+; they are properly distinct engines - so this library deliberately has
+; no opinion about what gets inserted, only about everything around it.
+;
+; Private to the ppx_windtrap package: it is rewriter-side machinery,
+; linked into ppx drivers and never into instrumented code, so it
+; carries no ppx_runtime_libraries and must never be a public name user
+; code can reach for.
+
+(library
+ (name windtrap_ppx_scaffold)
+ (package ppx_windtrap)
+ (libraries ppxlib)
+ (preprocess
+  (pps ppxlib.metaquot)))
