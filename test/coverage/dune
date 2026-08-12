@@ -23,7 +23,7 @@
 (test
  (name test_coverage)
  (modules test_coverage)
- (libraries windtrap windtrap_coverage unix)
+ (libraries windtrap windtrap_stateful windtrap_coverage unix)
  (deps dump_child.exe)
  (action
   (setenv

@@ -13,6 +13,7 @@
    the broken versions and regenerates the transcripts). *)
 
 open Windtrap
+open Windtrap_stateful
 
 (* ───── the worked example ───── *)
 

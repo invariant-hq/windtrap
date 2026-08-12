@@ -1,0 +1,24 @@
+; Stateful (model-based) property testing, above the core: commands over
+; a model, generated programs, and the [stateful] declaration. A suite
+; adds windtrap.stateful next to windtrap in its (libraries) and opens
+; Windtrap_stateful beside Windtrap. The library consumes the core
+; through Windtrap.Private only (the alias block at the top of
+; windtrap_stateful.ml is the census) and draws arguments through
+; windtrap.gen; no -linkall, because unlike lib/mutation nothing here
+; registers itself — linking it does nothing until a suite declares.
+;
+; Both instrumentation stanzas, matching lib/dune: this module was part
+; of the core's measured coverage and mutation population and the move
+; must not shrink either set. It runs below the scheduler — a mutant
+; here fails reaching tests rather than corrupting the judge — so unlike
+; lib/mutation there is no reason to withhold the mutation backend.
+; Inert without --instrument-with.
+
+(library
+ (name windtrap_stateful)
+ (public_name windtrap.stateful)
+ (libraries windtrap windtrap_gen)
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate)))

@@ -3,6 +3,22 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+(* The client diet: this library sits above the core, and everything it
+   takes from it arrives through [Windtrap.Private] — the core's one
+   export surface for co-versioned clients — so the census below is the
+   whole coupling: the failure payload and its classes, the location
+   vocabulary, the property engine's discard, the [prop] declaration
+   seam, and the text/format helpers the program printer is built from.
+   Gen comes from windtrap.gen directly; it is a dependency of this
+   library in its own right, not a core export. *)
+module Failure = Windtrap.Private.Failure
+module Loc = Windtrap.Private.Loc
+module Pp = Windtrap.Private.Pp
+module Property = Windtrap.Private.Property
+module Runner = Windtrap.Private.Runner
+module Text = Windtrap.Private.Text
+module Gen = Windtrap_gen.Gen
+
 (* Commands
 
    ['arg] is existential because a command list is heterogeneous in its

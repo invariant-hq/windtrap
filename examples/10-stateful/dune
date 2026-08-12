@@ -1,7 +1,9 @@
 ; Stateful property tests: commands over a bounded queue, a list model, a
 ; per-case system from ~setup, and an ~invariant tying the two together.
+; Stateful testing is its own library — windtrap.stateful, next to
+; windtrap — and Windtrap_stateful is opened beside Windtrap.
 
 (test
  (name test_bounded_queue)
  (modules test_bounded_queue bounded_queue)
- (libraries windtrap))
+ (libraries windtrap windtrap.stateful))

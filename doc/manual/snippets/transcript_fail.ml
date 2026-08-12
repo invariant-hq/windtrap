@@ -4,6 +4,7 @@
    transcript, selecting one walkthrough with -f. *)
 
 open Windtrap
+open Windtrap_stateful
 
 (* getting-started.md / assertions.md: the failing equal with a diff. *)
 

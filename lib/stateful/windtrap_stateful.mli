@@ -8,25 +8,31 @@
     A {{!type:command}command} is one operation of a system under test, and
     bundles four things: its argument generator, its precondition, its pure
     transition on a {e model} of the state, and a body that calls the system and
-    asserts with the ordinary verbs. {!stateful} declares a property over
+    asserts with windtrap's ordinary verbs. {!stateful} declares a property over
     {e programs} — sequences of calls drawn from a command list. It is
-    {!Runner.prop} over a derived generator with a derived body: the property
-    engine, the {!Failure} payload, and every renderer are unchanged, so seeds
-    and replay, [--prop-count], [--max-shrink], tags, timeouts, capture, [xfail]
-    and the CI reporters all apply as they do to any property.
+    [Runner.prop] — the seam behind {!Windtrap.prop} — over a derived generator
+    with a derived body: the property engine, the failure payload, and every
+    renderer are unchanged, so seeds and replay, [--prop-count], [--max-shrink],
+    tags, timeouts, capture, [xfail] and the CI reporters all apply as they do
+    to any property.
+
+    Add [windtrap.stateful] next to [windtrap] in the stanza —
+    [(libraries windtrap windtrap.stateful)] — and open this module beside
+    [Windtrap] or spell {!stateful} qualified; [doc/manual/stateful-testing.md]
+    is the worked chapter.
 
     {b The pipeline.} A program is drawn at a fixed length ([?steps]) from one
-    weight-1 {!Gen.frequency} branch per command, {e repaired} against the model
-    before the shrink tree is assembled ({!Gen.list_exact}'s [?keep]), and
-    shrunk by that tree's structural move set. Repair keeps a call iff its
-    [~pre] holds in the model the calls before it produced, and threads [~next]
-    through the calls it keeps. Two consequences are the design: the program
-    shown is the program that ran — a call whose precondition does not hold is
-    not in the program at all, not skipped at runtime — and shrinking only
-    deletes calls and reduces arguments. It never substitutes one command for
-    another and never invents one: every call of every candidate, everywhere in
-    the tree, is a call the drawn program made, with its argument only reduced
-    (see {!program} for the exact strength of that guarantee).
+    weight-1 [Gen.frequency] branch per command, {e repaired} against the model
+    before the shrink tree is assembled ([Gen.list_exact]'s [?keep]), and shrunk
+    by that tree's structural move set. Repair keeps a call iff its [~pre] holds
+    in the model the calls before it produced, and threads [~next] through the
+    calls it keeps. Two consequences are the design: the program shown is the
+    program that ran — a call whose precondition does not hold is not in the
+    program at all, not skipped at runtime — and shrinking only deletes calls
+    and reduces arguments. It never substitutes one command for another and
+    never invents one: every call of every candidate, everywhere in the tree, is
+    a call the drawn program made, with its argument only reduced (see
+    {!program} for the exact strength of that guarantee).
 
     {b [~pre] and [~next] must be pure, and ['model] must be persistent.} The
     model trajectory is folded three times per case — by repair when the program
@@ -48,16 +54,19 @@
     search therefore minimises the specification bug.
 
     Only three things escape repair, and all three are about the {e run} rather
-    than about the model: {!Failure.Timeout}, {!Failure.Exit_attempt}, and the
-    three {!Failure.is_fatal} exceptions. Everything else poisons — including
-    {!Failure.Check_failure}, {!Failure.Skip_test} and {!Property.Discard},
-    which {!execute} does {e not} convert when a body raises them. The asymmetry
-    is deliberate: a body runs on the program that was drawn, where an assertion
-    is the point, a skip means the run is unsupported and [assume] declines a
-    case. Repair runs at generation time over states nothing may ever execute,
-    and there none of the three means what it says — each is the model being
-    written wrong, which is what poisoning reports. Assert in a body, where the
-    report is made for it. *)
+    than about the model: [Failure.Timeout], [Failure.Exit_attempt], and the
+    three [Failure.is_fatal] exceptions. Everything else poisons — including
+    [Failure.Check_failure], [Failure.Skip_test] and [Property.Discard], which
+    {!execute} does {e not} convert when a body raises them. The asymmetry is
+    deliberate: a body runs on the program that was drawn, where an assertion is
+    the point, a skip means the run is unsupported and [assume] declines a case.
+    Repair runs at generation time over states nothing may ever execute, and
+    there none of the three means what it says — each is the model being written
+    wrong, which is what poisoning reports. Assert in a body, where the report
+    is made for it. *)
+
+module Gen := Windtrap_gen.Gen
+module Loc := Windtrap.Private.Loc
 
 (** {1:commands Commands} *)
 
@@ -68,7 +77,7 @@ type ('model, 'sut) command
     different types. *)
 
 val command :
-  ?pos:Loc.pos ->
+  ?pos:Windtrap.pos ->
   ?pre:('model -> 'arg -> bool) ->
   string ->
   'arg Gen.t ->
@@ -109,14 +118,14 @@ val command :
     being nearer the failure. *)
 
 val call :
-  ?pos:Loc.pos ->
+  ?pos:Windtrap.pos ->
   ?pre:('model -> bool) ->
   string ->
   next:('model -> 'model) ->
   ('model -> 'sut -> unit) ->
   ('model, 'sut) command
 (** [call] is {!command} for an operation with no generated argument — most of
-    them, in most APIs. It is {!command} at ['arg = unit] over {!Gen.unit}, and
+    them, in most APIs. It is {!command} at ['arg = unit] over [Gen.unit], and
     its step prints as its name alone. Read-only commands spell [~next:Fun.id].
 *)
 
@@ -167,12 +176,12 @@ val program :
     the search never leaves that program's vocabulary. Closing the gap needs the
     program re-assembled at every node, which is a different design.
 
-    The generator prints, always: {!Gen.prints} holds for the result, so a
+    The generator prints, always: [Gen.prints] holds for the result, so a
     printerless stateful counterexample is unreachable and the report's
     [Gen.with_pp] remedy line never fires here. A program renders as a summary
     line — ["5 calls, last: pop"], or ["(no commands)"] for the empty program —
     followed by one numbered line per step: the command's name and its argument
-    through {!Gen.render_value}, preceded by the model {e before} the step when
+    through [Gen.render_value], preceded by the model {e before} the step when
     [pp_model] is given. The printer bounds itself and emits hard newlines only:
     an argument that renders as ["()"] is omitted, arguments are cut at 200
     bytes (with a marker stating the original size) and model cells at 60 code
@@ -216,18 +225,18 @@ val execute :
     optional where [~next] is not.
 
     {b Failure class.} A body's exception is re-raised as a
-    {!Failure.Check_failure} carrying the payload the property engine would have
+    [Failure.Check_failure] carrying the payload the property engine would have
     built for it, so a descent never has to cross the engine's two acceptance
     classes and stall. Untouched, in bodies and in invariants alike:
-    {!Failure.Check_failure}, {!Failure.Skip_test}, {!Failure.Timeout},
-    {!Failure.Exit_attempt}, {!Property.Discard}, and the three
-    {!Failure.is_fatal} exceptions. {!Failure.Check_failure} is already the
-    class the narrowing aims at; the rest are statements about the run rather
-    than about this program — converting a skip would make it a reported
-    counterexample, converting a discard would break [assume] inside a body, and
-    converting a timeout would defeat the shrink search's deadline.
+    [Failure.Check_failure], [Failure.Skip_test], [Failure.Timeout],
+    [Failure.Exit_attempt], [Property.Discard], and the three [Failure.is_fatal]
+    exceptions. [Failure.Check_failure] is already the class the narrowing aims
+    at; the rest are statements about the run rather than about this program —
+    converting a skip would make it a reported counterexample, converting a
+    discard would break [assume] inside a body, and converting a timeout would
+    defeat the shrink search's deadline.
 
-    {b Attribution.} A {!Failure.Check_failure} leaving a step is re-raised with
+    {b Attribution.} A [Failure.Check_failure] leaving a step is re-raised with
     its [msg] slot naming the step: ["step 3 of 5: pop"], or
     ["invariant after step 3 of 5: pop"] for the check that follows the step, or
     ["step 3 of 3: close — ~pre raised"] for a poisoned program's last step, or
@@ -248,18 +257,18 @@ val execute :
     {b Teardown.} [teardown] is never composed with the body through
     [Fun.protect]: that raises [Fun.Finally_raised] {e in place of} the work
     exception, replacing a counterexample's assertion with a cleanup error and
-    hiding a {!Failure.Timeout} from the engine's shrink acceptance — an alarm
+    hiding a [Failure.Timeout] from the engine's shrink acceptance — an alarm
     delivered inside a candidate's teardown would then be accepted as a shrink
     step and reported as a converged, minimal counterexample. So a teardown
     failure is reported only when the body succeeded; on the failing path the
-    teardown's own exception is dropped, except for {!Failure.Timeout} and the
-    {!Failure.is_fatal} set, which end the run and outrank the failure in hand.
-    A [setup] that raises propagates unconverted, and no teardown is owed. *)
+    teardown's own exception is dropped, except for [Failure.Timeout] and the
+    [Failure.is_fatal] set, which end the run and outrank the failure in hand. A
+    [setup] that raises propagates unconverted, and no teardown is owed. *)
 
 (** {1:declaring Declaring} *)
 
 val stateful :
-  ?pos:Loc.pos ->
+  ?pos:Windtrap.pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
@@ -271,13 +280,13 @@ val stateful :
   model:'model ->
   setup:(unit -> 'sut) ->
   ('model, 'sut) command list ->
-  Test_tree.t
+  Windtrap.test
 (** [stateful name ~model ~setup commands] declares a property test: for every
     generated program over [commands], executing it against a system built by
     [setup] must leave every body's assertions and every [?invariant] check
     satisfied.
 
-    It is {!Runner.prop} over {!program} with {!execute} as its law, so
+    It is [Runner.prop] over {!program} with {!execute} as its law, so
     [timeout], [count] and the run's [--prop-count] / [--max-shrink] /
     [--max-discard] knobs behave exactly as on a property; [steps], [pp_model]
     are {!program}'s and [invariant], [teardown] are {!execute}'s. The declared
@@ -287,6 +296,10 @@ val stateful :
     profile. [pos] fixes the declaration site, which is where a poisoned
     program's failure is reported: [command] records no position of its own, and
     a command's name is its identity in the report.
+
+    [setup] should mint what it needs and [teardown] remove it:
+    {!Windtrap.temp_dir} is {e test}-scoped and the wrong tool here, because a
+    failing test builds one system per shrink candidate.
 
     There is no [?examples]: the program type is abstract, so a user cannot
     spell one, and a shrunk counterexample is copied back as a plain test. There

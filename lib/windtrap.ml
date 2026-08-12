@@ -23,7 +23,7 @@
 (* Public modules *)
 
 module Testable = Testable
-module Gen = Gen
+module Gen = Windtrap_gen.Gen
 
 (* Internal modules (see [Private] in the .mli) *)
 
@@ -46,10 +46,9 @@ module Private = struct
   module Rendered_seq = Rendered_seq
   module Run = Run
   module Runner = Runner
-  module Seed = Seed
-  module Shrink_tree = Shrink_tree
+  module Seed = Windtrap_gen.Seed
+  module Shrink_tree = Windtrap_gen.Shrink_tree
   module Snapshot = Snapshot
-  module Stateful = Stateful
   module Tag = Tag
   module Test_tree = Test_tree
   module Text = Text
@@ -165,15 +164,10 @@ let prop ?pos ?tags ?timeout ?count ?max_discard ?examples name gen law =
 let assume = Property.assume
 let reject = Property.reject
 
-(* [Stateful.stateful] applies [prop_tag] itself, alongside its own
-   ["stateful"] tag — so this is a re-export and not a wrapper like [prop]
-   above. Adding the tag here again would duplicate it. *)
-
-type ('model, 'sut) command = ('model, 'sut) Stateful.command
-
-let command = Stateful.command
-let call = Stateful.call
-let stateful = Stateful.stateful
+(* Stateful (model-based) testing lives above the core, in
+   windtrap.stateful: [Windtrap_stateful.stateful] applies [prop_tag]
+   itself, alongside its own ["stateful"] tag, so the header's seed
+   policy below holds for its tests without this facade naming it. *)
 
 let prop_context op =
   match Run.prop_context (Run.current_frame ()) with

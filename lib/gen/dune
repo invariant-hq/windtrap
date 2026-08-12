@@ -1,0 +1,22 @@
+; Deterministic generation, standalone: Seed (the frozen SplitMix64
+; stream and token format), Shrink_tree (lazy rose trees of candidates),
+; and Gen (generators with integrated shrinking and printing). No
+; (libraries), deliberately — stdlib only, usable without the runner as
+; a deterministic-generation library in its own right. The core depends
+; on this library, never the reverse; Gen's one former core need (Pp's
+; float round-trip printer) is inlined in gen.ml with attribution.
+;
+; Both instrumentation stanzas, matching lib/dune: these modules were
+; part of the core's measured coverage and mutation population and the
+; move must not shrink either set. They sit below the scheduler — a
+; mutant here fails reaching tests rather than hanging the judge — so
+; unlike lib/mutation there is no reason to withhold the mutation
+; backend. Inert without --instrument-with.
+
+(library
+ (name windtrap_gen)
+ (public_name windtrap.gen)
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate)))

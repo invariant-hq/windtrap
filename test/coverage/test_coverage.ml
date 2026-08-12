@@ -25,6 +25,7 @@
    inline coverage line on every green run. *)
 
 open Windtrap
+open Windtrap_stateful
 module C = Windtrap_coverage
 
 let check name cond = is_true ~msg:name cond

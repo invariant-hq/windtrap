@@ -12,6 +12,11 @@
     constraints as generated values — an {!int_range} candidate stays in bounds,
     a {!such_that} candidate satisfies its predicate.
 
+    This module, {!Seed} and {!Shrink_tree} ship as [windtrap.gen] — a
+    standalone, stdlib-only library, usable without the runner. [windtrap]
+    depends on it and re-exports this module as [Windtrap.Gen], so a property
+    suite needs nothing beyond [windtrap] in its stanza.
+
     Start from primitives ({!int}, {!float}, {!string}, ...), combine with
     containers ({!list}, {!pair}, ...) and choice ({!of_list}, {!one_of},
     {!frequency}), transform with {!map}, {!bind}, or the binding operators, and

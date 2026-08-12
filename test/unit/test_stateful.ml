@@ -9,6 +9,11 @@
 open Windtrap
 open Windtrap.Private
 
+(* The subject lives above the core, in windtrap.stateful; everything
+   else — the engine, the failure payload, the renderers — still arrives
+   through [Private]. *)
+module Stateful = Windtrap_stateful
+
 (* Printf-style shims over windtrap's [fail]. [Check.*] calls inside command
    bodies are the probes the engine and the executor catch; only these shims
    escape to the runner. *)
@@ -1304,12 +1309,16 @@ let a_malformed_declaration_raises_at_sample_time () =
 
 (* Integration *)
 
-(* Through the facade, whose [command] is abstract: this is the surface a
-   user meets. Everything [stateful] hands to the declaration layer is
+(* Spelled fully qualified, as a user's suite would: this is the surface
+   a user meets. Everything [stateful] hands to the declaration layer is
    visible on the flattened case — the tags [--tag] selects on, the
    per-test limit, and the declaration site. *)
 let tick_facade =
-  [ Windtrap.call "tick" ~next:(fun model -> model + 1) (fun _ () -> ()) ]
+  [
+    Windtrap_stateful.call "tick"
+      ~next:(fun model -> model + 1)
+      (fun _ () -> ());
+  ]
 
 let flattened tree =
   match Test_tree.flatten [ tree ] with
@@ -1320,7 +1329,8 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
   let pos = ("spec.ml", 42, 0, 7) in
   let case =
     flattened
-      (Windtrap.stateful ~pos ~tags:[ "custom" ] ~timeout:2.5 "spec" ~model:0
+      (Windtrap_stateful.stateful ~pos ~tags:[ "custom" ] ~timeout:2.5 "spec"
+         ~model:0
          ~setup:(fun () -> ())
          tick_facade)
   in
@@ -1363,13 +1373,13 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
   let bodies = ref 0 and invariants = ref 0 in
   let commands =
     [
-      Windtrap.call "tick"
+      Windtrap_stateful.call "tick"
         ~next:(fun model -> model + 1)
         (fun _ () -> incr bodies);
     ]
   in
   run_declared_body
-    (Windtrap.stateful ~count:3 ~steps:3 "wiring" ~model:0
+    (Windtrap_stateful.stateful ~count:3 ~steps:3 "wiring" ~model:0
        ~invariant:(fun _ () -> incr invariants)
        ~teardown:(fun () -> incr releases)
        ~setup:(fun () -> incr setups)
@@ -1401,7 +1411,7 @@ let stateful_threads_pp_model_into_the_counterexample () =
   in
   let commands =
     [
-      Windtrap.call "tick"
+      Windtrap_stateful.call "tick"
         ~next:(fun model -> model + 1)
         (fun model () -> Check.is_true ~msg:"the third call" (model < 2));
     ]
@@ -1410,7 +1420,7 @@ let stateful_threads_pp_model_into_the_counterexample () =
      the third fails: no candidate of the drawn program fails, so the
      counterexample is the three-call program and its column is 0, 1, 2. *)
   run_declared_body
-    (Windtrap.stateful ~count:3 ~steps:3 ~pp_model "failing" ~model:0
+    (Windtrap_stateful.stateful ~count:3 ~steps:3 ~pp_model "failing" ~model:0
        ~setup:(fun () -> ())
        commands);
   check (!seen <> []) "~pp_model never reached the counterexample printer";

@@ -11,6 +11,10 @@
 ; dialect; test_cookbook and test_stateful need no harness — windtrap
 ; renders their runs.
 
+; windtrap_stateful is test_stateful's subject — the stateful chapter's
+; call sites live in the windtrap.stateful library, mirrored here with
+; the (libraries ...) line the chapter shows.
+
 (tests
  (names test_guide test_migrating test_cookbook test_stateful)
- (libraries windtrap unix harness))
+ (libraries windtrap windtrap_stateful unix harness))
