@@ -11,8 +11,10 @@
    corruption rejection), deterministic
    output filenames (sandbox-invariant exe hashing), extent -> line
    derivation (nesting, one-line matches, boundary offsets, huge files),
-   report data (including stale-source rejection), excerpt regions, and
-   the at_exit dump end to end through a child executable.
+   report data (including stale-source rejection), and the at_exit dump
+   end to end through a child executable. Ranges and excerpt regions are
+   layout, live with the renderer, and are pinned in test/unit's render
+   suite.
 
    A windtrap suite ([run] executes tests sequentially in declaration
    order). The registry tests accumulate state in the shared global
@@ -667,23 +669,7 @@ let line_tests =
           C.lines_of_extents ~source [ pt 0 (String.length source) ]
         in
         check_int "a file-spanning extent marks every line of a huge file"
-          ~expected:n ~actual:(List.length lines);
-        check "a huge uncovered run collapses to one range"
-          (C.collapse_ranges lines = [ (1, n) ]));
-    test "line ranges collapse and format" (fun () ->
-        check "collapse of contiguous runs"
-          (C.collapse_ranges [ 1; 2; 3; 7; 8 ] = [ (1, 3); (7, 8) ]);
-        check "collapse tolerates duplicates"
-          (C.collapse_ranges [ 1; 1; 2; 5; 5 ] = [ (1, 2); (5, 5) ]);
-        check "collapse of the empty list" (C.collapse_ranges [] = []);
-        check "collapse of a singleton" (C.collapse_ranges [ 4 ] = [ (4, 4) ]);
-        check_string "range formatting matches the report shape"
-          ~expected:"88-94, 121"
-          ~actual:(C.format_ranges [ (88, 94); (121, 121) ]);
-        check_string "single-range formatting" ~expected:"1-3"
-          ~actual:(C.format_ranges [ (1, 3) ]);
-        check_string "empty-range formatting" ~expected:""
-          ~actual:(C.format_ranges []));
+          ~expected:n ~actual:(List.length lines));
   ]
 
 (* Summaries *)
@@ -699,15 +685,7 @@ let summary_tests =
           ~actual:
             (Format.asprintf "%a" C.pp_summary { C.visited = 0; total = 0 });
         check "aggregate summary sums files"
-          (C.summary (ab ()) = { C.visited = 2; total = 3 });
-        check "80 percent is green"
-          (C.style { C.visited = 8; total = 10 } = `Green);
-        check "60 percent is yellow"
-          (C.style { C.visited = 6; total = 10 } = `Yellow);
-        check "79 percent is yellow"
-          (C.style { C.visited = 79; total = 100 } = `Yellow);
-        check "59 percent is red"
-          (C.style { C.visited = 59; total = 100 } = `Red));
+          (C.summary (ab ()) = { C.visited = 2; total = 3 }));
   ]
 
 (* Reports against real sources *)
@@ -807,63 +785,6 @@ let report_tests =
         | reports ->
             check_int "eof file yields one report" ~expected:1
               ~actual:(List.length reports));
-  ]
-
-(* Excerpt regions *)
-
-let ten_lines =
-  String.concat "" (List.init 10 (fun i -> Printf.sprintf "l%d\n" (i + 1)))
-
-let excerpt_tests =
-  [
-    test "excerpt regions window their context" (fun () ->
-        let numbers region = List.map (fun l -> l.C.number) region in
-        let uncovered region =
-          List.filter_map
-            (fun l -> if l.C.uncovered then Some l.C.number else None)
-            region
-        in
-        (match C.excerpts ~source:ten_lines [ 3; 4; 8 ] with
-        | [ first; second ] ->
-            check "first region spans the range plus context"
-              (numbers first = [ 2; 3; 4; 5 ]);
-            check "first region marks only uncovered lines"
-              (uncovered first = [ 3; 4 ]);
-            check "second region spans its range plus context"
-              (numbers second = [ 7; 8; 9 ]);
-            check "second region marks its uncovered line"
-              (uncovered second = [ 8 ]);
-            check "excerpt text is the source line"
-              ((List.nth first 1).C.text = "l3")
-        | regions ->
-            check_int "separated ranges yield two regions" ~expected:2
-              ~actual:(List.length regions));
-        (match C.excerpts ~source:ten_lines [ 3; 6 ] with
-        | [ only ] ->
-            check "touching context windows merge into one region"
-              (numbers only = [ 2; 3; 4; 5; 6; 7 ])
-        | regions ->
-            check_int "touching windows yield one region" ~expected:1
-              ~actual:(List.length regions));
-        (match C.excerpts ~context:0 ~source:ten_lines [ 5 ] with
-        | [ [ line ] ] ->
-            check "zero context keeps the bare line"
-              (line.C.number = 5 && line.C.uncovered)
-        | _ -> check "zero context keeps the bare line" false);
-        (match C.excerpts ~source:ten_lines [ 1; 10 ] with
-        | [ first; second ] ->
-            check "context clamps at the top" (numbers first = [ 1; 2 ]);
-            check "context clamps at the bottom" (numbers second = [ 9; 10 ])
-        | _ -> check "boundary lines clamp their context" false);
-        check "out-of-range lines are ignored"
-          (C.excerpts ~source:ten_lines [ 0; 11; 99 ] = []);
-        check "an empty source yields no excerpts"
-          (C.excerpts ~source:"" [ 1 ] = []);
-        match C.excerpts ~source:"a\nb\n" [ 2 ] with
-        | [ region ] ->
-            check "a trailing newline opens no phantom line"
-              (numbers region = [ 1; 2 ] && (List.nth region 1).C.text = "b")
-        | _ -> check "a trailing newline opens no phantom line" false);
   ]
 
 (* The at_exit dump, end to end *)
@@ -1054,7 +975,6 @@ let () =
       group "lines" line_tests;
       group "summaries" summary_tests;
       group "reports" report_tests;
-      group "excerpts" excerpt_tests;
       group "dump" dump_tests;
       group "sequences" stateful_tests;
     ]

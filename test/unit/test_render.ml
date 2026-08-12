@@ -2068,7 +2068,7 @@ let test_shared_excerpt () =
   let coverage =
     {
       Render.file = "lib/eval.ml";
-      heading = Some "75.0% (111/148)";
+      heading = Some [ Render.plain "75.0% (111/148)" ];
       source = excerpt_source;
       marked_lines = [ 2; 9 ];
     }
@@ -2115,6 +2115,81 @@ let test_shared_excerpt () =
            source = excerpt_source;
            marked_lines = [ 99 ];
          })
+
+(* The excerpt regions and the range dialect
+
+   Moved here from the coverage runtime with the layout they serve: the
+   regions are what [Render.excerpt] draws, the ranges what the coverage
+   table's uncovered lists and the mutation report's unreached list
+   print. *)
+
+let ten_lines =
+  String.concat "" (List.init 10 (fun i -> Printf.sprintf "l%d\n" (i + 1)))
+
+let test_excerpt_regions () =
+  let numbers region = List.map (fun l -> l.Render.number) region in
+  let marked region =
+    List.filter_map
+      (fun l -> if l.Render.marked then Some l.Render.number else None)
+      region
+  in
+  (match Render.excerpts ~source:ten_lines [ 3; 4; 8 ] with
+  | [ first; second ] ->
+      check "first region spans the range plus context"
+        (numbers first = [ 2; 3; 4; 5 ]);
+      check "first region marks only marked lines" (marked first = [ 3; 4 ]);
+      check "second region spans its range plus context"
+        (numbers second = [ 7; 8; 9 ]);
+      check "second region marks its marked line" (marked second = [ 8 ]);
+      check "excerpt text is the source line"
+        ((List.nth first 1).Render.text = "l3")
+  | regions ->
+      equal ~msg:"separated ranges yield two regions" int 2
+        (List.length regions));
+  (match Render.excerpts ~source:ten_lines [ 3; 6 ] with
+  | [ only ] ->
+      check "touching context windows merge into one region"
+        (numbers only = [ 2; 3; 4; 5; 6; 7 ])
+  | regions ->
+      equal ~msg:"touching windows yield one region" int 1
+        (List.length regions));
+  (match Render.excerpts ~context:0 ~source:ten_lines [ 5 ] with
+  | [ [ line ] ] ->
+      check "zero context keeps the bare line"
+        (line.Render.number = 5 && line.Render.marked)
+  | _ -> check "zero context keeps the bare line" false);
+  (match Render.excerpts ~source:ten_lines [ 1; 10 ] with
+  | [ first; second ] ->
+      check "context clamps at the top" (numbers first = [ 1; 2 ]);
+      check "context clamps at the bottom" (numbers second = [ 9; 10 ])
+  | _ -> check "boundary lines clamp their context" false);
+  check "out-of-range lines are ignored"
+    (Render.excerpts ~source:ten_lines [ 0; 11; 99 ] = []);
+  check "an empty source yields no excerpts"
+    (Render.excerpts ~source:"" [ 1 ] = []);
+  match Render.excerpts ~source:"a\nb\n" [ 2 ] with
+  | [ region ] ->
+      check "a trailing newline opens no phantom line"
+        (numbers region = [ 1; 2 ] && (List.nth region 1).Render.text = "b")
+  | _ -> check "a trailing newline opens no phantom line" false
+
+let test_line_ranges () =
+  check "collapse of contiguous runs"
+    (Render.collapse_ranges [ 1; 2; 3; 7; 8 ] = [ (1, 3); (7, 8) ]);
+  check "collapse tolerates duplicates"
+    (Render.collapse_ranges [ 1; 1; 2; 5; 5 ] = [ (1, 2); (5, 5) ]);
+  check "collapse of the empty list" (Render.collapse_ranges [] = []);
+  check "collapse of a singleton" (Render.collapse_ranges [ 4 ] = [ (4, 4) ]);
+  check "a huge contiguous run collapses to one range"
+    (Render.collapse_ranges (List.init 20_000 (fun i -> i + 1))
+    = [ (1, 20_000) ]);
+  check_string "range formatting matches the report shape"
+    ~expected:"88-94, 121"
+    ~actual:(Render.format_ranges [ (88, 94); (121, 121) ]);
+  check_string "single-range formatting" ~expected:"1-3"
+    ~actual:(Render.format_ranges [ (1, 3) ]);
+  check_string "empty-range formatting" ~expected:""
+    ~actual:(Render.format_ranges [])
 
 (* The coverage detail block, escape for escape
 
@@ -2194,9 +2269,12 @@ let test_coverage_report_bytes () =
   output_string oc coverage_fixture_source;
   close_out oc;
   let collection = coverage_fixture_collection ~file in
+  (* Through the seam's one builder, as the driver and the [windtrap
+     coverage] command render it: the collection is the runtime's, the
+     section data the seam's, the layout the renderer's. *)
+  let data = Driver.coverage_data ~source_roots:[ root ] collection in
   let render ?ansi () =
-    with_renderer ?ansi (fun r ->
-        Render.coverage_report r ~source_roots:[ root ] ~mode:`Full collection)
+    with_renderer ?ansi (fun r -> Render.coverage_report r ~mode:`Full data)
   in
   let plain = render () and colored = render ~ansi:true () in
   check_string "coverage report: the frozen bytes, full mode"
@@ -2214,9 +2292,30 @@ let test_coverage_report_bytes () =
       "coverage: 50.0% (4/8 points)\n\
       \   50.0%  4/8  lib/fake.ml   uncovered: 1, 5-6, 11\n"
     ~actual:
-      (with_renderer (fun r ->
-           Render.coverage_report r ~source_roots:[ root ] ~mode:`Report
-             collection))
+      (with_renderer (fun r -> Render.coverage_report r ~mode:`Report data))
+
+(* The coverage thresholds, pinned at the bytes
+
+   Green at 80% and above, yellow at 60%, red below — the classification
+   used to live on the runtime as [style]; it is styling, so it lives
+   with the renderer now, and the summary line is where it shows. *)
+
+let test_coverage_thresholds () =
+  let line ~visited ~total =
+    with_renderer ~ansi:true (fun r ->
+        Render.coverage_report r ~mode:`Report
+          { Render.visited; total; files = [] })
+  in
+  check_contains "80 percent is green" ~sub:"\027[32m80.0%\027[0m"
+    (line ~visited:8 ~total:10);
+  check_contains "60 percent is yellow" ~sub:"\027[33m60.0%\027[0m"
+    (line ~visited:6 ~total:10);
+  check_contains "79 percent is yellow" ~sub:"\027[33m79.0%\027[0m"
+    (line ~visited:79 ~total:100);
+  check_contains "59 percent is red" ~sub:"\027[31m59.0%\027[0m"
+    (line ~visited:59 ~total:100);
+  check_contains "an empty summary is 100% and green"
+    ~sub:"\027[32m100.0%\027[0m (0/0 points)" (line ~visited:0 ~total:0)
 
 (* The mutation report (RFC §Asking, byte for byte)
 
@@ -2241,13 +2340,16 @@ let witness test file line =
 
 let rfc_report =
   {
-    Render.survivors =
+    (* Pre-spelled, as the loop spells them with the runtime's own
+       functions: the identifier in its canonical form, the arming
+       variable by name. *)
+    Render.arm_variable = "WINDTRAP_MUTATE_ARM";
+    survivors =
       [
         {
-          Render.file = "lib/calc.ml";
+          Render.id = "lib/calc.ml:9:12:add";
+          file = "lib/calc.ml";
           line = 9;
-          col = 12;
-          rewrite = "add";
           before = "a - b";
           after = "a + b";
           source = Some calc_source;
@@ -2260,10 +2362,9 @@ let rfc_report =
             ];
         };
         {
-          Render.file = "lib/calc.ml";
+          Render.id = "lib/calc.ml:11:15:neq";
+          file = "lib/calc.ml";
           line = 11;
-          col = 15;
-          rewrite = "neq";
           before = "b = 0";
           after = "b <> 0";
           source = Some calc_source;
@@ -2793,6 +2894,8 @@ let tests =
     test "excerpts resolve against the project root (render/F-1)"
       test_excerpt_project_root;
     test "the shared excerpt projection (Law 12)" test_shared_excerpt;
+    test "excerpt regions window their context" test_excerpt_regions;
+    test "line ranges collapse and format" test_line_ranges;
     test "snapshot report: wrote lines and the quiet gate"
       test_snapshot_report_writes;
     test "snapshot report: prune lines and refusals" test_snapshot_report_prune;
@@ -2801,6 +2904,8 @@ let tests =
     test "snapshot report: the advisory stands down under --strict-snapshots"
       test_strict_snapshots_report;
     test "the coverage report's frozen bytes" test_coverage_report_bytes;
+    test "the coverage thresholds are the renderer's"
+      test_coverage_thresholds;
     test "mutation: the worked survivor report" test_mutation_report;
     test "mutation: the block wears the failure colours" test_mutation_colors;
     test "mutation: summary line forms" test_mutation_summary_forms;

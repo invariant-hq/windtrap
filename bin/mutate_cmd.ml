@@ -217,10 +217,9 @@ let read_source ~roots =
    them. The name is what a reader greps for, and it is in the file. *)
 let survivor_of ~source (r : M.record) witnesses : Render.survivor =
   {
-    Render.file = r.M.id.M.file;
+    Render.id = M.id_to_string r.M.id;
+    file = r.M.id.M.file;
     line = r.M.id.M.line;
-    col = r.M.id.M.col;
-    rewrite = r.M.id.M.rewrite;
     before = r.M.before;
     after = r.M.after;
     source = source r.M.id.M.file;
@@ -285,7 +284,10 @@ let print_report ~roots collection =
   let renderer = Render.create ~out:Format.std_formatter ~ansi () in
   Render.mutation_report renderer
     {
-      Render.survivors;
+      (* The arming variable, spelled with the runtime's own function,
+         as the loop's report spells it. *)
+      Render.arm_variable = M.arm_variable;
+      survivors;
       survivors_total = List.length survivors;
       unreached = unreached_lines unreached;
       unreached_total = List.length unreached;

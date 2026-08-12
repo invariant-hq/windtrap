@@ -559,13 +559,14 @@ let witness_locations tests =
 
 (* From the verdict record, not from the catalogue: the record carries
    the renderings precisely so that this projection is the same one
-   [windtrap mutate] makes over a file it did not write. *)
+   [windtrap mutate] makes over a file it did not write. The identifier
+   is spelled here, with the runtime's own function — Render carries it
+   into the head row and the arm hint without re-spelling it. *)
 let survivor_of ~locations (r : M.record) witnesses : Render.survivor =
   {
-    Render.file = r.M.id.M.file;
+    Render.id = M.id_to_string r.M.id;
+    file = r.M.id.M.file;
     line = r.M.id.M.line;
-    col = r.M.id.M.col;
-    rewrite = r.M.id.M.rewrite;
     before = r.M.before;
     after = r.M.after;
     source = read_source r.M.id.M.file;
@@ -859,7 +860,11 @@ let print_report renderer ~limit ~population ~unreached ~verdicts ~duration
   in
   Render.mutation_report renderer
     {
-      Render.survivors = shown;
+      (* The arming variable, spelled with the runtime's own function:
+         the report and the runtime cannot disagree about what to
+         type. *)
+      Render.arm_variable = M.arm_variable;
+      survivors = shown;
       survivors_total = List.length survivors;
       unreached = unreached_lines unreached;
       unreached_total = List.length unreached;
@@ -1533,7 +1538,10 @@ let admit_loop renderer ~armed (spine : Driver.t) ~limit ~tries tests =
               in
               Render.admission_report renderer
                 {
-                  Render.admitted;
+                  (* As the survey's report: the arming variable is the
+                     runtime's own spelling. *)
+                  Render.admission_arm_variable = M.arm_variable;
+                  admitted;
                   unjustified;
                   no_sites =
                     List.map

@@ -1447,12 +1447,18 @@ let slowest t results =
       rendered
   end
 
-(* Coverage (run data, rendered late)
+(* Report sections (subsystem-neutral)
 
-   The one place the coverage layout lives: [finish]'s inline line, the
-   [WINDTRAP_COVERAGE]/[--coverage] report and full modes, and — through
-   [Private] — the [windtrap coverage] command, which renders the same
-   [coverage_report] over merged files so the two reports cannot drift. *)
+   The one vocabulary instrumentation reports are made of: styled lines,
+   hint lines, aligned rows, source excerpts, and the failure section's
+   rules. Coverage's per-file table and mutation's survivor blocks are
+   two projections into it, and Render draws it knowing nothing about
+   the runtimes that measured the data — the subsystem that owns the
+   numbers builds section data, and every name the runtime owns (a
+   mutant identifier, the arming variable) arrives pre-spelled with the
+   runtime's own functions. Law 12: a second copy of any of these
+   drawers is exactly the drift [bin/dune]'s own comment says the
+   coverage command's structure exists to prevent. *)
 
 let rstrip s =
   let n = ref (String.length s) in
@@ -1461,35 +1467,97 @@ let rstrip s =
   done;
   String.sub s 0 !n
 
-(* [style] is the runtime's frozen thresholds: green >= 80, yellow >= 60. *)
-let pct_styled t (s : Windtrap_coverage.summary) =
-  st t
-    (Windtrap_coverage.style s :> Pp.style)
-    (spf "%.1f%%" (Windtrap_coverage.percentage s))
+type span = { style : Pp.style option; text : string }
+
+let plain text = { style = None; text }
+let styled style text = { style = Some style; text }
+
+let span_str t { style; text } =
+  match style with None -> text | Some style -> st t style text
+
+let line_str t spans = String.concat "" (List.map (span_str t) spans)
+
+type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 
 (* Line numbers as ranges ([88-94, 121]) — one dialect for the coverage
-   table's uncovered lists and the mutation report's unreached list. *)
-let ranges lines =
-  Windtrap_coverage.format_ranges (Windtrap_coverage.collapse_ranges lines)
+   table's uncovered lists and the mutation report's unreached list.
+   Moved here from the coverage runtime with [excerpts]: layout lives
+   with the vocabulary, not with the instrumentation that measured the
+   lines. *)
 
-let coverage_line t ?(note = "") ?hint (s : Windtrap_coverage.summary) =
-  let note = if note = "" then "" else ", " ^ note in
-  let hint = match hint with None -> "" | Some h -> " \u{00b7} " ^ h in
-  put t
-    (spf "coverage: %s (%d/%d points%s)%s" (pct_styled t s) s.visited s.total
-       note hint)
+let collapse_ranges lines =
+  let rec loop acc range_start range_end = function
+    | [] -> List.rev ((range_start, range_end) :: acc)
+    | line :: rest ->
+        if line <= range_end + 1 then
+          loop acc range_start (max range_end line) rest
+        else loop ((range_start, range_end) :: acc) line line rest
+  in
+  match lines with [] -> [] | first :: rest -> loop [] first first rest
 
-(* Source excerpts (subsystem-neutral)
+let format_ranges ranges =
+  ranges
+  |> List.map (fun (s, e) ->
+      if s = e then string_of_int s else Printf.sprintf "%d-%d" s e)
+  |> String.concat ", "
 
-   One gutter renderer, one record, two subsystems: coverage draws the
-   uncovered regions of a file, mutation draws the one line a survivor
-   rewrites. Law 12 — a second copy of this block is exactly the drift
-   [bin/dune]'s own comment says the coverage command's structure exists
-   to prevent. *)
+let ranges lines = format_ranges (collapse_ranges lines)
+
+(* Excerpt regions *)
+
+type excerpt_line = { number : int; text : string; marked : bool }
+
+(* One entry per line, mirroring the coverage runtime's offset rule: an
+   empty source has no lines, and a trailing newline opens no phantom
+   line. *)
+let source_lines source =
+  if String.length source = 0 then [||]
+  else
+    let lines = String.split_on_char '\n' source in
+    let lines =
+      if source.[String.length source - 1] = '\n' then
+        match List.rev lines with "" :: rest -> List.rev rest | _ -> lines
+      else lines
+    in
+    Array.of_list lines
+
+let excerpts ?(context = 1) ~source marked =
+  let lines = source_lines source in
+  let total = Array.length lines in
+  let marked =
+    List.sort_uniq Int.compare marked
+    |> List.filter (fun l -> l >= 1 && l <= total)
+  in
+  let marked_set = Hashtbl.create 16 in
+  List.iter (fun l -> Hashtbl.replace marked_set l ()) marked;
+  let windows =
+    collapse_ranges marked
+    |> List.map (fun (s, e) -> (max 1 (s - context), min total (e + context)))
+  in
+  let rec merge_windows = function
+    | (s1, e1) :: (s2, e2) :: rest when s2 <= e1 + 1 ->
+        merge_windows ((s1, max e1 e2) :: rest)
+    | window :: rest -> window :: merge_windows rest
+    | [] -> []
+  in
+  merge_windows windows
+  |> List.map (fun (s, e) ->
+      List.init
+        (e - s + 1)
+        (fun i ->
+          let number = s + i in
+          {
+            number;
+            text = lines.(number - 1);
+            marked = Hashtbl.mem marked_set number;
+          }))
+
+(* The one gutter renderer: coverage draws the uncovered regions of a
+   file, mutation draws the one line a survivor rewrites. *)
 
 type excerpt = {
   file : string;
-  heading : string option;
+  heading : span list option;
   source : string;
   marked_lines : int list;
 }
@@ -1499,25 +1567,16 @@ let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
   | None -> ()
   | Some h ->
       put t "";
-      put t (spf "%s \u{2014} %s" e.file h);
+      put t (spf "%s \u{2014} %s" e.file (line_str t h));
       put t "");
-  (* Regions become plain rows at the boundary: a number, a mark, a text.
-     Everything below draws those, so the layout knows nothing about the
-     runtime that computed the regions. *)
-  let row (l : Windtrap_coverage.excerpt_line) =
-    (l.number, l.uncovered, l.text)
-  in
-  let regions =
-    List.map (List.map row)
-      (Windtrap_coverage.excerpts ~context ~source:e.source e.marked_lines)
-  in
+  let regions = excerpts ~context ~source:e.source e.marked_lines in
   let width =
     match number_width with
     | Some w -> w
     | None ->
         List.fold_left
-          (List.fold_left (fun w (n, _, _) ->
-               max w (String.length (string_of_int n))))
+          (List.fold_left (fun w l ->
+               max w (String.length (string_of_int l.number))))
           4 regions
   in
   (* The marker rides inside [margin] rather than beside it, so a marked
@@ -1536,68 +1595,199 @@ let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
     (fun i region ->
       if i > 0 then put t separator;
       List.iter
-        (fun (n, marked, text) ->
-          put t (rstrip (spf "%s%*d \u{2502} %s" (gutter marked) width n text)))
+        (fun l ->
+          put t
+            (rstrip (spf "%s%*d \u{2502} %s" (gutter l.marked) width l.number
+                       l.text)))
         region)
     regions
 
-(* One source-excerpt block: file heading, then each uncovered region with
-   a gutter marker on the uncovered lines and [·····] between regions. *)
-let coverage_excerpts t (r : Windtrap_coverage.file_report) =
-  match r.source with
-  | Some source when r.uncovered_lines <> [] ->
-      excerpt t
-        {
-          file = r.file;
-          heading =
-            Some
-              (spf "%s (%d/%d)" (pct_styled t r.summary) r.summary.visited
-                 r.summary.total);
-          source;
-          marked_lines = r.uncovered_lines;
-        }
-  | _ -> ()
+type section =
+  | Line of span list
+  | Hint of string
+  | Rows of { margin : string; columns : column list; rows : span list list }
+  | Excerpt of {
+      context : int;
+      marker : bool;
+      margin : string;
+      number_width : int option;
+      excerpt : excerpt;
+    }
+  | Rule of string option
 
-let coverage_report t ?source_roots ~mode collection =
+let span_width (s : span) = Text.length_utf8 s.text
+
+(* Column widths are the widest cell (or the caller's floor, for tables
+   that align across blocks); padding sits outside a styled cell, and
+   the rendered row is stripped of trailing spaces — after styling, so a
+   row whose last cell styles an empty string sheds the padding before
+   it, exactly as the hand-laid rows always did. *)
+let put_rows t ~margin ~columns rows =
+  let widths =
+    List.map
+      (fun (i, (c : column)) ->
+        List.fold_left
+          (fun w cells ->
+            match List.nth_opt cells i with
+            | Some cell -> max w (span_width cell)
+            | None -> w)
+          (Option.value c.width ~default:0)
+          rows)
+      (List.mapi (fun i c -> (i, c)) columns)
+  in
+  List.iter
+    (fun cells ->
+      let buf = Buffer.create 80 in
+      Buffer.add_string buf margin;
+      List.iteri
+        (fun i cell ->
+          match (List.nth_opt columns i, List.nth_opt widths i) with
+          | Some c, Some width ->
+              Buffer.add_string buf c.gap;
+              let pad = String.make (max 0 (width - span_width cell)) ' ' in
+              let text = span_str t cell in
+              Buffer.add_string buf
+                (match c.align with
+                | `Right -> pad ^ text
+                | `Left -> text ^ pad)
+          | _, _ -> ())
+        cells;
+      put t (rstrip (Buffer.contents buf)))
+    rows
+
+let render_section t = function
+  | Line spans -> put t (line_str t spans)
+  | Hint line -> put t line
+  | Rows { margin; columns; rows } -> put_rows t ~margin ~columns rows
+  | Excerpt { context; marker; margin; number_width; excerpt = e } ->
+      excerpt t ~context ~marker ~margin ?number_width e
+  | Rule (Some label) -> put t (st t `Faint (labeled_rule t label))
+  | Rule None -> put t (st t `Faint (dashes (min t.columns rule_width)))
+
+let sections t l = List.iter (render_section t) l
+
+(* Coverage (run data, rendered late)
+
+   The one place the coverage layout lives: [finish]'s inline line, the
+   [WINDTRAP_COVERAGE]/[--coverage] report and full modes, and — through
+   [Private] — the [windtrap coverage] command, which renders the same
+   [coverage_report] over merged files so the two reports cannot drift.
+   The data arrives as the record below, built at the coverage seam
+   ([Driver.coverage_data]) — this module orders nothing and counts
+   nothing, and it no longer names the runtime. *)
+
+type coverage_file = {
+  file : string;
+  visited : int;
+  total : int;
+  uncovered : int list;
+  source : string option;
+  stale : bool;
+}
+
+type coverage = { visited : int; total : int; files : coverage_file list }
+
+let coverage_percentage ~visited ~total =
+  if total = 0 then 100.
+  else 100. *. float_of_int visited /. float_of_int total
+
+(* The frozen thresholds the runtime's data has always been styled by:
+   green at 80% and above, yellow at 60%, red below. *)
+let coverage_style ~visited ~total : Pp.style =
+  let pct = coverage_percentage ~visited ~total in
+  if pct >= 80. then `Green else if pct >= 60. then `Yellow else `Red
+
+(* The one producer of the coverage line, shared by [finish]'s inline
+   form (hinting at the report modes) and [coverage_report]'s bare
+   form. *)
+let coverage_line ?(note = "") ?hint ~visited ~total () =
+  let note = if note = "" then "" else ", " ^ note in
+  let hint = match hint with None -> "" | Some h -> " \u{00b7} " ^ h in
+  [
+    plain "coverage: ";
+    styled
+      (coverage_style ~visited ~total)
+      (spf "%.1f%%" (coverage_percentage ~visited ~total));
+    plain (spf " (%d/%d points%s)%s" visited total note hint);
+  ]
+
+(* One source-excerpt block: file heading, then each uncovered region
+   with a gutter marker on the uncovered lines and [·····] between
+   regions. *)
+let coverage_excerpt (f : coverage_file) =
+  match f.source with
+  | Some source when f.uncovered <> [] ->
+      [
+        Excerpt
+          {
+            context = 1;
+            marker = true;
+            margin = "  ";
+            number_width = None;
+            excerpt =
+              {
+                file = f.file;
+                heading =
+                  Some
+                    [
+                      styled
+                        (coverage_style ~visited:f.visited ~total:f.total)
+                        (spf "%.1f%%"
+                           (coverage_percentage ~visited:f.visited
+                              ~total:f.total));
+                      plain (spf " (%d/%d)" f.visited f.total);
+                    ];
+                source;
+                marked_lines = f.uncovered;
+              };
+          };
+      ]
+  | _ -> []
+
+let coverage_sections ~mode (c : coverage) =
+  let table_row (f : coverage_file) =
+    let note =
+      if f.stale then
+        "stale: the source changed \u{2014} re-run the instrumented tests"
+      else if f.uncovered <> [] then "uncovered: " ^ ranges f.uncovered
+        (* Unvisited points with no line attribution: the source was not
+           found (a stale one already said so). *)
+      else if f.visited < f.total then "(source not found)"
+      else ""
+    in
+    [
+      styled
+        (coverage_style ~visited:f.visited ~total:f.total)
+        (spf "%5.1f%%" (coverage_percentage ~visited:f.visited ~total:f.total));
+      plain (string_of_int f.visited);
+      plain "/";
+      plain (string_of_int f.total);
+      plain f.file;
+      plain note;
+    ]
+  in
+  Line (coverage_line ~visited:c.visited ~total:c.total ())
+  :: Rows
+       {
+         margin = "  ";
+         columns =
+           [
+             { gap = ""; align = `Right; width = None };
+             { gap = "  "; align = `Right; width = None };
+             { gap = ""; align = `Left; width = None };
+             { gap = ""; align = `Left; width = None };
+             { gap = "  "; align = `Left; width = None };
+             { gap = "   "; align = `Left; width = None };
+           ];
+         rows = List.map table_row c.files;
+       }
+  :: (if mode = `Full then List.concat_map coverage_excerpt c.files else [])
+
+let coverage_report t ~mode c =
   if t.mode <> `Quiet then begin
     clear_live t;
     close_row t;
-    coverage_line t (Windtrap_coverage.summary collection);
-    let reports = Windtrap_coverage.file_reports ?source_roots collection in
-    let width f =
-      List.fold_left (fun w r -> max w (String.length (f r))) 0 reports
-    in
-    let visited_width =
-      width (fun (r : Windtrap_coverage.file_report) ->
-          string_of_int r.summary.visited)
-    and total_width =
-      width (fun (r : Windtrap_coverage.file_report) ->
-          string_of_int r.summary.total)
-    and file_width =
-      width (fun (r : Windtrap_coverage.file_report) -> r.file)
-    in
-    List.iter
-      (fun (r : Windtrap_coverage.file_report) ->
-        let pct =
-          st t
-            (Windtrap_coverage.style r.summary :> Pp.style)
-            (spf "%5.1f%%" (Windtrap_coverage.percentage r.summary))
-        in
-        let note =
-          if r.stale then
-            "stale: the source changed \u{2014} re-run the instrumented tests"
-          else if r.uncovered_lines <> [] then
-            "uncovered: " ^ ranges r.uncovered_lines
-          else if r.uncovered_extents <> [] then "(source not found)"
-          else ""
-        in
-        put t
-          (rstrip
-             (spf "  %s  %*d/%-*d  %-*s   %s" pct visited_width
-                r.summary.visited total_width r.summary.total file_width r.file
-                note)))
-      reports;
-    if mode = `Full then List.iter (coverage_excerpts t) reports
+    sections t (coverage_sections ~mode c)
   end
 
 (* Mutation (run data, rendered late)
@@ -1611,11 +1801,14 @@ let coverage_report t ?source_roots ~mode collection =
 
 type witness = { test : string; loc : Loc.t option }
 
+(* The identifier arrives spelled: the loop holds the runtime, whose
+   [id_to_string] is the canonical spelling, so this module spends none
+   of the Law-12 coupling budget re-spelling it — as the admission
+   report's fault record always worked. *)
 type survivor = {
+  id : string;
   file : string;
   line : int;
-  col : int;
-  rewrite : string;
   before : string;
   after : string;
   source : string option;
@@ -1625,6 +1818,7 @@ type survivor = {
 type unreached = { file : string; lines : int list }
 
 type mutation = {
+  arm_variable : string;
   survivors : survivor list;
   survivors_total : int;
   unreached : unreached list;
@@ -1636,100 +1830,150 @@ type mutation = {
   siblings : bool;
 }
 
-let mutant_id (s : survivor) =
-  Windtrap_mutate.id_to_string
-    {
-      Windtrap_mutate.file = s.file;
-      line = s.line;
-      col = s.col;
-      rewrite = s.rewrite;
-    }
-
 (* The command that arms this one mutant, in the invocation's spelling —
-   the variable's name comes from the runtime, so the report and the
-   runtime cannot disagree about what to type. Under [`Mirrors] the
-   instrumentation flag is part of the spelling: arming needs a build
-   that carries the mutants, and a bare [dune runtest] builds one that
-   does not, so the plain mirror would name a command that cannot do
-   what its line says. *)
-let arm_command t id =
+   the variable's name arrives on the record, spelled by the loop with
+   the runtime's own function, so the report and the runtime cannot
+   disagree about what to type. Under [`Mirrors] the instrumentation
+   flag is part of the spelling: arming needs a build that carries the
+   mutants, and a bare [dune runtest] builds one that does not, so the
+   plain mirror would name a command that cannot do what its line
+   says. *)
+let arm_command t ~variable id =
   match t.invocation with
-  | `Exe cmd -> spf "%s=%s %s" Windtrap_mutate.arm_variable id cmd
+  | `Exe cmd -> spf "%s=%s %s" variable id cmd
   | `Mirrors ->
       (* [--force] is not decoration. Dune does not key an action's digest
          on an ambient variable it was not told about, so a warm tree
          replays the cached run and the arming silently does nothing —
          a hint that appears to work and does not is worse than none. *)
       spf "%s=%s dune runtest --force --instrument-with ppx_windtrap.mutate"
-        Windtrap_mutate.arm_variable id
+        variable id
 
 let pad_to width s = String.make (max 0 (width - Text.length_utf8 s)) ' '
 
-let survivor_block t ~id_width ~witness_width ~number_width (s : survivor) =
-  let id = mutant_id s in
-  put t
-    ("  " ^ st t `Red "SURVIVED" ^ "  " ^ st t `Bold id ^ pad_to id_width id
-   ^ "   " ^ s.before ^ "  \u{2192}  " ^ s.after);
+let survivor_sections t ~variable ~id_width ~witness_width ~number_width
+    (s : survivor) =
+  let head =
+    Line
+      [
+        plain "  ";
+        styled `Red "SURVIVED";
+        plain "  ";
+        styled `Bold s.id;
+        plain
+          (pad_to id_width s.id ^ "   " ^ s.before ^ "  \u{2192}  " ^ s.after);
+      ]
+  in
   (* Best-effort, as every excerpt is: a survivor whose source the loop
      could not read still names its line in the head row. *)
-  (match s.source with
-  | Some source ->
-      excerpt t ~context:0 ~marker:false ~margin:(indent ^ "  ") ~number_width
-        { file = s.file; heading = None; source; marked_lines = [ s.line ] }
-  | None -> ());
-  put t "";
+  let excerpt_row =
+    match s.source with
+    | Some source ->
+        [
+          Excerpt
+            {
+              context = 0;
+              marker = false;
+              margin = indent ^ "  ";
+              number_width = Some number_width;
+              excerpt =
+                { file = s.file; heading = None; source;
+                  marked_lines = [ s.line ] };
+            };
+        ]
+    | None -> []
+  in
   (* The sentence that is the product. A survivor always names at least
      one test (an unreached mutant is a different finding with a different
      remedy), so the empty case cannot arise from a verdict. *)
-  (match s.witnesses with
-  | [] -> ()
-  | witnesses ->
-      let n = List.length witnesses in
-      put t
-        (indent
-        ^
-        if n = 1 then "1 test ran this line and did not fail when it changed:"
-        else spf "%d tests ran this line and none failed when it changed:" n);
-      List.iter
-        (fun w ->
-          let name = sanitize_name w.test in
-          let loc = match w.loc with Some l -> Loc.to_string l | None -> "" in
-          put t
-            (rstrip
-               (indent ^ "  " ^ name ^ pad_to witness_width name
-              ^ st t `Faint loc)))
-        witnesses;
-      put t "");
+  let witness_rows =
+    match s.witnesses with
+    | [] -> []
+    | witnesses ->
+        let n = List.length witnesses in
+        [
+          Line
+            [
+              plain
+                (indent
+                ^
+                if n = 1 then
+                  "1 test ran this line and did not fail when it changed:"
+                else
+                  spf "%d tests ran this line and none failed when it changed:"
+                    n);
+            ];
+          Rows
+            {
+              margin = indent ^ "  ";
+              columns =
+                [
+                  { gap = ""; align = `Left; width = Some witness_width };
+                  { gap = ""; align = `Left; width = None };
+                ];
+              rows =
+                List.map
+                  (fun w ->
+                    [
+                      plain (sanitize_name w.test);
+                      styled `Faint
+                        (match w.loc with
+                        | Some l -> Loc.to_string l
+                        | None -> "");
+                    ])
+                  witnesses;
+            };
+          Line [];
+        ]
+  in
   (* No color in either hint, as everywhere else, and both are one line a
      reader copies whole. *)
-  put t (indent ^ spf "%-9s%s" "arm" (arm_command t id));
-  put t (indent ^ spf "%-9s((%s) [@mutate off \"reason\"])" "dismiss" s.before)
+  (head :: excerpt_row)
+  @ (Line [] :: witness_rows)
+  @ [
+      Hint (indent ^ spf "%-9s%s" "arm" (arm_command t ~variable s.id));
+      Hint
+        (indent ^ spf "%-9s((%s) [@mutate off \"reason\"])" "dismiss" s.before);
+    ]
 
-let mutation_summary t (m : mutation) =
+let mutation_summary_spans (m : mutation) =
   let survived =
-    let text = spf "%d survived" m.survivors_total in
-    st t (if m.survivors_total = 0 then `Green else `Red) text
+    styled
+      (if m.survivors_total = 0 then `Green else `Red)
+      (spf "%d survived" m.survivors_total)
   in
   (* Zero terms are omitted, the way a passing suite prints no failure
      count: a run with nothing to report is one line. *)
   let terms =
-    (if m.killed > 0 then [ spf "%d killed" m.killed ] else [])
+    (if m.killed > 0 then [ plain (spf "%d killed" m.killed) ] else [])
     @
     if m.unreached_total > 0 then
-      [ st t `Yellow (spf "%d unreached" m.unreached_total) ]
+      [ styled `Yellow (spf "%d unreached" m.unreached_total) ]
     else []
   in
-  put t
-    (spf "mutants: %s of %d%s%s%s%s%s" survived m.total
-       (if m.siblings then " (this executable)" else "")
-       (if terms = [] then "" else " \u{00b7} " ^ String.concat ", " terms)
-       (match m.duration with
-       | Some d -> spf " in %s" (pp_duration d)
-       | None -> "")
-       (match m.seed with
-       | Some s -> spf " (seed %s)" (Seed.to_string s)
-       | None -> "")
-       (if m.siblings then " \u{00b7} project: dune build @mutate" else ""))
+  let rec separated = function
+    | [] -> []
+    | [ last ] -> [ last ]
+    | term :: rest -> term :: plain ", " :: separated rest
+  in
+  [
+    plain "mutants: ";
+    survived;
+    plain
+      (spf " of %d%s" m.total
+         (if m.siblings then " (this executable)" else ""));
+  ]
+  @ (if terms = [] then [] else plain " \u{00b7} " :: separated terms)
+  @ [
+      plain
+        ((match m.duration with
+         | Some d -> spf " in %s" (pp_duration d)
+         | None -> "")
+        ^ (match m.seed with
+          | Some s -> spf " (seed %s)" (Seed.to_string s)
+          | None -> "")
+        ^ if m.siblings then " \u{00b7} project: dune build @mutate" else "");
+    ]
 
 (* The discovery line, and the two lines an armed run is owed.
 
@@ -1784,73 +2028,90 @@ let mutation_not_saved t =
        "verdicts not saved: this run's selection narrows the suite, and a \
         partial run's verdicts would stand in the project merge as the whole.")
 
+let mutation_sections t (m : mutation) =
+  let survivor_part =
+    match m.survivors with
+    | [] -> []
+    | survivors ->
+        let shown = List.length survivors in
+        (* The cap is in the label so nobody thinks they saw everything. *)
+        let label =
+          if shown < m.survivors_total then
+            spf "survivors (%d of %d)" shown m.survivors_total
+          else spf "survivors (%d)" m.survivors_total
+        in
+        let id_width =
+          List.fold_left
+            (fun w (s : survivor) -> max w (Text.length_utf8 s.id))
+            0 survivors
+        in
+        (* One column across the whole report, not one per block: the
+           locations are meant to be read down. *)
+        let witness_width =
+          List.fold_left
+            (fun w (s : survivor) ->
+              List.fold_left
+                (fun w (wit : witness) ->
+                  max w (Text.length_utf8 (sanitize_name wit.test)))
+                w s.witnesses)
+            0 survivors
+          + witness_gap
+        in
+        let number_width =
+          List.fold_left
+            (fun w (s : survivor) ->
+              max w (String.length (string_of_int s.line)))
+            1 survivors
+        in
+        [ Line []; Rule (Some label); Line [] ]
+        @ List.concat
+            (List.mapi
+               (fun i s ->
+                 (if i > 0 then [ Line [] ] else [])
+                 @ survivor_sections t ~variable:m.arm_variable ~id_width
+                     ~witness_width ~number_width s)
+               survivors)
+        @ [ Line []; Rule None ]
+  in
+  let unreached_part =
+    match m.unreached with
+    | [] -> []
+    | unreached ->
+        [
+          Line [];
+          Line
+            [
+              styled `Faint
+                (spf "unreached (%d) \u{2014} no test evaluates these"
+                   m.unreached_total);
+            ];
+          (* One compact line per file, in the shape of the coverage
+             table's file column: an unreached mutant is a gap, not a
+             block. *)
+          Rows
+            {
+              margin = "   ";
+              columns =
+                [
+                  { gap = ""; align = `Left; width = None };
+                  { gap = "   "; align = `Left; width = None };
+                ];
+              rows =
+                List.map
+                  (fun (u : unreached) ->
+                    [ plain u.file; plain (ranges u.lines) ])
+                  unreached;
+            };
+        ]
+  in
+  survivor_part @ unreached_part
+  @ (if m.survivors <> [] || m.unreached <> [] then [ Line [] ] else [])
+  @ [ Line (mutation_summary_spans m) ]
+
 let mutation_report t (m : mutation) =
   clear_live t;
   close_row t;
-  if m.survivors <> [] then begin
-    let shown = List.length m.survivors in
-    (* The cap is in the label so nobody thinks they saw everything. *)
-    let label =
-      if shown < m.survivors_total then
-        spf "survivors (%d of %d)" shown m.survivors_total
-      else spf "survivors (%d)" m.survivors_total
-    in
-    let id_width =
-      List.fold_left
-        (fun w s -> max w (Text.length_utf8 (mutant_id s)))
-        0 m.survivors
-    in
-    (* One column across the whole report, not one per block: the
-       locations are meant to be read down. *)
-    let witness_width =
-      List.fold_left
-        (fun w (s : survivor) ->
-          List.fold_left
-            (fun w (wit : witness) ->
-              max w (Text.length_utf8 (sanitize_name wit.test)))
-            w s.witnesses)
-        0 m.survivors
-      + witness_gap
-    in
-    let number_width =
-      List.fold_left
-        (fun w (s : survivor) -> max w (String.length (string_of_int s.line)))
-        1 m.survivors
-    in
-    put t "";
-    put t (st t `Faint (labeled_rule t label));
-    put t "";
-    List.iteri
-      (fun i s ->
-        if i > 0 then put t "";
-        survivor_block t ~id_width ~witness_width ~number_width s)
-      m.survivors;
-    put t "";
-    put t (st t `Faint (dashes (min t.columns rule_width)))
-  end;
-  if m.unreached <> [] then begin
-    put t "";
-    put t
-      (st t `Faint
-         (spf "unreached (%d) \u{2014} no test evaluates these"
-            m.unreached_total));
-    (* One compact line per file, in the shape of the coverage table's
-       file column: an unreached mutant is a gap, not a block. *)
-    let file_width =
-      List.fold_left
-        (fun w (u : unreached) -> max w (Text.length_utf8 u.file))
-        0 m.unreached
-    in
-    List.iter
-      (fun (u : unreached) ->
-        put t
-          (rstrip
-             (spf "   %s%s   %s" u.file (pad_to file_width u.file)
-                (ranges u.lines))))
-      m.unreached
-  end;
-  if m.survivors <> [] || m.unreached <> [] then put t "";
-  mutation_summary t m
+  sections t (mutation_sections t m)
 
 (* Admission (run data, rendered late)
 
@@ -1889,6 +2150,7 @@ type unjustified = {
 type no_sites = { no_sites_test : string; no_sites_loc : Loc.t option }
 
 type admission = {
+  admission_arm_variable : string;
   admitted : admitted list;
   unjustified : unjustified list;
   no_sites : no_sites list;
@@ -1908,147 +2170,236 @@ type admission = {
    the invocation already ends in [--], so the filter lands after it;
    under [`Mirrors] both bindings precede the one command that exists
    there. *)
-let admission_arm_command t id ~test =
+let admission_arm_command t ~variable id ~test =
   match t.invocation with
-  | `Exe _ -> spf "%s -f %s" (arm_command t id) (shell_quote test)
-  | `Mirrors -> spf "WINDTRAP_FILTER=%s %s" (shell_quote test) (arm_command t id)
+  | `Exe _ -> spf "%s -f %s" (arm_command t ~variable id) (shell_quote test)
+  | `Mirrors ->
+      spf "WINDTRAP_FILTER=%s %s" (shell_quote test)
+        (arm_command t ~variable id)
 
-let admission_head t ~verb ~style ~test ~loc =
-  let name = sanitize_name test in
-  let loc =
-    match loc with
-    | Some l -> "    " ^ st t `Faint (Loc.to_string l)
-    | None -> ""
-  in
-  put t (rstrip (spf "  %s  %s%s" (st t style verb) name loc))
+(* A head row is one aligned row: the styled verb, the name, and the
+   faint declaration site, trailing space stripped after styling — a
+   ruling with no site sheds the gap before it. *)
+let admission_head ~verb ~style ~test ~loc =
+  Rows
+    {
+      margin = "  ";
+      columns =
+        [
+          { gap = ""; align = `Left; width = None };
+          { gap = "  "; align = `Left; width = None };
+          { gap = "    "; align = `Left; width = None };
+        ];
+      rows =
+        [
+          [
+            styled style verb;
+            plain (sanitize_name test);
+            styled `Faint
+              (match loc with Some l -> Loc.to_string l | None -> "");
+          ];
+        ];
+    }
 
-let fault_row t ~id_width f =
-  put t
-    (indent ^ "  " ^ st t `Bold f.fault_id ^ pad_to id_width f.fault_id
-   ^ "   " ^ f.fault_before ^ "  \u{2192}  " ^ f.fault_after)
+let fault_row ~id_width f =
+  Line
+    [
+      plain (indent ^ "  ");
+      styled `Bold f.fault_id;
+      plain
+        (pad_to id_width f.fault_id ^ "   " ^ f.fault_before ^ "  \u{2192}  "
+       ^ f.fault_after);
+    ]
 
-let fault_excerpt t ~number_width f =
+let fault_excerpt ~number_width f =
   match f.fault_source with
   | Some source ->
-      excerpt t ~context:0 ~marker:false
-        ~margin:(indent ^ "    ")
-        ~number_width
-        {
-          file = f.fault_file;
-          heading = None;
-          source;
-          marked_lines = [ f.fault_line ];
-        }
-  | None -> ()
+      [
+        Excerpt
+          {
+            context = 0;
+            marker = false;
+            margin = indent ^ "    ";
+            number_width = Some number_width;
+            excerpt =
+              {
+                file = f.fault_file;
+                heading = None;
+                source;
+                marked_lines = [ f.fault_line ];
+              };
+          };
+      ]
+  | None -> []
 
-let admitted_block t (a : admitted) =
-  put t "";
-  admission_head t ~verb:"ADMITTED" ~style:`Green ~test:a.admitted_test
-    ~loc:None;
+let admitted_sections (a : admitted) =
   let verb =
     match a.cause with
     | `Failure -> "killed"
     | `Fixture -> "killed (fixture)"
     | `Crashed -> "killed (crash)"
   in
-  put t
-    (indent ^ st t `Green verb ^ "  " ^ st t `Bold a.witness.fault_id ^ "   "
-   ^ a.witness.fault_before ^ "  \u{2192}  " ^ a.witness.fault_after)
+  [
+    Line [];
+    admission_head ~verb:"ADMITTED" ~style:`Green ~test:a.admitted_test
+      ~loc:None;
+    Line
+      [
+        plain indent;
+        styled `Green verb;
+        plain "  ";
+        styled `Bold a.witness.fault_id;
+        plain
+          ("   " ^ a.witness.fault_before ^ "  \u{2192}  "
+         ^ a.witness.fault_after);
+      ];
+  ]
 
-let no_sites_block t ~scope (n : no_sites) =
-  put t "";
-  admission_head t ~verb:"NO SITES" ~style:`Yellow ~test:n.no_sites_test
-    ~loc:n.no_sites_loc;
-  put t
-    (indent
-   ^ "this test evaluates no mutation site \u{2014} no condition, comparison,"
-    );
-  put t
-    (indent
-   ^ "connective or arithmetic \u{2014} so there is nothing to admit it \
-      against.");
+let no_sites_sections ~scope (n : no_sites) =
+  [
+    Line [];
+    admission_head ~verb:"NO SITES" ~style:`Yellow ~test:n.no_sites_test
+      ~loc:n.no_sites_loc;
+    Line
+      [
+        plain
+          (indent
+         ^ "this test evaluates no mutation site \u{2014} no condition, \
+            comparison,");
+      ];
+    Line
+      [
+        plain
+          (indent
+         ^ "connective or arithmetic \u{2014} so there is nothing to admit it \
+            against.");
+      ];
+  ]
+  @
   match scope with
-  | None -> ()
+  | None -> []
   | Some binding ->
-      put t
-        (indent
-        ^ spf "(%s is set: a site outside it does not exist for this run.)"
-            binding)
+      [
+        Line
+          [
+            plain
+              (indent
+              ^ spf "(%s is set: a site outside it does not exist for this \
+                     run.)"
+                  binding);
+          ];
+      ]
 
-let unjustified_block t (u : unjustified) =
-  admission_head t ~verb:"UNJUSTIFIED" ~style:`Red ~test:u.unjustified_test
-    ~loc:u.unjustified_loc;
+let unjustified_sections t ~variable (u : unjustified) =
   let plural n = if n = 1 then "" else "s" in
-  if u.capped then begin
-    (* "Most-run" is a claim about the tried faults: when a skip kept a
-       capped candidate unwatched they are something other than the
-       most-run ones, and the sentence then counts only what was tried
-       (Law 17e). *)
-    (if u.tried = u.candidates then
-       put t
-         (indent
-         ^ spf "killed none of the %d most-run fault%s on its lines, of %d \
-                reached"
-             u.tried (plural u.tried) u.reached)
-     else
-       put t
-         (indent
-         ^ spf "killed none of the %d fault%s tried on its lines, of %d \
-                reached"
-             u.tried (plural u.tried) u.reached));
-    put t (indent ^ "(WINDTRAP_MUTATE_TRY=0 tries them all):")
-  end
-  else if u.tried = u.reached then
-    put t
-      (indent
-      ^ spf "killed none of the %d fault%s it reaches:" u.reached
-          (plural u.reached))
-  else
-    put t
-      (indent
-      ^ spf "killed none of the %d fault%s tried on its lines, of %d reached:"
-          u.tried (plural u.tried) u.reached);
-  put t "";
+  let sentence =
+    if u.capped then
+      (* "Most-run" is a claim about the tried faults: when a skip kept a
+         capped candidate unwatched they are something other than the
+         most-run ones, and the sentence then counts only what was tried
+         (Law 17e). *)
+      [
+        Line
+          [
+            plain
+              (indent
+              ^
+              if u.tried = u.candidates then
+                spf
+                  "killed none of the %d most-run fault%s on its lines, of %d \
+                   reached"
+                  u.tried (plural u.tried) u.reached
+              else
+                spf
+                  "killed none of the %d fault%s tried on its lines, of %d \
+                   reached"
+                  u.tried (plural u.tried) u.reached);
+          ];
+        Line [ plain (indent ^ "(WINDTRAP_MUTATE_TRY=0 tries them all):") ];
+      ]
+    else if u.tried = u.reached then
+      [
+        Line
+          [
+            plain
+              (indent
+              ^ spf "killed none of the %d fault%s it reaches:" u.reached
+                  (plural u.reached));
+          ];
+      ]
+    else
+      [
+        Line
+          [
+            plain
+              (indent
+              ^ spf
+                  "killed none of the %d fault%s tried on its lines, of %d \
+                   reached:"
+                  u.tried (plural u.tried) u.reached);
+          ];
+      ]
+  in
   let id_width =
-    List.fold_left
-      (fun w f -> max w (Text.length_utf8 f.fault_id))
-      0 u.shown
+    List.fold_left (fun w f -> max w (Text.length_utf8 f.fault_id)) 0 u.shown
   in
   let number_width =
     List.fold_left
-      (fun w (f : fault) ->
-        max w (String.length (string_of_int f.fault_line)))
+      (fun w (f : fault) -> max w (String.length (string_of_int f.fault_line)))
       1 u.shown
   in
-  List.iter
-    (fun f ->
-      fault_row t ~id_width f;
-      fault_excerpt t ~number_width f)
-    u.shown;
-  if u.tried > List.length u.shown then
-    put t
-      (indent ^ "  "
-      ^ spf "\u{2026} %d more (WINDTRAP_MUTATE_LIMIT=0 for all)"
-          (u.tried - List.length u.shown));
-  match u.shown with
-  | [] -> ()
-  | first :: _ ->
-      put t "";
-      put t (indent ^ "strengthen the assertion, then watch it catch one:");
-      put t
-        (indent ^ "  "
-        ^ spf "%-9s%s" "arm"
-            (admission_arm_command t first.fault_id ~test:u.unjustified_test));
-      put t
-        (indent
-       ^ "a fault whose two versions compute the same value is equivalent \
-          \u{2014} dismiss it in the source:");
-      put t
-        (indent ^ "  "
-        ^ spf "%-9s((%s) [@mutate off \"reason\"])" "dismiss"
-            first.fault_before)
+  let more =
+    if u.tried > List.length u.shown then
+      [
+        Line
+          [
+            plain
+              (indent ^ "  "
+              ^ spf "\u{2026} %d more (WINDTRAP_MUTATE_LIMIT=0 for all)"
+                  (u.tried - List.length u.shown));
+          ];
+      ]
+    else []
+  in
+  let remedies =
+    match u.shown with
+    | [] -> []
+    | first :: _ ->
+        [
+          Line [];
+          Line
+            [
+              plain (indent ^ "strengthen the assertion, then watch it catch \
+                              one:");
+            ];
+          Hint
+            (indent ^ "  "
+            ^ spf "%-9s%s" "arm"
+                (admission_arm_command t ~variable first.fault_id
+                   ~test:u.unjustified_test));
+          Line
+            [
+              plain
+                (indent
+               ^ "a fault whose two versions compute the same value is \
+                  equivalent \u{2014} dismiss it in the source:");
+            ];
+          Hint
+            (indent ^ "  "
+            ^ spf "%-9s((%s) [@mutate off \"reason\"])" "dismiss"
+                first.fault_before);
+        ]
+  in
+  (admission_head ~verb:"UNJUSTIFIED" ~style:`Red ~test:u.unjustified_test
+     ~loc:u.unjustified_loc
+   :: sentence)
+  @ [ Line [] ]
+  @ List.concat_map
+      (fun f -> fault_row ~id_width f :: fault_excerpt ~number_width f)
+      u.shown
+  @ more @ remedies
 
-let admission_summary t (a : admission) =
+let admission_summary_spans (a : admission) =
   let plural n = if n = 1 then "" else "s" in
   let admitted_count = List.length a.admitted in
   let unjustified_count = List.length a.unjustified in
@@ -2058,56 +2409,64 @@ let admission_summary t (a : admission) =
   let terms =
     (if admitted_count > 0 || unjustified_count > 0 then
        [
-         st t
+         styled
            (if admitted_count > 0 then `Green else `Red)
            (spf "%d admitted" admitted_count);
        ]
      else [])
     @ (if unjustified_count > 0 then
-         [ st t `Red (spf "%d unjustified" unjustified_count) ]
+         [ styled `Red (spf "%d unjustified" unjustified_count) ]
        else [])
     @
     if no_sites_count > 0 then
-      [ st t `Yellow (spf "%d no sites" no_sites_count) ]
+      [ styled `Yellow (spf "%d no sites" no_sites_count) ]
     else []
   in
-  put t
-    (spf "admission: %s of %d \u{00b7} %d fork%s%s in %s%s%s"
-       (String.concat ", " terms) a.designated a.admission_forks
-       (plural a.admission_forks)
-       (if a.admission_reached > 0 then
-          spf " over %d reached" a.admission_reached
-        else "")
-       (pp_duration a.admission_duration)
-       (if a.capped_rulings > 0 then
-          spf " \u{00b7} %d ruling%s capped at %d" a.capped_rulings
-            (plural a.capped_rulings) a.tries
-        else "")
-       (match a.admission_seed with
-       | Some s -> spf " (seed %s)" (Seed.to_string s)
-       | None -> ""))
+  let rec separated = function
+    | [] -> []
+    | [ last ] -> [ last ]
+    | term :: rest -> term :: plain ", " :: separated rest
+  in
+  (plain "admission: " :: separated terms)
+  @ [
+      plain
+        (spf " of %d \u{00b7} %d fork%s%s in %s%s%s" a.designated
+           a.admission_forks
+           (plural a.admission_forks)
+           (if a.admission_reached > 0 then
+              spf " over %d reached" a.admission_reached
+            else "")
+           (pp_duration a.admission_duration)
+           (if a.capped_rulings > 0 then
+              spf " \u{00b7} %d ruling%s capped at %d" a.capped_rulings
+                (plural a.capped_rulings) a.tries
+            else "")
+           (match a.admission_seed with
+           | Some s -> spf " (seed %s)" (Seed.to_string s)
+           | None -> ""));
+    ]
 
 let admission_report t (a : admission) =
   clear_live t;
   close_row t;
-  List.iter (admitted_block t) a.admitted;
-  List.iter (no_sites_block t ~scope:a.scope) a.no_sites;
-  if a.unjustified <> [] then begin
-    put t "";
-    put t
-      (st t `Faint
-         (labeled_rule t (spf "unjustified (%d)" (List.length a.unjustified))));
-    put t "";
-    List.iteri
-      (fun i u ->
-        if i > 0 then put t "";
-        unjustified_block t u)
-      a.unjustified;
-    put t "";
-    put t (st t `Faint (dashes (min t.columns rule_width)))
-  end;
-  put t "";
-  admission_summary t a
+  sections t
+    (List.concat_map admitted_sections a.admitted
+    @ List.concat_map (no_sites_sections ~scope:a.scope) a.no_sites
+    @ (if a.unjustified = [] then []
+       else
+         [
+           Line [];
+           Rule (Some (spf "unjustified (%d)" (List.length a.unjustified)));
+           Line [];
+         ]
+         @ List.concat
+             (List.mapi
+                (fun i u ->
+                  (if i > 0 then [ Line [] ] else [])
+                  @ unjustified_sections t ~variable:a.admission_arm_variable u)
+                a.unjustified)
+         @ [ Line []; Rule None ])
+    @ [ Line []; Line (admission_summary_spans a) ])
 
 let finish t ?coverage ~results ~duration () =
   clear_live t;
@@ -2182,11 +2541,14 @@ let finish t ?coverage ~results ~duration () =
      is the merge — the line says so instead of posing as the total. *)
   (match coverage with
   | Some { Run.visited; total; siblings } when t.mode <> `Quiet ->
-      let s = { Windtrap_coverage.visited; total } in
-      if siblings then
-        coverage_line t ~note:"this executable"
-          ~hint:"project: dune build @cover" s
-      else coverage_line t ~hint:"WINDTRAP_COVERAGE=report for detail" s
+      put t
+        (line_str t
+           (if siblings then
+              coverage_line ~note:"this executable"
+                ~hint:"project: dune build @cover" ~visited ~total ()
+            else
+              coverage_line ~hint:"WINDTRAP_COVERAGE=report for detail"
+                ~visited ~total ()))
   | _ -> ());
   Pp.flush t.out ()
 

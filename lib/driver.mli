@@ -193,6 +193,17 @@ val coverage_summary :
     the report modes print their own line ({!coverage_report}), and [`Off]
     prints nothing. *)
 
+val coverage_data :
+  ?source_roots:string list -> Windtrap_coverage.t -> Render.coverage
+(** [coverage_data collection] is [collection] as the renderer's section data
+    ({!Render.coverage}): the aggregate counts and one {!Render.coverage_file}
+    per file, sources resolved under [source_roots]
+    ({!Windtrap_coverage.file_reports}, whose current-directory default it
+    keeps). The one builder of that data — this seam links the runtime, so
+    Render does not have to ({!Render.sections}) — shared with the
+    [windtrap coverage] command over merged files, so the inline report and the
+    CI report cannot drift. *)
+
 val coverage_report :
   Render.t ->
   coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
@@ -200,11 +211,12 @@ val coverage_report :
   Windtrap_coverage.t ->
   unit
 (** [coverage_report renderer ~coverage_mode run collection] prints the per-file
-    coverage report ({!Render.coverage_report}) after {!Render.finish} when
-    [coverage_mode] is [`Report] or [`Full] and the run recorded coverage; a
-    no-op otherwise. Sources are recorded workspace-relative, so they resolve
-    against {!Path_ops.project_root} — under [dune runtest] the cwd is inside
-    [_build], where the recorded paths never open. *)
+    coverage report ({!Render.coverage_report} over {!coverage_data}) after
+    {!Render.finish} when [coverage_mode] is [`Report] or [`Full] and the run
+    recorded coverage; a no-op otherwise. Sources are recorded
+    workspace-relative, so they resolve against {!Path_ops.project_root} —
+    under [dune runtest] the cwd is inside [_build], where the recorded paths
+    never open. *)
 
 (** {1:staged Staged internals}
 

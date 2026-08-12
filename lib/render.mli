@@ -346,22 +346,56 @@ val report_snapshots :
     settled: lines go straight to the sink, outside the compact row and deferral
     machinery. *)
 
-(** {1:excerpts Source excerpts}
+(** {1:sections Report sections}
 
-    The one gutter renderer, shared by every subsystem that shows source: the
-    right-aligned line number, the [│] rule, the source text, the region marker,
-    and the [·····] between regions live here and nowhere else. Two subsystems
-    may not own two copies of one renderer — coverage's file blocks and
-    mutation's survivor blocks are two projections of {!type:excerpt}, not two
-    layouts. *)
+    The subsystem-neutral vocabulary instrumentation reports are made of:
+    styled lines, hint lines, aligned rows, source excerpts, and the failure
+    section's rules. Coverage's per-file table and mutation's survivor blocks
+    are two projections into it — the subsystem that owns the numbers builds
+    section data ({!Driver.coverage_data}, the mutation loop), and this module
+    draws it knowing nothing about the runtimes that measured it. Every name a
+    runtime owns (a mutant identifier, the arming variable) arrives in the data
+    pre-spelled with the runtime's own functions, so the report and the runtime
+    cannot disagree about what to type.
+
+    Styling is data here ({!type:span}): the renderer applies it under the
+    [ansi] decision made at {!create}, so section data never carries escape
+    codes and never has to know what sink it will meet. *)
+
+type span = {
+  style : Pp.style option;
+      (** The style [text] is wrapped in whole, or [None] for plain text.
+          Applied by the renderer iff it emits styling; an empty [text] is
+          never wrapped. *)
+  text : string;  (** The run of text. *)
+}
+(** The type for one styled run of a section line. *)
+
+val plain : string -> span
+(** [plain text] is [text] with no style. *)
+
+val styled : Pp.style -> string -> span
+(** [styled style text] is [text] wrapped whole in [style]. *)
+
+type column = {
+  gap : string;  (** Printed before this column, every row. [""] abuts. *)
+  align : [ `Left | `Right ];
+      (** Which side of the column the cell's padding lands on. *)
+  width : int option;
+      (** The least column width. [None] sizes the column to its widest cell;
+          a caller aligning several [Rows] sections against each other passes
+          the width it computed across all of them, as {!excerpt}'s
+          [number_width] does. *)
+}
+(** The type for one column of a {!section.Rows} section. *)
 
 type excerpt = {
   file : string;
       (** The source file the lines come from. Printed on the heading line and
           nowhere else, so it is unused — and may be anything — when [heading]
           is [None]. *)
-  heading : string option;
-      (** What follows ["<file> — "] on the heading line — coverage's styled
+  heading : span list option;
+      (** What follows ["<file> — "] on the heading line — coverage's
           percentage and point counts. [None] prints no heading and no blank
           lines around it, for an excerpt that sits inside a block whose head
           row already named the file. *)
@@ -375,6 +409,76 @@ type excerpt = {
     and what to call them. Subsystem-neutral — the data is the caller's, the
     layout is this module's. *)
 
+type section =
+  | Line of span list
+      (** One line, the spans concatenated; [Line []] is a blank line. *)
+  | Hint of string
+      (** One command-hint line, printed verbatim: a line the reader copies
+          whole, so it carries no style by construction — no color in any
+          hint. *)
+  | Rows of { margin : string; columns : column list; rows : span list list }
+      (** Aligned rows: each row is one cell per column, cells padded to the
+          column's width on the [align] side (outside the cell's styling) and
+          the rendered row stripped of trailing spaces. Cells beyond [columns]
+          are dropped; missing trailing cells are allowed. *)
+  | Excerpt of {
+      context : int;
+      marker : bool;
+      margin : string;
+      number_width : int option;
+      excerpt : excerpt;
+    }  (** A source-excerpt block, drawn as {!val:excerpt} draws it. *)
+  | Rule of string option
+      (** The failure section's 54-column faint rule: [Some label] centers the
+          label in it ([survivors (2)]), [None] is the closing rule. *)
+(** The type for report sections. The vocabulary is priced like
+    {!Failure.kind}: additions are design amendments, not conveniences. *)
+
+val sections : t -> section list -> unit
+(** [sections t l] prints [l] in order on [t]'s sink. Sections neither erase
+    the live display nor close a compact glyph row: the report entry points
+    below do that once, and callers print section data after {!finish}, when
+    the transcript is settled. *)
+
+(** {1:excerpts Source excerpts}
+
+    The one gutter renderer, shared by every subsystem that shows source: the
+    right-aligned line number, the [│] rule, the source text, the region marker,
+    and the [·····] between regions live here and nowhere else. Two subsystems
+    may not own two copies of one renderer — coverage's file blocks and
+    mutation's survivor blocks are two projections of {!type:excerpt}, not two
+    layouts. The region and range computations below moved here from the
+    coverage runtime with the vocabulary: layout lives with the renderer, not
+    with the instrumentation that measured the lines. *)
+
+val collapse_ranges : int list -> (int * int) list
+(** [collapse_ranges lines] collapses a sorted list of line numbers (duplicates
+    allowed) into inclusive contiguous ranges: [[1; 2; 3; 7; 8]] is
+    [[(1, 3); (7, 8)]]. *)
+
+val format_ranges : (int * int) list -> string
+(** [format_ranges ranges] is the ranges rendered as ["1-3, 7-8"]; a single-line
+    range appears without a dash, as in ["88-94, 121"] — the one dialect for
+    the coverage table's uncovered lists and the mutation report's unreached
+    list. *)
+
+type excerpt_line = {
+  number : int;  (** 1-based source line number. *)
+  text : string;  (** The line's text, without its newline. *)
+  marked : bool;  (** Whether the line is in the marked set. *)
+}
+(** The type for one line of source-excerpt data. *)
+
+val excerpts :
+  ?context:int -> source:string -> int list -> excerpt_line list list
+(** [excerpts ~source lines] is the excerpt regions for the marked [lines] of
+    [source]: each region is a contiguous run of lines covering one or more
+    marked ranges plus [context] lines around each (default [1]). Regions whose
+    context windows touch or overlap are one region. Line numbers outside
+    [source] are ignored; the result is [[]] when no valid marked line remains
+    (in particular when [source] is empty). {!val:excerpt} draws the gutter,
+    markers, and separators between regions. *)
+
 val excerpt :
   t ->
   ?context:int ->
@@ -384,8 +488,9 @@ val excerpt :
   excerpt ->
   unit
 (** [excerpt t e] prints [e]'s heading, when it has one, then one region per run
-    of [e.marked_lines], each line as [<margin><marker><number> │ <text>] with
-    trailing spaces stripped, and [·····] between regions. With:
+    of [e.marked_lines] ({!excerpts}), each line as
+    [<margin><marker><number> │ <text>] with trailing spaces stripped, and
+    [·····] between regions. With:
 
     - [context], the lines shown around each marked line. Defaults to [1]; [0]
       shows the marked lines alone.
@@ -411,35 +516,56 @@ val excerpt :
     [WINDTRAP_COVERAGE]/[--coverage] report modes and, through the facade's
     [Private], the [windtrap coverage] command over merged files — the inline
     report and the CI report cannot drift apart. Presentation only: the data
-    (percentages, uncovered lines, excerpt regions) is the coverage runtime's —
-    run data, rendered late. *)
+    arrives as the records below, built at the coverage seam
+    ({!Driver.coverage_data}) from what the runtime measured — run data,
+    rendered late. This module orders nothing and counts nothing, and it does
+    not name the runtime. *)
 
-val coverage_report :
-  t ->
-  ?source_roots:string list ->
-  mode:[ `Report | `Full ] ->
-  Windtrap_coverage.t ->
-  unit
-(** [coverage_report t ~mode c] prints the coverage block for the collection
-    [c]:
+type coverage_file = {
+  file : string;  (** The source file name as recorded at instrumentation. *)
+  visited : int;  (** Points visited at least once. *)
+  total : int;  (** Points instrumented. *)
+  uncovered : int list;
+      (** The 1-based source lines the unvisited points touch, sorted, without
+          duplicates. [[]] when [source] is [None] — lines cannot be attributed
+          without the text. *)
+  source : string option;
+      (** The source text, when the builder found it and it is consistent with
+          the recorded data; the excerpt block needs it. *)
+  stale : bool;
+      (** [true] when the source was found but changed since the data was
+          recorded. [source] is then [None] and [uncovered] is [[]]: the line
+          states the staleness and the fix rather than painting lines of code
+          the data does not describe. *)
+}
+(** The type for one line of the per-file table. *)
+
+type coverage = {
+  visited : int;  (** Points visited at least once, over all files. *)
+  total : int;  (** Points instrumented, over all files. *)
+  files : coverage_file list;
+      (** The per-file table, in the order it prints — ordered by file name by
+          the builder. *)
+}
+(** The type for a whole coverage report. Every field is measured, not derived
+    here. *)
+
+val coverage_report : t -> mode:[ `Report | `Full ] -> coverage -> unit
+(** [coverage_report t ~mode c] prints the coverage block for [c]:
 
     - the summary line, as {!finish}'s without the discoverability hint
       ([coverage: 87.2% (312/358 points)]);
-    - one line per file — percentage (styled by the runtime's thresholds, as the
-      summary line), visited/total, file name, and the uncovered line ranges
-      ([uncovered: 88-94, 121]). A fully covered file has no range list; a stale
-      file (source changed since the data was recorded) states the staleness and
-      the fix instead of ranges it cannot attribute; a file whose source was not
-      found notes that;
+    - one line per file — percentage (styled by the frozen thresholds the
+      summary line uses: green at 80% and above, yellow at 60%, red below),
+      visited/total, file name, and the uncovered line ranges
+      ([uncovered: 88-94, 121]). A fully covered file has no range list; a
+      stale file states the staleness and the fix instead of ranges it cannot
+      attribute; a file whose unvisited points have no line attribution notes
+      the missing source;
     - under [`Full], source excerpts for each file with uncovered lines and a
       readable source: a heading ([lib/eval.ml — 75.0% (111/148)]), then each
       uncovered region with one line of context, uncovered lines carrying a
       gutter marker, regions separated by [·····].
-
-    [source_roots] is the source lookup list for line mapping and excerpts,
-    defaulting to the current directory (the coverage runtime's [file_reports]
-    default) — the [windtrap coverage] command passes the project root it
-    discovered.
 
     Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
     summary, and the coverage report is neither. The caller prints it after
@@ -513,10 +639,13 @@ type witness = {
     did not fail when it changed. *)
 
 type survivor = {
-  file : string;  (** The mutated source file. *)
+  id : string;
+      (** The mutant's identifier in the runtime's canonical spelling
+          ([lib/calc.ml:9:12:add]) — spelled by the loop, which holds the
+          runtime, so this module spends none of the Law-12 coupling budget
+          re-spelling it. *)
+  file : string;  (** The mutated source file, for the excerpt row. *)
   line : int;  (** 1-based line of the mutated expression. *)
-  col : int;  (** 0-based column of the mutated expression. *)
-  rewrite : string;  (** The replacement's name ([add], [neq], …). *)
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   source : string option;
@@ -540,6 +669,11 @@ type unreached = {
     test evaluates. *)
 
 type mutation = {
+  arm_variable : string;
+      (** The runtime's arming variable ([WINDTRAP_MUTATE_ARM]), spelled by the
+          loop with the runtime's own function — the [arm] hints complete it
+          with each survivor's [id] and the invocation, so the report and the
+          runtime cannot disagree about what to type. *)
   survivors : survivor list;
       (** The survivor blocks to print, in the order they print — ordered by
           witness count descending and already capped by the loop. *)
@@ -584,8 +718,8 @@ val mutation_report : t -> mutation -> unit
       [1 test ran this line and did not fail when it changed:]) with one
       indented line per witness — name and declaration site, in columns aligned
       across the report — and the [arm] and [dismiss] lines. [arm] is the
-      command that arms this one mutant, spelled from the [invocation] and from
-      the runtime's own variable name — under [`Mirrors] it carries
+      command that arms this one mutant, spelled from the [invocation], from
+      [m.arm_variable] and the survivor's [id] — under [`Mirrors] it carries
       [--instrument-with ppx_windtrap.mutate], because a build without the
       backend has no mutant to arm; [dismiss] is the attribute to paste,
       [((a - b) [@mutate off "reason"])];
@@ -685,6 +819,10 @@ type no_sites = {
     name it as the cause. *)
 
 type admission = {
+  admission_arm_variable : string;
+      (** The runtime's arming variable, spelled by the loop with the runtime's
+          own function, as {!mutation.arm_variable} is — the [arm] remedy lines
+          complete it. *)
   admitted : admitted list;  (** ADMITTED rulings, in the order they print. *)
   unjustified : unjustified list;
       (** UNJUSTIFIED rulings, in the order they print. *)

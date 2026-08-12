@@ -14,8 +14,9 @@
     command {!load}s and {!merge}s the files of several executables and renders
     {!file_reports}.
 
-    This module computes report {e data} only — line ranges, excerpt lines,
-    percentages. Styling and printing belong to the renderers. Enabling coverage
+    This module computes report {e data} only — point counts, uncovered lines,
+    percentages. Styling, layout, and printing belong to the renderers, ranges
+    and excerpt regions included. Enabling coverage
     never changes what programs or tests mean: entry visits sequence before
     their block, out-edge visits fire only after the application has returned
     and are never inserted in tail position, and every failure on the dump path
@@ -246,8 +247,9 @@ val load : string -> (t * identity option, error) result
 
 (** {1:reports Report data}
 
-    Everything below is presentation-free data for the renderers: the terminal
-    summary line, the per-file table, and source excerpts. *)
+    Everything below is presentation-free data for the renderers: the counts
+    behind the terminal summary line and the per-file table. Ranges and excerpt
+    regions are layout, and live with the renderer that draws them. *)
 
 type summary = { visited : int; total : int }
 (** The type for point-count summaries: [visited] points visited at least once
@@ -259,10 +261,6 @@ val summary : t -> summary
 val percentage : summary -> float
 (** [percentage s] is [100. *. visited /. total], and [100.] when [s.total] is
     [0]. *)
-
-val style : summary -> [ `Green | `Yellow | `Red ]
-(** [style s] classifies [s] for rendering: [`Green] at 80% and above, [`Yellow]
-    at 60% and above, [`Red] below. *)
 
 val pp_summary : Format.formatter -> summary -> unit
 (** [pp_summary ppf s] formats [s] as ["87.2% (312/358 points)"] — one decimal,
@@ -319,29 +317,3 @@ val lines_of_extents : source:string -> point list -> int list
     - An empty extent marks the line containing [start_ofs]; offsets past the
       end of [source] clamp to its last line; if [source] is empty the result is
       [[]]. *)
-
-val collapse_ranges : int list -> (int * int) list
-(** [collapse_ranges lines] collapses a sorted list of line numbers (duplicates
-    allowed) into inclusive contiguous ranges: [[1; 2; 3; 7; 8]] is
-    [[(1, 3); (7, 8)]]. *)
-
-val format_ranges : (int * int) list -> string
-(** [format_ranges ranges] is the ranges rendered as ["1-3, 7-8"]; a single-line
-    range appears without a dash, as in ["88-94, 121"]. *)
-
-type excerpt_line = {
-  number : int;  (** 1-based source line number. *)
-  text : string;  (** The line's text, without its newline. *)
-  uncovered : bool;  (** Whether the line is in the uncovered set. *)
-}
-(** The type for one line of source-excerpt data. *)
-
-val excerpts :
-  ?context:int -> source:string -> int list -> excerpt_line list list
-(** [excerpts ~source lines] is the excerpt regions for the uncovered [lines] of
-    [source]: each region is a contiguous run of lines covering one or more
-    uncovered ranges plus [context] lines around each (default [1]). Regions
-    whose context windows touch or overlap are one region. Line numbers outside
-    [source] are ignored; the result is [[]] when no valid uncovered line
-    remains (in particular when [source] is empty). Renderers draw the gutter,
-    markers, and separators between regions. *)

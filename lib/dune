@@ -1,9 +1,12 @@
 ; windtrap_coverage is the coverage seam's data source: the runner
-; snapshots in-process coverage at run end for the inline summary.
-; windtrap_mutate is the mutation seam's: Render spells mutant
-; identifiers and the arming variable with the runtime's own functions,
-; so the report and the runtime cannot disagree about what to type. Both
-; dependencies point downward only — neither runtime links windtrap.
+; snapshots in-process coverage at run end for the inline summary, and
+; the driver builds the report's section data from it. windtrap_mutate
+; is the mutation seam's: the mutation loop and the CLI spell mutant
+; identifiers and the arming variable with the runtime's own functions
+; before they enter section data, so the report and the runtime cannot
+; disagree about what to type — Render draws sections and names neither
+; runtime. Both dependencies point downward only — neither runtime
+; links windtrap.
 
 (library
  (name windtrap)

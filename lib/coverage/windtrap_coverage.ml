@@ -293,10 +293,6 @@ let summary t =
 let percentage { visited; total } =
   if total = 0 then 100. else 100. *. float_of_int visited /. float_of_int total
 
-let style s =
-  let pct = percentage s in
-  if pct >= 80. then `Green else if pct >= 60. then `Yellow else `Red
-
 let pp_summary ppf s =
   Format.fprintf ppf "%.1f%% (%d/%d points)" (percentage s) s.visited s.total
 
@@ -337,22 +333,6 @@ let lines_of_extents ~source extents =
         List.init (last - first + 1) (fun i -> first + i))
       extents
     |> List.sort_uniq Int.compare
-
-let collapse_ranges lines =
-  let rec loop acc range_start range_end = function
-    | [] -> List.rev ((range_start, range_end) :: acc)
-    | line :: rest ->
-        if line <= range_end + 1 then
-          loop acc range_start (max range_end line) rest
-        else loop ((range_start, range_end) :: acc) line line rest
-  in
-  match lines with [] -> [] | first :: rest -> loop [] first first rest
-
-let format_ranges ranges =
-  ranges
-  |> List.map (fun (s, e) ->
-      if s = e then string_of_int s else Printf.sprintf "%d-%d" s e)
-  |> String.concat ", "
 
 (* Per-File Reports *)
 
@@ -426,50 +406,3 @@ let file_reports ?(source_roots = [ Filename.current_dir_name ]) t =
     t []
   |> List.rev
 
-(* Excerpts *)
-
-type excerpt_line = { number : int; text : string; uncovered : bool }
-
-(* One entry per line, mirroring [line_starts]: an empty source has no
-   lines, and a trailing newline opens no phantom line. *)
-let source_lines source =
-  if String.length source = 0 then [||]
-  else
-    let lines = String.split_on_char '\n' source in
-    let lines =
-      if source.[String.length source - 1] = '\n' then
-        match List.rev lines with "" :: rest -> List.rev rest | _ -> lines
-      else lines
-    in
-    Array.of_list lines
-
-let excerpts ?(context = 1) ~source uncovered =
-  let lines = source_lines source in
-  let total = Array.length lines in
-  let uncovered =
-    List.sort_uniq Int.compare uncovered
-    |> List.filter (fun l -> l >= 1 && l <= total)
-  in
-  let uncovered_set = Hashtbl.create 16 in
-  List.iter (fun l -> Hashtbl.replace uncovered_set l ()) uncovered;
-  let windows =
-    collapse_ranges uncovered
-    |> List.map (fun (s, e) -> (max 1 (s - context), min total (e + context)))
-  in
-  let rec merge_windows = function
-    | (s1, e1) :: (s2, e2) :: rest when s2 <= e1 + 1 ->
-        merge_windows ((s1, max e1 e2) :: rest)
-    | window :: rest -> window :: merge_windows rest
-    | [] -> []
-  in
-  merge_windows windows
-  |> List.map (fun (s, e) ->
-      List.init
-        (e - s + 1)
-        (fun i ->
-          let number = s + i in
-          {
-            number;
-            text = lines.(number - 1);
-            uncovered = Hashtbl.mem uncovered_set number;
-          }))

@@ -236,6 +236,33 @@ let coverage_summary ~coverage_mode run =
   | `Summary -> Run.coverage run
   | `Report | `Full | `Off -> None
 
+(* The one builder of the report's section data ({!Render.coverage}):
+   the seam that links the runtime turns what it measured into the
+   neutral records the renderer draws, and pre-computes nothing the
+   runtime did not — Render orders nothing and counts nothing, and it
+   no longer names the runtime. Shared — through the facade's [Private]
+   — with the [windtrap coverage] command over merged files, so the
+   inline report and the CI report cannot drift. *)
+let coverage_data ?source_roots collection : Render.coverage =
+  let file_line (r : Windtrap_coverage.file_report) : Render.coverage_file =
+    {
+      Render.file = r.file;
+      visited = r.summary.Windtrap_coverage.visited;
+      total = r.summary.Windtrap_coverage.total;
+      uncovered = r.uncovered_lines;
+      source = r.source;
+      stale = r.stale;
+    }
+  in
+  let s = Windtrap_coverage.summary collection in
+  {
+    Render.visited = s.Windtrap_coverage.visited;
+    total = s.Windtrap_coverage.total;
+    files =
+      List.map file_line
+        (Windtrap_coverage.file_reports ?source_roots collection);
+  }
+
 let coverage_report renderer ~coverage_mode run collection =
   match coverage_mode with
   | (`Report | `Full) as mode when Run.coverage run <> None ->
@@ -249,7 +276,8 @@ let coverage_report renderer ~coverage_mode run collection =
         | root -> [ root ]
         | exception Sys_error _ -> []
       in
-      Render.coverage_report renderer ~source_roots ~mode collection
+      Render.coverage_report renderer ~mode
+        (coverage_data ~source_roots collection)
   | `Report | `Full | `Summary | `Off -> ()
 
 (* The staged internals *)
@@ -323,11 +351,11 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
          Every sink projects it, so a verdict that sets the exit code is
          always visible in the report. *)
       let results = Run.results outcome.Runner.run in
-      let coverage_data = snapshot_coverage outcome.Runner.run in
+      let collection = snapshot_coverage outcome.Runner.run in
       Render.finish renderer
         ?coverage:(coverage_summary ~coverage_mode outcome.Runner.run)
         ~results ~duration:outcome.Runner.duration ();
-      coverage_report renderer ~coverage_mode outcome.Runner.run coverage_data;
+      coverage_report renderer ~coverage_mode outcome.Runner.run collection;
       Render.report_snapshots renderer ~orphans:outcome.Runner.orphans
         ~pruned:outcome.Runner.pruned outcome.Runner.run;
       github_end ~github;

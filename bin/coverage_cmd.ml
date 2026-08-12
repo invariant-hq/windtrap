@@ -3,12 +3,15 @@
    SPDX-License-Identifier: ISC
 
    File discovery and the staleness pass live in Data_files, shared with
-   `windtrap mutate`; the table and excerpt rendering moved into the
-   library renderer (Render, via Windtrap.Private) so the in-process
-   WINDTRAP_COVERAGE modes and this command share one layout.
+   `windtrap mutate`; the table and excerpt rendering live in the
+   library renderer (Render, via Windtrap.Private) over section data
+   built by the coverage seam's one builder (Driver.coverage_data), so
+   the in-process WINDTRAP_COVERAGE modes and this command share one
+   layout and one projection.
   ---------------------------------------------------------------------------*)
 
 module Render = Windtrap.Private.Render
+module Driver = Windtrap.Private.Driver
 module Env = Windtrap.Private.Env
 
 let spf = Printf.sprintf
@@ -300,7 +303,7 @@ let print_json ~source_roots collection =
         (json_escape r.file) r.summary.visited r.summary.total
         (Windtrap_coverage.percentage r.summary)
         (json_ints r.uncovered_lines)
-        (json_ranges (Windtrap_coverage.collapse_ranges r.uncovered_lines)))
+        (json_ranges (Render.collapse_ranges r.uncovered_lines)))
     reports;
   Printf.printf " ] }\n%!"
 
@@ -312,9 +315,11 @@ let report_table ~source_roots ~show_uncovered collection =
       ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
   in
   let renderer = Render.create ~out:Format.std_formatter ~ansi () in
-  Render.coverage_report renderer ~source_roots
+  (* The section data comes from the coverage seam's one builder, so this
+     table and the in-process report modes cannot drift. *)
+  Render.coverage_report renderer
     ~mode:(if show_uncovered then `Full else `Report)
-    collection;
+    (Driver.coverage_data ~source_roots collection);
   Format.pp_print_flush Format.std_formatter ()
 
 (* The gate compares raw values; the verdict prints decimal renderings,
