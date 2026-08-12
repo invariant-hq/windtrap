@@ -123,6 +123,97 @@ let fatal =
    most-reached mutant is one that dies and the forced-fail check passes
    on its own merits rather than on a tie-break. *)
 
+(* Admission's shapes, one group each. Every group is built so a wrong
+   answer from the machine changes a string the scenarios pin.
+
+   - [vacuous] reaches two sites and pins neither, so the TRY cap has
+     something to truncate and an exhaustive ruling something to list.
+   - [skipper] skips when [widen] changes: a fault a test skipped under
+     was never watched — it advances no tried count and appears in no
+     UNJUSTIFIED list.
+   - [capped_skipper] runs [widen] most and skips under it, with three
+     sites in reach: a TRY=2 list is capped AND skip-shortened, so a
+     ruling claiming its tried faults are the most-run ones would be
+     false — the most-run one is exactly the one it skipped under.
+   - [shared] declares a killer BEFORE a watcher of the same line, and
+     the killer's own TRY=1 list holds [orphan], not [widen]: one no-bail
+     fork of [widen] must admit the first through a ride-along kill and
+     still deliver the second's pass outcome. Bail would starve the
+     watcher of the one try it owns; an own-list-only batch would never
+     run the killer under [widen] at all.
+   - [fixture_kill] stands on [sub] through a bracket's setup: a kill
+     through a dependency the test declared counts, and the witness says
+     so.
+   - [crash_pair] declares a watcher of [crasher]'s line BEFORE the test
+     that dies under the same fault: the watcher's pass — its only try —
+     is on the pipe when the child crashes, and the ruling must count it
+     rather than discard the buffer with the child.
+   - [always_skips] skips wherever it runs: an admission set with
+     nothing executed in it is a refusal, not an empty report. *)
+
+let vacuous =
+  [
+    test "touches widen and orphan and pins neither" (fun () ->
+        is_true (Subject.widen 1 2 + Subject.orphan 3 4 <> 99));
+  ]
+
+let skipper =
+  [
+    test "skips when widen changes" (fun () ->
+        let w = Subject.widen 3 4 in
+        ignore (Subject.orphan 1 2);
+        ignore (Subject.orphan 2 3);
+        if w <> 7 then skip ~reason:"the subject changed under this test" ();
+        is_true (Subject.orphan 1 2 <> 99));
+  ]
+
+let capped_skipper =
+  [
+    test "skips under the fault it runs most" (fun () ->
+        let w = Subject.widen 3 4 in
+        ignore (Subject.widen 1 2);
+        ignore (Subject.widen 2 3);
+        ignore (Subject.orphan 1 2);
+        ignore (Subject.sub 10 4);
+        if w <> 7 then skip ~reason:"the subject changed under this test" ();
+        is_true (Subject.orphan 1 2 <> 99));
+  ]
+
+let shared =
+  [
+    test "pins widen through a shared fork" (fun () ->
+        ignore (Subject.orphan 1 2);
+        ignore (Subject.orphan 2 3);
+        equal int 7 (Subject.widen 3 4));
+    test "watches widen and pins nothing" (fun () ->
+        is_true (Subject.widen 3 4 <> 0));
+  ]
+
+let fixture_kill =
+  [
+    bracket
+      ~setup:(fun () ->
+        equal ~msg:"the fixture stands on sub" int 6 (Subject.sub 10 4))
+      ~teardown:(fun () -> ())
+      "reads through a fixture"
+      (fun () -> is_true true);
+  ]
+
+let crash_pair =
+  [
+    test "watches crasher and pins nothing" (fun () ->
+        is_true (Subject.crasher 3 1 <> 99));
+    test "dies when crasher changes" (fun () ->
+        if Subject.crasher 3 1 <> 2 then Unix._exit 3;
+        equal int 2 (Subject.crasher 3 1));
+  ]
+
+let always_skips =
+  [
+    test "skips wherever it runs" (fun () ->
+        skip ~reason:"never runs on this fixture" ());
+  ]
+
 let retried = ref 0
 let handle = fixture ~teardown:(fun () -> ignore (Subject.crasher 3 1)) Fun.id
 
@@ -148,6 +239,13 @@ let () =
           print_endline (Windtrap_mutate.id_to_string m.Windtrap_mutate.id))
         (Windtrap_mutate.catalogue ())
   | "weak" -> run "calc" [ group "widen" weak ]
+  | "vacuous" -> run "calc" [ group "vacuous" vacuous ]
+  | "skipper" -> run "calc" [ group "skipper" skipper ]
+  | "capped_skipper" -> run "calc" [ group "capped" capped_skipper ]
+  | "shared" -> run "calc" [ group "shared" shared ]
+  | "fixture" -> run "calc" [ group "fixture" fixture_kill ]
+  | "crash_pair" -> run "calc" [ group "crash" crash_pair ]
+  | "skips" -> run "calc" [ group "skip" always_skips ]
   | "crash" ->
       run "calc"
         [ group "calc" strong; group "widen" weak; group "crash" crash ]

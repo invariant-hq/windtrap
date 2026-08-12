@@ -58,6 +58,31 @@
       produces no verdict about them either way.
     - [WINDTRAP_MUTATE=1] (or [report]): the loop below, which takes the process
       over and reports on its own.
+    - [WINDTRAP_MUTATE=admit]: the admission machine — the run's ordinary test
+      selection becomes an admission set, the loop arms only faults those tests
+      reach, and every selected test is ruled ADMITTED (it named the fault it
+      kills, with its cause when the kill was not an ordinary failure),
+      UNJUSTIFIED (it watched faults on its lines and never failed — a failure
+      block, and the run exits [1]), or NO SITES (it reaches nothing the
+      operators can break — a stated fact, never a finding). Selection is the
+      author's, never inferred: [-f]/[-e], the tag knobs, [--failed] and an
+      in-source focus designate; [--shard] and [--quick] do not, and an admit
+      run with no selection refuses, naming the survey as the question it
+      probably meant. A selection matching nothing refuses under the standalone
+      runner and, under the inline runner's project-wide invocation, declines
+      in one [stderr] line and lets the ordinary run stand — the
+      {!Windtrap_mutate.Uncatalogued} softness, for the same reason. Per
+      selected test the loop tries the undismissed faults it reaches, most-run
+      first, at most [WINDTRAP_MUTATE_TRY] (default 25, [0] for all): a fault
+      counts as tried only when the test ran to a pass or fail outcome under
+      it — a skip watched nothing, and a shared fork the test merely rode
+      along in charges nothing, though a kill observed there still admits.
+      Batches are union-scheduled across the selection and children run
+      without bail, reporting one incremental line per test event so a crash
+      is attributable and every earlier outcome kept. The forced-fail check
+      does not apply, the determinism probe is skipped when nothing reaches a
+      site, and {b an admission run persists nothing}: no verdict file is
+      written, none is read, and an existing one is left byte-intact.
 
     {b The loop.}
 
@@ -112,7 +137,11 @@
     — a survivor never fails a build in this release — and [1] when it refused
     to start or could not finish, each with its own message on [stderr]. Never
     [2]: "nothing ran" is a statement about a test selection, and a mutation run
-    does not make one. *)
+    does not make one. Exception, per the amendment's reserved survivor-driven
+    clause: an [admit] run — which judges an explicit selection at its author's
+    request — additionally exits [1] when a selected test killed nothing it
+    reached (any UNJUSTIFIED ruling); NO SITES alone is never red. For [admit]
+    the refusal causes additionally include a missing selection. *)
 
 (** {1:running Running} *)
 

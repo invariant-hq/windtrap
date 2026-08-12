@@ -1804,6 +1804,263 @@ let mutation_report t (m : mutation) =
   if m.survivors <> [] || m.unreached <> [] then put t "";
   mutation_summary t m
 
+(* Admission (run data, rendered late)
+
+   Three per-test rulings, one summary line, and nothing project-level
+   (Law 17e): no survivor list, no score. An UNJUSTIFIED ruling is a
+   failure block about a named test, so it renders as one — the labelled
+   rule, the [  VERB  subject] head row, red. As everywhere, the ordering,
+   the caps and every count are the loop's; this projects them. *)
+
+(* The identifier arrives spelled: the loop holds the runtime's canonical
+   spelling, and a second caller of it here would spend the Law-12
+   coupling budget on a string this record can carry. *)
+type fault = {
+  fault_id : string;
+  fault_file : string;
+  fault_line : int;
+  fault_before : string;
+  fault_after : string;
+  fault_source : string option;
+}
+
+type admission_cause = [ `Failure | `Fixture | `Crashed ]
+
+type admitted = { admitted_test : string; witness : fault; cause : admission_cause }
+
+type unjustified = {
+  unjustified_test : string;
+  unjustified_loc : Loc.t option;
+  shown : fault list;
+  tried : int;
+  candidates : int;
+  reached : int;
+  capped : bool;
+}
+
+type no_sites = { no_sites_test : string; no_sites_loc : Loc.t option }
+
+type admission = {
+  admitted : admitted list;
+  unjustified : unjustified list;
+  no_sites : no_sites list;
+  designated : int;
+  admission_forks : int;
+  admission_reached : int;
+  capped_rulings : int;
+  tries : int;
+  admission_duration : float;
+  admission_seed : Seed.seed option;
+  scope : string option;
+}
+
+(* The arm counter-check of an UNJUSTIFIED ruling: the survivor block's
+   arm command, narrowed to the one test the ruling is about — the reader
+   strengthens that test, then watches it catch the fault. Under [`Exe]
+   the invocation already ends in [--], so the filter lands after it;
+   under [`Mirrors] both bindings precede the one command that exists
+   there. *)
+let admission_arm_command t id ~test =
+  match t.invocation with
+  | `Exe _ -> spf "%s -f %s" (arm_command t id) (shell_quote test)
+  | `Mirrors -> spf "WINDTRAP_FILTER=%s %s" (shell_quote test) (arm_command t id)
+
+let admission_head t ~verb ~style ~test ~loc =
+  let name = sanitize_name test in
+  let loc =
+    match loc with
+    | Some l -> "    " ^ st t `Faint (Loc.to_string l)
+    | None -> ""
+  in
+  put t (rstrip (spf "  %s  %s%s" (st t style verb) name loc))
+
+let fault_row t ~id_width f =
+  put t
+    (indent ^ "  " ^ st t `Bold f.fault_id ^ pad_to id_width f.fault_id
+   ^ "   " ^ f.fault_before ^ "  \u{2192}  " ^ f.fault_after)
+
+let fault_excerpt t ~number_width f =
+  match f.fault_source with
+  | Some source ->
+      excerpt t ~context:0 ~marker:false
+        ~margin:(indent ^ "    ")
+        ~number_width
+        {
+          file = f.fault_file;
+          heading = None;
+          source;
+          marked_lines = [ f.fault_line ];
+        }
+  | None -> ()
+
+let admitted_block t (a : admitted) =
+  put t "";
+  admission_head t ~verb:"ADMITTED" ~style:`Green ~test:a.admitted_test
+    ~loc:None;
+  let verb =
+    match a.cause with
+    | `Failure -> "killed"
+    | `Fixture -> "killed (fixture)"
+    | `Crashed -> "killed (crash)"
+  in
+  put t
+    (indent ^ st t `Green verb ^ "  " ^ st t `Bold a.witness.fault_id ^ "   "
+   ^ a.witness.fault_before ^ "  \u{2192}  " ^ a.witness.fault_after)
+
+let no_sites_block t ~scope (n : no_sites) =
+  put t "";
+  admission_head t ~verb:"NO SITES" ~style:`Yellow ~test:n.no_sites_test
+    ~loc:n.no_sites_loc;
+  put t
+    (indent
+   ^ "this test evaluates no mutation site \u{2014} no condition, comparison,"
+    );
+  put t
+    (indent
+   ^ "connective or arithmetic \u{2014} so there is nothing to admit it \
+      against.");
+  match scope with
+  | None -> ()
+  | Some binding ->
+      put t
+        (indent
+        ^ spf "(%s is set: a site outside it does not exist for this run.)"
+            binding)
+
+let unjustified_block t (u : unjustified) =
+  admission_head t ~verb:"UNJUSTIFIED" ~style:`Red ~test:u.unjustified_test
+    ~loc:u.unjustified_loc;
+  let plural n = if n = 1 then "" else "s" in
+  if u.capped then begin
+    (* "Most-run" is a claim about the tried faults: when a skip kept a
+       capped candidate unwatched they are something other than the
+       most-run ones, and the sentence then counts only what was tried
+       (Law 17e). *)
+    (if u.tried = u.candidates then
+       put t
+         (indent
+         ^ spf "killed none of the %d most-run fault%s on its lines, of %d \
+                reached"
+             u.tried (plural u.tried) u.reached)
+     else
+       put t
+         (indent
+         ^ spf "killed none of the %d fault%s tried on its lines, of %d \
+                reached"
+             u.tried (plural u.tried) u.reached));
+    put t (indent ^ "(WINDTRAP_MUTATE_TRY=0 tries them all):")
+  end
+  else if u.tried = u.reached then
+    put t
+      (indent
+      ^ spf "killed none of the %d fault%s it reaches:" u.reached
+          (plural u.reached))
+  else
+    put t
+      (indent
+      ^ spf "killed none of the %d fault%s tried on its lines, of %d reached:"
+          u.tried (plural u.tried) u.reached);
+  put t "";
+  let id_width =
+    List.fold_left
+      (fun w f -> max w (Text.length_utf8 f.fault_id))
+      0 u.shown
+  in
+  let number_width =
+    List.fold_left
+      (fun w (f : fault) ->
+        max w (String.length (string_of_int f.fault_line)))
+      1 u.shown
+  in
+  List.iter
+    (fun f ->
+      fault_row t ~id_width f;
+      fault_excerpt t ~number_width f)
+    u.shown;
+  if u.tried > List.length u.shown then
+    put t
+      (indent ^ "  "
+      ^ spf "\u{2026} %d more (WINDTRAP_MUTATE_LIMIT=0 for all)"
+          (u.tried - List.length u.shown));
+  match u.shown with
+  | [] -> ()
+  | first :: _ ->
+      put t "";
+      put t (indent ^ "strengthen the assertion, then watch it catch one:");
+      put t
+        (indent ^ "  "
+        ^ spf "%-9s%s" "arm"
+            (admission_arm_command t first.fault_id ~test:u.unjustified_test));
+      put t
+        (indent
+       ^ "a fault whose two versions compute the same value is equivalent \
+          \u{2014} dismiss it in the source:");
+      put t
+        (indent ^ "  "
+        ^ spf "%-9s((%s) [@mutate off \"reason\"])" "dismiss"
+            first.fault_before)
+
+let admission_summary t (a : admission) =
+  let plural n = if n = 1 then "" else "s" in
+  let admitted_count = List.length a.admitted in
+  let unjustified_count = List.length a.unjustified in
+  let no_sites_count = List.length a.no_sites in
+  (* Zero terms are elided as the survey's are, with one exception: beside
+     an unjustified ruling, [0 admitted] is the answer, not noise. *)
+  let terms =
+    (if admitted_count > 0 || unjustified_count > 0 then
+       [
+         st t
+           (if admitted_count > 0 then `Green else `Red)
+           (spf "%d admitted" admitted_count);
+       ]
+     else [])
+    @ (if unjustified_count > 0 then
+         [ st t `Red (spf "%d unjustified" unjustified_count) ]
+       else [])
+    @
+    if no_sites_count > 0 then
+      [ st t `Yellow (spf "%d no sites" no_sites_count) ]
+    else []
+  in
+  put t
+    (spf "admission: %s of %d \u{00b7} %d fork%s%s in %s%s%s"
+       (String.concat ", " terms) a.designated a.admission_forks
+       (plural a.admission_forks)
+       (if a.admission_reached > 0 then
+          spf " over %d reached" a.admission_reached
+        else "")
+       (pp_duration a.admission_duration)
+       (if a.capped_rulings > 0 then
+          spf " \u{00b7} %d ruling%s capped at %d" a.capped_rulings
+            (plural a.capped_rulings) a.tries
+        else "")
+       (match a.admission_seed with
+       | Some s -> spf " (seed %s)" (Seed.to_string s)
+       | None -> ""))
+
+let admission_report t (a : admission) =
+  clear_live t;
+  close_row t;
+  List.iter (admitted_block t) a.admitted;
+  List.iter (no_sites_block t ~scope:a.scope) a.no_sites;
+  if a.unjustified <> [] then begin
+    put t "";
+    put t
+      (st t `Faint
+         (labeled_rule t (spf "unjustified (%d)" (List.length a.unjustified))));
+    put t "";
+    List.iteri
+      (fun i u ->
+        if i > 0 then put t "";
+        unjustified_block t u)
+      a.unjustified;
+    put t "";
+    put t (st t `Faint (dashes (min t.columns rule_width)))
+  end;
+  put t "";
+  admission_summary t a
+
 let finish t ?coverage ~results ~duration () =
   clear_live t;
   let failed_results, excused_results =

@@ -580,9 +580,10 @@ let env_only =
     ("WINDTRAP_TAIL_ERRORS", "Captured-output lines shown per failure");
     ("WINDTRAP_PROJECT_ROOT", "Project root for snapshot path resolution");
     ("WINDTRAP_COVERAGE_ONLY", "Source prefixes the coverage number covers");
-    ("WINDTRAP_MUTATE", "Mutation testing: 1, report or off");
+    ("WINDTRAP_MUTATE", "Mutation testing: 1, report, admit or off");
     (Windtrap_mutate.arm_variable, "Arm one mutant, by identifier");
     ("WINDTRAP_MUTATE_LIMIT", "Survivor blocks to print (0 for all)");
+    ("WINDTRAP_MUTATE_TRY", "Faults an admit run tries per test (0 for all)");
     ("WINDTRAP_MUTATE_ONLY", "Source prefixes whose mutants a run considers");
   ]
 
@@ -866,26 +867,30 @@ let coverage_mode (cli : parsed) =
    different variables. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Report ];
+  mode : [ `Off | `Loop | `Report | `Admit ];
   arm : string option;
   limit : int;
+  tries : int;
 }
 
 let default_mutate_limit = 10
+let default_mutate_tries = 25
 
 let mutation () =
   let* mode =
     match Env.get_string "WINDTRAP_MUTATE" with
     | None -> Ok `Off
     | Some value -> (
-        if String.lowercase_ascii (String.trim value) = "report" then Ok `Report
-        else
-          match Env.get_bool "WINDTRAP_MUTATE" with
-          | Some true -> Ok `Loop
-          | Some false -> Ok `Off
-          | None ->
-              invalid ~source:"WINDTRAP_MUTATE" ~value
-                ~expected:"1, report or off")
+        match String.lowercase_ascii (String.trim value) with
+        | "report" -> Ok `Report
+        | "admit" -> Ok `Admit
+        | _ -> (
+            match Env.get_bool "WINDTRAP_MUTATE" with
+            | Some true -> Ok `Loop
+            | Some false -> Ok `Off
+            | None ->
+                invalid ~source:"WINDTRAP_MUTATE" ~value
+                  ~expected:"1, report, admit or off"))
   in
   let* limit =
     match Env.get_string "WINDTRAP_MUTATE_LIMIT" with
@@ -897,7 +902,17 @@ let mutation () =
             invalid ~source:"WINDTRAP_MUTATE_LIMIT" ~value
               ~expected:"a non-negative integer (0 prints every survivor)")
   in
-  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable; limit }
+  let* tries =
+    match Env.get_string "WINDTRAP_MUTATE_TRY" with
+    | None -> Ok default_mutate_tries
+    | Some value -> (
+        match int_of_string_opt (String.trim value) with
+        | Some n when n >= 0 -> Ok n
+        | _ ->
+            invalid ~source:"WINDTRAP_MUTATE_TRY" ~value
+              ~expected:"a non-negative integer (0 tries every fault)")
+  in
+  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable; limit; tries }
 
 (* One invocation, one resolution call. Both drivers want all three
    answers and neither wants three error paths to reach them, so the three

@@ -198,29 +198,36 @@ val coverage_mode :
     configuration first and exit on that error, which is where it belongs. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Report ];
+  mode : [ `Off | `Loop | `Report | `Admit ];
       (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
-          truthy spellings), [`Report] for [report], [`Off] for a falsy spelling
-          or an unset variable. *)
+          truthy spellings), [`Report] for [report], [`Admit] for [admit] — the
+          per-test admission run over the selection — [`Off] for a falsy
+          spelling or an unset variable. *)
   arm : string option;
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
           {!Windtrap_mutate.selector_of_string} owns that grammar and reports
           its own errors. [None] when the variable is unset or empty. *)
   limit : int;
-      (** [WINDTRAP_MUTATE_LIMIT]: survivor blocks to print, [0] for all.
+      (** [WINDTRAP_MUTATE_LIMIT]: survivor blocks to print — and, under
+          [`Admit], tried faults listed per UNJUSTIFIED ruling — [0] for all.
           Defaults to [10]. *)
+  tries : int;
+      (** [WINDTRAP_MUTATE_TRY]: faults an admit run tries per selected test
+          before ruling it unjustified, [0] for all it reaches. Defaults to
+          [25]. Read for every mode: a value the user set and misspelled must
+          be loud in every build. *)
 }
 (** The type for the mutation knobs, which are environment variables only: the
     inline runner's argument parser accepts dune's inline-test protocol and
     nothing else, so a flag would exist for half the users. *)
 
 val mutation : unit -> (mutation, error) result
-(** [mutation ()] reads the three mutation variables. Resolved apart from
+(** [mutation ()] reads the four mutation variables. Resolved apart from
     {!resolve} like {!coverage_mode}, and for the same reason — none of them is
     run configuration, and nothing in the runner may read them — with the same
-    loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] or
-    [WINDTRAP_MUTATE_LIMIT] when its value is not one the variable accepts,
-    never a silently defaulted mode.
+    loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE],
+    [WINDTRAP_MUTATE_LIMIT] or [WINDTRAP_MUTATE_TRY] when its value is not one
+    the variable accepts, never a silently defaulted mode.
 
     [WINDTRAP_MUTATE_JOBS] and [WINDTRAP_MUTATE_TIMEOUT] are specified but do
     not ship yet, and are deliberately not read here: a knob that is read and
