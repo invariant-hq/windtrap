@@ -396,5 +396,5 @@ them on their own.
   between. A `~pp_model` that raises costs its own cell and no more.
 - `stateful` with an empty command list does not pass vacuously: the
   test fails at case 0 with
-  `Invalid_argument("Windtrap.stateful: no commands to draw from")`,
+  `Invalid_argument("Windtrap_stateful.stateful: no commands to draw from")`,
   under a `<generator raised before producing a value>` counterexample.

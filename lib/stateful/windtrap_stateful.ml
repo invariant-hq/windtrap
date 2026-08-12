@@ -335,7 +335,7 @@ let pp_program ?pp_model ppf program =
 (* The generator *)
 
 let default_steps = 20
-let no_commands = "Windtrap.stateful: no commands to draw from"
+let no_commands = "Windtrap_stateful.stateful: no commands to draw from"
 
 (* One branch per command: the argument generator with the command's facts
    bound into a call. [Gen.map] loses the printer, deliberately and
