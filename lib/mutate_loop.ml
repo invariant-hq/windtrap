@@ -24,6 +24,20 @@
 
 module M = Windtrap_mutate
 
+(* The client diet, compiler-enforced: everything drive-side reaches core
+   through the facade's constrained re-exports (windtrap_driver.mli is
+   the census), so a use the facade does not name fails to compile here
+   rather than widening the surface silently. Beyond it this module
+   names only its own runtime (M), the Render sections it projects the
+   report into, and the shared tree/failure vocabulary. *)
+module Cli = Windtrap_driver.Cli
+module Driver = Windtrap_driver.Driver
+module Env = Windtrap_driver.Env
+module Path_ops = Windtrap_driver.Path_ops
+module Registry = Windtrap_driver.Registry
+module Run = Windtrap_driver.Run
+module Runner = Windtrap_driver.Runner
+
 let spf = Printf.sprintf
 
 (* The catalogue is complete only after module initialization, which is
@@ -35,7 +49,7 @@ let spf = Printf.sprintf
 let catalogue = lazy (M.catalogue ())
 let instrumented () = Lazy.force catalogue <> []
 
-type run =
+type run = Registry.verdict =
   | Ran of (Runner.outcome, Runner.startup_error) result
   | Reported of int
 
@@ -59,7 +73,10 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
    child and passes everything else through untouched, so the places that
    run the suite cannot drift in what they pass. [armed] travels beside
    it, not in it — it is this module's seam with the inline runtime
-   (Law 16d), not part of what a driver consumes. *)
+   (Law 16d), not part of what a driver consumes. Since the registry, the
+   seam is registered rather than passed: [execute_and_report] builds
+   [armed] from the hooks in [Registry.armed_hooks] and threads it below
+   exactly as the argument used to travel. *)
 
 (* The reach map
 
@@ -1676,7 +1693,15 @@ let arm_mode renderer ~armed (spine : Driver.t) tests =
 
 (* Entry *)
 
-let execute_and_report ~armed (spine : Driver.t) tests =
+let execute_and_report (spine : Driver.t) tests =
+  (* What a process about to run with a mutant armed owes the inline
+     runtime (Law 16d): the hooks registered in the registry, fired in
+     registration order — in each forked child before its first test, and
+     once in the parent under WINDTRAP_MUTATE_ARM; never by a run that
+     arms nothing. Read at fire time, not captured here: registration is
+     a module-load act and the loop must honor every hook the link
+     produced, however the initializers were ordered. *)
+  let armed () = List.iter (fun hook -> hook ()) (Registry.armed_hooks ()) in
   (* A listing is not a run: nothing executes, so there is nothing to
      observe, announce or mutate. Everything else goes through the knobs,
      instrumented or not — a variable the user set and misspelled must be
@@ -1724,3 +1749,14 @@ let execute_and_report ~armed (spine : Driver.t) tests =
             else
               try admit_loop (renderer ()) ~armed spine ~limit ~tries tests
               with Supervision message -> refuse "%s" message))
+
+(* Self-installed at module load — the registry's slot discipline: the
+   slot is set once, at the module load of whatever links the loop, so
+   every process that could run a suite with this module linked has the
+   interceptor before any run can start, whatever the link order. In-core
+   the linking is the inline runtime's one deliberate link edge
+   (ppx_runtime.ml) and the facade, which additionally installs the same
+   entry by name (windtrap.ml — identical record, last install wins).
+   When the loop moves to its own library this line moves with it and the
+   dune stanza linking that library becomes the whole arming act. *)
+let () = Registry.install execute_and_report

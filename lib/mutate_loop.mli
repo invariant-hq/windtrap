@@ -5,14 +5,19 @@
 
 (** The mutation loop: the parent process of a mutation run.
 
-    Core windtrap's whole coupling to mutation is {!execute_and_report}, called
-    at run entry by the two thin drivers in place of
-    {!Driver.execute_and_report} — plus one read-only flag on the expect
-    correction path ({!Ppx_runtime.enter_armed}, Law 16d, reached through this
-    module's [~armed] argument, never as a dependency). Everything else lives
-    here and in the stdlib-only runtime {!Windtrap_mutate}: the dry run and its
-    reach map, the determinism probe, the forced-fail check, the fork loop, the
-    verdict file, and the report.
+    Core windtrap's whole coupling to mutation is one {!Registry} slot:
+    {!execute_and_report} is installed there at module load — the module
+    installs itself, and the facade additionally names the same install while
+    the loop is still in-core — and the two thin drivers consult the slot at
+    run entry in place of {!Driver.execute_and_report} — plus one read-only
+    flag on the expect correction path ([Ppx_runtime.enter_armed], Law 16d,
+    registered in {!Registry.on_armed} and fired here, never a dependency in
+    either direction). Everything else lives here and in the stdlib-only
+    runtime {!Windtrap_mutate}: the dry run and its reach map, the determinism
+    probe, the forced-fail check, the fork loop, the verdict file, and the
+    report. This module consumes core through the drive-side facade —
+    [windtrap_driver.mli] is the census — plus the {!Render} sections its
+    report projects into.
 
     {b Why this module wraps the run rather than being called around it.} The
     three things a mutation run must do — announce an armed mutant {e before}
@@ -145,8 +150,7 @@
 
 (** {1:running Running} *)
 
-(** The type for what {!execute_and_report} did with the run. *)
-type run =
+type run = Windtrap_driver.Registry.verdict =
   | Ran of (Runner.outcome, Runner.startup_error) result
       (** The suite ran once, ordinarily — no loop, or a loop that never
           started. The caller finishes its own post-run work on it (JUnit, the
@@ -157,10 +161,12 @@ type run =
           has to say. Nothing about the underlying run is the caller's business
           — a loop's dry run is not the process's verdict — and the process
           exits with this code. *)
+(** The type for what {!execute_and_report} did with the run:
+    {!Registry.verdict}, whose constructors live in core because the drivers
+    that dispatch on them must not name this module. *)
 
-val execute_and_report :
-  armed:(unit -> unit) -> Driver.t -> Test_tree.t list -> run
-(** [execute_and_report ~armed spine tests] is the mutation-aware run entry:
+val execute_and_report : Driver.t -> Test_tree.t list -> run
+(** [execute_and_report spine tests] is the mutation-aware run entry:
     {!Driver.execute_and_report} over the same spine record with the same
     meaning, wrapped in whichever of the modes above this process is in. In an
     uninstrumented build, in a [--list] run, and whenever the environment asks
@@ -170,15 +176,15 @@ val execute_and_report :
     log directory, read-only checking); the children run through
     {!Driver.plan}/{!Driver.execute} — a session with no reporting.
 
-    [armed] is what a process about to run with a mutant armed owes the inline
-    (ppx) runtime — {!Ppx_runtime.enter_armed}, which turns checking read-only
-    (Law 16d) and clears the cross-run tables a forked child must not inherit.
-    It is an argument and not a call because {!Ppx_runtime} sits {e above} this
-    module: depending on it here would be a cycle, and a mutable hook would be
-    that same cycle hidden behind a [ref] that a link order could leave unset.
-    Both thin drivers pass {!Ppx_runtime.enter_armed}. It is called in each
-    forked child before its first test, and once in the parent under
-    [WINDTRAP_MUTATE_ARM]; it is never called by a run that arms nothing.
+    What a process about to run with a mutant armed owes the inline (ppx)
+    runtime — [Ppx_runtime.enter_armed], which turns checking read-only
+    (Law 16d) and clears the cross-run tables a forked child must not inherit —
+    arrives through {!Registry.armed_hooks} rather than as an argument or a
+    dependency: the runtime sits {e above} this module and registers at its
+    module load, whatever the link order, and this module fires the registered
+    hooks in registration order. They are fired in each forked child before its
+    first test, and once in the parent under [WINDTRAP_MUTATE_ARM]; they are
+    never fired by a run that arms nothing.
 
     An unrecognized [WINDTRAP_MUTATE] or [WINDTRAP_MUTATE_LIMIT], asking for the
     loop and an armed mutant at once, and a [WINDTRAP_MUTATE_ARM] that is

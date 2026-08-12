@@ -55,6 +55,8 @@ module Private = struct
   module Tag = Tag
   module Test_tree = Test_tree
   module Text = Text
+  module Windtrap_driver = Windtrap_driver
+  module Windtrap_testkit = Windtrap_testkit
 end
 
 (* Types *)
@@ -274,7 +276,11 @@ let invocation_of ~inside_dune argv : Render.invocation =
       else argv0
     in
     let backend =
-      if Mutate_loop.instrumented () then
+      (* The runtime's catalogue, not the loop: a binary with mutants
+         registered was necessarily built with the mutation backend, and
+         the catalogue is the runtime's own record of that — complete by
+         now, since module initialization is long over at run entry. *)
+      if Windtrap_mutate.catalogue () <> [] then
         "--instrument-with ppx_windtrap.mutate "
       else ""
     in
@@ -284,6 +290,18 @@ let invocation_of ~inside_dune argv : Render.invocation =
 
 let print_cli_error ~prog error =
   Format.eprintf "%s@.%s@." (Cli.error_message error) (Cli.usage ~prog)
+
+(* The mutation interceptor, installed by name: the registry exists so
+   the thin drivers need not name the loop, and while the loop is still
+   in-core this line is core's explicit statement of what fills the slot.
+   The loop also installs itself at module load (mutate_loop.ml — an
+   inline runner links this facade's unit only incidentally, so the
+   self-install is what its processes rely on); both installs carry the
+   identical entry, and the later one — this one — replaces like with
+   like. When the loop moves to its own library, that library's
+   self-install is the whole mechanism and this line is deleted with the
+   dependency. *)
+let () = Registry.install Mutate_loop.execute_and_report
 
 (* The thin library driver: [Driver.execute_and_report] writes the whole
    transcript, shared byte-for-byte with the inline (ppx) runner. What is
@@ -310,29 +328,33 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~render ~output tests =
     in
     if has_props then Some config.Run.seed else None
   in
-  (* The mutation seam: one call at run entry, in place of the driver's.
-     Without a mutation backend and without the variables it is exactly
-     [Driver.execute_and_report] — same transcript, same bytes, same cost;
-     with them it wraps the run on both sides (an armed mutant is
+  let spine =
+    {
+      Driver.invocation;
+      seed;
+      selection = Driver.selection_description config;
+      github;
+      output;
+      coverage_mode;
+      render;
+      config;
+      suite;
+    }
+  in
+  (* The mutation seam: one registry consult at run entry, in place of
+     the driver's (the interceptor is installed above). Without a
+     mutation backend and without the variables it is exactly
+     [Driver.execute_and_report] — same transcript, same bytes, same
+     cost; with them it wraps the run on both sides (an armed mutant is
      announced before any output, the discovery line follows the summary,
      and the loop forks after the dry run) and may take the process over. *)
   match
-    Mutate_loop.execute_and_report ~armed:Ppx_runtime.enter_armed
-      {
-        Driver.invocation;
-        seed;
-        selection = Driver.selection_description config;
-        github;
-        output;
-        coverage_mode;
-        render;
-        config;
-        suite;
-      }
-      tests
+    match Registry.interceptor () with
+    | Some run -> run spine tests
+    | None -> Registry.Ran (Driver.execute_and_report spine tests)
   with
-  | Mutate_loop.Reported code -> exit code
-  | Mutate_loop.Ran result -> (
+  | Registry.Reported code -> exit code
+  | Registry.Ran result -> (
       match result with
       | Error error ->
           (* The message is already on stderr; this runner owns the exit. *)

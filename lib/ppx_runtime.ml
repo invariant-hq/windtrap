@@ -3,7 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-
 (* Not mutated. This module is part of the machinery a mutation run uses
    to judge mutants — the scheduler, the ambient run state, the reporting
    spine, the loop itself — so a mutant here is armed inside the process
@@ -22,6 +21,33 @@
    at the pinned conformance commit (test/conformance/NOTICE; upstream
    runtime/{test_spec,test_node,output}.ml and the shapes its corpus
    goldens pin) — see the .mli for the contract. *)
+
+(* The client diet, compiler-enforced: everything drive-side reaches core
+   through the facade's constrained re-exports (windtrap_driver.mli is
+   the census), everything body-side through Windtrap_testkit, so a use
+   neither facade names fails to compile here rather than widening the
+   surface silently. Beyond them this module names only the shared
+   vocabulary — Failure, Test_tree, Loc — plus the one documented link
+   edge below. *)
+module Cli = Windtrap_driver.Cli
+module Driver = Windtrap_driver.Driver
+module Env = Windtrap_driver.Env
+module Registry = Windtrap_driver.Registry
+module Run = Windtrap_driver.Run
+module Runner = Windtrap_driver.Runner
+
+(* One link edge, not an API edge. The loop installs itself into the
+   registry at module load, but only a linked module loads: while the
+   loop lives in-core, this reference is what carries it into every
+   inline runner's closure — a generated runner references nothing beyond
+   this module, so without it an inline mutation run would silently fall
+   back to a plain run — exactly the linking the old direct call
+   provided. A value reference, because a module alias has no runtime
+   component and forces nothing; [Sys.opaque_identity] keeps it beyond an
+   optimizer's reach. Consultation stays registry-only below. When the
+   loop moves to its own library, linking becomes the test stanza's
+   explicit act and this line is deleted with it. *)
+let _link : unit -> bool = Sys.opaque_identity Mutate_loop.instrumented
 
 (* Initialization *)
 
@@ -196,6 +222,16 @@ let enter_armed () =
   Hashtbl.reset !state.node_pool;
   Hashtbl.reset !state.covered;
   !state.current_expect <- None
+
+(* Registered, not passed: the mutation loop sits below this module and
+   fires the registry's hooks in every process that arms — each forked
+   child before its first test, once in the parent under
+   WINDTRAP_MUTATE_ARM (Law 16d). Registering at module load means any
+   process that can run this runtime's tests has the debt on record
+   before any run can arm; [reset] leaves it standing, like
+   [initial_dir], because owing the mutation loop read-only checking is a
+   fact about the process, not run state. *)
+let () = Registry.on_armed enter_armed
 
 (* Protocol arguments *)
 
@@ -442,13 +478,29 @@ let formatted_contents node raw =
       format_pretty ~delimiter:(node_delimiter node)
         ~node_column:(column node.loc) raw
 
+(* [Text.contains_substring]'s naive scan, duplicated: the
+   delimiter-conflict check below is this module's one string search, and
+   [Text] is not part of the client surface the facades name — twelve
+   lines here keep the diet exact. *)
+let contains_substring ~pattern s =
+  let n = String.length pattern and len = String.length s in
+  if n = 0 then true
+  else begin
+    let matches_at i =
+      let rec go j = j = n || (s.[i + j] = pattern.[j] && go (j + 1)) in
+      go 0
+    in
+    let rec scan i = i + n <= len && (matches_at i || scan (i + 1)) in
+    scan 0
+  end
+
 (* Delimiter conflict fixing: grow the tag until neither delimiter occurs in
    the contents. *)
 let fix_tag ~contents tag =
   let rec fix tag =
     if
-      Text.contains_substring ~pattern:("{" ^ tag ^ "|") contents
-      || Text.contains_substring ~pattern:("|" ^ tag ^ "}") contents
+      contains_substring ~pattern:("{" ^ tag ^ "|") contents
+      || contains_substring ~pattern:("|" ^ tag ^ "}") contents
     then fix (tag ^ "xxx")
     else tag
   in
@@ -894,7 +946,7 @@ let require_ctx op =
           runner")
 
 let consume_output ctx ~pos =
-  ctx.ctx_sanitize (Capture.output ~pos (Run.capture (Run.current ())))
+  ctx.ctx_sanitize (Windtrap_testkit.captured_output ~pos ())
 
 let expect_output () =
   let ctx = require_ctx "[%expect.output]" in
@@ -954,7 +1006,7 @@ let shown_expected node =
   | None -> ""
 
 let fail_node ctx node ~shown =
-  Run.add_failure (Run.current_frame ())
+  Windtrap_testkit.add_failure
     (Failure.equality
        ~loc:(loc_t ~file:ctx.ctx_file node.loc)
        ~expected:(shown_expected node) ~actual:shown ())
@@ -1035,7 +1087,7 @@ let resolve_nodes ctx ~check_reachability =
       | [] ->
           if check_reachability then begin
             all_covered := false;
-            Run.add_failure (Run.current_frame ())
+            Windtrap_testkit.add_failure
               (Failure.message
                  ~loc:(loc_t ~file:ctx.ctx_file node.loc)
                  (Printf.sprintf "[%%%s] node was never reached"
@@ -1061,7 +1113,7 @@ let record_covered value =
      so no failure may be reported as covered by one. *)
   if !state.read_only then ()
   else
-    let path = Run.path (Run.current_frame ()) in
+    let path = Windtrap_testkit.current_path () in
     if value = `No_problem then Hashtbl.remove !state.covered path
     else Hashtbl.replace !state.covered path (value = `Covered)
 
@@ -1098,7 +1150,7 @@ let resolve_trailing ctx ~raw =
       record formatted;
       (match result with
       | Fail _ ->
-          Run.add_failure (Run.current_frame ())
+          Windtrap_testkit.add_failure
             (Failure.equality
                ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
                ~msg:"trailing output not matched by [%expect]" ~expected:""
@@ -1112,7 +1164,7 @@ let resolve_trailing ctx ~raw =
           ()
       in
       record (format_pretty ~delimiter:(Tag "") ~node_column:insert_column cr);
-      Run.add_failure (Run.current_frame ())
+      Windtrap_testkit.add_failure
         (Failure.equality
            ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
            ~msg:"trailing output not matched by [%expect]" ~expected:""
@@ -1142,14 +1194,13 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
   !state.current_expect <- Some ctx;
   (* Every expect failure is recorded below, after the body returns
      ([resolve_trailing]/[resolve_nodes]). So anything the frame gains
-     during the body is something else — and [Run.subtest] records a
+     during the body is something else — and [subtest] records a
      failure and carries on, so a body can return having already failed.
      The protocol's covered bit is what tells dune the run's failures are
      all promotable corrections; counting such a body as covered exits 0
      and invites [dune promote] to bless output the assertion says is
      wrong (Law 11: "masked assertion failures"). *)
-  let frame = Run.current_frame () in
-  let failures_before = List.length (Run.failures frame) in
+  let failures_before = Windtrap_testkit.failure_count () in
   Fun.protect
     ~finally:(fun () -> !state.current_expect <- saved)
     (fun () ->
@@ -1157,7 +1208,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
       | () ->
           (* Read before resolution records any expect failure of its own. *)
           let body_failed =
-            List.length (Run.failures frame) > failures_before
+            Windtrap_testkit.failure_count () > failures_before
           in
           (* Trailing output not matched by any node becomes an inserted
              node; then per-node reachability. *)
@@ -1221,29 +1272,33 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
    files, and the returned exit code that [exit] combines with the
    correction protocol. *)
 let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
+  let spine =
+    {
+      Driver.invocation = `Mirrors;
+      seed = None;
+      selection = None;
+      github = Env.in_github_actions ();
+      output;
+      coverage_mode;
+      render;
+      config;
+      suite;
+    }
+  in
   match
-    (* The mutation seam: one call at run entry, in place of the driver's
-       (see [Mutate_loop]). A mutation run's exit code is its own and never
+    (* The mutation seam: one registry consult at run entry, in place of
+       the driver's (the facade installs the loop at startup; see
+       [Registry]). A mutation run's exit code is its own and never
        reports a test outcome, so [Reported] skips the correction protocol
        entirely: dune's promotion protocol is not what a mutation run is
        for, and Law 16(d) has already stopped every correction it could
        have recorded. *)
-    Mutate_loop.execute_and_report ~armed:enter_armed
-      {
-        Driver.invocation = `Mirrors;
-        seed = None;
-        selection = None;
-        github = Env.in_github_actions ();
-        output;
-        coverage_mode;
-        render;
-        config;
-        suite;
-      }
-      tests
+    match Registry.interceptor () with
+    | Some run -> run spine tests
+    | None -> Registry.Ran (Driver.execute_and_report spine tests)
   with
-  | Mutate_loop.Reported code -> code
-  | Mutate_loop.Ran result -> (
+  | Registry.Reported code -> code
+  | Registry.Ran result -> (
       match result with
       | Error error ->
           (* The message is already on stderr; this runner returns the code

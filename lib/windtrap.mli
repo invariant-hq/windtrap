@@ -970,4 +970,15 @@ module Private : sig
   module Tag = Tag
   module Test_tree = Test_tree
   module Text = Text
+
+  module Windtrap_driver = Windtrap_driver
+  (** The named client surfaces: what a thing that runs suites may use
+      ([Windtrap_driver], the registry inside it) and what code running inside a
+      test may use ([Windtrap_testkit]). Private-stable like everything here —
+      whether they someday earn a public spelling is deliberately undecided —
+      but unlike the modules around them their contents are a specification, not
+      an export of convenience: each is the census of its clients' uses, and
+      widening one is a design act (see the two [.mli]s). *)
+
+  module Windtrap_testkit = Windtrap_testkit
 end

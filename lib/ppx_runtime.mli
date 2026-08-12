@@ -388,10 +388,12 @@ val enter_armed : unit -> unit
     {!Snapshot.Update}, so an armed run's [update = No_update] already makes
     snapshot checking read-only by construction.
 
-    The mutation loop calls it in every process that has a mutant armed — each
+    The mutation loop fires it in every process that has a mutant armed — each
     forked child, and an interactive [WINDTRAP_MUTATE_ARM] run — and reaches it
-    as an argument rather than a dependency, because this module sits {e above}
-    the loop (see {!Mutate_loop.execute_and_report}'s [~armed]). *)
+    through {!Registry.on_armed}, where this module registers it at load time,
+    rather than as a dependency: this module sits {e above} the loop, and the
+    registry is the seam that keeps the two from naming each other (see
+    {!Mutate_loop.execute_and_report}). *)
 
 (** {1:seams Test seams} *)
 
