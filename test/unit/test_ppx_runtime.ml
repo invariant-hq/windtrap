@@ -24,6 +24,10 @@
 open Windtrap.Private
 open Harness
 
+(* The runtime lives in ppx_windtrap.runtime, not in the core; the alias
+   keeps the suite's spelling as short as the module's old home did. *)
+module Ppx_runtime = Ppx_windtrap_runtime.Ppx_runtime
+
 let () = init "ppx_runtime"
 
 (* Temp roots and config *)

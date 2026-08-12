@@ -937,10 +937,11 @@ val run : ?argv:string array -> string -> test list -> unit
 (** {1:private Private} *)
 
 (** Internal machinery — windtrap's own composition surface, re-exported for the
-    library's per-module test suites (the [test/] directories) and for
-    [ppx_windtrap]. Not part of the public API: these interfaces move without
-    notice and carry no stability guarantee. Everything user-facing is the
-    documented surface above; nothing here escapes into scope on
+    library's per-module test suites (the [test/] directories) and for the
+    co-versioned client libraries ([ppx_windtrap]'s runtime and
+    [windtrap.mutation]). Not part of the public API: these interfaces move
+    without notice and carry no stability guarantee. Everything user-facing is
+    the documented surface above; nothing here escapes into scope on
     [open Windtrap]. *)
 module Private : sig
   module Atomic_file = Atomic_file
@@ -950,12 +951,10 @@ module Private : sig
   module Diff = Diff
   module Driver = Driver
   module Env = Env
-  module Expect_test_config = Expect_test_config
   module Failure = Failure
   module Loc = Loc
   module Path_ops = Path_ops
   module Pp = Pp
-  module Ppx_runtime = Ppx_runtime
   module Property = Property
   module Render = Render
   module Render_github = Render_github

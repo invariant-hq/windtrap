@@ -142,7 +142,7 @@ val observe :
     - [selection] is what an empty run explains itself with: the facade passes
       {!selection_description}. The inline runner deliberately does not. Under
       [dune runtest] a [WINDTRAP_FILTER] narrows {e every} partition, and the
-      ones it empties are not typos — {!Ppx_runtime.inline_exit_code} exits [0]
+      ones it empties are not typos — [Ppx_runtime.inline_exit_code] exits [0]
       on them for exactly that reason — so the sentence would be a paragraph of
       noise per partition on a working command; and its second line offers [-l],
       which the inline protocol does not have. *)

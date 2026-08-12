@@ -13,4 +13,6 @@
 (executable
  (name runaway_main)
  (modules runaway_main)
- (libraries windtrap mutate_loop_spinner))
+ ; windtrap_mutation: the suite runs under WINDTRAP_MUTATE=1, and the
+ ; loop only answers where its library is linked (see lib/mutation/dune).
+ (libraries windtrap windtrap_mutation mutate_loop_spinner))

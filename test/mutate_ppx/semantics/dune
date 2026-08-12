@@ -46,10 +46,19 @@
 ; baseline library it links - are the uninstrumented side of every
 ; comparison.
 
+; windtrap.mutation: the suite links an instrumented library, and the
+; discovery line after its summary is the loop's — the loop only
+; answers where its library is linked (see lib/mutation/dune).
+
 (test
  (name test_semantics)
  (modules test_semantics)
- (libraries windtrap windtrap.mutate mutsem_fixtures mutsem_baseline))
+ (libraries
+  windtrap
+  windtrap.mutation
+  windtrap.mutate
+  mutsem_fixtures
+  mutsem_baseline))
 
 ; The runtime-only link contract (Law 12, interchange contract): this
 ; executable lists mutsem_fixtures alone - no windtrap, no

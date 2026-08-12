@@ -35,12 +35,10 @@ module Private = struct
   module Diff = Diff
   module Driver = Driver
   module Env = Env
-  module Expect_test_config = Expect_test_config
   module Failure = Failure
   module Loc = Loc
   module Path_ops = Path_ops
   module Pp = Pp
-  module Ppx_runtime = Ppx_runtime
   module Property = Property
   module Render = Render
   module Render_github = Render_github
@@ -291,18 +289,6 @@ let invocation_of ~inside_dune argv : Render.invocation =
 let print_cli_error ~prog error =
   Format.eprintf "%s@.%s@." (Cli.error_message error) (Cli.usage ~prog)
 
-(* The mutation interceptor, installed by name: the registry exists so
-   the thin drivers need not name the loop, and while the loop is still
-   in-core this line is core's explicit statement of what fills the slot.
-   The loop also installs itself at module load (mutate_loop.ml — an
-   inline runner links this facade's unit only incidentally, so the
-   self-install is what its processes rely on); both installs carry the
-   identical entry, and the later one — this one — replaces like with
-   like. When the loop moves to its own library, that library's
-   self-install is the whole mechanism and this line is deleted with the
-   dependency. *)
-let () = Registry.install Mutate_loop.execute_and_report
-
 (* The thin library driver: [Driver.execute_and_report] writes the whole
    transcript, shared byte-for-byte with the inline (ppx) runner. What is
    legitimately this runner's own stays visible here: the parsed-CLI
@@ -342,7 +328,8 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~render ~output tests =
     }
   in
   (* The mutation seam: one registry consult at run entry, in place of
-     the driver's (the interceptor is installed above). Without a
+     the driver's (the loop installs itself at module load; linking
+     windtrap.mutation is what fills the slot — see Registry). Without a
      mutation backend and without the variables it is exactly
      [Driver.execute_and_report] — same transcript, same bytes, same
      cost; with them it wraps the run on both sides (an armed mutant is

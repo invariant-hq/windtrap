@@ -12,13 +12,11 @@
     wiring, and the thin drivers cannot name it without core depending upward.
     This module is the seam that removes the name: the loop installs an
     {!type:interceptor} here at its module load, and the drivers hand it the run
-    ({!interceptor}) instead of calling the loop. Today core also names the
-    install outright — the facade installs the same entry at startup, and the
-    inline runtime carries one deliberate link edge so a generated runner's
-    closure still loads the loop — because the loop is still in-core; once it
-    moves to its own library, its self-install is the whole mechanism and the
-    [dune] stanza linking that library is what arms mutation, explicit and
-    greppable.
+    ({!interceptor}) instead of calling the loop. The loop lives in its own
+    library, [windtrap.mutation], and that self-install is the whole mechanism:
+    the [dune] stanza linking the library is what arms mutation, explicit and
+    greppable — a test stanza's own entry for the standalone runner,
+    [ppx_windtrap.runtime]'s dependency for every generated inline runner.
 
     This is the library's second documented ambient slot, beside {!Run}'s. Same
     defense: it is written once at module load by explicitly linked code, read

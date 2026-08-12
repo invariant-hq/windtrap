@@ -5,18 +5,18 @@
 
 (** The mutation loop: the parent process of a mutation run.
 
-    Core windtrap's whole coupling to mutation is one {!Registry} slot:
-    {!execute_and_report} is installed there at module load — the module
-    installs itself, and the facade additionally names the same install while
-    the loop is still in-core — and the two thin drivers consult the slot at
-    run entry in place of {!Driver.execute_and_report} — plus one read-only
+    Core windtrap's whole coupling to mutation is one [Registry] slot:
+    {!execute_and_report} is installed there at this module's load — the module
+    installs itself, so the dune stanza linking [windtrap.mutation] is the
+    arming act — and the two thin drivers consult the slot at
+    run entry in place of [Driver.execute_and_report] — plus one read-only
     flag on the expect correction path ([Ppx_runtime.enter_armed], Law 16d,
-    registered in {!Registry.on_armed} and fired here, never a dependency in
+    registered in [Registry.on_armed] and fired here, never a dependency in
     either direction). Everything else lives here and in the stdlib-only
     runtime {!Windtrap_mutate}: the dry run and its reach map, the determinism
     probe, the forced-fail check, the fork loop, the verdict file, and the
     report. This module consumes core through the drive-side facade —
-    [windtrap_driver.mli] is the census — plus the {!Render} sections its
+    [windtrap_driver.mli] is the census — plus the [Render] sections its
     report projects into.
 
     {b Why this module wraps the run rather than being called around it.} The
@@ -28,7 +28,7 @@
     run is this module's argument, not its caller's: it is one call, in one
     place, and there is nothing for a runner to get out of order.
 
-    {b Modes} (from {!Cli.mutation}, and the catalogue):
+    {b Modes} (from [Cli.mutation], and the catalogue):
 
     - No mutant registered in this executable: the run is an ordinary run and
       nothing here does anything.
@@ -93,7 +93,7 @@
 
     + {b Dry run.} The suite runs once, normally, nothing armed, printing its
       ordinary summary line. The reach map is built from
-      {!Driver.execute_and_report}'s [?on_event] — a {e second} subscriber
+      [Driver.execute_and_report]'s [?on_event] — a {e second} subscriber
       composed after the transcript's, never replacing it. A red dry run, an
       empty one, or one with no mutant to test aborts: a score over a suite that
       does not pass is not a score.
@@ -113,7 +113,7 @@
       code cannot tell a killed mutant from a survivor.
     + {b Report.} One verdict file under [_build/_mutants] (so [windtrap mutate]
       can merge the several test executables that cover one library) and the
-      report through {!Render.mutation_report}. A run whose selection narrows
+      report through [Render.mutation_report]. A run whose selection narrows
       the suite — a filter, an exclude, a tag selection, a shard, [--quick],
       [--failed], or an in-source focus — still completes and reports, but
       writes no verdict file and says so in one line: its verdicts are relative
@@ -148,6 +148,14 @@
     reached (any UNJUSTIFIED ruling); NO SITES alone is never red. For [admit]
     the refusal causes additionally include a missing selection. *)
 
+(* The shared core vocabulary, substituted rather than aliased: the loop
+   lives outside the core, and these names must mean the core's modules
+   without this signature re-exporting them. *)
+module Windtrap_driver := Windtrap.Private.Windtrap_driver
+module Driver := Windtrap.Private.Windtrap_driver.Driver
+module Runner := Windtrap.Private.Windtrap_driver.Runner
+module Test_tree := Windtrap.Private.Test_tree
+
 (** {1:running Running} *)
 
 type run = Windtrap_driver.Registry.verdict =
@@ -155,31 +163,31 @@ type run = Windtrap_driver.Registry.verdict =
       (** The suite ran once, ordinarily — no loop, or a loop that never
           started. The caller finishes its own post-run work on it (JUnit, the
           focus warning, the correction protocol, the exit) exactly as it would
-          have on {!Driver.execute_and_report}'s result. *)
+          have on [Driver.execute_and_report]'s result. *)
   | Reported of int
       (** The mutation run took the process over and has printed everything it
           has to say. Nothing about the underlying run is the caller's business
           — a loop's dry run is not the process's verdict — and the process
           exits with this code. *)
 (** The type for what {!execute_and_report} did with the run:
-    {!Registry.verdict}, whose constructors live in core because the drivers
+    [Registry.verdict], whose constructors live in core because the drivers
     that dispatch on them must not name this module. *)
 
 val execute_and_report : Driver.t -> Test_tree.t list -> run
 (** [execute_and_report spine tests] is the mutation-aware run entry:
-    {!Driver.execute_and_report} over the same spine record with the same
+    [Driver.execute_and_report] over the same spine record with the same
     meaning, wrapped in whichever of the modes above this process is in. In an
     uninstrumented build, in a [--list] run, and whenever the environment asks
     for nothing, it is exactly [Ran (Driver.execute_and_report spine tests)] —
     same transcript, same bytes, same cost. The loop threads [spine] whole,
     replacing [spine.config] per child (the pruned selection, the child's own
     log directory, read-only checking); the children run through
-    {!Driver.plan}/{!Driver.execute} — a session with no reporting.
+    [Driver.plan]/[Driver.execute] — a session with no reporting.
 
     What a process about to run with a mutant armed owes the inline (ppx)
     runtime — [Ppx_runtime.enter_armed], which turns checking read-only
     (Law 16d) and clears the cross-run tables a forked child must not inherit —
-    arrives through {!Registry.armed_hooks} rather than as an argument or a
+    arrives through [Registry.armed_hooks] rather than as an argument or a
     dependency: the runtime sits {e above} this module and registers at its
     module load, whatever the link order, and this module fires the registered
     hooks in registration order. They are fired in each forked child before its
@@ -203,7 +211,7 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     instruction from outside the process, and reaches no further than the one
     place that reads it.
 
-    Effects: the union of {!Driver.execute_and_report}'s and, under the loop,
+    Effects: the union of [Driver.execute_and_report]'s and, under the loop,
     [fork]/[waitpid]/[pipe]/[setitimer], one scratch log directory per run
     (removed at the end), and one verdict file under
     {!Windtrap_mutate.output_file}. Children never reach [Stdlib]'s exit

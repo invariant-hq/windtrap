@@ -95,8 +95,8 @@ let runtime_construct ~loc name arg =
 
 (* Ppx_runtime.loc is byte offsets: start_pos/end_pos are pos_cnum,
    start_bol is pos_bol, line is 1-based pos_lnum (see
-   lib/ppx_runtime.mli; the shape is ppx_expect's Compact_loc plus the
-   report line). *)
+   runtime/ppx_runtime.mli; the shape is ppx_expect's Compact_loc plus
+   the report line). *)
 let compact_loc_expr ~loc (l : Location.t) =
   runtime_record ~loc
     [

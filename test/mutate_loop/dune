@@ -16,18 +16,30 @@
  (preprocess
   (pps ppx_windtrap.mutate)))
 
+; windtrap_mutation is the arming act: the loop lives in its own
+; library and installs itself at module load, so a suite that should
+; answer the mutation variables must link it — exactly what these
+; stanzas are for (see lib/mutation/dune).
+
 (executable
  (name suite_main)
  (modules suite_main)
- (libraries windtrap windtrap_mutate mutate_loop_subject unix))
+ (libraries
+  windtrap
+  windtrap_mutation
+  windtrap_mutate
+  mutate_loop_subject
+  unix))
 
 ; The control: a suite that links no instrumented module, so the seam has
-; to decline by name instead of reporting nothing.
+; to decline by name instead of reporting nothing. It links the loop —
+; the decline is the loop's sentence, and a control without the seam
+; would be a control for nothing.
 
 (executable
  (name plain_main)
  (modules plain_main)
- (libraries windtrap))
+ (libraries windtrap windtrap_mutation))
 
 (test
  (name test_mutate_loop)

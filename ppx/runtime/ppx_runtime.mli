@@ -20,14 +20,14 @@
     main then calls {!init} with the argument vector and {!exit}: under dune's
     [inline_tests] backend the vector carries the
     [inline-test-runner <lib> -partition <file>] protocol, and {!exit} collects
-    the selected partition, executes it through {!Runner.execute}, writes
-    pending [.corrected] files into the sandbox, and terminates with the
+    the selected partition, executes it through [Runner.execute], writes pending
+    [.corrected] files into the sandbox, and terminates with the
     promotion-protocol exit code (see {!inline_exit_code}).
 
     {b Expect tests.} An expect test declares its [[%expect]] nodes up front
     ({!type:node}: per-node ids, exact payload locations, delimiters); the body
     calls {!expect} with the node's id. Each call consumes captured output
-    ({!Capture.output} through the run record), sanitizes it, and compares —
+    ([Capture.output] through the run record), sanitizes it, and compares —
     normalized for [[%expect]] ({!normalize}), raw for [[%expect_exact]].
     Mismatches do not abort the body: every reached node records its result, so
     one run corrects every stale payload. At the end of the body the runtime
@@ -55,6 +55,12 @@
     Registration state is module-global by nature (module initializers run
     before any run record exists); everything {e per-run} — capture, results,
     per-test expect state — lives in the run record and the per-test frames. *)
+
+(* The shared core vocabulary, substituted rather than aliased: the
+   runtime lives outside the core, and these names must mean the core's
+   modules without this signature re-exporting them. *)
+module Test_tree := Windtrap.Private.Test_tree
+module Runner := Windtrap.Private.Windtrap_driver.Runner
 
 (** {1:locations Locations}
 
@@ -176,8 +182,8 @@ val add_expect_test :
     The registered test wraps [body] with the expect machinery described in the
     module preamble; [sanitize] is applied to every read of captured output.
     Body outcomes: a body that returns is checked for trailing output and
-    per-node reachability; everything a body raises — {!Failure.Check_failure},
-    {!Failure.Skip_test}, {!Failure.Timeout}, fatal exceptions, and any other
+    per-node reachability; everything a body raises — [Failure.Check_failure],
+    [Failure.Skip_test], [Failure.Timeout], fatal exceptions, and any other
     uncaught exception alike — propagates to the runner, and none of it is a
     correction: nodes reached before the exception still resolve, so their
     corrections are recorded, but nothing is spliced at the trailing point — a
@@ -188,8 +194,8 @@ val add_expect_test :
     [(try boom () with e -> print_string (Printexc.to_string e))] followed by an
     ordinary [[%expect]] node.
 
-    A skip raised in the body ([skip ()], {!Failure.Skip_test}) makes the test
-    an ordinary skip: nothing is checked and nothing is recorded — no correction
+    A skip raised in the body ([skip ()], [Failure.Skip_test]) makes the test an
+    ordinary skip: nothing is checked and nothing is recorded — no correction
     for any node, the ones reached before the skip included, no trailing-output
     insertion, and no unreached-node failure — so no [.corrected] content ever
     exists for the test's nodes, and the test plays no part in the promotion
@@ -301,7 +307,7 @@ val exit : unit -> 'a
     [-list-partitions] (print and exit [0]); collects the partition's tests
     (none registered: exit [0]); resolves configuration from the environment
     mirrors alone ([WINDTRAP_*] — under [dune runtest] they are the CLI;
-    resolution errors print and exit [2]); executes through {!Runner.execute}
+    resolution errors print and exit [2]); executes through [Runner.execute]
     with the terminal renderer, wired exactly as the library runner wires it —
     [WINDTRAP_QUIET]/[WINDTRAP_VERBOSE] pick the verbosity level,
     [WINDTRAP_SLOW_THRESHOLD] tunes the slow warnings with ["slow"]-tagged tests
@@ -383,17 +389,17 @@ val enter_armed : unit -> unit
       protocol arguments and the duplicate-name counters are kept: the child
       runs the tests the parent registered.
 
-    Snapshots need no counterpart. {!Snapshot.resolve_mode} maps
-    {!Env.No_update} to {!Snapshot.Check} and writing is reachable only under
-    {!Snapshot.Update}, so an armed run's [update = No_update] already makes
-    snapshot checking read-only by construction.
+    Snapshots need no counterpart. [Snapshot.resolve_mode] maps [Env.No_update]
+    to [Snapshot.Check] and writing is reachable only under [Snapshot.Update],
+    so an armed run's [update = No_update] already makes snapshot checking
+    read-only by construction.
 
     The mutation loop fires it in every process that has a mutant armed — each
     forked child, and an interactive [WINDTRAP_MUTATE_ARM] run — and reaches it
-    through {!Registry.on_armed}, where this module registers it at load time,
+    through [Registry.on_armed], where this module registers it at load time,
     rather than as a dependency: this module sits {e above} the loop, and the
     registry is the seam that keeps the two from naming each other (see
-    {!Mutate_loop.execute_and_report}). *)
+    [Mutate_loop.execute_and_report]). *)
 
 (** {1:seams Test seams} *)
 

@@ -1,4 +1,30 @@
+; The ordinary-OCaml half of ppx_windtrap: generated code and the
+; inline_tests backend's runner address it as
+; Ppx_windtrap_runtime.Ppx_runtime — the wrapped library name is the
+; spelling, so windtrap's internal module layout stays out of generated
+; code. It consumes the core through Windtrap.Private's facades
+; (windtrap_driver.mli is the census).
+;
+; windtrap_mutation is a link dependency, not an API edge: the inline
+; runner is a thin driver, and the driver linking windtrap.mutation is
+; what arms mutation (see lib/mutation/dune). No module here names the
+; loop — the loop installs itself into the core's Registry at module
+; load, and its -linkall archive is what guarantees the unit loads —
+; so this line is what carries it into every generated runner's
+; closure, exactly the linking a test stanza's explicit
+; windtrap.mutation entry provides for the standalone runner. Without
+; it an inline mutation run would silently fall back to a plain run
+; (test/mutate_loop/inline is the fence).
+
 (library
  (name ppx_windtrap_runtime)
  (public_name ppx_windtrap.runtime)
- (libraries windtrap))
+ (libraries windtrap windtrap_mutation)
+ ; The core measures its own coverage, and Ppx_runtime moved out of it;
+ ; keeping the backend keeps the measured set intact. No mutation
+ ; stanza, deliberately: the runtime is part of the machinery that
+ ; judges mutants, and a mutant armed inside the judging process hangs
+ ; — ppx_runtime.ml's [@@@mutate exclude_file] states the same intent
+ ; in-file. Inert without --instrument-with.
+ (instrumentation
+  (backend ppx_windtrap.coverage)))

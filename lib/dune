@@ -23,9 +23,11 @@
   (backend ppx_windtrap.coverage))
  ; And windtrap mutates itself. Six modules opt out with
  ; [@@@mutate exclude_file] — the scheduler, the ambient run state, the
- ; reporting spine, the loop — because a mutant there is armed inside the
- ; process that is supposed to judge it, and the failure mode is a hang
- ; rather than a survivor.
+ ; reporting spine — because a mutant there is armed inside the process
+ ; that is supposed to judge it, and the failure mode is a hang rather
+ ; than a survivor. The loop and the inline runtime, excluded for the
+ ; same reason, live above the core (lib/mutation, ppx/runtime) in
+ ; libraries whose dune carries no mutation stanza at all.
  ;
  ; This stanza is only safe because of WINDTRAP_MUTATE_ONLY. The tree's
  ; own mutation suites are built on controlled catalogues — a zero-mutant

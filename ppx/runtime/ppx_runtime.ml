@@ -5,13 +5,13 @@
 
 (* Not mutated. This module is part of the machinery a mutation run uses
    to judge mutants — the scheduler, the ambient run state, the reporting
-   spine, the loop itself — so a mutant here is armed inside the process
-   that is supposed to detect it. The failure mode is not a false
-   survivor but a hang or a corrupted verdict: a mutated bail counter or
-   timeout does not fail the reaching tests, it stops them from
-   finishing. Coverage still measures these files; only mutation is off.
-   Everything below the scheduler — the verbs, the generators, the
-   diffing, the renderers — is mutated. *)
+   spine — so a mutant here is armed inside the process that is supposed
+   to detect it. The failure mode is not a false survivor but a hang or a
+   corrupted verdict: a mutated bail counter or timeout does not fail the
+   reaching tests, it stops them from finishing. This library's dune
+   carries no mutation stanza, so no build can instrument it; the
+   attribute stays as the statement of intent and the guard against a
+   stanza appearing. Coverage still measures the file. *)
 [@@@mutate exclude_file]
 
 (* The ordinary-OCaml half of ppx_windtrap. Protocol and sandbox mechanics
@@ -27,27 +27,21 @@
    the census), everything body-side through Windtrap_testkit, so a use
    neither facade names fails to compile here rather than widening the
    surface silently. Beyond them this module names only the shared
-   vocabulary — Failure, Test_tree, Loc — plus the one documented link
-   edge below. *)
+   vocabulary — Failure, Test_tree, Loc, Text. All of it arrives through
+   [Windtrap.Private]: this library sits outside the core, and Private is
+   the core's one export surface for co-versioned clients. *)
+module Windtrap_driver = Windtrap.Private.Windtrap_driver
+module Windtrap_testkit = Windtrap.Private.Windtrap_testkit
+module Failure = Windtrap.Private.Failure
+module Loc = Windtrap.Private.Loc
+module Test_tree = Windtrap.Private.Test_tree
+module Text = Windtrap.Private.Text
 module Cli = Windtrap_driver.Cli
 module Driver = Windtrap_driver.Driver
 module Env = Windtrap_driver.Env
 module Registry = Windtrap_driver.Registry
 module Run = Windtrap_driver.Run
 module Runner = Windtrap_driver.Runner
-
-(* One link edge, not an API edge. The loop installs itself into the
-   registry at module load, but only a linked module loads: while the
-   loop lives in-core, this reference is what carries it into every
-   inline runner's closure — a generated runner references nothing beyond
-   this module, so without it an inline mutation run would silently fall
-   back to a plain run — exactly the linking the old direct call
-   provided. A value reference, because a module alias has no runtime
-   component and forces nothing; [Sys.opaque_identity] keeps it beyond an
-   optimizer's reach. Consultation stays registry-only below. When the
-   loop moves to its own library, linking becomes the test stanza's
-   explicit act and this line is deleted with it. *)
-let _link : unit -> bool = Sys.opaque_identity Mutate_loop.instrumented
 
 (* Initialization *)
 
@@ -1287,12 +1281,13 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
   in
   match
     (* The mutation seam: one registry consult at run entry, in place of
-       the driver's (the facade installs the loop at startup; see
-       [Registry]). A mutation run's exit code is its own and never
-       reports a test outcome, so [Reported] skips the correction protocol
-       entirely: dune's promotion protocol is not what a mutation run is
-       for, and Law 16(d) has already stopped every correction it could
-       have recorded. *)
+       the driver's (the loop installs itself at module load; this
+       library links windtrap.mutation so every generated runner carries
+       it — see this directory's dune). A mutation run's exit code is its
+       own and never reports a test outcome, so [Reported] skips the
+       correction protocol entirely: dune's promotion protocol is not
+       what a mutation run is for, and Law 16(d) has already stopped
+       every correction it could have recorded. *)
     match Registry.interceptor () with
     | Some run -> run spine tests
     | None -> Registry.Ran (Driver.execute_and_report spine tests)

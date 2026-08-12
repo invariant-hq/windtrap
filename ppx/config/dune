@@ -3,9 +3,15 @@
 ; let%expect_test references the unqualified name Expect_test_config,
 ; so this library — pulled in automatically via the rewriter's
 ; ppx_runtime_libraries — must expose exactly that module. A user
-; module of the same name in scope shadows it.
+; module of the same name in scope shadows it. The contract is
+; expect_test_config.mli, here; the module is stdlib-only, so the
+; library needs no dependency at all.
 
 (library
  (name expect_test_config)
  (public_name ppx_windtrap.config)
- (libraries windtrap))
+ ; The core measures its own coverage, and this module moved out of it;
+ ; keeping the backend keeps the measured set intact. Inert without
+ ; --instrument-with, like every instrumentation stanza.
+ (instrumentation
+  (backend ppx_windtrap.coverage)))

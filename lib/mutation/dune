@@ -1,0 +1,28 @@
+; The mutation loop: the parent process of a mutation run, above the
+; core. It installs itself into the core's Registry at module load, and
+; that self-install is the whole mechanism — core names no loop, so the
+; stanza that links this library is what arms mutation, explicit and
+; greppable. A standalone suite adds windtrap.mutation next to windtrap;
+; the inline runner carries it through ppx_windtrap.runtime's own
+; dependency (see ppx/runtime/dune).
+;
+; -linkall is load-bearing: no module anywhere references Mutate_loop,
+; so without it the linker would drop the unit from every closure and
+; the self-install would never run — WINDTRAP_MUTATE would silently
+; select a plain run. The flag marks the archive so any binary that
+; links the library loads the unit. test/mutate_loop is the fence.
+;
+; No mutation stanza, deliberately: a mutant armed inside the judging
+; process hangs rather than surviving, so this library must never
+; become instrumentable — mutate_loop.ml's [@@@mutate exclude_file]
+; states the same intent in-file. The core measures its own coverage
+; and the loop moved out of it; keeping the coverage backend keeps the
+; measured set intact. Inert without --instrument-with.
+
+(library
+ (name windtrap_mutation)
+ (public_name windtrap.mutation)
+ (libraries unix windtrap windtrap_mutate)
+ (library_flags (-linkall))
+ (instrumentation
+  (backend ppx_windtrap.coverage)))

@@ -362,11 +362,11 @@ let two_executables =
 
 (* Law 12: core windtrap's coupling to the mutation subsystem is one
    dispatch call at run entry plus the survivor projection the shared
-   renderer needs. lib/mutate is the runtime and lib/mutate_loop is the
-   one core module the law allows to drive it, so both are excluded from
-   the count; what is counted is the lines of the remaining lib/*.ml{,i}
-   that name either. Growth past the cap is a law violation, not a test
-   to update. *)
+   renderer needs. lib/mutate is the runtime and lib/mutation is the
+   loop's own library above the core, so neither is in the count; what
+   is counted is the lines of lib/*.ml{,i} — the core — that name
+   either. Growth past the cap is a law violation, not a test to
+   update. *)
 (* An instrumented build leaves dune's ppx output beside each source as
    <module>.pp.ml, and those files are nothing but generated calls into
    the runtime. The law is about the coupling a maintainer WRITES, so
@@ -384,13 +384,13 @@ let law12_budget =
     Sys.readdir lib_dir |> Array.to_list
     |> List.filter (fun name ->
         (Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
-        && (not (is_preprocessed name))
-        && not (String.starts_with ~prefix:"mutate_loop." name))
+        && not (is_preprocessed name))
     |> List.sort String.compare
   in
   check "lib sources are visible to the budget check" (sources <> []);
-  check "the driver module is excluded, not missing"
-    (Sys.file_exists (Filename.concat lib_dir "mutate_loop.ml"));
+  check "the loop is outside the core, not missing"
+    (Sys.file_exists
+       (Filename.concat lib_dir (Filename.concat "mutation" "mutate_loop.ml")));
   let mentions =
     List.fold_left
       (fun acc name ->

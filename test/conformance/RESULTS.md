@@ -146,7 +146,7 @@ split-head shape, `;;` preserved.)
    sandbox; the random path also makes runner logs nondeterministic —
    the harness deliberately never goldens them).
 4. **Behavioral notes for the record** (unexercised by the corpus, not
-   silent — documented in `lib/ppx_runtime.mli`): duplicated instances
+   silent — documented in `ppx/runtime/ppx_runtime.mli`): duplicated instances
    are renamed `name (2)` in windtrap's runner output where ppx_expect
    repeats the name; per-node reachability stays per-instance
    (mechanism (d)) where upstream's `Can_reach` tolerates an instance
