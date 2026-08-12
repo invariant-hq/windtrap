@@ -54,11 +54,8 @@ units keep their core spellings for `Property` and the test seams.
 
 Data: `Failure` (failure-as-data: typed kinds, phase, location,
 output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions),
-`Testable`, `Rendered_seq` (a conservative reader from a printed
-`[…]`/`[|…|]` back to its elements and their byte extents — the
-structure the witness waist deliberately does not carry), `Diff` (diff
-*data*: Myers hunks, refinement spans, and the element-grain alignment
-over `Rendered_seq`'s output; no styling).
+`Testable`, `Diff` (diff *data*: Myers hunks and character-refinement
+spans; no styling).
 
 Verbs and engines: `Check` (the Twenty-five verbs, pure, no run-state
 dependency), `Gen` (an alias to `windtrap.gen`'s module — the witness

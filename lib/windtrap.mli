@@ -867,7 +867,6 @@ module Private : sig
   module Render = Render
   module Render_github = Render_github
   module Render_junit = Render_junit
-  module Rendered_seq = Rendered_seq
   module Run = Run
   module Runner = Runner
   module Seed = Windtrap_gen.Seed

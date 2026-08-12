@@ -84,11 +84,9 @@ under test:
 `mem`, `require_some`, `require_ok`, `require_error`, `require_match`, `raises`,
 `raises_match`, `fail`, `failf`, `skip`. Comparisons go through an `'a testable` (a printer and an equality),
 so every failure prints both values and marks what changed — for every type,
-not just strings, and with no diff function to write. Lists and arrays are
-compared element by element, so a mark is a whole differing element rather
-than a character span running across one. Values whose rendering spans lines
-— including strings compared with the `text` witness — are diffed line by
-line instead. The `require_*` verbs assert *and unwrap*, keeping the happy
+not just strings, and with no diff function to write. Values whose rendering
+spans lines — including strings compared with the `text` witness — are diffed
+line by line instead. The `require_*` verbs assert *and unwrap*, keeping the happy
 path short.
 
 **Property testing** — `prop` draws inputs from an `'a Gen.t`, runs an

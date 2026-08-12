@@ -76,9 +76,9 @@ Checklist for the blocks, in order:
 
 | block | validate |
 | --- | --- |
-| `equal on nested structure` | element-grain highlight: the changed element and the added one marked whole on each side, never a span crossing `;` (marker lines `~~~` under both sides when colors are off) |
+| `equal on nested structure` | char-level highlight of the inserted tail on the actual side (a marker line `~~~` when colors are off; a pure insertion leaves the expected side unmarked) |
 | `equal on strings` | char-level highlight: `o`→`a` and `s`→`ed` only |
-| `equal on a large array` | `arrays differ at 3 of 300 elements; first at [290]: expected 84100, actual 84101` above a tight unified hunk |
+| `equal on a large array` | a tight unified hunk marking the changed region, not the whole 300-element rendering |
 | `not_equal …` | single line `both sides equal: [1; 2; 3]` |
 | `is_true hides the data` | `expected true / actual false` and nothing else — no value, just the collapsed boolean; the contrast for the next block |
 | `satisfies shows the data` | the `positive` msg, `expected value satisfying the predicate`, and `actual -3` — the data `is_true` hides; the claim sentence is never diffed against the value |
@@ -275,8 +275,9 @@ WINDTRAP_COLOR=never dune exec examples/x-demo/main.exe | cat -v
 ```
 
 Validate: **zero** escape bytes anywhere, and every highlight degrades
-to a `~~~` marker line under its own side — both `expected` and
-`actual` carry one, since a deletion shows only on the expected side.
+to a `~~~` marker line under the side that carries it — the string
+block marks both sides, the nested-structure block only `actual` (a
+pure insertion leaves `expected` unmarked).
 Compare
 with the default (piped output under dune is still styled):
 

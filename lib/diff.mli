@@ -16,23 +16,7 @@
     Both functions are pure and guarded: above internal size bounds the result
     degrades — {!hunks} to a whole-region replacement, {!refine} to [None] — but
     a difference is never silently reported as absent. The guards and the
-    refinement noise cutoff are implementation constants, not contract.
-
-    {!sequences} is the third grain: when both renderings read back as
-    OCaml-style list or array renderings — the output of the [Testable]
-    container printers, recovered by {!Rendered_seq} — it compares them element
-    by element, so renderers can state the first differing index and the
-    mismatch count instead of leaving a hundred-element diff to speak for
-    itself.
-
-    Element grain outranks character grain wherever it applies. A character-
-    minimal edit script between two sequence renderings is free to mark a region
-    that spans the tail of one element, a separator, and the head of the next —
-    minimal in characters, meaningless to a reader — and on a shifted sequence
-    ([[1; 2; 3]] against [[2; 3; 4]]) it marks every element as changed. So
-    {!sequences} also carries the highlight ranges themselves, computed from the
-    element alignment, and renderers of a sequence rendering take their marks
-    from there rather than from {!refine}. *)
+    refinement noise cutoff are implementation constants, not contract. *)
 
 (** {1:hunks Line hunks} *)
 
@@ -107,86 +91,3 @@ val refine : expected:string -> actual:string -> refinement option
     draw the eye to coincidental alignments rather than to a change. Malformed
     UTF-8 is compared byte-faithfully, one replacement-sized unit at a time,
     following {!String.get_utf_8_uchar}. *)
-
-(** {1:sequences Sequence elements}
-
-    Element-grain comparison of two {e rendered} sequences. The inputs are the
-    payload strings of an equality failure, not the original values: the
-    elements are recovered from the printed text by {!Rendered_seq}, which reads
-    the source-like renderings the [Testable] [list], [array], and [slist]
-    printers produce — [[e1; e2; …]] and [[|e1; e2; …|]] — including the line
-    breaks their compacting boxes insert in long renderings. Anything that
-    reader declines yields [None], never a wrong element count. *)
-
-type mismatch = {
-  index : int;
-      (** Zero-based position of the element in the side(s) that carry it. *)
-  expected : string option;
-      (** The expected-side element, canonically rendered; [None] when the
-          element exists only on the actual side (an insertion). *)
-  actual : string option;
-      (** The actual-side element, canonically rendered; [None] when the element
-          exists only on the expected side (a deletion). *)
-}
-(** The type for the first differing element under the alignment. Both sides
-    present is a replacement; one side [None] is an element without a
-    counterpart. Element strings are {!Rendered_seq.element.canonical}, so an
-    element compares and prints the same wherever the rendering's line breaks
-    fell. *)
-
-type seq_diff = {
-  kind : [ `List | `Array ];
-      (** The bracket form both renderings used ([[…]] or [[|…|]]). *)
-  expected_length : int;  (** Element count of the [expected] rendering. *)
-  actual_length : int;  (** Element count of the [actual] rendering. *)
-  expected_spans : span list;
-      (** Byte ranges of [expected] to highlight, under the same contract as
-          {!refinement}: ascending, non-overlapping, coalesced, on code-point
-          boundaries. A range never crosses an element boundary — it is either a
-          whole non-aligned element or, when refinement localizes the change
-          inside a replaced one, a part of it.
-
-          Empty on its own whenever no expected-side element is non-aligned: a
-          pure insertion leaves this list empty while [differing] is positive.
-          Both lists are empty when [differing] is [0], when [spans] was
-          [false], and on the guarded path — so empty spans mean "no marks to
-          show", never "the sequences agree". *)
-  actual_spans : span list;  (** As {!expected_spans}, for [actual]. *)
-  differing : int;
-      (** Differing elements under the element-grain alignment (the line-diff
-          algorithm over canonical elements): each replaced pair counts once,
-          and each element present on only one side counts once. Alignment, not
-          position — a single inserted or removed element is one difference, not
-          a shifted disagreement at every later index. *)
-  first : mismatch option;
-      (** The first non-aligned element; [None] iff [differing] is [0] (the
-          sequences are equal or differ only in layout). *)
-}
-(** The type for element-grain comparisons of two rendered sequences. *)
-
-val sequences :
-  ?spans:bool -> expected:string -> actual:string -> unit -> seq_diff option
-(** [sequences ~expected ~actual ()] is the element-by-element comparison of the
-    two renderings, or [None] when {!Rendered_seq.parse} declines either of them
-    or they are not the same {!seq_diff.kind}. As there, [None] means the
-    comparison could not be made — never that the sequences agree.
-
-    Elements are compared as canonical strings (see {!mismatch}), which follows
-    the printed values, not the witness's equality — exactly what a reader of
-    the failure sees. A lossy element printer can therefore leave [differing] at
-    [0] for unequal values; renderers fall back to their identical-rendering
-    explanation in that case.
-
-    [spans] (default [true]) asks for the highlight ranges. They are the
-    expensive half — a Wagner-Fischer pass over the replaced element pairs — and
-    a renderer that will not display marks (a caller taking the {!hunks} branch,
-    say) should pass [false] and read the summary fields alone.
-
-    Guarded, like {!hunks} and {!refine}, and by the same constant: the replaced
-    pairs share one [refine] cell budget for the whole call, so per-element
-    refinement cannot cost more in total than refining the payload once did.
-    Over budget, every non-aligned element is marked whole rather than some
-    pairs being refined and others not. Above an internal element count the
-    alignment itself degrades to a delete-all/insert-all block; that block is an
-    artifact of the guard rather than a computed alignment, so the result
-    carries no spans at all. *)

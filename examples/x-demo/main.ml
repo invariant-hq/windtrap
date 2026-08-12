@@ -57,7 +57,7 @@ let pp_addr ppf = function
 let expected_grid = Array.init 300 (fun i -> i * i)
 
 (* Same-width corruptions near the end: the unified diff stays a tight
-   hunk while the element-grain summary line does the diagnosis. *)
+   hunk instead of drowning the report in 300 unchanged elements. *)
 let actual_grid =
   let a = Array.init 300 (fun i -> i * i) in
   a.(290) <- 84101;
@@ -189,7 +189,7 @@ let assertion_tests =
         let rendered = "the quick brawn fox jumped" in
         equal string "the quick brown fox jumps" rendered;
         equal int 26 (String.length rendered));
-    test "equal on a large array (first-mismatch summary)" (fun () ->
+    test "equal on a large array (bounded diff)" (fun () ->
         equal (array int) expected_grid actual_grid;
         equal int 300 (Array.length actual_grid));
     test "not_equal when both sides are equal" (fun () ->

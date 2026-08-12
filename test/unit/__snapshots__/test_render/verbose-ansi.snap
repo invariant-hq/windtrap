@@ -13,8 +13,8 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
 [2m──────────────────── failures (6) ────────────────────[0m
   [31mFAIL[0m  [1musers › sessions after login[0m
     [2mtest/test_users.ml:31[0m
-    [2mexpected[0m  [("alice", [1; 2; 3]); [32m("bob", [4])[0m]
-    [2mactual[0m    [("alice", [1; 2; 3]); [31m("bob", [4; 5])[0m; [31m("carol", [])[0m]
+    [2mexpected[0m  [("alice", [1; 2; 3]); ("bob", [4])]
+    [2mactual[0m    [("alice", [1; 2; 3]); ("bob", [4[31m; 5]); ("carol", [[0m])]
     [2m── captured output (last 2 lines, 12034 earlier bytes omitted) ──[0m
     [debug] session table resize 2 -> 4
     [debug] carol: ghost session from pool reuse

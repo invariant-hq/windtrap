@@ -251,10 +251,10 @@ let equal_tensor ?pos expected actual =
 ```
 
 The first `equal` fails fast with `shape: [|3; 4|]` vs `[|4; 3|]`; the
-value comparison only ever runs on same-shaped tensors, where the
-renderer's first-mismatch reporting ("differ at 3 of 100 elements;
-first at [37]") does its job. Thread `?pos` through helpers like this
-one so failures point at the caller.
+value comparison only ever runs on same-shaped tensors, where the diff
+marks the few values that differ instead of a wall of misaligned ones.
+Thread `?pos` through helpers like this one so failures point at the
+caller.
 
 ## 10. A complex-tolerance testable
 
