@@ -292,7 +292,7 @@ let print_cli_error ~prog error =
    policies (the property-aware seed and the selection description),
    GitHub gating minus list-only runs, the listing itself, JUnit, the
    focus warning, and the process exit. *)
-let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
+let run_suite ~argv ~suite ~config ~coverage_mode ~render ~output tests =
   (* A listing is not a transcript: it must not be folded into a
      ::group:: section, so it drops out of the gating decision here. *)
   let github = Env.in_github_actions () && not config.Run.list_only in
@@ -320,7 +320,7 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
     Mutate_loop.execute_and_report ~armed:Ppx_runtime.enter_armed ~invocation
       ~seed
       ~selection:(Driver.selection_description config)
-      ~github ~output ~coverage_mode ~config ~suite tests
+      ~github ~output ~coverage_mode ~render ~config ~suite tests
   with
   | Mutate_loop.Reported code -> exit code
   | Mutate_loop.Ran result -> (
@@ -380,6 +380,6 @@ let run ?(argv = Sys.argv) suite tests =
       | Error error ->
           print_cli_error ~prog error;
           exit 2
-      | Ok { Cli.config; coverage_mode; output_level } ->
-          run_suite ~argv ~suite ~config ~coverage_mode ~output:output_level
-            tests)
+      | Ok { Cli.config; render; coverage_mode; output_level } ->
+          run_suite ~argv ~suite ~config ~coverage_mode ~render
+            ~output:output_level tests)

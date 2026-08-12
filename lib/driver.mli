@@ -35,17 +35,18 @@
 (** {1:renderer Renderer construction} *)
 
 val renderer :
-  config:Run.config ->
+  render:Render.settings ->
   mode:[ `Quiet | `Compact | `Verbose ] ->
   invocation:Render.invocation ->
   unit ->
   Render.t
-(** [renderer ~config ~mode ~invocation ()] is the run's terminal renderer on
-    [Format.std_formatter], wired from the environment and [config] exactly as
-    both runners require: color from {!Env.resolve_color} over [config.color],
-    the terminal status, and [INSIDE_DUNE]/[TERM]; width and tail bounds from
-    [config.columns]/[config.tail_errors]; the slow threshold from
-    [config.slow_threshold]. The live tail is on only for a TTY outside GitHub
+(** [renderer ~render ~mode ~invocation ()] is the run's terminal renderer on
+    [Format.std_formatter], wired from the environment and the resolved
+    {!Render.settings} exactly as both runners require: color from
+    {!Env.resolve_color} over [render.color], the terminal status, and
+    [INSIDE_DUNE]/[TERM]; width and tail bounds from
+    [render.columns]/[render.tail_errors]; the slow threshold from
+    [render.slow_threshold]. The live tail is on only for a TTY outside GitHub
     Actions — under the GitHub sink the transcript sits inside the [::group::]
     envelope and cursor controls must never land in the CI log.
 
@@ -210,19 +211,21 @@ val execute_and_report :
   github:bool ->
   output:[ `Quiet | `Compact | `Verbose ] ->
   coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
+  render:Render.settings ->
   config:Run.config ->
   suite:string ->
   Test_tree.t list ->
   (Runner.outcome, Runner.startup_error) result
 (** [execute_and_report ~invocation ~seed ~selection ~github ~output
-     ~coverage_mode ~config ~suite tests] runs [tests] as suite [suite] and
-    writes the run's whole report on standard output, composing the producers
-    above in the one order both runners use: {!val:renderer} and {!observe},
-    {!github_start}, {!Runner.execute}, then — for a run that happened —
-    {!snapshot_coverage}, {!Render.finish} (its [?coverage] from
-    {!coverage_summary}) over {!Run.results}, {!coverage_report},
-    {!report_snapshots}, {!github_end}, {!github_annotations}, and a flush of
-    both standard formatters.
+     ~coverage_mode ~render ~config ~suite tests] runs [tests] as suite [suite]
+    — [config] is what the runner reads, [render] the presentation knobs the
+    run's renderer is built from ({!val:renderer}) — and writes the run's whole
+    report on standard output, composing the producers above in the one order
+    both runners use: {!val:renderer} and {!observe}, {!github_start},
+    {!Runner.execute}, then — for a run that happened — {!snapshot_coverage},
+    {!Render.finish} (its [?coverage] from {!coverage_summary}) over
+    {!Run.results}, {!coverage_report}, {!report_snapshots}, {!github_end},
+    {!github_annotations}, and a flush of both standard formatters.
 
     [Ok outcome] is {!Runner.execute}'s outcome, reported. {!Run.results} is the
     list every sink projected — the runner's verdict rows included

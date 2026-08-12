@@ -72,6 +72,33 @@ type invocation = [ `Exe of string | `Mirrors ]
     startup; every acceptance, replay, and prune line derives from it, so no
     hint can name an invocation that would not re-run the suite. *)
 
+type settings = {
+  color : Env.color_mode;
+      (** [--color]/[WINDTRAP_COLOR]: the color preference. The driver resolves
+          it against the sink's terminal status ({!Env.resolve_color}) into
+          {!create}'s [ansi] — this module never sniffs. *)
+  columns : int option;
+      (** [WINDTRAP_COLUMNS]: terminal width override; [None] leaves
+          {!create}'s default. *)
+  tail_errors : int option;
+      (** [WINDTRAP_TAIL_ERRORS]: captured-output lines shown per failure
+          ({!create}'s [tail_lines]); [None] leaves the default. *)
+  slow_threshold : float;
+      (** [--slow-threshold]/[WINDTRAP_SLOW_THRESHOLD]: seconds a test not
+          tagged ["slow"] may take before the run counts as noteworthy ([0.]
+          disables). Invariant: finite and non-negative, validated by the CLI
+          layer. *)
+}
+(** The type for resolved renderer settings: the presentation knobs the CLI
+    layer resolves ({!Cli.settings}) and the runner never reads — they are
+    deliberately not {!Run.config} fields, because no level or width can
+    change outcomes or exit codes. The driver applies them when it constructs
+    the run's renderer ({!Driver.renderer}). *)
+
+val default_settings : settings
+(** [default_settings] is the settings with every knob at its built-in default:
+    [color = Env.Auto], no width or tail override, [slow_threshold = 1.]. *)
+
 val create :
   out:Format.formatter ->
   ansi:bool ->

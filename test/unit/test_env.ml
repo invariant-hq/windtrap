@@ -54,21 +54,20 @@ let tests =
         clear "WINDTRAP_STREAM";
         equal ~msg:"stream unset" (option bool) None (bool_of "WINDTRAP_STREAM"));
     test "numeric readers" (fun () ->
+        (* The flagless numeric settings (WINDTRAP_COLUMNS,
+           WINDTRAP_TAIL_ERRORS) are rows of Cli's table and their
+           vocabularies are pinned there; this pins the generic reader
+           they go through. *)
         set "WINDTRAP_COLUMNS" "100";
-        equal ~msg:"columns parses" (option int) (Some 100) (Env.columns ());
-        set "WINDTRAP_COLUMNS" "0";
-        equal ~msg:"non-positive columns ignored" (option int) None
-          (Env.columns ());
-        set "WINDTRAP_COLUMNS" "-3";
-        equal ~msg:"negative columns ignored" (option int) None (Env.columns ());
+        equal ~msg:"get_int parses" (option int) (Some 100)
+          (Env.get_int "WINDTRAP_COLUMNS");
+        set "WINDTRAP_COLUMNS" " 25 ";
+        equal ~msg:"the value is trimmed" (option int) (Some 25)
+          (Env.get_int "WINDTRAP_COLUMNS");
         set "WINDTRAP_COLUMNS" "wide";
-        equal ~msg:"unparseable columns ignored" (option int) None
-          (Env.columns ());
-        clear "WINDTRAP_COLUMNS";
-        set "WINDTRAP_TAIL_ERRORS" "25";
-        equal ~msg:"tail_errors parses" (option int) (Some 25)
-          (Env.tail_errors ());
-        clear "WINDTRAP_TAIL_ERRORS");
+        equal ~msg:"an unparseable value reads as unset" (option int) None
+          (Env.get_int "WINDTRAP_COLUMNS");
+        clear "WINDTRAP_COLUMNS");
     test "value mirrors are passed through unparsed, like the seed" (fun () ->
         (* The CLI layer owns validation (prop/F-4): a malformed winning
            token must reach it verbatim so it can error naming the
@@ -125,13 +124,6 @@ let tests =
           (Env.update () = Env.No_update);
         clear "WINDTRAP_UPDATE");
     test "settings with no flag" (fun () ->
-        clear "WINDTRAP_ALLOW_FOCUS";
-        is_false ~msg:"allow_focus defaults to false" (Env.allow_focus ());
-        set "WINDTRAP_ALLOW_FOCUS" "1";
-        is_true ~msg:"allow_focus 1 is true" (Env.allow_focus ());
-        set "WINDTRAP_ALLOW_FOCUS" "nonsense";
-        is_false ~msg:"an unparseable allow_focus is false" (Env.allow_focus ());
-        clear "WINDTRAP_ALLOW_FOCUS";
         set "WINDTRAP_PROJECT_ROOT" "/tmp/proj";
         equal ~msg:"project_root passed through" (option string)
           (Some "/tmp/proj") (Env.project_root ());

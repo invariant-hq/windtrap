@@ -34,8 +34,6 @@ let split_comma s =
   String.split_on_char ',' s |> List.map String.trim
   |> List.filter (fun s -> s <> "")
 
-let is_truthy name = Option.value ~default:false (get_bool name)
-
 (* Set-and-not-falsy: `CI=false` must not count as CI. *)
 let is_flagged name =
   match get_raw name with
@@ -95,16 +93,11 @@ let resolve_color mode ~tty ~inside_dune ~term_dumb =
 
    The flag mirrors are not here: each is declared beside its flag in
    [Cli]'s table and read through the generic readers above, which is what
-   keeps a mirror from parsing differently from the flag it mirrors. What
-   remains are the variables no flag can set. *)
+   keeps a mirror from parsing differently from the flag it mirrors — and
+   so are the flagless settings the resolution itself consumes
+   (WINDTRAP_ALLOW_FOCUS, WINDTRAP_COLUMNS, WINDTRAP_TAIL_ERRORS). What
+   remains are the variables read below the CLI layer or beside it. *)
 
-let columns () =
-  match get_int "WINDTRAP_COLUMNS" with
-  | Some n when n > 0 -> Some n
-  | _ -> None
-
-let tail_errors () = get_int "WINDTRAP_TAIL_ERRORS"
-let allow_focus () = is_truthy "WINDTRAP_ALLOW_FOCUS"
 let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 
 (* Which files the run's own coverage number speaks about. The registry is

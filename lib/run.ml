@@ -33,15 +33,11 @@ type config = {
   prune : bool;
   strict_snapshots : bool;
   timeout : float option;
-  slow_threshold : float;
   prop_count : int option;
   max_shrink : int option;
   max_discard : int option;
   max_prop_count : int option;
   junit : string option;
-  color : Env.color_mode;
-  columns : int option;
-  tail_errors : int option;
   log_dir : string;
   allow_focus : bool;
 }
@@ -63,15 +59,11 @@ let default_config () =
     prune = false;
     strict_snapshots = false;
     timeout = None;
-    slow_threshold = 1.0;
     prop_count = None;
     max_shrink = None;
     max_discard = None;
     max_prop_count = None;
     junit = None;
-    color = Env.Auto;
-    columns = None;
-    tail_errors = None;
     log_dir = Path_ops.default_log_dir ();
     allow_focus = false;
   }

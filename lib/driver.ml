@@ -29,11 +29,11 @@ let display_path = Path_ops.display
 
 (* Renderer construction *)
 
-let renderer ~config ~mode ~invocation () =
+let renderer ~render ~mode ~invocation () =
   let inside_dune = Env.inside_dune () in
   let tty = Env.is_tty_stdout () in
   let ansi =
-    Env.resolve_color config.Run.color ~tty ~inside_dune
+    Env.resolve_color render.Render.color ~tty ~inside_dune
       ~term_dumb:(Env.term_dumb ())
   in
   (* The mode decides what prints; the sink only decides color ([ansi]) and
@@ -44,9 +44,9 @@ let renderer ~config ~mode ~invocation () =
      log. *)
   Render.create ~out:Format.std_formatter ~ansi ~mode
     ~live:(tty && not (Env.in_github_actions ()))
-    ?columns:(Option.map (Int.max 20) config.Run.columns)
-    ?tail_lines:(Option.map (Int.max 0) config.Run.tail_errors)
-    ~slow_threshold:config.Run.slow_threshold ~invocation ()
+    ?columns:(Option.map (Int.max 20) render.Render.columns)
+    ?tail_lines:(Option.map (Int.max 0) render.Render.tail_errors)
+    ~slow_threshold:render.Render.slow_threshold ~invocation ()
 
 (* What narrowed the run, in the words the reader typed. Used only to
    explain an empty selection: a bare "no tests ran." names neither the
@@ -324,8 +324,9 @@ let coverage_report renderer ~coverage_mode run collection =
    the invocation context, the GitHub gating decision, and the listing a
    [--list] run prints. *)
 let execute_and_report ?(on_event = fun (_ : Runner.event) -> ()) ~invocation
-    ~seed ~selection ~github ~output ~coverage_mode ~config ~suite tests =
-  let renderer = renderer ~config ~mode:output ~invocation () in
+    ~seed ~selection ~github ~output ~coverage_mode ~render ~config ~suite tests
+    =
+  let renderer = renderer ~render ~mode:output ~invocation () in
   (* [Runner.execute]'s [?on_event] has one slot and the transcript owns
      it. A second subscriber composes here rather than replacing it, in a
      fixed order — transcript first — so no caller can drop the run's own

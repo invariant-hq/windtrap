@@ -51,13 +51,10 @@ let () =
     && (not config.Run.list_only) && (not config.Run.stream)
     && (not config.Run.prune) && not config.Run.allow_focus);
   check "default config: no update request" (config.Run.update = Env.No_update);
-  check "default config: color auto" (config.Run.color = Env.Auto);
   check "default config: no overrides"
     (config.Run.bail = None && config.Run.timeout = None
     && config.Run.prop_count = None
-    && config.Run.junit = None && config.Run.columns = None
-    && config.Run.tail_errors = None
-    && config.Run.shard = None);
+    && config.Run.junit = None && config.Run.shard = None);
   check "default config: log dir is set" (config.Run.log_dir <> "")
 
 let () =

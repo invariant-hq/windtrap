@@ -1220,7 +1220,7 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
    are not the mistyped filter the sentence diagnoses), the .corrected
    files, and the returned exit code that [exit] combines with the
    correction protocol. *)
-let run_inline_suite ~suite ~config ~coverage_mode ~output tests =
+let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
   match
     (* The mutation seam: one call at run entry, in place of the driver's
        (see [Mutate_loop]). A mutation run's exit code is its own and never
@@ -1230,7 +1230,7 @@ let run_inline_suite ~suite ~config ~coverage_mode ~output tests =
        have recorded. *)
     Mutate_loop.execute_and_report ~armed:enter_armed ~invocation:`Mirrors
       ~seed:None ~selection:None ~github:(Env.in_github_actions ()) ~output
-      ~coverage_mode ~config ~suite tests
+      ~coverage_mode ~render ~config ~suite tests
   with
   | Mutate_loop.Reported code -> code
   | Mutate_loop.Ran result -> (
@@ -1279,10 +1279,10 @@ let exit () =
   | Error error ->
       prerr_endline (Cli.error_message error);
       Stdlib.exit 2
-  | Ok { Cli.config; coverage_mode; output_level } ->
+  | Ok { Cli.config; render; coverage_mode; output_level } ->
       Stdlib.exit
-        (run_inline_suite ~suite ~config ~coverage_mode ~output:output_level
-           tests)
+        (run_inline_suite ~suite ~config ~coverage_mode ~render
+           ~output:output_level tests)
 
 (* Test seams *)
 

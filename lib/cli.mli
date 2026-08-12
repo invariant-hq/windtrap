@@ -5,25 +5,29 @@
 
 (** Command-line and environment resolution into the run configuration.
 
-    One declarative flag table drives everything here: {!parse} reads an
-    argument vector into a {!type:parsed} record of raw flag values, {!settings}
-    merges programmatic overrides, parsed flags, and the [WINDTRAP_*]
-    environment mirrors into a {!Run.config} and the two rendering decisions
-    kept out of it — with the precedence {e programmatic > CLI > env > default}
-    (under [dune runtest] the environment mirrors {e are} the CLI) — and {!help}
-    renders the flag and variable inventory. {!settings} is the one call a
-    driver makes; {!resolve}, {!coverage_mode} and {!output_level} are its
-    layers, documented and testable on their own.
+    One declarative table drives everything here — every knob is one row, a flag
+    beside its optional [WINDTRAP_*] mirror or a setting only the environment
+    can spell: {!parse} reads an argument vector into a {!type:parsed} record of
+    raw flag values, {!settings} merges programmatic overrides, parsed flags,
+    and the environment mirrors into a {!Run.config} and the three rendering
+    decisions kept out of it — with the precedence
+    {e programmatic > CLI > env > default} (under [dune runtest] the environment
+    mirrors {e are} the CLI) — and {!help} renders the flag and variable
+    inventory from the same rows. {!settings} is the one call a driver makes,
+    one pass over one environment layer; {!resolve}, {!coverage_mode} and
+    {!output_level} are its layers, documented and testable on their own.
 
     A flag's mirror is declared in that table beside the flag, and its value is
     applied through the flag's own parser, so the two cannot drift: a variable
     accepts exactly what its flag accepts, refuses exactly what its flag
     refuses, with the same [expected] wording, and differs only in naming the
     variable rather than the flag as the source of a bad value. {!Env} is
-    consulted for the reading, not for the inventory — the settings it still
-    owns outright are the ones no flag can set ([WINDTRAP_ALLOW_FOCUS],
-    [WINDTRAP_COLUMNS], [WINDTRAP_TAIL_ERRORS], [WINDTRAP_PROJECT_ROOT]) and the
-    two vocabularies wider than their flag's ([WINDTRAP_UPDATE]'s [force],
+    consulted for the reading, not for the inventory — the flagless rows that
+    resolution itself consumes ([WINDTRAP_ALLOW_FOCUS], [WINDTRAP_COLUMNS],
+    [WINDTRAP_TAIL_ERRORS]) are read here through its generic readers; what it
+    still owns outright are the variables read below this layer
+    ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes) and the two
+    vocabularies wider than their flag's ([WINDTRAP_UPDATE]'s [force],
     [WINDTRAP_COLOR]'s lenient fall back to {!Env.Auto}).
 
     Nothing in this module prints or exits: parse and resolution failures are
@@ -84,9 +88,13 @@ type parsed = {
   prop_count : int option;
       (** [--prop-count N]: generated cases per property; must be positive. *)
   max_shrink : int option;
-  max_discard : int option;
-  max_prop_count : int option;
       (** [--max-shrink N]: accepted shrink steps per failing property; must be
+          positive. *)
+  max_discard : int option;
+      (** [--max-discard N]: discarded cases tolerated per property; must be
+          non-negative, [0] tolerates none. *)
+  max_prop_count : int option;
+      (** [--max-prop-count N]: ceiling on every property's case count; must be
           positive. *)
   output : [ `Quiet | `Verbose ] option;
       (** [-q]/[--quiet] parse as [Some `Quiet], [-v]/[--verbose] as
@@ -150,11 +158,10 @@ val parse : string array -> (parsed, error) result
 val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
 (** [resolve ~overrides cli] is the run configuration obtained by taking, for
     each field, the first value present in [overrides] (programmatic, defaults
-    to {!empty}), then [cli], then the field's [WINDTRAP_*] environment mirror
-    ({!Env}), then {!Run.default_config} — except [tags] and [exclude_tags],
-    which are additive across all three layers, overrides first. The env-only
-    settings ([WINDTRAP_ALLOW_FOCUS], [WINDTRAP_COLUMNS],
-    [WINDTRAP_TAIL_ERRORS]) are filled from the environment alone.
+    to {!empty}), then [cli], then the field's [WINDTRAP_*] environment mirror,
+    then {!Run.default_config} — except [tags] and [exclude_tags], which are
+    additive across all three layers, overrides first. [WINDTRAP_ALLOW_FOCUS],
+    which no flag can set, is filled from the environment alone.
 
     Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
     when no layer provides one.
@@ -171,7 +178,8 @@ val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
     layer already decided is not even parsed.
 
     The winning [timeout], [prop_count], [max_shrink] and [bail] must be
-    positive ([timeout] finite as well), the winning [slow_threshold] must be
+    positive ([timeout] finite as well), the winning [slow_threshold] — a
+    renderer setting {!settings} resolves, checked here all the same — must be
     finite and non-negative, and the winning [shard] must satisfy [1 <= K <= N].
     {!parse} and the mirrors enforce this already, each naming its own source; a
     violation that arrives through [overrides] — the one layer with no parser
@@ -255,30 +263,37 @@ val output_level :
 
 type settings = {
   config : Run.config;  (** The run configuration ({!resolve}). *)
+  render : Render.settings;
+      (** The renderer settings: the presentation knobs — [--color], the
+          [WINDTRAP_COLUMNS]/[WINDTRAP_TAIL_ERRORS] overrides,
+          [--slow-threshold] — resolved with the same precedence as [config] and
+          handed to the driver's renderer construction. *)
   coverage_mode : [ `Summary | `Report | `Full | `Off ];
       (** The coverage rendering mode ({!coverage_mode}). *)
   output_level : [ `Quiet | `Compact | `Verbose ];
       (** The terminal verbosity level ({!output_level}). *)
 }
-(** The type for everything one invocation resolves to. Three fields, not one
-    configuration: the two rendering decisions stay {e out} of {!Run.config},
-    because neither can change outcomes or exit codes and nothing in the runner
-    may read them. *)
+(** The type for everything one invocation resolves to. Four fields, not one
+    configuration: the three rendering decisions stay {e out} of {!Run.config},
+    because none of them can change outcomes or exit codes and nothing in the
+    runner may read them. *)
 
 val settings : ?overrides:parsed -> parsed -> (settings, error) result
-(** [settings ~overrides cli] is {!resolve}, {!coverage_mode} and
-    {!output_level} in one call — what a driver needs from one invocation, with
-    one error to render instead of three. Resolution runs in that order, so a
-    malformed environment layer is reported as {!resolve} reports it (the caller
-    prints that error and exits [2]), and the fresh root seed {!resolve} may
-    draw is drawn exactly once.
+(** [settings ~overrides cli] is what a driver needs from one invocation, with
+    one error to render instead of four: one pass builds the environment layer
+    that {!resolve}, {!coverage_mode} and {!output_level} each describe, and
+    every field is a fold over it. The verbosity level resolves first and
+    tolerantly, exactly as {!output_level} does — a malformed mirror is the
+    error the caller reports (it prints it and exits [2]), and the level that
+    error renders at must survive the failed fold — and the fresh root seed
+    {!resolve} may draw is drawn exactly once.
 
     [overrides] is the programmatic layer {!resolve} and {!output_level} take
     (defaults to {!empty}); the coverage mode has no programmatic layer and
     comes from [cli] and [WINDTRAP_COVERAGE] alone.
 
-    Effects: the union of the three — reads the environment, and draws a fresh
-    root seed when no layer provides one. *)
+    Effects: reads the environment, and draws a fresh root seed when no layer
+    provides one. *)
 
 (** {1:help Help} *)
 

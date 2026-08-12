@@ -397,6 +397,16 @@ let resolve ?overrides parsed =
       Printf.printf "  resolve error: %s\n%!" (Cli.error_message error);
       Run.default_config ()
 
+(* The renderer half of the resolution: the four presentation knobs land
+   in [settings]'s render field, not in [Run.config]. *)
+let render_settings ?overrides parsed =
+  match Cli.settings ?overrides parsed with
+  | Ok s -> s.Cli.render
+  | Error error ->
+      check "settings succeeds" false;
+      Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
+      Render.default_settings
+
 let () =
   reg "resolution defaults" @@ fun () ->
   clear_env ();
@@ -416,9 +426,10 @@ let () =
     (config.Run.bail = None && config.Run.timeout = None
     && config.Run.prop_count = None
     && config.Run.junit = None);
-  check "default: color auto" (config.Run.color = Env.Auto);
+  let render = render_settings Cli.empty in
+  check "default: color auto" (render.Render.color = Env.Auto);
   check "default: env-only settings unset"
-    (config.Run.columns = None && config.Run.tail_errors = None);
+    (render.Render.columns = None && render.Render.tail_errors = None);
   check "default: log dir non-empty" (String.length config.Run.log_dir > 0)
 
 (* Resolution: precedence *)
@@ -526,9 +537,30 @@ let () =
   check "WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
   check "WINDTRAP_MAX_SHRINK" (config.Run.max_shrink = Some 40);
   check "WINDTRAP_ALLOW_FOCUS" config.Run.allow_focus;
-  check "WINDTRAP_COLUMNS" (config.Run.columns = Some 100);
-  check "WINDTRAP_TAIL_ERRORS" (config.Run.tail_errors = Some 3);
+  let render = render_settings Cli.empty in
+  check "WINDTRAP_COLUMNS" (render.Render.columns = Some 100);
+  check "WINDTRAP_TAIL_ERRORS" (render.Render.tail_errors = Some 3);
   check "WINDTRAP_EXCLUDE" (config.Run.exclude = Some "skipme");
+  clear_env ()
+
+(* The flagless rows keep their own tolerant vocabularies — no flag
+   exists for a lenient reading to drift from, so a hostile or
+   unparseable value counts as unset rather than refusing the run. *)
+let () =
+  reg "flagless settings vocabulary" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_ALLOW_FOCUS" "nonsense";
+  check "an unparseable allow_focus is false"
+    (not (resolve Cli.empty).Run.allow_focus);
+  Unix.putenv "WINDTRAP_COLUMNS" "0";
+  check "non-positive columns count as unset"
+    ((render_settings Cli.empty).Render.columns = None);
+  Unix.putenv "WINDTRAP_COLUMNS" "-3";
+  check "negative columns count as unset"
+    ((render_settings Cli.empty).Render.columns = None);
+  Unix.putenv "WINDTRAP_COLUMNS" "wide";
+  check "unparseable columns count as unset"
+    ((render_settings Cli.empty).Render.columns = None);
   clear_env ()
 
 (* The mirrors that only existed as flags. Under `dune runtest` the mirrors
@@ -703,10 +735,10 @@ let () =
   reg "color precedence" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_COLOR" "never";
-  let config = resolve Cli.empty in
-  check "WINDTRAP_COLOR fills the default" (config.Run.color = Env.Never);
-  let config = resolve { Cli.empty with Cli.color = Some Env.Always } in
-  check "--color beats WINDTRAP_COLOR" (config.Run.color = Env.Always);
+  let render = render_settings Cli.empty in
+  check "WINDTRAP_COLOR fills the default" (render.Render.color = Env.Never);
+  let render = render_settings { Cli.empty with Cli.color = Some Env.Always } in
+  check "--color beats WINDTRAP_COLOR" (render.Render.color = Env.Always);
   clear_env ()
 
 (* Resolution: the coverage mode *)
@@ -778,6 +810,7 @@ let settings ?overrides parsed =
       Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
       {
         Cli.config = Run.default_config ();
+        render = Render.default_settings;
         coverage_mode = `Summary;
         output_level = `Compact;
       }
@@ -791,6 +824,7 @@ let () =
   let cli = { Cli.empty with Cli.filter = Some "geo" } in
   let s = settings cli in
   check "the config field is [resolve]'s" (s.Cli.config = resolve cli);
+  check "the render field defaults" (s.Cli.render = Render.default_settings);
   check "the coverage field defaults to summary" (s.Cli.coverage_mode = `Summary);
   check "the level field defaults to compact" (s.Cli.output_level = `Compact);
   Unix.putenv "WINDTRAP_COVERAGE" "report";
@@ -831,14 +865,17 @@ let () =
 let () =
   reg "--slow-threshold resolution" @@ fun () ->
   clear_env ();
-  let config = resolve Cli.empty in
-  check "the built-in default is one second" (config.Run.slow_threshold = 1.0);
+  let render = render_settings Cli.empty in
+  check "the built-in default is one second" (render.Render.slow_threshold = 1.0);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "3";
-  let config = resolve Cli.empty in
+  let render = render_settings Cli.empty in
   check "WINDTRAP_SLOW_THRESHOLD fills an absent flag"
-    (config.Run.slow_threshold = 3.0);
-  let config = resolve { Cli.empty with Cli.slow_threshold = Some 0.5 } in
-  check "--slow-threshold beats the env mirror" (config.Run.slow_threshold = 0.5);
+    (render.Render.slow_threshold = 3.0);
+  let render =
+    render_settings { Cli.empty with Cli.slow_threshold = Some 0.5 }
+  in
+  check "--slow-threshold beats the env mirror"
+    (render.Render.slow_threshold = 0.5);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "-2";
   (match Cli.resolve Cli.empty with
   | Error
@@ -847,9 +884,11 @@ let () =
       check "a negative winning env threshold errors with its source" true
   | Ok _ | Error _ ->
       check "a negative winning env threshold errors with its source" false);
-  let config = resolve { Cli.empty with Cli.slow_threshold = Some 1.5 } in
+  let render =
+    render_settings { Cli.empty with Cli.slow_threshold = Some 1.5 }
+  in
   check "a CLI threshold shadows the bad env value"
-    (config.Run.slow_threshold = 1.5);
+    (render.Render.slow_threshold = 1.5);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "soon";
   (match Cli.resolve Cli.empty with
   | Error

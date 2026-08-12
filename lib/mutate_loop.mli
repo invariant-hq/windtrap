@@ -166,6 +166,7 @@ val execute_and_report :
   github:bool ->
   output:[ `Quiet | `Compact | `Verbose ] ->
   coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
+  render:Render.settings ->
   config:Run.config ->
   suite:string ->
   Test_tree.t list ->

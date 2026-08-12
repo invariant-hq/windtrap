@@ -117,20 +117,10 @@ val resolve_color :
 
 (** {1:standalone Settings with no flag}
 
-    The variables no runner flag can set, and which therefore have no entry in
-    {!Cli}'s table to be read from. *)
-
-val columns : unit -> int option
-(** [columns ()] is [WINDTRAP_COLUMNS], a terminal width override. Non-positive
-    or unparseable values count as unset. *)
-
-val tail_errors : unit -> int option
-(** [tail_errors ()] is [WINDTRAP_TAIL_ERRORS], the maximum number of
-    captured-output lines shown per failure. *)
-
-val allow_focus : unit -> bool
-(** [allow_focus ()] is [true] iff [WINDTRAP_ALLOW_FOCUS] is truthy. Lifts the
-    CI guard on focused tests. *)
+    The variables read below the CLI layer or beside it. The flagless settings
+    the resolution itself consumes ([WINDTRAP_ALLOW_FOCUS], [WINDTRAP_COLUMNS],
+    [WINDTRAP_TAIL_ERRORS]) are not here either: they are rows of {!Cli}'s
+    table, read there through {!get_bool} and {!get_int}. *)
 
 val project_root : unit -> string option
 (** [project_root ()] is [WINDTRAP_PROJECT_ROOT], overriding project-root

@@ -70,14 +70,15 @@ type spine = {
   github : bool;
   output : [ `Quiet | `Compact | `Verbose ];
   coverage_mode : [ `Summary | `Report | `Full | `Off ];
+  render : Render.settings;
   suite : string;
 }
 
 let drive ?on_event spine ~config tests =
   Driver.execute_and_report ?on_event ~invocation:spine.invocation
     ~seed:spine.seed ~selection:spine.selection ~github:spine.github
-    ~output:spine.output ~coverage_mode:spine.coverage_mode ~config
-    ~suite:spine.suite tests
+    ~output:spine.output ~coverage_mode:spine.coverage_mode
+    ~render:spine.render ~config ~suite:spine.suite tests
 
 (* The reach map
 
@@ -1658,9 +1659,19 @@ let arm_mode renderer spine ~(config : Run.config) tests =
 (* Entry *)
 
 let execute_and_report ~armed ~invocation ~seed ~selection ~github ~output
-    ~coverage_mode ~(config : Run.config) ~suite tests =
+    ~coverage_mode ~render ~(config : Run.config) ~suite tests =
   let spine =
-    { armed; invocation; seed; selection; github; output; coverage_mode; suite }
+    {
+      armed;
+      invocation;
+      seed;
+      selection;
+      github;
+      output;
+      coverage_mode;
+      render;
+      suite;
+    }
   in
   (* A listing is not a run: nothing executes, so there is nothing to
      observe, announce or mutate. Everything else goes through the knobs,
@@ -1676,7 +1687,7 @@ let execute_and_report ~armed ~invocation ~seed ~selection ~github ~output
         note "%s" (Cli.error_message error);
         Reported 1
     | Ok { Cli.mode; arm; limit; tries } -> (
-        let renderer () = Driver.renderer ~config ~mode:output ~invocation () in
+        let renderer () = Driver.renderer ~render ~mode:output ~invocation () in
         match (mode, arm) with
         | `Off, None ->
             (* The one path an uninstrumented build must not pay for. *)

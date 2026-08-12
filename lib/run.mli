@@ -69,39 +69,35 @@ type config = {
           failure — after a run that was not full and clean, which is the same
           gate stale-baseline reporting sits behind. *)
   timeout : float option;  (** [--timeout]: default per-test limit, seconds. *)
-  slow_threshold : float;
-      (** [--slow-threshold]/[WINDTRAP_SLOW_THRESHOLD]: seconds a test not
-          tagged ["slow"] may take before the compact renderer treats the run as
-          noteworthy and warns (default [1.]; [0.] disables both). Invariant:
-          finite and non-negative, validated by the CLI layer. *)
   prop_count : int option;  (** [--prop-count]: generated cases per property. *)
   max_shrink : int option;
-  max_discard : int option;
-  max_prop_count : int option;
       (** [--max-shrink]: accepted shrink steps per failing property. The
           engine's default is 100; a search that spends the budget reports so,
           because a truncated search and a converged one otherwise read alike.
       *)
+  max_discard : int option;
+      (** [--max-discard]: discarded cases tolerated per property; the engine
+          defaults to twice the case count. *)
+  max_prop_count : int option;
+      (** [--max-prop-count]: ceiling on every property's case count. *)
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
-  color : Env.color_mode;  (** [--color]/[WINDTRAP_COLOR]. *)
-  columns : int option;
-      (** [WINDTRAP_COLUMNS]: terminal width override for renderers. *)
-  tail_errors : int option;
-      (** [WINDTRAP_TAIL_ERRORS]: captured-output lines shown per failure. *)
   log_dir : string;  (** [-o]/[--output]: root directory for capture logs. *)
   allow_focus : bool;
       (** [WINDTRAP_ALLOW_FOCUS]: lift the CI guard on focused tests. *)
 }
 (** The type for resolved run configuration: one plain record the CLI layer
     populates by merging programmatic arguments, CLI flags, and environment
-    mirrors in that precedence order ({!Cli.resolve}). Consumers read it from
+    mirrors in that precedence order ({!Cli.resolve}). Every field here is one
+    the runner reads; the presentation knobs an invocation also resolves (color,
+    width, the output tail, the slow threshold) live in [Render.settings]
+    instead, where the runner cannot reach them. Consumers read it from
     {!config}; nothing re-reads flags or the environment mid-run. *)
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration with every field at its built-in
-    default: no filters, no tags, all flags off, [color = Env.Auto],
-    [slow_threshold = 1.], and no overrides. Effects: [seed] is drawn fresh from
-    {!Seed.random} and [log_dir] is {!Path_ops.default_log_dir}[ ()]. *)
+    default: no filters, no tags, all flags off, and no overrides. Effects:
+    [seed] is drawn fresh from {!Seed.random} and [log_dir] is
+    {!Path_ops.default_log_dir}[ ()]. *)
 
 (** {1:runs Run records} *)
 

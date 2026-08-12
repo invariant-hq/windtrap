@@ -123,6 +123,15 @@ type entry = {
   mirror : mirror option;
 }
 
+(* A table row: a flag with its optional mirror, or a setting only the
+   environment can spell. One inventory drives parsing, [--help]'s two
+   sections, and the environment layer — the flagless rows once lived in
+   a second, hand-maintained list that could drift from what resolution
+   actually read. *)
+type item =
+  | Flag_entry of entry
+  | Env_setting of { var : string; doc : string }
+
 let invalid ~source ~value ~expected =
   Error (Invalid_value { source; value; expected })
 
@@ -188,322 +197,428 @@ let shard_of_string value =
 
 let table =
   [
-    {
-      short = Some "-f";
-      long = "--filter";
-      arg =
-        set_string (fun ~source:_ acc value ->
-            Ok { acc with filter = Some value });
-      doc = "Run only tests whose path contains PATTERN";
-      mirror = mirrored "WINDTRAP_FILTER" verbatim (fun p -> p.filter = None);
-    };
-    {
-      short = Some "-e";
-      long = "--exclude";
-      arg =
-        set_string (fun ~source:_ acc value ->
-            Ok { acc with exclude = Some value });
-      doc = "Skip tests whose path contains PATTERN";
-      mirror = mirrored "WINDTRAP_EXCLUDE" verbatim (fun p -> p.exclude = None);
-    };
-    {
-      short = None;
-      long = "--tag";
-      arg =
-        Value
-          {
-            metavar = "LABEL";
-            set =
-              (fun ~source:_ acc value ->
-                Ok { acc with tags = acc.tags @ [ value ] });
-          };
-      doc = "Run only tests tagged LABEL (repeatable)";
-      mirror = mirrored "WINDTRAP_TAG" Comma additive;
-    };
-    {
-      short = None;
-      long = "--exclude-tag";
-      arg =
-        Value
-          {
-            metavar = "LABEL";
-            set =
-              (fun ~source:_ acc value ->
-                Ok { acc with exclude_tags = acc.exclude_tags @ [ value ] });
-          };
-      doc = "Skip tests tagged LABEL (repeatable)";
-      mirror = mirrored "WINDTRAP_EXCLUDE_TAG" Comma additive;
-    };
-    {
-      short = None;
-      long = "--shard";
-      arg =
-        Value
-          {
-            metavar = "K/N";
-            set =
-              (fun ~source acc value ->
-                match shard_of_string value with
-                | Some shard -> Ok { acc with shard = Some shard }
-                | None -> invalid ~source ~value ~expected:shard_expected);
-          };
-      doc = "Run only the Kth of N deterministic path-hash buckets";
-      mirror = mirrored "WINDTRAP_SHARD" verbatim (fun p -> p.shard = None);
-    };
-    {
-      short = None;
-      long = "--quick";
-      arg = Flag (fun acc -> { acc with quick = Some true });
-      doc = "Skip slow-tagged tests";
-      mirror = None;
-    };
-    {
-      short = None;
-      long = "--failed";
-      arg = Flag (fun acc -> { acc with failed_only = Some true });
-      doc = "Rerun only the last run's failures";
-      mirror = mirrored "WINDTRAP_FAILED" Truthy (fun p -> p.failed_only = None);
-    };
-    {
-      short = Some "-l";
-      long = "--list";
-      arg = Flag (fun acc -> { acc with list_only = Some true });
-      doc = "List selected tests without running them";
-      mirror = None;
-    };
-    {
-      short = Some "-x";
-      long = "--fail-fast";
-      arg = Flag (fun acc -> { acc with bail = Some 1 });
-      doc = "Stop after the first failure (same as --bail 1)";
-      mirror = None;
-    };
-    {
-      short = None;
-      long = "--bail";
-      arg = set_positive_int (fun acc n -> { acc with bail = Some n });
-      doc = "Stop after N failures";
-      mirror = mirrored "WINDTRAP_BAIL" trimmed (fun p -> p.bail = None);
-    };
-    {
-      short = None;
-      long = "--timeout";
-      arg =
-        Value
-          {
-            metavar = "SECONDS";
-            set =
-              (fun ~source acc value ->
-                match float_of_string_opt value with
-                | Some limit when limit > 0. && Float.is_finite limit ->
-                    Ok { acc with timeout = Some limit }
-                | _ -> invalid ~source ~value ~expected:"a positive number");
-          };
-      doc = "Default per-test timeout in seconds";
-      mirror = mirrored "WINDTRAP_TIMEOUT" trimmed (fun p -> p.timeout = None);
-    };
-    {
-      short = None;
-      long = "--slow-threshold";
-      arg =
-        Value
-          {
-            metavar = "SECONDS";
-            set =
-              (fun ~source acc value ->
-                match float_of_string_opt value with
-                | Some limit when limit >= 0. && Float.is_finite limit ->
-                    Ok { acc with slow_threshold = Some limit }
-                | _ -> invalid ~source ~value ~expected:"a non-negative number");
-          };
-      doc = "Warn when an untagged test runs longer than SECONDS (0 disables)";
-      mirror =
-        mirrored "WINDTRAP_SLOW_THRESHOLD" trimmed (fun p ->
-            p.slow_threshold = None);
-    };
-    {
-      short = None;
-      long = "--seed";
-      arg =
-        Value
-          {
-            metavar = "TOKEN";
-            set =
-              (fun ~source acc value ->
-                match Seed.of_string value with
-                | Ok seed -> Ok { acc with seed = Some seed }
-                | Error _ -> invalid ~source ~value ~expected:seed_expected);
-          };
-      doc = "Root seed for property tests (s1:<16 hex>)";
-      mirror = mirrored "WINDTRAP_SEED" verbatim (fun p -> p.seed = None);
-    };
-    {
-      short = None;
-      long = "--prop-count";
-      arg = set_positive_int (fun acc n -> { acc with prop_count = Some n });
-      doc = "Generated cases per property";
-      mirror =
-        mirrored "WINDTRAP_PROP_COUNT" trimmed (fun p -> p.prop_count = None);
-    };
-    {
-      short = None;
-      long = "--max-shrink";
-      arg = set_positive_int (fun acc n -> { acc with max_shrink = Some n });
-      doc = "Accepted shrink steps per failing property";
-      mirror =
-        mirrored "WINDTRAP_MAX_SHRINK" trimmed (fun p -> p.max_shrink = None);
-    };
-    {
-      short = None;
-      long = "--max-prop-count";
-      arg =
-        set_positive_int (fun acc n -> { acc with max_prop_count = Some n });
-      doc = "Ceiling on every property's case count";
-      mirror =
-        mirrored "WINDTRAP_MAX_PROP_COUNT" trimmed (fun p ->
-            p.max_prop_count = None);
-    };
-    {
-      short = None;
-      long = "--max-discard";
-      arg = set_non_negative_int (fun acc n -> { acc with max_discard = Some n });
-      doc = "Discarded cases tolerated per property (default 2x the count)";
-      mirror =
-        mirrored "WINDTRAP_MAX_DISCARD" trimmed (fun p -> p.max_discard = None);
-    };
-    {
-      short = Some "-u";
-      long = "--update";
-      arg = Flag (fun acc -> { acc with update = Some Env.Update });
-      doc = "Accept snapshot changes (refused under CI)";
-      mirror =
-        mirrored "WINDTRAP_UPDATE"
-          (Own
-             (fun acc ->
-               match Env.update () with
-               | Env.No_update -> acc
-               | mode -> { acc with update = Some mode }))
-          (fun p -> p.update = None);
-    };
-    {
-      short = None;
-      long = "--prune";
-      arg = Flag (fun acc -> { acc with prune = Some true });
-      doc = "Delete orphaned baselines after a full, clean update run";
-      mirror = mirrored "WINDTRAP_PRUNE" Truthy (fun p -> p.prune = None);
-    };
-    {
-      short = None;
-      long = "--strict-snapshots";
-      arg = Flag (fun acc -> { acc with strict_snapshots = Some true });
-      doc = "Fail the run on a stale baseline left by a full, clean run";
-      mirror =
-        mirrored "WINDTRAP_STRICT_SNAPSHOTS" Truthy (fun p ->
-            p.strict_snapshots = None);
-    };
-    {
-      short = Some "-s";
-      long = "--stream";
-      arg = Flag (fun acc -> { acc with stream = Some true });
-      doc = "Stream test output instead of capturing it";
-      mirror = mirrored "WINDTRAP_STREAM" Truthy (fun p -> p.stream = None);
-    };
-    {
-      (* One verbosity axis, three levels: -q ⊂ default ⊂ -v. Both flags
+    Flag_entry
+      {
+        short = Some "-f";
+        long = "--filter";
+        arg =
+          set_string (fun ~source:_ acc value ->
+              Ok { acc with filter = Some value });
+        doc = "Run only tests whose path contains PATTERN";
+        mirror = mirrored "WINDTRAP_FILTER" verbatim (fun p -> p.filter = None);
+      };
+    Flag_entry
+      {
+        short = Some "-e";
+        long = "--exclude";
+        arg =
+          set_string (fun ~source:_ acc value ->
+              Ok { acc with exclude = Some value });
+        doc = "Skip tests whose path contains PATTERN";
+        mirror =
+          mirrored "WINDTRAP_EXCLUDE" verbatim (fun p -> p.exclude = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--tag";
+        arg =
+          Value
+            {
+              metavar = "LABEL";
+              set =
+                (fun ~source:_ acc value ->
+                  Ok { acc with tags = acc.tags @ [ value ] });
+            };
+        doc = "Run only tests tagged LABEL (repeatable)";
+        mirror = mirrored "WINDTRAP_TAG" Comma additive;
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--exclude-tag";
+        arg =
+          Value
+            {
+              metavar = "LABEL";
+              set =
+                (fun ~source:_ acc value ->
+                  Ok { acc with exclude_tags = acc.exclude_tags @ [ value ] });
+            };
+        doc = "Skip tests tagged LABEL (repeatable)";
+        mirror = mirrored "WINDTRAP_EXCLUDE_TAG" Comma additive;
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--shard";
+        arg =
+          Value
+            {
+              metavar = "K/N";
+              set =
+                (fun ~source acc value ->
+                  match shard_of_string value with
+                  | Some shard -> Ok { acc with shard = Some shard }
+                  | None -> invalid ~source ~value ~expected:shard_expected);
+            };
+        doc = "Run only the Kth of N deterministic path-hash buckets";
+        mirror = mirrored "WINDTRAP_SHARD" verbatim (fun p -> p.shard = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--quick";
+        arg = Flag (fun acc -> { acc with quick = Some true });
+        doc = "Skip slow-tagged tests";
+        mirror = None;
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--failed";
+        arg = Flag (fun acc -> { acc with failed_only = Some true });
+        doc = "Rerun only the last run's failures";
+        mirror =
+          mirrored "WINDTRAP_FAILED" Truthy (fun p -> p.failed_only = None);
+      };
+    Flag_entry
+      {
+        short = Some "-l";
+        long = "--list";
+        arg = Flag (fun acc -> { acc with list_only = Some true });
+        doc = "List selected tests without running them";
+        mirror = None;
+      };
+    Flag_entry
+      {
+        short = Some "-x";
+        long = "--fail-fast";
+        arg = Flag (fun acc -> { acc with bail = Some 1 });
+        doc = "Stop after the first failure (same as --bail 1)";
+        mirror = None;
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--bail";
+        arg = set_positive_int (fun acc n -> { acc with bail = Some n });
+        doc = "Stop after N failures";
+        mirror = mirrored "WINDTRAP_BAIL" trimmed (fun p -> p.bail = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--timeout";
+        arg =
+          Value
+            {
+              metavar = "SECONDS";
+              set =
+                (fun ~source acc value ->
+                  match float_of_string_opt value with
+                  | Some limit when limit > 0. && Float.is_finite limit ->
+                      Ok { acc with timeout = Some limit }
+                  | _ -> invalid ~source ~value ~expected:"a positive number");
+            };
+        doc = "Default per-test timeout in seconds";
+        mirror = mirrored "WINDTRAP_TIMEOUT" trimmed (fun p -> p.timeout = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--slow-threshold";
+        arg =
+          Value
+            {
+              metavar = "SECONDS";
+              set =
+                (fun ~source acc value ->
+                  match float_of_string_opt value with
+                  | Some limit when limit >= 0. && Float.is_finite limit ->
+                      Ok { acc with slow_threshold = Some limit }
+                  | _ ->
+                      invalid ~source ~value ~expected:"a non-negative number");
+            };
+        doc = "Warn when an untagged test runs longer than SECONDS (0 disables)";
+        mirror =
+          mirrored "WINDTRAP_SLOW_THRESHOLD" trimmed (fun p ->
+              p.slow_threshold = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--seed";
+        arg =
+          Value
+            {
+              metavar = "TOKEN";
+              set =
+                (fun ~source acc value ->
+                  match Seed.of_string value with
+                  | Ok seed -> Ok { acc with seed = Some seed }
+                  | Error _ -> invalid ~source ~value ~expected:seed_expected);
+            };
+        doc = "Root seed for property tests (s1:<16 hex>)";
+        mirror = mirrored "WINDTRAP_SEED" verbatim (fun p -> p.seed = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--prop-count";
+        arg = set_positive_int (fun acc n -> { acc with prop_count = Some n });
+        doc = "Generated cases per property";
+        mirror =
+          mirrored "WINDTRAP_PROP_COUNT" trimmed (fun p -> p.prop_count = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--max-shrink";
+        arg = set_positive_int (fun acc n -> { acc with max_shrink = Some n });
+        doc = "Accepted shrink steps per failing property";
+        mirror =
+          mirrored "WINDTRAP_MAX_SHRINK" trimmed (fun p -> p.max_shrink = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--max-prop-count";
+        arg =
+          set_positive_int (fun acc n -> { acc with max_prop_count = Some n });
+        doc = "Ceiling on every property's case count";
+        mirror =
+          mirrored "WINDTRAP_MAX_PROP_COUNT" trimmed (fun p ->
+              p.max_prop_count = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--max-discard";
+        arg =
+          set_non_negative_int (fun acc n -> { acc with max_discard = Some n });
+        doc = "Discarded cases tolerated per property (default 2x the count)";
+        mirror =
+          mirrored "WINDTRAP_MAX_DISCARD" trimmed (fun p ->
+              p.max_discard = None);
+      };
+    Flag_entry
+      {
+        short = Some "-u";
+        long = "--update";
+        arg = Flag (fun acc -> { acc with update = Some Env.Update });
+        doc = "Accept snapshot changes (refused under CI)";
+        mirror =
+          mirrored "WINDTRAP_UPDATE"
+            (Own
+               (fun acc ->
+                 match Env.update () with
+                 | Env.No_update -> acc
+                 | mode -> { acc with update = Some mode }))
+            (fun p -> p.update = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--prune";
+        arg = Flag (fun acc -> { acc with prune = Some true });
+        doc = "Delete orphaned baselines after a full, clean update run";
+        mirror = mirrored "WINDTRAP_PRUNE" Truthy (fun p -> p.prune = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--strict-snapshots";
+        arg = Flag (fun acc -> { acc with strict_snapshots = Some true });
+        doc = "Fail the run on a stale baseline left by a full, clean run";
+        mirror =
+          mirrored "WINDTRAP_STRICT_SNAPSHOTS" Truthy (fun p ->
+              p.strict_snapshots = None);
+      };
+    Flag_entry
+      {
+        short = Some "-s";
+        long = "--stream";
+        arg = Flag (fun acc -> { acc with stream = Some true });
+        doc = "Stream test output instead of capturing it";
+        mirror = mirrored "WINDTRAP_STREAM" Truthy (fun p -> p.stream = None);
+      };
+    Flag_entry
+      {
+        (* One verbosity axis, three levels: -q ⊂ default ⊂ -v. Both flags
          set the same [output] field, so repeating or mixing them is
          last-one-wins, like every other single-valued flag. *)
-      short = Some "-v";
-      long = "--verbose";
-      arg = Flag (fun acc -> { acc with output = Some `Verbose });
-      doc = "One status line per test";
-      mirror = mirrored "WINDTRAP_VERBOSE" Truthy (fun p -> p.output = None);
-    };
-    {
-      short = Some "-q";
-      long = "--quiet";
-      arg = Flag (fun acc -> { acc with output = Some `Quiet });
-      doc = "Failures and summary only";
-      mirror = mirrored "WINDTRAP_QUIET" Truthy (fun p -> p.output = None);
-    };
-    {
-      short = None;
-      long = "--junit";
-      arg =
-        Value
-          {
-            metavar = "PATH";
-            set =
-              (fun ~source:_ acc value -> Ok { acc with junit = Some value });
-          };
-      doc = "Also write a JUnit XML report to PATH";
-      mirror = mirrored "WINDTRAP_JUNIT" verbatim (fun p -> p.junit = None);
-    };
-    {
-      short = None;
-      long = "--color";
-      arg =
-        Value
-          {
-            metavar = "MODE";
-            set =
-              (fun ~source acc value ->
-                match String.lowercase_ascii value with
-                | "always" -> Ok { acc with color = Some Env.Always }
-                | "never" -> Ok { acc with color = Some Env.Never }
-                | "auto" -> Ok { acc with color = Some Env.Auto }
-                | _ -> invalid ~source ~value ~expected:"always, never or auto");
-          };
-      doc = "Color output: always, never or auto";
-      mirror =
-        mirrored "WINDTRAP_COLOR"
-          (Own (fun acc -> { acc with color = Some (Env.color_mode ()) }))
-          (fun p -> p.color = None);
-    };
-    {
-      short = None;
-      long = "--coverage";
-      arg =
-        Value
-          {
-            metavar = "MODE";
-            set =
-              (fun ~source acc value ->
-                match coverage_of_string value with
-                | Some mode -> Ok { acc with coverage = Some mode }
-                | None -> invalid ~source ~value ~expected:coverage_expected);
-          };
-      doc = "Coverage output: summary, report, full or off";
-      mirror =
-        mirrored "WINDTRAP_COVERAGE" verbatim (fun p -> p.coverage = None);
-    };
-    {
-      short = Some "-o";
-      long = "--output";
-      arg =
-        Value
-          {
-            metavar = "DIR";
-            set =
-              (fun ~source:_ acc value -> Ok { acc with log_dir = Some value });
-          };
-      doc = "Root directory for capture logs";
-      mirror = mirrored "WINDTRAP_OUTPUT" verbatim (fun p -> p.log_dir = None);
-    };
-    {
-      short = Some "-V";
-      long = "--version";
-      arg = Flag (fun acc -> { acc with version = true });
-      doc = "Print the version and exit";
-      mirror = None;
-    };
-    {
-      short = Some "-h";
-      long = "--help";
-      arg = Flag (fun acc -> { acc with help = true });
-      doc = "Print this help and exit";
-      mirror = None;
-    };
+        short = Some "-v";
+        long = "--verbose";
+        arg = Flag (fun acc -> { acc with output = Some `Verbose });
+        doc = "One status line per test";
+        mirror = mirrored "WINDTRAP_VERBOSE" Truthy (fun p -> p.output = None);
+      };
+    Flag_entry
+      {
+        short = Some "-q";
+        long = "--quiet";
+        arg = Flag (fun acc -> { acc with output = Some `Quiet });
+        doc = "Failures and summary only";
+        mirror = mirrored "WINDTRAP_QUIET" Truthy (fun p -> p.output = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--junit";
+        arg =
+          Value
+            {
+              metavar = "PATH";
+              set =
+                (fun ~source:_ acc value -> Ok { acc with junit = Some value });
+            };
+        doc = "Also write a JUnit XML report to PATH";
+        mirror = mirrored "WINDTRAP_JUNIT" verbatim (fun p -> p.junit = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--color";
+        arg =
+          Value
+            {
+              metavar = "MODE";
+              set =
+                (fun ~source acc value ->
+                  match String.lowercase_ascii value with
+                  | "always" -> Ok { acc with color = Some Env.Always }
+                  | "never" -> Ok { acc with color = Some Env.Never }
+                  | "auto" -> Ok { acc with color = Some Env.Auto }
+                  | _ ->
+                      invalid ~source ~value ~expected:"always, never or auto");
+            };
+        doc = "Color output: always, never or auto";
+        mirror =
+          mirrored "WINDTRAP_COLOR"
+            (Own (fun acc -> { acc with color = Some (Env.color_mode ()) }))
+            (fun p -> p.color = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--coverage";
+        arg =
+          Value
+            {
+              metavar = "MODE";
+              set =
+                (fun ~source acc value ->
+                  match coverage_of_string value with
+                  | Some mode -> Ok { acc with coverage = Some mode }
+                  | None -> invalid ~source ~value ~expected:coverage_expected);
+            };
+        doc = "Coverage output: summary, report, full or off";
+        mirror =
+          mirrored "WINDTRAP_COVERAGE" verbatim (fun p -> p.coverage = None);
+      };
+    Flag_entry
+      {
+        short = Some "-o";
+        long = "--output";
+        arg =
+          Value
+            {
+              metavar = "DIR";
+              set =
+                (fun ~source:_ acc value ->
+                  Ok { acc with log_dir = Some value });
+            };
+        doc = "Root directory for capture logs";
+        mirror = mirrored "WINDTRAP_OUTPUT" verbatim (fun p -> p.log_dir = None);
+      };
+    Flag_entry
+      {
+        short = Some "-V";
+        long = "--version";
+        arg = Flag (fun acc -> { acc with version = true });
+        doc = "Print the version and exit";
+        mirror = None;
+      };
+    Flag_entry
+      {
+        short = Some "-h";
+        long = "--help";
+        arg = Flag (fun acc -> { acc with help = true });
+        doc = "Print this help and exit";
+        mirror = None;
+      };
+    (* The settings no flag can set, after the flags so [--help] lists
+       them where the mirror rows end. Each is read where its owner
+       consumes it: the first three by the resolution below,
+       WINDTRAP_PROJECT_ROOT by [Path_ops], WINDTRAP_COVERAGE_ONLY by
+       [Driver]'s coverage seam, and the mutation knobs by [mutation]
+       and [Mutate_loop]. The arm row spells the runtime's own constant,
+       so this roster, the reader and the report's [arm] line cannot
+       name three different variables. *)
+    Env_setting
+      {
+        var = "WINDTRAP_ALLOW_FOCUS";
+        doc = "Lift the CI guard on focused tests";
+      };
+    Env_setting
+      { var = "WINDTRAP_COLUMNS"; doc = "Terminal width override for reports" };
+    Env_setting
+      {
+        var = "WINDTRAP_TAIL_ERRORS";
+        doc = "Captured-output lines shown per failure";
+      };
+    Env_setting
+      {
+        var = "WINDTRAP_PROJECT_ROOT";
+        doc = "Project root for snapshot path resolution";
+      };
+    Env_setting
+      {
+        var = "WINDTRAP_COVERAGE_ONLY";
+        doc = "Source prefixes the coverage number covers";
+      };
+    Env_setting
+      {
+        var = "WINDTRAP_MUTATE";
+        doc = "Mutation testing: 1, report, admit or off";
+      };
+    Env_setting
+      {
+        var = Windtrap_mutate.arm_variable;
+        doc = "Arm one mutant, by identifier";
+      };
+    Env_setting
+      {
+        var = "WINDTRAP_MUTATE_LIMIT";
+        doc = "Survivor blocks to print (0 for all)";
+      };
+    Env_setting
+      {
+        var = "WINDTRAP_MUTATE_TRY";
+        doc = "Faults an admit run tries per test (0 for all)";
+      };
+    Env_setting
+      {
+        var = "WINDTRAP_MUTATE_ONLY";
+        doc = "Source prefixes whose mutants a run considers";
+      };
   ]
+
+(* The flagless settings the resolution itself consumes, read through
+   [Env]'s generic readers beside their rows above. Their tolerance is
+   the setting's vocabulary — a non-positive or unparseable width counts
+   as unset — where a mirror refuses loudly: no flag exists here for a
+   lenient reading to drift from. *)
+
+let allow_focus () = Env.get_bool "WINDTRAP_ALLOW_FOCUS" = Some true
+
+let columns () =
+  match Env.get_int "WINDTRAP_COLUMNS" with
+  | Some n when n > 0 -> Some n
+  | _ -> None
+
+let tail_errors () = Env.get_int "WINDTRAP_TAIL_ERRORS"
 
 (* Did-you-mean
 
@@ -551,12 +666,14 @@ let nearest_flag flag =
     (* A third of the name, floor two: beyond that it is a different word,
        not a slip. *)
     let budget = max 2 (String.length flag / 3) in
-    let closer best entry =
-      let d = edit_distance flag entry.long in
-      match best with
-      | Some (_, best_d) when best_d <= d -> best
-      | _ when d <= budget -> Some (entry.long, d)
-      | _ -> best
+    let closer best = function
+      | Env_setting _ -> best
+      | Flag_entry entry -> (
+          let d = edit_distance flag entry.long in
+          match best with
+          | Some (_, best_d) when best_d <= d -> best
+          | _ when d <= budget -> Some (entry.long, d)
+          | _ -> best)
     in
     Option.map fst (List.fold_left closer None table)
 
@@ -572,25 +689,17 @@ let error_message = function
   | Extra_positional { filter; extra } ->
       Pp.str "unexpected argument '%s': the filter is already '%s'" extra filter
 
-(* Environment settings with no flag, listed by --help. *)
-let env_only =
-  [
-    ("WINDTRAP_ALLOW_FOCUS", "Lift the CI guard on focused tests");
-    ("WINDTRAP_COLUMNS", "Terminal width override for reports");
-    ("WINDTRAP_TAIL_ERRORS", "Captured-output lines shown per failure");
-    ("WINDTRAP_PROJECT_ROOT", "Project root for snapshot path resolution");
-    ("WINDTRAP_COVERAGE_ONLY", "Source prefixes the coverage number covers");
-    ("WINDTRAP_MUTATE", "Mutation testing: 1, report, admit or off");
-    (Windtrap_mutate.arm_variable, "Arm one mutant, by identifier");
-    ("WINDTRAP_MUTATE_LIMIT", "Survivor blocks to print (0 for all)");
-    ("WINDTRAP_MUTATE_TRY", "Faults an admit run tries per test (0 for all)");
-    ("WINDTRAP_MUTATE_ONLY", "Source prefixes whose mutants a run considers");
-  ]
-
 (* Parsing *)
 
-let find_long name = List.find_opt (fun entry -> entry.long = name) table
-let find_short name = List.find_opt (fun entry -> entry.short = Some name) table
+let find_long name =
+  List.find_map
+    (function Flag_entry e when e.long = name -> Some e | _ -> None)
+    table
+
+let find_short name =
+  List.find_map
+    (function Flag_entry e when e.short = Some name -> Some e | _ -> None)
+    table
 
 (* Split "--flag=value" into the flag and its inline value. *)
 let split_inline arg =
@@ -685,26 +794,33 @@ let layers ~overrides cli =
         else Ok acc
   in
   List.fold_left
-    (fun acc entry ->
+    (fun acc item ->
       let* acc = acc in
-      match entry.mirror with
-      | Some mirror when mirror.absent overrides && mirror.absent acc -> (
-          match Env.get_string mirror.var with
-          | Some raw -> contribute acc entry mirror raw
-          | None -> Ok acc)
-      | Some _ | None -> Ok acc)
+      match item with
+      | Env_setting _ -> Ok acc
+      | Flag_entry entry -> (
+          match entry.mirror with
+          | Some mirror when mirror.absent overrides && mirror.absent acc -> (
+              match Env.get_string mirror.var with
+              | Some raw -> contribute acc entry mirror raw
+              | None -> Ok acc)
+          | Some _ | None -> Ok acc))
     (Ok cli) table
+
+(* The level fold, shared by [output_level] and [settings]: never errors,
+   so verbosity is resolved even when configuration resolution fails. *)
+let level_of ~overrides below =
+  match first_some overrides.output below.output with
+  | Some `Quiet -> `Quiet
+  | Some `Verbose -> `Verbose
+  | None -> `Compact
 
 let output_level ?(overrides = empty) cli =
   (* [layers] stops at the first malformed mirror, which may well be one the
      output level does not depend on. The caller resolves the configuration
      first and exits on that error, so the layers above the environment are
      answer enough when the fold did not finish. *)
-  let below = Result.value (layers ~overrides cli) ~default:cli in
-  match first_some overrides.output below.output with
-  | Some `Quiet -> `Quiet
-  | Some `Verbose -> `Verbose
-  | None -> `Compact
+  level_of ~overrides (Result.value (layers ~overrides cli) ~default:cli)
 
 (* [parse] checks every value the command line offers and the mirror readers
    check every value the environment offers, each naming its own source. A
@@ -721,9 +837,14 @@ let checked ~flag ~valid ~render ~expected value =
       invalid ~source:flag ~value:(render v) ~expected
   | picked -> Ok picked
 
-let resolve ?(overrides = empty) cli =
-  let* below = layers ~overrides cli in
+(* One fold from the fully-layered record to the two resolved records —
+   the runner's configuration and the renderer's settings, split along
+   the line the architecture draws: after it, no field is consulted by
+   both sides. The validation order below is kept stable so a caller
+   holding two invalid overrides is told about the same one as always. *)
+let resolved ~overrides below =
   let defaults = Run.default_config () in
+  let render_defaults = Render.default_settings in
   let seconds ~flag ~valid ~expected value =
     checked ~flag ~valid ~render:(Pp.str "%g") ~expected value
   in
@@ -775,71 +896,81 @@ let resolve ?(overrides = empty) cli =
     | picked -> Ok picked
   in
   Ok
-    {
-      Run.seed =
-        Option.value
-          (first_some overrides.seed below.seed)
-          ~default:defaults.Run.seed;
-      filter = first_some overrides.filter below.filter;
-      exclude = first_some overrides.exclude below.exclude;
-      tags = overrides.tags @ below.tags;
-      exclude_tags = overrides.exclude_tags @ below.exclude_tags;
-      shard;
-      quick =
-        Option.value (first_some overrides.quick below.quick) ~default:false;
-      failed_only =
-        Option.value
-          (first_some overrides.failed_only below.failed_only)
-          ~default:false;
-      list_only =
-        Option.value
-          (first_some overrides.list_only below.list_only)
-          ~default:false;
-      bail;
-      stream =
-        Option.value (first_some overrides.stream below.stream) ~default:false;
-      update =
-        Option.value
-          (first_some overrides.update below.update)
-          ~default:Env.No_update;
-      prune =
-        Option.value (first_some overrides.prune below.prune) ~default:false;
-      strict_snapshots =
-        Option.value
-          (first_some overrides.strict_snapshots below.strict_snapshots)
-          ~default:false;
-      timeout;
-      slow_threshold =
-        Option.value slow_threshold ~default:defaults.Run.slow_threshold;
-      prop_count;
-      max_shrink;
-      max_discard;
-      max_prop_count;
-      junit = first_some overrides.junit below.junit;
-      color =
-        Option.value
-          (first_some overrides.color below.color)
-          ~default:defaults.Run.color;
-      columns = Env.columns ();
-      tail_errors = Env.tail_errors ();
-      log_dir =
-        (* Resolved against the cwd once, here, before any test body runs.
-           A relative [-o DIR] otherwise follows the process around: a test
-           that chdirs sends the rest of the run's capture logs somewhere
-           else, or nowhere, and the failure reports point at paths that do
-           not exist. The default is already absolute. *)
-        (let dir =
-           Option.value
-             (first_some overrides.log_dir below.log_dir)
-             ~default:defaults.Run.log_dir
-         in
-         if not (Filename.is_relative dir) then dir
-         else
-           match Sys.getcwd () with
-           | cwd -> Filename.concat cwd dir
-           | exception Sys_error _ -> dir);
-      allow_focus = Env.allow_focus ();
-    }
+    ( {
+        Run.seed =
+          Option.value
+            (first_some overrides.seed below.seed)
+            ~default:defaults.Run.seed;
+        filter = first_some overrides.filter below.filter;
+        exclude = first_some overrides.exclude below.exclude;
+        tags = overrides.tags @ below.tags;
+        exclude_tags = overrides.exclude_tags @ below.exclude_tags;
+        shard;
+        quick =
+          Option.value (first_some overrides.quick below.quick) ~default:false;
+        failed_only =
+          Option.value
+            (first_some overrides.failed_only below.failed_only)
+            ~default:false;
+        list_only =
+          Option.value
+            (first_some overrides.list_only below.list_only)
+            ~default:false;
+        bail;
+        stream =
+          Option.value (first_some overrides.stream below.stream) ~default:false;
+        update =
+          Option.value
+            (first_some overrides.update below.update)
+            ~default:Env.No_update;
+        prune =
+          Option.value (first_some overrides.prune below.prune) ~default:false;
+        strict_snapshots =
+          Option.value
+            (first_some overrides.strict_snapshots below.strict_snapshots)
+            ~default:false;
+        timeout;
+        prop_count;
+        max_shrink;
+        max_discard;
+        max_prop_count;
+        junit = first_some overrides.junit below.junit;
+        log_dir =
+          (* Resolved against the cwd once, here, before any test body runs.
+             A relative [-o DIR] otherwise follows the process around: a test
+             that chdirs sends the rest of the run's capture logs somewhere
+             else, or nowhere, and the failure reports point at paths that do
+             not exist. The default is already absolute. *)
+          (let dir =
+             Option.value
+               (first_some overrides.log_dir below.log_dir)
+               ~default:defaults.Run.log_dir
+           in
+           if not (Filename.is_relative dir) then dir
+           else
+             match Sys.getcwd () with
+             | cwd -> Filename.concat cwd dir
+             | exception Sys_error _ -> dir);
+        allow_focus = allow_focus ();
+      },
+      {
+        Render.color =
+          Option.value
+            (first_some overrides.color below.color)
+            ~default:render_defaults.Render.color;
+        columns = columns ();
+        tail_errors = tail_errors ();
+        slow_threshold =
+          Option.value slow_threshold
+            ~default:render_defaults.Render.slow_threshold;
+      } )
+
+let resolve ?(overrides = empty) cli =
+  let* below = layers ~overrides cli in
+  Result.map fst (resolved ~overrides below)
+
+(* The coverage fold, shared by [coverage_mode] and [settings]. *)
+let coverage_of below = Option.value below.coverage ~default:`Summary
 
 (* The coverage mode resolves outside [resolve] because it is not run
    configuration: it is a rendering decision the facade's [run] applies
@@ -849,7 +980,7 @@ let resolve ?(overrides = empty) cli =
    a malformed winning value is an error, never a silently defaulted mode. *)
 let coverage_mode (cli : parsed) =
   let* below = layers ~overrides:empty cli in
-  Ok (Option.value below.coverage ~default:`Summary)
+  Ok (coverage_of below)
 
 (* The mutation knobs
 
@@ -914,25 +1045,32 @@ let mutation () =
   in
   Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable; limit; tries }
 
-(* One invocation, one resolution call. Both drivers want all three
-   answers and neither wants three error paths to reach them, so the three
-   resolvers compose here — in the order the drivers used to spell out,
-   which is load-bearing: [resolve] is the layer that draws a fresh root
-   seed and the layer whose error the caller is meant to report, so when
-   the environment layer is malformed the reported error stays the
-   configuration's. The three stay separate values in the result:
-   coverage and verbosity are rendering decisions, and folding either
-   into [Run.config] would let a display choice reach the runner. *)
+(* One invocation, one resolution pass. Both drivers want all four
+   answers and neither wants four error paths to reach them, so the
+   environment layer is folded once and every answer is a projection of
+   it. The four stay separate values in the result: coverage, verbosity
+   and the renderer settings are rendering decisions, and folding any of
+   them into [Run.config] would let a display choice reach the runner. *)
 type settings = {
   config : Run.config;
+  render : Render.settings;
   coverage_mode : [ `Summary | `Report | `Full | `Off ];
   output_level : [ `Quiet | `Compact | `Verbose ];
 }
 
 let settings ?(overrides = empty) cli =
-  let* config = resolve ~overrides cli in
-  let* coverage_mode = coverage_mode cli in
-  Ok { config; coverage_mode; output_level = output_level ~overrides cli }
+  (* The coverage mode has no programmatic layer; blanking the field keeps
+     the shared fold from treating [overrides] as one. *)
+  let overrides = { overrides with coverage = None } in
+  let layered = layers ~overrides cli in
+  (* Verbosity first, and tolerantly: a malformed mirror stops the
+     environment layer short, the error below is the one the caller
+     reports, and the level it renders that error at must come from the
+     layers above the environment rather than be lost with the fold. *)
+  let output_level = level_of ~overrides (Result.value layered ~default:cli) in
+  let* below = layered in
+  let* config, render = resolved ~overrides below in
+  Ok { config; render; coverage_mode = coverage_of below; output_level }
 
 (* Help *)
 
@@ -961,13 +1099,19 @@ let two_columns rows =
     rows
 
 let help ~prog =
-  let flag_rows = List.map (fun e -> (flag_heading e, e.doc)) table in
+  let flag_rows =
+    List.filter_map
+      (function
+        | Flag_entry e -> Some (flag_heading e, e.doc) | Env_setting _ -> None)
+      table
+  in
   let mirror_rows =
     List.filter_map
-      (fun e ->
-        Option.map (fun m -> (m.var, Pp.str "Mirror of %s" e.long)) e.mirror)
+      (function
+        | Flag_entry e ->
+            Option.map (fun m -> (m.var, Pp.str "Mirror of %s" e.long)) e.mirror
+        | Env_setting { var; doc } -> Some (var, doc))
       table
-    @ env_only
   in
   String.concat "\n"
     ([
