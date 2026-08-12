@@ -66,7 +66,11 @@ val install : interceptor -> unit
 val interceptor : unit -> interceptor option
 (** [interceptor ()] is the installed interceptor, or [None] when no library
     installed one — the drivers then run the suite through
-    {!Driver.execute_and_report} unwrapped. *)
+    {!Driver.execute_and_report} unwrapped, unless [WINDTRAP_MUTATE] is set and
+    non-empty: that ask has no interceptor to answer it, so both drivers refuse
+    to start (exit 1) and name the library to link rather than silently running
+    the suite plain. List-only runs are exempt, as they are in the loop: a
+    listing is not a run, so there is no ask to ignore. *)
 
 (** {1:hooks Armed hooks} *)
 

@@ -11,8 +11,19 @@
  (modules arm_child)
  (libraries windtrap_mutate))
 
+; The negative control for the mutation seam: a suite that links windtrap
+; and not windtrap.mutation, so the registry's slot is empty and a
+; WINDTRAP_MUTATE ask has no interceptor to answer it. The driver must
+; refuse to start rather than run as if nothing was asked; unset, the run
+; is an ordinary one.
+
+(executable
+ (name unlinked_main)
+ (modules unlinked_main)
+ (libraries windtrap))
+
 (test
  (name test_mutate)
  (modules test_mutate)
  (libraries windtrap windtrap_mutate unix)
- (deps arm_child.exe))
+ (deps arm_child.exe unlinked_main.exe))

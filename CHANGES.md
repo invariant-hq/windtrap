@@ -199,6 +199,8 @@ test binary's closure.
 `windtrap.mutation`; add it to the test stanza's libraries —
 `(libraries … windtrap windtrap.mutation)` — and linking it is the wiring.
 Inline (`ppx_windtrap`) suites get it through the runtime automatically.
+Asking without the link — `WINDTRAP_MUTATE` set in a binary that never linked
+the loop — refuses to start, exit 1, naming the stanza entry to add.
 Builds without the backend, and runs without `WINDTRAP_MUTATE`, are unchanged.
 
 **Generation stands alone as `windtrap.gen`.** `Gen`, and the seed and

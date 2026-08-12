@@ -16,7 +16,9 @@ library you want mutated, inert without the flag:
 The loop that answers `WINDTRAP_MUTATE` ships beside the framework as
 `windtrap.mutation`: add it to the *test* stanza's libraries —
 `(libraries calc windtrap windtrap.mutation)` — and linking it is all
-the wiring there is. The runs below assume it.
+the wiring there is. A run that sets `WINDTRAP_MUTATE` without the
+library linked refuses to start and says so — the ask is never silently
+ignored. The runs below assume it.
 
 The `(instrumentation …)` field repeats, so a library can carry both
 backends. An instrumented build that was not asked to mutate anything

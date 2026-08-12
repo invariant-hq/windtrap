@@ -1287,9 +1287,31 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
        own and never reports a test outcome, so [Reported] skips the
        correction protocol entirely: dune's promotion protocol is not
        what a mutation run is for, and Law 16(d) has already stopped
-       every correction it could have recorded. *)
+       every correction it could have recorded.
+
+       An empty slot answers no ask: WINDTRAP_MUTATE set with no
+       interceptor installed names a build that dropped this library's
+       windtrap.mutation link, and running would silently ignore the ask
+       — so the run refuses to start instead (exit 1, a refusal in Law
+       16e's vocabulary, never 2: "nothing ran" would blame the
+       selection). The value is deliberately not parsed — its vocabulary
+       is the loop's; only [Env.get_string]'s set/unset boundary is
+       mirrored, inlined here because the facade deliberately narrows
+       [Env], so an empty value reads as unset exactly as the loop reads
+       it. The sentence is byte-shared with [Windtrap.run]; the facade's
+       list-only exemption has no counterpart here because the inline
+       protocol has no [--list] and no mirror sets it. *)
     match Registry.interceptor () with
     | Some run -> run spine tests
+    | None
+      when match Sys.getenv_opt "WINDTRAP_MUTATE" with
+           | Some "" | None -> false
+           | Some _ -> true ->
+        Format.eprintf
+          "windtrap mutate: this executable links no mutation loop, so \
+           WINDTRAP_MUTATE would be silently ignored. Add windtrap.mutation to \
+           the test stanza's libraries@.";
+        Registry.Reported 1
     | None -> Registry.Ran (Driver.execute_and_report spine tests)
   with
   | Registry.Reported code -> code

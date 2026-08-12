@@ -327,10 +327,30 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~render ~output tests =
      [Driver.execute_and_report] — same transcript, same bytes, same
      cost; with them it wraps the run on both sides (an armed mutant is
      announced before any output, the discovery line follows the summary,
-     and the loop forks after the dry run) and may take the process over. *)
+     and the loop forks after the dry run) and may take the process over.
+
+     An empty slot answers no ask: WINDTRAP_MUTATE set with no
+     interceptor installed names a stanza that never linked the loop,
+     and running would silently ignore the ask — so the run refuses to
+     start instead (exit 1, a refusal in Law 16e's vocabulary, never 2:
+     "nothing ran" would blame the selection). A listing is exempt, as
+     it is in the loop itself: a listing is not a run, so linking the
+     loop would leave it byte-identical and there is no ask to ignore.
+     The value is deliberately not parsed — its vocabulary is the
+     loop's; only [Env.get_string]'s set/unset boundary is mirrored, so
+     an empty value reads as unset here exactly as it does there. The
+     sentence is byte-shared with [Ppx_runtime.run_inline_suite]. *)
   match
     match Registry.interceptor () with
     | Some run -> run spine tests
+    | None
+      when (not config.Run.list_only)
+           && Env.get_string "WINDTRAP_MUTATE" <> None ->
+        Format.eprintf
+          "windtrap mutate: this executable links no mutation loop, so \
+           WINDTRAP_MUTATE would be silently ignored. Add windtrap.mutation to \
+           the test stanza's libraries@.";
+        Registry.Reported 1
     | None -> Registry.Ran (Driver.execute_and_report spine tests)
   with
   | Registry.Reported code -> exit code
