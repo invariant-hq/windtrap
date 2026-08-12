@@ -101,7 +101,7 @@ Reject these shapes on sight — in review, and in your own output.
 - **Vacuous** — executes code but checks nothing that can break: no
   assertion at all, `is_some` where the *value* matters, "does not
   raise" on a function that cannot raise. Green from the day it was
-  born; surfaces as mutation survivors (§9).
+  born; an admit run rules it `UNJUSTIFIED` (§9).
 - **Tautological** — re-derives the answer with the implementation's
   own algorithm (a "property" computing the same fold), or tests the
   language: that a record field holds what the constructor assigned,
@@ -567,57 +567,65 @@ with `dune promote`. Non-obvious mechanics:
 
 ## 9. Prove every test can fail (mutation)
 
-A test nobody has seen fail is unverified — and windtrap mechanizes the
-verification. The mutation loop breaks the code on purpose, one site at
-a time, and reports every change your tests did not notice, **naming
-the tests that ran the line and stayed green**:
+A test nobody has seen fail is unverified, and windtrap mechanizes the
+verification by breaking the code on purpose. Two modes: `admit` asks
+*can this test fail?*, the survey *which of this file's faults does
+nothing catch?*
+
+**Admit every test you write or change** — the last step of writing
+one, not a separate audit. The run's selection becomes the admission
+set: only the faults those tests reach are armed, and each is ruled by
+name, in about a second for a fast test.
 
 ```
-$ WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate test/unit/test_calc.exe
-
-  SURVIVED  lib/calc.ml:9:11:add   a - b  →  a + b
-    2 tests ran this line and none failed when it changed:
-      sub › of two positives      test/unit/test_calc.ml:15
+WINDTRAP_MUTATE=admit dune exec --instrument-with ppx_windtrap.mutate \
+  test/unit/test_foo.exe -- -f "<test name>"
 ```
 
-Make it part of writing tests, not a separate audit:
+- **`ADMITTED`** names the fault the test kills. Done — that line
+  belongs in the PR description.
+- **`UNJUSTIFIED`** is stop-the-line, and exits 1: the test ran faults
+  on its lines and never failed. Strengthen the assertion or dismiss a
+  genuine equivalent with a reason — the block prints both commands,
+  its `arm` line reproducing the fault under that one test. Never
+  proceed past one.
+- **`NO SITES`** means mutation had nothing to say about that subject:
+  not a failure, never a reason to delete a test, review it by eye.
 
-- **After writing or changing tests for a module**, run the loop scoped
-  to that file — `WINDTRAP_MUTATE_ONLY=lib/foo.ml` narrows the work,
-  keeping the run seconds-fast:
+The selection designates (`-f`/`-e`, tag knobs, `--failed`, an
+in-source focus; `--shard` does not, and selecting nothing refuses). An
+admit run writes no verdict file, so it never perturbs `@mutate`; each
+test tries at most 25 faults and says when that cap decided the ruling
+(`WINDTRAP_MUTATE_TRY=0` tries every fault it reaches).
 
-  ```
-  WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/foo.ml \
-    dune exec --instrument-with ppx_windtrap.mutate test/unit/test_foo.exe
-  ```
+**Survey the module when auditing or reviewing one** — file-scoped, so
+it stays seconds-fast; it names the tests that watched a change and
+stayed green:
 
-  Two sharp edges. A typo'd prefix silently empties the catalogue and
-  the refusal blames missing instrumentation — check the
-  `WINDTRAP_MUTATE_ONLY` value before rebuilding anything. And a scoped
-  run overwrites this executable's verdict file with its narrower view,
-  so between a scoped run and the next full one, do not read
-  `dune build @mutate` as project truth.
+```
+WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/foo.ml \
+  dune exec --instrument-with ppx_windtrap.mutate test/unit/test_foo.exe
+```
 
 - A **survivor** means "strengthen one of these named tests" — usually
   a weak assertion (`is_true`, a shape check where an exact `equal`
   belongs). An **unreached** mutant means "write a test": no assertion,
   however sharp, can catch what no test evaluates.
-- **When fixing a bug, write the failing test first** and see it fail.
-  For a test over existing code, arm one mutant and watch the test
-  catch it — copy the survivor block's `arm` line
-  (`WINDTRAP_MUTATE_ARM=<id> …`): green with the mutant armed means the
-  test proves nothing yet; `mutant killed.` closes the loop.
+- **When fixing a bug, write the failing test first** and see it fail;
+  admission is for every other test.
 - Dismiss a genuinely equivalent mutant in the source, with a reason —
   `((want > 16) [@mutate off "both arms yield 16 at the boundary"])` —
-  never to silence a real finding. There is no suppression database:
-  dismissals live where `git blame` can see them. Never dismiss a
-  mutant you have not reasoned about.
+  never to silence a real finding, and never one you have not reasoned
+  about. There is no suppression database: dismissals live in the
+  source, where `git blame` sees them.
 - With several test executables over one library, per-executable
   reports disagree by construction (one suite's kill is another's
-  survivor); `dune build @mutate` merges verdicts under
-  killed-anywhere-wins. Trust the merged report, not the per-suite one.
-- Survivors never fail the build — the report is a reading list, not a
-  gate. Mutation needs `Unix.fork`, so it declines by name on Windows.
+  survivor); `dune build @mutate` merges under killed-anywhere-wins.
+  Trust the merged report, not the per-suite one.
+- Survivors never fail the build — the survey is a reading list, not a
+  gate; only `admit` answers with its exit code. Both need `Unix.fork`
+  and decline by name on Windows, where `WINDTRAP_MUTATE_ARM=<id>` on
+  one mutant is the fallback.
 
 ## 10. Coverage
 
@@ -740,8 +748,8 @@ merely recall having read the rule:
       as a code change
 - [ ] Cram stanzas declare `(deps %{bin:…})`; exit codes asserted
 - [ ] Every new test seen failing — failing-first for bugfixes,
-      mutation loop or armed mutant otherwise — and survivors resolved
-      or dismissed with a reason
+      `WINDTRAP_MUTATE=admit` otherwise — with no `UNJUSTIFIED` ruling
+      left standing, and survivors resolved or dismissed with a reason
 - [ ] Coverage read on touched code; `@cover`/`@mutate` aliases
       present; `--min` ratcheted, never lowered
 - [ ] Layout: suites split only along mechanical boundaries; files by

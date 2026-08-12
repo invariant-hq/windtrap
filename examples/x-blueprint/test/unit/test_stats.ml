@@ -18,6 +18,13 @@ let () =
     [
       group "render"
         [
+          (* Deliberately weak, and kept that way: this law counts lines,
+             and no arithmetic inside a line moves a line count, so an
+             admit run rules it UNJUSTIFIED — it is the manual's living
+             specimen (doc/manual/mutation.md, "Admitting a test"), and
+             the faults it misses are killed by the tests beside it.
+             Strengthening it is the exercise; doing so here would orphan
+             the manual's transcripts. *)
           prop "prints one line per row plus the total" gen_rows (fun rows ->
               equal int (List.length rows + 1) (line_count (Stats.render rows)));
           test "pads and draws a single row" (fun () ->

@@ -33,7 +33,30 @@ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib/slug.ml \
   examples/x-blueprint/test/unit/test_slug.exe        # the mutation loop
 ```
 
-Three things are deliberate:
+Writing a new test here ends the way the skill teaches (`SKILL.md` §9):
+admit it, and let the run name the fault it kills.
+
+```
+$ WINDTRAP_MUTATE=admit dune exec --instrument-with ppx_windtrap.mutate \
+    examples/x-blueprint/test/unit/test_slug.exe -- -f idempotent
+slug: 1 passed in 0.0221s (seed s1:cd98c762bb757a06).
+
+  ADMITTED  slugify › is idempotent
+    killed  examples/x-blueprint/lib/slug.ml:2:3:gt   c >= 'a'  →  c > 'a'
+
+admission: 1 admitted of 1 · 2 forks over 62 reached in 77ms (seed s1:cd98c762bb757a06)
+```
+
+`UNJUSTIFIED` would mean the test cannot fail, and exits 1; `NO SITES`
+means mutation has nothing to say about that subject. Nothing is written
+to `_build/_mutants`, so admitting a test never disturbs the verdicts
+`example-mutate` merges. Swapping `-f idempotent` for `-e zzz` audits
+every test in the suite at once — and on `test_stats.exe`, scoped with
+`WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib` (inside windtrap's
+tree the framework's own sites are in reach otherwise), that audit
+exits 1 by design; see the fourth deliberate thing below.
+
+Four things are deliberate:
 
 - **The aliases are named `example-cover` / `example-mutate`.** In your
   own project they are `cover` and `mutate` — the names windtrap's
@@ -55,6 +78,16 @@ Three things are deliberate:
   the mutation denominator. Both scoped loops above report
   `0 survived` — the suites here practice the discipline the skill
   teaches.
+
+- **`test_stats.ml` keeps one deliberately weak law.** The
+  line-count property cannot fail under either arithmetic fault in
+  `lib/stats.ml`, so a scoped admit run rules it `UNJUSTIFIED` and
+  exits 1 — it is the manual's living specimen ("Admitting a test"),
+  and the comment above it says so. In a real project that ruling is
+  stop-the-line: strengthen the law (here, that would orphan the
+  manual's transcripts, so the exercise is left to the reader — and
+  the faults it misses are killed by the example tests beside it, so
+  the survey still reports `0 survived`).
 
 A stateful suite slots into `unit/` the same way (see
 `examples/10-stateful`); this example keeps the surface small.

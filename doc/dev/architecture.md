@@ -77,7 +77,8 @@ own parser, so a variable cannot accept what its flag rejects),
 one producer per transcript line class and one order they run in —
 `execute_and_report` — around `Runner.execute`), `Mutate_loop` (the
 mutation seam: the dry run and its reach map, the determinism probe,
-the forced-fail check, the fork loop, the verdict file and the report —
+the forced-fail check, the fork loop, the admission machine that rules
+a selection test by test, the verdict file and the report —
 it *wraps* `Driver.execute_and_report` rather than sitting beside it,
 because a mutation run must announce an armed mutant before any other
 output and fork after the dry run, which brackets the run on both
@@ -143,9 +144,10 @@ per-file report and mutation's survivor blocks both project into.
 
 Ported from the accepted v3 design RFC ("Laws", including the
 2026-07-28 amendment of Law 14, and the mutation RFC's amendments to
-Laws 11, 12, 13 and 15 plus the new Law 16); the RFC documents
-themselves were removed from the repo — this copy is the durable
-record. Each law names the failure it prevents; **a change to any of
+Laws 11, 12, 13 and 15 plus the new Law 16; and the admission RFC's
+2026-08-12 amendment of Law 16(b), (c) and (e) plus the new Law 17);
+the RFC documents themselves were removed from the repo — this copy is
+the durable record. Each law names the failure it prevents; **a change to any of
 them reopens the design**.
 
 1. **Checking never writes to the source tree.** Within an executed
@@ -271,13 +273,23 @@ them reopens the design**.
     against a *second, uninstrumented* compilation of the same sources
     rather than against an editable expectation, and which must stay
     green.
-    (b) *One mutant, announced.* At most one mutant is armed per
-    process, named by `WINDTRAP_MUTATE_ARM` and by nothing else, and a
-    process with a mutant armed prints
+    (b) *One mutant, announced and concluded.* At most one mutant is
+    armed per process, named by `WINDTRAP_MUTATE_ARM` and by nothing
+    else, and a process with a mutant armed prints
     `mutant <id> armed: <before> → <after>` before any other output —
-    so a run whose output does not say so has none.
+    so a run whose output does not say so has none — and closes, after
+    the transcript, with exactly one of `mutant killed.`,
+    `mutant survived: the armed site was evaluated N time(s) and no test
+    failed.` and `mutant not evaluated: no selected test ran the site.`,
+    because green has two meanings there and they ask for opposite work.
+    A run that exited 2 gets no closing line: a selection that matched
+    nothing says something about the filter and nothing about the
+    mutant.
     (c) *A verdict is data.* Killed (carrying its cause), survived, or
-    unreached — never a boolean, and never an exit code.
+    unreached — never a boolean, and never an exit code: an armed run
+    states its own verdict in (b)'s closing line, and the loop's live in
+    its report and its verdict file. An `admit` run's per-test rulings
+    are the same rule under Law 17(c).
     (d) *Armed checking is read-only.* While a mutant is armed, a
     snapshot or `[%expect]` mismatch is a plain failure: no
     `.corrected` is written and dune's promotion protocol is not
@@ -291,16 +303,61 @@ them reopens the design**.
     and followed by `Unix._exit`. Each child runs under its own log
     directory, and the loop removes the lot when it ends. A mutation
     run's own exit code is 0 when it
-    completed — **whatever it found** — and 1 when it refused to start
+    completed — **whatever it found**, and whether or not it persisted:
+    a run whose selection narrows the suite completes, reports in full,
+    writes no verdict file and says so — and 1 when it refused to start
     or could not finish: red or empty dry run, probe disagreement,
     forced-fail failure, or a supervision error, each with its own
     message. **It never exits 2**, because "nothing ran" is a statement
     about a test selection and a mutation run does not make one. A
     survivor-driven nonzero exit is a later addition and is the only
-    thing that may ever change this. *Prevents:* mutation-gated CI; a
-    mutation build silently reporting different test results;
+    thing that may ever change this. **Exception, claiming exactly that
+    reserved clause (2026-08-12): an `admit` run — which judges an
+    explicit test selection at its author's request — additionally exits
+    1 when a selected test killed nothing it reached. For `admit` runs
+    the refusal causes additionally include a missing selection, an
+    empty one under the standalone runner, and a selection of nothing
+    but skipped and `xfail` tests; the forced-fail check does not
+    apply.** Survey runs are unchanged forever. *Prevents:*
+    mutation-gated CI; a mutation build silently reporting different
+    test results;
     meaning-change escaping the child; multi-mutant interaction making
     a survivor unattributable; a mutated run being mistaken for a real
     one; a mutation run rewriting the source tree through the promotion
     protocol; a crashing child overwriting the parent's `.coverage`
     dump through `at_exit`.
+17. **Admission judges tests, one selection at a time.**
+    (a) *Designation is the author's selection, never inferred.* The
+    admission set is the run's ordinary test selection — a filter, an
+    exclude, a tag selection, `--failed`, an in-source focus — and
+    nothing else: no VCS awareness, no run-to-run comparison, no store
+    of tests seen before. `--shard` and `--quick` narrow work rather
+    than naming tests and do not designate on their own; a run that
+    designates nothing refuses, naming the survey as the question it
+    probably meant. *Prevents:* silent misses that admit by omission;
+    Law 15 violations by the back door; a working-tree model the
+    framework cannot own.
+    (b) *An admission run persists nothing.* No verdict file is
+    written, none is read, and an existing one is left byte-intact.
+    *Prevents:* fabricated claims about the mutants an early stop never
+    tried; selection-relative poisoning of the merge; the forbidden
+    cache.
+    (c) *A per-test ruling is three-valued data, and a capped ruling
+    says so* — admitted (with its witness and, when unusual, its
+    cause), unjustified (the faults tried, with the cap stated when it
+    bit), no sites (the cause when determinable). A fault counts as
+    tried for a test only when that test ran to an outcome of its own
+    under it: a skip watched nothing, and a fork the test merely rode
+    along in charges no try, though a kill observed there still admits.
+    *Prevents:* capped rulings posing as exhaustive; conflating
+    "couldn't be tested" with "wasn't caught"; a skipped test billed as
+    an unobservant one.
+    (d) *NO SITES never fails a run.* The partition is decided before
+    any fork and is never consulted by the exit predicate.
+    *Prevents:* punishing legitimate tests of data and glue; teaching
+    agents to delete tests to go green.
+    (e) *An admit transcript makes only per-test claims* — never a
+    survivor list, a mutation score, or any other project-level
+    statement. *Prevents:* an admission report posing as the survey's
+    answer; killed-anywhere-wins confusion read into a one-suite
+    question.
