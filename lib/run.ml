@@ -95,8 +95,13 @@ type fixture_entry = {
   fx_release : (unit -> unit) option;
 }
 
+type subject = Test | Fixture_release | Stale_baselines
+
+let fixture_release_path = [ "fixture release" ]
+
 type result = {
   path : string list;
+  subject : subject;
   outcome : Failure.outcome;
   counted : bool;
   xfail : Test_tree.xfail option;

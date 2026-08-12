@@ -328,7 +328,7 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
       | Error error ->
           (* The message is already on stderr; this runner owns the exit. *)
           exit (Runner.startup_exit_code error)
-      | Ok (outcome, results) ->
+      | Ok outcome ->
           if config.Run.list_only then begin
             List.iter
               (fun case ->
@@ -338,7 +338,8 @@ let run_suite ~argv ~suite ~config ~coverage_mode ~output tests =
           end;
           Option.iter
             (Driver.write_junit ~invocation ~suite
-               ~duration:outcome.Runner.duration ~results)
+               ~duration:outcome.Runner.duration
+               ~results:(Run.results outcome.Runner.run))
             config.Run.junit;
           if
             outcome.Runner.focus_active

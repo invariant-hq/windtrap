@@ -230,8 +230,13 @@ val startup_message : startup_error -> string
 
 type outcome = {
   run : Run.t;
-      (** The run record: results in execution order, the snapshot registry
-          (acceptance {!Snapshot.writes} included), and the coverage seam. *)
+      (** The run record: results in execution order — every executed test's
+          row, then the end-of-run verdict rows ({!Run.type-subject}): one
+          {!Run.Fixture_release} row per failed fixture teardown and the
+          {!Run.Stale_baselines} row of a failed [--strict-snapshots] check —
+          plus the snapshot registry (acceptance {!Snapshot.writes} included)
+          and the coverage seam. Every sink projects this one list, so a verdict
+          that sets the exit code is always visible in the report. *)
   selected : Test_tree.case list;
       (** The selected tests in execution order — the [-l] listing data. Under
           [--bail] some may not have executed. *)
@@ -246,16 +251,14 @@ type outcome = {
           the exit code and the last-failed store, in execution order: failures
           not expected by [xfail], plus expected-failure tests that passed (see
           the preamble, {e Expected failures}). *)
-  release_failures : Failure.t list;
-      (** {!Failure.Release}-phase failures from end-of-run fixture teardowns,
-          in release order. Any entry makes {!outcome.exit_code} [1]. *)
   orphans : string list;
       (** Baselines still stale when the run ended ({!Snapshot.orphans}, minus
           whatever a granted [--prune] deleted), reported only after a full,
           clean run — no filters, focus, bail, skips, or failures — and [[]]
           otherwise. Reporting never deletes; the deletions are
           {!outcome.pruned}. Nonempty under [config.strict_snapshots] makes
-          {!outcome.exit_code} [1]. *)
+          {!outcome.exit_code} [1] and records the {!Run.Stale_baselines}
+          verdict row. *)
   pruned : (string list, Snapshot.prune_refusal) result option;
       (** [Some] iff [config.prune] requested pruning: the deleted paths, or the
           refusal for renderers to explain. [None] otherwise. *)
@@ -263,11 +266,12 @@ type outcome = {
   exit_code : int;
       (** [1] when any test counted as failed ({!outcome.failed_paths}
           nonempty), any release failed, or [config.strict_snapshots] is set and
-          {!outcome.orphans} is nonempty; else [2] when no test executed (empty
-          suite or empty selection — the filter-typo case); else [0] — a
-          nonempty selection whose every test skipped is deliberate and exits
-          [0], and so does a run whose only failures were expected ([xfail]).
-          List-only runs exit [0]. *)
+          {!outcome.orphans} is nonempty — equivalently, when any recorded row
+          counted as failed; else [2] when no test executed (empty suite or
+          empty selection — the filter-typo case); else [0] — a nonempty
+          selection whose every test skipped is deliberate and exits [0], and so
+          does a run whose only failures were expected ([xfail]). List-only runs
+          exit [0]. *)
 }
 (** The type for completed runs: everything renderers project and the facade
     needs to exit. *)

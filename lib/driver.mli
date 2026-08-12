@@ -13,11 +13,11 @@
     drift apart byte-wise. The five producers are renderer construction
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
     ({!github_start}, {!github_end}, {!github_annotations}), the snapshot/prune
-    report ({!report_snapshots} and {!stale_baseline_results}), and the coverage
-    seam ({!snapshot_coverage}, {!coverage_summary}, {!coverage_report});
-    {!execute_and_report} is the order they run in, around {!Runner.execute}. A
-    runner that composed them itself would be free to get that order wrong,
-    which is the same drift by another route.
+    report ({!report_snapshots}), and the coverage seam ({!snapshot_coverage},
+    {!coverage_summary}, {!coverage_report}); {!execute_and_report} is the order
+    they run in, around {!Runner.execute}. A runner that composed them itself
+    would be free to get that order wrong, which is the same drift by another
+    route.
 
     What the runners legitimately do {e not} share stays visible at their call
     sites, as an argument to {!execute_and_report} or a line in the thin
@@ -147,14 +147,15 @@ val report_snapshots :
     [pruned <path>] lines of a granted [--prune], or the
     [stale baseline: <path>] lines with the prune refusal's explanation, or the
     stale-baseline lines with the removal hint spelled from [invocation]
-    ([<exe> -u --prune] under [`Exe],
-    [WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest] under [`Mirrors]).
+    ({!Render.stale_lines_with_hint} — the line class the [--strict-snapshots]
+    failure block shares).
 
-    The stale-baseline lines are dropped when {!stale_baseline_results} already
-    carried them into the failure section — under [--strict-snapshots] they are
-    the failure, and naming the files twice in one transcript is noise. A prune
-    refusal's explanation still prints: it says why the deletion did not happen,
-    which the failure does not.
+    The stale-baseline lines are dropped when the runner recorded the
+    {!Run.Stale_baselines} verdict row, which carries the same lines into the
+    failure section — under [--strict-snapshots] they are the failure, and
+    naming the files twice in one transcript is noise. A prune refusal's
+    explanation still prints: it says why the deletion did not happen, which the
+    failure does not.
 
     Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
     summary. *)
@@ -186,41 +187,6 @@ val coverage_summary :
     the report modes print their own line ({!coverage_report}), and [`Off]
     prints nothing. *)
 
-val stale_baseline_results :
-  invocation:Render.invocation -> Runner.outcome -> Run.result list
-(** [stale_baseline_results ~invocation outcome] is the one-row projection of a
-    [--strict-snapshots] verdict: a counted [Fail] result at path
-    ["stale baselines"] whose message is exactly the [stale baseline: <path>]
-    lines and the removal hint {!report_snapshots} would otherwise print — when
-    [config.strict_snapshots] is set and {!Runner.outcome.orphans} is nonempty,
-    the same condition {!Runner.execute} turned into exit code [1]. [[]]
-    otherwise, which includes every run that was not full and clean: such a run
-    computes no orphans, so the check is silently inapplicable.
-
-    It exists for the reason {!results_with_releases} does — the verdict must
-    reach the sinks that project results, or the run exits [1] under a summary
-    that says every test passed — and it is not recorded into the run for the
-    same reason either. *)
-
-(** {1:releases Fixture release failures} *)
-
-val results_with_releases : Runner.outcome -> Run.result list
-(** [results_with_releases outcome] is the run's results followed by one
-    synthetic result per fixture-release failure.
-
-    Releases run after the last test, so their failures never enter
-    {!Run.results} — {!Runner.outcome.release_failures} carries them beside it,
-    and every sink (terminal, JUnit, GitHub) projects results. This is the
-    projection: a [Fail] result at path ["fixture release"], counted, carrying
-    the failure with its [Release] phase and the fixture's declaration site. Law
-    8 requires body and release failures both to be reported; without this the
-    run exits [1] with a report that says everything passed.
-
-    The synthetic results are not recorded into the run, and must not be:
-    {!Runner} decides whether the whole suite executed by comparing the result
-    count against the selected count, so an extra row there would disable orphan
-    reporting and [--prune]. *)
-
 val coverage_report :
   Render.t ->
   coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
@@ -247,22 +213,21 @@ val execute_and_report :
   config:Run.config ->
   suite:string ->
   Test_tree.t list ->
-  (Runner.outcome * Run.result list, Runner.startup_error) result
+  (Runner.outcome, Runner.startup_error) result
 (** [execute_and_report ~invocation ~seed ~selection ~github ~output
      ~coverage_mode ~config ~suite tests] runs [tests] as suite [suite] and
     writes the run's whole report on standard output, composing the producers
     above in the one order both runners use: {!val:renderer} and {!observe},
     {!github_start}, {!Runner.execute}, then — for a run that happened —
-    {!results_with_releases} and {!stale_baseline_results},
     {!snapshot_coverage}, {!Render.finish} (its [?coverage] from
-    {!coverage_summary}), {!coverage_report}, {!report_snapshots},
-    {!github_end}, {!github_annotations}, and a flush of both standard
-    formatters.
+    {!coverage_summary}) over {!Run.results}, {!coverage_report},
+    {!report_snapshots}, {!github_end}, {!github_annotations}, and a flush of
+    both standard formatters.
 
-    [Ok (outcome, results)] carries the outcome and the results
-    {e as the sinks saw them} — {!Run.results} plus the synthetic release rows
-    and the [--strict-snapshots] stale-baselines row — for the caller's own
-    transports and exit code.
+    [Ok outcome] is {!Runner.execute}'s outcome, reported. {!Run.results} is the
+    list every sink projected — the runner's verdict rows included
+    ({!Run.type-subject}) — so a caller's own transport (JUnit) reads the same
+    rows the terminal showed.
 
     [seed] and [selection] are {!observe}'s two header policies, passed through
     rather than derived: the runners genuinely disagree about both, and the
@@ -285,10 +250,9 @@ val execute_and_report :
     the transcript, and annotations are the part a reviewer must see without
     unfolding anything.
 
-    A [config.list_only] run reports nothing and is [Ok (outcome, [])]:
-    {!Runner.execute} applied the startup checks and the selection without
-    running a test, so there is no run to project — the caller prints the
-    listing.
+    A [config.list_only] run reports nothing: {!Runner.execute} applied the
+    startup checks and the selection without running a test, so there is no run
+    to project — the caller prints the listing.
 
     [Error error] is a refused startup: {!github_end} has closed the envelope
     and {!Runner.startup_message} is already on [stderr], so all the caller

@@ -816,16 +816,18 @@ let inline_exit_code (outcome : Runner.outcome) =
             | Failure.Pass | Failure.Skip _ -> false)
           (Run.results outcome.Runner.run)
       in
-      let is_covered result =
-        Option.value ~default:false
-          (Hashtbl.find_opt !state.covered result.Run.path)
+      (* Only a test row can be covered — the runner's verdict rows (a
+         failed fixture release, the strict stale-baselines check) are
+         [Fail] rows no correction can cover, so they hold the exit at 1
+         through the same predicate as any uncovered failure. The subject
+         check, not the path lookup, is what says so: a covered test whose
+         name spells a verdict label must not excuse the verdict. *)
+      let is_covered (result : Run.result) =
+        result.Run.subject = Run.Test
+        && Option.value ~default:false
+             (Hashtbl.find_opt !state.covered result.Run.path)
       in
-      if
-        failed <> []
-        && List.for_all is_covered failed
-        && outcome.Runner.release_failures = []
-      then 0
-      else 1
+      if failed <> [] && List.for_all is_covered failed then 0 else 1
 
 (* The stderr trace of written corrections. Dune runs one sandboxed
    action per library — every partition's runner concurrently, then the
@@ -1237,14 +1239,15 @@ let run_inline_suite ~suite ~config ~coverage_mode ~output tests =
           (* The message is already on stderr; this runner returns the code
          for [exit] to combine with the correction protocol. *)
           Runner.startup_exit_code error
-      | Ok (outcome, results) ->
+      | Ok outcome ->
           (* An inline partition is a suite like any other, and WINDTRAP_JUNIT
          is the only spelling that reaches it — the protocol has no CLI. It
          writes its own file under the directory form, which is what makes
          a report per partition possible at all. *)
           Option.iter
             (Driver.write_junit ~invocation:`Mirrors ~suite
-               ~duration:outcome.Runner.duration ~results)
+               ~duration:outcome.Runner.duration
+               ~results:(Run.results outcome.Runner.run))
             config.Run.junit;
           let written, unwritable = flush_corrections_report () in
           (* The correction-coverage exit-0 downgrade presumes the correction

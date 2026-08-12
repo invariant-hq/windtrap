@@ -705,12 +705,30 @@ val pp_run_duration : float -> string
     Everything derives from the typed payload: no formatting happens at failure
     sites. *)
 
-val headline : Failure.t -> string
+val headline : ?invocation:invocation -> Failure.t -> string
 (** [headline f] is a one-line, unstyled summary of [f]
     ([expected true, got false], [snapshot "help": no baseline], …), for
     transports that need a single-line field (JUnit [message] attributes).
     Newlines and escape codes cannot occur — payload-borne ANSI sequences are
-    stripped; long payload renderings are truncated with an ellipsis. *)
+    stripped; long payload renderings are truncated with an ellipsis.
+    [invocation], default [`Mirrors], spells the one hint that rides into a
+    summary: the {!Failure.Stale_baselines} removal hint, whose lines flatten
+    whole ({!stale_lines_with_hint}). *)
+
+val stale_lines : string list -> string list
+(** [stale_lines orphans] is one [stale baseline: <path>] line per orphan, in
+    order, paths spelled by {!Path_ops.display}. The one producer of the
+    stale-baseline line class: the [--strict-snapshots] failure block renders
+    the {!Failure.Stale_baselines} payload with it, and {!Driver}'s advisory
+    snapshot report prints the same lines, so the two surfaces cannot drift. *)
+
+val stale_lines_with_hint :
+  invocation:invocation -> string list -> string list
+(** [stale_lines_with_hint ~invocation orphans] is {!stale_lines} followed by
+    the removal hint, spelled from [invocation] like every other command hint:
+    [remove stale baselines: <exe> -u --prune] under [`Exe],
+    [remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest]
+    under [`Mirrors]. *)
 
 val is_subtest_failure : path:string list -> Failure.t -> bool
 (** [is_subtest_failure ~path f] is [true] iff [f]'s [msg] carries a subtest
@@ -799,7 +817,10 @@ val pp_failure :
       [`Mirrors] — because replaying a late case needs at least as many cases as
       the failing run generated; a declaration-site count replays without any
       flag;
-    - message: the text ([(empty failure message)] when it is empty).
+    - message: the text ([(empty failure message)] when it is empty);
+    - stale baselines: one [stale baseline: <path>] line per payload path and
+      the removal hint, exactly {!stale_lines_with_hint} spelled from the
+      invocation — the payload carries paths, never a pre-baked command.
 
     Every line is indented four spaces and the output ends with a newline. The
     captured-output tail is {e not} rendered here — it is per test, not per

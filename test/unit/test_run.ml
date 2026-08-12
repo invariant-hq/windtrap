@@ -725,6 +725,7 @@ let () =
   let r1 =
     {
       Run.path = [ "a" ];
+      subject = Run.Test;
       outcome = Failure.Pass;
       counted = false;
       xfail = None;
@@ -738,6 +739,7 @@ let () =
   let r2 =
     {
       Run.path = [ "g"; "b" ];
+      subject = Run.Test;
       outcome = Failure.Fail [ Failure.message "boom" ];
       counted = true;
       xfail = None;

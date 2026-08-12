@@ -357,8 +357,37 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
 
 (** {1:results Results} *)
 
+(** The type for what a result row reports on. The runner records one {!Test}
+    row per executed test and — because every sink projects the one recorded
+    list — one row per end-of-run verdict that no test owns: a fixture-release
+    failure, and the [--strict-snapshots] verdict. Consumers that reason about
+    tests (mutation verdicts, the last-failed store, full-run detection)
+    dispatch on this field, never on the reporting path: a test whose name
+    spells a verdict label must not alias a verdict row. *)
+type subject =
+  | Test  (** A declared test the runner executed. *)
+  | Fixture_release
+      (** An end-of-run fixture teardown that raised ({!release_fixtures}): one
+          row per failure, recorded when the release runs, carrying the
+          {!Failure.Release}-phase failure. *)
+  | Stale_baselines
+      (** The [--strict-snapshots] verdict — baselines still stale after a full,
+          clean run: at most one row per run, carrying
+          {!Failure.Stale_baselines} with the offending paths
+          ({!Runner.outcome.orphans}). *)
+
+val fixture_release_path : string list
+(** [fixture_release_path] is [["fixture release"]] — the reporting path of
+    {!Fixture_release} rows: one component, because no test owns a release.
+    Exported for the mutation loop's verdict vocabulary; row consumers dispatch
+    on {!result.subject}, never on this label. *)
+
 type result = {
-  path : string list;  (** The test's full path, groups first. *)
+  path : string list;
+      (** The row's reporting path: the test's full path (groups first) for a
+          {!Test} row, the verdict's one-component label otherwise
+          ({!fixture_release_path}, [["stale baselines"]]). *)
+  subject : subject;  (** What the row reports on; see {!type:subject}. *)
   outcome : Failure.outcome;  (** The classified outcome, failures inside. *)
   counted : bool;
       (** [true] iff the result counted as failed — the bit the runner drives
@@ -388,16 +417,20 @@ type result = {
           its recorded attempt; [None] otherwise. Renderers print the replay
           line of a failing stochastic test from it. *)
 }
-(** The type for per-test results, as recorded by the runner after a test
-    completes. Renderers project the accumulated list; the record carries every
-    fact rendering needs — outcome classification included — so no consumer
-    re-derives runner decisions from tables or messages. *)
+(** The type for result rows, as recorded by the runner — one per completed
+    test, plus the end-of-run verdict rows (see {!type:subject}). Verdict rows
+    are counted [Fail] rows with no annotation, no attempts beyond the first,
+    and zero duration. Renderers project the accumulated list; the record
+    carries every fact rendering needs — outcome classification included — so no
+    consumer re-derives runner decisions from tables or messages. *)
 
 val record : t -> result -> unit
 (** [record t result] appends [result] to the run's results. *)
 
 val results : t -> result list
-(** [results t] is the recorded results in execution order. *)
+(** [results t] is the recorded rows in execution order: every executed test's
+    row, then any fixture-release rows (release order), then the stale-baselines
+    row of a failed [--strict-snapshots] check, if any. *)
 
 (** {1:coverage Coverage seam}
 

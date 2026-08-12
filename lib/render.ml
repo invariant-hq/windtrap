@@ -95,6 +95,26 @@ let replay_line ?count ?max_shrink invocation ~seed ~filter =
         (shell_quote flt)
   | `Mirrors, None -> spf "replay: WINDTRAP_SEED=%s%s dune runtest" token env
 
+(* The one producer of the stale-baseline lines, shared by the
+   [--strict-snapshots] failure block ({!Failure.Stale_baselines}, below)
+   and the driver's advisory snapshot report: one spelling, so the failure
+   section and the advisory block cannot drift. [stale_lines] names the
+   offending files; everywhere a way out applies, the removal hint follows,
+   spelled — like every other command hint — from the run's
+   startup-computed invocation. *)
+let stale_lines orphans =
+  List.map
+    (fun path -> spf "stale baseline: %s" (Path_ops.display path))
+    orphans
+
+let stale_lines_with_hint ~invocation orphans =
+  let command =
+    match (invocation : invocation) with
+    | `Exe cmd -> cmd ^ " -u --prune"
+    | `Mirrors -> "WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
+  in
+  stale_lines orphans @ [ spf "remove stale baselines: %s" command ]
+
 let pp_duration secs =
   if secs >= 60. then
     (* Round to whole seconds first, or 119.6s prints as "1m60s". *)
@@ -190,7 +210,7 @@ let flat s =
        (function '\n' | '\r' | '\t' -> ' ' | c -> c)
        (Text.strip_ansi s))
 
-let headline (f : Failure.t) =
+let headline ?(invocation = `Mirrors) (f : Failure.t) =
   let base =
     match f.kind with
     | Failure.Equality { not_ = true; expected; _ } ->
@@ -253,6 +273,12 @@ let headline (f : Failure.t) =
         spf "property failed (%s): %s" desc (flat rendered)
     | Failure.Message "" -> "(empty failure message)"
     | Failure.Message m -> flat m
+    | Failure.Stale_baselines orphans ->
+        (* The block's lines flattened whole, removal hint included — the
+           bound truncates to the first files either way, and a summary that
+           dropped the hint would diverge from the block for no reader
+           gain. *)
+        flat (String.concat "\n" (stale_lines_with_hint ~invocation orphans))
   in
   match f.msg with None -> base | Some m -> spf "%s \u{2014} %s" (flat m) base
 
@@ -786,6 +812,13 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m ->
       List.iter (fun line -> put_ind line) (Text.split_lines m)
+  | Failure.Stale_baselines orphans ->
+      (* One line per offending file, then the way out — spelled here, at
+         render time, from the invocation: the payload carries paths, never
+         a pre-baked command. *)
+      List.iter put_ind
+        (if commands then stale_lines_with_hint ~invocation orphans
+         else stale_lines orphans)
 
 let pp_failure ~ansi ?(excerpt = false) ?filter ?(invocation = `Mirrors) ppf f =
   pp_gen ~ansi ~excerpt ~filter ~commands:true ~invocation ~ind:indent ppf f
@@ -1240,8 +1273,8 @@ let pp_block t (r : Run.result) =
       | None -> ())
 
 (* The summary counts REPORTED RESULTS, which is not the header's count of
-   selected tests: a failing fixture release arrives as a synthetic result
-   after the header printed (Driver.release_results), so a one-test suite
+   selected tests: a failing fixture release is recorded as a verdict row
+   after the header printed (Run.Fixture_release), so a one-test suite
    whose release raises reads "1 test" above and "1 passed, 1 failed" below.
    The two are answering different questions — what will run, what came
    back — and the extra row names itself in the block directly above, under

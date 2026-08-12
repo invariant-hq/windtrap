@@ -39,16 +39,17 @@ let make_run ?config ?snapshots () =
   let config = Option.value config ~default:(Run.default_config ()) in
   Run.create config ~capture:Capture.disabled ~snapshots
 
-let outcome ?config ?snapshots ?(orphans = []) ?pruned ?(release_failures = [])
-    () =
+let outcome ?config ?snapshots ?run ?(orphans = []) ?pruned () =
+  let run =
+    match run with Some run -> run | None -> make_run ?config ?snapshots ()
+  in
   {
-    Runner.run = make_run ?config ?snapshots ();
+    Runner.run;
     selected = [];
     total = 0;
     focus_active = false;
     bailed = false;
     failed_paths = [];
-    release_failures;
     orphans;
     pruned;
     duration = 0.1;
@@ -61,43 +62,6 @@ let report ?(output = `Compact) ?(invocation = `Mirrors) outcome =
   Driver.report_snapshots ~out ~output ~invocation outcome;
   Format.pp_print_flush out ();
   Buffer.contents buf
-
-(* Fixture release failures reach the sinks
-
-   Releases run after the last test, so their failures are not in
-   [Run.results] and every sink projects results — before
-   [results_with_releases] the run exited 1 while the terminal said
-   everything passed and the JUnit document reported failures="0". Law 8
-   requires body and release failures both to be reported. *)
-
-let release_failure name =
-  Failure.message (name ^ ": release raised Failure(\"boom\")")
-  |> Failure.with_phase Failure.Release
-
-let test_release_failures_reach_the_sinks () =
-  let clean = outcome () in
-  check "a clean run adds nothing"
-    (Driver.results_with_releases clean = Run.results clean.Runner.run);
-  let failed = outcome ~release_failures:[ release_failure "db" ] () in
-  match Driver.results_with_releases failed with
-  | [ r ] ->
-      check "the release failure is a counted failure" r.Run.counted;
-      check "it carries the Release phase"
-        (match r.Run.outcome with
-        | Failure.Fail [ f ] -> f.Failure.phase = Failure.Release
-        | _ -> false);
-      (* Renderers key off the path, so it must not read as a test. *)
-      check_string "it reports under its own path" ~expected:"fixture release"
-        ~actual:(Test_tree.path_to_string r.Run.path);
-      (* The run itself stays untouched: Runner decides "the whole suite
-         executed" by comparing the result count against the selected
-         count, and an extra row there disables orphans and --prune. *)
-      check "the run's own results are unchanged"
-        (Run.results failed.Runner.run = [])
-  | rs ->
-      check
-        (Printf.sprintf "expected one synthetic result, got %d" (List.length rs))
-        false
 
 (* The snapshot/prune report *)
 
@@ -168,41 +132,34 @@ let test_report_orphan_hint () =
 
 (* The --strict-snapshots verdict
 
-   [Runner] already folded it into the exit code; what this pins is that
-   the verdict also reaches the sinks that project results, and that the
-   same lines are printed exactly once. Without the row the run exits 1
-   under a summary saying every test passed — the defect
-   [results_with_releases] exists to prevent, in a second place. *)
+   The runner records the verdict as a result row ({!Run.Stale_baselines};
+   pinned at runner level in test_runner.ml), so the same stale lines reach
+   the failure section of every sink. What this pins is the report's side
+   of the bargain: the advisory block stands down when the run carries the
+   row — one printing — while a prune refusal keeps its explanation. *)
 
-let strict_config () =
-  { (Run.default_config ()) with Run.strict_snapshots = true }
+let strict_run ~orphans =
+  let run = make_run () in
+  Run.record run
+    {
+      Run.path = [ "stale baselines" ];
+      subject = Run.Stale_baselines;
+      outcome = Failure.Fail [ Failure.stale_baselines orphans ];
+      counted = true;
+      xfail = None;
+      slow_tagged = false;
+      duration = 0.;
+      attempts = 1;
+      prop_stats = None;
+      srandom_root = None;
+    };
+  run
 
-let test_strict_snapshots_row () =
+let test_strict_snapshots_report () =
   let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
-  let lines =
-    String.concat "\n"
-      (List.map
-         (fun p -> Printf.sprintf "stale baseline: %s" (Path_ops.display p))
-         orphans
-      @ [ "remove stale baselines: ./t.exe -u --prune" ])
-  in
-  let strict = outcome ~config:(strict_config ()) ~orphans () in
-  (match Driver.stale_baseline_results ~invocation:(`Exe "./t.exe") strict with
-  | [ r ] ->
-      check "the stale-baselines row is a counted failure" r.Run.counted;
-      check_string "it reports under its own path" ~expected:"stale baselines"
-        ~actual:(Test_tree.path_to_string r.Run.path);
-      check_string "it names the files and the way out" ~expected:lines
-        ~actual:
-          (match r.Run.outcome with
-          | Failure.Fail [ { Failure.kind = Failure.Message m; _ } ] -> m
-          | _ -> "<not a single message failure>")
-  | rs ->
-      check
-        (Printf.sprintf "expected one stale row, got %d" (List.length rs))
-        false);
   (* One printing: the advisory block stands down when the failure block
-     already carried the same lines. *)
+     already carried the same lines on the recorded row. *)
+  let strict = outcome ~run:(strict_run ~orphans) ~orphans () in
   check_string "the advisory block stands down under the flag" ~expected:""
     ~actual:(report ~invocation:(`Exe "./t.exe") strict);
   (* A refused prune still explains itself — the failure says what is
@@ -221,15 +178,7 @@ let test_strict_snapshots_row () =
       "prune refused: the run was not an update run (-u / WINDTRAP_UPDATE=1)\n"
     ~actual:
       (report ~invocation:(`Exe "./t.exe")
-         (outcome ~config:(strict_config ()) ~orphans ~pruned:(Error refusal) ()));
-  (* Off by default, and inapplicable with nothing stale. *)
-  check "no row without the flag"
-    (Driver.stale_baseline_results ~invocation:`Mirrors (outcome ~orphans ())
-    = []);
-  check "no row with nothing stale"
-    (Driver.stale_baseline_results ~invocation:`Mirrors
-       (outcome ~config:(strict_config ()) ())
-    = [])
+         (outcome ~run:(strict_run ~orphans) ~orphans ~pruned:(Error refusal) ()))
 
 (* The observer's header-seed policy *)
 
@@ -338,16 +287,14 @@ let tests =
     test "snapshot report: wrote lines and the quiet gate" test_report_writes;
     test "snapshot report: prune lines and refusals" test_report_prune;
     test "snapshot report: orphan hints per invocation" test_report_orphan_hint;
-    test "snapshot report: the --strict-snapshots verdict"
-      test_strict_snapshots_row;
+    test "snapshot report: the advisory stands down under --strict-snapshots"
+      test_strict_snapshots_report;
     test "observer: header-seed policy" test_observe_seed_policy;
     test "github envelope: bytes and gating" test_github_envelope;
     test "github envelope: composed around a transcript"
       test_github_envelope_composed;
     test "coverage seam: mode selection and the empty snapshot"
       test_coverage_seam;
-    test "fixture release failures reach the sinks"
-      test_release_failures_reach_the_sinks;
     (* One process per suite is the normal case under `dune runtest`, so a
        single fixed path would have each suite overwrite the last. The
        [.xml] suffix is what tells the two intents apart. *)

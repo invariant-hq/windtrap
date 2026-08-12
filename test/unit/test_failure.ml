@@ -399,6 +399,17 @@ let tests =
           (match f.F.kind with
           | F.Property { timed_out = Some 0.3; _ } -> true
           | _ -> false));
+    test "stale-baselines constructor" (fun () ->
+        (* Renderers derive the display spelling and the removal-hint command
+           from the paths: they are identities and must never be truncated. *)
+        let path = String.make 100_000 'p' in
+        let f = F.stale_baselines [ path; "b.snap" ] in
+        check "paths are stored unmodified"
+          (match f.F.kind with
+          | F.Stale_baselines [ p; "b.snap" ] -> String.equal p path
+          | _ -> false);
+        raises_match ~msg:"an empty verdict is rejected" Exn.invalid_arg
+          (fun () -> F.stale_baselines []));
     test "with_phase and with_output_tail" (fun () ->
         let f = F.message "boom" in
         let g = F.with_phase F.Teardown f in

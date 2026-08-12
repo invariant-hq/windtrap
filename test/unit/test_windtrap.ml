@@ -106,13 +106,13 @@ let () =
       Windtrap.run ~argv "focussuite" suite
   | _ -> ()
 
-(* The release-failure child (driver, "fixture releases"): re-exec'd to run
+(* The release-failure child (runner, "fixture releases"): re-exec'd to run
    the facade's [run] on a suite that touches a fixture whose teardown
-   raises. Releases run after the last test, so a release failure never
-   enters [Run.results] — only [Driver.results_with_releases] carries it to
-   the renderer and to JUnit. The one test passes, so a driver that
-   projected [Run.results] alone would print a clean transcript and count
-   zero JUnit failures while still exiting 1: exactly the defect. *)
+   raises. Releases run after the last test, and the runner records each
+   failure as a result row the moment it happens — the one recorded list
+   every sink (renderer, JUnit) projects. The one test passes, so a runner
+   that dropped the row would print a clean transcript and count zero JUnit
+   failures while still exiting 1: exactly the defect (Law 8). *)
 let leaky_release =
   fixture ~teardown:(fun () -> failwith "release-boom") (fun () -> ())
 
@@ -251,6 +251,13 @@ let expect_run name ?on_event ~config ?(suite = "suite") tests f =
 
 let result_of outcome path =
   List.find_opt (fun r -> r.Run.path = path) (Run.results outcome.Runner.run)
+
+(* The end-of-run fixture-release rows the runner records beside the test
+   rows (one result model), identified by their subject. *)
+let release_rows outcome =
+  List.filter
+    (fun (r : Run.result) -> r.Run.subject = Run.Fixture_release)
+    (Run.results outcome.Runner.run)
 
 let outcome_of outcome path =
   match result_of outcome path with
@@ -552,8 +559,9 @@ let () =
   let suite = [ test "touch" (fun () -> failing_release ()) ] in
   expect_run "release failure" ~config suite @@ fun outcome ->
   check "release failure is a Release-phase entry"
-    (match outcome.Runner.release_failures with
-    | [ f ] -> f.Failure.phase = Failure.Release
+    (match release_rows outcome with
+    | [ { Run.outcome = Failure.Fail [ f ]; _ } ] ->
+        f.Failure.phase = Failure.Release
     | _ -> false);
   check_int "release failure exits 1" ~expected:1
     ~actual:outcome.Runner.exit_code
@@ -994,8 +1002,9 @@ let () =
   let suite = [ test "touch" (fun () -> release_wants_scratch ()) ] in
   expect_run "temp_dir in fixture release" ~config suite @@ fun outcome ->
   check "temp_dir in a fixture release is a Release-phase failure"
-    (match outcome.Runner.release_failures with
-    | [ f ] -> f.Failure.phase = Failure.Release
+    (match release_rows outcome with
+    | [ { Run.outcome = Failure.Fail [ f ]; _ } ] ->
+        f.Failure.phase = Failure.Release
     | _ -> false);
   check_int "temp_dir in fixture release exits 1" ~expected:1
     ~actual:outcome.Runner.exit_code

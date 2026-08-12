@@ -187,62 +187,13 @@ let explain_prune_refusal (refusal : Snapshot.prune_refusal) =
   in
   "prune refused: " ^ String.concat "; " blockers
 
-(* The one producer of the stale-baseline lines. [stale_lines] names the
-   offending files; a refused [--prune] stops there, because its blockers
-   replace the way out. Everywhere else the removal hint follows, spelled —
-   like every other command hint — from the run's startup-computed
-   invocation. Both spellings feed the advisory block below and the
-   [--strict-snapshots] failure that block becomes, so the two cannot
-   drift. *)
-let stale_lines orphans =
-  List.map (fun path -> Pp.str "stale baseline: %s" (display_path path)) orphans
-
-let stale_lines_with_hint ~invocation orphans =
-  let command =
-    match (invocation : Render.invocation) with
-    | `Exe cmd -> cmd ^ " -u --prune"
-    | `Mirrors -> "WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
-  in
-  stale_lines orphans @ [ Pp.str "remove stale baselines: %s" command ]
-
-(* [--strict-snapshots] is a verdict, so it needs a row in the results every
-   sink projects — the same reason fixture-release failures get one (see
-   [release_results]). Without it the run exits 1 under a summary that says
-   every test passed. The row carries the stale lines themselves, and
-   [report_snapshots] then drops its advisory copy: one printing, one
-   producer. Its path is one component, like a release failure's, so it
-   cannot collide with a declared test path. *)
-let stale_path = "stale baselines"
-
-(* The verdict itself: [Runner] already folded it into the exit code, and
-   this is the one place that re-derives it, for the two sinks that project
-   results rather than the outcome. *)
-let stale_is_fatal (outcome : Runner.outcome) =
-  (Run.config outcome.Runner.run).Run.strict_snapshots
-  && outcome.Runner.orphans <> []
-
-let stale_baseline_results ~invocation (outcome : Runner.outcome) =
-  if not (stale_is_fatal outcome) then []
-  else
-    [
-      {
-        Run.path = [ stale_path ];
-        outcome =
-          Failure.Fail
-            [
-              Failure.message
-                (String.concat "\n"
-                   (stale_lines_with_hint ~invocation outcome.Runner.orphans));
-            ];
-        counted = true;
-        xfail = None;
-        slow_tagged = false;
-        duration = 0.;
-        attempts = 1;
-        prop_stats = None;
-        srandom_root = None;
-      };
-    ]
+(* Whether the runner recorded the [--strict-snapshots] verdict row: the
+   row is the verdict, so the advisory block below reads the recorded fact
+   instead of re-deriving the runner's decision from configuration. *)
+let stale_row_recorded (outcome : Runner.outcome) =
+  List.exists
+    (fun (r : Run.result) -> r.Run.subject = Run.Stale_baselines)
+    (Run.results outcome.Runner.run)
 
 let report_snapshots ~out ~output ~invocation (outcome : Runner.outcome) =
   if output <> `Quiet then begin
@@ -261,18 +212,18 @@ let report_snapshots ~out ~output ~invocation (outcome : Runner.outcome) =
        failure section on the stale-baselines row: naming the files twice,
        ten lines apart, is noise, not emphasis. *)
     let advisory =
-      if stale_is_fatal outcome then [] else outcome.Runner.orphans
+      if stale_row_recorded outcome then [] else outcome.Runner.orphans
     in
     match outcome.Runner.pruned with
     | Some (Ok deleted) ->
         put (List.map (fun p -> Pp.str "pruned %s" (display_path p)) deleted)
     | Some (Error refusal) ->
-        put (stale_lines advisory);
+        put (Render.stale_lines advisory);
         Format.fprintf out "%s@." (explain_prune_refusal refusal)
     | None -> (
         match advisory with
         | [] -> ()
-        | orphans -> put (stale_lines_with_hint ~invocation orphans))
+        | orphans -> put (Render.stale_lines_with_hint ~invocation orphans))
   end
 
 (* The coverage seam *)
@@ -330,40 +281,6 @@ let snapshot_coverage run =
       }
   end;
   collection
-
-(* The path a release failure reports under. Not a test path — no test owns
-   a release — so it is a single component that cannot collide with one: a
-   declared path component may not contain the separator. *)
-let release_path = "fixture release"
-
-(* Fixture releases (Run.release_fixtures)
-
-   Releases run after the last test, so a release failure never enters
-   [Run.results] — [Runner] carries it beside them, and every sink projects
-   results. Give it one: a synthetic result per failure, built here so both
-   runners get the same thing and no sink has to learn a second shape.
-
-   Deliberately NOT recorded into the run. [Runner] decides "did the whole
-   suite execute" as [List.length results = total], and an extra row there
-   would silently disable orphan reporting and [--prune]. *)
-let release_results (outcome : Runner.outcome) =
-  List.map
-    (fun failure ->
-      {
-        Run.path = [ release_path ];
-        outcome = Failure.Fail [ failure ];
-        counted = true;
-        xfail = None;
-        slow_tagged = false;
-        duration = 0.;
-        attempts = 1;
-        prop_stats = None;
-        srandom_root = None;
-      })
-    outcome.Runner.release_failures
-
-let results_with_releases outcome =
-  Run.results outcome.Runner.run @ release_results outcome
 
 let coverage_summary ~coverage_mode run =
   match coverage_mode with
@@ -428,15 +345,13 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ()) ~invocation
       (* Nothing ran, so there is nothing to project: [Runner.execute]
          applied the startup checks and the selection and stopped. The
          caller prints the listing it asked for. *)
-      Ok (outcome, [])
+      Ok outcome
   | Ok outcome ->
-      (* Release failures and a strict stale-baseline verdict ride with the
-         results: both are part of the run's verdict (both set the exit
-         code), so every sink must see them. *)
-      let results =
-        results_with_releases outcome
-        @ stale_baseline_results ~invocation outcome
-      in
+      (* The one recorded list: test rows plus the runner's verdict rows
+         (fixture-release failures, the strict stale-baselines verdict).
+         Every sink projects it, so a verdict that sets the exit code is
+         always visible in the report. *)
+      let results = Run.results outcome.Runner.run in
       let coverage_data = snapshot_coverage outcome.Runner.run in
       Render.finish renderer
         ?coverage:(coverage_summary ~coverage_mode outcome.Runner.run)
@@ -451,4 +366,4 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ()) ~invocation
       github_annotations ~github ~invocation results;
       Format.pp_print_flush Format.std_formatter ();
       Format.pp_print_flush Format.err_formatter ();
-      Ok (outcome, results)
+      Ok outcome

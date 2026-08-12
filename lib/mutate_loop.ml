@@ -36,7 +36,7 @@ let catalogue = lazy (M.catalogue ())
 let instrumented () = Lazy.force catalogue <> []
 
 type run =
-  | Ran of (Runner.outcome * Run.result list, Runner.startup_error) result
+  | Ran of (Runner.outcome, Runner.startup_error) result
   | Reported of int
 
 let note fmt =
@@ -53,11 +53,6 @@ let refuse fmt =
       Reported 1)
     fmt
 
-(* The pseudo-path a fixture-release failure is reported under, matching
-   the one Driver gives its synthetic release results: no test owns a
-   release, and a declared path component may not contain the separator,
-   so it cannot collide with one. *)
-let release_path = [ "fixture release" ]
 let saturating_add x y = if x > max_int - y then max_int else x + y
 
 (* The spine's arguments, threaded whole
@@ -399,37 +394,46 @@ let counted_failure (r : Run.result) =
   r.Run.counted
   && match r.Run.outcome with Failure.Fail _ -> true | _ -> false
 
-(* Whether a run that had a mutant armed detected it: a counted failure, or
-   a fixture release that failed. Read off the results and never off
+(* Whether a run that had a mutant armed detected it: a counted failure on
+   a test row, or a fixture-release row. Read off the results and never off
    [outcome.exit_code] (Law 16c): the exit code answers a different
    question — it is [2] for a selection that matched nothing, which is a
-   statement about a filter and not about a mutant. *)
+   statement about a filter and not about a mutant. The stale-baselines
+   verdict row never kills, for the same reason it is excluded everywhere
+   here: staleness is a statement about the baseline store and the child's
+   pruned selection, not about the mutant. *)
+let kills (r : Run.result) =
+  counted_failure r && r.Run.subject <> Run.Stale_baselines
+
+let executed_test (r : Run.result) = r.Run.subject = Run.Test
+
 let killed_by (outcome : Runner.outcome) =
-  List.exists counted_failure (Run.results outcome.Runner.run)
-  || outcome.Runner.release_failures <> []
+  List.exists kills (Run.results outcome.Runner.run)
 
 let encode_outcome ~paths (outcome : Runner.outcome) =
   let results = Run.results outcome.Runner.run in
-  match List.find_opt counted_failure results with
+  (* Test rows precede the verdict rows, so a failing test wins the
+     witness slot over a failing release. *)
+  match List.find_opt kills results with
+  | Some { Run.subject = Run.Fixture_release; _ } -> "killed release"
   | Some result -> (
       match index_of result.Run.path paths with
       | Some i -> spf "killed %d" i
       | None -> "crashed")
   | None ->
-      if outcome.Runner.release_failures <> [] then "killed release"
-        (* A child that recorded nothing did not survive the mutant, it
-           failed to test it: reporting a survivor here would send the
-           reader to strengthen tests that never ran. The pruned tree is
-           the dry run's own executed paths, so this is unreachable — and
-           a false survivor is the one failure mode that makes people stop
-           running the tool, so it is not left to be unreachable. *)
-      else if results = [] && paths <> [] then "crashed"
+      (* A child that recorded no test row did not survive the mutant, it
+         failed to test it: reporting a survivor here would send the
+         reader to strengthen tests that never ran. The pruned tree is
+         the dry run's own executed paths, so this is unreachable — and
+         a false survivor is the one failure mode that makes people stop
+         running the tool, so it is not left to be unreachable. *)
+      if (not (List.exists executed_test results)) && paths <> [] then "crashed"
       else "survived"
 
 let decode_verdict ~paths line =
   match String.split_on_char ' ' (String.trim line) with
   | [ "survived" ] -> Ok (M.survived paths)
-  | [ "killed"; "release" ] -> Ok (M.Killed (M.Failed release_path))
+  | [ "killed"; "release" ] -> Ok (M.Killed (M.Failed Run.fixture_release_path))
   | [ "killed"; index ] -> (
       match int_of_string_opt index with
       | Some i when i >= 0 && i < List.length paths ->
@@ -618,7 +622,12 @@ let probe_line ~armed ~paths ~config ~suite tests (_ : Unix.file_descr) =
   match Runner.execute ~config ~suite (pruned_to paths tests) with
   | Error error -> "error " ^ one_line (Runner.startup_message error)
   | Ok outcome ->
-      let results = Run.results outcome.Runner.run in
+      (* Test rows only: the probe's counts answer "did the same tests run
+         the same way", and a verdict row (a failed release, a stale
+         baseline over the pruned selection) is not a test. *)
+      let results =
+        List.filter executed_test (Run.results outcome.Runner.run)
+      in
       let skipped =
         List.length
           (List.filter
@@ -897,7 +906,7 @@ let loop renderer spine ~(config : Run.config) ~limit tests =
   (* The startup message is already on stderr; a refused run never
      produced a number. *)
   | Error _ -> Reported 1
-  | Ok (outcome, _) -> (
+  | Ok outcome -> (
       (* The last test's teardown window. *)
       ignore (M.drain ());
       let executed = List.rev reach.executed in
@@ -1333,7 +1342,7 @@ let admit_loop renderer spine ~(config : Run.config) ~limit ~tries tests =
   (* The startup message is already on stderr; a refused run never
      produced a verdict. *)
   | Error _ -> Reported 1
-  | Ok (outcome, results) ->
+  | Ok outcome ->
       (* The last test's teardown window. *)
       ignore (M.drain ());
       let executed = List.rev reach.executed in
@@ -1361,7 +1370,7 @@ let admit_loop renderer spine ~(config : Run.config) ~limit ~tries tests =
               "admit: the selection matches no test in this suite, so there \
                is nothing to admit here; the suite that declares the \
                selected tests answers for them";
-            Ran (Ok (outcome, results)))
+            Ran (Ok outcome))
       else if outcome.Runner.exit_code <> 0 then
         refuse
           "the dry run is red. Admission judges tests against a green \
@@ -1379,7 +1388,7 @@ let admit_loop renderer spine ~(config : Run.config) ~limit ~tries tests =
             (fun (r : Run.result) ->
               r.Run.xfail = None
               && match r.Run.outcome with Failure.Pass -> true | _ -> false)
-            results
+            (Run.results outcome.Runner.run)
         in
         if designated = [] then
           refuse
@@ -1637,9 +1646,8 @@ let arm_mode renderer spine ~(config : Run.config) tests =
          line says which — except on exit 2, where the run made no claim
          about the mutant at all. *)
       (match result with
-      | Ok (outcome, _) when killed_by outcome ->
-          Render.mutation_killed renderer
-      | Ok (outcome, _) when outcome.Runner.exit_code <> 2 -> (
+      | Ok outcome when killed_by outcome -> Render.mutation_killed renderer
+      | Ok outcome when outcome.Runner.exit_code <> 2 -> (
           match M.armed_hits () with
           | 0 -> Render.mutation_not_evaluated renderer
           | hits -> Render.mutation_survived renderer ~hits)

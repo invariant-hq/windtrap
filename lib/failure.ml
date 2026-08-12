@@ -51,6 +51,7 @@ type kind =
       inner : t option;
     }
   | Message of string
+  | Stale_baselines of string list
 
 and t = {
   kind : kind;
@@ -262,6 +263,12 @@ let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
        })
 
 let message ?loc text = make ?loc (Message (cap text))
+
+let stale_baselines paths =
+  if paths = [] then invalid_arg "Failure.stale_baselines: paths is empty";
+  (* Paths are identities: renderers derive the display spelling and the
+     removal-hint command from them, so they are stored unmodified. *)
+  make (Stale_baselines paths)
 
 (* Updating *)
 

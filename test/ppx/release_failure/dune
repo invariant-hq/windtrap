@@ -1,9 +1,9 @@
 ; Release-failure regression, inline runner (Law 8): a fixture teardown that
 ; raises must be REPORTED, not merely counted in the exit code. Releases run
-; after the last test, so the failure never enters Run.results; only
-; Driver.results_with_releases carries it to the renderer, and both runners
-; must compose it. Reverting lib/ppx_runtime.ml's call site to
-; Run.results left the whole suite green before this fixture existed.
+; after the last test; the runner records each failure as a result row the
+; moment it happens (one result model), and every sink projects the one
+; recorded list — a runner that dropped the row would leave the whole suite
+; green while still exiting 1, which this fixture pins at process level.
 ; runner_main.exe mirrors the inline_tests backend's generated runner;
 ; drive_release_failure.exe spawns it under a scrubbed environment and
 ; records the transcript and exit code.

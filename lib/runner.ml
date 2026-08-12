@@ -483,6 +483,7 @@ let run_case ~on_event run (case : Test_tree.case) =
       let result =
         {
           Run.path = case.Test_tree.path;
+          subject = Run.Test;
           outcome;
           (* The three rendering facts computed here and nowhere else (the
              record is the contract): whether the result counted as failed,
@@ -693,7 +694,6 @@ type outcome = {
   focus_active : bool;
   bailed : bool;
   failed_paths : string list;
-  release_failures : Failure.t list;
   orphans : string list;
   pruned : (string list, Snapshot.prune_refusal) result option;
   duration : float;
@@ -704,20 +704,45 @@ let release ~on_event run =
   Run.release_fixtures run ~announce:(fun name ->
       on_event (Fixture_release { name }))
 
+(* An end-of-run verdict recorded as a result row (one result model): every
+   sink projects the one recorded list, so a verdict that only rode the exit
+   code would leave the run exiting 1 under a summary that says every test
+   passed. Counted, unannotated, one attempt, no duration: renderers already
+   classify a failing row from those bits. *)
+let verdict_result ~subject ~path failures =
+  {
+    Run.path;
+    subject;
+    outcome = Failure.Fail failures;
+    counted = true;
+    xfail = None;
+    slow_tagged = false;
+    duration = 0.;
+    attempts = 1;
+    prop_stats = None;
+    srandom_root = None;
+  }
+
+let executed_test (result : Run.result) = result.Run.subject = Run.Test
+
 (* Runs the selected tests one at a time in declaration order, stopping once
-   [--bail]'s budget is spent. Returns whether it bailed and the paths that
-   counted as failed (see [counts_failed]) in execution order: what [--bail],
-   the exit code, and the store react to, never a recorded outcome alone —
-   expected [xfail] failures are recorded but never accumulate here. *)
+   [--bail]'s budget is spent. Returns whether it bailed, how many cases
+   executed (what full-run detection counts — never result rows, which the
+   verdict rows below would inflate), and the paths that counted as failed
+   (see [counts_failed]) in execution order: what [--bail], the exit code,
+   and the store react to, never a recorded outcome alone — expected [xfail]
+   failures are recorded but never accumulate here. *)
 let drive ~on_event run selected =
   let config = Run.config run in
   let bailed = ref false in
+  let executed = ref 0 in
   let rev_failed = ref [] in
   (try
      List.iter
        (fun case ->
          if not !bailed then begin
            let _result, failed = run_case ~on_event run case in
+           incr executed;
            if failed then
              rev_failed :=
                Test_tree.path_to_string case.Test_tree.path :: !rev_failed;
@@ -738,7 +763,7 @@ let drive ~on_event run selected =
      in
      (try ignore (Run.release_fixtures run ~announce) with _ -> ());
      Printexc.raise_with_backtrace exn backtrace);
-  (!bailed, List.rev !rev_failed)
+  (!bailed, !executed, List.rev !rev_failed)
 
 (* Rewrites the last-failed store at [path] with this run's failures. Entries
    for tests a partial run never reached survive; only a [full] run — one that
@@ -840,7 +865,6 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
         focus_active;
         bailed = false;
         failed_paths = [];
-        release_failures = [];
         orphans = [];
         pruned = None;
         duration = Clock.count_s started;
@@ -860,32 +884,51 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
     Run.with_active run @@ fun () ->
     on_event
       (Run_started { run; suite; total; selected = List.length selected });
-    let bailed, failed_paths = drive ~on_event run selected in
+    let bailed, executed, failed_paths = drive ~on_event run selected in
     (* Releases run after the last test, outside any per-test timeout,
-       including under --bail. *)
+       including under --bail. A failure here is part of the run's verdict,
+       so it is recorded the moment it happens: one row per failure, after
+       every test row. *)
     let release_failures = release ~on_event run in
+    List.iter
+      (fun failure ->
+        Run.record run
+          (verdict_result ~subject:Run.Fixture_release
+             ~path:Run.fixture_release_path [ failure ]))
+      release_failures;
     Capture.link_latest capture;
-    let results = Run.results run in
+    (* Store and snapshot maintenance range over executed tests: a verdict
+       row is not a test — counting one as skipped, failed, or executed
+       would silently disable orphan reporting and [--prune] and corrupt
+       the last-failed store. *)
+    let test_results = List.filter executed_test (Run.results run) in
     (* A full run executed the entire declared suite: only such a run may drop
        store entries for tests that no longer exist, report orphans, or
        prune. *)
-    let full = (not bailed) && List.length results = total in
-    update_last_failed (store_path config ~suite) ~full ~results ~failed_paths;
+    let full = (not bailed) && executed = total in
+    update_last_failed (store_path config ~suite) ~full ~results:test_results
+      ~failed_paths;
     let focused_count =
       List.length (List.filter (fun case -> case.Test_tree.focused) cases)
     in
     let orphans, pruned =
-      snapshot_maintenance config snapshots ~full ~results ~focused_count
+      snapshot_maintenance config snapshots ~full ~results:test_results
+        ~focused_count
     in
     (* [--strict-snapshots] turns the advisory report into a verdict. It
        rides on [orphans], so it inherits that field's gate for free: a run
        that was not full and clean computed no orphans, and a check that
        cannot tell "stale" from "not selected this time" must not fail
-       anything. *)
+       anything. The verdict is a result row like any other; renderers spell
+       the removal hint from the payload's paths at render time. *)
     let stale_baselines = config.Run.strict_snapshots && orphans <> [] in
+    if stale_baselines then
+      Run.record run
+        (verdict_result ~subject:Run.Stale_baselines ~path:[ "stale baselines" ]
+           [ Failure.stale_baselines orphans ]);
     let exit_code =
       if failed_paths <> [] || release_failures <> [] || stale_baselines then 1
-      else if results = [] then 2
+      else if executed = 0 then 2
       else 0
     in
     Ok
@@ -896,7 +939,6 @@ let execute ?(on_event = fun _ -> ()) ~config ~suite tests =
         focus_active;
         bailed;
         failed_paths;
-        release_failures;
         orphans;
         pruned;
         duration = Clock.count_s started;

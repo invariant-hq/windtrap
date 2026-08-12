@@ -147,7 +147,7 @@
 
 (** The type for what {!execute_and_report} did with the run. *)
 type run =
-  | Ran of (Runner.outcome * Run.result list, Runner.startup_error) result
+  | Ran of (Runner.outcome, Runner.startup_error) result
       (** The suite ran once, ordinarily — no loop, or a loop that never
           started. The caller finishes its own post-run work on it (JUnit, the
           focus warning, the correction protocol, the exit) exactly as it would

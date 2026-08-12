@@ -824,6 +824,44 @@ let test_headline () =
   check_contains "block: empty message named" ~sub:"(empty failure message)"
     (failure_block (Failure.message ""))
 
+(* The --strict-snapshots verdict's projection: the payload carries the
+   orphan paths and nothing else; the [stale baseline:] lines and the
+   removal hint — a command hint like any other — are spelled here, at
+   render time, from the invocation. The same producer feeds Driver's
+   advisory block, so the failure section and the advisory cannot drift. *)
+let test_stale_baselines_projections () =
+  let f = Failure.stale_baselines [ "/tmp/a.snap"; "/tmp/b.snap" ] in
+  check_string "block under Exe: the files, then the way out"
+    ~expected:
+      (Printf.sprintf
+         "    stale baseline: %s\n\
+         \    stale baseline: %s\n\
+         \    remove stale baselines: ./t.exe -u --prune\n"
+         (Path_ops.display "/tmp/a.snap")
+         (Path_ops.display "/tmp/b.snap"))
+    ~actual:(failure_block ~invocation:(`Exe "./t.exe") f);
+  check_contains "block under Mirrors: the hint spells the mirrors"
+    ~sub:
+      "remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
+    (failure_block f);
+  (* The line producers are the exported pair Driver's advisory block
+     prints — one spelling. *)
+  check "stale_lines_with_hint is stale_lines plus the hint"
+    (Render.stale_lines_with_hint ~invocation:(`Exe "./t.exe") [ "/tmp/a.snap" ]
+    = Render.stale_lines [ "/tmp/a.snap" ]
+      @ [ "remove stale baselines: ./t.exe -u --prune" ]);
+  (* The headline flattens the block's lines whole, hint included, into
+     the one-line bound (a short path, so nothing truncates here; real
+     baseline paths push the invocation-specific tail past the bound). *)
+  check_string "headline: files and hint flattened, invocation spelled"
+    ~expected:"stale baseline: a remove stale baselines: ./t -u --prune"
+    ~actual:
+      (Render.headline ~invocation:(`Exe "./t")
+         (Failure.stale_baselines [ "a" ]));
+  let long = Render.headline (Failure.stale_baselines [ "/tmp/a.snap" ]) in
+  check "headline: never multi-line, bounded"
+    ((not (String.contains long '\n')) && has ~sub:"..." long)
+
 let test_property_projections () =
   let example =
     Failure.property ~rendered:"Rect (2, 0)" ~case_index:0 ~shrink_steps:0
@@ -837,17 +875,17 @@ let test_property_projections () =
   check_absent "example: no seed token" ~sub:"WINDTRAP_SEED" b;
   (* A printerless counterexample is a placeholder, and the block says so
      once — under the counterexample, whichever placeholder shape the engine
-     produced ([<from: ...>], [<no printer>], [<example k>]). A printing
-     generator must never draw the advice. *)
+     produced ([<no printer>], [<example k>]). A printing generator must
+     never draw the advice. *)
   let printerless =
-    Failure.property ~rendered:"<from: (\"a\", 60000)>" ~case_index:19
-      ~shrink_steps:9 ~root:Fixtures.root ~examples:false ~printerless:true ()
+    Failure.property ~rendered:"<no printer>" ~case_index:19 ~shrink_steps:9
+      ~root:Fixtures.root ~examples:false ~printerless:true ()
   in
   let hint = "attach one with Gen.with_pp" in
   check_contains "printerless: names the remedy" ~sub:hint
     (failure_block printerless);
-  check_contains "printerless: keeps the provenance rendering"
-    ~sub:"counterexample (case 19, shrunk 9 steps): <from: (\"a\", 60000)>"
+  check_contains "printerless: keeps the placeholder rendering"
+    ~sub:"counterexample (case 19, shrunk 9 steps): <no printer>"
     (failure_block printerless);
   check_absent "printerless: advice is not repeated" ~sub:"add Gen.with_pp>"
     (failure_block printerless);
@@ -2569,6 +2607,8 @@ let tests =
     test "slow threshold zero disables the machinery" test_slow_threshold_zero;
     test "verbose gains the slow warnings" test_verbose_slow_warnings;
     test "headline projection" test_headline;
+    test "stale-baselines projections (one result model)"
+      test_stale_baselines_projections;
     test "property projections" test_property_projections;
     test "kind details" test_kind_details;
     test "degenerate equalities" test_degenerate_equalities;

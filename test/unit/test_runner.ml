@@ -49,6 +49,26 @@ let outcome_of outcome path =
   | Some r -> Some r.Run.outcome
   | None -> None
 
+(* The end-of-run fixture-release rows, in release order: recorded by the
+   runner beside the test rows (one result model), identified by their
+   subject — never by their reporting path, which a test name could spell. *)
+let release_rows outcome =
+  List.filter
+    (fun (r : Run.result) -> r.Run.subject = Run.Fixture_release)
+    (Run.results outcome.Runner.run)
+
+(* The one failure of a one-failure release row. *)
+let release_failure_of (r : Run.result) =
+  match r.Run.outcome with
+  | Failure.Fail [ f ] -> Some f
+  | Failure.Fail _ | Failure.Pass | Failure.Skip _ -> None
+
+(* The --strict-snapshots verdict rows (at most one per run). *)
+let stale_rows outcome =
+  List.filter
+    (fun (r : Run.result) -> r.Run.subject = Run.Stale_baselines)
+    (Run.results outcome.Runner.run)
+
 let failure_list = function
   | Some (Failure.Fail fs) -> fs
   | Some Failure.Pass | Some (Failure.Skip _) | None -> []
@@ -392,7 +412,7 @@ let () =
     check "the test passed within its window"
       (outcome_of outcome [ "tight" ] = Some Failure.Pass);
     check "the slow release completed, untimed and unfailed"
-      (!release_done && outcome.Runner.release_failures = []);
+      (!release_done && release_rows outcome = []);
     check "the run stayed green" (outcome.Runner.exit_code = 0))
 
 let () =
@@ -1431,7 +1451,7 @@ let () =
   check_int "acquisition was attempted once" ~expected:1 ~actual:!acquisitions;
   check "a skipped fixture is never announced for release" (not !announced);
   check "an unavailable optional resource does not turn the run red"
-    (outcome.Runner.exit_code = 0 && outcome.Runner.release_failures = [])
+    (outcome.Runner.exit_code = 0 && release_rows outcome = [])
 
 (* Duplicate paths *)
 
@@ -1492,7 +1512,7 @@ let () =
   expect_run "fixture suite runs" ~on_event ~config tests @@ fun outcome ->
   check "fixtures release in reverse acquisition order"
     (List.rev !order = [ "b"; "a" ]);
-  check "no release failures" (outcome.Runner.release_failures = []);
+  check "no release failures" (release_rows outcome = []);
   let events = List.rev !events in
   let is_finish = function Runner.Test_finished _ -> true | _ -> false in
   let is_release = function Runner.Fixture_release _ -> true | _ -> false in
@@ -1573,11 +1593,23 @@ let () =
   let fx = Run.fixture ~teardown:(fun _ -> raise Boom) (fun () -> ()) in
   let tests = [ Test_tree.test "acquires" (fun () -> ignore (fx ())) ] in
   expect_run "release-failure suite runs" ~config tests @@ fun outcome ->
-  (match outcome.Runner.release_failures with
-  | [ f ] ->
+  (match release_rows outcome with
+  | [ r ] ->
       check "a failing release is a Release-phase failure"
-        (f.Failure.phase = Failure.Release)
-  | _ -> check "one release failure" false);
+        (match release_failure_of r with
+        | Some f -> f.Failure.phase = Failure.Release
+        | None -> false);
+      (* The row is the verdict: counted, unannotated, reporting under the
+         release label after the test rows — what every sink projects. *)
+      check "the release row is a counted, unannotated failure"
+        (r.Run.counted && r.Run.xfail = None);
+      check "the release row reports under its own label"
+        (r.Run.path = Run.fixture_release_path);
+      check "the release row is recorded after the test rows"
+        (match List.rev (Run.results outcome.Runner.run) with
+        | last :: _ -> last == r
+        | [] -> false)
+  | _ -> check "one release row" false);
   check "a release failure exits 1, tests all green"
     (outcome.Runner.exit_code = 1
     && outcome_of outcome [ "acquires" ] = Some Failure.Pass)
@@ -1924,13 +1956,17 @@ let () =
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
   let base = base_config ~log_dir:(Filename.concat root "_logs") () in
   let suite = stale_suite root in
-  (* Default: advisory. The run is green and the stale file survives. *)
+  (* Default: advisory. The run is green, records no verdict row, and the
+     stale file survives. *)
   expect_run "a stale baseline is advisory by default" ~config:base suite
   @@ fun outcome ->
   check "the stale baseline is reported"
     (outcome.Runner.orphans = [ baseline root "gone" ]);
   check "but the run still passes" (outcome.Runner.exit_code = 0);
-  (* --strict-snapshots: the same run, now a failure. *)
+  check "no verdict row without the flag" (stale_rows outcome = []);
+  (* --strict-snapshots: the same run, now a failure — recorded as a result
+     row (one result model), so every sink that projects results sees the
+     verdict the exit code carries. *)
   let strict = { base with Run.strict_snapshots = true } in
   expect_run "--strict-snapshots fails on a stale baseline" ~config:strict suite
   @@ fun outcome ->
@@ -1938,6 +1974,25 @@ let () =
     (outcome.Runner.orphans = [ baseline root "gone" ]);
   check "and the run exits 1" (outcome.Runner.exit_code = 1);
   check "no test counted as failed" (outcome.Runner.failed_paths = []);
+  (match stale_rows outcome with
+  | [ r ] ->
+      check "the verdict row is a counted, unannotated failure"
+        (r.Run.counted && r.Run.xfail = None);
+      check "it reports under its own label" (r.Run.path = [ "stale baselines" ]);
+      check "it carries the orphan paths as structured data, no baked hint"
+        (match r.Run.outcome with
+        | Failure.Fail [ { Failure.kind = Failure.Stale_baselines ps; _ } ] ->
+            ps = [ baseline root "gone" ]
+        | _ -> false);
+      check "it is recorded last, after every test row"
+        (match List.rev (Run.results outcome.Runner.run) with
+        | last :: _ -> last == r
+        | [] -> false)
+  | rows ->
+      check
+        (Printf.sprintf "expected one stale-baselines row, got %d"
+           (List.length rows))
+        false);
   check "the stale file was not deleted"
     (Sys.file_exists (baseline root "gone"));
   (* The verdict inherits the orphan gate: a filtered run cannot tell
@@ -1948,6 +2003,7 @@ let () =
   @@ fun outcome ->
   check "a filtered run reports no orphans" (outcome.Runner.orphans = []);
   check "and stays green" (outcome.Runner.exit_code = 0);
+  check "and records no verdict row" (stale_rows outcome = []);
   (* Same for a run that did not finish clean: one failing test is enough. *)
   let dirty = [ Test_tree.test "boom" (fun () -> Check.fail "boom") ] @ suite in
   expect_run "--strict-snapshots is inapplicable after a failing run"
@@ -1992,6 +2048,29 @@ let () =
   check "the file is gone" (not (Sys.file_exists (baseline root "gone")));
   check "and the run is green" (outcome.Runner.exit_code = 0);
   check "the live baseline survived" (Sys.file_exists (baseline root "kept"));
+  clear_env ()
+
+(* The verdict rows are not tests: a release failure recorded into the run
+   must not count as an executed, failing test — that would disable
+   full-run detection and orphan reporting for exactly the runs that need
+   both. *)
+let () =
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let config = base_config ~log_dir:(Filename.concat root "_logs") () in
+  let fx =
+    Run.fixture ~teardown:(fun _ -> Check.fail "release-boom") (fun () -> ())
+  in
+  let suite =
+    stale_suite root @ [ Test_tree.test "t3" (fun () -> ignore (fx ())) ]
+  in
+  expect_run "release failure beside a stale baseline" ~config suite
+  @@ fun outcome ->
+  check "the release row does not gate orphan reporting"
+    (outcome.Runner.orphans = [ baseline root "gone" ]);
+  check "the release failure still fails the run"
+    (outcome.Runner.exit_code = 1 && List.length (release_rows outcome) = 1);
   clear_env ()
 
 (* The last-failed store *)
@@ -2189,7 +2268,7 @@ let () =
   expect_run "exit-release suite runs" ~config
     [ Test_tree.test "uses" (fun () -> ignore (fx ())) ]
   @@ fun outcome ->
-  (match outcome.Runner.release_failures with
+  (match List.filter_map release_failure_of (release_rows outcome) with
   | [ f ] ->
       check "exit during fixture release is a Release-phase failure"
         (f.Failure.phase = Failure.Release);
