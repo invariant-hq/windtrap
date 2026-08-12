@@ -13,6 +13,7 @@ recreating the walkthrough from the windtrap guide:
 - `08-coverage` — expression-level coverage from one inert `(instrumentation (backend ppx_windtrap))` stanza: `dune runtest --instrument-with ppx_windtrap` prints the inline percentage, `WINDTRAP_COVERAGE=report` the per-file detail, and `dune exec windtrap -- coverage --min 80` gates CI.
 - `09-coverage-aggregation` — merging `.coverage` files from several test executables into one project-wide report.
 - `10-stateful` — `stateful` over a bounded queue: one `command` per operation, a list as the model, preconditions that both exclude illegal calls and select the interesting state, and an `~invariant` on the per-case system from `~setup`.
+- `x-blueprint` — the canonical project layout, ready to copy: a library with both instrumentation stanzas, `test/{unit,failures,expect,cram}` with one suite per file, the project verdict aliases, a live `xfail` backlog, and a dismissed equivalent mutant — the shape the windtrap skill teaches, as a buildable project.
 
 Run them all with `dune runtest examples`, or one directly, e.g.
 `dune exec examples/01-first-test/test_mylib.exe`.

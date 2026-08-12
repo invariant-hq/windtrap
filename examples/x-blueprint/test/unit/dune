@@ -1,0 +1,10 @@
+; THE windtrap suite: one test stanza per file, one file per source
+; module. The snapshot deps glob is load-bearing: baselines are runtime
+; data, invisible to dune, and without it editing a baseline would not
+; re-trigger the test.
+
+(tests
+ (names test_slug test_stats)
+ (libraries windtrap windtrap_example_blueprint)
+ (deps
+  (glob_files_rec __snapshots__/**)))

@@ -1,0 +1,11 @@
+; Expect tests live here, not in lib/: a library stanza with
+; (inline_tests), depending on the code under test. dune drives the
+; inline runner; stale [%expect] payloads are accepted with dune
+; promote.
+
+(library
+ (name windtrap_example_blueprint_expect)
+ (inline_tests)
+ (libraries windtrap_example_blueprint)
+ (preprocess
+  (pps ppx_windtrap)))

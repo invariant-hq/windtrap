@@ -1,0 +1,6 @@
+; The binary the cram suite exercises. Private: cram depends on its
+; path, so no public_name is needed.
+
+(executable
+ (name main)
+ (libraries windtrap_example_blueprint))

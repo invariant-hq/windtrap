@@ -1,0 +1,8 @@
+; The known-bug backlog: one suite per issue, ordinary test stanzas.
+; Green while the bugs exist (xfail), loudly red the day one is fixed —
+; then the test moves to unit/ as a regression, the issue file dies,
+; and its name leaves this list.
+
+(tests
+ (names issue_1)
+ (libraries windtrap windtrap_example_blueprint))

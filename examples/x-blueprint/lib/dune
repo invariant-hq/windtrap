@@ -1,0 +1,10 @@
+; The library under test: two inert instrumentation stanzas, committed
+; once — zero overhead until the matching --instrument-with flag asks
+; for them — and no PPX or test code in lib/ itself.
+
+(library
+ (name windtrap_example_blueprint)
+ (instrumentation
+  (backend ppx_windtrap))
+ (instrumentation
+  (backend ppx_windtrap.mutate)))
