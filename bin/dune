@@ -10,4 +10,4 @@
  (name main)
  (public_name windtrap)
  (package windtrap)
- (libraries windtrap windtrap_coverage windtrap_mutate))
+ (libraries windtrap windtrap_coverage windtrap_instr windtrap_mutate))

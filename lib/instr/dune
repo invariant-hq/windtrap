@@ -1,0 +1,9 @@
+; The shared plumbing of the two instrumentation runtimes: the build-path
+; algebra, the writer identity, the atomic write, and the parser
+; scaffolding both file formats are built from. Stdlib only - through
+; either runtime it enters the closure of every instrumented library, so
+; it must never pull the windtrap core (or anything else) in.
+
+(library
+ (name windtrap_instr)
+ (public_name windtrap.instr))

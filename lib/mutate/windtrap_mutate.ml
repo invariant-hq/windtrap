@@ -3,11 +3,28 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+module Instr = Windtrap_instr
+
 (* Identity *)
 
 type id = { file : string; line : int; col : int; rewrite : string }
 
 let magic = "windtrap-mutants-v1"
+
+(* The constants Windtrap_instr's shared plumbing is parameterized by:
+   this format's magic line, its on-disk home, and the words its error
+   messages use. *)
+let format =
+  {
+    Instr.magic;
+    kind = "verdict";
+    dir = "_mutants";
+    ext = "mutants";
+    remedy =
+      "delete the stale files under _build/_mutants, then re-run the mutation \
+       tests";
+    who = "Windtrap_mutate";
+  }
 
 (* The closed rewrite vocabulary. Both the site table and every parser
    check against it: a rewrite name nobody can render is a report nobody
@@ -586,22 +603,14 @@ let pp_verdict ppf = function
 
 (* Collections *)
 
-type error =
+(* The shared plumbing's error type, re-exported with its constructors: a
+   verdict file fails in exactly the three ways both formats share. *)
+type error = Instr.error =
   | Unknown_format of { path : string; header : string }
   | Unreadable of { path : string; reason : string }
   | Corrupt of { path : string; reason : string }
 
-let pp_error ppf = function
-  | Unknown_format { path; header } ->
-      Format.fprintf ppf
-        "%s: not a windtrap verdict file (expected header %S, found \"%s\"); \
-         files written by other windtrap versions are not readable - delete \
-         the stale files under _build/_mutants, then re-run the mutation tests"
-        path magic header
-  | Unreadable { path; reason } ->
-      Format.fprintf ppf "%s: cannot read verdict file: %s" path reason
-  | Corrupt { path; reason } ->
-      Format.fprintf ppf "%s: corrupt verdict file: %s" path reason
+let pp_error ppf e = Instr.pp_error format ppf e
 
 module Id_map = Map.Make (struct
   type t = id
@@ -671,14 +680,7 @@ let merge a b = Id_map.fold (fun id v acc -> add acc (record_of id v)) b a
 
 (* Serialization *)
 
-type identity = { exe : string; digest : string }
-
-let is_hex = function '0' .. '9' | 'a' .. 'f' -> true | _ -> false
-
-let validate_identity { exe; digest } =
-  if exe = "" then invalid_arg "Windtrap_mutate: empty identity exe";
-  if String.length digest <> 32 || not (String.for_all is_hex digest) then
-    invalid_arg "Windtrap_mutate: identity digest is not 32 hex characters"
+type identity = Instr.identity = { exe : string; digest : string }
 
 let add_witness buffer w =
   Printf.bprintf buffer "%d" (List.length w);
@@ -704,13 +706,7 @@ let add_verdict buffer = function
 
 let to_string ?identity t =
   let buffer = Buffer.create 1024 in
-  Buffer.add_string buffer magic;
-  Buffer.add_char buffer '\n';
-  (match identity with
-  | None -> ()
-  | Some ({ exe; digest } as identity) ->
-      validate_identity identity;
-      Printf.bprintf buffer "exe %s %d %s\n" digest (String.length exe) exe);
+  Instr.add_header format buffer identity;
   Printf.bprintf buffer "%d\n" (Id_map.cardinal t);
   Id_map.iter
     (fun id (r, verdict) ->
@@ -724,215 +720,76 @@ let to_string ?identity t =
     t;
   Buffer.contents buffer
 
-exception Parse_error of string
-
-let parse_fail fmt = Printf.ksprintf (fun m -> raise (Parse_error m)) fmt
-
-let first_line s =
-  let line =
-    match String.index_opt s '\n' with Some i -> String.sub s 0 i | None -> s
-  in
-  let line = if String.length line > 64 then String.sub line 0 64 else line in
-  String.escaped line
-
-let is_ws = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
-
 let of_string ?(path = "<string>") s =
-  let len = String.length s in
-  let has_magic =
-    String.starts_with ~prefix:magic s
-    && (len = String.length magic || is_ws s.[String.length magic])
-  in
-  if not has_magic then Error (Unknown_format { path; header = first_line s })
-  else begin
-    let pos = ref (String.length magic) in
-    let skip_ws () =
-      while !pos < len && is_ws s.[!pos] do
-        incr pos
-      done
-    in
-    let read_int what =
-      skip_ws ();
-      let start = !pos in
-      if !pos < len && s.[!pos] = '-' then incr pos;
-      while !pos < len && is_digit s.[!pos] do
-        incr pos
-      done;
-      if !pos = start then parse_fail "expected %s at offset %d" what start;
-      match int_of_string (String.sub s start (!pos - start)) with
-      | n -> n
-      | exception Failure _ -> parse_fail "invalid %s at offset %d" what start
-    in
-    let read_nat what =
-      let n = read_int what in
-      if n < 0 then parse_fail "negative %s" what;
-      n
-    in
-    let read_name what =
-      let n = read_nat (what ^ " length") in
-      if !pos >= len || s.[!pos] <> ' ' then
-        parse_fail "expected space before %s at offset %d" what !pos;
-      incr pos;
-      if n > len - !pos then parse_fail "truncated %s" what;
-      let name = String.sub s !pos n in
-      pos := !pos + n;
-      name
-    in
-    let read_word what =
-      skip_ws ();
-      let start = !pos in
-      while !pos < len && not (is_ws s.[!pos]) do
-        incr pos
-      done;
-      if !pos = start then parse_fail "expected %s at offset %d" what start;
-      String.sub s start (!pos - start)
-    in
-    let read_witness () =
-      let n = read_nat "test path length" in
-      if n > len then parse_fail "test path length exceeds data";
-      let acc = ref [] in
-      for _ = 1 to n do
-        acc := read_name "test name" :: !acc
-      done;
-      List.rev !acc
-    in
-    let read_verdict () =
-      match read_word "verdict" with
-      | "unreached" -> Unreached
-      | "crashed" -> Killed Crashed
-      | "timeout" -> Killed Timed_out
-      | "failed" -> Killed (Failed (read_witness ()))
-      | "survived" ->
-          let n = read_nat "witness count" in
-          if n = 0 then
-            parse_fail "a survivor names no test (survived is not unreached)";
-          if n > len then parse_fail "witness count exceeds data";
-          let acc = ref [] in
-          for _ = 1 to n do
-            acc := read_witness () :: !acc
-          done;
-          survived !acc
-      | word -> parse_fail "unknown verdict %S" word
-    in
-    try
-      (* The optional identity line ([exe <digest> <len> <path>]), written
-         by the mutation loop; absent from merged collections, which have
-         no single writer. Unambiguous: everything else here starts with a
-         digit. *)
-      let identity =
-        skip_ws ();
-        if
-          !pos + 3 <= len
-          && s.[!pos] = 'e'
-          && s.[!pos + 1] = 'x'
-          && s.[!pos + 2] = 'e'
-        then begin
-          pos := !pos + 3;
-          skip_ws ();
-          let start = !pos in
-          while !pos < len && is_hex s.[!pos] do
-            incr pos
-          done;
-          let digest = String.sub s start (!pos - start) in
-          if String.length digest <> 32 then
-            parse_fail "identity digest is not 32 hex characters at offset %d"
-              start;
-          let exe = read_name "executable identity" in
-          if exe = "" then parse_fail "empty executable identity";
-          Some { exe; digest }
-        end
-        else None
+  match Instr.start format ~path s with
+  | Error e -> Error e
+  | Ok c -> (
+      let read_witness () =
+        let n = Instr.read_count c "test path length" in
+        let acc = ref [] in
+        for _ = 1 to n do
+          acc := Instr.read_name c "test name" :: !acc
+        done;
+        List.rev !acc
       in
-      let record_count = read_nat "record count" in
-      if record_count > len then parse_fail "record count exceeds data";
-      let result = ref empty in
-      for _ = 1 to record_count do
-        let file = read_name "file name" in
-        if file = "" then parse_fail "empty file name";
-        let line = read_nat "line" in
-        if line < 1 then parse_fail "line %d is not 1-based" line;
-        let col = read_nat "column" in
-        let rewrite = read_name "rewrite" in
-        if not (is_rewrite rewrite) then parse_fail "unknown rewrite %S" rewrite;
-        let id = { file; line; col; rewrite } in
-        if Id_map.mem id !result then
-          parse_fail "duplicate record for %s" (id_to_string id);
-        let first = read_nat "span start" in
-        let last = read_nat "span end" in
-        if first > last then parse_fail "inverted span %d-%d" first last;
-        let before = read_name "before" in
-        let after = read_name "after" in
-        let verdict = read_verdict () in
-        result :=
-          add !result { id; span = (first, last); before; after; verdict }
-      done;
-      skip_ws ();
-      if !pos <> len then parse_fail "trailing data at offset %d" !pos;
-      Ok (!result, identity)
-    with Parse_error reason -> Error (Corrupt { path; reason })
-  end
+      let read_verdict () =
+        match Instr.read_word c "verdict" with
+        | "unreached" -> Unreached
+        | "crashed" -> Killed Crashed
+        | "timeout" -> Killed Timed_out
+        | "failed" -> Killed (Failed (read_witness ()))
+        | "survived" ->
+            let n = Instr.read_count c "witness count" in
+            if n = 0 then
+              Instr.parse_fail
+                "a survivor names no test (survived is not unreached)";
+            let acc = ref [] in
+            for _ = 1 to n do
+              acc := read_witness () :: !acc
+            done;
+            survived !acc
+        | word -> Instr.parse_fail "unknown verdict %S" word
+      in
+      try
+        let identity = Instr.read_identity c in
+        let record_count = Instr.read_count c "record count" in
+        let result = ref empty in
+        for _ = 1 to record_count do
+          let file = Instr.read_name c "file name" in
+          if file = "" then Instr.parse_fail "empty file name";
+          let line = Instr.read_nat c "line" in
+          if line < 1 then Instr.parse_fail "line %d is not 1-based" line;
+          let col = Instr.read_nat c "column" in
+          let rewrite = Instr.read_name c "rewrite" in
+          if not (is_rewrite rewrite) then
+            Instr.parse_fail "unknown rewrite %S" rewrite;
+          let id = { file; line; col; rewrite } in
+          if Id_map.mem id !result then
+            Instr.parse_fail "duplicate record for %s" (id_to_string id);
+          let first = Instr.read_nat c "span start" in
+          let last = Instr.read_nat c "span end" in
+          if first > last then
+            Instr.parse_fail "inverted span %d-%d" first last;
+          let before = Instr.read_name c "before" in
+          let after = Instr.read_name c "after" in
+          let verdict = read_verdict () in
+          result :=
+            add !result { id; span = (first, last); before; after; verdict }
+        done;
+        Instr.finish c;
+        Ok (!result, identity)
+      with Instr.Parse_error reason -> Error (Corrupt { path; reason }))
 
 let load path =
-  match
-    let ic = open_in_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_in_noerr ic)
-      (fun () -> really_input_string ic (in_channel_length ic))
-  with
-  | contents -> of_string ~path contents
-  | exception Sys_error reason -> Error (Unreadable { path; reason })
-  | exception End_of_file ->
-      Error (Corrupt { path; reason = "file changed while reading" })
+  match Instr.read_file path with
+  | Ok contents -> of_string ~path contents
+  | Error e -> Error e
 
 (* Output Path and Identity *)
 
-(* The path algebra below duplicates Windtrap_coverage's deliberately: the
-   two runtimes are separate sub-libraries by Law 12, and neither may link
-   the other. A shared extraction is a later, separate commit; until then
-   the semantics must stay identical, so any change here belongs in both. *)
-
-let hex_hash s = Digest.to_hex (Digest.string s)
-
-let absolute path =
-  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
-  else path
-
-(* The one root rule: [Some (root, below)] when [path] has a [_build]
-   component - [root] the parent of the topmost one, [below] the path
-   under it with any [.sandbox/<digest>] prefix stripped, so sandboxed and
-   direct runs agree. *)
-let split_build path =
-  let components =
-    String.map (function '\\' -> '/' | c -> c) (absolute path)
-    |> String.split_on_char '/'
-  in
-  let rec split_at_build before = function
-    | [] -> None
-    | "_build" :: below -> Some (List.rev before, below)
-    | c :: rest -> split_at_build (c :: before) rest
-  in
-  match split_at_build [] components with
-  | None -> None
-  | Some (root, below) ->
-      let below =
-        match below with
-        | ".sandbox" :: _digest :: rest -> rest
-        | below -> below
-      in
-      Some (String.concat "/" root, String.concat "/" below)
-
-let build_root ~path = Option.map fst (split_build path)
-
-let exe_identity ~exe =
-  match split_build exe with Some (_, below) -> below | None -> absolute exe
-
-let output_file ~exe =
-  let root, key =
-    match split_build exe with
-    | Some (root, below) -> (root, below)
-    | None -> (Sys.getcwd (), absolute exe)
-  in
-  Printf.sprintf "%s/_build/_mutants/windtrap-%s.mutants" root (hex_hash key)
+let build_root = Instr.build_root
+let exe_identity = Instr.exe_identity
+let output_file ~exe = Instr.output_file format ~exe
 
 (* Digesting the executable's bytes is what makes a stale verdict
    detectable: the reporting command re-digests the file at the recorded
@@ -940,58 +797,13 @@ let output_file ~exe =
    that wrote the file - mtimes cannot say that, because dune's shared
    cache restores artifacts with their original timestamps. *)
 let writer_identity ~exe =
-  match Digest.to_hex (Digest.file exe) with
-  | digest -> Some { exe = exe_identity ~exe; digest }
-  | exception (Sys_error _ | End_of_file) -> None
+  Option.map
+    (fun digest -> { exe = exe_identity ~exe; digest })
+    (Instr.file_digest exe)
 
 (* Atomic Write *)
 
-let rec mkdir_p dir =
-  if dir = "" || dir = "." || dir = "/" || Sys.file_exists dir then ()
-  else begin
-    mkdir_p (Filename.dirname dir);
-    try Sys.mkdir dir 0o755 with Sys_error _ -> ()
-  end
-
-let temp_state = lazy (Random.State.make_self_init ())
-
-(* Exclusive creation, retried under a fresh suffix on collision: two
-   processes writing the same [path] concurrently can never interleave
-   into a shared temp file - the loser of the last atomic rename simply
-   overwrites, which is fine. A leftover [.tmp] from a crashed run is
-   skipped, not reused. *)
-let create_temp path =
-  let rec attempt tries =
-    let suffix =
-      Printf.sprintf ".%06x.tmp"
-        (Random.State.int (Lazy.force temp_state) 0x1000000)
-    in
-    let temp = path ^ suffix in
-    match
-      open_out_gen
-        [ Open_wronly; Open_creat; Open_excl; Open_binary ]
-        0o644 temp
-    with
-    | oc -> (temp, oc)
-    | exception Sys_error _ when tries > 1 -> attempt (tries - 1)
-  in
-  attempt 10
-
-let save ?identity path t =
-  let data = to_string ?identity t in
-  mkdir_p (Filename.dirname path);
-  let temp, oc = create_temp path in
-  (try
-     Fun.protect
-       ~finally:(fun () -> close_out_noerr oc)
-       (fun () -> output_string oc data)
-   with e ->
-     (try Sys.remove temp with Sys_error _ -> ());
-     raise e);
-  try Sys.rename temp path
-  with e ->
-    (try Sys.remove temp with Sys_error _ -> ());
-    raise e
+let save ?identity path t = Instr.write_file path (to_string ?identity t)
 
 let () =
   Printexc.register_printer (function

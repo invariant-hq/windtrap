@@ -1,8 +1,10 @@
 ; The mutation runtime: linked by instrumented user code via
 ; ppx_runtime_libraries and by the mutation loop in the runner. Stdlib
 ; only - it must never pull the windtrap core (or anything else) into the
-; closure of every instrumented library.
+; closure of every instrumented library; windtrap.instr, the stdlib-only
+; plumbing both runtimes share, is the one dependency.
 
 (library
  (name windtrap_mutate)
- (public_name windtrap.mutate))
+ (public_name windtrap.mutate)
+ (libraries windtrap_instr))

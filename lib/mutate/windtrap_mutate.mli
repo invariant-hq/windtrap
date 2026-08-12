@@ -561,13 +561,14 @@ val merge : t -> t -> t
     unit — so merging any number of verdict files in any order gives one answer.
 *)
 
-type identity = { exe : string; digest : string }
-(** The type for verdict-file writer identities: [exe] is the writing
-    executable's {!exe_identity} and [digest] the lowercase hex MD5 of its
-    contents at write time. An executable at [exe] whose digest differs is
-    {e not} the one that wrote the file — the content comparison survives
-    rebuilds that dune's cache restores with their original timestamps, which
-    mtimes do not. *)
+type identity = Windtrap_instr.identity = { exe : string; digest : string }
+(** The type for verdict-file writer identities — [Windtrap_instr]'s,
+    re-exported, so the reporting command handles both runtimes' identities
+    with one pass: [exe] is the writing executable's {!exe_identity} and
+    [digest] the lowercase hex MD5 of its contents at write time. An
+    executable at [exe] whose digest differs is {e not} the one that wrote the
+    file — the content comparison survives rebuilds that dune's cache restores
+    with their original timestamps, which mtimes do not. *)
 
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the [exe] field a verdict file records for the

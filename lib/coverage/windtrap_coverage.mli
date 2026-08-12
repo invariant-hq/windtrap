@@ -165,14 +165,16 @@ val snapshot : unit -> t
     effort); the reporting command uses it to exclude dumps whose executable was
     deleted or rebuilt since the run. *)
 
-type identity = { exe : string; digest : string }
-(** The type for dump writer identities: [exe] is the writing executable's
-    {!exe_identity} and [digest] the lowercase hex MD5 of its contents at dump
-    time. An executable at [exe] whose digest differs is {e not} the one that
-    wrote the dump — the content comparison survives rebuilds that dune's cache
-    restores with their original timestamps, which mtimes do not. Digesting
-    reads the executable once at exit (a few milliseconds for a typical test
-    binary), off the test path. *)
+type identity = Windtrap_instr.identity = { exe : string; digest : string }
+(** The type for dump writer identities — [Windtrap_instr]'s, re-exported, so
+    the reporting command handles both runtimes' identities with one pass:
+    [exe] is the writing executable's {!exe_identity} and [digest] the
+    lowercase hex MD5 of its contents at dump time. An executable at [exe]
+    whose digest differs is {e not} the one that wrote the dump — the content
+    comparison survives rebuilds that dune's cache restores with their
+    original timestamps, which mtimes do not. Digesting reads the executable
+    once at exit (a few milliseconds for a typical test binary), off the test
+    path. *)
 
 val build_root : path:string -> string option
 (** [build_root ~path] is the parent directory of the topmost [_build] component

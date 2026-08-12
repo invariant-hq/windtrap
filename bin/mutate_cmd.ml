@@ -2,12 +2,12 @@
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
 
-   File discovery and the staleness pass are bin/coverage_cmd.ml's, with
-   _coverage/.coverage replaced by _mutants/.mutants: one rule for
-   resolving the project root, one rule for detecting a dump whose
-   executable is gone or was rebuilt. The report layout lives in the
-   library renderer (Render.mutation_report, via Windtrap.Private), so
-   the loop's in-process report and this merged one cannot drift.
+   File discovery and the staleness pass live in Data_files, shared with
+   `windtrap coverage`: one rule for resolving the project root, one rule
+   for detecting a file whose executable is gone or was rebuilt. The
+   report layout lives in the library renderer (Render.mutation_report,
+   via Windtrap.Private), so the loop's in-process report and this merged
+   one cannot drift.
   ---------------------------------------------------------------------------*)
 
 module Render = Windtrap.Private.Render
@@ -55,96 +55,23 @@ let parse_args args =
   in
   go [] args
 
-(* Discovery *)
-
-let mutants_dir_of root =
-  Filename.concat (Filename.concat root "_build") "_mutants"
-
-(* Ancestor-scan fallback: the nearest ancestor (the current directory
-   included) with a _build/_mutants directory — `dune exec windtrap`
-   runs from wherever the user is in the checkout. Candidates inside a
-   sandbox are never roots: planted garbage under _build/.sandbox must
-   not capture the scan. *)
-let under_sandbox dir =
-  String.map (function '\\' -> '/' | c -> c) dir
-  |> String.split_on_char '/' |> List.mem ".sandbox"
-
-let rec find_project_root dir =
-  let candidate = mutants_dir_of dir in
-  if
-    (not (under_sandbox dir))
-    && Sys.file_exists candidate && Sys.is_directory candidate
-  then Some dir
-  else
-    let parent = Filename.dirname dir in
-    if parent = dir then None else find_project_root parent
-
-(* The root rule, shared with the runtime's output path: when the current
-   directory is inside a _build — a dune rule action, sandboxed or not —
-   the root is the parent of the topmost _build component,
-   unconditionally; only outside _build does the ancestor scan run. *)
-let project_root cwd =
-  match M.build_root ~path:cwd with
-  | Some root -> Some root
-  | None -> find_project_root cwd
-
-let is_verdict_file path = Filename.check_suffix path ".mutants"
-
-let rec files_under dir =
-  match Sys.readdir dir with
-  | exception Sys_error _ -> []
-  | entries ->
-      Array.fold_left
-        (fun acc entry ->
-          let path = Filename.concat dir entry in
-          match Sys.is_directory path with
-          | true -> files_under path @ acc
-          | false -> if is_verdict_file path then path :: acc else acc
-          | exception Sys_error _ -> acc)
-        [] entries
-
-(* Explicit arguments are a contract: a named file must exist and carry
-   the .mutants suffix. A typo'd path or a wrong glob in CI that silently
-   narrowed the merge would be worse here than in coverage: under
-   killed-anywhere-wins, dropping the file that holds the kill turns the
-   mutant back into a survivor, which is the exact failure mode this
-   command exists to prevent. Directories keep the scan's tolerance. *)
-let expand_path path =
-  if not (Sys.file_exists path) then
-    Error (spf "%s: no such file or directory" path)
-  else if Sys.is_directory path then Ok (files_under path)
-  else if is_verdict_file path then Ok [ path ]
-  else Error (spf "%s: not a .mutants file" path)
-
-(* [files] sorted for deterministic merge order and error attribution;
+(* Discovery: Data_files's, shared with `windtrap coverage` — the project
+   root resolved as the runtime resolves its output path, explicit PATH
+   arguments as a loud contract. A silently narrowed merge would be worse
+   here than in coverage: under killed-anywhere-wins, dropping the file
+   that holds the kill turns the mutant back into a survivor, which is
+   the exact failure mode this command exists to prevent. [files] come
+   back sorted for deterministic merge order and error attribution;
    [roots] are the source roots the survivor excerpts resolve against. *)
-let discover = function
-  | [] ->
-      Ok
-        (match project_root (Sys.getcwd ()) with
-        | None -> ([], [ "." ])
-        | Some root ->
-            ( List.sort_uniq String.compare (files_under (mutants_dir_of root)),
-              [ root ] ))
-  | paths ->
-      List.fold_left
-        (fun acc path ->
-          Result.bind acc (fun files ->
-              Result.map (fun found -> found @ files) (expand_path path)))
-        (Ok []) paths
-      |> Result.map (fun files ->
-          (List.sort_uniq String.compare files, [ "." ]))
+
+let discover paths = Data_files.discover ~dir:"_mutants" ~ext:"mutants" paths
 
 (* The staleness pass
 
-   Coverage's, detected the same way from the identity each file records:
-   a verdict file whose executable was deleted or renamed (an orphan), and
+   Data_files.freshness's, judged from the identity each file records: a
+   verdict file whose executable was deleted or renamed (an orphan), and
    one not written by the executable now on disk — a re-run made without
-   --instrument-with, or a run dune replayed from cache. The digest
-   comparison is content-based because mtimes prove nothing: dune's
-   shared cache restores rebuilt artifacts with their original
-   timestamps. Files without an identity (hand-written or already merged)
-   are never flagged.
+   --instrument-with, or a run dune replayed from cache.
 
    There is no --stale override here, and the asymmetry with coverage is
    deliberate. A stale coverage dump understates what the suite reaches;
@@ -152,43 +79,9 @@ let discover = function
    kill hides a live defect. Excluding is the only answer that cannot
    lie. *)
 
-type freshness = Fresh | Orphan of string | Stale of string
-
-let freshness ~path identity =
-  match (identity : M.identity option) with
-  | None -> Fresh
-  | Some { exe; digest } -> (
-      let resolved =
-        if not (Filename.is_relative exe) then Some exe
-        else
-          (* A relative identity is a path below _build; the file's own
-             topmost-_build root locates that _build — the same root
-             whether the file was discovered or named on the command
-             line. *)
-          match M.build_root ~path with
-          | None -> None
-          | Some root ->
-              Some (Filename.concat (Filename.concat root "_build") exe)
-      in
-      match resolved with
-      | None -> Fresh
-      | Some exe_path -> (
-          if not (Sys.file_exists exe_path) then Orphan exe
-          else
-            match Digest.to_hex (Digest.file exe_path) <> digest with
-            | true -> Stale exe
-            | false -> Fresh
-            | exception (Sys_error _ | End_of_file) -> Fresh))
-
-let describe ~path = function
-  | Fresh -> assert false
-  | Orphan exe -> spf "%s: its executable (%s) no longer exists" path exe
-  | Stale exe ->
-      spf
-        "%s: not written by the executable now at %s - a re-run made without \
-         --instrument-with ppx_windtrap.mutate, or a mutation run dune did not \
-         repeat"
-        path exe
+let stale_hint =
+  "a re-run made without --instrument-with ppx_windtrap.mutate, or a mutation \
+   run dune did not repeat"
 
 (* Loads [files], drops the orphaned and stale ones loudly, and merges
    what is left. Warnings and failure details go to stderr; [Error code]
@@ -200,7 +93,7 @@ let load_merged files =
         Result.bind acc (fun entries ->
             Result.map
               (fun (t, identity) ->
-                (path, t, freshness ~path identity) :: entries)
+                (path, t, Data_files.freshness ~path identity) :: entries)
               (M.load path)))
       (Ok []) files
   in
@@ -210,8 +103,12 @@ let load_merged files =
       Error 1
   | Ok entries ->
       let entries = List.rev entries in
-      let kept = List.filter (fun (_, _, f) -> f = Fresh) entries in
-      let excluded = List.filter (fun (_, _, f) -> f <> Fresh) entries in
+      let kept =
+        List.filter (fun (_, _, f) -> f = Data_files.Fresh) entries
+      in
+      let excluded =
+        List.filter (fun (_, _, f) -> f <> Data_files.Fresh) entries
+      in
       (* Per-file detail is what a reader wants when a verdict or two is
          stale among many: it names the executable and the reason. When
          every file is excluded it is the same sentence N times, and it
@@ -224,7 +121,7 @@ let load_merged files =
         (fun i (path, _, f) ->
           if i < detail_cap then
             Printf.eprintf "windtrap mutate: %s; excluding it\n%!"
-              (describe ~path f))
+              (Data_files.describe ~stale_hint ~path f))
         excluded;
       if excluded_count > detail_cap then
         Printf.eprintf "windtrap mutate: ... and %d more like that\n%!"
@@ -238,11 +135,19 @@ let load_merged files =
          both. *)
       let any predicate = List.exists (fun (_, _, f) -> predicate f) excluded in
       if kept <> [] then begin
-        if any (function Stale _ -> true | Fresh | Orphan _ -> false) then
+        if
+          any (function
+            | Data_files.Stale _ -> true
+            | Data_files.Fresh | Data_files.Orphan _ -> false)
+        then
           Printf.eprintf
             "windtrap mutate: a forced run rewrites stale verdicts:\n%s\n%!"
             rerun;
-        if any (function Orphan _ -> true | Fresh | Stale _ -> false) then
+        if
+          any (function
+            | Data_files.Orphan _ -> true
+            | Data_files.Fresh | Data_files.Stale _ -> false)
+        then
           Printf.eprintf
             "windtrap mutate: delete the orphaned files; re-running cannot \
              replace a verdict whose executable is gone\n\
@@ -253,7 +158,9 @@ let load_merged files =
           List.length
             (List.filter
                (fun (_, _, f) ->
-                 match f with Orphan _ -> true | Fresh | Stale _ -> false)
+                 match f with
+                 | Data_files.Orphan _ -> true
+                 | Data_files.Fresh | Data_files.Stale _ -> false)
                excluded)
         in
         Printf.eprintf

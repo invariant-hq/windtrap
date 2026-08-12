@@ -2,10 +2,10 @@
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
 
-   File discovery adapts windtrap v1's bin/coverage_cmd.ml; the table and
-   excerpt rendering moved into the library renderer (Render, via
-   Windtrap.Private) so the in-process WINDTRAP_COVERAGE modes and this
-   command share one layout.
+   File discovery and the staleness pass live in Data_files, shared with
+   `windtrap mutate`; the table and excerpt rendering moved into the
+   library renderer (Render, via Windtrap.Private) so the in-process
+   WINDTRAP_COVERAGE modes and this command share one layout.
   ---------------------------------------------------------------------------*)
 
 module Render = Windtrap.Private.Render
@@ -109,85 +109,14 @@ let parse_args args =
     }
     args
 
-(* Discovery *)
+(* Discovery: Data_files's, shared with `windtrap mutate` — the project
+   root resolved as the runtime resolves its dump path, explicit PATH
+   arguments as a loud contract (a silent narrowing of the merge would
+   end in the no-data message and its wrong remedy). [files] come back
+   sorted for deterministic merge order and error attribution; [roots]
+   are the source roots for line mapping. *)
 
-let coverage_dir_of root =
-  Filename.concat (Filename.concat root "_build") "_coverage"
-
-(* Ancestor-scan fallback: the nearest ancestor (the current directory
-   included) with a _build/_coverage directory — `dune exec windtrap`
-   runs from wherever the user is in the checkout. Candidates inside a
-   sandbox are never roots: planted garbage under _build/.sandbox must
-   not capture the scan. *)
-let under_sandbox dir =
-  String.map (function '\\' -> '/' | c -> c) dir
-  |> String.split_on_char '/' |> List.mem ".sandbox"
-
-let rec find_project_root dir =
-  let candidate = coverage_dir_of dir in
-  if
-    (not (under_sandbox dir))
-    && Sys.file_exists candidate && Sys.is_directory candidate
-  then Some dir
-  else
-    let parent = Filename.dirname dir in
-    if parent = dir then None else find_project_root parent
-
-(* The root rule, shared with the runtime's dump path: when the
-   current directory is inside a _build — a dune rule action, sandboxed
-   or not — the root is the parent of the topmost _build component,
-   unconditionally; only outside _build does the ancestor scan run. *)
-let project_root cwd =
-  match Windtrap_coverage.build_root ~path:cwd with
-  | Some root -> Some root
-  | None -> find_project_root cwd
-
-let is_coverage_file path = Filename.check_suffix path ".coverage"
-
-let rec files_under dir =
-  match Sys.readdir dir with
-  | exception Sys_error _ -> []
-  | entries ->
-      Array.fold_left
-        (fun acc entry ->
-          let path = Filename.concat dir entry in
-          match Sys.is_directory path with
-          | true -> files_under path @ acc
-          | false -> if is_coverage_file path then path :: acc else acc
-          | exception Sys_error _ -> acc)
-        [] entries
-
-(* Explicit arguments are a contract: a named file must exist and carry
-   the .coverage suffix — a typo'd path, a wrong glob in CI, or a
-   renamed dump is a loud error, never a silent narrowing of the merge
-   (which would end in the no-data message and its wrong remedy).
-   Directories keep the scan's tolerance: they contribute however many
-   .coverage files they contain. *)
-let expand_path path =
-  if not (Sys.file_exists path) then
-    Error (spf "%s: no such file or directory" path)
-  else if Sys.is_directory path then Ok (files_under path)
-  else if is_coverage_file path then Ok [ path ]
-  else Error (spf "%s: not a .coverage file" path)
-
-(* [files] sorted for deterministic merge order and error attribution;
-   [roots] are the source roots for line mapping. *)
-let discover = function
-  | [] ->
-      Ok
-        (match project_root (Sys.getcwd ()) with
-        | None -> ([], [ "." ])
-        | Some root ->
-            ( List.sort_uniq String.compare (files_under (coverage_dir_of root)),
-              [ root ] ))
-  | paths ->
-      List.fold_left
-        (fun acc path ->
-          Result.bind acc (fun files ->
-              Result.map (fun found -> found @ files) (expand_path path)))
-        (Ok []) paths
-      |> Result.map (fun files ->
-          (List.sort_uniq String.compare files, [ "." ]))
+let discover paths = Data_files.discover ~dir:"_coverage" ~ext:"coverage" paths
 
 (* The staleness pass
 
@@ -199,49 +128,13 @@ let discover = function
    writes no fresh dump), or a test action dune replayed from cache
    after sources reverted to an already-tested state (the dump on disk
    stays a different build's, and plain re-runs stay cache hits, so only
-   a forced run heals it — hence the remedy below). All are detected
-   from the identity recorded in each dump; the digest comparison is
-   content-based because mtimes prove nothing here: dune's shared cache
-   restores rebuilt artifacts with their original timestamps. Dumps
-   without an identity (hand-written or merged files) are never
-   flagged. *)
+   a forced run heals it — hence the remedy below). Detection is
+   Data_files.freshness's, from the identity recorded in each dump; the
+   --stale policy and the wording of the remedies are this command's. *)
 
-type verdict = Fresh | Orphan of string | Stale of string
-
-let verdict ~path identity =
-  match (identity : Windtrap_coverage.identity option) with
-  | None -> Fresh
-  | Some { exe; digest } -> (
-      let resolved =
-        if not (Filename.is_relative exe) then Some exe
-        else
-          (* A relative identity is a path below _build; the dump's own
-             topmost-_build root locates that _build — the same root
-             whether the dump was discovered or named on the command
-             line. *)
-          match Windtrap_coverage.build_root ~path with
-          | None -> None
-          | Some root ->
-              Some (Filename.concat (Filename.concat root "_build") exe)
-      in
-      match resolved with
-      | None -> Fresh
-      | Some exe_path -> (
-          if not (Sys.file_exists exe_path) then Orphan exe
-          else
-            match Digest.to_hex (Digest.file exe_path) <> digest with
-            | true -> Stale exe
-            | false -> Fresh
-            | exception (Sys_error _ | End_of_file) -> Fresh))
-
-let describe ~path = function
-  | Fresh -> assert false
-  | Orphan exe -> spf "%s: its executable (%s) no longer exists" path exe
-  | Stale exe ->
-      spf
-        "%s: not written by the executable now at %s - a re-run made without \
-         --instrument-with ppx_windtrap, or a cached test dune did not re-run"
-        path exe
+let stale_hint =
+  "a re-run made without --instrument-with ppx_windtrap, or a cached test \
+   dune did not re-run"
 
 (* Loads [files], applies the --stale policy, and merges the survivors.
    Warnings and failure details go to stderr; [Error code] is the exit
@@ -252,7 +145,8 @@ let load_merged ~stale files =
       (fun acc path ->
         Result.bind acc (fun entries ->
             Result.map
-              (fun (t, exe) -> (path, t, verdict ~path exe) :: entries)
+              (fun (t, exe) ->
+                (path, t, Data_files.freshness ~path exe) :: entries)
               (Windtrap_coverage.load path)))
       (Ok []) files
   in
@@ -262,11 +156,14 @@ let load_merged ~stale files =
       Error 1
   | Ok entries -> (
       let entries = List.rev entries in
-      let flagged = List.filter (fun (_, _, v) -> v <> Fresh) entries in
+      let flagged =
+        List.filter (fun (_, _, v) -> v <> Data_files.Fresh) entries
+      in
       let kept =
         match stale with
         | Include | Fail -> entries
-        | Exclude -> List.filter (fun (_, _, v) -> v = Fresh) entries
+        | Exclude ->
+            List.filter (fun (_, _, v) -> v = Data_files.Fresh) entries
       in
       (* Per-file detail is what a reader wants when a dump or two is
          stale among many: it names the executable and the reason, and
@@ -287,7 +184,8 @@ let load_merged ~stale files =
               | Include -> "including it anyway (--stale=include)"
               | Fail -> "failing (--stale=fail)"
             in
-            Printf.eprintf "windtrap coverage: %s; %s\n%!" (describe ~path v)
+            Printf.eprintf "windtrap coverage: %s; %s\n%!"
+              (Data_files.describe ~stale_hint ~path v)
               action)
         flagged;
       if flagged_count > detail_cap then
@@ -295,7 +193,8 @@ let load_merged ~stale files =
           (flagged_count - detail_cap);
       let any_stale =
         List.exists
-          (fun (_, _, v) -> match v with Stale _ -> true | _ -> false)
+          (fun (_, _, v) ->
+            match v with Data_files.Stale _ -> true | _ -> false)
           flagged
       in
       (* A plain re-run cannot heal a stale dump whose test action is a
@@ -312,7 +211,8 @@ let load_merged ~stale files =
         let orphans =
           List.length
             (List.filter
-               (fun (_, _, v) -> match v with Orphan _ -> true | _ -> false)
+               (fun (_, _, v) ->
+                 match v with Data_files.Orphan _ -> true | _ -> false)
                flagged)
         in
         let total = List.length flagged in

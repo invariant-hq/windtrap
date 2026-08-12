@@ -3,11 +3,28 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+module Instr = Windtrap_instr
+
 (* Points *)
 
 type point = { start_ofs : int; end_ofs : int }
 
 let magic = "windtrap-coverage-v3"
+
+(* The constants Windtrap_instr's shared plumbing is parameterized by:
+   this format's magic line, its on-disk home, and the words its error
+   messages use. *)
+let format =
+  {
+    Instr.magic;
+    kind = "coverage";
+    dir = "_coverage";
+    ext = "coverage";
+    remedy =
+      "delete the stale files under _build/_coverage (or run dune clean), \
+       then re-run the instrumented tests";
+    who = "Windtrap_coverage";
+  }
 
 let points_equal a b =
   Array.length a = Array.length b
@@ -42,22 +59,25 @@ type error =
   | Corrupt of { path : string; reason : string }
   | Point_mismatch of { file : string }
 
-(* Hint copy is deliberate: re-running never
-   removes a foreign-*named* file, so Unknown_format instructs deletion;
+(* The first three cases are the shared plumbing's; Point_mismatch is
+   coverage's own - merging produces it and parsing reports it - which is
+   why the public type cannot simply re-export Windtrap_instr.error. The
+   hint asymmetry is deliberate: re-running never removes a
+   foreign-*named* file, so Unknown_format instructs deletion;
    Point_mismatch self-heals under a full instrumented re-run, so dune
    clean is only the fallback for orphaned files. *)
+let error_of_instr = function
+  | Instr.Unknown_format { path; header } -> Unknown_format { path; header }
+  | Instr.Unreadable { path; reason } -> Unreadable { path; reason }
+  | Instr.Corrupt { path; reason } -> Corrupt { path; reason }
+
 let pp_error ppf = function
   | Unknown_format { path; header } ->
-      Format.fprintf ppf
-        "%s: not a windtrap coverage file (expected header %S, found \"%s\"); \
-         files written by other windtrap versions are not readable - delete \
-         the stale files under _build/_coverage (or run dune clean), then \
-         re-run the instrumented tests"
-        path magic header
+      Instr.pp_error format ppf (Instr.Unknown_format { path; header })
   | Unreadable { path; reason } ->
-      Format.fprintf ppf "%s: cannot read coverage file: %s" path reason
+      Instr.pp_error format ppf (Instr.Unreadable { path; reason })
   | Corrupt { path; reason } ->
-      Format.fprintf ppf "%s: corrupt coverage file: %s" path reason
+      Instr.pp_error format ppf (Instr.Corrupt { path; reason })
   | Point_mismatch { file } ->
       Format.fprintf ppf
         "%s: coverage point tables disagree across coverage files (executables \
@@ -121,24 +141,11 @@ let visit counts index =
 
 (* Serialization *)
 
-type identity = { exe : string; digest : string }
-
-let is_hex = function '0' .. '9' | 'a' .. 'f' -> true | _ -> false
-
-let validate_identity { exe; digest } =
-  if exe = "" then invalid_arg "Windtrap_coverage: empty identity exe";
-  if String.length digest <> 32 || not (String.for_all is_hex digest) then
-    invalid_arg "Windtrap_coverage: identity digest is not 32 hex characters"
+type identity = Instr.identity = { exe : string; digest : string }
 
 let to_string ?identity t =
   let buffer = Buffer.create 1024 in
-  Buffer.add_string buffer magic;
-  Buffer.add_char buffer '\n';
-  (match identity with
-  | None -> ()
-  | Some ({ exe; digest } as identity) ->
-      validate_identity identity;
-      Printf.bprintf buffer "exe %s %d %s\n" digest (String.length exe) exe);
+  Instr.add_header format buffer identity;
   Printf.bprintf buffer "%d\n" (File_map.cardinal t);
   File_map.iter
     (fun file { points; counts } ->
@@ -151,176 +158,51 @@ let to_string ?identity t =
     t;
   Buffer.contents buffer
 
-exception Parse_error of string
 exception Conflicting_entry of error
 
-let parse_fail fmt = Printf.ksprintf (fun m -> raise (Parse_error m)) fmt
-
-let first_line s =
-  let line =
-    match String.index_opt s '\n' with Some i -> String.sub s 0 i | None -> s
-  in
-  let line = if String.length line > 64 then String.sub line 0 64 else line in
-  String.escaped line
-
-let is_ws = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
-
 let of_string ?(path = "<string>") s =
-  let len = String.length s in
-  let has_magic =
-    String.starts_with ~prefix:magic s
-    && (len = String.length magic || is_ws s.[String.length magic])
-  in
-  if not has_magic then Error (Unknown_format { path; header = first_line s })
-  else begin
-    let pos = ref (String.length magic) in
-    let skip_ws () =
-      while !pos < len && is_ws s.[!pos] do
-        incr pos
-      done
-    in
-    let read_int what =
-      skip_ws ();
-      let start = !pos in
-      if !pos < len && s.[!pos] = '-' then incr pos;
-      while !pos < len && s.[!pos] >= '0' && s.[!pos] <= '9' do
-        incr pos
-      done;
-      if !pos = start then parse_fail "expected %s at offset %d" what start;
-      match int_of_string (String.sub s start (!pos - start)) with
-      | n -> n
-      | exception Failure _ -> parse_fail "invalid %s at offset %d" what start
-    in
-    let read_nat what =
-      let n = read_int what in
-      if n < 0 then parse_fail "negative %s" what;
-      n
-    in
-    let read_name what =
-      let n = read_nat (what ^ " length") in
-      if !pos >= len || s.[!pos] <> ' ' then
-        parse_fail "expected space before %s at offset %d" what !pos;
-      incr pos;
-      if n > len - !pos then parse_fail "truncated %s" what;
-      let name = String.sub s !pos n in
-      pos := !pos + n;
-      name
-    in
-    try
-      (* The optional identity line ([exe <digest> <len> <path>]),
-         written by the at_exit dump; absent from merged or synthetic
-         collections. Unambiguous: everything else here starts with a
-         digit. *)
-      let identity =
-        skip_ws ();
-        if
-          !pos + 3 <= len
-          && s.[!pos] = 'e'
-          && s.[!pos + 1] = 'x'
-          && s.[!pos + 2] = 'e'
-        then begin
-          pos := !pos + 3;
-          skip_ws ();
-          let start = !pos in
-          while !pos < len && is_hex s.[!pos] do
-            incr pos
+  match Instr.start format ~path s with
+  | Error e -> Error (error_of_instr e)
+  | Ok c -> (
+      try
+        let identity = Instr.read_identity c in
+        let file_count = Instr.read_count c "file count" in
+        let result = ref empty in
+        for _ = 1 to file_count do
+          let file = Instr.read_name c "file name" in
+          let point_count = Instr.read_count c "point count" in
+          let points = Array.make point_count { start_ofs = 0; end_ofs = 0 } in
+          let counts = Array.make point_count 0 in
+          for i = 0 to point_count - 1 do
+            let start_ofs = Instr.read_nat c "extent start" in
+            let end_ofs = Instr.read_nat c "extent end" in
+            if end_ofs < start_ofs then
+              Instr.parse_fail "inverted extent %d-%d in %s" start_ofs end_ofs
+                file;
+            let count = Instr.read_nat c "count" in
+            points.(i) <- { start_ofs; end_ofs };
+            counts.(i) <- count
           done;
-          let digest = String.sub s start (!pos - start) in
-          if String.length digest <> 32 then
-            parse_fail "identity digest is not 32 hex characters at offset %d"
-              start;
-          let exe = read_name "executable identity" in
-          if exe = "" then parse_fail "empty executable identity";
-          Some { exe; digest }
-        end
-        else None
-      in
-      let file_count = read_nat "file count" in
-      if file_count > len then parse_fail "file count exceeds data";
-      let result = ref empty in
-      for _ = 1 to file_count do
-        let file = read_name "file name" in
-        let point_count = read_nat "point count" in
-        if point_count > len then parse_fail "point count exceeds data";
-        let points = Array.make point_count { start_ofs = 0; end_ofs = 0 } in
-        let counts = Array.make point_count 0 in
-        for i = 0 to point_count - 1 do
-          let start_ofs = read_nat "extent start" in
-          let end_ofs = read_nat "extent end" in
-          if end_ofs < start_ofs then
-            parse_fail "inverted extent %d-%d in %s" start_ofs end_ofs file;
-          let count = read_nat "count" in
-          points.(i) <- { start_ofs; end_ofs };
-          counts.(i) <- count
+          match add !result ~file ~points ~counts with
+          | Ok t -> result := t
+          | Error e -> raise (Conflicting_entry e)
         done;
-        match add !result ~file ~points ~counts with
-        | Ok t -> result := t
-        | Error e -> raise (Conflicting_entry e)
-      done;
-      skip_ws ();
-      if !pos <> len then parse_fail "trailing data at offset %d" !pos;
-      Ok (!result, identity)
-    with
-    | Parse_error reason -> Error (Corrupt { path; reason })
-    | Conflicting_entry e -> Error e
-  end
+        Instr.finish c;
+        Ok (!result, identity)
+      with
+      | Instr.Parse_error reason -> Error (Corrupt { path; reason })
+      | Conflicting_entry e -> Error e)
 
 let load path =
-  match
-    let ic = open_in_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_in_noerr ic)
-      (fun () -> really_input_string ic (in_channel_length ic))
-  with
-  | contents -> of_string ~path contents
-  | exception Sys_error reason -> Error (Unreadable { path; reason })
-  | exception End_of_file ->
-      Error (Corrupt { path; reason = "file changed while reading" })
+  match Instr.read_file path with
+  | Ok contents -> of_string ~path contents
+  | Error e -> Error (error_of_instr e)
 
 (* Output Path and Identity *)
 
-let hex_hash s = Digest.to_hex (Digest.string s)
-
-let absolute path =
-  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
-  else path
-
-(* The one root rule: [Some (root, below)] when
-   [path] has a [_build] component — [root] the parent of the topmost
-   one, [below] the path under it with any [.sandbox/<digest>] prefix
-   stripped, so sandboxed and direct runs agree. *)
-let split_build path =
-  let components =
-    String.map (function '\\' -> '/' | c -> c) (absolute path)
-    |> String.split_on_char '/'
-  in
-  let rec split_at_build before = function
-    | [] -> None
-    | "_build" :: below -> Some (List.rev before, below)
-    | c :: rest -> split_at_build (c :: before) rest
-  in
-  match split_at_build [] components with
-  | None -> None
-  | Some (root, below) ->
-      let below =
-        match below with
-        | ".sandbox" :: _digest :: rest -> rest
-        | below -> below
-      in
-      Some (String.concat "/" root, String.concat "/" below)
-
-let build_root ~path = Option.map fst (split_build path)
-
-let exe_identity ~exe =
-  match split_build exe with Some (_, below) -> below | None -> absolute exe
-
-let output_file ~exe =
-  let root, key =
-    match split_build exe with
-    | Some (root, below) -> (root, below)
-    | None -> (Sys.getcwd (), absolute exe)
-  in
-  Printf.sprintf "%s/_build/_coverage/windtrap-%s.coverage" root (hex_hash key)
+let build_root = Instr.build_root
+let exe_identity = Instr.exe_identity
+let output_file ~exe = Instr.output_file format ~exe
 
 (* At-Exit Dump *)
 
@@ -332,52 +214,6 @@ let dump_destination () = !dump_path
 let warn fmt =
   Printf.ksprintf (fun m -> Printf.eprintf "windtrap coverage: %s\n%!" m) fmt
 
-let rec mkdir_p dir =
-  if dir = "" || dir = "." || dir = "/" || Sys.file_exists dir then ()
-  else begin
-    mkdir_p (Filename.dirname dir);
-    try Sys.mkdir dir 0o755 with Sys_error _ -> ()
-  end
-
-let temp_state = lazy (Random.State.make_self_init ())
-
-(* Exclusive creation, retried under a fresh suffix on collision: two
-   processes dumping the same [path] concurrently (the same executable run
-   twice) can never interleave writes into a shared temp file — the loser
-   of the last atomic rename simply overwrites, which is fine. A leftover
-   [.tmp] from a crashed run is skipped, not reused. *)
-let create_temp path =
-  let rec attempt tries =
-    let suffix =
-      Printf.sprintf ".%06x.tmp"
-        (Random.State.int (Lazy.force temp_state) 0x1000000)
-    in
-    let temp = path ^ suffix in
-    match
-      open_out_gen
-        [ Open_wronly; Open_creat; Open_excl; Open_binary ]
-        0o644 temp
-    with
-    | oc -> (temp, oc)
-    | exception Sys_error _ when tries > 1 -> attempt (tries - 1)
-  in
-  attempt 10
-
-let write_file path data =
-  mkdir_p (Filename.dirname path);
-  let temp, oc = create_temp path in
-  (try
-     Fun.protect
-       ~finally:(fun () -> close_out_noerr oc)
-       (fun () -> output_string oc data)
-   with e ->
-     (try Sys.remove temp with Sys_error _ -> ());
-     raise e);
-  try Sys.rename temp path
-  with e ->
-    (try Sys.remove temp with Sys_error _ -> ());
-    raise e
-
 (* The identity digests the running executable's bytes (a few
    milliseconds for a typical test binary, off the test path at exit):
    the reporting command re-digests the file at the recorded path, and
@@ -388,10 +224,10 @@ let write_file path data =
 let dump_identity () =
   match !dump_exe with
   | None -> None
-  | Some exe -> (
-      match Digest.to_hex (Digest.file Sys.executable_name) with
-      | digest -> Some { exe; digest }
-      | exception (Sys_error _ | End_of_file) -> None)
+  | Some exe ->
+      Option.map
+        (fun digest -> { exe; digest })
+        (Instr.file_digest Sys.executable_name)
 
 let dump () =
   if not !dumped then begin
@@ -401,13 +237,13 @@ let dump () =
     | Some path -> (
         let t = snapshot () in
         if not (is_empty t) then
-          try write_file path (to_string ?identity:(dump_identity ()) t)
+          try Instr.write_file path (to_string ?identity:(dump_identity ()) t)
           with e -> warn "cannot write %s: %s" path (Printexc.to_string e))
   end
 
 let resolve_dump_path () =
   match Sys.getenv_opt "WINDTRAP_COVERAGE_FILE" with
-  | Some path when path <> "" -> absolute path
+  | Some path when path <> "" -> Instr.absolute path
   | _ -> output_file ~exe:Sys.executable_name
 
 let register ~file ~points ~counts =
