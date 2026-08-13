@@ -52,7 +52,7 @@ val create : log_dir:string -> suite:string -> unit -> t
     - [log_dir] is the log root, usually {!Path_ops.default_log_dir}.
     - [suite] is the suite name, sanitized into one path component.
     - [<run-id>] is a fresh 8-character base-36 identifier drawn from
-      operating-system entropy ([Seed.random]), distinguishing concurrent and
+      operating-system entropy ({!Seed.random}), distinguishing concurrent and
       successive runs of the same suite.
 
     Nothing is written until {!with_capture} runs a test. *)

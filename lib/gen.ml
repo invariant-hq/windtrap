@@ -29,40 +29,8 @@ let pp_int64 ppf n = Format.fprintf ppf "%LdL" n
 (* A counterexample is meant to be copied back into [~examples], so the
    printed float has to be the float that failed: [%.12g] does not
    round-trip, and the value a reader pastes back may not even reproduce
-   the failure.
-
-   Copied from the core's [Pp.float_exact] (lib/pp.ml), byte for byte in
-   its output: the shortest decimal rendering that round-trips to the
-   exact bits — 15 significant digits when they suffice, else 16, else 17
-   (always enough for a double). Inlined rather than imported because it
-   is this library's whole dependency on the core, and windtrap.gen is
-   stdlib-only by contract (see dune). Sign of zero survives; non-finite
-   values render as [nan], [inf], [-inf]. *)
-let pp_float ppf f =
-  if Float.is_nan f || not (Float.is_finite f) then
-    Format.pp_print_string ppf (Printf.sprintf "%g" f)
-  else
-    let round_trips s =
-      Int64.equal
-        (Int64.bits_of_float (float_of_string s))
-        (Int64.bits_of_float f)
-    in
-    let s15 = Printf.sprintf "%.15g" f in
-    let s =
-      if round_trips s15 then s15
-      else
-        let s16 = Printf.sprintf "%.16g" f in
-        if round_trips s16 then s16 else Printf.sprintf "%.17g" f
-    in
-    (* [%g] drops the point on a whole value: [1.] renders as ["1"], which
-       is an int literal, not a float one. The whole reason to round-trip
-       is that a reader can paste the value back — into [~examples], into
-       a [let] — so it has to stay syntactically a float. *)
-    let is_float_syntax =
-      String.exists (fun c -> c = '.' || c = 'e' || c = 'E') s
-    in
-    Format.pp_print_string ppf (if is_float_syntax then s else s ^ ".")
-
+   the failure. *)
+let pp_float = Pp.float_exact
 let pp_bool = Format.pp_print_bool
 let pp_unit ppf () = Format.pp_print_string ppf "()"
 let pp_char ppf c = Format.fprintf ppf "%C" c

@@ -29,7 +29,7 @@
    decided at the thin drivers and visible there. *)
 type t = {
   invocation : Render.invocation;
-  seed : Windtrap_gen.Seed.seed option;
+  seed : Seed.seed option;
   selection : string option;
   github : bool;
   output : [ `Quiet | `Compact | `Verbose ];

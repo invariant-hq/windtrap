@@ -76,9 +76,9 @@ type parsed = {
   strict_snapshots : bool option;
       (** [--strict-snapshots]: fail the run on a baseline still stale after a
           full, clean run. *)
-  seed : Windtrap_gen.Seed.seed option;
+  seed : Seed.seed option;
       (** [--seed TOKEN]: the root seed, an [s1:] token parsed by
-          [Seed.of_string]. *)
+          {!Seed.of_string}. *)
   timeout : float option;
       (** [--timeout SECONDS]: default per-test limit; must be positive. *)
   slow_threshold : float option;
@@ -163,7 +163,7 @@ val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
     additive across all three layers, overrides first. [WINDTRAP_ALLOW_FOCUS],
     which no flag can set, is filled from the environment alone.
 
-    Effects: reads the environment, and draws a fresh root seed ([Seed.random])
+    Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
     when no layer provides one.
 
     [Error (Invalid_value _)] with source [WINDTRAP_SEED] when the seed falls

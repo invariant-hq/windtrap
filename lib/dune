@@ -5,16 +5,13 @@
 ; identifiers and the arming variable with the runtime's own functions
 ; before they enter section data, so the report and the runtime cannot
 ; disagree about what to type — Render draws sections and names neither
-; runtime. windtrap_gen (lib/gen) is the generation library — Seed,
-; Shrink_tree, Gen — standalone and stdlib-only; the core reaches it
-; through the alias units gen.ml/seed.ml/shrink_tree.ml here, so the
-; property engine keeps its unqualified spellings. All dependencies
-; point downward only — none of the three links windtrap.
+; runtime. Both dependencies point downward only — neither runtime
+; links windtrap.
 
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix windtrap_coverage windtrap_mutate windtrap_gen)
+ (libraries unix windtrap_coverage windtrap_mutate)
  ; Windtrap measures its own coverage. The backend is spelled
  ; `ppx_windtrap.coverage`, not the `ppx_windtrap` the manual shows
  ; users: that name resolves to the inline-test rewriter, whose

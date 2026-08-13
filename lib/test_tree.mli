@@ -223,7 +223,7 @@ val prune : (string list -> bool) -> t list -> t list
 
     Surviving nodes are kept verbatim, so their paths, tags, focus flags,
     declaration sites and bodies are exactly the ones an unpruned run would use
-    — per-case seed derivation ([Seed.derive] over the path) and snapshot
+    — per-case seed derivation ({!Seed.derive} over the path) and snapshot
     scoping (over the declaration file) are therefore identical between a full
     run and a narrowed one.
 
@@ -262,4 +262,4 @@ val flatten : t list -> case list
 val path_to_string : string list -> string
 (** [path_to_string path] joins [path] with [" › "] — the canonical rendering
     matched by [-f]/[-e] filters and hashed by per-case seed derivation
-    ([Seed.derive]). The separator is frozen. *)
+    ({!Seed.derive}). The separator is frozen. *)

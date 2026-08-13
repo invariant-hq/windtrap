@@ -157,7 +157,7 @@ val header :
   tests:int ->
   ?declared:int ->
   ?selection:string ->
-  seed:Windtrap_gen.Seed.seed option ->
+  seed:Seed.seed option ->
   unit ->
   unit
 (** [header t ~suite ~tests ~seed] records and, under [`Verbose], prints the run
@@ -694,8 +694,7 @@ type mutation = {
   duration : float option;
       (** The mutation run's wall-clock seconds, [None] for a merge, which ran
           nothing. *)
-  seed : Windtrap_gen.Seed.seed option;
-      (** The run's root seed, when it had one. *)
+  seed : Seed.seed option;  (** The run's root seed, when it had one. *)
   siblings : bool;
       (** [true] when other executables' verdict files sat beside this one's:
           the numbers are then one executable's view of the code it links, and
@@ -842,7 +841,7 @@ type admission = {
           summary term. *)
   tries : int;  (** The [WINDTRAP_MUTATE_TRY] value the capped term names. *)
   admission_duration : float;  (** The admit run's wall-clock seconds. *)
-  admission_seed : Windtrap_gen.Seed.seed option;
+  admission_seed : Seed.seed option;
       (** The run's root seed, printed under the run header's rule: [Some] iff
           the header printed one. *)
   scope : string option;

@@ -22,16 +22,13 @@ let unit_of name =
   | None -> name
 
 (* Windtrap's own units, and only those: the alias unit, its wrapped
-   modules, the co-versioned windtrap.gen sublibrary whose frames sit
-   under user callbacks (a generator callback in tail position leaves a
-   Gen frame on top), and the coverage runtime. The test matches whole
-   unit names rather than a bare "Windtrap" prefix, so a user library
-   called [Windtrap_helpers] stays foreign. *)
+   modules, and the coverage runtime. The test matches whole unit names
+   rather than a bare "Windtrap" prefix, so a user library called
+   [Windtrap_helpers] stays foreign. *)
 let own_unit name =
   let unit_name = unit_of name in
   unit_name = "Windtrap"
   || String.starts_with ~prefix:"Windtrap__" unit_name
-  || String.starts_with ~prefix:"Windtrap_gen__" unit_name
   || unit_name = "Windtrap_coverage"
 
 let internal_unit name =

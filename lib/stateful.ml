@@ -3,10 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The generation vocabulary lives in windtrap.gen; the commands keep
-   its short name. *)
-module Gen = Windtrap_gen.Gen
-
 (* Commands
 
    ['arg] is existential because a command list is heterogeneous in its

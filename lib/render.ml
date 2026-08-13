@@ -7,8 +7,6 @@
    payloads and Diff data — renderers project, never alter, run data.
   ---------------------------------------------------------------------------*)
 
-module Seed = Windtrap_gen.Seed
-
 let spf = Printf.sprintf
 
 (* Layout constants — illustrative, not contract. *)

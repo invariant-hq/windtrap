@@ -83,7 +83,7 @@ module Driver : sig
   type t = Driver.t = {
     invocation : Render.invocation;
         (** The hint context every command hint derives from. *)
-    seed : Windtrap_gen.Seed.seed option;  (** The header's seed policy. *)
+    seed : Seed.seed option;  (** The header's seed policy. *)
     selection : string option;  (** What an empty run explains itself with. *)
     github : bool;  (** The GitHub gating decision. *)
     output : [ `Quiet | `Compact | `Verbose ];
@@ -166,7 +166,7 @@ module Run : sig
       {!Runner.type-outcome}. *)
 
   type config = Run.config = {
-    seed : Windtrap_gen.Seed.seed;
+    seed : Seed.seed;
     filter : string option;
     exclude : string option;
     tags : string list;
@@ -208,7 +208,7 @@ module Run : sig
     duration : float;  (** Seconds, attempts summed. *)
     attempts : int;  (** [1] plus retries used. *)
     prop_stats : Property.stats option;  (** Property bookkeeping. *)
-    srandom_root : Windtrap_gen.Seed.seed option;
+    srandom_root : Seed.seed option;
         (** The replay root, when drawn. *)
   }
   (** The type for result rows ({!Run.type-result}): what the inline runner's

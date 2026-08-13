@@ -71,7 +71,7 @@ val command :
   ?pos:Loc.pos ->
   ?pre:('model -> 'arg -> bool) ->
   string ->
-  'arg Windtrap_gen.Gen.t ->
+  'arg Gen.t ->
   next:('model -> 'arg -> 'model) ->
   ('model -> 'arg -> 'sut -> unit) ->
   ('model, 'sut) command
@@ -138,7 +138,7 @@ val program :
   ?pp_model:(Format.formatter -> 'model -> unit) ->
   model:'model ->
   ('model, 'sut) command list ->
-  ('model, 'sut) program Windtrap_gen.Gen.t
+  ('model, 'sut) program Gen.t
 (** [program ~model commands] generates programs over [commands] starting from
     [model].
 

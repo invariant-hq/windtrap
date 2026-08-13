@@ -119,7 +119,7 @@
     {!Fixture_release} before each teardown and outside any per-test timeout.
 
     {b Sharding.} [--shard K/N] partitions the suite into [N] buckets by a
-    deterministic hash of each test's full path ([Seed.derive] under a frozen
+    deterministic hash of each test's full path ({!Seed.derive} under a frozen
     constant root) and selects bucket [K]. Buckets are stable across runs,
     machines, and suite composition — the hash is frozen — so [N] concurrent
     [dune] partitions cover every test exactly once; renaming or regrouping a
@@ -159,7 +159,7 @@ val prop :
   ?max_discard:int ->
   ?examples:'a list ->
   string ->
-  'a Windtrap_gen.Gen.t ->
+  'a Gen.t ->
   ('a -> unit) ->
   Test_tree.t
 (** [prop name gen law] declares a property test: a leaf test whose body checks

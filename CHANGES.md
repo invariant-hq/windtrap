@@ -194,12 +194,6 @@ and its C stub now live in the core library and the public name is gone.
 Nothing user-visible changes unless a stanza linked `windtrap.clock` directly,
 in which case: delete that line.
 
-**Generation stands alone as `windtrap.gen`.** `Gen`, and the seed and
-shrink-tree machinery under it, now live in a sublibrary with zero
-dependencies — deterministic generation with integrated shrinking, usable
-without the runner. `Windtrap.Gen` is unchanged: same module, same docs, now
-an alias.
-
 **A printerless counterexample says `<no printer>`.** Property failures for
 generators without a printer no longer reconstruct a `<from: …>` provenance
 string from the generation path; the report says `<no printer>` and, as

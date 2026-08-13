@@ -566,7 +566,7 @@ val contramap : ('a -> 'b) -> 'b testable -> 'a testable
     run header replays every failure: the failure report prints the exact replay
     command for the way the run was invoked. *)
 
-module Gen = Windtrap_gen.Gen
+module Gen = Gen
 (** The generator vocabulary:
 
     - numeric — {!Gen.int}, {!Gen.nat}, {!Gen.small_int}, {!Gen.int_range},
@@ -963,8 +963,8 @@ module Private : sig
   module Render_junit = Render_junit
   module Run = Run
   module Runner = Runner
-  module Seed = Windtrap_gen.Seed
-  module Shrink_tree = Windtrap_gen.Shrink_tree
+  module Seed = Seed
+  module Shrink_tree = Shrink_tree
   module Snapshot = Snapshot
   module Stateful = Stateful
   module Tag = Tag

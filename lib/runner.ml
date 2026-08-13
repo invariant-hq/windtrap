@@ -142,8 +142,7 @@ let random_reseed_root = 0x57696e6474726170L
 let with_isolated_random ~path fn =
   let saved = Random.get_state () in
   Random.init
-    (Int64.to_int
-       (Windtrap_gen.Seed.derive ~root:random_reseed_root ~path ~index:0));
+    (Int64.to_int (Seed.derive ~root:random_reseed_root ~path ~index:0));
   Fun.protect ~finally:(fun () -> Random.set_state saved) fn
 
 (* A SIGALRM window bounding setup + body + teardown, and the [renew] that
@@ -524,7 +523,7 @@ let shard_root = 0x77696e6473687264L (* "windshrd" *)
 let shard_bucket ~shards path =
   Int64.to_int
     (Int64.unsigned_rem
-       (Windtrap_gen.Seed.derive ~root:shard_root ~path ~index:0)
+       (Seed.derive ~root:shard_root ~path ~index:0)
        (Int64.of_int shards))
 
 let selection_predicate (config : Run.config) =

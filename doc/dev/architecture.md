@@ -28,8 +28,7 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | the kernel: declaration tree, checking, property engine, model-based testing, snapshots, capture, the run/driver spine, the mutation loop, renderers, CLI, the client facades and the registry; links `unix`, `windtrap.clock`, `windtrap.gen`, `windtrap.coverage` and `windtrap.mutate` only — all in-package, so Law 10's no-third-party-weight posture is untouched |
-| `windtrap.gen` | `lib/gen/` | deterministic generation with integrated shrinking: `Gen`, `Seed`, `Shrink_tree`; zero library dependencies, usable without the runner |
+| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, snapshots, capture, the run/driver spine, the mutation loop, renderers, CLI, the client facades and the registry; links `unix`, `windtrap.coverage` and `windtrap.mutate` only — both in-package, so Law 10's no-third-party-weight posture is untouched |
 | `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation runtimes share; stdlib only |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
 | `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map, `.mutants` verdict files; stdlib only, for the same reason |
@@ -46,11 +45,9 @@ themselves are declared in `Cli`'s table), `Tag`, `Loc` (`pos` +
 backtrace-derived source attribution), `Path_ops` (project root,
 sandbox reconstruction, log dirs), `Atomic_file` (temp+rename writes),
 `Clock` (monotonic C-stub counter; the runner's timing source for
-per-test durations and the run total). `Seed` (SplitMix64, `s1:` tokens,
-`mix(root, path, index)` derivation) and `Shrink_tree` (memoized lazy
-rose trees) live in `windtrap.gen` since the repartition; core
-consumers name `Windtrap_gen` directly, and `Windtrap.Gen` and
-[Private] re-export them.
+per-test durations and the run total), `Seed` (SplitMix64, `s1:`
+tokens, `mix(root, path, index)` derivation), `Shrink_tree` (memoized
+lazy rose trees).
 
 Data: `Failure` (failure-as-data: typed kinds, phase, location,
 output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions),
@@ -58,12 +55,10 @@ output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions),
 spans; no styling).
 
 Verbs and engines: `Check` (the Twenty-five verbs, pure, no run-state
-dependency), `Gen` (an alias to `windtrap.gen`'s module — the witness
-itself lives in the standalone library), `Property` (the case loop:
-examples-first, derived per-case seeds, discard/give-up, shrink search,
-collect tables), `Stateful` (model-based testing: the command
-vocabulary, compiled into programs the property engine runs, over
-`windtrap.gen`).
+dependency), `Gen`, `Property` (the case loop: examples-first, derived
+per-case seeds, discard/give-up, shrink search, collect tables),
+`Stateful` (model-based testing: the command vocabulary, compiled into
+programs the property engine runs).
 
 Subsystems (each owns a state *type*; the state *instances* live in
 `Run`): `Capture` (fd-level dup2 capture into per-test log files, C

@@ -23,7 +23,7 @@
 (* Public modules *)
 
 module Testable = Testable
-module Gen = Windtrap_gen.Gen
+module Gen = Gen
 
 (* Internal modules (see [Private] in the .mli) *)
 
@@ -47,8 +47,8 @@ module Private = struct
   module Render_junit = Render_junit
   module Run = Run
   module Runner = Runner
-  module Seed = Windtrap_gen.Seed
-  module Shrink_tree = Windtrap_gen.Shrink_tree
+  module Seed = Seed
+  module Shrink_tree = Shrink_tree
   module Snapshot = Snapshot
   module Stateful = Stateful
   module Tag = Tag
