@@ -38,7 +38,7 @@ type t = {
   invocation : Render.invocation;
       (** The hint context every command hint derives from, computed once at
           startup ({!Render.type-invocation}). *)
-  seed : Seed.seed option;
+  seed : Windtrap_gen.Seed.seed option;
       (** The header's seed: the facade passes the root seed iff the suite
           declares property tests; the inline runner passes [None] ({!observe}).
       *)
@@ -124,7 +124,7 @@ val write_junit :
 
 val observe :
   Render.t ->
-  seed:Seed.seed option ->
+  seed:Windtrap_gen.Seed.seed option ->
   selection:string option ->
   Runner.event ->
   unit

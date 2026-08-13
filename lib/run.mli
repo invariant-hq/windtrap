@@ -33,7 +33,7 @@
 (** {1:config Configuration} *)
 
 type config = {
-  seed : Seed.seed;  (** The run's root seed. *)
+  seed : Windtrap_gen.Seed.seed;  (** The run's root seed. *)
   filter : string option;
       (** [-f]/positional/[WINDTRAP_FILTER]: run only tests whose path contains
           this substring. *)
@@ -96,7 +96,7 @@ type config = {
 val default_config : unit -> config
 (** [default_config ()] is the configuration with every field at its built-in
     default: no filters, no tags, all flags off, and no overrides. Effects:
-    [seed] is drawn fresh from {!Seed.random} and [log_dir] is
+    [seed] is drawn fresh from [Seed.random] and [log_dir] is
     {!Path_ops.default_log_dir}[ ()]. *)
 
 (** {1:runs Run records} *)
@@ -408,7 +408,7 @@ type result = {
   prop_stats : Property.stats option;
       (** The property engine's bookkeeping (label distribution, coverage
           statuses) for property tests; [None] otherwise. *)
-  srandom_root : Seed.seed option;
+  srandom_root : Windtrap_gen.Seed.seed option;
       (** [Some root] — the run's root seed — iff the test called {!srandom} on
           its recorded attempt; [None] otherwise. Renderers print the replay
           line of a failing stochastic test from it. *)

@@ -171,7 +171,7 @@ type kind =
               things: a converged search reports the minimal counterexample, an
               exhausted one reports the best it reached. *)
       timed_out : float option;
-      root : Seed.seed;
+      root : Windtrap_gen.Seed.seed;
       count : int option;
       max_shrink : int option;
       examples : bool;
@@ -356,7 +356,7 @@ val property :
   case_index:int ->
   shrink_steps:int ->
   ?shrink_exhausted:bool ->
-  root:Seed.seed ->
+  root:Windtrap_gen.Seed.seed ->
   examples:bool ->
   ?printerless:bool ->
   unit ->

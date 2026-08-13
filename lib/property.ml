@@ -7,6 +7,12 @@
   shrinking), and Failure (typed counterexamples).
   --------------------------------------------------------------------------*)
 
+(* The generation vocabulary lives in windtrap.gen; the engine keeps its
+   short names. *)
+module Gen = Windtrap_gen.Gen
+module Seed = Windtrap_gen.Seed
+module Shrink_tree = Windtrap_gen.Shrink_tree
+
 (* Discarding *)
 
 exception Discard

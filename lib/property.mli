@@ -167,9 +167,9 @@ val run :
   ?max_discard:int ->
   ?max_shrink:int ->
   ?examples:'a list ->
-  root:Seed.seed ->
+  root:Windtrap_gen.Seed.seed ->
   path:string ->
-  'a Gen.t ->
+  'a Windtrap_gen.Gen.t ->
   (context -> 'a -> unit) ->
   outcome
 (** [run ~root ~path gen body] checks [body] over [gen] and returns the

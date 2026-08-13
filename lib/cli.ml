@@ -23,7 +23,7 @@ type parsed = {
   update : Env.update option;
   prune : bool option;
   strict_snapshots : bool option;
-  seed : Seed.seed option;
+  seed : Windtrap_gen.Seed.seed option;
   timeout : float option;
   slow_threshold : float option;
   prop_count : int option;
@@ -355,7 +355,7 @@ let table =
               metavar = "TOKEN";
               set =
                 (fun ~source acc value ->
-                  match Seed.of_string value with
+                  match Windtrap_gen.Seed.of_string value with
                   | Ok seed -> Ok { acc with seed = Some seed }
                   | Error _ -> invalid ~source ~value ~expected:seed_expected);
             };

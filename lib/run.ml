@@ -15,6 +15,8 @@
    diffing, the renderers — is mutated. *)
 [@@@mutate exclude_file]
 
+module Seed = Windtrap_gen.Seed
+
 (* Configuration *)
 
 type config = {

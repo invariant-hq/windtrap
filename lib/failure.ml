@@ -43,7 +43,7 @@ type kind =
       shrink_steps : int;
       shrink_exhausted : bool;
       timed_out : float option;
-      root : Seed.seed;
+      root : Windtrap_gen.Seed.seed;
       count : int option;
       max_shrink : int option;
       examples : bool;

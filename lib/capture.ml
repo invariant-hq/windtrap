@@ -30,7 +30,7 @@ type t = Disabled | Enabled of enabled
    OS-entropy word so no module-level PRNG state exists. *)
 let generate_run_id () =
   let bytes = Bytes.create 8 in
-  let v = ref (Seed.random ()) in
+  let v = ref (Windtrap_gen.Seed.random ()) in
   for i = 0 to 7 do
     let d = Int64.to_int (Int64.unsigned_rem !v 36L) in
     v := Int64.unsigned_div !v 36L;
