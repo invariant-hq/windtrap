@@ -14,7 +14,7 @@
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix clock windtrap_coverage windtrap_mutate windtrap_gen)
+ (libraries unix windtrap_coverage windtrap_mutate windtrap_gen)
  ; Windtrap measures its own coverage. The backend is spelled
  ; `ppx_windtrap.coverage`, not the `ppx_windtrap` the manual shows
  ; users: that name resolves to the inline-test rewriter, whose
@@ -42,4 +42,4 @@
   (backend ppx_windtrap.mutate))
  (foreign_stubs
   (language c)
-  (names capture_stubs)))
+  (names capture_stubs clock_stubs)))

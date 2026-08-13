@@ -4,6 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 open Windtrap
+module Clock = Windtrap.Private.Clock
 
 let tests =
   [

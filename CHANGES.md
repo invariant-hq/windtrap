@@ -188,6 +188,12 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
+**`windtrap.clock` is folded into the core.** The sublibrary had no dependent
+of its own — only the runner ever linked it — so the monotonic-clock module
+and its C stub now live in the core library and the public name is gone.
+Nothing user-visible changes unless a stanza linked `windtrap.clock` directly,
+in which case: delete that line.
+
 **A mutation run is a linked library.** The mutation loop leaves the core for
 `windtrap.mutation`; add it to the test stanza's libraries —
 `(libraries … windtrap windtrap.mutation)` — and linking it is the wiring.

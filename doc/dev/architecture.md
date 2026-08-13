@@ -32,7 +32,6 @@ They never merge again (that was v1's mistake).
 | `windtrap.gen` | `lib/gen/` | deterministic generation with integrated shrinking: `Gen`, `Seed`, `Shrink_tree`; zero library dependencies, usable without the runner |
 | `windtrap.mutation` | `lib/mutation/` | the mutation loop — dry run, reach map, fork supervision, verdicts, report — a `Windtrap_driver` client that installs itself into `Registry` at load; linking it is the arming act (`-linkall`) |
 | `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation runtimes share; stdlib only |
-| `windtrap.clock` | `lib/clock/` | monotonic clock C stubs; the runner's timing source for per-test durations and the run total |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
 | `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map, `.mutants` verdict files; stdlib only, for the same reason |
 | binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`) and `mutate` (merge verdicts, report the survivors that survived everywhere); shared discovery and staleness in `data_files` |
@@ -46,7 +45,9 @@ Format helpers), `Text` (newline/UTF-8/substring utilities), `Env`
 CI/TTY detection, the settings with no flag; the `WINDTRAP_*` mirrors
 themselves are declared in `Cli`'s table), `Tag`, `Loc` (`pos` +
 backtrace-derived source attribution), `Path_ops` (project root,
-sandbox reconstruction, log dirs), `Atomic_file` (temp+rename writes). `Seed` (SplitMix64, `s1:` tokens,
+sandbox reconstruction, log dirs), `Atomic_file` (temp+rename writes),
+`Clock` (monotonic C-stub counter; the runner's timing source for
+per-test durations and the run total). `Seed` (SplitMix64, `s1:` tokens,
 `mix(root, path, index)` derivation) and `Shrink_tree` (memoized lazy
 rose trees) live in `windtrap.gen` since the repartition; thin alias
 units keep their core spellings for `Property` and the test seams.

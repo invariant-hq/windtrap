@@ -948,6 +948,7 @@ module Private : sig
   module Capture = Capture
   module Check = Check
   module Cli = Cli
+  module Clock = Clock
   module Diff = Diff
   module Driver = Driver
   module Env = Env
