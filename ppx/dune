@@ -8,8 +8,7 @@
 ; ppx_runtime_libraries makes every library preprocessed with
 ; ppx_windtrap depend on the runtime and on the top-level
 ; Expect_test_config module the generated code references (matching
-; ppx_expect). The runtime carries windtrap.mutation with it, so every
-; generated runner links the mutation loop — see ppx/runtime/dune.
+; ppx_expect).
 
 (library
  (name ppx_windtrap)
