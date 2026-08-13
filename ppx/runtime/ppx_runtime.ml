@@ -22,28 +22,40 @@
    runtime/{test_spec,test_node,output}.ml and the shapes its corpus
    goldens pin) — see the .mli for the contract. *)
 
-(* The client diet, compiler-enforced: everything drive-side reaches core
-   through the facade's constrained re-exports (windtrap_driver.mli is
-   the census), everything body-side through Windtrap_testkit, so a use
-   neither facade names fails to compile here rather than widening the
-   surface silently. Beyond them this module names only the shared
-   vocabulary — Failure, Test_tree, Loc, Text — and Mutate_loop, the
-   mutation-aware run entry both thin drivers call. All of it arrives
-   through [Windtrap.Private]: this library sits outside the core, and
-   Private is the core's one export surface for co-versioned clients. *)
-module Windtrap_driver = Windtrap.Private.Windtrap_driver
-module Windtrap_testkit = Windtrap.Private.Windtrap_testkit
+(* The client diet. This block is the complete list of core modules the
+   expect runtime consumes, kept deliberately minimal — the greppable
+   census of the one out-of-core client's reach (Law 12). Drive-side:
+   Cli (settings resolution over empty), Driver (the spine and
+   execute_and_report, write_junit), Runner (outcome readers, startup
+   exit codes), Run (result rows, the ambient slot the body-side
+   one-liners below read), Env (GitHub gating), Registry (the Law 16d
+   hook registration), Mutate_loop (the mutation-aware run entry both
+   thin drivers call). Body-side: Capture, through [captured_output]
+   below. Shared vocabulary: Failure, Test_tree, Loc, Text. All of it
+   arrives through [Windtrap.Private]: this library sits outside the
+   core, and Private is the core's one export surface for co-versioned
+   clients. Widening this list is a design act; record the reason here. *)
+module Capture = Windtrap.Private.Capture
+module Cli = Windtrap.Private.Cli
+module Driver = Windtrap.Private.Driver
+module Env = Windtrap.Private.Env
 module Failure = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
 module Mutate_loop = Windtrap.Private.Mutate_loop
+module Registry = Windtrap.Private.Registry
+module Run = Windtrap.Private.Run
+module Runner = Windtrap.Private.Runner
 module Test_tree = Windtrap.Private.Test_tree
 module Text = Windtrap.Private.Text
-module Cli = Windtrap_driver.Cli
-module Driver = Windtrap_driver.Driver
-module Env = Windtrap_driver.Env
-module Registry = Windtrap_driver.Registry
-module Run = Windtrap_driver.Run
-module Runner = Windtrap_driver.Runner
+
+(* Ambient-reading one-liners: read the one documented slot, dispatch on
+   explicit state. Semantics live in Run and Capture. *)
+let add_failure failure = Run.add_failure (Run.current_frame ()) failure
+let current_path () = Run.path (Run.current_frame ())
+let failure_count () = List.length (Run.failures (Run.current_frame ()))
+
+let captured_output ?pos () =
+  Capture.output ?pos (Run.capture (Run.current ()))
 
 (* Initialization *)
 
@@ -942,7 +954,7 @@ let require_ctx op =
           runner")
 
 let consume_output ctx ~pos =
-  ctx.ctx_sanitize (Windtrap_testkit.captured_output ~pos ())
+  ctx.ctx_sanitize (captured_output ~pos ())
 
 let expect_output () =
   let ctx = require_ctx "[%expect.output]" in
@@ -1002,7 +1014,7 @@ let shown_expected node =
   | None -> ""
 
 let fail_node ctx node ~shown =
-  Windtrap_testkit.add_failure
+  add_failure
     (Failure.equality
        ~loc:(loc_t ~file:ctx.ctx_file node.loc)
        ~expected:(shown_expected node) ~actual:shown ())
@@ -1083,7 +1095,7 @@ let resolve_nodes ctx ~check_reachability =
       | [] ->
           if check_reachability then begin
             all_covered := false;
-            Windtrap_testkit.add_failure
+            add_failure
               (Failure.message
                  ~loc:(loc_t ~file:ctx.ctx_file node.loc)
                  (Printf.sprintf "[%%%s] node was never reached"
@@ -1109,7 +1121,7 @@ let record_covered value =
      so no failure may be reported as covered by one. *)
   if !state.read_only then ()
   else
-    let path = Windtrap_testkit.current_path () in
+    let path = current_path () in
     if value = `No_problem then Hashtbl.remove !state.covered path
     else Hashtbl.replace !state.covered path (value = `Covered)
 
@@ -1146,7 +1158,7 @@ let resolve_trailing ctx ~raw =
       record formatted;
       (match result with
       | Fail _ ->
-          Windtrap_testkit.add_failure
+          add_failure
             (Failure.equality
                ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
                ~msg:"trailing output not matched by [%expect]" ~expected:""
@@ -1160,7 +1172,7 @@ let resolve_trailing ctx ~raw =
           ()
       in
       record (format_pretty ~delimiter:(Tag "") ~node_column:insert_column cr);
-      Windtrap_testkit.add_failure
+      add_failure
         (Failure.equality
            ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
            ~msg:"trailing output not matched by [%expect]" ~expected:""
@@ -1196,7 +1208,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
      all promotable corrections; counting such a body as covered exits 0
      and invites [dune promote] to bless output the assertion says is
      wrong (Law 11: "masked assertion failures"). *)
-  let failures_before = Windtrap_testkit.failure_count () in
+  let failures_before = failure_count () in
   Fun.protect
     ~finally:(fun () -> !state.current_expect <- saved)
     (fun () ->
@@ -1204,7 +1216,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
       | () ->
           (* Read before resolution records any expect failure of its own. *)
           let body_failed =
-            Windtrap_testkit.failure_count () > failures_before
+            failure_count () > failures_before
           in
           (* Trailing output not matched by any node becomes an inserted
              node; then per-node reachability. *)

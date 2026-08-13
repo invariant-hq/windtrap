@@ -2,9 +2,8 @@
 ; inline_tests backend's runner address it as
 ; Ppx_windtrap_runtime.Ppx_runtime — the wrapped library name is the
 ; spelling, so windtrap's internal module layout stays out of generated
-; code. It consumes the core through Windtrap.Private's facades
-; (windtrap_driver.mli is the census) plus Private's Mutate_loop, the
-; mutation-aware run entry both thin drivers call.
+; code. It consumes the core through Windtrap.Private; the alias block
+; at the top of ppx_runtime.ml is the census of that diet.
 
 (library
  (name ppx_windtrap_runtime)

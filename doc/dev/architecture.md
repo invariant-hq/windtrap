@@ -86,10 +86,8 @@ data, and `Render` names no instrumentation runtime), `Driver` (the
 spine: `Driver.t` is the record of one invocation's reporting inputs,
 `execute_and_report` the one order every driver shares, and
 `plan`/`execute` the staged halves for mutation-child-style callers),
-`Registry` (the Law-16d armed hooks: the one cross-package cell), the
-two client facades `Windtrap_driver` (what a thing that runs suites
-may use) and `Windtrap_testkit` (what code inside a test may use) —
-together the Law-12 referent — `Mutate_loop` (the mutation seam: the
+`Registry` (the Law-16d armed hooks: the one cross-package cell),
+`Mutate_loop` (the mutation seam: the
 dry run and its reach map, the determinism probe, the forced-fail
 check, the fork loop, the admission machine, the verdict file and the
 report — it *wraps* `Driver.execute_and_report` rather than sitting
@@ -97,7 +95,9 @@ beside it, because a mutation run must announce an armed mutant before
 any other output and fork after the dry run, which brackets the run on
 both sides), and the facade `Windtrap`. The expect runtime is a
 client, not a resident: `Ppx_runtime` (inline-test protocol, expect
-matching, `.corrected` assembly) and the ambient `Expect_test_config`
+matching, `.corrected` assembly) consumes the core through
+`Windtrap.Private` — the alias block at its top is the census of that
+diet, and widening it is a design act — and the ambient `Expect_test_config`
 live in `ppx_windtrap`, against the facades.
 
 Two thin drivers sit on top of `Mutate_loop.execute_and_report` —
@@ -231,8 +231,9 @@ them reopens the design**.
     subcommand that merges and renders but never runs tests or drives a
     build, and at most one core module that drives it — coverage needs
     none; mutation's is `lib/mutate_loop.ml`. Out-of-core client code
-    (the expect runtime) reaches the drive axis only through the named
-    facades (`Windtrap_driver`, `Windtrap_testkit`). Core windtrap's
+    (the expect runtime) is a client of the core through
+    `Windtrap.Private`, its diet documented at its alias block. Core
+    windtrap's
     coupling to each subsystem is one read per run — coverage's summary
     snapshot at run end, mutation's dispatch call at run entry — plus,
     for mutation alone, the Law-16d armed hooks registered in

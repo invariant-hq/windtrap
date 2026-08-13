@@ -60,7 +60,7 @@
    runtime lives outside the core, and these names must mean the core's
    modules without this signature re-exporting them. *)
 module Test_tree := Windtrap.Private.Test_tree
-module Runner := Windtrap.Private.Windtrap_driver.Runner
+module Runner := Windtrap.Private.Runner
 
 (** {1:locations Locations}
 

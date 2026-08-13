@@ -149,8 +149,8 @@ forks — batching plus ride-along admission let one killed fault admit
 hundreds of tests, and no test of this suite ruled `UNJUSTIFIED`. The
 admission machine's own scenarios live in `test/mutate_loop`.
 
-Seven core modules opt out with `[@@@mutate exclude_file]`: `runner`,
-`run`, `driver`, `registry`, `windtrap_testkit`, `mutate_loop` and
+Six core modules opt out with `[@@@mutate exclude_file]`: `runner`,
+`run`, `driver`, `registry`, `mutate_loop` and
 `windtrap`; the expect runtime, a library of its own since the
 repartition, excludes itself the same way and its stanza carries no
 mutation backend at all. They are the

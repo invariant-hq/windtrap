@@ -45,6 +45,7 @@ module Private = struct
   module Render = Render
   module Render_github = Render_github
   module Render_junit = Render_junit
+  module Registry = Registry
   module Run = Run
   module Runner = Runner
   module Seed = Seed
@@ -54,8 +55,6 @@ module Private = struct
   module Tag = Tag
   module Test_tree = Test_tree
   module Text = Text
-  module Windtrap_driver = Windtrap_driver
-  module Windtrap_testkit = Windtrap_testkit
 end
 
 (* Types *)
