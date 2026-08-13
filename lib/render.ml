@@ -1531,6 +1531,12 @@ let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
         region)
     regions
 
+(* The subsystem-neutral report-section vocabulary. Internal: every
+   producer goes through the typed report entry points (coverage_report,
+   mutation_report, admission_report), and no third-backend consumer
+   exists. Priced like Failure.kind all the same — a new constructor is
+   a design amendment, not a convenience. Hint carries no spans by
+   construction: no color in any hint. *)
 type section =
   | Line of span list
   | Hint of string

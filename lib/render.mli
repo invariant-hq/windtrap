@@ -348,13 +348,12 @@ val report_snapshots :
 
 (** {1:sections Report sections}
 
-    The subsystem-neutral vocabulary instrumentation reports are made of:
-    styled lines, hint lines, aligned rows, source excerpts, and the failure
-    section's rules. Coverage's per-file table and mutation's survivor blocks
-    are two projections into it — the subsystem that owns the numbers builds
-    section data ({!Driver.coverage_data}, the mutation loop), and this module
-    draws it knowing nothing about the runtimes that measured it. Every name a
-    runtime owns (a mutant identifier, the arming variable) arrives in the data
+    Instrumentation reports are data drawn by this module: coverage's per-file
+    table and mutation's survivor blocks are two projections into one internal
+    section vocabulary — the subsystem that owns the numbers builds the record
+    data ({!Driver.coverage_data}, the mutation loop), and this module draws it
+    knowing nothing about the runtimes that measured it. Every name a runtime
+    owns (a mutant identifier, the arming variable) arrives in the data
     pre-spelled with the runtime's own functions, so the report and the runtime
     cannot disagree about what to type.
 
@@ -377,18 +376,6 @@ val plain : string -> span
 val styled : Pp.style -> string -> span
 (** [styled style text] is [text] wrapped whole in [style]. *)
 
-type column = {
-  gap : string;  (** Printed before this column, every row. [""] abuts. *)
-  align : [ `Left | `Right ];
-      (** Which side of the column the cell's padding lands on. *)
-  width : int option;
-      (** The least column width. [None] sizes the column to its widest cell;
-          a caller aligning several [Rows] sections against each other passes
-          the width it computed across all of them, as {!excerpt}'s
-          [number_width] does. *)
-}
-(** The type for one column of a {!section.Rows} section. *)
-
 type excerpt = {
   file : string;
       (** The source file the lines come from. Printed on the heading line and
@@ -408,37 +395,6 @@ type excerpt = {
 (** The type for one source-excerpt block: which lines of which file to show,
     and what to call them. Subsystem-neutral — the data is the caller's, the
     layout is this module's. *)
-
-type section =
-  | Line of span list
-      (** One line, the spans concatenated; [Line []] is a blank line. *)
-  | Hint of string
-      (** One command-hint line, printed verbatim: a line the reader copies
-          whole, so it carries no style by construction — no color in any
-          hint. *)
-  | Rows of { margin : string; columns : column list; rows : span list list }
-      (** Aligned rows: each row is one cell per column, cells padded to the
-          column's width on the [align] side (outside the cell's styling) and
-          the rendered row stripped of trailing spaces. Cells beyond [columns]
-          are dropped; missing trailing cells are allowed. *)
-  | Excerpt of {
-      context : int;
-      marker : bool;
-      margin : string;
-      number_width : int option;
-      excerpt : excerpt;
-    }  (** A source-excerpt block, drawn as {!val:excerpt} draws it. *)
-  | Rule of string option
-      (** The failure section's 54-column faint rule: [Some label] centers the
-          label in it ([survivors (2)]), [None] is the closing rule. *)
-(** The type for report sections. The vocabulary is priced like
-    {!Failure.kind}: additions are design amendments, not conveniences. *)
-
-val sections : t -> section list -> unit
-(** [sections t l] prints [l] in order on [t]'s sink. Sections neither erase
-    the live display nor close a compact glyph row: the report entry points
-    below do that once, and callers print section data after {!finish}, when
-    the transcript is settled. *)
 
 (** {1:excerpts Source excerpts}
 

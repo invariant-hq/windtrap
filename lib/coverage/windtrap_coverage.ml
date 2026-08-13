@@ -293,9 +293,6 @@ let summary t =
 let percentage { visited; total } =
   if total = 0 then 100. else 100. *. float_of_int visited /. float_of_int total
 
-let pp_summary ppf s =
-  Format.fprintf ppf "%.1f%% (%d/%d points)" (percentage s) s.visited s.total
-
 (* Extent -> Line Mapping *)
 
 (* Byte offsets at which each line starts, excluding the phantom line a

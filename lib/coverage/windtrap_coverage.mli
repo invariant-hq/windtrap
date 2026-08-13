@@ -262,10 +262,6 @@ val percentage : summary -> float
 (** [percentage s] is [100. *. visited /. total], and [100.] when [s.total] is
     [0]. *)
 
-val pp_summary : Format.formatter -> summary -> unit
-(** [pp_summary ppf s] formats [s] as ["87.2% (312/358 points)"] — one decimal,
-    no styling. *)
-
 type file_report = {
   file : string;  (** The source file name as recorded at instrumentation. *)
   summary : summary;  (** This file's point counts. *)

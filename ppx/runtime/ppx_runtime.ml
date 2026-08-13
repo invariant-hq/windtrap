@@ -486,29 +486,13 @@ let formatted_contents node raw =
       format_pretty ~delimiter:(node_delimiter node)
         ~node_column:(column node.loc) raw
 
-(* [Text.contains_substring]'s naive scan, duplicated: the
-   delimiter-conflict check below is this module's one string search, and
-   [Text] is not part of the client surface the facades name — twelve
-   lines here keep the diet exact. *)
-let contains_substring ~pattern s =
-  let n = String.length pattern and len = String.length s in
-  if n = 0 then true
-  else begin
-    let matches_at i =
-      let rec go j = j = n || (s.[i + j] = pattern.[j] && go (j + 1)) in
-      go 0
-    in
-    let rec scan i = i + n <= len && (matches_at i || scan (i + 1)) in
-    scan 0
-  end
-
 (* Delimiter conflict fixing: grow the tag until neither delimiter occurs in
    the contents. *)
 let fix_tag ~contents tag =
   let rec fix tag =
     if
-      contains_substring ~pattern:("{" ^ tag ^ "|") contents
-      || contains_substring ~pattern:("|" ^ tag ^ "}") contents
+      Text.contains_substring ~pattern:("{" ^ tag ^ "|") contents
+      || Text.contains_substring ~pattern:("|" ^ tag ^ "}") contents
     then fix (tag ^ "xxx")
     else tag
   in

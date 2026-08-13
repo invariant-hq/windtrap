@@ -200,7 +200,7 @@ val coverage_data :
     per file, sources resolved under [source_roots]
     ({!Windtrap_coverage.file_reports}, whose current-directory default it
     keeps). The one builder of that data — this seam links the runtime, so
-    Render does not have to ({!Render.sections}) — shared with the
+    Render does not have to — shared with the
     [windtrap coverage] command over merged files, so the inline report and the
     CI report cannot drift. *)
 

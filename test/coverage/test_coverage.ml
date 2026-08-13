@@ -676,14 +676,7 @@ let line_tests =
 
 let summary_tests =
   [
-    test "summaries format and style" (fun () ->
-        let s = { C.visited = 312; total = 358 } in
-        check_string "summary line matches the RFC transcript"
-          ~expected:"87.2% (312/358 points)"
-          ~actual:(Format.asprintf "%a" C.pp_summary s);
-        check_string "an empty summary is 100%" ~expected:"100.0% (0/0 points)"
-          ~actual:
-            (Format.asprintf "%a" C.pp_summary { C.visited = 0; total = 0 });
+    test "aggregate summary sums files" (fun () ->
         check "aggregate summary sums files"
           (C.summary (ab ()) = { C.visited = 2; total = 3 }));
   ]
