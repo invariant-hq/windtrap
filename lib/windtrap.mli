@@ -938,8 +938,8 @@ val run : ?argv:string array -> string -> test list -> unit
 
 (** Internal machinery — windtrap's own composition surface, re-exported for the
     library's per-module test suites (the [test/] directories) and for the
-    co-versioned client libraries ([ppx_windtrap]'s runtime and
-    [windtrap.mutation]). Not part of the public API: these interfaces move
+    co-versioned client library ([ppx_windtrap]'s runtime). Not part of the
+    public API: these interfaces move
     without notice and carry no stability guarantee. Everything user-facing is
     the documented surface above; nothing here escapes into scope on
     [open Windtrap]. *)
@@ -954,6 +954,7 @@ module Private : sig
   module Env = Env
   module Failure = Failure
   module Loc = Loc
+  module Mutate_loop = Mutate_loop
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property

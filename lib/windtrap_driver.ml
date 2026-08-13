@@ -11,5 +11,4 @@ module Driver = Driver
 module Runner = Runner
 module Run = Run
 module Env = Env
-module Path_ops = Path_ops
 module Registry = Registry

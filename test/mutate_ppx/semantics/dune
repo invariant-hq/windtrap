@@ -46,16 +46,11 @@
 ; baseline library it links - are the uninstrumented side of every
 ; comparison.
 
-; windtrap.mutation: the suite links an instrumented library, and the
-; discovery line after its summary is the loop's — the loop only
-; answers where its library is linked (see lib/mutation/dune).
-
 (test
  (name test_semantics)
  (modules test_semantics)
  (libraries
   windtrap
-  windtrap.mutation
   windtrap.mutate
   mutsem_fixtures
   mutsem_baseline))

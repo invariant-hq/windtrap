@@ -27,13 +27,15 @@
    the census), everything body-side through Windtrap_testkit, so a use
    neither facade names fails to compile here rather than widening the
    surface silently. Beyond them this module names only the shared
-   vocabulary — Failure, Test_tree, Loc, Text. All of it arrives through
-   [Windtrap.Private]: this library sits outside the core, and Private is
-   the core's one export surface for co-versioned clients. *)
+   vocabulary — Failure, Test_tree, Loc, Text — and Mutate_loop, the
+   mutation-aware run entry both thin drivers call. All of it arrives
+   through [Windtrap.Private]: this library sits outside the core, and
+   Private is the core's one export surface for co-versioned clients. *)
 module Windtrap_driver = Windtrap.Private.Windtrap_driver
 module Windtrap_testkit = Windtrap.Private.Windtrap_testkit
 module Failure = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
+module Mutate_loop = Windtrap.Private.Mutate_loop
 module Test_tree = Windtrap.Private.Test_tree
 module Text = Windtrap.Private.Text
 module Cli = Windtrap_driver.Cli
@@ -1280,42 +1282,16 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
     }
   in
   match
-    (* The mutation seam: one registry consult at run entry, in place of
-       the driver's (the loop installs itself at module load; this
-       library links windtrap.mutation so every generated runner carries
-       it — see this directory's dune). A mutation run's exit code is its
-       own and never reports a test outcome, so [Reported] skips the
-       correction protocol entirely: dune's promotion protocol is not
-       what a mutation run is for, and Law 16(d) has already stopped
-       every correction it could have recorded.
-
-       An empty slot answers no ask: WINDTRAP_MUTATE set with no
-       interceptor installed names a build that dropped this library's
-       windtrap.mutation link, and running would silently ignore the ask
-       — so the run refuses to start instead (exit 1, a refusal in Law
-       16e's vocabulary, never 2: "nothing ran" would blame the
-       selection). The value is deliberately not parsed — its vocabulary
-       is the loop's; only [Env.get_string]'s set/unset boundary is
-       mirrored, inlined here because the facade deliberately narrows
-       [Env], so an empty value reads as unset exactly as the loop reads
-       it. The sentence is byte-shared with [Windtrap.run]; the facade's
-       list-only exemption has no counterpart here because the inline
-       protocol has no [--list] and no mirror sets it. *)
-    match Registry.interceptor () with
-    | Some run -> run spine tests
-    | None
-      when match Sys.getenv_opt "WINDTRAP_MUTATE" with
-           | Some "" | None -> false
-           | Some _ -> true ->
-        Format.eprintf
-          "windtrap mutate: this executable links no mutation loop, so \
-           WINDTRAP_MUTATE would be silently ignored. Add windtrap.mutation to \
-           the test stanza's libraries@.";
-        Registry.Reported 1
-    | None -> Registry.Ran (Driver.execute_and_report spine tests)
+    (* The mutation seam: one call at run entry, in place of the
+       driver's. A mutation run's exit code is its own and never reports
+       a test outcome, so [Reported] skips the correction protocol
+       entirely: dune's promotion protocol is not what a mutation run is
+       for, and Law 16(d) has already stopped every correction it could
+       have recorded. *)
+    Mutate_loop.execute_and_report spine tests
   with
-  | Registry.Reported code -> code
-  | Registry.Ran result -> (
+  | Mutate_loop.Reported code -> code
+  | Mutate_loop.Ran result -> (
       match result with
       | Error error ->
           (* The message is already on stderr; this runner returns the code

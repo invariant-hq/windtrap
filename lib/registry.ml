@@ -14,22 +14,12 @@
    diffing, the renderers — is mutated. *)
 [@@@mutate exclude_file]
 
-(* The slot and the hooks are two independent cells on purpose:
-   installation and registration are module-load acts of two different
-   units — the loop's owner installs, the inline runtime registers — in
-   whichever order the link puts them, and the firing side reads the hook
-   cell at fire time. A hook list carried inside the installed value
-   would lose every hook registered before the install. *)
+(* Registration is a module-load act of another package's unit (the
+   inline runtime lives in ppx_windtrap), and the firing side reads the
+   cell at fire time — so hooks registered before or after the loop's own
+   load are honored alike, whatever order the link put the
+   initializers in. *)
 
-type verdict =
-  | Ran of (Runner.outcome, Runner.startup_error) result
-  | Reported of int
-
-type interceptor = Driver.t -> Test_tree.t list -> verdict
-
-let slot : interceptor option ref = ref None
 let hooks : (unit -> unit) list ref = ref []
-let install run = slot := Some run
-let interceptor () = !slot
 let on_armed hook = hooks := hook :: !hooks
 let armed_hooks () = List.rev !hooks

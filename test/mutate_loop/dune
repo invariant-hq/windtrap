@@ -16,17 +16,11 @@
  (preprocess
   (pps ppx_windtrap.mutate)))
 
-; windtrap_mutation is the arming act: the loop lives in its own
-; library and installs itself at module load, so a suite that should
-; answer the mutation variables must link it — exactly what these
-; stanzas are for (see lib/mutation/dune).
-
 (executable
  (name suite_main)
  (modules suite_main)
  (libraries
   windtrap
-  windtrap_mutation
   windtrap_mutate
   mutate_loop_subject
   unix))
@@ -39,7 +33,7 @@
 (executable
  (name plain_main)
  (modules plain_main)
- (libraries windtrap windtrap_mutation))
+ (libraries windtrap))
 
 (test
  (name test_mutate_loop)

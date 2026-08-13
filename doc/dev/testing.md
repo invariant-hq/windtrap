@@ -92,9 +92,8 @@ dune build @cover --instrument-with ppx_windtrap.coverage
 runs every suite and merges their dumps through `windtrap coverage`,
 gated at `--min 87` against a measured baseline. The gate ratchets:
 raise it when the margin is comfortable, never lower it to make a red
-build green. Not all of the remaining gap is reachable —
-`windtrap.mutation`'s Windows-decline paths and `capture`'s C-stub
-error branches cannot run
+build green. Not all of the remaining gap is reachable — `mutate_loop`'s
+Windows-decline paths and `capture`'s C-stub error branches cannot run
 in a green suite — so chase the branches the report names, not the
 percentage.
 
@@ -150,10 +149,10 @@ forks — batching plus ride-along admission let one killed fault admit
 hundreds of tests, and no test of this suite ruled `UNJUSTIFIED`. The
 admission machine's own scenarios live in `test/mutate_loop`.
 
-Six core modules opt out with `[@@@mutate exclude_file]`: `runner`,
-`run`, `driver`, `registry`, `windtrap_testkit` and `windtrap`; the
-mutation loop and the expect runtime, libraries of their own since the
-repartition, exclude themselves the same way and their stanzas carry no
+Seven core modules opt out with `[@@@mutate exclude_file]`: `runner`,
+`run`, `driver`, `registry`, `windtrap_testkit`, `mutate_loop` and
+`windtrap`; the expect runtime, a library of its own since the
+repartition, excludes itself the same way and its stanza carries no
 mutation backend at all. They are the
 machinery a mutation run uses to judge mutants, so a mutant there is
 armed inside the process meant to detect it, and the failure mode is a

@@ -1519,71 +1519,6 @@ let child_tests =
           |> List.filter (fun n -> Filename.check_suffix n ".tmp")));
   ]
 
-(* The unlinked driver
-
-   This directory's executables deliberately link no windtrap.mutation,
-   so the registry's slot is empty and a WINDTRAP_MUTATE ask has no
-   interceptor to answer it. The driver must refuse to start rather than
-   run as if nothing was asked (exit 1, the loop's own refusal shape —
-   never 2, which would blame the selection). The value's vocabulary is
-   the loop's, so the driver does not parse it: any non-empty value
-   refuses, and an empty value reads as unset, the loop's own set/unset
-   boundary. *)
-
-let unlinked_exe = Filename.concat exe_dir "unlinked_main.exe"
-
-(* WINDTRAP_COLOR=never: unlike arm_child, this child renders a real
-   windtrap transcript, and under dune runtest it inherits INSIDE_DUNE,
-   which resolves auto colour to on even into a redirected file. *)
-let run_unlinked ?(args = []) ~mutate () =
-  let out = scratch "unlinked-out.txt" and err = scratch "unlinked-err.txt" in
-  Unix.putenv "WINDTRAP_MUTATE" mutate;
-  Unix.putenv "WINDTRAP_COLOR" "never";
-  let status =
-    Sys.command
-      (Filename.quote_command unlinked_exe ~stdout:out ~stderr:err args)
-  in
-  Unix.putenv "WINDTRAP_MUTATE" "";
-  Unix.putenv "WINDTRAP_COLOR" "";
-  ( status,
-    Option.value ~default:"" (read_file out),
-    Option.value ~default:"" (read_file err) )
-
-let unlinked_tests =
-  [
-    test "asking an unlinked suite to mutate refuses to start" (fun () ->
-        let status, out, err = run_unlinked ~mutate:"1" () in
-        equal ~msg:"exit code (a refusal to start, never 2)" int 1 status;
-        equal ~msg:"nothing ran" text "" out;
-        equal ~msg:"the refusal names the missing library and the fix" text
-          "windtrap mutate: this executable links no mutation loop, so \
-           WINDTRAP_MUTATE would be silently ignored. Add windtrap.mutation to \
-           the test stanza's libraries\n"
-          err;
-        (* The value is not parsed: its vocabulary belongs to the loop,
-           so even a spelling the loop would read as off refuses here. *)
-        let status, _, err = run_unlinked ~mutate:"off" () in
-        equal ~msg:"off refuses the same way" int 1 status;
-        contains ~msg:"with the same sentence" ~sub:"links no mutation loop" err);
-    test "an empty value reads as unset: the run is an ordinary one" (fun () ->
-        (* [~mutate:""] leaves the variable present but empty, which is
-           the boundary itself: the loop's own reader treats it as unset,
-           and so must the refusal. *)
-        let status, out, err = run_unlinked ~mutate:"" () in
-        equal ~msg:"exit code" int 0 status;
-        equal ~msg:"stderr" text "" err;
-        contains ~msg:"the ordinary transcript" ~sub:"unlinked: 1 passed" out);
-    test "a listing is not a run: --list lists, linked or not" (fun () ->
-        (* The loop passes list-only runs through before it reads the
-           knobs — a listing is not a run — so the unlinked refusal must
-           exempt them too: linking the loop would leave the listing
-           byte-identical, and refusing would claim otherwise. *)
-        let status, out, err = run_unlinked ~mutate:"1" ~args:[ "--list" ] () in
-        equal ~msg:"exit code" int 0 status;
-        equal ~msg:"stderr" text "" err;
-        equal ~msg:"the listing" text "arithmetic\n" out);
-  ]
-
 (* The suite *)
 
 let () =
@@ -1598,5 +1533,4 @@ let () =
       group "filenames" filename_tests;
       group "files" file_tests;
       group "child" child_tests;
-      group "unlinked" unlinked_tests;
     ]

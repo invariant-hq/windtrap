@@ -18,7 +18,6 @@
   pins_add.exe
   pins_sub.exe
   calc.ml
-  ../../lib/mutation/mutate_loop.ml
   (glob_files ../../lib/*.ml)
   (glob_files ../../lib/*.mli)))
 
@@ -35,16 +34,12 @@
  (preprocess
   (pps ppx_windtrap.mutate)))
 
-; windtrap_mutation: each pins executable runs its own mutation loop,
-; and the loop only answers where its library is linked (see
-; lib/mutation/dune).
-
 (executable
  (name pins_add)
  (modules pins_add)
- (libraries windtrap windtrap_mutation mutcli_fixture))
+ (libraries windtrap mutcli_fixture))
 
 (executable
  (name pins_sub)
  (modules pins_sub)
- (libraries windtrap windtrap_mutation mutcli_fixture))
+ (libraries windtrap mutcli_fixture))

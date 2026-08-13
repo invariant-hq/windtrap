@@ -4,15 +4,15 @@
   ---------------------------------------------------------------------------*)
 
 
-(* Not mutated. This module is the loop itself — the machinery a mutation
-   run uses to judge mutants — so a mutant here is armed inside the
-   process that is supposed to detect it. The failure mode is not a false
+(* Not mutated. This module is part of the machinery a mutation run uses
+   to judge mutants — the scheduler, the ambient run state, the reporting
+   spine, the loop itself — so a mutant here is armed inside the process
+   that is supposed to detect it. The failure mode is not a false
    survivor but a hang or a corrupted verdict: a mutated bail counter or
    timeout does not fail the reaching tests, it stops them from
-   finishing. This library's dune carries no mutation stanza, so no build
-   can instrument it; the attribute stays as the statement of intent and
-   the guard against a stanza appearing. Coverage still measures the
-   file. *)
+   finishing. Coverage still measures these files; only mutation is off.
+   Everything below the scheduler — the verbs, the generators, the
+   diffing, the renderers — is mutated. *)
 [@@@mutate exclude_file]
 
 (* The parent of a mutation run: dry run, probe, forced-fail check, fork
@@ -23,28 +23,6 @@
    counts nothing, and neither does the runtime. *)
 
 module M = Windtrap_mutate
-
-(* The client diet, compiler-enforced: everything drive-side reaches core
-   through the facade's constrained re-exports (windtrap_driver.mli is
-   the census), so a use the facade does not name fails to compile here
-   rather than widening the surface silently. Beyond it this module
-   names only its own runtime (M), the Render sections it projects the
-   report into, and the shared tree/failure vocabulary. All of it
-   arrives through [Windtrap.Private]: the loop sits outside the core,
-   and Private is the core's one export surface for co-versioned
-   clients. *)
-module Windtrap_driver = Windtrap.Private.Windtrap_driver
-module Failure = Windtrap.Private.Failure
-module Render = Windtrap.Private.Render
-module Tag = Windtrap.Private.Tag
-module Test_tree = Windtrap.Private.Test_tree
-module Cli = Windtrap_driver.Cli
-module Driver = Windtrap_driver.Driver
-module Env = Windtrap_driver.Env
-module Path_ops = Windtrap_driver.Path_ops
-module Registry = Windtrap_driver.Registry
-module Run = Windtrap_driver.Run
-module Runner = Windtrap_driver.Runner
 
 let spf = Printf.sprintf
 
@@ -57,7 +35,7 @@ let spf = Printf.sprintf
 let catalogue = lazy (M.catalogue ())
 let instrumented () = Lazy.force catalogue <> []
 
-type run = Registry.verdict =
+type run =
   | Ran of (Runner.outcome, Runner.startup_error) result
   | Reported of int
 
@@ -1757,15 +1735,3 @@ let execute_and_report (spine : Driver.t) tests =
             else
               try admit_loop (renderer ()) ~armed spine ~limit ~tries tests
               with Supervision message -> refuse "%s" message))
-
-(* Self-installed at module load — the registry's slot discipline: the
-   slot is set once, at the module load of whatever links the loop, so
-   every process that could run a suite with this module linked has the
-   interceptor before any run can start, whatever the link order. This
-   line is the whole mechanism: core names no loop, and the dune stanza
-   linking windtrap.mutation is the arming act — a test stanza's
-   explicit entry for the standalone runner, ppx_windtrap.runtime's
-   dependency for the inline one. The library's -linkall (see the dune)
-   is what guarantees this unit, which nothing references, still
-   loads. *)
-let () = Registry.install execute_and_report

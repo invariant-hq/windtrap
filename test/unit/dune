@@ -37,14 +37,7 @@
   test_render_github
   test_cli
   test_driver)
- ; windtrap_mutation: this executable is the driver of the repo's own
- ; mutation runs (doc/dev/testing.md's recipe and the root dune's
- ; @mutate workflow spell `WINDTRAP_MUTATE=1 dune exec
- ; --instrument-with ppx_windtrap.mutate test/unit/main.exe`), and the
- ; loop only answers where its library is linked (see
- ; lib/mutation/dune). Inert on a plain runtest — without the backend
- ; and the variables the run is byte-identical.
- (libraries windtrap windtrap_mutation windtrap_coverage unix harness)
+ (libraries windtrap windtrap_coverage unix harness)
  ; test_render's golden transcripts are snapshot baselines, not literals
  ; in the source. They are inputs to the run, so dune must know about
  ; them or a sandboxed action cannot read them.

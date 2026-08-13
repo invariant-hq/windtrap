@@ -5,19 +5,15 @@
 
 (** The mutation loop: the parent process of a mutation run.
 
-    Core windtrap's whole coupling to mutation is one [Registry] slot:
-    {!execute_and_report} is installed there at this module's load — the module
-    installs itself, so the dune stanza linking [windtrap.mutation] is the
-    arming act — and the two thin drivers consult the slot at
-    run entry in place of [Driver.execute_and_report] — plus one read-only
-    flag on the expect correction path ([Ppx_runtime.enter_armed], Law 16d,
-    registered in [Registry.on_armed] and fired here, never a dependency in
-    either direction). Everything else lives here and in the stdlib-only
-    runtime {!Windtrap_mutate}: the dry run and its reach map, the determinism
-    probe, the forced-fail check, the fork loop, the verdict file, and the
-    report. This module consumes core through the drive-side facade —
-    [windtrap_driver.mli] is the census — plus the [Render] sections its
-    report projects into.
+    Core windtrap's whole coupling to mutation is one dispatch call:
+    the two thin drivers call {!execute_and_report} at run entry in place
+    of [Driver.execute_and_report] — plus one read-only flag on the
+    expect correction path ([Ppx_runtime.enter_armed], Law 16d, registered
+    in [Registry.on_armed] and fired here, never a dependency in either
+    direction). Everything else lives here and in the stdlib-only runtime
+    {!Windtrap_mutate}: the dry run and its reach map, the determinism
+    probe, the forced-fail check, the fork loop, the verdict file, and
+    the report, projected into [Render]'s sections.
 
     {b Why this module wraps the run rather than being called around it.} The
     three things a mutation run must do — announce an armed mutant {e before}
@@ -148,17 +144,9 @@
     reached (any UNJUSTIFIED ruling); NO SITES alone is never red. For [admit]
     the refusal causes additionally include a missing selection. *)
 
-(* The shared core vocabulary, substituted rather than aliased: the loop
-   lives outside the core, and these names must mean the core's modules
-   without this signature re-exporting them. *)
-module Windtrap_driver := Windtrap.Private.Windtrap_driver
-module Driver := Windtrap.Private.Windtrap_driver.Driver
-module Runner := Windtrap.Private.Windtrap_driver.Runner
-module Test_tree := Windtrap.Private.Test_tree
-
 (** {1:running Running} *)
 
-type run = Windtrap_driver.Registry.verdict =
+type run =
   | Ran of (Runner.outcome, Runner.startup_error) result
       (** The suite ran once, ordinarily — no loop, or a loop that never
           started. The caller finishes its own post-run work on it (JUnit, the
@@ -169,9 +157,7 @@ type run = Windtrap_driver.Registry.verdict =
           has to say. Nothing about the underlying run is the caller's business
           — a loop's dry run is not the process's verdict — and the process
           exits with this code. *)
-(** The type for what {!execute_and_report} did with the run:
-    [Registry.verdict], whose constructors live in core because the drivers
-    that dispatch on them must not name this module. *)
+(** The type for what {!execute_and_report} did with the run. *)
 
 val execute_and_report : Driver.t -> Test_tree.t list -> run
 (** [execute_and_report spine tests] is the mutation-aware run entry:
