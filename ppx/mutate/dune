@@ -34,7 +34,7 @@
  (name windtrap_mutate_ppx)
  (public_name ppx_windtrap.mutate)
  (kind ppx_rewriter)
- (libraries ppxlib windtrap_ppx_scaffold)
+ (libraries ppxlib)
  (ppx_runtime_libraries windtrap.mutate)
  (instrumentation.backend
   (ppx ppx_windtrap.mutate))

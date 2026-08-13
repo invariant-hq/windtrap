@@ -254,3 +254,14 @@
  (alias runtest)
  (action
   (diff reject_double_off.expected reject_double_off.actual)))
+
+; Attribute-grammar parity: the acceptance twin of
+; test/coverage_ppx/parity_spellings.ml. The mirror rules - normalized
+; diff against this file and the shared rejection fixtures - live in
+; test/coverage_ppx/dune.
+
+(rule
+ (alias runtest)
+ (action
+  (ignore-outputs
+   (run ./pp.exe --impl %{dep:parity_spellings.ml}))))

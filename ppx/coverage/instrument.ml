@@ -42,13 +42,51 @@ open Ppxlib
 module Exp = Ast_helper.Exp
 module Cl = Ast_helper.Cl
 module Cf = Ast_helper.Cf
-module Shared = Windtrap_ppx_scaffold
 
-(* The [coverage] attributes (Bisect_ppx's spelling): the shared
-   exclusion grammar, without mutation's reason strings. *)
+(* The [coverage] attributes (Bisect_ppx's spelling). The mutate
+   attribute grammar in ppx/mutate/instrument.ml mirrors this one
+   deliberately — the manual promises the same spellings, modulo
+   mutation's optional reason string — so a spelling added or an error
+   message changed here changes there too. Keep them in sync; the
+   attribute-parity fixtures in test/coverage_ppx pin the promise. *)
 
-let grammar = Shared.grammar ~namespace:"coverage" ~reasons:false
-let has_off_attribute attributes = Shared.has_off_attribute grammar attributes
+let recognize_coverage_attribute { attr_name; attr_payload; attr_loc } =
+  if not (String.equal attr_name.txt "coverage") then `None
+  else
+    match attr_payload with
+    | PStr
+        [
+          {
+            pstr_desc =
+              Pstr_eval
+                ({ pexp_desc = Pexp_ident { txt = Lident payload; _ }; _ }, _);
+            _;
+          };
+        ] -> (
+        match payload with
+        | "off" -> `Off
+        | "on" -> `On
+        | "exclude_file" -> `Exclude_file
+        | _ ->
+            Location.raise_errorf ~loc:attr_loc
+              "Bad payload in coverage attribute.")
+    | _ ->
+        Location.raise_errorf ~loc:attr_loc "Bad payload in coverage attribute."
+
+let has_off_attribute attributes =
+  (* Fold rather than short-circuit so every attribute is error-checked. *)
+  List.fold_left
+    (fun found attribute ->
+      match recognize_coverage_attribute attribute with
+      | `None -> found
+      | `Off -> true
+      | `On ->
+          Location.raise_errorf ~loc:attribute.attr_loc
+            "coverage on is not allowed here."
+      | `Exclude_file ->
+          Location.raise_errorf ~loc:attribute.attr_loc
+            "coverage exclude_file is not allowed here.")
+    false attributes
 
 (* [[@tail_mod_cons]] / [[@ocaml.tail_mod_cons]] on a binding: the calls in
    its body sit in a position out-edge wrapping would destroy. *)
@@ -57,6 +95,14 @@ let has_tmc_attribute attributes =
     (fun { attr_name = { txt; _ }; _ } ->
       txt = "tail_mod_cons" || txt = "ocaml.tail_mod_cons")
     attributes
+
+let has_exclude_file_attribute structure =
+  List.exists
+    (function
+      | { pstr_desc = Pstr_attribute attribute; _ } ->
+          recognize_coverage_attribute attribute = `Exclude_file
+      | _ -> false)
+    structure
 
 (* Points *)
 
@@ -171,11 +217,21 @@ let instrument_cases st cases =
       end)
     cases
 
-(* Semantics-preservation guards. [lazy] applied to a trivial syntactic
-   value ([Shared.is_trivial_syntactic_value]) compiles as already
-   forced; a visit under such a [lazy] would turn the value into a thunk
-   and change the compilation of the [lazy] - so it is not
-   instrumented. *)
+(* Semantics-preservation guards *)
+
+(* [lazy] applied to a trivial syntactic value compiles as already forced;
+   a visit under such a [lazy] would turn the value into a thunk and change
+   the compilation of the [lazy] - so it is not instrumented. Mirrored
+   verbatim in ppx/mutate/instrument.ml, whose guards face the same
+   [lazy]-compilation hazard; keep the two in sync. *)
+let rec is_trivial_syntactic_value e =
+  match e.pexp_desc with
+  | Pexp_function _ | Pexp_poly _ | Pexp_ident _ | Pexp_constant _
+  | Pexp_construct (_, None) ->
+      true
+  | Pexp_constraint (inner, _) | Pexp_coerce (inner, _, _) ->
+      is_trivial_syntactic_value inner
+  | _ -> false
 
 (* Applications of these never carry an out-edge point: they are
    primitives that cannot fail interestingly (or, for [raise] and friends,
@@ -526,7 +582,7 @@ class instrumenter st =
             | Pexp_lazy body ->
                 let body = traverse ~is_in_tail_position:true body in
                 let body =
-                  if Shared.is_trivial_syntactic_value body then body
+                  if is_trivial_syntactic_value body then body
                   else instrument_expr body
                 in
                 Exp.lazy_ ~loc ~attrs body
@@ -706,9 +762,9 @@ class instrumenter st =
     method! structure_item si =
       match si.pstr_desc with
       | Pstr_attribute attribute ->
-          (match Shared.recognize grammar attribute with
+          (match recognize_coverage_attribute attribute with
           | `None -> ()
-          | `Off _ ->
+          | `Off ->
               if suppressed then
                 Location.raise_errorf ~loc:attribute.attr_loc
                   "Coverage is already off.";
@@ -772,14 +828,26 @@ class instrumenter st =
 
    [___windtrap_post_visit___ i e] visits after its argument [e] has been
    evaluated - the out-edge fires only if [e] returned; it is emitted only
-   when the file has out-edge points. The mangled module name and the
-   stop-comment frame are the shared preamble shape ([Shared.preamble]);
-   coverage is the [opened] instantiation, so the file's marks name the
-   visit functions unqualified. *)
+   when the file has out-edge points. The functions live in a module
+   mangled from the file name so that each compilation unit calls its own
+   (an unscoped binding could be shadowed by a later [open], and two files
+   could collide when one includes another). The [[@@@ocaml.text "/*"]]
+   stop comments hide the generated code from odoc. Mutation builds the
+   same mangled-name and stop-comment frame in
+   ppx/mutate/instrument.ml's [runtime_initialization] (unopened, its
+   prefix Windtrap_mut___); keep the shape in sync. *)
 let runtime_initialization st ~file =
-  let loc = Shared.ghost_loc ~file in
+  let loc = { (Location.in_file file) with loc_ghost = true } in
   let module_name =
-    Shared.mangled_module_name ~prefix:"Windtrap_cov___" ~file
+    let buffer = Buffer.create (String.length file + 16) in
+    Buffer.add_string buffer "Windtrap_cov___";
+    String.iter
+      (function
+        | ('A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_') as c ->
+            Buffer.add_char buffer c
+        | _ -> Buffer.add_string buffer "___")
+      file;
+    Buffer.contents buffer
   in
   let points_table =
     Ast_builder.Default.pexp_array ~loc
@@ -816,13 +884,35 @@ let runtime_initialization st ~file =
     if st.uses_post then [ visit_binding; post_visit_binding ]
     else [ visit_binding ]
   in
-  Shared.preamble ~loc ~module_name ~opened:true bindings
+  let generated_module =
+    Ast_helper.Str.module_ ~loc
+      (Ast_helper.Mb.mk ~loc
+         { txt = Some module_name; loc }
+         (Ast_helper.Mod.structure ~loc bindings))
+  in
+  let module_open =
+    Ast_helper.Str.open_ ~loc
+      (Ast_helper.Opn.mk ~loc
+         (Ast_helper.Mod.ident ~loc { txt = Lident module_name; loc }))
+  in
+  let stop_comment = [%stri [@@@ocaml.text "/*"]] in
+  [ stop_comment; generated_module; module_open; stop_comment ]
 
 (* Entry point *)
 
+(* The ignore lists are mirrored in ppx/mutate/instrument.ml's entry
+   filter; keep them in sync. *)
+let always_ignore_paths = [ "//toplevel//"; "(stdin)" ]
+let always_ignore_basenames = [ ".ocamlinit"; "topfind" ]
+
 let transform_impl_file ctxt ast =
   let file = Expansion_context.Base.input_name ctxt in
-  if Shared.excluded_file grammar ~file ast then ast
+  let excluded =
+    List.mem file always_ignore_paths
+    || List.mem (Filename.basename file) always_ignore_basenames
+    || has_exclude_file_attribute ast
+  in
+  if excluded then ast
   else
     let st = create_state () in
     let instrumented = (new instrumenter st)#structure ast in
