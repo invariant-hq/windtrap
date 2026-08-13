@@ -1,0 +1,7 @@
+(lang dune 3.21)
+(cram enable)
+
+(package
+ (name windtrap_example_blueprint)
+ (allow_empty)
+ (depends windtrap ppx_windtrap))

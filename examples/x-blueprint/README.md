@@ -7,6 +7,10 @@ and a `test/` tree where **every child is one suite with its own
 by test kind.
 
 ```
+dune-project    the project: cram enabled, one package depending on
+                windtrap and ppx_windtrap
+dune-workspace  instrumentation on by default — inert in this tree,
+                active the moment the directory is copied out
 lib/            the code under test — two inert instrumentation
                 stanzas, no PPX, no test code
 bin/            a tiny CLI over the library (what cram/ tests)
@@ -21,13 +25,15 @@ test/
   cram/         blackbox tests of the binary: exit codes and output
 ```
 
-Things to try from the repository root:
+Things to try from the repository root (in windtrap's own tree the
+workspace file above is inert, so these carry the `--instrument-with`
+flag the standalone copy never needs):
 
 ```
 dune runtest examples/x-blueprint                 # every suite
 dune runtest examples/x-blueprint/test/failures   # just the bug backlog
 dune build @examples/x-blueprint/test/example-cover \
-  --instrument-with ppx_windtrap                  # coverage, gated
+  --instrument-with ppx_windtrap.coverage         # coverage, gated
 WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib/slug.ml \
   dune exec --instrument-with ppx_windtrap.mutate \
   examples/x-blueprint/test/unit/test_slug.exe        # the mutation loop
@@ -55,6 +61,45 @@ every test in the suite at once — and on `test_stats.exe`, scoped with
 `WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib` (inside windtrap's
 tree the framework's own sites are in reach otherwise), that audit
 exits 1 by design; see the fourth deliberate thing below.
+
+## Copied out: the workspace posture
+
+This directory is a complete project — it carries its own
+`dune-project` (a nested project composes into windtrap's workspace
+here, and stands alone the moment it leaves). Copy the directory,
+rename the package, and until windtrap is on your package repository,
+point the dependencies at a checkout by appending one pin to
+`dune-project`:
+
+```lisp
+(pin
+ (url "git+file:///path/to/windtrap")
+ (package (name windtrap))
+ (package (name ppx_windtrap)))
+```
+
+Outside this tree the shipped `dune-workspace` activates, and **every
+`--instrument-with` flag in this README disappears** — the workspace
+declares once what each command was repeating:
+
+```
+dune runtest                                          # every suite
+dune build @example-cover                             # coverage, gated
+WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/slug.ml \
+  dune exec test/unit/test_slug.exe                   # the mutation loop
+WINDTRAP_MUTATE=admit \
+  dune exec test/unit/test_slug.exe -- -f idempotent  # admit a test
+dune build @example-mutate                            # merge verdicts
+```
+
+Measured on a copy pinned to this tree: the whole suite runs in under
+three seconds with both backends on, `admit` answers in tens of
+milliseconds, and every suite's transcript ends with the two discovery
+lines — the coverage percentage and the mutant count — standing
+reminders of the verdicts a green run has not yet earned. The built
+programs mean exactly what they meant uninstrumented: marks only
+count, and a mutant changes meaning only in a forked child that armed
+it.
 
 Four things are deliberate:
 
