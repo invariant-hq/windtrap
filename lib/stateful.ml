@@ -3,20 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The client diet: this library sits above the core, and everything it
-   takes from it arrives through [Windtrap.Private] — the core's one
-   export surface for co-versioned clients — so the census below is the
-   whole coupling: the failure payload and its classes, the location
-   vocabulary, the property engine's discard, the [prop] declaration
-   seam, and the text/format helpers the program printer is built from.
-   Gen comes from windtrap.gen directly; it is a dependency of this
-   library in its own right, not a core export. *)
-module Failure = Windtrap.Private.Failure
-module Loc = Windtrap.Private.Loc
-module Pp = Windtrap.Private.Pp
-module Property = Windtrap.Private.Property
-module Runner = Windtrap.Private.Runner
-module Text = Windtrap.Private.Text
+(* The generation vocabulary lives in windtrap.gen; the commands keep
+   its short name. *)
 module Gen = Windtrap_gen.Gen
 
 (* Commands
@@ -335,7 +323,7 @@ let pp_program ?pp_model ppf program =
 (* The generator *)
 
 let default_steps = 20
-let no_commands = "Windtrap_stateful.stateful: no commands to draw from"
+let no_commands = "Windtrap.stateful: no commands to draw from"
 
 (* One branch per command: the argument generator with the command's facts
    bound into a call. [Gen.map] loses the printer, deliberately and

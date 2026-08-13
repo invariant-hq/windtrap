@@ -89,6 +89,5 @@ Four things are deliberate:
   the faults it misses are killed by the example tests beside it, so
   the survey still reports `0 survived`).
 
-A stateful suite slots into `unit/` the same way, with
-`windtrap.stateful` added to the stanza's libraries (see
+A stateful suite slots into `unit/` the same way (see
 `examples/10-stateful`); this example keeps the surface small.

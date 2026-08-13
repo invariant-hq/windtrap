@@ -25,4 +25,4 @@
 (executable
  (name transcript_fail)
  (modules transcript_fail)
- (libraries windtrap windtrap.stateful))
+ (libraries windtrap))

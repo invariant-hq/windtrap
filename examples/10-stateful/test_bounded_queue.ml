@@ -4,7 +4,6 @@
    "push when full" is generated only at capacity. *)
 
 open Windtrap
-open Windtrap_stateful
 
 let capacity = 4
 

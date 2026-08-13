@@ -7,17 +7,12 @@ sequences of them — 100 generated programs of at most 20 calls by
 default, each run against a system built for it, and a failing one
 shrunk to a minimal program before it is reported.
 
-Stateful testing ships as its own library: add `windtrap.stateful`
-next to `windtrap` in the stanza — `(libraries windtrap
-windtrap.stateful)` — and open `Windtrap_stateful` beside `Windtrap`.
-`command`, `call` and `stateful` below are all its.
-
 Under test here is a fixed-capacity queue over a ring buffer: `push`
 raises `Full` at capacity, `pop` and `peek` raise `Empty`.
 
 ```ocaml
 open Windtrap
-open Windtrap_stateful
+
 let capacity = 4
 
 (* The model: the elements the queue should hold, oldest first. *)
@@ -396,5 +391,5 @@ them on their own.
   between. A `~pp_model` that raises costs its own cell and no more.
 - `stateful` with an empty command list does not pass vacuously: the
   test fails at case 0 with
-  `Invalid_argument("Windtrap_stateful.stateful: no commands to draw from")`,
+  `Invalid_argument("Windtrap.stateful: no commands to draw from")`,
   under a `<generator raised before producing a value>` counterexample.

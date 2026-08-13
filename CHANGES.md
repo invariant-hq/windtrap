@@ -188,13 +188,6 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
-**Stateful testing moves to `windtrap.stateful`.** The `command` type and the
-`command`/`call`/`stateful` constructors leave `Windtrap` for the sublibrary's
-`Windtrap_stateful`, same contracts, same failure reports: add
-`windtrap.stateful` to the test stanza's libraries and `open
-Windtrap_stateful`. The core no longer carries model-based testing in every
-test binary's closure.
-
 **A mutation run is a linked library.** The mutation loop leaves the core for
 `windtrap.mutation`; add it to the test stanza's libraries —
 `(libraries … windtrap windtrap.mutation)` — and linking it is the wiring.

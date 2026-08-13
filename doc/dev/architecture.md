@@ -30,7 +30,6 @@ They never merge again (that was v1's mistake).
 | --- | --- | --- |
 | library `windtrap` | `lib/` | the kernel: declaration tree, checking, property engine, snapshots, capture, the run/driver spine, renderers, CLI, the client facades and the registry; links `unix`, `windtrap.clock`, `windtrap.gen`, `windtrap.coverage` and `windtrap.mutate` only — all in-package, so Law 10's no-third-party-weight posture is untouched |
 | `windtrap.gen` | `lib/gen/` | deterministic generation with integrated shrinking: `Gen`, `Seed`, `Shrink_tree`; zero library dependencies, usable without the runner |
-| `windtrap.stateful` | `lib/stateful/` | model-based testing: `Windtrap_stateful`'s `command` vocabulary and `stateful`, over `windtrap` + `windtrap.gen` |
 | `windtrap.mutation` | `lib/mutation/` | the mutation loop — dry run, reach map, fork supervision, verdicts, report — a `Windtrap_driver` client that installs itself into `Registry` at load; linking it is the arming act (`-linkall`) |
 | `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation runtimes share; stdlib only |
 | `windtrap.clock` | `lib/clock/` | monotonic clock C stubs; the runner's timing source for per-test durations and the run total |
@@ -61,8 +60,9 @@ Verbs and engines: `Check` (the Twenty-five verbs, pure, no run-state
 dependency), `Gen` (an alias to `windtrap.gen`'s module — the witness
 itself lives in the standalone library), `Property` (the case loop:
 examples-first, derived per-case seeds, discard/give-up, shrink search,
-collect tables). Model-based testing composes on `Property` from
-outside: `windtrap.stateful` is a client, not a resident.
+collect tables), `Stateful` (model-based testing: the command
+vocabulary, compiled into programs the property engine runs, over
+`windtrap.gen`).
 
 Subsystems (each owns a state *type*; the state *instances* live in
 `Run`): `Capture` (fd-level dup2 capture into per-test log files, C
