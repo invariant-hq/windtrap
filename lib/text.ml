@@ -9,26 +9,27 @@
 (* Newlines *)
 
 let normalize_newlines s =
-  let len = String.length s in
-  let b = Buffer.create len in
-  let rec loop i =
-    if i >= len then ()
-    else
-      match s.[i] with
-      | '\r' ->
-          Buffer.add_char b '\n';
-          if i + 1 < len && s.[i + 1] = '\n' then loop (i + 2) else loop (i + 1)
-      | c ->
-          Buffer.add_char b c;
-          loop (i + 1)
-  in
-  loop 0;
-  Buffer.contents b
+  if not (String.contains s '\r') then s
+  else
+    let len = String.length s in
+    let b = Buffer.create len in
+    let rec loop i =
+      if i >= len then ()
+      else
+        match s.[i] with
+        | '\r' ->
+            Buffer.add_char b '\n';
+            if i + 1 < len && s.[i + 1] = '\n' then loop (i + 2)
+            else loop (i + 1)
+        | c ->
+            Buffer.add_char b c;
+            loop (i + 1)
+    in
+    loop 0;
+    Buffer.contents b
 
 let ensure_trailing_newline s =
-  if s = "" then "\n"
-  else if s.[String.length s - 1] = '\n' then s
-  else s ^ "\n"
+  if String.ends_with ~suffix:"\n" s then s else s ^ "\n"
 
 (* "a\nb\n" and "a\nb" both split to ["a"; "b"]: a single trailing newline
    terminates the last line instead of opening an empty one. *)
