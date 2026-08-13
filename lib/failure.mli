@@ -218,6 +218,13 @@ and t = {
   phase : phase;
   loc : Loc.t option;  (** [None] renders without a location header. *)
   msg : string option;  (** The user's [?msg] annotation, when given. *)
+  subtest : string list;
+      (** The sub-case label's components — the test's leaf name, then the
+          enclosing subtest names outermost first — when the failure was
+          recorded inside {!Run.subtest}; [[]] for plain failures. Renderers
+          derive the displayed [leaf › name] label from it; classification
+          reads the field, never the [msg] text, so a user annotation can
+          never dress a plain failure as a sub-case. *)
   output_tail : tail option;
       (** Attached by the runner after the test completes; [None] until
           {!with_output_tail}. *)

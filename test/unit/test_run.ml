@@ -472,7 +472,11 @@ let () =
   expect_invalid_arg "subtest outside a run raises" (fun () ->
       Run.subtest "s" (fun () -> ()))
 
-let msg_of (f : Failure.t) = Option.value f.Failure.msg ~default:"<none>"
+(* The displayed label: the sub-case components joined with the user's
+   annotation — the derivation renderers share ([Render.labeled_msg]).
+   Recording keeps [msg] purely the user's; the label is data. *)
+let msg_of (f : Failure.t) =
+  Option.value (Render.labeled_msg f) ~default:"<none>"
 
 let () =
   let run = make_run () in

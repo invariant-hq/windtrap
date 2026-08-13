@@ -140,16 +140,16 @@ let xpass_result =
            "expected to fail (issue #42), but the test passed";
        ])
 
-(* B13: one test whose failure list mixes two subtest entries (labeled
-   through the msg slot, as Run.subtest records them) and one plain body
-   failure. *)
+(* B13: one test whose failure list mixes two subtest entries (their
+   sub-case components carried as data, as Run.subtest records them) and
+   one plain body failure. *)
 let subtest_failure name =
   {
     (Failure.equality
        ~loc:(loc "test/test_backend.ml" 40)
        ~expected:"[1; 2]" ~actual:"[1; 3]" ())
     with
-    Failure.msg = Some ("contract \u{203a} " ^ name);
+    Failure.subtest = [ "contract"; name ];
   }
 
 let subtest_result =

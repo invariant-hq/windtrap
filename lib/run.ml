@@ -246,27 +246,17 @@ let srandom () =
   Random.State.make
     [| Int64.to_int seed; Int64.to_int (Int64.shift_right_logical seed 32) |]
 
-(* The failure label of the executing subtest: the test's own name, then the
-   enclosing subtest names outermost first, joined like a test path. *)
-let subtest_label frame =
+(* The sub-case identity rides in the failure's [subtest] slot as data;
+   [msg] stays purely the user's annotation. Renderers derive the
+   displayed label from the components. *)
+let relabel frame (failure : Failure.t) =
   let stack = List.rev frame.fr_subtests in
   let components =
     match List.rev frame.fr_path with
     | leaf :: _ -> leaf :: stack
     | [] -> stack (* hand-built frames only; case paths are never empty *)
   in
-  Test_tree.path_to_string components
-
-(* The subtest label rides in the failure's [msg] slot — the one designed
-   context slot renderers already show — prefixed to a user [~msg]. *)
-let relabel frame (failure : Failure.t) =
-  let label = subtest_label frame in
-  let msg =
-    match failure.Failure.msg with
-    | None -> label
-    | Some msg -> label ^ ": " ^ msg
-  in
-  { failure with Failure.msg = Some msg }
+  { failure with Failure.subtest = components }
 
 let subtest name fn =
   let frame = current_frame () in

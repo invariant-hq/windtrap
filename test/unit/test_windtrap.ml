@@ -867,7 +867,7 @@ let () =
   (match failure_list (outcome_of outcome [ "subtests" ]) with
   | [ a; b ] ->
       check "a failing subtest lets its sibling run, labeled parent › name"
-        (match (a.Failure.msg, b.Failure.msg) with
+        (match (Render.labeled_msg a, Render.labeled_msg b) with
         | Some ma, Some mb ->
             contains "subtests › first" ma && contains "subtests › second" mb
         | _ -> false)

@@ -58,6 +58,7 @@ and t = {
   phase : phase;
   loc : Loc.t option;
   msg : string option;
+  subtest : string list;
   output_tail : tail option;
 }
 
@@ -166,7 +167,14 @@ let utf8_boundary_at_or_after s pos =
 (* Constructors *)
 
 let make ?loc ?msg kind =
-  { kind; phase = Body; loc; msg = cap_opt msg; output_tail = None }
+  {
+    kind;
+    phase = Body;
+    loc;
+    msg = cap_opt msg;
+    subtest = [];
+    output_tail = None;
+  }
 
 let equality ?loc ?msg ?(not_ = false) ~expected ~actual () =
   make ?loc ?msg

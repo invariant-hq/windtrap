@@ -883,14 +883,20 @@ val stale_lines_with_hint :
     [remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest]
     under [`Mirrors]. *)
 
-val is_subtest_failure : path:string list -> Failure.t -> bool
-(** [is_subtest_failure ~path f] is [true] iff [f]'s [msg] carries a subtest
-    label for the test at [path]: it starts with the test's own (leaf) name
-    followed by the [" › "] separator — the labeling contract of [subtest]
-    ({!Run.subtest}). The terminal summary counts such entries as sub-cases and
-    {!Render_junit} projects them as separate testcases. The label rides the
-    [msg] slot by design, so a user [?msg] beginning with that exact prefix is
-    indistinguishable from a subtest label. *)
+val is_subtest_failure : Failure.t -> bool
+(** [is_subtest_failure f] is [true] iff [f] was recorded inside
+    {!Run.subtest}: the failure's [subtest] components are non-empty. The
+    terminal summary counts such entries as sub-cases and {!Render_junit}
+    projects them as separate testcases. Classification is record-driven — a
+    user [?msg] spelling out a [leaf › name] prefix stays an ordinary
+    annotation. *)
+
+val labeled_msg : Failure.t -> string option
+(** [labeled_msg f] is [f]'s [msg] slot as reports display it: for a sub-case
+    entry, the [leaf › name] label derived from [f]'s [subtest] components,
+    with the user's [?msg] joined after [": "] when there is one; for a plain
+    failure, the [?msg] annotation itself. The one derivation, shared by the
+    failure block, the headline, and {!Render_junit}'s testcase names. *)
 
 val pp_failure :
   ansi:bool ->

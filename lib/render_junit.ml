@@ -79,9 +79,7 @@ type fail_case =
 
 let classify_fail (r : Run.result) fs =
   if r.counted then
-    let subtests, own =
-      List.partition (Render.is_subtest_failure ~path:r.path) fs
-    in
+    let subtests, own = List.partition Render.is_subtest_failure fs in
     Counted { own; subtests }
   else Excused (Option.value ~default:{ Test_tree.reason = None } r.xfail)
 
@@ -185,14 +183,15 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
               Buffer.add_string buf "    </testcase>\n";
               List.iter
                 (fun (f : Failure.t) ->
-                  (* The name is the msg slot verbatim: the [parent › name]
-                     label, plus the user's [?msg] suffix when the entry
-                     carried one (the label cannot be split back out). *)
+                  (* The name is the displayed label: the [parent › name]
+                     components joined, plus the user's [?msg] suffix when
+                     the entry carried one — the same spelling the terminal
+                     block prints. *)
                   let name =
-                    match f.Failure.msg with
+                    match Render.labeled_msg f with
                     | Some label -> label
                     | None ->
-                        path_string (* unreachable: labels select subtests *)
+                        path_string (* unreachable: subtests always label *)
                   in
                   Buffer.add_string buf
                     (spf

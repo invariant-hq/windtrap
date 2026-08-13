@@ -188,13 +188,13 @@ let test_subtests_only () =
     doc
 
 let test_subtest_user_msg_name () =
-  (* A subtest entry whose assertion also carried a user [?msg]: the label
-     rides the msg slot with the user text appended, and the testcase name is
-     that slot verbatim — the label cannot be split back out (documented). *)
+  (* A subtest entry whose assertion also carried a user [?msg]: the
+     testcase name is the displayed label — the sub-case components joined,
+     the user text appended after ": " (Render.labeled_msg). *)
   let entry =
     {
-      (Failure.equality ~expected:"1" ~actual:"2" ()) with
-      Failure.msg = Some "contract \u{203a} shape [0]: user context";
+      (Failure.equality ~msg:"user context" ~expected:"1" ~actual:"2" ()) with
+      Failure.subtest = [ "contract"; "shape [0]" ];
     }
   in
   let doc =
@@ -204,7 +204,7 @@ let test_subtest_user_msg_name () =
       ~duration:0.1 ()
   in
   check_well_formed "user-msg subtest document is well-formed" doc;
-  check_contains "subtest testcase name is the msg slot verbatim"
+  check_contains "subtest testcase name is the displayed label"
     ~sub:
       {|<testcase name="contract › shape [0]: user context" classname="s.backend"|}
     doc

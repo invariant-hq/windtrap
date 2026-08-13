@@ -223,6 +223,18 @@ let flat s =
        (function '\n' | '\r' | '\t' -> ' ' | c -> c)
        (Text.strip_ansi s))
 
+(* The msg slot as displayed: a sub-case entry's [leaf › name] label
+   (derived from the structured components — never sniffed from the text)
+   joined with the user's annotation when there is one. *)
+let labeled_msg (f : Failure.t) =
+  match f.Failure.subtest with
+  | [] -> f.Failure.msg
+  | components -> (
+      let label = Test_tree.path_to_string components in
+      match f.Failure.msg with
+      | None -> Some label
+      | Some m -> Some (label ^ ": " ^ m))
+
 let headline ?(invocation = `Mirrors) (f : Failure.t) =
   let base =
     match f.kind with
@@ -293,7 +305,9 @@ let headline ?(invocation = `Mirrors) (f : Failure.t) =
            gain. *)
         flat (String.concat "\n" (stale_lines_with_hint ~invocation orphans))
   in
-  match f.msg with None -> base | Some m -> spf "%s \u{2014} %s" (flat m) base
+  match labeled_msg f with
+  | None -> base
+  | Some m -> spf "%s \u{2014} %s" (flat m) base
 
 (* [s] with [spans] (ascending, non-overlapping byte ranges) wrapped in the
    escape codes of [style]; [s] unchanged when [ansi] is false. *)
@@ -518,7 +532,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
              put ""
          | None -> ())
      | None -> ());
-  (match f.msg with Some m -> put_ind m | None -> ());
+  (match labeled_msg f with Some m -> put_ind m | None -> ());
   match f.kind with
   | Failure.Equality { not_ = true; expected; _ } ->
       if String.contains expected '\n' then begin
@@ -767,13 +781,9 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
 let pp_failure ~ansi ?(excerpt = false) ?filter ?(invocation = `Mirrors) ppf f =
   pp_gen ~ansi ~excerpt ~filter ~commands:true ~invocation ~ind:indent ppf f
 
-(* Subtest entries are identified by their label riding the [msg] slot
-   (Run.subtest): the test's leaf name, the frozen path
-   separator, then the sub-case path. *)
-let is_subtest_failure ~path (f : Failure.t) =
-  match (List.rev path, f.Failure.msg) with
-  | leaf :: _, Some msg -> String.starts_with ~prefix:(leaf ^ " \u{203a} ") msg
-  | _, _ -> false
+(* Sub-case entries carry their identity as data (Run.subtest fills the
+   [subtest] components); the msg text is never consulted. *)
+let is_subtest_failure (f : Failure.t) = f.Failure.subtest <> []
 
 (* Renderer state *)
 
@@ -2426,8 +2436,7 @@ let finish t ?coverage ~results ~duration () =
     List.fold_left
       (fun acc (r : Run.result) ->
         match r.outcome with
-        | Failure.Fail fs ->
-            acc + List.length (List.filter (is_subtest_failure ~path:r.path) fs)
+        | Failure.Fail fs -> acc + List.length (List.filter is_subtest_failure fs)
         | _ -> acc)
       0 failed_results
   in

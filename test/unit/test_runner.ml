@@ -1324,8 +1324,8 @@ let () =
   (match failure_list (outcome_of outcome [ "layouts" ]) with
   | [ a; b ] ->
       check "each failing subtest is one labeled entry, in order"
-        (a.Failure.msg = Some "layouts › row-major"
-        && b.Failure.msg = Some "layouts › strided")
+        (Render.labeled_msg a = Some "layouts › row-major"
+        && Render.labeled_msg b = Some "layouts › strided")
   | _ -> check "two subtest failures recorded" false);
   check "subtest failures fail the test"
     (outcome.Runner.exit_code = 1 && outcome.Runner.failed_paths = [ "layouts" ])
@@ -1377,7 +1377,7 @@ let () =
   match failure_list (outcome_of outcome [ "bracketed" ]) with
   | [ sub; td ] ->
       check "the subtest entry is labeled and precedes the teardown's"
-        (sub.Failure.msg = Some "bracketed › uses-resource"
+        (Render.labeled_msg sub = Some "bracketed › uses-resource"
         && td.Failure.phase = Failure.Teardown)
   | _ -> check "bracket-subtest: two entries" false
 
@@ -1409,7 +1409,7 @@ let () =
           check "the entries are labeled subtest failures, not Property"
             (List.for_all
                (fun f ->
-                 f.Failure.msg = Some "prop-sub › law-half"
+                 Render.labeled_msg f = Some "prop-sub › law-half"
                  &&
                  match f.Failure.kind with
                  | Failure.Property _ -> false

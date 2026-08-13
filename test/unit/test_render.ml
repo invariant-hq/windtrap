@@ -1301,24 +1301,35 @@ let test_xpass_is_loud () =
 (* Subtest failures (amendment B13) *)
 
 let test_subtest_projection () =
-  check "subtest entries recognized by their label"
-    (Render.is_subtest_failure ~path:Fixtures.subtest_result.Run.path
-       (Fixtures.subtest_failure "shape [0]"));
+  check "subtest entries recognized by their components"
+    (Render.is_subtest_failure (Fixtures.subtest_failure "shape [0]"));
   check "plain failures are not subtest entries"
-    (not
-       (Render.is_subtest_failure ~path:Fixtures.subtest_result.Run.path
-          (Failure.message "boom")));
-  check "a user msg without the leaf prefix is not a subtest entry"
-    (not
-       (Render.is_subtest_failure ~path:Fixtures.subtest_result.Run.path
-          (Failure.message ~loc:(Fixtures.loc "f.ml" 1) "x")));
-  check "the leaf name alone is not enough — the separator is the label"
-    (not
-       (Render.is_subtest_failure ~path:Fixtures.subtest_result.Run.path
-          {
-            (Failure.message "context") with
-            Failure.msg = Some "contract note: extra context";
-          }))
+    (not (Render.is_subtest_failure (Failure.message "boom")));
+  (* The collision regression: classification is record-driven, so a user
+     [?msg] spelling out the [leaf › name] prefix stays an ordinary
+     annotation instead of being dressed as a sub-case. *)
+  let collision =
+    {
+      (Failure.message "boom") with
+      Failure.msg = Some "contract \u{203a} shape [0]";
+    }
+  in
+  check "a user msg spelling the label prefix is not a subtest entry"
+    (not (Render.is_subtest_failure collision));
+  let t =
+    with_renderer (fun r ->
+        Render.finish r
+          ~results:
+            [
+              Fixtures.result [ "backend"; "contract" ]
+                (Failure.Fail [ collision ]);
+            ]
+          ~duration:0.1 ())
+  in
+  check_contains "the colliding msg renders as an ordinary annotation"
+    ~sub:"contract \u{203a} shape [0]" t;
+  check "the colliding msg adds no subtest count to the summary"
+    (not (has ~sub:"subtest failure" t))
 
 let test_subtest_rendering () =
   let t =
