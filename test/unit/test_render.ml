@@ -1024,7 +1024,14 @@ let test_degenerate_equalities () =
 
 let test_ansi_hygiene () =
   (* User pp output may carry raw escapes; under [ansi:false] the transcript
-     must contain none (render.mli), under [ansi:true] they pass through. *)
+     must contain none (render.mli), under [ansi:true] they pass through.
+
+     The two ways it contains none are not the same. A comparison surface
+     escapes them, keeping every byte the value had — the block below is
+     [test_control_bytes_refined]'s guarantee seen from the hygiene side, so
+     it pins the escaped bytes rather than the stripped remains. The
+     surfaces that print verbatim — a message, a test name, a captured
+     tail — are stripped at the sink, as they always were. *)
   let esc = "\027[31mred\027[0m" in
   let f =
     Failure.equality ~expected:(esc ^ " one") ~actual:"\027]0;title\007 two" ()
@@ -1032,8 +1039,10 @@ let test_ansi_hygiene () =
   let plain = failure_block f in
   check_absent "ansi:false: payload escapes stripped from blocks" ~sub:"\027"
     plain;
-  check_contains "ansi:false: stripped payload text survives" ~sub:"red one"
-    plain;
+  check_contains "ansi:false: the payload's own bytes survive, escaped"
+    ~sub:{|\x1b[31mred\x1b[0m one|} plain;
+  check_contains "ansi:false: an OSC payload survives the same way"
+    ~sub:{|\x1b]0;title\x07 two|} plain;
   let colored = failure_block ~ansi:true (Failure.message (esc ^ " boom")) in
   check_contains "ansi:true: payload escapes pass through" ~sub:esc colored;
   let hostile_line =
@@ -1056,6 +1065,173 @@ let test_ansi_hygiene () =
   check_absent "ansi:false: captured tail stripped" ~sub:"\027" hostile_tail;
   check_contains "ansi:false: stripped tail text survives" ~sub:" captured"
     hostile_tail
+
+(* Control bytes on comparison surfaces
+
+   A value carrying ESC drove the terminal instead of appearing in the
+   report, and a grep for the reported bytes found nothing. Comparison
+   surfaces escape C0 and DEL at render time; comparison and storage stay
+   byte-raw. The three surfaces the escape has to reach are the short-value
+   refinement path, the multi-line hunk path, and the containment excerpt —
+   and on all three the marks are computed against the raw value and drawn
+   against the escaped one, so the columns are what these tests are really
+   pinning. *)
+
+(* The one failure a check verb raised: the end-to-end payload, not a
+   hand-built one. *)
+let caught name f =
+  match f () with
+  | () -> fail (name ^ ": expected Check_failure, got a return")
+  | exception Failure.Check_failure fl -> fl
+  | exception e ->
+      fail (name ^ ": expected Check_failure, raised " ^ Printexc.to_string e)
+
+let test_control_bytes_refined () =
+  (* The refinement path. The mark moves with the text it marks: a span at
+     raw byte 3 lands at display column 6, because the ESC before it now
+     occupies four. *)
+  let b =
+    failure_block
+      (Failure.equality ~expected:"\027[31mred\027[0m"
+         ~actual:"\027[32mred\027[0m" ())
+  in
+  check_absent "refined: no raw ESC reaches a plain block" ~sub:"\027" b;
+  check_contains "refined: the expected side is escaped and marked"
+    ~sub:("    expected  \\x1b[31mred\\x1b[0m\n" ^ String.make 20 ' ' ^ "~\n")
+    b;
+  check_contains "refined: the actual side too"
+    ~sub:("    actual    \\x1b[32mred\\x1b[0m\n" ^ String.make 20 ' ' ^ "~\n")
+    b;
+  (* A marked region that IS a control byte: the mark covers all four
+     columns of the escape, not the one the raw span measured. *)
+  let widened =
+    failure_block
+      (Failure.equality ~expected:"plain text here" ~actual:"plain\027text here"
+         ())
+  in
+  check_contains "refined: a marked control byte widens its mark"
+    ~sub:("    actual    plain\\x1btext here\n" ^ String.make 19 ' ' ^ "~~~~\n")
+    widened;
+  check_contains "refined: the unescaped side keeps its one column"
+    ~sub:("    expected  plain text here\n" ^ String.make 19 ' ' ^ "~\n")
+    widened;
+  (* Under ansi the payload's sequence is still text; only the renderer's
+     own styling is live. *)
+  let colored =
+    failure_block ~ansi:true
+      (Failure.equality ~expected:"\027[31mred\027[0m"
+         ~actual:"\027[32mred\027[0m" ())
+  in
+  check_absent "refined: the payload's own sequence never runs"
+    ~sub:"\027[31mred" colored;
+  check_contains "refined: the highlight wraps the escaped payload"
+    ~sub:"\\x1b[3\027[32m1\027[0m" colored
+
+let test_control_bytes_hunks () =
+  (* The multi-line path, through the witness that produces multi-line
+     renderings: [text] prints verbatim, so a styled line arrives at the
+     diff with its ESC intact. *)
+  let expected = "header\n\027[31malert\027[0m\nfooter" in
+  let f =
+    caught "text equality" (fun () ->
+        Check.equal Testable.text expected
+          "header\n\027[32malert\027[0m\nfooter")
+  in
+  let b = failure_block f in
+  check_absent "hunks: no raw ESC reaches a plain block" ~sub:"\027" b;
+  check_contains "hunks: both changed lines are escaped"
+    ~sub:"    - \\x1b[31malert\\x1b[0m\n    + \\x1b[32malert\\x1b[0m\n" b;
+  check_contains "hunks: context lines are escaped too" ~sub:"      header\n" b;
+  (* A carriage return no longer eats the line it shares. *)
+  let cr =
+    failure_block
+      (Failure.equality ~expected:"one\ntwo\r\nthree" ~actual:"one\ntwo\nthree"
+         ())
+  in
+  check_contains "hunks: CR renders as its hex escape" ~sub:"- two\\x0d\n" cr;
+  check_absent "hunks: no raw CR survives" ~sub:"two\r" cr;
+  (* Snapshot mismatches share [pp_hunks] — the single producer. *)
+  let snap =
+    failure_block
+      (Failure.snapshot ~name:"tui" ~path:"p.snap"
+         (Failure.Mismatch
+            { expected = "\027[1mbold\027[0m\n"; actual = "bold\n" }))
+  in
+  check_contains "hunks: snapshot baselines escape as well"
+    ~sub:"- \\x1b[1mbold\\x1b[0m\n" snap
+
+let test_control_bytes_containment () =
+  (* The excerpt path: the occurrence marker is computed from the payload's
+     raw byte offset and drawn in display columns. *)
+  let f =
+    caught "containment" (fun () ->
+        Check.contains ~sub:"NOPE" "\027[31mred\027[0m text")
+  in
+  let b = failure_block f in
+  check_absent "containment: no raw ESC reaches a plain block" ~sub:"\027" b;
+  check_contains "containment: the excerpt is escaped"
+    ~sub:"    haystack  \\x1b[31mred\\x1b[0m text\n" b;
+  (* not_contains: the needle occurs, and its mark must land under the
+     escaped occurrence rather than at its raw offset. *)
+  let found =
+    caught "not_contains" (fun () ->
+        Check.not_contains ~sub:"red" "\027[31mred\027[0m text")
+  in
+  let b = failure_block found in
+  check_contains "containment: the needle keeps its own %S escapes"
+    ~sub:"    needle    \"red\" \u{2014} found at byte 5\n" b;
+  check_contains "containment: the mark sits under the escaped occurrence"
+    ~sub:
+      ("    haystack  \\x1b[31mred\\x1b[0m text\n" ^ String.make 22 ' '
+     ^ "~~~\n")
+    b;
+  let colored = failure_block ~ansi:true found in
+  check_absent "containment: the excerpt's own sequence never runs"
+    ~sub:"\027[31mred\027[0m text" colored;
+  check_contains "containment: the highlight wraps the escaped occurrence"
+    ~sub:"\\x1b[31m\027[31mred\027[0m\\x1b[0m text" colored
+
+let test_control_bytes_alphabet () =
+  (* One rule: every C0 byte and DEL as [\xNN], LF and TAB excepted because
+     the block's layout is made of them. *)
+  let b =
+    failure_block
+      (Failure.predicate ~claim:"a clean value" "a\x00b\x07c\rd\x7fe\x1ff")
+  in
+  check_contains "alphabet: NUL, BEL, CR, DEL and US all escape"
+    ~sub:"    actual    a\\x00b\\x07c\\x0dd\\x7fe\\x1ff\n" b;
+  let kept =
+    failure_block (Failure.predicate ~claim:"a clean value" "one\ttwo\nthree")
+  in
+  check_contains "alphabet: TAB survives inside a line" ~sub:"      one\ttwo\n"
+    kept;
+  check_contains "alphabet: LF still breaks the block into lines"
+    ~sub:"      one\ttwo\n      three\n" kept
+
+let test_control_bytes_are_render_only () =
+  (* The guarantee's other half: nothing below the renderer sees the
+     escape. Equality still compares bytes, and the payload still stores
+     them. *)
+  let f =
+    caught "byte-exact comparison" (fun () ->
+        Check.equal Testable.string "\027" "\\x1b")
+  in
+  (match f.Failure.kind with
+  | Failure.Equality { expected; actual; _ } ->
+      check_string "payloads store the raw bytes" ~expected:{|"\027"|}
+        ~actual:expected;
+      check_string "and the other side's own bytes" ~expected:{|"\\x1b"|}
+        ~actual
+  | _ -> fail "expected an Equality payload");
+  (* Two values a lossy printer merges are reported as such; two the
+     ESCAPING would merge are not, because the test is made on the raw
+     renderings. [Testable.text] renders both verbatim. *)
+  let merged =
+    caught "escaping is not a printer" (fun () ->
+        Check.equal Testable.text "\027" "\\x1b")
+  in
+  check_absent "an escape collision is never called an identical rendering"
+    ~sub:"render identically" (failure_block merged)
 
 let test_diff_truncation () =
   let text prefix =
@@ -2729,6 +2905,15 @@ let tests =
     test "kind details" test_kind_details;
     test "degenerate equalities" test_degenerate_equalities;
     test "ansi hygiene under ansi:false" test_ansi_hygiene;
+    test "control bytes: the refined path escapes and moves its marks"
+      test_control_bytes_refined;
+    test "control bytes: the hunk path escapes every line"
+      test_control_bytes_hunks;
+    test "control bytes: the containment excerpt and its mark"
+      test_control_bytes_containment;
+    test "control bytes: the escape alphabet" test_control_bytes_alphabet;
+    test "control bytes: escaping is render-only"
+      test_control_bytes_are_render_only;
     test "diff display bounds" test_diff_truncation;
     test "proposed-content display bounds" test_proposed_truncation;
     test "source excerpt" test_excerpt;

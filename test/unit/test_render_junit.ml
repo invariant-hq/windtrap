@@ -230,6 +230,15 @@ let test_ansi_impossible () =
   let doc = Render_junit.render ~suite:ansi ~results ~duration:0.1 () in
   check_absent "no ESC byte anywhere in the document" ~sub:"\027" doc;
   check_contains "stripped payload text survives" ~sub:"red tail text" doc;
+  (* Two ways to keep ESC out of XML, and the body uses the one that keeps
+     the bytes: [pp_failure] escapes comparison data before this transport
+     ever sees it, so a styled expected value arrives readable instead of
+     stripped down to its letters. The captured tail keeps the old
+     treatment — it is a log excerpt with a full-log path. *)
+  check_contains "the failure body carries the value's own bytes, escaped"
+    ~sub:{|\x1b[31mred\x1b[0m expected|} doc;
+  check_contains "and the OSC-carrying side too"
+    ~sub:{|\x1b]0;title\x07 actual|} doc;
   check_well_formed "ANSI-stripped document is well-formed" doc
 
 let test_xml_range () =

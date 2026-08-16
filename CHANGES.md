@@ -188,6 +188,33 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
+**Failure blocks show control bytes instead of executing them.** A value
+carrying an ESC byte used to reach the terminal intact, so a failing
+assertion on styled output drew its own colours over the report, ate the
+label beside it, and left nothing a `grep` for the reported bytes could
+find — the failure that most needed reading was the one you could not read.
+Every surface that prints compared data — both equality paths, the
+containment excerpt, the predicate value, the rendered exceptions, snapshot
+baselines and proposed content, the counterexample — now renders each C0 byte
+and DEL as `\x1b`, `\x00`, `\x0d`, keeping newlines and tabs, which are the
+block's own layout:
+
+```
+    expected  \x1b[31mred\x1b[0m
+                    ~
+    actual    \x1b[32mred\x1b[0m
+                    ~
+```
+
+Only the rendering changes. Equality still compares bytes, snapshots still
+store and accept them, and the `~~~` marks still come from a refinement made
+against the raw values — moved into the escaped columns so a mark covers the
+whole escape it opened. The failure block's captured-output tail is
+deliberately untouched: it is a log excerpt, and it names the full log's path
+for anything the terminal mangles. JUnit and GitHub bodies inherit the change
+through the same projection, where the bytes previously survived only as
+stripped remains.
+
 **`windtrap.clock` is folded into the core.** The sublibrary had no dependent
 of its own — only the runner ever linked it — so the monotonic-clock module
 and its C stub now live in the core library and the public name is gone.

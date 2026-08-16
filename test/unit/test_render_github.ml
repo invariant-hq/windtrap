@@ -111,7 +111,11 @@ let test_ansi_stripped () =
   in
   let a = Render_github.annotation ~path:[ "t" ] f in
   check_absent "ANSI stripped from annotations" ~sub:"\027" a;
-  check_contains "stripped payload survives" ~sub:"green" a
+  (* The annotation shares [pp_failure] at [ansi:false], so a comparison
+     value reaches it escaped rather than stripped: the bytes survive the
+     workflow-command encoding as ordinary text. *)
+  check_contains "the compared value keeps its own bytes"
+    ~sub:{|\x1b[32mgreen\x1b[0m|} a
 
 (* Folding *)
 

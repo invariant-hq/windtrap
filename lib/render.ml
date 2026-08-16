@@ -215,6 +215,56 @@ let sanitize_name s =
 
 (* Failure projections *)
 
+(* Comparison surfaces print the values a test produced, and a control byte
+   in one of those drives the terminal instead of appearing in the report:
+   ESC eats the label beside it and leaves the terminal coloured, CR
+   overwrites the line the reader needed, and a grep for the reported value
+   finds nothing. Every C0 byte and DEL therefore renders as a lowercase
+   [\xNN] escape — one rule, no mnemonics, so [\x] marks every escape a
+   reader sees — with LF and TAB the two exceptions, because line structure
+   and indentation ARE the layout the block is built from.
+
+   This is a projection, exactly like colour: equality, containment, and
+   snapshot storage never see it. The transform is not injective — a value
+   holding the four characters [\x1b] renders like one holding the byte —
+   because the alternative is escaping the backslash, which would double
+   every escape in the [%S] renderings that make up most of a transcript.
+   Every structural decision (are the two renderings equal, do their line
+   lists differ, which regions changed) is therefore made on the raw
+   values, and only the printed glyphs and their column arithmetic move
+   into escaped space.
+
+   Distinct from [sanitize_name] above: a name has no line structure to
+   preserve, so it spells [\n] and [\t] out, and its ESC belongs to the
+   [ansi] policy rather than to this one. *)
+let control_byte c = (c < ' ' && c <> '\n' && c <> '\t') || c = '\127'
+
+let show_controls s =
+  if not (String.exists control_byte s) then s
+  else begin
+    let buf = Buffer.create (String.length s + 8) in
+    String.iter
+      (fun c ->
+        if control_byte c then
+          Buffer.add_string buf (spf "\\x%02x" (Char.code c))
+        else Buffer.add_char buf c)
+      s;
+    Buffer.contents buf
+  end
+
+(* [span], given in [s]'s byte coordinates, moved into those of
+   [show_controls s]. The escape is per byte and context-free, so escaping
+   a prefix and escaping the whole string agree on that prefix: the moved
+   span covers all four columns of every escape sequence it opened, which
+   is what keeps a [~~~] marker under the region it marks. *)
+let moved_span s ({ Diff.start; length } as span) =
+  if not (String.exists control_byte s) then span
+  else
+    {
+      Diff.start = String.length (show_controls (String.sub s 0 start));
+      length = String.length (show_controls (String.sub s start length));
+    }
+
 (* One line, no escape codes, bounded: headline material. Stripping comes
    first so truncation cannot leave a dangling partial sequence. *)
 let flat s =
@@ -393,9 +443,11 @@ let pp_hunks ~ansi put ~ind hunks =
              [---]/[+++] header and the [-]/[+] sigils already say which
              side is which, so the colour is free to carry the report's
              own meaning. *)
-          | Diff.Keep s -> emit (ind ^ "  " ^ s)
-          | Diff.Delete s -> emit (ind ^ st `Green ("- " ^ show_trailing_ws s))
-          | Diff.Insert s -> emit (ind ^ st `Red ("+ " ^ show_trailing_ws s)))
+          | Diff.Keep s -> emit (ind ^ "  " ^ show_controls s)
+          | Diff.Delete s ->
+              emit (ind ^ st `Green ("- " ^ show_trailing_ws (show_controls s)))
+          | Diff.Insert s ->
+              emit (ind ^ st `Red ("+ " ^ show_trailing_ws (show_controls s))))
         h.lines)
     hunks;
   if total > max_diff_lines then
@@ -432,6 +484,16 @@ let pp_eq_detail ~ansi put ~ind ~expected ~actual =
       | Some r -> Some (r.Diff.expected_spans, r.Diff.actual_spans)
       | None -> None
     in
+    (* Refinement ran against the raw values; the marks are drawn against
+       the escaped ones, so both sides move into display coordinates
+       together and a widened escape carries its marks with it. *)
+    let marked =
+      Option.map
+        (fun (es, as_) ->
+          (List.map (moved_span expected) es, List.map (moved_span actual) as_))
+        marked
+    in
+    let expected = show_controls expected and actual = show_controls actual in
     match marked with
     | Some (es, as_) when ansi ->
         put
@@ -471,7 +533,12 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
        ([equal float nan nan], a lossy pp): explain the identical lines. A
        multi-line rendering prints once, in block form — repeating it twice
        under expected/actual labels would only pad the block, and inlining
-       it after a label would break the four-space indentation. *)
+       it after a label would break the four-space indentation.
+
+       The test is made on the raw renderings because the claim is about
+       them: escaping merges values it cannot tell apart, and a pair the
+       printer did distinguish must never be reported as one it did not. *)
+    let expected = show_controls expected and actual = show_controls actual in
     if String.contains expected '\n' then begin
       put (ind ^ st `Faint "both render as:");
       List.iter (fun l -> put (ind ^ "  " ^ l)) (Text.split_lines expected)
@@ -535,6 +602,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   (match labeled_msg f with Some m -> put_ind m | None -> ());
   match f.kind with
   | Failure.Equality { not_ = true; expected; _ } ->
+      let expected = show_controls expected in
       if String.contains expected '\n' then begin
         put_ind "both sides equal:";
         put_block expected
@@ -554,9 +622,14 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         | Some at -> spf "found at byte %d" at
         | None -> "not found"
       in
+      (* [%S] carries its own escapes, OCaml's decimal ones, so the needle
+         needs none of [show_controls]'s — as do the [%S]-quoted exception
+         messages [pp_eq] diffs below. Only the unquoted surfaces do. *)
       put_ind (st `Faint "needle" ^ "    " ^ spf "%S \u{2014} %s" needle verdict);
       (* The occurrence's byte range inside the excerpt, when it is there to
-         mark: a failed [not_contains] window always contains it. *)
+         mark: a failed [not_contains] window always contains it. Offsets are
+         the payload's own, so the span is computed in raw bytes and moved
+         into display coordinates where it is drawn. *)
       let occurrence =
         match found_at with
         | None -> None
@@ -590,24 +663,25 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                  when ansi && start >= off && start < off + String.length line
                  ->
                    let length = min length (off + String.length line - start) in
-                   highlight ~ansi `Red line
-                     [ { Diff.start = start - off; length } ]
-               | _ -> line
+                   highlight ~ansi `Red (show_controls line)
+                     [ moved_span line { Diff.start = start - off; length } ]
+               | _ -> show_controls line
              in
              put_ind ("  " ^ styled))
            lines offsets
        end
        else
+         let shown = show_controls excerpt in
          match occurrence with
          | Some span when ansi ->
              put_ind
                (st `Faint "haystack" ^ "  "
-               ^ highlight ~ansi `Red excerpt [ span ])
+               ^ highlight ~ansi `Red shown [ moved_span excerpt span ])
          | occurrence -> (
-             put_ind (st `Faint "haystack" ^ "  " ^ excerpt);
+             put_ind (st `Faint "haystack" ^ "  " ^ shown);
              match occurrence with
              | Some span -> (
-                 match marker_line excerpt [ span ] with
+                 match marker_line shown [ moved_span excerpt span ] with
                  | Some m -> put (ind ^ "          " ^ m)
                  | None -> ())
              | None -> ()));
@@ -625,7 +699,9 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       (* Never diff or refine the claim sentence against the value: [claim]
          is a description, not a rendering. Colour still applies — green and
          red mark which side is which, and that is as true of a description
-         as of a value. *)
+         as of a value, and so is visibility: the ordering verbs build a
+         claim around a rendered bound ([greater than <x>]). *)
+      let claim = show_controls claim and value = show_controls value in
       put_ind (st `Faint "expected" ^ "  " ^ st `Green claim);
       if String.contains value '\n' then begin
         put_ind (st `Faint "actual:");
@@ -643,7 +719,11 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             ~expected:(spf "%S" expected_message)
             ~actual:(spf "%S" actual_message)
       | None -> (
-          match (expected, actual) with
+          (* An exception rendering is a value like any other: a payload
+             string reaches the block through [Printexc.to_string]. *)
+          match
+            (Option.map show_controls expected, Option.map show_controls actual)
+          with
           | Some e, Some a ->
               put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
               put_ind (st `Faint "raised            " ^ "  " ^ st `Red a)
@@ -669,7 +749,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       | Failure.Missing { proposed } ->
           put_ind
             (spf "snapshot %S: no baseline at %s" name (Path_ops.display path));
-          let lines = Text.split_lines proposed in
+          let lines = Text.split_lines (show_controls proposed) in
           let n = List.length lines in
           put_ind (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
           List.iter
@@ -720,6 +800,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         inner;
       } ->
       let desc = property_case_desc ~examples ~case_index ~shrink_steps in
+      let rendered = show_controls rendered in
       if String.contains rendered '\n' then begin
         put_ind (spf "counterexample (%s):" desc);
         put_block rendered

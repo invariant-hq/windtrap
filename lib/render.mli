@@ -115,9 +115,11 @@ val create :
     - [ansi], whether styling and diff-highlight colors are emitted. The caller
       decides from its color mode and the sink's terminal status
       ({!Env.resolve_color}); this module never sniffs. Under [ansi:false] the
-      transcript contains no escape codes at all: sequences arriving inside
-      payload strings, test names, or captured output (a user [pp] or program
-      that styles) are stripped; under [ansi:true] they pass through.
+      transcript contains no escape codes at all: sequences arriving inside test
+      names or captured output (a user [pp] or program that styles) are
+      stripped; under [ansi:true] they pass through. Compared {e values} are
+      neither stripped nor passed through under either setting — they are
+      escaped into visible text, see {!pp_failure}.
     - [mode], the verbosity level — one axis, each level a superset of the one
       below. [`Quiet] ([--quiet]) prints the failure blocks and the summary,
       nothing else. [`Compact] (the default) adds the header and one glyph per
@@ -144,7 +146,10 @@ val create :
     Test and suite names print with C0 control bytes and DEL escaped OCaml-style
     ([\n], [\t], [\xNN]) on every terminal surface — live tail, [FAIL] headers,
     verbose lines, summaries — so a payload-borne newline cannot split a header
-    or leave live-tail residue; ESC follows the [ansi] policy above.
+    or leave live-tail residue; ESC follows the [ansi] policy above. Compared
+    values inside a failure block follow the neighbouring but distinct rule at
+    {!pp_failure}: they keep their newlines and tabs, which are their own
+    layout, and they escape ESC whatever [ansi] says.
 
     Raises [Invalid_argument] if [columns < 20], [tail_lines < 0], or
     [slow_threshold] is negative or not finite. *)
@@ -976,7 +981,43 @@ val pp_failure :
 
     Every line is indented four spaces and the output ends with a newline. The
     captured-output tail is {e not} rendered here — it is per test, not per
-    failure; {!finish} and the transports place it.
+    failure; {!finish} and the transports place it. It is also the one surface
+    that stays byte-verbatim: a log excerpt is read as a log, and it names the
+    full log's path for the rest.
+
+    Every surface above that prints compared data — the two equality
+    renderings on both paths, the negated-equality value, the containment
+    excerpt, the predicate claim and value, the rendered exceptions, the
+    snapshot baseline and proposed content, the counterexample — prints each
+    C0 byte and DEL as a lowercase [\xNN] escape ([\x1b], [\x00], [\x0d]),
+    with LF and TAB the exceptions: line structure and indentation are the
+    block's own layout. One rule, no mnemonics, so [\x] marks every escape a
+    reader sees. Payload text arriving inside [%S] quotes — the containment
+    needle, the two exception messages — carries OCaml's escapes instead and
+    is left alone.
+
+    The surfaces that are the author's own words rather than a compared
+    value — the [?msg] annotation, a {!Failure.Message} text, a recorded
+    backtrace — keep the [ansi] policy above, as test names do.
+
+    This holds under [ansi:true] as much as under [ansi:false]: a terminal
+    is exactly where a payload-borne [ESC] would stop being data and start
+    being a command, coloring the report and eating the label beside it. The
+    renderer's own styling is applied after the escape, so it is the only
+    live sequence in the block.
+
+    The escape is a projection, like color. Equality, containment, and
+    snapshot storage never see it — raw bytes in, raw bytes compared, raw
+    bytes accepted into a baseline — and neither do the decisions this block
+    makes about the data: whether two renderings are equal, whether their
+    line lists differ, which regions {!Diff.refine} marked. Only the printed
+    glyphs and their column arithmetic move into escaped space, together, so
+    a [~~~] marker covers all four columns of an escape it opened.
+
+    It is not injective: a value holding the four characters [\x1b] renders
+    like one holding the byte. Escaping the backslash would fix that and
+    double every escape in the [%S] renderings that make up most of a
+    transcript, which is the worse trade.
 
     [excerpt], default [false], additionally prints the located source line read
     from disk, best-effort: unreadable files print nothing. Recorded source
