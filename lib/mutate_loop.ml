@@ -1098,7 +1098,8 @@ let loop renderer ~armed (spine : Driver.t) ~limit tests =
               flush_descriptors ();
               Reported 0)
 
-(* Admission (WINDTRAP_MUTATE=admit)
+(* Admission (WINDTRAP_MUTATE=admit, and =audit with universal
+   designation)
 
    "A test is justified by the fault it kills", as one command over the
    run's ordinary selection. The survey's spine is reused whole — the dry
@@ -1425,7 +1426,14 @@ let fault_of (m : M.mutant) : Render.fault =
     fault_source = read_source m.M.id.M.file;
   }
 
-let admit_loop renderer ~armed (spine : Driver.t) ~limit ~tries tests =
+(* [universal] is audit's one difference: every test the run selects is
+   designated, so the no-selection case — where admit refuses naming the
+   survey — designates the whole suite and proceeds. A selection present
+   narrows the set exactly as admit's does, and everything after the
+   designation check is shared — except the no-test refusal's wording,
+   which cannot blame a filter when no selection exists. *)
+let admit_loop renderer ~armed ~universal (spine : Driver.t) ~limit ~tries tests
+    =
   let config = spine.Driver.config in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
@@ -1437,7 +1445,8 @@ let admit_loop renderer ~armed (spine : Driver.t) ~limit ~tries tests =
       (* The last test's teardown window. *)
       ignore (M.drain ());
       let executed = List.rev reach.executed in
-      if not (designates ~config ~focus:outcome.Runner.focus_active) then
+      let selection = designates ~config ~focus:outcome.Runner.focus_active in
+      if (not universal) && not selection then
         refuse
           "admit judges a test selection and this run makes none: name the \
            tests to admit with -f/WINDTRAP_FILTER, -e, a tag knob, --failed \
@@ -1446,11 +1455,24 @@ let admit_loop renderer ~armed (spine : Driver.t) ~limit ~tries tests =
       else if outcome.Runner.exit_code = 2 then (
         match spine.Driver.invocation with
         | `Exe _ ->
-            (* The author named one binary, so an empty selection here is
-               a mistake, and it is refused as one. *)
-            refuse
-              "the selection matches no test, so there is no test to admit. \
-               Fix the filter, or run the suite that declares the test"
+            (* The author named one binary, so a run that admits nothing
+               here is a mistake, and it is refused as one. Only audit
+               reaches this arm without a selection — admit's refusal
+               above fired first — and then there is no filter to fix:
+               the run itself executed nothing, and the message says
+               that instead. *)
+            if selection then
+              refuse
+                "the selection matches no test, so there is no test to \
+                 admit. Fix the filter, or run the suite that declares the \
+                 test"
+            else
+              refuse
+                "audit judges the tests this run executes and this run \
+                 executed none, so there is no test to admit: the suite \
+                 declares no test, or every declared test was dropped \
+                 before running — a tag the default predicate drops, or an \
+                 empty shard"
         | `Mirrors ->
             (* The arm precedent's softness (Uncatalogued): one variable
                reaches every partition of a project-wide run, and failing
@@ -1798,7 +1820,7 @@ let execute_and_report (spine : Driver.t) tests =
             if instrumented () then discovery_mode (renderer ()) spine tests
             else Ran (Driver.execute_and_report spine tests)
         | `Off, Some _ -> arm_mode (renderer ()) ~armed spine tests
-        | (`Loop | `Report | `Admit), Some _ ->
+        | (`Loop | `Report | `Admit | `Audit), Some _ ->
             refuse
               "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
                each mutant itself, so an armed parent would mutate its own dry \
@@ -1812,11 +1834,14 @@ let execute_and_report (spine : Driver.t) tests =
             else
               try loop (renderer ()) ~armed spine ~limit tests
               with Supervision message -> refuse "%s" message)
-        | `Admit, None -> (
+        | ((`Admit | `Audit) as mode), None -> (
             if Sys.win32 then
               refuse
                 "mutation testing needs Unix.fork, which Windows does not \
                  have; the tests themselves still ran"
             else
-              try admit_loop (renderer ()) ~armed spine ~limit ~tries tests
+              try
+                admit_loop (renderer ()) ~armed
+                  ~universal:(mode = `Audit)
+                  spine ~limit ~tries tests
               with Supervision message -> refuse "%s" message))

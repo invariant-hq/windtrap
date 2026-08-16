@@ -67,7 +67,7 @@ ENVIRONMENT:
   WINDTRAP_TAIL_ERRORS       Captured-output lines shown per failure
   WINDTRAP_PROJECT_ROOT      Project root for snapshot path resolution
   WINDTRAP_COVERAGE_ONLY     Source prefixes the coverage number covers
-  WINDTRAP_MUTATE            Mutation testing: 1, report, admit or off
+  WINDTRAP_MUTATE            Mutation testing: 1, report, admit, audit or off
   WINDTRAP_MUTATE_ARM        Arm one mutant, by identifier
   WINDTRAP_MUTATE_LIMIT      Survivor blocks to print (0 for all)
   WINDTRAP_MUTATE_TRY        Faults an admit run tries per test (0 for all)

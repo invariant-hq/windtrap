@@ -206,10 +206,12 @@ val coverage_mode :
     configuration first and exit on that error, which is where it belongs. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Report | `Admit ];
+  mode : [ `Off | `Loop | `Report | `Admit | `Audit ];
       (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
           truthy spellings), [`Report] for [report], [`Admit] for [admit] — the
-          per-test admission run over the selection — [`Off] for a falsy
+          per-test admission run over the selection — [`Audit] for [audit] —
+          the same admission run with universal designation, so a run that
+          makes no selection judges every test it runs — [`Off] for a falsy
           spelling or an unset variable. *)
   arm : string option;
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
@@ -217,13 +219,13 @@ type mutation = {
           its own errors. [None] when the variable is unset or empty. *)
   limit : int;
       (** [WINDTRAP_MUTATE_LIMIT]: survivor blocks to print — and, under
-          [`Admit], tried faults listed per UNJUSTIFIED ruling — [0] for all.
-          Defaults to [10]. *)
+          [`Admit] and [`Audit], tried faults listed per UNJUSTIFIED ruling —
+          [0] for all. Defaults to [10]. *)
   tries : int;
-      (** [WINDTRAP_MUTATE_TRY]: faults an admit run tries per selected test
-          before ruling it unjustified, [0] for all it reaches. Defaults to
-          [25]. Read for every mode: a value the user set and misspelled must
-          be loud in every build. *)
+      (** [WINDTRAP_MUTATE_TRY]: faults an admission run ([`Admit] or
+          [`Audit]) tries per selected test before ruling it unjustified, [0]
+          for all it reaches. Defaults to [25]. Read for every mode: a value
+          the user set and misspelled must be loud in every build. *)
 }
 (** The type for the mutation knobs, which are environment variables only: the
     inline runner's argument parser accepts dune's inline-test protocol and

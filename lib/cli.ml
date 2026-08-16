@@ -581,7 +581,7 @@ let table =
     Env_setting
       {
         var = "WINDTRAP_MUTATE";
-        doc = "Mutation testing: 1, report, admit or off";
+        doc = "Mutation testing: 1, report, admit, audit or off";
       };
     Env_setting
       {
@@ -992,13 +992,13 @@ let coverage_mode (cli : parsed) =
    unrecognized value is an error naming the variable, never a silently
    defaulted mode. WINDTRAP_MUTATE's truthy and falsy spellings come from
    [Env]'s shared boolean reader, so it accepts exactly what every other
-   boolean variable accepts, plus [report]. The variable a mutant
+   boolean variable accepts, plus the mode words. The variable a mutant
    identifier travels in is the runtime's own constant, so the roster
    above, this reader and the report's [arm] line cannot name three
    different variables. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Report | `Admit ];
+  mode : [ `Off | `Loop | `Report | `Admit | `Audit ];
   arm : string option;
   limit : int;
   tries : int;
@@ -1015,13 +1015,14 @@ let mutation () =
         match String.lowercase_ascii (String.trim value) with
         | "report" -> Ok `Report
         | "admit" -> Ok `Admit
+        | "audit" -> Ok `Audit
         | _ -> (
             match Env.get_bool "WINDTRAP_MUTATE" with
             | Some true -> Ok `Loop
             | Some false -> Ok `Off
             | None ->
                 invalid ~source:"WINDTRAP_MUTATE" ~value
-                  ~expected:"1, report, admit or off"))
+                  ~expected:"1, report, admit, audit or off"))
   in
   let* limit =
     match Env.get_string "WINDTRAP_MUTATE_LIMIT" with

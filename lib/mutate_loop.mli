@@ -85,6 +85,19 @@
       does not apply, the determinism probe is skipped when nothing reaches a
       site, and {b an admission run persists nothing}: no verdict file is
       written, none is read, and an existing one is left byte-intact.
+    - [WINDTRAP_MUTATE=audit]: the admission machine with universal
+      designation — every test the run selects is designated, so the run
+      with no selection, which [admit] refuses naming the survey, judges the
+      whole suite and proceeds. It exists so an alias can say "admit every
+      test this executable runs" with no per-invocation selection. A run
+      that executes no test at all still refuses under the standalone
+      runner, naming the suite rather than a filter no one set. A
+      selection present narrows the set to exactly what [admit]'s would be,
+      empty-selection refusal and decline included, and everything else —
+      the red-dry-run refusal, the empty-catalogue refusals, the armed-parent
+      refusal, the skipped forced-fail check, [WINDTRAP_MUTATE_TRY], the
+      per-child deadlines, the rulings, the summary, persist-nothing and the
+      exit codes — is [admit]'s, shared, not duplicated.
 
     {b The loop.}
 
@@ -152,10 +165,11 @@
     to start or could not finish, each with its own message on [stderr]. Never
     [2]: "nothing ran" is a statement about a test selection, and a mutation run
     does not make one. Exception, per the amendment's reserved survivor-driven
-    clause: an [admit] run — which judges an explicit selection at its author's
-    request — additionally exits [1] when a selected test killed nothing it
-    reached (any UNJUSTIFIED ruling); NO SITES alone is never red. For [admit]
-    the refusal causes additionally include a missing selection. *)
+    clause: an [admit] or [audit] run — which judges a test selection at its
+    author's request — additionally exits [1] when a selected test killed
+    nothing it reached (any UNJUSTIFIED ruling); NO SITES alone is never red.
+    For [admit] the refusal causes additionally include a missing selection;
+    [audit] designates the whole suite there instead. *)
 
 (** {1:running Running} *)
 
