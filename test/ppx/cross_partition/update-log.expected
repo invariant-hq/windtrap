@@ -1,0 +1,3 @@
+cross_partition: 1 passed in <duration>s.
+windtrap: wrote stale.ml.corrected
+windtrap: accepted into the source tree: test/ppx/cross_partition/stale.ml

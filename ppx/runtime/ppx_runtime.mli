@@ -30,7 +30,10 @@
     ([Capture.output] through the run record), sanitizes it, and compares —
     normalized for [[%expect]] ({!normalize}), raw for [[%expect_exact]].
     Mismatches do not abort the body: every reached node records its result, so
-    one run corrects every stale payload. At the end of the body the runtime
+    one run corrects every stale payload. Under [WINDTRAP_UPDATE] a mismatch
+    that records a correction is not reported as a failure at all — the run
+    accepts it into the source tree instead, as it accepts a snapshot baseline
+    (see {!flush_corrections_report}). At the end of the body the runtime
     checks trailing output and {e per-node} reachability: a node reached twice
     and a node reached never can never cancel out. Corrections re-indent
     payloads relative to the node exactly as ppx_expect does, so adopting a
@@ -51,6 +54,11 @@
     The cwd is captured at module-load time — tests may [chdir] — and
     [.corrected] files are written there, next to the copied source in dune's
     sandbox, where the backend's [diff?] action and [dune promote] expect them.
+    That channel is per-library: dune registers the corrections of a library
+    only if every one of its partitions exits cleanly. Under [WINDTRAP_UPDATE]
+    corrections are additionally accepted into the source tree, per file and
+    without dune — the channel snapshot baselines already use (see
+    {!flush_corrections_report}).
 
     Registration state is module-global by nature (module initializers run
     before any run record exists); everything {e per-run} — capture, results,
@@ -272,18 +280,56 @@ val corrected_source : file:string -> source:string -> string option
     [source] with every recorded correction applied and the file's resolved
     nodes re-rendered in standard shape — or [None] when no corrections were
     recorded for [file]. Pure with respect to the filesystem;
-    {!flush_corrections} is this plus the read and the write. *)
+    {!flush_corrections_report} is this plus the read and the write. *)
 
-val flush_corrections : unit -> string list
-(** [flush_corrections ()] restores the module-load cwd, then writes
+type flush_report = {
+  written : string list;  (** [.corrected] names written beside the source. *)
+  accepted : string list;
+      (** Source files rewritten in place, project-root relative. *)
+  refused : string list;
+      (** Sources whose correction did not fully land — nothing written, or
+          written but not accepted — each already reported on [stderr]. *)
+}
+(** The type for what one flush did. *)
+
+val flush_corrections_report : accept:bool -> flush_report
+(** [flush_corrections_report ~accept] restores the module-load cwd, then writes
     [<basename>.corrected] there for every file with recorded corrections —
     dune's diff action expects the corrected file next to the copied source in
-    the sandbox — and clears the table. Returns the written file names. A file
-    whose source cannot be read or whose target cannot be written is never
-    skipped silently: a line naming the source path and the reason is printed on
-    [stderr], and {!exit} then terminates nonzero — a failed expect test whose
-    correction never reached disk must not read as passed (see
-    {!inline_exit_code}). *)
+    the sandbox — and clears the table.
+
+    With [accept] — the run's resolved update mode, [Snapshot.Update], which is
+    [WINDTRAP_UPDATE] after the CI refusal and the [force] override — each
+    written correction is {e additionally} accepted into the source tree, the
+    channel snapshot baselines already use from inside the same sandboxed
+    action: the recorded path is reconstructed against
+    [Path_ops.project_root ()], proven to lie under it, and published with
+    [Atomic_file.write]. That is what makes one file's correction independent of
+    another file's crash — dune registers corrections only when {e every}
+    partition of the library exits cleanly (see {!correction_notice}), and this
+    channel does not go through dune at all. What is promotable is unchanged: an
+    uncaught exception is not a correction under [WINDTRAP_UPDATE] any more than
+    without it, so no acceptance can bless one (see {!add_expect_test}).
+
+    Acceptance carries every correction the run recorded, including one recorded
+    in a test that also failed an assertion — exactly as an update run accepts
+    the baseline of such a test, since [WINDTRAP_UPDATE] means "take the output
+    I just produced". It does not touch {!inline_exit_code}, so that run still
+    exits [1] and still reports the assertion: what the update channel removes
+    is the {e cross-file} veto, not the failure.
+
+    Acceptance is guarded by a drift check. The corrected content is a patch by
+    byte offsets into the sandbox {e copy} of the source, so it describes the
+    source-tree file only while the two are byte-identical. The bytes are
+    compared first, and any difference — a source edited while the tests ran, a
+    stale sandbox, a [WINDTRAP_PROJECT_ROOT] aimed elsewhere — is refused
+    loudly, leaving the file untouched.
+
+    A file whose source cannot be read, whose target cannot be written, or whose
+    acceptance is refused is never skipped silently: a line naming the source
+    path and the reason is printed on [stderr], the file is returned in
+    [refused], and {!exit} then terminates nonzero — a correction that did not
+    fully land must not read as passed (see {!inline_exit_code}). *)
 
 (** {1:protocol The runner protocol}
 
@@ -313,12 +359,14 @@ val exit : unit -> 'a
     [WINDTRAP_SLOW_THRESHOLD] tunes the slow warnings with ["slow"]-tagged tests
     exempt, and accepted baselines report their written paths project-root
     relative, one behavior across both runners (and GitHub annotations under
-    GitHub Actions); writes [.corrected] files, naming each written one on
-    [stderr] (see {!correction_notice}); and exits with {!inline_exit_code} —
-    forced to [1] when any correction could not be written (see
-    {!flush_corrections}): dune's promotion diff can only surface corrections
-    that exist, so an unwritable one must fail the partition instead of exiting
-    [0] with nothing for the diff to catch. *)
+    GitHub Actions); writes [.corrected] files — accepting them into the source
+    tree as well when the run resolved to [Snapshot.Update], the same
+    [WINDTRAP_UPDATE] decision the run's snapshot baselines were made under —
+    and names what it wrote on [stderr] (see {!correction_notice}); and exits
+    with {!inline_exit_code} — forced to [1] when any correction reached neither
+    channel (see {!flush_corrections_report}): dune's promotion diff can only
+    surface corrections that exist, so an unwritable one must fail the partition
+    instead of exiting [0] with nothing for the diff to catch. *)
 
 val inline_exit_code : Runner.outcome -> int
 (** [inline_exit_code outcome] is the inline runner's exit code for [outcome] —
@@ -331,35 +379,46 @@ val inline_exit_code : Runner.outcome -> int
       [diff?] step, which shows the diff and registers the promotion;
     - [1] otherwise: any assertion failure, uncaught exception, timeout,
       unreached expect node, or release failure. Corrections already recorded
-      are still written by {!flush_corrections}; under dune they are withheld
-      from promotion until a rerun in which every partition exits cleanly (see
-      {!correction_notice}).
+      are still written by {!flush_corrections_report}; under dune they are
+      withheld from promotion until a rerun in which every partition exits
+      cleanly (see {!correction_notice}), and under [WINDTRAP_UPDATE] the ones
+      recorded before the failure are accepted into the source tree — the exit
+      code is untouched by that, so a crashing partition still exits [1] with
+      [WINDTRAP_UPDATE] set, and the crash itself is not a correction to accept.
 
     The [0]-on-corrections case presumes the corrections reach disk: {!exit}
-    overrides this code to [1] when {!flush_corrections} could not write one,
-    because a failed expect test with no [.corrected] for dune to diff would
-    otherwise be recorded as passed.
+    overrides this code to [1] when {!flush_corrections_report} could not write
+    one — including a refused acceptance — because a failed expect test with no
+    [.corrected] for dune to diff and no rewritten source would otherwise be
+    recorded as passed.
 
     Skipped tests are invisible to this rule: a skip — in a plain or an expect
     test — neither forces [1] nor helps reach [0]. A run of skips and covered
     corrections exits [0]; a run of skips and one assertion failure exits [1];
     an all-skipped run exits [0]. *)
 
-val correction_notice : exit_code:int -> string list -> string option
-(** [correction_notice ~exit_code written] is the [stderr] notice for a runner
-    process that wrote the [.corrected] files [written] and is about to exit
-    with [exit_code], or [None] when [written] is empty. The first line —
-    [windtrap: wrote <files>] — prints whenever anything was written: dune runs
-    every partition of a library inside one action, and any partition's nonzero
-    exit fails the whole action, skips every diff step, and discards the sandbox
-    with all computed [.corrected] files in it, so this line is the only trace
-    of a computed correction that survives a sibling partition's failure. When
-    [exit_code] is nonzero a second, louder line explains that the corrections
-    just written are {e not} registered for promotion — dune withholds every
-    correction in the library until a rerun in which every inline-test process
-    exits cleanly — and names the way out: fix the failure, rerun, then
-    [dune promote]. {!exit} prints the notice after {!flush_corrections}, once
-    the exit code is settled. *)
+val correction_notice : accepted:string list -> string list -> string option
+(** [correction_notice ~accepted written] is the [stderr] notice for a runner
+    process that wrote the [.corrected] files [written], of which [accepted]
+    names the source files it also rewrote in place; [None] when [written] is
+    empty. The first line — [windtrap: wrote <files>] — prints whenever anything
+    was written: dune runs every partition of a library inside one action, and
+    any partition's nonzero exit fails the whole action, skips every diff step,
+    and discards the sandbox with all computed [.corrected] files in it, so this
+    line is the only trace of a computed correction that survives a sibling
+    partition's failure.
+
+    A second line follows it. When [accepted] is empty it is the caveat: dune
+    registers a correction for promotion only when every inline-test process of
+    the library exits cleanly, so a failure in any of its files withholds this
+    one too — fix the failures, rerun, then [dune promote], or rerun with
+    [WINDTRAP_UPDATE=1]. The caveat is {e unconditional}, not gated on this
+    process's own exit code: the withholding is the whole library's, and no
+    partition can see whether a sibling just vetoed its correction (gating it
+    left it silent in exactly the cross-file case it exists for). When
+    [accepted] is non-empty the line names those paths instead — they went
+    nowhere near dune's channel, so the caveat does not apply to them. {!exit}
+    prints the notice after {!flush_corrections_report}. *)
 
 (** {1:armed Armed processes}
 
@@ -373,8 +432,9 @@ val enter_armed : unit -> unit
 
     - {b Checking becomes read-only.} An [[%expect]] or [[%expect_exact]]
       mismatch is a plain failure: no correction is recorded, so
-      {!flush_corrections} writes no [.corrected] file and finds nothing to name
-      on [stderr], and no failed test is recorded as covered by a correction, so
+      {!flush_corrections_report} writes no [.corrected] file, accepts nothing
+      into the source tree whatever [WINDTRAP_UPDATE] says, and finds nothing to
+      name on [stderr], and no failed test is recorded as covered, so
       {!inline_exit_code} never downgrades a failing run to [0] on dune's
       promotion protocol. Matching, normalization, per-node reachability and the
       failures they report are unchanged. An armed mutant changes program output
@@ -412,7 +472,7 @@ val reset : unit -> unit
     arguments including {!init}'s once-guard. The clearing is total by
     construction, not by enumeration: the runtime holds that state in a single
     record and [reset] assigns a fresh one. The module-load cwd is not run state
-    and survives (see {!flush_corrections}).
+    and survives (see {!flush_corrections_report}).
 
     For this module's own test suite, which registers synthetic suites
     repeatedly in one process. Never called by generated code. *)

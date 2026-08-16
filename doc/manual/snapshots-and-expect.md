@@ -201,13 +201,33 @@ Mechanics worth knowing:
   `equal` mismatch or a raise. To pin an expected exception, catch and
   print it: `(try boom () with e -> print_string (Printexc.to_string e));
   [%expect {| Failure("boom") |}]`.
-  Promotion is per-library, not per-file: dune registers corrections
-  only when every inline-test process of the library exits cleanly, so
-  one raising test anywhere in the library withholds `dune promote` for
-  *all* of the library's corrections — including other files'. The run
-  still tells you what was computed: each `windtrap: wrote
-  <file>.corrected` line names a correction that will be offered once
-  the failing test is fixed and the suite rerun.
+  `dune promote` is per-library, not per-file: dune registers
+  corrections only when every inline-test process of the library exits
+  cleanly, so one raising test anywhere in the library withholds
+  `dune promote` for *all* of the library's corrections — including
+  other files'. The run still tells you what was computed: each
+  `windtrap: wrote <file>.corrected` line names a correction, and the
+  caveat under it says it is not registered yet.
+- `WINDTRAP_UPDATE=1` is the way past that, and it is the same variable
+  and the same act as for snapshot baselines: accept the output the run
+  just produced. Corrections go straight into the source tree, one file
+  at a time and without dune, so a crash in `b.ml` no longer withholds
+  `a.ml`'s payload. An accepted mismatch is not reported as a failure —
+  the run goes green and names what it wrote, exactly as an accepted
+  baseline does:
+
+```
+$ WINDTRAP_UPDATE=1 dune runtest
+mylib: 4 passed in 0.0031s.
+windtrap: wrote parser.ml.corrected
+windtrap: accepted into the source tree: lib/parser.ml
+```
+
+  What is promotable does not widen: a raise is still never a
+  correction, so no update run can bless one, and a test that also
+  fails an assertion still fails the run — what the variable removes is
+  the *cross-file* veto, not the failure. Review with `git diff`. Under
+  CI an update request refuses the run, as it does for baselines.
 - Shadowing `Expect_test_config` tunes a whole file; the useful knob
   is `sanitize`, applied to every read of captured output:
 

@@ -1551,49 +1551,64 @@ let () =
     ~actual:(exit_of ~register:mixed ~tweak_config:Fun.id ())
 
 (* The correction notice: the stderr trace of written .corrected files.
-   The wrote-line is unconditional (a sibling partition's failure makes
-   dune discard the sandbox, so this line is the only surviving trace of
-   a computed correction); the loud withheld-from-promotion line fires
-   only when the writing process itself exits nonzero. *)
+   Both lines are unconditional, and for the same reason — a sibling
+   partition's failure makes dune discard the sandbox, and no process
+   can see that happen. The wrote-line is the only surviving trace of a
+   computed correction; the caveat under it is the only surviving
+   explanation. Gating the caveat on the writing process's own exit code
+   (what it used to do) silenced it in exactly the cross-partition case
+   it exists for: there, the process that writes exits 0 and the process
+   that exits 1 wrote nothing. *)
 
 let () =
   (match
-     Ppx_runtime.correction_notice ~exit_code:1 [ "a_mismatch.ml.corrected" ]
+     Ppx_runtime.correction_notice ~accepted:[] [ "a_mismatch.ml.corrected" ]
    with
-  | None -> check "corrections + exit 1 produce a notice" false
+  | None -> check "a written correction produces a notice" false
   | Some notice ->
-      check "corrections + exit 1 produce a notice" true;
-      check_contains "corrections + exit 1: the wrote line names the file"
+      check "a written correction produces a notice" true;
+      check_contains "the wrote line names the file"
         ~sub:"windtrap: wrote a_mismatch.ml.corrected" notice;
-      check_contains "corrections + exit 1: the withheld notice fires"
-        ~sub:"1 correction written but NOT registered for promotion" notice;
-      check_contains "corrections + exit 1: the notice names the way out"
-        ~sub:"Fix that failure, rerun, then 'dune promote'." notice);
+      check_contains "the caveat states the per-library rule"
+        ~sub:
+          "dune registers a correction for promotion only when every \
+           inline-test process of the library exits cleanly"
+        notice;
+      check_contains "the caveat names the dune way out"
+        ~sub:"Fix the failures, rerun, then 'dune promote'" notice;
+      check_contains "the caveat names the update way out"
+        ~sub:"rerun with WINDTRAP_UPDATE=1" notice);
+  (* The notice no longer takes an exit code, so no shape of the
+     arguments brings the old silence back. *)
   (match
-     Ppx_runtime.correction_notice ~exit_code:0 [ "a_mismatch.ml.corrected" ]
-   with
-  | None -> check "corrections + exit 0 produce a notice" false
-  | Some notice ->
-      check "corrections + exit 0 produce a notice" true;
-      check_contains "corrections + exit 0: the wrote line still prints"
-        ~sub:"windtrap: wrote a_mismatch.ml.corrected" notice;
-      check "corrections + exit 0: no withheld notice"
-        (match find notice "NOT registered" with
-        | _ -> false
-        | exception Invalid_argument _ -> true));
-  (match
-     Ppx_runtime.correction_notice ~exit_code:1
+     Ppx_runtime.correction_notice ~accepted:[]
        [ "a.ml.corrected"; "b.ml.corrected" ]
    with
-  | None -> check "two corrections + exit 1 produce a notice" false
+  | None -> check "two corrections produce a notice" false
   | Some notice ->
       check_contains "two corrections: the wrote line lists both"
         ~sub:"windtrap: wrote a.ml.corrected, b.ml.corrected" notice;
-      check_contains "two corrections: the count pluralizes"
-        ~sub:"2 corrections written but NOT registered" notice);
-  check "no corrections: no notice, whatever the exit code"
-    (Ppx_runtime.correction_notice ~exit_code:1 [] = None
-    && Ppx_runtime.correction_notice ~exit_code:0 [] = None)
+      check_contains "two corrections: the caveat still fires"
+        ~sub:"dune registers a correction for promotion only" notice);
+  (* Accepted into the source tree: those corrections never went through
+     dune's channel, so the caveat is replaced by where they landed. *)
+  (match
+     Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ]
+       [ "a_mismatch.ml.corrected" ]
+   with
+  | None -> check "an accepted correction produces a notice" false
+  | Some notice ->
+      check_contains "accepted: the wrote line still prints"
+        ~sub:"windtrap: wrote a_mismatch.ml.corrected" notice;
+      check_contains "accepted: the source path is named"
+        ~sub:"windtrap: accepted into the source tree: lib/a.ml" notice;
+      check "accepted: no dune caveat"
+        (match find notice "dune registers" with
+        | _ -> false
+        | exception Invalid_argument _ -> true));
+  check "no corrections: no notice"
+    (Ppx_runtime.correction_notice ~accepted:[] [] = None
+    && Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ] [] = None)
 
 (* Corrections round-trip on a real temp source file *)
 
@@ -1632,8 +1647,8 @@ let () =
           print_string "new\n";
           Ppx_runtime.expect ~id:0;
           (* Tests may chdir; the runner does not restore the cwd, so
-             flush_corrections must — .corrected files land in the
-             module-load cwd regardless. *)
+             the flush must — .corrected files land in the module-load
+             cwd regardless. *)
           Sys.chdir (Filename.get_temp_dir_name ()));
       let tests = Ppx_runtime.collect () in
       with_temp_root (fun log_dir ->
@@ -1645,12 +1660,16 @@ let () =
           | Ok _ -> ());
       check "the test body left the cwd changed"
         (not (String.equal (Sys.getcwd ()) start_dir));
-      let written = Ppx_runtime.flush_corrections () in
+      let report = Ppx_runtime.flush_corrections_report ~accept:false in
       check "flush restores the module-load cwd"
         (String.equal (Sys.getcwd ()) start_dir);
       let corrected_name = Filename.basename temp ^ ".corrected" in
       check "flush writes <basename>.corrected in the start cwd"
-        (written = [ corrected_name ] && Sys.file_exists corrected_name);
+        (report.Ppx_runtime.written = [ corrected_name ]
+        && Sys.file_exists corrected_name);
+      check "without accept, nothing reaches the source tree"
+        (report.Ppx_runtime.accepted = []
+        && report.Ppx_runtime.refused = []);
       let golden =
         {x|let%expect_test "t" =
   print_string "new\n";
@@ -1669,7 +1688,366 @@ let () =
       | exception Sys_error _ -> check "read back .corrected" false);
       (try Sys.remove corrected_name with Sys_error _ -> ());
       check "flush clears the corrections table"
-        (Ppx_runtime.flush_corrections () = []))
+        ((Ppx_runtime.flush_corrections_report ~accept:false)
+           .Ppx_runtime.written = []))
+
+(* Accepting corrections into the source tree (WINDTRAP_UPDATE)
+
+   The second channel, and the one that makes a correction independent of
+   the rest of its library: dune registers a .corrected only when every
+   partition of the library exits 0, so one file's crash withholds
+   another file's correction — and no partition can see that happen.
+   Under an update run the correction goes to the source tree directly
+   instead, through the machinery snapshot baselines already use.
+
+   The layout below is dune's situation in miniature, and the two copies
+   have to stay distinct for any of it to mean anything. The recorded
+   path is workspace-relative ("sub/<name>.ml"); the copy the runtime
+   reads and patches is the SANDBOX copy, which [absolute_path] resolves
+   to <module-load cwd>/<name>.ml; the source tree is a scratch root
+   named by WINDTRAP_PROJECT_ROOT, holding <root>/sub/<name>.ml. The
+   correction is a set of byte offsets into the first, applied to the
+   second — which is sound only while their bytes are equal, and is what
+   the drift guard is for. *)
+
+let read_text path =
+  let ic = open_in_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_in_noerr ic)
+    (fun () -> really_input_string ic (in_channel_length ic))
+
+let write_text path contents =
+  let oc = open_out_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_out_noerr oc)
+    (fun () -> output_string oc contents)
+
+(* Runs [f] with the process's stderr redirected, returning its result
+   and the bytes written there. The flush reports a refusal on stderr and
+   nowhere else, so a test that does not read it there cannot assert on
+   it — and a green `dune runtest` must not carry the line either. *)
+let capturing_stderr f =
+  let path = Filename.temp_file "windtrap-ppxrt-err-" ".txt" in
+  flush Stdlib.stderr;
+  let saved = Unix.dup Unix.stderr in
+  let fd = Unix.openfile path [ Unix.O_WRONLY; Unix.O_TRUNC ] 0o600 in
+  Unix.dup2 fd Unix.stderr;
+  Unix.close fd;
+  let result =
+    Fun.protect
+      ~finally:(fun () ->
+        flush Stdlib.stderr;
+        Unix.dup2 saved Unix.stderr;
+        Unix.close saved)
+      f
+  in
+  let text = read_text path in
+  (try Sys.remove path with Sys_error _ -> ());
+  (result, text)
+
+let stale_source =
+  {x|let%expect_test "t" =
+  print_string "fresh";
+  [%expect {| stale |}]
+|x}
+
+let stale_corrected =
+  {x|let%expect_test "t" =
+  print_string "fresh";
+  [%expect {| fresh |}]
+|x}
+
+let register_stale ~file =
+  let source = stale_source in
+  let body_start = find source "let%expect_test" in
+  let body_end = find source "|}]" + String.length "|}]" in
+  let body_loc = mk_loc source body_start body_end in
+  let nodes =
+    [
+      node_of source ~id:0 ~node_text:"[%expect {| stale |}]"
+        ~payload:("{| stale |}", " stale ", Ppx_runtime.Tag "")
+        ();
+    ]
+  in
+  Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[]
+    ~run:(fun f -> f ())
+    ~sanitize:(fun s -> s)
+    ~nodes ~body_loc ~body_wrap:None
+    ~trailing_loc:(mk_loc source body_end body_end)
+    "stale"
+    (fun () ->
+      print_string "fresh";
+      Ppx_runtime.expect ~id:0)
+
+(* A payload that matches, then a raise: the whole of what a crashing
+   partition contributes. Nothing mismatched, so nothing is recorded, so
+   there is nothing for either channel to carry — and the exception is
+   not itself a correction on any channel. *)
+let crash_source =
+  {x|let%expect_test "t" =
+  print_string "before";
+  [%expect {| before |}];
+  failwith "boom"
+|x}
+
+let register_crash ~file =
+  let source = crash_source in
+  let body_start = find source "let%expect_test" in
+  let body_end = find source "|}]" + String.length "|}]" in
+  let body_loc = mk_loc source body_start body_end in
+  let nodes =
+    [
+      node_of source ~id:0 ~node_text:"[%expect {| before |}]"
+        ~payload:("{| before |}", " before ", Ppx_runtime.Tag "")
+        ();
+    ]
+  in
+  Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[]
+    ~run:(fun f -> f ())
+    ~sanitize:(fun s -> s)
+    ~nodes ~body_loc ~body_wrap:None
+    ~trailing_loc:(mk_loc source body_end body_end)
+    "crash"
+    (fun () ->
+      print_string "before";
+      Ppx_runtime.expect ~id:0;
+      failwith "boom")
+
+(* The module-load cwd, which is where [absolute_path] looks for the
+   source and where the .corrected lands. Captured here rather than read
+   per case: every flush above restored it, and a case that laid its
+   sandbox copy somewhere else would test nothing. *)
+let sandbox_dir = Sys.getcwd ()
+
+let case_counter = ref 0
+
+let with_case ~root ~sandbox_source ~tree_source f =
+  incr case_counter;
+  let name = Printf.sprintf "ppxrt_case%d.ml" !case_counter in
+  let dir = Filename.concat root "sub" in
+  (try Unix.mkdir dir 0o700 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+  let sandbox = Filename.concat sandbox_dir name in
+  write_text sandbox sandbox_source;
+  write_text (Filename.concat dir name) tree_source;
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter
+        (fun p -> try Sys.remove p with Sys_error _ -> ())
+        [ sandbox; sandbox ^ ".corrected" ])
+    (fun () ->
+      f ~file:("sub/" ^ name)
+        ~target:(Filename.concat dir name)
+        ~corrected:(Filename.concat sandbox_dir (name ^ ".corrected"))
+        ~corrected_name:(name ^ ".corrected"))
+
+(* One partition, run and flushed exactly as [exit] does it: the update
+   decision is read off the registry the runner built, so the CI refusal
+   and the [force] override are the run's own, not restated here. *)
+let run_partition ?(ci = false) ~update ~root ~register () =
+  Ppx_runtime.reset ();
+  register ();
+  let tests = Ppx_runtime.collect () in
+  let saved_ci = Sys.getenv_opt "CI" in
+  Unix.putenv "CI" (if ci then "1" else "");
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.putenv "CI" (Option.value ~default:"" saved_ci);
+      Unix.putenv "WINDTRAP_PROJECT_ROOT" "")
+    (fun () ->
+      with_temp_root (fun log_dir ->
+          let config = { (base_config ~log_dir ()) with Run.update } in
+          capturing_stderr (fun () ->
+              match Runner.execute ~config ~suite:"ppxrt" tests with
+              | Error error -> Error error
+              | Ok outcome ->
+                  let accept =
+                    Snapshot.mode (Run.snapshots outcome.Runner.run)
+                    = Snapshot.Update
+                  in
+                  let report = Ppx_runtime.flush_corrections_report ~accept in
+                  let failures =
+                    List.length
+                      (List.filter
+                         (fun r ->
+                           match r.Run.outcome with
+                           | Failure.Fail _ -> true
+                           | Failure.Pass | Failure.Skip _ -> false)
+                         (Run.results outcome.Runner.run))
+                  in
+                  Ok (Ppx_runtime.inline_exit_code outcome, report, failures))))
+
+(* A stale-only partition: exit 0 and a .corrected, and — without an
+   update run — nothing at all in the source tree. *)
+let () =
+  with_temp_root (fun root ->
+      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
+        (fun ~file ~target ~corrected ~corrected_name ->
+          match
+            run_partition ~update:Env.No_update ~root
+              ~register:(fun () -> register_stale ~file)
+              ()
+          with
+          | Error _, _ -> check "stale partition: the run started" false
+          | Ok (code, report, failures), stderr ->
+              check_int "stale partition exits 0 (its correction covers it)"
+                ~expected:0 ~actual:code;
+              check_int "a plain run reports the mismatch as a failure"
+                ~expected:1 ~actual:failures;
+              check "stale partition writes its .corrected"
+                (report.Ppx_runtime.written = [ corrected_name ]);
+              check "a plain run accepts nothing into the source tree"
+                (report.Ppx_runtime.accepted = []
+                && report.Ppx_runtime.refused = []);
+              check_string "a plain run leaves the source tree byte-identical"
+                ~expected:stale_source ~actual:(read_text target);
+              check_string "the .corrected carries the fresh payload"
+                ~expected:stale_corrected ~actual:(read_text corrected);
+              check_string "a clean flush says nothing on stderr" ~expected:""
+                ~actual:stderr))
+
+(* A crashing partition: exit 1 and nothing written, on either channel —
+   under WINDTRAP_UPDATE too. This is the guard that option C did not
+   quietly make a crash promotable: the update channel can only carry
+   what the correction table holds, and a raise never puts anything
+   there. *)
+let () =
+  List.iter
+    (fun (label, update) ->
+      with_temp_root (fun root ->
+          with_case ~root ~sandbox_source:crash_source ~tree_source:crash_source
+            (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
+              match
+                run_partition ~update ~root
+                  ~register:(fun () -> register_crash ~file)
+                  ()
+              with
+              | Error _, _ ->
+                  check ("crash partition (" ^ label ^ "): the run started")
+                    false
+              | Ok (code, report, failures), stderr ->
+                  check_int ("crash partition exits 1 (" ^ label ^ ")")
+                    ~expected:1 ~actual:code;
+                  check_int
+                    ("crash partition still reports the crash (" ^ label ^ ")")
+                    ~expected:1 ~actual:failures;
+                  check ("crash partition writes nothing (" ^ label ^ ")")
+                    (report.Ppx_runtime.written = []
+                    && report.Ppx_runtime.accepted = []
+                    && report.Ppx_runtime.refused = []);
+                  check_string
+                    ("crash partition leaves the source alone (" ^ label ^ ")")
+                    ~expected:crash_source ~actual:(read_text target);
+                  check_string
+                    ("crash partition is silent on stderr (" ^ label ^ ")")
+                    ~expected:"" ~actual:stderr)))
+    [ ("plain run", Env.No_update); ("update run", Env.Update) ]
+
+(* An update run rewrites the source tree, reports the path it wrote
+   project-root relative, and exits 0 — with no help from dune. *)
+let () =
+  with_temp_root (fun root ->
+      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
+        (fun ~file ~target ~corrected ~corrected_name ->
+          match
+            run_partition ~update:Env.Update ~root
+              ~register:(fun () -> register_stale ~file)
+              ()
+          with
+          | Error _, _ -> check "update run: the run started" false
+          | Ok (code, report, failures), stderr ->
+              check_int "an accepted correction exits 0" ~expected:0
+                ~actual:code;
+              (* Snapshot parity: an update run writes the new expectation
+                 and passes. Reporting the mismatch it just accepted would
+                 be noise — and fifty of them, noise fifty times over. *)
+              check_int "an accepted mismatch is not reported as a failure"
+                ~expected:0 ~actual:failures;
+              check "the update run reports the accepted path, root-relative"
+                (report.Ppx_runtime.accepted
+                = [ Filename.concat "sub" (Filename.basename target) ]);
+              check "the update run still writes the .corrected"
+                (report.Ppx_runtime.written = [ corrected_name ]
+                && report.Ppx_runtime.refused = []);
+              check_string "the source tree carries the corrected payload"
+                ~expected:stale_corrected ~actual:(read_text target);
+              check_string "the sandbox .corrected matches what was accepted"
+                ~expected:stale_corrected ~actual:(read_text corrected);
+              check_string "an accepted flush says nothing on stderr"
+                ~expected:"" ~actual:stderr))
+
+(* The drift guard. The source-tree file differs from the copy the
+   correction was computed against, so its offsets describe something
+   else: refuse, name the file and the reason, leave both files exactly
+   as they were, and report the refusal so [exit] forces a nonzero code
+   over an exit rule that would otherwise read 0. *)
+let () =
+  let drifted =
+    "let%expect_test \"t\" = (* edited while the tests ran *) ()\n"
+  in
+  with_temp_root (fun root ->
+      with_case ~root ~sandbox_source:stale_source ~tree_source:drifted
+        (fun ~file ~target ~corrected ~corrected_name ->
+          match
+            run_partition ~update:Env.Update ~root
+              ~register:(fun () -> register_stale ~file)
+              ()
+          with
+          | Error _, _ -> check "drift guard: the run started" false
+          | Ok (code, report, _), stderr ->
+              check_string "the drift guard leaves the source untouched"
+                ~expected:drifted ~actual:(read_text target);
+              check "the drift guard accepts nothing"
+                (report.Ppx_runtime.accepted = []);
+              check "the refused file is reported unwritable"
+                (report.Ppx_runtime.refused = [ file ]);
+              check "the .corrected is still written for dune's channel"
+                (report.Ppx_runtime.written = [ corrected_name ]
+                && String.equal (read_text corrected) stale_corrected);
+              check_contains "the refusal names the file" ~sub:file stderr;
+              check_contains "the refusal names the reason"
+                ~sub:"differs from the copy the correction was computed against"
+                stderr;
+              (* The run itself is green — the mismatch was accepted, and
+                 the refusal happens after it, at flush. So the refusal is
+                 the only thing that can fail this partition, exactly as an
+                 unwritable .corrected is. *)
+              check_int "the run's own exit code is 0" ~expected:0 ~actual:code;
+              check "a refused acceptance forces the partition nonzero"
+                (report.Ppx_runtime.refused <> [])))
+
+(* The CI guard, inherited whole from snapshots: WINDTRAP_UPDATE under CI
+   is refused before a single test runs, and [force] overrides it. *)
+let () =
+  with_temp_root (fun root ->
+      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
+        (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
+          (match
+             run_partition ~ci:true ~update:Env.Update ~root
+               ~register:(fun () -> register_stale ~file)
+               ()
+           with
+          | Error Runner.Update_refused_in_ci, _ ->
+              check "an update run under CI is refused" true
+          | Error _, _ | Ok _, _ ->
+              check "an update run under CI is refused" false);
+          check_string "a refused update run leaves the source tree alone"
+            ~expected:stale_source ~actual:(read_text target)));
+  with_temp_root (fun root ->
+      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
+        (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
+          match
+            run_partition ~ci:true ~update:Env.Force_update ~root
+              ~register:(fun () -> register_stale ~file)
+              ()
+          with
+          | Error _, _ -> check "force overrides the CI refusal" false
+          | Ok (code, report, _), _ ->
+              check "force overrides the CI refusal"
+                (report.Ppx_runtime.accepted <> []);
+              check_int "a forced update run exits 0" ~expected:0 ~actual:code;
+              check_string "force writes the corrected payload to the source"
+                ~expected:stale_corrected ~actual:(read_text target)))
 
 (* reset: the seam every scenario above leans on *)
 

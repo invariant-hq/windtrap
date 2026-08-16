@@ -263,6 +263,47 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
+**`WINDTRAP_UPDATE` now covers expect payloads, and the correction notice
+stopped lying about promotion.** Under dune's `inline_tests` protocol every
+partition of a library runs inside one action, and the per-file
+`(diff? src src.corrected)` steps run only after every partition exits 0. So
+a raise in `b.ml` withholds `a.ml`'s correction: the correction is computed,
+its `windtrap: wrote a.ml.corrected` line prints, the sandbox is then thrown
+away with the file in it, and `dune promote` has nothing to offer. No exit
+code can fix this — a crashing partition that exits 0 to let the diffs run
+makes the crash itself promotable, which is the one thing the promotion rule
+exists to forbid.
+
+So expect corrections stop depending on dune's channel alone. `WINDTRAP_UPDATE`
+already means "accept the output I just produced as the new expectation", and
+it was arbitrary that it covered snapshot baselines but not expect payloads —
+the same act, on a different file. Under `WINDTRAP_UPDATE=1` a correction is
+now written into the source tree directly, per file, through the machinery
+baselines already use: the project root resolved above any `_build` tree, the
+target proved to lie under it, an atomic write. The mismatch is reported as
+accepted rather than failed, so the run goes green and names what it wrote,
+and one file's correction no longer depends on another file's crash. This is
+a unification, not a new concept: users who already set the variable will find
+it also updates expect payloads.
+
+Crashes remain non-promotable everywhere. A raise is never a correction, on
+either channel, so no update run can bless one — a crashing partition still
+exits 1 having written nothing. Before overwriting, the source-tree file's
+bytes are compared with the sandbox copy the correction's offsets were
+computed against, and *any* difference is refused loudly with the file left
+untouched: those offsets describe one file, and splicing them into another
+corrupts it. Under CI an update request is refused exactly as it is for
+baselines, `force` included.
+
+The notice that was supposed to explain all this had the defect too. Its
+"corrections written but NOT registered for promotion" line printed only when
+the writing process itself exited nonzero — but the withholding is the whole
+library's, and no partition can see a sibling's exit code. In the
+cross-partition case that motivated the warning, the process that wrote the
+correction exits 0 and the process that exits 1 wrote nothing, so it stayed
+silent in exactly the case it was written for. Every process that writes a
+correction now prints the caveat, and it names both ways out.
+
 **Failure blocks show control bytes instead of executing them.** A value
 carrying an ESC byte used to reach the terminal intact, so a failing
 assertion on styled output drew its own colours over the report, ate the
