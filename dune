@@ -74,3 +74,40 @@
    WINDTRAP_COVERAGE_FILE
    windtrap-reporter-self.coverage
    (run %{bin:windtrap} mutate))))
+
+; Admission, the third workflow, and the only one an alias can carry on
+; its own. WINDTRAP_MUTATE=audit is `admit` with universal designation:
+; a run that makes no per-invocation selection judges every test it
+; executes, which is the question an alias wants to ask and no filter
+; spells. It needs no merging half, because an admission run persists
+; nothing (Law 17b) — the rulings it prints are the whole product.
+;
+;   dune build @admit --instrument-with ppx_windtrap.mutate
+;
+; The flag is required, for @cover's reason: this tree's workspace
+; declares no instrumentation, and an uninstrumented main.exe has an
+; empty catalogue, so the seam declines by name instead of ruling.
+; --force is not required — (universe) already re-runs the action on
+; every build, as it does above.
+;
+; Scoped to test/unit/main.exe in this release, and the scope is a
+; statement about what an arming can reach. main.exe is the suite whose
+; subject is lib/ — the library that carries the mutation backend — and
+; it exercises it in-process, which is the only place a mutant armed in
+; this process changes anything. The four meta suites beside it are
+; plain executables over the hand-rolled harness, with no windtrap run
+; and so no per-test boundary to rule on. The other suites are left out
+; not because admission would be wrong over them but because their
+; subject is not lib/'s behaviour: mutate_loop, mutate_cli, coverage_ppx,
+; ppx and conformance observe the machinery through fixtures they spawn
+; or expansions they diff, so the code under test runs where no arming
+; reaches it, and a ruling would name whichever fault their own
+; assertion code happened to evaluate — true about the test, silent
+; about what the test is for. Widening this is a later choice.
+(rule
+ (alias admit)
+ (deps
+  (universe)
+  test/unit/main.exe)
+ (action
+  (setenv WINDTRAP_MUTATE audit (run %{exe:test/unit/main.exe}))))

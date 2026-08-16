@@ -34,6 +34,8 @@ dune runtest examples/x-blueprint                 # every suite
 dune runtest examples/x-blueprint/test/failures   # just the bug backlog
 dune build @examples/x-blueprint/test/example-cover \
   --instrument-with ppx_windtrap.coverage         # coverage, gated
+dune build @examples/x-blueprint/test/example-admit \
+  --instrument-with ppx_windtrap.mutate           # can every slug test fail?
 WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib/slug.ml \
   dune exec --instrument-with ppx_windtrap.mutate \
   examples/x-blueprint/test/unit/test_slug.exe        # the mutation loop
@@ -56,11 +58,23 @@ admission: 1 admitted of 1 · 2 forks over 62 reached in 77ms (seed s1:cd98c762b
 `UNJUSTIFIED` would mean the test cannot fail, and exits 1; `NO SITES`
 means mutation has nothing to say about that subject. Nothing is written
 to `_build/_mutants`, so admitting a test never disturbs the verdicts
-`example-mutate` merges. Swapping `-f idempotent` for `-e zzz` audits
-every test in the suite at once — and on `test_stats.exe`, scoped with
-`WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib` (inside windtrap's
-tree the framework's own sites are in reach otherwise), that audit
-exits 1 by design; see the fourth deliberate thing below.
+`example-mutate` merges.
+
+Drop the `-f` and spell the mode `audit` instead, and the run judges
+every test it executes rather than refusing for want of a selection —
+which is the whole reason an alias can carry it. `@example-admit` is
+that command over `test_slug.exe`, and it reports `9 admitted of 9 · 2
+forks` here. It carries no `WINDTRAP_MUTATE_ONLY`, so inside windtrap's
+tree the framework's own sites are in reach too: the same audit scoped
+to `examples/x-blueprint/lib` reports `8 admitted, 1 no sites` in three
+forks, which is what the alias sees once this directory is copied out
+and windtrap is an uninstrumented dependency. No prefix is right in
+both places, and wide is the safe direction — every ruling is still
+true about the test it names.
+
+Its sibling `test_stats.exe` is left out of the alias on purpose:
+scoped that way, auditing it exits 1 by design. The fourth deliberate
+thing below says why that red is the point rather than a defect.
 
 ## Copied out: the workspace posture
 
@@ -89,6 +103,7 @@ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/slug.ml \
   dune exec test/unit/test_slug.exe                   # the mutation loop
 WINDTRAP_MUTATE=admit \
   dune exec test/unit/test_slug.exe -- -f idempotent  # admit a test
+dune build @example-admit                             # admit a whole suite
 dune build @example-mutate                            # merge verdicts
 ```
 
@@ -103,11 +118,12 @@ it.
 
 Four things are deliberate:
 
-- **The aliases are named `example-cover` / `example-mutate`.** In your
-  own project they are `cover` and `mutate` — the names windtrap's
-  manual, skill, and own root `dune` use. They are renamed here only
-  because this example lives inside windtrap's tree, where `@cover` and
-  `@mutate` are recursive and already mean the project's own aggregate.
+- **The aliases are named `example-cover` / `example-mutate` /
+  `example-admit`.** In your own project they are `cover`, `mutate` and
+  `admit` — the names windtrap's manual, skill, and own root `dune`
+  use. They are renamed here only because this example lives inside
+  windtrap's tree, where those aliases are recursive and already mean
+  the project's own aggregate.
 - **Issue #1 is a real, intentional bug.** `Slug.slugify` treats UTF-8
   letters as separators (`"Café"` → `"caf"`, not `"café"`).
   `test/failures/issue_1.ml` keeps the reproduction running as an
@@ -126,13 +142,25 @@ Four things are deliberate:
 
 - **`test_stats.ml` keeps one deliberately weak law.** The
   line-count property cannot fail under either arithmetic fault in
-  `lib/stats.ml`, so a scoped admit run rules it `UNJUSTIFIED` and
+  `lib/stats.ml`, so a scoped admission run rules it `UNJUSTIFIED` and
   exits 1 — it is the manual's living specimen ("Admitting a test"),
-  and the comment above it says so. In a real project that ruling is
-  stop-the-line: strengthen the law (here, that would orphan the
-  manual's transcripts, so the exercise is left to the reader — and
-  the faults it misses are killed by the example tests beside it, so
-  the survey still reports `0 survived`).
+  and the comment above it says so. See the ruling itself with
+
+  ```
+  WINDTRAP_MUTATE=audit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
+    dune exec --instrument-with ppx_windtrap.mutate \
+    examples/x-blueprint/test/unit/test_stats.exe   # 3 admitted, 1 unjustified
+  ```
+
+  In a real project that ruling is stop-the-line: strengthen the law
+  (here, that would orphan the manual's transcripts, so the exercise is
+  left to the reader — and the faults it misses are killed by the
+  example tests beside it, so the survey still reports `0 survived`).
+  It is also why `@example-admit` names only `test_slug.exe`: a
+  scaffold whose alias is red on the day it is copied teaches that a
+  red alias is normal, which is the opposite of what `UNJUSTIFIED`
+  means. Yours names every unit executable, because nothing in yours is
+  a specimen.
 
 A stateful suite slots into `unit/` the same way (see
 `examples/10-stateful`); this example keeps the surface small.

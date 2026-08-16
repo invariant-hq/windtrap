@@ -179,7 +179,7 @@ only the project verdict aliases:
 
 ```
 test/
-  dune                 ; the @cover/@mutate verdict aliases (below)
+  dune                 ; the @cover/@mutate/@admit verdict aliases (below)
   unit/                ; THE windtrap suite: laws, examples, stateful, snapshots
     dune               ; (tests (names test_parser test_eval) ...)
     test_parser.ml     ; everything that constrains Parser — its own run
@@ -261,7 +261,7 @@ the last issue dies, the stanza goes with it.
   (glob_files_rec __snapshots__/**)))
 ```
 
-`test/dune` — the two project verdict aliases:
+`test/dune` — the three project verdict aliases:
 
 ```lisp
 (rule
@@ -281,6 +281,11 @@ the last issue dies, the stanza goes with it.
   (chdir
    %{workspace_root}
    (run %{bin:windtrap} mutate))))
+
+(rule
+ (alias admit)
+ (deps (universe) unit/test_parser.exe)
+ (action (setenv WINDTRAP_MUTATE audit (run %{exe:unit/test_parser.exe}))))
 ```
 
 The snapshot `deps` glob is load-bearing: baselines are runtime data,
@@ -289,11 +294,16 @@ the test. `(universe)` is load-bearing in both rules: the `.coverage`
 and `.mutants` files test executables write at exit are not declarable
 dependencies, so it makes the milliseconds-cheap merge re-run every
 build. The `chdir %{workspace_root}` keeps the rules correct wherever
-they live. The two aliases are asymmetric on purpose: coverage
+they live. The first two are asymmetric on purpose: coverage
 accumulates as a side effect of any instrumented run, so `@cover` both
 runs the suites and merges; a mutation *verdict* only exists if a run
 was asked to test mutants (`WINDTRAP_MUTATE=1`), so `@mutate` merges
-what previous runs left.
+what previous runs left. `@admit` neither merges nor gates — an
+admission run persists nothing, so its rulings are the whole product.
+Repeat its rule for each unit executable whose subject is the
+instrumented library; a suite that tests its subject through a process
+it spawns has nothing to admit, because the arming never reaches the
+child.
 
 Set `--min` to the measured baseline minus a couple of points of
 headroom, not a round number. It ratchets: raise it when the margin is
@@ -367,6 +377,12 @@ The vocabulary worth knowing rather than reinventing:
 - Exceptions: `raises exn fn` (structural; distinguishes "nothing
   raised" from "raised something else"), `raises_match pred fn` with
   the `Exn` helpers (`Exn.invalid_arg ~substring:"negative"`).
+- Convergence: `eventually ~step probe` — probes, steps, probes again,
+  returns the first `Some`. `~attempts` bounds the probes (default
+  100), `~diagnose` adds state lines to the failure. Windtrap never
+  sleeps: put the thing that advances the system (mock clock tick,
+  event-loop turn, queue drain) in `~step`, never a sleep — a sleeping
+  step hides a race instead of exposing it.
 - Escape hatches: `fail` / `failf` for unreachable branches,
   `skip ~reason ()` for unmet environment preconditions.
 
@@ -595,10 +611,19 @@ WINDTRAP_MUTATE=admit dune exec --instrument-with ppx_windtrap.mutate \
   not a failure, never a reason to delete a test, review it by eye.
 
 The selection designates (`-f`/`-e`, tag knobs, `--failed`, an
-in-source focus; `--shard` does not, and selecting nothing refuses). An
-admit run writes no verdict file, so it never perturbs `@mutate`; each
-test tries at most 25 faults and says when that cap decided the ruling
-(`WINDTRAP_MUTATE_TRY=0` tries every fault it reaches).
+in-source focus; `--shard` does not, and selecting nothing refuses).
+`WINDTRAP_MUTATE=audit` is `admit` with no selection to refuse over —
+it judges every test the run executes — which is the whole-suite
+question, and belongs in an alias rather than in a filter:
+
+```
+dune build @admit --instrument-with ppx_windtrap.mutate
+```
+
+An admission run writes no verdict file, so it never perturbs
+`@mutate`; each test tries at most 25 faults and says when that cap
+decided the ruling (`WINDTRAP_MUTATE_TRY=0` tries every fault it
+reaches).
 
 **Survey the module when auditing or reviewing one** — file-scoped, so
 it stays seconds-fast; it names the tests that watched a change and
@@ -625,7 +650,7 @@ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/foo.ml \
   survivor); `dune build @mutate` merges under killed-anywhere-wins.
   Trust the merged report, not the per-suite one.
 - Survivors never fail the build — the survey is a reading list, not a
-  gate; only `admit` answers with its exit code. Both need `Unix.fork`
+  gate; only admission answers with its exit code. Both need `Unix.fork`
   and decline by name on Windows, where `WINDTRAP_MUTATE_ARM=<id>` on
   one mutant is the fallback.
 
@@ -752,8 +777,8 @@ merely recall having read the rule:
 - [ ] Every new test seen failing — failing-first for bugfixes,
       `WINDTRAP_MUTATE=admit` otherwise — with no `UNJUSTIFIED` ruling
       left standing, and survivors resolved or dismissed with a reason
-- [ ] Coverage read on touched code; `@cover`/`@mutate` aliases
-      present; `--min` ratcheted, never lowered
+- [ ] Coverage read on touched code; `@cover`/`@mutate`/`@admit`
+      aliases present; `--min` ratcheted, never lowered
 - [ ] Layout: suites split only along mechanical boundaries; files by
       subject; no test code in `lib/`; known bugs in `test/failures/`
 - [ ] No §12 violation: nothing weakened, deleted, skipped, or

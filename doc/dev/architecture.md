@@ -165,10 +165,12 @@ at the builder site.
 
 Ported from the accepted v3 design RFC ("Laws", including the
 2026-07-28 amendment of Law 14, and the mutation RFC's amendments to
-Laws 11, 12, 13 and 15 plus the new Law 16; and the admission RFC's
-2026-08-12 amendment of Law 16(b), (c) and (e) plus the new Law 17);
-the RFC documents themselves were removed from the repo — this copy is
-the durable record. Each law names the failure it prevents; **a change to any of
+Laws 11, 12, 13 and 15 plus the new Law 16; the admission RFC's
+2026-08-12 amendment of Law 16(b), (c) and (e) plus the new Law 17; and
+its slice-2 amendment of 2026-08-16, which extends Law 16(e) to `audit`
+and gives Law 17(a) universal designation); the RFC documents
+themselves were removed from the repo — this copy is the durable
+record. Each law names the failure it prevents; **a change to any of
 them reopens the design**.
 
 1. **Checking never writes to the source tree.** Within an executed
@@ -340,13 +342,14 @@ them reopens the design**.
     about a test selection and a mutation run does not make one. A
     survivor-driven nonzero exit is a later addition and is the only
     thing that may ever change this. **Exception, claiming exactly that
-    reserved clause (2026-08-12): an `admit` run — which judges an
-    explicit test selection at its author's request — additionally exits
-    1 when a selected test killed nothing it reached. For `admit` runs
-    the refusal causes additionally include a missing selection, an
-    empty one under the standalone runner, and a selection of nothing
-    but skipped and `xfail` tests; the forced-fail check does not
-    apply.** Survey runs are unchanged forever. *Prevents:*
+    reserved clause (2026-08-12): an `admit` or `audit` run — which
+    judges a test selection at its author's request — additionally exits
+    1 when a selected test killed nothing it reached. For such runs the
+    refusal causes additionally include a missing selection (`admit`
+    only; `audit` designates the whole suite there instead), an empty
+    one under the standalone runner, and a selection of nothing but
+    skipped and `xfail` tests; the forced-fail check does not apply.**
+    Survey runs are unchanged forever. *Prevents:*
     mutation-gated CI; a mutation build silently reporting different
     test results;
     meaning-change escaping the child; multi-mutant interaction making
@@ -362,9 +365,16 @@ them reopens the design**.
     of tests seen before. `--shard` and `--quick` narrow work rather
     than naming tests and do not designate on their own; a run that
     designates nothing refuses, naming the survey as the question it
-    probably meant. *Prevents:* silent misses that admit by omission;
-    Law 15 violations by the back door; a working-tree model the
-    framework cannot own.
+    probably meant. **Universal designation is a designation
+    (2026-08-16): `audit` designates every test the run executes, which
+    is the author asking for all of them and is not the same act as
+    asking for none — the ask is the mode itself, spelled once where a
+    per-invocation selection cannot be. The refusal for designating
+    nothing stands unchanged for `admit`, and a run that designates
+    everything and still executes nothing refuses in its own words.**
+    *Prevents:* silent misses that admit by omission; Law 15 violations
+    by the back door; a working-tree model the framework cannot own; a
+    whole-suite question spelled as a filter nobody can keep in sync.
     (b) *An admission run persists nothing.* No verdict file is
     written, none is read, and an existing one is left byte-intact.
     *Prevents:* fabricated claims about the mutants an early stop never

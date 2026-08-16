@@ -141,13 +141,31 @@ Measured: 190 mutants in `diff.ml`, **155 killed and 28 survived in
 against each mutant and no test filter needed.
 
 Admission runs the same way — `WINDTRAP_MUTATE=admit` with a filter,
-against the same instrumented build. Measured on this tree
-(2026-08-12): one test admits in single-digit milliseconds of
-admission work, a 109-test `-f render` selection in under a second and
-12 forks, and the full 602-test audit (`-e` matching nothing) in 9
+against the same instrumented build. The whole-suite question has an
+alias of its own:
+
+```
+dune build @admit --instrument-with ppx_windtrap.mutate
+```
+
+`@admit` runs `test/unit/main.exe` under `WINDTRAP_MUTATE=audit`, which
+is `admit` with universal designation: no filter, and every test the run
+executes is judged. It is scoped to that one executable because it is
+the suite whose subject is `lib/` and exercises it in-process, which is
+where an arming reaches; the suites that drive the machinery through
+fixtures they spawn would be ruled on whatever their own assertion code
+happened to evaluate. `--force` is not needed, since `(universe)`
+re-runs the action, but `--instrument-with` is: this tree's workspace
+declares no instrumentation, so an uninstrumented `main.exe` has an
+empty catalogue and the seam declines by name.
+
+Measured on this tree: the alias reports `596 admitted of 596 · 9 forks
+over 912 reached in 8.76s`, where the same audit cost 1m38s before the
+per-child deadline shipped. One test admits in single-digit milliseconds
+of admission work, and a 117-test `-f render` selection in 922 ms and 11
 forks — batching plus ride-along admission let one killed fault admit
-hundreds of tests, and no test of this suite ruled `UNJUSTIFIED`. The
-admission machine's own scenarios live in `test/mutate_loop`.
+hundreds of tests, and no test of this suite has ruled `UNJUSTIFIED`.
+The admission machine's own scenarios live in `test/mutate_loop`.
 
 Six core modules opt out with `[@@@mutate exclude_file]`: `runner`,
 `run`, `driver`, `registry`, `mutate_loop` and
@@ -203,18 +221,28 @@ this, and it needs no maintenance when a test adds a name.
 
 ### What still does not work
 
-A run with **no** scope does not finish. It passes the forced-fail check
-and then reaches a mutant whose child *blocks* rather than spins —
-observed at 1m41s of CPU while the parent waited. The runaway hit-count
-budget cannot catch a child that has stopped hitting sites, so only the
-whole-loop deadline can end the run, and it can name just whichever
-mutant was in flight. Admission meets the same wall on its 60 s floor:
-`WINDTRAP_MUTATE=admit … -f capture` sits at 0% CPU for exactly a
-minute — `lib/path_ops.ml:179:38:neq` deadlocks capture's pipe reader —
-then refuses, and the refusal itself names the missing piece. The
-per-mutant deadline `Mutate_loop`'s interface
-already scopes out is the fix; scoping by file is the way around it
-today, and it is the better habit regardless.
+The blocking mutant is fixed, and what it cost is worth recording. A
+child whose fault *blocks* rather than spins — a flipped comparison in
+`lib/path_ops.ml` deadlocking capture's pipe reader — stops hitting
+sites, so the runaway hit-count budget structurally cannot see it, and
+it used to ride the whole-loop deadline: an unscoped survey never
+finished, and `WINDTRAP_MUTATE=admit … -f capture` sat at 0% CPU for
+exactly the 60 s floor before refusing. Every forked child now runs
+under a deadline derived from the dry run — its wall clock, plus
+`max(1 s, 10 × that child's own scheduled tests)` — and on expiry the
+child's whole process group is killed and its mutant scored
+`killed (timeout)`, which is the right verdict: the suite noticed the
+change by hanging. Re-measured here, that capture selection answers in
+0.56 s wall (248 ms of admission work, 26 of 26 admitted, 9 forks)
+where it used to burn a silent minute and exit 1, and the full-suite
+audit fell from 1m38s to 8.5 s. The whole-loop deadline stays as the
+backstop, recomputed as the sum of its children's own bounds, so its
+expiry is now a statement about the run rather than about the mutant in
+flight.
+
+What is left is the bill rather than a hang: an unscoped survey still
+forks once per mutant across the whole core, so mutating one file at a
+time remains the habit, and the better one regardless.
 
 Two smaller sharp edges, both measured:
 
@@ -229,8 +257,9 @@ Two smaller sharp edges, both measured:
   file until the mutant is killed or dismissed —
   `WINDTRAP_MUTATE_ONLY=lib/capture.ml` refuses today on
   `lib/capture.ml:38:10:le`, reached by 15 tests and caught by none.
-  (An `admit` run skips the check by design — Law 16e — so it is the
-  way to interrogate such a file's tests in the meantime.)
+  (An admission run — `admit` or `audit` — skips the check by design,
+  Law 16e, so it is the way to interrogate such a file's tests in the
+  meantime.)
 - **A narrowed run's survivors are relative to its selection.** A mutant
   is reported as surviving when no *selected* test killed it. Such a run
   now keeps that to itself — a selection (`-f`, `-e`, tags, `--quick`,

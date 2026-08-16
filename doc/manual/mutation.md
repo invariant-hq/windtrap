@@ -399,12 +399,86 @@ of guessing:
 windtrap mutate: admit judges a test selection and this run makes none: name the tests to admit with -f/WINDTRAP_FILTER, -e, a tag knob, --failed or an in-source focus. Judging every mutant is the survey's question — WINDTRAP_MUTATE=1
 ```
 
-An over-wide selection is an audit rather than an error: a pattern
-matching forty tests judges forty tests, old ones included, and the
-summary states the count. Skipped and `xfail` tests are excluded from
-the set — a skip ran nothing, and an `xfail` has already demonstrated it
-can fail — and a selection containing nothing else refuses in the same
-voice as the empty one.
+`WINDTRAP_MUTATE=audit` is that refusal's answer, and it exists because
+an alias cannot write a filter. It is `admit` with *universal
+designation*: every test the run executes is designated, so a command
+that names nothing judges the whole suite instead of refusing. With a
+selection present it narrows to exactly `admit` — same rulings, same
+refusals, same exit code — so the two are one machine asked at two
+widths, and a project alias can carry the wide question while `-f`
+keeps the narrow one:
+
+```
+$ WINDTRAP_MUTATE=audit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
+    dune exec --instrument-with ppx_windtrap.mutate \
+    examples/x-blueprint/test/unit/test_slug.exe
+slug: 9 passed in 0.0235s (seed s1:84441284d8d5c4be).
+
+  ADMITTED  slugify › is idempotent
+    killed  examples/x-blueprint/lib/slug.ml:2:3:gt   c >= 'a'  →  c > 'a'
+
+  ADMITTED  slugify › emits lowercase alphanumerics and single inner dashes
+    killed  examples/x-blueprint/lib/slug.ml:2:2:or   (c >= 'a') && (c <= 'z')  →  (c >= 'a') || (c <= 'z')
+
+  ADMITTED  slugify › specified points › "Hello, World!"
+    killed  examples/x-blueprint/lib/slug.ml:2:2:or   (c >= 'a') && (c <= 'z')  →  (c >= 'a') || (c <= 'z')
+
+  ADMITTED  slugify › specified points › "  OCaml 5.x  "
+    killed  examples/x-blueprint/lib/slug.ml:2:2:or   (c >= 'a') && (c <= 'z')  →  (c >= 'a') || (c <= 'z')
+
+  ADMITTED  slugify › specified points › "a--b"
+    killed  examples/x-blueprint/lib/slug.ml:2:2:or   (c >= 'a') && (c <= 'z')  →  (c >= 'a') || (c <= 'z')
+
+  ADMITTED  slugify › specified points › "---"
+    killed  examples/x-blueprint/lib/slug.ml:2:2:or   (c >= 'a') && (c <= 'z')  →  (c >= 'a') || (c <= 'z')
+
+  ADMITTED  slugify › specified points › "MiXeD"
+    killed  examples/x-blueprint/lib/slug.ml:11:9:not   is_alnum c  →  not (is_alnum c)
+
+  ADMITTED  slugify › specified points › "Az Za 09"
+    killed  examples/x-blueprint/lib/slug.ml:2:2:or   (c >= 'a') && (c <= 'z')  →  (c >= 'a') || (c <= 'z')
+
+  NO SITES  slugify › specified points › ""    examples/x-blueprint/test/unit/test_slug.ml:28
+    this test evaluates no mutation site — no condition, comparison,
+    connective or arithmetic — so there is nothing to admit it against.
+    (WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib is set: a site outside it does not exist for this run.)
+
+admission: 8 admitted, 1 no sites of 9 · 3 forks over 16 reached in 70ms (seed s1:84441284d8d5c4be)
+```
+
+Nine tests, three forks: the repetition in that transcript is the cost
+model showing through, because one killed fault admits every designated
+test that failed under it, and six of these nine fell to the same `or`.
+That is what makes the wide question affordable enough to be an alias —
+one rule at the project root, no filter to keep in sync:
+
+```lisp
+(rule
+ (alias admit)
+ (deps (universe) test/test_calc.exe)
+ (action (setenv WINDTRAP_MUTATE audit (run %{exe:test/test_calc.exe}))))
+```
+
+Unlike `@mutate`, it has no merging half to pair with: an admission run
+persists nothing, so the rulings it prints are the whole product. Name
+the executables whose subject is the instrumented library; a suite that
+observes its subject through a process it spawns has nothing to admit,
+because the arming never reaches the child.
+
+The one state `admit` cannot reach is a run that designates everything
+and still executes nothing, and it gets its own diagnosis rather than
+inheriting advice about a filter nobody set:
+
+```
+windtrap mutate: audit judges the tests this run executes and this run executed none, so there is no test to admit: the suite declares no test, or every declared test was dropped before running — a tag the default predicate drops, or an empty shard
+```
+
+An over-wide selection judges every test it matches rather than erring:
+a pattern matching forty tests judges forty tests, old ones included,
+and the summary states the count. Skipped and `xfail` tests are excluded
+from the set — a skip ran nothing, and an `xfail` has already
+demonstrated it can fail — and a selection containing nothing else
+refuses in the same voice as the empty one.
 
 Under `dune runtest` the environment mirrors are the CLI, as everywhere
 else in this chapter:
@@ -441,11 +515,12 @@ artifact is the strengthened test, in git.
 
 The exit code follows the question that was asked. `0` when the run
 completed with no unjustified ruling — `NO SITES` alone is never red —
-and `1` either because it *could not answer* (no selection, a red or
-empty dry run, a suite that disagrees with itself between runs, nothing
-instrumented, `WINDTRAP_MUTATE_ARM` set at the same time, Windows) or
-because it *answered no*. The block above the exit says which. Survey
-runs are untouched: completed still means 0 there, whatever they found.
+and `1` either because it *could not answer* (a red or empty dry run, a
+suite that disagrees with itself between runs, nothing instrumented,
+`WINDTRAP_MUTATE_ARM` set at the same time, Windows, and for `admit` a
+missing selection where `audit` would have judged the suite) or because
+it *answered no*. The block above the exit says which. Survey runs are
+untouched: completed still means 0 there, whatever they found.
 
 The bill is the selected tests' own runtime — paid once by the dry run
 and once by the determinism probe — plus one fork per fault tried. On a
@@ -455,27 +530,31 @@ for the dry run alone, and a single-test admit run of windtrap's own
 suite measured 0.32 s of wall clock where the plain run measured 0.31 s.
 A group of a hundred tests lands near a second, because one killed fault
 admits every selected test that failed under it: the blueprint's nine
-slug tests audit against their own library in three forks, and
-windtrap's own 602-test suite audits in nine. What the cap bounds is the
-other end — `WINDTRAP_MUTATE_TRY` forks for every selected test that
-never kills anything — which is why a wide selection is an audit you
-schedule and one test is the inner loop.
+slug tests are ruled against their own library in three forks, and
+windtrap's own suite — some six hundred tests — whole, in nine forks and
+about eight and a half seconds. What the cap
+bounds is the other end — `WINDTRAP_MUTATE_TRY` forks for every selected
+test that never kills anything — which is why the whole suite is a
+question you schedule and one test is the inner loop.
 
-One honest limitation. A fault that makes a child *block* — a deadlock
-rather than a spin — has no per-child deadline to catch it in this
-release, so the child sits until the whole loop's deadline expires and
-the run refuses instead of ruling:
+A fault that makes a child *block* — a deadlock rather than a spin —
+is the case that used to end the run instead of ruling on it, and it is
+now the case that shows the machinery at its best. Every forked child
+runs under its own deadline (What it costs, below); a child that
+overruns is killed with its process group, and admission attributes the
+kill to the one test that had started and never reported, admitting it
+with cause `killed (timeout)`. A hang under a fault is a detected
+fault, noticed by never finishing.
 
-```
-windtrap mutate: the loop exceeded its deadline while running lib/path_ops.ml:179:38:neq. The runaway budget catches a mutant that spins; a mutant that blocks needs the per-child deadline, which is not in this release
-```
-
-That is a real run of windtrap's own capture tests, where a flipped
-comparison in path normalization deadlocks the pipe reader: a silent
-minute, then a refusal. The refusal names the mutant, so the diagnosis
-is one `arm` away — and it is a refusal, not a ruling, so nothing is
-claimed about the tests. The per-child deadline is the next piece of
-work here.
+The measured case is windtrap's own capture tests, where a flipped
+comparison in path normalization deadlocks the pipe reader.
+`WINDTRAP_MUTATE=admit … -f capture` used to sit at 0% CPU for the
+whole loop's 60 s floor and then refuse; it now answers in **1.03 s,
+26 of 26 admitted**. The full-suite audit fell from **1m38s to
+8.47 s** — most of that minute was children blocked in reads, not work
+— with seven of its rulings carrying the `timeout` cause. Every outcome
+a killed child had already delivered is kept, so the rest of its batch
+is ruled on what it actually tried.
 
 ## Several test executables: `windtrap mutate`
 
@@ -605,9 +684,9 @@ or a supervision error, each with its own message. It never exits 2 —
 that code belongs to the runner, and an armed run can still produce it
 by selecting no test at all. A gate over an uncalibrated number is how a
 tool earns a reputation for lying, and the equivalent-mutant rate here
-is a prediction until it is measured. `admit` is the one mode whose exit
-code carries an answer, and it answers only about the tests its caller
-selected — never about the project.
+is a prediction until it is measured. Admission is where an exit code
+carries an answer — `admit` about the tests its caller selected, `audit`
+about every test the run executed — and never about the project.
 
 ## What it costs
 
@@ -626,23 +705,39 @@ approaches mutants × suite. Overlap costs too: a mutant in a file seven
 suites link is dry-run, forked and scored seven times — the merge makes
 the *answer* right, not the bill. Nothing is parallel in this release.
 
-There is no per-mutant deadline. The whole loop runs under one —
-`max(60 s, 3 × the work the dry run's per-test timings predict for it
-+ the dry run's own wall clock once per forked mutant + 5 s)` — and
-overrunning it aborts the run, naming the mutant it was on. The middle
-term is the one that matters on a fast suite: every child pays a fork
-and a whole process's module initialization before its first test, and a
-sum of *test* times does not include a second of it. The dry run
-measured that fixed cost for free — it is one whole in-process run of
-this same suite — so charging it per mutant is what makes the deadline
-scale with the population. It over-counts, since a child runs a subset
-of the tests, and generous is the right side to err on for a guard whose
-job is catching a hang rather than pacing the loop. What catches a
-mutant that spins without consuming wall clock is a separate per-site
-budget on how often the armed line may be evaluated, set from the hit
-count the dry run measured there: a child that blows it
-dies, and its mutant is scored *killed*, as is a child that crashes.
-Mutation needs `Unix.fork`, so it declines by name on Windows.
+Every forked child — a survey mutant, an admission batch, the
+determinism probe — runs under a deadline of its own, derived and never
+a knob: **the dry run's wall clock, plus `max(1 s, 10 × the dry run's
+own timings for exactly the tests that child is scheduled to run)`**.
+The first term is the fixed cost every child pays before its first test,
+a fork and a whole process's module initialization, and the dry run
+measured it for free, being one whole in-process run of this same suite.
+The second is the work the child was actually handed, with an order of
+magnitude of headroom, and a floor that absorbs measurement noise on
+fast suites. Generous is the right side to err on for a guard whose job
+is catching a hang rather than pacing the loop.
+
+A child that overruns is killed with its whole process group — children
+`setsid` at birth, so anything a test spawned goes with them — and its
+mutant is scored `killed (timeout)`. That is not a consolation prize: a
+fault that makes the suite hang is a fault the suite noticed, on the
+crash kill's own reasoning, and it is the case nothing else here can
+see. The cheap first line against a mutant that *spins* is a separate
+per-site budget on how often the armed line may be evaluated, set from
+the hit count the dry run measured there; a child that blows it dies and
+is scored killed too. But a mutant that *blocks* evaluates nothing, sits
+at 0% CPU and consumes no budget at all, and only a clock ever ends it.
+
+Behind both sits the whole-loop deadline, now the backstop rather than
+the mechanism: the sum of what the scheduled children are each allowed
+to spend, plus the dry run and the probe, never under 60 s. Because
+every child is bounded on its own, the alarm firing is a statement about
+the run and not about the mutant in flight, and the refusal says so —
+it names the mutant it was on, then disowns the diagnosis: *a mutant
+that spins or blocks is killed by its child's own deadline and scored
+killed (timeout), so the run as a whole overran the sum of its
+children's budgets*. Mutation needs `Unix.fork`, so it declines by name
+on Windows.
 
 ## Knobs
 
@@ -653,11 +748,11 @@ naming the variable, never a silently defaulted mode.
 
 | variable | values | default |
 | --- | --- | --- |
-| `WINDTRAP_MUTATE` | `1` / `report` / `admit` / `off` | `off` |
+| `WINDTRAP_MUTATE` | `1` / `report` / `admit` / `audit` / `off` | `off` |
 | `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
 | `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
 | `WINDTRAP_MUTATE_LIMIT` | survivor blocks to print, `0` for all | `10` |
-| `WINDTRAP_MUTATE_TRY` | faults an `admit` run tries per test, `0` for all | `25` |
+| `WINDTRAP_MUTATE_TRY` | faults an admission run (`admit`, `audit`) tries per test, `0` for all | `25` |
 
 All five are read by the test executable and by nothing else.
 
@@ -705,10 +800,13 @@ first or second fault, so the cap is a bound and not a schedule.
 dismissed, not-armable and timeout tables it will add are not in this
 release — and `WINDTRAP_MUTATE_JOBS` and `WINDTRAP_MUTATE_TIMEOUT` are
 specified but deliberately not read, because a knob that is read and
-ignored is worse than one that is not.
-Asking for a loop — `1`, `report` or `admit` — and an armed mutant at
-once is a refusal, not a guess: the loop arms each mutant itself, so an
-armed parent would mutate its own dry run.
+ignored is worse than one that is not. `TIMEOUT` in particular stays
+unread on purpose: the per-child deadline is derived from the dry run's
+own measurements, and a number a user has to guess would be worse than
+one the run already knows.
+Asking for a loop — `1`, `report`, `admit` or `audit` — and an armed
+mutant at once is a refusal, not a guess: the loop arms each mutant
+itself, so an armed parent would mutate its own dry run.
 
 windtrap's mutation testing is deliberately the 90% product: one honest
 count after a run you already make, and the names of the tests that let
