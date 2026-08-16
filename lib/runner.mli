@@ -29,7 +29,11 @@
     Windows) and cannot interrupt blocked C calls. The runner owns [SIGALRM]
     while a test with a limit runs. After every attempt — outside the timeout
     window, on every path where the runner regains control, a fatal exception
-    included — the attempt's scratch paths are removed ({!Run.remove_temp}).
+    included — the attempt is reclaimed ({!Run.reclaim}): the working directory
+    and the environment bindings it changed ({!Run.chdir}, {!Run.setenv}) go
+    back, and its scratch paths are removed. A restoration that fails is a
+    {!Failure.Teardown}-phase failure of the test, recorded with the attempt's
+    others.
 
     {b Scoped tests.} A {!Test_tree.Scoped} node is one call the runner does not
     control: [scope] acquires, invokes its callback, and reclaims on return. The

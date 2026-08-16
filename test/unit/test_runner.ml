@@ -1288,6 +1288,182 @@ let () =
   check "the final attempt's scratch is removed too"
     (List.for_all (fun d -> not (Sys.file_exists d)) !dirs)
 
+(* Test-scoped environment and working directory (setenv, chdir)
+
+   Both are process-global, so the runner's restoration is what makes them
+   test-scoped: what the attempt bound is put back at the attempt boundary,
+   outside the timeout window, on every outcome. The variables below are
+   windtrap's own namespace so a failing meta-run leaks nothing a later
+   suite reads. *)
+
+let unset_var = "WINDTRAP_TEST_SCOPED_UNSET"
+let bound_var = "WINDTRAP_TEST_SCOPED_BOUND"
+let twice_var = "WINDTRAP_TEST_SCOPED_TWICE"
+let drop_var = "WINDTRAP_TEST_SCOPED_DROP"
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  (* Four shapes of prior state: never bound, bound, bound and rebound by
+     the test itself, and bound then unbound by the test. *)
+  Env.set unset_var None;
+  Env.set bound_var (Some "before");
+  Env.set twice_var (Some "before");
+  Env.set drop_var (Some "before");
+  let seen = ref [] in
+  let note name = seen := (name, Sys.getenv_opt name) :: !seen in
+  let tests =
+    [
+      Test_tree.test "binds" (fun () ->
+          Run.setenv unset_var (Some "inside");
+          Run.setenv bound_var (Some "inside");
+          Run.setenv twice_var (Some "first");
+          Run.setenv twice_var (Some "second");
+          Run.setenv drop_var None;
+          List.iter note [ unset_var; bound_var; twice_var; drop_var ]);
+    ]
+  in
+  expect_run "setenv suite runs" ~config tests @@ fun outcome ->
+  check "the suite passed" (outcome.Runner.exit_code = 0);
+  check "setenv binds for the rest of the test"
+    (List.sort compare !seen
+    = List.sort compare
+        [
+          (unset_var, Some "inside");
+          (bound_var, Some "inside");
+          (twice_var, Some "second");
+          (drop_var, None);
+        ]);
+  check "a variable the test found unbound is unbound again — not empty"
+    (Sys.getenv_opt unset_var = None);
+  check "a variable the test found bound is restored to its prior value"
+    (Sys.getenv_opt bound_var = Some "before");
+  check "two setenvs of one name restore what the first one found"
+    (Sys.getenv_opt twice_var = Some "before");
+  check "a variable the test unbound is bound again"
+    (Sys.getenv_opt drop_var = Some "before")
+
+let () =
+  (* Restoration is not the pass path's privilege: it happens on failure,
+     on skip, and on a timeout that cut the body short. *)
+  if not Sys.win32 then (
+    with_temp_root @@ fun root ->
+    let config = base_config ~log_dir:root () in
+    Env.set bound_var (Some "before");
+    let after = ref [] in
+    let tests =
+      [
+        Test_tree.test "fails" (fun () ->
+            Run.setenv bound_var (Some "failing");
+            Check.fail "boom");
+        Test_tree.test "skips" (fun () ->
+            Run.setenv bound_var (Some "skipping");
+            Check.skip ());
+        Test_tree.test ~timeout:0.2 "times out" (fun () ->
+            Run.setenv bound_var (Some "hanging");
+            busy_forever ());
+      ]
+    in
+    let on_event = function
+      | Runner.Test_finished _ -> after := Sys.getenv_opt bound_var :: !after
+      | Runner.Run_started _ | Runner.Test_started _ | Runner.Fixture_release _
+        ->
+          ()
+    in
+    expect_run "setenv outcomes suite runs" ~on_event ~config tests
+    @@ fun outcome ->
+    check "the timing-out test is a failure"
+      (outcome.Runner.failed_paths = [ "fails"; "times out" ]);
+    check "the binding is restored after failure, skip, and timeout alike"
+      (!after = [ Some "before"; Some "before"; Some "before" ]);
+    Env.set bound_var None)
+
+(* A directory that no longer exists is exactly the state a missing
+   restoration leaves behind, so reading the working directory must not
+   itself be fatal here: a regression has to read as a failed check, not as
+   a fatal error that takes the rest of the suite with it. *)
+let cwd_opt () = try Some (Sys.getcwd ()) with Sys_error _ -> None
+let go_home home = try Unix.chdir home with Unix.Unix_error _ -> ()
+
+let () =
+  (* chdir is per attempt like the scratch paths: every retry captures and
+     restores its own directory, so each attempt starts where the first
+     one did — and not in the deleted scratch of the attempt before. *)
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let home = Sys.getcwd () in
+  let at_entry = ref [] in
+  let inside = ref [] in
+  let between = ref [] in
+  let tests =
+    [
+      Test_tree.test ~retries:2 "chdir-retry" (fun () ->
+          at_entry := cwd_opt () :: !at_entry;
+          Run.chdir (Run.temp_dir ());
+          inside := cwd_opt () :: !inside;
+          if List.length !inside < 3 then Check.fail "again");
+    ]
+  in
+  let on_event = function
+    | Runner.Test_started _ | Runner.Test_finished _ ->
+        between := cwd_opt () :: !between
+    | Runner.Run_started _ | Runner.Fixture_release _ -> ()
+  in
+  expect_run "chdir suite runs" ~on_event ~config tests @@ fun outcome ->
+  go_home home;
+  check "the test passed on its final attempt"
+    (outcome_of outcome [ "chdir-retry" ] = Some Failure.Pass);
+  check_int "every attempt ran the body" ~expected:3
+    ~actual:(List.length !inside);
+  check "chdir took effect inside the test"
+    (List.for_all (fun d -> d <> None && d <> Some home) !inside);
+  check "every attempt starts in the directory the first one did"
+    (List.length !at_entry = 3
+    && List.for_all (fun d -> d = Some home) !at_entry);
+  check "the directory is restored before the runner moves on"
+    (!between <> [] && List.for_all (fun d -> d = Some home) !between);
+  check "the run ends where it started" (cwd_opt () = Some home)
+
+let () =
+  (* A restoration that cannot happen is stated, not swallowed: unlike a
+     leaked scratch directory, a process left in the wrong place breaks
+     every test after it. The prior directory here is one the test itself
+     removes, so the runner's chdir back has nowhere to go. *)
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let home = Sys.getcwd () in
+  let gone = Filename.concat root "gone" in
+  Unix.mkdir gone 0o700;
+  let pos = __POS__ in
+  let tests =
+    [
+      Test_tree.test "chdir-restore-fails" (fun () ->
+          (* Enter [gone] without telling the runner, so it becomes the
+             directory the first [chdir] below captures. *)
+          Unix.chdir gone;
+          Run.chdir ~pos root;
+          Unix.rmdir gone);
+    ]
+  in
+  expect_run "chdir-restore suite runs" ~config tests @@ fun outcome ->
+  go_home home;
+  check "an unrestorable directory fails the test"
+    (outcome.Runner.failed_paths = [ "chdir-restore-fails" ]);
+  match failure_list (outcome_of outcome [ "chdir-restore-fails" ]) with
+  | [ f ] ->
+      check "the restoration failure is attributed to cleanup"
+        (f.Failure.phase = Failure.Teardown);
+      check "it names the directory it could not return to"
+        (contains "working directory" (message_of f)
+        && contains gone (message_of f));
+      (* [?pos] earns its place here: the boundary that discovers the
+         problem is nobody's code, so the report points at the [chdir]. *)
+      check "it is located at the change that could not be undone"
+        (f.Failure.loc = Some (Loc.of_pos pos))
+  | fs ->
+      check_int "chdir restore failure entries" ~expected:1
+        ~actual:(List.length fs)
+
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in

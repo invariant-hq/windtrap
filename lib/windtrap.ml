@@ -231,6 +231,8 @@ let subtest = Run.subtest
 let srandom = Run.srandom
 let temp_dir = Run.temp_dir
 let temp_file = Run.temp_file
+let setenv = Run.setenv
+let chdir = Run.chdir
 
 (* Running *)
 

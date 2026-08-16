@@ -268,6 +268,12 @@ let failure_list = function
   | Some (Failure.Fail fs) -> fs
   | Some Failure.Pass | Some (Failure.Skip _) | None -> []
 
+(* A working directory that no longer exists is what a missing [chdir]
+   restoration leaves behind, so reading it must not be fatal: the
+   regression has to read as a failed check rather than take the suite
+   down with it. *)
+let cwd_or_gone () = try Sys.getcwd () with Sys_error _ -> "<gone>"
+
 (* Ambient operations outside a run *)
 
 let probe_fixture = fixture (fun () -> ())
@@ -290,6 +296,13 @@ let () =
   outside "srandom" (fun () -> ignore (srandom ()));
   outside "temp_dir" (fun () -> ignore (temp_dir ()));
   outside "temp_file" (fun () -> ignore (temp_file ()));
+  (* Both read the frame before touching the process: an ambient operation
+     with no runner to undo it must not half-happen. *)
+  let home = Sys.getcwd () in
+  outside "setenv" (fun () -> setenv "WINDTRAP_TEST_OUTSIDE" (Some "x"));
+  outside "chdir" (fun () -> chdir (Filename.get_temp_dir_name ()));
+  check "setenv and chdir outside a run change nothing"
+    (Sys.getenv_opt "WINDTRAP_TEST_OUTSIDE" = None && Sys.getcwd () = home);
   (* [subtest] reads the frame before running its body: the body must not
      execute outside a run. *)
   let body_ran = ref false in
@@ -823,6 +836,9 @@ let () =
   let observed_path = ref [] in
   let scratch = ref "" in
   let draws = ref (0, 1) in
+  let home = Sys.getcwd () in
+  let facade_env = ref (Some "unset") in
+  let facade_cwd = ref "" in
   let suite =
     [
       test "satisfies" (fun () -> satisfies int (fun n -> n > 0) 0);
@@ -842,6 +858,11 @@ let () =
           let a = Random.State.bits (srandom ()) in
           let b = Random.State.bits (srandom ()) in
           draws := (a, b));
+      test "scoped process state" (fun () ->
+          setenv "WINDTRAP_TEST_FACADE" (Some "inside");
+          chdir (temp_dir ());
+          facade_env := Sys.getenv_opt "WINDTRAP_TEST_FACADE";
+          facade_cwd := cwd_or_gone ());
       xfail ~reason:"known" (test "expected failure" (fun () -> fail "boom"));
       xfail (test "unexpected pass" (fun () -> ()));
     ]
@@ -877,6 +898,10 @@ let () =
     (!observed_path = [ "body operations" ]);
   check "temp_dir was removed after its test"
     (!scratch <> "" && not (Sys.file_exists !scratch));
+  check "setenv bound inside the test and was undone after it"
+    (!facade_env = Some "inside" && Sys.getenv_opt "WINDTRAP_TEST_FACADE" = None);
+  check "chdir took effect inside the test and was undone after it"
+    (!facade_cwd <> "" && !facade_cwd <> home && cwd_or_gone () = home);
   check "srandom is identically seeded within one test" (fst !draws = snd !draws);
   check "an expected failure does not count as failed"
     (not (List.mem "expected failure" outcome.Runner.failed_paths));

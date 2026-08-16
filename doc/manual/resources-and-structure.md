@@ -132,6 +132,48 @@ outcome — there is no lifecycle to write. Paths are per test attempt:
 anything that must outlive the test (a fixture's resource) must not
 live in them.
 
+## Process state: `setenv` and `chdir`
+
+```ocaml
+test "reads the token from the environment" (fun () ->
+    setenv "API_TOKEN" (Some "t-123");
+    equal (option string) (Some "t-123") (Config.token ());
+    setenv "API_TOKEN" None;
+    equal (option string) None (Config.token ()))
+```
+
+The environment and the working directory belong to the process, not to
+the test, so nothing scopes them but putting them back — which is what
+the runner does when the test ends, on every outcome and once per
+`~retries` attempt, the same bargain the scratch paths make. The
+unbinding is a real one: after `setenv name None`, `Sys.getenv_opt`
+answers `None` and not `Some ""`, which is what makes it usable to test
+the path a *missing* variable takes.
+
+What comes back is what the variable held before the test's **first**
+`setenv` of it, so binding one twice still leaves behind what the test
+found.
+
+```ocaml
+test "builds in place" (fun () ->
+    chdir (temp_dir ());
+    Out_channel.with_open_text "built.txt" (fun oc ->
+        Out_channel.output_string oc "ok");
+    is_true (Sys.file_exists "built.txt"))
+```
+
+`chdir` restores the directory the process was in at the test's first
+`chdir`. If that directory is gone — the test deleted it — the test
+fails saying so, rather than leaving every later test to run from
+somewhere unexpected: a leaked scratch directory is inert, a process in
+the wrong place is not.
+
+Both are process-global while the test runs: threads the test spawns and
+child processes it starts see them, and a thread still moving when the
+test ends races the restoration. Tests never race *each other* here —
+the runner is sequential, one domain — but ordering threads within one
+test is that test's own job.
+
 ## One test per input: `cases`
 
 `cases name inputs fn` declares a group with one child per input, so

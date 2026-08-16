@@ -40,6 +40,26 @@ let is_flagged name =
   | None -> false
   | Some s -> ( match parse_bool s with Some b -> b | None -> true)
 
+(* Writing
+
+   [Unix.putenv] is only the binding half: the stdlib has no unsetenv, and
+   binding to "" is not unbinding — [Sys.getenv_opt] answers [Some ""],
+   which is a different fact to every program that asks. The unbinding half
+   is C's (see env_stubs.c), so [Run.setenv] can put back a variable the
+   test found unset. The name check sits here rather than in each
+   platform's error path, so one bad name reads the same everywhere. *)
+
+external unsetenv : string -> unit = "ocaml_windtrap_unsetenv"
+
+let set name value =
+  if name = "" || String.contains name '=' then
+    invalid_arg
+      (Printf.sprintf
+         "windtrap: %S is not a usable environment variable name — a name is \
+          non-empty and contains no '='"
+         name);
+  match value with Some v -> Unix.putenv name v | None -> unsetenv name
+
 (* Platform detection *)
 
 let inside_dune () = is_flagged "INSIDE_DUNE"

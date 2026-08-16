@@ -35,9 +35,11 @@
     print their acceptance command on mismatch. Resources are scoped by
     {!bracket} (one the setup returns), {!scoped} (one a callback receives) and
     {!fixture} (one shared by the run); {!temp_dir} and {!temp_file} give
-    runner-cleaned scratch paths; {!output} reads back the test's captured
-    output; {!subtest} names sub-cases inside a body and {!val:xfail} keeps
-    known-bug reproductions in-tree without a red run.
+    runner-cleaned scratch paths, and {!setenv} and {!chdir} bind the
+    environment and the working directory for one test with the runner
+    restoring both; {!output} reads back the test's captured output;
+    {!subtest} names sub-cases inside a body and {!val:xfail} keeps known-bug
+    reproductions in-tree without a red run.
 
     Runnable examples for each feature live under [examples/] in the
     distribution; [doc/cookbook.md] collects the recipes windtrap deliberately
@@ -953,6 +955,51 @@ val temp_dir : ?prefix:string -> unit -> string
 val temp_file : ?suffix:string -> unit -> string
 (** [temp_file ()] is the path of a fresh empty file with the same lifecycle as
     {!temp_dir}; [suffix] is appended to the basename (e.g. [".json"]). *)
+
+val setenv : ?pos:pos -> string -> string option -> unit
+(** [setenv name (Some value)] binds the environment variable [name] to [value]
+    for the rest of the test; [setenv name None] unbinds it. The runner puts
+    [name] back the way it found it when the test ends, on every outcome —
+    failure, skip, and timeout included, and per attempt under [~retries].
+
+    {[
+      test "reads the token from the environment" (fun () ->
+          setenv "API_TOKEN" (Some "t-123");
+          equal (option string) (Some "t-123") (Config.token ()))
+    ]}
+
+    The unbinding is a real one: [Sys.getenv_opt name] answers [None]
+    afterwards, not [Some ""], which is what makes [setenv name None] usable to
+    test the code path a missing variable takes. What gets restored is what
+    [name] held before the test's {e first} [setenv] of it, so binding a
+    variable twice still leaves behind what the test found.
+
+    {b Process-global.} The environment is the process's, so the binding is
+    visible to every thread the test spawns and to every child process it
+    starts — and a test that changes the environment from a spawned thread
+    races the runner's restoration. Windtrap runs tests sequentially in one
+    domain, so tests never race {e each other} here; threads within one test
+    are the caller's to order. *)
+
+val chdir : ?pos:pos -> string -> unit
+(** [chdir dir] changes the working directory to [dir] for the rest of the test.
+    The runner returns the process to the directory it was in at the test's
+    first [chdir] when the test ends, on every outcome, per attempt.
+
+    {[
+      test "builds in place" (fun () ->
+          chdir (temp_dir ());
+          Builder.run ();
+          is_true (Sys.file_exists "output.txt"))
+    ]}
+
+    Process-global on the same terms as {!setenv}: threads and child processes
+    see it, and the restoration is not ordered against a thread still moving.
+
+    If the directory cannot be restored — the test deleted it — the test fails
+    with a message naming it, rather than leaving every later test to run from
+    somewhere unexpected. Raises [Unix.Unix_error] when [dir] itself cannot be
+    entered. *)
 
 (** {1:running Running} *)
 

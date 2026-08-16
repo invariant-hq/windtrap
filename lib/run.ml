@@ -135,6 +135,16 @@ let snapshots t = t.snapshots
 
 (* Per-test frames *)
 
+(* What one [setenv] recorded: the binding to put back when the attempt
+   ends, and where the change was made — a restoration that cannot happen
+   is reported at the call that made the change, not at the runner's
+   boundary, which is nobody's code. *)
+type env_restore = {
+  er_name : string;
+  er_prior : string option;
+  er_loc : Loc.t option;
+}
+
 type frame = {
   owner : t;
   fr_path : string list;
@@ -146,6 +156,8 @@ type frame = {
   mutable fr_temp_root : string option; (* the attempt's scratch dir *)
   mutable fr_temp_seq : int; (* next path number within the scratch dir *)
   mutable fr_srandom : bool; (* the attempt called [srandom] *)
+  mutable fr_env : env_restore list; (* one entry per name, first set wins *)
+  mutable fr_cwd : (string * Loc.t option) option; (* dir at the first chdir *)
 }
 
 let frame t ~path ~file ~loc =
@@ -160,6 +172,8 @@ let frame t ~path ~file ~loc =
     fr_temp_root = None;
     fr_temp_seq = 0;
     fr_srandom = false;
+    fr_env = [];
+    fr_cwd = None;
   }
 
 let run_of_frame frame = frame.owner
@@ -367,6 +381,84 @@ let remove_temp frame =
   | Some dir ->
       frame.fr_temp_root <- None;
       remove_tree dir
+
+(* Runner-restored process state
+
+   The environment and the working directory belong to the process, not to
+   the test: nothing scopes them but putting them back. So the body records
+   what it changed and the runner undoes it at the attempt boundary — the
+   same bargain the scratch paths make, holding on every outcome for the
+   same reason, that the runner regains control on every outcome. *)
+
+let setenv ?pos name value =
+  let frame = current_frame () in
+  (* First set wins: what gets restored is what was there before the
+     attempt's first [setenv] of this name, so a test that binds a variable
+     twice still leaves behind what it found. *)
+  if not (List.exists (fun e -> e.er_name = name) frame.fr_env) then
+    frame.fr_env <-
+      {
+        er_name = name;
+        er_prior = Sys.getenv_opt name;
+        er_loc = Loc.resolve ?pos ();
+      }
+      :: frame.fr_env;
+  Env.set name value
+
+let chdir ?pos dir =
+  let frame = current_frame () in
+  (* Captured at the first [chdir] rather than at the attempt's start: a
+     test that never moves pays nothing, and the directory to return to is
+     the same one either way. *)
+  if frame.fr_cwd = None then
+    frame.fr_cwd <- Some (Sys.getcwd (), Loc.resolve ?pos ());
+  Unix.chdir dir
+
+(* A restoration that cannot happen is recorded, never raised: the attempt
+   is over, so there is no phase left to interrupt — and unlike a leaked
+   scratch directory, which is inert, a process left in the wrong place or
+   still holding the test's binding is precisely the fact the next test's
+   baffling failure needs stated up front. It is attributed to the call
+   that made the change, since the boundary is nobody's code. *)
+let restore_failure frame ?loc text =
+  add_failure frame
+    (Failure.with_phase Failure.Teardown (Failure.message ?loc text))
+
+let restore_cwd frame =
+  match frame.fr_cwd with
+  | None -> ()
+  | Some (dir, loc) -> (
+      frame.fr_cwd <- None;
+      try Unix.chdir dir
+      with Unix.Unix_error (err, _, _) ->
+        restore_failure frame ?loc
+          (Printf.sprintf
+             "the test changed the working directory and it could not be \
+              restored to %s: %s — every later test in this process runs from \
+              the wrong place"
+             dir (Unix.error_message err)))
+
+let restore_env frame =
+  let entries = frame.fr_env in
+  frame.fr_env <- [];
+  List.iter
+    (fun entry ->
+      match Env.set entry.er_name entry.er_prior with
+      | () -> ()
+      | exception exn when not (Failure.is_fatal exn) ->
+          restore_failure frame ?loc:entry.er_loc
+            (Printf.sprintf
+               "the test set %s and its prior binding could not be restored: \
+                %s — every later test in this process sees the test's value"
+               entry.er_name (Printexc.to_string exn)))
+    entries
+
+let reclaim frame =
+  (* The directory first: removing the scratch tree while the process is
+     still sitting inside it would strand it in a deleted directory. *)
+  restore_cwd frame;
+  restore_env frame;
+  remove_temp frame
 
 (* Fixtures *)
 

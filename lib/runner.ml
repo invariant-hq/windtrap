@@ -389,11 +389,11 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
                 record_failure !phase
                   (timeout_failure ?loc:case.Test_tree.loc limit)))
   in
-  (* Scratch removal runs after the attempt, outside the
-     timeout window and the capture redirection, on every path where the
-     runner regains control — only a fatal exception escapes the frame, and
-     it too passes through the cleanup. [remove_temp] never
-     raises. *)
+  (* Reclamation runs after the attempt, outside the timeout window and the
+     capture redirection, on every path where the runner regains control —
+     only a fatal exception escapes the frame, and it too passes through the
+     cleanup. [reclaim] never raises; a restoration it could not perform is
+     recorded on the frame, so the outcome below picks it up. *)
   (match
      Run.with_frame frame (fun () ->
          match
@@ -406,10 +406,10 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
              let backtrace = Printexc.get_raw_backtrace () in
              classify Failure.Body exn backtrace)
    with
-  | () -> Run.remove_temp frame
+  | () -> Run.reclaim frame
   | exception exn ->
       let backtrace = Printexc.get_raw_backtrace () in
-      Run.remove_temp frame;
+      Run.reclaim frame;
       Printexc.raise_with_backtrace exn backtrace);
   let outcome =
     match Run.failures frame with

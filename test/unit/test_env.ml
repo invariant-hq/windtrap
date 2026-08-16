@@ -6,9 +6,10 @@
 open Windtrap
 module Env = Windtrap.Private.Env
 
-(* Unix.putenv cannot remove a variable, but Env treats the empty string
-   as unset, which is what makes these tests deterministic regardless of
-   the ambient environment (e.g. INSIDE_DUNE under dune runtest). *)
+(* The readers treat the empty string as unset, which is what makes these
+   tests deterministic regardless of the ambient environment (e.g.
+   INSIDE_DUNE under dune runtest) — so they clear with putenv rather than
+   through [Env.set], whose real unbinding is proven on its own below. *)
 let set = Unix.putenv
 let clear name = Unix.putenv name ""
 
@@ -20,6 +21,26 @@ let bool_of = Env.get_bool
 
 let tests =
   [
+    test "set binds, and unbinds for real" (fun () ->
+        let var = "WINDTRAP_TEST_ENV_SET" in
+        Env.set var (Some "bound");
+        equal ~msg:"the binding reaches the stdlib, not just Env's readers"
+          (option string) (Some "bound") (Sys.getenv_opt var);
+        Env.set var None;
+        equal ~msg:"unbinding removes the variable" (option string) None
+          (Sys.getenv_opt var);
+        (* The whole reason the unbinding half is a C stub: the spelling
+           [Unix] can manage leaves the variable set to the empty string,
+           which is a different fact to every program that asks. *)
+        Unix.putenv var "";
+        equal ~msg:"an empty binding is not an unbinding" (option string)
+          (Some "") (Sys.getenv_opt var);
+        Env.set var None);
+    test "set refuses the names POSIX refuses" (fun () ->
+        let refused = Exn.invalid_arg ~substring:"environment variable name" in
+        raises_match ~msg:"a name carrying '='" refused (fun () ->
+            Env.set "WINDTRAP=BAD" (Some "x"));
+        raises_match ~msg:"the empty name" refused (fun () -> Env.set "" None));
     test "empty value reads as unset" (fun () ->
         clear "WINDTRAP_FILTER";
         equal (option string) None (string_of "WINDTRAP_FILTER");

@@ -298,13 +298,63 @@ val temp_file : ?suffix:string -> unit -> string
 
     Raises [Unix.Unix_error] if the file cannot be created. *)
 
-val remove_temp : frame -> unit
-(** [remove_temp frame] recursively removes the scratch directory backing
-    [frame]'s {!temp_dir}/{!temp_file} paths, when one was created. Runner-side:
-    called after every attempt, on every path where the runner regains control
-    Best-effort — removal errors are ignored, never raised (the paths live under
-    the system temporary directory) — and idempotent; symbolic links are
-    removed, never followed. *)
+(** {1:process Runner-restored process state}
+
+    The environment and the working directory belong to the process, not to the
+    test: nothing scopes them but putting them back. So a test body records what
+    it changed and the runner undoes it at the attempt boundary
+    ({!reclaim}) — on every outcome, and per attempt, on the same terms as the
+    scratch paths above. Both are process-global while the test runs: a thread
+    the test spawns sees them, and a change made from such a thread races the
+    restoration. *)
+
+val setenv : ?pos:Loc.pos -> string -> string option -> unit
+(** [setenv name (Some value)] binds the environment variable [name] to [value]
+    for the rest of the executing test; [setenv name None] unbinds it
+    ({!Env.set}, so an unbinding is a real one — [Sys.getenv_opt] answers [None],
+    not [Some ""]). The runner restores the prior state of [name] when the
+    attempt ends.
+
+    What is restored is what [name] held before the attempt's {e first} [setenv]
+    of it: later calls with the same name change the binding without touching
+    the restore record, so a test that binds a variable twice still leaves
+    behind what it found, and a variable that was unbound is unbound again.
+    [pos] locates the change, and so locates a restoration that fails.
+
+    Raises the assertions-outside-run error ([Invalid_argument], see
+    {!current_frame}) when no test is running — the frame is read before the
+    process is touched, so nothing is bound that nothing would undo — and
+    [Invalid_argument] for a name {!Env.set} refuses. *)
+
+val chdir : ?pos:Loc.pos -> string -> unit
+(** [chdir dir] changes the process's working directory to [dir] for the rest of
+    the executing test ([Unix.chdir]). The runner restores the directory
+    captured at the attempt's first [chdir] when the attempt ends; later calls
+    move the process without changing what is restored. [pos] locates the
+    change, and so locates a restoration that fails.
+
+    Raises the assertions-outside-run error ([Invalid_argument], see
+    {!current_frame}) when no test is running, and [Unix.Unix_error] when [dir]
+    cannot be entered — inside a test that fails the test. *)
+
+val reclaim : frame -> unit
+(** [reclaim frame] undoes the attempt's ambient changes and removes its
+    scratch: it restores the working directory captured by {!chdir}, then the
+    prior bindings recorded by {!setenv}, then recursively removes the scratch
+    directory backing [frame]'s {!temp_dir}/{!temp_file} paths, when one was
+    created. The directory goes back first, so removing the scratch tree cannot
+    strand the process inside it.
+
+    Runner-side: called after every attempt, outside the timeout window, on
+    every path where the runner regains control. Never raises, and idempotent.
+    Scratch removal is best-effort — errors are ignored, the paths live under
+    the system temporary directory — and symbolic links are removed, never
+    followed. A restoration that {e fails}, by contrast, is recorded on [frame]
+    as a {!Failure.Teardown}-phase message failure located at the change that
+    could not be undone: the scratch a run leaks is inert, while a process left
+    in the wrong directory or holding a test's binding fails everything after it
+    for reasons that name the wrong test. Because it is recorded on the frame,
+    the runner picks it up with the attempt's other failures. *)
 
 (** {1:fixtures Fixtures} *)
 

@@ -6,7 +6,8 @@
 (* Tests for Run: the resolved-config defaults, run-record accessors, frame
    bookkeeping, the single ambient slot (set/restore, outside-run error,
    isolation between sequential runs), the test-body operations
-   (current_test, srandom, subtest, temp_dir/temp_file with remove_temp),
+   (current_test, srandom, subtest, temp_dir/temp_file and the
+   setenv/chdir bindings, all reclaimed at the attempt boundary),
    the fixture lifecycle over a scripted fake run (first-use acquisition,
    per-run caching, cached acquisition errors and skips, reverse-order
    announced release, drain, re-acquisition across runs), results
@@ -593,7 +594,7 @@ let () =
       let oc = open_out (Filename.concat d1 "nested.txt") in
       output_string oc "scratch";
       close_out oc);
-  Run.remove_temp frame
+  Run.reclaim frame
 
 let () =
   let run = make_run () in
@@ -608,15 +609,15 @@ let () =
         [ d; f; Filename.concat d "deep.txt" ])
   in
   check "scratch paths exist until removal" (List.for_all Sys.file_exists paths);
-  Run.remove_temp frame;
-  check "remove_temp removes every scratch path, recursively"
+  Run.reclaim frame;
+  check "reclaim removes every scratch path, recursively"
     (List.for_all (fun p -> not (Sys.file_exists p)) paths);
-  Run.remove_temp frame;
-  check "remove_temp is idempotent" true
+  Run.reclaim frame;
+  check "reclaim is idempotent" true
 
 let () =
   (* Exception safety: paths created before a raising body are still
-     removable — the runner calls remove_temp on every path it controls. *)
+     removable — the runner reclaims on every path it controls. *)
   let run = make_run () in
   let frame = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
   let created = ref "" in
@@ -629,8 +630,8 @@ let () =
   | exception Boom -> check "raising body propagates" true);
   check "the scratch dir survives the raise (removal is the runner's)"
     (Sys.file_exists !created);
-  Run.remove_temp frame;
-  check "remove_temp cleans up after a raising body"
+  Run.reclaim frame;
+  check "reclaim cleans up after a raising body"
     (not (Sys.file_exists !created))
 
 let () =
@@ -646,7 +647,7 @@ let () =
         && not (String.contains (Filename.basename d) '/'));
       check "a hostile suffix is sanitized into the scratch directory"
         (Filename.dirname f = Filename.dirname plain));
-  Run.remove_temp frame
+  Run.reclaim frame
 
 let () =
   (* The documented permission contract is a security property: no group or
@@ -664,7 +665,7 @@ let () =
       check "temp_file grants no group/other access" (private_to_owner f);
       check "the scratch root grants no group/other access"
         (private_to_owner (Filename.dirname d)));
-  Run.remove_temp frame
+  Run.reclaim frame
 
 let () =
   (* Fresh frames get fresh scratch directories: retries never see a
@@ -672,11 +673,11 @@ let () =
   let run = make_run () in
   let first = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
   let d1 = Run.with_frame first (fun () -> Run.temp_dir ()) in
-  Run.remove_temp first;
+  Run.reclaim first;
   let second = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
   let d2 = Run.with_frame second (fun () -> Run.temp_dir ()) in
   check "a later attempt gets a fresh scratch directory" (d1 <> d2);
-  Run.remove_temp second
+  Run.reclaim second
 
 (* Fixture acquisition skips (amendment C1) *)
 

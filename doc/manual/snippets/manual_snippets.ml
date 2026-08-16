@@ -234,6 +234,12 @@ module Pool = struct
   let count conn = conn.rows
 end
 
+(* Code that reads a setting straight out of the environment: the shape
+   [setenv] exists for, missing case included. *)
+module Config = struct
+  let token () = Sys.getenv_opt "API_TOKEN"
+end
+
 let with_db = bracket ~setup:Db.connect ~teardown:Db.close
 let with_conn = scoped Pool.with_connection
 let server = fixture ~teardown:Server.stop Server.start
@@ -253,6 +259,16 @@ let resources =
           Out_channel.with_open_text file (fun oc ->
               Out_channel.output_string oc "{}");
           is_true (Sys.file_exists file));
+      test "reads the token from the environment" (fun () ->
+          setenv "API_TOKEN" (Some "t-123");
+          equal (option string) (Some "t-123") (Config.token ());
+          setenv "API_TOKEN" None;
+          equal (option string) None (Config.token ()));
+      test "builds in place" (fun () ->
+          chdir (temp_dir ());
+          Out_channel.with_open_text "built.txt" (fun oc ->
+              Out_channel.output_string oc "ok");
+          is_true (Sys.file_exists "built.txt"));
       test "backend contract" (fun () ->
           List.iter
             (fun (name, count) -> subtest name (fun () -> equal int 12 count))

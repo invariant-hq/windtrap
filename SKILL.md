@@ -125,7 +125,9 @@ Reject these shapes on sight — in review, and in your own output.
   state, the wall clock, the network, or directory-listing order. It
   breaks the moment the suite is selected differently — `-f`,
   `--failed`, and `--shard` all change which tests run. Use
-  `bracket`/`fixture`/`temp_dir` for state; mask time (§7).
+  `bracket`/`fixture`/`temp_dir` for state, `setenv`/`chdir` for the
+  environment and the working directory (the runner puts both back);
+  mask time (§7).
 
 *Tests at the wrong level:*
 
@@ -703,7 +705,10 @@ partial application builds reusable constructors from both. `fixture`
 shares one expensive resource across the run (a `skip` raised during
 acquisition skips every dependent test — the pattern for suites gated
 on a missing device). `temp_dir ()`/`temp_file ()` are runner-cleaned
-scratch paths. `~timeout` caps a test; `~retries` is for the
+scratch paths; `setenv name value_opt` and `chdir dir` bind the
+environment and the working directory for one test and the runner puts
+both back on every outcome (`setenv name None` really unbinds, so the
+missing-variable path is testable). `~timeout` caps a test; `~retries` is for the
 flaky-by-nature only, never a way of life. `slow name fn` tags tests
 that legitimately take time. `ftest`/`fgroup` focus while debugging —
 remove before committing (CI refuses them; a successful focused run

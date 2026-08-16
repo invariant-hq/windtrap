@@ -39,4 +39,4 @@
   (backend ppx_windtrap.mutate))
  (foreign_stubs
   (language c)
-  (names capture_stubs clock_stubs)))
+  (names capture_stubs clock_stubs env_stubs)))

@@ -121,9 +121,10 @@ selectable.
 
 **Resources** — `bracket` scopes a per-test resource with teardown on every
 outcome; `fixture` shares an expensive resource across the run, released by
-the runner; `temp_dir`/`temp_file` give runner-cleaned scratch paths.
-`subtest` names sub-cases inside a body and `xfail` keeps known-bug
-reproductions in-tree without a red run.
+the runner; `temp_dir`/`temp_file` give runner-cleaned scratch paths, and
+`setenv`/`chdir` bind the environment and the working directory for one test
+with the runner restoring both. `subtest` names sub-cases inside a body and
+`xfail` keeps known-bug reproductions in-tree without a red run.
 
 **Code coverage** — expression-level coverage from the inert
 `(instrumentation (backend ppx_windtrap))` stanza. Run

@@ -3,12 +3,13 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Environment variable reading and platform detection.
+(** Environment variable access and platform detection.
 
-    This module owns {e how} the environment is read: the generic typed readers
+    This module owns {e how} the environment is read — the generic typed readers
     below, the value vocabularies they share (booleans, comma-separated lists,
     colour modes, snapshot update modes), platform and CI detection, and the few
-    settings that have no command-line flag. It is not the inventory of
+    settings that have no command-line flag — and, in {!set}, the one way it is
+    written. It is not the inventory of
     variables: every [WINDTRAP_*] mirror of a runner flag is declared beside
     that flag in {!Cli}'s table and read through {!get_string}, {!get_bool} and
     {!split_comma} from there, which is what stops a mirror from parsing or
@@ -54,6 +55,27 @@ val split_comma : string -> string list
 (** [split_comma value] splits [value] on commas, trims each item and drops the
     empty ones — the spelling the repeatable flags take in one variable, e.g.
     [WINDTRAP_TAG="a, b ,,c "] is [["a"; "b"; "c"]]. *)
+
+(** {1:writing Writing} *)
+
+val set : string -> string option -> unit
+(** [set name (Some value)] binds [name] to [value] in the process environment;
+    [set name None] {e unbinds} it — [Sys.getenv_opt name] is then [None], not
+    [Some ""], which is a different fact to every program that asks. [Unix]
+    offers only the binding half ([putenv]); the unbinding half is POSIX
+    [unsetenv(3)] through a C stub, or on Windows the empty assignment [_putenv]
+    documents as deletion.
+
+    The change is process-global, immediate, and visible to every reader — the
+    lookups above, [Sys.getenv_opt], and any child process spawned after it.
+    Nothing else in the library writes the environment: this is the primitive
+    under {!Run.setenv}, which is what test bodies call, and which has the runner
+    put the prior binding back at the attempt boundary.
+
+    Raises [Invalid_argument] when [name] is empty or contains ['='] — the names
+    POSIX refuses, checked here so one bad name reads the same on every platform
+    — and [Unix.Unix_error] or [Sys_error] when the environment itself cannot be
+    changed (allocation failure). *)
 
 (** {1:platform Platform detection} *)
 

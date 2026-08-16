@@ -9,6 +9,39 @@ codes. New entries go at the top of their section.
 
 ### Added
 
+**`setenv` and `chdir`: the environment and the working directory, scoped to
+one test.** Both belong to the process, not to the test, so a test that
+needed either wrote the save-and-restore by hand — and wrote it wrong,
+because the restore has to survive the failure, the skip and the timeout too,
+which `Fun.protect` around the body does not cover and a `bracket` teardown
+covers only if nothing before it raised. `setenv name (Some v)` binds,
+`setenv name None` unbinds, `chdir dir` moves, and the runner puts all of it
+back at the attempt boundary — outside the timeout window, on every outcome,
+once per `~retries` attempt, beside the scratch-path removal that already
+worked this way.
+
+The unbinding is a real one. OCaml's `Unix` can only bind, and binding to the
+empty string is not unbinding: `Sys.getenv_opt` then answers `Some ""`, which
+reads as *set* to every program that asks, so the code path a missing
+variable takes stayed untestable. The unbinding half is now POSIX
+`unsetenv(3)` through a C stub (on Windows, the empty assignment `_putenv`
+documents as deletion), which is what makes `setenv name None` mean what it
+says and what lets the runner restore a variable the test found unset.
+
+Restoration is first-set-wins per variable: what comes back is what the
+variable held before the test's *first* `setenv` of it, so binding one twice
+still leaves behind what the test found. `chdir` restores the directory
+captured at the test's first call. A restoration that *cannot* happen — the
+test deleted the directory it came from — fails that test with a message
+naming it, rather than being swallowed the way a leaked scratch directory is:
+scratch under `/tmp` is inert, while a process left in the wrong place fails
+everything after it under names that have nothing to do with the cause.
+
+Both are process-global while the test runs, which the docs say plainly:
+threads the test spawns and child processes it starts see the change, and a
+thread still moving when the test ends races the restoration. Tests never
+race each other — the runner is sequential, one domain.
+
 **Mutation testing: the `ppx_windtrap.mutate` backend, `WINDTRAP_MUTATE`, and
 `windtrap mutate`.** Coverage answers *did this line run*. It cannot answer
 *would anything fail if this line were wrong*, and that is the question a
