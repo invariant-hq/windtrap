@@ -85,6 +85,7 @@ let is_true = Check.is_true
 let is_false = Check.is_false
 let contains = Check.contains
 let not_contains = Check.not_contains
+let in_order = Check.in_order
 let starts_with = Check.starts_with
 let ends_with = Check.ends_with
 let satisfies = Check.satisfies

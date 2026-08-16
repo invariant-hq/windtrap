@@ -23,6 +23,23 @@ let failing_equal =
           equal int 3 (List.length sessions));
     ]
 
+(* assertions.md: the two demanded-occurrence blocks. The log shows the last
+   two events the wrong way round, which three [contains] calls cannot fail
+   on, and one retry too many. *)
+
+let session_log = "connect send disconnect authenticate"
+
+let failing_occurrences =
+  group "session"
+    [
+      test "the handshake runs in order" (fun () ->
+          in_order
+            ~subs:[ "connect"; "authenticate"; "disconnect" ]
+            session_log);
+      test "the client retries twice" (fun () ->
+          contains ~count:2 ~sub:"retry" "retry retry retry");
+    ]
+
 (* property-testing.md: the failing property and its replay line. *)
 
 let encode fields = String.concat "," fields
@@ -150,6 +167,7 @@ let poisoned_pre =
 let suite =
   [
     failing_equal;
+    failing_occurrences;
     failing_prop;
     missing_snapshot;
     failing_stateful;

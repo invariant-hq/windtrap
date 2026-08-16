@@ -52,15 +52,28 @@ val truncate_bytes_utf8 : int -> string -> string
 
 (** {1:search Search} *)
 
-val first_occurrence : pattern:string -> string -> int option
+val first_occurrence : ?start:int -> pattern:string -> string -> int option
 (** [first_occurrence ~pattern s] is the byte offset of the first occurrence of
-    [pattern] in [s] as a byte substring, and [None] when [pattern] does not
-    occur. An empty [pattern] occurs at [0]. *)
+    [pattern] in [s] as a byte substring at or after [start] (defaults to [0]),
+    and [None] when [pattern] does not occur there. An empty [pattern] occurs
+    at [start].
+
+    Raises [Invalid_argument] if [start] is negative or past the end of [s]. A
+    [start] equal to [String.length s] is in range and searches nothing. *)
 
 val contains_substring : pattern:string -> string -> bool
 (** [contains_substring ~pattern s] is [true] iff [s] contains [pattern] as a
     byte substring, i.e. iff {!first_occurrence} finds an occurrence. An empty
     [pattern] always matches. *)
+
+val count_occurrences : pattern:string -> string -> int
+(** [count_occurrences ~pattern s] is the number of occurrences of [pattern] in
+    [s], counted leftmost-first and non-overlapping: each match resumes the
+    scan at its end, so ["aa"] occurs once in ["aaa"] and twice in ["aaaa"].
+
+    The empty pattern occurs at every byte position and at the end, so its
+    count is [String.length s + 1] — the one reading under which an empty match
+    advances the scan by a byte instead of never terminating. *)
 
 (** {1:ansi ANSI escapes} *)
 

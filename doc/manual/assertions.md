@@ -1,6 +1,6 @@
 # Assertions
 
-Twenty-five verbs, one design rule: a failure must print the data that
+Twenty-six verbs, one design rule: a failure must print the data that
 would let you fix the bug without adding a `Printf`. Every checking
 verb takes optional `?msg` (an annotation shown in the report) and
 `?pos` (a `__POS__` override for the automatic call-stack location);
@@ -151,6 +151,50 @@ there is one, instead of printing `false`:
 contains ~sub:"user=alice" log;
 not_contains ~sub:"secret" log
 ```
+
+`contains ~count:n` demands exactly `n` occurrences rather than at
+least one. Occurrences are counted leftmost-first and never overlap —
+each match resumes the count at its end, so `"aa"` occurs once in
+`"aaa"` — and the failure states both numbers:
+
+```ocaml
+contains ~count:2 ~sub:"retry" log
+```
+
+```
+needle    "retry" — expected 2 occurrences, found 3
+haystack  retry retry retry
+          ~~~~~
+```
+
+The excerpt marks the first occurrence and not all of them: when the
+counts disagree the two numbers *are* the finding, and painting every
+match would add red without adding an answer. `~count:0` is the
+counted spelling of `not_contains`.
+
+When the order is the claim, `in_order ~subs` asserts a whole chain of
+substrings at once. Each element must match at or after the end of the
+previous one, which is exactly what a run of `contains` calls does not
+check:
+
+```ocaml
+in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] session_log
+```
+
+A break names the element that caused it — its index and its value —
+and the byte the search had reached, over an excerpt of the region
+still to be matched. The interesting failure is the element that *is*
+in the string, only too early:
+
+```
+element   2
+needle    "disconnect" — found at byte 13, before the search resumed at byte 36
+haystack  connect send disconnect authenticate
+                       ~~~~~~~~~~
+```
+
+Out of order and missing are different bugs; three `contains` calls
+report neither, because all three needles are there.
 
 `starts_with ~affix` and `ends_with ~affix` demand a position as well
 as presence. When the affix is nowhere in the string they report what

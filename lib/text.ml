@@ -94,9 +94,11 @@ let truncate_bytes_utf8 max_bytes s =
 (* Search *)
 
 (* Naive scan: patterns are assertion- and filter-sized. *)
-let first_occurrence ~pattern s =
+let first_occurrence ?(start = 0) ~pattern s =
   let n = String.length pattern and len = String.length s in
-  if n = 0 then Some 0
+  if start < 0 || start > len then
+    invalid_arg "Text.first_occurrence: start is outside the string";
+  if n = 0 then Some start
   else
     let matches_at i =
       let rec go j = j = n || (s.[i + j] = pattern.[j] && go (j + 1)) in
@@ -105,9 +107,24 @@ let first_occurrence ~pattern s =
     let rec scan i =
       if i + n > len then None else if matches_at i then Some i else scan (i + 1)
     in
-    scan 0
+    scan start
 
 let contains_substring ~pattern s = first_occurrence ~pattern s <> None
+
+let count_occurrences ~pattern s =
+  let len = String.length s in
+  (* An empty pattern matches everywhere without consuming, so the scan
+     steps a byte per match rather than standing still: that is what makes
+     its count [len + 1] instead of a loop that never ends. *)
+  let step = max (String.length pattern) 1 in
+  let rec go start count =
+    if start > len then count
+    else
+      match first_occurrence ~start ~pattern s with
+      | None -> count
+      | Some i -> go (i + step) (count + 1)
+  in
+  go 0 0
 
 (* ANSI escapes *)
 

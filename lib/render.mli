@@ -932,13 +932,22 @@ val pp_failure :
     - predicate ([satisfies], [require_match]): the claim description and the
       rendered value under the [expected]/[actual] labels, never diffed or
       refined against each other — a description is not a rendering;
-    - containment ([contains], [not_contains]): the needle with its verdict
-      ([needle "secret" — found at byte 10] / [needle "NOPE" — not found]), then
-      the stored haystack excerpt — occurrence highlighted, or marked with a
-      [~~~] line without color — and, when the excerpt is partial, one faint
-      line stating the excerpted byte range and the haystack's total size
+    - containment ([contains], [not_contains], the affix verbs, [in_order]):
+      the needle with its verdict ([needle "secret" — found at byte 10] /
+      [needle "NOPE" — not found]), then the stored haystack excerpt —
+      occurrence highlighted, or marked with a [~~~] line without color — and,
+      when the excerpt is partial, one faint line stating the excerpted byte
+      range and the haystack's total size
       ([(excerpt: bytes 0-8191 of a 20006-byte haystack)]). The claim
-      description never prints: the verdict says more than the sentence would;
+      description never prints: the verdict says more than the sentence would.
+      The payload's {!Failure.containment_demand} widens that verdict rather
+      than adding lines of its own — a {!Failure.Counted} mismatch reads
+      [expected 2 occurrences, found 3] and marks only its first occurrence,
+      since the counts are the finding; a {!Failure.Ordered} chain break reads
+      [not found at or after byte 36], or names the out-of-order occurrence
+      ([found at byte 13, before the search resumed at byte 36]) and marks it.
+      Only [Ordered] adds a line, the [element] index, which says which
+      assertion the rest of the block is about;
     - raise: expected and raised exceptions, and the recorded backtrace. When
       the payload carries a {!Failure.message_diff} — the failure site decided
       the two exceptions differ only in their message — the block diffs the

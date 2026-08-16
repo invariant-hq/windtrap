@@ -18,6 +18,11 @@ type message_diff = {
   actual_message : string;
 }
 
+type containment_demand =
+  | Anywhere
+  | Ordered of { index : int; resumed_at : int }
+  | Counted of { expected : int; found : int }
+
 type kind =
   | Equality of { expected : string; actual : string; not_ : bool }
   | Containment of {
@@ -27,6 +32,7 @@ type kind =
       haystack_length : int;
       excerpt : string;
       excerpt_offset : int;
+      demand : containment_demand;
     }
   | Predicate of { claim : string; value : string }
   | Raise of {
@@ -181,15 +187,15 @@ let equality ?loc ?msg ?(not_ = false) ~expected ~actual () =
     (Equality { expected = cap expected; actual = cap actual; not_ })
 
 (* The bounded haystack window stored as a containment failure's [excerpt]:
-   around the match when there is one, the head otherwise. Both cuts land on
+   around [anchor] when there is one, the head otherwise. Both cuts land on
    UTF-8 code-point boundaries, so the window may exceed the limit by the up
    to three bytes needed to complete a sequence. *)
-let excerpt_window ~found_at haystack =
+let excerpt_window ~anchor haystack =
   let len = String.length haystack in
   if len <= excerpt_limit then (0, haystack)
   else
     let start =
-      match found_at with
+      match anchor with
       | None -> 0
       | Some i ->
           let at_or_before = max 0 (i - (excerpt_limit / 2)) in
@@ -201,12 +207,28 @@ let excerpt_window ~found_at haystack =
     in
     (start, String.sub haystack start (stop - start))
 
-let containment ?loc ?msg ?found_at ~claim ~needle ~haystack () =
+(* Which offset the excerpt centres on. An [Ordered] failure is about a
+   search that began at the cursor, so the cursor wins over an occurrence
+   that — being before it — is precisely the one that did not count. *)
+let excerpt_anchor ~found_at ~demand =
+  match demand with
+  | Ordered { resumed_at; _ } -> Some resumed_at
+  | Anywhere | Counted _ -> found_at
+
+let containment ?loc ?msg ?found_at ?(demand = Anywhere) ~claim ~needle
+    ~haystack () =
+  let outside i = i < 0 || i > String.length haystack in
   (match found_at with
-  | Some i when i < 0 || i > String.length haystack ->
+  | Some i when outside i ->
       invalid_arg "Failure.containment: found_at is outside the haystack"
   | Some _ | None -> ());
-  let excerpt_offset, excerpt = excerpt_window ~found_at haystack in
+  (match demand with
+  | Ordered { resumed_at; _ } when outside resumed_at ->
+      invalid_arg "Failure.containment: resumed_at is outside the haystack"
+  | Anywhere | Ordered _ | Counted _ -> ());
+  let excerpt_offset, excerpt =
+    excerpt_window ~anchor:(excerpt_anchor ~found_at ~demand) haystack
+  in
   make ?loc ?msg
     (Containment
        {
@@ -216,6 +238,7 @@ let containment ?loc ?msg ?found_at ~claim ~needle ~haystack () =
          haystack_length = String.length haystack;
          excerpt;
          excerpt_offset;
+         demand;
        })
 
 let predicate ?loc ?msg ~claim value =

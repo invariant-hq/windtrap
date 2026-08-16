@@ -1673,6 +1673,109 @@ let test_containment_headlines () =
     (Render.headline contains_failure
     = {|needle "NOPE" not found (20006-byte haystack)|})
 
+(* The demanded-occurrence blocks: [in_order]'s chain break and
+   [contains ~count]'s counts. Both fixtures are the payloads the assertions
+   chapter's transcripts come from, so the manual cannot drift from the
+   renderer without failing here.
+
+   Byte offsets in the chain haystack: connect 0, send 8, disconnect 13,
+   authenticate 24, end 36. *)
+
+let chain_haystack = "connect send disconnect authenticate"
+
+(* [in_order ~subs:["connect"; "authenticate"; "disconnect"]]: the log shows
+   the last two events the wrong way round, so the search for "disconnect"
+   resumed at 36 — past "authenticate" — and its only occurrence, byte 13,
+   is behind the cursor. *)
+let out_of_order_failure =
+  Failure.containment ~found_at:13
+    ~demand:(Failure.Ordered { index = 2; resumed_at = 36 })
+    ~claim:{|string containing "disconnect" at or after byte 36|}
+    ~needle:"disconnect" ~haystack:chain_haystack ()
+
+let missing_element_failure =
+  Failure.containment
+    ~demand:(Failure.Ordered { index = 2; resumed_at = 36 })
+    ~claim:{|string containing "teardown" at or after byte 36|}
+    ~needle:"teardown" ~haystack:chain_haystack ()
+
+let counted_failure =
+  Failure.containment ~found_at:0
+    ~demand:(Failure.Counted { expected = 2; found = 3 })
+    ~claim:{|string containing "retry" exactly 2 times|} ~needle:"retry"
+    ~haystack:"retry retry retry" ()
+
+let test_in_order_block () =
+  let b = failure_block out_of_order_failure in
+  (* Which element broke the chain is its own line, on the label gutter;
+     the verdict slot carries where the search stood and where the element
+     actually is — "there, but too early" rather than "not there". *)
+  check_contains "in_order: the element index is a line of its own"
+    ~sub:"    element   2\n" b;
+  check_contains "in_order: the verdict names both offsets"
+    ~sub:
+      "    needle    \"disconnect\" \u{2014} found at byte 13, before the \
+       search resumed at byte 36\n"
+    b;
+  check_contains "in_order: the early occurrence is marked in the haystack"
+    ~sub:
+      ("    haystack  " ^ chain_haystack ^ "\n" ^ String.make 27 ' '
+     ^ "~~~~~~~~~~\n")
+    b;
+  check_absent "in_order: the claim description never prints"
+    ~sub:"at or after byte 36\n" b;
+  let colored = failure_block ~ansi:true out_of_order_failure in
+  check_contains "in_order: the early occurrence highlights under ansi"
+    ~sub:"send \027[31mdisconnect\027[0m authenticate" colored;
+  (* No occurrence anywhere: the verdict is the cursor alone and there is
+     nothing to mark. *)
+  let b = failure_block missing_element_failure in
+  check_contains "in_order: a missing element names only the cursor"
+    ~sub:
+      "    element   2\n\
+      \    needle    \"teardown\" \u{2014} not found at or after byte 36\n"
+    b;
+  check_absent "in_order: nothing is marked when nothing occurs" ~sub:"~~~" b
+
+let test_counted_block () =
+  let b = failure_block counted_failure in
+  (* Expected precedes actual, on the verdict slot the other containment
+     verbs already own — the counts are the failure, so they go where the
+     reader is already looking, and no line is added. *)
+  check_contains "contains ~count: the verdict is the two counts"
+    ~sub:"    needle    \"retry\" \u{2014} expected 2 occurrences, found 3\n" b;
+  check_absent "contains ~count: no element line" ~sub:"element" b;
+  (* Only the first occurrence is marked: with a count mismatch the numbers
+     carry the verdict, and painting all three would add red without adding
+     an answer. *)
+  check_contains "contains ~count: the first occurrence is marked"
+    ~sub:("    haystack  retry retry retry\n" ^ String.make 14 ' ' ^ "~~~~~\n")
+    b;
+  check_absent "contains ~count: the later occurrences are not marked"
+    ~sub:"~~~~~ ~~~~~" b;
+  let zero =
+    Failure.containment ~found_at:0
+      ~demand:(Failure.Counted { expected = 0; found = 3 })
+      ~claim:{|string containing "retry" exactly 0 times|} ~needle:"retry"
+      ~haystack:"retry retry retry" ()
+  in
+  check_contains "contains ~count:0: the counted spelling of not_contains"
+    ~sub:"    needle    \"retry\" \u{2014} expected 0 occurrences, found 3\n"
+    (failure_block zero)
+
+let test_demand_headlines () =
+  check "headline: in_order names the element, its offset and the cursor"
+    (Render.headline out_of_order_failure
+    = {|element 2 "disconnect" out of order: at byte 13, before byte 36|});
+  let missing =
+    {|element 2 "teardown" not found at or after byte 36 (36-byte haystack)|}
+  in
+  check "headline: a missing element names the cursor and the haystack size"
+    (Render.headline missing_element_failure = missing);
+  check "headline: contains ~count states expected before found"
+    (Render.headline counted_failure
+    = {|expected 2 occurrences of needle "retry", found 3|})
+
 let test_satisfies_no_refinement () =
   (* The claim sentence is a description, not a rendering: never diff or
      refine the two (D5 §2). *)
@@ -2930,6 +3033,9 @@ let tests =
     test "containment: claim-aware block (D5 §2)" test_containment_block;
     test "containment: multi-line haystack block" test_containment_multiline;
     test "containment: headline forms" test_containment_headlines;
+    test "containment: in_order chain-break block" test_in_order_block;
+    test "containment: contains ~count block" test_counted_block;
+    test "containment: demanded-occurrence headlines" test_demand_headlines;
     test "satisfies/matches: no refinement against the claim"
       test_satisfies_no_refinement;
     test "hunks: trailing whitespace visualized on changed lines (D5 §4)"

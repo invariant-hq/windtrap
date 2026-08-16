@@ -51,17 +51,51 @@ let equality_payload name f k =
       k (expected, actual, not_)
   | _ -> fail (name ^ ": kind is Equality")
 
-(* [k] gets the claim description and the containment payload. *)
+(* [k] gets the claim description and the containment payload. The demand is
+   projected separately by [containment_demand] below rather than widening
+   this continuation to a seventh component. *)
 let containment_payload name f k =
   match caught name f with
   | {
    F.kind =
      F.Containment
-       { claim; needle; found_at; haystack_length; excerpt; excerpt_offset };
+       {
+         claim;
+         needle;
+         found_at;
+         haystack_length;
+         excerpt;
+         excerpt_offset;
+         demand = _;
+       };
    _;
   } ->
       k (claim, excerpt, needle, found_at, haystack_length, excerpt_offset)
   | _ -> fail (name ^ ": kind is Containment")
+
+(* The counted and ordered verbs: what the assertion demanded, and the
+   excerpt bookkeeping that demand steers. *)
+let containment_demand name f k =
+  match caught name f with
+  | {
+   F.kind = F.Containment { demand; found_at; excerpt; excerpt_offset; _ };
+   _;
+  } ->
+      k (demand, found_at, excerpt, excerpt_offset)
+  | _ -> fail (name ^ ": kind is Containment")
+
+(* The demand as a flat string, so a wrong one is legible in the report —
+   the [describe_message_diff] precedent below. *)
+let describe_demand = function
+  | F.Anywhere -> "anywhere"
+  | F.Ordered { index; resumed_at } ->
+      Printf.sprintf "ordered %d from %d" index resumed_at
+  | F.Counted { expected; found } ->
+      Printf.sprintf "counted %d found %d" expected found
+
+let describe_offset = function
+  | Some i -> Printf.sprintf "Some %d" i
+  | None -> "None"
 
 (* [k] gets the claim description and the rejected value. *)
 let predicate_payload name f k =
@@ -290,6 +324,165 @@ let tests =
                 check "not_contains: haystack_length is the full byte length"
                   (haystack_length = String.length haystack)
             | None -> check "not_contains: the occurrence is recorded" false));
+    test "contains ~count" (fun () ->
+        let log = "ab-ab-ab" in
+        passes "contains ~count: the exact number of occurrences" (fun () ->
+            Check.contains ~count:3 ~sub:"ab" log);
+        (* [count:0] is the counted spelling of [not_contains]. *)
+        passes "contains ~count:0: an absent needle" (fun () ->
+            Check.contains ~count:0 ~sub:"zz" log);
+        (* Occurrences are non-overlapping and leftmost-first: the match at
+           byte 0 consumes both bytes, so "aaa" holds one "aa", not two. *)
+        passes "contains ~count: occurrences do not overlap" (fun () ->
+            Check.contains ~count:1 ~sub:"aa" "aaa");
+        passes "contains ~count: a needle equal to the haystack" (fun () ->
+            Check.contains ~count:1 ~sub:"ab" "ab");
+        (* [contains] holds the empty needle to occur in every string;
+           counting inherits that — it occurs at every byte position and at
+           the end, so its count is the length plus one. *)
+        passes "contains ~count: the empty needle counts length+1" (fun () ->
+            Check.contains ~count:4 ~sub:"" "abc");
+        check "contains ~count: a negative count is a programmer error"
+          (match
+             outcome (fun () -> Check.contains ~count:(-1) ~sub:"ab" log)
+           with
+          | Raised (Invalid_argument _) -> true
+          | _ -> false);
+        containment_demand "contains ~count: too few occurrences"
+          (fun () -> Check.contains ~count:5 ~sub:"ab" log)
+          (fun (demand, found_at, _, _) ->
+            check_string "contains ~count: the two counts are the payload"
+              ~expected:"counted 5 found 3" ~actual:(describe_demand demand);
+            check_string "contains ~count: found_at is the first occurrence"
+              ~expected:"Some 0" ~actual:(describe_offset found_at));
+        containment_demand "contains ~count: too many occurrences"
+          (fun () -> Check.contains ~count:1 ~sub:"ab" log)
+          (fun (demand, _, _, _) ->
+            check_string "contains ~count: an excess reads the same way"
+              ~expected:"counted 1 found 3" ~actual:(describe_demand demand));
+        containment_demand "contains ~count:0 on a present needle"
+          (fun () -> Check.contains ~count:0 ~sub:"ab" log)
+          (fun (demand, found_at, _, _) ->
+            check_string "contains ~count:0: fails where not_contains fails"
+              ~expected:"counted 0 found 3" ~actual:(describe_demand demand);
+            check_string "contains ~count:0: the occurrence is recorded"
+              ~expected:"Some 0" ~actual:(describe_offset found_at));
+        containment_demand "contains ~count: a needle that never occurs"
+          (fun () -> Check.contains ~count:2 ~sub:"zz" log)
+          (fun (demand, found_at, _, _) ->
+            check_string "contains ~count: zero found is still a count"
+              ~expected:"counted 2 found 0" ~actual:(describe_demand demand);
+            check_string "contains ~count: nothing to record"
+              ~expected:"None" ~actual:(describe_offset found_at));
+        containment_payload "contains ~count: fail payload"
+          (fun () -> Check.contains ~count:5 ~sub:"ab" log)
+          (fun (claim, _, needle, _, haystack_length, _) ->
+            check_string "contains ~count: claim names the demanded count"
+              ~expected:{|string containing "ab" exactly 5 times|}
+              ~actual:claim;
+            check_string "contains ~count: needle stored verbatim"
+              ~expected:"ab" ~actual:needle;
+            check "contains ~count: haystack_length is the full byte length"
+              (haystack_length = String.length log));
+        (* Without [?count] the verb is what it always was: one occurrence
+           is enough, and the failure demands nothing beyond presence. *)
+        passes "contains: no count still means at least one" (fun () ->
+            Check.contains ~sub:"ab" log);
+        containment_demand "contains: no count leaves the demand plain"
+          (fun () -> Check.contains ~sub:"zz" log)
+          (fun (demand, _, _, _) ->
+            check_string "contains: an uncounted failure demands nothing more"
+              ~expected:"anywhere" ~actual:(describe_demand demand)));
+    test "in_order" (fun () ->
+        (* Byte offsets: start 0, connect 6, send 14, receive 19, stop 27. *)
+        let log = "start connect send receive stop" in
+        passes "in_order: an ordered chain" (fun () ->
+            Check.in_order ~subs:[ "start"; "send"; "stop" ] log);
+        passes "in_order: a singleton chain is [contains]" (fun () ->
+            Check.in_order ~subs:[ "connect" ] log);
+        passes "in_order: the whole string as one element" (fun () ->
+            Check.in_order ~subs:[ log ] log);
+        (* Each match resumes at the END of the previous one, so a repeated
+           element needs a second occurrence rather than re-matching the
+           first. *)
+        passes "in_order: a repeated element takes a later occurrence"
+          (fun () -> Check.in_order ~subs:[ "ab"; "ab" ] "abab");
+        passes "in_order: adjacent matches" (fun () ->
+            Check.in_order ~subs:[ "ab"; "cd" ] "abcd");
+        (* The empty needle occurs in every string, so a chain element
+           inherits that: it matches at the cursor without advancing it. *)
+        passes "in_order: an empty element matches trivially" (fun () ->
+            Check.in_order ~subs:[ ""; "a"; "" ] "a");
+        check "in_order: an empty chain is a programmer error"
+          (match outcome (fun () -> Check.in_order ~subs:[] log) with
+          | Raised (Invalid_argument _) -> true
+          | _ -> false);
+        (* The element is nowhere in the string: the index and the cursor
+           name the break, and there is no occurrence to record. *)
+        containment_demand "in_order: an element missing entirely"
+          (fun () -> Check.in_order ~subs:[ "start"; "abort" ] log)
+          (fun (demand, found_at, _, _) ->
+            check_string "in_order: the break names its index and cursor"
+              ~expected:"ordered 1 from 5" ~actual:(describe_demand demand);
+            check_string "in_order: a missing element records no occurrence"
+              ~expected:"None" ~actual:(describe_offset found_at));
+        (* The out-of-order bug: the element IS in the string, before the
+           cursor. [found_at] carries that occurrence — [starts_with]'s rule
+           — so the report says "there, but too early", not "not there". *)
+        containment_demand "in_order: an element present only before the cursor"
+          (fun () -> Check.in_order ~subs:[ "send"; "connect" ] log)
+          (fun (demand, found_at, _, _) ->
+            check_string "in_order: the out-of-order break names its cursor"
+              ~expected:"ordered 1 from 18" ~actual:(describe_demand demand);
+            check_string "in_order: the earlier occurrence is recorded"
+              ~expected:"Some 6" ~actual:(describe_offset found_at));
+        (* Chain matches do not overlap: the first "aa" consumes bytes 0-1,
+           so the second must start at 2 and "aaa" has no room for it. *)
+        containment_demand "in_order: chain matches do not overlap"
+          (fun () -> Check.in_order ~subs:[ "aa"; "aa" ] "aaa")
+          (fun (demand, found_at, _, _) ->
+            check_string "in_order: the second element resumes past the first"
+              ~expected:"ordered 1 from 2" ~actual:(describe_demand demand);
+            check_string "in_order: the overlapping occurrence is reported"
+              ~expected:"Some 0" ~actual:(describe_offset found_at));
+        containment_payload "in_order: fail payload"
+          (fun () -> Check.in_order ~subs:[ "start"; "abort" ] log)
+          (fun (claim, excerpt, needle, _, haystack_length, _) ->
+            check_string "in_order: claim names the element and the cursor"
+              ~expected:{|string containing "abort" at or after byte 5|}
+              ~actual:claim;
+            check_string "in_order: the needle is the element that broke"
+              ~expected:"abort" ~actual:needle;
+            check_string "in_order: small haystack stored whole" ~expected:log
+              ~actual:excerpt;
+            check "in_order: haystack_length is the whole string"
+              (haystack_length = String.length log));
+        (* On a haystack too big to store whole the excerpt shows where the
+           search stood — the region still to be matched — not the head the
+           reader has already matched past. *)
+        let filler =
+          String.concat ""
+            (List.init 3_000 (fun i -> Printf.sprintf "%07d\n" i))
+        in
+        let haystack = filler ^ "OPEN" ^ filler in
+        containment_demand "in_order: the excerpt windows on the cursor"
+          (fun () -> Check.in_order ~subs:[ "OPEN"; "MIDDLE" ] haystack)
+          (fun (demand, found_at, excerpt, excerpt_offset) ->
+            let cursor = String.length filler + String.length "OPEN" in
+            check_string "in_order: the cursor is the end of the first match"
+              ~expected:(Printf.sprintf "ordered 1 from %d" cursor)
+              ~actual:(describe_demand demand);
+            check "in_order: excerpt is bounded"
+              (String.length excerpt <= 8_195);
+            check "in_order: the window is cut around the cursor, not the head"
+              (excerpt_offset > 0 && excerpt_offset <= cursor);
+            check "in_order: the excerpt is the recorded window"
+              (String.sub haystack excerpt_offset (String.length excerpt)
+              = excerpt);
+            check "in_order: the cursor is inside the window"
+              (cursor - excerpt_offset <= String.length excerpt);
+            check_string "in_order: no occurrence to record" ~expected:"None"
+              ~actual:(describe_offset found_at)));
     test "starts_with and ends_with" (fun () ->
         let path = "sessions/ghost/session.json" in
         passes "starts_with: pass" (fun () ->
@@ -930,6 +1123,10 @@ let tests =
             Check.contains ~pos:fake_pos ~sub:"z" "abc");
         with_pos "not_contains: ?pos" (fun () ->
             Check.not_contains ~pos:fake_pos ~sub:"a" "abc");
+        with_pos "contains ~count: ?pos" (fun () ->
+            Check.contains ~pos:fake_pos ~count:2 ~sub:"a" "abc");
+        with_pos "in_order: ?pos" (fun () ->
+            Check.in_order ~pos:fake_pos ~subs:[ "b"; "a" ] "abc");
         with_pos "satisfies: ?pos" (fun () ->
             Check.satisfies ~pos:fake_pos Testable.int (fun _ -> false) 1);
         with_pos "require_match: ?pos" (fun () ->
@@ -988,6 +1185,14 @@ let tests =
           (msg_of "not_contains: ?msg" (fun () ->
                Check.not_contains ~msg:"log" ~sub:"a" "abc")
           = Some "log");
+        check "contains ~count: ?msg stored"
+          (msg_of "contains ~count: ?msg" (fun () ->
+               Check.contains ~msg:"log" ~count:2 ~sub:"a" "abc")
+          = Some "log");
+        check "in_order: ?msg stored"
+          (msg_of "in_order: ?msg" (fun () ->
+               Check.in_order ~msg:"trace" ~subs:[ "b"; "a" ] "abc")
+          = Some "trace");
         check "satisfies: ?msg stored"
           (msg_of "satisfies: ?msg" (fun () ->
                Check.satisfies ~msg:"positive" Testable.int (fun _ -> false) 1)

@@ -6,7 +6,7 @@
 (** One library for all your OCaml tests.
 
     Windtrap runs unit, property, and snapshot tests from one flat surface:
-    declare tests with {!test} and {!group}, assert with the Twenty-five verbs
+    declare tests with {!test} and {!group}, assert with the Twenty-six verbs
     ({!equal}, {!require_some}, {!raises}, ...), and hand the suite to {!run}:
 
     {[
@@ -289,7 +289,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:assertions Assertions}
 
-    Twenty-five verbs and the {!Exn} predicates. Each verb raises one structured
+    Twenty-six verbs and the {!Exn} predicates. Each verb raises one structured
     failure that the runner catches at the test boundary; the failure records
     the call site ([?pos], else a best-effort call-stack capture) and the
     optional [?msg] annotation. Expected precedes actual, always. An assertion
@@ -366,16 +366,44 @@ val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
     want the assertion and not the value. No [?pp]: the failing side is [None].
 *)
 
-val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
+val contains :
+  ?pos:pos -> ?msg:string -> ?count:int -> sub:string -> string -> unit
 (** [contains ~sub s] asserts that [s] contains [sub] as a byte substring (the
     empty needle is contained in every string). The failure prints the needle
-    and a bounded excerpt of [s], never a bare [false]. *)
+    and a bounded excerpt of [s], never a bare [false].
+
+    [~count:n] demands exactly [n] occurrences instead of at least one, counted
+    leftmost-first and non-overlapping — each match resumes the count at its
+    end, so ["aa"] occurs once in ["aaa"]. The failure prints both counts and
+    marks the first occurrence. [~count:0] is the counted spelling of
+    {!not_contains}; a negative count raises [Invalid_argument]. *)
 
 val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [not_contains ~sub s] asserts that [s] does {e not} contain [sub] as a byte
     substring — so it always fails when [sub] is empty. The failure prints the
     needle, the byte offset of its first occurrence, and a bounded excerpt of
     [s] around it. *)
+
+val in_order : ?pos:pos -> ?msg:string -> subs:string list -> string -> unit
+(** [in_order ~subs s] asserts that each element of [subs] occurs in [s], each
+    match beginning at or after the end of the previous element's match — the
+    assertion for a log or a transcript, where the order is the claim and a
+    chain of {!contains} calls would not check it:
+
+    {[
+      in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] session_log
+    ]}
+
+    The failure names the element that broke the chain — its index and its
+    value — and the byte the search had reached, over an excerpt of the region
+    still to be matched. When that element {e is} in the string but before the
+    cursor, the failure says so and marks it: "out of order" and "missing" are
+    different bugs, and the first is the one you would otherwise read the whole
+    string to find.
+
+    Matches never re-use bytes, so [["aa"; "aa"]] needs four [a]s. An empty
+    element matches without advancing. [subs] must be non-empty; an empty chain
+    raises [Invalid_argument]. *)
 
 val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
 (** [require_some o] asserts that [o] is [Some v] {e and unwraps}: the happy

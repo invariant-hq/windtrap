@@ -97,6 +97,44 @@ let tests =
           (Text.first_occurrence ~pattern:"z" "hello");
         equal ~msg:"pattern longer than the string" (option int) None
           (Text.first_occurrence ~pattern:"hello!" "hello"));
+    test "first_occurrence searches from ~start" (fun () ->
+        equal ~msg:"skips an earlier occurrence" (option int) (Some 3)
+          (Text.first_occurrence ~start:2 ~pattern:"a" "banana");
+        equal ~msg:"a match at ~start itself counts" (option int) (Some 3)
+          (Text.first_occurrence ~start:3 ~pattern:"a" "banana");
+        equal ~msg:"no occurrence left" (option int) None
+          (Text.first_occurrence ~start:6 ~pattern:"a" "banana");
+        equal ~msg:"the empty pattern occurs at ~start" (option int) (Some 4)
+          (Text.first_occurrence ~start:4 ~pattern:"" "hello");
+        equal ~msg:"~start at the end is in range" (option int) None
+          (Text.first_occurrence ~start:5 ~pattern:"o" "hello");
+        raises_match
+          ~msg:"a negative ~start is a programmer error"
+          (Exn.invalid_arg ~substring:"start")
+          (fun () -> Text.first_occurrence ~start:(-1) ~pattern:"a" "abc");
+        raises_match ~msg:"a ~start past the end is a programmer error"
+          (Exn.invalid_arg ~substring:"start")
+          (fun () -> Text.first_occurrence ~start:4 ~pattern:"a" "abc"));
+    test "count_occurrences counts non-overlapping matches" (fun () ->
+        equal ~msg:"separated occurrences" int 3
+          (Text.count_occurrences ~pattern:"ab" "ab-ab-ab");
+        (* Each match resumes the scan at its end, so the two candidate
+           "aa"s in "aaa" are one occurrence, not two. *)
+        equal ~msg:"matches do not overlap" int 1
+          (Text.count_occurrences ~pattern:"aa" "aaa");
+        equal ~msg:"adjacent occurrences" int 2
+          (Text.count_occurrences ~pattern:"aa" "aaaa");
+        equal ~msg:"absent pattern" int 0
+          (Text.count_occurrences ~pattern:"z" "hello");
+        equal ~msg:"pattern longer than the string" int 0
+          (Text.count_occurrences ~pattern:"hello!" "hello");
+        equal ~msg:"the whole string" int 1
+          (Text.count_occurrences ~pattern:"hello" "hello");
+        (* The empty pattern occurs at every byte position and at the end. *)
+        equal ~msg:"the empty pattern counts length+1" int 4
+          (Text.count_occurrences ~pattern:"" "abc");
+        equal ~msg:"the empty pattern in the empty string" int 1
+          (Text.count_occurrences ~pattern:"" ""));
     test "contains_substring" (fun () ->
         is_true ~msg:"finds substring in middle"
           (Text.contains_substring ~pattern:"ell" "hello");

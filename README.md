@@ -78,9 +78,9 @@ under test:
 
 ## Features
 
-**Assertions** — Twenty-five verbs: `equal`, `not_equal`, `is_true`, `is_false`,
+**Assertions** — Twenty-six verbs: `equal`, `not_equal`, `is_true`, `is_false`,
 `is_none`, `is_some`, `satisfies`, `greater`, `greater_equal`, `less`,
-`less_equal`, `contains`, `not_contains`, `starts_with`, `ends_with`,
+`less_equal`, `contains`, `not_contains`, `in_order`, `starts_with`, `ends_with`,
 `mem`, `require_some`, `require_ok`, `require_error`, `require_match`, `raises`,
 `raises_match`, `fail`, `failf`, `skip`. Comparisons go through an `'a testable` (a printer and an equality),
 so every failure prints both values and marks what changed — for every type,

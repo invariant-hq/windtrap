@@ -292,15 +292,25 @@ let headline ?(invocation = `Mirrors) (f : Failure.t) =
         spf "both sides equal: %s" (flat expected)
     | Failure.Equality { expected; actual; _ } ->
         spf "expected %s, got %s" (flat expected) (flat actual)
-    | Failure.Containment { needle; found_at; haystack_length; _ } -> (
-        (* The containment verdict, never a fake equality. *)
-        match found_at with
-        | Some at ->
-            spf "needle %s found at byte %d" (flat (spf "%S" needle)) at
-        | None ->
-            spf "needle %s not found (%d-byte haystack)"
-              (flat (spf "%S" needle))
-              haystack_length)
+    | Failure.Containment { needle; found_at; haystack_length; demand; _ } -> (
+        (* The containment verdict, never a fake equality. The demand comes
+           first: a chain break and a count mismatch are their own verdicts,
+           and neither reads as "found / not found". *)
+        let quoted = flat (spf "%S" needle) in
+        match (demand, found_at) with
+        | Failure.Counted { expected; found }, _ ->
+            spf "expected %d occurrences of needle %s, found %d" expected quoted
+              found
+        | Failure.Ordered { index; resumed_at }, Some at ->
+            spf "element %d %s out of order: at byte %d, before byte %d" index
+              quoted at resumed_at
+        | Failure.Ordered { index; resumed_at }, None ->
+            spf "element %d %s not found at or after byte %d (%d-byte haystack)"
+              index quoted resumed_at haystack_length
+        | Failure.Anywhere, Some at ->
+            spf "needle %s found at byte %d" quoted at
+        | Failure.Anywhere, None ->
+            spf "needle %s not found (%d-byte haystack)" quoted haystack_length)
     | Failure.Predicate { claim; value } ->
         spf "expected %s, got %s" (flat claim) (flat value)
     | Failure.Raise { expected = Some e; actual = Some a; _ } ->
@@ -611,25 +621,54 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   | Failure.Equality { expected; actual; _ } ->
       pp_eq ~ansi put ~ind ~expected ~actual
   | Failure.Containment
-      { needle; found_at; haystack_length; excerpt; excerpt_offset; claim = _ }
-    ->
+      {
+        needle;
+        found_at;
+        haystack_length;
+        excerpt;
+        excerpt_offset;
+        demand;
+        claim = _;
+      } ->
       (* The block derives from the containment payload — needle, verdict,
          byte offset, marked occurrence — never a fake equality diff; the
          claim sentence is a description and stays out of the block. Labels
          pad to the [expected]/[actual] 10-column gutter. *)
       let verdict =
-        match found_at with
-        | Some at -> spf "found at byte %d" at
-        | None -> "not found"
+        (* The demand widens the verdict slot rather than adding lines: a
+           chain break and a count mismatch answer the same question the
+           other two verbs answer there, in more words. Expected precedes
+           found, as everywhere else. *)
+        match (demand, found_at) with
+        | Failure.Counted { expected; found }, _ ->
+            spf "expected %d occurrences, found %d" expected found
+        | Failure.Ordered { resumed_at; _ }, Some at ->
+            spf "found at byte %d, before the search resumed at byte %d" at
+              resumed_at
+        | Failure.Ordered { resumed_at; _ }, None ->
+            spf "not found at or after byte %d" resumed_at
+        | Failure.Anywhere, Some at -> spf "found at byte %d" at
+        | Failure.Anywhere, None -> "not found"
       in
+      (* Which element of the chain broke it: its own line, because the
+         index identifies the assertion the rest of the block is about. *)
+      (match demand with
+      | Failure.Ordered { index; _ } ->
+          put_ind (st `Faint "element" ^ "   " ^ string_of_int index)
+      | Failure.Anywhere | Failure.Counted _ -> ());
       (* [%S] carries its own escapes, OCaml's decimal ones, so the needle
          needs none of [show_controls]'s — as do the [%S]-quoted exception
          messages [pp_eq] diffs below. Only the unquoted surfaces do. *)
       put_ind (st `Faint "needle" ^ "    " ^ spf "%S \u{2014} %s" needle verdict);
       (* The occurrence's byte range inside the excerpt, when it is there to
-         mark: a failed [not_contains] window always contains it. Offsets are
-         the payload's own, so the span is computed in raw bytes and moved
-         into display coordinates where it is drawn. *)
+         mark: a failed [not_contains] window always contains it, and an
+         out-of-order chain break carries one that a cursor-anchored window
+         may have left behind — hence the bounds test rather than a plain
+         subtraction. A count mismatch marks its first occurrence only; the
+         counts on the verdict line are the finding, and painting every
+         occurrence would add red without adding an answer. Offsets are the
+         payload's own, so the span is computed in raw bytes and moved into
+         display coordinates where it is drawn. *)
       let occurrence =
         match found_at with
         | None -> None

@@ -67,6 +67,22 @@ unchanged. See [the manual chapter](doc/manual/mutation.md); the laws that
 contain it are Laws 11–13, 15 and the new Law 16 in
 [`doc/dev/architecture.md`](doc/dev/architecture.md).
 
+**`in_order ~subs` and `contains ~count`.** Both are questions about *which*
+occurrences count, and neither could be asked of a string without throwing the
+string away. A log that must show connect, then authenticate, then disconnect
+was asserted with three `contains` calls, which pass just as happily on a log
+that shows them backwards; the order was the claim and nothing checked it.
+`in_order ~subs` searches each element from the end of the previous element's
+match and, on a break, names the element that caused it — its index and its
+value — the byte the search had reached, and an excerpt of the region still to
+be matched. When that element is in the string but behind the cursor the
+failure says so and marks it, because "out of order" and "missing" are
+different bugs and only the first is invisible to `contains`. A counted
+occurrence was the same story: `~count:n` demands exactly `n` non-overlapping
+occurrences and the failure prints both numbers, where
+`is_true (count log = 2)` printed `false`. `~count:0` is the counted spelling
+of `not_contains`.
+
 **`starts_with` and `ends_with`.** `contains ~sub` existed and its prefix and
 suffix counterparts did not, so string-shape assertions fell back to
 `is_true (String.starts_with ~prefix p s)` — a boolean, with the string gone.

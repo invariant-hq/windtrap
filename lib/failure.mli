@@ -87,6 +87,28 @@ type message_diff = {
     three hold, because that conjunction is the only question a renderer asks of
     it; a renderer therefore branches on the option and nothing else. *)
 
+(** The type for what a containment assertion demanded of the needle's
+    occurrences, beyond the "occurs / does not occur" that [found_at] already
+    records. The four containment verbs share one payload; this field is how a
+    renderer tells them apart. *)
+type containment_demand =
+  | Anywhere
+      (** One occurrence, anywhere: [contains], [not_contains], and the affix
+          verbs (whose position demand lives in their claim). *)
+  | Ordered of { index : int; resumed_at : int }
+      (** [in_order]: the needle is the chain element at zero-based [index],
+          and the search for it began at byte [resumed_at] — the end of the
+          previous element's match. [found_at] keeps its plain meaning, the
+          needle's first occurrence {e anywhere}, so a renderer distinguishes
+          "not in the string at all" from "in the string, but before the
+          cursor" — the out-of-order bug — exactly as it does for
+          [starts_with]. *)
+  | Counted of { expected : int; found : int }
+      (** [contains ~count]: [expected] non-overlapping occurrences were
+          demanded and [found] occur. The two always differ, since an equal
+          count passes. [found_at] is the first occurrence, the one the
+          excerpt marks; the counts, not the marks, carry the verdict. *)
+
 (** The type for typed failure payloads. Never a stringly key-value bag: each
     assertion family has its own case, and renderers pattern match on it. *)
 type kind =
@@ -111,15 +133,22 @@ type kind =
               which of the two verbs failed. *)
       haystack_length : int;  (** The haystack's total byte length. *)
       excerpt : string;
-          (** A bounded window of the haystack: around the first occurrence when
-              [found_at] is [Some _], its head otherwise. Bounded by an
-              implementation constant (currently 8 KiB) and cut on UTF-8
-              code-point boundaries. *)
+          (** A bounded window of the haystack, centred on the offset the
+              failure is about: the {!Ordered} cursor when there is one — the
+              remaining region is what that search was reading — else
+              [found_at] when it is [Some _], else the haystack's head.
+              Bounded by an implementation constant (currently 8 KiB) and cut
+              on UTF-8 code-point boundaries. *)
       excerpt_offset : int;
           (** The byte offset of [excerpt] within the haystack; renderers derive
               the omitted byte counts on either side from it together with
               [haystack_length]. *)
-    }  (** A containment assertion ([contains]/[not_contains]) failed. *)
+      demand : containment_demand;
+          (** What the assertion demanded beyond mere occurrence; {!Anywhere}
+              for the verbs that demand nothing more. *)
+    }
+      (** A containment assertion ([contains], [not_contains], the affix verbs,
+          [in_order]) failed. *)
   | Predicate of { claim : string; value : string }
       (** A [satisfies] or [require_match] assertion failed. [claim] is a
           one-line description of what was demanded
@@ -312,22 +341,24 @@ val containment :
   ?loc:Loc.t ->
   ?msg:string ->
   ?found_at:int ->
+  ?demand:containment_demand ->
   claim:string ->
   needle:string ->
   haystack:string ->
   unit ->
   t
 (** [containment ~claim ~needle ~haystack ()] is a {!Containment} failure
-    storing [claim] and [needle] as given and a bounded excerpt of [haystack] —
-    a window around [found_at] when given (the failed-[not_contains] case), the
-    head of [haystack] otherwise (the failed-[contains] case). The excerpt is
-    cut on UTF-8 code-point boundaries and bounded by an implementation constant
-    (currently 8 KiB, the captured-output tail bound); the failure records the
-    excerpt's offset and the haystack's total length so renderers can state what
-    was omitted.
+    storing [claim], [needle] and [demand] as given ([demand] defaults to
+    {!Anywhere}) and a bounded excerpt of [haystack] — a window around an
+    {!Ordered} demand's cursor when there is one, else around [found_at] when
+    given (the failed-[not_contains] case), else the head of [haystack] (the
+    failed-[contains] case). The excerpt is cut on UTF-8 code-point boundaries
+    and bounded by an implementation constant (currently 8 KiB, the
+    captured-output tail bound); the failure records the excerpt's offset and
+    the haystack's total length so renderers can state what was omitted.
 
-    Raises [Invalid_argument] if [found_at] is negative or past the end of
-    [haystack]. *)
+    Raises [Invalid_argument] if [found_at], or an {!Ordered} demand's
+    [resumed_at], is negative or past the end of [haystack]. *)
 
 val predicate : ?loc:Loc.t -> ?msg:string -> claim:string -> string -> t
 (** [predicate ~claim value] is a {!Predicate} failure: [claim] describes in one

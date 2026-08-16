@@ -5,7 +5,7 @@
 
 (** The assertion verbs.
 
-    Twenty-five verbs and the {!Exn} predicates, each verb raising one structured
+    Twenty-six verbs and the {!Exn} predicates, each verb raising one structured
     failure: a failing verb constructs a single {!Failure.t} — a typed kind, an
     optional location, the [?msg] annotation when given — and raises
     {!Failure.Check_failure}. Verbs never print, never diff, and never touch run
@@ -66,12 +66,24 @@ val is_false : ?pos:pos -> ?msg:string -> bool -> unit
 
 (** {1:containment String containment} *)
 
-val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
+val contains :
+  ?pos:pos -> ?msg:string -> ?count:int -> sub:string -> string -> unit
 (** [contains ~sub s] is [()] iff [s] contains [sub] as a byte substring; the
     empty needle is contained in every string. Otherwise it raises
     {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
     [sub] and a bounded excerpt of [s]'s head (see {!Failure.containment} for
-    the excerpt policy). *)
+    the excerpt policy).
+
+    [contains ~count:n ~sub s] instead demands exactly [n] occurrences of
+    [sub], counted leftmost-first and non-overlapping — each match resumes the
+    count at its end, so ["aa"] occurs once in ["aaa"]. The failure carries a
+    {!Failure.Counted} demand holding both counts, and [found_at] stays the
+    first occurrence, which is the one the excerpt marks. [count:0] is the
+    counted spelling of {!not_contains}. The empty needle occurs at every byte
+    position and at the end, so its count is [String.length s + 1].
+
+    Raises [Invalid_argument] if [count] is negative: a count no string can
+    have is a programmer error, not a failing assertion. *)
 
 val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [not_contains ~sub s] is [()] iff [s] does {e not} contain [sub] as a byte
@@ -79,6 +91,27 @@ val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
     {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
     [sub], the byte offset of its first occurrence, and a bounded excerpt of [s]
     around that occurrence. *)
+
+val in_order : ?pos:pos -> ?msg:string -> subs:string list -> string -> unit
+(** [in_order ~subs s] is [()] iff every element of [subs] occurs in [s], each
+    match beginning at or after the {e end} of the previous element's match;
+    matches are leftmost. The chain never re-uses bytes, so [["aa"; "aa"]]
+    needs four [a]s and not three.
+
+    Otherwise it raises {!Failure.Check_failure} with a
+    {!Failure.Containment} payload whose needle is the element that broke the
+    chain and whose {!Failure.Ordered} demand carries that element's
+    zero-based index and the byte offset the search resumed from; [found_at]
+    is that element's first occurrence anywhere in [s], so a report separates
+    "not in the string at all" from "in the string, but before the cursor" —
+    the out-of-order bug — as {!starts_with} does. The excerpt windows on the
+    cursor: what it shows is the region the search was reading.
+
+    An empty element matches at the cursor without advancing it, {!contains}
+    holding the empty needle to occur in every string.
+
+    Raises [Invalid_argument] if [subs] is empty: an assertion that demands
+    nothing is a programmer error, not a passing test. *)
 
 val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
 (** [starts_with ~affix s] is [()] iff [s] begins with [affix]. Otherwise it
