@@ -298,9 +298,8 @@ val flush_corrections_report : accept:bool -> flush_report
     dune's diff action expects the corrected file next to the copied source in
     the sandbox — and clears the table.
 
-    With [accept] — the run's resolved update mode, [Snapshot.Update], which is
-    [WINDTRAP_UPDATE] after the CI refusal and the [force] override — each
-    written correction is {e additionally} accepted into the source tree, the
+    With [accept], each written correction is {e additionally} accepted into
+    the source tree, the
     channel snapshot baselines already use from inside the same sandboxed
     action: the recorded path is reconstructed against
     [Path_ops.project_root ()], proven to lie under it, and published with
@@ -311,12 +310,19 @@ val flush_corrections_report : accept:bool -> flush_report
     uncaught exception is not a correction under [WINDTRAP_UPDATE] any more than
     without it, so no acceptance can bless one (see {!add_expect_test}).
 
-    Acceptance carries every correction the run recorded, including one recorded
-    in a test that also failed an assertion — exactly as an update run accepts
-    the baseline of such a test, since [WINDTRAP_UPDATE] means "take the output
-    I just produced". It does not touch {!inline_exit_code}, so that run still
-    exits [1] and still reports the assertion: what the update channel removes
-    is the {e cross-file} veto, not the failure.
+    [accept] is the caller's whole decision, and {!exit} passes the
+    conjunction of two facts: the run's resolved update mode
+    ([Snapshot.Update] — [WINDTRAP_UPDATE] after the CI refusal and the
+    [force] override) {e and} the process's own clean verdict
+    ({!inline_exit_code} [= 0]). Output produced beside a non-expect failure —
+    an assertion failing beside a stale payload, a crash later in the same
+    partition — is therefore never accepted, under [WINDTRAP_UPDATE] too:
+    since dune gives each file its own partition, the gate removes exactly the
+    {e cross-file} veto and keeps the per-file one the masked-assertion rule
+    exists for. A declined acceptance cannot restore the failure blocks the
+    update mode already suppressed at record time; the declined notice and the
+    nonzero exit carry them, and the [.corrected] files still await
+    [dune promote] once the failures are fixed.
 
     Acceptance is guarded by a drift check. The corrected content is a patch by
     byte offsets into the sandbox {e copy} of the source, so it describes the
@@ -397,27 +403,39 @@ val inline_exit_code : Runner.outcome -> int
     corrections exits [0]; a run of skips and one assertion failure exits [1];
     an all-skipped run exits [0]. *)
 
-val correction_notice : accepted:string list -> string list -> string option
-(** [correction_notice ~accepted written] is the [stderr] notice for a runner
-    process that wrote the [.corrected] files [written], of which [accepted]
-    names the source files it also rewrote in place; [None] when [written] is
-    empty. The first line — [windtrap: wrote <files>] — prints whenever anything
-    was written: dune runs every partition of a library inside one action, and
-    any partition's nonzero exit fails the whole action, skips every diff step,
-    and discards the sandbox with all computed [.corrected] files in it, so this
-    line is the only trace of a computed correction that survives a sibling
-    partition's failure.
+val correction_notice :
+  accepted:string list ->
+  refused:string list ->
+  declined:bool ->
+  string list ->
+  string option
+(** [correction_notice ~accepted ~refused ~declined written] is the [stderr]
+    notice for a runner process that wrote the [.corrected] files [written];
+    [accepted] names the source files it also rewrote in place, [refused] the
+    ones whose acceptance was attempted and refused, and [declined] says an
+    acceptance was requested but withheld because this process's own verdict
+    was not clean. [None] when [written] is empty. The first line —
+    [windtrap: wrote <files>] — prints whenever anything was written: dune runs
+    every partition of a library inside one action, and any partition's nonzero
+    exit fails the whole action, skips every diff step, and discards the
+    sandbox with all computed [.corrected] files in it, so this line is the
+    only trace of a computed correction that survives a sibling partition's
+    failure.
 
-    A second line follows it. When [accepted] is empty it is the caveat: dune
-    registers a correction for promotion only when every inline-test process of
-    the library exits cleanly, so a failure in any of its files withholds this
-    one too — fix the failures, rerun, then [dune promote], or rerun with
+    The explanation under it matches what actually happened, one case only:
+    accepted paths are named ([windtrap: accepted into the source tree: …] —
+    those went nowhere near dune's channel, so no caveat applies to them);
+    refusals point back at the reasons already printed and say to resolve them
+    — never advising the acceptance that just failed; a declined acceptance
+    says fixing the failures comes first, because acceptance never blesses
+    output produced beside a non-expect failure; and only a run that asked for
+    none of it gets the caveat with both ways out: dune registers a correction
+    for promotion only when every inline-test process of the library exits
+    cleanly — fix the failures, rerun, then [dune promote], or rerun with
     [WINDTRAP_UPDATE=1]. The caveat is {e unconditional}, not gated on this
     process's own exit code: the withholding is the whole library's, and no
     partition can see whether a sibling just vetoed its correction (gating it
-    left it silent in exactly the cross-file case it exists for). When
-    [accepted] is non-empty the line names those paths instead — they went
-    nowhere near dune's channel, so the caveat does not apply to them. {!exit}
+    left it silent in exactly the cross-file case it exists for). {!exit}
     prints the notice after {!flush_corrections_report}. *)
 
 (** {1:armed Armed processes}

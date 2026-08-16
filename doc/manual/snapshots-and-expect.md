@@ -224,10 +224,12 @@ windtrap: accepted into the source tree: lib/parser.ml
 ```
 
   What is promotable does not widen: a raise is still never a
-  correction, so no update run can bless one, and a test that also
-  fails an assertion still fails the run — what the variable removes is
-  the *cross-file* veto, not the failure. Review with `git diff`. Under
-  CI an update request refuses the run, as it does for baselines.
+  correction, so no update run can bless one, and a file whose run holds
+  any non-expect failure — an assertion beside a stale payload, a crash
+  in a sibling test — accepts nothing until those are fixed: what the
+  variable removes is the *cross-file* veto, never the per-file one.
+  Review with `git diff`. Under CI an update request refuses the run, as
+  it does for baselines.
 - Shadowing `Expect_test_config` tunes a whole file; the useful knob
   is `sanitize`, applied to every read of captured output:
 

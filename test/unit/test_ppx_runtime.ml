@@ -1562,7 +1562,8 @@ let () =
 
 let () =
   (match
-     Ppx_runtime.correction_notice ~accepted:[] [ "a_mismatch.ml.corrected" ]
+     Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:false
+       [ "a_mismatch.ml.corrected" ]
    with
   | None -> check "a written correction produces a notice" false
   | Some notice ->
@@ -1581,7 +1582,7 @@ let () =
   (* The notice no longer takes an exit code, so no shape of the
      arguments brings the old silence back. *)
   (match
-     Ppx_runtime.correction_notice ~accepted:[]
+     Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:false
        [ "a.ml.corrected"; "b.ml.corrected" ]
    with
   | None -> check "two corrections produce a notice" false
@@ -1593,7 +1594,7 @@ let () =
   (* Accepted into the source tree: those corrections never went through
      dune's channel, so the caveat is replaced by where they landed. *)
   (match
-     Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ]
+     Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[] ~declined:false
        [ "a_mismatch.ml.corrected" ]
    with
   | None -> check "an accepted correction produces a notice" false
@@ -1607,8 +1608,45 @@ let () =
         | _ -> false
         | exception Invalid_argument _ -> true));
   check "no corrections: no notice"
-    (Ppx_runtime.correction_notice ~accepted:[] [] = None
-    && Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ] [] = None)
+    (Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:false []
+     = None
+    && Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[]
+         ~declined:false []
+       = None);
+  (* A declined acceptance says fixing comes first — and never advises
+     the update that was already requested. *)
+  (match
+     Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:true
+       [ "a_mismatch.ml.corrected" ]
+   with
+  | None -> check "a declined acceptance produces a notice" false
+  | Some notice ->
+      check_contains "declined: acceptance never blesses failing output"
+        ~sub:"acceptance never blesses output produced beside one" notice;
+      check_contains "declined: fixing comes first"
+        ~sub:"Fix the failures and rerun" notice;
+      check "declined: no advice to rerun with the update already on"
+        (match find notice "rerun with WINDTRAP_UPDATE=1" with
+        | _ -> false
+        | exception Invalid_argument _ -> true));
+  (* A refusal points back at its reasons, and never advises the
+     acceptance that just failed. *)
+  match
+    Ppx_runtime.correction_notice ~accepted:[] ~refused:[ "lib/a.ml" ]
+      ~declined:false
+      [ "a_mismatch.ml.corrected" ]
+  with
+  | None -> check "a refused acceptance produces a notice" false
+  | Some notice ->
+      check_contains "refused: the count and the way out"
+        ~sub:
+          "1 correction was not accepted into the source tree — resolve the \
+           reasons above and rerun"
+        notice;
+      check "refused: no advice to rerun with the update that failed"
+        (match find notice "rerun with WINDTRAP_UPDATE=1" with
+        | _ -> false
+        | exception Invalid_argument _ -> true)
 
 (* Corrections round-trip on a real temp source file *)
 
@@ -1861,11 +1899,23 @@ let run_partition ?(ci = false) ~update ~root ~register () =
               match Runner.execute ~config ~suite:"ppxrt" tests with
               | Error error -> Error error
               | Ok outcome ->
+                  (* Mirrors [run_inline_suite]'s wiring exactly: acceptance
+                     is gated on the process's own clean verdict as well as
+                     the update mode, so output produced beside a non-expect
+                     failure is never accepted (the per-file half of the
+                     masked-assertion veto), and a refusal forces the exit. *)
+                  let clean = Ppx_runtime.inline_exit_code outcome = 0 in
                   let accept =
-                    Snapshot.mode (Run.snapshots outcome.Runner.run)
-                    = Snapshot.Update
+                    clean
+                    && Snapshot.mode (Run.snapshots outcome.Runner.run)
+                       = Snapshot.Update
                   in
                   let report = Ppx_runtime.flush_corrections_report ~accept in
+                  let code =
+                    if report.Ppx_runtime.refused = [] then
+                      if clean then 0 else 1
+                    else 1
+                  in
                   let failures =
                     List.length
                       (List.filter
@@ -1875,7 +1925,7 @@ let run_partition ?(ci = false) ~update ~root ~register () =
                            | Failure.Pass | Failure.Skip _ -> false)
                          (Run.results outcome.Runner.run))
                   in
-                  Ok (Ppx_runtime.inline_exit_code outcome, report, failures))))
+                  Ok (code, report, failures))))
 
 (* A stale-only partition: exit 0 and a .corrected, and — without an
    update run — nothing at all in the source tree. *)
@@ -1943,6 +1993,41 @@ let () =
                     ~expected:"" ~actual:stderr)))
     [ ("plain run", Env.No_update); ("update run", Env.Update) ]
 
+(* A partition holding both a stale payload and a crash: the process is
+   not clean, so an update run declines the acceptance — the per-file
+   half of the masked-assertion veto, kept under WINDTRAP_UPDATE too.
+   The .corrected is still written (dune promote works once the crash is
+   fixed), the source tree stays byte-identical, and the exit is 1. *)
+let () =
+  with_temp_root (fun root ->
+      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
+        (fun ~file ~target ~corrected:_ ~corrected_name ->
+          match
+            run_partition ~update:Env.Update ~root
+              ~register:(fun () ->
+                register_stale ~file;
+                register_crash ~file)
+              ()
+          with
+          | Error _, _ -> check "mixed partition: the run started" false
+          | Ok (code, report, failures), _stderr ->
+              check_int "a dirty process exits 1 under WINDTRAP_UPDATE"
+                ~expected:1 ~actual:code;
+              (* The mismatch's failure block was suppressed at record
+                 time — the update mode speaks there, and cleanliness is
+                 unknowable until the run ends — so the crash is the one
+                 reported failure; the declined notice and the exit code
+                 carry the mismatch. *)
+              check_int "the crash is the reported failure" ~expected:1
+                ~actual:failures;
+              check "the correction is still written for dune's channel"
+                (report.Ppx_runtime.written = [ corrected_name ]);
+              check "a dirty process accepts nothing into the source tree"
+                (report.Ppx_runtime.accepted = []
+                && report.Ppx_runtime.refused = []);
+              check_string "a dirty process leaves the source tree untouched"
+                ~expected:stale_source ~actual:(read_text target)))
+
 (* An update run rewrites the source tree, reports the path it wrote
    project-root relative, and exits 0 — with no help from dune. *)
 let () =
@@ -2008,13 +2093,48 @@ let () =
               check_contains "the refusal names the reason"
                 ~sub:"differs from the copy the correction was computed against"
                 stderr;
-              (* The run itself is green — the mismatch was accepted, and
-                 the refusal happens after it, at flush. So the refusal is
-                 the only thing that can fail this partition, exactly as an
-                 unwritable .corrected is. *)
-              check_int "the run's own exit code is 0" ~expected:0 ~actual:code;
-              check "a refused acceptance forces the partition nonzero"
+              (* The run itself was green — the mismatch was accepted, and
+                 the refusal happens after it, at flush — so the refusal is
+                 the only thing failing this partition, exactly as an
+                 unwritable .corrected is, and the combined code says so. *)
+              check_int "a refused acceptance forces exit 1" ~expected:1
+                ~actual:code;
+              check "the refusal is recorded on the report"
                 (report.Ppx_runtime.refused <> [])))
+
+(* A source path that is a symbolic link is refused: acceptance replaces
+   the file a path names, and publication never turns a link into a
+   regular file behind its owner's back. The link and its target must
+   both survive byte-intact, and the report must say why. *)
+let () =
+  if not Sys.win32 then
+    with_temp_root (fun root ->
+        with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
+          (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
+            (* Re-point the tree path at a link to a sibling holding the
+               same bytes, so linkness is the only difference — the drift
+               guard passes and the refusal is the write's alone. *)
+            let real = target ^ ".real" in
+            Sys.rename target real;
+            Unix.symlink real target;
+            match
+              run_partition ~update:Env.Update ~root
+                ~register:(fun () -> register_stale ~file)
+                ()
+            with
+            | Error _, _ -> check "symlink: the run started" false
+            | Ok (code, report, _), stderr ->
+                check_int "a symlinked source forces exit 1" ~expected:1
+                  ~actual:code;
+                check "the acceptance is a refusal, not a success"
+                  (report.Ppx_runtime.refused <> []
+                  && report.Ppx_runtime.accepted = []);
+                check_contains "the refusal names the linkness"
+                  ~sub:"symbolic link" stderr;
+                check "the link survives as a link"
+                  ((Unix.lstat target).Unix.st_kind = Unix.S_LNK);
+                check_string "the link's target keeps its bytes"
+                  ~expected:stale_source ~actual:(read_text real)))
 
 (* The CI guard, inherited whole from snapshots: WINDTRAP_UPDATE under CI
    is refused before a single test runs, and [force] overrides it. *)

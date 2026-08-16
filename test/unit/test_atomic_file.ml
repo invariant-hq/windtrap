@@ -211,20 +211,30 @@ let test_replacement_takes_the_temporary_permissions () =
         equal_int "read-only target permissions replaced" 0o644
           ((Unix.stat path).Unix.st_perm land 0o777))
 
-let test_target_symlink_is_replaced_not_followed () =
+let test_target_symlink_is_refused_not_followed () =
+  (* Refusal subsumes the two protections this test has pinned in turn:
+     writing through the link would modify a file the caller never named,
+     and replacing the link (the previous contract) silently substituted a
+     regular file for it while its referent kept the old bytes — reported
+     as success to the caller. Publication never changes what kind of
+     thing a path names; both sides survive byte-intact. *)
   if not Sys.win32 then
     with_temporary_directory (fun directory ->
         let referent = Filename.concat directory "referent" in
         let path = Filename.concat directory "target" in
         write_file referent "referent bytes";
         Unix.symlink referent path;
-        Atomic_file.write ~path "new target";
-        check "symlink becomes regular"
-          ((Unix.lstat path).Unix.st_kind = Unix.S_REG);
-        equal_string "symlink replacement bytes" "new target" (read_file path);
-        equal_string "symlink referent untouched" "referent bytes"
+        (match Atomic_file.write ~path "new target" with
+        | () -> check "a symlinked target must be refused" false
+        | exception Sys_error message ->
+            check "the refusal names the linkness"
+              (contains message "symbolic link"));
+        check "the link survives as a link"
+          ((Unix.lstat path).Unix.st_kind = Unix.S_LNK);
+        equal_string "the referent keeps its bytes" "referent bytes"
           (read_file referent);
-        equal_entries "symlink replacement siblings" [ "referent"; "target" ]
+        equal_entries "no temporary survives the refusal"
+          [ "referent"; "target" ]
           (sorted_directory directory))
 
 (* Atomicity under concurrency *)
@@ -374,8 +384,8 @@ let suite =
       test_read_only_parent_directory_fails_cleanly );
     ( "replacement takes the temporary permissions",
       test_replacement_takes_the_temporary_permissions );
-    ( "target symlink is replaced, not followed",
-      test_target_symlink_is_replaced_not_followed );
+    ( "target symlink is refused, not followed",
+      test_target_symlink_is_refused_not_followed );
     ( "colliding temporary names are skipped, not clobbered",
       test_colliding_temporary_names_are_skipped_not_clobbered );
     ( "exhausted temporary names fail without clobbering",

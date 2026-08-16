@@ -42,6 +42,11 @@ val write : ?perm:int -> path:string -> string -> unit
     [perm] is the created file's permission bits, subject to the process umask
     exactly like any newly created file. Defaults to [0o666].
 
+    A [path] that names a symbolic link is refused before any write:
+    replacement would silently substitute a regular file for the link while
+    the link's target kept the old bytes, and publication never changes what
+    kind of thing a path names.
+
     On failure of any step, raises [Sys_error] with a message that starts with
     [path] and names the failing step. [Sys.Break], [Out_of_memory], and
     [Stack_overflow] pass through unwrapped, after the same best-effort cleanup.

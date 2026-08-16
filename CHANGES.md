@@ -288,7 +288,12 @@ it also updates expect payloads.
 
 Crashes remain non-promotable everywhere. A raise is never a correction, on
 either channel, so no update run can bless one — a crashing partition still
-exits 1 having written nothing. Before overwriting, the source-tree file's
+exits 1 having written nothing. And acceptance is gated on the process's own
+clean verdict: a partition holding a non-expect failure — an assertion beside
+a stale payload, a crash in a sibling test of the same file — accepts nothing
+under `WINDTRAP_UPDATE` either, so what the variable removes is exactly the
+*cross-file* veto and never the per-file one the masked-assertion rule
+exists for. Before overwriting, the source-tree file's
 bytes are compared with the sandbox copy the correction's offsets were
 computed against, and *any* difference is refused loudly with the file left
 untouched: those offsets describe one file, and splicing them into another

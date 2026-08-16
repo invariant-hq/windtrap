@@ -983,24 +983,38 @@ let inline_exit_code (outcome : Runner.outcome) =
    under WINDTRAP_UPDATE: those went nowhere near dune's channel, so
    the caveat does not apply to them and is replaced by the line that
    says where they landed. *)
-let correction_notice ~accepted written =
+let correction_notice ~accepted ~refused ~declined written =
   match written with
   | [] -> None
   | files ->
       let notice = Buffer.create 256 in
       Printf.bprintf notice "windtrap: wrote %s\n" (String.concat ", " files);
-      (match accepted with
-      | [] ->
-          Printf.bprintf notice
-            "windtrap: dune registers a correction for promotion only when \
-             every inline-test process of the library exits cleanly, so a \
-             failure in any of its files withholds this one too. Fix the \
-             failures, rerun, then 'dune promote' — or rerun with \
-             WINDTRAP_UPDATE=1 to accept corrections into the source tree \
-             directly.\n"
-      | paths ->
-          Printf.bprintf notice "windtrap: accepted into the source tree: %s\n"
-            (String.concat ", " paths));
+      if accepted <> [] then
+        Printf.bprintf notice "windtrap: accepted into the source tree: %s\n"
+          (String.concat ", " accepted);
+      (* One explanation, matched to what actually happened: a refusal must
+         not advise the acceptance that just failed, a declined acceptance
+         must say why fixing the failures comes first, and only a run that
+         never asked gets the WINDTRAP_UPDATE suggestion. *)
+      if refused <> [] then
+        Printf.bprintf notice
+          "windtrap: %d correction%s not accepted into the source tree — \
+           resolve the reasons above and rerun.\n"
+          (List.length refused)
+          (if List.length refused = 1 then " was" else "s were")
+      else if declined then
+        Printf.bprintf notice
+          "windtrap: corrections were not accepted into the source tree: a \
+           failure above is not an expect mismatch, and acceptance never \
+           blesses output produced beside one. Fix the failures and rerun.\n"
+      else if accepted = [] then
+        Printf.bprintf notice
+          "windtrap: dune registers a correction for promotion only when \
+           every inline-test process of the library exits cleanly, so a \
+           failure in any of its files withholds this one too. Fix the \
+           failures, rerun, then 'dune promote' — or rerun with \
+           WINDTRAP_UPDATE=1 to accept corrections into the source tree \
+           directly.\n";
       Some (Buffer.contents notice)
 
 (* Expect-test execution *)
@@ -1431,12 +1445,23 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
          WINDTRAP_UPDATE through [Snapshot.resolve_mode], so the CI
          refusal and the [force] override that governs snapshot baselines
          governs expect payloads by the same decision, made once. A run
-         refused in CI never reaches this branch at all. *)
+         refused in CI never reaches this branch at all.
+
+         Acceptance is further gated on this process's own verdict:
+         [clean] means every failure this partition counted is covered by
+         a correction — no assertion failed beside a stale payload,
+         nothing crashed — which is the per-file half of the veto the
+         masked-assertion rule (Law 11) exists for. Under dune one
+         partition is one file, so the gate removes exactly the
+         cross-file hostage-taking and nothing else: output produced
+         beside a non-expect failure is never accepted, under
+         WINDTRAP_UPDATE too. *)
+          let clean = inline_exit_code outcome = 0 in
+          let update =
+            Snapshot.mode (Run.snapshots outcome.Runner.run) = Snapshot.Update
+          in
           let { written; accepted; refused } =
-            flush_corrections_report
-              ~accept:
-                (Snapshot.mode (Run.snapshots outcome.Runner.run)
-                = Snapshot.Update)
+            flush_corrections_report ~accept:(clean && update)
           in
           (* The correction-coverage exit-0 downgrade presumes the correction
          reached disk — dune's diff action can only surface corrections
@@ -1444,8 +1469,12 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
          refused to touch. A failed expect test whose correction was not
          written must exit nonzero (the write failure was reported
          above), or dune would record the partition as passed. *)
-          let code = if refused = [] then inline_exit_code outcome else 1 in
-          (match correction_notice ~accepted written with
+          let code = if refused = [] then (if clean then 0 else 1) else 1 in
+          (match
+             correction_notice ~accepted ~refused
+               ~declined:(update && not clean)
+               written
+           with
           | None -> ()
           | Some notice ->
               output_string Stdlib.stderr notice;

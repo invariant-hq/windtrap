@@ -70,6 +70,19 @@ let rec write_all fd contents offset =
 let write ?(perm = 0o666) ~path contents =
   if perm land lnot 0o777 <> 0 then
     invalid_arg "Atomic_file.write: perm must contain only bits within 0o777";
+  (* Renaming over a symlink would silently substitute a regular file for
+     the link — the reader keeps their path, loses their indirection, and
+     the real target keeps the old bytes. Publication never changes what
+     kind of thing a path names: refuse, loudly, before any write. *)
+  (match Unix.lstat path with
+  | { Unix.st_kind = Unix.S_LNK; _ } ->
+      raise
+        (Sys_error
+           (path
+          ^ ": is a symbolic link; atomic replacement would substitute a \
+             regular file for the link, so it is refused"))
+  | _ -> ()
+  | exception Unix.Unix_error _ -> ());
   let directory = Filename.dirname path in
   let temp, fd =
     step path "cannot create temporary file" (fun () ->
