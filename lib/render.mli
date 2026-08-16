@@ -721,13 +721,14 @@ type fault = {
 (** The type for one fault as a ruling shows it: a mutant's identity and
     renderings, without a verdict — the ruling it sits in is the verdict. *)
 
-type admission_cause = [ `Failure | `Fixture | `Crashed ]
+type admission_cause = [ `Failure | `Fixture | `Crashed | `Timed_out ]
 (** The type for how an admitted test killed its witness fault: an ordinary
     counted failure, a counted failure in the test's own setup or teardown (a
     kill through a dependency the test declared counts, and the witness says
-    so), or a child that died without reporting — a crash under a fault is a
-    detected fault. A deadline-killed child ([`Timed_out]) arrives with the
-    per-child deadline, which this release does not have. *)
+    so), a child that died without reporting — a crash under a fault is a
+    detected fault — or a child its own deadline killed ([`Timed_out]): a
+    hang under a fault is a detected fault too, noticed by never
+    finishing. *)
 
 type admitted = {
   admitted_test : string;
@@ -816,7 +817,7 @@ val admission_report : t -> admission -> unit
       ([  ADMITTED  parser › rejects empty input]) and the witness line
       ([    killed  lib/parser.ml:41:8:le   n < len  →  n <= len], the cause
       spelled when it was not an ordinary failure: [killed (crash)],
-      [killed (fixture)]);
+      [killed (fixture)], [killed (timeout)]);
     - one block per NO SITES ruling — the head row with the declaration site
       and the two-line statement of fact, plus the [WINDTRAP_MUTATE_ONLY] echo
       when [a.scope] is set;

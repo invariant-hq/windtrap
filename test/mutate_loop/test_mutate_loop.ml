@@ -885,14 +885,13 @@ let read_only_tests =
 (* The runaway hit-count budget, end to end.
 
    [runaway_main.exe]'s one mutant turns a terminating loop into a
-   non-terminating one, and in this slice the budget is the ONLY thing
-   that stops it: the whole-loop [Unix.setitimer] has a sixty-second
-   floor, and the per-mutant deadline is a later release. So the shape of
-   the verdict is the assertion — [killed] naming the test that failed
-   means the guard raised inside the child and the runner reported it as
-   an ordinary failure, which is the documented contract; [killed
-   (timeout)] would mean the budget did nothing and the clock cleaned up
-   after it, and this test would take a minute to say so. *)
+   non-terminating one, and the budget must stop it BEFORE the per-child
+   deadline does: the guard counts hits in microseconds where the
+   deadline waits out its one-second floor. The shape of the verdict is
+   the assertion — [killed] naming the test that failed means the guard
+   raised inside the child and the runner reported it as an ordinary
+   failure, which is the documented contract; [killed (timeout)] would
+   mean the budget did nothing and the deadline cleaned up after it. *)
 
 let runaway_exe =
   Filename.concat (Filename.concat exe_dir "runaway") "runaway_main.exe"
@@ -923,6 +922,221 @@ let runaway_tests =
                  (fun (r : M.record) ->
                    Format.asprintf "%a" M.pp_verdict r.M.verdict)
                  (M.records verdicts)));
+  ]
+
+(* The per-child deadline, end to end.
+
+   Every deadline below is the loop's own derivation — the fixture
+   suite's measured dry-run wall clock plus ten times the scheduled
+   tests' measured timings, floored at one second — so a loaded machine
+   that slows the tests slows the budget with them: no scenario races an
+   absolute sleep against an absolute deadline. The whole-loop backstop
+   is deliberately not scenario-tested: its floor is sixty seconds and
+   every child is bounded below it, so constructing an expiry means
+   genuinely spending a minute of wall clock. *)
+
+let rendered_verdicts path =
+  match M.load path with
+  | Error e -> failf "verdict file unreadable: %a" M.pp_error e
+  | Ok (verdicts, _) ->
+      List.map
+        (fun (r : M.record) ->
+          ( M.id_to_string r.M.id,
+            Format.asprintf "%a" M.pp_verdict r.M.verdict ))
+        (M.records verdicts)
+
+let deadline_tests =
+  [
+    test
+      "a mutant that blocks is killed by its child's deadline, scored with \
+       the timeout spelling" (fun () ->
+        (try Sys.remove verdict_path with Sys_error _ -> ());
+        let started = Unix.gettimeofday () in
+        let code, out, err =
+          spawn [ "MUTATE_FIXTURE=block"; "WINDTRAP_MUTATE=1" ]
+        in
+        let elapsed = Unix.gettimeofday () -. started in
+        equal ~msg:"the run completes: a blocked child is a score, not a \
+                    refusal" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        says ~msg:"the kill counted" out "mutants: 0 survived of 4";
+        says ~msg:"summary terms" out "1 killed, 3 unreached";
+        is_true
+          ~msg:
+            (Printf.sprintf
+               "the child's own deadline cut it short, not the 60s backstop \
+                (%.1fs)"
+               elapsed)
+          (elapsed < 30.);
+        equal ~msg:"the blocked mutant is killed by timeout" (list string)
+          [ "killed (timeout)" ]
+          (List.filter_map
+             (fun (id, v) ->
+               if id = mutant_named "add" then Some v else None)
+             (rendered_verdicts verdict_path)));
+    test "a blocking test is admitted with cause timeout, and co-batched \
+          outcomes are kept" (fun () ->
+        let code, out, err =
+          spawn ~args:[ "-f"; "block" ]
+            [ "MUTATE_FIXTURE=block"; "WINDTRAP_MUTATE=admit" ]
+        in
+        equal ~msg:"exit code (the watcher is unjustified)" int 1 code;
+        equal ~msg:"stderr (the ruling is the report, not a refusal)" text ""
+          err;
+        says ~msg:"the hang admits the one test in flight" out
+          "ADMITTED  block \u{203a} blocks when sub changes";
+        says ~msg:"with its cause" out
+          ("killed (timeout)  " ^ mutant_named "add");
+        says ~msg:"the watcher keeps the outcome it delivered before the \
+                   kill" out
+          "UNJUSTIFIED  block \u{203a} watches sub without pinning it";
+        says ~msg:"ruled on its own try, never timeout-admitted" out
+          "killed none of the 1 fault it reaches:";
+        says ~msg:"one fork, both rulings" out
+          "admission: 1 admitted, 1 unjustified of 2 \u{00b7} 1 fork over 1 \
+           reached in ");
+    test "a blocker mid-batch: the never-started member is charged no try"
+      (fun () ->
+        (* Outcomes on BOTH sides of the kill: the watcher's pass is on
+           the pipe before the blocker hangs, and the trailing test never
+           starts. The trailing test would fail under the fault, so both
+           wrong attributions are loud — timeout-admitting it, or billing
+           it a try for a fork it never reached. Its one fault is spent
+           (one fork per mutant), so it is ruled on its exhausted list,
+           with zero tried and the sentence saying so. *)
+        let code, out, err =
+          spawn ~args:[ "-f"; "block" ]
+            [ "MUTATE_FIXTURE=block_mid"; "WINDTRAP_MUTATE=admit" ]
+        in
+        equal ~msg:"exit code (two unjustified)" int 1 code;
+        equal ~msg:"stderr" text "" err;
+        says ~msg:"the hang admits the one test in flight" out
+          "ADMITTED  block \u{203a} blocks when sub changes";
+        says ~msg:"with its cause" out
+          ("killed (timeout)  " ^ mutant_named "add");
+        says ~msg:"the outcome delivered before the kill is kept" out
+          "UNJUSTIFIED  block \u{203a} watches sub without pinning it";
+        says ~msg:"and ruled a try" out
+          "killed none of the 1 fault it reaches:";
+        says ~msg:"the never-started test is ruled, never timeout-admitted"
+          out "UNJUSTIFIED  block \u{203a} pins sub after the blocker";
+        says ~msg:"and charged no try for the fork it never reached" out
+          "killed none of the 0 faults tried on its lines, of 1 reached:";
+        says ~msg:"one fork, three rulings" out
+          "admission: 1 admitted, 2 unjustified of 3 \u{00b7} 1 fork over 1 \
+           reached in ");
+    test "a slow but finite test is never killed by the clock" (fun () ->
+        (* The regression the multiplier guards: the sleep runs armed and
+           unarmed alike, so the dry run prices it into the deadline at
+           ten times its measured cost, and the kill must be the
+           assertion's. *)
+        (try Sys.remove verdict_path with Sys_error _ -> ());
+        let started = Unix.gettimeofday () in
+        let code, out, err =
+          spawn [ "MUTATE_FIXTURE=slow"; "WINDTRAP_MUTATE=1" ]
+        in
+        let elapsed = Unix.gettimeofday () -. started in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"stderr" text "" err;
+        (* The margin, asserted as a precondition rather than left to the
+           verdict. The run is three executions of the suite — dry run,
+           probe, one child — each containing [slow]'s 0.25 s sleep, so
+           the child cost at most the sleep plus one execution's
+           remainder, while its deadline was at least ten times the
+           sleep the dry run measured ([sleepf] cannot undershoot). A
+           machine too loaded to keep the child inside HALF that bound
+           fails here, on the arithmetic, not flakily on the verdict
+           below. *)
+        let sleep = 0.25 (* [slow]'s own [sleepf] *) in
+        let overhead = Float.max 0. ((elapsed -. (3. *. sleep)) /. 3.) in
+        is_true
+          ~msg:
+            (Printf.sprintf
+               "precondition: one child's cost (%.2fs) stays inside half \
+                its %.2fs deadline floor"
+               (sleep +. overhead) (10. *. sleep))
+          (2. *. (sleep +. overhead) <= 10. *. sleep);
+        says ~msg:"the mutant died" out "mutants: 0 survived of 4";
+        let verdicts =
+          String.concat "\n" (List.map snd (rendered_verdicts verdict_path))
+        in
+        says ~msg:"killed by the assertion, after the sleep" verdicts
+          "killed by slow > sleeps briefly and still pins sub";
+        denies ~msg:"no false timeout" verdicts "(timeout)");
+    test
+      "an expired child's process group dies whole: no grandchild outlives \
+       the run" (fun () ->
+        incr counter;
+        let pidfile =
+          Filename.concat scratch_dir ("grandchild" ^ string_of_int !counter)
+        in
+        let code, out, _ =
+          spawn
+            [
+              "MUTATE_FIXTURE=block";
+              "WINDTRAP_MUTATE=1";
+              "MUTATE_GRANDCHILD_PIDFILE=" ^ pidfile;
+            ]
+        in
+        equal ~msg:"the run completed" int 0 code;
+        says ~msg:"and scored the blocked mutant" out
+          "mutants: 0 survived of 4";
+        let pids =
+          List.filter_map int_of_string_opt
+            (String.split_on_char '\n' (read_file pidfile))
+        in
+        equal ~msg:"the blocking test recorded its one grandchild" int 1
+          (List.length pids);
+        let pid = List.hd pids in
+        (* The grandchild ignores SIGTERM and respawns its inner sleeps,
+           so only the unignorable group SIGKILL explains its death. It
+           lands before the parent reaps the child, but init's reap of
+           the orphaned grandchild can lag: poll for the pid to vanish
+           rather than asserting on one glance. *)
+        let rec dead attempts =
+          match Unix.kill pid 0 with
+          | () ->
+              if attempts = 0 then false
+              else (
+                Unix.sleepf 0.1;
+                dead (attempts - 1))
+          | exception Unix.Unix_error (Unix.ESRCH, _, _) -> true
+          | exception Unix.Unix_error (_, _, _) -> false
+        in
+        is_true ~msg:"the grandchild did not outlive the run" (dead 100));
+    test
+      "a probe that blocks is killed by its own deadline and refused as \
+       non-determinism" (fun () ->
+        (* The probe shares [fork_child], so it shares the deadline; an
+           expiry there means something else — nothing is armed, so the
+           hang is the suite's own — and the refusal must say so rather
+           than score anything. The fixture blocks only on its SECOND
+           run, on the marker the dry run leaves. *)
+        incr counter;
+        let marker =
+          Filename.concat scratch_dir ("marker" ^ string_of_int !counter)
+        in
+        let started = Unix.gettimeofday () in
+        let code, _, err =
+          spawn
+            [
+              "MUTATE_FIXTURE=probe_block";
+              "WINDTRAP_MUTATE=1";
+              "MUTATE_PROBE_MARKER=" ^ marker;
+            ]
+        in
+        let elapsed = Unix.gettimeofday () -. started in
+        equal ~msg:"a refusal, not a score" int 1 code;
+        says ~msg:"named as the probe's own deadline, not the backstop's" err
+          "the determinism probe exceeded its deadline";
+        says ~msg:"and stated as a determinism claim" err "not a number";
+        is_true
+          ~msg:
+            (Printf.sprintf
+               "the probe's deadline cut it short, not the 60s backstop \
+                (%.1fs)"
+               elapsed)
+          (elapsed < 30.));
   ]
 
 (* Admission (WINDTRAP_MUTATE=admit)
@@ -1507,6 +1721,7 @@ let () =
       group "one identifier, several executables" cross_executable_tests;
       group "read-only checking" read_only_tests;
       group "runaway budget" runaway_tests;
+      group "per-child deadline" deadline_tests;
       group "admission" admission_tests;
       group "uninstrumented" uninstrumented_tests;
     ]

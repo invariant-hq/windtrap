@@ -80,7 +80,8 @@
       along in charges nothing, though a kill observed there still admits.
       Batches are union-scheduled across the selection and children run
       without bail, reporting one incremental line per test event so a crash
-      is attributable and every earlier outcome kept. The forced-fail check
+      or a deadline kill is attributable and every earlier outcome kept. The
+      forced-fail check
       does not apply, the determinism probe is skipped when nothing reaches a
       site, and {b an admission run persists nothing}: no verdict file is
       written, none is read, and an existing one is left byte-intact.
@@ -106,7 +107,18 @@
       arms, runs that mutant's reaching tests under [bail = Some 1], and writes
       one line on a pipe. {b The verdict never rides an exit code}: the inline
       runner returns [0] for a corrections-covered expect failure, so an exit
-      code cannot tell a killed mutant from a survivor.
+      code cannot tell a killed mutant from a survivor. Each child runs in a
+      session of its own under a deadline derived from the dry run — its wall
+      clock, which bounds any child's fork and module initialization, plus ten
+      times the scheduled tests' own measured time, with a one-second floor
+      and never a knob. A child that exceeds it is killed with its whole
+      process group — anything a test spawned included — and the mutant is
+      scored [killed (timeout)]: a mutant that blocks (a flipped comparison
+      deadlocking a pipe reader, where the runtime's runaway hit-count budget
+      sees nothing) made the suite hang, and a hang is a noticed change on the
+      crash kill's own reasoning. In admission the kill is attributed to the
+      one test that started and never reported, admitted with cause
+      [timeout]; every outcome the child had already delivered is kept.
     + {b Report.} One verdict file under [_build/_mutants] (so [windtrap mutate]
       can merge the several test executables that cover one library) and the
       report through [Render.mutation_report]. A run whose selection narrows
@@ -119,11 +131,12 @@
       not which tests judge them, so a scoped run's records are project-true for
       this executable and still write.
 
-    {b Not in this slice.} Per-mutant deadlines, process groups and
-    [WINDTRAP_MUTATE_JOBS]: the deadline is one whole-loop [Unix.setitimer],
-    complemented by the runtime's runaway hit-count budget. It costs the
-    per-mutant granularity, not the diagnosis — an expiry still names the mutant
-    it was on, and aborts the run rather than scoring it. [report] mode's
+    {b Not in this slice.} [WINDTRAP_MUTATE_JOBS]: children run one at a
+    time. The whole-loop [Unix.setitimer] remains as the backstop behind the
+    per-child deadlines — the sum of what the scheduled children may each
+    spend, plus the dry run and the probe, never under a minute — so its
+    expiry is a supervision refusal about the run, not a score about the
+    mutant in flight. [report] mode's
     dismissed, not-armable and timeout tables are likewise later, so [report]
     currently runs the loop and prints the default report — and with no
     not-armable table, a site the dry run only evaluated {e outside} a test
@@ -198,7 +211,9 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     place that reads it.
 
     Effects: the union of [Driver.execute_and_report]'s and, under the loop,
-    [fork]/[waitpid]/[pipe]/[setitimer], one scratch log directory per run
+    [fork]/[waitpid]/[pipe]/[select]/[setitimer], [setsid] in each child and
+    [kill] of an expired child's process group, one scratch log directory per
+    run
     (removed at the end), and one verdict file under
     {!Windtrap_mutate.output_file}. Children never reach [Stdlib]'s exit
     machinery: every exception, fatal included, is caught, reduced to a verdict

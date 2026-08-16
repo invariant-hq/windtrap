@@ -214,6 +214,88 @@ let always_skips =
         skip ~reason:"never runs on this fixture" ());
   ]
 
+(* The per-child deadline's fixtures.
+
+   - [block] pairs a watcher of [sub] that pins nothing with a test that
+     BLOCKS when [sub]'s answer changes — a pipe read with no writer, the
+     measured shape: a blocked child spends its deadline at 0% CPU, where
+     the runaway hit-count budget sees nothing. Unarmed nothing blocks,
+     so the dry run and the probe are green and fast, which is what keeps
+     the derived deadline short. Under MUTATE_GRANDCHILD_PIDFILE the
+     blocking test first spawns a subprocess that IGNORES SIGTERM — it
+     outlives its inner sleeps for as long as its bounded loop respawns
+     them, so only an unignorable signal to the whole group clears it —
+     and records its pid: the file is how the harness finds the
+     grandchild to poll.
+   - [block_mid] puts the blocker in the MIDDLE of the admission batch:
+     a delivered outcome before it, and after it a test that never
+     starts. The trailing test pins [sub] — under the fault it would
+     fail — so what the parent charges it for the fork it never reached
+     is the claim.
+   - [slow] sleeps on every run, armed and unarmed alike, then pins
+     [sub]: the dry run measures the sleep, so the derived deadline grows
+     tenfold with it, and a kill here must come from the assertion and
+     never from the clock.
+   - [probe_block] is green where the reach map is measured and BLOCKED
+     where it is re-run: the dry run leaves the marker, the probe's
+     unarmed re-run finds it and hangs. No mutant is armed in a probe,
+     so only its own deadline can end it, and what an expiry proves is
+     non-determinism. *)
+
+let block =
+  [
+    test "watches sub without pinning it" (fun () ->
+        is_true (Subject.sub 10 4 < 100));
+    test "blocks when sub changes" (fun () ->
+        if Subject.sub 10 4 <> 6 then (
+          (match Sys.getenv_opt "MUTATE_GRANDCHILD_PIDFILE" with
+          | None | Some "" -> ()
+          | Some path ->
+              let pid =
+                Unix.create_process "sh"
+                  [|
+                    "sh";
+                    "-c";
+                    "trap '' TERM; n=0; while [ $n -lt 600 ]; do sleep 1; \
+                     n=$((n+1)); done";
+                  |]
+                  Unix.stdin Unix.stdout Unix.stderr
+              in
+              let oc = open_out_gen [ Open_append; Open_creat ] 0o644 path in
+              output_string oc (string_of_int pid ^ "\n");
+              close_out oc);
+          let never_written, _held_open = Unix.pipe () in
+          ignore (Unix.read never_written (Bytes.create 1) 0 1));
+        equal int 6 (Subject.sub 10 4));
+  ]
+
+let block_mid =
+  block
+  @ [
+      test "pins sub after the blocker" (fun () ->
+          equal int 6 (Subject.sub 10 4));
+    ]
+
+let slow =
+  [
+    test "sleeps briefly and still pins sub" (fun () ->
+        Unix.sleepf 0.25;
+        equal int 6 (Subject.sub 10 4));
+  ]
+
+let probe_block =
+  [
+    test "blocks on its second run" (fun () ->
+        is_true (Subject.sub 10 4 < 100);
+        match Sys.getenv_opt "MUTATE_PROBE_MARKER" with
+        | None | Some "" -> ()
+        | Some path ->
+            if Sys.file_exists path then (
+              let never_written, _held_open = Unix.pipe () in
+              ignore (Unix.read never_written (Bytes.create 1) 0 1))
+            else close_out (open_out path));
+  ]
+
 let retried = ref 0
 let handle = fixture ~teardown:(fun () -> ignore (Subject.crasher 3 1)) Fun.id
 
@@ -246,6 +328,10 @@ let () =
   | "fixture" -> run "calc" [ group "fixture" fixture_kill ]
   | "crash_pair" -> run "calc" [ group "crash" crash_pair ]
   | "skips" -> run "calc" [ group "skip" always_skips ]
+  | "block" -> run "calc" [ group "block" block ]
+  | "block_mid" -> run "calc" [ group "block" block_mid ]
+  | "slow" -> run "calc" [ group "slow" slow ]
+  | "probe_block" -> run "calc" [ group "probe" probe_block ]
   | "crash" ->
       run "calc"
         [ group "calc" strong; group "widen" weak; group "crash" crash ]

@@ -2078,7 +2078,7 @@ type fault = {
   fault_source : string option;
 }
 
-type admission_cause = [ `Failure | `Fixture | `Crashed ]
+type admission_cause = [ `Failure | `Fixture | `Crashed | `Timed_out ]
 
 type admitted = { admitted_test : string; witness : fault; cause : admission_cause }
 
@@ -2183,6 +2183,7 @@ let admitted_sections (a : admitted) =
     | `Failure -> "killed"
     | `Fixture -> "killed (fixture)"
     | `Crashed -> "killed (crash)"
+    | `Timed_out -> "killed (timeout)"
   in
   [
     Line [];
