@@ -54,8 +54,10 @@ external unsetenv : string -> unit = "ocaml_windtrap_unsetenv"
 let set name value =
   if name = "" || String.contains name '=' then
     invalid_arg
+      (* No non-ASCII here: [Printexc.to_string] renders the payload with
+         [%S], so anything outside ASCII reaches reports as escaped bytes. *)
       (Printf.sprintf
-         "windtrap: %S is not a usable environment variable name — a name is \
+         "windtrap: %S is not a usable environment variable name: a name is \
           non-empty and contains no '='"
          name);
   match value with Some v -> Unix.putenv name v | None -> unsetenv name

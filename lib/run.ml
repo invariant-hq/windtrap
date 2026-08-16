@@ -226,8 +226,9 @@ let active () = Option.is_some !slot
 
 let outside_run_error =
   "windtrap: no test is running. Assertions, [output ()], [snapshot], \
-   [collect] and fixture accessors work only inside a test body executed by \
-   [run] — not at module toplevel, and not after the run."
+   [collect], [setenv], [chdir] and fixture accessors work only inside a \
+   test body executed by [run] — not at module toplevel, and not after the \
+   run."
 
 let current_frame () =
   match !slot with
@@ -392,18 +393,20 @@ let remove_temp frame =
 
 let setenv ?pos name value =
   let frame = current_frame () in
+  (* The prior binding is read before [Env.set] changes it, but recorded
+     only after [Env.set] returns: [Env.set] validates the name before it
+     touches the process, and a record made before that validation would be
+     replayed at [reclaim] — where the same rejection reads as a
+     restoration failure about a change that never happened. *)
+  let prior = Sys.getenv_opt name in
+  Env.set name value;
   (* First set wins: what gets restored is what was there before the
      attempt's first [setenv] of this name, so a test that binds a variable
      twice still leaves behind what it found. *)
   if not (List.exists (fun e -> e.er_name = name) frame.fr_env) then
     frame.fr_env <-
-      {
-        er_name = name;
-        er_prior = Sys.getenv_opt name;
-        er_loc = Loc.resolve ?pos ();
-      }
-      :: frame.fr_env;
-  Env.set name value
+      { er_name = name; er_prior = prior; er_loc = Loc.resolve ?pos () }
+      :: frame.fr_env
 
 let chdir ?pos dir =
   let frame = current_frame () in

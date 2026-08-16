@@ -1344,6 +1344,28 @@ let () =
     (Sys.getenv_opt drop_var = Some "before")
 
 let () =
+  (* A rejected name records nothing: [Env.set] validates before the restore
+     entry is made, so the documented [Invalid_argument] is the whole story —
+     no entry survives to replay the same rejection at the boundary as a
+     restoration failure about a change that never happened. *)
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let tests =
+    [
+      Test_tree.test "rejects" (fun () ->
+          (match Run.setenv "" (Some "x") with
+          | () -> Check.fail "an empty name must be rejected"
+          | exception Invalid_argument _ -> ());
+          match Run.setenv "BAD=NAME" (Some "x") with
+          | () -> Check.fail "a name containing '=' must be rejected"
+          | exception Invalid_argument _ -> ());
+    ]
+  in
+  expect_run "setenv rejection suite runs" ~config tests @@ fun outcome ->
+  check "a handled rejection is the whole story — the test passes"
+    (outcome.Runner.exit_code = 0)
+
+let () =
   (* Restoration is not the pass path's privilege: it happens on failure,
      on skip, and on a timeout that cut the body short. *)
   if not Sys.win32 then (
