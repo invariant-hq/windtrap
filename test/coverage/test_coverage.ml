@@ -866,7 +866,7 @@ let dump_tests =
    breaks.
 
    Two things make the global registry testable this way. Each case mints
-   its own file-name prefix in [setup], so cases cannot see each other's
+   its own file-name prefix in its scope, so cases cannot see each other's
    files; and the invariant reads the snapshot through
    [Windtrap_coverage.filter] on that prefix, so it speaks about this
    case's files and not about the instrumented windtrap core this
@@ -941,7 +941,7 @@ let stateful_tests =
   [
     stateful "the registry accumulates what the program did"
       ~model:[]
-      ~setup:registry_setup
+      ~scope:(fun run -> run (registry_setup ()))
       ~invariant:(fun model sut ->
         let scoped =
           C.filter

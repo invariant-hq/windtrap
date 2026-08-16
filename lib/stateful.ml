@@ -258,10 +258,10 @@ let widest texts =
    print, so a wide model cell inside the omitted middle indents nothing. *)
 let program_text ?pp_model program =
   match program.calls with
-  (* The empty program is a reachable counterexample — a [~setup] that
-     raises, or an [?invariant] that rejects the fresh system, shrinks to it
-     in one step — and an empty rendering would take the renderer's
-     single-line branch and print a bare colon. *)
+  (* The empty program is a reachable counterexample — a [~scope] that
+     raises while acquiring, or an [?invariant] that rejects the fresh
+     system, shrinks to it in one step — and an empty rendering would take
+     the renderer's single-line branch and print a bare colon. *)
   | [] -> empty_program
   | calls ->
       let total = List.length calls in
@@ -473,28 +473,80 @@ let run_program ?loc ?invariant program sut =
 let ends_the_run exn =
   match exn with Failure.Timeout _ -> true | exn -> Failure.is_fatal exn
 
-let execute ?loc ?invariant ?teardown ~setup program =
-  let sut = setup () in
-  let release () =
-    match teardown with None -> () | Some teardown -> teardown sut
+(* The two ways a scope can fail its side of the contract, and they are
+   different in kind. A scope that never runs the program fails the case:
+   a program that did not run is not a passing program, and silently green
+   is the worst outcome available here. A second call is the harness
+   itself being wrong — one execution is what the whole case is keyed by,
+   the system the first call used is spent, and a case whose harness is
+   wrong has no counterexample to report — so it is [Invalid_argument] at
+   the call rather than a failure the search would try to minimise. *)
+let no_program =
+  "the scope returned without running the program — a scope must call its \
+   callback exactly once"
+
+let called_twice =
+  "Windtrap.stateful: the scope called its callback twice — a scope must call \
+   it exactly once"
+
+let execute ?loc ?invariant ~scope program =
+  let entries = ref 0 in
+  let misused = ref None in
+  let failed = ref None in
+  let run sut =
+    incr entries;
+    if !entries > 1 then begin
+      (* Recorded as well as raised: a scope that swallows it would
+         otherwise report a program that ran twice as a pass. *)
+      let exn = Invalid_argument called_twice in
+      misused := Some exn;
+      raise exn
+    end;
+    match run_program ?loc ?invariant program sut with
+    | () -> ()
+    | exception exn ->
+        (* Recorded before it is re-raised through [scope]'s frames, so a
+           scope that cancels or releases on the exception path sees it and
+           one that swallows it cannot turn a failing case green. *)
+        let backtrace = Printexc.get_raw_backtrace () in
+        failed := Some (exn, backtrace);
+        Printexc.raise_with_backtrace exn backtrace
   in
-  (* Never [Fun.protect] at this boundary. It raises [Fun.Finally_raised] in
-     place of the work exception, which would replace the counterexample's
-     assertion with a cleanup error and hide a [Failure.Timeout] from the
-     engine's shrink acceptance — an alarm delivered inside a candidate's
-     teardown would then be accepted as a shrink step and reported as a
-     converged, minimal counterexample. A teardown failure is reported only
-     when the body succeeded; on the failing path the teardown's own
-     exception is dropped, matching the engine's one-failure-per-case
-     shape. *)
-  match run_program ?loc ?invariant program sut with
-  | () -> release ()
-  | exception exn ->
-      let backtrace = Printexc.get_raw_backtrace () in
-      (match release () with
-      | () -> ()
-      | exception released when not (ends_the_run released) -> ());
+  let escaped =
+    match scope run with
+    | () -> None
+    | exception exn -> Some (exn, Printexc.get_raw_backtrace ())
+  in
+  match (!misused, escaped, !failed) with
+  (* The harness being wrong outranks whatever else the case had to say,
+     and it keeps the backtrace of the second call when the scope let it
+     out — which is the one frame a reader needs. *)
+  | Some exn, Some (raised, backtrace), _ when raised == exn ->
+      Printexc.raise_with_backtrace raised backtrace
+  | Some exn, _, _ -> raise exn
+  | None, None, None ->
+      if !entries = 0 then
+        raise (Failure.Check_failure (Failure.message ?loc no_program))
+  | None, None, Some (exn, backtrace) ->
+      (* [scope] swallowed the program's failure; [execute] does not. *)
       Printexc.raise_with_backtrace exn backtrace
+  | None, Some (exn, backtrace), None ->
+      (* The scope's own, and unconverted either way: before the callback
+         it is an acquisition that failed — or a skip declining a system
+         the machine cannot build — and after it returned it is a release
+         that failed with no failure in hand to outrank. *)
+      Printexc.raise_with_backtrace exn backtrace
+  | None, Some (exn, backtrace), Some (failure, failure_backtrace) ->
+      (* A release that raised over a failing program. The cleanup error
+         must not replace the counterexample, and a [Failure.Timeout]
+         hidden behind one would be accepted by the engine as a shrink
+         step and reported as a converged, minimal counterexample. So the
+         program's failure is the failure, except for the exceptions that
+         end the whole run and outrank it — and except for itself, on its
+         way out through the scope. *)
+      if exn == failure || ends_the_run exn then
+        Printexc.raise_with_backtrace exn backtrace
+      else Printexc.raise_with_backtrace failure failure_backtrace
 
 (* The entry point *)
 
@@ -505,13 +557,14 @@ let execute ?loc ?invariant ?teardown ~setup program =
 let prop_tag = "prop"
 let stateful_tag = "stateful"
 
-let stateful ?pos ?tags ?timeout ?count ?steps ?pp_model ?invariant ?teardown
-    name ~model ~setup commands =
-  (* The declaration site, for the one failure with no site of its own: a
-     poisoned program's, since [command] records no [?pos] and the command's
-     name is its identity in the report. *)
+let stateful ?pos ?tags ?timeout ?count ?steps ?pp_model ?invariant name ~model
+    ~scope commands =
+  (* The declaration site, for the two failures with no site of their own:
+     a poisoned program's and a scope that never ran one, since [command]
+     records no [?pos] and the command's name is its identity in the
+     report. *)
   let loc = Loc.resolve ?pos () in
   let tags = prop_tag :: stateful_tag :: Option.value ~default:[] tags in
   Runner.prop ?pos ~tags ?timeout ?count name
     (program ?steps ?pp_model ~model commands) (fun program ->
-      execute ?loc ?invariant ?teardown ~setup program)
+      execute ?loc ?invariant ~scope program)

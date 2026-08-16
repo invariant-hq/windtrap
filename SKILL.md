@@ -491,7 +491,7 @@ let () =
   run "bounded_queue"
     [
       stateful "behaves like a list" ~model:[]
-        ~setup:(fun () -> Bounded_queue.create capacity)
+        ~scope:(fun run -> run (Bounded_queue.create capacity))
         ~pp_model:(Testable.pp (list int))
         ~invariant:(fun m q -> equal int (List.length m) (Bounded_queue.size q))
         commands;
@@ -515,11 +515,20 @@ after every call) checks what the state *is*. What to know:
 - Generated arguments cannot be handles that don't exist yet: generate
   an *index* into the model's live set and let `~pre` keep the lookup
   total.
-- `~setup`/`~teardown` run once per case **and per shrink candidate** —
-  hundreds on a failing run. `temp_dir ()` is test-scoped, wrong here;
-  mint scratch paths in `~setup`, remove in `~teardown`. `~steps`
-  (default 20) is quadratic on the failing path — lower it first when
-  the test is expensive; `~timeout` is the only per-test bound there.
+- `~scope` builds the system and reclaims it, and it takes a callback:
+  a resource that only exists *inside* one (`Eio_main.run`, any
+  `with_`-style API) is the plain case. An acquire/release pair binds
+  `let s = acquire ()` and runs `run s` under
+  `Fun.protect ~finally:(fun () -> release s)` — that `Fun.protect` is
+  yours, windtrap never sees the resource, but a release failure never
+  replaces the counterexample you were shown. Call the callback exactly
+  once: never fails the case, twice raises `Invalid_argument`.
+- The scope runs once per case **and per shrink candidate** — hundreds
+  on a failing run. `temp_dir ()` is test-scoped, wrong here; mint
+  scratch paths inside the scope and remove them on the way out.
+  `~steps` (default 20) is quadratic on the failing path — lower it
+  first when the test is expensive; `~timeout` is the only per-test
+  bound there.
 - There is no `~examples` for programs: pin a fixed regression by
   copying the shrunk counterexample's steps into a plain `test`.
 - These tests carry the `prop` and `stateful` tags —

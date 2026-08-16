@@ -198,16 +198,15 @@ val command_names : ('model, 'sut) program -> string list
 val execute :
   ?loc:Loc.t ->
   ?invariant:('model -> 'sut -> unit) ->
-  ?teardown:('sut -> unit) ->
-  setup:(unit -> 'sut) ->
+  scope:(('sut -> unit) -> unit) ->
   ('model, 'sut) program ->
   unit
-(** [execute ~setup program] runs [program] against a system built by [setup],
-    and returns [()] iff every body, every invariant check and [teardown]
-    succeeded. [setup] runs once per [execute] — so once per generated case
+(** [execute ~scope program] runs [program] against the system [scope] hands its
+    callback, and returns [()] iff every body, every invariant check and the
+    scope itself succeeded. [scope] acquires, calls back exactly once, and
+    releases on return; it runs once per [execute] — so once per generated case
     {e and} once per shrink candidate, since the search re-runs the program and
-    a shared system would make it meaningless — and [teardown] releases on every
-    path [execute] leaves.
+    a shared system would make it meaningless.
 
     [invariant m sut] checks the state itself, as opposed to what a call
     returns: it runs on the fresh system before step 1, which is what makes the
@@ -233,9 +232,10 @@ val execute :
     ["step 3 of 3: close — ~pre raised"] for a poisoned program's last step, or
     ["invariant on the fresh system"]. A user [?msg] is flattened to one line
     and joined onto it, since the slot renders as one line. [loc] is stamped on
-    the poisoned-program failure only — every other failure carries the site of
-    the assertion that produced it, and a poisoned program's has none, so
-    callers pass the [stateful] declaration site.
+    the two failures with no assertion of their own to be located by — a
+    poisoned program's and a scope that never ran the program — and on no
+    other, every one of which carries the site of the assertion that produced
+    it; callers pass the [stateful] declaration site.
 
     {b The poisoned step.} A [~pre] poison means the call is not known to be
     legal, so its body does not run. A [~next] poison means [~pre] held and only
@@ -245,16 +245,48 @@ val execute :
     instead. No invariant check follows a poisoned step: there is no model to
     check it against.
 
-    {b Teardown.} [teardown] is never composed with the body through
-    [Fun.protect]: that raises [Fun.Finally_raised] {e in place of} the work
-    exception, replacing a counterexample's assertion with a cleanup error and
-    hiding a {!Failure.Timeout} from the engine's shrink acceptance — an alarm
-    delivered inside a candidate's teardown would then be accepted as a shrink
-    step and reported as a converged, minimal counterexample. So a teardown
-    failure is reported only when the body succeeded; on the failing path the
-    teardown's own exception is dropped, except for {!Failure.Timeout} and the
-    {!Failure.is_fatal} set, which end the run and outrank the failure in hand.
-    A [setup] that raises propagates unconverted, and no teardown is owed. *)
+    {b The scope contract.} Release is [scope]'s own: [execute] never sees the
+    resource, so a scope that must reclaim on the failing path writes it —
+    [Fun.protect ~finally:release (fun () -> run sut)], or a [with_]-style
+    function that already does.
+
+    {[
+      Stateful.execute
+        ~scope:(fun run ->
+          let store = Store.open_ dir in
+          Fun.protect
+            ~finally:(fun () -> Store.close store)
+            (fun () -> run store))
+        program
+    ]}
+
+    What [execute] guarantees is the failure. The program's exception is
+    recorded and then re-raised {e through} [scope], so a scope that cancels or
+    cleans up on that path sees it and one that swallows it cannot turn a
+    failing case green; anything the scope raises {e over} it is dropped. That
+    last rule is not tidiness: a cleanup error must not replace a
+    counterexample's assertion, and a {!Failure.Timeout} hidden behind one would
+    be accepted by the engine as a shrink step and reported as a converged,
+    minimal counterexample. So only {!Failure.Timeout} and the
+    {!Failure.is_fatal} set outrank the failure in hand — they end the run. The
+    exception [execute] cannot see past is [Fun.protect]'s own
+    [Fun.Finally_raised], which arrives {e in place of} the program's: keep
+    cleanup that can fail out of a [~finally], or handle it there.
+
+    Raising before the callback is acquisition failing, and propagates
+    unconverted: no release is owed for a system that was never built, and a
+    scope that {!Failure.Skip_test}s there skips the test rather than failing
+    it. Raising after the callback returned is release failing, and propagates
+    the same way when the program succeeded.
+
+    Calling back exactly once is the contract. A scope that returns without
+    running the program fails the case — a program that did not run is not a
+    passing program — with the {!Failure.Message} ["the scope returned without
+    running the program …"] located at [loc]. A scope that runs it twice gets
+    [Invalid_argument] at the second call, and that outranks everything else
+    the case has to say, a swallowed one included: one execution is what the
+    case is keyed by, and a harness that is wrong has no counterexample to
+    report. *)
 
 (** {1:declaring Declaring} *)
 
@@ -266,27 +298,27 @@ val stateful :
   ?steps:int ->
   ?pp_model:(Format.formatter -> 'model -> unit) ->
   ?invariant:('model -> 'sut -> unit) ->
-  ?teardown:('sut -> unit) ->
   string ->
   model:'model ->
-  setup:(unit -> 'sut) ->
+  scope:(('sut -> unit) -> unit) ->
   ('model, 'sut) command list ->
   Test_tree.t
-(** [stateful name ~model ~setup commands] declares a property test: for every
-    generated program over [commands], executing it against a system built by
-    [setup] must leave every body's assertions and every [?invariant] check
+(** [stateful name ~model ~scope commands] declares a property test: for every
+    generated program over [commands], executing it against the system [scope]
+    builds must leave every body's assertions and every [?invariant] check
     satisfied.
 
     It is {!Runner.prop} over {!program} with {!execute} as its law, so
     [timeout], [count] and the run's [--prop-count] / [--max-shrink] /
     [--max-discard] knobs behave exactly as on a property; [steps], [pp_model]
-    are {!program}'s and [invariant], [teardown] are {!execute}'s. The declared
+    are {!program}'s and [scope], [invariant] are {!execute}'s. The declared
     tags are extended with ["prop"] — so [--tag prop] selects stateful tests
     with every other property, and the run header prints the root seed — and
     ["stateful"], so a suite can select or exclude them on their own cost
     profile. [pos] fixes the declaration site, which is where a poisoned
-    program's failure is reported: [command] records no position of its own, and
-    a command's name is its identity in the report.
+    program's failure and a scope that never ran one are reported: [command]
+    records no position of its own, and a command's name is its identity in the
+    report.
 
     There is no [?examples]: the program type is abstract, so a user cannot
     spell one, and a shrunk counterexample is copied back as a plain test. There

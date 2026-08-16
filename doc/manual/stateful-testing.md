@@ -42,7 +42,7 @@ let () =
   run "bounded_queue"
     [
       stateful "behaves like a list" ~model:[]
-        ~setup:(fun () -> Bounded_queue.create capacity)
+        ~scope:(fun run -> run (Bounded_queue.create capacity))
         ~pp_model:(Testable.pp (list int))
         ~invariant:(fun m q -> equal int (List.length m) (Bounded_queue.size q))
         commands;
@@ -167,7 +167,7 @@ selects, from `~invariant`, which runs on every case:
 
 ```ocaml
 stateful "behaves like a list" ~model:[]
-  ~setup:(fun () -> Bounded_queue.create capacity)
+  ~scope:(fun run -> run (Bounded_queue.create capacity))
   ~pp_model:(Testable.pp (list int))
   ~invariant:(fun m q ->
     cover ~label:"reached capacity" ~at_least:5. (List.length m = capacity);
@@ -242,41 +242,87 @@ raise is a specification bug — see below.
 
 ## The system under test
 
-`~setup` runs once per generated case **and once per shrink
-candidate** — the search re-runs the program, so a shared system would
-make it meaningless — and `~teardown` releases on every path the
-executor leaves. It is the `bracket` pair, scoped to a case instead of
-a test.
+`~scope` builds the system a case runs against and reclaims it. It
+takes a callback: everything before the call acquires, the call runs
+the program, everything after it returns releases. The worked example
+above is the whole of it —
+`~scope:(fun run -> run (Bounded_queue.create capacity))` — because an
+in-memory queue needs no release.
 
-`temp_dir ()` is the wrong tool inside `~setup`: it is *test*-scoped,
+It runs once per generated case **and once per shrink candidate**: the
+search re-runs the program, so a shared system would make it
+meaningless.
+
+Taking a callback rather than returning a system is what lets a
+resource that only exists *inside* a call be the system under test —
+an Eio env or switch, `In_channel.with_open_text`, any `with_`-style
+API. There is no moment inside those at which the resource could be
+returned, and no `~setup`/`~teardown` pair expresses them without
+threads or effects; as a scope they are the plain case (fragment; not
+compiled here):
+
+```ocaml
+(* fragment: requires eio_main *)
+stateful "store replays" ~model:Model.empty
+  ~scope:(fun run ->
+    Eio_main.run @@ fun env ->
+    Eio.Switch.run @@ fun sw -> run (Store.open_ ~sw ~env dir))
+  commands
+```
+
+The acquire-and-release pair `bracket` spells is the same shape with
+the release written out: a `~setup:f ~teardown:g` becomes a scope that
+binds `let sut = f ()` and runs `run sut` under
+`Fun.protect ~finally:(fun () -> g sut)` — one primitive instead of two
+parameters, and the callback-only resources above stop being
+inexpressible.
+
+`temp_dir ()` is the wrong tool inside a scope: it is *test*-scoped,
 creating a directory per call that survives until the test ends, and a
 failing stateful test builds one system per shrink candidate —
-hundreds of them. Mint the path in `~setup` and remove it in
-`~teardown`:
+hundreds of them. Mint the path in the scope and remove it on the way
+out:
 
 ```ocaml
 stateful "store survives any sequence" ~model:Store_model.empty
-  ~setup:(fun () ->
+  ~scope:(fun run ->
     let dir = Filename.temp_file "store-" ".dir" in
     Sys.remove dir;
     Sys.mkdir dir 0o700;
-    (dir, Store.open_ dir))
-  ~teardown:(fun (dir, store) ->
-    Store.close store;
-    rm_rf dir)
+    let store = Store.open_ dir in
+    Fun.protect
+      ~finally:(fun () ->
+        Store.close store;
+        rm_rf dir)
+      (fun () -> run store))
   commands
 ```
 
 `rm_rf` is [the cookbook's](../cookbook.md#1-temporary-directories-and-files).
-No `Fun.protect` is wanted around it: `~teardown` is already the
-release path, and a teardown failure is reported only when the program
-succeeded — on the failing path the counterexample outranks the cleanup
-error, so a broken teardown does not replace the assertion you were
-shown. Only a timeout or a fatal exception from the teardown itself
-outranks a failure in hand: those end the run.
+The `Fun.protect` is yours: windtrap never sees the resource, so
+releasing on the failing path is the scope's own contract — the same
+bargain `scoped` strikes at the test level. `Eio_main.run` and anything
+built on `Fun.protect` release on both paths; `let r = acquire () in
+run r; release r` leaks whenever the program fails.
 
-A `~setup` that raises propagates as it is — no teardown is owed for a
-system that was never built.
+What windtrap does guarantee is that the failure reaches you: the
+program's exception is re-raised *through* the scope, so a scope that
+cancels or cleans up on that path does so, and a release failure never
+*replaces* it — on the failing path the counterexample outranks the
+cleanup error, and a scope that swallows the failure outright cannot
+turn a failing case green. Only a timeout or a fatal exception from the
+scope outranks a failure in hand: those end the run. The one thing that
+does replace it is `Fun.protect`'s own rule — a `~finally` that raises
+reports `Fun.Finally_raised` in place of the work exception — so keep
+cleanup that can fail out of `~finally`, or handle it there.
+
+A `~scope` that raises before calling back propagates as it is: nothing
+was built and no release is owed, and a scope that *skips* there skips
+the test — the pattern for a suite gated on a resource the machine does
+not have. Calling back exactly once is the contract: a scope that
+returns without running the program fails the case rather than passing
+it, and one that runs it twice raises `Invalid_argument` at the second
+call.
 
 ## When the specification itself raises
 
@@ -335,7 +381,8 @@ measures 1,133.
 
 A failing run adds the shrink search, and that is where the cost is.
 Every candidate the search considers, accepted or rejected, is a whole
-program re-run with its own `~setup` and `~teardown`. One node offers
+program re-run with its own `~scope` call, acquisition and release
+included. One node offers
 `1 + Σ_k ⌊steps/k⌋` deletion candidates — the empty program, plus one
 per non-overlapping chunk at each chunk size, `k` over the powers of
 two from below `steps` down to 1, so 39 at `~steps:20` — then one per
@@ -383,8 +430,8 @@ them on their own.
   contract, and retrying would hide that rather than settle it.
 - The empty program is a real test — the invariant runs on the fresh
   system before the first call — and renders as `(no commands)`. It is
-  what a `~setup` that raises, or an invariant that rejects a fresh
-  system, shrinks to.
+  what a `~scope` that raises while acquiring, or an invariant that
+  rejects a fresh system, shrinks to.
 - The program printer bounds itself: arguments are cut at 200 bytes,
   model cells at 60 code points and one line each, and a program over
   40 steps prints its first and last 20 with `… (N steps omitted)`

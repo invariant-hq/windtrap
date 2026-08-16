@@ -34,7 +34,7 @@ let () =
   run "bounded_queue"
     [
       stateful "behaves like a list" ~model:[]
-        ~setup:(fun () -> Bounded_queue.create capacity)
+        ~scope:(fun run -> run (Bounded_queue.create capacity))
         ~pp_model:(Testable.pp (list int))
         ~invariant:(fun m q -> equal int (List.length m) (Bounded_queue.size q))
         commands;

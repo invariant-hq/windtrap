@@ -31,6 +31,10 @@ let root_value tree = Shrink_tree.root tree
 let program_at gen index = root_value (Gen.sample gen (state index))
 let names = Stateful.command_names
 
+(* [~scope] over a system that needs no acquisition at all: what most of
+   the tests below exercise is the program, not the resource. *)
+let unit_scope run = run ()
+
 let render gen program =
   match Gen.render_value gen program with
   | Some text -> text
@@ -277,7 +281,7 @@ let every_forced_node_holds_only_legal_calls () =
   let rec go tree =
     if !nodes >= budget then raise_notrace Exit;
     incr nodes;
-    Stateful.execute ~setup:(fun () -> ()) (root_value tree);
+    Stateful.execute ~scope:unit_scope (root_value tree);
     Seq.iter go (Shrink_tree.children tree)
   in
   let index = ref 0 in
@@ -453,7 +457,7 @@ let a_raising_pre_poisons_and_withholds_the_body () =
     "the program was not truncated at the poison: %s" (show_names kept);
   let failure =
     expect_check_failure "a ~pre poison" (fun () ->
-        Stateful.execute ~setup:(fun () -> ()) program)
+        Stateful.execute ~scope:unit_scope program)
   in
   check
     (failure_msg failure
@@ -478,7 +482,7 @@ let a_raising_next_poisons_and_runs_the_body () =
     expect_check_failure "a ~next poison" (fun () ->
         Stateful.execute
           ~invariant:(fun _ () -> incr invariants)
-          ~setup:(fun () -> ())
+          ~scope:unit_scope
           program)
   in
   check
@@ -512,7 +516,7 @@ let a_failing_body_outranks_the_next_poison_it_precedes () =
   let total = List.length (names program) in
   let failure =
     expect_check_failure "a failing body before a ~next poison" (fun () ->
-        Stateful.execute ~setup:(fun () -> ()) program)
+        Stateful.execute ~scope:unit_scope program)
   in
   check
     (failure.Failure.kind = Failure.Message "the body")
@@ -533,7 +537,7 @@ let a_poisoned_program_carries_the_declaration_site () =
   let loc = { Loc.file = "spec.ml"; line = 42; column = 7 } in
   let failure =
     expect_check_failure "a located poison" (fun () ->
-        Stateful.execute ~loc ~setup:(fun () -> ()) program)
+        Stateful.execute ~loc ~scope:unit_scope program)
   in
   check (failure.Failure.loc = Some loc) "the poison lost the declaration site";
   let failing =
@@ -548,7 +552,7 @@ let a_poisoned_program_carries_the_declaration_site () =
   in
   let ordinary =
     expect_check_failure "a body failure under a located execute" (fun () ->
-        Stateful.execute ~loc ~setup:(fun () -> ()) failing)
+        Stateful.execute ~loc ~scope:unit_scope failing)
   in
   check
     (ordinary.Failure.loc <> Some loc)
@@ -615,7 +619,7 @@ let a_failing_step_points_at_its_command () =
         (Gen.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0))
     in
     expect_check_failure "a located step" (fun () ->
-        Stateful.execute ~setup:(fun () -> ()) program)
+        Stateful.execute ~scope:unit_scope program)
   in
   (match (executed ()).Failure.loc with
   | Some loc ->
@@ -662,7 +666,7 @@ let assertions_skips_and_discards_from_pre_poison () =
       check (total > 0) "%s from ~pre produced an empty program" label;
       let failure =
         expect_check_failure label (fun () ->
-            Stateful.execute ~setup:(fun () -> ()) program)
+            Stateful.execute ~scope:unit_scope program)
       in
       check
         (failure_msg failure
@@ -692,7 +696,7 @@ let control_exceptions_escape_a_body_unconverted () =
   in
   List.iter
     (fun (label, exn) ->
-      match Stateful.execute ~setup:(fun () -> ()) (program_of exn) with
+      match Stateful.execute ~scope:unit_scope (program_of exn) with
       | exception raised ->
           check (raised = exn) "%s from a body came back as %s" label
             (Printexc.to_string raised)
@@ -710,7 +714,7 @@ let control_exceptions_escape_a_body_unconverted () =
   let asserted =
     expect_check_failure "an asserting body" (fun () ->
         Stateful.execute
-          ~setup:(fun () -> ())
+          ~scope:unit_scope
           (program_of
              (Failure.Check_failure
                 {
@@ -727,7 +731,7 @@ let control_exceptions_escape_a_body_unconverted () =
   (* And anything else is narrowed, under the same label. *)
   let narrowed =
     expect_check_failure "a raising body" (fun () ->
-        Stateful.execute ~setup:(fun () -> ()) (program_of Not_found))
+        Stateful.execute ~scope:unit_scope (program_of Not_found))
   in
   check
     (failure_msg narrowed = "step 1 of 1: boom")
@@ -741,31 +745,33 @@ let control_exceptions_escape_a_body_unconverted () =
 let counter_program ?(steps = 4) index =
   program_at (Stateful.program ~steps ~model:0 counter_draws) index
 
-(* [teardown] releases on every path [execute] leaves, and on none it does
-   not: a [setup] that raises owes no teardown. *)
-let teardown_runs_on_every_path () =
+let one_call_program exn =
+  program_at
+    (Stateful.program ~steps:1 ~model:0
+       [
+         Stateful.call "boom"
+           ~next:(fun model -> model + 1)
+           (fun _ () -> raise exn);
+       ])
+    0
+
+(* The scope owns release, so a [Fun.protect] inside it fires on every
+   path [execute] leaves — and on none it does not: a scope that raises
+   while acquiring never reached its own release. *)
+let a_scope_releases_on_every_path () =
   let body_ran = ref false in
   let poisoned =
     find_poisoned
       (Stateful.program ~steps:6 ~model:0 (poison_spec ~body_ran `Pre))
   in
-  let raising exn =
-    [
-      Stateful.call "boom"
-        ~next:(fun model -> model + 1)
-        (fun _ () -> raise exn);
-    ]
-  in
-  let one_call exn =
-    program_at (Stateful.program ~steps:1 ~model:0 (raising exn)) 0
-  in
   let paths =
     [
       ("pass", counter_program 0);
-      ("body failure", one_call (Failure.Check_failure (Failure.message "nope")));
-      ("skip", one_call (Failure.Skip_test (Some "why")));
-      ("timeout", one_call (Failure.Timeout 0.5));
-      ("uncaught", one_call Not_found);
+      ( "body failure",
+        one_call_program (Failure.Check_failure (Failure.message "nope")) );
+      ("skip", one_call_program (Failure.Skip_test (Some "why")));
+      ("timeout", one_call_program (Failure.Timeout 0.5));
+      ("uncaught", one_call_program Not_found);
       ("poison", poisoned);
     ]
   in
@@ -774,106 +780,261 @@ let teardown_runs_on_every_path () =
       let released = ref 0 in
       (try
          Stateful.execute
-           ~teardown:(fun () -> incr released)
-           ~setup:(fun () -> ())
+           ~scope:(fun run ->
+             Fun.protect ~finally:(fun () -> incr released) (fun () -> run ()))
            program
        with _ -> ());
       check (!released = 1) "the %s path released %d times" label !released)
     paths;
   let released = ref 0 in
-  (match
-     Stateful.execute
-       ~teardown:(fun () -> incr released)
-       ~setup:(fun () -> raise Not_found)
-       (counter_program 0)
-   with
+  let failing_acquisition run =
+    let sut = raise Not_found in
+    Fun.protect ~finally:(fun () -> incr released) (fun () -> run sut)
+  in
+  (match Stateful.execute ~scope:failing_acquisition (counter_program 0) with
   | exception Not_found -> ()
   | exception exn ->
-      failf "a raising setup came back as %s" (Printexc.to_string exn)
-  | () -> failf "a raising setup was swallowed");
-  check (!released = 0) "a raising setup was owed a teardown, and got %d"
+      failf "a scope that raised while acquiring came back as %s"
+        (Printexc.to_string exn)
+  | () -> failf "a scope that raised while acquiring was swallowed");
+  check (!released = 0) "a scope that acquired nothing released %d times"
     !released
 
-(* On the failing path the teardown's exception is dropped: the reported
-   failure is the body's. On the passing path there is no failure to
-   outrank, so the teardown's is the failure. *)
-let a_teardown_failure_never_replaces_the_body_s () =
-  let raising exn =
-    [
-      Stateful.call "boom"
-        ~next:(fun model -> model + 1)
-        (fun _ () -> raise exn);
-    ]
-  in
+(* What the scope raises after the program returns is a release that
+   failed. On the failing path it is dropped: the reported failure is the
+   program's. On the passing path there is no failure to outrank, so the
+   release's is the failure. *)
+let a_release_failure_never_replaces_the_program_s () =
   let failing =
-    program_at
-      (Stateful.program ~steps:1 ~model:0
-         (raising (Failure.Check_failure (Failure.message "the body"))))
-      0
+    one_call_program (Failure.Check_failure (Failure.message "the body"))
+  in
+  (* A scope whose release raises on both paths. Hand-rolled rather than
+     [Fun.protect] with a raising [~finally], which would deliver
+     [Fun.Finally_raised] in place of the program's failure — the caveat
+     a scope author owns. *)
+  let releasing exn run =
+    match run () with () -> raise exn | exception _ -> raise exn
   in
   let failure =
-    expect_check_failure "a body failure under a raising teardown" (fun () ->
-        Stateful.execute
-          ~teardown:(fun () -> raise Not_found)
-          ~setup:(fun () -> ())
-          failing)
+    expect_check_failure "a program failure under a raising release" (fun () ->
+        Stateful.execute ~scope:(releasing Not_found) failing)
   in
   check
     (failure.Failure.kind = Failure.Message "the body")
-    "the teardown's exception replaced the body's failure";
-  (* Passing path: the teardown's exception is the only one there is, and it
+    "the release's exception replaced the program's failure";
+  (* Passing path: the release's exception is the only one there is, and it
      propagates as itself — [execute] converts nothing outside a step. *)
-  (match
-     Stateful.execute
-       ~teardown:(fun () -> raise Not_found)
-       ~setup:(fun () -> ())
-       (counter_program 0)
-   with
+  (match Stateful.execute ~scope:(releasing Not_found) (counter_program 0) with
   | exception Not_found -> ()
   | exception exn ->
-      failf "a passing-path teardown raised %s" (Printexc.to_string exn)
-  | () -> failf "a passing-path teardown failure was swallowed");
+      failf "a passing-path release raised %s" (Printexc.to_string exn)
+  | () -> failf "a passing-path release failure was swallowed");
   (* Except for the exceptions that end the run: a [Timeout] delivered in a
-     candidate's teardown outranks the failure in hand, or the engine would
+     candidate's release outranks the failure in hand, or the engine would
      accept it as a shrink step and report a converged counterexample. The
      three fatal ones outrank it for the same reason. *)
   List.iter
     (fun (label, exn) ->
-      match
-        Stateful.execute
-          ~teardown:(fun () -> raise exn)
-          ~setup:(fun () -> ())
-          failing
-      with
+      match Stateful.execute ~scope:(releasing exn) failing with
       | exception raised when raised = exn -> ()
       | exception Failure.Check_failure _ ->
-          failf "a %s from a failing path's teardown was dropped" label
+          failf "a %s from a failing path's release was dropped" label
       | exception raised ->
-          failf "the teardown's %s came back as %s" label
+          failf "the release's %s came back as %s" label
             (Printexc.to_string raised)
       | () -> failf "the failing program did not fail")
     [ ("Timeout", Failure.Timeout 0.5); ("Sys.Break", Sys.Break) ]
 
-(* [setup] runs once per [execute] — so once per generated case and once per
-   shrink candidate, counted across a real failing run. *)
-let setup_runs_once_per_case_and_per_shrink_candidate () =
-  let setups = ref 0 and releases = ref 0 and executions = ref 0 in
+(* A scope that returns without running the program fails the case rather
+   than passing it: a program that never ran is not a passing program. *)
+let a_scope_that_never_runs_the_program_fails_the_case () =
+  let failure =
+    expect_check_failure "a scope that never called back" (fun () ->
+        Stateful.execute ~scope:(fun _ -> ()) (counter_program 0))
+  in
+  check
+    (failure.Failure.kind
+    = Failure.Message
+        "the scope returned without running the program — a scope must call \
+         its callback exactly once")
+    "a scope that never called back failed with %S"
+    (Printexc.to_string (Failure.Check_failure failure));
+  (* It carries the declaration site, like the poison: it is the other
+     failure with no assertion of its own to be located by. *)
+  let loc = { Loc.file = "spec.ml"; line = 42; column = 7 } in
+  let located =
+    expect_check_failure "a located missing body" (fun () ->
+        Stateful.execute ~loc ~scope:(fun _ -> ()) (counter_program 0))
+  in
+  check
+    (located.Failure.loc = Some loc)
+    "the missing-program failure lost the declaration site";
+  (* A scope that raises or skips instead of calling back has already said
+     what happened, and says it rather than this. *)
+  (match
+     Stateful.execute ~scope:(fun _ -> raise Not_found) (counter_program 0)
+   with
+  | exception Not_found -> ()
+  | exception exn ->
+      failf "a scope that raised instead of calling back reported %s"
+        (Printexc.to_string exn)
+  | () -> failf "a scope that raised instead of calling back was swallowed");
+  (* And through the engine, where failing the case is what the reader
+     meets: it is in the assertion class, so the search converges on the
+     empty program and the message is the counterexample's inner failure. *)
+  let outcome =
+    Property.run ~count:(`Declared 4) ~root ~path:"no-body" (queue_gen ())
+      (fun _ program -> Stateful.execute ~scope:(fun _ -> ()) program)
+  in
+  let reported, _ = expect_fail outcome in
+  let rendered, _, _, _, inner = property_payload reported in
+  check (rendered = "(no commands)")
+    "a scope that never called back converged on %S" rendered;
+  check
+    (Option.map (fun (inner : Failure.t) -> inner.Failure.kind) inner
+    = Some failure.Failure.kind)
+    "the counterexample's inner failure is not the missing-program one";
+  let block = failure_block reported in
+  check
+    (contains "must call its callback exactly once" block)
+    "the reader is not told what went wrong:\n%s" block
+
+(* A second call is the harness itself being wrong, not a counterexample:
+   [Invalid_argument] at the call, and it outranks whatever else the case
+   had to say — including a scope that swallows it, which would otherwise
+   report a program that ran twice as a pass. *)
+let a_scope_that_runs_the_program_twice_is_invalid () =
+  let runs = ref 0 in
+  let twice run =
+    run ();
+    incr runs;
+    run ();
+    incr runs
+  in
+  (match Stateful.execute ~scope:twice (counter_program 0) with
+  | exception Invalid_argument message ->
+      check
+        (contains "exactly once" message && contains "stateful" message)
+        "the double-call error said %S" message
+  | exception exn ->
+      failf "a scope that called back twice raised %s" (Printexc.to_string exn)
+  | () -> failf "a scope that called back twice was accepted");
+  check (!runs = 1) "the program ran under %d of the two calls" !runs;
+  (* Swallowed by the scope, and still fatal to the case. *)
+  (match
+     Stateful.execute
+       ~scope:(fun run ->
+         run ();
+         try run () with Invalid_argument _ -> ())
+       (counter_program 0)
+   with
+  | exception Invalid_argument _ -> ()
+  | exception exn ->
+      failf "a swallowed double call came back as %s" (Printexc.to_string exn)
+  | () -> failf "a swallowed double call passed the case");
+  (* And it outranks the program's own failure: a case whose harness is
+     wrong has no counterexample to report. *)
+  match
+    Stateful.execute
+      ~scope:(fun run ->
+        (try run () with Failure.Check_failure _ -> ());
+        run ())
+      (one_call_program (Failure.Check_failure (Failure.message "the body")))
+  with
+  | exception Invalid_argument _ -> ()
+  | exception exn ->
+      failf "a double call after a failing program came back as %s"
+        (Printexc.to_string exn)
+  | () -> failf "a double call after a failing program was accepted"
+
+(* Before the callback the scope is acquiring, and what it raises there
+   propagates as itself — unconverted and unlabelled — so an assertion is
+   an exception-class failure, a skip skips the whole test, and an alarm
+   ends the run. *)
+let a_scope_that_raises_before_the_callback_propagates_unconverted () =
+  List.iter
+    (fun (label, exn) ->
+      match
+        Stateful.execute ~scope:(fun _ -> raise exn) (counter_program 0)
+      with
+      | exception raised ->
+          check (raised = exn) "%s from an acquiring scope came back as %s"
+            label (Printexc.to_string raised)
+      | () -> failf "%s from an acquiring scope was swallowed" label)
+    [
+      ("Not_found", Not_found);
+      ("Check_failure", Failure.Check_failure (Failure.message "nope"));
+      ("Skip_test", Failure.Skip_test (Some "why"));
+      ("Timeout", Failure.Timeout 0.5);
+      ("Exit_attempt", Failure.Exit_attempt);
+      ("Discard", Property.Discard);
+      ("Sys.Break", Sys.Break);
+    ];
+  (* And through the engine, where the classification is what it means: a
+     scope that skips before acquiring skips the test. *)
+  match
+    Property.run ~count:(`Declared 4) ~root ~path:"unavailable" (queue_gen ())
+      (fun _ program ->
+        Stateful.execute
+          ~scope:(fun _ -> raise (Failure.Skip_test (Some "no server")))
+          program)
+  with
+  | exception Failure.Skip_test (Some "no server") -> ()
+  | exception exn ->
+      failf "a skipping scope reached the runner as %s" (Printexc.to_string exn)
+  | _ -> failf "a skipping scope did not skip the test"
+
+(* The program's own failure crosses the scope's frames as itself: the
+   step label, the payload and the assertion class all survive a scope
+   that catches and re-raises, and a scope that swallows it cannot turn a
+   failing case green. *)
+let a_failing_program_keeps_its_identity_through_the_scope () =
+  let failing =
+    one_call_program (Failure.Check_failure (Failure.message "the body"))
+  in
+  let expect what scope =
+    let failure =
+      expect_check_failure what (fun () -> Stateful.execute ~scope failing)
+    in
+    check
+      (failure.Failure.kind = Failure.Message "the body")
+      "%s reported %S" what
+      (Printexc.to_string (Failure.Check_failure failure));
+    check
+      (failure_msg failure = "step 1 of 1: boom")
+      "%s was labelled %S" what (failure_msg failure)
+  in
+  expect "a transparent scope" unit_scope;
+  expect "a scope that cleans up and re-raises" (fun run ->
+      match run () with
+      | () -> ()
+      | exception exn ->
+          let backtrace = Printexc.get_raw_backtrace () in
+          Printexc.raise_with_backtrace exn backtrace);
+  expect "a scope that swallows the failure" (fun run ->
+      try run () with Failure.Check_failure _ -> ())
+
+(* [scope] runs once per [execute] — so once per generated case and once
+   per shrink candidate, counted across a real failing run. *)
+let the_scope_runs_once_per_case_and_per_shrink_candidate () =
+  let scopes = ref 0 and releases = ref 0 and executions = ref 0 in
   let outcome =
     Property.run ~count:(`Declared 40) ~max_shrink:20 ~root ~path:"lifecycle"
       (queue_gen ()) (fun _ program ->
         incr executions;
         Stateful.execute
-          ~teardown:(fun _ -> incr releases)
-          ~setup:(fun () ->
-            incr setups;
-            Bad_queue.create ())
+          ~scope:(fun run ->
+            incr scopes;
+            Fun.protect
+              ~finally:(fun () -> incr releases)
+              (fun () -> run (Bad_queue.create ())))
           program)
   in
   let failure, _ = expect_fail outcome in
   let _, case_index, shrink_steps, _, _ = property_payload failure in
-  check (!setups = !executions) "%d setups for %d executions" !setups
+  check (!scopes = !executions) "%d scopes for %d executions" !scopes
     !executions;
-  check (!releases = !setups) "%d releases for %d setups" !releases !setups;
+  check (!releases = !scopes) "%d releases for %d scopes" !releases !scopes;
   check (shrink_steps > 0) "the search took no shrink step";
   check
     (!executions > case_index + 1)
@@ -891,7 +1052,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
   let seen = ref [] in
   Stateful.execute
     ~invariant:(fun model () -> seen := model :: !seen)
-    ~setup:(fun () -> ())
+    ~scope:unit_scope
     program;
   let expected =
     List.rev
@@ -909,14 +1070,14 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
     program_at (Stateful.program ~steps:5 ~model:0 never_commands) 0
   in
   let ran = ref 0 in
-  Stateful.execute ~invariant:(fun _ () -> incr ran) ~setup:(fun () -> ()) empty;
+  Stateful.execute ~invariant:(fun _ () -> incr ran) ~scope:unit_scope empty;
   check (!ran = 1) "the empty program ran the invariant %d times" !ran;
   (* Distinct labels, and a user ~msg joined onto them. *)
   let fresh =
     expect_check_failure "the fresh-system invariant" (fun () ->
         Stateful.execute
           ~invariant:(fun _ () -> Check.is_true ~msg:"note" false)
-          ~setup:(fun () -> ())
+          ~scope:unit_scope
           program)
   in
   check
@@ -929,7 +1090,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
           ~invariant:(fun _ () ->
             incr visits;
             if !visits = 2 then Check.fail "nope")
-          ~setup:(fun () -> ())
+          ~scope:unit_scope
           program)
   in
   check
@@ -950,7 +1111,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
     expect_check_failure "a raising fresh-system invariant" (fun () ->
         Stateful.execute
           ~invariant:(fun _ () -> raise Not_found)
-          ~setup:(fun () -> ())
+          ~scope:unit_scope
           program)
   in
   check
@@ -966,7 +1127,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
           ~invariant:(fun _ () ->
             incr visits;
             if !visits = 2 then raise Not_found)
-          ~setup:(fun () -> ())
+          ~scope:unit_scope
           program)
   in
   check
@@ -982,7 +1143,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
       (match
          Stateful.execute
            ~invariant:(fun _ () -> raise exn)
-           ~setup:(fun () -> ())
+           ~scope:unit_scope
            program
        with
       | exception raised ->
@@ -996,7 +1157,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
           ~invariant:(fun _ () ->
             incr visits;
             if !visits = 2 then raise exn)
-          ~setup:(fun () -> ())
+          ~scope:unit_scope
           program
       with
       | exception raised ->
@@ -1321,7 +1482,7 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
   let case =
     flattened
       (Windtrap.stateful ~pos ~tags:[ "custom" ] ~timeout:2.5 "spec" ~model:0
-         ~setup:(fun () -> ())
+         ~scope:unit_scope
          tick_facade)
   in
   let selects tag =
@@ -1359,7 +1520,7 @@ let run_declared_body tree =
       | exception _ -> ())
 
 let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
-  let setups = ref 0 and releases = ref 0 in
+  let scopes = ref 0 and releases = ref 0 in
   let bodies = ref 0 and invariants = ref 0 in
   let commands =
     [
@@ -1371,25 +1532,57 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
   run_declared_body
     (Windtrap.stateful ~count:3 ~steps:3 "wiring" ~model:0
        ~invariant:(fun _ () -> incr invariants)
-       ~teardown:(fun () -> incr releases)
-       ~setup:(fun () -> incr setups)
+       ~scope:(fun run ->
+         incr scopes;
+         Fun.protect ~finally:(fun () -> incr releases) (fun () -> run ()))
        commands);
-  check (!setups > 0) "the declared body ran no case at all";
+  check (!scopes > 0) "the declared body ran no case at all";
   (* The declared ?count is an upper bound here rather than an equality: a
      run may lower it with --max-prop-count, but nothing may raise it, and
      the engine default of 100 would. *)
-  check (!setups <= 3) "the declared ?count of 3 ran %d cases" !setups;
-  check (!releases = !setups) "%d releases for %d systems" !releases !setups;
+  check (!scopes <= 3) "the declared ?count of 3 ran %d cases" !scopes;
+  check (!releases = !scopes) "%d releases for %d systems" !releases !scopes;
   (* Every call of every case is legal, so ?steps is the program's length:
      three bodies and four invariant checks per system. *)
   check
-    (!bodies = 3 * !setups)
+    (!bodies = 3 * !scopes)
     "%d bodies over %d systems — ?steps:3 did not reach the generator" !bodies
-    !setups;
+    !scopes;
   check
-    (!invariants = 4 * !setups)
-    "%d invariant checks over %d systems, not %d" !invariants !setups
-    (4 * !setups)
+    (!invariants = 4 * !scopes)
+    "%d invariant checks over %d systems, not %d" !invariants !scopes
+    (4 * !scopes)
+
+(* A resource that exists only inside a callback and is never returned —
+   [Eio_main.run], [In_channel.with_open_text], any [with_]-style API. No
+   [unit -> 'sut] thunk can hand one over; as a scope it is the plain
+   case, end to end through the facade. *)
+let a_callback_only_resource_runs_end_to_end () =
+  let opened = ref 0 and closed = ref 0 in
+  (* [with_sink] never returns the buffer: the only way to see it is to
+     be called by it. *)
+  let with_sink fn =
+    incr opened;
+    let sink = Buffer.create 16 in
+    Fun.protect ~finally:(fun () -> incr closed) (fun () -> fn sink)
+  in
+  let commands =
+    [
+      Windtrap.command "write" (Gen.int_range 0 9)
+        ~next:(fun model item -> model @ [ item ])
+        (fun _ item sink -> Buffer.add_string sink (string_of_int item));
+      Windtrap.call "contents" ~next:Fun.id (fun model sink ->
+          Check.equal string
+            (String.concat "" (List.map string_of_int model))
+            (Buffer.contents sink));
+    ]
+  in
+  run_declared_body
+    (Windtrap.stateful ~count:5 ~steps:6 "sink" ~model:[] ~scope:with_sink
+       commands);
+  check (!opened > 0) "the declared body ran no case at all";
+  check (!opened <= 5) "the declared ?count of 5 ran %d cases" !opened;
+  check (!closed = !opened) "%d sinks closed for %d opened" !closed !opened
 
 (* [?pp_model] reaches the printer the engine renders a counterexample
    with, and reaches it with the pre-states. *)
@@ -1411,7 +1604,7 @@ let stateful_threads_pp_model_into_the_counterexample () =
      counterexample is the three-call program and its column is 0, 1, 2. *)
   run_declared_body
     (Windtrap.stateful ~count:3 ~steps:3 ~pp_model "failing" ~model:0
-       ~setup:(fun () -> ())
+       ~scope:unit_scope
        commands);
   check (!seen <> []) "~pp_model never reached the counterexample printer";
   check
@@ -1430,7 +1623,9 @@ let the_same_seed_reproduces_the_same_counterexample () =
       Property.run ~count:(`Declared 40) ~root ~path:"replay" (queue_gen ())
         (fun _ program ->
           trace := names program :: !trace;
-          Stateful.execute ~setup:Bad_queue.create program)
+          Stateful.execute
+            ~scope:(fun run -> run (Bad_queue.create ()))
+            program)
     in
     let failure, _ = expect_fail outcome in
     let rendered, case, steps, _, _ = property_payload failure in
@@ -1476,7 +1671,7 @@ let collect_and_cover_work_inside_command_bodies () =
       (Stateful.program ~steps:12 ~model:0 (labelled ~unreachable))
       (fun context program ->
         Run.with_prop_context frame context (fun () ->
-            Stateful.execute ~setup:(fun () -> ()) program))
+            Stateful.execute ~scope:unit_scope program))
   in
   let stats = expect_pass (run ~unreachable:false "labels") in
   check
@@ -1543,7 +1738,8 @@ let a_buggy_system_renders_a_diagnosable_failure () =
   let outcome =
     Property.run ~count:(`Declared 40) ~root ~path:"bad_queue" (queue_gen ())
       (fun _ program ->
-        Stateful.execute ~invariant:queue_invariant ~setup:Bad_queue.create
+        Stateful.execute ~invariant:queue_invariant
+          ~scope:(fun run -> run (Bad_queue.create ()))
           program)
   in
   let failure, _ = expect_fail outcome in
@@ -1616,11 +1812,19 @@ let suite =
       assertions_skips_and_discards_from_pre_poison );
     ( "control exceptions escape a body unconverted",
       control_exceptions_escape_a_body_unconverted );
-    ("teardown runs on every path", teardown_runs_on_every_path);
-    ( "a teardown failure never replaces the body's",
-      a_teardown_failure_never_replaces_the_body_s );
-    ( "setup runs once per case and per shrink candidate",
-      setup_runs_once_per_case_and_per_shrink_candidate );
+    ("a scope releases on every path", a_scope_releases_on_every_path);
+    ( "a release failure never replaces the program's",
+      a_release_failure_never_replaces_the_program_s );
+    ( "a scope that never runs the program fails the case",
+      a_scope_that_never_runs_the_program_fails_the_case );
+    ( "a scope that runs the program twice is invalid",
+      a_scope_that_runs_the_program_twice_is_invalid );
+    ( "a scope that raises before the callback propagates unconverted",
+      a_scope_that_raises_before_the_callback_propagates_unconverted );
+    ( "a failing program keeps its identity through the scope",
+      a_failing_program_keeps_its_identity_through_the_scope );
+    ( "the scope runs once per case and per shrink candidate",
+      the_scope_runs_once_per_case_and_per_shrink_candidate );
     ( "the invariant runs before step one and after every step",
       the_invariant_runs_before_step_one_and_after_every_step );
     ( "an invariant is narrowed and propagates like a body",
@@ -1649,6 +1853,8 @@ let suite =
       stateful_declares_a_prop_node_with_its_tags_timeout_and_site );
     ( "stateful runs one fresh system per case over ?steps calls",
       stateful_runs_one_fresh_system_per_case_over_steps_calls );
+    ( "a callback-only resource runs end to end",
+      a_callback_only_resource_runs_end_to_end );
     ( "stateful threads ~pp_model into the counterexample",
       stateful_threads_pp_model_into_the_counterexample );
     ( "the same seed reproduces the same counterexample",

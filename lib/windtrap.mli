@@ -762,22 +762,60 @@ val stateful :
   ?steps:int ->
   ?pp_model:'model printer ->
   ?invariant:('model -> 'sut -> unit) ->
-  ?teardown:('sut -> unit) ->
   string ->
   model:'model ->
-  setup:(unit -> 'sut) ->
+  scope:(('sut -> unit) -> unit) ->
   ('model, 'sut) command list ->
   test
-(** [stateful name ~model ~setup commands] declares a test over {e sequences} of
+(** [stateful name ~model ~scope commands] declares a test over {e sequences} of
     [commands]: each case draws a program, runs it against a fresh system, and
     checks it against the model. A failure reports the shrunk program one
     numbered step per line, the step that broke, and the ordinary
     expected/actual diff.
 
-    [setup] runs once per generated case {e and once per shrink candidate} — the
-    search re-runs the program, so a shared system would make it meaningless —
-    and [teardown] releases on every path. [temp_dir] is test-scoped and the
-    wrong tool here: [setup] should mint its own path and [teardown] remove it.
+    [scope] builds that system and reclaims it, the way {!scoped} does for a
+    test: it takes a callback, and everything before the call acquires, the call
+    runs the program, everything after it returns releases. It runs once per
+    generated case {e and once per shrink candidate} — the search re-runs the
+    program, so a shared system would make it meaningless.
+
+    Taking a callback rather than returning a system is what puts a resource
+    that exists only {e inside} a call — an Eio env or switch,
+    [In_channel.with_open_text], any [with_]-style API — under test at all:
+    there is no moment in those at which the resource could be returned.
+
+    {[
+      (* fragment: requires eio_main *)
+      stateful "store replays" ~model:Model.empty
+        ~scope:(fun run ->
+          Eio_main.run @@ fun env ->
+          Eio.Switch.run @@ fun sw -> run (Store.open_ ~sw ~env dir))
+        commands
+    ]}
+
+    The acquire-and-release pair {!bracket} spells is the same shape with the
+    release written out — a [~setup:f ~teardown:g] is this [~scope]:
+
+    {[
+      let scope run =
+        let sut = f () in
+        Fun.protect ~finally:(fun () -> g sut) (fun () -> run sut)
+    ]}
+
+    That [Fun.protect] is yours — windtrap never sees the resource, so releasing
+    on the failing path is the scope's own contract, exactly as under {!scoped}.
+    What windtrap guarantees is the failure: the program's exception is
+    re-raised {e through} [scope], so a scope that cancels or cleans up on that
+    path does so, and a release failure never replaces the counterexample you
+    were shown (only a timeout or a fatal exception outranks it — those end the
+    run). A scope that raises before calling back propagates as it is, and one
+    that skips there skips the test; a scope that returns without running the
+    program fails the case, and one that runs it twice raises [Invalid_argument]
+    at the second call.
+
+    [temp_dir] is test-scoped and the wrong tool here: a failing test builds
+    hundreds of systems, so the scope should mint its own path and remove it on
+    the way out.
 
     [invariant] runs on the fresh system before the first call and after every
     call. An operation whose body asserts nothing is checked only by it: bodies

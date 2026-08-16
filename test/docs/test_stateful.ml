@@ -74,7 +74,7 @@ let commands =
 
 let queue_test =
   stateful "behaves like a list" ~model:[]
-    ~setup:(fun () -> Bounded_queue.create capacity)
+    ~scope:(fun run -> run (Bounded_queue.create capacity))
     ~pp_model:(Testable.pp (list int))
     ~invariant:(fun m q -> equal int (List.length m) (Bounded_queue.size q))
     commands
@@ -90,7 +90,7 @@ let queue_test =
    test name differs from the chapter's, which reuses the worked example's. *)
 let cover_test =
   stateful "behaves like a list, and reaches capacity" ~model:[]
-    ~setup:(fun () -> Bounded_queue.create capacity)
+    ~scope:(fun run -> run (Bounded_queue.create capacity))
     ~pp_model:(Testable.pp (list int))
     ~invariant:(fun m q ->
       cover ~label:"reached capacity" ~at_least:5. (List.length m = capacity);
@@ -136,7 +136,7 @@ let pool_commands =
 
 let pool_test =
   stateful "handles stay live" ~model:{ live = []; next_id = 0 }
-    ~setup:Pool.create
+    ~scope:(fun run -> run (Pool.create ()))
     ~invariant:(fun m pool -> equal int (List.length m.live) (Pool.live pool))
     pool_commands
 
@@ -177,27 +177,30 @@ let store_commands =
     command "put"
       (Gen.pair (Gen.int_range 0 5) (Gen.string_of (Gen.char_range 'a' 'z')))
       ~next:(fun m (k, v) -> (k, v) :: List.remove_assoc k m)
-      (fun _ (k, v) (_, store) -> Store.put store k v);
+      (fun _ (k, v) store -> Store.put store k v);
     command "get" (Gen.int_range 0 5)
       ~pre:(fun m k -> List.mem_assoc k m)
       ~next:Fun.const
-      (fun m k (_, store) -> equal string (List.assoc k m) (Store.get store k));
+      (fun m k store -> equal string (List.assoc k m) (Store.get store k));
   ]
 
-(* The chapter's ~setup / ~teardown shape. [~count] and [~steps] are the
-   mirror's own: the chapter shows the lifecycle, and this suite pays a
-   directory and a file per case for it. *)
+(* The chapter's ~scope shape, acquisition and release in one call.
+   [~count] and [~steps] are the mirror's own: the chapter shows the
+   lifecycle, and this suite pays a directory and a file per case for
+   it. *)
 let store_test =
   stateful "store survives any sequence" ~count:20 ~steps:8
     ~model:Store_model.empty
-    ~setup:(fun () ->
+    ~scope:(fun run ->
       let dir = Filename.temp_file "store-" ".dir" in
       Sys.remove dir;
       Sys.mkdir dir 0o700;
-      (dir, Store.open_ dir))
-    ~teardown:(fun (dir, store) ->
-      Store.close store;
-      rm_rf dir)
+      let store = Store.open_ dir in
+      Fun.protect
+        ~finally:(fun () ->
+          Store.close store;
+          rm_rf dir)
+        (fun () -> run store))
     store_commands
 
 (* ───── when the specification itself raises ───── *)
@@ -217,7 +220,7 @@ let _raising_pre : (pool_model, Pool.t) command =
    held here by [xfail], which inverts the outcome without hiding it. *)
 let empty_commands =
   xfail ~reason:"the chapter's empty-command-list note"
-    (stateful "no commands" ~model:() ~setup:Fun.id [])
+    (stateful "no commands" ~model:() ~scope:(fun run -> run ()) [])
 
 let () =
   run "stateful-testing"

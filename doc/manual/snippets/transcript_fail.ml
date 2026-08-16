@@ -139,7 +139,7 @@ let commands =
 
 let failing_stateful =
   stateful "behaves like a list" ~model:[]
-    ~setup:(fun () -> Bounded_queue.create capacity)
+    ~scope:(fun run -> run (Bounded_queue.create capacity))
     ~pp_model:(Testable.pp (list int))
     ~invariant:(fun m q -> equal int (List.length m) (Bounded_queue.size q))
     commands
@@ -161,7 +161,7 @@ let slot = Gen.int_range 0 3
 
 let poisoned_pre =
   stateful "handles stay live" ~model:{ live = []; next_id = 0 }
-    ~setup:Pool.create
+    ~scope:(fun run -> run (Pool.create ()))
     ~pp_model:(fun ppf m -> Testable.pp (list int) ppf m.live)
     [
       call "open"

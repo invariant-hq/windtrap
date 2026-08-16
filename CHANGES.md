@@ -184,9 +184,11 @@ which failed with:
 Programs draw at a fixed length, are repaired against the model so an illegal
 call is removed rather than skipped — the program you read is the program that
 ran — and shrink by deleting calls and reducing arguments, never by
-substituting one command for another. `~setup` builds a fresh system per case
-*and per shrink candidate*, `?teardown` releases on every path without ever
-masking the failure you were shown, `?invariant` checks the state that no
+substituting one command for another. `~scope` builds a fresh system per case
+*and per shrink candidate* and reclaims it — it takes a callback, so a resource
+that exists only *inside* one (an Eio env or switch, any `with_`-style API) is
+as testable as a value some setup could have returned, and a release failure
+never masks the failure you were shown. `?invariant` checks the state that no
 single command owns, and `?pp_model` prints the model each call was made in. A
 `~pre` or `~next` that raises is reported as a specification failure naming the
 command and step, rather than escaping into the generator and silently ending
