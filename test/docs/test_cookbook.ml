@@ -75,6 +75,14 @@ let with_env var value fn =
 let env_tests =
   group "scoped environment"
     [
+      test "the built-in setenv binds and truly unbinds" (fun () ->
+          setenv "COOKBOOK_BUILTIN" (Some "inner");
+          equal (option string) (Some "inner")
+            (Sys.getenv_opt "COOKBOOK_BUILTIN");
+          (* The half putenv cannot do: after [setenv name None] the
+             variable is unset, not empty — the fact §2 pivots on. *)
+          setenv "COOKBOOK_BUILTIN" None;
+          equal (option string) None (Sys.getenv_opt "COOKBOOK_BUILTIN"));
       test "with_env sets inside and restores after" (fun () ->
           with_env "COOKBOOK_ENV" "inner" (fun () ->
               equal (option string) (Some "inner")
@@ -265,6 +273,88 @@ let complex_tests =
             { Complex.re = 1. +. 1e-13; im = 2. -. 1e-13 });
     ]
 
+(* Recipe 11: scripted seams — the tape *)
+
+type 'a tape = { name : string; mutable entries : 'a list; mutable dealt : int }
+
+let next ?pos t =
+  match t.entries with
+  | [] -> failf ?pos "tape %s: exhausted after %d entries" t.name t.dealt
+  | e :: rest ->
+      t.entries <- rest;
+      t.dealt <- t.dealt + 1;
+      e
+
+let next_opt t =
+  match t.entries with
+  | [] -> None
+  | e :: rest ->
+      t.entries <- rest;
+      t.dealt <- t.dealt + 1;
+      Some e
+
+let remainder t =
+  let rest = t.entries in
+  t.entries <- [];
+  t.dealt <- t.dealt + List.length rest;
+  rest
+
+let check_consumed t =
+  if t.entries <> [] then
+    failf "tape %s: %d of %d entries never consumed" t.name
+      (List.length t.entries)
+      (t.dealt + List.length t.entries)
+
+let with_tape name entries =
+  bracket
+    ~setup:(fun () -> { name; entries; dealt = 0 })
+    ~teardown:check_consumed
+
+(* The recipe's seam consumer: retry once past a transient error. *)
+let run_turn provider =
+  match provider () with
+  | Ok reply -> reply
+  | Error _ -> (
+      match provider () with
+      | Ok reply -> reply
+      | Error _ -> fail "gave up after one retry")
+
+let message_of failure =
+  match failure.Private.Failure.kind with
+  | Private.Failure.Message m -> m
+  | _ -> fail "failf raises a Message"
+
+let tape_tests =
+  group "scripted seams"
+    [
+      (* The constructor in real use: the whole script consumed, the
+         teardown check passing silently on the way out. *)
+      with_tape "provider"
+        [ Error "timeout"; Ok "done" ]
+        "a retry consumes the script exactly" (fun provider ->
+          equal string "done" (run_turn (fun () -> next provider));
+          is_none (next_opt provider));
+      test "exhaustion names the tape and the position" (fun () ->
+          let t = { name = "provider"; entries = []; dealt = 3 } in
+          match next t with
+          | _ -> fail "an exhausted tape must fail"
+          | exception Private.Failure.Check_failure f ->
+              contains ~sub:"tape provider: exhausted after 3 entries"
+                (message_of f));
+      test "unconsumed entries fail the teardown check" (fun () ->
+          let t = { name = "provider"; entries = [ 1; 2 ]; dealt = 1 } in
+          match check_consumed t with
+          | () -> fail "a leftover script must fail"
+          | exception Private.Failure.Check_failure f ->
+              contains ~sub:"tape provider: 2 of 3 entries never consumed"
+                (message_of f));
+      test "remainder discharges the obligation" (fun () ->
+          let t = { name = "events"; entries = [ "a"; "b" ]; dealt = 0 } in
+          equal string "a" (next t);
+          equal (list string) [ "b" ] (remainder t);
+          check_consumed t);
+    ]
+
 (* The role dispatch and the suite *)
 
 let () =
@@ -285,4 +375,5 @@ let () =
           codec_tests;
           keyed_tests;
           complex_tests;
+          tape_tests;
         ]

@@ -49,8 +49,23 @@ after `fn dir` leaks it on every failing test.
 
 ## 2. Scoped environment variables
 
-Mutating the environment in a test must restore it on every path, or one
-failing test poisons the rest of the run:
+Prefer the built-ins: `setenv name (Some v)` binds and `setenv name
+None` unbinds — a real unbinding, `Sys.getenv_opt` answers `None` — for
+the rest of the test, and the runner restores what the variable held
+before the test's first `setenv` of it, on every outcome: failure,
+skip, and timeout included. There is no lifecycle to write:
+
+```ocaml
+test "a missing token is refused, an empty one is not a token" (fun () ->
+    setenv "API_TOKEN" (Some "test-token");
+    equal string "test-token" (Client.token ());
+    setenv "API_TOKEN" None;
+    raises Missing_token (fun () -> ignore (Client.token ())))
+```
+
+Reach for a hand-rolled scope only outside a run — a setup script, a
+tool. The canonical shape, and the limitation that keeps it inferior to
+the built-in:
 
 ```ocaml
 let with_env var value fn =
@@ -62,16 +77,11 @@ let with_env var value fn =
     fn
 ```
 
-Two facts to know:
-
-- **`putenv` cannot unset.** If `var` was unset before the call, the
-  restore above leaves it *set to `""`* — the POSIX interface has no
-  portable unset. Code under test should treat the empty string as
-  absent (`match Sys.getenv_opt var with Some "" | None -> ... `), or
-  the test should assert against a variable it sets in both branches.
-- **The environment is per-process.** Windtrap's runner is sequential,
-  so this is safe today; the recipe is a hazard class under any future
-  parallel runner, which is one reason it stays a recipe.
+**`putenv` cannot unset.** If `var` was unset before the call, the
+restore above leaves it *set to `""`* — the POSIX interface OCaml's
+`Unix` exposes has no unset, which is exactly why `setenv`'s `None`
+goes through a real `unsetenv` stub instead. Under this recipe, code
+that distinguishes unset from empty stays untestable.
 
 ## 3. Testing under Eio
 
@@ -276,3 +286,93 @@ The same shape scales to any component-tolerance record; `%.17g` keeps
 unequal values from rendering identically. NaN components follow the
 underlying witness: equal to nothing under `float_rel` — build on
 `float_exact` instead when asserting NaN behavior.
+
+## 11. Scripted seams: the tape
+
+A test double for an effectful dependency wants three things: canned
+responses dealt in order, a failure when the code under test asks for
+more than the script holds, and a failure when the test ends with
+entries never consumed — the silent case, where the interaction you
+scripted simply did not happen and nothing said so. The whole of it is
+a record and a few functions over the public surface:
+
+```ocaml
+type 'a tape = { name : string; mutable entries : 'a list; mutable dealt : int }
+
+let next ?pos t =
+  match t.entries with
+  | [] -> failf ?pos "tape %s: exhausted after %d entries" t.name t.dealt
+  | e :: rest ->
+      t.entries <- rest;
+      t.dealt <- t.dealt + 1;
+      e
+
+let check_consumed t =
+  if t.entries <> [] then
+    failf "tape %s: %d of %d entries never consumed" t.name
+      (List.length t.entries)
+      (t.dealt + List.length t.entries)
+
+let with_tape name entries =
+  bracket
+    ~setup:(fun () -> { name; entries; dealt = 0 })
+    ~teardown:check_consumed
+```
+
+`bracket` is what makes the end-of-test check unforgeable: the teardown
+runs on every outcome, and a teardown assertion after a green body is a
+counted failure of the test — the runner's boundary matrix pins exactly
+this. Setup runs per attempt, so a retried test deals from a fresh
+script. In use, the tape is the seam's implementation:
+
+```ocaml
+let () =
+  run "engine"
+    [
+      with_tape "provider"
+        [ Error `Timeout; Ok "done" ]
+        "a turn retries once past a transient provider error"
+        (fun provider ->
+          let engine = Engine.create ~provider:(fun _req -> next provider) in
+          equal string "done" (Engine.run_turn engine "hi"));
+    ]
+```
+
+If the retry logic is broken and the second entry is never dealt, the
+teardown fails the test naming the tape and the counts — where a
+hand-rolled fake passes silently, having proved only that the first
+response was consumed. Two companions round it out:
+
+```ocaml
+let next_opt t =
+  match t.entries with
+  | [] -> None
+  | e :: rest ->
+      t.entries <- rest;
+      t.dealt <- t.dealt + 1;
+      Some e
+
+let remainder t =
+  let rest = t.entries in
+  t.entries <- [];
+  t.dealt <- t.dealt + List.length rest;
+  rest
+```
+
+`next_opt` is the driver form — exhaustion as the normal stop condition
+for a loop that feeds a system to the end of its script — and
+`remainder` takes the rest and discharges the check: the explicit
+spelling of "the rest may go unused", usually to assert on it directly.
+
+Two boundaries, on purpose. Hold-and-release — delivering a scripted
+response only when the test says so, to observe the in-flight state —
+is scheduling, not sequencing: make the entry a promise
+(`Eio.Promise.t`, or your runtime's equivalent) that the seam awaits,
+and the concurrency library owns when it resolves. And a tape is not a
+mock framework: there is no call matcher and no expectation DSL here
+deliberately — a test that needs several interlocking fakes to check
+one line is the over-mocked shape the skill's bad-test catalog rejects.
+The tape verifies one thing, the thing hand-rolled fakes silently skip:
+this finite interaction budget was consumed, exactly. Faults need no
+machinery at all — script an `Error`, or a thunk that raises, at the
+position where the failure should happen.
