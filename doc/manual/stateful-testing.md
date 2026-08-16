@@ -280,8 +280,13 @@ inexpressible.
 `temp_dir ()` is the wrong tool inside a scope: it is *test*-scoped,
 creating a directory per call that survives until the test ends, and a
 failing stateful test builds one system per shrink candidate —
-hundreds of them. Mint the path in the scope and remove it on the way
-out:
+hundreds of them. The same boundary applies to `setenv` and `chdir`:
+the runner restores them at the *attempt* boundary, not between cases
+or shrink candidates, so a scope that moves the process or binds a
+variable carries that state into every later case of the run — use
+absolute paths, and put process state back yourself, per case, if the
+scope must touch it. Mint the path in the scope and remove it on the
+way out:
 
 ```ocaml
 stateful "store survives any sequence" ~model:Store_model.empty

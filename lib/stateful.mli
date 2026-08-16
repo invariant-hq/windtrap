@@ -285,8 +285,11 @@ val execute :
     running the program …"] located at [loc]. A scope that runs it twice gets
     [Invalid_argument] at the second call, and that outranks everything else
     the case has to say, a swallowed one included: one execution is what the
-    case is keyed by, and a harness that is wrong has no counterexample to
-    report. *)
+    case is keyed by. Under the engine the search treats that like any
+    exception and converges on the empty program — accurately, since a scope
+    that calls back twice does so whatever the program says — so the report
+    reads [(no commands)] with the misuse as its failure: the message, not
+    the counterexample, is the diagnosis. *)
 
 (** {1:declaring Declaring} *)
 

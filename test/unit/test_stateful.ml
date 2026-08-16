@@ -934,18 +934,41 @@ let a_scope_that_runs_the_program_twice_is_invalid () =
   | () -> failf "a swallowed double call passed the case");
   (* And it outranks the program's own failure: a case whose harness is
      wrong has no counterexample to report. *)
-  match
-    Stateful.execute
-      ~scope:(fun run ->
-        (try run () with Failure.Check_failure _ -> ());
-        run ())
-      (one_call_program (Failure.Check_failure (Failure.message "the body")))
-  with
+  (match
+     Stateful.execute
+       ~scope:(fun run ->
+         (try run () with Failure.Check_failure _ -> ());
+         run ())
+       (one_call_program (Failure.Check_failure (Failure.message "the body")))
+   with
   | exception Invalid_argument _ -> ()
   | exception exn ->
       failf "a double call after a failing program came back as %s"
         (Printexc.to_string exn)
-  | () -> failf "a double call after a failing program was accepted"
+  | () -> failf "a double call after a failing program was accepted");
+  (* And through the engine: the misuse is classified like any exception,
+     so the search re-runs the broken scope and converges on the empty
+     program — accurately, since a scope that calls back twice does so
+     whatever the program says. The message, not the counterexample, is
+     the diagnosis, and the reader must be shown it. *)
+  let outcome =
+    Property.run ~count:(`Declared 4) ~root ~path:"double-call" (queue_gen ())
+      (fun _ program ->
+        Stateful.execute
+          ~scope:(fun run ->
+            run (Bad_queue.create ());
+            run (Bad_queue.create ()))
+          program)
+  in
+  let reported, _ = expect_fail outcome in
+  let rendered, _, _, _, _ = property_payload reported in
+  check (rendered = "(no commands)")
+    "a double-calling scope converged on %S instead of the empty program"
+    rendered;
+  let block = failure_block reported in
+  check
+    (contains "called its callback twice" block)
+    "the reader is not told the harness is wrong:\n%s" block
 
 (* Before the callback the scope is acquiring, and what it raises there
    propagates as itself — unconverted and unlabelled — so an assertion is

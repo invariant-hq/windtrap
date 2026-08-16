@@ -525,7 +525,10 @@ after every call) checks what the state *is*. What to know:
   once: never fails the case, twice raises `Invalid_argument`.
 - The scope runs once per case **and per shrink candidate** — hundreds
   on a failing run. `temp_dir ()` is test-scoped, wrong here; mint
-  scratch paths inside the scope and remove them on the way out.
+  scratch paths inside the scope and remove them on the way out. So are
+  `setenv`/`chdir` — restored per attempt, not per case: a scope that
+  moves the process or binds a variable leaks it into later cases; use
+  absolute paths, restore process state yourself.
   `~steps` (default 20) is quadratic on the failing path — lower it
   first when the test is expensive; `~timeout` is the only per-test
   bound there.

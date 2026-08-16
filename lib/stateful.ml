@@ -478,15 +478,19 @@ let ends_the_run exn =
    a program that did not run is not a passing program, and silently green
    is the worst outcome available here. A second call is the harness
    itself being wrong — one execution is what the whole case is keyed by,
-   the system the first call used is spent, and a case whose harness is
-   wrong has no counterexample to report — so it is [Invalid_argument] at
-   the call rather than a failure the search would try to minimise. *)
+   and the system the first call used is spent — so it is
+   [Invalid_argument] at the call. The engine classifies that like any
+   exception, so the search re-runs the broken scope and converges on the
+   empty program: accurate — a scope that calls back twice does so
+   whatever the program says — and the message, not the counterexample,
+   is what diagnoses it. No non-ASCII in [called_twice]:
+   [Printexc.to_string] renders [Invalid_argument] payloads with [%S]. *)
 let no_program =
   "the scope returned without running the program — a scope must call its \
    callback exactly once"
 
 let called_twice =
-  "Windtrap.stateful: the scope called its callback twice — a scope must call \
+  "Windtrap.stateful: the scope called its callback twice; a scope must call \
    it exactly once"
 
 let execute ?loc ?invariant ~scope program =

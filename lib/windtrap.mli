@@ -815,7 +815,12 @@ val stateful :
 
     [temp_dir] is test-scoped and the wrong tool here: a failing test builds
     hundreds of systems, so the scope should mint its own path and remove it on
-    the way out.
+    the way out. {!setenv} and {!chdir} are test-scoped the same way — the
+    runner restores them at the attempt boundary, not between cases or shrink
+    candidates — so a scope (or a command body) that moves the process or
+    binds a variable carries that state into every later case of the same
+    run: use absolute paths, and if the scope must touch process state, it
+    puts it back itself, per case.
 
     [invariant] runs on the fresh system before the first call and after every
     call. An operation whose body asserts nothing is checked only by it: bodies
