@@ -310,6 +310,14 @@ let eventually ?pos ?msg ?(attempts = 100) ?diagnose ~step probe =
               | exception ((Failure.Timeout _ | Failure.Exit_attempt) as e) ->
                   raise e
               | exception e when Failure.is_fatal e -> raise e
+              | exception Failure.Skip_test reason ->
+                  (* A skip at failure time cannot un-fail the test, and the
+                     internal constructor's [Printexc] rendering belongs to
+                     no report; say what was asked in plain words. *)
+                  Error
+                    (match reason with
+                    | Some r -> "skip requested: " ^ r
+                    | None -> "skip requested")
               | exception e -> Error (Printexc.to_string e))
             diagnose
         in

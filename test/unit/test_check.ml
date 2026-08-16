@@ -979,7 +979,22 @@ let tests =
                       (fun () -> None)))
            with
           | Raised (F.Timeout _) -> true
-          | _ -> false));
+          | _ -> false);
+        (* A skip raised at failure time is recorded in plain words — never
+           honoured (it cannot un-fail the test), and never rendered as the
+           internal constructor's [Printexc] spelling. *)
+        match
+          caught "eventually: skipping diagnostic" (fun () ->
+              ignore
+                (Check.eventually ~attempts:1
+                   ~diagnose:(fun () -> Check.skip ~reason:"no device" ())
+                   ~step:(fun () -> ())
+                   (fun () -> None)))
+        with
+        | { F.kind = F.Convergence { diagnosis = Error text; _ }; _ } ->
+            check_string "eventually: the skip is recorded in plain words"
+              ~expected:"skip requested: no device" ~actual:text
+        | _ -> fail "eventually: kind is Convergence carrying Error");
     test "raises: structural equality and payload shapes" (fun () ->
         passes "raises: pass on the exact exception" (fun () ->
             Check.raises Not_found (fun () -> raise Not_found));

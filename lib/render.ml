@@ -372,9 +372,12 @@ let headline ?(invocation = `Mirrors) (f : Failure.t) =
            would have observed. *)
         match diagnosis with
         | Ok [] -> spent
-        | Ok lines -> spf "%s: %s" spent (flat (String.concat "; " lines))
+        | Ok lines ->
+            spf "%s: %s" spent
+              (flat (show_controls (String.concat "; " lines)))
         | Error text ->
-            spf "%s (diagnosis unavailable: %s)" spent (flat text))
+            spf "%s (diagnosis unavailable: %s)" spent
+              (flat (show_controls text)))
     | Failure.Message "" -> "(empty failure message)"
     | Failure.Message m -> flat m
     | Failure.Stale_baselines orphans ->
@@ -909,13 +912,15 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   | Failure.Convergence { attempts; diagnosis } -> (
       (* The budget, then what the assertion's [?diagnose] reported nested
          under it. No labels: there is no expected side to put opposite,
-         only a state that never arrived. Diagnosis lines are messages, not
-         compared data, so they print as [Message] does; a crashed callback
-         prints as one [diagnosis unavailable] line, its exception rendering
-         escaped like the compared values, never as an observation. *)
+         only a state that never arrived. Diagnosis lines render live system
+         state — the callback exists to print what the probe saw — so they
+         are escaped like the compared values, unlike a [Message], which is
+         the author's own words; a crashed callback prints as one
+         [diagnosis unavailable] line on the same terms, never as an
+         observation. *)
       put_ind (convergence_verdict attempts);
       match diagnosis with
-      | Ok lines -> List.iter (fun line -> put_block line) lines
+      | Ok lines -> List.iter (fun line -> put_block (show_controls line)) lines
       | Error text -> put_ind ("diagnosis unavailable: " ^ show_controls text))
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m ->

@@ -256,9 +256,11 @@ val eventually :
     it is a boundary in the opposite direction to the two callbacks below: an
     exception it raises is caught and recorded as the diagnosis being
     unavailable, never allowed to replace the verdict it was decorating —
-    [diagnose] observes a failure that has already happened. Only the run's
-    own exceptions pass through it: a {!Failure.Timeout} deadline, an exit
-    attempt, and the fatal three ({!Failure.is_fatal}).
+    [diagnose] observes a failure that has already happened. Only the
+    exceptions that end the run pass through it: a {!Failure.Timeout}
+    deadline, an exit attempt, and the fatal three ({!Failure.is_fatal}). A
+    skip raised there is recorded in plain words, not honoured — a skip at
+    failure time cannot un-fail the test.
 
     The budget counts probes, not seconds. Windtrap never sleeps: [step] is
     the caller's, and whatever advances the system — a mock clock tick, one

@@ -1810,7 +1810,19 @@ let test_convergence_block () =
   check_contains "eventually: a crashed diagnostic is named unavailable"
     ~sub:"    diagnosis unavailable: Failure(\"boom\\x1b\")\n" crashed;
   check_absent "eventually: the crash never reaches the block raw"
-    ~sub:"\x1b\"" crashed
+    ~sub:"\x1b\"" crashed;
+  (* Diagnosis lines render live system state: a payload-borne escape is
+     shown, not executed — the compared-data rule, not [Message]'s. *)
+  let styled =
+    failure_block
+      (Failure.convergence ~attempts:3
+         ~diagnosis:(Ok [ "state = \x1b[31mRED\x1b[0m"; "raw \x00 byte" ])
+         ())
+  in
+  check_contains "eventually: diagnosis lines are escaped"
+    ~sub:"      state = \\x1b[31mRED\\x1b[0m\n      raw \\x00 byte\n" styled;
+  check_absent "eventually: no raw control byte reaches the block"
+    ~sub:"\x1b[31m" styled
 
 let test_convergence_headlines () =
   check "headline: convergence names the budget"
@@ -1826,7 +1838,11 @@ let test_convergence_headlines () =
     (Render.headline
        (Failure.convergence ~attempts:7 ~diagnosis:(Error "Failure(\"boom\")")
           ())
-    = {|no convergence in 7 attempts (diagnosis unavailable: Failure("boom"))|})
+    = {|no convergence in 7 attempts (diagnosis unavailable: Failure("boom"))|});
+  check "headline: diagnosis control bytes are escaped, not executed"
+    (Render.headline
+       (Failure.convergence ~attempts:3 ~diagnosis:(Ok [ "s = \x1b[31mR" ]) ())
+    = {|no convergence in 3 attempts: s = \x1b[31mR|})
 
 let test_satisfies_no_refinement () =
   (* The claim sentence is a description, not a rendering: never diff or
