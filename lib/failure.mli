@@ -233,6 +233,23 @@ type kind =
           explicit examples list (such cases are never seeded or shrunk);
           [inner] is the assertion failure raised by the property body at the
           shrunk counterexample, when it was a {!Check_failure}. *)
+  | Convergence of {
+      attempts : int;
+          (** The number of probes that ran, which is the whole budget: the
+              failure exists only because the budget was spent. *)
+      diagnosis : (string list, string) result;
+          (** What the assertion's [?diagnose] callback reported, one entry
+              per line and each bounded like every payload string; [Ok []]
+              when the assertion carried no callback. [Error text] when the
+              callback itself raised, [text] rendering the exception — the
+              distinction is recorded here so a renderer never labels a
+              crashed diagnostic as an observation. Collected at the failure,
+              because the exhausted state is the only one worth describing. *)
+    }
+      (** An [eventually] assertion never converged. There is no duration in
+          the payload because there is none in the assertion: windtrap does
+          not sleep, so the budget counts probes and the waiting — if any —
+          belongs to the caller's [step]. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
   | Stale_baselines of string list
       (** Baselines still stale at the end of a full, clean run, failing it
@@ -403,6 +420,21 @@ val property :
     {!Property} failure; see {!kind} for the payload semantics. [timed_out],
     [count], and [max_shrink] default to [None], and [printerless] to [false] —
     the caller states that [rendered] is a placeholder, since only it knows. *)
+
+val convergence :
+  ?loc:Loc.t ->
+  ?msg:string ->
+  ?diagnosis:(string list, string) result ->
+  attempts:int ->
+  unit ->
+  t
+(** [convergence ~attempts ()] is a {!Convergence} failure over a budget of
+    [attempts] probes, all spent. [diagnosis] defaults to [Ok []]; its entries
+    — or the [Error] rendering of a crashed callback — are bounded like every
+    payload string.
+
+    Raises [Invalid_argument] if [attempts] is not positive: a budget that
+    admits no probe cannot be spent, so no failure can describe it. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)

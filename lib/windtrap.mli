@@ -6,7 +6,7 @@
 (** One library for all your OCaml tests.
 
     Windtrap runs unit, property, and snapshot tests from one flat surface:
-    declare tests with {!test} and {!group}, assert with the Twenty-six verbs
+    declare tests with {!test} and {!group}, assert with the Twenty-seven verbs
     ({!equal}, {!require_some}, {!raises}, ...), and hand the suite to {!run}:
 
     {[
@@ -289,12 +289,12 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:assertions Assertions}
 
-    Twenty-six verbs and the {!Exn} predicates. Each verb raises one structured
-    failure that the runner catches at the test boundary; the failure records
-    the call site ([?pos], else a best-effort call-stack capture) and the
-    optional [?msg] annotation. Expected precedes actual, always. An assertion
-    failing outside any run surfaces as an ordinary uncaught exception rendered
-    with the failure's one-line summary. *)
+    Twenty-seven verbs and the {!Exn} predicates. Each verb raises one
+    structured failure that the runner catches at the test boundary; the
+    failure records the call site ([?pos], else a best-effort call-stack
+    capture) and the optional [?msg] annotation. Expected precedes actual,
+    always. An assertion failing outside any run surfaces as an ordinary
+    uncaught exception rendered with the failure's one-line summary. *)
 
 val equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal t expected actual] asserts that [expected] and [actual] are equal
@@ -439,6 +439,45 @@ val require_match :
     otherwise; the printer runs only on failure. An exception raised by
     [extract] propagates unchanged — it is the test's failure, not a match
     failure. *)
+
+val eventually :
+  ?pos:pos ->
+  ?msg:string ->
+  ?attempts:int ->
+  ?diagnose:(unit -> string list) ->
+  step:(unit -> unit) ->
+  (unit -> 'a option) ->
+  'a
+(** [eventually ~step probe] drives a system until it settles, and returns what
+    [probe] finally saw:
+
+    {[
+      let reply =
+        eventually
+          ~step:(fun () -> Scheduler.run_one sched)
+          ~diagnose:(fun () ->
+            [ Printf.sprintf "queue: %d" (Queue.length pending) ])
+          (fun () -> Client.poll client)
+    ]}
+
+    It probes first, then alternates probe and [step], returning the first
+    [Some v] as [v]. After [attempts] probes (default [100]) with nothing, it
+    fails, printing the budget and whatever [?diagnose] returned — the state
+    you could not see from a bare timeout.
+
+    {b Windtrap never sleeps.} The budget counts probes, not seconds, and
+    [step] is yours: put in it the thing that actually advances the system — a
+    mock clock tick, one turn of an event loop, a queue drained — and the
+    convergence you assert is deterministic and runs as fast as the system
+    does. A [step] that only sleeps makes this a retry loop that hides a race
+    by outlasting it; that race is a defect in the code under test, and this
+    verb exists to expose it rather than wait it out.
+
+    An exception from [probe] or [step] propagates unchanged: an assertion
+    failing inside [probe] is that assertion's failure, not a slow system.
+    [diagnose] points the other way — it decorates a failure already reached,
+    so if it raises, the report keeps the convergence verdict and records the
+    diagnosis as unavailable. [attempts] must be positive. *)
 
 val raises : ?pos:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
 (** [raises e f] asserts that [f ()] raises an exception structurally equal to

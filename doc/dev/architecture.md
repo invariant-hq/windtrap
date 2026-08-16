@@ -54,7 +54,7 @@ output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions),
 `Testable`, `Diff` (diff *data*: Myers hunks and character-refinement
 spans; no styling).
 
-Verbs and engines: `Check` (the Twenty-six verbs, pure, no run-state
+Verbs and engines: `Check` (the Twenty-seven verbs, pure, no run-state
 dependency), `Gen`, `Property` (the case loop: examples-first, derived
 per-case seeds, discard/give-up, shrink search, collect tables),
 `Stateful` (model-based testing: the command vocabulary, compiled into

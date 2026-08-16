@@ -67,6 +67,30 @@ unchanged. See [the manual chapter](doc/manual/mutation.md); the laws that
 contain it are Laws 11–13, 15 and the new Law 16 in
 [`doc/dev/architecture.md`](doc/dev/architecture.md).
 
+**`eventually ~step probe`, a convergence verb that never sleeps.** Asserting
+that a system *reaches* a state, rather than that it is already in one, had no
+verb, so it was written as a hand-rolled loop around `Unix.sleepf` — and that
+loop is a race detector run backwards. It passes when the system is fast
+enough, fails when CI is loaded, and its failure says only that a deadline
+expired. `eventually` takes the stepping function instead of owning it: it
+probes, runs your `~step`, and probes again, returning the first `Some v` as
+`v`. Because `~step` is yours, it is the thing that actually advances the
+system — a mock clock tick, one turn of an event loop, a queue drained — so
+the convergence is deterministic and the test runs as fast as the system does
+instead of as slowly as the worst case you guessed. **Windtrap never sleeps,
+and this verb is where that rule is load-bearing**: a `~step` that only waits
+hides a race by outlasting it, and a race is a defect this verb exists to
+expose. The budget is therefore a count of probes (`~attempts`, default 100),
+not a duration, and there is no time anywhere in the failure payload.
+`~diagnose` returns lines describing the state at exhaustion, which is what a
+bare timeout can never tell you: not that the state never arrived, but what it
+was when you stopped waiting. Neither `~step` nor the probe is a failure
+boundary — an assertion failing inside the probe is that assertion's failure,
+reported as itself rather than swallowed into a budget report. `~diagnose`
+points the other way: it decorates a verdict already reached, so a diagnostic
+that crashes is recorded as `diagnosis unavailable` under the intact verdict
+instead of replacing the finding with its own exception.
+
 **`in_order ~subs` and `contains ~count`.** Both are questions about *which*
 occurrences count, and neither could be asked of a string without throwing the
 string away. A log that must show connect, then authenticate, then disconnect

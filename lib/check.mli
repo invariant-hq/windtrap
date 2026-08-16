@@ -5,12 +5,12 @@
 
 (** The assertion verbs.
 
-    Twenty-six verbs and the {!Exn} predicates, each verb raising one structured
-    failure: a failing verb constructs a single {!Failure.t} — a typed kind, an
-    optional location, the [?msg] annotation when given — and raises
-    {!Failure.Check_failure}. Verbs never print, never diff, and never touch run
-    state: renderers project failure data into reports, computing diffs from the
-    rendered values stored in the payload.
+    Twenty-seven verbs and the {!Exn} predicates, each verb raising one
+    structured failure: a failing verb constructs a single {!Failure.t} — a
+    typed kind, an optional location, the [?msg] annotation when given — and
+    raises {!Failure.Check_failure}. Verbs never print, never diff, and never
+    touch run state: renderers project failure data into reports, computing
+    diffs from the rendered values stored in the payload.
 
     Comparisons go through a {!Testable.t} witness: {!equal} and {!not_equal}
     use its equality and, on failure only, render the values with its printer
@@ -232,6 +232,45 @@ val require_match :
     payload whose claim is ["a match"], carrying [v] rendered by [pp] when given
     and as [<abstract>] otherwise; the printer runs only on failure. An
     exception raised by [extract] propagates unchanged. *)
+
+(** {1:convergence Convergence} *)
+
+val eventually :
+  ?pos:pos ->
+  ?msg:string ->
+  ?attempts:int ->
+  ?diagnose:(unit -> string list) ->
+  step:(unit -> unit) ->
+  (unit -> 'a option) ->
+  'a
+(** [eventually ~step probe] is [v] for the first [probe ()] that is [Some v].
+    It probes before it steps and then alternates — probe, [step], probe, … —
+    so a system already in the wanted state converges without being driven,
+    and a budget of [attempts] probes drives [attempts - 1] steps: the last
+    probe is not followed by a step nothing would read. [attempts] defaults to
+    [100].
+
+    When the budget is spent it raises {!Failure.Check_failure} with a
+    {!Failure.Convergence} payload carrying the budget and, when [?diagnose]
+    is given, the lines it returns. [diagnose] runs once, at the failure, and
+    it is a boundary in the opposite direction to the two callbacks below: an
+    exception it raises is caught and recorded as the diagnosis being
+    unavailable, never allowed to replace the verdict it was decorating —
+    [diagnose] observes a failure that has already happened. Only the run's
+    own exceptions pass through it: a {!Failure.Timeout} deadline, an exit
+    attempt, and the fatal three ({!Failure.is_fatal}).
+
+    The budget counts probes, not seconds. Windtrap never sleeps: [step] is
+    the caller's, and whatever advances the system — a mock clock tick, one
+    turn of an event loop, a queue drained — belongs there. A [step] that only
+    waits turns this into a retry loop that hides a race by outlasting it,
+    which is the one thing the verb is not for.
+
+    Neither callback is a failure boundary: an exception raised by [probe] or
+    [step] — a nested assertion's {!Failure.Check_failure} included —
+    propagates unchanged rather than counting as "not converged yet".
+
+    Raises [Invalid_argument] if [attempts] is not positive. *)
 
 (** {1:exceptions Exceptions}
 

@@ -81,6 +81,20 @@ let assertions =
       test "in_order asserts a chain of substrings" (fun () ->
           let log = "connect authenticate send disconnect" in
           in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] log);
+      test "eventually drives a system until it settles" (fun () ->
+          (* The step is what advances the world — here a hand-turned
+             queue, in a real test a scheduler or a mock clock. *)
+          let pending = Queue.create () in
+          List.iter (fun x -> Queue.add x pending) [ 1; 2; 3 ];
+          let drained = ref [] in
+          let reply =
+            eventually
+              ~step:(fun () -> drained := Queue.pop pending :: !drained)
+              ~diagnose:(fun () ->
+                [ Printf.sprintf "pending: %d" (Queue.length pending) ])
+              (fun () -> if Queue.is_empty pending then Some !drained else None)
+          in
+          equal (list int) [ 3; 2; 1 ] reply);
       test "raises compares structurally" (fun () ->
           raises (Parse_error "empty") (fun () -> Calc.parse " "));
       test "raises_match takes a predicate" (fun () ->

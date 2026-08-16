@@ -783,6 +783,203 @@ let tests =
             check_string
               "require_match: composed scrutinee is abstract without pp"
               ~expected:"<abstract>" ~actual:value));
+    test "eventually: convergence, budget, and ordering" (fun () ->
+        (* A counter that converges once [step] has run [n] times, plus the
+           trace of what ran in which order. *)
+        let trace = ref [] in
+        let note event = trace := event :: !trace in
+        let converge_after n =
+          let ticks = ref 0 in
+          let step () =
+            note "step";
+            incr ticks
+          in
+          let probe () =
+            note "probe";
+            if !ticks >= n then Some !ticks else None
+          in
+          (step, probe)
+        in
+        (* Probe first: a system already in the wanted state converges
+           without being driven, so [step] must not have run. *)
+        trace := [];
+        let step, probe = converge_after 0 in
+        check "eventually: returns the converged value"
+          (Check.eventually ~step probe = 0);
+        check_string "eventually: an already-converged probe never steps"
+          ~expected:"probe"
+          ~actual:(String.concat " " (List.rev !trace));
+        (* The loop alternates strictly, probing before every step. *)
+        trace := [];
+        let step, probe = converge_after 2 in
+        check "eventually: returns the value of the converging probe"
+          (Check.eventually ~step probe = 2);
+        check_string "eventually: probe precedes every step"
+          ~expected:"probe step probe step probe"
+          ~actual:(String.concat " " (List.rev !trace));
+        (* A budget of n probes drives n-1 steps: the last probe is not
+           followed by a step nothing would read. *)
+        trace := [];
+        let step, probe = converge_after 99 in
+        let _ =
+          caught "eventually: exhaustion" (fun () ->
+              ignore (Check.eventually ~attempts:4 ~step probe))
+        in
+        let ran = List.rev !trace in
+        check_string "eventually: the budget counts probes, not steps"
+          ~expected:"4 probes, 3 steps"
+          ~actual:
+            (Printf.sprintf "%d probes, %d steps"
+               (List.length (List.filter (String.equal "probe") ran))
+               (List.length (List.filter (String.equal "step") ran)));
+        (* [attempts:1] is a single probe with no step at all. *)
+        trace := [];
+        let step, probe = converge_after 99 in
+        let _ =
+          caught "eventually: single-attempt exhaustion" (fun () ->
+              ignore (Check.eventually ~attempts:1 ~step probe))
+        in
+        check_string "eventually: one attempt probes once and never steps"
+          ~expected:"probe"
+          ~actual:(String.concat " " (List.rev !trace));
+        (* The default budget is 100 probes. *)
+        let probes = ref 0 in
+        let _ =
+          caught "eventually: default budget" (fun () ->
+              ignore
+                (Check.eventually
+                   ~step:(fun () -> ())
+                   (fun () ->
+                     incr probes;
+                     None)))
+        in
+        check_string "eventually: the default budget is 100 probes"
+          ~expected:"100" ~actual:(string_of_int !probes);
+        (* A budget that admits no probe is a programmer error. *)
+        List.iter
+          (fun attempts ->
+            check
+              (Printf.sprintf "eventually: ~attempts:%d is rejected" attempts)
+              (match
+                 outcome (fun () ->
+                     ignore
+                       (Check.eventually ~attempts ~step:(fun () -> ())
+                          (fun () -> Some ())))
+               with
+              | Raised (Invalid_argument _) -> true
+              | _ -> false))
+          [ 0; -1 ]);
+    test "eventually: the failure payload" (fun () ->
+        let never () = None in
+        let step () = () in
+        (* No [?diagnose]: the budget is the whole payload. *)
+        (match
+           caught "eventually: bare failure" (fun () ->
+               ignore (Check.eventually ~attempts:3 ~step never))
+         with
+        | { F.kind = F.Convergence { attempts; diagnosis }; _ } ->
+            check_string "eventually: the spent budget is recorded"
+              ~expected:"3" ~actual:(string_of_int attempts);
+            check "eventually: no callback means no diagnosis"
+              (diagnosis = Ok [])
+        | _ -> fail "eventually: kind is Convergence");
+        (* [?diagnose] runs once, at the failure, and its lines are the
+           payload's diagnosis in order. *)
+        let calls = ref 0 in
+        let diagnose () =
+          incr calls;
+          [ "queue depth: 3"; "worker: draining" ]
+        in
+        (match
+           caught "eventually: diagnosed failure" (fun () ->
+               ignore (Check.eventually ~attempts:2 ~diagnose ~step never))
+         with
+        | { F.kind = F.Convergence { diagnosis = Ok lines; _ }; _ } ->
+            check_string "eventually: the diagnosis is stored in order"
+              ~expected:"queue depth: 3 | worker: draining"
+              ~actual:(String.concat " | " lines);
+            check_string "eventually: diagnose runs exactly once"
+              ~expected:"1" ~actual:(string_of_int !calls)
+        | _ -> fail "eventually: kind is Convergence");
+        (* Like every printer here, it does not run on the pass path. *)
+        let calls = ref 0 in
+        let diagnose () =
+          incr calls;
+          [ "unreachable" ]
+        in
+        passes "eventually: pass path" (fun () ->
+            ignore (Check.eventually ~diagnose ~step (fun () -> Some 1)));
+        check_string "eventually: diagnose does not run when it converges"
+          ~expected:"0" ~actual:(string_of_int !calls));
+    test "eventually: callbacks are not a failure boundary" (fun () ->
+        (* An assertion failing inside the probe is that assertion's failure,
+           not "not converged yet": swallowing it is how a convergence loop
+           turns a real defect into a budget report. *)
+        let inner =
+          caught "eventually: a failing probe" (fun () ->
+              ignore
+                (Check.eventually
+                   ~step:(fun () -> ())
+                   (fun () ->
+                     Check.equal Testable.int 1 2;
+                     Some ())))
+        in
+        (match inner.F.kind with
+        | F.Equality { expected; actual; _ } ->
+            check_string "eventually: the probe's own failure propagates"
+              ~expected:"1 vs 2"
+              ~actual:(Printf.sprintf "%s vs %s" expected actual)
+        | _ -> fail "eventually: the probe's failure is an Equality");
+        check "eventually: an exception from the probe propagates"
+          (match
+             outcome (fun () ->
+                 ignore
+                   (Check.eventually ~step:(fun () -> ()) (fun () ->
+                        raise Not_found)))
+           with
+          | Raised Not_found -> true
+          | _ -> false);
+        check "eventually: an exception from step propagates"
+          (match
+             outcome (fun () ->
+                 ignore
+                   (Check.eventually
+                      ~step:(fun () -> raise Not_found)
+                      (fun () -> None)))
+           with
+          | Raised Not_found -> true
+          | _ -> false));
+    test "eventually: a raising diagnose cannot replace the verdict" (fun () ->
+        (* [diagnose] decorates a verdict already reached; its crash is
+           recorded as the diagnosis being unavailable, and the convergence
+           failure survives with its budget intact. *)
+        (match
+           caught "eventually: crashed diagnostic" (fun () ->
+               ignore
+                 (Check.eventually ~attempts:2
+                    ~diagnose:(fun () -> failwith "probe of the probe broke")
+                    ~step:(fun () -> ())
+                    (fun () -> None)))
+         with
+        | { F.kind = F.Convergence { attempts; diagnosis = Error text }; _ } ->
+            check_string "eventually: the budget survives the crash"
+              ~expected:"2" ~actual:(string_of_int attempts);
+            check_string "eventually: the crash is recorded as the exception"
+              ~expected:{|Failure("probe of the probe broke")|} ~actual:text
+        | _ -> fail "eventually: kind is Convergence carrying Error");
+        (* The run's own exceptions are not a diagnostic detail: a deadline
+           firing while [diagnose] runs must still stop the test. *)
+        check "eventually: a deadline outranks the diagnostic boundary"
+          (match
+             outcome (fun () ->
+                 ignore
+                   (Check.eventually ~attempts:1
+                      ~diagnose:(fun () -> raise (F.Timeout 1.5))
+                      ~step:(fun () -> ())
+                      (fun () -> None)))
+           with
+          | Raised (F.Timeout _) -> true
+          | _ -> false));
     test "raises: structural equality and payload shapes" (fun () ->
         passes "raises: pass on the exact exception" (fun () ->
             Check.raises Not_found (fun () -> raise Not_found));
@@ -1127,6 +1324,11 @@ let tests =
             Check.contains ~pos:fake_pos ~count:2 ~sub:"a" "abc");
         with_pos "in_order: ?pos" (fun () ->
             Check.in_order ~pos:fake_pos ~subs:[ "b"; "a" ] "abc");
+        with_pos "eventually: ?pos" (fun () ->
+            ignore
+              (Check.eventually ~pos:fake_pos ~attempts:1
+                 ~step:(fun () -> ())
+                 (fun () -> None)));
         with_pos "satisfies: ?pos" (fun () ->
             Check.satisfies ~pos:fake_pos Testable.int (fun _ -> false) 1);
         with_pos "require_match: ?pos" (fun () ->
@@ -1193,6 +1395,13 @@ let tests =
           (msg_of "in_order: ?msg" (fun () ->
                Check.in_order ~msg:"trace" ~subs:[ "b"; "a" ] "abc")
           = Some "trace");
+        check "eventually: ?msg stored"
+          (msg_of "eventually: ?msg" (fun () ->
+               ignore
+                 (Check.eventually ~msg:"drain" ~attempts:1
+                    ~step:(fun () -> ())
+                    (fun () -> None)))
+          = Some "drain");
         check "satisfies: ?msg stored"
           (msg_of "satisfies: ?msg" (fun () ->
                Check.satisfies ~msg:"positive" Testable.int (fun _ -> false) 1)

@@ -948,6 +948,14 @@ val pp_failure :
       ([found at byte 13, before the search resumed at byte 36]) and marks it.
       Only [Ordered] adds a line, the [element] index, which says which
       assertion the rest of the block is about;
+    - convergence ([eventually]): the spent budget
+      ([no convergence in 100 attempts], singular at one), then the payload's
+      diagnosis lines nested under it. No labels — there is no expected side
+      to set opposite, only a state that never arrived — and the lines print
+      as a {!Failure.Message} does, being messages rather than compared data;
+      a diagnosis whose callback crashed prints as one
+      [diagnosis unavailable: <exn>] line, the exception rendering escaped
+      like a compared value;
     - raise: expected and raised exceptions, and the recorded backtrace. When
       the payload carries a {!Failure.message_diff} — the failure site decided
       the two exceptions differ only in their message — the block diffs the
