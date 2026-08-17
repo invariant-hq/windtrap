@@ -41,8 +41,7 @@ module Vec =
 let move a b = Vec.(+) a b
 let ordered a b =
   if
-    let __windtrap_mut_0_r = b in
-    let __windtrap_mut_0_l = a in
+    let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
     (if Windtrap_mut_________fixture_shadow___ml.___windtrap_armed___ 0
      then Stdlib.not (__windtrap_mut_0_r < __windtrap_mut_0_l)
      else __windtrap_mut_0_l < __windtrap_mut_0_r)

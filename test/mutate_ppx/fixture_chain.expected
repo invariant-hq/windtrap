@@ -112,20 +112,17 @@ module Windtrap_mut_________fixture_chain___ml =
   end
 [@@@ocaml.text "/*"]
 let three a b c =
-  let __windtrap_mut_0_r = c in
-  let __windtrap_mut_0_l = a + b in
+  let (__windtrap_mut_0_l, __windtrap_mut_0_r) = ((a + b), c) in
   if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 0
   then __windtrap_mut_0_l - __windtrap_mut_0_r
   else __windtrap_mut_0_l + __windtrap_mut_0_r
 let minus a b c =
-  let __windtrap_mut_1_r = c in
-  let __windtrap_mut_1_l = a - b in
+  let (__windtrap_mut_1_l, __windtrap_mut_1_r) = ((a - b), c) in
   if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 1
   then __windtrap_mut_1_l + __windtrap_mut_1_r
   else __windtrap_mut_1_l - __windtrap_mut_1_r
 let floats a b c =
-  let __windtrap_mut_2_r = c in
-  let __windtrap_mut_2_l = a +. b in
+  let (__windtrap_mut_2_l, __windtrap_mut_2_r) = ((a +. b), c) in
   if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 2
   then __windtrap_mut_2_l -. __windtrap_mut_2_r
   else __windtrap_mut_2_l +. __windtrap_mut_2_r
@@ -142,15 +139,13 @@ let conn a b c =
   else 0
 let parens a b c =
   ignore
-    (let __windtrap_mut_4_r = c in
-     let __windtrap_mut_4_l = a + b in
+    (let (__windtrap_mut_4_l, __windtrap_mut_4_r) = ((a + b), c) in
      if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 4
      then __windtrap_mut_4_l - __windtrap_mut_4_r
      else __windtrap_mut_4_l + __windtrap_mut_4_r)
 let in_arg f a b c =
   f
-    (let __windtrap_mut_5_r = c in
-     let __windtrap_mut_5_l = a + b in
+    (let (__windtrap_mut_5_l, __windtrap_mut_5_r) = ((a + b), c) in
      if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 5
      then __windtrap_mut_5_l - __windtrap_mut_5_r
      else __windtrap_mut_5_l + __windtrap_mut_5_r)
@@ -164,31 +159,27 @@ let conn_arg f a b c =
         then c
         else __windtrap_mut_6_p))
 let siblings a b c d =
-  let __windtrap_mut_7_r =
-    let __windtrap_mut_8_r = d in
-    let __windtrap_mut_8_l = c in
-    if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 8
-    then __windtrap_mut_8_l - __windtrap_mut_8_r
-    else __windtrap_mut_8_l + __windtrap_mut_8_r in
-  let __windtrap_mut_7_l = a + b in
+  let (__windtrap_mut_7_l, __windtrap_mut_7_r) =
+    ((a + b),
+      (let (__windtrap_mut_8_l, __windtrap_mut_8_r) = (c, d) in
+       if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 8
+       then __windtrap_mut_8_l - __windtrap_mut_8_r
+       else __windtrap_mut_8_l + __windtrap_mut_8_r)) in
   if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 7
   then __windtrap_mut_7_l - __windtrap_mut_7_r
   else __windtrap_mut_7_l + __windtrap_mut_7_r
 let mixed a b c =
-  let __windtrap_mut_9_r = c in
-  let __windtrap_mut_9_l =
-    let __windtrap_mut_10_r = b in
-    let __windtrap_mut_10_l = a in
-    if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 10
-    then __windtrap_mut_10_l - __windtrap_mut_10_r
-    else __windtrap_mut_10_l + __windtrap_mut_10_r in
+  let (__windtrap_mut_9_l, __windtrap_mut_9_r) =
+    ((let (__windtrap_mut_10_l, __windtrap_mut_10_r) = (a, b) in
+      if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 10
+      then __windtrap_mut_10_l - __windtrap_mut_10_r
+      else __windtrap_mut_10_l + __windtrap_mut_10_r), c) in
   if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 9
   then __windtrap_mut_9_l + __windtrap_mut_9_r
   else __windtrap_mut_9_l - __windtrap_mut_9_r
 let chained a b c =
   if
-    let __windtrap_mut_11_r = c in
-    let __windtrap_mut_11_l = a < b in
+    let (__windtrap_mut_11_l, __windtrap_mut_11_r) = ((a < b), c) in
     (if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 11
      then Stdlib.not (__windtrap_mut_11_r < __windtrap_mut_11_l)
      else __windtrap_mut_11_l < __windtrap_mut_11_r)

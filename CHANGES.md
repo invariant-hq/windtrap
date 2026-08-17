@@ -831,7 +831,25 @@ reports include the tail of the test's captured output
 
 ### Fixed
 
-- **A crashing test no longer swallows a library's expect corrections.** Every
+- **The mutate backend no longer breaks the user's own type-directed record
+  disambiguation.** The `ari` and `cmp` guards lift the operator's two
+  operands out of the application, and lifted them as a chain of `let`s bound
+  right to left — the order the compiler *evaluates* the application in, but
+  the reverse of the order the type-checker *reads* it in. An expression
+  whose first, qualified access teaches the checker a record's type and whose
+  later fields lean on the lesson — `rect.Layout.x - x0 … rect.height`, an
+  ordinary shape in real code — stopped compiling under
+  `--instrument-with ppx_windtrap.mutate` with "Unbound record field": the
+  guard asked about `rect.height` before anything had said what `rect` is.
+  (An entry below fixes the mirror image — PPX-*generated* code relying on
+  the user's scope; this was the PPX un-typing the user's, which is strictly
+  worse.) The operands are now lifted
+  through one tuple binding, `let (l, r) = (left, right)`, whose components
+  the checker reads left to right — the source's order — and whose literal
+  tuple the compiler never builds: it destructures into the very
+  right-operand-first `let` chain emitted before, so evaluation order,
+  operand count, and allocation are unchanged, and every mutant keeps its
+  identifier. Every
   inline-test process that writes a `.corrected` file names it on stderr
   (`windtrap: wrote <file>.corrected`), and a process that wrote corrections
   and still fails adds a loud notice explaining that dune withholds every

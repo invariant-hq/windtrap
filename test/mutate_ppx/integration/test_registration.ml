@@ -26,23 +26,22 @@ let baseline () =
 
 (* The behaviour battery. A golden proves the instrumenter emits what it
    emits; only running an armed program proves that what it emits means
-   the rewrite the report names. [with_mutant ~rewrite ~before f] finds
-   the single mutant of [Oracle] with that rendering, arms it, runs [f],
-   and disarms - failing loudly if the mutant is not unique, which is
-   also what keeps the [before] renderings under test. *)
+   the rewrite the report names. [with_mutant ~file ~rewrite ~before f]
+   finds the single mutant of [file] with that rendering, arms it, runs
+   [f], and disarms - failing loudly if the mutant is not unique, which
+   is also what keeps the [before] renderings under test. *)
 
-let oracle_mutants () =
+let mutants_of file =
   List.filter
-    (fun (m : Windtrap_mutate.mutant) ->
-      Filename.basename m.id.file = "oracle.ml")
+    (fun (m : Windtrap_mutate.mutant) -> Filename.basename m.id.file = file)
     (Windtrap_mutate.catalogue ())
 
-let with_mutant ~rewrite ~before f =
+let with_mutant ~file ~rewrite ~before f =
   let matching =
     List.filter
       (fun (m : Windtrap_mutate.mutant) ->
         m.id.rewrite = rewrite && m.before = before)
-      (oracle_mutants ())
+      (mutants_of file)
   in
   (match matching with
   | [ m ] -> (
@@ -51,13 +50,15 @@ let with_mutant ~rewrite ~before f =
       | Error e -> Format.kasprintf failwith "%a" Windtrap_mutate.pp_arm_error e
       )
   | [] ->
-      Format.kasprintf failwith "no %s mutant renders as %S in oracle.ml"
-        rewrite before
+      Format.kasprintf failwith "no %s mutant renders as %S in %s" rewrite
+        before file
   | _ ->
-      Format.kasprintf failwith "%d %s mutants render as %S in oracle.ml"
-        (List.length matching) rewrite before);
+      Format.kasprintf failwith "%d %s mutants render as %S in %s"
+        (List.length matching) rewrite before file);
   f ();
   Windtrap_mutate.disarm ()
+
+let with_oracle_mutant = with_mutant ~file:"oracle.ml"
 
 let check name condition =
   if not condition then Format.kasprintf failwith "behaviour check: %s" name
@@ -70,32 +71,32 @@ let behaviour () =
   check "con disarmed" ((not (O.con_and false true)) && O.con_or true false);
   check "ari disarmed" (O.ari_add 5 3 = 8 && O.ari_sub 5 3 = 2);
   (* [neg]: the condition, and only the condition, is negated. *)
-  with_mutant ~rewrite:"not" ~before:"flag" (fun () ->
+  with_oracle_mutant ~rewrite:"not" ~before:"flag" (fun () ->
       check "neg armed true" (O.neg_pick true = 0);
       check "neg armed false" (O.neg_pick false = 1));
   (* [cmp]: each armed arm is the relation the report names, checked at
      the boundary where it and the original disagree, and agreeing with
      the original everywhere else. *)
-  with_mutant ~rewrite:"le" ~before:"a < b" (fun () ->
+  with_oracle_mutant ~rewrite:"le" ~before:"a < b" (fun () ->
       check "a < b -> a <= b" (O.cmp_lt 2 2 = 1 && O.cmp_lt 3 2 = 0));
-  with_mutant ~rewrite:"lt" ~before:"a <= b" (fun () ->
+  with_oracle_mutant ~rewrite:"lt" ~before:"a <= b" (fun () ->
       check "a <= b -> a < b" (O.cmp_le 2 2 = 0 && O.cmp_le 1 2 = 1));
-  with_mutant ~rewrite:"ge" ~before:"a > b" (fun () ->
+  with_oracle_mutant ~rewrite:"ge" ~before:"a > b" (fun () ->
       check "a > b -> a >= b" (O.cmp_gt 2 2 = 1 && O.cmp_gt 1 2 = 0));
-  with_mutant ~rewrite:"gt" ~before:"a >= b" (fun () ->
+  with_oracle_mutant ~rewrite:"gt" ~before:"a >= b" (fun () ->
       check "a >= b -> a > b" (O.cmp_ge 2 2 = 0 && O.cmp_ge 3 2 = 1));
-  with_mutant ~rewrite:"neq" ~before:"a = b" (fun () ->
+  with_oracle_mutant ~rewrite:"neq" ~before:"a = b" (fun () ->
       check "a = b -> a <> b" (O.cmp_eq 2 2 = 0 && O.cmp_eq 1 2 = 1));
-  with_mutant ~rewrite:"eq" ~before:"a <> b" (fun () ->
+  with_oracle_mutant ~rewrite:"eq" ~before:"a <> b" (fun () ->
       check "a <> b -> a = b" (O.cmp_ne 2 2 = 1 && O.cmp_ne 1 2 = 0));
   (* [con]: the whole four-row truth table of each connective, since the
      encoding expresses both through one branch and a row transcribed
      backwards would still pass a test that only checked one input. *)
-  with_mutant ~rewrite:"or" ~before:"a && b" (fun () ->
+  with_oracle_mutant ~rewrite:"or" ~before:"a && b" (fun () ->
       check "&& -> ||"
         (O.con_and true true && O.con_and true false && O.con_and false true
         && not (O.con_and false false)));
-  with_mutant ~rewrite:"and" ~before:"a || b" (fun () ->
+  with_oracle_mutant ~rewrite:"and" ~before:"a || b" (fun () ->
       check "|| -> &&"
         (O.con_or true true
         && (not (O.con_or true false))
@@ -103,13 +104,13 @@ let behaviour () =
         && not (O.con_or false false)));
   (* [ari]: the four operators, on operands that make each direction
      visible. *)
-  with_mutant ~rewrite:"sub" ~before:"a + b" (fun () ->
+  with_oracle_mutant ~rewrite:"sub" ~before:"a + b" (fun () ->
       check "+ -> -" (O.ari_add 5 3 = 2));
-  with_mutant ~rewrite:"add" ~before:"a - b" (fun () ->
+  with_oracle_mutant ~rewrite:"add" ~before:"a - b" (fun () ->
       check "- -> +" (O.ari_sub 5 3 = 8));
-  with_mutant ~rewrite:"fsub" ~before:"a +. b" (fun () ->
+  with_oracle_mutant ~rewrite:"fsub" ~before:"a +. b" (fun () ->
       check "+. -> -." (O.ari_fadd 5. 3. = 2.));
-  with_mutant ~rewrite:"fadd" ~before:"a -. b" (fun () ->
+  with_oracle_mutant ~rewrite:"fadd" ~before:"a -. b" (fun () ->
       check "-. -> +." (O.ari_fsub 5. 3. = 8.));
   (* Evaluation order and multiplicity. Both operand-binding encodings
      evaluate each operand exactly once, right to left, armed or not. *)
@@ -119,9 +120,9 @@ let behaviour () =
   in
   order "cmp order disarmed" (fun () -> O.cmp_order 1 2);
   order "ari order disarmed" (fun () -> O.ari_order 1 2);
-  with_mutant ~rewrite:"le" ~before:"(note \"l\" a) < (note \"r\" b)" (fun () ->
-      order "cmp order armed" (fun () -> O.cmp_order 1 2));
-  with_mutant ~rewrite:"sub" ~before:"(note \"l\" a) + (note \"r\" b)"
+  with_oracle_mutant ~rewrite:"le" ~before:"(note \"l\" a) < (note \"r\" b)"
+    (fun () -> order "cmp order armed" (fun () -> O.cmp_order 1 2));
+  with_oracle_mutant ~rewrite:"sub" ~before:"(note \"l\" a) + (note \"r\" b)"
     (fun () -> order "ari order armed" (fun () -> O.ari_order 1 2));
   (* Short-circuiting: the right operand runs exactly when the connective
      in force says it does, and never twice. *)
@@ -131,12 +132,43 @@ let behaviour () =
   in
   shortcut "&& skips b on false" false true false;
   shortcut "&& runs b on true" true true true;
-  with_mutant ~rewrite:"or" ~before:"a && (note \"r\" b)" (fun () ->
+  with_oracle_mutant ~rewrite:"or" ~before:"a && (note \"r\" b)" (fun () ->
       shortcut "|| runs b on false" false true true;
       shortcut "|| skips b on true" true true false)
 
+(* The typing-context corpus ([Disambiguate], see its dune stanza).
+   That its library compiled at all is the regression test; what is
+   left to prove here is that the tuple-lifted encodings still MEAN
+   their rewrites, so one mutant of each reshaped shape - [ari]'s
+   two-binder guard, its chain form, and [cmp]'s swapping form - is
+   armed and its behaviour read at a point where the original and the
+   mutant disagree. *)
+let typing_context () =
+  let module D = Windtrap_mutate_disambiguate.Disambiguate in
+  let with_mutant = with_mutant ~file:"disambiguate.ml" in
+  let rect = { D.Layout.x = 10; y = 20; width = 30; height = 40 } in
+  let line = { D.Line.start = 2; end_ = 7 } in
+  let sides left right = { D.Sides.left; right; top = 0.; bottom = 0. } in
+  let item = { D.padding = sides 1. 2.; border = sides 3. 4. } in
+  check "disambiguate disarmed"
+    (D.clip rect 0 0 100 100 = 130
+    && D.span line = 5
+    && D.inverted line = 0
+    && D.horizontal item = 10.);
+  with_mutant ~rewrite:"add" ~before:"line.Line.end_ - line.start" (fun () ->
+      check "span - -> +" (D.span line = 9));
+  with_mutant ~rewrite:"le" ~before:"line.Line.end_ < line.start" (fun () ->
+      check "inverted < -> <= at the boundary"
+        (D.inverted { D.Line.start = 7; end_ = 7 } = 1));
+  with_mutant ~rewrite:"fsub"
+    ~before:
+      "(((child.padding).left +. (child.padding).right) +. \
+       (child.border).left) +. (child.border).right" (fun () ->
+      check "horizontal chain +. -> -." (D.horizontal item = 2.))
+
 let () =
   behaviour ();
+  typing_context ();
   let catalogue = Windtrap_mutate.catalogue () in
   assert (Windtrap_mutate.armed () = None);
   List.iter

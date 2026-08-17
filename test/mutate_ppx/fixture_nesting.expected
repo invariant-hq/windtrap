@@ -89,8 +89,7 @@ let deep a b c d =
         else __windtrap_mut_2_p))
 let by_cmp a b =
   if
-    let __windtrap_mut_3_r = b in
-    let __windtrap_mut_3_l = a in
+    let (__windtrap_mut_3_l, __windtrap_mut_3_r) = (a, b) in
     (if Windtrap_mut_________fixture_nesting___ml.___windtrap_armed___ 3
      then Stdlib.not (__windtrap_mut_3_r < __windtrap_mut_3_l)
      else __windtrap_mut_3_l < __windtrap_mut_3_r)

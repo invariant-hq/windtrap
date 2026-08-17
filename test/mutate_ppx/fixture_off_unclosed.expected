@@ -26,8 +26,7 @@ module Windtrap_mut_________fixture_off_unclosed___ml =
 module Quiet = struct [@@@mutate off]
                       let hidden a b = a + b end
 let visible a b =
-  let __windtrap_mut_0_r = b in
-  let __windtrap_mut_0_l = a in
+  let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
   if Windtrap_mut_________fixture_off_unclosed___ml.___windtrap_armed___ 0
   then __windtrap_mut_0_l - __windtrap_mut_0_r
   else __windtrap_mut_0_l + __windtrap_mut_0_r

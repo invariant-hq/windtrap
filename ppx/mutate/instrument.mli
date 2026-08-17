@@ -87,8 +87,7 @@
 
     {[
       (* a < b, in a boolean context *)
-      let __windtrap_mut_0_r = b in
-      let __windtrap_mut_0_l = a in
+      let __windtrap_mut_0_l, __windtrap_mut_0_r = (a, b) in
       if ___windtrap_armed___ 0 then
         Stdlib.not (__windtrap_mut_0_r < __windtrap_mut_0_l)
       else __windtrap_mut_0_l < __windtrap_mut_0_r
@@ -99,8 +98,19 @@
       else __windtrap_mut_1_p
     ]}
 
-    Operands are let-bound right to left, matching the order the compiler
-    already uses. Lifting the operator to a value instead —
+    Operands are lifted through {e one tuple binding}, never a chain of [let]s,
+    because the type-checker and the compiler read a tuple in opposite orders
+    and the guard needs both. Components are {e type-checked} left to right —
+    the order the original application's arguments were — so an operand that
+    teaches the checker a record's type ([rect.Layout.x]) still does so before
+    an operand that depends on the lesson ([rect.height]); a [let]-chain must
+    pick one order for checking and evaluation alike, and the right-to-left
+    chain this encoding replaced broke type-directed record disambiguation in
+    user code. The literal tuple is then {e compiled} without ever being built:
+    the match compiler emits the very right-operand-first [let]-chain the old
+    encoding spelled out, so each operand is still evaluated exactly once, in
+    the order the compiler gives the uninstrumented application, with nothing
+    allocated. Lifting the operator to a value instead —
     [(if ___windtrap_armed___ 0 then ( <= ) else ( < )) a b] — is shorter and is
     rejected twice over: it names a second operator, and it forces the generic
     polymorphic comparison on both paths including the disarmed one, turning an
@@ -167,11 +177,13 @@
 
     {[
       (* a + b *)
-      let __windtrap_mut_0_r = b in
-      let __windtrap_mut_0_l = a in
+      let __windtrap_mut_0_l, __windtrap_mut_0_r = (a, b) in
       if ___windtrap_armed___ 0 then __windtrap_mut_0_l - __windtrap_mut_0_r
       else __windtrap_mut_0_l + __windtrap_mut_0_r
     ]}
+
+    The tuple binding is [cmp]'s, for [cmp]'s two reasons: components type-check
+    in source order and compile to the right-operand-first [let]-chain.
 
     This is the single admitted exception to the emission law: [a + b → a - b]
     cannot be expressed without naming [-]. It is guarded by skipping the

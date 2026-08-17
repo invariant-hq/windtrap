@@ -15,9 +15,10 @@
 ; identifier built from it - names a file that exists in this build
 ; rather than one two directories away). It is frozen: read it, never
 ; edit it. mutsem_order.ml is the mutation-specific addition, and it is
-; the one that settles the instrumenter's unproven claim that its
-; right-to-left operand binding "matches the order the compiler already
-; uses". mutsem_boom.ml is the third, and the only one the suite does
+; the one that settles the instrumenter's unproven claim that its tuple
+; operand binding destructures into "the order the compiler gives the
+; uninstrumented application". mutsem_boom.ml is the third, and the
+; only one the suite does
 ; not run: it exists to be run by the exit-code executables below, and
 ; to be catalogued here so that they are known to be comparing an
 ; instrumented program with a plain one.

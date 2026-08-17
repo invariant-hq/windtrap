@@ -50,8 +50,8 @@ let note tag v =
   trace := tag :: !trace;
   v
 
-(* The two encodings that let-bind their operands must evaluate each
-   exactly once and right to left, armed or disarmed. *)
+(* The two encodings that lift their operands into a tuple binding must
+   evaluate each exactly once and right to left, armed or disarmed. *)
 let cmp_order a b = if note "l" a < note "r" b then 1 else 0
 let ari_order a b = note "l" a + note "r" b
 

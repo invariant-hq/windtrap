@@ -50,8 +50,7 @@ module Hidden = struct let diff a b = a - b end[@@mutate off]
 let suppressed a b = a + b
 [@@@mutate on]
 let visible a b =
-  let __windtrap_mut_2_r = b in
-  let __windtrap_mut_2_l = a in
+  let (__windtrap_mut_2_l, __windtrap_mut_2_r) = (a, b) in
   if Windtrap_mut_________fixture_off___ml.___windtrap_armed___ 2
   then __windtrap_mut_2_l - __windtrap_mut_2_r
   else __windtrap_mut_2_l + __windtrap_mut_2_r

@@ -35,6 +35,22 @@
  (instrumentation
   (backend ppx_windtrap.mutate)))
 
+; [windtrap_mutate_disambiguate] is the typing-context regression: its
+; module compiles only while the guards type-check their lifted operands
+; in source order, because every later record field in it resolves from
+; the type a first, qualified access taught the checker. It is a library
+; of its own, not a module of [forced], because it must keep dune's
+; DEFAULT warning set: type-directed disambiguation is warning 40's
+; subject, and the [-w +a] battery would reject the uninstrumented
+; source itself. Preprocessed directly, like [forced], so the regression
+; is a compile failure on every ordinary build.
+
+(library
+ (name windtrap_mutate_disambiguate)
+ (modules disambiguate)
+ (preprocess
+  (pps ppx_windtrap.mutate)))
+
 ; Nothing links [windtrap_mutate_both]: its job is to be compiled with
 ; both backends enabled at once, which is the stanza pair the guide
 ; shows. Coverage wraps application out-edges, mutation replaces
@@ -51,4 +67,8 @@
 (test
  (name test_registration)
  (modules test_registration)
- (libraries windtrap.mutate windtrap_mutate_forced windtrap_mutate_stanza))
+ (libraries
+  windtrap.mutate
+  windtrap_mutate_forced
+  windtrap_mutate_stanza
+  windtrap_mutate_disambiguate))

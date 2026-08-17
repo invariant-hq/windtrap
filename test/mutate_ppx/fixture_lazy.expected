@@ -34,8 +34,7 @@ module Windtrap_mut_________fixture_lazy___ml =
 let thunk a b = lazy (fun () -> a + b)
 let forced a b =
   lazy
-    (let __windtrap_mut_0_r = b in
-     let __windtrap_mut_0_l = a in
+    (let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
      if Windtrap_mut_________fixture_lazy___ml.___windtrap_armed___ 0
      then __windtrap_mut_0_l - __windtrap_mut_0_r
      else __windtrap_mut_0_l + __windtrap_mut_0_r)
@@ -43,8 +42,7 @@ let plain x = lazy x
 let annotated a b = lazy (fun () -> a + b : unit -> int)
 let computed a b =
   lazy
-    (let __windtrap_mut_1_r = b in
-     let __windtrap_mut_1_l = a in
+    (let (__windtrap_mut_1_l, __windtrap_mut_1_r) = (a, b) in
      if Windtrap_mut_________fixture_lazy___ml.___windtrap_armed___ 1
      then __windtrap_mut_1_l - __windtrap_mut_1_r
      else __windtrap_mut_1_l + __windtrap_mut_1_r : int)

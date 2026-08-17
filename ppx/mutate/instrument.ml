@@ -435,10 +435,34 @@ let neg_guard ~loc ~module_name ~index condition =
     if [%e armed ~loc ~module_name index] then Stdlib.not [%e evar ~loc p]
     else [%e evar ~loc p]]
 
-(* [cmp], swapping form. The operands are let-bound right to left,
-   matching the order the compiler already uses, and both arms apply the
+(* [cmp], swapping form. The operands are lifted through ONE tuple
+   binding, [let (l, r) = (left, right)], and both arms apply the
    operator the source wrote - the armed one to the swapped operands,
-   under [Stdlib.not]. *)
+   under [Stdlib.not].
+
+   The tuple, not a chain of [let]s, is load-bearing on both sides of
+   the type-checker, because the two sides read it in opposite orders
+   and both orders matter:
+
+   - CHECKING is left to right, component by component - the order the
+     original application's arguments were checked in. That is what
+     preserves the user's typing context: type-directed record
+     disambiguation lets one qualified access ([rect.Layout.x]) teach
+     the checker the type a later unqualified field of the same record
+     ([rect.height]) resolves by, and only source order keeps the
+     teaching operand ahead of the taught one. A chain of [let]s must
+     pick ONE order for both checking and evaluation, and the
+     right-to-left chain this replaced chose evaluation - real code
+     stopped compiling with "Unbound record field" under
+     instrumentation.
+
+   - COMPILING destructures a literal tuple without ever building it:
+     the match compiler emits exactly the [let]-chain this shape used to
+     spell out, right operand bound first. So the guard still evaluates
+     each operand exactly once, in the order the compiler gives the
+     uninstrumented application, still allocates nothing, and Law 16(a)
+     holds bit for bit; test/mutate_ppx/semantics/ checks all of it
+     against an uninstrumented twin. *)
 let cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs ~original_loc
     left right =
   let l = binder index "l" and r = binder index "r" in
@@ -455,8 +479,7 @@ let cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs ~original_loc
     [%expr Stdlib.not [%e apply ~loc (evar ~loc r) (evar ~loc l)]]
   in
   [%expr
-    let [%p pvar ~loc r] = [%e right] in
-    let [%p pvar ~loc l] = [%e left] in
+    let [%p pvar ~loc l], [%p pvar ~loc r] = ([%e left], [%e right]) in
     if [%e armed ~loc ~module_name index] then [%e armed_arm] else [%e disarmed]]
 
 (* [cmp], self-negating form, for [=] and [<>]. Their identities do not
@@ -515,9 +538,12 @@ let con_guard ~loc ~module_name ~index ~is_and left right =
 
 (* [ari]. The one operator whose well-typedness is not structural: the
    armed arm names an operator the source did not write, which is why
-   [capabilities.ari] must hold for it to be emitted at all. Operands are
-   let-bound right to left, as for [cmp], so neither arm duplicates
-   one. *)
+   [capabilities.ari] must hold for it to be emitted at all. Operands
+   are lifted through one tuple binding, as for [cmp] and for the same
+   two reasons: components are TYPE-CHECKED left to right, preserving
+   the source's typing context, and COMPILED into the right-operand-
+   first [let]-chain, preserving the source's compiled evaluation order
+   - and neither arm duplicates an operand. *)
 let ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
     ~original_loc left right =
   let l = binder index "l" and r = binder index "r" in
@@ -531,8 +557,7 @@ let ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
     apply ~loc (pexp_ident ~loc { txt = Lident replacement; loc })
   in
   [%expr
-    let [%p pvar ~loc r] = [%e right] in
-    let [%p pvar ~loc l] = [%e left] in
+    let [%p pvar ~loc l], [%p pvar ~loc r] = ([%e left], [%e right]) in
     if [%e armed ~loc ~module_name index] then [%e armed_arm] else [%e disarmed]]
 
 (* [lazy] applied to a trivial syntactic value compiles as already

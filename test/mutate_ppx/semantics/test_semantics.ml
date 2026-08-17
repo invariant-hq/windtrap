@@ -24,15 +24,18 @@
    What each family proves, and what it does not:
 
    - Operand order is the reason this suite exists. [cmp] and [ari]
-     let-bind their operands right to left before branching, and the
-     instrumenter's manual claims that order "matches the order the
-     compiler already uses". OCaml does not specify argument evaluation
-     order, so that claim is about the compiler in the build. Two tests
-     carry it: one pins the uninstrumented twin's order (the premise),
-     the other compares the twin against the instrumented copy (the
-     conclusion). If a compiler ever evaluates left to right, the first
-     goes red naming the premise and the second goes red naming the
-     divergent expression.
+     lift their operands into one tuple binding before branching -
+     typed left to right, which is what preserves the user's
+     type-directed record disambiguation - and the instrumenter's
+     manual claims the literal tuple is destructured without being
+     built, into "the order the compiler gives the uninstrumented
+     application". OCaml specifies neither argument nor tuple-component
+     evaluation order, so that claim is about the compiler in the
+     build. Two tests carry it: one pins the uninstrumented twin's
+     order (the premise), the other compares the twin against the
+     instrumented copy (the conclusion). If a compiler ever evaluates
+     the two forms in different orders, the first goes red naming the
+     premise and the second goes red naming the divergent expression.
    - Tail position is MEASURED, with [Printexc.get_callstack], not hoped
      for: OCaml 5 grows a fibre's stack on demand, so a lost tail call
      does not overflow at any depth a test can afford - a non-tail

@@ -12,22 +12,26 @@
    baseline. A hand-written expectation can be edited to match a defect;
    a twin cannot.
 
-   What it is here to settle. [cmp] and [ari] let-bind their operands
-   before branching, right to left:
+   What it is here to settle. [cmp] and [ari] lift their operands into
+   one tuple binding before branching:
 
-     a < b  ->  let __r = b in let __l = a in
+     a < b  ->  let (__l, __r) = (a, b) in
                 if armed then Stdlib.not (__r < __l) else __l < __r
 
-   The instrumenter's manual claims that order "matches the order the
-   compiler already uses". OCaml does not specify argument evaluation
-   order, so that claim is a statement about the compiler in the build,
-   not about the language - and it is the ONE place where a disarmed
-   guard could change meaning, because the guard FIXES an order the
-   compiler was free to choose. Every operand below is a call to [note],
-   which appends a tag to a log, so the traces say exactly which operand
-   ran, in which order, and how many times. If the compiler ever
-   evaluates left to right, the [cmp]/[ari] witnesses diverge from their
-   twin and this suite goes red at the site of the divergence.
+   The instrumenter's manual claims the literal tuple is destructured
+   without being built, into a let-chain binding the right component
+   first - "the order the compiler gives the uninstrumented
+   application". OCaml specifies neither argument nor tuple-component
+   evaluation order, so both halves of that claim are statements about
+   the compiler in the build, not about the language - and they are the
+   ONE place where a disarmed guard could change meaning, because the
+   guard FIXES an order the compiler was free to choose. Every operand
+   below is a call to [note], which appends a tag to a log, so the
+   traces say exactly which operand ran, in which order, and how many
+   times. If the compiler ever evaluates the application and the
+   destructured tuple in different orders, the [cmp]/[ari] witnesses
+   diverge from their twin and this suite goes red at the site of the
+   divergence.
 
    The witnesses also pin short-circuiting, the number of times each
    operand is evaluated, which operand's exception escapes, laziness,

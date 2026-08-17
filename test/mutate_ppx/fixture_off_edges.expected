@@ -51,16 +51,14 @@ let coarse a b = ((match a with | 0 -> b | n -> n + b)
   [@mutate off "not a site"])
 let local a b =
   let s =
-    let __windtrap_mut_1_r = b in
-    let __windtrap_mut_1_l = a in
+    let (__windtrap_mut_1_l, __windtrap_mut_1_r) = (a, b) in
     if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 1
     then __windtrap_mut_1_l - __windtrap_mut_1_r
     else __windtrap_mut_1_l + __windtrap_mut_1_r[@@mutate off "ignored here"] in
   s
 type t = int[@@mutate off]
 let after a b =
-  let __windtrap_mut_2_r = b in
-  let __windtrap_mut_2_l = a in
+  let (__windtrap_mut_2_l, __windtrap_mut_2_r) = (a, b) in
   if Windtrap_mut_________fixture_off_edges___ml.___windtrap_armed___ 2
   then __windtrap_mut_2_l - __windtrap_mut_2_r
   else __windtrap_mut_2_l + __windtrap_mut_2_r
