@@ -146,7 +146,10 @@ val to_string : 'a t -> 'a -> string
     containers do not: a lexicographic order over a list or a pair is a choice,
     not a fact, and a test that wants one should say which. The float witnesses
     order by {!Float.compare} whatever their equality's tolerance — the
-    tolerance decides what counts as equal, not what counts as greater. *)
+    tolerance decides what counts as equal, not what counts as greater, and
+    since {!Float.compare} places NaN below every float, a NaN value passes
+    {!Check.less}: NaN outcomes are asserted with {!float_exact}'s equality,
+    not an ordering verb. *)
 
 val unit : unit t
 val bool : bool t

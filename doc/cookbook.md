@@ -376,3 +376,27 @@ The tape verifies one thing, the thing hand-rolled fakes silently skip:
 this finite interaction budget was consumed, exactly. Faults need no
 machinery at all — script an `Error`, or a thunk that raises, at the
 position where the failure should happen.
+
+## 12. Counting occurrences
+
+`contains ~count:n` asserts an exact occurrence count — and deliberately
+returns nothing, because an assertion is not a query. When the count
+itself feeds further logic (a bound, a ratio, an assertion sharper than
+equality), fold it locally with the same semantics the verb uses —
+leftmost-first, non-overlapping:
+
+```ocaml
+let count ~sub s =
+  let n = String.length sub in
+  let rec go i acc =
+    if n = 0 || i + n > String.length s then acc
+    else if String.sub s i n = sub then go (i + n) (acc + 1)
+    else go (i + 1) acc
+  in
+  go 0 0
+```
+
+Then assert about the number with the ordering verbs —
+`greater int ~than:2 (count ~sub:"retry" log)` — and keep
+`contains ~count` for the exact-count claim, whose failure prints both
+counts and marks the first occurrence.

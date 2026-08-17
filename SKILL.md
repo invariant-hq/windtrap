@@ -561,7 +561,11 @@ Mechanics that matter:
   `__snapshots__/<src_basename>/<name>.snap`. Nothing is silently
   created: a missing baseline fails and prints the acceptance command.
   Accept with `-u` / `WINDTRAP_UPDATE=1`, review with `git diff`.
-  `snapshot_pp` snapshots a pretty-printed value.
+  `snapshot_pp` snapshots a pretty-printed value. Comparison
+  canonicalizes newlines on *both* sides (CR/CRLF become LF, a trailing
+  newline is forced), so a byte-exact golden test migrated to `snapshot`
+  silently loses that strictness — when CR bytes or the missing final
+  newline are the point, encode before snapshotting.
 - Stale baselines are reported after a full clean run; `--prune`
   deletes them, `--strict-snapshots` fails on them — turn the latter on
   in CI once the suite is stable, so adding or removing a case cannot
@@ -569,7 +573,11 @@ Mechanics that matter:
 - `[%expect]` matches with ppx_expect's whitespace flexibility;
   `[%expect_exact]` is byte-for-byte. Corrections are accepted with
   `dune promote`, which must directly follow the failing `dune runtest`
-  (any other dune command clears the pending set). Assertion failures
+  (any other dune command clears the pending set). The same trap holds
+  for `dune build @fmt`: re-running the check clears the pending set,
+  so "Nothing to promote" after a second run means the corrections were
+  lost, not applied — `dune fmt`, which formats in place, avoids it.
+  Assertion failures
   and uncaught exceptions are ordinary failures — promotion can never
   bless them; to pin an expected exception, catch and print it.
 - Nondeterminism must be masked *before* comparison or every run
@@ -609,6 +617,18 @@ A test nobody has seen fail is unverified, and windtrap mechanizes the
 verification by breaking the code on purpose. Two modes: `admit` asks
 *can this test fail?*, the survey *which of this file's faults does
 nothing catch?*
+
+Both exist only where the precondition holds: the library under test
+carries §3's instrumentation stanza —
+`(instrumentation (backend ppx_windtrap.mutate))`, the mutate twin of
+coverage's `(backend ppx_windtrap)` — and the run passes
+`--instrument-with ppx_windtrap.mutate`. A library without the stanza
+contributes no fault sites: every admission ruling is `NO SITES` and
+the survey has nothing to report. Where instrumentation is absent — a
+vendored dependency, a stanza not yet landed — fall back to falsifying
+by hand: edit the assertion's expected value to a wrong one, watch the
+test fail, restore it. Cruder than a ruling, but it is the same
+evidence, and no test is exempt from producing it.
 
 **Admit every test you write or change** — the last step of writing
 one, not a separate audit. The run's selection becomes the admission

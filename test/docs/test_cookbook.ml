@@ -355,6 +355,30 @@ let tape_tests =
           check_consumed t);
     ]
 
+(* Recipe 12: counting occurrences *)
+
+let count ~sub s =
+  let n = String.length sub in
+  let rec go i acc =
+    if n = 0 || i + n > String.length s then acc
+    else if String.sub s i n = sub then go (i + n) (acc + 1)
+    else go (i + 1) acc
+  in
+  go 0 0
+
+let count_tests =
+  group "counting occurrences"
+    [
+      test "the local count matches contains ~count's semantics" (fun () ->
+          let log = "retry retry retry" in
+          (* Same number the verb asserts: leftmost-first, non-overlapping. *)
+          contains ~count:(count ~sub:"retry" log) ~sub:"retry" log;
+          equal int 1 (count ~sub:"aa" "aaa");
+          equal int 0 (count ~sub:"absent" log);
+          (* The point of the query form: the number feeds a sharper verb. *)
+          greater int ~than:2 (count ~sub:"retry" log));
+    ]
+
 (* The role dispatch and the suite *)
 
 let () =
@@ -376,4 +400,5 @@ let () =
           keyed_tests;
           complex_tests;
           tape_tests;
+          count_tests;
         ]

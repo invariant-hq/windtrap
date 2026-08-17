@@ -163,7 +163,14 @@ val cases :
     — when given, and ["<name>.<i>"] otherwise; either way each sub-test is
     individually selectable ([-f "name › 8080"]) and one bad input does not mask
     the rest. [timeout] and [retries] apply to each child — per input, not per
-    table. *)
+    table.
+
+    The [inputs] list is evaluated at {e declaration} time, outside any test:
+    rows are data, not test code. A row that needs test-scoped work —
+    {!temp_dir}, {!setenv}, an assertion, IO against the system under test —
+    cannot be a row; keep the list pure and do per-input work inside [fn]. A
+    table whose rows must be computed inside a test does not convert to
+    [cases]: use {!subtest} within one body instead. *)
 
 val xfail : ?reason:string -> test -> test
 (** [xfail t] marks [t] — and, through a group, every test under it — as
@@ -343,7 +350,15 @@ val greater : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
 
     The ordering comes from the witness: every base-type witness carries one,
     and {!Testable.with_order} attaches one to your own. A witness without an
-    ordering raises [Invalid_argument], failing the test that asked. *)
+    ordering raises [Invalid_argument], failing the test that asked.
+
+    The float witnesses order with [Float.compare] whatever their equality's
+    tolerance: the tolerance decides what counts as equal, never what counts
+    as greater, so a value within [eps] above the bound is still strictly
+    greater, and {!greater_equal}'s "equal" is [Float.compare]'s exact zero,
+    not the tolerance. [Float.compare] places NaN below every float, so a NaN
+    value {e passes} {!less} and {!less_equal} — an ordering verb never
+    catches a NaN outcome; assert it with {!equal} {!float_exact}. *)
 
 val greater_equal :
   ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
@@ -466,6 +481,17 @@ val eventually :
     [Some v] as [v]. After [attempts] probes (default [100]) with nothing, it
     fails, printing the budget and whatever [?diagnose] returned — the state
     you could not see from a bare timeout.
+
+    Because the probe runs {e first}, a probe that is vacuously true of a
+    system nobody started — "is settled", "queue is empty", "no errors
+    logged", all true before anything ran — converges on the very first probe
+    and the test passes having driven nothing. Make the probe include
+    evidence the system actually ran:
+
+    {[
+      (* not: Queue.is_empty pending — already true before anything starts *)
+      (fun () -> if !replies > 0 && Queue.is_empty pending then Some () else None)
+    ]}
 
     {b Windtrap never sleeps.} The budget counts probes, not seconds, and
     [step] is yours: put in it the thing that actually advances the system — a

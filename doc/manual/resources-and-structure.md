@@ -186,6 +186,15 @@ cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
 
 `?name` derives the child's name from the input (here the string
 itself); without it children are numbered `ports parse.0`, `.1`, ….
+
+The row list — and each `?name` application — is evaluated at
+*declaration* time, before any test runs: rows are data, not test
+code. A row that needs test-scoped work (`temp_dir`, `setenv`, an
+assertion, IO against the system under test) cannot be a row; keep the
+list pure and do per-input work inside the body. A table whose rows
+must be computed inside a test does not convert to `cases` — use
+`subtest` in one body instead.
+
 For sub-cases *inside* one body — labels, not selectable tests — use
 `subtest`:
 

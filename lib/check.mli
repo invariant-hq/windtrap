@@ -250,6 +250,11 @@ val eventually :
     probe is not followed by a step nothing would read. [attempts] defaults to
     [100].
 
+    Probe-first has a corollary the caller owns: a probe vacuously true of a
+    system nobody started ("is settled", "queue is empty") converges on the
+    first probe with nothing driven — the probe must include evidence the
+    system ran ("has started and is settled").
+
     When the budget is spent it raises {!Failure.Check_failure} with a
     {!Failure.Convergence} payload carrying the budget and, when [?diagnose]
     is given, the lines it returns. [diagnose] runs once, at the failure, and

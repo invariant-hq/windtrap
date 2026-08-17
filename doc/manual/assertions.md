@@ -250,6 +250,16 @@ Containers deliberately carry no ordering — a lexicographic order over
 a list or a pair is a choice, not a fact — and a witness without one
 raises `Invalid_argument` naming the fix.
 
+The float witnesses all order with `Float.compare`, whatever their
+equality's tolerance: the tolerance decides what counts as *equal*,
+never what counts as *greater*, so `greater (float 0.01) ~than:1.0 v`
+passes for any `v` strictly above `1.0` — even `1.005`, which the same
+witness calls equal to the bound — and `greater_equal`'s "equal" is
+`Float.compare`'s exact zero, not the tolerance. `Float.compare` also
+places NaN below every float, so a NaN value *passes* `less` and
+`less_equal`: an ordering verb never catches a NaN outcome — assert it
+with `equal float_exact`, the one witness whose equality can say NaN.
+
 ## Options
 
 Asserting an option's *shape* needs no witness: `is_none` and
@@ -303,7 +313,19 @@ let reply =
 ```
 
 It probes *before* it steps, so a system already in the wanted state
-converges without being driven; after that it alternates. `~attempts`
+converges without being driven; after that it alternates. Probe-first
+has a hazard: a probe that is vacuously true of a system nobody
+started — `is_settled` on a scheduler with no work, "queue is empty"
+before anything was enqueued — converges on the very first probe, and
+the test passes having driven nothing. The probe must include evidence
+that the system ran, not just that it is quiet:
+
+```ocaml
+(* not: Queue.is_empty pending — already true before anything starts *)
+(fun () -> if !replies > 0 && Queue.is_empty pending then Some () else None)
+```
+
+`~attempts`
 bounds the probes (default 100), and a spent budget prints as the
 budget plus whatever `~diagnose` returned:
 

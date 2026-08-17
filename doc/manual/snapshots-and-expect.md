@@ -64,7 +64,10 @@ The rules:
   file) — a snapshot reached through a helper in another file does not
   relocate its baseline.
 - **Snapshots are line-oriented text**: CR/CRLF normalize to LF and a
-  trailing newline is forced on both sides. If CR bytes or the missing
+  trailing newline is forced on both sides — the produced value *and*
+  the stored baseline — so a byte-exact golden test migrated to
+  `snapshot` silently loses that strictness, its imported baseline
+  canonicalized on read. If CR bytes or the missing
   final newline are the point, encode first (e.g. `String.escaped`).
   Redaction is ordinary code before the call:
   `snapshot "log" (mask_timestamps out)`.
