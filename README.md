@@ -71,7 +71,7 @@ under test:
 (library
  (name mylib)
  (instrumentation
-  (backend ppx_windtrap))
+  (backend ppx_windtrap.coverage))
  (instrumentation
   (backend ppx_windtrap.mutate)))
 ```
@@ -127,8 +127,8 @@ with the runner restoring both. `subtest` names sub-cases inside a body and
 `xfail` keeps known-bug reproductions in-tree without a red run.
 
 **Code coverage** — expression-level coverage from the inert
-`(instrumentation (backend ppx_windtrap))` stanza. Run
-`dune runtest --instrument-with ppx_windtrap` for an inline percentage
+`(instrumentation (backend ppx_windtrap.coverage))` stanza. Run
+`dune runtest --instrument-with ppx_windtrap.coverage` for an inline percentage
 after the results, `WINDTRAP_COVERAGE=report` for per-file detail, and
 `dune exec windtrap -- coverage --min 80` (or `--json`) to gate CI.
 

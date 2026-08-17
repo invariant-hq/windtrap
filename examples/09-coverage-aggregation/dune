@@ -3,7 +3,7 @@
 ; their half, and the one rule that merges their .coverage dumps.
 ;
 ;   dune build @examples/09-coverage-aggregation/example-cover \
-;     --instrument-with ppx_windtrap
+;     --instrument-with ppx_windtrap.coverage
 ;
 ; In your own project you would call this alias `cover`, which is the
 ; name windtrap's inline coverage line tells readers to type and the name
@@ -23,7 +23,7 @@
  (name windtrap_example_aggregation)
  (modules half_a half_b)
  (instrumentation
-  (backend ppx_windtrap)))
+  (backend ppx_windtrap.coverage)))
 
 (test
  (name test_a)

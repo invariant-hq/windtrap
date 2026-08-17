@@ -11,7 +11,7 @@ The project number is the merge of every executable's dump: the file set is
 the union, a file in several dumps must carry identical point tables, counts
 add per point, and the denominator is every instrumented point linked into
 at least one test executable. The honest limit: code in libraries without
-the `(instrumentation (backend ppx_windtrap))` stanza — and modules no test
+the `(instrumentation (backend ppx_windtrap.coverage))` stanza — and modules no test
 executable links at all — never registers, so it is silently absent from
 the denominator, not reported as 0%.
 
@@ -19,7 +19,7 @@ One rule, once, produces it (`--min` makes the alias a CI gate; test runs
 themselves never fail on coverage):
 
     dune build @examples/09-coverage-aggregation/example-cover \
-      --instrument-with ppx_windtrap
+      --instrument-with ppx_windtrap.coverage
 
 (In your own project you would name the alias `cover`; it is
 `example-cover` here only because this example sits inside windtrap's

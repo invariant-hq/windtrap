@@ -16,4 +16,4 @@
  (modules main)
  (libraries windtrap)
  (instrumentation
-  (backend ppx_windtrap)))
+  (backend ppx_windtrap.coverage)))

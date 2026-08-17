@@ -136,7 +136,7 @@ let discover paths = Data_files.discover ~dir:"_coverage" ~ext:"coverage" paths
    --stale policy and the wording of the remedies are this command's. *)
 
 let stale_hint =
-  "a re-run made without --instrument-with ppx_windtrap, or a cached test \
+  "a re-run made without --instrument-with ppx_windtrap.coverage, or a cached test \
    dune did not re-run"
 
 (* Loads [files], applies the --stale policy, and merges the survivors.
@@ -207,7 +207,7 @@ let load_merged ~stale files =
       if any_stale && kept <> [] then
         Printf.eprintf
           "windtrap coverage: a forced run rewrites stale dumps: dune build \
-           @cover --force --instrument-with ppx_windtrap\n\
+           @cover --force --instrument-with ppx_windtrap.coverage\n\
            %!";
       if stale = Fail && flagged <> [] then Error 1
       else if kept = [] then begin
@@ -231,7 +231,7 @@ let load_merged ~stale files =
           \  The usual cause is a build without the instrumentation flag.\n\
            Re-run the instrumented tests, naming the backend your \
            (instrumentation) stanza uses:\n\
-          \  dune build @cover --force --instrument-with ppx_windtrap\n\
+          \  dune build @cover --force --instrument-with ppx_windtrap.coverage\n\
            (--stale=include reads them anyway; dune clean removes leftovers \
            of deleted executables.)\n\
            %!"
@@ -383,9 +383,9 @@ let run args =
             Printf.eprintf
               "windtrap coverage: no .coverage files found\n\
                Instrument the library under test\n\
-              \  (instrumentation (backend ppx_windtrap))\n\
+              \  (instrumentation (backend ppx_windtrap.coverage))\n\
                and run its tests first:\n\
-              \  dune runtest --instrument-with ppx_windtrap\n";
+              \  dune runtest --instrument-with ppx_windtrap.coverage\n";
             1
           end
           else

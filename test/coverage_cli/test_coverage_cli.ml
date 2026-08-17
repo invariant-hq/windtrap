@@ -643,7 +643,7 @@ let loud_failures =
   let code, _, err = coverage_cmd ~cwd:empty [] in
   check_int "no .coverage files exit 1" ~expected:1 ~actual:code;
   check_contains "no files: the hint names the instrumentation flow"
-    ~needle:"--instrument-with ppx_windtrap" err;
+    ~needle:"--instrument-with ppx_windtrap.coverage" err;
   (* Corrupt and foreign files are rejected loudly (Law 15). *)
   let corrupt = scratch "corrupt/_build/_coverage/bad.coverage" in
   write_file corrupt "not a coverage file\n";
@@ -963,7 +963,7 @@ let staleness_pass =
      pins its own wording. *)
   check_contains "excluding everything is loud" ~needle:"and every one is" err;
   check_contains "the all-excluded remedy is a forced run"
-    ~needle:"dune build @cover --force --instrument-with ppx_windtrap" err;
+    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage" err;
   let code, out, _ = coverage_cmd ~cwd:root [ "--stale=include" ] in
   check_int "--stale=include reports the stale dump" ~expected:0 ~actual:code;
   check_contains "--stale=include merges the stale dump"
@@ -989,7 +989,7 @@ let staleness_pass =
   check_contains "the partial-exclusion warning names the dump"
     ~needle:"b.coverage" err;
   check_contains "the partial-exclusion remedy is a forced run"
-    ~needle:"dune build @cover --force --instrument-with ppx_windtrap" err;
+    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage" err;
   (* An absolute identity resolves without a _build root. *)
   let root = stale_root "stale-abs" in
   write_dump root "abs.coverage"

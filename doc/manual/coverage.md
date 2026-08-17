@@ -8,13 +8,13 @@ once and forgotten:
 (library
  (name mylib)
  (instrumentation
-  (backend ppx_windtrap)))
+  (backend ppx_windtrap.coverage)))
 ```
 
 The percentage appears in the run you already make; no second command:
 
 ```
-$ dune runtest --instrument-with ppx_windtrap
+$ dune runtest --instrument-with ppx_windtrap.coverage
 calc: 4 passed in 0.00176s.
 coverage: 77.8% (7/9 points) · WINDTRAP_COVERAGE=report for detail
 ```
@@ -33,7 +33,7 @@ rendering — `summary` (the default one-liner), `report`, `full`, or
 `off`:
 
 ```
-$ WINDTRAP_COVERAGE=report dune runtest --instrument-with ppx_windtrap
+$ WINDTRAP_COVERAGE=report dune runtest --instrument-with ppx_windtrap.coverage
 ...
 coverage: 77.8% (7/9 points)
    77.8%  7/9  lib/calc.ml   uncovered: 9-10
@@ -114,7 +114,7 @@ root:
  (action (run %{bin:windtrap} coverage --min 80)))
 ```
 
-`dune build @cover --instrument-with ppx_windtrap` runs every
+`dune build @cover --instrument-with ppx_windtrap.coverage` runs every
 out-of-date stanza, then merges every executable's data and prints the
 project table; `--min` makes the alias your CI gate (test runs
 themselves never fail on coverage). `(universe)` is load-bearing: the
@@ -133,7 +133,7 @@ path and content digest). The report excludes, with a warning, dumps
 whose executable was deleted (orphans) or rebuilt since the dump —
 typically a re-run made without `--instrument-with`, or a dune cache hit
 replaying an older binary; the warning names the remedy
-(`dune build @cover --force --instrument-with ppx_windtrap`).
+(`dune build @cover --force --instrument-with ppx_windtrap.coverage`).
 `--stale include|exclude|fail` overrides (default `exclude`). Foreign
 format versions fail with a delete instruction: re-running never removes
 stale-named files.

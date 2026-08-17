@@ -3,8 +3,8 @@
 ; this plain `dune runtest` runs uninstrumented, with zero overhead and
 ; no coverage output. For the inline percentage and the reports:
 ;
-;   dune runtest --instrument-with ppx_windtrap
-;   WINDTRAP_COVERAGE=report dune runtest --instrument-with ppx_windtrap
+;   dune runtest --instrument-with ppx_windtrap.coverage
+;   WINDTRAP_COVERAGE=report dune runtest --instrument-with ppx_windtrap.coverage
 ;   dune exec windtrap -- coverage --min 80
 ;
 ; The Sub and Mul arms in calc.ml are deliberately untested: instrumented
@@ -14,7 +14,7 @@
  (name windtrap_example_coverage)
  (modules calc)
  (instrumentation
-  (backend ppx_windtrap)))
+  (backend ppx_windtrap.coverage)))
 
 (test
  (name test_calc)

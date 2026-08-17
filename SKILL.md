@@ -318,16 +318,22 @@ and no PPX or test code in `lib/` itself:
 ```lisp
 (library
  (name mylib)
- (instrumentation (backend ppx_windtrap))          ; coverage
+ (instrumentation (backend ppx_windtrap.coverage))          ; coverage
  (instrumentation (backend ppx_windtrap.mutate)))  ; mutation
 ```
+
+Coverage is spelled `ppx_windtrap.coverage`, never the bare
+`ppx_windtrap`: both resolve the same rewriter, but the bare spelling's
+`ppx_runtime_libraries` link the windtrap core into every instrumented
+library's closure — a test framework in your production dependency
+cone.
 
 CI runs four things: the suite, the coverage gate, the mutation report,
 and JUnit output for ingestion:
 
 ```yaml
 - run: WINDTRAP_JUNIT=_build/junit dune runtest
-- run: dune build @cover --instrument-with ppx_windtrap
+- run: dune build @cover --instrument-with ppx_windtrap.coverage
 - run: WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
 - run: dune build @mutate
 ```
@@ -674,9 +680,9 @@ Coverage finds *missing* tests (unreached branches); mutation finds
 *weak* ones. Both, routinely:
 
 ```
-dune runtest --instrument-with ppx_windtrap    # inline % after the results
-WINDTRAP_COVERAGE=full dune runtest --instrument-with ppx_windtrap
-dune build @cover --instrument-with ppx_windtrap   # project merge + --min gate
+dune runtest --instrument-with ppx_windtrap.coverage    # inline % after the results
+WINDTRAP_COVERAGE=full dune runtest --instrument-with ppx_windtrap.coverage
+dune build @cover --instrument-with ppx_windtrap.coverage   # project merge + --min gate
 ```
 
 `full` renders uncovered points as source excerpts — the mode that

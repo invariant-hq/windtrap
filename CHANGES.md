@@ -263,6 +263,16 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
+**Coverage is taught and hinted as `ppx_windtrap.coverage` everywhere.**
+The SKILL, the manual, the examples, and the runner's own hint messages
+all spelled the coverage backend as the bare `ppx_windtrap`. Both resolve
+the same rewriter, but the bare spelling's `ppx_runtime_libraries` link
+the windtrap core into every instrumented library's closure — a test
+framework in the production dependency cone, which the first real
+downstream migration nearly shipped across 25 libraries by following the
+SKILL. `ppx/coverage/dune` had argued the difference all along; now every
+teaching surface and every hint agrees with it.
+
 **`WINDTRAP_UPDATE` now covers expect payloads, and the correction notice
 stopped lying about promotion.** Under dune's `inline_tests` protocol every
 partition of a library runs inside one action, and the per-file

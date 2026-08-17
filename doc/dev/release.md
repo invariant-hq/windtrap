@@ -21,7 +21,7 @@ the coverage backend, pinned to `windtrap` with `(= :version)`).
       (`test/coverage_ppx/semantics/`) — non-negotiable (Law 14; see
       `testing.md`).
 - [ ] Instrumented smoke run:
-      `dune runtest --instrument-with ppx_windtrap` still green with
+      `dune runtest --instrument-with ppx_windtrap.coverage` still green with
       the summary line present (Law 13: outcomes unchanged).
 - [ ] Docs current: `doc/manual/` chapters against `lib/windtrap.mli`
       (the `.mli` is the truth), the migration notes in `CHANGES.md`

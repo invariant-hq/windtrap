@@ -82,7 +82,7 @@ let pp_error ppf = function
       Format.fprintf ppf
         "%s: coverage point tables disagree across coverage files (executables \
          built from different sources?); re-run all the instrumented tests \
-         together (dune build @cover --instrument-with ppx_windtrap); dune \
+         together (dune build @cover --instrument-with ppx_windtrap.coverage); dune \
          clean only if orphaned files remain"
         file
 

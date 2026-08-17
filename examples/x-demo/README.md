@@ -292,7 +292,7 @@ ppx_windtrap))`; plain builds have zero overhead. The verified
 instrumented commands (coverage is measured over `main.ml` itself):
 
 ```sh
-dune exec --instrument-with ppx_windtrap examples/x-demo/main.exe -- -f "compact › addition"
+dune exec --instrument-with ppx_windtrap.coverage examples/x-demo/main.exe -- -f "compact › addition"
 ```
 
 prints the inline line after the summary:
@@ -300,7 +300,7 @@ prints the inline line after the summary:
 (exact numbers move with any edit to `main.ml`).
 
 ```sh
-WINDTRAP_COVERAGE=report dune exec --instrument-with ppx_windtrap examples/x-demo/main.exe -- -f "compact › addition"
+WINDTRAP_COVERAGE=report dune exec --instrument-with ppx_windtrap.coverage examples/x-demo/main.exe -- -f "compact › addition"
 ```
 
 adds the per-file table with uncovered line ranges. The merged view
