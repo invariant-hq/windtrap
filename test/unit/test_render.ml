@@ -1618,7 +1618,8 @@ let test_containment_block () =
   check_contains "not_contains: occurrence highlighted red under ansi"
     ~sub:"0123456789\027[31msecret\027[0m-end" colored;
   check_absent "not_contains: no marker line under ansi" ~sub:"~~~" colored;
-  (* contains: needle absent, bounded head excerpt of a huge haystack. *)
+  (* contains: needle absent, display-capped head excerpt of a huge
+     haystack. *)
   let haystack = String.make 20_006 'a' in
   let contains_failure =
     Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
@@ -1627,9 +1628,9 @@ let test_containment_block () =
   let b = failure_block contains_failure in
   check_contains "contains: needle line with the not-found verdict"
     ~sub:"    needle    \"NOPE\" \u{2014} not found\n" b;
-  check_contains "contains: excerpt range line iff partial"
-    ~sub:"    (excerpt: bytes 0-8191 of a 20006-byte haystack)\n" b;
-  check_contains "contains: the stored excerpt prints verbatim"
+  check_contains "contains: elision line states the capped display window"
+    ~sub:"    (excerpt: bytes 0-1023 of a 20006-byte haystack)\n" b;
+  check_contains "contains: the capped excerpt prints verbatim"
     ~sub:("haystack  " ^ String.make 100 'a')
     b;
   check_absent "contains: no diff against the claim sentence" ~sub:"~~~" b
@@ -1661,6 +1662,80 @@ let test_containment_multiline () =
     ~sub:"      \027[31msecret\027[0m here\n" colored;
   let plain = failure_block found in
   check_absent "multi-line block form carries no markers" ~sub:"~~~" plain
+
+(* The not-found display cap: with no occurrence to mark, the haystack is
+   context rather than evidence, so the display shows a small head window
+   — at most 10 lines and 1 KiB — and the excerpt line states the cut in
+   the same words it states the stored bound. A found occurrence keeps the
+   full stored window: there the excerpt is the evidence. *)
+let test_containment_not_found_cap () =
+  (* Single-line content cuts at the byte bound, and the verdict sits
+     directly above the excerpt — the cap exists so an 8 KiB context dump
+     cannot scroll the diagnosis away. *)
+  let haystack = String.make 20_006 'a' in
+  let f =
+    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
+      ~haystack ()
+  in
+  let b = failure_block f in
+  check_contains "cap: the verdict line is adjacent to the excerpt"
+    ~sub:
+      ("    needle    \"NOPE\" \u{2014} not found\n    haystack  "
+      ^ String.make 64 'a')
+    b;
+  check_absent "cap: nothing beyond the display window prints"
+    ~sub:(String.make 1025 'a') b;
+  check_contains "cap: the elision line states the shown range"
+    ~sub:"    (excerpt: bytes 0-1023 of a 20006-byte haystack)\n" b;
+  (* Line-structured content cuts after ten complete lines, well under the
+     byte bound. 40 lines of 21 bytes: the cut lands after "line 09"'s
+     newline, byte 219. *)
+  let line i = Printf.sprintf "line %02d filler filler" i in
+  let haystack = String.concat "\n" (List.init 40 line) in
+  let f =
+    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
+      ~haystack ()
+  in
+  let b = failure_block f in
+  check_contains "cap: the tenth line still prints"
+    ~sub:"      line 09 filler filler\n" b;
+  check_absent "cap: the eleventh line does not" ~sub:"line 10" b;
+  check_contains "cap: the multi-line elision line states the shown range"
+    ~sub:"    (excerpt: bytes 0-219 of a 879-byte haystack)\n" b;
+  (* contains ~count with zero occurrences is the same not-found shape and
+     caps the same way. *)
+  let f =
+    Failure.containment
+      ~demand:(Failure.Counted { expected = 2; found = 0 })
+      ~claim:{|string containing "NOPE" exactly 2 times|} ~needle:"NOPE"
+      ~haystack:(String.make 20_006 'a') ()
+  in
+  check_contains "cap: a zero-occurrence count is capped too"
+    ~sub:"    (excerpt: bytes 0-1023 of a 20006-byte haystack)\n"
+    (failure_block f);
+  (* A found occurrence keeps the stored window whole: not_contains on a
+     3 KiB haystack shows all of it, uncapped and unelided. *)
+  let haystack = String.make 2_994 'x' ^ "secret" in
+  let f =
+    Failure.containment ~found_at:2_994
+      ~claim:{|string not containing "secret"|} ~needle:"secret" ~haystack ()
+  in
+  let b = failure_block f in
+  check_contains "found-at: the full stored window prints" ~sub:haystack b;
+  check_absent "found-at: no elision line for a complete excerpt"
+    ~sub:"(excerpt:" b;
+  (* An in_order chain break keeps its window even with nothing found: the
+     cursor-anchored excerpt is the region still to be matched, which is
+     the diagnosis, not context. *)
+  let f =
+    Failure.containment
+      ~demand:(Failure.Ordered { index = 1; resumed_at = 9_000 })
+      ~claim:{|string containing "NOPE" at or after byte 9000|} ~needle:"NOPE"
+      ~haystack:(String.make 10_000 'a') ()
+  in
+  check_contains "in_order: the cursor-anchored window is not capped"
+    ~sub:"    (excerpt: bytes 4904-9999 of a 10000-byte haystack)\n"
+    (failure_block f)
 
 let test_containment_headlines () =
   check "headline: not_contains names the offset"
@@ -3100,6 +3175,7 @@ let tests =
     test "property stats" test_prop_stats;
     test "containment: claim-aware block (D5 §2)" test_containment_block;
     test "containment: multi-line haystack block" test_containment_multiline;
+    test "containment: not-found display cap" test_containment_not_found_cap;
     test "containment: headline forms" test_containment_headlines;
     test "containment: in_order chain-break block" test_in_order_block;
     test "containment: contains ~count block" test_counted_block;

@@ -282,6 +282,20 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
+**A failed `contains` no longer prints 8 KiB of haystack.** When the
+needle is absent there is nothing in the haystack to mark: the excerpt is
+context, not evidence — yet it rendered whole up to the payload bound, so
+an 8 KiB SVG printed in full and scrolled the verdict off the screen. The
+display now caps the not-found window (a `~count` that found zero
+occurrences included) to at most 10 lines and 1 KiB, cutting after the
+last complete line and never inside a UTF-8 sequence, and the excerpt
+line under the block states the cut in the words it already used for the
+stored bound: `(excerpt: bytes 0-1023 of a 20006-byte haystack)`. A found
+occurrence keeps its full window — there the excerpt is the evidence —
+and so does an `in_order` chain break, whose cursor-anchored excerpt is
+the region still to be matched, which is the diagnosis itself. The
+failure payload is unchanged: only the projection tightened (Law 4).
+
 **BREAKING: `float` and `float_rel` refuse degenerate tolerances — `float 0.`
 becomes `float_exact`.** `float 0.` was exact equality wearing a tolerance's
 syntax: any `eps` at or below zero (NaN included) reduces

@@ -587,6 +587,55 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
   end
   else pp_eq_detail ~ansi put ~ind ~expected ~actual
 
+(* Containment display bounds. A not-found verdict has no occurrence to
+   mark, so its haystack excerpt is context rather than evidence — and the
+   stored window is payload-sized (8 KiB, Failure's excerpt bound), enough
+   for one big rendered document to scroll the verdict out of sight. The
+   display caps that window to a head small enough to read past; the
+   stored payload is untouched (truncation lives in renderers, Law 4), and
+   the excerpt line under the block states the cut in the same
+   bytes-of-haystack vocabulary it states the stored bound with. *)
+let not_found_excerpt_bytes = 1024
+let not_found_excerpt_lines = 10
+
+(* The head window: at most [not_found_excerpt_lines] lines and
+   [not_found_excerpt_bytes] bytes. Line-structured content cuts after its
+   last complete line so the block form never ends on a fragment; a long
+   single line cuts at a code-point boundary at or before the byte bound,
+   so a UTF-8 sequence is never split. *)
+let not_found_window s =
+  let len = String.length s in
+  let after_line_stop =
+    (* Byte index just after the [not_found_excerpt_lines]-th newline,
+       when the content has that many. *)
+    let rec go i remaining =
+      if remaining = 0 then Some i
+      else
+        match String.index_from_opt s i '\n' with
+        | Some j -> go (j + 1) (remaining - 1)
+        | None -> None
+    in
+    go 0 not_found_excerpt_lines
+  in
+  let byte_stop =
+    if len <= not_found_excerpt_bytes then len
+    else
+      (* Back off to a code-point boundary: continuation bytes are
+         0b10xxxxxx, and a well-formed sequence holds at most three, so
+         the scan is bounded even on malformed input. *)
+      let rec boundary i steps =
+        if steps = 0 || i = 0 || Char.code s.[i] land 0xC0 <> 0x80 then i
+        else boundary (i - 1) (steps - 1)
+      in
+      boundary not_found_excerpt_bytes 3
+  in
+  let stop =
+    match after_line_stop with
+    | Some line_stop -> min line_stop byte_stop
+    | None -> byte_stop
+  in
+  if stop >= len then s else String.sub s 0 stop
+
 let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
     (f : Failure.t) =
   let st style s = Pp.styled_string ~ansi style s in
@@ -656,6 +705,20 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
          byte offset, marked occurrence — never a fake equality diff; the
          claim sentence is a description and stays out of the block. Labels
          pad to the [expected]/[actual] 10-column gutter. *)
+      let excerpt =
+        (* Display cap for the not-found verdicts (nothing anywhere, and a
+           count that found no occurrence): with nothing to mark, a small
+           head window keeps the verdict adjacent to what it is about. An
+           Ordered break keeps its window even when nothing was found —
+           its excerpt is anchored on the cursor and is itself the region
+           still to be matched — and a found occurrence keeps its
+           surroundings, which are the evidence. *)
+        match (demand, found_at) with
+        | (Failure.Anywhere | Failure.Counted _), None ->
+            not_found_window excerpt
+        | (Failure.Anywhere | Failure.Counted _ | Failure.Ordered _), _ ->
+            excerpt
+      in
       let verdict =
         (* The demand widens the verdict slot rather than adding lines: a
            chain break and a count mismatch answer the same question the
