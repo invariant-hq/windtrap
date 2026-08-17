@@ -399,7 +399,7 @@ let () =
             (fun () -> failwith "boom"));
       test "composites" (fun () ->
           equal
-            (option (pair (float 0.) (slist int compare)))
+            (option (pair (float 1e-9) (slist int compare)))
             (Some (1., [ 1; 2 ]))
             (Some (1., [ 2; 1 ]));
           equal (contramap String.length int) "abc" "xyz";

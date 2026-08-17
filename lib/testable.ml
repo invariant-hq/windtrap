@@ -131,7 +131,17 @@ let float_exact =
 
 (* NaN is never equal under the tolerance witnesses: [a = b] is false for
    NaN, and every [<=] comparison against a NaN difference is false. *)
+
+(* Any eps <= 0 (NaN included) degenerates the tolerance test to the [a = b]
+   shortcut — exact equality wearing a tolerance's syntax. Refused loudly:
+   the caller either meant a tolerance and mistyped it, or meant exactness
+   and should say so. [not (eps > 0.)] rather than [eps <= 0.] so NaN is
+   caught by the same comparison. *)
 let float eps =
+  if not (eps > 0.) then
+    invalid_arg
+      "Testable.float: eps is not positive; exact equality is spelled \
+       float_exact";
   {
     pp = pp_float;
     equal = (fun a b -> a = b || Float.abs (a -. b) <= eps);
@@ -146,7 +156,20 @@ let float eps =
    infinite side, [rel *. max_ab] is [infinity] and [diff <= infinity] would
    make [infinity] "equal" to any float (v1's behavior, a latent bug). Equal
    infinities are caught by [a = b]. *)
+
+(* One zero bound is a real configuration — it switches that component off
+   while the other still tolerates — so each bound is only required
+   non-negative and non-NaN. Both zero, though, is [float 0.] in more
+   letters: exact equality in a tolerance's syntax, refused the same way. *)
 let float_rel ~rel ~abs =
+  if not (rel >= 0.) then
+    invalid_arg "Testable.float_rel: ~rel is negative or NaN";
+  if not (abs >= 0.) then
+    invalid_arg "Testable.float_rel: ~abs is negative or NaN";
+  if rel = 0. && abs = 0. then
+    invalid_arg
+      "Testable.float_rel: both tolerances are zero; exact equality is \
+       spelled float_exact";
   {
     pp = pp_float;
     equal =

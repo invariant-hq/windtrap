@@ -79,10 +79,10 @@ let tests =
         check_prints "prints int32" T.int32 42l ~expected:"42";
         check_prints "prints int64" T.int64 42L ~expected:"42";
         check_prints "prints nativeint" T.nativeint 42n ~expected:"42";
-        check_prints "prints float with %g" (T.float 0.) 1.5 ~expected:"1.5";
-        check_prints "prints whole float compactly" (T.float 0.) 1.0
+        check_prints "prints float with %g" (T.float 0.1) 1.5 ~expected:"1.5";
+        check_prints "prints whole float compactly" (T.float 0.1) 1.0
           ~expected:"1";
-        check_prints "prints nan" (T.float 0.) Float.nan ~expected:"nan";
+        check_prints "prints nan" (T.float 0.1) Float.nan ~expected:"nan";
         check_prints "prints float_rel with %g"
           (T.float_rel ~rel:0.1 ~abs:0.1)
           2.5 ~expected:"2.5");
@@ -392,17 +392,18 @@ let tests =
           (T.to_string T.float_exact 0.)
           (T.to_string T.float_exact (-0.)));
     test "float: tolerance and IEEE default semantics" (fun () ->
-        check_equal "exact equality at zero eps" (T.float 0.) 1.5 1.5;
+        check_equal "equal values short-circuit the tolerance" (T.float 1e-9)
+          1.5 1.5;
         check_equal "within epsilon" (T.float 0.01) 1.0 1.005;
         check_differ "outside epsilon" (T.float 0.001) 1.0 1.005;
         check_differ "NaN differs from NaN by default (use float_exact)"
-          (T.float 0.) Float.nan Float.nan;
+          (T.float 0.001) Float.nan Float.nan;
         check_differ "NaN differs from NaN under a wide tolerance"
           (T.float 1e10) Float.nan Float.nan;
         check_differ "NaN differs from a number" (T.float 1.0) Float.nan 1.0;
         check_differ "a number differs from NaN" (T.float 1.0) 1.0 Float.nan;
-        check_equal "signed zeros are equal" (T.float 0.) 0. (-0.);
-        check_equal "equal infinities" (T.float 0.) Float.infinity
+        check_equal "signed zeros are equal" (T.float 0.001) 0. (-0.);
+        check_equal "equal infinities" (T.float 0.001) Float.infinity
           Float.infinity;
         check_differ "opposite infinities differ" (T.float 1e300) Float.infinity
           Float.neg_infinity;
@@ -422,7 +423,7 @@ let tests =
           (T.float_rel ~rel:0.001 ~abs:0.001)
           1.0 1.5;
         check_differ "NaN differs from NaN by default (use float_exact)"
-          (T.float_rel ~rel:0.0 ~abs:0.0)
+          (T.float_rel ~rel:0.001 ~abs:0.001)
           Float.nan Float.nan;
         check_differ "NaN differs from NaN under wide tolerances"
           (T.float_rel ~rel:1.0 ~abs:1e10)
@@ -431,7 +432,7 @@ let tests =
           (T.float_rel ~rel:1.0 ~abs:1.0)
           Float.nan 1.0;
         check_equal "signed zeros are equal"
-          (T.float_rel ~rel:0.0 ~abs:0.0)
+          (T.float_rel ~rel:0.001 ~abs:0.0)
           0. (-0.);
         check_equal "equal infinities"
           (T.float_rel ~rel:0.01 ~abs:0.0)
@@ -442,6 +443,40 @@ let tests =
         check_differ "infinity differs from a finite value"
           (T.float_rel ~rel:1.0 ~abs:0.0)
           Float.infinity Float.max_float);
+    test "float: a non-positive eps is rejected" (fun () ->
+        (* [float 0.] — and any eps below it — is exact equality wearing a
+           tolerance's syntax; the guard names the honest spelling. *)
+        let rejects msg fn =
+          raises_match ~msg (Exn.invalid_arg ~substring:"float_exact") fn
+        in
+        rejects "zero eps" (fun () -> T.float 0.);
+        rejects "negative zero eps" (fun () -> T.float (-0.));
+        rejects "negative eps" (fun () -> T.float (-1e-9));
+        rejects "NaN eps" (fun () -> T.float Float.nan));
+    test "float_rel: degenerate bounds are rejected" (fun () ->
+        raises_match ~msg:"negative rel"
+          (Exn.invalid_arg ~substring:"~rel")
+          (fun () -> T.float_rel ~rel:(-0.1) ~abs:0.1);
+        raises_match ~msg:"negative abs"
+          (Exn.invalid_arg ~substring:"~abs")
+          (fun () -> T.float_rel ~rel:0.1 ~abs:(-0.1));
+        raises_match ~msg:"NaN rel"
+          (Exn.invalid_arg ~substring:"~rel")
+          (fun () -> T.float_rel ~rel:Float.nan ~abs:0.1);
+        raises_match ~msg:"NaN abs"
+          (Exn.invalid_arg ~substring:"~abs")
+          (fun () -> T.float_rel ~rel:0.1 ~abs:Float.nan);
+        raises_match ~msg:"both bounds zero"
+          (Exn.invalid_arg ~substring:"float_exact")
+          (fun () -> T.float_rel ~rel:0. ~abs:0.);
+        (* One zero bound stays legal: it switches a component off while the
+           other remains a real tolerance. *)
+        check_equal "pure relative still constructs"
+          (T.float_rel ~rel:0.01 ~abs:0.)
+          100.0 100.5;
+        check_equal "pure absolute still constructs"
+          (T.float_rel ~rel:0. ~abs:0.1)
+          0.0 0.05);
     test "of_module: the trio witness" (fun () ->
         check_equal "equal per the module's equal" point { Point.x = 1; y = 2 }
           { Point.x = 1; y = 2 };

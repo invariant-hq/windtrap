@@ -577,12 +577,20 @@ val float : float -> float testable
 (** [float eps] compares with absolute tolerance: [a] and [b] are equal when
     [a = b] or [|a -. b| <= eps]. NaN follows IEEE 754 — equal to nothing,
     itself included; assert a NaN result with {!float_exact}. An infinity is
-    equal only to an infinity of the same sign; [0.] and [-0.] are equal. *)
+    equal only to an infinity of the same sign; [0.] and [-0.] are equal.
+
+    Raises [Invalid_argument] if [eps] is not strictly positive (NaN
+    included): any such [eps] is exact equality wearing a tolerance's syntax
+    — exactness is spelled {!float_exact}. *)
 
 val float_rel : rel:float -> abs:float -> float testable
 (** [float_rel ~rel ~abs] compares with combined tolerance: within [abs] near
     zero, within [rel *. Float.max (abs_float a) (abs_float b)] for large
-    values. NaN and infinities behave as in {!float}. *)
+    values. NaN and infinities behave as in {!float}.
+
+    Raises [Invalid_argument] if either bound is negative or NaN, or if both
+    are zero. One zero bound switches that component off; both zero is exact
+    equality in disguise — spell it {!float_exact}. *)
 
 val option : 'a testable -> 'a option testable
 val result : 'a testable -> 'e testable -> ('a, 'e) result testable

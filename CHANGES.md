@@ -282,6 +282,28 @@ hand-written predicate. The set is now complete.
 
 ### Changed
 
+**BREAKING: `float` and `float_rel` refuse degenerate tolerances — `float 0.`
+becomes `float_exact`.** `float 0.` was exact equality wearing a tolerance's
+syntax: any `eps` at or below zero (NaN included) reduces
+`|a -. b| <= eps` to the `a = b` shortcut, so the witness compared exactly
+while the call site read as approximate — and, because NaN is equal to
+nothing under the tolerance semantics, it was a *worse* exactness than
+`float_exact`, unable to assert a NaN result. Migrations write it by the
+hundred, one `float 0.` per hand-ported epsilon, and every one is an
+assertion whose spelling misstates its strength. Both constructors now raise
+`Invalid_argument` at construction, naming the honest spelling: `float eps`
+unless `eps` is strictly positive, `float_rel ~rel ~abs` when either bound
+is negative or NaN, or when both are zero. One zero bound in `float_rel`
+stays legal — `~abs:0.` is a purely relative tolerance, `~rel:0.` a purely
+absolute one — because a component switched off is a real configuration
+where a tolerance of nothing at all is not.
+
+**Migration: `float 0.` becomes `float_exact`; `float_rel ~rel:0. ~abs:0.`
+becomes `float_exact` too.** A test that meant exactness now says so — and
+gains the ability to assert NaN, which `float 0.` never had. A test that
+meant a tolerance now has to state one, which is the assertion it was
+silently not making.
+
 **Coverage is taught and hinted as `ppx_windtrap.coverage` everywhere.**
 The SKILL, the manual, the examples, and the runner's own hint messages
 all spelled the coverage backend as the bare `ppx_windtrap`. Both resolve

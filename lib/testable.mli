@@ -192,7 +192,12 @@ val float : float -> float t
     [a = b] or [|a -. b| <= eps]. NaN follows IEEE 754: it is equal to nothing,
     not even itself — assert a NaN result with {!float_exact}. An infinity is
     equal only to an infinity of the same sign; no finite [eps] bridges an
-    infinite and a finite value. [0.] and [-0.] are equal. *)
+    infinite and a finite value. [0.] and [-0.] are equal.
+
+    Raises [Invalid_argument] if [eps] is not strictly positive (NaN
+    included). Every such [eps] degenerates the comparison to exact equality
+    while the call still reads as a tolerance; exactness is spelled
+    {!float_exact}, which is also the only witness that can assert NaN. *)
 
 val float_rel : rel:float -> abs:float -> float t
 (** [float_rel ~rel ~abs] compares with combined tolerance: [a] and [b] are
@@ -201,7 +206,13 @@ val float_rel : rel:float -> abs:float -> float t
     [rel *. Float.max (abs_float a) (abs_float b)] (large values). NaN follows
     IEEE 754, as with {!float}: it is equal to nothing — assert a NaN result
     with {!float_exact}. An infinity is equal only to an infinity of the same
-    sign: no finite tolerance applies when either side is infinite. *)
+    sign: no finite tolerance applies when either side is infinite.
+
+    Raises [Invalid_argument] if either bound is negative or NaN, or if both
+    are zero. One zero bound is meaningful — [~rel:0.] is a purely absolute
+    tolerance, [~abs:0.] a purely relative one — but both zero is exact
+    equality wearing a tolerance's syntax, and exactness is spelled
+    {!float_exact}. *)
 
 (** {1:containers Containers} *)
 
