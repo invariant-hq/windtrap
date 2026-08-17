@@ -586,6 +586,13 @@ let () =
         (Sys.file_exists f1 && (not (Sys.is_directory f1)) && f1 <> f2);
       check "the suffix is appended to the file name"
         (Filename.check_suffix f2 ".json");
+      let f3 = Run.temp_file ~prefix:"scratch" ~suffix:".json" () in
+      check "the prefix names the file basename"
+        (String.length (Filename.basename f3) >= 7
+        && String.sub (Filename.basename f3) 0 7 = "scratch");
+      check "prefix and suffix compose" (Filename.check_suffix f3 ".json");
+      check "the default file prefix is unchanged"
+        (String.sub (Filename.basename f1) 0 4 = "file");
       check "paths share one per-attempt scratch directory"
         (Filename.dirname d1 = Filename.dirname f1
         && Filename.dirname d1 = Filename.dirname d2);
@@ -641,12 +648,16 @@ let () =
   Run.with_frame frame (fun () ->
       let d = Run.temp_dir ~prefix:"../evil" () in
       let f = Run.temp_file ~suffix:"/evil" () in
+      let fp = Run.temp_file ~prefix:"../evil" () in
       let plain = Run.temp_dir () in
       check "a hostile prefix is sanitized into the scratch directory"
         (Filename.dirname d = Filename.dirname plain
         && not (String.contains (Filename.basename d) '/'));
       check "a hostile suffix is sanitized into the scratch directory"
-        (Filename.dirname f = Filename.dirname plain));
+        (Filename.dirname f = Filename.dirname plain);
+      check "a hostile file prefix is sanitized into the scratch directory"
+        (Filename.dirname fp = Filename.dirname plain
+        && not (String.contains (Filename.basename fp) '/')));
   Run.reclaim frame
 
 let () =

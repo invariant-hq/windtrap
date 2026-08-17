@@ -9,6 +9,14 @@ codes. New entries go at the top of their section.
 
 ### Added
 
+**`temp_file ?prefix`.** `temp_dir` named its directories and `temp_file`
+did not, so a test wanting a recognizable scratch file — a config the code
+under test reports by path, a name a failure message should read sensibly
+in — got `file-0.json` or hand-rolled its own naming around the runner's
+lifecycle. The parameter mirrors `temp_dir`'s exactly: a basename prefix,
+default `"file"`, sanitized to a safe path component, composing with
+`?suffix` as `<prefix>-<n><suffix>`. Existing calls are untouched.
+
 **Inline tests that nothing drives now fail loudly.** `let%expect_test` and
 `let%test` code preprocessed with `ppx_windtrap` inside a plain
 `(executable)` or `(test)` stanza registers its tests at module load — and
