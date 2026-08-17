@@ -1,0 +1,100 @@
+; Undriven-registration regression: an executable that links
+; ppx_windtrap-preprocessed test code without ever driving it must fail
+; loudly, not exit 0 in silence. The defect class is real — a plain
+; (executable)/(test) stanza with (pps ppx_windtrap) and no
+; (inline_tests) registers tests at module load that nothing ever runs,
+; and a project shipped hundreds of expect tests that way for months,
+; their goldens never checked against anything. undriven_main.exe
+; reproduces that shape; runner_main.exe mirrors the inline_tests
+; backend's generated runner; drive_undriven.exe spawns both under a
+; scrubbed environment — the undriven binary bare, the runner with the
+; protocol argv, with -list-partitions, and by hand — and records each
+; transcript and exit code. The goldens pin the guard's diagnostic with
+; exit 2 for the undriven run, and byte-identical, guard-silent behavior
+; on every legitimate driving path.
+
+; The fixture module compiled once, linked by both mains: a library
+; carries it so the two executables cannot each claim its module. The
+; library is itself the defect's other spelling — (pps ppx_windtrap)
+; with no (inline_tests) — and which main links it decides whether its
+; registration is driven.
+
+(library
+ (name undriven_inline_lib)
+ (modules inline_undriven)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name undriven_main)
+ (modules undriven_main)
+ (libraries undriven_inline_lib))
+
+(executable
+ (name runner_main)
+ (modules runner_main)
+ (libraries ppx_windtrap.runtime undriven_inline_lib))
+
+(executable
+ (name drive_undriven)
+ (modules drive_undriven)
+ (libraries unix))
+
+(rule
+ (targets
+  run-undriven-log
+  run-undriven-exit
+  run-driven-log
+  run-driven-exit
+  run-list-log
+  run-list-exit
+  run-byhand-log
+  run-byhand-exit)
+ (deps inline_undriven.ml)
+ (action
+  (run
+   ./drive_undriven.exe
+   run
+   %{dep:undriven_main.exe}
+   %{dep:runner_main.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff undriven-log.expected run-undriven-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff undriven-exit.expected run-undriven-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff driven-log.expected run-driven-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff driven-exit.expected run-driven-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff list-log.expected run-list-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff list-exit.expected run-list-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff byhand-log.expected run-byhand-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff byhand-exit.expected run-byhand-exit)))

@@ -9,6 +9,25 @@ codes. New entries go at the top of their section.
 
 ### Added
 
+**Inline tests that nothing drives now fail loudly.** `let%expect_test` and
+`let%test` code preprocessed with `ppx_windtrap` inside a plain
+`(executable)` or `(test)` stanza registers its tests at module load — and
+with no `(inline_tests)` stanza nothing ever drives them: the binary exited
+0 having run nothing, and its `[%expect]` payloads were never checked
+against anything. The failure mode is real — a migrating project shipped
+three whole directories of expect tests that way for months, every golden
+unread. The first registration now installs an `at_exit` guard, and every
+legitimate driving path disarms it: the runner protocol's entry in every
+mode (a partition run, `-list-partitions`, the generated runner invoked by
+hand), draining the registry from a hand-rolled harness, and arming a
+mutant, whose process belongs to the mutation loop. A process that
+terminates with registrations never claimed prints a diagnostic naming the
+registered files and both fixes — add `(inline_tests)` to the library
+stanza, or drive the runner protocol yourself — and exits 2, the
+nothing-ran code, readable as neither a pass nor a test failure. Best
+effort, against the silent 0 only: a death by signal or `Unix._exit`
+bypasses `at_exit`, and those endings are already loud or deliberate.
+
 **`setenv` and `chdir`: the environment and the working directory, scoped to
 one test.** Both belong to the process, not to the test, so a test that
 needed either wrote the save-and-restore by hand — and wrote it wrong,

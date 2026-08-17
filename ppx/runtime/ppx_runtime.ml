@@ -67,9 +67,7 @@ module Text = Windtrap.Private.Text
 let add_failure failure = Run.add_failure (Run.current_frame ()) failure
 let current_path () = Run.path (Run.current_frame ())
 let failure_count () = List.length (Run.failures (Run.current_frame ()))
-
-let captured_output ?pos () =
-  Capture.output ?pos (Run.capture (Run.current ()))
+let captured_output ?pos () = Capture.output ?pos (Run.capture (Run.current ()))
 
 (* Initialization *)
 
@@ -215,6 +213,74 @@ let initial_state () : state =
 
 let state = ref (initial_state ())
 
+(* The undriven-registration guard
+
+   The silent success this closes: [let%expect_test] code preprocessed
+   with ppx_windtrap inside a plain (executable) or (test) stanza
+   registers its tests at module load, and with no (inline_tests) stanza
+   nothing ever drives the registry — the binary exits 0 having run
+   nothing, and its expectations are never checked against anything.
+   The first registration therefore installs a [Stdlib.at_exit] handler;
+   every legitimate driving path claims the registry ([claim_registry]'s
+   callers: [init], [collect], [enter_armed], [reset] — the rule is
+   argued at each call site and stated in the .mli); a process that
+   terminates normally with registrations never claimed prints the
+   diagnostic and exits 2 — Law 11's nothing-ran code, which can be read
+   as neither a pass nor a test failure.
+
+   Process facts, not run state, like [initial_dir]: [reset] replaces
+   the state record and leaves these standing — a claimed process stays
+   claimed for its life, and the handler is installed at most once.
+
+   Ordering against the core runner's exit guard: registration is a
+   module-load act and [Runner.execute] installs its guard mid-run, so
+   this handler always sits deeper in the [at_exit] chain and runs
+   after it. An in-run exit the core guard cancels (by raising
+   [Failure.Exit_attempt] out of [do_at_exit]) never reaches this
+   handler — its once-flag is untouched, and it fires only at the exit
+   that finally proceeds, when no run is active. Firing calls
+   [Stdlib.exit] from inside an [at_exit] handler, which is safe: each
+   registered handler runs at most once, so the nested [do_at_exit]
+   skips this one and still runs the rest — a coverage runtime's
+   at_exit dump included, which is why this is [Stdlib.exit] and not
+   [Unix._exit].
+
+   The pid check is the core guard's own defense: a test that forks
+   inherits the handler, and a child exiting through [Stdlib.exit] must
+   not repeat the parent's diagnostic. *)
+
+let guard_claimed = ref false
+let guard_installed = ref false
+let claim_registry () = guard_claimed := true
+
+let undriven_diagnostic files =
+  let code =
+    match files with
+    | [] -> "ppx_windtrap-preprocessed test code"
+    | files ->
+        Printf.sprintf "ppx_windtrap-preprocessed test code (%s)"
+          (String.concat ", " files)
+  in
+  "windtrap: registered inline tests were never driven: this executable links "
+  ^ code
+  ^ " but nothing ran it.\n\
+     windtrap: add (inline_tests) to the library stanza so dune builds and \
+     drives the inline runner, or drive the runner protocol yourself \
+     (Ppx_windtrap_runtime.Ppx_runtime.init/exit). Exiting 2: nothing ran.\n"
+
+let install_undriven_guard () =
+  if not !guard_installed then begin
+    guard_installed := true;
+    let owner = Unix.getpid () in
+    Stdlib.at_exit (fun () ->
+        if (not !guard_claimed) && Unix.getpid () = owner then begin
+          output_string Stdlib.stderr
+            (undriven_diagnostic (String_set.elements !state.partitions_seen));
+          flush Stdlib.stderr;
+          Stdlib.exit 2
+        end)
+  end
+
 (* Armed processes (Law 16d)
 
    Two things a process that is about to run with a mutant armed owes this
@@ -240,6 +306,12 @@ let state = ref (initial_state ())
    registered. *)
 
 let enter_armed () =
+  (* A process with a mutant armed belongs to the mutation loop: its
+     transcript closes with a verdict line and its exit code is Law
+     16(e)'s, and the undriven guard must write into neither. The forked
+     children leave through [Unix._exit] and never run [at_exit] anyway;
+     this claim covers the interactive WINDTRAP_MUTATE_ARM parent. *)
+  claim_registry ();
   !state.read_only <- true;
   Hashtbl.reset !state.corrections;
   Hashtbl.reset !state.styled;
@@ -260,6 +332,11 @@ let () = Registry.on_armed enter_armed
 (* Protocol arguments *)
 
 let init argv =
+  (* The runner protocol's entry claims the registry in every mode — a
+     partition run, -list-partitions, and the generated runner invoked
+     by hand (which then does nothing, by [exit]'s documented contract:
+     a deliberate invocation is not a silent one). *)
+  claim_registry ();
   if !state.initialized then ()
   else begin
     !state.initialized <- true;
@@ -288,6 +365,11 @@ let init argv =
 (* Registration *)
 
 let note_partition file =
+  (* Every registration entry point passes through here, so the first
+     registration is what arms the undriven guard — a process that
+     merely links this runtime, registering nothing, installs no
+     handler. *)
+  install_undriven_guard ();
   !state.partitions_seen <-
     String_set.add (Filename.basename file) !state.partitions_seen
 
@@ -360,6 +442,10 @@ let leave_group () =
 (* Partition filtering happens at collection, not registration: init — which
    sets the partition — runs after the test modules have loaded. *)
 let collect () =
+  (* Draining claims the registry for the undriven guard: whoever takes
+     the trees owns the execution of what they took — the rule that
+     covers hand-rolled harnesses driving [Runner] directly. *)
+  claim_registry ();
   if !state.group_stack <> [] then
     invalid_arg "Ppx_runtime.collect: a module%test group was never closed";
   let entries = List.rev !state.top_level in
@@ -900,7 +986,7 @@ let flush_corrections_report ~accept =
         let source = read_file (absolute_path file) in
         match corrected_source ~file ~source with
         | None -> ()
-        | Some corrected ->
+        | Some corrected -> (
             let target = Filename.basename file ^ ".corrected" in
             let oc = open_out_bin target in
             Fun.protect
@@ -911,7 +997,7 @@ let flush_corrections_report ~accept =
               match accept_into_source_tree ~file ~source ~corrected with
               | Ok path -> accepted := path :: !accepted
               | Error reason ->
-                  refuse ~what:"not accepted into the source tree" file reason
+                  refuse ~what:"not accepted into the source tree" file reason)
       in
       match write () with
       | () -> ()
@@ -1009,12 +1095,11 @@ let correction_notice ~accepted ~refused ~declined written =
            blesses output produced beside one. Fix the failures and rerun.\n"
       else if accepted = [] then
         Printf.bprintf notice
-          "windtrap: dune registers a correction for promotion only when \
-           every inline-test process of the library exits cleanly, so a \
-           failure in any of its files withholds this one too. Fix the \
-           failures, rerun, then 'dune promote' — or rerun with \
-           WINDTRAP_UPDATE=1 to accept corrections into the source tree \
-           directly.\n";
+          "windtrap: dune registers a correction for promotion only when every \
+           inline-test process of the library exits cleanly, so a failure in \
+           any of its files withholds this one too. Fix the failures, rerun, \
+           then 'dune promote' — or rerun with WINDTRAP_UPDATE=1 to accept \
+           corrections into the source tree directly.\n";
       Some (Buffer.contents notice)
 
 (* Expect-test execution *)
@@ -1051,8 +1136,7 @@ let require_ctx op =
        ^ " only works inside a [let%expect_test] body executed by the test \
           runner")
 
-let consume_output ctx ~pos =
-  ctx.ctx_sanitize (captured_output ~pos ())
+let consume_output ctx ~pos = ctx.ctx_sanitize (captured_output ~pos ())
 
 let expect_output () =
   let ctx = require_ctx "[%expect.output]" in
@@ -1336,9 +1420,7 @@ let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
       match run body with
       | () ->
           (* Read before resolution records any expect failure of its own. *)
-          let body_failed =
-            failure_count () > failures_before
-          in
+          let body_failed = failure_count () > failures_before in
           (* Trailing output not matched by any node becomes an inserted
              node; then per-node reachability. *)
           let trailing_problem =
@@ -1469,11 +1551,10 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
          refused to touch. A failed expect test whose correction was not
          written must exit nonzero (the write failure was reported
          above), or dune would record the partition as passed. *)
-          let code = if refused = [] then (if clean then 0 else 1) else 1 in
+          let code = if refused = [] then if clean then 0 else 1 else 1 in
           (match
              correction_notice ~accepted ~refused
-               ~declined:(update && not clean)
-               written
+               ~declined:(update && not clean) written
            with
           | None -> ()
           | Some notice ->
@@ -1506,5 +1587,11 @@ let exit () =
 
 (* Total by construction: [initial_state] is a record literal, so every
    field of [state] — present and future — is given a fresh initial value
-   here. [initial_dir] is not state and is deliberately untouched. *)
-let reset () = state := initial_state ()
+   here. [initial_dir] is not state and is deliberately untouched, and
+   neither is the undriven guard's claim: a process that pokes this seam
+   owns the registry by construction, so [reset] claims it — otherwise
+   the guard would diagnose registrations [reset] itself just threw
+   away. *)
+let reset () =
+  claim_registry ();
+  state := initial_state ()

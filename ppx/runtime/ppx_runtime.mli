@@ -33,13 +33,13 @@
     one run corrects every stale payload. Under [WINDTRAP_UPDATE] a mismatch
     that records a correction is not reported as a failure at all — the run
     accepts it into the source tree instead, as it accepts a snapshot baseline
-    (see {!flush_corrections_report}). At the end of the body the runtime
-    checks trailing output and {e per-node} reachability: a node reached twice
-    and a node reached never can never cancel out. Corrections re-indent
-    payloads relative to the node exactly as ppx_expect does, so adopting a
-    ppx_expect suite produces no formatting churn on first promote; a corrected
-    file additionally standardizes the shape of every node its resolved tests
-    declare — the corrected-file style the conformance corpus goldens pin (see
+    (see {!flush_corrections_report}). At the end of the body the runtime checks
+    trailing output and {e per-node} reachability: a node reached twice and a
+    node reached never can never cancel out. Corrections re-indent payloads
+    relative to the node exactly as ppx_expect does, so adopting a ppx_expect
+    suite produces no formatting churn on first promote; a corrected file
+    additionally standardizes the shape of every node its resolved tests declare
+    — the corrected-file style the conformance corpus goldens pin (see
     {!corrected_source}).
 
     {b Duplicated tests.} A functor whose body declares tests, instantiated more
@@ -248,7 +248,8 @@ val collect : unit -> Test_tree.t list
     grouped per source file under the file's module name ([my_file.ml] →
     [My_file]), files in first-registration order, and — when {!init} parsed a
     [-partition] argument — only the tests of that partition. A second call
-    returns [[]] until new registrations arrive.
+    returns [[]] until new registrations arrive. Draining claims the registry
+    for the undriven-registration guard (see {!section:undriven}).
 
     Raises [Invalid_argument] if a group opened by {!enter_group} was never
     closed. *)
@@ -298,10 +299,9 @@ val flush_corrections_report : accept:bool -> flush_report
     dune's diff action expects the corrected file next to the copied source in
     the sandbox — and clears the table.
 
-    With [accept], each written correction is {e additionally} accepted into
-    the source tree, the
-    channel snapshot baselines already use from inside the same sandboxed
-    action: the recorded path is reconstructed against
+    With [accept], each written correction is {e additionally} accepted into the
+    source tree, the channel snapshot baselines already use from inside the same
+    sandboxed action: the recorded path is reconstructed against
     [Path_ops.project_root ()], proven to lie under it, and published with
     [Atomic_file.write]. That is what makes one file's correction independent of
     another file's crash — dune registers corrections only when {e every}
@@ -310,19 +310,18 @@ val flush_corrections_report : accept:bool -> flush_report
     uncaught exception is not a correction under [WINDTRAP_UPDATE] any more than
     without it, so no acceptance can bless one (see {!add_expect_test}).
 
-    [accept] is the caller's whole decision, and {!exit} passes the
-    conjunction of two facts: the run's resolved update mode
-    ([Snapshot.Update] — [WINDTRAP_UPDATE] after the CI refusal and the
-    [force] override) {e and} the process's own clean verdict
-    ({!inline_exit_code} [= 0]). Output produced beside a non-expect failure —
-    an assertion failing beside a stale payload, a crash later in the same
-    partition — is therefore never accepted, under [WINDTRAP_UPDATE] too:
-    since dune gives each file its own partition, the gate removes exactly the
-    {e cross-file} veto and keeps the per-file one the masked-assertion rule
-    exists for. A declined acceptance cannot restore the failure blocks the
-    update mode already suppressed at record time; the declined notice and the
-    nonzero exit carry them, and the [.corrected] files still await
-    [dune promote] once the failures are fixed.
+    [accept] is the caller's whole decision, and {!exit} passes the conjunction
+    of two facts: the run's resolved update mode ([Snapshot.Update] —
+    [WINDTRAP_UPDATE] after the CI refusal and the [force] override) {e and} the
+    process's own clean verdict ({!inline_exit_code} [= 0]). Output produced
+    beside a non-expect failure — an assertion failing beside a stale payload, a
+    crash later in the same partition — is therefore never accepted, under
+    [WINDTRAP_UPDATE] too: since dune gives each file its own partition, the
+    gate removes exactly the {e cross-file} veto and keeps the per-file one the
+    masked-assertion rule exists for. A declined acceptance cannot restore the
+    failure blocks the update mode already suppressed at record time; the
+    declined notice and the nonzero exit carry them, and the [.corrected] files
+    still await [dune promote] once the failures are fixed.
 
     Acceptance is guarded by a drift check. The corrected content is a patch by
     byte offsets into the sandbox {e copy} of the source, so it describes the
@@ -350,7 +349,8 @@ val init : string array -> unit
     [-partition <file>], [-list-partitions], [-source-tree-root <root>], and
     [-diff-cmd <cmd>] (accepted for protocol compatibility). Unrecognized
     arguments are ignored. Only the first call parses; later calls are no-ops.
-*)
+    Every call claims the registry for the undriven-registration guard (see
+    {!section:undriven}). *)
 
 val exit : unit -> 'a
 (** [exit ()] runs the inline suite and terminates the process. Not in runner
@@ -413,30 +413,73 @@ val correction_notice :
     notice for a runner process that wrote the [.corrected] files [written];
     [accepted] names the source files it also rewrote in place, [refused] the
     ones whose acceptance was attempted and refused, and [declined] says an
-    acceptance was requested but withheld because this process's own verdict
-    was not clean. [None] when [written] is empty. The first line —
+    acceptance was requested but withheld because this process's own verdict was
+    not clean. [None] when [written] is empty. The first line —
     [windtrap: wrote <files>] — prints whenever anything was written: dune runs
     every partition of a library inside one action, and any partition's nonzero
-    exit fails the whole action, skips every diff step, and discards the
-    sandbox with all computed [.corrected] files in it, so this line is the
-    only trace of a computed correction that survives a sibling partition's
-    failure.
+    exit fails the whole action, skips every diff step, and discards the sandbox
+    with all computed [.corrected] files in it, so this line is the only trace
+    of a computed correction that survives a sibling partition's failure.
 
     The explanation under it matches what actually happened, one case only:
     accepted paths are named ([windtrap: accepted into the source tree: …] —
     those went nowhere near dune's channel, so no caveat applies to them);
-    refusals point back at the reasons already printed and say to resolve them
-    — never advising the acceptance that just failed; a declined acceptance
-    says fixing the failures comes first, because acceptance never blesses
-    output produced beside a non-expect failure; and only a run that asked for
-    none of it gets the caveat with both ways out: dune registers a correction
-    for promotion only when every inline-test process of the library exits
-    cleanly — fix the failures, rerun, then [dune promote], or rerun with
+    refusals point back at the reasons already printed and say to resolve them —
+    never advising the acceptance that just failed; a declined acceptance says
+    fixing the failures comes first, because acceptance never blesses output
+    produced beside a non-expect failure; and only a run that asked for none of
+    it gets the caveat with both ways out: dune registers a correction for
+    promotion only when every inline-test process of the library exits cleanly —
+    fix the failures, rerun, then [dune promote], or rerun with
     [WINDTRAP_UPDATE=1]. The caveat is {e unconditional}, not gated on this
     process's own exit code: the withholding is the whole library's, and no
     partition can see whether a sibling just vetoed its correction (gating it
-    left it silent in exactly the cross-file case it exists for). {!exit}
-    prints the notice after {!flush_corrections_report}. *)
+    left it silent in exactly the cross-file case it exists for). {!exit} prints
+    the notice after {!flush_corrections_report}. *)
+
+(** {1:undriven The undriven-registration guard}
+
+    The silent success the guard closes: [let%expect_test] code preprocessed
+    with [ppx_windtrap] inside a plain [(executable)] or [(test)] stanza
+    registers its tests at module load, and with no [(inline_tests)] stanza
+    nothing ever drives the registry — the binary exits [0] having run nothing,
+    and its expectations are never checked against anything.
+
+    The first registration installs a [Stdlib.at_exit] handler. A process that
+    terminates normally with registrations never claimed by any driving path
+    prints a diagnostic on [stderr] — naming the registered files, the missing
+    [(inline_tests)] stanza and the runner protocol — and exits [2]: Law 11's
+    nothing-ran code, which can be read as neither a pass nor a test failure.
+    The handler cannot see the code the process was about to exit with, so it
+    fires on every unclaimed normal termination, a crashing one included — the
+    diagnostic is true there too, and the exit stays nonzero.
+
+    {b The claim rule.} The registry is claimed — once, for the process's life —
+    by any of:
+
+    - {!init}: the runner protocol's entry, in every mode — a partition run,
+      [-list-partitions], and the generated runner invoked by hand (which then
+      does nothing, by {!exit}'s documented contract: a deliberate invocation is
+      not a silent one);
+    - {!collect}: whoever drains the registry owns the execution of what they
+      took — the rule that covers hand-rolled harnesses driving [Runner]
+      directly;
+    - {{!section:armed} [enter_armed]}: a process with a mutant armed belongs to
+      the mutation loop, whose transcript and exit code are Law 16's — the guard
+      must write into neither;
+    - {!reset}: a test seam; its caller owns the registry by construction.
+
+    Running a suite claims nothing by itself: a standalone [Windtrap.run]
+    executable that also links preprocessed test code it never drains dies with
+    the diagnostic, because those registrations can run under no invocation of
+    that executable — which is the defect, not a false positive.
+
+    The guard is best-effort, against the silent [0] only: death by signal and
+    [Unix._exit] bypass [at_exit] — those endings are already loud or
+    deliberate. It also cannot fight the core runner's exit guard: that guard is
+    installed mid-run, later in the [at_exit] chain, so an in-run exit it
+    cancels ([Failure.Exit_attempt]) never reaches this handler, which fires
+    only at the exit that finally proceeds. *)
 
 (** {1:armed Armed processes}
 
@@ -446,7 +489,10 @@ val correction_notice :
 val enter_armed : unit -> unit
 (** [enter_armed ()] puts this module into the state a process with a mutant
     armed requires, and does not come back out — a process that arms stays armed
-    for its life. Two things, always needed together:
+    for its life. It also claims the registry for the undriven-registration
+    guard: an armed process's transcript and exit code are Law 16's, and the
+    guard must write into neither (see {!section:undriven}). Beyond that, two
+    things, always needed together:
 
     - {b Checking becomes read-only.} An [[%expect]] or [[%expect_exact]]
       mismatch is a plain failure: no correction is recorded, so
@@ -490,7 +536,9 @@ val reset : unit -> unit
     arguments including {!init}'s once-guard. The clearing is total by
     construction, not by enumeration: the runtime holds that state in a single
     record and [reset] assigns a fresh one. The module-load cwd is not run state
-    and survives (see {!flush_corrections_report}).
+    and survives (see {!flush_corrections_report}). Calling it claims the
+    registry for the undriven-registration guard — the seam's caller owns the
+    registry by construction (see {!section:undriven}).
 
     For this module's own test suite, which registers synthetic suites
     repeatedly in one process. Never called by generated code. *)

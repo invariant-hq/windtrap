@@ -8,7 +8,11 @@
 (library
  (name ppx_windtrap_runtime)
  (public_name ppx_windtrap.runtime)
- (libraries windtrap)
+ ; unix: the undriven-registration guard records the installing pid and
+ ; fires only in that process — a test that forks must not see the
+ ; parent's diagnostic repeated by a child's exit (the core exit guard's
+ ; own defense). No new dependency weight: windtrap already links unix.
+ (libraries windtrap unix)
  ; The core measures its own coverage, and Ppx_runtime moved out of it;
  ; keeping the backend keeps the measured set intact. No mutation
  ; stanza, deliberately: the runtime is part of the machinery that
