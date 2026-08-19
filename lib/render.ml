@@ -1276,9 +1276,13 @@ let pp_block t (r : Run.result) =
   | Failure.Pass | Failure.Skip _ -> ()
   | Failure.Fail failures -> (
       let name = Test_tree.path_to_string r.path in
+      (* One spelling of the count, the verbose status line's: a block
+         only prints for a test that failed on its last attempt, so
+         "attempt N of N" was always N of N — the declared total is not
+         recorded, and a number that can only equal itself says nothing
+         the plain count does not. *)
       let attempts =
-        if r.attempts > 1 then spf " (attempt %d of %d)" r.attempts r.attempts
-        else ""
+        if r.attempts > 1 then spf " (%d attempts)" r.attempts else ""
       in
       put t
         ("  " ^ st t `Red "FAIL" ^ "  "

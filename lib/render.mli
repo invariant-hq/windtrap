@@ -279,9 +279,11 @@ val finish :
     (any mode, or a compact run made noteworthy) the transcript ends with:
 
     - the failure section — every {e counted} failed result of [results]
-      re-printed in full ([FAIL] header, then {!pp_failure} with source excerpts
-      for each of its failures, then its bounded captured-output tail and
-      full-log path, printed once per test) — when any test failed;
+      re-printed in full ([FAIL] header, carrying the attempt count when
+      [r.attempts > 1] in the same words {!result}'s status line uses, then
+      {!pp_failure} with source excerpts for each of its failures, then its
+      bounded captured-output tail and full-log path, printed once per test) —
+      when any test failed;
     - the slow warnings: a faint-yellow block over every
       completed test past the slow threshold whose record is not [slow_tagged] —
       a [slow tests (n):] heading, then one indented entry per test with the
