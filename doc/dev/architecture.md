@@ -169,7 +169,9 @@ Laws 11, 12, 13 and 15 plus the new Law 16; the admission RFC's
 2026-08-12 amendment of Law 16(b), (c) and (e) plus the new Law 17; and
 its slice-2 amendment of 2026-08-16, which extends Law 16(e) to `audit`
 and gives Law 17(a) universal designation, folded back into the base
-clause on 2026-08-19); the RFC documents
+clause on 2026-08-19; Law 2's parenthetical amended on 2026-08-19, when
+`WINDTRAP_UPDATE` began accepting expect payloads into the source tree
+and `dune promote` stopped being their only channel); the RFC documents
 themselves were removed from the repo — this copy is the durable
 record. Each law names the failure it prevents; **a change to any of
 them reopens the design**.
@@ -182,8 +184,8 @@ them reopens the design**.
 2. **Persisted snapshot identity is a name.** No baseline stored
    outside the source file is keyed by a source position. (Inline
    `[%expect]` payloads are positional by nature; they persist only
-   inside the source itself and are rewritten only via `dune
-   promote`.) *Prevents:* baselines orphaned by unrelated edits.
+   inside the source itself and are rewritten only by explicit
+   acceptance.) *Prevents:* baselines orphaned by unrelated edits.
 3. **Every mismatch prints its own acceptance command.** *Prevents:*
    memorized verbs; silent updates.
 4. **Failures are data; renderers are projections.** Styling, diff
