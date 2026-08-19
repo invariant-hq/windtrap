@@ -595,7 +595,7 @@ let arming_tests =
         | Error e -> failf "arm: %a" M.pp_arm_error e);
         fresh ();
         is_true ~msg:"armed" (g 0);
-        is_some ~msg:"armed () reports it" (M.armed ());
+        ignore (require_some ~msg:"armed () reports it" (M.armed ()));
         (match
            M.arm
              (id ~file:"t/nothing.ml" ~line:1 ~col:0 ~rewrite:"or")

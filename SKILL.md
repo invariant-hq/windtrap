@@ -99,8 +99,8 @@ Reject these shapes on sight — in review, and in your own output.
   a snapshot; write it as one (§7) so the acceptance workflow and its
   reviewer own it.
 - **Vacuous** — executes code but checks nothing that can break: no
-  assertion at all, `is_some` where the *value* matters, "does not
-  raise" on a function that cannot raise. Green from the day it was
+  assertion at all, a shape assertion where the *value* matters, "does
+  not raise" on a function that cannot raise. Green from the day it was
   born; an admit run rules it `UNJUSTIFIED` (§9).
 - **Tautological** — re-derives the answer with the implementation's
   own algorithm (a "property" computing the same fold), or tests the
@@ -380,7 +380,7 @@ The vocabulary worth knowing rather than reinventing:
   `is_true (n > 0)` reports only `false`.
 - Strings: `contains ~sub` / `not_contains ~sub` /
   `in_order ~subs:[...]` for substrings that must appear in that order /
-  `starts_with ~affix` / `ends_with ~affix`; lists: `mem`.
+  `starts_with ~affix` / `ends_with ~affix`.
 - Exceptions: `raises exn fn` (structural; distinguishes "nothing
   raised" from "raised something else"), `raises_match pred fn` with
   the `Exn` helpers (`Exn.invalid_arg ~substring:"negative"`).
