@@ -276,13 +276,9 @@ let json_escape s =
 let json_ints lines =
   spf "[%s]" (String.concat "," (List.map string_of_int lines))
 
-let json_ranges ranges =
-  spf "[%s]"
-    (String.concat "," (List.map (fun (a, b) -> spf "[%d,%d]" a b) ranges))
-
-(* The CI artifact: summary + per-file visited/total/
-   percentage + uncovered lines and ranges. Frozen keys; a file whose
-   source is missing or stale reports empty uncovered arrays. *)
+(* The CI artifact: summary + per-file visited/total/percentage +
+   uncovered lines. Frozen keys; a file whose source is missing or stale
+   reports an empty uncovered list. *)
 let print_json ~source_roots collection =
   let summary = Windtrap_coverage.summary collection in
   let reports = Windtrap_coverage.file_reports ~source_roots collection in
@@ -297,13 +293,11 @@ let print_json ~source_roots collection =
         "%s\n\
         \    { \"path\": \"%s\", \"visited\": %d, \"total\": %d,\n\
         \      \"percentage\": %.2f,\n\
-        \      \"uncovered_lines\": %s,\n\
-        \      \"uncovered_ranges\": %s }"
+        \      \"uncovered_lines\": %s }"
         (if i = 0 then "" else ",")
         (json_escape r.file) r.summary.visited r.summary.total
         (Windtrap_coverage.percentage r.summary)
-        (json_ints r.uncovered_lines)
-        (json_ranges (Render.collapse_ranges r.uncovered_lines)))
+        (json_ints r.uncovered_lines))
     reports;
   Printf.printf " ] }\n%!"
 

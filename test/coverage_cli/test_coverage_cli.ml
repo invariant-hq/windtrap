@@ -612,7 +612,7 @@ let json_shape =
   check "--json keeps stderr empty" (err = "");
   check "--json is well-formed" (json_well_formed out);
   (* The design-frozen shape: summary + files with path/visited/total/
-     percentage/uncovered_lines/uncovered_ranges (design 1c). *)
+     percentage/uncovered_lines (design 1c). *)
   check_contains "json: the summary object"
     ~needle:
       "\"summary\": { \"visited\": 3, \"total\": 5, \"percentage\": 60.00 }"
@@ -623,8 +623,6 @@ let json_shape =
     out;
   check_contains "json: per-file percentage" ~needle:"\"percentage\": 66.67" out;
   check_contains "json: uncovered lines" ~needle:"\"uncovered_lines\": [3]" out;
-  check_contains "json: uncovered ranges"
-    ~needle:"\"uncovered_ranges\": [[3,3]]" out;
   check_contains "json: bar.ml is present" ~needle:"\"path\": \"lib/bar.ml\""
     out;
   (* --json --min: stdout stays a pure JSON artifact. *)

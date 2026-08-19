@@ -2275,15 +2275,6 @@ let test_excerpt_regions () =
   | _ -> check "a trailing newline opens no phantom line" false
 
 let test_line_ranges () =
-  check "collapse of contiguous runs"
-    (Render.collapse_ranges [ 1; 2; 3; 7; 8 ] = [ (1, 3); (7, 8) ]);
-  check "collapse tolerates duplicates"
-    (Render.collapse_ranges [ 1; 1; 2; 5; 5 ] = [ (1, 2); (5, 5) ]);
-  check "collapse of the empty list" (Render.collapse_ranges [] = []);
-  check "collapse of a singleton" (Render.collapse_ranges [ 4 ] = [ (4, 4) ]);
-  check "a huge contiguous run collapses to one range"
-    (Render.collapse_ranges (List.init 20_000 (fun i -> i + 1))
-    = [ (1, 20_000) ]);
   check_string "range formatting matches the report shape"
     ~expected:"88-94, 121"
     ~actual:(Render.format_ranges [ (88, 94); (121, 121) ]);

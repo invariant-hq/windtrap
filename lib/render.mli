@@ -393,11 +393,6 @@ type excerpt = {
     coverage runtime with the vocabulary: layout lives with the renderer, not
     with the instrumentation that measured the lines. *)
 
-val collapse_ranges : int list -> (int * int) list
-(** [collapse_ranges lines] collapses a sorted list of line numbers (duplicates
-    allowed) into inclusive contiguous ranges: [[1; 2; 3; 7; 8]] is
-    [[(1, 3); (7, 8)]]. *)
-
 val format_ranges : (int * int) list -> string
 (** [format_ranges ranges] is the ranges rendered as ["1-3, 7-8"]; a single-line
     range appears without a dash, as in ["88-94, 121"] — the one dialect for
