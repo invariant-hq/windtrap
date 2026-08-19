@@ -4,8 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Testable: instance printing and equality tables, tolerance
-   semantics (RFC v3 amendment B8), [of_module] (amendment B15), and
-   combinator composition. The witness sits below Check, so assertions on
+   semantics (RFC v3 amendment B8), and combinator composition. The witness sits below Check, so assertions on
    it go through booleans and string renderings, never through the witness
    under test. *)
 
@@ -19,9 +18,8 @@ let check_prints name witness value ~expected =
 let check_equal name witness a b = is_true ~msg:name (T.equal witness a b)
 let check_differ name witness a b = is_false ~msg:name (T.equal witness a b)
 
-(* of_module fixtures *)
+(* Fixtures for the conventional [t]/[pp]/[equal] trio [make] consumes. *)
 
-(* The exact WITNESS shape: nothing but [t]/[pp]/[equal]. *)
 module Point = struct
   type t = { x : int; y : int }
 
@@ -29,7 +27,7 @@ module Point = struct
   let equal a b = a.x = b.x && a.y = b.y
 end
 
-(* A wider module: extra members beyond the trio must match unchanged. *)
+(* A wider module: extra members beyond the trio are simply not read. *)
 module Version = struct
   type t = int * int
 
@@ -58,7 +56,7 @@ module Phys = struct
   let equal = ( == )
 end
 
-let point = T.of_module (module Point)
+let point = T.make ~pp:Point.pp ~equal:Point.equal
 
 let tests =
   [
@@ -418,36 +416,36 @@ let tests =
         check_equal "pure absolute still constructs"
           (T.float_rel ~rel:0. ~abs:0.1)
           0.0 0.05);
-    test "of_module: the trio witness" (fun () ->
+    test "make: a module's trio" (fun () ->
         check_equal "equal per the module's equal" point { Point.x = 1; y = 2 }
           { Point.x = 1; y = 2 };
         check_differ "differ per the module's equal" point
           { Point.x = 1; y = 2 } { Point.x = 1; y = 3 };
         check_prints "prints with the module's pp" point { Point.x = 1; y = 2 }
           ~expected:"(1, 2)";
-        check_equal "accepts modules with extra members"
-          (T.of_module (module Version))
+        check_equal "members beyond the trio are not read"
+          (T.make ~pp:Version.pp ~equal:Version.equal)
           (Version.make 1 2) (1, 2);
         check_prints "wider module prints with its pp"
-          (T.of_module (module Version))
+          (T.make ~pp:Version.pp ~equal:Version.equal)
           (3, 14) ~expected:"3.14";
         check_equal "the module's equal wins over structure"
-          (T.of_module (module By_id))
+          (T.make ~pp:By_id.pp ~equal:By_id.equal)
           { By_id.id = 1; name = "a" }
           { By_id.id = 1; name = "b" };
         check_differ "the module's equal still distinguishes"
-          (T.of_module (module By_id))
+          (T.make ~pp:By_id.pp ~equal:By_id.equal)
           { By_id.id = 1; name = "a" }
           { By_id.id = 2; name = "a" });
-    test "of_module: physical equality passes through" (fun () ->
-        let phys = T.of_module (module Phys) in
+    test "make: physical equality passes through" (fun () ->
+        let phys = T.make ~pp:Phys.pp ~equal:Phys.equal in
         let r = ref 0 in
         check_equal "physical equality holds on the same value" phys r r;
         check_differ "physical equality distinguishes structural twins" phys
           (ref 0) (ref 0);
         check_prints "printing is independent of the equality" phys (ref 42)
           ~expected:"ref 42");
-    test "of_module: composes as an ordinary witness" (fun () ->
+    test "make: composes as an ordinary witness" (fun () ->
         check_equal "composes into containers" (T.list point)
           [ { Point.x = 0; y = 0 }; { Point.x = 1; y = 1 } ]
           [ { Point.x = 0; y = 0 }; { Point.x = 1; y = 1 } ];
@@ -457,7 +455,7 @@ let tests =
         check_prints "container printing uses the module's pp" (T.option point)
           (Some { Point.x = 4; y = 5 })
           ~expected:"Some (4, 5)";
-        check_equal "contramap over an of_module witness"
+        check_equal "contramap over a module's witness"
           (T.contramap (fun (p, _) -> p) point)
           ({ Point.x = 1; y = 2 }, "ignored")
           ({ Point.x = 1; y = 2 }, "also ignored"));

@@ -31,7 +31,8 @@ type 'a t
 val make :
   pp:(Format.formatter -> 'a -> unit) -> equal:('a -> 'a -> bool) -> 'a t
 (** [make ~pp ~equal] is a witness comparing with [equal] and printing with
-    [pp]. Both must be total over the values the tests exercise.
+    [pp]. Both must be total over the values the tests exercise. A module with
+    the conventional trio is [make ~pp:M.pp ~equal:M.equal].
 
     {b [equal] receives [expected] first, [actual] second.} The equality verbs
     apply it in their own argument order ([Check.equal t expected actual] calls
@@ -52,28 +53,6 @@ val structural : pp:(Format.formatter -> 'a -> unit) -> 'a t
     [Stdlib.( = )] — the choice is explicit in the name. Structural equality
     raises on functional values and loops on cyclic ones; give such types a real
     [equal] via {!make}. *)
-
-(** The module shape {!of_module} consumes: a type with the conventional
-    [t]/[pp]/[equal] trio. Modules with additional members match unchanged. *)
-module type WITNESS = sig
-  type t
-  (** The type being witnessed. *)
-
-  val pp : Format.formatter -> t -> unit
-  (** [pp ppf v] formats [v] into failure payloads. Must be total. *)
-
-  val equal : t -> t -> bool
-  (** [equal a b] is [true] iff [a] and [b] are equal. Must be total. *)
-end
-
-val of_module : (module WITNESS with type t = 'a) -> 'a t
-(** [of_module (module M)] is [make ~pp:M.pp ~equal:M.equal]: the witness of a
-    module following the conventional naming, written without repeating the
-    module name.
-
-    {[
-      let policy = Testable.of_module (module Policy)
-    ]} *)
 
 val of_equal : ('a -> 'a -> bool) -> 'a t
 (** [of_equal equal] is a witness comparing with [equal] and printing every

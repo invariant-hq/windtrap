@@ -99,7 +99,7 @@ let assertions =
       test "slist compares as a multiset" (fun () ->
           equal (slist int compare) [ 3; 1; 2 ] [ 1; 2; 3 ]);
       test "contramap projects before comparing" (fun () ->
-          let by_length = contramap String.length int in
+          let by_length = Testable.contramap String.length int in
           equal by_length "abc" "xyz");
       cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
         (fun input -> ignore (require_ok (parse_port input)));

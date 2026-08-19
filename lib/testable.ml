@@ -18,16 +18,6 @@ let make ~pp ~equal = { pp; equal }
 let structural ~pp = { pp; equal = Stdlib.( = ) }
 let of_equal equal = { pp = (fun ppf _ -> Pp.string ppf "<abstract>"); equal }
 
-module type WITNESS = sig
-  type t
-
-  val pp : Format.formatter -> t -> unit
-  val equal : t -> t -> bool
-end
-
-let of_module (type a) (module M : WITNESS with type t = a) =
-  { pp = M.pp; equal = M.equal }
-
 let contramap f w =
   {
     pp = (fun ppf a -> w.pp ppf (f a));

@@ -368,9 +368,9 @@ The vocabulary worth knowing rather than reinventing:
   any multi-line string; `string`'s `%S` rendering buries the difference
   in `\n` soup.
 - `slist t cmp` — lists as multisets (order ignored, multiplicity kept);
-  `contramap proj t` — compare and print through a projection. Together
-  they make "these events happened, in any order, ignoring noisy
-  fields" a one-liner.
+  `Testable.contramap proj t` — compare and print through a projection.
+  Together they make "these events happened, in any order, ignoring
+  noisy fields" a one-liner.
 - `require_some` / `require_ok` / `require_error` / `require_match` —
   assert a shape and hand back its payload; the happy path keeps its
   value instead of drowning in `match`.
@@ -394,8 +394,7 @@ The vocabulary worth knowing rather than reinventing:
 
 Custom types: expose `pp` and `equal` in the tested module's `.mli`,
 then `let point = Testable.make ~pp:Point.pp ~equal:Point.equal` (or
-`Testable.of_module (module Point)` for the conventional `t`/`pp`/
-`equal` trio, `Testable.structural ~pp` to use `( = )`).
+`Testable.structural ~pp` to use `( = )`).
 
 Style: one behavior per test, named by the behavior — `"rejects empty
 input"` diagnoses a failure from the list alone; `"test_parse_2"` forces

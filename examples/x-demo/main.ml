@@ -42,11 +42,11 @@ module Version = struct
   let equal = ( = )
 end
 
-let version = Testable.of_module (module Version)
+let version = Testable.make ~pp:Version.pp ~equal:Version.equal
 
 type user = { id : int; name : string }
 
-let by_id = contramap (fun u -> u.id) int
+let by_id = Testable.contramap (fun u -> u.id) int
 
 type addr = Tcp of int | Unix_socket of string
 
@@ -130,7 +130,7 @@ let compact_tests =
     test "pass ignores a component" (fun () ->
         equal (pair string pass) ("key", 1) ("key", 999));
     test "of_equal compares without a printer" (fun () ->
-        equal (of_equal (fun a b -> a mod 3 = b mod 3)) 4 7);
+        equal (Testable.of_equal (fun a b -> a mod 3 = b mod 3)) 4 7);
     test "contramap compares users by id" (fun () ->
         equal by_id { id = 1; name = "alice" } { id = 1; name = "al" });
     test "custom witnesses: Testable.make and of_module" (fun () ->

@@ -485,12 +485,15 @@ val skip : ?reason:string -> unit -> 'a
     An ['a] {!type:testable} tells the equality assertions how to compare values
     of type ['a] and how to render them in failure reports. Witnesses for base
     types and containers are re-exported here flat, so
-    [equal (list (pair string int))] reads without qualification; {!Testable}
-    holds the constructors ({!Testable.make}, {!Testable.structural}, and
-    {!Testable.of_module} for modules with the conventional [t]/[pp]/[equal]
-    trio). Diffing needs no support from the witness: reports compute diffs from
-    the printed values, so every type gets highlighted diffs from its printer
-    alone. *)
+    [equal (list (pair string int))] reads without qualification; the
+    constructors stay in {!Testable} — {!Testable.make} for a printer and an
+    equality (a module with the conventional trio is
+    [Testable.make ~pp:M.pp ~equal:M.equal]), {!Testable.structural} for
+    polymorphic equality under its own name, {!Testable.contramap} to compare
+    and print through a projection, {!Testable.of_equal} for a type with no
+    rendering. Diffing needs no support from the witness: reports compute diffs
+    from the printed values, so every type gets highlighted diffs from its
+    printer alone. *)
 
 val unit : unit testable
 val bool : bool testable
@@ -557,15 +560,6 @@ val triple :
 val pass : 'a testable
 (** [pass] considers all values equal and prints [<pass>] — for ignoring a
     component of a composed witness, e.g. [pair string pass]. *)
-
-val of_equal : ('a -> 'a -> bool) -> 'a testable
-(** [of_equal equal] compares with [equal] and prints every value as
-    [<abstract>]; failures cannot show a diff. Prefer {!Testable.make} as soon
-    as the type has any printable rendering. *)
-
-val contramap : ('a -> 'b) -> 'b testable -> 'a testable
-(** [contramap f t] compares and prints values through their image under [f]:
-    [contramap (fun u -> u.id) int] compares users by id. *)
 
 (** {1:properties Properties}
 

@@ -97,16 +97,22 @@ Windtrap's own `float_rel` scales by
 `Float.max (abs_float a) (abs_float b)` — symmetric by construction.
 Most libraries' `allclose` is not; wrap it accordingly.
 
-`Testable.structural ~pp` uses `( = )` for you; `Testable.of_module`
-takes a module with the conventional `t`/`pp`/`equal` trio;
-`of_equal` compares without printing (failures show `<abstract>` —
-prefer `Testable.make` as soon as anything is printable). `contramap`
-projects before comparing *and* printing:
+A module with the conventional trio needs no ceremony:
+`Testable.make ~pp:Point.pp ~equal:Point.equal`.
+`Testable.structural ~pp` uses `( = )` for you;
+`Testable.of_equal` compares without printing (failures show
+`<abstract>` — prefer `Testable.make` as soon as anything is
+printable). `Testable.contramap` projects before comparing *and*
+printing:
 
 ```ocaml
-let by_length = contramap String.length int in
+let by_length = Testable.contramap String.length int in
 equal by_length "abc" "xyz"
 ```
+
+The witnesses are flat (`int`, `list`, `pair`); the constructors stay
+behind `Testable.`, which is what keeps names like `contramap` and
+`make` out of every test file's scope.
 
 ## Assert and unwrap: `require_*`
 

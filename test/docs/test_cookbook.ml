@@ -165,7 +165,7 @@ let subprocess_tests =
 type event = { path : string; kind : string; timestamp : float }
 
 let key e = (e.path, e.kind)
-let event = contramap key (pair string string)
+let event = Testable.contramap key (pair string string)
 let events = slist event (fun a b -> compare (key a) (key b))
 
 let projection_tests =

@@ -140,8 +140,6 @@ let slist = Testable.slist
 let pair = Testable.pair
 let triple = Testable.triple
 let pass = Testable.pass
-let of_equal = Testable.of_equal
-let contramap = Testable.contramap
 
 (* Properties *)
 

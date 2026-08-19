@@ -19,7 +19,7 @@ let hex_of_int64 value = Printf.sprintf "%016Lx" value
 
 (* Compares with Int64 equality (via the canonical hex image) and renders
    in hex, which is how the frozen literals are written. *)
-let hex64 = contramap hex_of_int64 string
+let hex64 = Testable.contramap hex_of_int64 string
 
 let checkf condition format =
   Printf.ksprintf (fun message -> if not condition then fail message) format

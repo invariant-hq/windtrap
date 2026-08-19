@@ -153,7 +153,7 @@ environment if the child itself ever calls `run` — a leaked
 `WINDTRAP_UPDATE` or `WINDTRAP_STREAM` would change the child run's
 behavior.
 
-## 5. Comparing event sets: `slist` + `contramap`
+## 5. Comparing event sets: `slist` + `Testable.contramap`
 
 "Did these events happen, in any order, ignoring the noisy fields" is a
 projection followed by a multiset comparison — both already exist:
@@ -162,7 +162,7 @@ projection followed by a multiset comparison — both already exist:
 type event = { path : string; kind : string; timestamp : float }
 
 let key e = (e.path, e.kind)                     (* drop the noise *)
-let event = contramap key (pair string string)   (* compare/print the key *)
+let event = Testable.contramap key (pair string string)  (* on the key *)
 let events = slist event (fun a b -> compare (key a) (key b))
 
 (* order-insensitive, timestamp-insensitive: *)

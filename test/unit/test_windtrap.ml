@@ -402,7 +402,7 @@ let () =
             (option (pair (float 1e-9) (slist int compare)))
             (Some (1., [ 1; 2 ]))
             (Some (1., [ 2; 1 ]));
-          equal (contramap String.length int) "abc" "xyz";
+          equal (Testable.contramap String.length int) "abc" "xyz";
           equal pass 1 2);
     ]
   in

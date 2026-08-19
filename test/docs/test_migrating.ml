@@ -262,7 +262,7 @@ let b_package =
           ignore (Random.State.bits state));
       test "of_module witnesses a conventional module" (fun () ->
           equal
-            (Testable.of_module (module Point))
+            (Testable.make ~pp:Point.pp ~equal:Point.equal)
             { Point.x = 1; y = 2 } { Point.x = 1; y = 2 });
     ]
 
