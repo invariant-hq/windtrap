@@ -94,7 +94,6 @@ let require_some = Check.require_some
 let require_ok = Check.require_ok
 let require_error = Check.require_error
 let require_match = Check.require_match
-let eventually = Check.eventually
 let raises = Check.raises
 let raises_match = Check.raises_match
 

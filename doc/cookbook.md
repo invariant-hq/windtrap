@@ -401,3 +401,62 @@ Then assert about the number with the ordinary verbs:
 (count ~sub:"retry" log)` for a bound. Both failures print the number
 they got; `not_contains ~sub` is still the verb for "never occurs",
 and its failure marks the occurrence in the haystack.
+
+## 13. Convergence: driving a system until it settles
+
+Some assertions are about a system that *reaches* a state rather than
+one already in it — a writer that flushes once the scheduler runs, a
+cache that fills once the worker drains. Windtrap has no verb for it,
+because the loop is seven lines and everything that matters is in how
+you write the two callbacks:
+
+```ocaml
+let eventually ?(attempts = 100) ?diagnose ~step probe =
+  let rec go n =
+    match probe () with
+    | Some v -> v
+    | None when n >= attempts ->
+        failf "no convergence in %d attempts%s" attempts
+          (match diagnose with
+          | None -> ""
+          | Some d -> ": " ^ String.concat "; " (d ()))
+    | None ->
+        step ();
+        go (n + 1)
+  in
+  go 1
+```
+
+**Probe first, then step.** A system already in the wanted state has
+converged; a loop that stepped first would demand one change of a
+system that needed none. So a budget of *n* probes drives *n − 1*
+steps — the last probe is not followed by a step nothing would read.
+
+**The vacuous-probe hazard.** Probe-first has a corollary you own: a
+probe that is true of a system nobody started — `is_settled` on a
+scheduler with no work, "queue is empty" before anything was enqueued,
+"no errors logged" — converges on the very first probe, and the test
+passes having driven nothing. Make the probe carry evidence that the
+system actually ran:
+
+```ocaml
+(* not: Queue.is_empty pending — already true before anything starts *)
+(fun () -> if !replies > 0 && Queue.is_empty pending then Some () else None)
+```
+
+**Windtrap never sleeps.** The budget counts probes, not seconds, and
+`~step` is yours: put in it the thing that actually advances the system
+— a mock clock tick, one turn of an event loop, a queue drained. Then
+the convergence you assert is deterministic, and the test runs as fast
+as the system does rather than as slowly as your worst-case guess. A
+`~step` that only sleeps turns this into a retry loop that hides a race
+by outlasting it; that race is a defect in the code under test, and the
+loop exists to expose it rather than wait it out.
+
+`failf` splits its message on newlines in the failure block, so a
+multi-line `?diagnose` reads as a nested list. Nothing here is a failure
+boundary: an exception from `probe` or `step` — a nested assertion's
+failure included — propagates as it was raised, which is what you want.
+An exception from `diagnose` would replace the verdict it was
+decorating, so wrap that callback yourself if it touches state that may
+already be broken.

@@ -285,13 +285,6 @@ let labeled_msg (f : Failure.t) =
       | None -> Some label
       | Some m -> Some (label ^ ": " ^ m))
 
-(* A spent convergence budget, worded once for both the block and the
-   summary. The count is probes, not seconds — there is no duration in the
-   payload because windtrap never sleeps for one. *)
-let convergence_verdict attempts =
-  spf "no convergence in %d attempt%s" attempts
-    (if attempts = 1 then "" else "s")
-
 let headline ?(invocation = `Mirrors) (f : Failure.t) =
   let base =
     match f.kind with
@@ -360,21 +353,6 @@ let headline ?(invocation = `Mirrors) (f : Failure.t) =
               else desc
         in
         spf "property failed (%s): %s" desc (flat rendered)
-    | Failure.Convergence { attempts; diagnosis } -> (
-        let spent = convergence_verdict attempts in
-        (* The diagnosis rides into the summary the way the stale-baseline
-           hint does: it is the whole of what the assertion could say about
-           why, and a summary without it names only the budget. A crashed
-           callback is named as unavailable, never passed off as what it
-           would have observed. *)
-        match diagnosis with
-        | Ok [] -> spent
-        | Ok lines ->
-            spf "%s: %s" spent
-              (flat (show_controls (String.concat "; " lines)))
-        | Error text ->
-            spf "%s (diagnosis unavailable: %s)" spent
-              (flat (show_controls text)))
     | Failure.Message "" -> "(empty failure message)"
     | Failure.Message m -> flat m
     | Failure.Stale_baselines orphans ->
@@ -961,19 +939,6 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       | None -> ());
       if commands && not examples then
         put_ind (replay_line ?count ?max_shrink invocation ~seed:root ~filter)
-  | Failure.Convergence { attempts; diagnosis } -> (
-      (* The budget, then what the assertion's [?diagnose] reported nested
-         under it. No labels: there is no expected side to put opposite,
-         only a state that never arrived. Diagnosis lines render live system
-         state — the callback exists to print what the probe saw — so they
-         are escaped like the compared values, unlike a [Message], which is
-         the author's own words; a crashed callback prints as one
-         [diagnosis unavailable] line on the same terms, never as an
-         observation. *)
-      put_ind (convergence_verdict attempts);
-      match diagnosis with
-      | Ok lines -> List.iter (fun line -> put_block (show_controls line)) lines
-      | Error text -> put_ind ("diagnosis unavailable: " ^ show_controls text))
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m ->
       List.iter (fun line -> put_ind line) (Text.split_lines m)

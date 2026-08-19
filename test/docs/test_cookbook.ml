@@ -381,6 +381,62 @@ let count_tests =
             (count ~sub:"retry" log));
     ]
 
+(* Recipe 13: convergence *)
+
+let eventually ?(attempts = 100) ?diagnose ~step probe =
+  let rec go n =
+    match probe () with
+    | Some v -> v
+    | None when n >= attempts ->
+        failf "no convergence in %d attempts%s" attempts
+          (match diagnose with
+          | None -> ""
+          | Some d -> ": " ^ String.concat "; " (d ()))
+    | None ->
+        step ();
+        go (n + 1)
+  in
+  go 1
+
+let convergence_tests =
+  group "convergence"
+    [
+      test "the loop probes first, then alternates" (fun () ->
+          let pending = Queue.create () in
+          List.iter (fun x -> Queue.add x pending) [ 1; 2; 3 ];
+          let drained = ref [] in
+          let reply =
+            eventually
+              ~step:(fun () -> drained := Queue.pop pending :: !drained)
+              (fun () -> if Queue.is_empty pending then Some !drained else None)
+          in
+          (* Three steps drained the queue; the fourth probe converged, so
+             a budget of n probes drove n-1 steps. *)
+          equal (list int) [ 3; 2; 1 ] reply);
+      test "an already-converged probe drives nothing" (fun () ->
+          let steps = ref 0 in
+          let () = eventually ~step:(fun () -> incr steps) (fun () -> Some ()) in
+          equal int 0 !steps);
+      test "a spent budget fails, and the diagnosis says what it saw"
+        (fun () ->
+          let pending = Queue.create () in
+          Queue.add 1 pending;
+          let failed =
+            match
+              eventually ~attempts:3
+                ~diagnose:(fun () ->
+                  [ Printf.sprintf "pending: %d" (Queue.length pending) ])
+                ~step:(fun () -> ())
+                (fun () -> if Queue.is_empty pending then Some () else None)
+            with
+            | () -> None
+            | exception e -> Some (Printexc.to_string e)
+          in
+          let message = require_some failed in
+          contains ~sub:"no convergence in 3 attempts" message;
+          contains ~sub:"pending: 1" message);
+    ]
+
 (* The role dispatch and the suite *)
 
 let () =
@@ -403,4 +459,5 @@ let () =
           complex_tests;
           tape_tests;
           count_tests;
+          convergence_tests;
         ]

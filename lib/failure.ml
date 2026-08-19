@@ -55,7 +55,6 @@ type kind =
       printerless : bool;
       inner : t option;
     }
-  | Convergence of { attempts : int; diagnosis : (string list, string) result }
   | Message of string
   | Stale_baselines of string list
 
@@ -292,16 +291,6 @@ let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
          printerless;
          inner;
        })
-
-let convergence ?loc ?msg ?(diagnosis = Ok []) ~attempts () =
-  if attempts < 1 then
-    invalid_arg "Failure.convergence: attempts is not positive";
-  let diagnosis =
-    match diagnosis with
-    | Ok lines -> Ok (List.map cap lines)
-    | Error text -> Error (cap text)
-  in
-  make ?loc ?msg (Convergence { attempts; diagnosis })
 
 let message ?loc text = make ?loc (Message (cap text))
 

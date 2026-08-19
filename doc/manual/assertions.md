@@ -249,62 +249,6 @@ raises_match (Exn.invalid_arg ~substring:"negative") (fun () ->
     invalid_arg "checkout: negative coupon")
 ```
 
-## Convergence: `eventually`
-
-Some assertions are about a system that reaches a state rather than one
-that is already in it — a writer that flushes once the scheduler runs,
-a cache that fills once the worker drains. `eventually` probes, steps,
-and probes again, returning what the probe finally saw:
-
-```ocaml
-let reply =
-  eventually
-    ~step:(fun () -> Scheduler.run_one sched)
-    ~diagnose:(fun () ->
-      [ Printf.sprintf "pending: %d" (Queue.length pending) ])
-    (fun () -> Client.poll client)
-```
-
-It probes *before* it steps, so a system already in the wanted state
-converges without being driven; after that it alternates. Probe-first
-has a hazard: a probe that is vacuously true of a system nobody
-started — `is_settled` on a scheduler with no work, "queue is empty"
-before anything was enqueued — converges on the very first probe, and
-the test passes having driven nothing. The probe must include evidence
-that the system ran, not just that it is quiet:
-
-```ocaml
-(* not: Queue.is_empty pending — already true before anything starts *)
-(fun () -> if !replies > 0 && Queue.is_empty pending then Some () else None)
-```
-
-`~attempts`
-bounds the probes (default 100), and a spent budget prints as the
-budget plus whatever `~diagnose` returned:
-
-```
-no convergence in 100 attempts
-  pending: 3
-```
-
-That second line is the whole point of `~diagnose`. A bare timeout
-tells you the state never arrived; the diagnosis tells you what the
-state *was* when you gave up, which is usually the bug.
-
-**Windtrap never sleeps.** The budget counts probes, not seconds, and
-`~step` is yours to supply: put in it the thing that actually advances
-the system — a mock clock tick, one turn of an event loop, a queue
-drained. Then the convergence you assert is deterministic, and the
-test runs as fast as the system does rather than as slowly as your
-worst-case guess.
-
-A `~step` that only sleeps turns this into a retry loop that hides a
-race by outlasting it. If your code has a race, that is a defect, and
-this verb exists to expose it rather than wait it out — which is also
-why an exception from either callback propagates untouched: an
-assertion failing inside the probe is that assertion's failure, not a
-slow system.
-
 ## Escape hatches
 
 `fail msg` (and `failf fmt …`) fails the current test and never

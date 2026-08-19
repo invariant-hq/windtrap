@@ -32,19 +32,6 @@ let failing_occurrences =
   test "the handshake runs in order" (fun () ->
       in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] session_log)
 
-(* assertions.md: a spent convergence budget. The step never drains the
-   queue, so the diagnosis reports the state the probe kept seeing. *)
-
-let failing_convergence =
-  test "the writer flushes" (fun () ->
-      let pending = Queue.create () in
-      List.iter (fun x -> Queue.add x pending) [ 1; 2; 3 ];
-      eventually
-        ~step:(fun () -> ())
-        ~diagnose:(fun () ->
-          [ Printf.sprintf "pending: %d" (Queue.length pending) ])
-        (fun () -> if Queue.is_empty pending then Some () else None))
-
 (* property-testing.md: the failing property and its replay line. *)
 
 let encode fields = String.concat "," fields
@@ -173,7 +160,6 @@ let suite =
   [
     failing_equal;
     failing_occurrences;
-    failing_convergence;
     failing_prop;
     missing_snapshot;
     failing_stateful;

@@ -186,66 +186,6 @@ let require_match ?pos ?msg ?pp extract v =
       in
       fail_predicate ?pos ?msg ~claim:"a match" rendered
 
-(* Convergence
-
-   The budget counts probes, never seconds: windtrap does not sleep, and
-   [step] is where any waiting the caller needs belongs. That is what keeps
-   the verb an assertion about a system that converges when driven, rather
-   than a retry loop that hides a race by outlasting it.
-
-   Nothing here is a failure boundary. An exception from [probe] or [step]
-   — a nested assertion's Check_failure included — propagates as it was
-   raised: catching it would report a spent budget where the real defect
-   was the first thing the probe did. *)
-
-let fail_convergence ?pos ?msg ?diagnosis ~attempts () =
-  raise
-    (Failure.Check_failure
-       (Failure.convergence ?loc:(Loc.resolve ?pos ()) ?msg ?diagnosis ~attempts
-          ()))
-
-let eventually ?pos ?msg ?(attempts = 100) ?diagnose ~step probe =
-  if attempts < 1 then invalid_arg "Check.eventually: ~attempts is not positive";
-  (* Probe before stepping: a system already in the wanted state has
-     converged, and a verb that stepped first would demand one change of a
-     system that needed none. The last probe is likewise not followed by a
-     step nothing would read, so a budget of n probes drives n-1 steps. *)
-  let rec attempt n =
-    match probe () with
-    | Some v -> v
-    | None when n >= attempts ->
-        (* The one boundary here, and it points the other way: [diagnose]
-           decorates a verdict already reached, so an exception it raises is
-           recorded as the diagnosis being unavailable rather than allowed
-           to replace that verdict. Only the exceptions that belong to the
-           run pass through — a deadline or an exit attempt is about the
-           run, not the callback, and the fatal three stop everything. *)
-        let diagnosis =
-          Option.map
-            (fun d ->
-              match d () with
-              | lines -> Ok lines
-              | exception ((Failure.Timeout _ | Failure.Exit_attempt) as e) ->
-                  raise e
-              | exception e when Failure.is_fatal e -> raise e
-              | exception Failure.Skip_test reason ->
-                  (* A skip at failure time cannot un-fail the test, and the
-                     internal constructor's [Printexc] rendering belongs to
-                     no report; say what was asked in plain words. *)
-                  Error
-                    (match reason with
-                    | Some r -> "skip requested: " ^ r
-                    | None -> "skip requested")
-              | exception e -> Error (Printexc.to_string e))
-            diagnose
-        in
-        fail_convergence ?pos ?msg ?diagnosis ~attempts ()
-    | None ->
-        step ();
-        attempt (n + 1)
-  in
-  attempt 1
-
 (* Exceptions
 
    The control exceptions are re-raised from inside the thunk: without the

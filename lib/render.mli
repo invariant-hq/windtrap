@@ -953,13 +953,6 @@ val pp_failure :
       ([found at byte 13, before the search resumed at byte 36]) and marks it.
       Only [Ordered] adds a line, the [element] index, which says which
       assertion the rest of the block is about;
-    - convergence ([eventually]): the spent budget
-      ([no convergence in 100 attempts], singular at one), then the payload's
-      diagnosis lines nested under it. No labels — there is no expected side
-      to set opposite, only a state that never arrived. The lines render live
-      system state, so they are escaped like the compared values; a diagnosis
-      whose callback crashed prints as one [diagnosis unavailable: <exn>]
-      line on the same terms;
     - raise: expected and raised exceptions, and the recorded backtrace. When
       the payload carries a {!Failure.message_diff} — the failure site decided
       the two exceptions differ only in their message — the block diffs the
@@ -1009,8 +1002,7 @@ val pp_failure :
     Every surface above that prints compared data — the two equality
     renderings on both paths, the negated-equality value, the containment
     excerpt, the predicate claim and value, the rendered exceptions, the
-    snapshot baseline and proposed content, the counterexample, the
-    convergence diagnosis — prints each
+    snapshot baseline and proposed content, the counterexample — prints each
     C0 byte and DEL as a lowercase [\xNN] escape ([\x1b], [\x00], [\x0d]),
     with LF and TAB the exceptions: line structure and indentation are the
     block's own layout. One rule, no mnemonics, so [\x] marks every escape a

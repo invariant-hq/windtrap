@@ -1804,74 +1804,6 @@ let test_demand_headlines () =
   check "headline: a missing element names the cursor and the haystack size"
     (Render.headline missing_element_failure = missing)
 
-(* Convergence blocks: the spent budget, then whatever [?diagnose] said. *)
-
-let convergence_failure =
-  Failure.convergence ~attempts:100
-    ~diagnosis:(Ok [ "queue depth: 3"; "worker: draining" ])
-    ()
-
-let test_convergence_block () =
-  let b = failure_block convergence_failure in
-  check_contains "eventually: the budget is the verdict line"
-    ~sub:"    no convergence in 100 attempts\n" b;
-  (* The diagnosis nests under it, one line each, in the order given — the
-     [both sides equal:] block indent. *)
-  check_contains "eventually: the diagnosis nests under the verdict"
-    ~sub:"      queue depth: 3\n      worker: draining\n" b;
-  check_absent "eventually: no fake equality labels" ~sub:"expected" b;
-  (* Without a callback the budget line stands alone. *)
-  let bare = failure_block (Failure.convergence ~attempts:5 ()) in
-  check_contains "eventually: a bare failure is one line"
-    ~sub:"    no convergence in 5 attempts\n" bare;
-  (* A budget of one is not "1 attempts". *)
-  let single = failure_block (Failure.convergence ~attempts:1 ()) in
-  check_contains "eventually: a single attempt reads singular"
-    ~sub:"    no convergence in 1 attempt\n" single;
-  (* A crashed callback is named as unavailable, its exception rendering
-     escaped like the compared values — never printed as an observation. *)
-  let crashed =
-    failure_block
-      (Failure.convergence ~attempts:7
-         ~diagnosis:(Error "Failure(\"boom\x1b\")") ())
-  in
-  check_contains "eventually: a crashed diagnostic is named unavailable"
-    ~sub:"    diagnosis unavailable: Failure(\"boom\\x1b\")\n" crashed;
-  check_absent "eventually: the crash never reaches the block raw"
-    ~sub:"\x1b\"" crashed;
-  (* Diagnosis lines render live system state: a payload-borne escape is
-     shown, not executed — the compared-data rule, not [Message]'s. *)
-  let styled =
-    failure_block
-      (Failure.convergence ~attempts:3
-         ~diagnosis:(Ok [ "state = \x1b[31mRED\x1b[0m"; "raw \x00 byte" ])
-         ())
-  in
-  check_contains "eventually: diagnosis lines are escaped"
-    ~sub:"      state = \\x1b[31mRED\\x1b[0m\n      raw \\x00 byte\n" styled;
-  check_absent "eventually: no raw control byte reaches the block"
-    ~sub:"\x1b[31m" styled
-
-let test_convergence_headlines () =
-  check "headline: convergence names the budget"
-    (Render.headline (Failure.convergence ~attempts:100 ())
-    = "no convergence in 100 attempts");
-  check "headline: the diagnosis rides along, joined"
-    (Render.headline convergence_failure
-    = "no convergence in 100 attempts: queue depth: 3; worker: draining");
-  check "headline: a single attempt reads singular"
-    (Render.headline (Failure.convergence ~attempts:1 ())
-    = "no convergence in 1 attempt");
-  check "headline: a crashed diagnostic is named unavailable"
-    (Render.headline
-       (Failure.convergence ~attempts:7 ~diagnosis:(Error "Failure(\"boom\")")
-          ())
-    = {|no convergence in 7 attempts (diagnosis unavailable: Failure("boom"))|});
-  check "headline: diagnosis control bytes are escaped, not executed"
-    (Render.headline
-       (Failure.convergence ~attempts:3 ~diagnosis:(Ok [ "s = \x1b[31mR" ]) ())
-    = {|no convergence in 3 attempts: s = \x1b[31mR|})
-
 let test_satisfies_no_refinement () =
   (* The claim sentence is a description, not a rendering: never diff or
      refine the two (D5 §2). *)
@@ -3129,8 +3061,6 @@ let tests =
     test "containment: headline forms" test_containment_headlines;
     test "containment: in_order chain-break block" test_in_order_block;
     test "containment: demanded-occurrence headlines" test_demand_headlines;
-    test "convergence: budget and diagnosis block" test_convergence_block;
-    test "convergence: headline forms" test_convergence_headlines;
     test "satisfies/matches: no refinement against the claim"
       test_satisfies_no_refinement;
     test "hunks: trailing whitespace visualized on changed lines (D5 §4)"

@@ -384,12 +384,11 @@ The vocabulary worth knowing rather than reinventing:
 - Exceptions: `raises exn fn` (structural; distinguishes "nothing
   raised" from "raised something else"), `raises_match pred fn` with
   the `Exn` helpers (`Exn.invalid_arg ~substring:"negative"`).
-- Convergence: `eventually ~step probe` — probes, steps, probes again,
-  returns the first `Some`. `~attempts` bounds the probes (default
-  100), `~diagnose` adds state lines to the failure. Windtrap never
-  sleeps: put the thing that advances the system (mock clock tick,
-  event-loop turn, queue drain) in `~step`, never a sleep — a sleeping
-  step hides a race instead of exposing it.
+- Convergence has no verb: the probe/step loop is seven lines of your
+  own (cookbook recipe 13). Windtrap never sleeps — the budget counts
+  probes, and the thing that advances the system (mock clock tick,
+  event-loop turn, queue drain) goes in the step, never a sleep. A
+  sleeping step hides a race instead of exposing it.
 - Escape hatches: `fail` / `failf` for unreachable branches,
   `skip ~reason ()` for unmet environment preconditions.
 
