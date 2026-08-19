@@ -11,13 +11,11 @@
     test's result is an {!outcome} carrying a failure {e list} — a body failure
     and a teardown failure are two entries, never merged.
 
-    Failures are data; renderers are projections. Nothing here contains ANSI
-    styling, acceptance or replay command text, or any other rendered transcript
-    fragment: renderers derive all of those from the typed payloads. The strings
-    stored here are pp-rendered {e values} — the one thing that cannot outlive
-    the failure site — and every payload string is bounded at construction with
-    an explicit truncation marker stating the original size (the bound is an
-    implementation constant, currently 64 KiB).
+Failures are data; renderers are projections. Nothing here holds ANSI
+    styling or command text — renderers derive those. What it does hold is
+    pp-rendered {e values}, the one thing that cannot outlive the failure site,
+    each bounded at construction with a truncation marker stating the original
+    size (currently 64 KiB).
 
     Construct failures with {!equality}, {!containment}, {!predicate},
     {!raised}, {!snapshot}, {!property}, and {!message}; the runner reclassifies
@@ -131,8 +129,8 @@ type kind =
   | Containment of {
       claim : string;
           (** A one-line description of what was asserted
-              ([string containing "eof"]). A description, not a rendering:
-              renderers state it, they never diff it against the haystack. *)
+              ([string containing "eof"]) — a description, never diffed against
+              the haystack. *)
       needle : string;
           (** The needle, verbatim (bounded like every payload string). *)
       found_at : int option;
@@ -212,27 +210,25 @@ type kind =
               carrying its own advice. *)
       inner : t option;
     }
-      (** A property failed. [rendered] is the printed (shrunk) counterexample;
-          [case_index] the zero-based failing case; [shrink_steps] how many
-          shrinks led to it; [timed_out] is [Some limit] when the per-test
-          timeout expired during the shrink search — the counterexample is the
-          best found within the budget and may not be minimal. It is [None] on
-          every other path: a timeout before any case has failed times out the
-          whole test instead, so [timed_out] is never set when [examples] is
-          [true]. [root] is the run's root seed — renderers derive the replay
-          line from it; [count] is the effective case count when run
-          configuration ([--prop-count] / [WINDTRAP_PROP_COUNT]) supplied it,
-          and [None] when the declaration site fixed the count or the engine
-          default applied — renderers restate it in the replay line exactly when
-          present, because replaying a late case needs at least as many cases as
-          the failing run generated; [max_shrink] is the shrink-step budget on
-          the same terms ([--max-shrink] / [WINDTRAP_MAX_SHRINK] supplied it,
-          [None] for the engine default), because a replay under a different
-          budget stops the descent elsewhere and reports a different
-          counterexample; [examples] is [true] when the case came from the
-          explicit examples list (such cases are never seeded or shrunk);
-          [inner] is the assertion failure raised by the property body at the
-          shrunk counterexample, when it was a {!Check_failure}. *)
+      (** A property failed. [rendered] is the printed (shrunk)
+          counterexample, [case_index] the zero-based failing case,
+          [shrink_steps] how many shrinks led to it, and [inner] the assertion
+          failure the body raised at that counterexample when it raised a
+          {!Check_failure}. [examples] is [true] when the case came from the
+          explicit examples list, which is never seeded or shrunk.
+
+          [timed_out] is [Some limit] when the per-test timeout expired {e
+          during} the shrink search, and [None] on every other path — a timeout
+          before any case failed times out the whole test — so it is never set
+          alongside [examples].
+
+          [root], [count] and [max_shrink] are the replay line's three
+          ingredients: the run's root seed, and the two run-configuration knobs
+          when configuration supplied them ([None] when the declaration site or
+          the engine default did). A renderer restates exactly the ones that
+          are present: a replay under a different case count or shrink budget
+          reaches a different case, or stops the descent at a different node,
+          and reports something else. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
   | Stale_baselines of string list
       (** Baselines still stale at the end of a full, clean run, failing it

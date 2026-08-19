@@ -6,7 +6,7 @@
 (** One library for all your OCaml tests.
 
     Windtrap runs unit, property, and snapshot tests from one flat surface:
-    declare tests with {!test} and {!group}, assert with the Twenty-seven verbs
+    declare tests with {!test} and {!group}, assert with the assertion verbs
     ({!equal}, {!require_some}, {!raises}, ...), and hand the suite to {!run}:
 
     {[
@@ -59,7 +59,12 @@ type pos = string * int * int * int
     a failure names the failing call's own line when that call's frame is still
     on the stack; when it is not — a call in tail position leaves no frame — the
     failure is attributed to the enclosing test's declaration instead, and when
-    even that is unknown, reports omit the location rather than guess. *)
+    even that is unknown, reports omit the location rather than guess.
+
+    That attribution is the symptom to reach for [?pos] on: a report pointing
+    at a test's declaration line rather than the assertion inside it means the
+    assertion was the body's last expression, and [~pos:__POS__] at the call
+    puts the location back. *)
 
 type 'a printer = Format.formatter -> 'a -> unit
 (** The type for value printers: the one printer type used by testables,
@@ -298,7 +303,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:assertions Assertions}
 
-    Twenty-seven verbs and the {!Exn} predicates. Each verb raises one
+    The assertion verbs and the {!Exn} predicates. Each verb raises one
     structured failure that the runner catches at the test boundary; the
     failure records the call site ([?pos], else a best-effort call-stack
     capture) and the optional [?msg] annotation. Expected precedes actual,

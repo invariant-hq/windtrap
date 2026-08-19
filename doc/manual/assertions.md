@@ -1,11 +1,17 @@
 # Assertions
 
-Twenty-seven verbs, one design rule: a failure must print the data that
+One design rule behind every verb: a failure must print the data that
 would let you fix the bug without adding a `Printf`. Every checking
 verb takes optional `?msg` (an annotation shown in the report) and
 `?pos` (a `__POS__` override for the automatic call-stack location);
 of the escape hatches, `fail` and `failf` take only `?pos`, and `skip`
 only `?reason`. Expected precedes actual, always.
+
+`?pos` is for one symptom: a failure that points at the test's
+declaration line instead of the assertion. That happens when the
+failing call sits in tail position — the capture walks the stack and
+the frame it wanted is not there any more — and the fix is to hand the
+location in, `equal ~pos:__POS__ int 3 (f x)`.
 
 ## Equality: testables
 

@@ -5,31 +5,19 @@
 
 (** The assertion verbs.
 
-    Twenty-seven verbs and the {!Exn} predicates, each verb raising one
-    structured failure: a failing verb constructs a single {!Failure.t} — a
-    typed kind, an optional location, the [?msg] annotation when given — and
-    raises {!Failure.Check_failure}. Verbs never print, never diff, and never
-    touch run state: renderers project failure data into reports, computing
-    diffs from the rendered values stored in the payload.
+    Internal. {!Windtrap} re-exports every verb below flat and states the
+    contract a test author reads; this interface states what a {e renderer}
+    author needs, which is the payload each verb builds. Summaries here, the
+    contract there, the prose in [doc/manual/assertions.md].
 
-    Comparisons go through a {!Testable.t} witness: {!equal} and {!not_equal}
-    use its equality and, on failure only, render the values with its printer
-    into the payload — expected precedes actual, always. The {!require_some},
-    {!require_ok}, and {!require_error} verbs assert {e and unwrap}, so the
-    happy path keeps its value:
+    Two rules hold for all of them. A failing verb constructs one
+    {!Failure.t} — a typed kind, an optional location, the [?msg] annotation
+    when given — and raises {!Failure.Check_failure}; verbs never print, never
+    diff, and never touch run state. And the location is [?pos] when given,
+    else a best-effort call-stack capture, else none ({!Loc.resolve} is the
+    rule).
 
-    {[
-      let user = require_some (Store.find store "alice") in
-      let config = require_ok ~pp_error:Config.pp_error (Config.parse src) in
-      equal Testable.string "alice" user.name
-    ]}
-
-    A failure's location is [?pos] ([__POS__] at the call site) when given, else
-    a best-effort call-stack capture; when neither yields a location the failure
-    has none ({!Loc.resolve} is the rule).
-
-    {!skip} is not a failure: it raises {!Failure.Skip_test}, and the runner
-    reports the test as skipped. *)
+    {!skip} is not a failure: it raises {!Failure.Skip_test}. *)
 
 (** {1:types Types} *)
 
@@ -37,92 +25,68 @@ type pos = Loc.pos
 (** The type of [__POS__] payloads: file, line, start column, end column. *)
 
 type 'a printer = Format.formatter -> 'a -> unit
-(** The type for value printers, as taken by [?pp_error] and [?pp_ok]. *)
+(** The type for value printers, as taken by [?pp], [?pp_error], [?pp_ok]. *)
 
 type 'a testable = 'a Testable.t
 (** The type for assertion witnesses; see {!Testable}. *)
 
-(** {1:comparisons Comparisons} *)
+(** {1:equalities Equalities}
+
+    Every verb here builds a diffable {!Failure.equality} over two rendered
+    values or constructor descriptions, expected first. The witness renders
+    only on failure. *)
 
 val equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
-(** [equal t expected actual] is [()] iff [Testable.equal t expected actual].
-    Otherwise it raises {!Failure.Check_failure} with both values rendered by
-    [t]'s printer, expected first. Values are rendered only on failure. *)
+(** [equal t expected actual] is [()] iff [Testable.equal t expected actual]. *)
 
 val not_equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
-(** [not_equal t a b] is [()] iff [a] and [b] are {e not} equal under [t].
-    Otherwise it raises {!Failure.Check_failure} carrying one rendering — [a]'s,
-    stored on both sides of the payload — which renderers print once
-    ([both sides equal: <v>]). *)
-
-(** {1:booleans Booleans} *)
+(** [not_equal t a b] is [()] iff [a] and [b] are {e not} equal under [t]. The
+    payload sets [not_] and stores one rendering — [a]'s — on both sides, which
+    renderers print once. *)
 
 val is_true : ?pos:pos -> ?msg:string -> bool -> unit
-(** [is_true b] is [()] iff [b]. The failure payload compares [true] against
-    [false]. *)
+(** [is_true b] is [()] iff [b]. The payload compares ["true"] against
+    ["false"]. *)
 
 val is_false : ?pos:pos -> ?msg:string -> bool -> unit
 (** [is_false b] is [()] iff [not b]. *)
 
-(** {1:containment String containment} *)
+val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
+(** [is_none o] is [()] iff [o] is [None]. The payload compares ["None"]
+    against ["Some " ^ pp v], [pp] defaulting to {!Pp.abstract}. *)
 
-val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
-(** [contains ~sub s] is [()] iff [s] contains [sub] as a byte substring; the
-    empty needle is contained in every string. Otherwise it raises
-    {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
-    [sub] and a bounded excerpt of [s]'s head (see {!Failure.containment} for
-    the excerpt policy). *)
+val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
+(** [is_some o] is [()] iff [o] is [Some _]. No [?pp]: the failing side is
+    [None]. Payload-identical to {!require_some}'s. *)
 
-val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
-(** [not_contains ~sub s] is [()] iff [s] does {e not} contain [sub] as a byte
-    substring — so it always fails when [sub] is empty. Otherwise it raises
-    {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
-    [sub], the byte offset of its first occurrence, and a bounded excerpt of [s]
-    around that occurrence. *)
+(** {1:unwrapping Unwrapping}
 
-val in_order : ?pos:pos -> ?msg:string -> subs:string list -> string -> unit
-(** [in_order ~subs s] is [()] iff every element of [subs] occurs in [s], each
-    match beginning at or after the {e end} of the previous element's match;
-    matches are leftmost. The chain never re-uses bytes, so [["aa"; "aa"]]
-    needs four [a]s and not three.
+    Assert the constructor and return the payload. The rejected side renders
+    with the caller's printer, {!Pp.abstract} without one, and only on
+    failure. *)
 
-    Otherwise it raises {!Failure.Check_failure} with a
-    {!Failure.Containment} payload whose needle is the element that broke the
-    chain and whose {!Failure.Ordered} demand carries that element's
-    zero-based index and the byte offset the search resumed from; [found_at]
-    is that element's first occurrence anywhere in [s], so a report separates
-    "not in the string at all" from "in the string, but before the cursor" —
-    the out-of-order bug — as {!starts_with} does. The excerpt windows on the
-    cursor: what it shows is the region the search was reading.
+val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
+(** [require_some o] is [v] iff [o] is [Some v]. *)
 
-    An empty element matches at the cursor without advancing it, {!contains}
-    holding the empty needle to occur in every string.
+val require_ok :
+  ?pos:pos -> ?msg:string -> ?pp_error:'e printer -> ('a, 'e) result -> 'a
+(** [require_ok r] is [v] iff [r] is [Ok v]. *)
 
-    Raises [Invalid_argument] if [subs] is empty: an assertion that demands
-    nothing is a programmer error, not a passing test. *)
+val require_error :
+  ?pos:pos -> ?msg:string -> ?pp_ok:'a printer -> ('a, 'e) result -> 'e
+(** [require_error r] is [e] iff [r] is [Error e]. *)
 
-val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
-(** [starts_with ~affix s] is [()] iff [s] begins with [affix]. Otherwise it
-    raises {!Failure.Check_failure} with a {!Failure.Containment} payload
-    carrying [affix], a bounded excerpt of [s], and — when [affix] occurs
-    somewhere in [s] — the offset of that occurrence, so a report distinguishes
-    "not there at all" from "there, but not at the start". *)
+val require_match :
+  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b
+(** [require_match extract v] is [b] iff [extract v] is [Some b]. Its payload
+    is {!Failure.predicate}'s, with ["a match"] as the claim. An exception
+    raised by [extract] propagates unchanged. *)
 
-val ends_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
-(** [ends_with ~affix s] is [()] iff [s] ends with [affix]; the payload is
-    {!starts_with}'s. *)
+(** {1:predicates Predicates}
 
-val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
-(** [mem t x xs] is [()] iff [xs] has an element equal to [x] under [t].
-    Otherwise it raises {!Failure.Check_failure} with a {!Failure.Predicate}
-    payload whose claim names [x] and whose value is [xs], both rendered by
-    [t]'s printer — the data an [is_true (List.mem x xs)] would have thrown
-    away. Elements are rendered only on failure.
-
-    Membership over bytes is {!contains}; this is membership over a witnessed
-    element type, so the two cannot share a payload. *)
-
-(** {1:predicates Predicates} *)
+    Both build a {!Failure.predicate} payload: a claim sentence on the expected
+    side, a rendered value on the actual side, and no diff between them —
+    a description is not a rendering. *)
 
 val satisfies :
   ?pos:pos ->
@@ -132,118 +96,88 @@ val satisfies :
   ('a -> bool) ->
   'a ->
   unit
-(** [satisfies t pred v] is [()] iff [pred v]. Otherwise it raises
-    {!Failure.Check_failure} with a {!Failure.predicate} payload carrying
-    [claim] and [v] rendered by [t]'s printer — [t]'s equality is not consulted.
-    [claim] is the sentence on the expected side and defaults to
-    ["value satisfying the predicate"]. [pred] must be total; it runs on every
-    call, the printer only on failure. *)
+(** [satisfies t pred v] is [()] iff [pred v]. [claim] takes the expected side
+    and defaults to ["value satisfying the predicate"]; [t]'s equality is never
+    consulted. [pred] must be total. *)
 
-(** {1:options Options}
+val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
+(** [mem t x xs] is [()] iff [xs] has an element equal to [x] under [t]. The
+    claim names [x], the value is [xs], both through [t]'s printer. Membership
+    over bytes is {!contains}, whose payload is byte offsets and cannot be
+    shared. *)
 
-    The shape assertions, for when the value is not wanted. They take the same
-    optional printer the unwrapping verbs do rather than a {!Testable.t}: a
-    witness carries an equality these never consult, and demanding one for a
-    type the assertion does not inspect is what drives call sites to
-    [equal (option pass) None x]. *)
+(** {1:containment String containment}
 
-val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
-(** [is_none o] is [()] iff [o] is [None]. On [Some v] it raises
-    {!Failure.Check_failure} comparing [None] against [Some <v>], with [v]
-    rendered by [pp] when given and as [<abstract>] otherwise; the printer runs
-    only on failure. *)
+    Every verb here builds a {!Failure.containment} payload: the needle, the
+    haystack's length, the byte offset of the needle's first occurrence
+    anywhere in it when there is one, and a bounded excerpt whose policy
+    {!Failure.containment} owns. The [demand] field is how a renderer tells the
+    verbs apart. *)
 
-val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
-(** [is_some o] is [()] iff [o] is [Some _] — {!require_some} for callers that
-    want the assertion and not the value, instead of discarding it. There is no
-    [?pp]: the failing side is [None], which has nothing to render. *)
+val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
+(** [contains ~sub s] is [()] iff [s] contains [sub] as a byte substring; the
+    empty needle is contained in every string. *)
 
-(** {1:unwrapping Unwrapping}
+val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
+(** [not_contains ~sub s] is [()] iff [s] does {e not} contain [sub] — so it
+    always fails when [sub] is empty. *)
 
-    Each verb asserts the constructor and returns the payload, so the value
-    flows on without a rebind. The rejected side of a [result] prints via
-    [?pp_error]/[?pp_ok] when given and as [<abstract>] otherwise; printers run
-    only on failure. *)
+val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+(** [starts_with ~affix s] is [()] iff [s] begins with [affix]. Recording the
+    affix's first occurrence when it has one is the point: a report separates
+    "not there at all" from "there, but not at the start". *)
 
-val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
-(** [require_some o] is [v] iff [o] is [Some v]. On [None] it raises
-    {!Failure.Check_failure} comparing [Some _] against [None]. *)
+val ends_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+(** [ends_with ~affix s] is [()] iff [s] ends with [affix]; the payload is
+    {!starts_with}'s. *)
 
-val require_ok :
-  ?pos:pos -> ?msg:string -> ?pp_error:'e printer -> ('a, 'e) result -> 'a
-(** [require_ok r] is [v] iff [r] is [Ok v]. On [Error e] it raises
-    {!Failure.Check_failure} comparing [Ok _] against [Error <e>], with [e]
-    rendered by [pp_error] when given and as [<abstract>] otherwise. *)
+val in_order : ?pos:pos -> ?msg:string -> subs:string list -> string -> unit
+(** [in_order ~subs s] is [()] iff every element of [subs] occurs in [s], each
+    match beginning at or after the {e end} of the previous element's match;
+    matches are leftmost, so [["aa"; "aa"]] needs four [a]s. An empty element
+    matches at the cursor without advancing it.
 
-val require_error :
-  ?pos:pos -> ?msg:string -> ?pp_ok:'a printer -> ('a, 'e) result -> 'e
-(** [require_error r] is [e] iff [r] is [Error e]. On [Ok v] it raises
-    {!Failure.Check_failure} comparing [Error _] against [Ok <v>], with [v]
-    rendered by [pp_ok] when given and as [<abstract>] otherwise. *)
+    The failing element is the needle, and a {!Failure.Ordered} demand carries
+    its zero-based index and the byte the search resumed from. [found_at] keeps
+    its plain meaning — the element's first occurrence {e anywhere} — so a
+    report separates "not in the string" from "in the string, but before the
+    cursor". The excerpt windows on the cursor: the region the search was
+    reading.
 
-val require_match :
-  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b
-(** [require_match extract v] is [b] iff [extract v] is [Some b] — the
-    match-and-unwrap counterpart of {!require_some} for values that are not
-    already options:
-
-    {[
-      let port =
-        require_match ~pp:Uri.pp (function Tcp p -> Some p | _ -> None) addr
-    ]}
-
-    On [None] it raises {!Failure.Check_failure} with a {!Failure.predicate}
-    payload whose claim is ["a match"], carrying [v] rendered by [pp] when given
-    and as [<abstract>] otherwise; the printer runs only on failure. An
-    exception raised by [extract] propagates unchanged. *)
+    Raises [Invalid_argument] if [subs] is empty: an assertion that demands
+    nothing is a programmer error, not a passing test. *)
 
 (** {1:exceptions Exceptions}
 
-    Both verbs run their thunk and re-raise the control exceptions
-    {!Failure.Check_failure}, {!Failure.Skip_test}, and {!Failure.Timeout}
-    unchanged, so an assertion failing (or a skip) {e inside} the thunk reports
-    itself rather than being mistaken for a wrong exception. Consequently the
-    control exceptions themselves cannot be asserted. *)
+    Both verbs re-raise {!Failure.Check_failure}, {!Failure.Skip_test} and
+    {!Failure.Timeout} from inside the thunk unchanged: without that guard a
+    [raises] over code that itself asserts would swallow the assertion failure
+    and report "wrong exception". Consequently the control exceptions cannot be
+    asserted. Both build a {!Failure.raised} payload. *)
 
 val raises : ?pos:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
 (** [raises e f] is [()] iff [f ()] raises an exception structurally equal to
-    [e]. It raises {!Failure.Check_failure} when [f ()] returns — the payload
-    then records the expected exception alone — or when it raises a different
-    exception, the payload then carrying both exceptions rendered by
-    [Printexc.to_string], the raised one's backtrace when the runtime recorded
-    one, and — when the two exceptions share their constructor and differ only
-    in a message payload — a {!Failure.message_diff}, so a wrong-message failure
-    reads as a message diff rather than two near-identical renderings. The verb
-    holds the exceptions themselves, so it names the shared constructor instead
-    of leaving a renderer to guess it from a rendering.
+    [e]. The payload records the expected exception alone when [f ()] returned,
+    and both plus the raised one's backtrace otherwise — with a
+    {!Failure.message_diff} when the two share a constructor and differ only in
+    a message. The verb holds both exceptions, so it names that constructor
+    rather than leaving a renderer to guess it from a rendering.
 
-    Structural equality compares the exception's constructor and payload with
-    [Stdlib.( = )]; a payload it cannot compare (a functional value) makes the
-    comparison itself raise [Invalid_argument], which propagates out of the verb
-    — assert such exceptions with {!raises_match}. *)
+    Structural equality is [Stdlib.( = )]: a payload it cannot compare (a
+    functional value) makes the comparison itself raise [Invalid_argument],
+    which propagates — assert such exceptions with {!raises_match}. *)
 
 val raises_match :
   ?pos:pos -> ?msg:string -> (exn -> bool) -> (unit -> 'a) -> unit
 (** [raises_match pred f] is [()] iff [f ()] raises an exception satisfying
-    [pred]. It raises {!Failure.Check_failure} when [f ()] returns or when
-    [pred] rejects the raised exception; a predicate has no rendering, so the
-    payload's expected side is absent, but its [predicate] flag is set —
-    distinguishing the rejection from an uncaught exception (see
-    {!Failure.kind}) — and the rejected exception is carried rendered. [pred]
-    must be total. {!Exn} provides the common predicates:
+    [pred], which must be total. A predicate has no rendering, so the payload's
+    expected side is absent and its [predicate] flag is set — which is what
+    separates a rejection from an uncaught exception. *)
 
-    {[
-      raises_match (Exn.invalid_arg ~substring:"unhandled op") (fun () ->
-          Machine.step m op)
-    ]} *)
-
-(** Exception predicates for {!raises_match}.
-
-    Each predicate checks the exception's constructor and, optionally, its
-    message: without [~substring] any message passes; with it the message must
-    contain the given byte substring (the empty string always matches). A whole
-    message is asserted with {!raises}, which holds both exceptions and so
-    reports a message diff. *)
+(** Exception predicates for {!raises_match}: a constructor check and, with
+    [~substring], a byte-substring check on the message (the empty string
+    always matches). A whole message is {!raises}' job — it holds both
+    exceptions, so it reports a message diff. *)
 module Exn : sig
   val invalid_arg : ?substring:string -> exn -> bool
   (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m]
@@ -256,15 +190,14 @@ module Exn : sig
   val sys_error : ?substring:string -> exn -> bool
   (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] contains
       [substring], if given. Completes the set: these three are exactly the
-      message-carrying exceptions {!raises} diffs by message rather than by
-      rendering (see [exn_message]). *)
+      message-carrying exceptions {!raises} diffs by message. *)
 end
 
 (** {1:escapes Escape hatches} *)
 
 val fail : ?pos:pos -> string -> 'a
-(** [fail msg] raises {!Failure.Check_failure} carrying [msg] as a direct
-    message failure. It never returns. *)
+(** [fail msg] raises {!Failure.Check_failure} carrying a {!Failure.message}
+    payload. It never returns. *)
 
 val failf : ?pos:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
 (** [failf fmt ...] is {!fail} with a [Format] message. It never returns. *)

@@ -167,21 +167,19 @@ val program :
     the search never leaves that program's vocabulary. Closing the gap needs the
     program re-assembled at every node, which is a different design.
 
-    The generator prints, always: [Gen.Private.prints] holds for the result, so a
-    printerless stateful counterexample is unreachable and the report's
-    [Gen.with_pp] remedy line never fires here. A program renders as a summary
-    line — ["5 calls, last: pop"], or ["(no commands)"] for the empty program —
-    followed by one numbered line per step: the command's name and its argument
-    through [Gen.Private.render_value], preceded by the model {e before} the step when
-    [pp_model] is given. The printer bounds itself and emits hard newlines only:
-    an argument that renders as ["()"] is omitted, arguments are cut at 200
-    bytes (with a marker stating the original size) and model cells at 60 code
-    points (each flattened to one line), a [pp_model] that raises costs its own
-    cell and no more, and a program longer than 40 steps prints its first and
-    last 20 with a ["… (N steps omitted)"] line between. Both columns are
-    measured over the rows that print. An argument whose own generator has no
-    printer renders as ["<no printer>"]; the step names and the program shape
-    survive.
+    The generator prints, always ([Gen.Private.prints] holds), so a printerless
+    stateful counterexample is unreachable and the [Gen.with_pp] remedy line
+    never fires here. A program renders as a summary line — ["5 calls, last:
+    pop"], or ["(no commands)"] — then one numbered line per step: the command's
+    name and its argument through [Gen.Private.render_value], preceded by the
+    model {e before} the step when [pp_model] is given. The printer bounds
+    itself and emits hard newlines only: a ["()"] argument is omitted, arguments
+    cut at 200 bytes (with a marker stating the original size) and model cells
+    at 60 code points flattened to one line, a raising [pp_model] costs its own
+    cell and no more, and a program over 40 steps prints its first and last 20
+    with a ["… (N steps omitted)"] line between. Columns are measured over the
+    rows that print. An argument whose generator has no printer renders as
+    ["<no printer>"]; the step names and the shape survive.
 
     Sampling raises [Invalid_argument] if [commands] is empty or if [steps] is
     negative — inside the running test's exception boundary, where every other
@@ -201,95 +199,65 @@ val execute :
   scope:(('sut -> unit) -> unit) ->
   ('model, 'sut) program ->
   unit
-(** [execute ~scope program] runs [program] against the system [scope] hands its
-    callback, and returns [()] iff every body, every invariant check and the
-    scope itself succeeded. [scope] acquires, calls back exactly once, and
-    releases on return; it runs once per [execute] — so once per generated case
-    {e and} once per shrink candidate, since the search re-runs the program and
-    a shared system would make it meaningless.
+(** [execute ~scope program] runs [program] against the system [scope] hands
+    its callback, and returns [()] iff every body, every invariant check and the
+    scope itself succeeded. [scope] runs once per [execute] — so once per
+    generated case {e and} once per shrink candidate, the search re-running the
+    program; {!Windtrap.stateful} states the scope contract for its callers.
 
-    [invariant m sut] checks the state itself, as opposed to what a call
-    returns: it runs on the fresh system before step 1, which is what makes the
-    empty program a real test, and after every step. Absent, it means
-    {e I make no claim about the state} — weaker than a false claim, so it is
-    optional where [~next] is not.
+    [invariant m sut] checks the state rather than what a call returns. It runs
+    on the fresh system before step 1 — which is what makes the empty program a
+    real test — and after every step.
 
     {b Failure class.} A body's exception is re-raised as a
     {!Failure.Check_failure} carrying the payload the property engine would have
-    built for it, so a descent never has to cross the engine's two acceptance
-    classes and stall. Untouched, in bodies and in invariants alike:
+    built for it, so a descent never crosses the engine's two acceptance classes
+    and stalls. Untouched, in bodies and invariants alike:
     {!Failure.Check_failure}, {!Failure.Skip_test}, {!Failure.Timeout},
     {!Failure.Exit_attempt}, {!Property.Discard}, and the three
-    {!Failure.is_fatal} exceptions. {!Failure.Check_failure} is already the
-    class the narrowing aims at; the rest are statements about the run rather
-    than about this program — converting a skip would make it a reported
-    counterexample, converting a discard would break [assume] inside a body, and
-    converting a timeout would defeat the shrink search's deadline.
+    {!Failure.is_fatal} exceptions — the first is already the target class, and
+    the rest are statements about the run, not about this program.
 
     {b Attribution.} A {!Failure.Check_failure} leaving a step is re-raised with
-    its [msg] slot naming the step: ["step 3 of 5: pop"], or
-    ["invariant after step 3 of 5: pop"] for the check that follows the step, or
-    ["step 3 of 3: close — ~pre raised"] for a poisoned program's last step, or
-    ["invariant on the fresh system"]. A user [?msg] is flattened to one line
-    and joined onto it, since the slot renders as one line. [loc] is stamped on
-    the two failures with no assertion of their own to be located by — a
-    poisoned program's and a scope that never ran the program — and on no
-    other, every one of which carries the site of the assertion that produced
-    it; callers pass the [stateful] declaration site.
+    its [msg] slot naming the step: ["step 3 of 5: pop"],
+    ["invariant after step 3 of 5: pop"], ["step 3 of 3: close — ~pre raised"]
+    for a poisoned program's last step, or ["invariant on the fresh system"]. A
+    user [?msg] is flattened to one line and joined onto it. [loc] is stamped on
+    the two failures with no assertion of their own to locate — a poisoned
+    program's, and a scope that never ran the program — and on no other; callers
+    pass the [stateful] declaration site.
 
     {b The poisoned step.} A [~pre] poison means the call is not known to be
     legal, so its body does not run. A [~next] poison means [~pre] held and only
     the model {e after} the call is unknown, so the body does run, under the
     step's own attribution and before the poison is reported — and a failure of
-    that body is the reported failure, the poison surfacing on some other case
-    instead. No invariant check follows a poisoned step: there is no model to
-    check it against.
+    that body is the reported failure. No invariant check follows a poisoned
+    step: there is no model to check it against.
 
-    {b The scope contract.} Release is [scope]'s own: [execute] never sees the
-    resource, so a scope that must reclaim on the failing path writes it —
-    [Fun.protect ~finally:release (fun () -> run sut)], or a [with_]-style
-    function that already does.
-
-    {[
-      Stateful.execute
-        ~scope:(fun run ->
-          let store = Store.open_ dir in
-          Fun.protect
-            ~finally:(fun () -> Store.close store)
-            (fun () -> run store))
-        program
-    ]}
-
-    What [execute] guarantees is the failure. The program's exception is
-    recorded and then re-raised {e through} [scope], so a scope that cancels or
-    cleans up on that path sees it and one that swallows it cannot turn a
-    failing case green; anything the scope raises {e over} it is dropped. That
-    last rule is not tidiness: a cleanup error must not replace a
+    {b Ranking, at the scope boundary.} The program's exception is recorded and
+    re-raised {e through} [scope]; anything the scope raises {e over} it is
+    dropped. That is not tidiness: a cleanup error must not replace a
     counterexample's assertion, and a {!Failure.Timeout} hidden behind one would
     be accepted by the engine as a shrink step and reported as a converged,
-    minimal counterexample. So only {!Failure.Timeout} and the
-    {!Failure.is_fatal} set outrank the failure in hand — they end the run. The
-    exception [execute] cannot see past is [Fun.protect]'s own
-    [Fun.Finally_raised], which arrives {e in place of} the program's: keep
-    cleanup that can fail out of a [~finally], or handle it there.
+    minimal counterexample. Only {!Failure.Timeout} and the {!Failure.is_fatal}
+    set outrank the failure in hand — they end the run. [Fun.Finally_raised] is
+    the one exception [execute] cannot see past: it arrives {e in place of} the
+    program's.
 
-    Raising before the callback is acquisition failing, and propagates
-    unconverted: no release is owed for a system that was never built, and a
-    scope that {!Failure.Skip_test}s there skips the test rather than failing
-    it. Raising after the callback returned is release failing, and propagates
-    the same way when the program succeeded.
+    Raising before the callback is acquisition failing and propagates
+    unconverted — no release is owed for a system never built, and a
+    {!Failure.Skip_test} there skips the test. Raising after the callback
+    returned is release failing, and propagates the same way when the program
+    succeeded.
 
-    Calling back exactly once is the contract. A scope that returns without
-    running the program fails the case — a program that did not run is not a
-    passing program — with the {!Failure.Message} ["the scope returned without
-    running the program …"] located at [loc]. A scope that runs it twice gets
-    [Invalid_argument] at the second call, and that outranks everything else
-    the case has to say, a swallowed one included: one execution is what the
-    case is keyed by. Under the engine the search treats that like any
-    exception and converges on the empty program — accurately, since a scope
-    that calls back twice does so whatever the program says — so the report
-    reads [(no commands)] with the misuse as its failure: the message, not
-    the counterexample, is the diagnosis. *)
+    {b Exactly once.} A scope that returns without running the program fails the
+    case with the {!Failure.Message} ["the scope returned without running the
+    program …"] located at [loc]. A scope that runs it twice gets
+    [Invalid_argument] at the second call, and that outranks everything else the
+    case has to say, a swallowed failure included. The search then converges on
+    the empty program — accurately, since such a scope misbehaves whatever the
+    program says — so the report reads [(no commands)] with the misuse as its
+    failure. *)
 
 (** {1:declaring Declaring} *)
 
