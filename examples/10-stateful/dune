@@ -1,7 +1,0 @@
-; Stateful property tests: commands over a bounded queue, a list model, a
-; per-case system from ~scope, and an ~invariant tying the two together.
-
-(test
- (name test_bounded_queue)
- (modules test_bounded_queue bounded_queue)
- (libraries windtrap))
