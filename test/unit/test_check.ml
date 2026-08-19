@@ -884,8 +884,6 @@ let tests =
         check "Exn.sys_error: ~substring matches inside the message"
           (Check.Exn.sys_error ~substring:"No such file"
              (Sys_error "nope.txt: No such file or directory"));
-        check "Exn.sys_error: ~exact requires the whole message"
-          (not (Check.Exn.sys_error ~exact:"nope" (Sys_error "nope.txt")));
         check "Exn.invalid_arg: ~substring matches inside the message"
           (Check.Exn.invalid_arg ~substring:"unhandled op"
              (Invalid_argument "step: unhandled op HALT"));
@@ -894,44 +892,15 @@ let tests =
              (Check.Exn.invalid_arg ~substring:"overflow" (Invalid_argument "x")));
         check "Exn.invalid_arg: empty ~substring matches any message"
           (Check.Exn.invalid_arg ~substring:"" (Invalid_argument ""));
-        check "Exn.failure: ~exact requires the whole message"
-          (Check.Exn.failure ~exact:"boom" (Stdlib.Failure "boom"));
-        check "Exn.failure: ~exact rejects a superstring"
-          (not (Check.Exn.failure ~exact:"boom" (Stdlib.Failure "boom!")));
-        check
-          "Exn predicates: ~substring and ~exact together are a programmer \
-           error"
-          (match
-             Check.Exn.invalid_arg ~substring:"a" ~exact:"a"
-               (Invalid_argument "a")
-           with
-          | _ -> false
-          | exception Invalid_argument _ -> true);
-        (* The programmer error must not hide behind the exception under
-           test: a wrong-constructor exception would otherwise turn "both
-           constraints given" into a silent [false]. *)
-        check
-          "Exn predicates: the mutual-exclusion error is not gated on the \
-           raised constructor"
-          (match Check.Exn.invalid_arg ~substring:"a" ~exact:"a" Not_found with
-          | _ -> false
-          | exception Invalid_argument _ -> true);
-        check
-          "Exn.failure: the mutual-exclusion error fires on non-Failure \
-           exceptions too"
-          (match
-             Check.Exn.failure ~substring:"a" ~exact:"a" (Invalid_argument "a")
-           with
-          | _ -> false
-          | exception Invalid_argument _ -> true);
         (* The composition the predicates exist for. *)
         passes "raises_match composes with Exn.invalid_arg" (fun () ->
             Check.raises_match (Check.Exn.invalid_arg ~substring:"unhandled op")
               (fun () -> invalid_arg "step: unhandled op HALT"));
-        raise_payload "raises_match rejects via Exn.failure ~exact"
+        raise_payload "raises_match rejects via Exn.failure ~substring"
           (fun () ->
-            Check.raises_match (Check.Exn.failure ~exact:"boom") (fun () ->
-                failwith "boom!"))
+            Check.raises_match
+              (Check.Exn.failure ~substring:"underflow")
+              (fun () -> failwith "overflow"))
           (fun (_, actual, _) ->
             check "raises_match + Exn: rejected exception rendered"
               (actual <> None)));

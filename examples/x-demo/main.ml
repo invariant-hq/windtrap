@@ -242,7 +242,7 @@ let assertion_tests =
     test "raises_match prints the raised exception" (fun () ->
         raises_match (Exn.invalid_arg ~substring:"unhandled op") (fun () ->
             failwith "stack underflow");
-        raises_match (Exn.failure ~exact:"boom") (fun () -> failwith "boom"));
+        raises (Failure "boom") (fun () -> failwith "boom"));
     test "raises_match when nothing was raised" (fun () ->
         raises_match (Exn.failure ~substring:"overflow") (fun () -> min_int - 1);
         equal int min_int (min_int - 1 + 1));

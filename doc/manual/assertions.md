@@ -242,12 +242,16 @@ raises (Parse_error "empty") (fun () -> Calc.parse " ")
 
 When the payload is not comparable, or you only care about part of the
 message, use `raises_match` with a predicate — the `Exn` module has
-the common ones (`~substring` or `~exact` constrain the message):
+the common ones, and `~substring` constrains the message:
 
 ```ocaml
 raises_match (Exn.invalid_arg ~substring:"negative") (fun () ->
     invalid_arg "checkout: negative coupon")
 ```
+
+A *whole* message is `raises`' job: `raises (Failure "boom")` says the
+same thing, and because it holds both exceptions it reports a message
+diff where a predicate could only reject.
 
 ## Escape hatches
 

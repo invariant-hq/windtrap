@@ -247,29 +247,24 @@ let raises_match ?pos ?msg pred fn =
           ?backtrace ()
 
 module Exn = struct
-  (* The message constraint resolves once, when the predicate is built:
-     passing both constraints is a programmer error reported there, never
-     gated on the raised exception's constructor. Defined before the
-     predicates so [invalid_arg] below is unambiguously Stdlib's. *)
-  let message_check ?substring ?exact () =
-    match (substring, exact) with
-    | Some _, Some _ ->
-        invalid_arg
-          "Exn predicate: ~substring and ~exact are mutually exclusive"
-    | Some sub, None -> fun m -> Text.contains_substring ~pattern:sub m
-    | None, Some exact -> String.equal exact
-    | None, None -> Fun.const true
+  (* The message constraint resolves once, when the predicate is built,
+     never per exception examined. An exact message is [raises (Failure m)]:
+     it holds both exceptions and so reports a message diff, which this
+     cannot. *)
+  let message_check = function
+    | Some sub -> fun m -> Text.contains_substring ~pattern:sub m
+    | None -> Fun.const true
 
-  let invalid_arg ?substring ?exact =
-    let ok = message_check ?substring ?exact () in
+  let invalid_arg ?substring =
+    let ok = message_check substring in
     function Invalid_argument m -> ok m | _ -> false
 
-  let failure ?substring ?exact =
-    let ok = message_check ?substring ?exact () in
+  let failure ?substring =
+    let ok = message_check substring in
     function Stdlib.Failure m -> ok m | _ -> false
 
-  let sys_error ?substring ?exact =
-    let ok = message_check ?substring ?exact () in
+  let sys_error ?substring =
+    let ok = message_check substring in
     function Sys_error m -> ok m | _ -> false
 end
 

@@ -237,7 +237,7 @@ let bounded_rejects_invalid_bounds_before_sampling () =
   let state = Seed.make 0L in
   let expect_invalid ~label bound =
     raises_match ~msg:label
-      (Exn.invalid_arg ~exact:"Seed.below: non-positive bound") (fun () ->
+      (Exn.invalid_arg ~substring:"Seed.below: non-positive bound") (fun () ->
         Seed.below ~bound state)
   in
   expect_invalid ~label:"zero bound" 0L;

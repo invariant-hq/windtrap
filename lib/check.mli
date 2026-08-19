@@ -225,24 +225,22 @@ val raises_match :
 (** Exception predicates for {!raises_match}.
 
     Each predicate checks the exception's constructor and, optionally, its
-    message: with neither constraint any message passes; [~substring] requires
-    the message to contain the given byte substring (the empty string always
-    matches); [~exact] requires exact equality. The constraints are mutually
-    exclusive — supplying both is a programmer error that raises
-    [Invalid_argument] as soon as the predicate is built, before it examines any
-    exception. *)
+    message: without [~substring] any message passes; with it the message must
+    contain the given byte substring (the empty string always matches). A whole
+    message is asserted with {!raises}, which holds both exceptions and so
+    reports a message diff. *)
 module Exn : sig
-  val invalid_arg : ?substring:string -> ?exact:string -> exn -> bool
+  val invalid_arg : ?substring:string -> exn -> bool
   (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m]
-      satisfies the constraint, if any. *)
+      contains [substring], if given. *)
 
-  val failure : ?substring:string -> ?exact:string -> exn -> bool
-  (** [failure e] is [true] iff [e] is [Failure m] and [m] satisfies the
-      constraint, if any. *)
+  val failure : ?substring:string -> exn -> bool
+  (** [failure e] is [true] iff [e] is [Failure m] and [m] contains
+      [substring], if given. *)
 
-  val sys_error : ?substring:string -> ?exact:string -> exn -> bool
-  (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] satisfies the
-      constraint, if any. Completes the set: these three are exactly the
+  val sys_error : ?substring:string -> exn -> bool
+  (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] contains
+      [substring], if given. Completes the set: these three are exactly the
       message-carrying exceptions {!raises} diffs by message rather than by
       rendering (see [exn_message]). *)
 end

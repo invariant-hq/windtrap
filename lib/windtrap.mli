@@ -445,27 +445,27 @@ val raises_match :
     total. {!Exn} provides the common predicates. *)
 
 (** Exception predicates for {!raises_match}: constructor checks with an
-    optional message constraint. With neither constraint any message passes;
-    [~substring] requires the message to contain the given byte substring;
-    [~exact] requires exact equality. Supplying both raises [Invalid_argument]
-    as soon as the predicate is built.
+    optional message constraint. Without [~substring] any message passes; with
+    it the message must contain the given byte substring. A whole message is
+    {!raises}' job — it holds both exceptions, so it reports a message diff
+    where a predicate can only reject.
 
     {[
       raises_match (Exn.invalid_arg ~substring:"unhandled op") (fun () ->
           Machine.step m op)
     ]} *)
 module Exn : sig
-  val invalid_arg : ?substring:string -> ?exact:string -> exn -> bool
+  val invalid_arg : ?substring:string -> exn -> bool
   (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m]
-      satisfies the constraint, if any. *)
+      contains [substring], if given. *)
 
-  val failure : ?substring:string -> ?exact:string -> exn -> bool
-  (** [failure e] is [true] iff [e] is [Failure m] and [m] satisfies the
-      constraint, if any. *)
+  val failure : ?substring:string -> exn -> bool
+  (** [failure e] is [true] iff [e] is [Failure m] and [m] contains
+      [substring], if given. *)
 
-  val sys_error : ?substring:string -> ?exact:string -> exn -> bool
-  (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] satisfies the
-      constraint, if any. *)
+  val sys_error : ?substring:string -> exn -> bool
+  (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] contains
+      [substring], if given. *)
 end
 
 val fail : ?pos:pos -> string -> 'a
