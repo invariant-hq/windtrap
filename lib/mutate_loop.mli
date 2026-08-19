@@ -116,7 +116,7 @@
       times the scheduled tests' own measured time, with a one-second floor
       and never a knob. A child that exceeds it is killed with its whole
       process group — anything a test spawned included — and the mutant is
-      scored [killed (timeout)]: a mutant that blocks (a flipped comparison
+      scored killed: a mutant that blocks (a flipped comparison
       deadlocking a pipe reader, where the runtime's runaway hit-count budget
       sees nothing) made the suite hang, and a hang is a noticed change on the
       crash kill's own reasoning. In admission the kill is attributed to the

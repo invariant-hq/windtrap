@@ -9,7 +9,7 @@ module Instr = Windtrap_instr
 
 type id = { file : string; line : int; col : int; rewrite : string }
 
-let magic = "windtrap-mutants-v2"
+let magic = "windtrap-mutants-v3"
 
 (* The constants Windtrap_instr's shared plumbing is parameterized by:
    this format's magic line, its on-disk home, and the words its error
@@ -483,26 +483,13 @@ let reset_reach () =
 (* Verdicts *)
 
 type witness = string list
-type cause = Failed of witness | Crashed | Timed_out
 
 type verdict =
-  | Killed of cause
+  | Killed
   | Survived of { witness : witness; others : witness list }
   | Unreached
 
 let compare_witness = List.compare String.compare
-
-(* Prefer the most informative cause, and among failures the
-   lexicographically smaller test path: a commutative, associative choice,
-   so merging any number of files in any order gives one answer. *)
-let merge_cause a b =
-  match (a, b) with
-  | Failed x, Failed y -> if compare_witness x y <= 0 then a else b
-  | Failed _, (Crashed | Timed_out) -> a
-  | (Crashed | Timed_out), Failed _ -> b
-  | Timed_out, (Crashed | Timed_out) | Crashed, Timed_out -> Timed_out
-  | Crashed, Crashed -> Crashed
-
 let sorted_witnesses ws = List.sort_uniq compare_witness ws
 
 (* A survivor names at least one test: a mutant no test reached is
@@ -518,9 +505,9 @@ let survived ws =
 
 let merge_verdict a b =
   match (a, b) with
-  | Killed x, Killed y -> Killed (merge_cause x y)
-  | Killed _, (Survived _ | Unreached) -> a
-  | (Survived _ | Unreached), Killed _ -> b
+  | Killed, Killed -> Killed
+  | Killed, (Survived _ | Unreached) -> a
+  | (Survived _ | Unreached), Killed -> b
   | Survived x, Survived y ->
       survived (x.witness :: y.witness :: (x.others @ y.others))
   | Survived s, Unreached | Unreached, Survived s ->
@@ -530,9 +517,7 @@ let merge_verdict a b =
 let pp_witness ppf w = Format.pp_print_string ppf (String.concat " > " w)
 
 let pp_verdict ppf = function
-  | Killed (Failed w) -> Format.fprintf ppf "killed by %a" pp_witness w
-  | Killed Crashed -> Format.pp_print_string ppf "killed (crash)"
-  | Killed Timed_out -> Format.pp_print_string ppf "killed (timeout)"
+  | Killed -> Format.pp_print_string ppf "killed"
   | Survived s ->
       Format.fprintf ppf "survived by %a"
         (Format.pp_print_list
@@ -589,7 +574,7 @@ let add t r =
   let verdict =
     match r.verdict with
     | Survived s -> survived (s.witness :: s.others)
-    | Killed _ | Unreached -> r.verdict
+    | Killed | Unreached -> r.verdict
   in
   let rendering = { r_before = r.before; r_after = r.after } in
   Id_map.update r.id
@@ -618,11 +603,7 @@ let add_witness buffer w =
 
 let add_verdict buffer = function
   | Unreached -> Buffer.add_string buffer "unreached"
-  | Killed Crashed -> Buffer.add_string buffer "crashed"
-  | Killed Timed_out -> Buffer.add_string buffer "timeout"
-  | Killed (Failed w) ->
-      Buffer.add_string buffer "failed ";
-      add_witness buffer w
+  | Killed -> Buffer.add_string buffer "killed"
   | Survived s ->
       let ws = s.witness :: s.others in
       Printf.bprintf buffer "survived %d" (List.length ws);
@@ -662,9 +643,7 @@ let of_string ?(path = "<string>") s =
       let read_verdict () =
         match Instr.read_word c "verdict" with
         | "unreached" -> Unreached
-        | "crashed" -> Killed Crashed
-        | "timeout" -> Killed Timed_out
-        | "failed" -> Killed (Failed (read_witness ()))
+        | "killed" -> Killed
         | "survived" ->
             let n = Instr.read_count c "witness count" in
             if n = 0 then

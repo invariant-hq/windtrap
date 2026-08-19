@@ -717,7 +717,7 @@ is catching a hang rather than pacing the loop.
 
 A child that overruns is killed with its whole process group — children
 `setsid` at birth, so anything a test spawned goes with them — and its
-mutant is scored `killed (timeout)`. That is not a consolation prize: a
+mutant is scored killed. That is not a consolation prize: a
 fault that makes the suite hang is a fault the suite noticed, on the
 crash kill's own reasoning, and it is the case nothing else here can
 see. The cheap first line against a mutant that *spins* is a separate
@@ -732,9 +732,8 @@ to spend, plus the dry run and the probe, never under 60 s. Because
 every child is bounded on its own, the alarm firing is a statement about
 the run and not about the mutant in flight, and the refusal says so —
 it names the mutant it was on, then disowns the diagnosis: *a mutant
-that spins or blocks is killed by its child's own deadline and scored
-killed (timeout), so the run as a whole overran the sum of its
-children's budgets*. Mutation needs `Unix.fork`, so it declines by name
+that spins or blocks is killed by its child's own deadline, so the run
+as a whole overran the sum of its children's budgets*. Mutation needs `Unix.fork`, so it declines by name
 on Windows.
 
 ## Knobs

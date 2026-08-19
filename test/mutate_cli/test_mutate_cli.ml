@@ -173,7 +173,6 @@ let m_and =
     ~after:"p || q"
 
 let collection records = List.fold_left M.add M.empty records
-let killed_by w = M.Killed (M.Failed w)
 
 (* The summary line is the report's last word and its whole contract for
    a project with nothing else to say; assert it whole rather than by
@@ -199,7 +198,7 @@ let summary out =
 let file_a =
   collection
     [
-      m_add (killed_by [ "calc"; "adds" ]);
+      m_add M.Killed;
       m_sub M.Unreached;
       m_lt (M.survived [ [ "calc"; "compares" ] ]);
       m_or M.Unreached;
@@ -211,7 +210,7 @@ let file_b =
     [
       m_add (M.survived [ [ "cli"; "runs" ] ]);
       m_sub (M.survived [ [ "cli"; "subtracts" ] ]);
-      m_lt (M.Killed M.Crashed);
+      m_lt M.Killed;
       m_or M.Unreached;
       m_and M.Unreached;
     ]
@@ -517,9 +516,9 @@ let clean_report =
     (M.to_string
        (collection
           [
-            m_add (killed_by [ "calc"; "adds" ]);
-            m_sub (M.Killed M.Timed_out);
-            m_lt (M.Killed M.Crashed);
+            m_add M.Killed;
+            m_sub M.Killed;
+            m_lt M.Killed;
           ]));
   let code, out, err = mutate ~cwd:root [] in
   check_int "a clean project exits 0" ~expected:0 ~actual:code;
@@ -659,7 +658,7 @@ let staleness =
            M.exe = "default/test/gone.exe";
            digest = Digest.to_hex (Digest.string "gone");
          }
-       (collection [ m_lt (M.Killed M.Crashed) ]));
+       (collection [ m_lt M.Killed ]));
   let code, out, err = mutate ~cwd:root [] in
   check_int "an orphan still reports the live data" ~expected:0 ~actual:code;
   equal ~msg:"the orphan's kill never reaches the report" text
@@ -681,7 +680,7 @@ let staleness =
   let other = plant_exe root "default/test/b.exe" "the sibling build" in
   write_file
     (Filename.concat root "_build/_mutants/b.mutants")
-    (M.to_string ~identity:other (collection [ m_lt (M.Killed M.Crashed) ]));
+    (M.to_string ~identity:other (collection [ m_lt M.Killed ]));
   write_file (Filename.concat root "_build/default/test/b.exe") "rebuilt since";
   let code, out, err = mutate ~cwd:root [] in
   check_int "a stale file beside a fresh one still reports" ~expected:0
@@ -753,7 +752,7 @@ let loud_failures =
   check_int "a foreign-format file exits 1" ~expected:1 ~actual:code;
   check_contains "a foreign-format file is named" ~needle:"old.mutants" err;
   check_contains "a foreign-format file names the expected magic"
-    ~needle:"windtrap-mutants-v2" err;
+    ~needle:"windtrap-mutants-v3" err;
   check_contains "a foreign format instructs deletion" ~needle:"delete" err;
   (* A coverage dump under _build/_mutants is the same rejection. *)
   let crossed = scratch "crossed/_build/_mutants/cov.mutants" in

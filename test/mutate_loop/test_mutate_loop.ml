@@ -537,7 +537,7 @@ let verdict_file_tests =
 
 let crash_tests =
   [
-    test "a child that dies without writing a verdict is killed by crash"
+    test "a child that dies without writing a verdict is killed, not survived"
       (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, out, err =
@@ -558,11 +558,18 @@ let crash_tests =
                     Format.asprintf "%a" M.pp_verdict r.M.verdict ))
                 (M.records verdicts)
             in
-            equal ~msg:"the crash is named as a crash" (list string)
-              [ "killed (crash)" ]
-              (List.filter_map
-                 (fun (_, v) -> if v = "killed (crash)" then Some v else None)
-                 rendered));
+            (* A verdict file names no cause, so the assertion is the one
+               that matters: the crashing child's mutant is recorded
+               killed like the ordinary one, and never as a survivor — a
+               false survivor sends the reader to strengthen a test that
+               already noticed. *)
+            equal ~msg:"both kills are in the file" int 2
+              (List.length (List.filter (fun (_, v) -> v = "killed") rendered));
+            equal ~msg:"and nothing else claims a kill" int 1
+              (List.length
+                 (List.filter
+                    (fun (_, v) -> String.starts_with ~prefix:"survived" v)
+                    rendered)));
   ]
 
 let refusal_tests =
@@ -846,11 +853,11 @@ let read_only_tests =
    [runaway_main.exe]'s one mutant turns a terminating loop into a
    non-terminating one, and the budget must stop it BEFORE the per-child
    deadline does: the guard counts hits in microseconds where the
-   deadline waits out its one-second floor. The shape of the verdict is
-   the assertion — [killed] naming the test that failed means the guard
-   raised inside the child and the runner reported it as an ordinary
-   failure, which is the documented contract; [killed (timeout)] would
-   mean the budget did nothing and the deadline cleaned up after it. *)
+   deadline waits out its one-second floor. A verdict file names no
+   cause, so the CLOCK is the assertion: the whole run — dry run, probe
+   and one child — measures 0.06 s here, while a deadline kill would add
+   the child's full one-second floor on top. A run that finishes inside
+   that floor cannot have been ended by it. *)
 
 let runaway_exe =
   Filename.concat (Filename.concat exe_dir "runaway") "runaway_main.exe"
@@ -870,13 +877,14 @@ let runaway_tests =
         is_true
           ~msg:
             (Printf.sprintf
-               "the budget cut it short, not the loop deadline (%.1fs)" elapsed)
-          (elapsed < 30.);
+               "the guard cut it short, inside the child's own 1s deadline \
+                floor (%.2fs)"
+               elapsed)
+          (elapsed < 0.9);
         match M.load path with
         | Error e -> failf "verdict file unreadable: %a" M.pp_error e
         | Ok (verdicts, _) ->
-            equal ~msg:"killed by the test the guard failed" (list string)
-              [ "killed by counts down to zero" ]
+            equal ~msg:"and the mutant is killed" (list string) [ "killed" ]
               (List.map
                  (fun (r : M.record) ->
                    Format.asprintf "%a" M.pp_verdict r.M.verdict)
@@ -906,9 +914,7 @@ let rendered_verdicts path =
 
 let deadline_tests =
   [
-    test
-      "a mutant that blocks is killed by its child's deadline, scored with \
-       the timeout spelling" (fun () ->
+    test "a mutant that blocks is killed by its child's deadline" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let started = Unix.gettimeofday () in
         let code, out, err =
@@ -927,8 +933,7 @@ let deadline_tests =
                 (%.1fs)"
                elapsed)
           (elapsed < 30.);
-        equal ~msg:"the blocked mutant is killed by timeout" (list string)
-          [ "killed (timeout)" ]
+        equal ~msg:"the blocked mutant is killed" (list string) [ "killed" ]
           (List.filter_map
              (fun (id, v) ->
                if id = mutant_named "add" then Some v else None)
@@ -1016,12 +1021,19 @@ let deadline_tests =
                (sleep +. overhead) (10. *. sleep))
           (2. *. (sleep +. overhead) <= 10. *. sleep);
         says ~msg:"the mutant died" out "mutants: 0 survived of 4";
-        let verdicts =
-          String.concat "\n" (List.map snd (rendered_verdicts verdict_path))
-        in
-        says ~msg:"killed by the assertion, after the sleep" verdicts
-          "killed by slow > sleeps briefly and still pins sub";
-        denies ~msg:"no false timeout" verdicts "(timeout)");
+        (* And the assertion killed it, not the clock: a deadline kill
+           would have added the child's whole 10x-the-sleep floor to a
+           run that already pays three sleeps. *)
+        is_true
+          ~msg:
+            (Printf.sprintf
+               "the run (%.2fs) finished inside the child's %.2fs deadline"
+               elapsed (10. *. sleep))
+          (elapsed < 10. *. sleep);
+        equal ~msg:"the mutant is killed" (list string) [ "killed" ]
+          (List.filter_map
+             (fun (id, v) -> if id = mutant_named "add" then Some v else None)
+             (rendered_verdicts verdict_path)));
     test
       "an expired child's process group dies whole: no grandchild outlives \
        the run" (fun () ->

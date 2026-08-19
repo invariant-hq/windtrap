@@ -381,19 +381,12 @@ type witness = string list
 (** The type for test paths: the names from the run root inwards, e.g.
     [["calc"; "arithmetic"; "adds"]]. *)
 
-(** The type for kill causes. All three count as killed — divergence is a
-    detected behaviour change — but they are recorded apart rather than
-    collapsed, because a reader is owed the chance to disbelieve a kill that no
-    assertion made. The distinction lives in the verdict file; the report of
-    this release carries one killed count and does not yet break it out. *)
-type cause =
-  | Failed of witness  (** The test whose failure killed the mutant. *)
-  | Crashed  (** The child died without reporting a verdict. *)
-  | Timed_out  (** The child exceeded its deadline. *)
-
 (** The type for mutant verdicts. *)
 type verdict =
-  | Killed of cause  (** A test failed, or the child crashed or hung. *)
+  | Killed
+      (** A test failed, or the child crashed or hung: divergence is a detected
+          behaviour change however it arrived, and the report carries one
+          killed count. *)
   | Survived of { witness : witness; others : witness list }
       (** Every test that reached the mutant passed; [witness] and [others] are
           those tests, sorted and without duplicates.
@@ -429,14 +422,12 @@ val merge_verdict : verdict -> verdict -> verdict
     produces a false survivor, which sends the reader to write a test that
     already exists.
 
-    Two kills merge to the more informative cause: a {!Failed} beats a
-    {!Timed_out} beats a {!Crashed}, and two [Failed] keep the lexicographically
-    smaller witness. The operation is therefore commutative, associative and
-    idempotent, with [Unreached] as its unit — so merging any number of files in
-    any order gives one answer. *)
+    The operation is commutative, associative and idempotent, with [Unreached]
+    as its unit — so merging any number of files in any order gives one
+    answer. *)
 
 val pp_verdict : Format.formatter -> verdict -> unit
-(** [pp_verdict ppf v] formats [v] for diagnostics — ["killed (timeout)"],
+(** [pp_verdict ppf v] formats [v] for diagnostics — ["killed"],
     ["survived by calc > adds"], ["unreached"]. The report renders its own
     layout; this output is not stable. *)
 
@@ -447,7 +438,7 @@ val pp_verdict : Format.formatter -> verdict -> unit
     and renders the survivors that survive {e everywhere}. The catalogue never
     touches disk — only verdicts do.
 
-    The format is versioned by the magic string [windtrap-mutants-v2] on the
+    The format is versioned by the magic string [windtrap-mutants-v3] on the
     first line; {!of_string} and {!load} reject any other header loudly, and
     cross-version compatibility is not promised. The magic line may be followed
     by the writing executable's {!type:identity}, which the merge uses to

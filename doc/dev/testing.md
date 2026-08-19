@@ -229,9 +229,8 @@ finished, and `WINDTRAP_MUTATE=admit … -f capture` sat at 0% CPU for
 exactly the 60 s floor before refusing. Every forked child now runs
 under a deadline derived from the dry run — its wall clock, plus
 `max(1 s, 10 × that child's own scheduled tests)` — and on expiry the
-child's whole process group is killed and its mutant scored
-`killed (timeout)`, which is the right verdict: the suite noticed the
-change by hanging. Re-measured here, that capture selection answers in
+child's whole process group is killed and its mutant scored killed,
+which is the right verdict: the suite noticed the change by hanging. Re-measured here, that capture selection answers in
 0.56 s wall (248 ms of admission work, 26 of 26 admitted, 9 forks)
 where it used to burn a silent minute and exit 1, and the full-suite
 admission fell from 1m38s to 8.5 s. The whole-loop deadline stays as the

@@ -466,36 +466,25 @@ let killed_by (outcome : Runner.outcome) =
 
 let encode_outcome ~paths (outcome : Runner.outcome) =
   let results = Run.results outcome.Runner.run in
-  (* Test rows precede the verdict rows, so a failing test wins the
-     witness slot over a failing release. *)
-  match List.find_opt kills results with
-  | Some { Run.subject = Run.Fixture_release; _ } -> "killed release"
-  | Some result -> (
-      match index_of result.Run.path paths with
-      | Some i -> spf "killed %d" i
-      | None -> "crashed")
-  | None ->
-      (* A child that recorded no test row did not survive the mutant, it
-         failed to test it: reporting a survivor here would send the
-         reader to strengthen tests that never ran. The pruned tree is
-         the dry run's own executed paths, so this is unreachable — and
-         a false survivor is the one failure mode that makes people stop
-         running the tool, so it is not left to be unreachable. *)
-      if (not (List.exists executed_test results)) && paths <> [] then "crashed"
-      else "survived"
+  if List.exists kills results then "killed"
+  else if
+    (* A child that recorded no test row did not survive the mutant, it
+       failed to test it: reporting a survivor here would send the reader
+       to strengthen tests that never ran. The pruned tree is the dry
+       run's own executed paths, so this is unreachable — and a false
+       survivor is the one failure mode that makes people stop running
+       the tool, so it is not left to be unreachable. *)
+    (not (List.exists executed_test results)) && paths <> []
+  then "crashed"
+  else "survived"
 
 let decode_verdict ~paths line =
   match String.split_on_char ' ' (String.trim line) with
   | [ "survived" ] -> Ok (M.survived paths)
-  | [ "killed"; "release" ] -> Ok (M.Killed (M.Failed Run.fixture_release_path))
-  | [ "killed"; index ] -> (
-      match int_of_string_opt index with
-      | Some i when i >= 0 && i < List.length paths ->
-          Ok (M.Killed (M.Failed (List.nth paths i)))
-      | _ -> Ok (M.Killed M.Crashed))
   | "error" :: rest -> Error (String.concat " " rest)
-  (* No line at all, a partial line, or the wrapper's own "crashed". *)
-  | _ -> Ok (M.Killed M.Crashed)
+  (* "killed", the wrapper's own "crashed", no line at all, or a partial
+     one: a child that did not report a survivor proved none. *)
+  | _ -> Ok M.Killed
 
 (* The whole-loop deadline
 
@@ -812,12 +801,12 @@ let run_mutant ~armed ~expired ~scratch ~dry_run_wall ~index
   in
   remove_tree log_dir;
   match killed with
-  | `Backstop -> Ok (M.Killed M.Timed_out, `Backstop)
+  | `Backstop -> Ok (M.Killed, `Backstop)
   | `Deadline ->
-      (* The suite noticed the change by hanging: a kill, with its cause,
-         on the crash kill's own reasoning. Whatever reached the pipe
-         first is not a verdict — the child did not finish. *)
-      Ok (M.Killed M.Timed_out, `Reported)
+      (* The suite noticed the change by hanging: a kill, on the crash
+         kill's own reasoning. Whatever reached the pipe first is not a
+         verdict — the child did not finish. *)
+      Ok (M.Killed, `Reported)
   | `No -> (
       match decode_verdict ~paths line with
       | Error message ->
@@ -828,8 +817,7 @@ let run_mutant ~armed ~expired ~scratch ~dry_run_wall ~index
           let verdict =
             match status with
             | Unix.WEXITED 0 -> verdict
-            | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ ->
-                M.Killed M.Crashed
+            | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> M.Killed
           in
           Ok (verdict, `Reported))
 
@@ -933,7 +921,7 @@ let print_report renderer ~population ~unreached ~verdicts ~duration ~seed
         match r.M.verdict with
         | M.Survived { witness; others } ->
             Some (survivor_of ~locations r (witness :: others))
-        | M.Killed _ | M.Unreached -> None)
+        | M.Killed | M.Unreached -> None)
       records
   in
   (* Ordered by reaching-test count descending: the survivor the most
@@ -949,7 +937,7 @@ let print_report renderer ~population ~unreached ~verdicts ~duration ~seed
     List.length
       (List.filter
          (fun (r : M.record) ->
-           match r.M.verdict with M.Killed _ -> true | _ -> false)
+           match r.M.verdict with M.Killed -> true | _ -> false)
          records)
   in
   Render.mutation_report renderer

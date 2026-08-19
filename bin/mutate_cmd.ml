@@ -253,7 +253,7 @@ let print_report ~roots collection =
         match r.M.verdict with
         | M.Survived { witness; others } ->
             Some (survivor_of ~source r (witness :: others))
-        | M.Killed _ | M.Unreached -> None)
+        | M.Killed | M.Unreached -> None)
       records
   in
   (* Ordered by reaching-test count descending, as the loop's report is:
@@ -274,7 +274,7 @@ let print_report ~roots collection =
     List.length
       (List.filter
          (fun (r : M.record) ->
-           match r.M.verdict with M.Killed _ -> true | _ -> false)
+           match r.M.verdict with M.Killed -> true | _ -> false)
          records)
   in
   let ansi =

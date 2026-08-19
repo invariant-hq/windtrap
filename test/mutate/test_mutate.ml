@@ -729,18 +729,13 @@ let arming_tests =
 
 (* The verdict lattice *)
 
-let killed_by t = M.Killed (M.Failed t)
-
 let sample_verdicts =
   [
     M.Unreached;
     M.survived [ [ "a" ] ];
     M.survived [ [ "b"; "c" ] ];
     M.survived [ [ "a" ]; [ "b"; "c" ] ];
-    M.Killed M.Crashed;
-    M.Killed M.Timed_out;
-    killed_by [ "a" ];
-    killed_by [ "z" ];
+    M.Killed;
   ]
 
 let verdict_tests =
@@ -763,9 +758,7 @@ let verdict_tests =
                 M.survived [ [ "a" ] ];
                 M.survived [ [ "a" ]; [ "b" ] ];
               ])
-          (* Every shape of kill outranks every non-kill, not just a
-             failure: a crashed or timed-out child is a kill too. *)
-          [ killed_by [ "t" ]; M.Killed M.Crashed; M.Killed M.Timed_out ]);
+          [ M.Killed ]);
     test "a survivor names at least one test" (fun () ->
         (* [Survived] with no witness would print as "no test ran this line
            and none failed when it changed", which is [Unreached]'s
@@ -788,16 +781,6 @@ let verdict_tests =
           (M.merge_verdict
              (M.survived [ [ "b" ]; [ "a" ] ])
              (M.survived [ [ "c" ]; [ "b" ] ])));
-    test "two kills keep the most informative cause" (fun () ->
-        equal ~msg:"a failure beats a crash" verdict_t (killed_by [ "t" ])
-          (M.merge_verdict (killed_by [ "t" ]) (M.Killed M.Crashed));
-        equal ~msg:"a failure beats a timeout" verdict_t (killed_by [ "t" ])
-          (M.merge_verdict (M.Killed M.Timed_out) (killed_by [ "t" ]));
-        equal ~msg:"a timeout beats a crash" verdict_t (M.Killed M.Timed_out)
-          (M.merge_verdict (M.Killed M.Crashed) (M.Killed M.Timed_out));
-        equal ~msg:"two failures keep the smaller witness" verdict_t
-          (killed_by [ "a" ])
-          (M.merge_verdict (killed_by [ "z" ]) (killed_by [ "a" ])));
     test "merge_verdict is commutative, associative and idempotent" (fun () ->
         List.iter
           (fun a ->
@@ -833,13 +816,13 @@ let verdict_tests =
         (* The whole reason the verdict file exists: reporting the
            surviving executable's view alone is a false survivor. *)
         let m = id ~file:"lib/core.ml" ~line:12 ~col:4 ~rewrite:"add" in
-        let a = M.add M.empty (record m (killed_by [ "unit"; "adds" ])) in
+        let a = M.add M.empty (record m (M.Killed)) in
         let b = M.add M.empty (record m (M.survived [ [ "cli"; "runs" ] ])) in
         let c = M.add M.empty (record m M.Unreached) in
         List.iter
           (fun (name, t) ->
             equal ~msg:name (option verdict_t)
-              (Some (killed_by [ "unit"; "adds" ]))
+              (Some (M.Killed))
               (verdict_of t m))
           [
             ("a then b then c", M.merge (M.merge a b) c);
@@ -863,9 +846,9 @@ let verdict_tests =
         equal ~msg:"a second add unions" (option verdict_t)
           (Some (M.survived [ [ "a" ]; [ "b" ]; [ "c" ] ]))
           (verdict_of t m);
-        let t = M.add t (record m (M.Killed M.Crashed)) in
+        let t = M.add t (record m (M.Killed)) in
         equal ~msg:"a kill overrides" (option verdict_t)
-          (Some (M.Killed M.Crashed)) (verdict_of t m));
+          (Some (M.Killed)) (verdict_of t m));
     test "a record carries the rendering the report draws" (fun () ->
         (* The catalogue lives in the instrumented binary; [windtrap
            mutate] links none of them. A record that named only its
@@ -893,11 +876,11 @@ let verdict_tests =
           record ~before:"a - b" ~after:"a + b" m M.Unreached
         and newer =
           record ~before:"a - b" ~after:"a + b" m
-            (killed_by [ "calc" ])
+            (M.Killed)
         in
         let expected =
           record ~before:"a - b" ~after:"a + b" m
-            (killed_by [ "calc" ])
+            (M.Killed)
         in
         equal ~msg:"older then newer" (option record_t) (Some expected)
           (M.find (M.add (M.add M.empty older) newer) m);
@@ -922,15 +905,15 @@ let verdict_tests =
         let a =
           of_list
             [
-              ("lib/a.ml", 1, killed_by [ "z" ]);
+              ("lib/a.ml", 1, M.Killed);
               ("lib/a.ml", 2, M.survived [ [ "p" ] ]);
               ("lib/a.ml", 3, M.Unreached);
-              ("lib/only_a.ml", 1, M.Killed M.Crashed);
+              ("lib/only_a.ml", 1, M.Killed);
             ]
         and b =
           of_list
             [
-              ("lib/a.ml", 1, killed_by [ "a" ]);
+              ("lib/a.ml", 1, M.Killed);
               ("lib/a.ml", 2, M.Unreached);
               ("lib/a.ml", 3, M.survived [ [ "q" ] ]);
               ("lib/only_b.ml", 1, M.Unreached);
@@ -940,7 +923,7 @@ let verdict_tests =
             [
               ("lib/a.ml", 1, M.Unreached);
               ("lib/a.ml", 2, M.survived [ [ "p" ]; [ "r" ] ]);
-              ("lib/a.ml", 3, M.Killed M.Timed_out);
+              ("lib/a.ml", 3, M.Killed);
             ]
         in
         let bytes = M.to_string in
@@ -958,10 +941,10 @@ let verdict_tests =
         (* And the answer itself, not merely its stability. *)
         equal ~msg:"the merged verdicts" (list string)
           [
-            "lib/a.ml:1:0:lt killed by a";
+            "lib/a.ml:1:0:lt killed";
             "lib/a.ml:2:0:lt survived by p, r";
-            "lib/a.ml:3:0:lt killed (timeout)";
-            "lib/only_a.ml:1:0:lt killed (crash)";
+            "lib/a.ml:3:0:lt killed";
+            "lib/only_a.ml:1:0:lt killed";
             "lib/only_b.ml:1:0:lt unreached";
           ]
           (List.map
@@ -977,7 +960,7 @@ let verdict_tests =
             [
               ("lib/z.ml", 1, M.Unreached);
               ("lib/a.ml", 9, M.survived [ [ "t" ] ]);
-              ("lib/a.ml", 2, M.Killed M.Crashed);
+              ("lib/a.ml", 2, M.Killed);
             ]
         in
         is_false ~msg:"not empty" (M.is_empty t);
@@ -1000,28 +983,28 @@ let sample_collection () =
              M.Unreached))
        (record ~before:"p && q" ~after:"not (p && q)"
           (id ~file:"lib/b.ml" ~line:3 ~col:4 ~rewrite:"not")
-          (killed_by [ "g"; "t" ])))
+          M.Killed))
     (record ~before:"a || b" ~after:"a && b"
        (id ~file:"lib/b.ml" ~line:5 ~col:0 ~rewrite:"or")
        (M.survived [ [ "x" ]; [ "y"; "z" ] ]))
 
 let sample_bytes =
-  "windtrap-mutants-v2\n\
+  "windtrap-mutants-v3\n\
    3\n\
    8 lib/a.ml 1 2 3 add 5 a - b 5 a + b unreached\n\
-   8 lib/b.ml 3 4 3 not 6 p && q 12 not (p && q) failed 2 1 g 1 t\n\
+   8 lib/b.ml 3 4 3 not 6 p && q 12 not (p && q) killed\n\
    8 lib/b.ml 5 0 2 or 6 a || b 6 a && b survived 2 1 1 x 2 1 y 1 z\n"
 
 let digest = String.make 32 'a'
 
 let format_tests =
   [
-    test "to_string is the documented v2 encoding" (fun () ->
+    test "to_string is the documented v3 encoding" (fun () ->
         equal ~msg:"exact bytes" text sample_bytes
           (M.to_string (sample_collection ())));
     test "an identity is recorded after the magic line" (fun () ->
         equal ~msg:"exact bytes" text
-          ("windtrap-mutants-v2\nexe " ^ digest ^ " 10 test/a.exe\n0\n")
+          ("windtrap-mutants-v3\nexe " ^ digest ^ " 10 test/a.exe\n0\n")
           (M.to_string ~identity:{ M.exe = "test/a.exe"; digest } M.empty);
         raises_match ~msg:"an empty exe is refused" Exn.invalid_arg (fun () ->
             M.to_string ~identity:{ M.exe = ""; digest } M.empty);
@@ -1065,7 +1048,7 @@ let format_tests =
             ( id ~file:"lib/a.ml" ~line:1 ~col:0 ~rewrite:"or",
               M.survived [ [ "q" ]; [ "p" ] ] );
             ( id ~file:"lib/a.ml" ~line:9 ~col:0 ~rewrite:"sub",
-              killed_by [ "k" ] );
+              M.Killed );
           ]
         in
         let build order =
@@ -1076,9 +1059,9 @@ let format_tests =
         in
         equal ~msg:"reversed insertion" text (build ids) (build (List.rev ids)));
     test "empty collections round-trip" (fun () ->
-        equal ~msg:"bytes" text "windtrap-mutants-v2\n0\n" (M.to_string M.empty);
+        equal ~msg:"bytes" text "windtrap-mutants-v3\n0\n" (M.to_string M.empty);
         let parsed, _ =
-          ok_error "parse" (M.of_string "windtrap-mutants-v2\n0\n")
+          ok_error "parse" (M.of_string "windtrap-mutants-v3\n0\n")
         in
         is_true ~msg:"still empty" (M.is_empty parsed));
   ]
@@ -1098,9 +1081,9 @@ let rejection_tests =
       [
         ("empty", "");
         ("coverage file", "windtrap-coverage-v3\n1\n");
-        ("future version", "windtrap-mutants-v3\n0\n");
+        ("future version", "windtrap-mutants-v4\n0\n");
         ("uppercase", "WINDTRAP-MUTANTS-V1\n0\n");
-        ("prefix without separator", "windtrap-mutants-v20\n0\n");
+        ("prefix without separator", "windtrap-mutants-v30\n0\n");
         ("plain text", "hello\nworld\n");
       ]
       (fun (name, s) ->
@@ -1112,7 +1095,7 @@ let rejection_tests =
                 (M.Unknown_format { path; header })
             in
             contains ~msg:"the message names the expected magic"
-              ~sub:"windtrap-mutants-v2" rendered
+              ~sub:"windtrap-mutants-v3" rendered
         | Error e ->
             failf "%s: expected Unknown_format, got %a" name M.pp_error e
         | Ok _ -> failf "%s: parsed, expected a rejection" name);
@@ -1120,65 +1103,67 @@ let rejection_tests =
       ~name:(fun (name, _, _) -> name)
       [
         ( "truncated records",
-          "windtrap-mutants-v2\n2\n8 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
+          "windtrap-mutants-v3\n2\n8 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
           "expected" );
         ( "record count exceeds data",
-          "windtrap-mutants-v2\n99999999\n",
+          "windtrap-mutants-v3\n99999999\n",
           "exceeds data" );
-        ("negative record count", "windtrap-mutants-v2\n-1\n", "negative");
+        ("negative record count", "windtrap-mutants-v3\n-1\n", "negative");
         (* The magic alone is not an empty collection: a truncated file
            must not read as "this executable killed nothing". *)
-        ("magic only", "windtrap-mutants-v2", "expected record count");
+        ("magic only", "windtrap-mutants-v3", "expected record count");
         ( "negative witness count",
-          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a failed -1\n",
+          "windtrap-mutants-v3\n\
+           1\n\
+           8 lib/a.ml 1 2 3 add 1 b 1 a survived 1 -1\n",
           "negative test path length" );
         ( "line 0",
-          "windtrap-mutants-v2\n1\n8 lib/a.ml 0 2 3 add 1 b 1 a unreached\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 0 2 3 add 1 b 1 a unreached\n",
           "1-based" );
         ( "negative line",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml -3 2 3 add 0 0 1 b 1 a unreached\n",
           "negative line" );
         ( "negative column",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml 1 -2 3 add 0 0 1 b 1 a unreached\n",
           "negative column" );
         ( "empty file name",
-          "windtrap-mutants-v2\n1\n0  1 2 3 add 0 0 1 b 1 a unreached\n",
+          "windtrap-mutants-v3\n1\n0  1 2 3 add 0 0 1 b 1 a unreached\n",
           "empty file name" );
         ( "truncated file name",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
            80 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
           "truncated" );
         ( "unknown rewrite",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml 1 2 4 plus 1 b 1 a unreached\n",
           "unknown rewrite" );
         ( "truncated rendering",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml 1 2 3 add 80 b 1 a unreached\n",
           "truncated before" );
         ( "missing rendering",
-          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add unreached\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add unreached\n",
           "before" );
         ( "unknown verdict",
-          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a errored\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a errored\n",
           "unknown verdict" );
         ( "missing verdict",
-          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a\n",
           "expected verdict" );
         ( "truncated witness",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
-           8 lib/a.ml 1 2 3 add 1 b 1 a failed 2 1 g\n",
+           8 lib/a.ml 1 2 3 add 1 b 1 a survived 2 1 1 g\n",
           "expected" );
         ( "witness count exceeds data",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml 1 2 3 add 1 b 1 a survived 99999999\n",
           "exceeds data" );
@@ -1186,22 +1171,22 @@ let rejection_tests =
            unreached mutant looks like when a writer confuses the two, and
            it would render as "0 tests ran this line and none failed". *)
         ( "survivor with no witness",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            1\n\
            8 lib/a.ml 1 2 3 add 1 b 1 a survived 0\n",
           "names no test" );
         ( "duplicate record",
-          "windtrap-mutants-v2\n\
+          "windtrap-mutants-v3\n\
            2\n\
            8 lib/a.ml 1 2 3 add 1 b 1 a unreached\n\
-           8 lib/a.ml 1 2 3 add 1 b 1 a crashed\n",
+           8 lib/a.ml 1 2 3 add 1 b 1 a killed\n",
           "duplicate record" );
-        ("trailing data", "windtrap-mutants-v2\n0\nextra\n", "trailing data");
+        ("trailing data", "windtrap-mutants-v3\n0\nextra\n", "trailing data");
         ( "short identity digest",
-          "windtrap-mutants-v2\nexe abcd 1 a\n0\n",
+          "windtrap-mutants-v3\nexe abcd 1 a\n0\n",
           "digest" );
         ( "empty identity exe",
-          "windtrap-mutants-v2\nexe " ^ String.make 32 'a' ^ " 0 \n0\n",
+          "windtrap-mutants-v3\nexe " ^ String.make 32 'a' ^ " 0 \n0\n",
           "empty executable identity" );
       ]
       (fun (name, s, sub) -> check_corrupt name ~sub s);

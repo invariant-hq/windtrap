@@ -316,8 +316,8 @@ them reopens the design**.
     A run that exited 2 gets no closing line: a selection that matched
     nothing says something about the filter and nothing about the
     mutant.
-    (c) *A verdict is data.* Killed (carrying its cause), survived, or
-    unreached — never a boolean, and never an exit code: an armed run
+    (c) *A verdict is data.* Killed, survived, or unreached — never a
+    boolean, and never an exit code: an armed run
     states its own verdict in (b)'s closing line, and the loop's live in
     its report and its verdict file. An `admit` run's per-test rulings
     are the same rule under Law 17(c).
