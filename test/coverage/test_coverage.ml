@@ -591,29 +591,29 @@ let filename_tests =
              outside));
     test "build_root and exe_identity follow the topmost _build" (fun () ->
         check "build_root is the parent of the topmost _build component"
-          (C.build_root ~path:"/w/p/_build/default/test" = Some "/w/p");
+          (I.build_root ~path:"/w/p/_build/default/test" = Some "/w/p");
         check "build_root sees through the sandbox to the same root"
-          (C.build_root ~path:"/w/p/_build/.sandbox/0abc12/default/test"
+          (I.build_root ~path:"/w/p/_build/.sandbox/0abc12/default/test"
           = Some "/w/p");
         check "the topmost _build wins over planted inner ones"
-          (C.build_root ~path:"/w/p/_build/.sandbox/_build/_coverage"
+          (I.build_root ~path:"/w/p/_build/.sandbox/_build/_coverage"
           = Some "/w/p");
         check "build_root outside _build is None"
-          (C.build_root ~path:"/w/p/src/lib" = None);
+          (I.build_root ~path:"/w/p/src/lib" = None);
         check "a relative path resolves against the current directory first"
-          (C.build_root ~path:"src/lib"
-          = C.build_root ~path:(Filename.concat (Sys.getcwd ()) "src/lib"));
+          (I.build_root ~path:"src/lib"
+          = I.build_root ~path:(Filename.concat (Sys.getcwd ()) "src/lib"));
         check_string "exe_identity is the path below _build"
           ~expected:"default/test/a.exe"
-          ~actual:(C.exe_identity ~exe:"/w/p/_build/default/test/a.exe");
+          ~actual:(I.exe_identity ~exe:"/w/p/_build/default/test/a.exe");
         check_string "exe_identity strips the sandbox prefix"
           ~expected:"default/test/a.exe"
           ~actual:
-            (C.exe_identity
+            (I.exe_identity
                ~exe:"/w/p/_build/.sandbox/0abc12/default/test/a.exe");
         check_string "exe_identity outside _build is the absolute path"
           ~expected:"/opt/tools/mytool.exe"
-          ~actual:(C.exe_identity ~exe:"/opt/tools/mytool.exe");
+          ~actual:(I.exe_identity ~exe:"/opt/tools/mytool.exe");
         check "the identity is what output_file hashes"
           (C.output_file ~exe:"/w/p/_build/default/test/a.exe"
           = C.output_file ~exe:"/w/p/_build/.sandbox/9f/default/test/a.exe"));
@@ -803,7 +803,7 @@ let dump_tests =
               (exe
               = Some
                   {
-                    C.exe = C.exe_identity ~exe:child_exe;
+                    C.exe = I.exe_identity ~exe:child_exe;
                     digest = Digest.to_hex (Digest.file child_exe);
                   })
         | Error e ->

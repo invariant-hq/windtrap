@@ -27,6 +27,7 @@
 
 open Windtrap
 module C = Windtrap_coverage
+module I = Windtrap_instr
 
 let check name cond = is_true ~msg:name cond
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
@@ -317,7 +318,7 @@ let coverage_switch =
         (exe
         = Some
             {
-              C.exe = C.exe_identity ~exe:child_exe;
+              C.exe = I.exe_identity ~exe:child_exe;
               digest = Digest.to_hex (Digest.file child_exe);
             })
   | None -> check "the dump agrees with the inline summary" false);

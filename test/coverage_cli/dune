@@ -12,7 +12,7 @@
 (test
  (name test_coverage_cli)
  (modules test_coverage_cli)
- (libraries windtrap windtrap_coverage unix)
+ (libraries windtrap windtrap_coverage windtrap_instr unix)
  (deps
   inline_child.exe
   raise_child.exe

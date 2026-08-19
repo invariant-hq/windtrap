@@ -173,37 +173,13 @@ type identity = Windtrap_instr.identity = { exe : string; digest : string }
     once at exit (a few milliseconds for a typical test binary), off the test
     path. *)
 
-val build_root : path:string -> string option
-(** [build_root ~path] is the parent directory of the topmost [_build] component
-    of [path] (resolved against the current directory when relative), and [None]
-    when [path] has no [_build] component. This is the project-root rule shared
-    by {!output_file}, {!exe_identity}, and the reporting command's file
-    discovery — one rule, so a dump written from inside dune's sandbox and a
-    report run from anywhere in the checkout resolve the same root. *)
-
-val exe_identity : exe:string -> string
-(** [exe_identity ~exe] is the [exe] field the at_exit dump records for the
-    executable at path [exe]: its path below the topmost [_build] directory
-    (with any [.sandbox/<digest>] prefix removed, so sandboxed and direct runs
-    record the same identity), or its absolute path when [exe] is not under a
-    [_build] directory. The reporting command resolves a relative identity
-    against the dump's own {!build_root} to detect deleted or rebuilt
-    executables. *)
-
 val output_file : exe:string -> string
 (** [output_file ~exe] is the deterministic [.coverage] path for the executable
-    at path [exe] (resolved against the current directory when relative):
-    [<root>/_build/_coverage/windtrap-<hash>.coverage], where [<root>] is the
-    parent of the topmost [_build] component of [exe] and [<hash>] is the hex
-    digest of [exe]'s path below [_build] (with any [.sandbox/<digest>] prefix
-    removed, so sandboxed and direct runs write the same file). When [exe] is
-    not under a [_build] directory, [<root>] is the current directory and the
-    full path of [exe] is hashed.
-
-    The name depends on the executable's path: renaming or moving a test
-    executable orphans its previous [.coverage] file. The reporting command
-    detects orphans through the recorded {!exe_identity} and excludes them with
-    a warning; deleting the file (or [dune clean]) silences it. *)
+    at path [exe]: [<root>/_build/_coverage/windtrap-<hash>.coverage], with
+    [<root>] and [<hash>] by {!Windtrap_instr.output_file}'s rule. The name
+    depends on the executable's path, so renaming or moving a test executable
+    orphans its previous [.coverage] file; the reporting command detects the
+    orphan through the recorded {!identity} and excludes it with a warning. *)
 
 val to_string : ?identity:identity -> t -> string
 (** [to_string t] is [t] serialized in the [.coverage] format. Deterministic:

@@ -187,8 +187,6 @@ let load path =
 
 (* Output Path and Identity *)
 
-let build_root = Instr.build_root
-let exe_identity = Instr.exe_identity
 let output_file ~exe = Instr.output_file format ~exe
 
 (* At-Exit Dump *)
@@ -251,7 +249,7 @@ let register ~file ~points ~counts =
       | [] ->
           (try
              dump_path := Some (resolve_dump_path ());
-             dump_exe := Some (exe_identity ~exe:Sys.executable_name)
+             dump_exe := Some (Instr.exe_identity ~exe:Sys.executable_name)
            with e ->
              warn "cannot determine output file: %s" (Printexc.to_string e));
           at_exit dump
