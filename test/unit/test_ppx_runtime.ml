@@ -212,17 +212,7 @@ let () =
   (* Partition filtering: set by init, applied at collect. *)
   Ppx_runtime.reset ();
   Ppx_runtime.init
-    [|
-      "runner";
-      "inline-test-runner";
-      "mylib";
-      "-partition";
-      "a_file.ml";
-      "-source-tree-root";
-      "../..";
-      "-diff-cmd";
-      "-";
-    |];
+    [| "runner"; "inline-test-runner"; "mylib"; "-partition"; "a_file.ml" |];
   let nop () = () in
   Ppx_runtime.add_test ~file:"dir/a_file.ml" ~loc:zero_loc ~tags:[] "t1" nop;
   Ppx_runtime.add_test ~file:"dir/b_file.ml" ~loc:zero_loc ~tags:[] "t2" nop;

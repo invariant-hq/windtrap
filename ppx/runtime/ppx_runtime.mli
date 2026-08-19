@@ -339,16 +339,14 @@ val flush_corrections_report : accept:bool -> flush_report
 (** {1:protocol The runner protocol}
 
     The generated runner main is [init Sys.argv; exit ()]. The backend invokes
-    it as
-    [inline-test-runner <lib> -partition <file> -source-tree-root <root>
-     -diff-cmd -], and once with [-list-partitions] to enumerate partitions. *)
+    it as [inline-test-runner <lib> -partition <file>], and once with
+    [-list-partitions] to enumerate partitions. *)
 
 val init : string array -> unit
 (** [init argv] parses the inline-test-runner protocol arguments out of [argv]:
     [inline-test-runner <lib>] (runner mode and the library name),
-    [-partition <file>], [-list-partitions], [-source-tree-root <root>], and
-    [-diff-cmd <cmd>] (accepted for protocol compatibility). Unrecognized
-    arguments are ignored. Only the first call parses; later calls are no-ops.
+    [-partition <file>] and [-list-partitions]. Unrecognized arguments are
+    ignored. Only the first call parses; later calls are no-ops.
     Every call claims the registry for the undriven-registration guard (see
     {!section:undriven}). *)
 

@@ -352,11 +352,6 @@ let init argv =
       | "-list-partitions" :: rest ->
           !state.list_partitions_only <- true;
           parse rest
-      | ("-source-tree-root" | "-diff-cmd") :: _value :: rest ->
-          (* Protocol arguments windtrap does not use: the value is consumed
-             (it may itself look like a flag — dune passes [-diff-cmd -])
-             and ignored. *)
-          parse rest
       | _ :: rest -> parse rest
     in
     parse (Array.to_list argv)
