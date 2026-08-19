@@ -28,7 +28,7 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, snapshots, capture, the run/driver spine, the mutation loop, renderers, CLI, the client facades and the registry; links `unix`, `windtrap.coverage` and `windtrap.mutate` only — both in-package, so Law 10's no-third-party-weight posture is untouched |
+| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, snapshots, capture, the run/driver spine, the mutation loop, renderers, CLI and the client facade; links `unix`, `windtrap.coverage` and `windtrap.mutate` only — both in-package, so Law 10's no-third-party-weight posture is untouched |
 | `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation runtimes share; stdlib only |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
 | `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map, `.mutants` verdict files; stdlib only, for the same reason |
@@ -37,85 +37,62 @@ They never merge again (that was v1's mistake).
 
 ## Module graph (`lib/`)
 
-Foundation (no internal deps beyond each other): `Pp` (style-aware
-Format helpers), `Text` (newline/UTF-8/substring utilities), `Env`
-(how the environment is read — typed readers, value vocabularies,
-CI/TTY detection, the settings with no flag; the `WINDTRAP_*` mirrors
-themselves are declared in `Cli`'s table), `Tag`, `Loc` (`pos` +
-backtrace-derived source attribution), `Path_ops` (project root,
-sandbox reconstruction, log dirs), `Atomic_file` (temp+rename writes),
-`Clock` (monotonic C-stub counter; the runner's timing source for
-per-test durations and the run total), `Seed` (SplitMix64, `s1:`
-tokens, `mix(root, path, index)` derivation), `Shrink_tree` (memoized
-lazy rose trees).
+Read top to bottom: each layer may depend on the ones above it and on
+its own, never downward.
 
-Data: `Failure` (failure-as-data: typed kinds, phase, location,
-output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions),
-`Testable`, `Diff` (diff *data*: Myers hunks and character-refinement
-spans; no styling).
+| layer | module | what it owns |
+| --- | --- | --- |
+| Foundation | `Pp` | style-aware `Format` helpers |
+| | `Text` | newline, UTF-8 and substring utilities |
+| | `Env` | how the environment is read: typed readers, value vocabularies, CI/TTY detection, the settings with no flag (the `WINDTRAP_*` mirrors themselves are declared in `Cli`'s table) |
+| | `Tag` | the tag vocabulary and selection predicates |
+| | `Loc` | `pos` + backtrace-derived source attribution |
+| | `Path_ops` | project root, sandbox reconstruction, log dirs |
+| | `Atomic_file` | temp+rename writes |
+| | `Clock` | monotonic C-stub counter; the runner's timing source |
+| | `Seed` | SplitMix64, `s1:` tokens, `mix(root, path, index)` derivation |
+| | `Shrink_tree` | memoized lazy rose trees |
+| Data | `Failure` | failure-as-data: typed kinds, phase, location, output tail; the `Check_failure`/`Skip_test`/`Timeout` exceptions |
+| | `Testable` | the assertion-side witness |
+| | `Diff` | diff *data*: Myers hunks and character-refinement spans, no styling |
+| Verbs and engines | `Check` | the assertion verbs, pure, no run-state dependency |
+| | `Gen` | the property-side witness: generation, shrinking, printing |
+| | `Property` | the case loop: examples-first, derived per-case seeds, discard/give-up, shrink search, collect tables |
+| | `Stateful` | model-based testing: the command vocabulary, compiled into programs `Property` runs |
+| Subsystems | `Capture` | fd-level dup2 capture into per-test log files, C stdio flushing |
+| | `Snapshot` | name-keyed baselines, read-only checking, atomic acceptance, orphan tracking |
+| | `Test_tree` | the declaration tree: tests, groups, focus, xfail, flatten |
+| Drive and render | `Run` | THE run record and the one ambient slot; a result row carries its `subject` — test, fixture release, or the stale-baselines verdict — so every sink projects the one recorded list |
+| | `Runner` | sequential executor: startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, Law 11 exit codes. Emits typed events with immutable payloads; prints nothing |
+| | `Cli` | one declarative item table — flags and flagless settings — resolved once into `Run.config` and `Render.settings`, plus `--help`. Each flag's mirror is declared beside it and read through the flag's own parser, so a variable cannot accept what its flag rejects |
+| | `Render`, `Render_junit`, `Render_github` | the pure projections of the run record. `Render` also owns the subsystem-neutral report-section vocabulary: instrumentation reports arrive as section data, and `Render` names no instrumentation runtime |
+| | `Driver` | the spine: `Driver.t` is one invocation's reporting inputs, `execute_and_report` the one order every driver shares, `execute` the reporting-free run a mutation child needs |
+| | `Mutate_loop` | the mutation seam and the Law-16d armed hooks: the dry run and its reach map, the determinism probe, the forced-fail check, the fork loop, the admission machine, the verdict file and the report. It *wraps* `Driver.execute_and_report` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
+| | `Windtrap` | the facade |
 
-Verbs and engines: `Check` (the Twenty-seven verbs, pure, no run-state
-dependency), `Gen`, `Property` (the case loop: examples-first, derived
-per-case seeds, discard/give-up, shrink search, collect tables),
-`Stateful` (model-based testing: the command vocabulary, compiled into
-programs the property engine runs).
+The expect runtime is a client, not a resident: `Ppx_runtime`
+(inline-test protocol, expect matching, `.corrected` assembly) consumes
+the core through `Windtrap.Private` — the alias block at its top is the
+census of that diet, and widening it is a design act — and it and the
+ambient `Expect_test_config` live in `ppx_windtrap`, against the
+facades.
 
-Subsystems (each owns a state *type*; the state *instances* live in
-`Run`): `Capture` (fd-level dup2 capture into per-test log files, C
-stdio flushing), `Snapshot` (name-keyed baselines, read-only checking,
-atomic acceptance, orphan tracking), `Test_tree` (the declaration
-tree: tests, groups, focus, xfail, flatten).
-
-Drive and render: `Run` (THE run record and the one ambient slot; a
-result row carries its `subject` — test, fixture release, or the
-stale-baselines verdict — so every sink projects the one recorded
-list), `Runner` (sequential executor: `execute` runs the startup
-checks and the selection, then the tests; per-test boundary, timeout
-via SIGALRM, retries,
-fixture release, the last-failed store, the exit guard, Law 11 exit
-codes; emits typed events with immutable payloads, prints nothing),
-`Cli` (one declarative item table — flags and flagless settings — →
-one resolution pass producing `Run.config` and `Render.settings`,
-`--help`, and the environment layer: each flag's mirror is declared
-beside it and read through the flag's own parser, so a variable cannot
-accept what its flag rejects; `Env` remains the readers and platform
-detection consumed below `Run`), `Render` / `Render_junit` /
-`Render_github` (`Render` also owns the subsystem-neutral
-report-section vocabulary: instrumentation reports arrive as section
-data, and `Render` names no instrumentation runtime), `Driver` (the
-spine: `Driver.t` is the record of one invocation's reporting inputs,
-`execute_and_report` the one order every driver shares, and
-`execute` the reporting-free run a mutation child needs),
-`Mutate_loop` (the mutation seam, and the Law-16d armed hooks — the one
-cross-package cell: the
-dry run and its reach map, the determinism probe, the forced-fail
-check, the fork loop, the admission machine, the verdict file and the
-report — it *wraps* `Driver.execute_and_report` rather than sitting
-beside it, because a mutation run must announce an armed mutant before
-any other output and fork after the dry run, which brackets the run on
-both sides), and the facade `Windtrap`. The expect runtime is a
-client, not a resident: `Ppx_runtime` (inline-test protocol, expect
-matching, `.corrected` assembly) consumes the core through
-`Windtrap.Private` — the alias block at its top is the census of that
-diet, and widening it is a design act — and the ambient `Expect_test_config`
-live in `ppx_windtrap`, against the facades.
-
-Two thin drivers sit on top of `Mutate_loop.execute_and_report` —
-which in every uninstrumented build and every `--list` run *is*
+Two thin drivers sit on top of `Mutate_loop.execute_and_report` — which
+in every uninstrumented build and every `--list` run *is*
 `Driver.execute_and_report`, same transcript, same bytes, and which in
 an instrumented build the environment asked nothing of adds the one
-discovery line and nothing else — and nothing else sits between them
-and it: the facade's `run` (in core) and `Ppx_runtime.exit` (in
+discovery line and nothing else — and nothing else sits between them and
+it: the facade's `run` (in core) and `Ppx_runtime.exit` (in
 `ppx_windtrap`, through the facades). Each resolves one invocation
-(`Cli.settings`), calls `execute_and_report`, and adds
-only what is genuinely its own: the argv-derived invocation, the
-property-aware header seed, the selection description, GitHub gating,
-the `--list` listing, JUnit, the focus warning and the process exit on
-one side; the fixed `` `Mirrors `` invocation, a header with neither
-seed nor selection, `.corrected` flushing and dune's promotion exit
-code on the other. **A transcript line either comes from a `Driver`
-producer or it is a driver's own line, named as such.** That is what
-keeps the two runners byte-identical.
+(`Cli.settings`), calls `execute_and_report`, and adds only what is
+genuinely its own: the argv-derived invocation, the property-aware
+header seed, the selection description, GitHub gating, the `--list`
+listing, JUnit, the focus warning and the process exit on one side; the
+fixed `` `Mirrors `` invocation, a header with neither seed nor
+selection, `.corrected` flushing and dune's promotion exit code on the
+other. **A transcript line either comes from a `Driver` producer or it
+is a driver's own line, named as such.** That is what keeps the two
+runners byte-identical.
 
 The cycle-avoidance rule is load-bearing: subsystem modules operate on
 explicit state values (`Capture.output st`, `Snapshot.check st …`);

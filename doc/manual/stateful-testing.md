@@ -383,41 +383,32 @@ for it.
 
 ## What it costs
 
-`~steps` is how many calls are *drawn* per case; repair removes the
-ones the model forbids, so a program makes at most that many. It
-defaults to 20 — a work budget, not a fact about state machines, and
-the number to look at first, because a stateful test is the most
-expensive kind of test windtrap runs and is worst exactly when CI is
-red. Against the shipped defaults — `~count:100`, `~steps:20`,
-`--max-shrink 100`, and no timeout — a passing run builds 100 systems
-and makes at most `count × steps` = 2,000 calls: at most, because
-repair removes the calls the model forbids, and the queue above
-measures 1,133.
+A stateful test is the most expensive kind windtrap runs, and it is
+worst exactly when CI is red. Against the shipped defaults —
+`~count:100`, `~steps:20`, `--max-shrink 100`, no timeout — a *passing*
+run builds 100 systems and makes at most `count × steps` = 2,000 calls:
+at most, because repair removes the calls the model forbids, and the
+queue above measures 1,133.
 
-A failing run adds the shrink search, and that is where the cost is.
-Every candidate the search considers, accepted or rejected, is a whole
-program re-run with its own `~scope` call, acquisition and release
-included. One node offers
-`1 + Σ_k ⌊steps/k⌋` deletion candidates — the empty program, plus one
-per non-overlapping chunk at each chunk size, `k` over the powers of
-two from below `steps` down to 1, so 39 at `~steps:20` — then one per
-argument reduction, and each accepted step starts a fresh descent, up
-to `--max-shrink` of them. The queue above converges in 50 to 100
-systems and a few hundred calls; a failure that hides behind a long
-prefix costs one or two orders of magnitude more, and the call count
-grows with the *square* of `~steps`.
+A *failing* run adds the shrink search, and that is where the cost is:
+every candidate considered, accepted or rejected, is a whole program
+re-run with its own `~scope` call, acquisition and release included. One
+node offers `1 + Σ_k ⌊steps/k⌋` deletion candidates — the empty program,
+plus one per non-overlapping chunk at each chunk size, `k` over the
+powers of two from below `steps` down to 1, so 39 at `~steps:20` — then
+one per argument reduction, and each accepted step starts a fresh
+descent, up to `--max-shrink` of them. The queue above converges in 50
+to 100 systems and a few hundred calls; a failure hiding behind a long
+prefix costs one or two orders of magnitude more. For an in-memory
+system that is milliseconds; for one process, socket or descriptor per
+command it is minutes.
 
-For an in-memory system that is milliseconds. For one process, socket,
-or descriptor per command it is minutes. The levers:
-
-- `~steps` — quadratic on a failing run. Lower it first.
-- `~count` — linear, and only on a passing run.
-- `--max-shrink N` — linear on a failing run. It is **run-wide**:
-  there is no declaration-site spelling, so a suite cannot bound one
-  expensive stateful test without bounding every property.
-- `~timeout` — the only per-test bound on the failing path. A timeout
-  that expires during shrinking ends the search and reports the best
-  counterexample found so far, marked as not necessarily minimal.
+| lever | effect | reach for it when |
+| --- | --- | --- |
+| `~steps` (default 20) | calls drawn per case; **quadratic** on a failing run | first, always — it is a work budget, not a fact about the state machine |
+| `~count` (default 100) | linear, and only on a passing run | the passing run is the slow one |
+| `--max-shrink N` (default 100) | linear on a failing run | shrinking is what hurts. **Run-wide**: there is no declaration-site spelling, so a suite cannot bound one expensive stateful test without bounding every property |
+| `~timeout` | the only per-test bound on the failing path | a search that must not run away. Expiring during shrinking ends it and reports the best counterexample so far, marked as not necessarily minimal |
 
 `--tag stateful` selects these tests, `--exclude-tag stateful` drops
 them: an expensive suite can keep them out of the inner loop and run
