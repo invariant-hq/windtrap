@@ -165,15 +165,71 @@ forks — batching plus ride-along admission let one killed fault admit
 hundreds of tests, and no test of this suite has ruled `UNJUSTIFIED`.
 The admission machine's own scenarios live in `test/mutate_loop`.
 
-Six core modules opt out with `[@@@mutate exclude_file]`: `runner`,
-`run`, `driver`, `registry`, `mutate_loop` and
-`windtrap`; the expect runtime, a library of its own since the
-repartition, excludes itself the same way and its stanza carries no
-mutation backend at all. They are the
+Five core modules opt out with `[@@@mutate exclude_file]`: `runner`,
+`run`, `driver`, `mutate_loop` and `windtrap`; the expect runtime, a
+library of its own since the repartition, excludes itself the same way
+and its stanza carries no mutation backend at all. They are the
 machinery a mutation run uses to judge mutants, so a mutant there is
 armed inside the process meant to detect it, and the failure mode is a
 hang rather than a survivor — the first whole-core run aborted on
 `lib/runner.ml:385:19:fsub`. Coverage still measures those files.
+
+### What a run costs, and where the deadline comes from
+
+This is the one home for the derivation; `doc/manual/mutation.md` states
+the bill in three sentences and links here.
+
+Two suite runs — the dry run, and one unarmed fork that re-runs it to
+prove the suite deterministic — then, per reached mutant, one `fork` and
+the time of *its own* reaching tests, cut short at the first failure.
+Three factors do the work: reach-guided selection (a child runs the
+tests that touched the line, not the suite), bail at the first kill, and
+forking from the warm post-dry-run image instead of spawning and
+re-initializing a process. Dismissed and unreached mutants are not
+forked at all.
+
+The worst cases are unhidden. A suite whose coverage is one integration
+test degenerates to "every test reaches every mutant", and the cost
+approaches mutants × suite. Overlap costs too: a mutant in a file seven
+suites link is dry-run, forked and scored seven times — the merge makes
+the *answer* right, not the bill. Nothing is parallel in this release.
+
+Every forked child — a survey mutant, an admission batch, the
+determinism probe — runs under a deadline of its own, derived and never
+a knob: **the dry run's wall clock, plus `max(1 s, 10 × the dry run's
+own timings for exactly the tests that child is scheduled to run)`**.
+The first term is the fixed cost every child pays before its first test,
+a fork and a whole process's module initialization, and the dry run
+measured it for free, being one whole in-process run of this same suite.
+The second is the work the child was actually handed, with an order of
+magnitude of headroom, and a floor that absorbs measurement noise on
+fast suites. Generous is the right side to err on for a guard whose job
+is catching a hang rather than pacing the loop.
+
+A child that overruns is killed with its whole process group — children
+`setsid` at birth, so anything a test spawned goes with them — and its
+mutant is scored killed. That is not a consolation prize: a fault that
+makes the suite hang is a fault the suite noticed, on the crash kill's
+own reasoning, and it is the case nothing else here can see. The cheap
+first line against a mutant that *spins* is a separate per-site budget
+on how often the armed line may be evaluated, set from the hit count the
+dry run measured there; a child that blows it dies and is scored killed
+too. But a mutant that *blocks* evaluates nothing, sits at 0% CPU and
+consumes no budget at all, and only a clock ever ends it.
+
+The per-child deadline is the only clock: nothing caps a whole run, so a
+run of a thousand mutants takes as long as its thousand children do and
+it is you who stops it. Mutation needs `Unix.fork`, so it declines by
+name on Windows.
+
+Admission's own cap is the other end of the bill.
+`WINDTRAP_MUTATE_TRY` — 25 by default — bounds the faults a *single*
+test tries before the loop rules it unjustified, so the exhaustive
+ruling of one vacuous wide-reaching test cannot cost its whole reach.
+Measured against real suites the most-run-first ordering kills on the
+first or second fault, so the cap is a bound and not a schedule; a
+ruling the cap decided says so, and `0` tries every fault the test
+reaches.
 
 ### WINDTRAP_MUTATE_ONLY, and why it is not coverage's filter
 
@@ -225,18 +281,16 @@ child whose fault *blocks* rather than spins — a flipped comparison in
 sites, so the runaway hit-count budget structurally cannot see it, and
 it used to ride the whole-loop deadline: an unscoped survey never
 finished, and `WINDTRAP_MUTATE=admit … -f capture` sat at 0% CPU for
-exactly the 60 s floor before refusing. Every forked child now runs
-under a deadline derived from the dry run — its wall clock, plus
-`max(1 s, 10 × that child's own scheduled tests)` — and on expiry the
-child's whole process group is killed and its mutant scored killed,
-which is the right verdict: the suite noticed the change by hanging.
-Re-measured here, that capture selection answers in 0.56 s wall (248 ms of admission work, 26 of 26 admitted, 9 forks)
-where it used to burn a silent minute and exit 1, and the full-suite
-admission fell from 1m38s to 8.5 s. The whole-loop deadline that used to
-sit behind it is gone: every child is bounded on its own, and a budget
-computed as the sum of those bounds can only fire on parent-side
-overhead it never counted — which is a spurious refusal, not a
-backstop.
+exactly the 60 s floor before refusing. The per-child deadline above
+ended that, and on expiry the mutant is scored killed, which is the
+right verdict: the suite noticed the change by hanging. Re-measured
+here, that capture selection answers in **0.56 s wall** (248 ms of
+admission work, 26 of 26 admitted, 9 forks) where it used to burn a
+silent minute and exit 1, and the full-suite admission fell from
+**1m38s to 8.5 s**. The whole-loop deadline that used to sit behind it
+is gone: every child is bounded on its own, and a budget computed as the
+sum of those bounds can only fire on parent-side overhead it never
+counted — which is a spurious refusal, not a backstop.
 
 What is left is the bill rather than a hang: an unscoped survey still
 forks once per mutant across the whole core, so mutating one file at a
