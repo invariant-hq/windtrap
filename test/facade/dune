@@ -1,0 +1,22 @@
+; The facade's command line, end to end. [Windtrap.run] ends every branch
+; in [exit], so half its contract — Law 11's nothing-ran 2, the startup
+; refusals' 1, the informational 0 of --help and -l — is only visible to
+; a process that waited on it. [suite_main] is that process: a five-test
+; suite small enough for the driver to pin whole streams, spawned once
+; per scenario with a scrubbed environment. The shape is
+; test/mutate_loop's, for the same reason.
+;
+; Not under @admit, like every other directory whose subject runs where
+; no arming reaches it (see ../dune): the code these tests are about
+; executes in the child.
+
+(executable
+ (name suite_main)
+ (modules suite_main)
+ (libraries windtrap))
+
+(test
+ (name test_facade)
+ (modules test_facade)
+ (libraries windtrap windtrap_coverage windtrap_instr unix)
+ (deps suite_main.exe))
