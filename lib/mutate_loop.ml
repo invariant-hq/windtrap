@@ -239,8 +239,8 @@ type report = {
   line : string;
   lines : string list;
       (* Every complete (newline-terminated) line, in write order. The
-         batch protocol reads these; [line] keeps the one-line children's
-         reading, partial trailing bytes included, exactly as it was. *)
+         batch protocol reads these; [line] is the first of them, which
+         is what a one-line child writes. *)
   status : Unix.process_status;
   killed : [ `No | `Deadline ];
       (* [`Deadline] is the child's own deadline: the mutant is scored
@@ -329,11 +329,6 @@ let fork_child ~deadline body =
               (Supervision (spf "waitpid failed: %s" (Unix.error_message e)))
       in
       let contents = Buffer.contents buffer in
-      let line =
-        match String.index_opt contents '\n' with
-        | Some i -> String.sub contents 0 i
-        | None -> String.trim contents
-      in
       let lines =
         (* A killed or crashed child can leave a partial trailing line;
            it is not a report and is dropped. [split_on_char] never
@@ -342,6 +337,12 @@ let fork_child ~deadline body =
         | _partial :: complete -> List.rev complete
         | [] -> []
       in
+      (* Derived, so a torn write cannot decode as a survivor: bytes that
+         never got their newline are not a line, and the one-line readers
+         then see nothing rather than seeing "survived". A false survivor
+         is the one failure mode that makes people stop running the
+         tool. *)
+      let line = match lines with l :: _ -> l | [] -> "" in
       { line; lines; status; killed = !killed }
 
 (* The child's run configuration
@@ -493,19 +494,6 @@ let scratch_root () =
                 (Unix.error_message e)))
   in
   create 0
-
-let rec remove_tree path =
-  match Unix.lstat path with
-  | exception Unix.Unix_error _ -> ()
-  | { Unix.st_kind = Unix.S_DIR; _ } -> (
-      (match Sys.readdir path with
-      | exception Sys_error _ -> ()
-      | entries ->
-          Array.iter
-            (fun entry -> remove_tree (Filename.concat path entry))
-            entries);
-      try Unix.rmdir path with Unix.Unix_error _ -> ())
-  | _ -> ( try Unix.unlink path with Unix.Unix_error _ -> ())
 
 (* Report data *)
 
@@ -713,7 +701,7 @@ let check_determinism ~armed ~scratch ~dry_run_wall
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
       (probe_line ~armed ~paths ~spine:child tests)
   in
-  remove_tree log_dir;
+  Run.remove_tree log_dir;
   let named indices =
     List.filter_map
       (fun index ->
@@ -799,7 +787,7 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
       (mutant_line ~armed ~paths ~budget ~spine:child ~mutant tests)
   in
-  remove_tree log_dir;
+  Run.remove_tree log_dir;
   match killed with
   | `Deadline ->
       (* The suite noticed the change by hanging: a kill, on the crash
@@ -973,7 +961,7 @@ let loop renderer ~armed (spine : Driver.t) tests =
           let outcome =
             let scratch = scratch_root () in
             Fun.protect
-              ~finally:(fun () -> remove_tree scratch)
+              ~finally:(fun () -> Run.remove_tree scratch)
               (fun () ->
                 match
                   check_determinism ~armed ~scratch ~dry_run_wall ~spine ~reach
@@ -1208,7 +1196,7 @@ let run_batch ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
       (admit_line ~armed ~paths ~budget ~spine:child ~mutant tests)
   in
-  remove_tree log_dir;
+  Run.remove_tree log_dir;
   let outcomes, pending, finished, error =
       parse_batch_events ~size:(List.length batch) lines
     in
@@ -1472,7 +1460,7 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
             else
               let scratch = scratch_root () in
               Fun.protect
-                ~finally:(fun () -> remove_tree scratch)
+                ~finally:(fun () -> Run.remove_tree scratch)
                 (fun () ->
                   match
                     check_determinism ~armed ~scratch ~dry_run_wall ~spine

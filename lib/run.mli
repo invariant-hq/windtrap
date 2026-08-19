@@ -299,6 +299,15 @@ val temp_file : ?prefix:string -> ?suffix:string -> unit -> string
 
     Raises [Unix.Unix_error] if the file cannot be created. *)
 
+val remove_tree : string -> unit
+(** [remove_tree path] removes [path] and everything under it, best effort:
+    [lstat] so a symbolic link is removed rather than followed, and every
+    filesystem error swallowed — a scratch cleanup must not fail a test or mask
+    its outcome. Exposed for the mutation loop, which removes each forked
+    child's log directory from the parent: a child killed at its deadline never
+    runs its own cleanup, and an orphaned capture tree is exactly the trace
+    Law 16(e) forbids. *)
+
 (** {1:process Runner-restored process state}
 
     The environment and the working directory belong to the process, not to the
