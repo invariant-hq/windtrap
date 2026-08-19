@@ -287,7 +287,8 @@ let coverage_report renderer ~coverage_mode run collection =
    that session. Everything that reports goes through
    [execute_and_report] below, which composes [Runner.execute] whole. *)
 
-let plan (t : t) tests = Runner.plan ~config:t.config ~suite:t.suite tests
+let plan ?allowlist (t : t) tests =
+  Runner.plan ?allowlist ~config:t.config ~suite:t.suite tests
 let execute ?on_event plan = Runner.execute_plan ?on_event plan
 
 (* The execute-and-report spine *)

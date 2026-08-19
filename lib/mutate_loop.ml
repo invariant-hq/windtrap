@@ -345,15 +345,15 @@ let fork_child ~deadline body =
       let line = match lines with l :: _ -> l | [] -> "" in
       { line; lines; status; killed = !killed }
 
-let pruned_to paths tests =
-  let keep = Hashtbl.create (List.length paths * 2) in
-  List.iter (fun path -> Hashtbl.replace keep path ()) paths;
-  Test_tree.prune (fun path -> Hashtbl.mem keep path) tests
-
 (* Every child starts from the same clean post-dry-run image except for
    what the inline runtime must not inherit — its merged reach histories,
    and its licence to record a correction (Law 16d). Both are [armed]'s
    job; see [execute_and_report]'s argument. *)
+(* The child's selection, in the runner's own spelling: [reach] keys tests
+   by path components, [Runner]'s allowlist by the rendered path the
+   filters and the last-failed store both use. *)
+let allowlist_of paths = List.map Test_tree.path_to_string paths
+
 let child_prologue ~armed =
   silence_output ();
   armed ()
@@ -404,7 +404,7 @@ let encode_outcome ~paths (outcome : Runner.outcome) =
   else if
     (* A child that recorded no test row did not survive the mutant, it
        failed to test it: reporting a survivor here would send the reader
-       to strengthen tests that never ran. The pruned tree is the dry
+       to strengthen tests that never ran. The allowlist is the dry
        run's own executed paths, so this is unreachable — and a false
        survivor is the one failure mode that makes people stop running
        the tool, so it is not left to be unreachable. *)
@@ -604,13 +604,13 @@ let render_data ~resolve_source ~loc_of ~duration ~seed ~siblings ~total t =
 
 let probe_line ~armed ~paths ~spine tests (_ : Unix.file_descr) =
   child_prologue ~armed;
-  match Driver.plan spine (pruned_to paths tests) with
+  match Driver.plan ~allowlist:(allowlist_of paths) spine tests with
   | Error error -> "error " ^ one_line (Runner.startup_message error)
   | Ok plan ->
       let outcome = Driver.execute plan in
       (* Test rows only: the probe's counts answer "did the same tests run
-         the same way", and a verdict row (a failed release, a stale
-         baseline over the pruned selection) is not a test. *)
+         the same way", and a verdict row (a failed release) is not a
+         test. *)
       let results =
         List.filter executed_test (Run.results outcome.Runner.run)
       in
@@ -732,7 +732,7 @@ let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests
       (* After arming, so the runaway budget measures the child's own hits
          and not the dry run's accumulated ones. *)
       M.reset_reach ();
-      match Driver.plan spine (pruned_to paths tests) with
+      match Driver.plan ~allowlist:(allowlist_of paths) spine tests with
       | Error error -> "error " ^ one_line (Runner.startup_message error)
       | Ok plan -> encode_outcome ~paths (Driver.execute plan))
 
@@ -1083,7 +1083,7 @@ let admit_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests fd =
                 emit (spf "t %d %s" i word))
         | Runner.Run_started _ | Runner.Fixture_release _ -> ()
       in
-      match Driver.plan spine (pruned_to paths tests) with
+      match Driver.plan ~allowlist:(allowlist_of paths) spine tests with
       | Error error -> "error " ^ one_line (Runner.startup_message error)
       | Ok plan ->
           let (_ : Runner.outcome) = Driver.execute ~on_event:event plan in

@@ -504,16 +504,14 @@ let selection_predicate (config : Run.config) =
   let predicate = List.fold_left require Tag.any config.Run.tags in
   List.fold_left drop predicate config.Run.exclude_tags
 
-let case_selected (config : Run.config) ~predicate ~allowlist ~focus_active
+let case_selected (config : Run.config) ~predicate ~allowed ~focus_active
     (case : Test_tree.case) =
   let path = Test_tree.path_to_string case.Test_tree.path in
   let contains pattern = Text.contains_substring ~pattern path in
   (match config.Run.filter with None -> true | Some p -> contains p)
   && (match config.Run.exclude with None -> true | Some p -> not (contains p))
   && Tag.accepts predicate case.Test_tree.tags
-  && (match allowlist with
-    | None -> true
-    | Some entries -> List.mem path entries)
+  && allowed path
   && (match config.Run.shard with
     | None -> true
     | Some (k, shards) -> shard_bucket ~shards path = k - 1)
@@ -622,12 +620,13 @@ let startup_message = function
    the [--failed] store — because a suite that trips two of them must always
    be told about the same one. Between them the checks also decide the two
    values the rest of the run reads out of them: the snapshot mode and the
-   [--failed] allowlist ([None] when [--failed] was not asked for, and never
-   [Some []] — an allowlist matching nothing is the refusal above it). *)
+   path allowlist ([None] when neither the caller nor [--failed] narrowed by
+   path, and never [Some []] under [--failed] — an allowlist matching nothing
+   is the refusal above it). *)
 
 let ( let* ) = Result.bind
 
-let startup (config : Run.config) ~suite ~focus_active tests paths =
+let startup (config : Run.config) ~suite ~focus_active ~allowlist tests paths =
   let in_ci = Env.in_ci () in
   let* () =
     match duplicate_paths paths with
@@ -645,11 +644,17 @@ let startup (config : Run.config) ~suite ~focus_active tests paths =
     | Snapshot.Mode mode -> Ok mode
   in
   let* allowlist =
-    if not config.Run.failed_only then Ok None
+    (* The two narrowings intersect rather than override, which costs
+       nothing: they never co-occur — a caller-supplied allowlist comes
+       from [Run.for_subset], which clears [failed_only]. *)
+    if not config.Run.failed_only then Ok allowlist
     else
+      let asked path =
+        match allowlist with None -> true | Some entries -> List.mem path entries
+      in
       match
         List.filter
-          (fun path -> List.mem path paths)
+          (fun path -> List.mem path paths && asked path)
           (read_store (store_path config ~suite))
       with
       | [] -> Error No_recorded_failures
@@ -677,7 +682,7 @@ type plan = {
   started : Clock.counter;
 }
 
-let plan ~config ~suite tests : (plan, startup_error) result =
+let plan ?allowlist ~config ~suite tests : (plan, startup_error) result =
   install_exit_guard ();
   (* An unexpected exception's report is only as useful as its backtrace,
      and the runtime records one only when asked. Without this a test that
@@ -703,10 +708,22 @@ let plan ~config ~suite tests : (plan, startup_error) result =
     List.map (fun case -> Test_tree.path_to_string case.Test_tree.path) cases
   in
   let focus_active = Test_tree.has_focus tests in
-  let* mode, allowlist = startup config ~suite ~focus_active tests paths in
+  let* mode, allowlist =
+    startup config ~suite ~focus_active ~allowlist tests paths
+  in
   let predicate = selection_predicate config in
+  (* Hashed once: an allowlist is as long as the selection it names, and
+     the mutation loop's children name every path their parent ran. *)
+  let allowed =
+    match allowlist with
+    | None -> fun _ -> true
+    | Some entries ->
+        let table = Hashtbl.create (List.length entries * 2) in
+        List.iter (fun path -> Hashtbl.replace table path ()) entries;
+        Hashtbl.mem table
+  in
   let selected =
-    List.filter (case_selected config ~predicate ~allowlist ~focus_active) cases
+    List.filter (case_selected config ~predicate ~allowed ~focus_active) cases
   in
   let focused =
     List.length (List.filter (fun case -> case.Test_tree.focused) cases)
@@ -903,5 +920,5 @@ let execute_plan ?(on_event = fun _ -> ())
       exit_code;
     }
 
-let execute ?on_event ~config ~suite tests =
-  Result.map (execute_plan ?on_event) (plan ~config ~suite tests)
+let execute ?on_event ?allowlist ~config ~suite tests =
+  Result.map (execute_plan ?on_event) (plan ?allowlist ~config ~suite tests)

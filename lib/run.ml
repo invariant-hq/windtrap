@@ -64,14 +64,14 @@ let default_config () =
    where whoever adds a fourteenth selection knob is already editing.
 
    The knobs that select by PATH are cleared — filter, exclude, shard, the
-   [--failed] allowlist — because the tree the caller hands its child IS
-   that selection: it was pruned to the paths the parent executed, so
-   applying any of them again could only narrow it further.
+   [--failed] store — because the allowlist the caller hands its child IS
+   that selection: it names the paths the parent executed, so applying
+   any of them again could only narrow it further.
 
    The knobs that select by TAG are kept verbatim. A test's tags are not
-   in its path, so pruning cannot express them, and keeping them is what
-   makes the child's selection the parent's by construction rather than
-   by coincidence of the pruned tree. The root seed is kept for the same
+   in its path, so an allowlist cannot express them, and keeping them is
+   what makes the child's selection the parent's by construction rather
+   than by coincidence. The root seed is kept for the same
    family of reasons: per-case seeds derive from (root, path, index), so a
    child running 24 of 900 tests sees the same property cases the parent
    saw.

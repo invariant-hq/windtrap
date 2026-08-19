@@ -227,12 +227,17 @@ val coverage_report :
     also reports, and a driver that composed the halves itself would be free to
     put something between them — the same drift by another route. *)
 
-val plan : t -> Test_tree.t list -> (Runner.plan, Runner.startup_error) result
+val plan :
+  ?allowlist:string list ->
+  t ->
+  Test_tree.t list ->
+  (Runner.plan, Runner.startup_error) result
 (** [plan t tests] is {!Runner.plan} over [t]'s [config] and [suite]: the
     startup checks and the selection, and [Error error] on a refused run —
-    exactly when {!execute_and_report} would refuse. Only [t.config] and
-    [t.suite] are consulted; the reporting fields are along for the ride, so a
-    child plans with the spine it was handed, [config] swapped for its own. *)
+    exactly when {!execute_and_report} would refuse. [allowlist] is
+    {!Runner.plan}'s: the exact paths to run. Only [t.config] and [t.suite] are
+    consulted; the reporting fields are along for the ride, so a child plans
+    with the spine it was handed, [config] swapped for its own. *)
 
 val execute : ?on_event:(Runner.event -> unit) -> Runner.plan -> Runner.outcome
 (** [execute plan] is {!Runner.execute_plan}: runs [plan]'s selection and is the

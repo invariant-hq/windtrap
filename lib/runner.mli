@@ -115,7 +115,8 @@
     {b Selection.} A test runs iff its path contains [config.filter] (when set),
     does not contain [config.exclude] (when set), its tags satisfy
     [--tag]/[--exclude-tag] over {!Tag.any}, it survives
-    the [--failed] allowlist, it falls in the requested [--shard] bucket (when
+    the [--failed] store and the caller's [?allowlist], it falls in the
+    requested [--shard] bucket (when
     set), and — when any focused node exists — it is focused. Deselected tests
     do not execute and are not recorded. Fixture releases run after the last
     executed test on every path where the runner regains control, including
@@ -272,6 +273,7 @@ type outcome = {
 
 val execute :
   ?on_event:(event -> unit) ->
+  ?allowlist:string list ->
   config:Run.config ->
   suite:string ->
   Test_tree.t list ->
@@ -280,7 +282,11 @@ val execute :
     preamble and is [Ok outcome], or [Error error] when a startup check refuses
     the run before anything executes. [on_event] observes progress (defaults to
     ignoring). [suite] names the run in the capture log directory and the
-    last-failed store.
+    last-failed store. [allowlist] narrows the selection to those exact full
+    paths ({!Test_tree.path_to_string}), for a caller that already holds the set
+    it wants and cannot spell it as a substring filter — the mutation loop's
+    children, which run one mutant's reaching tests. It composes with every
+    other selection layer by intersection, [--failed] included.
 
     When [config.list_only] is set, startup checks and selection still apply but
     nothing executes, no event fires, no store or log is touched, and the
@@ -316,6 +322,7 @@ type plan
     duration. *)
 
 val plan :
+  ?allowlist:string list ->
   config:Run.config ->
   suite:string ->
   Test_tree.t list ->
@@ -323,6 +330,7 @@ val plan :
 (** [plan ~config ~suite tests] is {!execute}'s deciding half: the startup
     checks (in their contractual order) and the selection over [tests], and
     [Error error] on a refused run — exactly when {!execute} would refuse.
+    [allowlist] is {!execute}'s.
 
     Effects: {!execute}'s process-wide preliminaries (the exit-guard
     registration, [Printexc.record_backtrace true]) and the startup checks'

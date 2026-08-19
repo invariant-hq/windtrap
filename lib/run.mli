@@ -90,8 +90,9 @@ val for_subset : config -> log_dir:string -> bail:int option -> config
 (** [for_subset config ~log_dir ~bail] is [config] adjusted for a run over a
     {e subtree} of its own selection — the mutation loop's forked children.
     Path-selecting knobs ([filter], [exclude], [shard], [failed_only]) are
-    cleared, because the pruned tree {e is} that selection and applying them
-    again could only narrow it further; tag-selecting knobs ([tags],
+    cleared, because the caller's [Runner.plan] allowlist {e is} that selection
+    and applying them again could only narrow it further; tag-selecting knobs
+    ([tags],
     [exclude_tags]) and the root [seed] are kept verbatim, because
     pruning cannot express a tag and per-case seeds derive from
     [(root, path, index)]. Checking is made read-only ([update = No_update]),
