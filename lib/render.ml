@@ -1301,6 +1301,21 @@ let pp_block t (r : Run.result) =
       | Some tail -> pp_tail t tail
       | None -> ())
 
+(* Why a selection is empty, in one sentence — Exit 2 either way, but
+   the two causes call for different words: a suite with nothing in it is
+   not a mistyped filter, and neither is a shard that legitimately drew an
+   empty bucket. Naming the selection and the denominator is what turns a
+   dead end into a next step. [None] when nothing narrowed a non-empty
+   suite, which is a case with nothing to explain. *)
+let empty_selection_reason ~declared ~selection =
+  match (declared, selection) with
+  | 0, _ -> Some "the suite declares none"
+  | declared, Some selection ->
+      Some
+        (spf "%s matched none of %d test%s" selection declared
+           (if declared = 1 then "" else "s"))
+  | _, None -> None
+
 (* The summary counts REPORTED RESULTS, which is not the header's count of
    selected tests: a failing fixture release is recorded as a verdict row
    after the header printed (Run.Fixture_release), so a one-test suite
@@ -1322,18 +1337,10 @@ let summary_line t ~passed ~failed ~skipped ~excused ~subtests ~duration =
     | _ -> ""
   in
   if passed + failed + skipped + excused = 0 then begin
-    (* Exit 2 either way, but the two causes call for different sentences:
-       a suite with nothing in it is not a mistyped filter, and neither is
-       a shard that legitimately drew an empty bucket. Naming the selection
-       and the denominator is what turns a dead end into a next step. *)
     let reason =
-      match (t.declared, t.selection) with
-      | Some 0, _ -> Some "the suite declares none"
-      | Some declared, Some selection ->
-          Some
-            (spf "%s matched none of %d test%s" selection declared
-               (if declared = 1 then "" else "s"))
-      | Some _, None | None, _ -> None
+      match t.declared with
+      | Some declared -> empty_selection_reason ~declared ~selection:t.selection
+      | None -> None
     in
     match reason with
     | None -> put t (prefix ^ "no tests ran.")

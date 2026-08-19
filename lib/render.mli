@@ -241,6 +241,18 @@ val note : t -> string -> unit
     names itself on a terminal. The runner announces fixture releases with it
     ([releasing db]). *)
 
+val empty_selection_reason :
+  declared:int -> selection:string option -> string option
+(** [empty_selection_reason ~declared ~selection] is why a run selected nothing,
+    as the clause {!finish} puts after ["no tests ran: "] — ["the suite declares
+    none"] when [declared] is [0], else ["<selection> matched none of N tests"]
+    when something narrowed it ({!Driver.selection_description}), else [None],
+    a non-empty suite nothing narrowed having nothing to explain.
+
+    Exported for [--list], which selects and stops: a listing that answered a
+    mistyped filter with silence would be the one place the suggestion
+    ["(list the suite's tests with -l)"] leads nowhere. *)
+
 type coverage_summary = {
   visited : int;  (** Instrumented blocks visited at least once. *)
   total : int;  (** Instrumented blocks in every registered file. *)

@@ -363,6 +363,17 @@ let run ?(argv = Sys.argv) suite tests =
             | Error error ->
                 prerr_endline (Runner.startup_message error);
                 exit (Runner.startup_exit_code error)
+            | Ok [] ->
+                (* A listing that answered a mistyped filter with silence
+                   would be the dead end the empty-selection line's own
+                   "(list the suite's tests with -l)" hint leads to. The
+                   hint itself is not repeated: the reader is listing. *)
+                Option.iter
+                  (fun reason -> print_endline ("no tests ran: " ^ reason ^ "."))
+                  (Render.empty_selection_reason
+                     ~declared:(List.length (Test_tree.flatten tests))
+                     ~selection:(Driver.selection_description config));
+                exit 0
             | Ok paths ->
                 List.iter print_endline paths;
                 exit 0

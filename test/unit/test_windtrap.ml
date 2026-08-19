@@ -186,6 +186,22 @@ let () =
           group "outer" [ test "picked" (fun () -> is_true true) ];
           test "other" (fun () -> is_true true);
         ]
+  (* And over an empty selection: a listing that answered a mistyped
+     filter with silence is the dead end the empty-selection line's own
+     "(list the suite's tests with -l)" hint leads to. *)
+  | [ _; "--list-empty-child"; log_dir ] ->
+      clear_env ();
+      Windtrap.run
+        ~argv:
+          [|
+            "list-child"; "-o"; log_dir; "--color"; "never"; "-l"; "-f";
+            "zzznope";
+          |]
+        "listsuite"
+        [
+          group "outer" [ test "picked" (fun () -> is_true true) ];
+          test "other" (fun () -> is_true true);
+        ]
   | _ -> ()
 
 (* The empty-selection child (driver, [Driver.selection_description]):
@@ -1159,7 +1175,14 @@ let () =
     in
     check "a list run exits 0" (status = Unix.WEXITED 0);
     check_string "the transcript is the selection, in declaration order"
-      ~expected:"outer \u{203a} picked\nother\n" ~actual:transcript)
+      ~expected:"outer \u{203a} picked\nother\n" ~actual:transcript;
+    let status, transcript =
+      spawn_child ~merge_stderr:true [ "--list-empty-child"; root ]
+    in
+    check "an empty listing still exits 0" (status = Unix.WEXITED 0);
+    check_string "an empty listing says why it is empty"
+      ~expected:"no tests ran: filter \"zzznope\" matched none of 2 tests.\n"
+      ~actual:transcript)
 
 (* An empty selection says why it is empty, process level *)
 
