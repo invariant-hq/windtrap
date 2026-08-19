@@ -823,8 +823,8 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       (* Never diff or refine the claim sentence against the value: [claim]
          is a description, not a rendering. Colour still applies — green and
          red mark which side is which, and that is as true of a description
-         as of a value, and so is visibility: the ordering verbs build a
-         claim around a rendered bound ([greater than <x>]). *)
+         as of a value, and so is visibility: a [~claim] may be built around
+         a rendered bound ([greater than <x>]). *)
       let claim = show_controls claim and value = show_controls value in
       put_ind (st `Faint "expected" ^ "  " ^ st `Green claim);
       if String.contains value '\n' then begin

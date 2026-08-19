@@ -396,7 +396,8 @@ let count ~sub s =
   go 0 0
 ```
 
-Then assert about the number with the ordering verbs —
-`greater int ~than:2 (count ~sub:"retry" log)` — and keep
-`contains ~count` for the exact-count claim, whose failure prints both
-counts and marks the first occurrence.
+Then assert about the number with `satisfies ~claim` —
+`satisfies ~claim:"greater than 2" int (fun n -> n > 2)
+(count ~sub:"retry" log)` — and keep `contains ~count` for the
+exact-count claim, whose failure prints both counts and marks the
+first occurrence.

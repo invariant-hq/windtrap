@@ -376,7 +376,9 @@ let count_tests =
           equal int 1 (count ~sub:"aa" "aaa");
           equal int 0 (count ~sub:"absent" log);
           (* The point of the query form: the number feeds a sharper verb. *)
-          greater int ~than:2 (count ~sub:"retry" log));
+          satisfies ~claim:"greater than 2" int
+            (fun n -> n > 2)
+            (count ~sub:"retry" log));
     ]
 
 (* The role dispatch and the suite *)

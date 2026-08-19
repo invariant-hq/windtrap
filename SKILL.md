@@ -111,8 +111,8 @@ Reject these shapes on sight — in review, and in your own output.
 
 - **Blind boolean** — `is_true (a = b)`, `is_true (n > 0)`: the
   failure prints `expected true` and hides the data. Use testables and
-  the ordering verbs (`greater int ~than:0 n`); `satisfies ~msg` only
-  when nothing sharper exists. And weak predicates are weak oracles
+  `satisfies ~claim:"greater than 0" int (fun n -> n > 0) n`, which
+  keeps the bound and the value. And weak predicates are weak oracles
   too: `is_true (apply Sub 10 4 > 0)` survives the `a - b → a + b`
   mutant; `equal int 6 (apply Sub 10 4)` kills it.
 - **Overfit** — asserts incidental detail: the whole help text to
@@ -374,10 +374,10 @@ The vocabulary worth knowing rather than reinventing:
 - `require_some` / `require_ok` / `require_error` / `require_match` —
   assert a shape and hand back its payload; the happy path keeps its
   value instead of drowning in `match`.
-- Ordering: `greater int ~than:0 n` (and `greater_equal`, `less`,
-  `less_equal`) — the failure keeps the bound and the value, where
-  `is_true (n > 0)` reports only `false`. Custom orders via
-  `Testable.with_order`.
+- `satisfies ?claim t pred v` — `claim` is the sentence on the expected
+  side, so a comparison keeps its bound and its value
+  (`satisfies ~claim:"greater than 0" int (fun n -> n > 0) n`) where
+  `is_true (n > 0)` reports only `false`.
 - Strings: `contains ~sub` (with `~count:n` for exactly `n`
   non-overlapping occurrences) / `not_contains ~sub` /
   `in_order ~subs:[...]` for substrings that must appear in that order /

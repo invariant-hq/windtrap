@@ -47,24 +47,6 @@ val make :
     symmetric by construction. Wrapping a library's [allclose] — most of which
     are asymmetric in exactly this way — needs the same treatment. *)
 
-val with_order : ('a -> 'a -> int) -> 'a t -> 'a t
-(** [with_order compare w] is [w] carrying [compare] as its ordering, which is
-    what the ordering verbs ({!Check.greater} and kin) ask for. [compare]
-    follows the {!Stdlib.compare} convention — negative, zero, positive — and
-    must agree with [w]'s equality: two values [w] considers equal should
-    compare [0], or a value can be neither greater than, less than, nor equal
-    to another.
-
-    Ordering is attached rather than configured on {!make} because most types
-    have none a test should rely on. A record has no canonical order, and
-    reaching for {!Stdlib.compare} to invent one is the footgun {!structural}
-    names out loud. The base-type witnesses below carry theirs already; give
-    your own an order only where the type really has one.
-
-    {[
-      let version = Testable.of_module (module Version) |> Testable.with_order Version.compare
-    ]} *)
-
 val structural : pp:(Format.formatter -> 'a -> unit) -> 'a t
 (** [structural ~pp] is [make ~pp] with polymorphic structural equality
     [Stdlib.( = )] — the choice is explicit in the name. Structural equality
@@ -121,11 +103,6 @@ val pass : 'a t
 val pp : 'a t -> Format.formatter -> 'a -> unit
 (** [pp w ppf v] formats [v] with [w]'s printer. *)
 
-val order : 'a t -> ('a -> 'a -> int) option
-(** [order w] is [w]'s ordering when it has one ({!with_order}, or a base type
-    that ships with it), and [None] otherwise. The ordering verbs consult it;
-    every other verb ignores it. *)
-
 val equal : 'a t -> 'a -> 'a -> bool
 (** [equal w a b] is [true] iff [w]'s equality considers [a] and [b] equal. The
     verbs pass [expected] as [a] and [actual] as [b]; a witness whose equality
@@ -139,17 +116,7 @@ val to_string : 'a t -> 'a -> string
 
     Base-type witnesses print source-like renderings ([%S] for strings, [%C] for
     chars, [%g] for the tolerance float witnesses), so failure payloads read
-    like OCaml values.
-
-    Every base type below except {!unit} carries an ordering ({!with_order}),
-    so {!Check.greater} and kin work on them without further ceremony. The
-    containers do not: a lexicographic order over a list or a pair is a choice,
-    not a fact, and a test that wants one should say which. The float witnesses
-    order by {!Float.compare} whatever their equality's tolerance — the
-    tolerance decides what counts as equal, not what counts as greater, and
-    since {!Float.compare} places NaN below every float, a NaN value passes
-    {!Check.less}: NaN outcomes are asserted with {!float_exact}'s equality,
-    not an ordering verb. *)
+    like OCaml values. *)
 
 val unit : unit t
 val bool : bool t

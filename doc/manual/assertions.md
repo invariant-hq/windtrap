@@ -142,6 +142,28 @@ value, use `satisfies` — the failure renders the value a bare
 satisfies ~msg:"positive" int (fun n -> n > 0) 42
 ```
 
+`~claim` goes further: it replaces the expected side's default
+sentence ("value satisfying the predicate") with your own, which is
+what turns `satisfies` into a comparison assertion. A comparison
+consumes both numbers and hands back a boolean, so `is_true (n > 0)`
+can only fail with `expected true / actual false` — the number is
+gone. A claim keeps the bound, and the value keeps the value:
+
+```ocaml
+satisfies ~claim:"greater than 0" int (fun n -> n > 0)
+  (Source.omitted_bytes c)
+```
+
+```
+expected  greater than 0
+actual    0
+```
+
+Nothing checks that the claim describes the predicate — keep the two
+next to each other, and build the claim with the witness when the
+bound is not an `int`
+(`Printf.sprintf "greater than %s" (Testable.to_string string bound)`).
+
 String containment gets its own verbs because their failures print
 the needle with its verdict (`needle "secret" — found at byte 10`)
 over a bounded excerpt of the haystack, the occurrence marked when
@@ -219,46 +241,6 @@ mem int 42 [ 2; 3; 5 ]
 expected  a list containing 42
 actual    [2; 3; 5]
 ```
-
-## Ordering
-
-A comparison consumes both numbers and hands back a boolean, so
-`is_true (n > 0)` can only fail with `expected true / actual false` —
-the number is gone. The ordering verbs keep the bound as the claim and
-the value as the value:
-
-```ocaml
-greater int ~than:0 (Source.omitted_bytes c)
-```
-
-```
-expected  greater than 0
-actual    0
-```
-
-`greater_equal`, `less` and `less_equal` complete the set, all with
-`~than`. The ordering comes from the witness, which is what keeps the
-call shorter than the `is_true` it replaces; every base-type witness
-carries one. Give your own an order with `Testable.with_order`:
-
-```ocaml
-let version = Testable.of_module (module Version)
-              |> Testable.with_order Version.compare
-```
-
-Containers deliberately carry no ordering — a lexicographic order over
-a list or a pair is a choice, not a fact — and a witness without one
-raises `Invalid_argument` naming the fix.
-
-The float witnesses all order with `Float.compare`, whatever their
-equality's tolerance: the tolerance decides what counts as *equal*,
-never what counts as *greater*, so `greater (float 0.01) ~than:1.0 v`
-passes for any `v` strictly above `1.0` — even `1.005`, which the same
-witness calls equal to the bound — and `greater_equal`'s "equal" is
-`Float.compare`'s exact zero, not the tolerance. `Float.compare` also
-places NaN below every float, so a NaN value *passes* `less` and
-`less_equal`: an ordering verb never catches a NaN outcome — assert it
-with `equal float_exact`, the one witness whose equality can say NaN.
 
 ## Options
 

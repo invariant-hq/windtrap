@@ -10,30 +10,13 @@
    lives in Gen, and the two witnesses never merge.
   ---------------------------------------------------------------------------*)
 
-type 'a t = {
-  pp : Format.formatter -> 'a -> unit;
-  equal : 'a -> 'a -> bool;
-  order : ('a -> 'a -> int) option;
-      (* Ordering is optional because most types have none that a test
-         should rely on: a record has no canonical order, and inventing one
-         with [Stdlib.compare] is the footgun [structural] names out loud.
-         The ordering verbs ask for it and say so when it is missing; every
-         other verb ignores it. *)
-}
+type 'a t = { pp : Format.formatter -> 'a -> unit; equal : 'a -> 'a -> bool }
 
 (* Constructors *)
 
-let make ~pp ~equal = { pp; equal; order = None }
-
-(* Order arrives through its own combinator rather than an argument to
-   [make]: an optional before labelled arguments is unerasable (warning
-   16), so [?order] there would force a trailing [()] on every existing
-   call site. This also mirrors [Gen.with_pp] — the capability a witness
-   may or may not carry is attached, not configured. *)
-let with_order order w = { w with order = Some order }
-let structural ~pp = { pp; equal = Stdlib.( = ); order = None }
-let of_equal equal =
-  { pp = (fun ppf _ -> Pp.string ppf "<abstract>"); equal; order = None }
+let make ~pp ~equal = { pp; equal }
+let structural ~pp = { pp; equal = Stdlib.( = ) }
+let of_equal equal = { pp = (fun ppf _ -> Pp.string ppf "<abstract>"); equal }
 
 module type WITNESS = sig
   type t
@@ -43,71 +26,48 @@ module type WITNESS = sig
 end
 
 let of_module (type a) (module M : WITNESS with type t = a) =
-  { pp = M.pp; equal = M.equal; order = None }
+  { pp = M.pp; equal = M.equal }
 
 let contramap f w =
   {
     pp = (fun ppf a -> w.pp ppf (f a));
     equal = (fun a b -> w.equal (f a) (f b));
-    (* Order travels with everything else: comparing users by id means
-       ordering them by id too. *)
-    order = Option.map (fun cmp a b -> cmp (f a) (f b)) w.order;
   }
 
 let pass =
-  {
-    pp = (fun ppf _ -> Pp.string ppf "<pass>");
-    equal = (fun _ _ -> true);
-    order = None;
-  }
+  { pp = (fun ppf _ -> Pp.string ppf "<pass>"); equal = (fun _ _ -> true) }
 
 (* Observers *)
 
 let pp w = w.pp
 let equal w = w.equal
-let order w = w.order
 let to_string w v = Pp.to_string w.pp v
 
 (* Instances *)
 
 let unit =
-  {
-    pp = (fun ppf () -> Pp.string ppf "()");
-    equal = (fun () () -> true);
-    order = None;
-  }
-
-let bool = { pp = Pp.bool; equal = Bool.equal; order = Some Bool.compare }
-let char =
-  { pp = (fun ppf c -> Pp.pf ppf "%C" c); equal = Char.equal;
-    order = Some Char.compare }
-let string =
-  { pp = (fun ppf s -> Pp.pf ppf "%S" s); equal = String.equal;
-    order = Some String.compare }
+  { pp = (fun ppf () -> Pp.string ppf "()"); equal = (fun () () -> true) }
+let bool = { pp = Pp.bool; equal = Bool.equal }
+let char = { pp = (fun ppf c -> Pp.pf ppf "%C" c); equal = Char.equal }
+let string = { pp = (fun ppf s -> Pp.pf ppf "%S" s); equal = String.equal }
 
 (* Verbatim, so a multi-line value keeps its newlines and its failure reaches
    the renderer's unified-diff path instead of two escaped one-liners.
    [string] keeps [%S] because on a single line the quotes are what tell
    [""], [" "] and ["\t"] apart. *)
-let text = { pp = Pp.string; equal = String.equal; order = Some String.compare }
+let text = { pp = Pp.string; equal = String.equal }
 
 let bytes =
   {
     pp = (fun ppf b -> Pp.pf ppf "%S" (Bytes.to_string b));
     equal = Bytes.equal;
-    order = Some Bytes.compare;
   }
 
-let int = { pp = Pp.int; equal = Int.equal; order = Some Int.compare }
-let int32 = { pp = Pp.int32; equal = Int32.equal; order = Some Int32.compare }
-let int64 = { pp = Pp.int64; equal = Int64.equal; order = Some Int64.compare }
-
+let int = { pp = Pp.int; equal = Int.equal }
+let int32 = { pp = Pp.int32; equal = Int32.equal }
+let int64 = { pp = Pp.int64; equal = Int64.equal }
 let nativeint =
-  {
-    pp = (fun ppf n -> Pp.pf ppf "%nd" n);
-    equal = Nativeint.equal;
-    order = Some Nativeint.compare;
-  }
+  { pp = (fun ppf n -> Pp.pf ppf "%nd" n); equal = Nativeint.equal }
 
 let pp_float ppf f = Pp.pf ppf "%g" f
 let is_nan f = FP_nan = classify_float f
@@ -126,7 +86,6 @@ let float_exact =
       (fun a b ->
         (is_nan a && is_nan b)
         || Int64.equal (Int64.bits_of_float a) (Int64.bits_of_float b));
-     order = Some Float.compare;
   }
 
 (* NaN is never equal under the tolerance witnesses: [a = b] is false for
@@ -142,14 +101,7 @@ let float eps =
     invalid_arg
       "Testable.float: eps is not positive; exact equality is spelled \
        float_exact";
-  {
-    pp = pp_float;
-    equal = (fun a b -> a = b || Float.abs (a -. b) <= eps);
-    (* The tolerance is the equality's, not the order's: [greater] asks
-       whether one float exceeds another, and a value inside [eps] of the
-       bound does not. *)
-    order = Some Float.compare;
-  }
+  { pp = pp_float; equal = (fun a b -> a = b || Float.abs (a -. b) <= eps) }
 
 (* Combined tolerance: relative handles large magnitudes, absolute handles
    near-zero values. The relative test requires a finite [max_ab]: with an
@@ -180,7 +132,6 @@ let float_rel ~rel ~abs =
           let diff = Float.abs (a -. b) in
           let max_ab = Float.max (Float.abs a) (Float.abs b) in
           diff <= abs || (Float.is_finite max_ab && diff <= rel *. max_ab));
-     order = Some Float.compare;
   }
 
 (* Containers *)
@@ -194,7 +145,6 @@ let option w =
         | None, None -> true
         | Some a, Some b -> w.equal a b
         | Some _, None | None, Some _ -> false);
-     order = None;
   }
 
 let result ok_w err_w =
@@ -206,7 +156,6 @@ let result ok_w err_w =
         | Ok a, Ok b -> ok_w.equal a b
         | Error a, Error b -> err_w.equal a b
         | Ok _, Error _ | Error _, Ok _ -> false);
-     order = None;
   }
 
 let either left_w right_w =
@@ -221,7 +170,6 @@ let either left_w right_w =
         | Either.Left a, Either.Left b -> left_w.equal a b
         | Either.Right a, Either.Right b -> right_w.equal a b
         | Either.Left _, Either.Right _ | Either.Right _, Either.Left _ -> false);
-    order = None;
   }
 
 let rec equal_list eq a b =
@@ -231,18 +179,13 @@ let rec equal_list eq a b =
   | [], _ :: _ | _ :: _, [] -> false
 
 let list w =
-  {
-    pp = Pp.brackets (Pp.list ~sep:Pp.semi w.pp);
-    equal = equal_list w.equal;
-    order = None;
-  }
+  { pp = Pp.brackets (Pp.list ~sep:Pp.semi w.pp); equal = equal_list w.equal }
 
 let array w =
   {
     pp = (fun ppf arr -> Pp.pf ppf "[|%a|]" (Pp.array ~sep:Pp.semi w.pp) arr);
     equal =
       (fun a b -> Array.length a = Array.length b && Array.for_all2 w.equal a b);
-     order = None;
   }
 
 let slist w cmp =
@@ -253,14 +196,12 @@ let slist w cmp =
        arrival order. *)
     pp = (fun ppf l -> Pp.brackets (Pp.list ~sep:Pp.semi w.pp) ppf (sort l));
     equal = (fun a b -> equal_list w.equal (sort a) (sort b));
-    order = None;
   }
 
 let pair a_w b_w =
   {
     pp = Pp.pair a_w.pp b_w.pp;
     equal = (fun (a1, b1) (a2, b2) -> a_w.equal a1 a2 && b_w.equal b1 b2);
-     order = None;
   }
 
 let triple a_w b_w c_w =
@@ -271,7 +212,6 @@ let triple a_w b_w c_w =
     equal =
       (fun (a1, b1, c1) (a2, b2, c2) ->
         a_w.equal a1 a2 && b_w.equal b1 b2 && c_w.equal c1 c2);
-    order = None;
   }
 
 let quad a_w b_w c_w d_w =
@@ -282,5 +222,4 @@ let quad a_w b_w c_w d_w =
     equal =
       (fun (a1, b1, c1, d1) (a2, b2, c2, d2) ->
         a_w.equal a1 a2 && b_w.equal b1 b2 && c_w.equal c1 c2 && d_w.equal d1 d2);
-    order = None;
   }

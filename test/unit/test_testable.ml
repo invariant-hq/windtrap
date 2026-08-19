@@ -145,43 +145,6 @@ let tests =
            without escapes are still differences it reports. *)
         check_differ "trailing space is a difference" T.text "a" "a ";
         check_differ "trailing newline is a difference" T.text "a" "a\n");
-    (* Ordering is a capability a witness may carry, not a fact about
-       every type: the containers deliberately have none. *)
-    test "order: base types carry one, containers do not" (fun () ->
-        let has name w = is_true ~msg:name (Option.is_some (T.order w)) in
-        let lacks name w = is_true ~msg:name (Option.is_none (T.order w)) in
-        has "int" T.int;
-        has "string" T.string;
-        has "text" T.text;
-        has "char" T.char;
-        has "bytes" T.bytes;
-        has "float_exact" T.float_exact;
-        has "float eps" (T.float 0.5);
-        lacks "unit has no order" T.unit;
-        lacks "list" (T.list T.int);
-        lacks "pair" (T.pair T.int T.int);
-        lacks "option" (T.option T.int);
-        lacks "of_equal" (T.of_equal Int.equal);
-        lacks "pass" T.pass;
-        lacks "make without with_order" point;
-        (* The tolerance decides what is equal, not what is greater: 1.0
-           and 1.2 are equal under [float 0.5] and still ordered. *)
-        (match T.order (T.float 0.5) with
-        | Some cmp ->
-            is_true ~msg:"tolerance-equal floats still order" (cmp 1.0 1.2 < 0)
-        | None -> fail "float lost its order");
-        (* Attached, and carried through contramap. *)
-        let ordered_point = T.with_order (fun a b -> compare a.Point.x b.Point.x) point in
-        (match T.order ordered_point with
-        | Some cmp ->
-            is_true ~msg:"with_order attaches"
-              (cmp { Point.x = 1; y = 9 } { Point.x = 2; y = 0 } < 0)
-        | None -> fail "with_order did not attach");
-        (match T.order (T.contramap (fun (p, _) -> p) ordered_point) with
-        | Some cmp ->
-            is_true ~msg:"contramap carries the order through"
-              (cmp ({ Point.x = 1; y = 0 }, "a") ({ Point.x = 2; y = 0 }, "b") < 0)
-        | None -> fail "contramap dropped the order"));
     test "equality: base types" (fun () ->
         check_equal "unit equal" T.unit () ();
         check_equal "bool equal" T.bool true true;

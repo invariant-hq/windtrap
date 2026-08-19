@@ -321,11 +321,28 @@ val is_false : ?pos:pos -> ?msg:string -> bool -> unit
 (** [is_false b] asserts [not b]. *)
 
 val satisfies :
-  ?pos:pos -> ?msg:string -> 'a testable -> ('a -> bool) -> 'a -> unit
+  ?pos:pos ->
+  ?msg:string ->
+  ?claim:string ->
+  'a testable ->
+  ('a -> bool) ->
+  'a ->
+  unit
 (** [satisfies t pred v] asserts [pred v]. The failure renders [v] with [t]'s
-    printer — the data a bare {!is_true} would hide — and [?msg] names the
-    predicate: [satisfies ~msg:"positive" int (fun n -> n > 0) n]. [pred] must
-    be total; the printer runs only on failure. *)
+    printer — the data a bare {!is_true} would hide — against [claim], the
+    sentence on the expected side (default ["value satisfying the predicate"]):
+
+    {[
+      satisfies ~claim:"greater than 0" int (fun n -> n > 0) n
+      (* expected  greater than 0
+         actual    0 *)
+    ]}
+
+    That is the shape a comparison assertion takes: [is_true (n > 0)] consumes
+    both numbers into a boolean and can only report [true] against [false],
+    where a claim keeps the bound and the value keeps the value. [claim]
+    describes [pred] and nothing checks that it does — keep the two next to
+    each other. [pred] must be total; the printer runs only on failure. *)
 
 val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
 (** [starts_with ~affix s] asserts that [s] begins with [affix]. The failure
@@ -341,34 +358,6 @@ val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
     failure prints the element it wanted and the whole list — the data an
     [is_true (List.mem x xs)] would have thrown away. For a byte substring of a
     string, use {!contains}. *)
-
-val greater : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [greater t ~than:bound v] asserts that [v] is strictly greater than [bound]
-    under [t]'s ordering. The failure prints the bound it wanted and the value
-    it got — [expected greater than 0 / actual 0] — where [is_true (v > 0)]
-    could only print [true] against [false].
-
-    The ordering comes from the witness: every base-type witness carries one,
-    and {!Testable.with_order} attaches one to your own. A witness without an
-    ordering raises [Invalid_argument], failing the test that asked.
-
-    The float witnesses order with [Float.compare] whatever their equality's
-    tolerance: the tolerance decides what counts as equal, never what counts
-    as greater, so a value within [eps] above the bound is still strictly
-    greater, and {!greater_equal}'s "equal" is [Float.compare]'s exact zero,
-    not the tolerance. [Float.compare] places NaN below every float, so a NaN
-    value {e passes} {!less} and {!less_equal} — an ordering verb never
-    catches a NaN outcome; assert it with {!equal} {!float_exact}. *)
-
-val greater_equal :
-  ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [greater_equal] is {!greater} with equality allowed. *)
-
-val less : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [less t ~than:bound v] asserts that [v] is strictly less than [bound]. *)
-
-val less_equal : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
-(** [less_equal] is {!less} with equality allowed. *)
 
 val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
 (** [is_none o] asserts that [o] is [None]. On [Some v] the failure renders [v]
