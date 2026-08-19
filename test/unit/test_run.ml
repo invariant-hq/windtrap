@@ -32,8 +32,8 @@ let make_run () =
     ~snapshots:(Snapshot.create ~mode:Snapshot.Check ())
 
 (* Run [fn] as one scripted test attempt of [run]. *)
-let in_test ?(path = [ "suite"; "t" ]) ?file run fn =
-  let frame = Run.frame run ~path ~file ~loc:None in
+let in_test ?(path = [ "suite"; "t" ]) ?loc run fn =
+  let frame = Run.frame run ~path ~loc in
   Run.with_frame frame (fun () -> fn frame)
 
 (* Configuration *)
@@ -70,12 +70,8 @@ let () =
 
 let () =
   let run = make_run () in
-  let frame =
-    Run.frame run ~path:[ "g"; "t" ] ~file:(Some "test/test_g.ml") ~loc:None
-  in
+  let frame = Run.frame run ~path:[ "g"; "t" ] ~loc:None in
   check "frame records its path" (Run.path frame = [ "g"; "t" ]);
-  check "frame records its declaration file"
-    (Run.file frame = Some "test/test_g.ml");
   check "frame belongs to its run" (Run.run_of_frame frame == run);
   check "frame starts with no failures" (Run.failures frame = []);
   check "frame starts with no property context" (Run.prop_context frame = None);
@@ -98,10 +94,7 @@ let elsewhere = { Loc.file = "test/helper.ml"; line = 9; column = 0 }
 
 let () =
   let run = make_run () in
-  let frame =
-    Run.frame run ~path:[ "t" ] ~file:(Some "test/test_g.ml")
-      ~loc:(Some declared)
-  in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:(Some declared) in
   check "frame records its declaration location" (Run.loc frame = Some declared);
   (* A failure without a location — its failing call sat in tail position —
      is attributed to the declaration. *)
@@ -126,7 +119,7 @@ let () =
         | Failure.Property { inner = Some i; _ } -> i.Failure.loc = None
         | _ -> false)
   | _ -> check "location fallback failures shape" false);
-  let bare = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let bare = Run.frame run ~path:[ "t" ] ~loc:None in
   Run.add_failure bare (Failure.message "nowhere");
   match Run.failures bare with
   | [ f ] ->
@@ -188,8 +181,8 @@ let () =
   (* Nesting restores the previous frame — with_frame is save/restore, not
      assign/clear. *)
   let run = make_run () in
-  let outer = Run.frame run ~path:[ "outer" ] ~file:None ~loc:None in
-  let inner = Run.frame run ~path:[ "inner" ] ~file:None ~loc:None in
+  let outer = Run.frame run ~path:[ "outer" ] ~loc:None in
+  let inner = Run.frame run ~path:[ "inner" ] ~loc:None in
   Run.with_frame outer (fun () ->
       Run.with_frame inner (fun () ->
           check "inner frame is current inside" (Run.current_frame () == inner));
@@ -522,7 +515,7 @@ let () =
 
 let () =
   let run = make_run () in
-  let frame = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
   Run.with_frame frame (fun () ->
       let d1 = Run.temp_dir () in
       let d2 = Run.temp_dir ~prefix:"repo" () in
@@ -553,7 +546,7 @@ let () =
 
 let () =
   let run = make_run () in
-  let frame = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
   let paths =
     Run.with_frame frame (fun () ->
         let d = Run.temp_dir () in
@@ -574,7 +567,7 @@ let () =
   (* Exception safety: paths created before a raising body are still
      removable — the runner reclaims on every path it controls. *)
   let run = make_run () in
-  let frame = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
   let created = ref "" in
   (match
      Run.with_frame frame (fun () ->
@@ -592,7 +585,7 @@ let () =
 let () =
   (* A hostile prefix/suffix cannot escape the scratch directory. *)
   let run = make_run () in
-  let frame = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
   Run.with_frame frame (fun () ->
       let d = Run.temp_dir ~prefix:"../evil" () in
       let f = Run.temp_file ~suffix:"/evil" () in
@@ -610,7 +603,7 @@ let () =
      other access anywhere in the scratch tree (0o700 directories, 0o600
      files, modulo the caller's umask which can only tighten them). *)
   let run = make_run () in
-  let frame = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
   Run.with_frame frame (fun () ->
       let d = Run.temp_dir () in
       let f = Run.temp_file () in
@@ -627,10 +620,10 @@ let () =
   (* Fresh frames get fresh scratch directories: retries never see a
      previous attempt's files. *)
   let run = make_run () in
-  let first = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let first = Run.frame run ~path:[ "t" ] ~loc:None in
   let d1 = Run.with_frame first (fun () -> Run.temp_dir ()) in
   Run.reclaim first;
-  let second = Run.frame run ~path:[ "t" ] ~file:None ~loc:None in
+  let second = Run.frame run ~path:[ "t" ] ~loc:None in
   let d2 = Run.with_frame second (fun () -> Run.temp_dir ()) in
   check "a later attempt gets a fresh scratch directory" (d1 <> d2);
   Run.reclaim second

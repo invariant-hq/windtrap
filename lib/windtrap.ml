@@ -193,7 +193,9 @@ let cover label cond = Property.cover (prop_context "cover") label cond
 let snapshot_check ?pos name actual =
   let frame = Run.current_frame () in
   let scope =
-    match pos with Some (file, _, _, _) -> Some file | None -> Run.file frame
+    match pos with
+    | Some (file, _, _, _) -> Some file
+    | None -> Option.map (fun (l : Loc.t) -> l.Loc.file) (Run.loc frame)
   in
   (* Site ladder: explicit pos, else surviving call frame, else the checking
      test's declaration — display and duplicate-identity data only; the

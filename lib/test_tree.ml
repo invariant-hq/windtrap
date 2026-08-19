@@ -4,7 +4,7 @@
 
    The tree shape and traversal derive from windtrap v1's lib/test.ml,
    rebuilt without group hooks, with bracket kept as data, and with
-   declaration-file capture for snapshot scoping.
+   declaration-location capture for snapshot scoping.
   ---------------------------------------------------------------------------*)
 
 type body =
@@ -24,7 +24,6 @@ type t =
       name : string;
       body : body;
       loc : Loc.t option;
-      file : string option;
       tags : Tag.t;
       timeout : float option;
       retries : int;
@@ -51,25 +50,21 @@ let check_timeout = function
 let check_retries retries =
   if retries < 0 then invalid_arg "windtrap: retries must be non-negative"
 
-(* Declaration location and file. [?pos] wins; the backtrace fallback is
-   best-effort and can attribute to the wrong frame when the constructor
-   call was reached through tail calls (documented in the interface). The
-   [let] keeps the capture out of tail position. *)
-let declared_at pos =
-  let loc = Loc.resolve ?pos () in
-  let file = Option.map (fun (l : Loc.t) -> l.Loc.file) loc in
-  (loc, file)
+(* Declaration location: [?pos] wins, and the backtrace fallback is
+   best-effort — it can attribute to the wrong frame when the constructor
+   call was reached through tail calls (documented in the interface).
+   Every constructor binds it with a [let], which keeps the capture out of
+   tail position. *)
 
 let make_test ?pos ?(tags = []) ?timeout ?(retries = 0) ~focused name body =
   check_timeout timeout;
   check_retries retries;
-  let loc, file = declared_at pos in
+  let loc = Loc.resolve ?pos () in
   Test
     {
       name;
       body;
       loc;
-      file;
       tags = Tag.of_list tags;
       timeout;
       retries;
@@ -100,8 +95,6 @@ let scoped scope ?pos ?tags ?timeout ?retries name fn =
     (Scoped { scope; body = fn })
 
 let make_group ?pos ?(tags = []) ~focused name children =
-  (* Groups record a location (for focus sites) but no declaration file:
-     snapshot scoping reads the leaf test's own file. *)
   let loc = Loc.resolve ?pos () in
   Group { name; children; loc; tags = Tag.of_list tags; focused; xfail = None }
 
@@ -115,7 +108,7 @@ let cases ?pos ?(tags = []) ?timeout ?(retries = 0) ?name:name_of base inputs fn
     =
   check_timeout timeout;
   check_retries retries;
-  let loc, file = declared_at pos in
+  let loc = Loc.resolve ?pos () in
   let child index input =
     let child_name =
       match name_of with
@@ -127,7 +120,6 @@ let cases ?pos ?(tags = []) ?timeout ?(retries = 0) ?name:name_of base inputs fn
         name = child_name;
         body = Body (fun () -> fn input);
         loc;
-        file;
         tags = Tag.empty;
         timeout;
         retries;
@@ -197,7 +189,6 @@ type case = {
   path : string list;
   body : body;
   loc : Loc.t option;
-  file : string option;
   tags : Tag.t;
   focused : bool;
   timeout : float option;
@@ -218,7 +209,6 @@ let flatten tests =
           path = List.rev (t.name :: rev_groups);
           body = t.body;
           loc = t.loc;
-          file = t.file;
           tags = Tag.union inherited t.tags;
           focused = ancestor || t.focused;
           timeout = t.timeout;

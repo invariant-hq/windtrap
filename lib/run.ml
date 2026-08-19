@@ -182,7 +182,6 @@ type env_restore = {
 type frame = {
   owner : t;
   fr_path : string list;
-  fr_file : string option;
   fr_loc : Loc.t option; (* declaration site: the location fallback *)
   mutable fr_prop : Property.context option;
   mutable fr_rev_failures : Failure.t list;
@@ -193,11 +192,10 @@ type frame = {
   mutable fr_cwd : (string * Loc.t option) option; (* dir at the first chdir *)
 }
 
-let frame t ~path ~file ~loc =
+let frame t ~path ~loc =
   {
     owner = t;
     fr_path = path;
-    fr_file = file;
     fr_loc = loc;
     fr_prop = None;
     fr_rev_failures = [];
@@ -210,7 +208,6 @@ let frame t ~path ~file ~loc =
 
 let run_of_frame frame = frame.owner
 let path frame = frame.fr_path
-let file frame = frame.fr_file
 let loc frame = frame.fr_loc
 
 let add_failure frame failure =

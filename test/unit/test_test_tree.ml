@@ -196,16 +196,14 @@ let () =
         ~expected:"test/fake_g.ml" ~actual:lg.Loc.file
   | _ -> check "focus_sites shape (declaration order, kinds, locs)" false
 
-(* Declaration files *)
+(* Declaration sites *)
 
 let () =
-  reg "?pos wins for the declaration file" @@ fun () ->
+  reg "?pos wins for the declaration site" @@ fun () ->
   let pos = ("src/elsewhere.ml", 12, 0, 8) in
   match T.flatten [ T.test ~pos "t" nop ] with
   | [ c ] ->
-      check "?pos wins for the declaration file"
-        (c.T.file = Some "src/elsewhere.ml");
-      check "?pos wins for the location"
+      check "?pos wins for the declaration site"
         (match c.T.loc with
         | Some loc -> loc.Loc.file = "src/elsewhere.ml" && loc.Loc.line = 12
         | None -> false)
@@ -216,22 +214,22 @@ let () =
   match T.flatten [ T.test "t" nop ] with
   | [ c ] ->
       check "backtrace fallback records this file"
-        (match c.T.file with
-        | Some file -> Filename.basename file = "test_test_tree.ml"
+        (match c.T.loc with
+        | Some loc -> Filename.basename loc.Loc.file = "test_test_tree.ml"
         | None -> false)
   | _ -> check "backtrace flatten shape" false
 
 let () =
-  reg "nested tests keep their own declaration file" @@ fun () ->
-  (* The declaration file belongs to the test, not its group: a child keeps
+  reg "nested tests keep their own declaration site" @@ fun () ->
+  (* The declaration site belongs to the test, not its group: a child keeps
      its own capture even when nested. *)
   match T.flatten [ T.group "g" [ T.test "t" nop ] ] with
   | [ c ] ->
-      check "nested test still records its own declaration file"
-        (match c.T.file with
-        | Some file -> Filename.basename file = "test_test_tree.ml"
+      check "nested test still records its own declaration site"
+        (match c.T.loc with
+        | Some loc -> Filename.basename loc.Loc.file = "test_test_tree.ml"
         | None -> false)
-  | _ -> check "nested declaration-file shape" false
+  | _ -> check "nested declaration-site shape" false
 
 (* cases *)
 
@@ -283,9 +281,12 @@ let () =
   let flat = T.flatten [ T.cases ~pos ~tags:[ "tbl" ] "c" [ 0; 1 ] ignore ] in
   check "cases tags reach every sub-test"
     (List.for_all (fun (c : T.case) -> Tag.mem "tbl" c.T.tags) flat);
-  check "cases sub-tests share the declaration file"
+  check "cases sub-tests share the declaration site"
     (List.for_all
-       (fun (c : T.case) -> c.T.file = Some "test/fake_cases.ml")
+       (fun (c : T.case) ->
+         match c.T.loc with
+         | Some loc -> loc.Loc.file = "test/fake_cases.ml"
+         | None -> false)
        flat);
   check "cases with no inputs flattens to nothing"
     (T.flatten [ T.cases "empty" [] ignore ] = [])
@@ -356,7 +357,8 @@ let () =
       check "bracket records tags" (Tag.mem "db" c.T.tags);
       check "bracket records timeout" (c.T.timeout = Some 1.5);
       check_int "bracket records retries" ~expected:2 ~actual:c.T.retries;
-      check "bracket records the declaration file" (c.T.file = Some "f.ml")
+      check "bracket records the declaration site"
+        (match c.T.loc with Some loc -> loc.Loc.file = "f.ml" | None -> false)
   | _ -> check "bracket metadata shape" false
 
 (* scoped *)
@@ -397,7 +399,8 @@ let () =
       check "scoped records tags" (Tag.mem "eio" c.T.tags);
       check "scoped records timeout" (c.T.timeout = Some 1.5);
       check_int "scoped records retries" ~expected:2 ~actual:c.T.retries;
-      check "scoped records the declaration file" (c.T.file = Some "f.ml")
+      check "scoped records the declaration site"
+        (match c.T.loc with Some loc -> loc.Loc.file = "f.ml" | None -> false)
   | _ -> check "scoped metadata shape" false
 
 let () =

@@ -22,15 +22,14 @@
     Duplicate full paths are a startup error detected by the runner; the tree
     only makes paths derivable.
 
-    {b Declaration files.} Each test records the source file it was declared in,
-    consumed by snapshot scoping ({!Snapshot.check}): a [snapshot] call without
-    [~pos] scopes its baseline by the enclosing test's declaration file. The
-    file comes from the constructor's [?pos] when given, and otherwise from a
-    best-effort walk of the call stack at declaration time ({!Loc.capture}) —
-    never from backtrace frames at snapshot {e call} time. The fallback can
-    mis-attribute when the constructor call is reached through tail calls (the
-    declaring frame is gone), so helpers that wrap constructors should thread
-    [?pos] through. *)
+    {b Declaration sites.} Each test records where it was declared, from the
+    constructor's [?pos] when given and otherwise from a best-effort walk of the
+    call stack at declaration time ({!Loc.capture}). Snapshot scoping reads its
+    file ({!Snapshot.check}), so a [snapshot] call without [~pos] keys its
+    baseline by the enclosing test's source file, never by a backtrace frame at
+    snapshot {e call} time. The fallback can mis-attribute when the constructor
+    call is reached through tail calls (the declaring frame is gone), so helpers
+    that wrap constructors should thread [?pos] through. *)
 
 (** {1:trees Trees} *)
 
@@ -67,8 +66,8 @@ type body =
     Constructor arguments common to several constructors:
 
     - [pos] is the declaration position ([__POS__]). It records the node's
-      location and declaration file; when omitted both are captured from the
-      call stack, best effort (see the module preamble).
+      location; when omitted it is captured from the call stack, best effort
+      (see the module preamble).
     - [tags] are extra tag names for the node, unioned with ancestors' tags at
       {!flatten} time. Defaults to [[]].
     - [timeout] is the per-test limit in seconds, covering setup, body, and
@@ -137,7 +136,7 @@ val cases :
     [fn input]. The child is named [render input] when [render] is given —
     applied at declaration time — and ["<name>.<i>"] otherwise, making each
     sub-test individually selectable by path filter. All children share the
-    [cases] call's declaration position and file, and each child runs under
+    [cases] call's declaration position, and each child runs under
     [timeout] and [retries] — per child, not per table: every input gets the
     full budget. *)
 
@@ -224,8 +223,8 @@ val prune : (string list -> bool) -> t list -> t list
     Surviving nodes are kept verbatim, so their paths, tags, focus flags,
     declaration sites and bodies are exactly the ones an unpruned run would use
     — per-case seed derivation ({!Seed.derive} over the path) and snapshot
-    scoping (over the declaration file) are therefore identical between a full
-    run and a narrowed one.
+    scoping (over the declaration site's file) are therefore identical between a
+    full run and a narrowed one.
 
     This is not a second selection layer: {!Runner.execute} selects with the
     filters, tags, shard and allowlist of its {!Run.config}, and nothing in this
@@ -241,9 +240,9 @@ type case = {
       (** The test's full path: enclosing group names root-first, then the
           test's own name. Never empty. *)
   body : body;  (** The stored body (see {!type:body}). *)
-  loc : Loc.t option;  (** The declaration location, when known. *)
-  file : string option;
-      (** The declaration file (compile-time path), for snapshot scoping. *)
+  loc : Loc.t option;
+      (** The declaration site, when known; its file is what snapshot scoping
+          keys on. *)
   tags : Tag.t;  (** Effective tags: the node's own unioned with ancestors'. *)
   focused : bool;  (** [true] iff the test or any ancestor is focused. *)
   timeout : float option;  (** The declared per-test limit, seconds. *)

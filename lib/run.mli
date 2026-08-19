@@ -144,22 +144,18 @@ type frame
     the frame's run gives ambient operations the capture, snapshot, and fixture
     state. *)
 
-val frame :
-  t -> path:string list -> file:string option -> loc:Loc.t option -> frame
-(** [frame t ~path ~file ~loc] is a fresh frame for one attempt of the test at
-    [path] (as flattened by [Test_tree.flatten]), declared in [file] — the
-    snapshot-scoping input ({!Snapshot.check}'s [~scope] fallback) — at [loc];
-    [loc] is the fallback attribution for failures recorded without a location.
-*)
+val frame : t -> path:string list -> loc:Loc.t option -> frame
+(** [frame t ~path ~loc] is a fresh frame for one attempt of the test at [path]
+    (as flattened by [Test_tree.flatten]), declared at [loc] — the fallback
+    attribution for failures recorded without a location, and the
+    snapshot-scoping input ({!Snapshot.check}'s [~scope] fallback reads its
+    file). *)
 
 val run_of_frame : frame -> t
 (** [run_of_frame frame] is the run record [frame] belongs to. *)
 
 val path : frame -> string list
 (** [path frame] is the executing test's full path, groups first. *)
-
-val file : frame -> string option
-(** [file frame] is the executing test's declaration file, when known. *)
 
 val loc : frame -> Loc.t option
 (** [loc frame] is the test's declaration location, as passed to {!frame}. *)

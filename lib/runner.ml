@@ -442,7 +442,7 @@ let run_case ~on_event run (case : Test_tree.case) =
   let total_attempts = case.Test_tree.retries + 1 in
   let rec attempt number spent =
     let frame =
-      Run.frame run ~path:case.Test_tree.path ~file:case.Test_tree.file
+      Run.frame run ~path:case.Test_tree.path
         ~loc:case.Test_tree.loc
     in
     let start = Clock.counter () in
