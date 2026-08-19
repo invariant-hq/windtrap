@@ -74,11 +74,9 @@ let discover paths = Data_files.discover ~dir:"_mutants" ~ext:"mutants" paths
    one not written by the executable now on disk — a re-run made without
    --instrument-with, or a run dune replayed from cache.
 
-   There is no --stale override here, and the asymmetry with coverage is
-   deliberate. A stale coverage dump understates what the suite reaches;
-   a stale verdict can claim a kill the code no longer earns, and a false
-   kill hides a live defect. Excluding is the only answer that cannot
-   lie. *)
+   A flagged verdict file is excluded, never merged: a stale verdict can
+   claim a kill the code no longer earns, and a false kill hides a live
+   defect. Excluding is the only answer that cannot lie. *)
 
 let stale_hint =
   "a re-run made without --instrument-with ppx_windtrap.mutate, or a mutation \

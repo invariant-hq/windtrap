@@ -134,9 +134,9 @@ whose executable was deleted (orphans) or rebuilt since the dump —
 typically a re-run made without `--instrument-with`, or a dune cache hit
 replaying an older binary; the warning names the remedy
 (`dune build @cover --force --instrument-with ppx_windtrap.coverage`).
-`--stale include|exclude|fail` overrides (default `exclude`). Foreign
-format versions fail with a delete instruction: re-running never removes
-stale-named files.
+There is no override: a total computed from a dump that describes another
+build can only mislead. Foreign format versions fail with a delete
+instruction: re-running never removes stale-named files.
 
 ### Declared-output aggregation (escape hatch)
 

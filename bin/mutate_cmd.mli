@@ -56,11 +56,10 @@ val run : string list -> int
     survivors without excerpts. Excerpts are best-effort throughout — a survivor
     whose source cannot be read still names its file, line and rewrite.
 
-    An orphaned or outdated verdict file is excluded and warned about, and
-    unlike coverage's [--stale] there is no override: a coverage dump from a
-    previous build understates the truth, while a verdict from one can claim a
-    kill the code no longer earns, and a false kill hides a live defect where a
-    false survivor merely wastes a reader's time. The warning names the remedy
+    An orphaned or outdated verdict file is excluded and warned about, never
+    merged: a verdict from a previous build can claim a kill the code no longer
+    earns, and a false kill hides a live defect where a false survivor merely
+    wastes a reader's time. The warning names the remedy
     the exclusion actually has, and the two are not interchangeable: a forced
     re-run rewrites an {e outdated} verdict, while an {e orphan} — one whose
     recorded executable no longer exists — is a leftover that no run can replace

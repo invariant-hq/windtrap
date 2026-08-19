@@ -27,19 +27,14 @@ directories searched recursively) replace that default.
 
 OPTIONS:
   --min PCT             Exit 1 when total coverage is below PCT
-  --stale MODE          Dumps whose executable is gone or was rebuilt since:
-                        exclude (default; warns), include, or fail
   --json                Machine-readable report on standard output
   -u, --show-uncovered  Also render uncovered source excerpts
   -h, --help            Print this help and exit|}
 
 (* Flags *)
 
-type stale_mode = Exclude | Include | Fail
-
 type options = {
   min : float option;
-  stale : stale_mode;
   json : bool;
   show_uncovered : bool;
   paths : string list;
@@ -50,24 +45,11 @@ let min_of_string value =
   | Some pct when Float.is_finite pct && 0. <= pct && pct <= 100. -> Some pct
   | _ -> None
 
-let stale_of_string = function
-  | "exclude" -> Some Exclude
-  | "include" -> Some Include
-  | "fail" -> Some Fail
-  | _ -> None
-
 let parse_args args =
   let min_error value =
     Error
       (`Usage
          (spf "invalid value '%s' for --min: expected a percentage (0-100)"
-            value))
-  in
-  let stale_error value =
-    Error
-      (`Usage
-         (spf
-            "invalid value '%s' for --stale: expected include, exclude or fail"
             value))
   in
   let rec go acc = function
@@ -84,17 +66,6 @@ let parse_args args =
         match min_of_string value with
         | Some pct -> go { acc with min = Some pct } rest
         | None -> min_error value)
-    | "--stale" :: value :: rest -> (
-        match stale_of_string value with
-        | Some stale -> go { acc with stale } rest
-        | None -> stale_error value)
-    | [ "--stale" ] -> Error (`Usage "option '--stale' requires an argument")
-    | arg :: rest when String.length arg >= 8 && String.sub arg 0 8 = "--stale="
-      -> (
-        let value = String.sub arg 8 (String.length arg - 8) in
-        match stale_of_string value with
-        | Some stale -> go { acc with stale } rest
-        | None -> stale_error value)
     | "--json" :: rest -> go { acc with json = true } rest
     | ("-u" | "--show-uncovered") :: rest ->
         go { acc with show_uncovered = true } rest
@@ -102,15 +73,7 @@ let parse_args args =
         Error (`Usage (spf "unknown option '%s'" arg))
     | path :: rest -> go { acc with paths = path :: acc.paths } rest
   in
-  go
-    {
-      min = None;
-      stale = Exclude;
-      json = false;
-      show_uncovered = false;
-      paths = [];
-    }
-    args
+  go { min = None; json = false; show_uncovered = false; paths = [] } args
 
 (* Discovery: Data_files's, shared with `windtrap mutate` — the project
    root resolved as the runtime resolves its dump path, explicit PATH
@@ -133,16 +96,19 @@ let discover paths = Data_files.discover ~dir:"_coverage" ~ext:"coverage" paths
    stays a different build's, and plain re-runs stay cache hits, so only
    a forced run heals it — hence the remedy below). Detection is
    Data_files.freshness's, from the identity recorded in each dump; the
-   --stale policy and the wording of the remedies are this command's. *)
+   exclusion and the wording of the remedies are this command's. A flagged
+   dump is always excluded and always named: there is no override,
+   because a number computed from a dump known to describe another build
+   can only mislead. *)
 
 let stale_hint =
   "a re-run made without --instrument-with ppx_windtrap.coverage, or a cached test \
    dune did not re-run"
 
-(* Loads [files], applies the --stale policy, and merges the survivors.
-   Warnings and failure details go to stderr; [Error code] is the exit
-   code (the matrix is unchanged: data problems are 1). *)
-let load_merged ~stale files =
+(* Loads [files], excludes the ones the freshness pass flagged, and
+   merges the survivors. Warnings and failure details go to stderr;
+   [Error code] is the exit code (data problems are 1). *)
+let load_merged files =
   let loaded =
     List.fold_left
       (fun acc path ->
@@ -159,14 +125,8 @@ let load_merged ~stale files =
       Error 1
   | Ok entries -> (
       let entries = List.rev entries in
-      let flagged =
-        List.filter (fun (_, _, v) -> v <> Data_files.Fresh) entries
-      in
-      let kept =
-        match stale with
-        | Include | Fail -> entries
-        | Exclude ->
-            List.filter (fun (_, _, v) -> v = Data_files.Fresh) entries
+      let kept, flagged =
+        List.partition (fun (_, _, v) -> v = Data_files.Fresh) entries
       in
       (* Per-file detail is what a reader wants when a dump or two is
          stale among many: it names the executable and the reason, and
@@ -181,15 +141,8 @@ let load_merged ~stale files =
       List.iteri
         (fun i (path, _, v) ->
           if i < detail_cap then
-            let action =
-              match stale with
-              | Exclude -> "excluding it (--stale=include overrides)"
-              | Include -> "including it anyway (--stale=include)"
-              | Fail -> "failing (--stale=fail)"
-            in
-            Printf.eprintf "windtrap coverage: %s; %s\n%!"
-              (Data_files.describe ~stale_hint ~path v)
-              action)
+            Printf.eprintf "windtrap coverage: %s; excluding it\n%!"
+              (Data_files.describe ~stale_hint ~path v))
         flagged;
       if flagged_count > detail_cap then
         Printf.eprintf "windtrap coverage: ... and %d more like that\n%!"
@@ -209,8 +162,7 @@ let load_merged ~stale files =
           "windtrap coverage: a forced run rewrites stale dumps: dune build \
            @cover --force --instrument-with ppx_windtrap.coverage\n\
            %!";
-      if stale = Fail && flagged <> [] then Error 1
-      else if kept = [] then begin
+      if kept = [] then begin
         let orphans =
           List.length
             (List.filter
@@ -232,8 +184,7 @@ let load_merged ~stale files =
            Re-run the instrumented tests, naming the backend your \
            (instrumentation) stanza uses:\n\
           \  dune build @cover --force --instrument-with ppx_windtrap.coverage\n\
-           (--stale=include reads them anyway; dune clean removes leftovers \
-           of deleted executables.)\n\
+           (dune clean removes leftovers of deleted executables.)\n\
            %!"
           total
           (if total = 1 then "" else "s")
@@ -359,7 +310,7 @@ let run args =
             1
           end
           else
-            match load_merged ~stale:options.stale files with
+            match load_merged files with
             | Error code -> code
             | Ok collection ->
                 if options.json then print_json ~source_roots collection

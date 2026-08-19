@@ -10,7 +10,7 @@
    flag-over-env precedence and loud rejection of malformed modes, the
    at_exit dump feeding the reporting command, `windtrap coverage` end
    to end (walk-up discovery, merge across two executables, the
-   orphan/stale matrix with --stale overrides, --min matrix, --json
+   orphan/stale matrix, --min matrix, --json
    shape, --show-uncovered, loud failures), and the grep-based Law-12
    budget over lib/. A windtrap suite ([run] executes tests sequentially
    in declaration order); every subject under test is a spawned child
@@ -855,9 +855,9 @@ let explicit_path_contract =
    only `--force` heals it). Both are detected from the recorded
    identity; staleness is a content comparison — the recorded digest
    against the executable now on disk — because dune's cache restores
-   rebuilt artifacts with their original mtimes. Warned-and-excluded by
-   default; --stale overrides. Identity-less dumps (the fixtures above)
-   are never flagged. *)
+   rebuilt artifacts with their original mtimes. Both are warned about
+   and excluded, always: there is no override. Identity-less dumps (the
+   fixtures above) are never flagged. *)
 
 let ghost_points = [| { C.start_ofs = 0; end_ofs = 9 } |]
 
@@ -908,18 +908,8 @@ let staleness_pass =
   check_contains "the orphan warning names the dump" ~needle:"gone.coverage" err;
   check_contains "the orphan warning names the missing executable"
     ~needle:"default/test/gone.exe" err;
-  check_contains "the orphan warning names the override"
-    ~needle:"--stale=include" err;
-  (* --stale=include keeps it, still loudly. *)
-  let code, out, err = coverage_cmd ~cwd:root [ "--stale=include" ] in
-  check_int "--stale=include exits 0" ~expected:0 ~actual:code;
-  check_contains "--stale=include merges the orphan"
-    ~needle:"coverage: 75.0% (3/4 points)" out;
-  check_contains "--stale=include still warns" ~needle:"gone.coverage" err;
-  (* --stale=fail turns it into the exit code. *)
-  let code, _, err = coverage_cmd ~cwd:root [ "--stale"; "fail" ] in
-  check_int "--stale=fail exits 1 on an orphan" ~expected:1 ~actual:code;
-  check_contains "--stale=fail names the dump" ~needle:"gone.coverage" err;
+  check_contains "the orphan warning says what it did"
+    ~needle:"excluding it" err;
   (* Stale: the executable was rebuilt since the dump — its content no
      longer matches the recorded digest (its mtime is irrelevant). *)
   let root = stale_root "stale-rebuilt" in
@@ -939,10 +929,6 @@ let staleness_pass =
   check_contains "excluding everything is loud" ~needle:"and every one is" err;
   check_contains "the all-excluded remedy is a forced run"
     ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage" err;
-  let code, out, _ = coverage_cmd ~cwd:root [ "--stale=include" ] in
-  check_int "--stale=include reports the stale dump" ~expected:0 ~actual:code;
-  check_contains "--stale=include merges the stale dump"
-    ~needle:"coverage: 100.0% (3/3 points)" out;
   (* Stale beside fresh — the revert trap, measured against the blessed
      alias: reverting sources to an already-tested state makes that
      test action a dune cache hit, so its dump is never rewritten and
@@ -978,11 +964,12 @@ let staleness_pass =
   check_contains "a missing absolute identity is an orphan"
     ~needle:"no-such-exe" err;
   check_absent "the absolute orphan is excluded" ~needle:"ghost.ml" out;
-  (* Usage rail. *)
-  let code, _, err = coverage_cmd ~cwd:root [ "--stale"; "sideways" ] in
-  check_int "a malformed --stale exits 2" ~expected:2 ~actual:code;
-  check_contains "a malformed --stale names the vocabulary"
-    ~needle:"include, exclude or fail" err
+  (* Usage rail: the flag is gone, and an unknown flag is a usage
+     error, never a silently ignored argument. *)
+  let code, _, err = coverage_cmd ~cwd:root [ "--stale=include" ] in
+  check_int "--stale is no longer an option" ~expected:2 ~actual:code;
+  check_contains "--stale is reported as unknown"
+    ~needle:"unknown option '--stale=include'" err
 
 (* The inline line's sibling hint (aggregation design, E6) *)
 

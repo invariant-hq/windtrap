@@ -10,9 +10,9 @@
     instrumented test executable. This module is their shared half — resolving
     the project root as the runtimes resolve their output paths, walking
     directories, expanding explicit [PATH] arguments, and judging each file's
-    freshness from the writer identity it records. What to do about a stale
-    file stays with each command: coverage's [--stale] policy and mutation's
-    exclude-always are different decisions, deliberately. *)
+    freshness from the writer identity it records. Both commands exclude a
+    flagged file and warn; the wording of the warning and of the remedy stays
+    with each command. *)
 
 val discover :
   dir:string ->

@@ -601,10 +601,9 @@ arguments (`.mutants` files, or directories searched recursively)
 replace the default search, and naming a missing file, or one without
 the `.mutants` suffix, is a loud error naming the path — never a silent
 narrowing of the merge. A verdict file whose executable was deleted or
-rebuilt since the run is excluded with a warning and, unlike coverage's
-`--stale`, without an override: a stale verdict can claim a kill the code
-no longer earns, and a false kill hides a live defect where a false
-survivor merely wastes time.
+rebuilt since the run is excluded with a warning, never merged: a stale
+verdict can claim a kill the code no longer earns, and a false kill hides
+a live defect where a false survivor merely wastes time.
 
 Two runs feed the merge nothing. One is the admission run above, which
 writes no verdict file at all. The other is the survey run that narrowed

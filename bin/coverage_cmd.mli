@@ -9,11 +9,14 @@
     [_build/_coverage] (resolving the project root as the runtime does — the
     parent of the topmost [_build] component of the current directory, else the
     nearest ancestor with a [_build/_coverage]), or under explicit [PATH]
-    arguments; excludes dumps whose recorded executable was deleted or rebuilt
-    since the run (overridable with [--stale]); merges the rest — loudly
+    arguments; excludes, with a warning naming each one, dumps whose recorded
+    executable was deleted or rebuilt since the run; merges the rest — loudly
     rejecting foreign formats and mismatched point tables — and renders the
     merged per-file report through the library renderer. [--min] gates CI;
-    [--json] is the machine-readable artifact. *)
+    [--json] is the machine-readable artifact.
+
+    The exclusion has no override, deliberately: a total computed from a dump
+    known to describe another build is a number that can only mislead. *)
 
 val run : string list -> int
 (** [run args] executes the subcommand on [args] (the arguments after
@@ -23,9 +26,9 @@ val run : string list -> int
     - [1] — no [.coverage] files were found; an explicit [PATH] argument named a
       missing file or a file without the [.coverage] suffix; a file was
       unreadable, corrupt, of a foreign format version, or carried a mismatched
-      point table; every file was orphaned or stale; an orphaned or stale dump
-      was found under [--stale fail]; or total coverage fell below [--min];
-    - [2] — usage error (unknown flag, malformed [--min] or [--stale]).
+      point table; every file was orphaned or stale; or total coverage fell
+      below [--min];
+    - [2] — usage error (unknown flag, malformed [--min]).
 
     Explicit [PATH] arguments are a contract: a file argument must exist and
     carry the [.coverage] suffix, and a violation is an error naming the path
