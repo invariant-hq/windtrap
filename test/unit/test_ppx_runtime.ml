@@ -28,6 +28,11 @@ open Harness
    keeps the suite's spelling as short as the module's old home did. *)
 module Ppx_runtime = Ppx_windtrap_runtime.Ppx_runtime
 
+(* The runtime's test-only surface: normalization, collection, the
+   correction writer, the flush and the exit protocol. This suite is its
+   only caller, which is why it lives behind Private. *)
+module Private = Ppx_runtime.Private
+
 let () = init "ppx_runtime"
 
 (* Temp roots and config *)
@@ -118,11 +123,11 @@ type scenario = {
 
 let run_scenario ?(sanitize = fun s -> s) ?(run = fun f -> f ())
     ?(tweak_config = fun c -> c) ?body_wrap ~source ~nodes ~name body =
-  Ppx_runtime.reset ();
+  Private.reset ();
   let body_loc, trailing_loc = body_locs source in
   Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[] ~run ~sanitize ~nodes
     ~body_loc ~body_wrap ~trailing_loc name body;
-  let tests = Ppx_runtime.collect () in
+  let tests = Private.collect () in
   with_temp_root (fun log_dir ->
       let config = tweak_config (base_config ~log_dir ()) in
       match Runner.execute ~config ~suite:"ppxrt" tests with
@@ -138,8 +143,8 @@ let run_scenario ?(sanitize = fun s -> s) ?(run = fun f -> f ())
           in
           {
             outcome;
-            exit_code = Ppx_runtime.inline_exit_code run_outcome;
-            corrected = Ppx_runtime.corrected_source ~file ~source;
+            exit_code = Private.inline_exit_code run_outcome;
+            corrected = Private.corrected_source ~file ~source;
           })
 
 let failure_list = function
@@ -151,7 +156,7 @@ let is_pass = function Some Failure.Pass -> true | _ -> false
 (* Normalization *)
 
 let () =
-  let n = Ppx_runtime.normalize in
+  let n = Private.normalize in
   check_string "normalize: identity on plain text" ~expected:"a\nb"
     ~actual:(n "a\nb");
   check_string "normalize: rstrips every line" ~expected:"a\nb"
@@ -177,7 +182,7 @@ let zero_loc =
   { Ppx_runtime.line = 1; start_bol = 0; start_pos = 0; end_pos = 0 }
 
 let () =
-  Ppx_runtime.reset ();
+  Private.reset ();
   let nop () = () in
   Ppx_runtime.add_test ~file:"dir/a_file.ml" ~loc:zero_loc ~tags:[] "t1" nop;
   Ppx_runtime.add_test ~file:"dir/b_file.ml" ~loc:zero_loc ~tags:[] "t2" nop;
@@ -188,29 +193,29 @@ let () =
   let paths =
     List.map
       (fun case -> Test_tree.path_to_string case.Test_tree.path)
-      (Test_tree.flatten (Ppx_runtime.collect ()))
+      (Test_tree.flatten (Private.collect ()))
   in
   check "collect groups per file module, first-registration order"
     (paths = [ "A_file › t1"; "A_file › t3"; "A_file › G › t4"; "B_file › t2" ]);
-  check "collect drains the registry" (Ppx_runtime.collect () = []);
+  check "collect drains the registry" (Private.collect () = []);
   check_string "partitions are file basenames, sorted"
     ~expected:"a_file.ml,b_file.ml"
-    ~actual:(String.concat "," (Ppx_runtime.partitions ()));
+    ~actual:(String.concat "," (Private.partitions ()));
   (match Ppx_runtime.leave_group () with
   | () -> check "leave_group without a group raises" false
   | exception Invalid_argument _ ->
       check "leave_group without a group raises" true);
   (* An unclosed group is a collect-time error. *)
-  Ppx_runtime.reset ();
+  Private.reset ();
   Ppx_runtime.enter_group ~file:"dir/a_file.ml" ~tags:[] "open";
-  match Ppx_runtime.collect () with
+  match Private.collect () with
   | _ -> check "collect with an open group raises" false
   | exception Invalid_argument _ ->
       check "collect with an open group raises" true
 
 let () =
   (* Partition filtering: set by init, applied at collect. *)
-  Ppx_runtime.reset ();
+  Private.reset ();
   Ppx_runtime.init
     [| "runner"; "inline-test-runner"; "mylib"; "-partition"; "a_file.ml" |];
   let nop () = () in
@@ -219,7 +224,7 @@ let () =
   let paths =
     List.map
       (fun case -> Test_tree.path_to_string case.Test_tree.path)
-      (Test_tree.flatten (Ppx_runtime.collect ()))
+      (Test_tree.flatten (Private.collect ()))
   in
   check "partition filter keeps only the named file's tests"
     (paths = [ "A_file › t1" ]);
@@ -230,7 +235,7 @@ let () =
   let paths =
     List.map
       (fun case -> Test_tree.path_to_string case.Test_tree.path)
-      (Test_tree.flatten (Ppx_runtime.collect ()))
+      (Test_tree.flatten (Private.collect ()))
   in
   check "init is once-only" (paths = [ "A_file › t3" ])
 
@@ -927,7 +932,7 @@ let () =
   (* ppx_expect runs a functor-duplicated test under one name; windtrap's
      path-uniqueness law renames later duplicates " (2)", " (3)" — in the
      scope they collide in — and runs them all. *)
-  Ppx_runtime.reset ();
+  Private.reset ();
   let nop () = () in
   Ppx_runtime.add_test ~file:"dir/f.ml" ~loc:zero_loc ~tags:[] "dup" nop;
   Ppx_runtime.add_test ~file:"dir/f.ml" ~loc:zero_loc ~tags:[] "dup" nop;
@@ -941,7 +946,7 @@ let () =
   let paths =
     List.map
       (fun case -> Test_tree.path_to_string case.Test_tree.path)
-      (Test_tree.flatten (Ppx_runtime.collect ()))
+      (Test_tree.flatten (Private.collect ()))
   in
   check "duplicate names rename deterministically, per scope"
     (paths
@@ -957,7 +962,7 @@ let () =
    shape: identical file, name, and node spans — with [body] told which
    instance it is. Returns (exit code, corrected). *)
 let run_duplicated ~source ~nodes ~name ~times body =
-  Ppx_runtime.reset ();
+  Private.reset ();
   let body_loc, trailing_loc = body_locs source in
   let instance = ref 0 in
   for _ = 1 to times do
@@ -969,7 +974,7 @@ let run_duplicated ~source ~nodes ~name ~times body =
         incr instance;
         body !instance)
   done;
-  let tests = Ppx_runtime.collect () in
+  let tests = Private.collect () in
   with_temp_root (fun log_dir ->
       match
         Runner.execute ~config:(base_config ~log_dir ()) ~suite:"ppxrt" tests
@@ -978,8 +983,8 @@ let run_duplicated ~source ~nodes ~name ~times body =
           Printf.printf "startup error: %s\n%!" (Runner.startup_message error);
           (-1, None)
       | Ok outcome ->
-          ( Ppx_runtime.inline_exit_code outcome,
-            Ppx_runtime.corrected_source ~file ~source ))
+          ( Private.inline_exit_code outcome,
+            Private.corrected_source ~file ~source ))
 
 let dup_source =
   {x|let%expect_test "similar" =
@@ -1278,18 +1283,18 @@ let () =
       (fun () -> print_string "trailing")
   in
   let run_partition register =
-    Ppx_runtime.reset ();
+    Private.reset ();
     register ();
-    let tests = Ppx_runtime.collect () in
+    let tests = Private.collect () in
     with_temp_root (fun log_dir ->
         match
           Runner.execute ~config:(base_config ~log_dir ()) ~suite:"ppxrt" tests
         with
         | Error _ -> (-1, None, None)
         | Ok outcome ->
-            ( Ppx_runtime.inline_exit_code outcome,
-              Ppx_runtime.corrected_source ~file ~source:skip_source,
-              Ppx_runtime.corrected_source ~file:other_file ~source:other_source
+            ( Private.inline_exit_code outcome,
+              Private.corrected_source ~file ~source:skip_source,
+              Private.corrected_source ~file:other_file ~source:other_source
             ))
   in
   let exit_code, skip_corrected, other_corrected =
@@ -1515,7 +1520,7 @@ let () =
 
 let () =
   (* Outside any expect test, the node operations refuse loudly. *)
-  Ppx_runtime.reset ();
+  Private.reset ();
   (match Ppx_runtime.expect_output () with
   | _ -> check "expect_output outside an expect test raises" false
   | exception Invalid_argument _ ->
@@ -1529,14 +1534,14 @@ let () =
 
 let () =
   let exit_of ~register ~tweak_config () =
-    Ppx_runtime.reset ();
+    Private.reset ();
     register ();
-    let tests = Ppx_runtime.collect () in
+    let tests = Private.collect () in
     with_temp_root (fun log_dir ->
         let config = tweak_config (base_config ~log_dir ()) in
         match Runner.execute ~config ~suite:"ppxrt" tests with
         | Error _ -> -1
-        | Ok outcome -> Ppx_runtime.inline_exit_code outcome)
+        | Ok outcome -> Private.inline_exit_code outcome)
   in
   let plain_pass () =
     Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "ok" (fun () -> ())
@@ -1583,7 +1588,7 @@ let () =
 
 let () =
   (match
-     Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:false
+     Private.correction_notice ~accepted:[] ~refused:[] ~declined:false
        [ "a_mismatch.ml.corrected" ]
    with
   | None -> check "a written correction produces a notice" false
@@ -1603,7 +1608,7 @@ let () =
   (* The notice no longer takes an exit code, so no shape of the
      arguments brings the old silence back. *)
   (match
-     Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:false
+     Private.correction_notice ~accepted:[] ~refused:[] ~declined:false
        [ "a.ml.corrected"; "b.ml.corrected" ]
    with
   | None -> check "two corrections produce a notice" false
@@ -1615,7 +1620,7 @@ let () =
   (* Accepted into the source tree: those corrections never went through
      dune's channel, so the caveat is replaced by where they landed. *)
   (match
-     Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[] ~declined:false
+     Private.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[] ~declined:false
        [ "a_mismatch.ml.corrected" ]
    with
   | None -> check "an accepted correction produces a notice" false
@@ -1629,15 +1634,15 @@ let () =
         | _ -> false
         | exception Invalid_argument _ -> true));
   check "no corrections: no notice"
-    (Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:false []
+    (Private.correction_notice ~accepted:[] ~refused:[] ~declined:false []
      = None
-    && Ppx_runtime.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[]
+    && Private.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[]
          ~declined:false []
        = None);
   (* A declined acceptance says fixing comes first — and never advises
      the update that was already requested. *)
   (match
-     Ppx_runtime.correction_notice ~accepted:[] ~refused:[] ~declined:true
+     Private.correction_notice ~accepted:[] ~refused:[] ~declined:true
        [ "a_mismatch.ml.corrected" ]
    with
   | None -> check "a declined acceptance produces a notice" false
@@ -1653,7 +1658,7 @@ let () =
   (* A refusal points back at its reasons, and never advises the
      acceptance that just failed. *)
   match
-    Ppx_runtime.correction_notice ~accepted:[] ~refused:[ "lib/a.ml" ]
+    Private.correction_notice ~accepted:[] ~refused:[ "lib/a.ml" ]
       ~declined:false
       [ "a_mismatch.ml.corrected" ]
   with
@@ -1672,7 +1677,7 @@ let () =
 (* Corrections round-trip on a real temp source file *)
 
 let () =
-  Ppx_runtime.reset ();
+  Private.reset ();
   let source =
     {x|let%expect_test "t" =
   print_string "new\n";
@@ -1709,7 +1714,7 @@ let () =
              the flush must — .corrected files land in the module-load
              cwd regardless. *)
           Sys.chdir (Filename.get_temp_dir_name ()));
-      let tests = Ppx_runtime.collect () in
+      let tests = Private.collect () in
       with_temp_root (fun log_dir ->
           match
             Runner.execute ~config:(base_config ~log_dir ()) ~suite:"ppxrt"
@@ -1719,16 +1724,16 @@ let () =
           | Ok _ -> ());
       check "the test body left the cwd changed"
         (not (String.equal (Sys.getcwd ()) start_dir));
-      let report = Ppx_runtime.flush_corrections_report ~accept:false in
+      let report = Private.flush_corrections_report ~accept:false in
       check "flush restores the module-load cwd"
         (String.equal (Sys.getcwd ()) start_dir);
       let corrected_name = Filename.basename temp ^ ".corrected" in
       check "flush writes <basename>.corrected in the start cwd"
-        (report.Ppx_runtime.written = [ corrected_name ]
+        (report.Private.written = [ corrected_name ]
         && Sys.file_exists corrected_name);
       check "without accept, nothing reaches the source tree"
-        (report.Ppx_runtime.accepted = []
-        && report.Ppx_runtime.refused = []);
+        (report.Private.accepted = []
+        && report.Private.refused = []);
       let golden =
         {x|let%expect_test "t" =
   print_string "new\n";
@@ -1747,8 +1752,8 @@ let () =
       | exception Sys_error _ -> check "read back .corrected" false);
       (try Sys.remove corrected_name with Sys_error _ -> ());
       check "flush clears the corrections table"
-        ((Ppx_runtime.flush_corrections_report ~accept:false)
-           .Ppx_runtime.written = []))
+        ((Private.flush_corrections_report ~accept:false)
+           .Private.written = []))
 
 (* Accepting corrections into the source tree (WINDTRAP_UPDATE)
 
@@ -1903,9 +1908,9 @@ let with_case ~root ~sandbox_source ~tree_source f =
    decision is read off the registry the runner built, so the CI refusal
    and the [force] override are the run's own, not restated here. *)
 let run_partition ?(ci = false) ~update ~root ~register () =
-  Ppx_runtime.reset ();
+  Private.reset ();
   register ();
-  let tests = Ppx_runtime.collect () in
+  let tests = Private.collect () in
   let saved_ci = Sys.getenv_opt "CI" in
   Unix.putenv "CI" (if ci then "1" else "");
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
@@ -1925,15 +1930,15 @@ let run_partition ?(ci = false) ~update ~root ~register () =
                      the update mode, so output produced beside a non-expect
                      failure is never accepted (the per-file half of the
                      masked-assertion veto), and a refusal forces the exit. *)
-                  let clean = Ppx_runtime.inline_exit_code outcome = 0 in
+                  let clean = Private.inline_exit_code outcome = 0 in
                   let accept =
                     clean
                     && Snapshot.mode (Run.snapshots outcome.Runner.run)
                        = Snapshot.Update
                   in
-                  let report = Ppx_runtime.flush_corrections_report ~accept in
+                  let report = Private.flush_corrections_report ~accept in
                   let code =
-                    if report.Ppx_runtime.refused = [] then
+                    if report.Private.refused = [] then
                       if clean then 0 else 1
                     else 1
                   in
@@ -1966,10 +1971,10 @@ let () =
               check_int "a plain run reports the mismatch as a failure"
                 ~expected:1 ~actual:failures;
               check "stale partition writes its .corrected"
-                (report.Ppx_runtime.written = [ corrected_name ]);
+                (report.Private.written = [ corrected_name ]);
               check "a plain run accepts nothing into the source tree"
-                (report.Ppx_runtime.accepted = []
-                && report.Ppx_runtime.refused = []);
+                (report.Private.accepted = []
+                && report.Private.refused = []);
               check_string "a plain run leaves the source tree byte-identical"
                 ~expected:stale_source ~actual:(read_text target);
               check_string "the .corrected carries the fresh payload"
@@ -2003,9 +2008,9 @@ let () =
                     ("crash partition still reports the crash (" ^ label ^ ")")
                     ~expected:1 ~actual:failures;
                   check ("crash partition writes nothing (" ^ label ^ ")")
-                    (report.Ppx_runtime.written = []
-                    && report.Ppx_runtime.accepted = []
-                    && report.Ppx_runtime.refused = []);
+                    (report.Private.written = []
+                    && report.Private.accepted = []
+                    && report.Private.refused = []);
                   check_string
                     ("crash partition leaves the source alone (" ^ label ^ ")")
                     ~expected:crash_source ~actual:(read_text target);
@@ -2042,10 +2047,10 @@ let () =
               check_int "the crash is the reported failure" ~expected:1
                 ~actual:failures;
               check "the correction is still written for dune's channel"
-                (report.Ppx_runtime.written = [ corrected_name ]);
+                (report.Private.written = [ corrected_name ]);
               check "a dirty process accepts nothing into the source tree"
-                (report.Ppx_runtime.accepted = []
-                && report.Ppx_runtime.refused = []);
+                (report.Private.accepted = []
+                && report.Private.refused = []);
               check_string "a dirty process leaves the source tree untouched"
                 ~expected:stale_source ~actual:(read_text target)))
 
@@ -2070,11 +2075,11 @@ let () =
               check_int "an accepted mismatch is not reported as a failure"
                 ~expected:0 ~actual:failures;
               check "the update run reports the accepted path, root-relative"
-                (report.Ppx_runtime.accepted
+                (report.Private.accepted
                 = [ Filename.concat "sub" (Filename.basename target) ]);
               check "the update run still writes the .corrected"
-                (report.Ppx_runtime.written = [ corrected_name ]
-                && report.Ppx_runtime.refused = []);
+                (report.Private.written = [ corrected_name ]
+                && report.Private.refused = []);
               check_string "the source tree carries the corrected payload"
                 ~expected:stale_corrected ~actual:(read_text target);
               check_string "the sandbox .corrected matches what was accepted"
@@ -2104,11 +2109,11 @@ let () =
               check_string "the drift guard leaves the source untouched"
                 ~expected:drifted ~actual:(read_text target);
               check "the drift guard accepts nothing"
-                (report.Ppx_runtime.accepted = []);
+                (report.Private.accepted = []);
               check "the refused file is reported unwritable"
-                (report.Ppx_runtime.refused = [ file ]);
+                (report.Private.refused = [ file ]);
               check "the .corrected is still written for dune's channel"
-                (report.Ppx_runtime.written = [ corrected_name ]
+                (report.Private.written = [ corrected_name ]
                 && String.equal (read_text corrected) stale_corrected);
               check_contains "the refusal names the file" ~sub:file stderr;
               check_contains "the refusal names the reason"
@@ -2121,7 +2126,7 @@ let () =
               check_int "a refused acceptance forces exit 1" ~expected:1
                 ~actual:code;
               check "the refusal is recorded on the report"
-                (report.Ppx_runtime.refused <> [])))
+                (report.Private.refused <> [])))
 
 (* A source path that is a symbolic link is refused: acceptance replaces
    the file a path names, and publication never turns a link into a
@@ -2148,8 +2153,8 @@ let () =
                 check_int "a symlinked source forces exit 1" ~expected:1
                   ~actual:code;
                 check "the acceptance is a refusal, not a success"
-                  (report.Ppx_runtime.refused <> []
-                  && report.Ppx_runtime.accepted = []);
+                  (report.Private.refused <> []
+                  && report.Private.accepted = []);
                 check_contains "the refusal names the linkness"
                   ~sub:"symbolic link" stderr;
                 check "the link survives as a link"
@@ -2185,7 +2190,7 @@ let () =
           | Error _, _ -> check "force overrides the CI refusal" false
           | Ok (code, report, _), _ ->
               check "force overrides the CI refusal"
-                (report.Ppx_runtime.accepted <> []);
+                (report.Private.accepted <> []);
               check_int "a forced update run exits 0" ~expected:0 ~actual:code;
               check_string "force writes the corrected payload to the source"
                 ~expected:stale_corrected ~actual:(read_text target)))
@@ -2236,10 +2241,10 @@ let () =
   Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
   Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
   Ppx_runtime.enter_group ~file ~tags:[] "unclosed";
-  Ppx_runtime.reset ();
-  check "reset forgets the partitions seen" (Ppx_runtime.partitions () = []);
+  Private.reset ();
+  check "reset forgets the partitions seen" (Private.partitions () = []);
   check "reset clears the recorded corrections"
-    (Ppx_runtime.corrected_source ~file ~source = None);
+    (Private.corrected_source ~file ~source = None);
   (* One collect settles four fields at once — and it has to be the first
      one after the reset, since [collect] clears the name counters itself.
      A surviving group stack raises, a surviving registration shows up
@@ -2247,7 +2252,7 @@ let () =
      surviving [-partition] filters it out entirely. *)
   Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
   check "reset drops the registry: groups, tests, name counters, partition"
-    (match Test_tree.flatten (Ppx_runtime.collect ()) with
+    (match Test_tree.flatten (Private.collect ()) with
     | cases ->
         List.map
           (fun case -> Test_tree.path_to_string case.Test_tree.path)
@@ -2261,7 +2266,7 @@ let () =
      the failure's own code. *)
   Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "t" (fun () ->
       failwith "boom");
-  let tests = Ppx_runtime.collect () in
+  let tests = Private.collect () in
   with_temp_root (fun log_dir ->
       match
         Runner.execute ~config:(base_config ~log_dir ()) ~suite:"ppxrt" tests
@@ -2269,11 +2274,11 @@ let () =
       | Error _ -> check "reset clears the covered paths" false
       | Ok outcome ->
           check_int "reset clears the covered paths" ~expected:1
-            ~actual:(Ppx_runtime.inline_exit_code outcome));
+            ~actual:(Private.inline_exit_code outcome));
   (* init's once-guard is cleared, so a fresh vector takes effect. *)
   Ppx_runtime.init [| "runner"; "-partition"; "elsewhere.ml" |];
   Ppx_runtime.add_test ~file ~loc:zero_loc ~tags:[] "dup" nop;
-  check "reset clears init's once-guard" (Ppx_runtime.collect () = [])
+  check "reset clears init's once-guard" (Private.collect () = [])
 
 (* The ambient config module *)
 

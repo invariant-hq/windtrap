@@ -1576,3 +1576,25 @@ let exit () =
 let reset () =
   claim_registry ();
   state := initial_state ()
+
+(* The half of this module that only its own test suite calls. Generated
+   code needs the registration, execution and protocol entry points and
+   nothing else; these let test/unit check normalization, collection,
+   correction formatting, the flush and the exit protocol as functions
+   rather than as process transcripts. *)
+module Private = struct
+  type nonrec flush_report = flush_report = {
+    written : string list;
+    accepted : string list;
+    refused : string list;
+  }
+
+  let normalize = normalize
+  let collect = collect
+  let partitions = partitions
+  let corrected_source = corrected_source
+  let flush_corrections_report = flush_corrections_report
+  let inline_exit_code = inline_exit_code
+  let correction_notice = correction_notice
+  let reset = reset
+end
