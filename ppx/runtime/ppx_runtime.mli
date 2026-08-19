@@ -213,7 +213,7 @@ val exit : unit -> 'a
     by {!init} in every mode; by {!Private.collect}, since whoever drains the
     registry owns the execution of what they took, which covers a hand-rolled
     harness driving [Runner] directly; by arming a mutant, through the
-    [Registry.on_armed] hook this module registers, that process's transcript
+    [Mutate_loop.on_armed] hook this module registers, that process's transcript
     belonging to the mutation loop (Law 16); and by {!Private.reset}, whose
     caller owns the registry by construction.
 

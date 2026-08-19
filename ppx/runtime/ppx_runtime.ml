@@ -29,8 +29,8 @@
    execute_and_report, write_junit), Runner (outcome readers, startup
    exit codes), Run (result rows, the run's snapshot registry, the
    ambient slot the body-side one-liners below read), Env (GitHub
-   gating), Registry (the Law 16d hook registration), Mutate_loop (the
-   mutation-aware run entry both thin drivers call). Body-side: Capture,
+   gating), Mutate_loop (the mutation-aware run entry both thin drivers
+   call, and the Law 16d hook registration). Body-side: Capture,
    through [captured_output] below. Shared vocabulary: Failure,
    Test_tree, Loc, Text.
 
@@ -55,7 +55,6 @@ module Failure = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
 module Mutate_loop = Windtrap.Private.Mutate_loop
 module Path_ops = Windtrap.Private.Path_ops
-module Registry = Windtrap.Private.Registry
 module Run = Windtrap.Private.Run
 module Runner = Windtrap.Private.Runner
 module Snapshot = Windtrap.Private.Snapshot
@@ -312,14 +311,14 @@ let enter_armed () =
   !state.current_expect <- None
 
 (* Registered, not passed: the mutation loop sits below this module and
-   fires the registry's hooks in every process that arms — each forked
-   child before its first test, once in the parent under
-   WINDTRAP_MUTATE_ARM (Law 16d). Registering at module load means any
-   process that can run this runtime's tests has the debt on record
-   before any run can arm; [reset] leaves it standing, like
-   [initial_dir], because owing the mutation loop read-only checking is a
-   fact about the process, not run state. *)
-let () = Registry.on_armed enter_armed
+   fires its hooks in every process that arms — each forked child before
+   its first test, once in the parent under WINDTRAP_MUTATE_ARM
+   (Law 16d). Registering at module load means any process that can run
+   this runtime's tests has the debt on record before any run can arm;
+   [reset] leaves it standing, like [initial_dir], because owing the
+   mutation loop read-only checking is a fact about the process, not run
+   state. *)
+let () = Mutate_loop.on_armed enter_armed
 
 (* Protocol arguments *)
 

@@ -86,8 +86,8 @@ data, and `Render` names no instrumentation runtime), `Driver` (the
 spine: `Driver.t` is the record of one invocation's reporting inputs,
 `execute_and_report` the one order every driver shares, and
 `execute` the reporting-free run a mutation child needs),
-`Registry` (the Law-16d armed hooks: the one cross-package cell),
-`Mutate_loop` (the mutation seam: the
+`Mutate_loop` (the mutation seam, and the Law-16d armed hooks — the one
+cross-package cell: the
 dry run and its reach map, the determinism probe, the forced-fail
 check, the fork loop, the admission machine, the verdict file and the
 report — it *wraps* `Driver.execute_and_report` rather than sitting
@@ -147,10 +147,10 @@ module that drives it.
   entry (the two thin drivers call `Mutate_loop.execute_and_report` in
   place of `Driver.execute_and_report`), one *composed* observer on
   `Runner.execute`'s existing `?on_event` hook — never a replacement
-  for the transcript's — and the Law-16d armed hooks in `Registry`,
-  which `Ppx_runtime` registers at load and the loop fires: the one
-  cross-package cell, since the expect runtime sits above the loop and
-  in another package. Firing them clears the inline runtime's
+  for the transcript's — and the Law-16d armed hooks on
+  `Mutate_loop`, which `Ppx_runtime` registers at load and the loop
+  fires: the one cross-package cell, since the expect runtime sits
+  above the loop and in another package. Firing them clears the inline runtime's
   cross-run tables and revokes the corrections licence.
 
 No instrumentation type appears in `windtrap.mli`, and neither
@@ -241,8 +241,8 @@ them reopens the design**.
     windtrap's
     coupling to each subsystem is one read per run — coverage's summary
     snapshot at run end, mutation's dispatch call at run entry — plus,
-    for mutation alone, the Law-16d armed hooks registered in
-    `Registry`. Per-test
+    for mutation alone, the Law-16d armed hooks registered on
+    `Mutate_loop`. Per-test
     observation uses only the existing `Runner.execute ?on_event` hook,
     which receives immutable payloads and cannot alter status, counts,
     or scheduling, and reads only its own subsystem's runtime. **No

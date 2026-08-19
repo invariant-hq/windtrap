@@ -9,7 +9,7 @@
     thin drivers call {!execute_and_report} at run entry in place of
     [Driver.execute_and_report] — plus one read-only flag on the expect
     correction path ([Ppx_runtime.enter_armed], Law 16d, registered in
-    [Registry.on_armed] and fired here, never a dependency in either direction).
+    {!on_armed} and fired here, never a dependency in either direction).
     Everything else lives here and in the stdlib-only runtime
     {!Windtrap_mutate}: the dry run and its reach map, the determinism probe,
     the forced-fail check, the fork loop, the verdict file, and the report.
@@ -72,9 +72,9 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     What a process about to run with a mutant armed owes the inline (ppx)
     runtime — [Ppx_runtime.enter_armed], which turns checking read-only
     (Law 16d) and clears the cross-run tables a forked child must not inherit —
-    arrives through [Registry.armed_hooks] rather than as an argument or a
-    dependency: the runtime sits {e above} this module and registers at its
-    module load, whatever the link order. The hooks fire in each forked child
+    arrives through {!on_armed} rather than as an argument or a dependency: the
+    runtime sits {e above} this module and registers at its module load,
+    whatever the link order. The hooks fire in each forked child
     before its first test, and once in the parent under [WINDTRAP_MUTATE_ARM];
     never in a run that arms nothing.
 
@@ -103,6 +103,23 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     [Unix._exit] — otherwise a child dying of [Out_of_memory] would run the
     coverage at-exit dump against a path resolved before the fork and overwrite
     the parent's [.coverage] (Law 16e). *)
+
+(** {1:armed The armed hooks} *)
+
+val on_armed : (unit -> unit) -> unit
+(** [on_armed hook] registers [hook] to run in every process that arms a mutant
+    (Law 16d), before the process's first test — in each forked child, and once
+    in the parent under [WINDTRAP_MUTATE_ARM]. A run that arms nothing fires
+    nothing.
+
+    The one cross-package registration point, and the library's second ambient
+    cell beside {!Run}'s slot: the inline (ppx) runtime lives {e above} this
+    module and cannot be named from it, so what a process about to arm owes it
+    — read-only checking, and the clearing of the cross-run tables a forked
+    child must not inherit ([Ppx_runtime.enter_armed]) — is registered rather
+    than passed. Registration is a module-load act; hooks are never
+    unregistered, fire in registration order, and are read at fire time, so
+    registration order and link order need not agree. *)
 
 (** {1:report The report projection} *)
 

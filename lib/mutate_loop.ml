@@ -39,6 +39,16 @@ type run =
   | Ran of (Runner.outcome, Runner.startup_error) result
   | Reported of int
 
+(* The armed hooks (Law 16d): the one cross-package cell. Registration is
+   a module-load act of another package's unit — the inline runtime lives
+   in ppx_windtrap, above this module, so it registers what it is owed
+   rather than being called — and the firing side reads the cell at fire
+   time, so hooks registered before or after this module's own load are
+   honored alike, whatever order the link put the initializers in. *)
+
+let armed_hooks : (unit -> unit) list ref = ref []
+let on_armed hook = armed_hooks := hook :: !armed_hooks
+
 let note fmt =
   Printf.ksprintf
     (fun message ->
@@ -59,10 +69,9 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
    child and passes everything else through untouched, so the places that
    run the suite cannot drift in what they pass. [armed] travels beside
    it, not in it — it is this module's seam with the inline runtime
-   (Law 16d), not part of what a driver consumes. Since the registry, the
-   seam is registered rather than passed: [execute_and_report] builds
-   [armed] from the hooks in [Registry.armed_hooks] and threads it below
-   exactly as the argument used to travel. *)
+   (Law 16d), not part of what a driver consumes: [execute_and_report]
+   builds it from the registered hooks and threads it below exactly as an
+   argument would travel. *)
 
 (* The reach map
 
@@ -1598,13 +1607,13 @@ let arm_mode renderer ~armed (spine : Driver.t) tests =
 
 let execute_and_report (spine : Driver.t) tests =
   (* What a process about to run with a mutant armed owes the inline
-     runtime (Law 16d): the hooks registered in the registry, fired in
-     registration order — in each forked child before its first test, and
-     once in the parent under WINDTRAP_MUTATE_ARM; never by a run that
-     arms nothing. Read at fire time, not captured here: registration is
-     a module-load act and the loop must honor every hook the link
-     produced, however the initializers were ordered. *)
-  let armed () = List.iter (fun hook -> hook ()) (Registry.armed_hooks ()) in
+     runtime (Law 16d): every registered hook, in registration order — in
+     each forked child before its first test, and once in the parent
+     under WINDTRAP_MUTATE_ARM; never by a run that arms nothing. Read at
+     fire time, not captured here: registration is a module-load act and
+     the loop must honor every hook the link produced, however the
+     initializers were ordered. *)
+  let armed () = List.iter (fun hook -> hook ()) (List.rev !armed_hooks) in
   (* A listing is not a run: nothing executes, so there is nothing to
      observe, announce or mutate. Everything else goes through the knobs,
      instrumented or not — a variable the user set and misspelled must be

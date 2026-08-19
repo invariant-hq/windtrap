@@ -1082,7 +1082,6 @@ module Private : sig
   module Render_github = Render_github
   module Render_junit = Render_junit
 
-  module Registry = Registry
   (** The Law 16d armed hooks — the one cross-package registration cell;
       [ppx_windtrap]'s runtime registers its hook here at load. *)
 
