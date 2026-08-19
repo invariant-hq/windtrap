@@ -6,7 +6,7 @@
 (* Tests for Capture: fd-level redirection round-trips (including Unix.write
    and subprocess output that bypass OCaml channels), the log-dir layout,
    incremental consumption windows, bounded tails with drop counts, Disabled
-   ([--stream]) behavior, per-attempt truncation, and latest symlinks.
+   ([--stream]) behavior, and per-attempt truncation.
    These sessions nest inside the runner's own capture: [with_capture]
    saves and restores the (already redirected) descriptors, so the outer
    capture is unaffected.
@@ -67,22 +67,13 @@ let test_fd_round_trip () =
   check "descriptor 1 is restored" (fd_id Unix.stdout = out_before);
   check "descriptor 2 is restored" (fd_id Unix.stderr = err_before);
   check_int "subprocess exit status" ~expected:0 ~actual:!sub_status;
-  let run_dir =
-    match Capture.run_dir cap with
-    | Some d -> d
-    | None ->
-        check "run_dir is Some when enabled" false;
-        "."
-  in
-  check_string "run_dir sits under log_dir/suite"
-    ~expected:(Filename.concat root "suite")
-    ~actual:(Filename.dirname run_dir);
+  let suite_dir = Filename.concat root "suite" in
   (* The layout is read off the filesystem, not rebuilt: naming the file
      with [sanitize_component] would agree with any mapping whatsoever, so
      it would assert nothing. That Capture routes components through the
      sanitizer at all is [test_sanitized_layout]'s job; that the mapping
      keeps distinct tests on distinct files is [test_name_collisions]'. *)
-  let group_dir = concat_all run_dir [ "outer"; "inner" ] in
+  let group_dir = concat_all suite_dir [ "outer"; "inner" ] in
   let entries =
     if Sys.is_directory group_dir then Array.to_list (Sys.readdir group_dir)
     else []
@@ -92,8 +83,7 @@ let test_fd_round_trip () =
     | [ name ] when Filename.check_suffix name ".output" -> Some name
     | _ -> None
   in
-  check "one .output file at <log_dir>/<suite>/<run-id>/<groups...>"
-    (log_file <> None);
+  check "one .output file at <log_dir>/<suite>/<groups...>" (log_file <> None);
   match log_file with
   | Some name ->
       let path = Filename.concat group_dir name in
@@ -180,10 +170,9 @@ let test_setup_failure_isolation () =
   let cap = Capture.create ~log_dir:root ~suite:"s" () in
   Capture.with_capture cap ~groups:[] ~test_name:"prev" (fun () ->
       print_string "prev-output");
-  let run_dir = Option.get (Capture.run_dir cap) in
   (* A regular file where the next attempt needs a directory: the log file
      cannot be created and setup raises. *)
-  Out_channel.with_open_bin (Filename.concat run_dir "g") (fun _ -> ());
+  Out_channel.with_open_bin (concat_all root [ "s"; "g" ]) (fun _ -> ());
   let out_before = fd_id Unix.stdout and err_before = fd_id Unix.stderr in
   let raised =
     match
@@ -235,9 +224,7 @@ let stream_error = "this test requires capture; rerun without --stream"
 
 let test_disabled () =
   let cap = Capture.disabled in
-  check "run_dir is None under Disabled" (Capture.run_dir cap = None);
   check "output_tail is None under Disabled" (Capture.output_tail cap = None);
-  Capture.link_latest cap (* must not raise *);
   let value =
     Capture.with_capture cap ~groups:[ "g" ] ~test_name:"t" (fun () -> 7)
   in
@@ -414,18 +401,19 @@ let test_sanitized_layout () =
   let cap = Capture.create ~log_dir:root ~suite:"my suite" () in
   Capture.with_capture cap ~groups:[ "a/b" ] ~test_name:"x:y" (fun () ->
       print_string "content");
-  let run_dir = Option.get (Capture.run_dir cap) in
-  check_string "the suite name is sanitized into one component"
-    ~expected:(Filename.concat root (Path_ops.sanitize_component "my suite"))
-    ~actual:(Filename.dirname run_dir);
+  let suite_dir =
+    Filename.concat root (Path_ops.sanitize_component "my suite")
+  in
+  check "the suite name is sanitized into one component"
+    (Sys.is_directory suite_dir);
   let path =
     Filename.concat
-      (Filename.concat run_dir (Path_ops.sanitize_component "a/b"))
+      (Filename.concat suite_dir (Path_ops.sanitize_component "a/b"))
       (Path_ops.sanitize_component "x:y" ^ ".output")
   in
   check "group and test components are sanitized" (Sys.file_exists path);
   check "a slash in a group makes one component, not two"
-    (not (Sys.file_exists (Filename.concat run_dir "a")))
+    (not (Sys.file_exists (Filename.concat suite_dir "a")))
 
 (* Distinct names, distinct files *)
 
@@ -456,46 +444,26 @@ let test_name_collisions () =
   check_string "the second name's log holds its own output"
     ~expected:"output of parse, empty" ~actual:(read_file comma)
 
-(* Run ids *)
+(* Stable paths *)
 
-let is_base36 c = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')
-
-let test_run_ids () =
+let test_stable_paths () =
+  (* The log path is a function of the test's identity, so a second run of
+     the same suite writes the same file — which is what makes a path
+     printed in a failure report worth typing into an editor. *)
   with_temp_root @@ fun root ->
-  let id_of cap = Filename.basename (Option.get (Capture.run_dir cap)) in
-  let id1 = id_of (Capture.create ~log_dir:root ~suite:"s" ()) in
-  let id2 = id_of (Capture.create ~log_dir:root ~suite:"s" ()) in
-  check_int "run ids are 8 characters" ~expected:8 ~actual:(String.length id1);
-  check "run ids draw from 0-9A-Z" (String.for_all is_base36 id1);
-  check "two runs get distinct ids" (id1 <> id2)
-
-(* Latest links *)
-
-let test_link_latest () =
-  if not Sys.win32 then (
-    with_temp_root @@ fun root ->
-    let cap = Capture.create ~log_dir:root ~suite:"suite" () in
-    Capture.with_capture cap ~groups:[] ~test_name:"t" (fun () ->
+  let log_of cap =
+    Capture.with_capture cap ~groups:[ "g" ] ~test_name:"t" (fun () ->
         print_string "x");
-    Capture.link_latest cap;
-    let run_id = Filename.basename (Option.get (Capture.run_dir cap)) in
-    let suite_latest = concat_all root [ "suite"; "latest" ] in
-    check_string "suite-level latest points at the run id" ~expected:run_id
-      ~actual:(Unix.readlink suite_latest);
-    check "suite-level latest resolves to the run directory"
-      (Sys.is_directory suite_latest);
-    check_string "root-level latest points at suite/run-id"
-      ~expected:(Filename.concat "suite" run_id)
-      ~actual:(Unix.readlink (Filename.concat root "latest"));
-    (* A later run replaces both links. *)
-    let cap2 = Capture.create ~log_dir:root ~suite:"suite" () in
-    Capture.link_latest cap2;
-    let run_id2 = Filename.basename (Option.get (Capture.run_dir cap2)) in
-    check_string "a later run re-points the suite-level link" ~expected:run_id2
-      ~actual:(Unix.readlink suite_latest);
-    check_string "a later run re-points the root-level link"
-      ~expected:(Filename.concat "suite" run_id2)
-      ~actual:(Unix.readlink (Filename.concat root "latest")))
+    match Capture.output_tail cap with
+    | Some { Failure.log_path = Some path; _ } -> path
+    | _ -> ""
+  in
+  let first = log_of (Capture.create ~log_dir:root ~suite:"s" ()) in
+  let second = log_of (Capture.create ~log_dir:root ~suite:"s" ()) in
+  check_string "a rerun writes the same path" ~expected:first ~actual:second;
+  check_string "and the path is the test's identity under the suite"
+    ~expected:(concat_all root [ "s"; "g"; "t.output" ])
+    ~actual:first
 
 (* Saved descriptors are close-on-exec (cli/F-5) *)
 
@@ -572,14 +540,7 @@ let test_log_fd_is_cloexec () =
           "for fd in 3 4 5 6 7 8 9; do if [ /dev/fd/$fd -ef /dev/fd/1 ]; then \
            echo \"LEAK:$fd\"; fi; done; echo probed");
   check_int "probe shell exits 0" ~expected:0 ~actual:!status;
-  let run_dir =
-    match Capture.run_dir cap with
-    | Some d -> d
-    | None ->
-        check "run_dir is Some when enabled" false;
-        "."
-  in
-  let content = read_file (Filename.concat run_dir "probe.output") in
+  let content = read_file (concat_all root [ "cloexec"; "probe.output" ]) in
   check "the child still writes through the redirected fd 1"
     (contains content "probed");
   check "no fd aliasing the log file leaks to the child"
@@ -601,8 +562,7 @@ let tests =
     test "per-attempt reset truncates the file" test_per_attempt_reset;
     test "sanitized layout" test_sanitized_layout;
     test "punctuation variants get distinct log files" test_name_collisions;
-    test "run ids" test_run_ids;
-    test "latest links" test_link_latest;
+    test "log paths are stable across runs" test_stable_paths;
     test "saved descriptors are close-on-exec"
       test_saved_descriptors_are_cloexec;
     test "the log fd is close-on-exec" test_log_fd_is_cloexec;

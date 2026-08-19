@@ -218,10 +218,13 @@ log:
     PLUS
     INT 2
     EOF
-    full log: _build/_tests/mylib/JACOM9WP/parser/tokenize.output
+    full log: _build/_tests/mylib/parser/tokenize.output
 ```
 
-`WINDTRAP_TAIL_ERRORS` bounds the tail; `-o DIR` moves the log root.
+The path is the test's identity under the suite, so it is the same on
+every run — type it into an editor once and reruns keep it pointing at
+the current output. `WINDTRAP_TAIL_ERRORS` bounds the tail; `-o DIR`
+moves the log root.
 `--stream` disables capture entirely — output interleaves on the real
 descriptors, for printf-debugging a hang. `output ()` is the one
 operation whose meaning requires captured bytes: under `--stream` it

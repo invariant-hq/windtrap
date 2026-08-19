@@ -5,10 +5,9 @@
 
 (** Per-test output capture: fd-level redirection into per-test log files.
 
-    A {!t} value holds one run's capture state: the log-file layout, the run's
-    identity inside the log directory, and the byte cursor that {!output}
-    advances. The runner owns the value and threads it explicitly; this module
-    keeps no global state.
+    A {!t} value holds one run's capture state: the log-file layout and the byte
+    cursor that {!output} advances. The runner owns the value and threads it
+    explicitly; this module keeps no global state.
 
     Capture is fd-level: {!with_capture} redirects file descriptors 1 and 2 with
     [dup2], so writes that bypass OCaml channels — C stubs, subprocesses
@@ -23,9 +22,10 @@
     retried test starts from an empty file and its report shows the final
     attempt's output.
 
-    Log files live at [<log_dir>/<suite>/<run-id>/<groups...>/<test>.output],
-    every component made filesystem-safe with {!Path_ops.sanitize_component};
-    {!link_latest} points [latest] symlinks at the newest run.
+    Log files live at [<log_dir>/<suite>/<groups...>/<test>.output], every
+    component made filesystem-safe with {!Path_ops.sanitize_component}. The path
+    is a function of the test's identity alone, so it is the same on every run
+    and a rerun overwrites the previous one's logs.
 
     Under [--stream] capture is {!disabled}: tests run against the real
     descriptors, and {!output} — the one operation whose meaning requires
@@ -47,25 +47,14 @@ type t
 
 val create : log_dir:string -> suite:string -> unit -> t
 (** [create ~log_dir ~suite ()] is enabled capture state writing under
-    [log_dir/<suite>/<run-id>] where:
-
-    - [log_dir] is the log root, usually {!Path_ops.default_log_dir}.
-    - [suite] is the suite name, sanitized into one path component.
-    - [<run-id>] is a fresh 8-character base-36 identifier drawn from
-      operating-system entropy ({!Seed.random}), distinguishing concurrent and
-      successive runs of the same suite.
-
-    Nothing is written until {!with_capture} runs a test. *)
+    [log_dir/<suite>], where [log_dir] is the log root (usually
+    {!Path_ops.default_log_dir}) and [suite] is the suite name sanitized into
+    one path component. Nothing is written until {!with_capture} runs a test. *)
 
 val disabled : t
 (** [disabled] is the capture state for [--stream] runs: {!with_capture} runs
-    bodies with the real descriptors, {!run_dir} and {!output_tail} report no
-    data, {!link_latest} does nothing, and {!output} raises (see below). *)
-
-val run_dir : t -> string option
-(** [run_dir t] is the run's log directory [<log_dir>/<suite>/<run-id>], or
-    [None] when [t] is {!disabled}. The directory exists once a test has been
-    captured. *)
+    bodies with the real descriptors, {!output_tail} reports no data, and
+    {!output} raises (see below). *)
 
 (** {1:capturing Capturing} *)
 
@@ -75,8 +64,9 @@ val with_capture :
     [test_name] under group path [groups] and is [fn ()]. When [t] is
     {!disabled} it is exactly [fn ()]. Otherwise it:
 
-    - resolves the test's log file to [<run_dir>/<groups...>/<test_name>.output]
-      (each component sanitized), creating directories as needed and truncating
+    - resolves the test's log file to
+      [<log_dir>/<suite>/<groups...>/<test_name>.output] (each component
+      sanitized), creating directories as needed and truncating
       the file — each call is one attempt, so a retry starts from an empty file;
     - resets the {!output} cursor to the start of the file;
     - flushes the [Format] std/err formatters, the [stdout]/[stderr] channels,
@@ -133,15 +123,3 @@ val output_tail : t -> Failure.tail option
     capture file holding the complete output. A cut that lands inside a UTF-8
     sequence is moved past it (the skipped bytes count as omitted; a best effort
     — invalid UTF-8 is kept verbatim). *)
-
-(** {1:links Latest links} *)
-
-val link_latest : t -> unit
-(** [link_latest t] points the [latest] symlinks at this run:
-    [<log_dir>/<suite>/latest] to the run's directory and [<log_dir>/latest] to
-    [<suite>/<run-id>], replacing existing links. The runner calls it once per
-    run so [.../latest/...] always names the newest logs.
-
-    Best effort: does nothing when [t] is {!disabled} or on Windows (symlinks
-    need elevated privileges there), and filesystem errors leave the links
-    unchanged rather than raise. *)

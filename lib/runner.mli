@@ -300,9 +300,8 @@ val execute :
 
     Effects: registers a process-wide [Stdlib.at_exit] exit guard on first call
     (never removed; inert while no run is active), reads [CI] via {!Env},
-    captures test output under a fresh run directory in
-    [config.log_dir] and points the [latest] links at it (unless
-    [config.stream]), rewrites the last-failed store, and — in update mode —
+    captures test output under [config.log_dir] (unless [config.stream]),
+    rewrites the last-failed store, and — in update mode —
     writes accepted baselines through the snapshot registry. Raises
     [Invalid_argument] when called while a run is already active (from a test
     body, the calling test fails with that error), and when [config.shard]

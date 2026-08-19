@@ -897,7 +897,6 @@ let execute_plan ?(on_event = fun _ -> ())
           (verdict_result ~subject:Run.Fixture_release
              ~path:Run.fixture_release_path [ failure ]))
       release_failures;
-    Capture.link_latest capture;
     (* Store and snapshot maintenance range over executed tests: a verdict
        row is not a test — counting one as skipped, failed, or executed
        would silently disable orphan reporting and [--prune] and corrupt

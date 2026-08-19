@@ -4,18 +4,16 @@
   ---------------------------------------------------------------------------*)
 
 (* Capture mechanics adapted from v1's lib/log_trap.ml (fd-level dup2
-   redirection, formatter draining before descriptor restoration, symlink
-   retry loops) and the live half of v1's lib/expect.ml (incremental
-   consumption). Retention is bounded-tail (tail + exact drop count) over a
-   simple file-based design: the file is complete, only the failure report
-   is bounded. *)
+   redirection, formatter draining before descriptor restoration) and the
+   live half of v1's lib/expect.ml (incremental consumption). Retention is
+   bounded-tail (tail + exact drop count) over a simple file-based design:
+   the file is complete, only the failure report is bounded. *)
 
 (* Capture state *)
 
 type enabled = {
   root : string; (* the log root, e.g. _build/_tests *)
   suite : string; (* sanitized suite component *)
-  run_id : string;
   mutable current : string option;
       (* The current test's log file: set by [with_capture] and kept after it
          returns so the runner can read the attempt's output post-mortem;
@@ -26,33 +24,16 @@ type enabled = {
 
 type t = Disabled | Enabled of enabled
 
-(* Run ids are 8 base-36 characters (0-9, A-Z) — v1's format — drawn from one
-   OS-entropy word so no module-level PRNG state exists. *)
-let generate_run_id () =
-  let bytes = Bytes.create 8 in
-  let v = ref (Seed.random ()) in
-  for i = 0 to 7 do
-    let d = Int64.to_int (Int64.unsigned_rem !v 36L) in
-    v := Int64.unsigned_div !v 36L;
-    Bytes.set bytes i
-      (if d < 10 then Char.chr (Char.code '0' + d)
-       else Char.chr (Char.code 'A' + d - 10))
-  done;
-  Bytes.to_string bytes
-
 let create ~log_dir ~suite () =
   Enabled
     {
       root = log_dir;
       suite = Path_ops.sanitize_component suite;
-      run_id = generate_run_id ();
       current = None;
       consumed = 0;
     }
 
 let disabled = Disabled
-let run_dir_of e = Filename.concat e.root (Filename.concat e.suite e.run_id)
-let run_dir = function Disabled -> None | Enabled e -> Some (run_dir_of e)
 
 (* Capturing *)
 
@@ -74,7 +55,8 @@ let drain_formatters () =
 
 let output_path e ~groups ~test_name =
   let dir =
-    List.fold_left Filename.concat (run_dir_of e)
+    List.fold_left Filename.concat
+      (Filename.concat e.root e.suite)
       (List.map Path_ops.sanitize_component groups)
   in
   Filename.concat dir (Path_ops.sanitize_component test_name ^ ".output")
@@ -224,48 +206,3 @@ let output_tail t =
             Failure.tail ~log_path:path ~omitted_bytes:(start + skip) s
           in
           with_file_in path read)
-
-(* Latest links *)
-
-(* Retry loops handle EINTR (interrupted syscall) and EEXIST (race with a
-   concurrent run re-pointing the same link); other errors abandon the link —
-   these are conveniences, never worth failing a run over. *)
-
-let unlink_with_retry path =
-  let rec loop retries =
-    try Unix.unlink path with
-    | Unix.Unix_error (Unix.ENOENT, _, _) -> ()
-    | Unix.Unix_error (Unix.EINTR, _, _) when retries < 5 -> loop (retries + 1)
-    | Unix.Unix_error _ -> ()
-  in
-  loop 0
-
-let symlink_with_retry ~target ~link_name =
-  let rec loop retries =
-    try Unix.symlink target link_name with
-    | Unix.Unix_error (Unix.EEXIST, _, _) when retries < 5 ->
-        unlink_with_retry link_name;
-        loop (retries + 1)
-    | Unix.Unix_error (Unix.EINTR, _, _) when retries < 5 -> loop (retries + 1)
-    | Unix.Unix_error _ -> ()
-  in
-  loop 0
-
-let link_latest t =
-  match t with
-  | Disabled -> ()
-  (* Windows lacks reliable symlink support without elevated privileges. *)
-  | Enabled _ when Sys.win32 -> ()
-  | Enabled e -> (
-      try
-        let suite_dir = Filename.concat e.root e.suite in
-        Path_ops.mkdir_p suite_dir;
-        let suite_latest = Filename.concat suite_dir "latest" in
-        unlink_with_retry suite_latest;
-        symlink_with_retry ~target:e.run_id ~link_name:suite_latest;
-        let root_latest = Filename.concat e.root "latest" in
-        unlink_with_retry root_latest;
-        symlink_with_retry
-          ~target:(Filename.concat e.suite e.run_id)
-          ~link_name:root_latest
-      with Unix.Unix_error _ | Sys_error _ -> ())
