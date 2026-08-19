@@ -17,7 +17,7 @@
                    block [i] spans line [i + 1] minus its newline
    CHILD_FAIL      "1" adds a failing test
 
-   The remaining argv is windtrap's (--quiet, --color, ...).
+   The remaining argv is windtrap's (--color, -v, ...).
    Callers must set WINDTRAP_COVERAGE_FILE: the registration installs the
    at_exit dump, which must never land in the real _build/_coverage. *)
 

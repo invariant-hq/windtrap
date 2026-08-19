@@ -189,7 +189,7 @@ let () =
   suggests "--colour" "--color";
   suggests "--tags" "--tag";
   (* Transposition is one edit, not two: plain Levenshtein ties --juint
-     between --junit and --quiet, and the tie goes to table order. *)
+     between --junit and --update, and the tie goes to table order. *)
   suggests "--juint" "--junit";
   let silent typo =
     let m = message [ typo ] in
