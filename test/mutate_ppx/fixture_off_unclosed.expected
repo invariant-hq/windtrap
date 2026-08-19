@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_off_unclosed___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_off_unclosed___ml =
                    line = 17;
                    col = 18;
                    rewrite = "sub";
-                   span = (645, 650);
                    before = "a + b";
                    after = "a - b";
                    dismissed = None

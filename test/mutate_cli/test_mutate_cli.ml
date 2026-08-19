@@ -149,28 +149,28 @@ let util = "lib/util.ml"
    calc.ml, one in util.ml. Every field is what an instrumented build
    would have recorded, renderings included — the report is drawn from
    them and from nothing else. *)
-let mutant ~file ~line ~col ~rewrite ~span ~before ~after verdict =
-  { M.id = { M.file; line; col; rewrite }; span; before; after; verdict }
+let mutant ~file ~line ~col ~rewrite ~before ~after verdict =
+  { M.id = { M.file; line; col; rewrite }; before; after; verdict }
 
 let m_add =
-  mutant ~file:calc ~line:1 ~col:14 ~rewrite:"add" ~span:(14, 19)
-    ~before:"a + b" ~after:"a - b"
+  mutant ~file:calc ~line:1 ~col:14 ~rewrite:"add" ~before:"a + b"
+    ~after:"a - b"
 
 let m_sub =
-  mutant ~file:calc ~line:2 ~col:14 ~rewrite:"sub" ~span:(34, 39)
-    ~before:"a - b" ~after:"a + b"
+  mutant ~file:calc ~line:2 ~col:14 ~rewrite:"sub" ~before:"a - b"
+    ~after:"a + b"
 
 let m_lt =
-  mutant ~file:calc ~line:3 ~col:14 ~rewrite:"lt" ~span:(54, 59) ~before:"a < b"
+  mutant ~file:calc ~line:3 ~col:14 ~rewrite:"lt" ~before:"a < b"
     ~after:"a <= b"
 
 let m_or =
-  mutant ~file:util ~line:1 ~col:13 ~rewrite:"or" ~span:(13, 19)
-    ~before:"p || q" ~after:"p && q"
+  mutant ~file:util ~line:1 ~col:13 ~rewrite:"or" ~before:"p || q"
+    ~after:"p && q"
 
 let m_and =
-  mutant ~file:util ~line:3 ~col:22 ~rewrite:"and" ~span:(70, 76)
-    ~before:"p && q" ~after:"p || q"
+  mutant ~file:util ~line:3 ~col:22 ~rewrite:"and" ~before:"p && q"
+    ~after:"p || q"
 
 let collection records = List.fold_left M.add M.empty records
 let killed_by w = M.Killed (M.Failed w)
@@ -753,7 +753,7 @@ let loud_failures =
   check_int "a foreign-format file exits 1" ~expected:1 ~actual:code;
   check_contains "a foreign-format file is named" ~needle:"old.mutants" err;
   check_contains "a foreign-format file names the expected magic"
-    ~needle:"windtrap-mutants-v1" err;
+    ~needle:"windtrap-mutants-v2" err;
   check_contains "a foreign format instructs deletion" ~needle:"delete" err;
   (* A coverage dump under _build/_mutants is the same rejection. *)
   let crossed = scratch "crossed/_build/_mutants/cov.mutants" in

@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_nesting___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_nesting___ml =
                    line = 6;
                    col = 23;
                    rewrite = "or";
-                   span = (249, 255);
                    before = "b && c";
                    after = "b || c";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_nesting___ml =
                      line = 7;
                      col = 18;
                      rewrite = "or";
-                     span = (274, 282);
                      before = "a && b";
                      after = "a || b";
                      dismissed = None
@@ -32,7 +29,6 @@ module Windtrap_mut_________fixture_nesting___ml =
                        line = 8;
                        col = 30;
                        rewrite = "and";
-                       span = (318, 326);
                        before = "c || d";
                        after = "c && d";
                        dismissed = None
@@ -40,7 +36,6 @@ module Windtrap_mut_________fixture_nesting___ml =
                          line = 11;
                          col = 20;
                          rewrite = "le";
-                         span = (422, 427);
                          before = "a < b";
                          after = "a <= b";
                          dismissed = None
@@ -48,7 +43,6 @@ module Windtrap_mut_________fixture_nesting___ml =
                            line = 12;
                            col = 20;
                            rewrite = "or";
-                           span = (462, 468);
                            before = "a && b";
                            after = "a || b";
                            dismissed = None
@@ -56,7 +50,6 @@ module Windtrap_mut_________fixture_nesting___ml =
                              line = 13;
                              col = 18;
                              rewrite = "not";
-                             span = (501, 502);
                              before = "a";
                              after = "not a";
                              dismissed = None

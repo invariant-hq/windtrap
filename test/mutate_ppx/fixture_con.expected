@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_con___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_con___ml =
                    line = 8;
                    col = 15;
                    rewrite = "or";
-                   span = (411, 417);
                    before = "a && b";
                    after = "a || b";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_con___ml =
                      line = 9;
                      col = 17;
                      rewrite = "and";
-                     span = (435, 441);
                      before = "a || b";
                      after = "a && b";
                      dismissed = None
@@ -32,7 +29,6 @@ module Windtrap_mut_________fixture_con___ml =
                        line = 10;
                        col = 22;
                        rewrite = "or";
-                       span = (464, 474);
                        before = "ready && x";
                        after = "ready || x";
                        dismissed = None
@@ -40,7 +36,6 @@ module Windtrap_mut_________fixture_con___ml =
                          line = 11;
                          col = 55;
                          rewrite = "and";
-                         span = (544, 564);
                          before = "(p x) || (search p rest)";
                          after = "(p x) && (search p rest)";
                          dismissed = None

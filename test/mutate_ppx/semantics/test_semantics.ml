@@ -318,7 +318,7 @@ let tests =
         let changed =
           List.filter
             (fun (m : M.mutant) ->
-              (match M.arm ~budget:1_000_000 (M.selector_of_mutant m) with
+              (match M.arm ~budget:1_000_000 m.M.id with
               | Ok _ -> ()
               | Error e -> failf "%a" M.pp_arm_error e);
               M.reset_reach ();
@@ -505,16 +505,13 @@ let tests =
     (* {1 Inertness, restated at the end} *)
     test "nothing was armed from the first line to the last" (fun () ->
         check "no mutant is armed" (M.armed () = None);
-        (* [selector_of_string] round-trips every catalogued identifier:
-           the report the loop will print names sites that can be found
+        (* [id_of_string] round-trips every catalogued identifier: the
+           report the loop will print names sites that can be found
            again. *)
         List.iter
           (fun (m : M.mutant) ->
-            match M.selector_of_string (M.id_to_string m.id) with
-            | Ok (M.By_position id) ->
-                check "the identifier round-trips" (M.equal_id id m.id)
-            | Ok (M.By_span _) ->
-                failf "%s parsed as a span selector" (M.id_to_string m.id)
+            match M.id_of_string (M.id_to_string m.id) with
+            | Ok id -> check "the identifier round-trips" (M.equal_id id m.id)
             | Error e -> failf "%a" M.pp_arm_error e)
           (M.catalogue ()));
   ]

@@ -3,14 +3,13 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Windtrap_mutate: identifiers and the two spellings a
-   selector accepts (with every rejection class), the register/guard
-   registry (reach counting, epoch and dirty-list bookkeeping across
-   simulated tests, hit counts, reset, duplicate and conflicting
-   registrations), arming (not-found versus ambiguous, span
-   disambiguation, the runaway budget), the verdict lattice (killed
+(* Tests for Windtrap_mutate: identifiers and their one spelling (with
+   every rejection class), the register/guard registry (reach counting,
+   epoch and dirty-list bookkeeping across simulated tests, hit counts,
+   reset, duplicate and conflicting registrations), arming (not-found
+   versus ambiguous, the runaway budget), the verdict lattice (killed
    anywhere wins, and the algebraic laws that make merging any number of
-   files in any order give one answer), the v1 verdict format (exact
+   files in any order give one answer), the v2 verdict format (exact
    bytes, round trip, every corruption class), deterministic output
    filenames, and the atomic write - the last also end to end through a
    child executable.
@@ -23,7 +22,7 @@
 open Windtrap
 module M = Windtrap_mutate
 
-let selector_t = Testable.structural ~pp:M.pp_selector
+let id_t = Testable.structural ~pp:M.pp_id
 let verdict_t = Testable.structural ~pp:M.pp_verdict
 
 (* This suite's own registrations, told apart from the process's
@@ -54,7 +53,7 @@ let catalogue () =
   List.filter (fun (m : M.mutant) -> mine m.M.id.M.file) (M.catalogue ())
 
 let pp_mutant ppf (m : M.mutant) =
-  Format.fprintf ppf "%a[%d-%d]%s" M.pp_id m.M.id (fst m.M.span) (snd m.M.span)
+  Format.fprintf ppf "%a%s" M.pp_id m.M.id
     (match m.M.dismissed with None -> "" | Some r -> " off:" ^ r)
 
 let mutant_t = Testable.structural ~pp:pp_mutant
@@ -64,25 +63,24 @@ let pp_reached ppf (r : M.reached) =
 
 let reached_t = Testable.structural ~pp:pp_reached
 
-let site ?dismissed ~line ~col ~rewrite ~span ?(before = "b") ?(after = "a") ()
-    =
-  { M.line; col; rewrite; span; before; after; dismissed }
+let site ?dismissed ~line ~col ~rewrite ?(before = "b") ?(after = "a") () =
+  { M.line; col; rewrite; before; after; dismissed }
 
-let mutant ~file ~line ~col ~rewrite ~span ?(before = "b") ?(after = "a")
-    ?dismissed () =
-  { M.id = { M.file; line; col; rewrite }; span; before; after; dismissed }
+let mutant ~file ~line ~col ~rewrite ?(before = "b") ?(after = "a") ?dismissed
+    () =
+  { M.id = { M.file; line; col; rewrite }; before; after; dismissed }
 
 let id ~file ~line ~col ~rewrite = { M.file; line; col; rewrite }
 
 (* A verdict-file record. The rendering defaults are the shortest that
    still round-trip; the tests that are about the rendering pass their
    own. *)
-let record ?(span = (0, 0)) ?(before = "b") ?(after = "a") id verdict =
-  { M.id; span; before; after; verdict }
+let record ?(before = "b") ?(after = "a") id verdict =
+  { M.id; before; after; verdict }
 
 let pp_record ppf (r : M.record) =
-  Format.fprintf ppf "%a[%d-%d] %s -> %s: %a" M.pp_id r.M.id (fst r.M.span)
-    (snd r.M.span) r.M.before r.M.after M.pp_verdict r.M.verdict
+  Format.fprintf ppf "%a %s -> %s: %a" M.pp_id r.M.id r.M.before r.M.after
+    M.pp_verdict r.M.verdict
 
 let record_t = Testable.structural ~pp:pp_record
 
@@ -141,7 +139,7 @@ let read_file path =
         (fun () -> Some (really_input_string ic (in_channel_length ic)))
   | exception Sys_error _ -> None
 
-(* Identifiers and selectors *)
+(* Identifiers *)
 
 let identity_tests =
   [
@@ -177,14 +175,13 @@ let identity_tests =
           (M.equal_id
              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"and")));
-    test "selector_of_string round-trips the canonical spelling" (fun () ->
+    test "id_of_string round-trips the canonical spelling" (fun () ->
         List.iter
           (fun i ->
-            equal ~msg:(M.id_to_string i) (result selector_t string)
-              (Ok (M.By_position i))
+            equal ~msg:(M.id_to_string i) (result id_t string) (Ok i)
               (Result.map_error
                  (fun e -> Format.asprintf "%a" M.pp_arm_error e)
-                 (M.selector_of_string (M.id_to_string i))))
+                 (M.id_of_string (M.id_to_string i))))
           [
             id ~file:"lib/calc.ml" ~line:9 ~col:12 ~rewrite:"add";
             id ~file:"a.ml" ~line:1 ~col:0 ~rewrite:"not";
@@ -192,39 +189,15 @@ let identity_tests =
                taken from the right. *)
             id ~file:"a:b.ml" ~line:44 ~col:3 ~rewrite:"fsub";
           ]);
-    test "selector_of_string accepts the byte-offset spelling" (fun () ->
-        equal ~msg:"span form" (result selector_t string)
-          (Ok
-             (M.By_span
-                {
-                  file = "lib/calc.ml";
-                  first = 312;
-                  last = 317;
-                  rewrite = "add";
-                }))
-          (Result.map_error
-             (fun _ -> "error")
-             (M.selector_of_string "lib/calc.ml:312-317:add"));
-        equal ~msg:"an empty span is still a span" (result selector_t string)
-          (Ok
-             (M.By_span { file = "a.ml"; first = 0; last = 0; rewrite = "drop" }))
-          (Result.map_error
-             (fun _ -> "error")
-             (M.selector_of_string "a.ml:0-0:drop")));
-    test "selector_of_mutant names a mutant by its span" (fun () ->
-        equal ~msg:"span selector" selector_t
-          (M.By_span { file = "lib/x.ml"; first = 5; last = 9; rewrite = "eq" })
-          (M.selector_of_mutant
-             (mutant ~file:"lib/x.ml" ~line:2 ~col:3 ~rewrite:"eq" ~span:(5, 9)
-                ())));
-    cases "selector_of_string rejects"
+    cases "id_of_string rejects"
       ~name:(fun (spec, _) -> if spec = "" then "<empty>" else spec)
       [
         ("", "no ':' separator");
         ("lib/calc.ml", "no ':' separator");
         ("lib/calc.ml:9:12:frobnicate", "unknown rewrite");
         (* The vocabulary is closed: a plausible operator name that is not
-           in it must not slip through as a selector matching nothing. *)
+           in it must not slip through as an identifier matching
+           nothing. *)
         ("lib/calc.ml:9:12:plus", "unknown rewrite");
         ("lib/calc.ml:9:12:LT", "unknown rewrite");
         ("add", "no ':' separator");
@@ -235,17 +208,17 @@ let identity_tests =
         ("lib/calc.ml:x:12:add", "invalid line");
         ("lib/calc.ml:0:12:add", "1-based");
         (":9:12:add", "empty file name");
-        ("lib/calc.ml:317-312:add", "inverted byte span");
-        ("lib/calc.ml:1-x:add", "invalid byte span");
-        (":312-317:add", "empty file name");
+        (* The byte-span spelling is not a spelling: the column parse
+           rejects it, and the message names the field it read. *)
+        ("lib/calc.ml:312-317:add", "invalid column");
         ("lib/calc.ml:0x10:2:add", "invalid line");
         ("lib/calc.ml:1_0:2:add", "invalid line");
       ]
       (fun (spec, needle) ->
-        match M.selector_of_string spec with
-        | Ok sel ->
+        match M.id_of_string spec with
+        | Ok i ->
             failf "%S parsed as %a, expected a rejection mentioning %S" spec
-              M.pp_selector sel needle
+              M.pp_id i needle
         | Error (M.Malformed { reason; _ }) ->
             contains ~msg:"reason" ~sub:needle reason
         | Error e ->
@@ -262,8 +235,8 @@ let registry_tests =
           M.register ~file:"t/reach.ml"
             ~sites:
               [|
-                site ~line:1 ~col:0 ~rewrite:"lt" ~span:(0, 5) ();
-                site ~line:2 ~col:0 ~rewrite:"add" ~span:(10, 15) ();
+                site ~line:1 ~col:0 ~rewrite:"lt" ();
+                site ~line:2 ~col:0 ~rewrite:"add" ();
               |]
         in
         fresh ();
@@ -276,13 +249,13 @@ let registry_tests =
             {
               M.mutant =
                 mutant ~file:"t/reach.ml" ~line:1 ~col:0 ~rewrite:"lt"
-                  ~span:(0, 5) ();
+                  ();
               hits = 2;
             };
             {
               M.mutant =
                 mutant ~file:"t/reach.ml" ~line:2 ~col:0 ~rewrite:"add"
-                  ~span:(10, 15) ();
+                  ();
               hits = 1;
             };
           ]
@@ -294,8 +267,8 @@ let registry_tests =
           M.register ~file:"t/epoch.ml"
             ~sites:
               [|
-                site ~line:1 ~col:0 ~rewrite:"lt" ~span:(0, 5) ();
-                site ~line:2 ~col:0 ~rewrite:"or" ~span:(10, 15) ();
+                site ~line:1 ~col:0 ~rewrite:"lt" ();
+                site ~line:2 ~col:0 ~rewrite:"or" ();
               |]
         in
         let ids reached =
@@ -327,7 +300,7 @@ let registry_tests =
     test "hits are counted per window, not cumulatively" (fun () ->
         let g =
           M.register ~file:"t/hits.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"eq" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"eq" () |]
         in
         let hits () = List.map (fun (r : M.reached) -> r.M.hits) (drain ()) in
         fresh ();
@@ -345,7 +318,7 @@ let registry_tests =
            release) and is reported as not armable, never as unreached. *)
         let g =
           M.register ~file:"t/outside.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"not" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"not" () |]
         in
         fresh ();
         equal ~msg:"the test window is empty" (list reached_t) [] (drain ());
@@ -356,7 +329,7 @@ let registry_tests =
     test "reset_reach zeroes counts and opens a fresh window" (fun () ->
         let g =
           M.register ~file:"t/reset.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"ge" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"ge" () |]
         in
         fresh ();
         ignore (g 0);
@@ -371,11 +344,11 @@ let registry_tests =
         register_only ~file:"t/cat_b.ml"
           ~sites:
             [|
-              site ~line:9 ~col:2 ~rewrite:"or" ~span:(90, 95) ();
-              site ~line:1 ~col:2 ~rewrite:"and" ~span:(10, 15) ();
+              site ~line:9 ~col:2 ~rewrite:"or" ();
+              site ~line:1 ~col:2 ~rewrite:"and" ();
             |];
         register_only ~file:"t/cat_a.ml"
-          ~sites:[| site ~line:4 ~col:0 ~rewrite:"sub" ~span:(40, 45) () |];
+          ~sites:[| site ~line:4 ~col:0 ~rewrite:"sub" () |];
         let mine =
           List.filter
             (fun (m : M.mutant) ->
@@ -390,13 +363,13 @@ let registry_tests =
         register_only ~file:"t/dismiss.ml"
           ~sites:
             [|
-              site ~line:3 ~col:1 ~rewrite:"add" ~span:(30, 35) ~before:"a + b"
+              site ~line:3 ~col:1 ~rewrite:"add" ~before:"a + b"
                 ~after:"a - b" ~dismissed:"equivalent" ();
             |];
         equal ~msg:"the dismissed mutant" (list mutant_t)
           [
             mutant ~file:"t/dismiss.ml" ~line:3 ~col:1 ~rewrite:"add"
-              ~span:(30, 35) ~before:"a + b" ~after:"a - b"
+              ~before:"a + b" ~after:"a - b"
               ~dismissed:"equivalent" ();
           ]
           (List.filter
@@ -405,25 +378,23 @@ let registry_tests =
     test "an index outside the site table raises" (fun () ->
         let g =
           M.register ~file:"t/bounds.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"lt" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"lt" () |]
         in
         raises_match ~msg:"past the end" Exn.invalid_arg (fun () -> g 1);
         raises_match ~msg:"negative" Exn.invalid_arg (fun () -> g (-1)));
     cases "a malformed site table raises"
       ~name:(fun (name, _) -> name)
       [
-        ("line 0", site ~line:0 ~col:0 ~rewrite:"lt" ~span:(0, 5) ());
-        ("negative column", site ~line:1 ~col:(-1) ~rewrite:"lt" ~span:(0, 5) ());
-        ("negative span", site ~line:1 ~col:0 ~rewrite:"lt" ~span:(-1, 5) ());
-        ("inverted span", site ~line:1 ~col:0 ~rewrite:"lt" ~span:(9, 5) ());
-        ("unknown rewrite", site ~line:1 ~col:0 ~rewrite:"plus" ~span:(0, 5) ());
+        ("line 0", site ~line:0 ~col:0 ~rewrite:"lt" ());
+        ("negative column", site ~line:1 ~col:(-1) ~rewrite:"lt" ());
+        ("unknown rewrite", site ~line:1 ~col:0 ~rewrite:"plus" ());
       ]
       (fun (name, s) ->
         raises_match ~msg:name Exn.invalid_arg (fun () ->
             register_only ~file:("t/bad_" ^ name ^ ".ml") ~sites:[| s |]));
     test "one source file registered twice arms and drains as one mutant"
       (fun () ->
-        let sites = [| site ~line:2 ~col:4 ~rewrite:"gt" ~span:(20, 25) () |] in
+        let sites = [| site ~line:2 ~col:4 ~rewrite:"gt" () |] in
         let g1 = M.register ~file:"t/twice.ml" ~sites in
         let g2 = M.register ~file:"t/twice.ml" ~sites:(Array.copy sites) in
         equal ~msg:"the file's mutants are catalogued once" int 1
@@ -441,9 +412,7 @@ let registry_tests =
            survivor for code reached through it. *)
         let armed =
           match
-            M.arm
-              (M.By_span
-                 { file = "t/twice.ml"; first = 20; last = 25; rewrite = "gt" })
+            M.arm (id ~file:"t/twice.ml" ~line:2 ~col:4 ~rewrite:"gt")
           with
           | Ok m -> m
           | Error e -> failf "arm: %a" M.pp_arm_error e
@@ -457,7 +426,7 @@ let registry_tests =
         is_false ~msg:"disarm clears the second copy" (g2 0);
         ignore (drain ()));
     test "a conflicting registration warns and yields an inert guard" (fun () ->
-        let sites = [| site ~line:1 ~col:0 ~rewrite:"lt" ~span:(0, 5) () |] in
+        let sites = [| site ~line:1 ~col:0 ~rewrite:"lt" () |] in
         register_only ~file:"t/conflict.ml" ~sites;
         let path = scratch "warn.txt" in
         let saved = Unix.dup Unix.stderr in
@@ -474,7 +443,8 @@ let registry_tests =
               Unix.close saved)
             (fun () ->
               M.register ~file:"t/conflict.ml"
-                ~sites:[| site ~line:1 ~col:0 ~rewrite:"lt" ~span:(0, 99) () |])
+                ~sites:
+                  [| site ~line:1 ~col:0 ~rewrite:"lt" ~before:"x < y" () |])
         in
         (match read_file path with
         | Some err ->
@@ -507,13 +477,13 @@ let arming_tests =
            empty. *)
         match
           M.arm
-            (M.By_position (id ~file:"t/absent.ml" ~line:1 ~col:0 ~rewrite:"lt"))
+            (id ~file:"t/absent.ml" ~line:1 ~col:0 ~rewrite:"lt")
         with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
-        | Error (M.Uncatalogued { selector } as e) ->
-            equal ~msg:"the selector is returned whole" string
+        | Error (M.Uncatalogued { id } as e) ->
+            equal ~msg:"the identifier is returned whole" string
               "t/absent.ml:1:0:lt"
-              (Format.asprintf "%a" M.pp_selector selector);
+              (Format.asprintf "%a" M.pp_id id);
             let rendered = Format.asprintf "%a" M.pp_arm_error e in
             contains ~msg:"the message says whose mutant it is not"
               ~sub:"not this executable's mutant" rendered;
@@ -526,11 +496,9 @@ let arming_tests =
            from the file, so the identifier is wrong or stale rather
            than someone else's, and a caller must refuse on it. *)
         register_only ~file:"t/stale.ml"
-          ~sites:[| site ~line:5 ~col:3 ~rewrite:"lt" ~span:(50, 55) () |];
+          ~sites:[| site ~line:5 ~col:3 ~rewrite:"lt" () |];
         match
-          M.arm
-            (M.By_span
-               { file = "t/stale.ml"; first = 90; last = 95; rewrite = "lt" })
+          M.arm (id ~file:"t/stale.ml" ~line:9 ~col:0 ~rewrite:"lt")
         with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Unmatched { candidates; _ }) ->
@@ -545,12 +513,12 @@ let arming_tests =
         register_only ~file:"t/near.ml"
           ~sites:
             [|
-              site ~line:5 ~col:3 ~rewrite:"lt" ~span:(50, 55) ();
-              site ~line:8 ~col:1 ~rewrite:"add" ~span:(80, 85) ();
+              site ~line:5 ~col:3 ~rewrite:"lt" ();
+              site ~line:8 ~col:1 ~rewrite:"add" ();
             |];
         match
           M.arm
-            (M.By_position (id ~file:"t/near.ml" ~line:5 ~col:4 ~rewrite:"lt"))
+            (id ~file:"t/near.ml" ~line:5 ~col:4 ~rewrite:"lt")
         with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Unmatched { candidates; _ } as e) ->
@@ -563,82 +531,31 @@ let arming_tests =
             contains ~msg:"the message names a candidate"
               ~sub:"t/near.ml:5:3:lt" rendered
         | Error e -> failf "expected Unmatched, got %a" M.pp_arm_error e);
-    test "a position two sites share is ambiguous, never silently one of them"
-      (fun () ->
-        (* Two sites at one line, column and rewrite: what a rewriter
-           duplicating locations produces. Arming must refuse and name
-           both - a silently ignored arming turns a green run into a
-           false survivor. *)
-        let g =
-          M.register ~file:"t/ambi.ml"
-            ~sites:
-              [|
-                site ~line:4 ~col:2 ~rewrite:"eq" ~span:(40, 45) ();
-                site ~line:4 ~col:2 ~rewrite:"eq" ~span:(60, 65) ();
-              |]
-        in
-        (match
-           M.arm
-             (M.By_position (id ~file:"t/ambi.ml" ~line:4 ~col:2 ~rewrite:"eq"))
-         with
-        | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
-        | Error (M.Ambiguous { candidates; _ } as e) ->
-            equal ~msg:"both candidates" (list int) [ 40; 60 ]
-              (List.map (fun (m : M.mutant) -> fst m.M.span) candidates);
-            contains ~msg:"the message offers the byte span" ~sub:"byte span"
-              (Format.asprintf "%a" M.pp_arm_error e)
-        | Error e -> failf "expected Ambiguous, got %a" M.pp_arm_error e);
-        is_none ~msg:"nothing is armed after a refusal" (M.armed ());
-        (* The byte-offset spelling names one of them exactly. *)
-        (match
-           M.arm
-             (M.By_span
-                { file = "t/ambi.ml"; first = 60; last = 65; rewrite = "eq" })
-         with
-        | Ok m -> equal ~msg:"the second site" int 60 (fst m.M.span)
-        | Error e -> failf "span arming: %a" M.pp_arm_error e);
-        fresh ();
-        is_false ~msg:"the first site stays disarmed" (g 0);
-        is_true ~msg:"the second site is armed" (g 1);
-        M.disarm ();
-        ignore (drain ()));
     test "two sites no identifier can tell apart are ambiguous, not arbitrary"
       (fun () ->
-        (* Same line, column, rewrite {e and} span: what a location-
-           duplicating rewriter emits. No spelling of an identifier
-           separates them, and one file carries one armed index, so arming
-           either would leave the other live - a false survivor for code
-           reached through it. It must be refused. *)
+        (* Same line, column and rewrite: what a location-duplicating
+           rewriter emits, and what [add_site] refuses to emit. No
+           identifier separates them, and one file carries one armed
+           index, so arming either would leave the other live - a false
+           survivor for code reached through it. It must be refused. *)
         let g =
           M.register ~file:"t/dup.ml"
             ~sites:
               [|
-                site ~line:4 ~col:2 ~rewrite:"eq" ~span:(40, 45) ();
-                site ~line:4 ~col:2 ~rewrite:"eq" ~span:(40, 45) ();
+                site ~line:4 ~col:2 ~rewrite:"eq" ();
+                site ~line:4 ~col:2 ~rewrite:"eq" ();
               |]
         in
-        List.iter
-          (fun (name, sel) ->
-            match M.arm sel with
-            | Ok m -> failf "%s: armed %a, expected a refusal" name pp_mutant m
-            | Error (M.Ambiguous { candidates; _ } as e) ->
-                equal
-                  ~msg:(name ^ ": both sites are named")
-                  int 2 (List.length candidates);
-                contains
-                  ~msg:(name ^ ": the message says they are alike")
-                  ~sub:"tell them apart"
-                  (Format.asprintf "%a" M.pp_arm_error e)
-            | Error e ->
-                failf "%s: expected Ambiguous, got %a" name M.pp_arm_error e)
-          [
-            ( "by position",
-              M.By_position (id ~file:"t/dup.ml" ~line:4 ~col:2 ~rewrite:"eq")
-            );
-            ( "by span",
-              M.By_span
-                { file = "t/dup.ml"; first = 40; last = 45; rewrite = "eq" } );
-          ];
+        (match M.arm (id ~file:"t/dup.ml" ~line:4 ~col:2 ~rewrite:"eq") with
+        | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
+        | Error (M.Ambiguous { candidates; _ } as e) ->
+            equal ~msg:"both sites are named" int 2 (List.length candidates);
+            let rendered = Format.asprintf "%a" M.pp_arm_error e in
+            contains ~msg:"the message says they are alike"
+              ~sub:"tell them apart" rendered;
+            contains ~msg:"and names the remedies that do work"
+              ~sub:"[@mutate off]" rendered
+        | Error e -> failf "expected Ambiguous, got %a" M.pp_arm_error e);
         is_none ~msg:"nothing is armed" (M.armed ());
         fresh ();
         is_false ~msg:"the first site stays disarmed" (g 0);
@@ -647,12 +564,11 @@ let arming_tests =
     test "a refused arming disarms whatever was armed before" (fun () ->
         let g =
           M.register ~file:"t/refuse.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"or" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"or" () |]
         in
         (match
            M.arm
-             (M.By_position
-                (id ~file:"t/refuse.ml" ~line:1 ~col:0 ~rewrite:"or"))
+             (id ~file:"t/refuse.ml" ~line:1 ~col:0 ~rewrite:"or")
          with
         | Ok _ -> ()
         | Error e -> failf "arm: %a" M.pp_arm_error e);
@@ -661,8 +577,7 @@ let arming_tests =
         is_some ~msg:"armed () reports it" (M.armed ());
         (match
            M.arm
-             (M.By_position
-                (id ~file:"t/nothing.ml" ~line:1 ~col:0 ~rewrite:"or"))
+             (id ~file:"t/nothing.ml" ~line:1 ~col:0 ~rewrite:"or")
          with
         | Ok m -> failf "armed %a" pp_mutant m
         | Error _ -> ());
@@ -675,10 +590,10 @@ let arming_tests =
            before it resolves, not the overwrite of one file's slot. *)
         let ga =
           M.register ~file:"t/rearm_a.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"lt" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"lt" () |]
         and gb =
           M.register ~file:"t/rearm_b.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"gt" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"gt" () |]
         in
         let arm_ok name ?budget sel =
           match M.arm ?budget sel with
@@ -687,15 +602,13 @@ let arming_tests =
         in
         let _ =
           arm_ok "first" ~budget:2
-            (M.By_position
-               (id ~file:"t/rearm_a.ml" ~line:1 ~col:0 ~rewrite:"lt"))
+            (id ~file:"t/rearm_a.ml" ~line:1 ~col:0 ~rewrite:"lt")
         in
         fresh ();
         is_true ~msg:"the first is armed" (ga 0);
         let second =
           arm_ok "second"
-            (M.By_position
-               (id ~file:"t/rearm_b.ml" ~line:1 ~col:0 ~rewrite:"gt"))
+            (id ~file:"t/rearm_b.ml" ~line:1 ~col:0 ~rewrite:"gt")
         in
         equal ~msg:"armed () names the second" (option string)
           (Some "t/rearm_b.ml:1:0:gt")
@@ -715,12 +628,11 @@ let arming_tests =
     test "the runaway budget fires on the evaluation that exceeds it" (fun () ->
         let g =
           M.register ~file:"t/runaway.ml"
-            ~sites:[| site ~line:2 ~col:0 ~rewrite:"not" ~span:(20, 26) () |]
+            ~sites:[| site ~line:2 ~col:0 ~rewrite:"not" () |]
         in
         (match
            M.arm ~budget:3
-             (M.By_position
-                (id ~file:"t/runaway.ml" ~line:2 ~col:0 ~rewrite:"not"))
+             (id ~file:"t/runaway.ml" ~line:2 ~col:0 ~rewrite:"not")
          with
         | Ok _ -> ()
         | Error e -> failf "arm: %a" M.pp_arm_error e);
@@ -752,7 +664,7 @@ let arming_tests =
            the reset its very first evaluation would look like a runaway. *)
         let g =
           M.register ~file:"t/forked.ml"
-            ~sites:[| site ~line:1 ~col:0 ~rewrite:"and" ~span:(0, 5) () |]
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"and" () |]
         in
         fresh ();
         for _ = 1 to 10 do
@@ -760,8 +672,7 @@ let arming_tests =
         done;
         (match
            M.arm ~budget:2
-             (M.By_position
-                (id ~file:"t/forked.ml" ~line:1 ~col:0 ~rewrite:"and"))
+             (id ~file:"t/forked.ml" ~line:1 ~col:0 ~rewrite:"and")
          with
         | Ok _ -> ()
         | Error e -> failf "arm: %a" M.pp_arm_error e);
@@ -778,13 +689,12 @@ let arming_tests =
           (fun n ->
             raises_match ~msg:(string_of_int n) Exn.invalid_arg (fun () ->
                 M.arm ~budget:n
-                  (M.By_position
-                     (id ~file:"t/x.ml" ~line:1 ~col:0 ~rewrite:"or"))))
+                  (id ~file:"t/x.ml" ~line:1 ~col:0 ~rewrite:"or")))
           [ 0; -1 ]);
     test "arm_from_env resolves WINDTRAP_MUTATE_ARM" (fun () ->
         let g =
           M.register ~file:"t/env.ml"
-            ~sites:[| site ~line:6 ~col:2 ~rewrite:"fadd" ~span:(60, 66) () |]
+            ~sites:[| site ~line:6 ~col:2 ~rewrite:"fadd" () |]
         in
         equal ~msg:"the variable's name" string "WINDTRAP_MUTATE_ARM"
           M.arm_variable;
@@ -963,7 +873,7 @@ let verdict_tests =
            [a - b  ->  a + b], which is the block's whole point. *)
         let m = id ~file:"lib/calc.ml" ~line:9 ~col:12 ~rewrite:"add" in
         let r =
-          record ~span:(312, 317) ~before:"a - b" ~after:"a + b" m
+          record ~before:"a - b" ~after:"a + b" m
             (M.survived [ [ "calc"; "adds" ] ])
         in
         let t = M.add M.empty r in
@@ -980,13 +890,13 @@ let verdict_tests =
            commutative and associative. *)
         let m = id ~file:"lib/calc.ml" ~line:9 ~col:12 ~rewrite:"add" in
         let older =
-          record ~span:(100, 105) ~before:"a - b" ~after:"a + b" m M.Unreached
+          record ~before:"a - b" ~after:"a + b" m M.Unreached
         and newer =
-          record ~span:(312, 317) ~before:"a - b" ~after:"a + b" m
+          record ~before:"a - b" ~after:"a + b" m
             (killed_by [ "calc" ])
         in
         let expected =
-          record ~span:(100, 105) ~before:"a - b" ~after:"a + b" m
+          record ~before:"a - b" ~after:"a + b" m
             (killed_by [ "calc" ])
         in
         equal ~msg:"older then newer" (option record_t) (Some expected)
@@ -1085,33 +995,33 @@ let sample_collection () =
   M.add
     (M.add
        (M.add M.empty
-          (record ~span:(10, 15) ~before:"a - b" ~after:"a + b"
+          (record ~before:"a - b" ~after:"a + b"
              (id ~file:"lib/a.ml" ~line:1 ~col:2 ~rewrite:"add")
              M.Unreached))
-       (record ~span:(40, 45) ~before:"p && q" ~after:"not (p && q)"
+       (record ~before:"p && q" ~after:"not (p && q)"
           (id ~file:"lib/b.ml" ~line:3 ~col:4 ~rewrite:"not")
           (killed_by [ "g"; "t" ])))
-    (record ~span:(60, 66) ~before:"a || b" ~after:"a && b"
+    (record ~before:"a || b" ~after:"a && b"
        (id ~file:"lib/b.ml" ~line:5 ~col:0 ~rewrite:"or")
        (M.survived [ [ "x" ]; [ "y"; "z" ] ]))
 
 let sample_bytes =
-  "windtrap-mutants-v1\n\
+  "windtrap-mutants-v2\n\
    3\n\
-   8 lib/a.ml 1 2 3 add 10 15 5 a - b 5 a + b unreached\n\
-   8 lib/b.ml 3 4 3 not 40 45 6 p && q 12 not (p && q) failed 2 1 g 1 t\n\
-   8 lib/b.ml 5 0 2 or 60 66 6 a || b 6 a && b survived 2 1 1 x 2 1 y 1 z\n"
+   8 lib/a.ml 1 2 3 add 5 a - b 5 a + b unreached\n\
+   8 lib/b.ml 3 4 3 not 6 p && q 12 not (p && q) failed 2 1 g 1 t\n\
+   8 lib/b.ml 5 0 2 or 6 a || b 6 a && b survived 2 1 1 x 2 1 y 1 z\n"
 
 let digest = String.make 32 'a'
 
 let format_tests =
   [
-    test "to_string is the documented v1 encoding" (fun () ->
+    test "to_string is the documented v2 encoding" (fun () ->
         equal ~msg:"exact bytes" text sample_bytes
           (M.to_string (sample_collection ())));
     test "an identity is recorded after the magic line" (fun () ->
         equal ~msg:"exact bytes" text
-          ("windtrap-mutants-v1\nexe " ^ digest ^ " 10 test/a.exe\n0\n")
+          ("windtrap-mutants-v2\nexe " ^ digest ^ " 10 test/a.exe\n0\n")
           (M.to_string ~identity:{ M.exe = "test/a.exe"; digest } M.empty);
         raises_match ~msg:"an empty exe is refused" Exn.invalid_arg (fun () ->
             M.to_string ~identity:{ M.exe = ""; digest } M.empty);
@@ -1166,9 +1076,9 @@ let format_tests =
         in
         equal ~msg:"reversed insertion" text (build ids) (build (List.rev ids)));
     test "empty collections round-trip" (fun () ->
-        equal ~msg:"bytes" text "windtrap-mutants-v1\n0\n" (M.to_string M.empty);
+        equal ~msg:"bytes" text "windtrap-mutants-v2\n0\n" (M.to_string M.empty);
         let parsed, _ =
-          ok_error "parse" (M.of_string "windtrap-mutants-v1\n0\n")
+          ok_error "parse" (M.of_string "windtrap-mutants-v2\n0\n")
         in
         is_true ~msg:"still empty" (M.is_empty parsed));
   ]
@@ -1188,9 +1098,9 @@ let rejection_tests =
       [
         ("empty", "");
         ("coverage file", "windtrap-coverage-v3\n1\n");
-        ("future version", "windtrap-mutants-v2\n0\n");
+        ("future version", "windtrap-mutants-v3\n0\n");
         ("uppercase", "WINDTRAP-MUTANTS-V1\n0\n");
-        ("prefix without separator", "windtrap-mutants-v10\n0\n");
+        ("prefix without separator", "windtrap-mutants-v20\n0\n");
         ("plain text", "hello\nworld\n");
       ]
       (fun (name, s) ->
@@ -1202,7 +1112,7 @@ let rejection_tests =
                 (M.Unknown_format { path; header })
             in
             contains ~msg:"the message names the expected magic"
-              ~sub:"windtrap-mutants-v1" rendered
+              ~sub:"windtrap-mutants-v2" rendered
         | Error e ->
             failf "%s: expected Unknown_format, got %a" name M.pp_error e
         | Ok _ -> failf "%s: parsed, expected a rejection" name);
@@ -1210,99 +1120,88 @@ let rejection_tests =
       ~name:(fun (name, _, _) -> name)
       [
         ( "truncated records",
-          "windtrap-mutants-v1\n2\n8 lib/a.ml 1 2 3 add 0 0 1 b 1 a unreached\n",
+          "windtrap-mutants-v2\n2\n8 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
           "expected" );
         ( "record count exceeds data",
-          "windtrap-mutants-v1\n99999999\n",
+          "windtrap-mutants-v2\n99999999\n",
           "exceeds data" );
-        ("negative record count", "windtrap-mutants-v1\n-1\n", "negative");
+        ("negative record count", "windtrap-mutants-v2\n-1\n", "negative");
         (* The magic alone is not an empty collection: a truncated file
            must not read as "this executable killed nothing". *)
-        ("magic only", "windtrap-mutants-v1", "expected record count");
+        ("magic only", "windtrap-mutants-v2", "expected record count");
         ( "negative witness count",
-          "windtrap-mutants-v1\n1\n8 lib/a.ml 1 2 3 add 0 0 1 b 1 a failed -1\n",
+          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a failed -1\n",
           "negative test path length" );
         ( "line 0",
-          "windtrap-mutants-v1\n1\n8 lib/a.ml 0 2 3 add 0 0 1 b 1 a unreached\n",
+          "windtrap-mutants-v2\n1\n8 lib/a.ml 0 2 3 add 1 b 1 a unreached\n",
           "1-based" );
         ( "negative line",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
            8 lib/a.ml -3 2 3 add 0 0 1 b 1 a unreached\n",
           "negative line" );
         ( "negative column",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
            8 lib/a.ml 1 -2 3 add 0 0 1 b 1 a unreached\n",
           "negative column" );
         ( "empty file name",
-          "windtrap-mutants-v1\n1\n0  1 2 3 add 0 0 1 b 1 a unreached\n",
+          "windtrap-mutants-v2\n1\n0  1 2 3 add 0 0 1 b 1 a unreached\n",
           "empty file name" );
         ( "truncated file name",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
-           80 lib/a.ml 1 2 3 add 0 0 1 b 1 a unreached\n",
+           80 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
           "truncated" );
         ( "unknown rewrite",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
-           8 lib/a.ml 1 2 4 plus 0 0 1 b 1 a unreached\n",
+           8 lib/a.ml 1 2 4 plus 1 b 1 a unreached\n",
           "unknown rewrite" );
-        (* The span is the mutated expression's extent, so [first > last]
-           names no expression - and a record whose rendering cannot be
-           trusted is a survivor block drawn wrong. *)
-        ( "inverted span",
-          "windtrap-mutants-v1\n1\n8 lib/a.ml 1 2 3 add 9 4 1 b 1 a unreached\n",
-          "inverted span" );
-        ( "negative span",
-          "windtrap-mutants-v1\n\
-           1\n\
-           8 lib/a.ml 1 2 3 add -1 4 1 b 1 a unreached\n",
-          "negative span start" );
         ( "truncated rendering",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
-           8 lib/a.ml 1 2 3 add 0 0 80 b 1 a unreached\n",
+           8 lib/a.ml 1 2 3 add 80 b 1 a unreached\n",
           "truncated before" );
         ( "missing rendering",
-          "windtrap-mutants-v1\n1\n8 lib/a.ml 1 2 3 add unreached\n",
-          "span start" );
+          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add unreached\n",
+          "before" );
         ( "unknown verdict",
-          "windtrap-mutants-v1\n1\n8 lib/a.ml 1 2 3 add 0 0 1 b 1 a errored\n",
+          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a errored\n",
           "unknown verdict" );
         ( "missing verdict",
-          "windtrap-mutants-v1\n1\n8 lib/a.ml 1 2 3 add 0 0 1 b 1 a\n",
+          "windtrap-mutants-v2\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a\n",
           "expected verdict" );
         ( "truncated witness",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
-           8 lib/a.ml 1 2 3 add 0 0 1 b 1 a failed 2 1 g\n",
+           8 lib/a.ml 1 2 3 add 1 b 1 a failed 2 1 g\n",
           "expected" );
         ( "witness count exceeds data",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
-           8 lib/a.ml 1 2 3 add 0 0 1 b 1 a survived 99999999\n",
+           8 lib/a.ml 1 2 3 add 1 b 1 a survived 99999999\n",
           "exceeds data" );
         (* A survivor with no witness is not a survivor: it is what an
            unreached mutant looks like when a writer confuses the two, and
            it would render as "0 tests ran this line and none failed". *)
         ( "survivor with no witness",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            1\n\
-           8 lib/a.ml 1 2 3 add 0 0 1 b 1 a survived 0\n",
+           8 lib/a.ml 1 2 3 add 1 b 1 a survived 0\n",
           "names no test" );
         ( "duplicate record",
-          "windtrap-mutants-v1\n\
+          "windtrap-mutants-v2\n\
            2\n\
-           8 lib/a.ml 1 2 3 add 0 0 1 b 1 a unreached\n\
-           8 lib/a.ml 1 2 3 add 0 0 1 b 1 a crashed\n",
+           8 lib/a.ml 1 2 3 add 1 b 1 a unreached\n\
+           8 lib/a.ml 1 2 3 add 1 b 1 a crashed\n",
           "duplicate record" );
-        ("trailing data", "windtrap-mutants-v1\n0\nextra\n", "trailing data");
+        ("trailing data", "windtrap-mutants-v2\n0\nextra\n", "trailing data");
         ( "short identity digest",
-          "windtrap-mutants-v1\nexe abcd 1 a\n0\n",
+          "windtrap-mutants-v2\nexe abcd 1 a\n0\n",
           "digest" );
         ( "empty identity exe",
-          "windtrap-mutants-v1\nexe " ^ String.make 32 'a' ^ " 0 \n0\n",
+          "windtrap-mutants-v2\nexe " ^ String.make 32 'a' ^ " 0 \n0\n",
           "empty executable identity" );
       ]
       (fun (name, s, sub) -> check_corrupt name ~sub s);
@@ -1424,10 +1323,8 @@ let child_tests =
            sum 3 4 = 7\n\
            positives = 2\n"
           out);
-    test "arming by byte span picks the same site the position would" (fun () ->
-        let status, out, _ =
-          run_child ~arm:"lib/child.ml:80-85:add" [ "run" ]
-        in
+    test "a second site of the same file arms on its own position" (fun () ->
+        let status, out, _ = run_child ~arm:"lib/child.ml:7:4:add" [ "run" ] in
         equal ~msg:"exit code" int 0 status;
         equal ~msg:"stdout" text
           "armed: lib/child.ml:7:4:add a + b -> a - b\n\
@@ -1504,7 +1401,7 @@ let child_tests =
         let t, recorded = ok_error "load" (M.load path) in
         equal ~msg:"the record" (option record_t)
           (Some
-             (record ~span:(80, 85) ~before:"l < r" ~after:"not (r < l)"
+             (record ~before:"l < r" ~after:"not (r < l)"
                 (id ~file:"lib/child.ml" ~line:3 ~col:10 ~rewrite:"lt")
                 (M.survived [ [ "child"; "less" ] ])))
           (M.find t (id ~file:"lib/child.ml" ~line:3 ~col:10 ~rewrite:"lt"));

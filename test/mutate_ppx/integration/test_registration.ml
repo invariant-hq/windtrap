@@ -45,7 +45,7 @@ let with_mutant ~file ~rewrite ~before f =
   in
   (match matching with
   | [ m ] -> (
-      match Windtrap_mutate.arm (Windtrap_mutate.selector_of_mutant m) with
+      match Windtrap_mutate.arm m.Windtrap_mutate.id with
       | Ok _ -> ()
       | Error e -> Format.kasprintf failwith "%a" Windtrap_mutate.pp_arm_error e
       )
@@ -176,7 +176,6 @@ let () =
       assert (List.mem m.id.rewrite Windtrap_mutate.rewrites);
       assert (m.id.line >= 1);
       assert (m.id.col >= 0);
-      assert (fst m.span <= snd m.span);
       assert (m.before <> "");
       assert (m.after <> ""))
     catalogue;
@@ -199,7 +198,7 @@ let () =
   let changed =
     List.filter
       (fun (m : Windtrap_mutate.mutant) ->
-        (match Windtrap_mutate.arm (Windtrap_mutate.selector_of_mutant m) with
+        (match Windtrap_mutate.arm m.Windtrap_mutate.id with
         | Ok _ -> ()
         | Error e ->
             Format.kasprintf failwith "%a" Windtrap_mutate.pp_arm_error e);

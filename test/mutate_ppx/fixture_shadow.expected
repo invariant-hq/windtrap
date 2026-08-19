@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_shadow___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_shadow___ml =
                    line = 16;
                    col = 21;
                    rewrite = "le";
-                   span = (641, 646);
                    before = "a < b";
                    after = "a <= b";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_shadow___ml =
                      line = 17;
                      col = 15;
                      rewrite = "or";
-                     span = (676, 682);
                      before = "a && b";
                      after = "a || b";
                      dismissed = None

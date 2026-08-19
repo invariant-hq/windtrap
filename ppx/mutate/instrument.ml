@@ -180,15 +180,13 @@ let capabilities_of_structure structure =
 
 (* Sites *)
 
-(* One entry of the file's site table: [line], [col] and the byte extent
-   describe the mutated expression, [before] and [after] are its
-   renderings for the report. *)
+(* One entry of the file's site table: [line] and [col] locate the
+   mutated expression, [before] and [after] are its renderings for the
+   report. *)
 type site = {
   line : int;
   col : int;
   rewrite : string;
-  first : int;
-  last : int;
   before : string;
   after : string;
   dismissed : string option;
@@ -273,18 +271,8 @@ let add_site st ~(loc : Location.t) ~rewrite ~before ~after ~dismissed =
     else begin
       Hashtbl.add st.seen key ();
       let index = st.count in
-      st.rev_sites <-
-        {
-          line;
-          col;
-          rewrite;
-          first = loc.loc_start.pos_cnum;
-          last = loc.loc_end.pos_cnum;
-          before;
-          after;
-          dismissed;
-        }
-        :: st.rev_sites;
+      st.rev_sites <- { line; col; rewrite; before; after; dismissed }
+                      :: st.rev_sites;
       st.count <- index + 1;
       match dismissed with Some _ -> None | None -> Some index
     end
@@ -400,7 +388,7 @@ let binder index role = Printf.sprintf "__windtrap_mut_%d_%s" index role
    must declare the site record's type to name that record's fields
    without type-directed disambiguation (see [runtime_initialization]),
    and opening a module that carries a record type would put labels named
-   [line], [col], [span], [before] and [after] into the user's scope.
+   [line], [col], [before] and [after] into the user's scope.
    The mangling itself mirrors coverage's (Windtrap_cov___, in
    ppx/coverage/instrument.ml's [runtime_initialization]); keep the two
    in sync. *)
@@ -866,7 +854,7 @@ class instrumenter st capabilities module_name =
 
      module Windtrap_mut___<mangled file> = struct
        type site = Windtrap_mutate.site = {
-         line : int; col : int; rewrite : string; span : int * int;
+         line : int; col : int; rewrite : string;
          before : string; after : string; dismissed : string option;
        }
 
@@ -885,12 +873,11 @@ class instrumenter st capabilities module_name =
 
    Two decisions here differ from coverage's otherwise identical
    preamble, and both have the same cause: [Windtrap_mutate] declares
-   [line], [col], [rewrite], [span], [before], [after] and [dismissed]
-   across three record types, so [Windtrap_mutate.span] resolves to
-   [mutant]'s field and using it for a [site] is warning 42 -
-   disambiguated-name, fatal in a library compiled with
-   [-w +a -warn-error +a]. Qualifying every field, which is all coverage
-   needs, is therefore not enough. Re-exporting the type makes its labels
+   [line], [col], [rewrite], [before], [after] and [dismissed] across
+   three record types, so [Windtrap_mutate.before] resolves to [mutant]'s
+   field and using it for a [site] is warning 42 - disambiguated-name,
+   fatal in a library compiled with [-w +a -warn-error +a]. Qualifying
+   every field, which is all coverage needs, is therefore not enough. Re-exporting the type makes its labels
    the only ones in scope inside the generated module, so the table names
    them with no type-directed disambiguation at all - and the equation
    makes a runtime whose record has drifted a loud compile error rather
@@ -898,7 +885,7 @@ class instrumenter st capabilities module_name =
 
    Because the module now carries a record type, it is referenced
    qualified instead of being opened: opening it would put labels named
-   [line], [col], [span], [before] and [after] into the user's scope,
+   [line], [col], [before] and [after] into the user's scope,
    where they could shadow the user's own or make the user's records
    ambiguous. *)
 let runtime_initialization st ~file ~module_name =
@@ -909,7 +896,6 @@ let runtime_initialization st ~file ~module_name =
         line : int;
         col : int;
         rewrite : string;
-        span : int * int;
         before : string;
         after : string;
         dismissed : string option;
@@ -924,7 +910,6 @@ let runtime_initialization st ~file ~module_name =
                line = [%e eint ~loc site.line];
                col = [%e eint ~loc site.col];
                rewrite = [%e estring ~loc site.rewrite];
-               span = ([%e eint ~loc site.first], [%e eint ~loc site.last]);
                before = [%e estring ~loc site.before];
                after = [%e estring ~loc site.after];
                dismissed =

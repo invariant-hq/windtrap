@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_cmp___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                    line = 7;
                    col = 19;
                    rewrite = "le";
-                   span = (310, 315);
                    before = "a < b";
                    after = "a <= b";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                      line = 8;
                      col = 21;
                      rewrite = "lt";
-                     span = (351, 357);
                      before = "a <= b";
                      after = "a < b";
                      dismissed = None
@@ -32,7 +29,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                        line = 11;
                        col = 8;
                        rewrite = "ge";
-                       span = (397, 402);
                        before = "a > b";
                        after = "a >= b";
                        dismissed = None
@@ -40,7 +36,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                          line = 15;
                          col = 39;
                          rewrite = "gt";
-                         span = (460, 466);
                          before = "a >= b";
                          after = "a > b";
                          dismissed = None
@@ -48,7 +43,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                            line = 16;
                            col = 18;
                            rewrite = "neq";
-                           span = (499, 504);
                            before = "a = b";
                            after = "a <> b";
                            dismissed = None
@@ -56,7 +50,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                              line = 17;
                              col = 21;
                              rewrite = "eq";
-                             span = (540, 546);
                              before = "a <> b";
                              after = "a = b";
                              dismissed = None
@@ -64,7 +57,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                                line = 20;
                                col = 21;
                                rewrite = "or";
-                               span = (648, 666);
                                before = "(x >= lo) && (x <= hi)";
                                after = "(x >= lo) || (x <= hi)";
                                dismissed = None
@@ -72,7 +64,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                                  line = 20;
                                  col = 21;
                                  rewrite = "gt";
-                                 span = (648, 655);
                                  before = "x >= lo";
                                  after = "x > lo";
                                  dismissed = None
@@ -80,7 +71,6 @@ module Windtrap_mut_________fixture_cmp___ml =
                                    line = 20;
                                    col = 32;
                                    rewrite = "lt";
-                                   span = (659, 666);
                                    before = "x <= hi";
                                    after = "x < hi";
                                    dismissed = None

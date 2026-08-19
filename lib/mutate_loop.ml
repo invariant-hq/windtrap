@@ -775,10 +775,10 @@ let check_determinism ~armed ~expired ~scratch ~dry_run_wall
 
 (* One mutant *)
 
-let mutant_line ~armed ~paths ~budget ~spine ~mutant tests (_ : Unix.file_descr)
-    =
+let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests
+    (_ : Unix.file_descr) =
   child_prologue ~armed;
-  match M.arm ~budget (M.selector_of_mutant mutant) with
+  match M.arm ~budget mutant.M.id with
   | Error error ->
       "error " ^ one_line (Format.asprintf "%a" M.pp_arm_error error)
   | Ok _ -> (
@@ -1187,9 +1187,9 @@ and ruling =
    start] before each test, [t <i> pass|fail|skip] after, a terminal
    [done] — so a crash or hang is attributable to the one index that
    started without an outcome while every earlier outcome is kept. *)
-let admit_line ~armed ~paths ~budget ~spine ~mutant tests fd =
+let admit_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests fd =
   child_prologue ~armed;
-  match M.arm ~budget (M.selector_of_mutant mutant) with
+  match M.arm ~budget mutant.M.id with
   | Error error ->
       "error " ^ one_line (Format.asprintf "%a" M.pp_arm_error error)
   | Ok _ -> (

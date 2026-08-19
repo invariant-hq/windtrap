@@ -9,7 +9,7 @@ module Instr = Windtrap_instr
 
 type id = { file : string; line : int; col : int; rewrite : string }
 
-let magic = "windtrap-mutants-v1"
+let magic = "windtrap-mutants-v2"
 
 (* The constants Windtrap_instr's shared plumbing is parameterized by:
    this format's magic line, its on-disk home, and the words its error
@@ -67,26 +67,12 @@ let compare_id a b =
 
 let equal_id a b = compare_id a b = 0
 
-type selector =
-  | By_position of id
-  | By_span of { file : string; first : int; last : int; rewrite : string }
-
-let pp_selector ppf = function
-  | By_position id -> pp_id ppf id
-  | By_span { file; first; last; rewrite } ->
-      Format.fprintf ppf "%s:%d-%d:%s" file first last rewrite
-
-let selector_file = function
-  | By_position { file; _ } -> file
-  | By_span { file; _ } -> file
-
 (* Sites and the Registry *)
 
 type site = {
   line : int;
   col : int;
   rewrite : string;
-  span : int * int;
   before : string;
   after : string;
   dismissed : string option;
@@ -94,19 +80,12 @@ type site = {
 
 type mutant = {
   id : id;
-  span : int * int;
   before : string;
   after : string;
   dismissed : string option;
 }
 
-let compare_mutant a b =
-  let c = compare_id a.id b.id in
-  if c <> 0 then c
-  else
-    let a_first, a_last = a.span and b_first, b_last = b.span in
-    let c = Int.compare a_first b_first in
-    if c <> 0 then c else Int.compare a_last b_last
+let compare_mutant a b = compare_id a.id b.id
 
 (* One registration: the file's site table plus the three per-site arrays
    the guard closure owns. [armed_index] is this file's local index of the
@@ -151,15 +130,12 @@ let validate ~file sites =
       in
       if s.line < 1 then bad "line %d is not 1-based" s.line;
       if s.col < 0 then bad "negative column %d" s.col;
-      let first, last = s.span in
-      if first < 0 || last < first then bad "invalid span %d-%d" first last;
       if not (is_rewrite s.rewrite) then bad "unknown rewrite %S" s.rewrite)
     sites
 
 let site_equal a b =
   a.line = b.line && a.col = b.col
   && String.equal a.rewrite b.rewrite
-  && a.span = b.span
   && String.equal a.before b.before
   && String.equal a.after b.after
   &&
@@ -175,7 +151,6 @@ let site_mutant entry i =
   let s = entry.sites.(i) in
   {
     id = { file = entry.file; line = s.line; col = s.col; rewrite = s.rewrite };
-    span = s.span;
     before = s.before;
     after = s.after;
     dismissed = s.dismissed;
@@ -280,17 +255,13 @@ let mutants_of entry =
 let catalogue () =
   List.sort_uniq compare_mutant (List.concat_map mutants_of !registry)
 
-let selector_of_mutant m =
-  let first, last = m.span in
-  By_span { file = m.id.file; first; last; rewrite = m.id.rewrite }
-
 (* Arming *)
 
 type arm_error =
   | Malformed of { spec : string; reason : string }
-  | Uncatalogued of { selector : selector }
-  | Unmatched of { selector : selector; candidates : mutant list }
-  | Ambiguous of { selector : selector; candidates : mutant list }
+  | Uncatalogued of { id : id }
+  | Unmatched of { id : id; candidates : mutant list }
+  | Ambiguous of { id : id; candidates : mutant list }
 
 let pp_candidates ppf mutants =
   let shown = 6 in
@@ -299,44 +270,32 @@ let pp_candidates ppf mutants =
     | rest when i = shown ->
         Format.fprintf ppf "@\n    (and %d more)" (List.length rest)
     | m :: rest ->
-        Format.fprintf ppf "@\n    %a  bytes %d-%d" pp_id m.id (fst m.span)
-          (snd m.span);
+        Format.fprintf ppf "@\n    %a" pp_id m.id;
         loop (i + 1) rest
   in
   loop 0 mutants
-
-(* Candidates carry duplicates exactly when the sites are indistinguishable
-   (§[arm]), and then the byte-span advice would be a lie: no spelling
-   separates them. *)
-let distinguishable candidates =
-  List.length (List.sort_uniq compare_mutant candidates)
-  = List.length candidates
 
 let pp_arm_error ppf = function
   | Malformed { spec; reason } ->
       Format.fprintf ppf
         "%S is not a mutant identifier: %s; expected \
-         <file>:<line>:<col>:<rewrite> or <file>:<first>-<last>:<rewrite>"
+         <file>:<line>:<col>:<rewrite>"
         spec reason
-  | Uncatalogued { selector } ->
+  | Uncatalogued { id } ->
       Format.fprintf ppf
         "%a: not this executable's mutant; it catalogues no site in %s (if you \
          expected one, is the library under test built with --instrument-with \
          ppx_windtrap.mutate?)"
-        pp_selector selector (selector_file selector)
-  | Unmatched { selector; candidates } ->
-      Format.fprintf ppf "%a: no such mutation site; %s has these:%a"
-        pp_selector selector (selector_file selector) pp_candidates candidates
-  | Ambiguous { selector; candidates } when distinguishable candidates ->
+        pp_id id id.file
+  | Unmatched { id; candidates } ->
+      Format.fprintf ppf "%a: no such mutation site; %s has these:%a" pp_id id
+        id.file pp_candidates candidates
+  | Ambiguous { id; candidates } ->
       Format.fprintf ppf
-        "%a: names %d mutation sites; arm one by its byte span instead:%a"
-        pp_selector selector (List.length candidates) pp_candidates candidates
-  | Ambiguous { selector; candidates } ->
-      Format.fprintf ppf
-        "%a: names %d mutation sites at one position and byte span, so no \
-         identifier can tell them apart (a rewriter duplicating locations?); \
-         dismiss the expression with [@mutate off] or exclude the file:%a"
-        pp_selector selector (List.length candidates) pp_candidates candidates
+        "%a: names %d mutation sites, so no identifier can tell them apart (a \
+         rewriter duplicating locations?); dismiss the expression with \
+         [@mutate off] or exclude the file:%a"
+        pp_id id (List.length candidates) pp_candidates candidates
 
 let arm_variable = "WINDTRAP_MUTATE_ARM"
 let is_digit = function '0' .. '9' -> true | _ -> false
@@ -348,7 +307,7 @@ let parse_nat s =
   if s = "" || not (String.for_all is_digit s) then None
   else int_of_string_opt s
 
-let selector_of_string spec =
+let id_of_string spec =
   let malformed fmt =
     Printf.ksprintf (fun reason -> Error (Malformed { spec; reason })) fmt
   in
@@ -365,50 +324,32 @@ let selector_of_string spec =
         | None -> malformed "no position before the rewrite"
         | Some j -> (
             let tail = after rest j and head = String.sub rest 0 j in
-            match String.index_opt tail '-' with
-            | Some k when k > 0 -> (
-                let first = String.sub tail 0 k and last = after tail k in
-                match (parse_nat first, parse_nat last) with
-                | Some _, Some _ when head = "" -> malformed "empty file name"
-                | Some first, Some last when first <= last ->
-                    Ok (By_span { file = head; first; last; rewrite })
-                | Some first, Some last ->
-                    malformed "inverted byte span %d-%d" first last
-                | _ -> malformed "invalid byte span %S" tail)
-            | Some _ | None -> (
-                match parse_nat tail with
-                | None -> malformed "invalid column %S" tail
-                | Some col -> (
-                    match String.rindex_opt head ':' with
-                    | None -> malformed "no line number"
-                    | Some k -> (
-                        let text = after head k
-                        and file = String.sub head 0 k in
-                        match parse_nat text with
-                        | None -> malformed "invalid line %S" text
-                        | Some _ when file = "" -> malformed "empty file name"
-                        | Some line when line >= 1 ->
-                            Ok (By_position { file; line; col; rewrite })
-                        | Some _ -> malformed "line numbers are 1-based")))))
+            match parse_nat tail with
+            | None -> malformed "invalid column %S" tail
+            | Some col -> (
+                match String.rindex_opt head ':' with
+                | None -> malformed "no line number"
+                | Some k -> (
+                    let text = after head k and file = String.sub head 0 k in
+                    match parse_nat text with
+                    | None -> malformed "invalid line %S" text
+                    | Some _ when file = "" -> malformed "empty file name"
+                    | Some line when line >= 1 ->
+                        Ok { file; line; col; rewrite }
+                    | Some _ -> malformed "line numbers are 1-based"))))
 
-let matches selector entry i =
+let matches (id : id) entry i =
   let s = entry.sites.(i) in
-  match selector with
-  | By_position id ->
-      String.equal entry.file id.file
-      && s.line = id.line && s.col = id.col
-      && String.equal s.rewrite id.rewrite
-  | By_span { file; first; last; rewrite } ->
-      String.equal entry.file file
-      && s.span = (first, last)
-      && String.equal s.rewrite rewrite
+  String.equal entry.file id.file
+  && s.line = id.line && s.col = id.col
+  && String.equal s.rewrite id.rewrite
 
-let matching selector =
+let matching id =
   List.concat_map
     (fun entry ->
       let acc = ref [] in
       for i = Array.length entry.sites - 1 downto 0 do
-        if matches selector entry i then acc := (entry, i) :: !acc
+        if matches id entry i then acc := (entry, i) :: !acc
       done;
       !acc)
     !registry
@@ -430,7 +371,7 @@ let armed_hits () =
     (fun acc (entry, i) -> saturating_add acc entry.reach.(i))
     0 !armed_slots
 
-let arm ?budget selector =
+let arm ?budget id =
   (match budget with
   | Some n when n <= 0 ->
       invalid_arg "Windtrap_mutate.arm: budget must be positive"
@@ -439,14 +380,14 @@ let arm ?budget selector =
      the previous mutant live, which would attribute the next run's
      verdict to the wrong site. *)
   disarm ();
-  let slots = matching selector in
+  let slots = matching id in
   (* One entry carries one [armed_index], so two matching sites in one
-     file cannot both be armed - and no spelling of an identifier
-     separates them, since they agree on position, span and rewrite. That
-     is an ambiguity, not an arming: silently arming one would leave the
-     other live and report a false survivor for code reached through it.
-     A repeat across entries is the opposite case and is required: the
-     same source compiled into two modules must arm together. *)
+     file cannot both be armed - and no identifier separates them, since
+     they agree on position and rewrite. That is an ambiguity, not an
+     arming: silently arming one would leave the other live and report a
+     false survivor for code reached through it. A repeat across entries
+     is the opposite case and is required: the same source compiled into
+     two modules must arm together. *)
   let rec twice_in_one_entry seen = function
     | [] -> None
     | (entry, _) :: rest ->
@@ -464,17 +405,16 @@ let arm ?budget selector =
          executable catalogues no site in is a file it was not built
          from: the identifier is about some other binary, and there is
          nothing in this one to hide. A file it DOES catalogue, at a
-         position or span no site occupies, is a wrong or stale
-         identifier - the caller believes it named a mutant of this
-         binary and it did not. Only the registry can tell them apart,
-         so it is told here, in the answer, rather than left for a
-         caller to re-derive from an empty candidate list. *)
-      let file = selector_file selector in
+         position no site occupies, is a wrong or stale identifier - the
+         caller believes it named a mutant of this binary and it did
+         not. Only the registry can tell them apart, so it is told here,
+         in the answer, rather than left for a caller to re-derive from
+         an empty candidate list. *)
       match
-        List.filter (fun m -> String.equal m.id.file file) (catalogue ())
+        List.filter (fun m -> String.equal m.id.file id.file) (catalogue ())
       with
-      | [] -> Error (Uncatalogued { selector })
-      | candidates -> Error (Unmatched { selector; candidates }))
+      | [] -> Error (Uncatalogued { id })
+      | candidates -> Error (Unmatched { id; candidates }))
   | None, [ mutant ] ->
       (* Every entry matching one mutant is armed: the same source file
          compiled into two modules must not leave one copy disarmed, or a
@@ -493,15 +433,15 @@ let arm ?budget selector =
           (fun (e, i) -> if e == entry then Some (site_mutant e i) else None)
           slots
       in
-      Error (Ambiguous { selector; candidates })
-  | _, candidates -> Error (Ambiguous { selector; candidates })
+      Error (Ambiguous { id; candidates })
+  | _, candidates -> Error (Ambiguous { id; candidates })
 
 let arm_from_env ?budget () =
   match Sys.getenv_opt arm_variable with
   | None | Some "" -> Ok None
   | Some spec ->
-      Result.bind (selector_of_string spec) (fun selector ->
-          Result.map Option.some (arm ?budget selector))
+      Result.bind (id_of_string spec) (fun id ->
+          Result.map Option.some (arm ?budget id))
 
 (* The Reach Map *)
 
@@ -618,21 +558,15 @@ module Id_map = Map.Make (struct
   let compare = compare_id
 end)
 
-type record = {
-  id : id;
-  span : int * int;
-  before : string;
-  after : string;
-  verdict : verdict;
-}
+type record = { id : id; before : string; after : string; verdict : verdict }
 
 let record_of_mutant (m : mutant) verdict =
-  { id = m.id; span = m.span; before = m.before; after = m.after; verdict }
+  { id = m.id; before = m.before; after = m.after; verdict }
 
 (* The rendering a record carries beside its verdict. Stored apart from
    the identifier because the identifier is the map's key: a value that
    repeated it could disagree with it. *)
-type rendering = { r_span : int * int; r_before : string; r_after : string }
+type rendering = { r_before : string; r_after : string }
 
 (* Two files describing one mutant are expected to agree here, and can
    disagree only across builds of one source - where the data says
@@ -640,14 +574,8 @@ type rendering = { r_span : int * int; r_before : string; r_after : string }
    made for determinism: a total order, smaller wins, which is what keeps
    [add] and [merge] commutative and associative. *)
 let compare_rendering a b =
-  let c = Int.compare (fst a.r_span) (fst b.r_span) in
-  if c <> 0 then c
-  else
-    let c = Int.compare (snd a.r_span) (snd b.r_span) in
-    if c <> 0 then c
-    else
-      let c = String.compare a.r_before b.r_before in
-      if c <> 0 then c else String.compare a.r_after b.r_after
+  let c = String.compare a.r_before b.r_before in
+  if c <> 0 then c else String.compare a.r_after b.r_after
 
 type t = (rendering * verdict) Id_map.t
 
@@ -655,7 +583,7 @@ let empty = Id_map.empty
 let is_empty = Id_map.is_empty
 
 let record_of id (r, verdict) =
-  { id; span = r.r_span; before = r.r_before; after = r.r_after; verdict }
+  { id; before = r.r_before; after = r.r_after; verdict }
 
 let add t r =
   let verdict =
@@ -663,7 +591,7 @@ let add t r =
     | Survived s -> survived (s.witness :: s.others)
     | Killed _ | Unreached -> r.verdict
   in
-  let rendering = { r_span = r.span; r_before = r.before; r_after = r.after } in
+  let rendering = { r_before = r.before; r_after = r.after } in
   Id_map.update r.id
     (function
       | None -> Some (rendering, verdict)
@@ -710,11 +638,10 @@ let to_string ?identity t =
   Printf.bprintf buffer "%d\n" (Id_map.cardinal t);
   Id_map.iter
     (fun id (r, verdict) ->
-      Printf.bprintf buffer "%d %s %d %d %d %s %d %d %d %s %d %s "
+      Printf.bprintf buffer "%d %s %d %d %d %s %d %s %d %s "
         (String.length id.file) id.file id.line id.col
-        (String.length id.rewrite) id.rewrite (fst r.r_span) (snd r.r_span)
-        (String.length r.r_before) r.r_before (String.length r.r_after)
-        r.r_after;
+        (String.length id.rewrite) id.rewrite (String.length r.r_before)
+        r.r_before (String.length r.r_after) r.r_after;
       add_verdict buffer verdict;
       Buffer.add_char buffer '\n')
     t;
@@ -766,15 +693,10 @@ let of_string ?(path = "<string>") s =
           let id = { file; line; col; rewrite } in
           if Id_map.mem id !result then
             Instr.parse_fail "duplicate record for %s" (id_to_string id);
-          let first = Instr.read_nat c "span start" in
-          let last = Instr.read_nat c "span end" in
-          if first > last then
-            Instr.parse_fail "inverted span %d-%d" first last;
           let before = Instr.read_name c "before" in
           let after = Instr.read_name c "after" in
           let verdict = read_verdict () in
-          result :=
-            add !result { id; span = (first, last); before; after; verdict }
+          result := add !result { id; before; after; verdict }
         done;
         Instr.finish c;
         Ok (!result, identity)

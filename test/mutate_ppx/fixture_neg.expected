@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_neg___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_neg___ml =
                    line = 8;
                    col = 23;
                    rewrite = "not";
-                   span = (416, 420);
                    before = "flag";
                    after = "not flag";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_neg___ml =
                      line = 9;
                      col = 23;
                      rewrite = "not";
-                     span = (458, 462);
                      before = "flag";
                      after = "not flag";
                      dismissed = None
@@ -32,7 +29,6 @@ module Windtrap_mut_________fixture_neg___ml =
                        line = 12;
                        col = 8;
                        rewrite = "not";
-                       span = (518, 526);
                        before = "ready ()";
                        after = "not (ready ())";
                        dismissed = None
@@ -40,7 +36,6 @@ module Windtrap_mut_________fixture_neg___ml =
                          line = 16;
                          col = 39;
                          rewrite = "not";
-                         span = (589, 592);
                          before = "p y";
                          after = "not (p y)";
                          dismissed = None
@@ -48,7 +43,6 @@ module Windtrap_mut_________fixture_neg___ml =
                            line = 20;
                            col = 20;
                            rewrite = "not";
-                           span = (757, 779);
                            before = "if a then b else false";
                            after = "not (if a then b else false)";
                            dismissed = None
@@ -56,7 +50,6 @@ module Windtrap_mut_________fixture_neg___ml =
                              line = 20;
                              col = 23;
                              rewrite = "not";
-                             span = (760, 761);
                              before = "a";
                              after = "not a";
                              dismissed = None

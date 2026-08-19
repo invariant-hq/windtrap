@@ -28,7 +28,6 @@ let guard =
           M.line = 3;
           col = 10;
           rewrite = "lt";
-          span = (40, 45);
           before = "a < b";
           after = "not (b < a)";
           dismissed = None;
@@ -37,7 +36,6 @@ let guard =
           M.line = 7;
           col = 4;
           rewrite = "add";
-          span = (80, 85);
           before = "a + b";
           after = "a - b";
           dismissed = None;
@@ -46,7 +44,6 @@ let guard =
           M.line = 11;
           col = 6;
           rewrite = "not";
-          span = (120, 126);
           before = "n > 0";
           after = "not (n > 0)";
           dismissed = None;
@@ -135,7 +132,6 @@ let () =
         M.add M.empty
           {
             M.id;
-            span = (80, 85);
             before = "l < r";
             after = "not (r < l)";
             verdict = M.survived [ [ "child"; "less" ] ];

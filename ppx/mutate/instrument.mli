@@ -324,7 +324,6 @@
           line : int;
           col : int;
           rewrite : string;
-          span : int * int;
           before : string;
           after : string;
           dismissed : string option;
@@ -340,9 +339,9 @@
 
     Two things differ from the coverage instrumenter's otherwise identical
     preamble, and both have one cause: [Windtrap_mutate] spreads the names
-    [line], [col], [rewrite], [span], [before], [after] and [dismissed] across
-    three record types, so [Windtrap_mutate.span] resolves to [mutant]'s field
-    and using it for a [site] is warning 42 — disambiguated name, fatal in a
+    [line], [col], [rewrite], [before], [after] and [dismissed] across three
+    record types, so [Windtrap_mutate.before] resolves to [mutant]'s field and
+    using it for a [site] is warning 42 — disambiguated name, fatal in a
     library built with [-w +a -warn-error +a]. Qualifying every field, which is
     all coverage needs, is therefore not enough.
 
@@ -353,7 +352,7 @@
       silent mis-registration.
     + Because the module now carries a record type it is
       {b referenced qualified rather than opened}: opening it would put labels
-      named [line], [col], [span], [before] and [after] into the user's scope,
+      named [line], [col], [before] and [after] into the user's scope,
       where they could shadow the user's own or make the user's records
       ambiguous. Not emitting an [open] also means a file whose every site is
       dismissed — which binds the guard and calls it from nowhere — trips no

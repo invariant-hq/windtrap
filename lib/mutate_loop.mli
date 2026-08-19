@@ -201,8 +201,8 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     {!Windtrap_mutate.Uncatalogued}, above.
 
     Inside the loop, arming stays strict: each forked child arms a mutant the
-    parent took from {e this} binary's own catalogue, through the byte span
-    {!Windtrap_mutate.selector_of_mutant} gives it, so a child that fails to arm
+    parent took from {e this} binary's own catalogue, by that mutant's own
+    identifier, so a child that fails to arm
     has hit a bug — it reports an error line, which aborts the whole run without
     a score, rather than running a green suite with nothing armed and calling
     the result a survivor. The leniency above is about a project-level

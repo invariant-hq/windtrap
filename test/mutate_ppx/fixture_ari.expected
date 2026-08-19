@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_ari___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_ari___ml =
                    line = 5;
                    col = 14;
                    rewrite = "sub";
-                   span = (192, 197);
                    before = "a + b";
                    after = "a - b";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_ari___ml =
                      line = 6;
                      col = 15;
                      rewrite = "add";
-                     span = (213, 218);
                      before = "a - b";
                      after = "a + b";
                      dismissed = None
@@ -32,7 +29,6 @@ module Windtrap_mut_________fixture_ari___ml =
                        line = 7;
                        col = 15;
                        rewrite = "fsub";
-                       span = (234, 240);
                        before = "a +. b";
                        after = "a -. b";
                        dismissed = None
@@ -40,7 +36,6 @@ module Windtrap_mut_________fixture_ari___ml =
                          line = 8;
                          col = 16;
                          rewrite = "fadd";
-                         span = (257, 263);
                          before = "a -. b";
                          after = "a +. b";
                          dismissed = None
@@ -48,7 +43,6 @@ module Windtrap_mut_________fixture_ari___ml =
                            line = 13;
                            col = 13;
                            rewrite = "sub";
-                           span = (442, 447);
                            before = "1 + 2";
                            after = "1 - 2";
                            dismissed = None
@@ -56,7 +50,6 @@ module Windtrap_mut_________fixture_ari___ml =
                              line = 17;
                              col = 17;
                              rewrite = "sub";
-                             span = (555, 562);
                              before = "a + b";
                              after = "a - b";
                              dismissed = None

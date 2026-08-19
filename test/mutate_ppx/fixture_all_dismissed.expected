@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_all_dismissed___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_all_dismissed___ml =
                    line = 8;
                    col = 5;
                    rewrite = "ge";
-                   span = (324, 335);
                    before = "want > 16";
                    after = "want >= 16";
                    dismissed = (Some "both arms yield 16 at the boundary")

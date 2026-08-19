@@ -69,21 +69,6 @@ val compare_id : id -> id -> int
 val equal_id : id -> id -> bool
 (** [equal_id a b] is [compare_id a b = 0]. *)
 
-(** The type for mutant selectors: the two spellings {!arm_variable} accepts.
-    Parsing yields a selector rather than an {!type:id} because the byte-offset
-    spelling carries no line or column — only the registry can supply those, and
-    it does so in {!arm}. *)
-type selector =
-  | By_position of id  (** ["lib/calc.ml:9:12:add"] — the canonical spelling. *)
-  | By_span of { file : string; first : int; last : int; rewrite : string }
-      (** ["lib/calc.ml:312-317:add"] — the byte-offset spelling, where
-          \[[first];[last][)] is the half-open extent of the mutated expression.
-          Exact even where positions collide, which is why {!selector_of_mutant}
-          produces this form. *)
-
-val pp_selector : Format.formatter -> selector -> unit
-(** [pp_selector ppf sel] formats [sel] in the spelling it names. *)
-
 (** {1:catalogue Sites and registration}
 
     The functions of this section are the contract [ppx_windtrap.mutate]
@@ -99,7 +84,6 @@ val pp_selector : Format.formatter -> selector -> unit
                 line = 9;
                 col = 12;
                 rewrite = "add";
-                span = (312, 317);
                 before = "a - b";
                 after = "a + b";
                 dismissed = None;
@@ -116,10 +100,6 @@ type site = {
   line : int;  (** 1-based line of the mutated expression's first byte. *)
   col : int;  (** 0-based column of the mutated expression's first byte. *)
   rewrite : string;  (** The replacement's name, from {!rewrites}. *)
-  span : int * int;
-      (** The mutated expression's half-open byte extent \[[first];[last][)],
-          following [Lexing.position.pos_cnum]. Invariant: [0 <= first <= last].
-      *)
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   dismissed : string option;
@@ -170,13 +150,12 @@ val register : file:string -> sites:site array -> int -> bool
     at every index). It is not an exception because [register] runs at module
     load inside the user's program.
 
-    Raises [Invalid_argument] if any site has [line < 1], [col < 0], an inverted
-    or negative span, or a [rewrite] outside {!rewrites} — a malformed table can
-    only come from a broken instrumenter, and fails fast. *)
+    Raises [Invalid_argument] if any site has [line < 1], [col < 0], or a
+    [rewrite] outside {!rewrites} — a malformed table can only come from a
+    broken instrumenter, and fails fast. *)
 
 type mutant = {
   id : id;  (** This mutant's identifier. *)
-  span : int * int;  (** The mutated expression's extent, as in {!type:site}. *)
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   dismissed : string option;  (** The [[@mutate off]] reason, if any. *)
@@ -185,9 +164,8 @@ type mutant = {
     outside the instrumenter sees it. *)
 
 val compare_mutant : mutant -> mutant -> int
-(** [compare_mutant a b] orders by {!compare_id}, then by [span]. Two mutants
-    are equal under it exactly when they name the same rewrite of the same
-    expression. *)
+(** [compare_mutant a b] is {!compare_id} on their identifiers, which name the
+    same rewrite of the same expression exactly when they are equal. *)
 
 val catalogue : unit -> mutant list
 (** [catalogue ()] is every mutant registered in this executable, ordered by
@@ -196,11 +174,6 @@ val catalogue : unit -> mutant list
     the population the loop iterates: it is complete only after module
     initialization, since registration happens at module load and the linker
     drops modules the binary never references. *)
-
-val selector_of_mutant : mutant -> selector
-(** [selector_of_mutant m] is the {!By_span} selector naming [m] exactly. The
-    loop arms through this rather than through [m]'s position, so that a
-    position collision cannot redirect an arming to a neighbouring site. *)
 
 (** {1:arming Arming}
 
@@ -227,25 +200,24 @@ val selector_of_mutant : mutant -> selector
 type arm_error =
   | Malformed of { spec : string; reason : string }
       (** [spec] is not a mutant identifier; [reason] says why. *)
-  | Uncatalogued of { selector : selector }
-      (** This executable catalogues no site at all in [selector]'s file, so the
+  | Uncatalogued of { id : id }
+      (** This executable catalogues no site at all in [id]'s file, so the
           identifier is about some other binary — or about no binary, if nothing
           was built with the mutation backend. Nothing is armed and nothing is
           concealed: an executable that catalogues none of a file's sites cannot
           produce a verdict about them either way. *)
-  | Unmatched of { selector : selector; candidates : mutant list }
-      (** [selector]'s file is catalogued here, but no site in it matches the
-          line, column and rewrite (or the byte span). [candidates] are that
-          file's mutants and are never empty — the empty case is
-          {!Uncatalogued}. This is a wrong or stale identifier: the caller
-          believes it named a mutant of {e this} executable and it did not. *)
-  | Ambiguous of { selector : selector; candidates : mutant list }
-      (** [selector] matches more than one site; [candidates] lists them, one
-          entry per site. Usually they differ in span and the byte-offset
-          spelling names one of them. When a rewriter has duplicated a location
-          they agree on span too — [candidates] then holds equal entries, and no
-          identifier can separate them: the remedy is [[@mutate off]] on the
-          expression or excluding the file. *)
+  | Unmatched of { id : id; candidates : mutant list }
+      (** [id]'s file is catalogued here, but no site in it matches the line,
+          column and rewrite. [candidates] are that file's mutants and are never
+          empty — the empty case is {!Uncatalogued}. This is a wrong or stale
+          identifier: the caller believes it named a mutant of {e this}
+          executable and it did not. *)
+  | Ambiguous of { id : id; candidates : mutant list }
+      (** [id] matches more than one site; [candidates] lists them, one entry
+          per site. The instrumenter cannot emit such a table, so this is a
+          rewriter that duplicated a location: no identifier can separate the
+          sites, and the remedy is [[@mutate off]] on the expression or
+          excluding the file. *)
 
 val pp_arm_error : Format.formatter -> arm_error -> unit
 (** [pp_arm_error ppf e] formats a human-readable message for [e], naming the
@@ -273,25 +245,25 @@ val scope_variable : string
     never registered, so it cannot be armed. Scoping a run is a statement about
     what that run's mutation surface {e is}, not a view over a larger one. *)
 
-val selector_of_string : string -> (selector, arm_error) result
-(** [selector_of_string s] parses either spelling of a mutant identifier. It is
+val id_of_string : string -> (id, arm_error) result
+(** [id_of_string s] parses a mutant identifier in its canonical spelling. It is
     [Error (Malformed _)] if [s] has the wrong shape, if a number is missing or
-    negative, if [first > last], if [line < 1], if [col < 0], or if the rewrite
-    is not in {!rewrites} — an unrecognized rewrite is a parse error and never a
-    selector that silently matches nothing.
+    negative, if [line < 1], if [col < 0], or if the rewrite is not in
+    {!rewrites} — an unrecognized rewrite is a parse error and never an
+    identifier that silently matches nothing.
 
-    Round trip: [selector_of_string (id_to_string id)] is [Ok (By_position id)]
-    for every [id] this module produces. *)
+    Round trip: [id_of_string (id_to_string id)] is [Ok id] for every [id] this
+    module produces. *)
 
-val arm : ?budget:int -> selector -> (mutant, arm_error) result
-(** [arm sel] arms the single mutant [sel] names and is that mutant, and is
-    {!Uncatalogued} when this executable holds no site of [sel]'s file at all,
-    {!Unmatched} when it holds that file's sites but none [sel] names, and
-    {!Ambiguous} when [sel] names several. Any previously armed mutant is
-    disarmed first, whether or not [sel] resolves. From then on the guard of
-    that site — and of every module registering an equal table for its file —
-    answers [true]. At most one mutant is armed per process, so this is the only
-    way the answer is ever [true].
+val arm : ?budget:int -> id -> (mutant, arm_error) result
+(** [arm id] arms the single mutant [id] names and is that mutant, and is
+    {!Uncatalogued} when this executable holds no site of [id]'s file at all,
+    {!Unmatched} when it holds that file's sites but none [id] names, and
+    {!Ambiguous} when [id] names several. Any previously armed mutant is
+    disarmed first, whether or not [id] resolves. From then on the guard of that
+    site — and of every module registering an equal table for its file — answers
+    [true]. At most one mutant is armed per process, so this is the only way the
+    answer is ever [true].
 
     [budget] caps the armed site's reach count: the guard raises {!Runaway} on
     the evaluation that would take the count past [budget]. The count is the
@@ -301,16 +273,16 @@ val arm : ?budget:int -> selector -> (mutant, arm_error) result
     measured for the site, which is what catches a mutant that spins without
     consuming wall clock in a place a timer can see. It defaults to no cap.
 
-    Two sites of one file that agree on position, span and rewrite are
-    {!Ambiguous}, not an arming: no identifier separates them and one of them
-    would stay live, reporting a false survivor for code reached through it.
+    Two sites of one file that agree on position and rewrite are {!Ambiguous},
+    not an arming: no identifier separates them and one of them would stay live,
+    reporting a false survivor for code reached through it.
 
     Raises [Invalid_argument] if [budget] is not positive; nothing is disarmed
     in that case. *)
 
 val arm_from_env : ?budget:int -> unit -> (mutant option, arm_error) result
 (** [arm_from_env ()] is [Ok None] when {!arm_variable} is unset or empty, and
-    otherwise {!arm}s the selector it holds, as [Ok (Some m)]. Parse and
+    otherwise {!arm}s the identifier it holds, as [Ok (Some m)]. Parse and
     resolution failures are reported, never ignored — including {!Uncatalogued},
     which is reported as the error it is a case of and left to the caller to
     read as "not mine" rather than turned into [Ok None] here: a process that
@@ -475,15 +447,15 @@ val pp_verdict : Format.formatter -> verdict -> unit
     and renders the survivors that survive {e everywhere}. The catalogue never
     touches disk — only verdicts do.
 
-    The format is versioned by the magic string [windtrap-mutants-v1] on the
+    The format is versioned by the magic string [windtrap-mutants-v2] on the
     first line; {!of_string} and {!load} reject any other header loudly, and
     cross-version compatibility is not promised. The magic line may be followed
     by the writing executable's {!type:identity}, which the merge uses to
     exclude verdicts whose executable was deleted or rebuilt since the run.
 
     A file is {b self-describing}: each {!type:record} carries not only the
-    mutant's identifier and verdict but the span and the [before]/[after]
-    renderings the report draws it with. The catalogue does not travel — it
+    mutant's identifier and verdict but the [before]/[after] renderings the
+    report draws it with. The catalogue does not travel — it
     lives inside the instrumented binary, which the merging command never links
     — so a record naming only an identifier would produce a project-level report
     strictly worse than the per-executable one it replaces. It is also what lets
@@ -509,9 +481,6 @@ val pp_error : Format.formatter -> error -> unit
 
 type record = {
   id : id;  (** The mutant's identifier. *)
-  span : int * int;
-      (** The mutated expression's half-open byte extent, as in {!type:mutant}.
-      *)
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   verdict : verdict;  (** What the run made of the mutant. *)
@@ -521,9 +490,8 @@ type record = {
     record: it is never forked and never receives a verdict. *)
 
 val record_of_mutant : mutant -> verdict -> record
-(** [record_of_mutant m v] is [m]'s record with verdict [v] — the identifier,
-    span and renderings of [m], which is what the loop holds when a child
-    reports. [m.dismissed] is dropped, having no meaning for a mutant that was
+(** [record_of_mutant m v] is [m]'s record with verdict [v] — the identifier and
+    renderings of [m], which is what the loop holds when a child reports. [m.dismissed] is dropped, having no meaning for a mutant that was
     tested. *)
 
 type t
@@ -539,7 +507,7 @@ val is_empty : t -> bool
 val add : t -> record -> t
 (** [add t r] is [t] with [r] recorded, combined with any record already under
     [r.id]: the verdicts through {!merge_verdict}, and the renderings by keeping
-    the lexicographically smaller [(span, before, after)] of the two.
+    the lexicographically smaller [(before, after)] of the two.
 
     Two records for one identifier are expected to agree on the rendering, and
     can disagree only if they came from different builds of one source — where
@@ -625,8 +593,8 @@ val of_string : ?path:string -> string -> (t * identity option, error) result
     errors, defaults to ["<string>"]. Errors: [Unknown_format] for a foreign
     header, [Corrupt] for truncated or invalid data — a negative or oversized
     count, a line that is not 1-based, a rewrite outside {!rewrites}, an
-    inverted span, an unknown verdict tag, a survivor naming no test, a
-    duplicate identifier, a malformed identity line, or trailing garbage.
+    unknown verdict tag, a survivor naming no test, a duplicate identifier, a
+    malformed identity line, or trailing garbage.
     Nothing is repaired and nothing is guessed: a file this module cannot read
     exactly is not read at all.
 

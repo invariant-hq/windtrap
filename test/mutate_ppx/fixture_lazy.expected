@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_lazy___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_lazy___ml =
                    line = 10;
                    col = 22;
                    rewrite = "sub";
-                   span = (505, 512);
                    before = "a + b";
                    after = "a - b";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_lazy___ml =
                      line = 17;
                      col = 25;
                      rewrite = "sub";
-                     span = (805, 810);
                      before = "a + b";
                      after = "a - b";
                      dismissed = None

@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_assert___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_assert___ml =
                    line = 7;
                    col = 2;
                    rewrite = "sub";
-                   span = (258, 263);
                    before = "a + b";
                    after = "a - b";
                    dismissed = None
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_assert___ml =
                      line = 17;
                      col = 21;
                      rewrite = "or";
-                     span = (698, 719);
                      before = "(a < b) && (assert false)";
                      after = "(a < b) || (assert false)";
                      dismissed = None
@@ -32,7 +29,6 @@ module Windtrap_mut_________fixture_assert___ml =
                        line = 17;
                        col = 21;
                        rewrite = "le";
-                       span = (698, 703);
                        before = "a < b";
                        after = "a <= b";
                        dismissed = None
@@ -40,7 +36,6 @@ module Windtrap_mut_________fixture_assert___ml =
                          line = 25;
                          col = 4;
                          rewrite = "not";
-                         span = (1041, 1066);
                          before = "assert (a < b); a > b";
                          after = "not (assert (a < b); a > b)";
                          dismissed = None

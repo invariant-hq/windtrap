@@ -6,7 +6,6 @@ module Windtrap_mut_________fixture_off___ml =
       line: int ;
       col: int ;
       rewrite: string ;
-      span: (int * int) ;
       before: string ;
       after: string ;
       dismissed: string option }
@@ -16,7 +15,6 @@ module Windtrap_mut_________fixture_off___ml =
                    line = 9;
                    col = 5;
                    rewrite = "ge";
-                   span = (385, 396);
                    before = "want > 16";
                    after = "want >= 16";
                    dismissed = (Some "both arms yield 16 at the boundary")
@@ -24,7 +22,6 @@ module Windtrap_mut_________fixture_off___ml =
                      line = 12;
                      col = 19;
                      rewrite = "or";
-                     span = (488, 496);
                      before = "a && b";
                      after = "a || b";
                      dismissed = (Some "")
@@ -32,7 +29,6 @@ module Windtrap_mut_________fixture_off___ml =
                        line = 26;
                        col = 18;
                        rewrite = "sub";
-                       span = (706, 711);
                        before = "a + b";
                        after = "a - b";
                        dismissed = None
