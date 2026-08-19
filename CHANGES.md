@@ -39,8 +39,8 @@ slow tests (1):
 **A failure marks what actually changed, for any type.** `equal` takes a
 testable — a printer and an equality — and the report is derived from the
 printed rendering, so a record, a variant, or an abstract type gets the same
-treatment as `int` with no diff combinator to write. Lists and arrays are
-compared element by element, and a mark never straddles two elements:
+treatment as `int` with no diff combinator to write. The marks cover the
+region where the two renderings stop agreeing, and nothing else:
 
 ```
 mylib: 1 test
@@ -51,15 +51,15 @@ F
       19 │               equal
 
     expected  [("alice", [1; 2; 3]); ("bob", [4])]
-                                     ~~~~~~~~~~~~
     actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
-                                     ~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~
+                                               ~~~~~~~~~~~~~~~~~~
 ──────────────────────────────────────────────────────
 
 1 failed in 0.000781s.
 ```
 
-Bob's entry changed and Carol's is new — that is what the marks say. No `~pos`
+Bob's list grew and Carol's entry is new — that is what the mark spans. The
+expected side lost nothing, so nothing is drawn under it. No `~pos`
 annotation either: the location comes from the assertion's call stack.
 
 **Properties are ordinary tests over generators.** One verb, an `'a Gen.t`, a
@@ -585,16 +585,12 @@ witness — every NaN equal to every NaN, `0.` and `-0.` distinct — so a test
 can assert that a function returns NaN.
 
 **Failure reports mark what changed.** Both renderings are compared and the
-differing regions marked: a unified diff on multi-line values, character
-marks on short ones, and — when both sides are list or array renderings —
-element-by-element alignment, so a mark is a whole differing element (or a
-localized change inside one) and never a region spanning the tail of one
-element and the head of the next. Shifted collections read correctly:
-`[1; 2; 3; 4]` against `[2; 3; 4; 5]` marks the dropped `1` and the added
-`5`, not every element. From eight elements up, a summary line leads with
-the count and the first differing index. Plain (no-color) output carries a
-`~~~` marker line under each side, so a deletion — which has nothing to show
-on the actual side — is still visible.
+differing regions marked: a unified diff on multi-line values, and on short
+ones a minimal edit script over code points, so a mark never splits a
+multi-byte character. Plain (no-color) output carries the marks on a `~~~`
+line under the side they belong to — one per side that has any, so a pure
+insertion draws nothing under the expected value — where color tints the
+regions in place.
 
 A mark is only shown when it points at a small part of a mostly shared
 value. Once it would cover half a side, the two values simply differ, and

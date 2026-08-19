@@ -5,8 +5,7 @@
 
 (* Adapted from windtrap 0.1's lib/env.ml. v3 drops the color globals
    (renderers make the ANSI decision explicitly) and adds the
-   WINDTRAP_PRUNE / WINDTRAP_COVERAGE variables and the [force] update
-   mode. *)
+   WINDTRAP_COVERAGE switch and the [force] update mode. *)
 
 (* Parsing helpers *)
 
