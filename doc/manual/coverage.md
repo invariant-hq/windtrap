@@ -82,7 +82,7 @@ coverage: 80.0% (24/30 points)
    77.8%   7/9   lib/calc.ml    uncovered: 9-10
    77.8%   7/9   lib/eval.ml    uncovered: 5, 10
    83.3%  10/12  lib/lexer.ml   uncovered: 6, 8
-minimum 80.0%: ok
+minimum 80%: ok
 ```
 
 `--min` exits 1 with a message when total coverage falls below the
@@ -91,9 +91,9 @@ Explicit `PATH` arguments (`.coverage` files, or directories searched
 recursively) replace the default search; naming a file that does not
 exist or lacks the `.coverage` suffix is a loud error naming the path,
 never a silent fall-through to the no-data report.
-`--json` prints a machine-readable document (per-file percentages,
-uncovered lines and ranges) on standard output for dashboards and
-diff-coverage tooling.
+`--json` prints a machine-readable document (per-file percentages and
+uncovered lines) on standard output for dashboards and diff-coverage
+tooling.
 
 ## Several test stanzas
 

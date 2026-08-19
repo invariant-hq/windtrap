@@ -32,12 +32,11 @@ val run : string list -> int
     and the reason — never a silent narrowing of the merge. A directory argument
     contributes the [.coverage] files found under it, however many that is.
 
-    The [--min] verdict prints the threshold with the fewest decimals (one at
-    least) that render the exact value the gate compared, and a failed verdict
-    prints the actual percentage with the fewest decimals whose rendering is
-    numerically below that printed threshold — the printed comparison is never
-    false: [--min 72.24] over data at 72.222…% reads ["72.2% is below 72.24%"],
-    never ["72.22% is below 72.2%"].
+    The gate compares raw percentages, never their renderings. A failed
+    verdict states the threshold as given and the measurement as the report
+    line states it — ["minimum 80%: FAILED — 75.1% (5527/7363 points)"] — so
+    coverage that renders equal to the threshold can still fail, and the
+    fraction says why.
 
     Reports and the [--min] verdict print on standard output; errors and
     staleness warnings print on standard error, as does the [--min] verdict

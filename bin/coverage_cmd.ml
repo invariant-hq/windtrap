@@ -316,46 +316,22 @@ let report_table ~source_roots ~show_uncovered collection =
     (Driver.coverage_data ~source_roots collection);
   Format.pp_print_flush Format.std_formatter ()
 
-(* The gate compares raw values; the verdict prints decimal renderings,
-   and a printed "A% is below B%" is true exactly when A < B as printed.
-   So the threshold prints with the fewest decimals (one at least) that
-   parse back to the exact value the gate compared — --min 72.24 prints
-   72.24, never a rounded 72.2 — and a failing percentage gains decimals
-   until its rendering is numerically below that threshold. %.17g is the
-   always-round-trips last resort for values no short rendering
-   reaches. *)
-let precisions = [ 1; 2; 4; 6; 9 ]
-
-let shown_min min =
-  let rec go = function
-    | [] -> spf "%.17g" min
-    | digits :: rest ->
-        let s = spf "%.*f" digits min in
-        if float_of_string s = min then s else go rest
-  in
-  go precisions
-
-let shown_pct ~min pct =
-  let rec go = function
-    | [] -> spf "%.17g" pct
-    | digits :: rest ->
-        let s = spf "%.*f" digits pct in
-        if float_of_string s < min then s else go rest
-  in
-  go precisions
-
+(* The gate compares raw percentages. The verdict states the threshold
+   as given and, on failure, the measurement exactly as the report line
+   states it — a fraction of integers beside its rounding — so no printed
+   sentence carries a comparison its own digits can contradict. *)
 let check_min ~json summary = function
   | None -> 0
   | Some min ->
       let pct = Windtrap_coverage.percentage summary in
       let print = if json then Printf.eprintf else Printf.printf in
       if pct >= min then begin
-        print "minimum %s%%: ok\n%!" (shown_min min);
+        print "minimum %g%%: ok\n%!" min;
         0
       end
       else begin
-        print "minimum %s%%: FAILED \u{2014} %s%% is below %s%%\n%!"
-          (shown_min min) (shown_pct ~min pct) (shown_min min);
+        print "minimum %g%%: FAILED \u{2014} %.1f%% (%d/%d points)\n%!" min pct
+          summary.Windtrap_coverage.visited summary.Windtrap_coverage.total;
         1
       end
 

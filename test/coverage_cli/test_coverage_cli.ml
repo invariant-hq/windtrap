@@ -495,14 +495,14 @@ let min_matrix =
   test "--min gates the merged percentage" @@ fun () ->
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "50" ] in
   check_int "--min below the total exits 0" ~expected:0 ~actual:code;
-  check_contains "--min ok prints the verdict" ~needle:"minimum 50.0%: ok" out;
+  check_contains "--min ok prints the verdict" ~needle:"minimum 50%: ok" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "60" ] in
   check_int "--min at the total exits 0" ~expected:0 ~actual:code;
-  check_contains "--min at the boundary is ok" ~needle:"minimum 60.0%: ok" out;
+  check_contains "--min at the boundary is ok" ~needle:"minimum 60%: ok" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "80" ] in
   check_int "--min above the total exits 1" ~expected:1 ~actual:code;
-  check_contains "--min failure states both percentages"
-    ~needle:"minimum 80.0%: FAILED \u{2014} 60.0% is below 80.0%" out;
+  check_contains "--min failure states the measurement and its fraction"
+    ~needle:"minimum 80%: FAILED \u{2014} 60.0% (3/5 points)" out;
   let code, _, err = coverage_cmd ~cwd:proj [ "--min"; "eleventy" ] in
   check_int "a malformed --min exits 2" ~expected:2 ~actual:code;
   check_contains "a malformed --min is a usage error"
@@ -702,11 +702,11 @@ let min_boundaries =
   (* The 0 and 100 rails. *)
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "0" ] in
   check_int "--min 0 always passes" ~expected:0 ~actual:code;
-  check_contains "--min 0 prints its verdict" ~needle:"minimum 0.0%: ok" out;
+  check_contains "--min 0 prints its verdict" ~needle:"minimum 0%: ok" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "100" ] in
   check_int "--min 100 fails below full coverage" ~expected:1 ~actual:code;
   check_contains "--min 100 states the shortfall"
-    ~needle:"minimum 100.0%: FAILED \u{2014} 60.0% is below 100.0%" out;
+    ~needle:"minimum 100%: FAILED \u{2014} 60.0% (3/5 points)" out;
   let full = scratch "fullproj" in
   let all =
     collection "full"
@@ -720,20 +720,19 @@ let min_boundaries =
     (C.to_string all);
   let code, out, _ = coverage_cmd ~cwd:full [ "--min"; "100" ] in
   check_int "--min 100 passes at exactly 100%" ~expected:0 ~actual:code;
-  check_contains "full coverage meets the 100% gate"
-    ~needle:"minimum 100.0%: ok" out;
+  check_contains "full coverage meets the 100% gate" ~needle:"minimum 100%: ok"
+    out;
   (* The --min=PCT spelling, including the empty value. *)
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min=50" ] in
   check_int "--min=PCT equals the two-word form" ~expected:0 ~actual:code;
-  check_contains "--min=PCT prints its verdict" ~needle:"minimum 50.0%: ok" out;
+  check_contains "--min=PCT prints its verdict" ~needle:"minimum 50%: ok" out;
   let code, _, err = coverage_cmd ~cwd:proj [ "--min=" ] in
   check_int "an empty --min= exits 2" ~expected:2 ~actual:code;
   check_contains "an empty --min= is an invalid value, not an unknown option"
     ~needle:"invalid value '' for --min" err;
-  (* The gate compares raw percentages, but the verdict must never read
-     "66.7% is below 66.7%": when one decimal cannot tell the total from
-     the gate (2/3 = 66.66% against --min 66.7), the shortfall gains
-     digits until it can. *)
+  (* The gate compares raw percentages, not their renderings: 2/3 rounds
+     to the 66.7 it is gated against and still falls short. The verdict
+     makes no comparative claim, so the fraction is what says why. *)
   let thirds = scratch "twothirds" in
   let two_of_three =
     collection "two-thirds" [ ("lib/foo.ml", foo_points, [| 1; 1; 0 |]) ]
@@ -743,30 +742,8 @@ let min_boundaries =
     (C.to_string two_of_three);
   let code, out, _ = coverage_cmd ~cwd:thirds [ "--min"; "66.7" ] in
   check_int "the gate compares raw percentages" ~expected:1 ~actual:code;
-  check_contains "a display-equal shortfall gains a decimal"
-    ~needle:"minimum 66.7%: FAILED \u{2014} 66.67% is below 66.7%" out;
-  (* A ratcheted two-decimal gate (--min pinned to a previous run's
-     two-decimal percentage) must never print a false sentence: the
-     threshold prints exactly as the gate compared it — 72.24, never a
-     rounded 72.2 — and the shortfall keeps the fewest decimals whose
-     rendering stays numerically below it. *)
-  let ratchet = scratch "ratchet" in
-  let eighteen =
-    Array.init 18 (fun i -> { C.start_ofs = i * 10; end_ofs = (i * 10) + 9 })
-  in
-  let counts = Array.init 18 (fun i -> if i < 13 then 1 else 0) in
-  write_file
-    (Filename.concat ratchet "_build/_coverage/r.coverage")
-    (C.to_string (collection "ratchet" [ ("lib/foo.ml", eighteen, counts) ]));
-  let code, out, _ = coverage_cmd ~cwd:ratchet [ "--min"; "72.24" ] in
-  check_int "a two-decimal gate exits 1 below the threshold" ~expected:1
-    ~actual:code;
-  check_contains "a two-decimal threshold prints exactly and truthfully"
-    ~needle:"minimum 72.24%: FAILED \u{2014} 72.2% is below 72.24%" out;
-  let code, out, _ = coverage_cmd ~cwd:ratchet [ "--min"; "72.22" ] in
-  check_int "a met two-decimal gate exits 0" ~expected:0 ~actual:code;
-  check_contains "the ok verdict prints the exact threshold too"
-    ~needle:"minimum 72.22%: ok" out
+  check_contains "a display-equal shortfall still fails, with its fraction"
+    ~needle:"minimum 66.7%: FAILED \u{2014} 66.7% (2/3 points)" out
 
 (* Discovery and merge robustness *)
 
