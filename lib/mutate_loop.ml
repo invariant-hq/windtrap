@@ -604,10 +604,9 @@ let render_data ~resolve_source ~loc_of ~duration ~seed ~siblings ~total t =
 
 let probe_line ~armed ~paths ~spine tests (_ : Unix.file_descr) =
   child_prologue ~armed;
-  match Driver.plan ~allowlist:(allowlist_of paths) spine tests with
+  match Driver.execute ~allowlist:(allowlist_of paths) spine tests with
   | Error error -> "error " ^ one_line (Runner.startup_message error)
-  | Ok plan ->
-      let outcome = Driver.execute plan in
+  | Ok outcome ->
       (* Test rows only: the probe's counts answer "did the same tests run
          the same way", and a verdict row (a failed release) is not a
          test. *)
@@ -732,9 +731,9 @@ let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests
       (* After arming, so the runaway budget measures the child's own hits
          and not the dry run's accumulated ones. *)
       M.reset_reach ();
-      match Driver.plan ~allowlist:(allowlist_of paths) spine tests with
+      match Driver.execute ~allowlist:(allowlist_of paths) spine tests with
       | Error error -> "error " ^ one_line (Runner.startup_message error)
-      | Ok plan -> encode_outcome ~paths (Driver.execute plan))
+      | Ok outcome -> encode_outcome ~paths outcome)
 
 (* The runaway budget: the dry run's hit count with room to spare. A
    drained count under-reports (a site a test's teardown evaluates again
@@ -1083,11 +1082,12 @@ let admit_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests fd =
                 emit (spf "t %d %s" i word))
         | Runner.Run_started _ | Runner.Fixture_release _ -> ()
       in
-      match Driver.plan ~allowlist:(allowlist_of paths) spine tests with
+      match
+        Driver.execute ~on_event:event ~allowlist:(allowlist_of paths) spine
+          tests
+      with
       | Error error -> "error " ^ one_line (Runner.startup_message error)
-      | Ok plan ->
-          let (_ : Runner.outcome) = Driver.execute ~on_event:event plan in
-          "done")
+      | Ok (_ : Runner.outcome) -> "done")
 
 (* What one batch child said, per index. [None] is a test that reported
    no outcome — never started, or in flight when the child died — and

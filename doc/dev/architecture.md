@@ -69,9 +69,9 @@ tree: tests, groups, focus, xfail, flatten).
 Drive and render: `Run` (THE run record and the one ambient slot; a
 result row carries its `subject` — test, fixture release, or the
 stale-baselines verdict — so every sink projects the one recorded
-list), `Runner` (sequential executor: `plan` stages the startup checks
-and selection, `execute_plan` runs the plan, `execute` is literally
-their composition; per-test boundary, timeout via SIGALRM, retries,
+list), `Runner` (sequential executor: `execute` runs the startup
+checks and the selection, then the tests; per-test boundary, timeout
+via SIGALRM, retries,
 fixture release, the last-failed store, the exit guard, Law 11 exit
 codes; emits typed events with immutable payloads, prints nothing),
 `Cli` (one declarative item table — flags and flagless settings — →
@@ -85,7 +85,7 @@ report-section vocabulary: instrumentation reports arrive as section
 data, and `Render` names no instrumentation runtime), `Driver` (the
 spine: `Driver.t` is the record of one invocation's reporting inputs,
 `execute_and_report` the one order every driver shares, and
-`plan`/`execute` the staged halves for mutation-child-style callers),
+`execute` the reporting-free run a mutation child needs),
 `Registry` (the Law-16d armed hooks: the one cross-package cell),
 `Mutate_loop` (the mutation seam: the
 dry run and its reach map, the determinism probe, the forced-fail

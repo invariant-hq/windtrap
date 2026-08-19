@@ -225,17 +225,15 @@ let coverage_data ?source_roots collection : Render.coverage =
         (Windtrap_coverage.file_reports ?source_roots collection);
   }
 
-(* The staged internals *)
+(* Execution without reporting *)
 
-(* Deciding and running, as two calls, for the one caller population that
-   needs the seam: a mutation child runs a session with no reporting —
-   stdout on /dev/null, the verdict on a pipe — and these two calls are
-   that session. Everything that reports goes through
-   [execute_and_report] below, which composes [Runner.execute] whole. *)
+(* For the one caller population that needs it: a mutation child runs a
+   session with no reporting — stdout on /dev/null, the verdict on a
+   pipe — and this call is that session. Everything that reports goes
+   through [execute_and_report] below. *)
 
-let plan ?allowlist (t : t) tests =
-  Runner.plan ?allowlist ~config:t.config ~suite:t.suite tests
-let execute ?on_event plan = Runner.execute_plan ?on_event plan
+let execute ?on_event ?allowlist (t : t) tests =
+  Runner.execute ?on_event ?allowlist ~config:t.config ~suite:t.suite tests
 
 (* The execute-and-report spine *)
 

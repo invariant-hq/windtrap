@@ -186,34 +186,21 @@ val coverage_data :
     merged files, which is the only place a per-file coverage table is drawn.
 *)
 
-(** {1:staged Staged internals}
+(** {1:silent Execution without reporting} *)
 
-    The run lifecycle in two halves — decide, then run — for the one caller
-    population that needs the seam: mutation children, which run a session with
-    no reporting (standard descriptors on [/dev/null], the verdict on a pipe).
-    Drivers use {!execute_and_report}, always: it is the sole composition that
-    also reports, and a driver that composed the halves itself would be free to
-    put something between them — the same drift by another route. *)
-
-val plan :
+val execute :
+  ?on_event:(Runner.event -> unit) ->
   ?allowlist:string list ->
   t ->
   Test_tree.t list ->
-  (Runner.plan, Runner.startup_error) result
-(** [plan t tests] is {!Runner.plan} over [t]'s [config] and [suite]: the
-    startup checks and the selection, and [Error error] on a refused run —
-    exactly when {!execute_and_report} would refuse. [allowlist] is
-    {!Runner.plan}'s: the exact paths to run. Only [t.config] and [t.suite] are
-    consulted; the reporting fields are along for the ride, so a child plans
-    with the spine it was handed, [config] swapped for its own. *)
-
-val execute : ?on_event:(Runner.event -> unit) -> Runner.plan -> Runner.outcome
-(** [execute plan] is {!Runner.execute_plan}: runs [plan]'s selection and is the
-    completed outcome, reporting {e nothing} — no renderer, no envelope, no
-    snapshot report. [on_event] observes progress under {!Runner.execute}'s
-    observer contract: it receives immutable projections, and if it raises the
-    run aborts with that exception. Execute a plan once, promptly, in the
-    process and run-state it was planned in ({!Runner.type-plan}). *)
+  (Runner.outcome, Runner.startup_error) result
+(** [execute t tests] is {!Runner.execute} over [t]'s [config] and [suite],
+    reporting {e nothing} — no renderer, no envelope, no snapshot report. For
+    the one caller population that needs that: mutation children, which run a
+    session with the standard descriptors on [/dev/null] and the verdict on a
+    pipe. Drivers use {!execute_and_report}, always. [on_event] and [allowlist]
+    are {!Runner.execute}'s; only [t.config] and [t.suite] are consulted, so a
+    child runs with the spine it was handed, [config] swapped for its own. *)
 
 (** {1:spine The execute-and-report spine} *)
 
