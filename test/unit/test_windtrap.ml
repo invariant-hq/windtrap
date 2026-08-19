@@ -258,6 +258,16 @@ let release_rows outcome =
     (fun (r : Run.result) -> r.Run.subject = Run.Fixture_release)
     (Run.results outcome.Runner.run)
 
+(* The paths that counted as failed, in execution order — what the exit
+   code and the last-failed store react to. *)
+let failed_paths outcome =
+  List.filter_map
+    (fun (r : Run.result) ->
+      if r.Run.subject = Run.Test && r.Run.counted then
+        Some (Test_tree.path_to_string r.Run.path)
+      else None)
+    (Run.results outcome.Runner.run)
+
 let outcome_of outcome path =
   match result_of outcome path with
   | Some r -> Some r.Run.outcome
@@ -906,9 +916,9 @@ let () =
   check "chdir took effect inside the test and was undone after it"
     (!facade_cwd <> "" && !facade_cwd <> home && cwd_or_gone () = home);
   check "an expected failure does not count as failed"
-    (not (List.mem "expected failure" outcome.Runner.failed_paths));
+    (not (List.mem "expected failure" (failed_paths outcome)));
   check "an unexpected pass counts as failed"
-    (List.mem "unexpected pass" outcome.Runner.failed_paths);
+    (List.mem "unexpected pass" (failed_paths outcome));
   check_int "b-package exit code" ~expected:1 ~actual:outcome.Runner.exit_code
 
 (* B-package edges
@@ -970,10 +980,10 @@ let () =
   in
   expect_run "xfail over cases" ~config suite @@ fun outcome ->
   check "the failing child is excused"
-    (not (List.mem "mixed › 2" outcome.Runner.failed_paths));
+    (not (List.mem "mixed › 2" (failed_paths outcome)));
   check "each passing child is an unexpected pass"
-    (List.mem "mixed › 1" outcome.Runner.failed_paths
-    && List.mem "mixed › 3" outcome.Runner.failed_paths);
+    (List.mem "mixed › 1" (failed_paths outcome)
+    && List.mem "mixed › 3" (failed_paths outcome));
   check_int "xfail over cases exit code" ~expected:1
     ~actual:outcome.Runner.exit_code
 

@@ -736,8 +736,6 @@ type outcome = {
   selected : Test_tree.case list;
   total : int;
   focus_active : bool;
-  bailed : bool;
-  failed_paths : string list;
   orphans : string list;
   duration : float;
   exit_code : int;
@@ -892,17 +890,8 @@ let execute_plan ?(on_event = fun _ -> ())
     else if executed = 0 then 2
     else 0
   in
-  {
-    run;
-    selected;
-    total;
-    focus_active;
-    bailed;
-    failed_paths;
-    orphans;
-    duration = Clock.count_s started;
-    exit_code;
-  }
+  { run; selected; total; focus_active; orphans;
+    duration = Clock.count_s started; exit_code }
 
 let execute ?on_event ?allowlist ~config ~suite tests =
   Result.map (execute_plan ?on_event) (plan ?allowlist ~config ~suite tests)

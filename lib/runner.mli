@@ -246,13 +246,6 @@ type outcome = {
   focus_active : bool;
       (** [true] iff a focused node narrowed the selection — renderers warn on
           successful focused runs outside CI. *)
-  bailed : bool;
-      (** [true] iff [--bail] stopped the run before the last selected test. *)
-  failed_paths : string list;
-      (** The paths (as {!Test_tree.path_to_string}) that counted as failed for
-          the exit code and the last-failed store, in execution order: failures
-          not expected by [xfail], plus expected-failure tests that passed (see
-          the preamble, {e Expected failures}). *)
   orphans : string list;
       (** Baselines still stale when the run ended ({!Snapshot.orphans}),
           reported only after a full, clean run — no filters, focus, bail,
@@ -260,9 +253,9 @@ type outcome = {
           and never changes {!outcome.exit_code}. *)
   duration : float;  (** Wall-clock seconds from startup checks to release. *)
   exit_code : int;
-      (** [1] when any test counted as failed ({!outcome.failed_paths}
-          nonempty) or any release failed — equivalently, when any recorded row
-          counted as failed; else [2] when no test executed (empty suite or
+      (** [1] when any recorded row counted as failed ({!Run.result.counted}) —
+          a test the [xfail] annotation did not excuse, or a failed fixture
+          release; else [2] when no test executed (empty suite or
           empty selection — the filter-typo case); else [0] — a nonempty
           selection whose every test skipped is deliberate and exits [0], and so
           does a run whose only failures were expected ([xfail]). List-only runs

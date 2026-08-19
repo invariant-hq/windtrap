@@ -739,6 +739,18 @@ let () =
 
 (* Selection *)
 
+(* The paths the exit code and the last-failed store react to: test rows
+   the runner counted as failed, in execution order. Derived from the
+   recorded rows rather than read off the outcome — no product consumer
+   asks for the list, so the runner keeps it as a local. *)
+let failed_paths outcome =
+  List.filter_map
+    (fun (r : Run.result) ->
+      if r.Run.subject = Run.Test && r.Run.counted then
+        Some (Test_tree.path_to_string r.Run.path)
+      else None)
+    (Run.results outcome.Runner.run)
+
 let ran_names outcome =
   List.map
     (fun r -> String.concat "/" r.Run.path)
@@ -910,7 +922,7 @@ let () =
   check "an expected failure does not fail the run"
     (outcome.Runner.exit_code = 0);
   check "an expected failure is not a failed path"
-    (outcome.Runner.failed_paths = []);
+    ((failed_paths outcome) = []);
   check "the flattened case carries the annotation for renderers"
     (match
        List.find_opt
@@ -937,7 +949,7 @@ let () =
         && contains "issue #42" (message_of f))
   | _ -> check "unexpected pass records one message failure" false);
   check "an unexpected pass fails the run"
-    (outcome.Runner.exit_code = 1 && outcome.Runner.failed_paths = [ "fixed" ])
+    (outcome.Runner.exit_code = 1 && (failed_paths outcome) = [ "fixed" ])
 
 let () =
   with_temp_root @@ fun root ->
@@ -958,7 +970,7 @@ let () =
     | [ { Failure.kind = Failure.Property _; _ } ] -> true
     | _ -> false);
   check "an expected property failure keeps the run green"
-    (outcome.Runner.exit_code = 0 && outcome.Runner.failed_paths = [])
+    (outcome.Runner.exit_code = 0 && (failed_paths outcome) = [])
 
 let () =
   (* The expectation inverts the whole outcome, phases included: an xfail
@@ -990,7 +1002,7 @@ let () =
     | [ f ] -> contains "expected to fail" (message_of f)
     | _ -> false);
   check "only the unexpected pass counts as failed"
-    (outcome.Runner.failed_paths = [ "xf-clean" ]
+    ((failed_paths outcome) = [ "xf-clean" ]
     && outcome.Runner.exit_code = 1)
 
 let () =
@@ -1018,7 +1030,7 @@ let () =
         ~actual:r.Run.attempts
   | None -> check "keeps-passing recorded" false);
   check "only the unexpected pass counts as failed"
-    (outcome.Runner.failed_paths = [ "keeps-passing" ])
+    ((failed_paths outcome) = [ "keeps-passing" ])
 
 let () =
   (* --bail counts effective failures: expected ones do not consume the
@@ -1035,7 +1047,7 @@ let () =
   in
   expect_run "xfail-bail suite runs" ~config tests @@ fun outcome ->
   check "an expected failure does not consume the bail budget"
-    (ran_names outcome = [ "excused"; "ok"; "boom" ] && outcome.Runner.bailed)
+    (ran_names outcome = [ "excused"; "ok"; "boom" ])
 
 let () =
   (* The last-failed store: expected failures never enter it; unexpected
@@ -1051,7 +1063,7 @@ let () =
   in
   expect_run "xfail-store: first run" ~config tests @@ fun outcome ->
   check "only the real failure counted"
-    (outcome.Runner.failed_paths = [ "real" ]);
+    ((failed_paths outcome) = [ "real" ]);
   expect_run "--failed skips expected failures" ~config:rerun tests
   @@ fun outcome ->
   check "--failed reruns only the real failure" (ran_names outcome = [ "real" ])
@@ -1228,7 +1240,7 @@ let () =
     (List.for_all (fun p -> not (Sys.file_exists p)) !scratch);
   check "scratch cleanup does not alter outcomes"
     (outcome.Runner.exit_code = 1
-    && outcome.Runner.failed_paths = [ "failing-scratch" ])
+    && (failed_paths outcome) = [ "failing-scratch" ])
 
 let () =
   (* Scratch removal on the boundary's worst paths (amendment B9, Law 8):
@@ -1252,7 +1264,7 @@ let () =
   in
   expect_run "teardown-scratch suite runs" ~config tests @@ fun outcome ->
   check "the failing teardown tripped the bail"
-    (ran_names outcome = [ "teardown-scratch" ] && outcome.Runner.bailed);
+    (ran_names outcome = [ "teardown-scratch" ]);
   check_int "scratch was created in body and teardown alike" ~expected:2
     ~actual:(List.length !scratch);
   check "scratch is removed when the teardown raises, under --bail too"
@@ -1389,7 +1401,7 @@ let () =
     expect_run "setenv outcomes suite runs" ~on_event ~config tests
     @@ fun outcome ->
     check "the timing-out test is a failure"
-      (outcome.Runner.failed_paths = [ "fails"; "times out" ]);
+      ((failed_paths outcome) = [ "fails"; "times out" ]);
     check "the binding is restored after failure, skip, and timeout alike"
       (!after = [ Some "before"; Some "before"; Some "before" ]);
     Env.set bound_var None)
@@ -1466,7 +1478,7 @@ let () =
   expect_run "chdir-restore suite runs" ~config tests @@ fun outcome ->
   go_home home;
   check "an unrestorable directory fails the test"
-    (outcome.Runner.failed_paths = [ "chdir-restore-fails" ]);
+    ((failed_paths outcome) = [ "chdir-restore-fails" ]);
   match failure_list (outcome_of outcome [ "chdir-restore-fails" ]) with
   | [ f ] ->
       check "the restoration failure is attributed to cleanup"
@@ -1508,7 +1520,7 @@ let () =
         && Render.labeled_msg b = Some "layouts › strided")
   | _ -> check "two subtest failures recorded" false);
   check "subtest failures fail the test"
-    (outcome.Runner.exit_code = 1 && outcome.Runner.failed_paths = [ "layouts" ])
+    (outcome.Runner.exit_code = 1 && (failed_paths outcome) = [ "layouts" ])
 
 let () =
   (* Subtest failures reset per attempt: a retry that stops failing
@@ -1730,7 +1742,7 @@ let () =
   in
   expect_run "bail suite runs" ~config tests @@ fun outcome ->
   check "bail stops after the limit"
-    (ran_names outcome = [ "first-fails" ] && outcome.Runner.bailed);
+    (ran_names outcome = [ "first-fails" ]);
   check "fixtures release under bail" !released;
   check "bailed failing run exits 1" (outcome.Runner.exit_code = 1)
 
@@ -1743,7 +1755,7 @@ let () =
   in
   expect_run "--bail 2 suite runs" ~config tests @@ fun outcome ->
   check "--bail 2 stops after the second failure, passes in between kept"
-    (ran_names outcome = [ "f1"; "ok"; "f2" ] && outcome.Runner.bailed)
+    (ran_names outcome = [ "f1"; "ok"; "f2" ])
 
 let () =
   (* A raising [on_event] observer aborts the run, but acquired fixtures
@@ -2081,7 +2093,7 @@ let () =
   check "the stale baseline is named"
     (outcome.Runner.orphans = [ baseline root "gone" ]);
   check "but the run still passes" (outcome.Runner.exit_code = 0);
-  check "and no test counted as failed" (outcome.Runner.failed_paths = []);
+  check "and no test counted as failed" ((failed_paths outcome) = []);
   check "the stale file was not deleted"
     (Sys.file_exists (baseline root "gone"));
   check "and the live baseline is untouched"
@@ -2099,7 +2111,7 @@ let () =
   @@ fun outcome ->
   check "an unclean run reports no orphans" (outcome.Runner.orphans = []);
   check "and fails for its own reason"
-    (outcome.Runner.exit_code = 1 && outcome.Runner.failed_paths = [ "boom" ]);
+    (outcome.Runner.exit_code = 1 && (failed_paths outcome) = [ "boom" ]);
   clear_env ()
 
 (* A verdict row is not a test: a release failure recorded into the run
@@ -2240,7 +2252,7 @@ let () =
         ~actual:(message_of f)
   | _ -> check "bomb: exactly one failure" false);
   check "the bomb and the genuine failure both counted"
-    (outcome.Runner.failed_paths = [ "bomb"; "after" ]);
+    ((failed_paths outcome) = [ "bomb"; "after" ]);
   check "the run exits through its own path with code 1"
     (outcome.Runner.exit_code = 1);
   check "the slot is inactive after execute returns" (not (Run.active ()))
@@ -2346,7 +2358,7 @@ let () =
     | Some (Failure.Fail _) -> true
     | _ -> false);
   check "the excused bomb is absent from failed_paths"
-    (outcome.Runner.failed_paths = []);
+    ((failed_paths outcome) = []);
   check "the excused bomb leaves the run green" (outcome.Runner.exit_code = 0)
 
 let () =
