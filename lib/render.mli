@@ -491,7 +491,9 @@ val coverage_report : t -> mode:[ `Report | `Full ] -> coverage -> unit
     - one line per file — percentage (styled by the frozen thresholds the
       summary line uses: green at 80% and above, yellow at 60%, red below),
       visited/total, file name, and the uncovered line ranges
-      ([uncovered: 88-94, 121]). A fully covered file has no range list; a
+      ([uncovered: 88-94, 121]), bounded at eight regions and then
+      [(+N more, -u shows them)] — a row no terminal can lay out is not a
+      report. A fully covered file has no range list; a
       stale file states the staleness and the fix instead of ranges it cannot
       attribute; a file whose unvisited points have no line attribution notes
       the missing source;

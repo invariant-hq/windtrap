@@ -1523,6 +1523,23 @@ let format_ranges ranges =
 
 let ranges lines = format_ranges (collapse_ranges lines)
 
+(* The table's uncovered cell, bounded. A barely-tested file has
+   hundreds of uncovered regions, and their ranges render as one cell of
+   thousands of characters — a row no terminal can lay out, in the very
+   report a reader opens to find out where to start. The staleness
+   warnings bound their detail the same way; the unbounded answer is one
+   flag away. *)
+let uncovered_cap = 8
+
+let bounded_ranges lines =
+  let regions = collapse_ranges lines in
+  let total = List.length regions in
+  if total <= uncovered_cap then format_ranges regions
+  else
+    spf "%s (+%d more, -u shows them)"
+      (format_ranges (List.filteri (fun i _ -> i < uncovered_cap) regions))
+      (total - uncovered_cap)
+
 (* Excerpt regions *)
 
 type excerpt_line = { number : int; text : string; marked : bool }
@@ -1774,7 +1791,7 @@ let coverage_sections ~mode (c : coverage) =
     let note =
       if f.stale then
         "stale: the source changed \u{2014} re-run the instrumented tests"
-      else if f.uncovered <> [] then "uncovered: " ^ ranges f.uncovered
+      else if f.uncovered <> [] then "uncovered: " ^ bounded_ranges f.uncovered
         (* Unvisited points with no line attribution: the source was not
            found (a stale one already said so). *)
       else if f.visited < f.total then "(source not found)"

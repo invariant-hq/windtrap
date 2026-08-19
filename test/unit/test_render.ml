@@ -2378,6 +2378,35 @@ let test_coverage_report_bytes () =
     ~actual:
       (with_renderer (fun r -> Render.coverage_report r ~mode:`Report data))
 
+(* A barely-tested file has hundreds of uncovered regions, and their
+   ranges would render as one cell of thousands of characters. The cell
+   is bounded, and names the flag that shows the rest. *)
+
+let test_coverage_uncovered_cap () =
+  let data =
+    {
+      Render.visited = 0;
+      total = 60;
+      files =
+        [
+          {
+            Render.file = "lib/wide.ml";
+            visited = 0;
+            total = 60;
+            uncovered = List.init 30 (fun i -> (i * 2) + 1);
+            source = None;
+            stale = false;
+          };
+        ];
+    }
+  in
+  let out =
+    with_renderer (fun r -> Render.coverage_report r ~mode:`Report data)
+  in
+  check_contains "the uncovered cell stops after eight regions"
+    ~sub:"uncovered: 1, 3, 5, 7, 9, 11, 13, 15 (+22 more, -u shows them)" out;
+  check_absent "and drops the ninth" ~sub:"17" out
+
 (* The coverage thresholds, pinned at the bytes
 
    Green at 80% and above, yellow at 60%, red below — the classification
@@ -2905,6 +2934,7 @@ let tests =
     test "snapshot report: stale baselines and the removal hint"
       test_snapshot_report_orphans;
     test "the coverage report's frozen bytes" test_coverage_report_bytes;
+    test "the uncovered cell is bounded" test_coverage_uncovered_cap;
     test "the coverage thresholds are the renderer's"
       test_coverage_thresholds;
     test "mutation: the worked survivor report" test_mutation_report;
