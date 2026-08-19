@@ -29,8 +29,6 @@ type config = {
   bail : int option;
   stream : bool;
   update : Env.update;
-  prune : bool;
-  strict_snapshots : bool;
   timeout : float option;
   prop_count : int option;
   max_shrink : int option;
@@ -52,8 +50,6 @@ let default_config () =
     bail = None;
     stream = false;
     update = Env.No_update;
-    prune = false;
-    strict_snapshots = false;
     timeout = None;
     prop_count = None;
     max_shrink = None;
@@ -95,7 +91,6 @@ let for_subset config ~log_dir ~bail =
     bail;
     stream = false;
     update = Env.No_update;
-    prune = false;
     junit = None;
     log_dir;
     allow_focus = true;
@@ -120,7 +115,7 @@ type fixture_entry = {
   fx_release : (unit -> unit) option;
 }
 
-type subject = Test | Fixture_release | Stale_baselines
+type subject = Test | Fixture_release
 
 let fixture_release_path = [ "fixture release" ]
 

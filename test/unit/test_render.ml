@@ -824,44 +824,6 @@ let test_headline () =
   check_contains "block: empty message named" ~sub:"(empty failure message)"
     (failure_block (Failure.message ""))
 
-(* The --strict-snapshots verdict's projection: the payload carries the
-   orphan paths and nothing else; the [stale baseline:] lines and the
-   removal hint — a command hint like any other — are spelled here, at
-   render time, from the invocation. The same producer feeds Driver's
-   advisory block, so the failure section and the advisory cannot drift. *)
-let test_stale_baselines_projections () =
-  let f = Failure.stale_baselines [ "/tmp/a.snap"; "/tmp/b.snap" ] in
-  check_string "block under Exe: the files, then the way out"
-    ~expected:
-      (Printf.sprintf
-         "    stale baseline: %s\n\
-         \    stale baseline: %s\n\
-         \    remove stale baselines: ./t.exe -u --prune\n"
-         (Path_ops.display "/tmp/a.snap")
-         (Path_ops.display "/tmp/b.snap"))
-    ~actual:(failure_block ~invocation:(`Exe "./t.exe") f);
-  check_contains "block under Mirrors: the hint spells the mirrors"
-    ~sub:
-      "remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
-    (failure_block f);
-  (* The line producers are the exported pair Driver's advisory block
-     prints — one spelling. *)
-  check "stale_lines_with_hint is stale_lines plus the hint"
-    (Render.stale_lines_with_hint ~invocation:(`Exe "./t.exe") [ "/tmp/a.snap" ]
-    = Render.stale_lines [ "/tmp/a.snap" ]
-      @ [ "remove stale baselines: ./t.exe -u --prune" ]);
-  (* The headline flattens the block's lines whole, hint included, into
-     the one-line bound (a short path, so nothing truncates here; real
-     baseline paths push the invocation-specific tail past the bound). *)
-  check_string "headline: files and hint flattened, invocation spelled"
-    ~expected:"stale baseline: a remove stale baselines: ./t -u --prune"
-    ~actual:
-      (Render.headline ~invocation:(`Exe "./t")
-         (Failure.stale_baselines [ "a" ]));
-  let long = Render.headline (Failure.stale_baselines [ "/tmp/a.snap" ]) in
-  check "headline: never multi-line, bounded"
-    ((not (String.contains long '\n')) && has ~sub:"..." long)
-
 let test_property_projections () =
   let example =
     Failure.property ~rendered:"Rect (2, 0)" ~case_index:0 ~shrink_steps:0
@@ -2814,12 +2776,12 @@ let test_summary_dialect () =
   check_string "harness monochrome FAIL tag is bare" ~expected:"FAIL"
     ~actual:(Harness.fail_tag ~ansi:false)
 
-(* The snapshot/prune report
+(* The snapshot report
 
-   The advisory baseline-maintenance lines the driver prints after
-   [finish] — a projection of run data, so every transcript byte leaves
-   through the renderer (Law 4). One producer for both runners: the line
-   classes under both invocations and the quiet gate are pinned here. *)
+   The baseline-maintenance lines the driver prints after [finish] — a
+   projection of run data, so every transcript byte leaves through the
+   renderer (Law 4). One producer for both runners: the line classes and
+   the quiet gate are pinned here. *)
 
 let make_run ?snapshots () =
   let snapshots =
@@ -2829,9 +2791,9 @@ let make_run ?snapshots () =
   in
   Run.create (Run.default_config ()) ~capture:Capture.disabled ~snapshots
 
-let snapshot_report ?mode ?invocation ?(orphans = []) ?pruned run =
+let snapshot_report ?mode ?invocation ?(orphans = []) run =
   with_renderer ?mode ?invocation (fun r ->
-      Render.report_snapshots r ~orphans ~pruned run)
+      Render.report_snapshots r ~orphans run)
 
 let test_snapshot_report_writes () =
   (* One [wrote] line per accepted baseline, paths spelled by
@@ -2851,105 +2813,26 @@ let test_snapshot_report_writes () =
   check_string "quiet prints no maintenance lines" ~expected:""
     ~actual:(snapshot_report ~mode:`Quiet (make_run ~snapshots ()))
 
-let test_snapshot_report_prune () =
-  check_string "granted prune: one line per deleted baseline"
-    ~expected:
-      (Printf.sprintf "pruned %s\npruned %s\n"
-         (Path_ops.display "/tmp/a.snap")
-         (Path_ops.display "/tmp/b.snap"))
-    ~actual:
-      (snapshot_report
-         ~pruned:(Ok [ "/tmp/a.snap"; "/tmp/b.snap" ])
-         (make_run ()));
-  let refusal =
-    {
-      Snapshot.not_update_run = true;
-      filtered = false;
-      skipped = 0;
-      failed = 2;
-      focused = 0;
-    }
-  in
-  check_string "refused prune: stale lines then the explanation"
+let test_snapshot_report_orphans () =
+  (* Stale baselines are always reported after a full, clean run, and the
+     report hands over the removal rather than performing it: a baseline
+     is a committed file. *)
+  let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
+  let a = Path_ops.display "/tmp/a.snap" and b = Path_ops.display "/tmp/b.snap" in
+  check_string "orphans: one line each, then the rm that removes them"
     ~expected:
       (Printf.sprintf
-         "stale baseline: %s\n\
-          prune refused: the run was not an update run (-u / \
-          WINDTRAP_UPDATE=1); 2 selected test(s) failed\n"
-         (Path_ops.display "/tmp/stale.snap"))
-    ~actual:
-      (snapshot_report ~orphans:[ "/tmp/stale.snap" ] ~pruned:(Error refusal)
-         (make_run ()))
-
-let test_snapshot_report_orphan_hint () =
-  (* The removal hint is spelled from the invocation — the one hint-context
-     difference between the runners. *)
-  let orphans = [ "/tmp/stale.snap" ] in
-  let expected_stale =
-    Printf.sprintf "stale baseline: %s\n" (Path_ops.display "/tmp/stale.snap")
-  in
-  check_string "orphans under Exe: hint completes the executable"
-    ~expected:(expected_stale ^ "remove stale baselines: ./t.exe -u --prune\n")
+         "stale baseline: %s\nstale baseline: %s\nremove them: rm '%s' '%s'\n" a
+         b a b)
+    ~actual:(snapshot_report ~orphans (make_run ()));
+  check_string "the hint does not depend on the invocation"
+    ~expected:(snapshot_report ~invocation:`Mirrors ~orphans (make_run ()))
     ~actual:
       (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans (make_run ()));
-  check_string "orphans under Mirrors: hint spells the environment prefixes"
-    ~expected:
-      (expected_stale
-     ^ "remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest\n"
-      )
-    ~actual:(snapshot_report ~invocation:`Mirrors ~orphans (make_run ()));
-  check_string "no writes, no orphans, no prune: nothing prints" ~expected:""
+  check_string "quiet prints no stale lines" ~expected:""
+    ~actual:(snapshot_report ~mode:`Quiet ~orphans (make_run ()));
+  check_string "no writes and no orphans: nothing prints" ~expected:""
     ~actual:(snapshot_report (make_run ()))
-
-(* The --strict-snapshots verdict
-
-   The runner records the verdict as a result row ({!Run.Stale_baselines};
-   pinned at runner level in test_runner.ml), so the same stale lines reach
-   the failure section of every sink. What this pins is the report's side
-   of the bargain: the advisory block stands down when the run carries the
-   row — one printing — while a prune refusal keeps its explanation. *)
-
-let strict_run ~orphans =
-  let run = make_run () in
-  Run.record run
-    {
-      Run.path = [ "stale baselines" ];
-      subject = Run.Stale_baselines;
-      outcome = Failure.Fail [ Failure.stale_baselines orphans ];
-      counted = true;
-      xfail = None;
-      slow_tagged = false;
-      duration = 0.;
-      attempts = 1;
-      prop_stats = None;
-    };
-  run
-
-let test_strict_snapshots_report () =
-  let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
-  (* One printing: the advisory block stands down when the failure block
-     already carried the same lines on the recorded row. *)
-  check_string "the advisory block stands down under the flag" ~expected:""
-    ~actual:
-      (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans
-         (strict_run ~orphans));
-  (* A refused prune still explains itself — the failure says what is
-     stale, the refusal says why nothing was deleted. *)
-  let refusal =
-    {
-      Snapshot.not_update_run = true;
-      filtered = false;
-      skipped = 0;
-      failed = 0;
-      focused = 0;
-    }
-  in
-  check_string "a refused prune keeps its explanation"
-    ~expected:
-      "prune refused: the run was not an update run (-u / WINDTRAP_UPDATE=1)\n"
-    ~actual:
-      (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans
-         ~pruned:(Error refusal) (strict_run ~orphans))
 
 let tests =
   [
@@ -2981,8 +2864,6 @@ let tests =
     test "slow threshold zero disables the machinery" test_slow_threshold_zero;
     test "verbose gains the slow warnings" test_verbose_slow_warnings;
     test "headline projection" test_headline;
-    test "stale-baselines projections (one result model)"
-      test_stale_baselines_projections;
     test "property projections" test_property_projections;
     test "kind details" test_kind_details;
     test "degenerate equalities" test_degenerate_equalities;
@@ -3038,11 +2919,8 @@ let tests =
     test "line ranges collapse and format" test_line_ranges;
     test "snapshot report: wrote lines and the quiet gate"
       test_snapshot_report_writes;
-    test "snapshot report: prune lines and refusals" test_snapshot_report_prune;
-    test "snapshot report: orphan hints per invocation"
-      test_snapshot_report_orphan_hint;
-    test "snapshot report: the advisory stands down under --strict-snapshots"
-      test_strict_snapshots_report;
+    test "snapshot report: stale baselines and the removal hint"
+      test_snapshot_report_orphans;
     test "the coverage report's frozen bytes" test_coverage_report_bytes;
     test "the coverage thresholds are the renderer's"
       test_coverage_thresholds;

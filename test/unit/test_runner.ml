@@ -11,7 +11,8 @@
    guards), exit codes including the all-skipped ratification, expected
    failures (xfail), subtest and scratch-path cleanup through the boundary,
    fixture release under bail and on release failure (acquisition skips
-   included), events, the property wiring, snapshot guard/prune plumbing,
+   included), events, the property wiring, the snapshot guard and the
+   stale-baseline report,
    and the last-failed store round trip. Plain executable: [execute]
    refuses to nest inside an active run, so this suite cannot host its
    own assertions under the windtrap runner. *)
@@ -62,12 +63,6 @@ let release_failure_of (r : Run.result) =
   match r.Run.outcome with
   | Failure.Fail [ f ] -> Some f
   | Failure.Fail _ | Failure.Pass | Failure.Skip _ -> None
-
-(* The --strict-snapshots verdict rows (at most one per run). *)
-let stale_rows outcome =
-  List.filter
-    (fun (r : Run.result) -> r.Run.subject = Run.Stale_baselines)
-    (Run.results outcome.Runner.run)
 
 let failure_list = function
   | Some (Failure.Fail fs) -> fs
@@ -2022,7 +2017,7 @@ let () =
         (contains "already active" actual)
   | _ -> check "a nested run fails the calling test" false
 
-(* Snapshot guard and prune plumbing *)
+(* The snapshot CI guard *)
 
 let () =
   with_temp_root @@ fun root ->
@@ -2042,35 +2037,7 @@ let () =
   check "forced run is green" (outcome.Runner.exit_code = 0);
   clear_env ()
 
-let () =
-  clear_env ();
-  with_temp_root @@ fun root ->
-  let base = base_config ~log_dir:root () in
-  let suite =
-    [ Test_tree.test "t1" (fun () -> ()); Test_tree.test "t2" (fun () -> ()) ]
-  in
-  expect_run "no prune request means no prune" ~config:base suite
-  @@ fun outcome ->
-  check "pruned is None without --prune" (outcome.Runner.pruned = None);
-  check "orphans of a snapshot-less run are empty" (outcome.Runner.orphans = []);
-  let config =
-    { base with Run.update = Env.Update; prune = true; filter = Some "t1" }
-  in
-  expect_run "prune refused on a filtered run" ~config suite @@ fun outcome ->
-  (match outcome.Runner.pruned with
-  | Some (Error refusal) ->
-      check "the refusal reports the filter"
-        (refusal.Snapshot.filtered && not refusal.Snapshot.not_update_run)
-  | _ -> check "filtered prune is refused" false);
-  let config = { base with Run.prune = true } in
-  expect_run "prune refused without update mode" ~config suite @@ fun outcome ->
-  match outcome.Runner.pruned with
-  | Some (Error refusal) ->
-      check "the refusal reports the missing update mode"
-        (refusal.Snapshot.not_update_run && not refusal.Snapshot.filtered)
-  | _ -> check "check-mode prune is refused" false
-
-(* Stale baselines: reporting, --strict-snapshots, and --prune
+(* Stale-baseline reporting
 
    The registry the runner builds resolves scopes under
    [Path_ops.project_root], so a throwaway root goes in
@@ -2109,101 +2076,34 @@ let () =
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
   let base = base_config ~log_dir:(Filename.concat root "_logs") () in
   let suite = stale_suite root in
-  (* Default: advisory. The run is green, records no verdict row, and the
-     stale file survives. *)
-  expect_run "a stale baseline is advisory by default" ~config:base suite
-  @@ fun outcome ->
-  check "the stale baseline is reported"
+  (* Advisory, always: the run is green and the stale file survives —
+     removing a committed baseline is the user's edit. *)
+  expect_run "a stale baseline is reported" ~config:base suite @@ fun outcome ->
+  check "the stale baseline is named"
     (outcome.Runner.orphans = [ baseline root "gone" ]);
   check "but the run still passes" (outcome.Runner.exit_code = 0);
-  check "no verdict row without the flag" (stale_rows outcome = []);
-  (* --strict-snapshots: the same run, now a failure — recorded as a result
-     row (one result model), so every sink that projects results sees the
-     verdict the exit code carries. *)
-  let strict = { base with Run.strict_snapshots = true } in
-  expect_run "--strict-snapshots fails on a stale baseline" ~config:strict suite
-  @@ fun outcome ->
-  check "the stale baseline is still named"
-    (outcome.Runner.orphans = [ baseline root "gone" ]);
-  check "and the run exits 1" (outcome.Runner.exit_code = 1);
-  check "no test counted as failed" (outcome.Runner.failed_paths = []);
-  (match stale_rows outcome with
-  | [ r ] ->
-      check "the verdict row is a counted, unannotated failure"
-        (r.Run.counted && r.Run.xfail = None);
-      check "it reports under its own label" (r.Run.path = [ "stale baselines" ]);
-      check "it carries the orphan paths as structured data, no baked hint"
-        (match r.Run.outcome with
-        | Failure.Fail [ { Failure.kind = Failure.Stale_baselines ps; _ } ] ->
-            ps = [ baseline root "gone" ]
-        | _ -> false);
-      check "it is recorded last, after every test row"
-        (match List.rev (Run.results outcome.Runner.run) with
-        | last :: _ -> last == r
-        | [] -> false)
-  | rows ->
-      check
-        (Printf.sprintf "expected one stale-baselines row, got %d"
-           (List.length rows))
-        false);
+  check "and no test counted as failed" (outcome.Runner.failed_paths = []);
   check "the stale file was not deleted"
     (Sys.file_exists (baseline root "gone"));
-  (* The verdict inherits the orphan gate: a filtered run cannot tell
-     "stale" from "not selected", so it says nothing and fails nothing. *)
-  let filtered = { strict with Run.filter = Some "t1" } in
-  expect_run "--strict-snapshots is inapplicable after a filtered run"
-    ~config:filtered suite
+  check "and the live baseline is untouched"
+    (Sys.file_exists (baseline root "kept"));
+  (* A filtered run cannot tell "stale" from "not selected this time", so
+     it says nothing. *)
+  let filtered = { base with Run.filter = Some "t1" } in
+  expect_run "a filtered run reports nothing" ~config:filtered suite
   @@ fun outcome ->
   check "a filtered run reports no orphans" (outcome.Runner.orphans = []);
   check "and stays green" (outcome.Runner.exit_code = 0);
-  check "and records no verdict row" (stale_rows outcome = []);
   (* Same for a run that did not finish clean: one failing test is enough. *)
   let dirty = [ Test_tree.test "boom" (fun () -> Check.fail "boom") ] @ suite in
-  expect_run "--strict-snapshots is inapplicable after a failing run"
-    ~config:strict dirty
+  expect_run "an unclean run reports nothing" ~config:base dirty
   @@ fun outcome ->
   check "an unclean run reports no orphans" (outcome.Runner.orphans = []);
   check "and fails for its own reason"
     (outcome.Runner.exit_code = 1 && outcome.Runner.failed_paths = [ "boom" ]);
   clear_env ()
 
-(* --prune deletes, --strict-snapshots judges what survived: deletion
-   first, so the two together mean "remove them, and fail if you could
-   not". *)
-let () =
-  clear_env ();
-  with_temp_root @@ fun root ->
-  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
-  let base = base_config ~log_dir:(Filename.concat root "_logs") () in
-  let suite = stale_suite root in
-  (* Refused prune (this is not an update run): nothing is deleted, so the
-     strict verdict still fires and the refusal still explains itself. *)
-  let refused = { base with Run.prune = true; strict_snapshots = true } in
-  expect_run "a refused --prune leaves the strict failure standing"
-    ~config:refused suite
-  @@ fun outcome ->
-  check "the refusal is reported"
-    (match outcome.Runner.pruned with
-    | Some (Error r) -> r.Snapshot.not_update_run
-    | _ -> false);
-  check "the survivor is still stale"
-    (outcome.Runner.orphans = [ baseline root "gone" ]);
-  check "and the run exits 1" (outcome.Runner.exit_code = 1);
-  (* Granted prune: the deletion happens first, so there is nothing left
-     to fail on and the run is green under the same flag. *)
-  let granted = { refused with Run.update = Env.Force_update } in
-  expect_run "a granted --prune disarms --strict-snapshots" ~config:granted
-    suite
-  @@ fun outcome ->
-  check "the stale baseline was deleted"
-    (outcome.Runner.pruned = Some (Ok [ baseline root "gone" ]));
-  check "so nothing is reported stale" (outcome.Runner.orphans = []);
-  check "the file is gone" (not (Sys.file_exists (baseline root "gone")));
-  check "and the run is green" (outcome.Runner.exit_code = 0);
-  check "the live baseline survived" (Sys.file_exists (baseline root "kept"));
-  clear_env ()
-
-(* The verdict rows are not tests: a release failure recorded into the run
+(* A verdict row is not a test: a release failure recorded into the run
    must not count as an executed, failing test — that would disable
    full-run detection and orphan reporting for exactly the runs that need
    both. *)

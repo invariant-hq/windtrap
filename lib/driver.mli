@@ -12,7 +12,7 @@
     and they are composed in exactly one order, so the two runners cannot drift
     apart byte-wise. The five producers are renderer construction
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
-    ({!github_start}, {!github_end}, {!github_annotations}), the snapshot/prune
+    ({!github_start}, {!github_end}, {!github_annotations}), the snapshot
     report ({!Render.report_snapshots} — every transcript byte leaves through a
     renderer), and the coverage seam ({!snapshot_coverage}, {!coverage_summary},
     {!coverage_report}); {!execute_and_report} is the order they run in, around

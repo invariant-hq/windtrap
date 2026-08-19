@@ -58,15 +58,6 @@ type config = {
       (** [-u]/[WINDTRAP_UPDATE]: the snapshot update request, merged from all
           sources but before the CI guard — the runner applies
           {!Snapshot.resolve_mode}. *)
-  prune : bool;
-      (** [--prune]/[WINDTRAP_PRUNE]: delete orphaned baselines after a full,
-          clean update run. *)
-  strict_snapshots : bool;
-      (** [--strict-snapshots]/[WINDTRAP_STRICT_SNAPSHOTS]: a baseline still
-          stale at the end of a full, clean run fails the run
-          ({!Runner.outcome.orphans}). Off by default; inapplicable — never a
-          failure — after a run that was not full and clean, which is the same
-          gate stale-baseline reporting sits behind. *)
   timeout : float option;  (** [--timeout]: default per-test limit, seconds. *)
   prop_count : int option;  (** [--prop-count]: generated cases per property. *)
   max_shrink : int option;
@@ -103,10 +94,9 @@ val for_subset : config -> log_dir:string -> bail:int option -> config
     again could only narrow it further; tag-selecting knobs ([tags],
     [exclude_tags]) and the root [seed] are kept verbatim, because
     pruning cannot express a tag and per-case seeds derive from
-    [(root, path, index)]. Checking is made read-only ([update = No_update],
-    [prune = false]), reporting side effects are dropped ([junit],
-    [stream], [list_only]), an in-source focus is allowed, and [log_dir] and
-    [bail] are the caller's.
+    [(root, path, index)]. Checking is made read-only ([update = No_update]),
+    reporting side effects are dropped ([junit], [stream], [list_only]), an
+    in-source focus is allowed, and [log_dir] and [bail] are the caller's.
 
     A new selection knob that this function does not clear gives such a child a
     selection its parent's tree already applied, which is how a deterministic
@@ -418,7 +408,7 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
 (** The type for what a result row reports on. The runner records one {!Test}
     row per executed test and — because every sink projects the one recorded
     list — one row per end-of-run verdict that no test owns: a fixture-release
-    failure, and the [--strict-snapshots] verdict. Consumers that reason about
+    failure. Consumers that reason about
     tests (mutation verdicts, the last-failed store, full-run detection)
     dispatch on this field, never on the reporting path: a test whose name
     spells a verdict label must not alias a verdict row. *)
@@ -428,11 +418,6 @@ type subject =
       (** An end-of-run fixture teardown that raised ({!release_fixtures}): one
           row per failure, recorded when the release runs, carrying the
           {!Failure.Release}-phase failure. *)
-  | Stale_baselines
-      (** The [--strict-snapshots] verdict — baselines still stale after a full,
-          clean run: at most one row per run, carrying
-          {!Failure.Stale_baselines} with the offending paths
-          ({!Runner.outcome.orphans}). *)
 
 val fixture_release_path : string list
 (** [fixture_release_path] is [["fixture release"]] — the reporting path of
@@ -483,8 +468,7 @@ val record : t -> result -> unit
 
 val results : t -> result list
 (** [results t] is the recorded rows in execution order: every executed test's
-    row, then any fixture-release rows (release order), then the stale-baselines
-    row of a failed [--strict-snapshots] check, if any. *)
+    row, then any fixture-release rows (release order). *)
 
 (** {1:coverage Coverage seam}
 

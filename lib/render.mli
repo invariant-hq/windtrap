@@ -317,31 +317,15 @@ val finish :
     {!Failure.tail} attached to its failures: the retained lines (at most
     [tail_lines]), what was omitted, and the tail's [log_path]. *)
 
-(** {1:snapshots The snapshot/prune report} *)
+(** {1:snapshots The snapshot report} *)
 
-val report_snapshots :
-  t ->
-  orphans:string list ->
-  pruned:(string list, Snapshot.prune_refusal) result option ->
-  Run.t ->
-  unit
-(** [report_snapshots t ~orphans ~pruned run] prints the run's baseline
-    maintenance lines on [t]'s sink: one [wrote <path> (new|updated)] line per
-    accepted baseline ({!Snapshot.writes} over [run]'s registry, paths spelled
-    by {!Path_ops.display} — the one producer for both runners), then either the
-    [pruned <path>] lines of a granted [--prune], or the
-    [stale baseline: <path>] lines with the prune refusal's explanation, or the
-    stale-baseline lines with the removal hint spelled from [t]'s invocation
-    ({!stale_lines_with_hint} — the line class the [--strict-snapshots] failure
-    block shares). [orphans] and [pruned] are the outcome's baseline-maintenance
-    facts ([Runner.outcome]'s fields of the same names).
-
-    The stale-baseline lines are dropped when [run] carries the
-    {!Run.Stale_baselines} verdict row, which took the same lines into the
-    failure section — under [--strict-snapshots] they are the failure, and
-    naming the files twice in one transcript is noise. A prune refusal's
-    explanation still prints: it says why the deletion did not happen, which the
-    failure does not.
+val report_snapshots : t -> orphans:string list -> Run.t -> unit
+(** [report_snapshots t ~orphans run] prints the run's baseline maintenance
+    lines on [t]'s sink: one [wrote <path> (new|updated)] line per accepted
+    baseline ({!Snapshot.writes} over [run]'s registry, paths spelled by
+    {!Path_ops.display} — the one producer for both runners), then
+    {!stale_lines} over [orphans] ([Runner.outcome.orphans]) and the removal
+    hint under them.
 
     Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
     summary. The driver calls it after {!finish}, when the transcript is
@@ -867,31 +851,18 @@ val pp_run_duration : float -> string
     Everything derives from the typed payload: no formatting happens at failure
     sites. *)
 
-val headline : ?invocation:invocation -> Failure.t -> string
+val headline : Failure.t -> string
 (** [headline f] is a one-line, unstyled summary of [f]
     ([expected true, got false], [snapshot "help": no baseline], …), for
     transports that need a single-line field (JUnit [message] attributes).
     Newlines and escape codes cannot occur — payload-borne ANSI sequences are
-    stripped; long payload renderings are truncated with an ellipsis.
-    [invocation], default [`Mirrors], spells the one hint that rides into a
-    summary: the {!Failure.Stale_baselines} removal hint, whose lines flatten
-    whole ({!stale_lines_with_hint}). *)
+    stripped; long payload renderings are truncated with an ellipsis. *)
 
 val stale_lines : string list -> string list
 (** [stale_lines orphans] is one [stale baseline: <path>] line per orphan, in
-    order, paths spelled by {!Path_ops.display}. The one producer of the
-    stale-baseline line class: the [--strict-snapshots] failure block renders
-    the {!Failure.Stale_baselines} payload with it, and the advisory snapshot
-    report ({!report_snapshots}) prints the same lines, so the two surfaces
-    cannot drift. *)
-
-val stale_lines_with_hint :
-  invocation:invocation -> string list -> string list
-(** [stale_lines_with_hint ~invocation orphans] is {!stale_lines} followed by
-    the removal hint, spelled from [invocation] like every other command hint:
-    [remove stale baselines: <exe> -u --prune] under [`Exe],
-    [remove stale baselines: WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest]
-    under [`Mirrors]. *)
+    order, paths spelled by {!Path_ops.display}, followed by a
+    [remove them: rm <paths>] line — a baseline is a committed file, so the
+    report names the removal rather than performing it. *)
 
 val is_subtest_failure : Failure.t -> bool
 (** [is_subtest_failure f] is [true] iff [f] was recorded inside
@@ -989,10 +960,7 @@ val pp_failure :
       [`Mirrors] — because replaying a late case needs at least as many cases as
       the failing run generated; a declaration-site count replays without any
       flag;
-    - message: the text ([(empty failure message)] when it is empty);
-    - stale baselines: one [stale baseline: <path>] line per payload path and
-      the removal hint, exactly {!stale_lines_with_hint} spelled from the
-      invocation — the payload carries paths, never a pre-baked command.
+    - message: the text ([(empty failure message)] when it is empty).
 
     Every line is indented four spaces and the output ends with a newline. The
     captured-output tail is {e not} rendered here — it is per test, not per

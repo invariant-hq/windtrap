@@ -5,8 +5,8 @@
 
 (* Tests for Snapshot: the CI-guarded mode resolution, name identity and
    collision rules, scope resolution and containment, canonicalization,
-   read-only checking payloads, atomic acceptance, orphan reporting and
-   prune refusals. Each test builds its own registry over a throwaway
+   read-only checking payloads, atomic acceptance and orphan reporting.
+   Each test builds its own registry over a throwaway
    project root. The registry sits below the runner's snapshot wiring, so
    testing it under the runner is not circular: everything here drives
    [S.check] directly with explicit modes and scopes. *)
@@ -555,59 +555,6 @@ let () =
   check "orphans: case-differing spelling of a checked name is referenced"
     (stale_only = [])
 
-(* Prune *)
-
-let () =
-  reg "prune: refusal conditions" @@ fun () ->
-  with_root @@ fun root ->
-  let refusal label result pred =
-    match result with
-    | Ok _ -> check (label ^ ": refused") false
-    | Error r -> check (label ^ ": refused") (pred r)
-  in
-  let c = S.create ~root ~mode:S.Check () in
-  refusal "prune: check-mode run"
-    (S.prune c ~filtered:false ~skipped:0 ~failed:0 ~focused:0) (fun r ->
-      r.S.not_update_run && (not r.S.filtered) && r.S.skipped = 0
-      && r.S.failed = 0 && r.S.focused = 0);
-  let u = S.create ~root ~mode:S.Update () in
-  refusal "prune: filtered run"
-    (S.prune u ~filtered:true ~skipped:0 ~failed:0 ~focused:0) (fun r ->
-      r.S.filtered && not r.S.not_update_run);
-  refusal "prune: skipped tests"
-    (S.prune u ~filtered:false ~skipped:2 ~failed:0 ~focused:0) (fun r ->
-      r.S.skipped = 2);
-  refusal "prune: failed tests"
-    (S.prune u ~filtered:false ~skipped:0 ~failed:1 ~focused:0) (fun r ->
-      r.S.failed = 1);
-  refusal "prune: focused tests"
-    (S.prune u ~filtered:false ~skipped:0 ~failed:0 ~focused:3) (fun r ->
-      r.S.focused = 3);
-  refusal "prune: all blockers recorded together"
-    (S.prune c ~filtered:true ~skipped:1 ~failed:2 ~focused:3) (fun r ->
-      r.S.not_update_run && r.S.filtered && r.S.skipped = 1 && r.S.failed = 2
-      && r.S.focused = 3);
-  expect_invalid_arg "prune: negative count" (fun () ->
-      ignore (S.prune u ~filtered:false ~skipped:(-1) ~failed:0 ~focused:0))
-
-let () =
-  reg "prune: clean full update run deletes orphans" @@ fun () ->
-  with_root @@ fun root ->
-  let t = S.create ~root ~mode:S.Update () in
-  expect_pass "prune: reference kept" (fun () ->
-      S.check t ~loc:loc_1 ~test:"t" ~scope:(Some scope_a) ~name:"kept" "x");
-  write_raw (dir_a root ^ "/stale.snap") "s\n";
-  write_raw (dir_a root ^ "/.tmp-leftover.snap") "t\n";
-  write_raw (dir_a root ^ "/notes.txt") "n\n";
-  (match S.prune t ~filtered:false ~skipped:0 ~failed:0 ~focused:0 with
-  | Ok deleted ->
-      check "prune: clean full update run deletes the orphans"
-        (deleted = [ dir_a root ^ "/stale.snap" ])
-  | Error _ -> check "prune: clean full update run deletes the orphans" false);
-  check "prune: only orphaned .snap files removed"
-    (sorted_entries (dir_a root)
-    = [ ".tmp-leftover.snap"; "kept.snap"; "notes.txt" ])
-
 (* Duplicate detection has priority over content *)
 
 let () =
@@ -770,42 +717,6 @@ let () =
   degenerate "degenerate scope: dot" ".";
   degenerate "degenerate scope: root itself" root;
   check "degenerate scope: nothing created" (sorted_entries root = [])
-
-(* Prune: refusal has no side effects; failed removals omitted *)
-
-let () =
-  reg "prune refusal has no side effects" @@ fun () ->
-  with_root @@ fun root ->
-  let t = S.create ~root ~mode:S.Update () in
-  expect_pass "prune-refusal: reference kept" (fun () ->
-      S.check t ~loc:loc_1 ~test:"t" ~scope:(Some scope_a) ~name:"kept" "x");
-  write_raw (dir_a root ^ "/stale.snap") "s\n";
-  (match S.prune t ~filtered:false ~skipped:0 ~failed:1 ~focused:0 with
-  | Error _ -> check "prune-refusal: refused" true
-  | Ok _ -> check "prune-refusal: refused" false);
-  check "prune-refusal: orphan file untouched by a refusal"
-    (Sys.file_exists (dir_a root ^ "/stale.snap"))
-
-let () =
-  reg "prune omits failed removals" @@ fun () ->
-  with_root @@ fun root ->
-  (* A directory named [*.snap] is reported as an orphan but its removal
-     fails: it is omitted from the deleted list and left in place. *)
-  let t = S.create ~root ~mode:S.Update () in
-  expect_pass "prune-undeletable: reference kept" (fun () ->
-      S.check t ~loc:loc_1 ~test:"t" ~scope:(Some scope_a) ~name:"kept" "x");
-  write_raw (dir_a root ^ "/stale.snap") "s\n";
-  Unix.mkdir (dir_a root ^ "/dir.snap") 0o700;
-  check "prune-undeletable: both reported as orphans"
-    (S.orphans t = [ dir_a root ^ "/dir.snap"; dir_a root ^ "/stale.snap" ]);
-  (match S.prune t ~filtered:false ~skipped:0 ~failed:0 ~focused:0 with
-  | Ok deleted ->
-      check "prune-undeletable: only the removable file is deleted"
-        (deleted = [ dir_a root ^ "/stale.snap" ])
-  | Error _ ->
-      check "prune-undeletable: only the removable file is deleted" false);
-  check "prune-undeletable: directory left in place"
-    (sorted_entries (dir_a root) = [ "dir.snap"; "kept.snap" ])
 
 (* Summary *)
 

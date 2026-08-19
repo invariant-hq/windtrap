@@ -230,13 +230,6 @@ type kind =
           reaches a different case, or stops the descent at a different node,
           and reports something else. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
-  | Stale_baselines of string list
-      (** Baselines still stale at the end of a full, clean run, failing it
-          under [--strict-snapshots]: the offending baseline paths, non-empty,
-          sorted as {!Snapshot.orphans} reports them and stored unmodified —
-          renderers derive the display spelling and the removal-hint command
-          from them. Runner-side ({!Run.Stale_baselines} rows), never raised by
-          an assertion verb. *)
 
 and t = {
   kind : kind;
@@ -412,13 +405,6 @@ val property :
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)
-
-val stale_baselines : string list -> t
-(** [stale_baselines paths] is a {!Stale_baselines} failure over the stale
-    baseline paths [paths], stored unmodified.
-
-    Raises [Invalid_argument] if [paths] is empty: an empty verdict is no
-    verdict, and the runner records none. *)
 
 (** {1:updating Updating}
 

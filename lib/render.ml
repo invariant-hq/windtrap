@@ -108,25 +108,21 @@ let replay_line ?count ?max_shrink invocation ~seed ~filter =
         (shell_quote flt)
   | `Mirrors, None -> spf "replay: WINDTRAP_SEED=%s%s dune runtest" token env
 
-(* The one producer of the stale-baseline lines, shared by the
-   [--strict-snapshots] failure block ({!Failure.Stale_baselines}, below)
-   and the advisory snapshot report ([report_snapshots], at the bottom):
-   one spelling, so the failure section and the advisory block cannot
-   drift. [stale_lines] names the offending files; everywhere a way out
-   applies, the removal hint follows, spelled — like every other command
-   hint — from the run's startup-computed invocation. *)
+(* The stale-baseline lines: the offending files, then the removal under
+   them. This hint is not spelled from the invocation like the others,
+   because it does not re-run anything — a baseline is a committed file,
+   so the report hands over the exact [rm] and leaves the edit to the
+   user. *)
 let stale_lines orphans =
-  List.map
-    (fun path -> spf "stale baseline: %s" (Path_ops.display path))
-    orphans
-
-let stale_lines_with_hint ~invocation orphans =
-  let command =
-    match (invocation : invocation) with
-    | `Exe cmd -> cmd ^ " -u --prune"
-    | `Mirrors -> "WINDTRAP_UPDATE=1 WINDTRAP_PRUNE=1 dune runtest"
-  in
-  stale_lines orphans @ [ spf "remove stale baselines: %s" command ]
+  match orphans with
+  | [] -> []
+  | _ ->
+      let paths = List.map Path_ops.display orphans in
+      List.map (spf "stale baseline: %s") paths
+      @ [
+          spf "remove them: rm %s"
+            (String.concat " " (List.map shell_quote paths));
+        ]
 
 let pp_duration secs =
   if secs >= 60. then
@@ -285,7 +281,7 @@ let labeled_msg (f : Failure.t) =
       | None -> Some label
       | Some m -> Some (label ^ ": " ^ m))
 
-let headline ?(invocation = `Mirrors) (f : Failure.t) =
+let headline (f : Failure.t) =
   let base =
     match f.kind with
     | Failure.Equality { not_ = true; expected; _ } ->
@@ -353,12 +349,6 @@ let headline ?(invocation = `Mirrors) (f : Failure.t) =
         spf "property failed (%s): %s" desc (flat rendered)
     | Failure.Message "" -> "(empty failure message)"
     | Failure.Message m -> flat m
-    | Failure.Stale_baselines orphans ->
-        (* The block's lines flattened whole, removal hint included — the
-           bound truncates to the first files either way, and a summary that
-           dropped the hint would diverge from the block for no reader
-           gain. *)
-        flat (String.concat "\n" (stale_lines_with_hint ~invocation orphans))
   in
   match labeled_msg f with
   | None -> base
@@ -883,13 +873,6 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m ->
       List.iter (fun line -> put_ind line) (Text.split_lines m)
-  | Failure.Stale_baselines orphans ->
-      (* One line per offending file, then the way out — spelled here, at
-         render time, from the invocation: the payload carries paths, never
-         a pre-baked command. *)
-      List.iter put_ind
-        (if commands then stale_lines_with_hint ~invocation orphans
-         else stale_lines orphans)
 
 let pp_failure ~ansi ?(excerpt = false) ?filter ?(invocation = `Mirrors) ppf f =
   pp_gen ~ansi ~excerpt ~filter ~commands:true ~invocation ~ind:indent ppf f
@@ -909,9 +892,8 @@ type t = {
   tail_lines : int;
   slow_threshold : float; (* seconds; 0. disables the slow machinery *)
   invocation : invocation;
-      (* the hint context: every acceptance, replay, rerun, and
-         prune line derives from the one value the driver computed at
-         startup. *)
+      (* the hint context: every acceptance, replay and rerun line derives
+         from the one value the driver computed at startup. *)
   row : Buffer.t; (* styled glyphs of the current compact row *)
   mutable row_count : int; (* glyphs on the current compact row *)
   pending : Buffer.t;
@@ -2599,43 +2581,13 @@ let finish t ?coverage ~results ~duration () =
   | _ -> ());
   Pp.flush t.out ()
 
-(* The snapshot/prune report *)
-
-let explain_prune_refusal (refusal : Snapshot.prune_refusal) =
-  let blockers =
-    List.concat
-      [
-        (if refusal.Snapshot.not_update_run then
-           [ "the run was not an update run (-u / WINDTRAP_UPDATE=1)" ]
-         else []);
-        (if refusal.Snapshot.filtered then [ "a filter narrowed the run" ]
-         else []);
-        (if refusal.Snapshot.skipped > 0 then
-           [ spf "%d selected test(s) skipped" refusal.Snapshot.skipped ]
-         else []);
-        (if refusal.Snapshot.failed > 0 then
-           [ spf "%d selected test(s) failed" refusal.Snapshot.failed ]
-         else []);
-        (if refusal.Snapshot.focused > 0 then
-           [ spf "%d test(s) are focused" refusal.Snapshot.focused ]
-         else []);
-      ]
-  in
-  "prune refused: " ^ String.concat "; " blockers
-
-(* Whether the runner recorded the [--strict-snapshots] verdict row: the
-   row is the verdict, so the advisory block below reads the recorded fact
-   instead of re-deriving the runner's decision from configuration. *)
-let stale_row_recorded run =
-  List.exists
-    (fun (r : Run.result) -> r.Run.subject = Run.Stale_baselines)
-    (Run.results run)
+(* The snapshot report *)
 
 (* Printed after [finish], so the transcript is settled: plain lines on
    the sink, never through [put] or the deferral machinery — a green
    compact run's one-line transcript is already committed, and rerouting
    these lines through the row/deferral paths would change their bytes. *)
-let report_snapshots t ~orphans ~pruned run =
+let report_snapshots t ~orphans run =
   if t.mode <> `Quiet then begin
     let writes = Snapshot.writes (Run.snapshots run) in
     List.iter
@@ -2647,21 +2599,5 @@ let report_snapshots t ~orphans ~pruned run =
         in
         Format.fprintf t.out "wrote %s (%s)@." (Path_ops.display path) status)
       writes;
-    let put_lines lines = List.iter (Format.fprintf t.out "%s@.") lines in
-    (* Under [--strict-snapshots] the same lines already rode into the
-       failure section on the stale-baselines row: naming the files twice,
-       ten lines apart, is noise, not emphasis. *)
-    let advisory = if stale_row_recorded run then [] else orphans in
-    match pruned with
-    | Some (Ok deleted) ->
-        put_lines
-          (List.map (fun p -> spf "pruned %s" (Path_ops.display p)) deleted)
-    | Some (Error refusal) ->
-        put_lines (stale_lines advisory);
-        Format.fprintf t.out "%s@." (explain_prune_refusal refusal)
-    | None -> (
-        match advisory with
-        | [] -> ()
-        | orphans ->
-            put_lines (stale_lines_with_hint ~invocation:t.invocation orphans))
+    List.iter (Format.fprintf t.out "%s@.") (stale_lines orphans)
   end

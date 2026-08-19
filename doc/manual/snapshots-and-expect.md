@@ -81,26 +81,17 @@ The rules:
 
   ```
   stale baseline: test/__snapshots__/test_mytool/removed.snap
-  remove stale baselines: dune exec test/test_mytool.exe -- -u --prune
+  remove them: rm 'test/__snapshots__/test_mytool/removed.snap'
   ```
 
-  `--prune` (`WINDTRAP_PRUNE=1`) deletes them, after a full, clean
-  *update* run. `--strict-snapshots` (`WINDTRAP_STRICT_SNAPSHOTS=1`)
-  fails the run on them, exit code 1, with the paths and the way out
-  in the failure block — that is how a suite asserts that its stored
-  baselines are exactly the set it checks, so adding or removing a
-  case cannot pass unnoticed. It is off by default; a suite that
-  legitimately carries unchecked baselines keeps working.
+  The report is advisory and has no flag: it never deletes and never
+  fails the run. A baseline is a committed file, so removing one is an
+  edit you make and review in `git diff` like any other — the report
+  hands you the exact `rm` and stops there.
 
-  The two compose in one order: `--prune` deletes first,
-  `--strict-snapshots` judges what survived. Together they mean
-  "remove them, and fail if you could not" — a granted prune leaves
-  nothing to fail on, a refused one leaves everything and says why.
-
-  After any other run neither applies, silently: a filtered run cannot
+  After any other run it says nothing, silently: a filtered run cannot
   tell a stale baseline from one it did not select this time, so
-  `--strict-snapshots` under `-f parser` reports nothing and fails
-  nothing.
+  `-f parser` reports no stale baselines at all.
 
 Baselines are runtime data, invisible to dune's dependency tracking —
 add the glob or editing a baseline will not re-trigger the test:

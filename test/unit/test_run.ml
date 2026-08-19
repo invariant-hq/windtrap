@@ -49,7 +49,7 @@ let () =
   check "default config: flags off"
     ((not config.Run.failed_only)
     && (not config.Run.list_only) && (not config.Run.stream)
-    && (not config.Run.prune) && not config.Run.allow_focus);
+    && not config.Run.allow_focus);
   check "default config: no update request" (config.Run.update = Env.No_update);
   check "default config: no overrides"
     (config.Run.bail = None && config.Run.timeout = None

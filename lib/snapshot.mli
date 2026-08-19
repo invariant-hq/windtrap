@@ -159,7 +159,7 @@ val writes : t -> (string * write_status) list
     mode. Renderers print one line per entry — every written path is reported
     with its created/updated status. *)
 
-(** {1:orphans Orphans and pruning} *)
+(** {1:orphans Orphans} *)
 
 val orphans : t -> string list
 (** [orphans t] is the sorted paths of stale baselines: directory entries of the
@@ -169,41 +169,7 @@ val orphans : t -> string list
     Reads the directories at call time; a consulted directory that does not
     exist contributes nothing.
 
-    Reporting never deletes; deletion is {!prune}. A run that executed only part
-    of the suite — a filter, focus, skips — under-registers names, so callers
-    report orphans only for full runs (the same conditions {!prune} refuses). *)
-
-type prune_refusal = {
-  not_update_run : bool;  (** The run was not an update run. *)
-  filtered : bool;  (** A filter narrowed the run. *)
-  skipped : int;  (** Number of selected tests that skipped. *)
-  failed : int;  (** Number of selected tests that failed. *)
-  focused : int;  (** Number of focused tests (focus narrows the run). *)
-}
-(** The type for pruning refusals: every blocking condition of the run, as
-    reported by the runner. A refusal has at least one [true] or positive field.
-    [not_update_run] and [filtered] block because only a full unfiltered update
-    run registers every name; [skipped], [failed] and [focused] block because
-    such a test's snapshot calls never registered their names. Renderers explain
-    each blocker. *)
-
-val prune :
-  t ->
-  filtered:bool ->
-  skipped:int ->
-  failed:int ->
-  focused:int ->
-  (string list, prune_refusal) result
-(** [prune t ~filtered ~skipped ~failed ~focused] deletes stale baselines after
-    a full, clean update run: when [mode t] is {!Update}, [filtered] is [false]
-    and every count is [0], it removes {!orphans}[ t] — only [.snap] files in
-    directories this run consulted — and is [Ok deleted] (sorted; paths whose
-    removal failed are omitted). Otherwise it deletes nothing and is
-    [Error refusal] with every blocker recorded.
-
-    Deletion is never implicit: callers invoke [prune] only under an explicit
-    [--prune]/[WINDTRAP_PRUNE=1] request. Baseline directories shared by several
-    test executables must be pruned from the executable that references the full
-    set, or by hand — the orphan report makes the stale set visible either way.
-
-    Raises [Invalid_argument] if any count is negative. *)
+    Nothing here deletes: a baseline is a committed file, and removing one is
+    the user's edit to make. A run that executed only part of the suite — a
+    filter, focus, skips — under-registers names, so callers report orphans only
+    for full, clean runs. *)

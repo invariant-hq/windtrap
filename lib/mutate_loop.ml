@@ -390,12 +390,8 @@ let counted_failure (r : Run.result) =
    a test row, or a fixture-release row. Read off the results and never off
    [outcome.exit_code] (Law 16c): the exit code answers a different
    question — it is [2] for a selection that matched nothing, which is a
-   statement about a filter and not about a mutant. The stale-baselines
-   verdict row never kills, for the same reason it is excluded everywhere
-   here: staleness is a statement about the baseline store and the child's
-   pruned selection, not about the mutant. *)
-let kills (r : Run.result) =
-  counted_failure r && r.Run.subject <> Run.Stale_baselines
+   statement about a filter and not about a mutant. *)
+let kills (r : Run.result) = counted_failure r
 
 let executed_test (r : Run.result) = r.Run.subject = Run.Test
 
@@ -1568,7 +1564,6 @@ let arm_mode renderer ~armed (spine : Driver.t) tests =
             {
               spine.Driver.config with
               Run.update = Env.No_update;
-              prune = false;
             };
         }
       in

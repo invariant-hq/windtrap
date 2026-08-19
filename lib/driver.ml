@@ -346,9 +346,8 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
       Ok outcome
   | Ok outcome ->
       (* The one recorded list: test rows plus the runner's verdict rows
-         (fixture-release failures, the strict stale-baselines verdict).
-         Every sink projects it, so a verdict that sets the exit code is
-         always visible in the report. *)
+         (fixture-release failures). Every sink projects it, so a verdict
+         that sets the exit code is always visible in the report. *)
       let results = Run.results outcome.Runner.run in
       let collection = snapshot_coverage outcome.Runner.run in
       Render.finish renderer
@@ -356,7 +355,7 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
         ~results ~duration:outcome.Runner.duration ();
       coverage_report renderer ~coverage_mode outcome.Runner.run collection;
       Render.report_snapshots renderer ~orphans:outcome.Runner.orphans
-        ~pruned:outcome.Runner.pruned outcome.Runner.run;
+        outcome.Runner.run;
       github_end ~github;
       (* After [github_end], deliberately: an ::error:: block written
          inside the ::group:: envelope folds away with the transcript,

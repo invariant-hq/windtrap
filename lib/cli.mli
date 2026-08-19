@@ -35,8 +35,8 @@
     exits [2] — and [--help]/[--version] come back as flags on {!type:parsed}
     for the caller to act on. The flag inventory is v1's minus the cut
     [--format] axis — terminal verbosity is one three-level axis ([-q] ⊂ default
-    ⊂ [-v], {!output_level}), not a format — plus [--quiet], [--verbose],
-    [--prune], [--strict-snapshots] and [--shard]. *)
+    ⊂ [-v], {!output_level}), not a format — plus [--quiet], [--verbose] and
+    [--shard]. *)
 
 (** {1:parsed Parsed flags} *)
 
@@ -69,12 +69,6 @@ type parsed = {
   update : Env.update option;
       (** [-u], [--update]: parse as [Some Env.Update]. Forcing past the CI
           guard is spelled [WINDTRAP_UPDATE=force]. *)
-  prune : bool option;
-      (** [--prune]: delete orphaned baselines after a full, clean update run.
-      *)
-  strict_snapshots : bool option;
-      (** [--strict-snapshots]: fail the run on a baseline still stale after a
-          full, clean run. *)
   seed : Seed.seed option;
       (** [--seed TOKEN]: the root seed, an [s1:] token parsed by
           {!Seed.of_string}. *)

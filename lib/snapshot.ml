@@ -209,25 +209,3 @@ let orphans t =
     t.dirs []
   |> List.sort String.compare
 
-type prune_refusal = {
-  not_update_run : bool;
-  filtered : bool;
-  skipped : int;
-  failed : int;
-  focused : int;
-}
-
-let prune t ~filtered ~skipped ~failed ~focused =
-  if skipped < 0 || failed < 0 || focused < 0 then
-    invalid_arg "Windtrap.Snapshot.prune: negative test count";
-  let not_update_run = t.mode <> Update in
-  if not_update_run || filtered || skipped > 0 || failed > 0 || focused > 0 then
-    Error { not_update_run; filtered; skipped; failed; focused }
-  else
-    Ok
-      (List.filter
-         (fun path ->
-           match Sys.remove path with
-           | () -> true
-           | exception Sys_error _ -> false)
-         (orphans t))

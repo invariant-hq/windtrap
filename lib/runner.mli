@@ -134,16 +134,12 @@
     {b Baseline maintenance.} A run that executed the whole declared suite with
     nothing filtered, focused, bailed, skipped or failed — and only such a run —
     knows the full set of baseline names the suite claims, so only such a run
-    may say that a stored baseline is stale ({!Snapshot.orphans}). The three
-    consumers of that set share the gate: {!outcome.orphans} reports it,
-    [--prune] deletes it ({!Snapshot.prune} refuses on the same facts, with
-    every blocker named), and [--strict-snapshots] fails the run on it. They
-    compose in that order — a granted prune deletes first and
-    [--strict-snapshots] judges what survived, so the two together mean "remove
-    them, and fail if you could not". After any other run the set is empty and
-    all three are silently inapplicable: a filtered run cannot tell a stale
-    baseline from one this invocation did not select, and a check that guessed
-    would fail correct suites.
+    may say that a stored baseline is stale ({!Snapshot.orphans}, reported in
+    {!outcome.orphans}). After any other run the set is empty: a filtered run
+    cannot tell a stale baseline from one this invocation did not select. The
+    report never deletes and never fails the run — a baseline is a committed
+    file, so removing one is the user's edit, and the report names every path
+    for it.
 
     {b The last-failed store} lives at [<log_dir>/<suite>/.last-failed], written
     atomically ({!Atomic_file}) after every executing run. Its format is
@@ -238,9 +234,8 @@ type outcome = {
   run : Run.t;
       (** The run record: results in execution order — every executed test's
           row, then the end-of-run verdict rows ({!Run.type-subject}): one
-          {!Run.Fixture_release} row per failed fixture teardown and the
-          {!Run.Stale_baselines} row of a failed [--strict-snapshots] check —
-          plus the snapshot registry (acceptance {!Snapshot.writes} included)
+          {!Run.Fixture_release} row per failed fixture teardown — plus the
+          snapshot registry (acceptance {!Snapshot.writes} included)
           and the coverage seam. Every sink projects this one list, so a verdict
           that sets the exit code is always visible in the report. *)
   selected : Test_tree.case list;
@@ -258,21 +253,14 @@ type outcome = {
           not expected by [xfail], plus expected-failure tests that passed (see
           the preamble, {e Expected failures}). *)
   orphans : string list;
-      (** Baselines still stale when the run ended ({!Snapshot.orphans}, minus
-          whatever a granted [--prune] deleted), reported only after a full,
-          clean run — no filters, focus, bail, skips, or failures — and [[]]
-          otherwise. Reporting never deletes; the deletions are
-          {!outcome.pruned}. Nonempty under [config.strict_snapshots] makes
-          {!outcome.exit_code} [1] and records the {!Run.Stale_baselines}
-          verdict row. *)
-  pruned : (string list, Snapshot.prune_refusal) result option;
-      (** [Some] iff [config.prune] requested pruning: the deleted paths, or the
-          refusal for renderers to explain. [None] otherwise. *)
+      (** Baselines still stale when the run ended ({!Snapshot.orphans}),
+          reported only after a full, clean run — no filters, focus, bail,
+          skips, or failures — and [[]] otherwise. Advisory: it never deletes
+          and never changes {!outcome.exit_code}. *)
   duration : float;  (** Wall-clock seconds from startup checks to release. *)
   exit_code : int;
       (** [1] when any test counted as failed ({!outcome.failed_paths}
-          nonempty), any release failed, or [config.strict_snapshots] is set and
-          {!outcome.orphans} is nonempty — equivalently, when any recorded row
+          nonempty) or any release failed — equivalently, when any recorded row
           counted as failed; else [2] when no test executed (empty suite or
           empty selection — the filter-typo case); else [0] — a nonempty
           selection whose every test skipped is deliberate and exits [0], and so

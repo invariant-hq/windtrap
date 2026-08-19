@@ -723,7 +723,6 @@ type outcome = {
   bailed : bool;
   failed_paths : string list;
   orphans : string list;
-  pruned : (string list, Snapshot.prune_refusal) result option;
   duration : float;
   exit_code : int;
 }
@@ -807,20 +806,12 @@ let update_last_failed path ~full ~results ~failed_paths =
   in
   write_store path (failed_paths @ survivors)
 
-(* Stale-baseline reporting, [--prune] and [--strict-snapshots], which gate on
-   the same facts about how much of the suite really ran. Orphans are reported
-   only after a full, clean run; [Snapshot.prune] is handed those facts to
-   refuse or explain. Every recorded [Fail] counts here, expected or not: an
-   [xfail] body did not complete, so its snapshots may be stale. Reporting
-   never deletes.
-
-   The reported set is what is stale when the run ENDS, so [--prune] and
-   [--strict-snapshots] compose in the only order that makes both useful:
-   deletion first, judgement on what survived it. A granted prune leaves
-   nothing to fail on; a refused one leaves everything, and the refusal
-   already says why. *)
-let snapshot_maintenance (config : Run.config) snapshots ~full ~results
-    ~focused_count =
+(* Stale-baseline reporting, gated on how much of the suite really ran:
+   only a run that executed all of it knows the full set of names the
+   suite claims. Every recorded [Fail] blocks the report, expected or not:
+   an [xfail] body did not complete, so its snapshots may be stale.
+   Reporting never deletes — a baseline is a committed file. *)
+let stale_baselines snapshots ~full ~results ~focused_count =
   let count_outcomes accepts =
     List.length (List.filter (fun r -> accepts r.Run.outcome) results)
   in
@@ -835,21 +826,7 @@ let snapshot_maintenance (config : Run.config) snapshots ~full ~results
       | Failure.Pass | Failure.Fail _ -> false)
   in
   let clean = full && skipped = 0 && failed = 0 && focused_count = 0 in
-  let orphans = if clean then Snapshot.orphans snapshots else [] in
-  let pruned =
-    if config.Run.prune then
-      Some
-        (Snapshot.prune snapshots ~filtered:(not full) ~skipped ~failed
-           ~focused:focused_count)
-    else None
-  in
-  let orphans =
-    match pruned with
-    | Some (Ok deleted) ->
-        List.filter (fun path -> not (List.mem path deleted)) orphans
-    | Some (Error _) | None -> orphans
-  in
-  (orphans, pruned)
+  if clean then Snapshot.orphans snapshots else []
 
 let execute_plan ?(on_event = fun _ -> ())
     ({ config; suite; selected; total; focus_active; focused; mode; started } :
@@ -867,7 +844,6 @@ let execute_plan ?(on_event = fun _ -> ())
       bailed = false;
       failed_paths = [];
       orphans = [];
-      pruned = None;
       duration = Clock.count_s started;
       exit_code = 0;
     }
@@ -898,32 +874,20 @@ let execute_plan ?(on_event = fun _ -> ())
       release_failures;
     (* Store and snapshot maintenance range over executed tests: a verdict
        row is not a test — counting one as skipped, failed, or executed
-       would silently disable orphan reporting and [--prune] and corrupt
-       the last-failed store. *)
+       would silently disable orphan reporting and corrupt the last-failed
+       store. *)
     let test_results = List.filter executed_test (Run.results run) in
     (* A full run executed the entire declared suite: only such a run may drop
-       store entries for tests that no longer exist, report orphans, or
-       prune. *)
+       store entries for tests that no longer exist, or report orphans. *)
     let full = (not bailed) && executed = total in
     update_last_failed (store_path config ~suite) ~full ~results:test_results
       ~failed_paths;
-    let orphans, pruned =
-      snapshot_maintenance config snapshots ~full ~results:test_results
+    let orphans =
+      stale_baselines snapshots ~full ~results:test_results
         ~focused_count:focused
     in
-    (* [--strict-snapshots] turns the advisory report into a verdict. It
-       rides on [orphans], so it inherits that field's gate for free: a run
-       that was not full and clean computed no orphans, and a check that
-       cannot tell "stale" from "not selected this time" must not fail
-       anything. The verdict is a result row like any other; renderers spell
-       the removal hint from the payload's paths at render time. *)
-    let stale_baselines = config.Run.strict_snapshots && orphans <> [] in
-    if stale_baselines then
-      Run.record run
-        (verdict_result ~subject:Run.Stale_baselines ~path:[ "stale baselines" ]
-           [ Failure.stale_baselines orphans ]);
     let exit_code =
-      if failed_paths <> [] || release_failures <> [] || stale_baselines then 1
+      if failed_paths <> [] || release_failures <> [] then 1
       else if executed = 0 then 2
       else 0
     in
@@ -935,7 +899,6 @@ let execute_plan ?(on_event = fun _ -> ())
       bailed;
       failed_paths;
       orphans;
-      pruned;
       duration = Clock.count_s started;
       exit_code;
     }

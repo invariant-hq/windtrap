@@ -386,19 +386,14 @@ let reach_tests =
         denies ~msg:"not the fourth" out "widen \u{203a} fourth reaches sub";
         denies ~msg:"not the fifth" out "widen \u{203a} fifth reaches sub";
         says ~msg:"summary" out "mutants: 1 survived of 4");
-    test "a tag the default predicate drops still selects the child's tests"
-      (fun () ->
-        (* [--tag disabled] is the one selection a pruned tree cannot
+    test "a tag selection still selects the child's tests" (fun () ->
+        (* [--tag gated] is the one selection a pruned tree cannot
            express: tags are not in a path. A child that dropped the
            parent's tag predicate runs nothing, and the determinism probe
            reports a deterministic suite as non-deterministic. *)
         let code, out, err =
           spawn
-            [
-              "MUTATE_FIXTURE=tagged";
-              "WINDTRAP_TAG=disabled";
-              "WINDTRAP_MUTATE=1";
-            ]
+            [ "MUTATE_FIXTURE=tagged"; "WINDTRAP_TAG=gated"; "WINDTRAP_MUTATE=1" ]
         in
         equal ~msg:"exit code" int 0 code;
         denies ~msg:"the probe agreed" err "not deterministic";
@@ -1477,7 +1472,7 @@ let admission_tests =
           spawn
             [
               "MUTATE_FIXTURE=tagged";
-              "WINDTRAP_TAG=disabled";
+              "WINDTRAP_TAG=gated";
               "WINDTRAP_MUTATE=admit";
             ]
         in
@@ -1654,12 +1649,11 @@ let whole_suite_tests =
         says ~msg:"the partition's one test is ruled" out "ADMITTED");
     test "a run that executed nothing blames the suite, not a filter"
       (fun () ->
-        (* Every test of the tagged fixture is dropped by the default
-           predicate, so the dry run executes nothing. With no selection
-           there is no filter to fix, and the refusal must not claim
-           there is. *)
+        (* The empty fixture declares no tests, so the dry run executes
+           nothing. With no selection there is no filter to fix, and the
+           refusal must not claim there is. *)
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=tagged"; "WINDTRAP_MUTATE=admit" ]
+          spawn [ "MUTATE_FIXTURE=empty"; "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code (never 2: Law 16e)" int 1 code;
         says ~msg:"the reason" err

@@ -562,10 +562,11 @@ Mechanics that matter:
   newline is forced), so a byte-exact golden test migrated to `snapshot`
   silently loses that strictness — when CR bytes or the missing final
   newline are the point, encode before snapshotting.
-- Stale baselines are reported after a full clean run; `--prune`
-  deletes them, `--strict-snapshots` fails on them — turn the latter on
-  in CI once the suite is stable, so adding or removing a case cannot
-  pass unnoticed.
+- Stale baselines — a baseline whose test was deleted or renamed — are
+  reported after a full clean run, with the `rm` that removes them. The
+  report is advisory: it never deletes and never fails the run, because
+  a baseline is a committed file and removing one is your edit to
+  review.
 - `[%expect]` matches with ppx_expect's whitespace flexibility;
   `[%expect_exact]` is byte-for-byte. Corrections are accepted with
   `dune promote`, which must directly follow the failing `dune runtest`

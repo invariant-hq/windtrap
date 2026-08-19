@@ -363,15 +363,19 @@ let () =
       ignore (Subject.orphan 1 2);
       run "calc" [ group "widen" boundary ]
   | "tagged" ->
-      (* [Tag.default_predicate] drops [disabled] by itself, so this suite
-         runs only under --tag/WINDTRAP_TAG: a tag predicate is not
-         expressible as a set of paths, and a child that dropped it would
-         run fewer tests than the dry run measured. *)
+      (* Every test carries one tag, so --tag/WINDTRAP_TAG selects the
+         whole suite: a tag predicate is not expressible as a set of
+         paths, and a child that dropped the parent's would run fewer
+         tests than the dry run measured. *)
       run "calc"
         [
-          group ~tags:[ "disabled" ] "calc" strong;
-          group ~tags:[ "disabled" ] "widen" weak;
+          group ~tags:[ "gated" ] "calc" strong;
+          group ~tags:[ "gated" ] "widen" weak;
         ]
+  | "empty" ->
+      (* Nothing declared: a run that executes nothing with nothing
+         selecting against it. *)
+      run "calc" []
   | _ ->
       run "calc"
         [ group "calc" strong; group "widen" weak; group "dismissed" dismissed ]

@@ -22,8 +22,6 @@ OPTIONS:
       --prop-count N            Generated cases per property
       --max-shrink N            Accepted shrink steps per failing property
   -u, --update                  Accept snapshot changes (refused under CI)
-      --prune                   Delete orphaned baselines after a full, clean update run
-      --strict-snapshots        Fail the run on a stale baseline left by a full, clean run
   -s, --stream                  Stream test output instead of capturing it
   -v, --verbose                 One status line per test
   -q, --quiet                   Failures and summary only
@@ -35,33 +33,31 @@ OPTIONS:
   -h, --help                    Print this help and exit
 
 ENVIRONMENT:
-  WINDTRAP_FILTER            Mirror of --filter
-  WINDTRAP_EXCLUDE           Mirror of --exclude
-  WINDTRAP_TAG               Mirror of --tag
-  WINDTRAP_EXCLUDE_TAG       Mirror of --exclude-tag
-  WINDTRAP_SHARD             Mirror of --shard
-  WINDTRAP_FAILED            Mirror of --failed
-  WINDTRAP_BAIL              Mirror of --bail
-  WINDTRAP_TIMEOUT           Mirror of --timeout
-  WINDTRAP_SLOW_THRESHOLD    Mirror of --slow-threshold
-  WINDTRAP_SEED              Mirror of --seed
-  WINDTRAP_PROP_COUNT        Mirror of --prop-count
-  WINDTRAP_MAX_SHRINK        Mirror of --max-shrink
-  WINDTRAP_UPDATE            Mirror of --update
-  WINDTRAP_PRUNE             Mirror of --prune
-  WINDTRAP_STRICT_SNAPSHOTS  Mirror of --strict-snapshots
-  WINDTRAP_STREAM            Mirror of --stream
-  WINDTRAP_VERBOSE           Mirror of --verbose
-  WINDTRAP_QUIET             Mirror of --quiet
-  WINDTRAP_JUNIT             Mirror of --junit
-  WINDTRAP_COLOR             Mirror of --color
-  WINDTRAP_COVERAGE          Mirror of --coverage
-  WINDTRAP_OUTPUT            Mirror of --output
-  WINDTRAP_COLUMNS           Terminal width override for reports
-  WINDTRAP_TAIL_ERRORS       Captured-output lines shown per failure
-  WINDTRAP_PROJECT_ROOT      Project root for snapshot path resolution
-  WINDTRAP_COVERAGE_ONLY     Source prefixes the coverage number covers
-  WINDTRAP_MUTATE            Mutation testing: 1, admit or off
-  WINDTRAP_MUTATE_ARM        Arm one mutant, by identifier
-  WINDTRAP_MUTATE_TRY        Faults an admit run tries per test (0 for all)
-  WINDTRAP_MUTATE_ONLY       Source prefixes whose mutants a run considers
+  WINDTRAP_FILTER          Mirror of --filter
+  WINDTRAP_EXCLUDE         Mirror of --exclude
+  WINDTRAP_TAG             Mirror of --tag
+  WINDTRAP_EXCLUDE_TAG     Mirror of --exclude-tag
+  WINDTRAP_SHARD           Mirror of --shard
+  WINDTRAP_FAILED          Mirror of --failed
+  WINDTRAP_BAIL            Mirror of --bail
+  WINDTRAP_TIMEOUT         Mirror of --timeout
+  WINDTRAP_SLOW_THRESHOLD  Mirror of --slow-threshold
+  WINDTRAP_SEED            Mirror of --seed
+  WINDTRAP_PROP_COUNT      Mirror of --prop-count
+  WINDTRAP_MAX_SHRINK      Mirror of --max-shrink
+  WINDTRAP_UPDATE          Mirror of --update
+  WINDTRAP_STREAM          Mirror of --stream
+  WINDTRAP_VERBOSE         Mirror of --verbose
+  WINDTRAP_QUIET           Mirror of --quiet
+  WINDTRAP_JUNIT           Mirror of --junit
+  WINDTRAP_COLOR           Mirror of --color
+  WINDTRAP_COVERAGE        Mirror of --coverage
+  WINDTRAP_OUTPUT          Mirror of --output
+  WINDTRAP_COLUMNS         Terminal width override for reports
+  WINDTRAP_TAIL_ERRORS     Captured-output lines shown per failure
+  WINDTRAP_PROJECT_ROOT    Project root for snapshot path resolution
+  WINDTRAP_COVERAGE_ONLY   Source prefixes the coverage number covers
+  WINDTRAP_MUTATE          Mutation testing: 1, admit or off
+  WINDTRAP_MUTATE_ARM      Arm one mutant, by identifier
+  WINDTRAP_MUTATE_TRY      Faults an admit run tries per test (0 for all)
+  WINDTRAP_MUTATE_ONLY     Source prefixes whose mutants a run considers
