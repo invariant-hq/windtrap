@@ -321,6 +321,28 @@ let subtest name fn =
       add_failure frame (relabel frame failure);
       pop ()
 
+(* Snapshots *)
+
+(* Two ladders, and the point is that they are different. The SCOPE — which
+   baseline directory the name resolves in — is the caller's [~pos] file,
+   else the enclosing test's declaration file, and never a backtrace frame
+   at snapshot call time: a snapshot reached through a helper in another
+   file must not relocate its baseline. The SITE is display and
+   duplicate-identity data only, so it may take the call frame. *)
+let check_snapshot ?pos ~name actual =
+  let frame = current_frame () in
+  let scope =
+    match pos with
+    | Some (file, _, _, _) -> Some file
+    | None -> Option.map (fun (l : Loc.t) -> l.Loc.file) frame.fr_loc
+  in
+  let loc =
+    match Loc.resolve ?pos () with Some _ as l -> l | None -> frame.fr_loc
+  in
+  Snapshot.check frame.owner.snapshots ?loc
+    ~test:(Test_tree.path_to_string frame.fr_path)
+    ~scope ~name actual
+
 (* Runner-owned scratch *)
 
 let temp_create_attempts = 64

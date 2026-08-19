@@ -186,33 +186,10 @@ let cover label cond = Property.cover (prop_context "cover") label cond
 
 (* Snapshots *)
 
-(* The scoping file is the caller's [~pos] file, else the enclosing test's
-   declaration file — never a backtrace frame at snapshot call time: a
-   snapshot reached through a helper in another file must not relocate its
-   baseline. *)
-let snapshot_check ?pos name actual =
-  let frame = Run.current_frame () in
-  let scope =
-    match pos with
-    | Some (file, _, _, _) -> Some file
-    | None -> Option.map (fun (l : Loc.t) -> l.Loc.file) (Run.loc frame)
-  in
-  (* Site ladder: explicit pos, else surviving call frame, else the checking
-     test's declaration — display and duplicate-identity data only; the
-     scope above never reads a frame. *)
-  let loc =
-    match Loc.resolve ?pos () with Some _ as l -> l | None -> Run.loc frame
-  in
-  Snapshot.check
-    (Run.snapshots (Run.run_of_frame frame))
-    ?loc
-    ~test:(Test_tree.path_to_string (Run.path frame))
-    ~scope ~name actual
-
-let snapshot ?pos name actual = snapshot_check ?pos name actual
+let snapshot ?pos name actual = Run.check_snapshot ?pos ~name actual
 
 let snapshot_pp ?pos name pp value =
-  snapshot_check ?pos name (Pp.to_string pp value)
+  Run.check_snapshot ?pos ~name (Pp.to_string pp value)
 
 (* Captured output *)
 

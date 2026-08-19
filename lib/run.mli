@@ -256,6 +256,24 @@ val subtest : string -> (unit -> unit) -> unit
     {!Failure.Body} phase — calling it inside a bracket's setup or teardown
     still labels and records, but the entries are not re-phased. *)
 
+(** {1:snapshots Snapshots} *)
+
+val check_snapshot : ?pos:Loc.pos -> name:string -> string -> unit
+(** [check_snapshot ~name actual] is {!Snapshot.check} against the executing
+    test's registry, with the two ladders the check needs resolved from the
+    frame.
+
+    The {e scope} — which baseline directory [name] resolves in — is [pos]'s
+    file when given, else the test's declaration file, and never a backtrace
+    frame at call time: a snapshot reached through a helper in another file must
+    keep the baseline of the test that owns it. The {e site} recorded on the
+    failure is [pos], else the surviving call frame, else the declaration; it is
+    display and duplicate-identity data and never chooses the path.
+
+    Raises {!Failure.Check_failure} on every snapshot failure ({!Snapshot.check})
+    and the assertions-outside-run error ([Invalid_argument], see
+    {!current_frame}) when no test is running. *)
+
 (** {1:scratch Runner-owned scratch}
 
     Per-test temporary paths: created lazily under one scratch directory per
