@@ -26,6 +26,7 @@
 
 open Windtrap
 module C = Windtrap_coverage
+module I = Windtrap_instr
 
 let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
@@ -426,7 +427,8 @@ let collection_tests =
         check "unknown-format hint instructs deletion, not a re-run alone"
           (let message =
              Format.asprintf "%a" C.pp_error
-               (C.Unknown_format { path = "old.coverage"; header = "V1" })
+               (C.Data
+                  (I.Unknown_format { path = "old.coverage"; header = "V1" }))
            in
            contains "delete" message && contains "_build/_coverage" message));
     test "empty is a merge identity" (fun () ->
@@ -475,29 +477,29 @@ let rejection_tests =
   [
     test "foreign and corrupt data are rejected" (fun () ->
         (match C.of_string "WINDTRAP-COVERAGE-1 1 8 lib/a.ml 1 12 1 34" with
-        | Error (C.Unknown_format { header; _ }) ->
+        | Error (C.Data (I.Unknown_format { header; _ })) ->
             check "v1 magic is rejected as unknown format"
               (contains "WINDTRAP-COVERAGE-1" header)
         | Ok _ | Error _ -> check "v1 magic is rejected as unknown format" false);
         (match
            C.of_string "windtrap-coverage-v2\n1\n8 lib/a.ml\n1\n0 5 1\n"
          with
-        | Error (C.Unknown_format { header; _ }) ->
+        | Error (C.Data (I.Unknown_format { header; _ })) ->
             check "the pre-release v2 magic is rejected as unknown format"
               (contains "windtrap-coverage-v2" header)
         | Ok _ | Error _ ->
             check "the pre-release v2 magic is rejected as unknown format" false);
         (match C.of_string "" with
-        | Error (C.Unknown_format _) ->
+        | Error (C.Data (I.Unknown_format _)) ->
             check "empty data is unknown format" true
         | Ok _ | Error _ -> check "empty data is unknown format" false);
         (match C.of_string "windtrap-coverage-v33\n0\n" with
-        | Error (C.Unknown_format _) ->
+        | Error (C.Data (I.Unknown_format _)) ->
             check "magic must be followed by whitespace" true
         | Ok _ | Error _ -> check "magic must be followed by whitespace" false);
         let corrupt name payload =
           match C.of_string payload with
-          | Error (C.Corrupt _) -> check name true
+          | Error (C.Data (I.Corrupt _)) -> check name true
           | Ok _ -> check (name ^ " (parsed!)") false
           | Error _ -> check (name ^ " (wrong error)") false
         in
@@ -562,7 +564,7 @@ let rejection_tests =
         | Error _ -> check "equal duplicate entries in one payload sum" false);
     test "loading a missing file is Unreadable" (fun () ->
         match C.load "no-such-file.coverage" with
-        | Error (C.Unreadable _) ->
+        | Error (C.Data (I.Unreadable _)) ->
             check "loading a missing file is Unreadable" true
         | Ok _ | Error _ -> check "loading a missing file is Unreadable" false);
   ]

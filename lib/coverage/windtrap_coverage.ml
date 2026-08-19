@@ -53,31 +53,17 @@ let validate ~file points counts =
 
 (* Collections *)
 
-type error =
-  | Unknown_format of { path : string; header : string }
-  | Unreadable of { path : string; reason : string }
-  | Corrupt of { path : string; reason : string }
-  | Point_mismatch of { file : string }
+type error = Data of Instr.error | Point_mismatch of { file : string }
 
-(* The first three cases are the shared plumbing's; Point_mismatch is
-   coverage's own - merging produces it and parsing reports it - which is
-   why the public type cannot simply re-export Windtrap_instr.error. The
-   hint asymmetry is deliberate: re-running never removes a
+(* Data carries the shared plumbing's failures verbatim; Point_mismatch
+   is coverage's own - merging produces it and parsing reports it -
+   which is why the public type cannot simply be Windtrap_instr.error.
+   The hint asymmetry is deliberate: re-running never removes a
    foreign-*named* file, so Unknown_format instructs deletion;
    Point_mismatch self-heals under a full instrumented re-run, so dune
    clean is only the fallback for orphaned files. *)
-let error_of_instr = function
-  | Instr.Unknown_format { path; header } -> Unknown_format { path; header }
-  | Instr.Unreadable { path; reason } -> Unreadable { path; reason }
-  | Instr.Corrupt { path; reason } -> Corrupt { path; reason }
-
 let pp_error ppf = function
-  | Unknown_format { path; header } ->
-      Instr.pp_error format ppf (Instr.Unknown_format { path; header })
-  | Unreadable { path; reason } ->
-      Instr.pp_error format ppf (Instr.Unreadable { path; reason })
-  | Corrupt { path; reason } ->
-      Instr.pp_error format ppf (Instr.Corrupt { path; reason })
+  | Data e -> Instr.pp_error format ppf e
   | Point_mismatch { file } ->
       Format.fprintf ppf
         "%s: coverage point tables disagree across coverage files (executables \
@@ -162,7 +148,7 @@ exception Conflicting_entry of error
 
 let of_string ?(path = "<string>") s =
   match Instr.start format ~path s with
-  | Error e -> Error (error_of_instr e)
+  | Error e -> Error (Data e)
   | Ok c -> (
       try
         let identity = Instr.read_identity c in
@@ -190,13 +176,14 @@ let of_string ?(path = "<string>") s =
         Instr.finish c;
         Ok (!result, identity)
       with
-      | Instr.Parse_error reason -> Error (Corrupt { path; reason })
+      | Instr.Parse_error reason ->
+          Error (Data (Instr.Corrupt { path; reason }))
       | Conflicting_entry e -> Error e)
 
 let load path =
   match Instr.read_file path with
   | Ok contents -> of_string ~path contents
-  | Error e -> Error (error_of_instr e)
+  | Error e -> Error (Data e)
 
 (* Output Path and Identity *)
 

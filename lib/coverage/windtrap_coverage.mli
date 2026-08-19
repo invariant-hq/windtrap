@@ -81,14 +81,10 @@ val visit : int array -> int -> unit
 (** The type for coverage-data errors. All are recoverable: the reporting
     command prints them via {!pp_error} and exits nonzero. *)
 type error =
-  | Unknown_format of { path : string; header : string }
-      (** [path] does not start with this version's magic string; [header] is
-          its escaped first line. Files written by other windtrap versions are
-          rejected, not converted. *)
-  | Unreadable of { path : string; reason : string }
-      (** [path] cannot be read; [reason] is the system message. *)
-  | Corrupt of { path : string; reason : string }
-      (** [path] has the right magic but malformed data. *)
+  | Data of Windtrap_instr.error
+      (** A [.coverage] file that cannot be read, does not carry this version's
+          magic string, or is malformed. Files written by other windtrap
+          versions are rejected, not converted. *)
   | Point_mismatch of { file : string }
       (** Two collections carry different point tables for source file [file] —
           the executables were built from different sources. *)
@@ -232,17 +228,17 @@ val to_string : ?identity:identity -> t -> string
 val of_string : ?path:string -> string -> (t * identity option, error) result
 (** [of_string s] is [Ok (t, id)] when [s] parses: [t] the collection and [id]
     the recorded writer identity, [None] when [s] carries none. [path], used in
-    errors, defaults to ["<string>"]. Errors: [Unknown_format] for a foreign
-    header (including the pre-release [windtrap-coverage-v2] and v1's
-    [WINDTRAP-COVERAGE-1]), [Corrupt] for truncated or invalid data (negative
-    counts, inverted extents, a malformed identity line, trailing garbage),
-    [Point_mismatch] for conflicting duplicate entries.
+    errors, defaults to ["<string>"]. Errors: [Data (Unknown_format _)] for a
+    foreign header (including the pre-release [windtrap-coverage-v2] and v1's
+    [WINDTRAP-COVERAGE-1]), [Data (Corrupt _)] for truncated or invalid data
+    (negative counts, inverted extents, a malformed identity line, trailing
+    garbage), [Point_mismatch] for conflicting duplicate entries.
 
     Round trip: [of_string (to_string ?identity t)] is [Ok (t, identity)]. *)
 
 val load : string -> (t * identity option, error) result
 (** [load path] reads and parses the [.coverage] file at [path].
-    [Error (Unreadable _)] when the file cannot be read; otherwise as
+    [Error (Data (Unreadable _))] when the file cannot be read; otherwise as
     {!of_string}. *)
 
 (** {1:reports Report data}
