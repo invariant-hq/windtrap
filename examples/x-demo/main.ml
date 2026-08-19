@@ -112,7 +112,8 @@ let compact_tests =
         equal bytes (Bytes.of_string "raw") (Bytes.of_string "raw"));
     test "fixed-width integer witnesses" (fun () ->
         equal int32 7l 7l;
-        equal int64 7L 7L);
+        equal int64 7L 7L;
+        equal nativeint 7n 7n);
     test "float with absolute tolerance" (fun () ->
         equal (float 1e-9) 0.1 (0.05 +. 0.05));
     test "float_rel with combined tolerance" (fun () ->
@@ -122,11 +123,14 @@ let compact_tests =
     test "option and result witnesses" (fun () ->
         equal (option int) (Some 3) (Some 3);
         equal (result int string) (Error "nope") (Error "nope"));
+    test "either witness" (fun () ->
+        equal (either int string) (Either.Left 1) (Either.Left 1));
     test "slist compares as a multiset" (fun () ->
         equal (slist int compare) [ 3; 1; 2 ] [ 2; 3; 1 ]);
-    test "pair and triple witnesses" (fun () ->
+    test "pair, triple, and quad witnesses" (fun () ->
         equal (pair string int) ("a", 1) ("a", 1);
-        equal (triple string int bool) ("a", 1, true) ("a", 1, true));
+        equal (triple string int bool) ("a", 1, true) ("a", 1, true);
+        equal (quad string int bool char) ("a", 1, true, 'z') ("a", 1, true, 'z'));
     test "pass ignores a component" (fun () ->
         equal (pair string pass) ("key", 1) ("key", 999));
     test "of_equal compares without a printer" (fun () ->

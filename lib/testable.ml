@@ -56,6 +56,9 @@ let bytes =
 let int = { pp = Pp.int; equal = Int.equal }
 let int32 = { pp = Pp.int32; equal = Int32.equal }
 let int64 = { pp = Pp.int64; equal = Int64.equal }
+let nativeint =
+  { pp = (fun ppf n -> Pp.pf ppf "%nd" n); equal = Nativeint.equal }
+
 let pp_float ppf f = Pp.pf ppf "%g" f
 let is_nan f = FP_nan = classify_float f
 
@@ -149,6 +152,20 @@ let result ok_w err_w =
         | Ok _, Error _ | Error _, Ok _ -> false);
   }
 
+let either left_w right_w =
+  {
+    pp =
+      (fun ppf -> function
+        | Either.Left x -> Pp.pf ppf "Left (%a)" left_w.pp x
+        | Either.Right x -> Pp.pf ppf "Right (%a)" right_w.pp x);
+    equal =
+      (fun a b ->
+        match (a, b) with
+        | Either.Left a, Either.Left b -> left_w.equal a b
+        | Either.Right a, Either.Right b -> right_w.equal a b
+        | Either.Left _, Either.Right _ | Either.Right _, Either.Left _ -> false);
+  }
+
 let rec equal_list eq a b =
   match (a, b) with
   | [], [] -> true
@@ -189,4 +206,14 @@ let triple a_w b_w c_w =
     equal =
       (fun (a1, b1, c1) (a2, b2, c2) ->
         a_w.equal a1 a2 && b_w.equal b1 b2 && c_w.equal c1 c2);
+  }
+
+let quad a_w b_w c_w d_w =
+  {
+    pp =
+      (fun ppf (a, b, c, d) ->
+        Pp.pf ppf "(@[%a,@ %a,@ %a,@ %a@])" a_w.pp a b_w.pp b c_w.pp c d_w.pp d);
+    equal =
+      (fun (a1, b1, c1, d1) (a2, b2, c2, d2) ->
+        a_w.equal a1 a2 && b_w.equal b1 b2 && c_w.equal c1 c2 && d_w.equal d1 d2);
   }

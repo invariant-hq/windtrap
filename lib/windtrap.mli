@@ -513,6 +513,7 @@ val bytes : bytes testable
 val int : int testable
 val int32 : int32 testable
 val int64 : int64 testable
+val nativeint : nativeint testable
 
 val float_exact : float testable
 (** [float_exact] compares floats exactly: [a] and [b] are equal iff both are
@@ -543,6 +544,7 @@ val float_rel : rel:float -> abs:float -> float testable
 
 val option : 'a testable -> 'a option testable
 val result : 'a testable -> 'e testable -> ('a, 'e) result testable
+val either : 'a testable -> 'b testable -> ('a, 'b) Either.t testable
 val list : 'a testable -> 'a list testable
 val array : 'a testable -> 'a array testable
 
@@ -556,6 +558,13 @@ val pair : 'a testable -> 'b testable -> ('a * 'b) testable
 
 val triple :
   'a testable -> 'b testable -> 'c testable -> ('a * 'b * 'c) testable
+
+val quad :
+  'a testable ->
+  'b testable ->
+  'c testable ->
+  'd testable ->
+  ('a * 'b * 'c * 'd) testable
 
 val pass : 'a testable
 (** [pass] considers all values equal and prints [<pass>] — for ignoring a

@@ -361,9 +361,9 @@ equal string "invalid port: 0" msg
 The vocabulary worth knowing rather than reinventing:
 
 - `equal` / `not_equal` through witnesses: `int`, `string`, `bool`,
-  `char`, `bytes`, `int32`, `int64`, `option`, `result`, `list`,
-  `array`, `pair`, `triple`, `float eps`, `float_rel ~rel ~abs`,
-  `float_exact` (the only one where NaN = NaN).
+  `char`, `bytes`, `int32`, `int64`, `option`, `result`, `either`,
+  `list`, `array`, `pair`, `triple`, `quad`, `float eps`,
+  `float_rel ~rel ~abs`, `float_exact` (the only one where NaN = NaN).
 - `text` — strings printed verbatim and diffed line by line. Use it for
   any multi-line string; `string`'s `%S` rendering buries the difference
   in `\n` soup.

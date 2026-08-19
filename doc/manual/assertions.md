@@ -25,13 +25,15 @@ highlights their diff — for every type, not just strings (the
 transcript is in [Getting started](getting-started.md)). The witness
 inventory:
 
-- `unit`, `bool`, `char`, `string`, `bytes`, `int`, `int32`, `int64`
+- `unit`, `bool`, `char`, `string`, `bytes`, `int`, `int32`, `int64`,
+  `nativeint`
 - `text` — a string printed verbatim rather than with `%S`; see
   [Multi-line strings](#multi-line-strings) below
 - floats: `float eps` (absolute tolerance), `float_rel ~rel ~abs`
   (combined tolerance), `float_exact` (bit-for-bit; the only witness
   under which NaN equals NaN — use it to assert a function returns NaN)
-- containers: `option`, `result`, `list`, `array`, `pair`, `triple`
+- containers: `option`, `result`, `either`, `list`, `array`, `pair`,
+  `triple`, `quad`
 - `slist t cmp` — lists as multisets: order ignored, multiplicity
   kept; failures print both sides sorted, so the diff shows the
   multiset difference, never the incidental arrival order
