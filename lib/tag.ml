@@ -15,7 +15,6 @@ let empty = String_set.empty
 let of_list = String_set.of_list
 let union = String_set.union
 let mem = String_set.mem
-let is_empty = String_set.is_empty
 
 (* Well-known tags *)
 

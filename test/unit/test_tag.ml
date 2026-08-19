@@ -9,9 +9,7 @@ module Tag = Windtrap.Private.Tag
 let tests =
   [
     test "tag sets" (fun () ->
-        is_true ~msg:"empty has no tags" (Tag.is_empty Tag.empty);
-        is_false ~msg:"a populated set is not empty"
-          (Tag.is_empty (Tag.of_list [ "a" ]));
+        is_false ~msg:"empty has no tags" (Tag.mem "a" Tag.empty);
         is_true ~msg:"of_list mem" (Tag.mem "a" (Tag.of_list [ "a"; "b" ]));
         is_false ~msg:"mem absent" (Tag.mem "c" (Tag.of_list [ "a"; "b" ]));
         let u = Tag.union (Tag.of_list [ "a" ]) (Tag.of_list [ "b" ]) in

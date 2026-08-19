@@ -191,6 +191,13 @@ val active : unit -> bool
     already-active refusals in [execute] and the facade's [run], and the
     runner's exit guard, dispatch on it. *)
 
+val active_run_error : string
+(** [active_run_error] is what every already-active refusal raises
+    [Invalid_argument] with. Three checks are separately load-bearing — the
+    runner's two halves, and the facade's, which must fire before [Cli.parse]
+    can exit on [--help] — and the sentence a nested [run] gets must not depend
+    on which one saw it first. *)
+
 val current_frame : unit -> frame
 (** [current_frame ()] is the frame of the attempt currently executing.
 
@@ -204,11 +211,6 @@ val current : unit -> t
     facade's ambient wiring dispatches on.
 
     Raises [Invalid_argument] as {!current_frame} does. *)
-
-val current_opt : unit -> frame option
-(** [current_opt ()] is the frame in the ambient slot: [Some frame] while a test
-    attempt executes and [None] otherwise — including between attempts of an
-    executing run. *)
 
 (** {1:body Test-body operations}
 

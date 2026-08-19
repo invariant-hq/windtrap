@@ -691,9 +691,7 @@ let plan ?allowlist ~config ~suite tests : (plan, startup_error) result =
      OCAMLRUNPARAM=b, which nothing tells them. Left on: the run owns the
      process, and every raise site here already reads the raw backtrace. *)
   Printexc.record_backtrace true;
-  if Run.active () then
-    invalid_arg
-      "windtrap: run is already active — a test body cannot start another run";
+  if Run.active () then invalid_arg Run.active_run_error;
   (* The CLI layer validates every layer it resolves; only a hand-built
      configuration can carry a malformed shard, and it must fail loudly
      before selection divides by N. *)
@@ -849,9 +847,7 @@ let stale_baselines snapshots ~full ~results ~focused_count =
 let execute_plan ?(on_event = fun _ -> ())
     ({ config; suite; selected; total; focus_active; focused; mode; started } :
       plan) : outcome =
-  if Run.active () then
-    invalid_arg
-      "windtrap: run is already active — a test body cannot start another run";
+  if Run.active () then invalid_arg Run.active_run_error;
   let snapshots = Snapshot.create ~mode () in
   let capture =
     if config.Run.stream then Capture.disabled

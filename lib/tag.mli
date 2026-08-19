@@ -31,9 +31,6 @@ val union : t -> t -> t
 val mem : string -> t -> bool
 (** [mem name tags] is [true] iff [name] is in [tags]. *)
 
-val is_empty : t -> bool
-(** [is_empty tags] is [true] iff [tags] has no elements. *)
-
 (** {1:known Well-known tags} *)
 
 val slow : string

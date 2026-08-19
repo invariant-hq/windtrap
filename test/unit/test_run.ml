@@ -135,15 +135,14 @@ let () =
   check "active is false outside any run" (not (Run.active ()));
   Run.with_active run (fun () ->
       check "active is true inside with_active" (Run.active ());
-      check "no frame is current between attempts (current_opt)"
-        (Run.current_opt () = None);
-      expect_invalid_arg "current_frame between attempts raises" (fun () ->
+      expect_invalid_arg "no frame is current between attempts" (fun () ->
           Run.current_frame ());
       in_test run (fun frame ->
           check "a frame overlays the executing run"
             (Run.active () && Run.current_frame () == frame));
-      check "the run stays active after the attempt"
-        (Run.active () && Run.current_opt () = None));
+      check "the run stays active after the attempt" (Run.active ());
+      expect_invalid_arg "and no frame outlives it" (fun () ->
+          Run.current_frame ()));
   check "active is false after with_active returns" (not (Run.active ()));
   (match Run.with_active run (fun () -> raise Boom) with
   | () -> check "with_active propagates exceptions" false
@@ -155,8 +154,7 @@ let () =
 let () =
   expect_invalid_arg "current_frame outside a run raises" (fun () ->
       Run.current_frame ());
-  expect_invalid_arg "current outside a run raises" (fun () -> Run.current ());
-  check "current_opt outside a run is None" (Run.current_opt () = None)
+  expect_invalid_arg "current outside a run raises" (fun () -> Run.current ())
 
 let () =
   let run = make_run () in
@@ -164,7 +162,8 @@ let () =
   in_test run (fun frame ->
       seen := Some (Run.current_frame () == frame && Run.current () == run));
   check "the slot exposes the executing frame and its run" (!seen = Some true);
-  check "the slot is cleared after the attempt" (Run.current_opt () = None)
+  expect_invalid_arg "the slot is cleared after the attempt" (fun () ->
+      Run.current_frame ())
 
 let () =
   let run = make_run () in
@@ -173,7 +172,8 @@ let () =
   (match in_test run (fun _ -> raise Boom) with
   | () -> check "with_frame propagates exceptions" false
   | exception Boom -> check "with_frame propagates exceptions" true);
-  check "the slot is cleared after a raising attempt" (Run.current_opt () = None)
+  expect_invalid_arg "the slot is cleared after a raising attempt" (fun () ->
+      Run.current_frame ())
 
 let () =
   (* Nesting restores the previous frame — with_frame is save/restore, not
@@ -193,10 +193,10 @@ let () =
   let run_b = make_run () in
   in_test run_a (fun _ ->
       check "first run sees itself" (Run.current () == run_a));
-  check "slot empty between runs" (Run.current_opt () = None);
+  expect_invalid_arg "slot empty between runs" (fun () -> Run.current ());
   in_test run_b (fun _ ->
       check "second run sees itself, not the first" (Run.current () == run_b));
-  check "slot empty after both runs" (Run.current_opt () = None)
+  expect_invalid_arg "slot empty after both runs" (fun () -> Run.current ())
 
 (* Property context *)
 

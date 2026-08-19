@@ -131,7 +131,6 @@ type t = {
   snapshots : Snapshot.t;
   fixtures : (int, fixture_entry) Hashtbl.t;
   mutable acquired : int list; (* fixture ids, most recently acquired first *)
-  mutable temp_seq : int; (* next scratch-directory number *)
   mutable rev_results : result list;
 }
 
@@ -142,7 +141,6 @@ let create config ~capture ~snapshots =
     snapshots;
     fixtures = Hashtbl.create 8;
     acquired = [];
-    temp_seq = 0;
     rev_results = [];
   }
 
@@ -235,6 +233,9 @@ let with_frame frame fn = with_context (In_test frame) fn
 let with_active t fn = with_context (In_run t) fn
 let active () = Option.is_some !slot
 
+let active_run_error =
+  "windtrap: run is already active — a test body cannot start another run"
+
 let outside_run_error =
   "windtrap: no test is running. Assertions, [output ()], [snapshot], \
    [collect], [setenv], [chdir] and fixture accessors work only inside a \
@@ -247,11 +248,6 @@ let current_frame () =
   | Some (In_run _) | None -> invalid_arg outside_run_error
 
 let current () = (current_frame ()).owner
-
-let current_opt () =
-  match !slot with
-  | Some (In_test frame) -> Some frame
-  | Some (In_run _) | None -> None
 
 (* Test-body operations *)
 
@@ -330,8 +326,13 @@ let check_snapshot ?pos ~name actual =
 
 let temp_create_attempts = 64
 
+(* Scratch identity. Not run state, for the reason [next_fixture_id] is
+   not: two runs in one process share a pid, so a per-run counter would
+   have the second run propose names the first already used. *)
+let next_temp_seq = ref 0
+
 (* The attempt's scratch directory, created lazily. Names are unique within
-   the process ([temp_seq] never repeats in a run) and carry the pid against
+   the process ([next_temp_seq] never repeats) and carry the pid against
    concurrent runners; EEXIST from a stale directory retries with the next
    number. *)
 let temp_root frame =
@@ -341,8 +342,8 @@ let temp_root frame =
       let base = Filename.get_temp_dir_name () in
       let pid = Unix.getpid () in
       let rec create attempts =
-        let n = frame.owner.temp_seq in
-        frame.owner.temp_seq <- n + 1;
+        let n = !next_temp_seq in
+        incr next_temp_seq;
         let candidate =
           Filename.concat base (Printf.sprintf "windtrap-%d-%d" pid n)
         in

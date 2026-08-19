@@ -326,12 +326,10 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
           exit outcome.Runner.exit_code)
 
 let run ?(argv = Sys.argv) suite tests =
-  (* [Run.active], not [current_opt]: the slot also holds the run
-     itself between attempts — a fixture release or an observer starting a
+  (* [Run.active], not a frame probe: the slot also holds the run itself
+     between attempts — a fixture release or an observer starting a
      nested run is refused like a test body would be. *)
-  if Run.active () then
-    invalid_arg
-      "windtrap: run is already active — a test body cannot start another run";
+  if Run.active () then invalid_arg Run.active_run_error;
   let prog =
     if Array.length argv > 0 && argv.(0) <> "" then argv.(0) else suite
   in

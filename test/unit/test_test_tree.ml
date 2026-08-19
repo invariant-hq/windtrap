@@ -86,7 +86,7 @@ let () =
   reg "defaults" @@ fun () ->
   match T.flatten [ T.test "t" nop ] with
   | [ c ] ->
-      check "default: no tags" (Tag.is_empty c.T.tags);
+      check "default: no tags" (not (Tag.mem "slow" c.T.tags));
       check "default: not focused" (not c.T.focused);
       check "default: no timeout" (c.T.timeout = None);
       check_int "default: zero retries" ~expected:0 ~actual:c.T.retries;
