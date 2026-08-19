@@ -29,8 +29,8 @@ upstream test suite, classified.
 Harness layout: `corpus/<dir>` mirrors `test/<dir>` upstream;
 `corpus/*/divergent/` holds fixtures that were quarantined at first
 measurement — files stayed in place when they flipped green, only
-their diff rules moved to `@runtest`; the still-divergent files are
-wired to `@conformance-divergent` (see `RESULTS.md`). "T" marks the
+their diff rules moved to `@runtest`; the three that never could are
+not vendored, and the rulings are in `RESULTS.md`. "T" marks the
 single-line source tweak listed under [Source tweaks](#source-tweaks).
 
 ## HONORED — 36 files
@@ -67,17 +67,17 @@ single-line source tweak listed under [Source tweaks](#source-tweaks).
 | `negative-tests/flexible.ml` (T) | `negative-tests/` | conforms since the D4 fix |
 | `negative-tests/import_test.ml` | `negative-tests/` | passes; cross-file functor instantiation |
 | `negative-tests/missing.ml` (T) | `negative-tests/` | conforms since the D4/D7 fix |
-| `negative-tests/nine.ml` | `negative-tests/` | **diverges** (reformat-on-match; RFC ruling pending), diff quarantined |
+| `negative-tests/nine.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
 | `negative-tests/normal_strings.ml` | `negative-tests/` | conforms since the D3 fix (incl. margin wrapping) |
 | `negative-tests/semicolon.ml` | `negative-tests/` | conforms |
 | `negative-tests/similar_distinct_outputs.ml` | `negative-tests/divergent/` | conforms since the D1 fix (rules on `@runtest`) |
 | `negative-tests/spacing.ml` (T) | `negative-tests/` | conforms since the D6 fix |
 | `negative-tests/string_extension_syntax.ml` | `negative-tests/` | conforms since the D5 fix (retag keeps `%expect`) |
 | `negative-tests/string_padding.ml` | `negative-tests/` | conforms |
-| `negative-tests/three.ml` | `negative-tests/` | **diverges** (reformat-on-match; RFC ruling pending), diff quarantined |
+| `negative-tests/three.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
 | `negative-tests/trailing.ml` (T) | `negative-tests/` | conforms |
 | `negative-tests/unidiomatic_syntax.ml` | `negative-tests/` | conforms |
-| `negative-tests/unusual_payload_location.ml` | `negative-tests/` | **diverges** (upstream golden inconsistent with its pinned source — unreachable), diff quarantined |
+| `negative-tests/unusual_payload_location.ml` | not vendored | **diverges** (upstream golden inconsistent with its pinned source — unreachable) |
 | `negative-tests/for-mdx/foo.ml` (T) | `negative-tests/for-mdx/` | conforms |
 | `explicit-strict-false/negative-test/nine.ml` | `explicit-strict-false/negative-test/` | conforms since the D4 fix |
 

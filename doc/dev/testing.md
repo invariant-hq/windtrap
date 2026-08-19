@@ -320,15 +320,16 @@ bar: **≥ 90% of HONORED byte-identical, 100% of REJECTED loud.**
 
 Triage workflow when a conformance diff appears:
 
-1. Reproduce: the conforming sets run on `@runtest`; known divergences
-   are quarantined on `@conformance-divergent`
-   (`dune build @conformance-divergent` — red by design).
+1. Reproduce: everything the corpus checks runs on `@runtest`. There
+   is no red-by-design alias — a fixture either states a contract
+   windtrap holds or it is not vendored.
 2. Decide which side is wrong. The upstream golden is truth for
    HONORED files; `RESULTS.md` documents the two cases where upstream
    itself is inconsistent or driven by a non-default flag.
-3. A fixed divergence flips its fixture green: move its diff rules
-   from `@conformance-divergent` back to `@runtest` (fixtures stay
-   in place under `corpus/*/divergent/`), and update `RESULTS.md`.
+3. A divergence windtrap should not follow is a ruling, not a
+   quarantine: write it under "Where windtrap does not follow upstream"
+   in `RESULTS.md`, drop the fixture and its golden, and mark the row
+   "not vendored" in `TRIAGE.md`.
 4. Never edit vendored bytes silently: the only permitted tweak is
    the one-line `open Corpus_shim` substitution, and each is listed in
    `TRIAGE.md` as a finding.

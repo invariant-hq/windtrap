@@ -37,15 +37,11 @@ described under [What changed](#what-changed).
   `unit Expect_test_config.IO.t = unit Async.Deferred.t is not
   compatible with type unit` — mechanism (b) exactly as contracted.
 
-**Divergent (3)** — quarantined on `@conformance-divergent`
-(`dune build @conformance-divergent` reproduces every one; red until
-resolved; fixtures stay vendored and goldens stay upstream truth):
-
-- `negative-tests/nine.ml`, `negative-tests/three.ml` — reformat-on-match
-  (old D8, needs an RFC ruling; see below).
-- `negative-tests/unusual_payload_location.ml` — upstream's golden is
-  inconsistent with its own pinned source (see below); byte-parity is
-  unreachable by construction.
+**Ruled out (3)** — not vendored, by the rulings under
+[Where windtrap does not follow upstream](#where-windtrap-does-not-follow-upstream).
+They were quarantined on an always-red alias while the questions were
+open; the questions are closed, and three permanently red rules are a
+maintenance tax on a decision, not a record of one.
 
 ## What changed (the conformance-fix pass)
 
@@ -99,9 +95,9 @@ correction goldens on `@runtest`:
    `Base.Char.is_whitespace` (adds `\011`), and the legacy
    count-spaces-but-strip-all-whitespace indentation rule.
 
-## Still open
+## Where windtrap does not follow upstream
 
-### D8 — reformat-on-match (`nine.ml`, `three.ml`): needs the RFC ruling
+### Reformat-on-match (`nine.ml`, `three.ml`): a matching payload is left alone
 
 Their payloads *match* under default flexibility; upstream's goldens
 still reformat every block. That behavior is real but is the
@@ -111,47 +107,33 @@ negative-tests directory of the upstream monorepo builds in a mode with
 that effect — its `test-output.expected` shows the runtime itself
 patching payloads that match flexibly), while the corpus's passing twin
 `explicit-strict-false/nine.ml` *must not* produce a correction under
-the default. One windtrap-wide default cannot satisfy both goldens; the
-RFC's mechanism (c) ("no formatting churn on first promote") argues for
-the flexible default windtrap implements. The RFC should either ratify
-this narrowing explicitly (recommended: these two goldens are artifacts
-of a non-default driver flag, like the N-A `explicit-strict-true` pair)
-or add the strict knob.
+the default. One windtrap-wide default cannot satisfy both goldens, and
+the RFC's mechanism (c) ("no formatting churn on first promote") settles
+it for the flexible default windtrap implements: a payload that matches
+is left alone. These two goldens are artifacts of a non-default driver
+flag, like the N-A `explicit-strict-true` pair, and the strict knob is
+not offered.
 
 ### `unusual_payload_location.ml`: upstream golden inconsistent with its source
 
-New finding, reclassified out of D4: the pinned checkout's
+Reclassified out of D4: the pinned checkout's
 `unusual_payload_location.ml` is a normal single-line node followed by
 `;;`, but its `.corrected.expected` (and `test-output.expected`)
 correspond to an *older* source with blank lines inside the node, a
 dangling `]`, and no `;;` — upstream's own runtime, run on the pinned
 source, cannot produce the pinned golden. Byte-parity is unreachable by
-construction; the fixture stays quarantined as documentation. (windtrap
-produces the correct correction for the *vendored* source: standard
-split-head shape, `;;` preserved.)
+construction, so the fixture is not vendored. (windtrap produces the
+correct correction for the *vendored* source: standard split-head shape,
+`;;` preserved.)
 
-## Punch list (remaining)
+## Behavioural notes for the record
 
-1. **RFC ruling on reformat-on-match** (D8, above) — decides `nine.ml`
-   and `three.ml` (would reach 35/36; `unusual_payload_location` is
-   unreachable regardless).
-2. **Coverage debts created by triage** (no action in this corpus):
-   sanitize-override behavior (its corpus file `test_sanitize.ml` is
-   REJECTED for unrelated constructs) and the `{xxx|…|xxx}`
-   weird-escaping payload (`example/tests.ml`, N-A) should be covered
-   in windtrap's own `test/ppx` suite. Nested expect tests
-   (`nesting/nested.ml`, N-A) need a defined windtrap behavior + test.
-3. **Runtime nit**: the inline runner writes per-test capture logs to
-   `_build/_tests/<random>/…` even under a sandboxed rule (escapes the
-   sandbox; the random path also makes runner logs nondeterministic —
-   the harness deliberately never goldens them).
-4. **Behavioral notes for the record** (unexercised by the corpus, not
-   silent — documented in `ppx/runtime/ppx_runtime.mli`): duplicated instances
-   are renamed `name (2)` in windtrap's runner output where ppx_expect
-   repeats the name; per-node reachability stays per-instance
-   (mechanism (d)) where upstream's `Can_reach` tolerates an instance
-   that skips a node another instance reached; simultaneous exception
-   splices from several instances keep the last instance's splice.
+Unexercised by the corpus, not silent: duplicated instances are renamed
+`name (2)` in windtrap's runner output where ppx_expect repeats the
+name; per-node reachability stays per-instance (mechanism (d)) where
+upstream's `Can_reach` tolerates an instance that skips a node another
+instance reached; simultaneous exception splices from several instances
+keep the last instance's splice.
 
 ## Harness map (for whoever picks this up)
 
@@ -173,9 +155,8 @@ split-head shape, `;;` preserved.)
   OCaml-compiler-version-sensitive by nature; regenerate via
   `dune promote` on compiler upgrades).
 - The formerly-divergent fixtures under `corpus/*/divergent/` stayed in
-  place when they flipped green — only their diff rules moved from
-  `@conformance-divergent` to `@runtest` — so the vendored-path map in
-  `TRIAGE.md` still holds.
-- Quarantine: `@conformance-divergent` (not on `@runtest`) — the three
-  files above, red by design; a fixed bug flips its file green, after
-  which its rules move back to `@runtest`.
+  place when they flipped green — only their diff rules moved onto
+  `@runtest` — so the vendored-path map in `TRIAGE.md` still holds.
+- Everything the corpus checks is on `@runtest`. There is no quarantine
+  alias: a fixture either states a contract windtrap holds, or its
+  ruling is written above and the fixture is gone.

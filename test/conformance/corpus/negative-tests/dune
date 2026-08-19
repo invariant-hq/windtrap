@@ -8,11 +8,11 @@
 ; exit code). The uncaught-exn/expectation/unreachable-family fixtures
 ; (comment, exn*, expectation, function_with_distinct_outputs, functor,
 ; tag, zero_alloc) are the rejected set, asserted by the pp.exe rules
-; at the bottom. Three fixtures stay diffed on @conformance-divergent
-; instead of @runtest — nine.ml and three.ml (reformat-on-match needs
-; an RFC ruling) and unusual_payload_location.ml (upstream golden is
-; inconsistent with its own pinned source) — see ../../RESULTS.md;
-; similar_distinct_outputs lives in divergent/.
+; at the bottom. Three upstream fixtures are not vendored — nine.ml and
+; three.ml want reformat-on-match, which windtrap deliberately does not
+; do, and unusual_payload_location.ml's golden contradicts its own
+; pinned source — see ../../RESULTS.md; similar_distinct_outputs lives
+; in divergent/.
 
 (executable
  (name conformance_runner)
@@ -26,16 +26,13 @@
   flexible
   import_test
   missing
-  nine
   normal_strings
   semicolon
   spacing
   string_extension_syntax
   string_padding
-  three
   trailing
-  unidiomatic_syntax
-  unusual_payload_location)
+  unidiomatic_syntax)
  (libraries ppx_windtrap.runtime)
  (preprocess
   (pps ppx_windtrap)))
@@ -49,16 +46,13 @@
   exact.ml.corrected
   flexible.ml.corrected
   missing.ml.corrected
-  nine.ml.corrected
   normal_strings.ml.corrected
   semicolon.ml.corrected
   spacing.ml.corrected
   string_extension_syntax.ml.corrected
   string_padding.ml.corrected
-  three.ml.corrected
   trailing.ml.corrected
-  unidiomatic_syntax.ml.corrected
-  unusual_payload_location.ml.corrected)
+  unidiomatic_syntax.ml.corrected)
  (deps
   chdir.ml
   escaped_strings.ml
@@ -67,16 +61,13 @@
   flexible.ml
   import_test.ml
   missing.ml
-  nine.ml
   normal_strings.ml
   semicolon.ml
   spacing.ml
   string_extension_syntax.ml
   string_padding.ml
-  three.ml
   trailing.ml
-  unidiomatic_syntax.ml
-  unusual_payload_location.ml)
+  unidiomatic_syntax.ml)
  (action
   (run
    ../../drive.exe
@@ -87,16 +78,13 @@
    exact.ml
    flexible.ml
    missing.ml
-   nine.ml
    normal_strings.ml
    semicolon.ml
    spacing.ml
    string_extension_syntax.ml
    string_padding.ml
-   three.ml
    trailing.ml
-   unidiomatic_syntax.ml
-   unusual_payload_location.ml)))
+   unidiomatic_syntax.ml)))
 
 (rule
  (alias runtest)
@@ -129,11 +117,6 @@
   (diff missing.ml.corrected.expected missing.ml.corrected)))
 
 (rule
- (alias conformance-divergent)
- (action
-  (diff nine.ml.corrected.expected nine.ml.corrected)))
-
-(rule
  (alias runtest)
  (action
   (diff normal_strings.ml.corrected.expected normal_strings.ml.corrected)))
@@ -161,11 +144,6 @@
   (diff string_padding.ml.corrected.expected string_padding.ml.corrected)))
 
 (rule
- (alias conformance-divergent)
- (action
-  (diff three.ml.corrected.expected three.ml.corrected)))
-
-(rule
  (alias runtest)
  (action
   (diff trailing.ml.corrected.expected trailing.ml.corrected)))
@@ -174,13 +152,6 @@
  (alias runtest)
  (action
   (diff unidiomatic_syntax.ml.corrected.expected unidiomatic_syntax.ml.corrected)))
-
-(rule
- (alias conformance-divergent)
- (action
-  (diff
-   unusual_payload_location.ml.corrected.expected
-   unusual_payload_location.ml.corrected)))
 
 ; ── Rejected set: expansion must exit 1 with the explicit diagnostic ──
 
