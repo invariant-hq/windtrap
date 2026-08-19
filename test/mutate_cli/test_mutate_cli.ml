@@ -307,9 +307,7 @@ let two_executables =
        mutants, not about the core's thousand. *)
     capture ~cwd:root
       ~env:
-        [
-          "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_cli/calc.ml";
-        ]
+        [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_cli/calc.ml" ]
       ~exe:(Filename.concat root (Filename.concat "_build/default/test" name))
       []
   in
@@ -512,13 +510,7 @@ let clean_report =
   plant_sources root;
   write_file
     (Filename.concat root "_build/_mutants/all.mutants")
-    (M.to_string
-       (collection
-          [
-            m_add M.Killed;
-            m_sub M.Killed;
-            m_lt M.Killed;
-          ]));
+    (M.to_string (collection [ m_add M.Killed; m_sub M.Killed; m_lt M.Killed ]));
   let code, out, err = mutate ~cwd:root [] in
   check_int "a clean project exits 0" ~expected:0 ~actual:code;
   check "a clean project keeps stderr empty" (err = "");

@@ -1485,8 +1485,8 @@ let test_prop_stats () =
             ]
           ~duration:0.01 ())
   in
-  check_absent "prop stats: a lone label is not restated"
-    ~sub:"covered labels:" b1;
+  check_absent "prop stats: a lone label is not restated" ~sub:"covered labels:"
+    b1;
   check_contains "prop stats: its labels still print"
     ~sub:"labels (100 passing cases):" b1
 
@@ -1576,7 +1576,7 @@ let test_containment_not_found_cap () =
   check_contains "cap: the verdict line is adjacent to the excerpt"
     ~sub:
       ("    needle    \"NOPE\" \u{2014} not found\n    haystack  "
-      ^ String.make 64 'a')
+     ^ String.make 64 'a')
     b;
   check_absent "cap: nothing beyond the display window prints"
     ~sub:(String.make 1025 'a') b;
@@ -2452,8 +2452,7 @@ let test_mutation_summary_forms () =
 let test_mutation_sections () =
   (* Every survivor gets a block: a survivor is a failure block, and
      windtrap caps no failure block. *)
-  check_contains "the label counts the blocks it printed"
-    ~sub:"survivors (1) "
+  check_contains "the label counts the blocks it printed" ~sub:"survivors (1) "
     (mutation_report
        {
          rfc_report with
@@ -2644,7 +2643,8 @@ let test_snapshot_report_orphans () =
      report hands over the removal rather than performing it: a baseline
      is a committed file. *)
   let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
-  let a = Path_ops.display "/tmp/a.snap" and b = Path_ops.display "/tmp/b.snap" in
+  let a = Path_ops.display "/tmp/a.snap"
+  and b = Path_ops.display "/tmp/b.snap" in
   check_string "orphans: one line each, then the rm that removes them"
     ~expected:
       (Printf.sprintf
@@ -2730,8 +2730,7 @@ let tests =
     test "hints: accept and replay per invocation (D5 §1)"
       test_hints_per_invocation;
     test "hints: no run advertises --failed" test_no_rerun_hint;
-    test "the property replay line is the only one"
-      test_property_replay_line;
+    test "the property replay line is the only one" test_property_replay_line;
     test "verbose PASS prints the label table (D5 §7)" test_verbose_pass_labels;
     test "terminal name sanitization (render/F-2)" test_name_sanitization;
     test "excerpts resolve against the project root (render/F-1)"
@@ -2742,8 +2741,7 @@ let tests =
       test_snapshot_report_orphans;
     test "the coverage report's frozen bytes" test_coverage_report_bytes;
     test "the uncovered cell is bounded" test_coverage_uncovered_cap;
-    test "the coverage thresholds are the renderer's"
-      test_coverage_thresholds;
+    test "the coverage thresholds are the renderer's" test_coverage_thresholds;
     test "mutation: the worked survivor report" test_mutation_report;
     test "mutation: the block wears the failure colours" test_mutation_colors;
     test "mutation: summary line forms" test_mutation_summary_forms;

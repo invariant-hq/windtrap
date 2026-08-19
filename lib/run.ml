@@ -3,7 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-
 (* Not mutated. This module is part of the machinery a mutation run uses
    to judge mutants — the scheduler, the ambient run state, the reporting
    spine, the loop itself — so a mutant here is armed inside the process
@@ -238,9 +237,8 @@ let active_run_error =
 
 let outside_run_error =
   "windtrap: no test is running. Assertions, [output ()], [snapshot], \
-   [collect], [setenv], [chdir] and fixture accessors work only inside a \
-   test body executed by [run] — not at module toplevel, and not after the \
-   run."
+   [collect], [setenv], [chdir] and fixture accessors work only inside a test \
+   body executed by [run] — not at module toplevel, and not after the run."
 
 let current_frame () =
   match !slot with
@@ -584,4 +582,3 @@ let release_fixtures t ~announce =
 
 let record t result = t.rev_results <- result :: t.rev_results
 let results t = List.rev t.rev_results
-

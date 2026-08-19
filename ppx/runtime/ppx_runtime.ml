@@ -115,7 +115,7 @@ type group_frame = {
 
 type correction =
   | Node_fix of { span : int * int; text : string }
-      (* the extent this correction replaces — the payload literal, or
+    (* the extent this correction replaces — the payload literal, or
          the whole node when the payload is the node — and its
          replacement *)
   | Insert of { body_loc : loc; body_wrap : int option; contents : string }
@@ -1431,8 +1431,8 @@ let exit () =
       Stdlib.exit 2
   | Ok { Cli.config; render; coverage; output_level; junit } ->
       Stdlib.exit
-        (run_inline_suite ~suite ~config ~coverage ~render
-           ~output:output_level ~junit tests)
+        (run_inline_suite ~suite ~config ~coverage ~render ~output:output_level
+           ~junit tests)
 
 (* Test seams *)
 

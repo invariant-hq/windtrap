@@ -135,9 +135,9 @@ type mutation = {
       (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
           truthy spellings), [`Admit] for [admit] — the per-test admission run
           over the selection, or over every test the run executes when it makes
-          none — [`Off] for a falsy spelling, and [`Unset] for an unset or
-          empty variable. The last two differ: an instrumented build says what
-          it could do unless it was told not to. *)
+          none — [`Off] for a falsy spelling, and [`Unset] for an unset or empty
+          variable. The last two differ: an instrumented build says what it
+          could do unless it was told not to. *)
   arm : string option;
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
           {!Windtrap_mutate.selector_of_string} owns that grammar and reports
@@ -145,8 +145,8 @@ type mutation = {
   tries : int;
       (** [WINDTRAP_MUTATE_TRY]: faults an [`Admit] run tries per selected test
           before ruling it unjustified, [0] for all it reaches. Defaults to
-          [25]. Read for every mode: a value the user set and misspelled must
-          be loud in every build. *)
+          [25]. Read for every mode: a value the user set and misspelled must be
+          loud in every build. *)
 }
 (** The type for the mutation knobs, which are environment variables only: the
     inline runner's argument parser accepts dune's inline-test protocol and
@@ -155,10 +155,9 @@ type mutation = {
 val mutation : unit -> (mutation, error) result
 (** [mutation ()] reads the three mutation variables. Resolved apart from
     {!settings} because none of them is run configuration and nothing in the
-    runner may read them, but with the same loudness:
-    [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] or [WINDTRAP_MUTATE_TRY]
-    when its value is not one the variable accepts, never a silently defaulted
-    mode.
+    runner may read them, but with the same loudness: [Error (Invalid_value _)]
+    naming [WINDTRAP_MUTATE] or [WINDTRAP_MUTATE_TRY] when its value is not one
+    the variable accepts, never a silently defaulted mode.
 
     Effects: reads the environment. *)
 

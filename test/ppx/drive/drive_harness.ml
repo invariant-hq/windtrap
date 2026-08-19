@@ -207,8 +207,7 @@ let environment extra =
   in
   let bindings =
     List.fold_left
-      (fun acc (name, value) ->
-        (name, value) :: List.remove_assoc name acc)
+      (fun acc (name, value) -> (name, value) :: List.remove_assoc name acc)
       [ ("WINDTRAP_COLOR", "never") ]
       extra
   in

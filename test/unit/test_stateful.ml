@@ -482,8 +482,7 @@ let a_raising_next_poisons_and_runs_the_body () =
     expect_check_failure "a ~next poison" (fun () ->
         Stateful.execute
           ~invariant:(fun _ () -> incr invariants)
-          ~scope:unit_scope
-          program)
+          ~scope:unit_scope program)
   in
   check
     (failure_msg failure
@@ -713,8 +712,7 @@ let control_exceptions_escape_a_body_unconverted () =
      which is flattened first, since the slot renders as one line. *)
   let asserted =
     expect_check_failure "an asserting body" (fun () ->
-        Stateful.execute
-          ~scope:unit_scope
+        Stateful.execute ~scope:unit_scope
           (program_of
              (Failure.Check_failure
                 {
@@ -854,9 +852,9 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
   in
   check
     (failure.Failure.kind
-    = Failure.Message
-        "the scope returned without running the program — a scope must call \
-         its callback exactly once")
+   = Failure.Message
+       "the scope returned without running the program — a scope must call its \
+        callback exactly once")
     "a scope that never called back failed with %S"
     (Printexc.to_string (Failure.Check_failure failure));
   (* It carries the declaration site, like the poison: it is the other
@@ -888,7 +886,8 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
   in
   let reported, _ = expect_fail outcome in
   let rendered, _, _, _, inner = property_payload reported in
-  check (rendered = "(no commands)")
+  check
+    (rendered = "(no commands)")
     "a scope that never called back converged on %S" rendered;
   check
     (Option.map (fun (inner : Failure.t) -> inner.Failure.kind) inner
@@ -962,7 +961,8 @@ let a_scope_that_runs_the_program_twice_is_invalid () =
   in
   let reported, _ = expect_fail outcome in
   let rendered, _, _, _, _ = property_payload reported in
-  check (rendered = "(no commands)")
+  check
+    (rendered = "(no commands)")
     "a double-calling scope converged on %S instead of the empty program"
     rendered;
   let block = failure_block reported in
@@ -982,7 +982,8 @@ let a_scope_that_raises_before_the_callback_propagates_unconverted () =
       with
       | exception raised ->
           check (raised = exn) "%s from an acquiring scope came back as %s"
-            label (Printexc.to_string raised)
+            label
+            (Printexc.to_string raised)
       | () -> failf "%s from an acquiring scope was swallowed" label)
     [
       ("Not_found", Not_found);
@@ -1075,8 +1076,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
   let seen = ref [] in
   Stateful.execute
     ~invariant:(fun model () -> seen := model :: !seen)
-    ~scope:unit_scope
-    program;
+    ~scope:unit_scope program;
   let expected =
     List.rev
       (List.fold_left
@@ -1100,8 +1100,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
     expect_check_failure "the fresh-system invariant" (fun () ->
         Stateful.execute
           ~invariant:(fun _ () -> Check.is_true ~msg:"note" false)
-          ~scope:unit_scope
-          program)
+          ~scope:unit_scope program)
   in
   check
     (failure_msg fresh = "invariant on the fresh system \u{2014} note")
@@ -1113,8 +1112,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
           ~invariant:(fun _ () ->
             incr visits;
             if !visits = 2 then Check.fail "nope")
-          ~scope:unit_scope
-          program)
+          ~scope:unit_scope program)
   in
   check
     (failure_msg after
@@ -1134,8 +1132,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
     expect_check_failure "a raising fresh-system invariant" (fun () ->
         Stateful.execute
           ~invariant:(fun _ () -> raise Not_found)
-          ~scope:unit_scope
-          program)
+          ~scope:unit_scope program)
   in
   check
     (failure_msg fresh = "invariant on the fresh system")
@@ -1150,8 +1147,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
           ~invariant:(fun _ () ->
             incr visits;
             if !visits = 2 then raise Not_found)
-          ~scope:unit_scope
-          program)
+          ~scope:unit_scope program)
   in
   check
     (failure_msg after
@@ -1166,8 +1162,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
       (match
          Stateful.execute
            ~invariant:(fun _ () -> raise exn)
-           ~scope:unit_scope
-           program
+           ~scope:unit_scope program
        with
       | exception raised ->
           check (raised = exn)
@@ -1180,8 +1175,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
           ~invariant:(fun _ () ->
             incr visits;
             if !visits = 2 then raise exn)
-          ~scope:unit_scope
-          program
+          ~scope:unit_scope program
       with
       | exception raised ->
           check (raised = exn) "%s from a post-step invariant came back as %s"
@@ -1361,7 +1355,8 @@ let a_printerless_argument_degrades_to_a_placeholder () =
     ]
   in
   let gen = Stateful.program ~steps:2 ~model:0 commands in
-  check (Gen.Private.prints gen) "a printerless argument made the program printerless";
+  check (Gen.Private.prints gen)
+    "a printerless argument made the program printerless";
   let program = program_at gen 0 in
   check
     (lines_of gen program
@@ -1466,7 +1461,9 @@ let the_model_column_is_measured_over_the_printed_rows () =
 (* Malformed arguments are reported at sample time, inside the running
    test's exception boundary. *)
 let a_malformed_declaration_raises_at_sample_time () =
-  (match Gen.Private.sample (Stateful.program ~steps:4 ~model:0 []) (state 0) with
+  (match
+     Gen.Private.sample (Stateful.program ~steps:4 ~model:0 []) (state 0)
+   with
   | exception Invalid_argument message ->
       check
         (contains "stateful" message)
@@ -1474,14 +1471,18 @@ let a_malformed_declaration_raises_at_sample_time () =
   | _ -> failf "an empty command list sampled successfully");
   (* At [?steps:0] no element is drawn, so the branch-level report never
      fires — a test declaring no commands must not pass vacuously. *)
-  (match Gen.Private.sample (Stateful.program ~steps:0 ~model:0 []) (state 0) with
+  (match
+     Gen.Private.sample (Stateful.program ~steps:0 ~model:0 []) (state 0)
+   with
   | exception Invalid_argument message ->
       check
         (contains "stateful" message)
         "the empty-command error at ?steps:0 said %S" message
   | _ -> failf "an empty command list at ?steps:0 sampled successfully");
   match
-    Gen.Private.sample (Stateful.program ~steps:(-1) ~model:0 counter_draws) (state 0)
+    Gen.Private.sample
+      (Stateful.program ~steps:(-1) ~model:0 counter_draws)
+      (state 0)
   with
   | exception Invalid_argument _ -> ()
   | _ -> failf "a negative ?steps sampled successfully"
@@ -1505,12 +1506,9 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
   let case =
     flattened
       (Windtrap.stateful ~pos ~tags:[ "custom" ] ~timeout:2.5 "spec" ~model:0
-         ~scope:unit_scope
-         tick_facade)
+         ~scope:unit_scope tick_facade)
   in
-  let selects tag =
-    Tag.accepts (Tag.require tag Tag.any) case.Test_tree.tags
-  in
+  let selects tag = Tag.accepts (Tag.require tag Tag.any) case.Test_tree.tags in
   check (selects "prop") "--tag prop did not select a stateful test";
   check (selects "stateful") "--tag stateful did not select a stateful test";
   check (selects "custom") "the declared tags were dropped";
@@ -1626,8 +1624,7 @@ let stateful_threads_pp_model_into_the_counterexample () =
      counterexample is the three-call program and its column is 0, 1, 2. *)
   run_declared_body
     (Windtrap.stateful ~count:3 ~steps:3 ~pp_model "failing" ~model:0
-       ~scope:unit_scope
-       commands);
+       ~scope:unit_scope commands);
   check (!seen <> []) "~pp_model never reached the counterexample printer";
   check
     (List.for_all (fun model -> model >= 0 && model <= 2) !seen)
@@ -1645,9 +1642,7 @@ let the_same_seed_reproduces_the_same_counterexample () =
       Property.run ~count:(`Declared 40) ~root ~path:"replay" (queue_gen ())
         (fun _ program ->
           trace := names program :: !trace;
-          Stateful.execute
-            ~scope:(fun run -> run (Bad_queue.create ()))
-            program)
+          Stateful.execute ~scope:(fun run -> run (Bad_queue.create ())) program)
     in
     let failure, _ = expect_fail outcome in
     let rendered, case, steps, _, _ = property_payload failure in
@@ -1890,5 +1885,4 @@ let suite =
   ]
 
 let tests = List.map (fun (name, fn) -> test name fn) suite
-
 let () = Windtrap.run "stateful" tests

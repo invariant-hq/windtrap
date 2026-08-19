@@ -56,14 +56,12 @@ let tests =
           (string_of "WINDTRAP_EXCLUDE");
         clear "WINDTRAP_EXCLUDE");
     cases ~name:Fun.id "truthy bool spellings"
-      [ "1"; "true"; "TRUE"; "yes"; "Y"; "on" ]
-      (fun v ->
+      [ "1"; "true"; "TRUE"; "yes"; "Y"; "on" ] (fun v ->
         set "WINDTRAP_STREAM" v;
         equal (option bool) (Some true) (bool_of "WINDTRAP_STREAM");
         clear "WINDTRAP_STREAM");
     cases ~name:Fun.id "falsy bool spellings"
-      [ "0"; "false"; "no"; "N"; "off"; "OFF" ]
-      (fun v ->
+      [ "0"; "false"; "no"; "N"; "off"; "OFF" ] (fun v ->
         set "WINDTRAP_STREAM" v;
         equal (option bool) (Some false) (bool_of "WINDTRAP_STREAM");
         clear "WINDTRAP_STREAM");

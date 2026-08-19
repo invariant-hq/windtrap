@@ -228,8 +228,11 @@
 (rule
  (alias runtest)
  (action
-  (run diff -u %{dep:parity_spellings.here.normalized}
-    %{dep:parity_spellings.twin.normalized})))
+  (run
+   diff
+   -u
+   %{dep:parity_spellings.here.normalized}
+   %{dep:parity_spellings.twin.normalized})))
 
 (rule
  (target reject_bad_payload.here.normalized)
@@ -248,8 +251,11 @@
 (rule
  (alias runtest)
  (action
-  (run diff -u %{dep:reject_bad_payload.here.normalized}
-    %{dep:reject_bad_payload.twin.normalized})))
+  (run
+   diff
+   -u
+   %{dep:reject_bad_payload.here.normalized}
+   %{dep:reject_bad_payload.twin.normalized})))
 
 (rule
  (target reject_misplaced_on.here.normalized)
@@ -268,5 +274,8 @@
 (rule
  (alias runtest)
  (action
-  (run diff -u %{dep:reject_misplaced_on.here.normalized}
-    %{dep:reject_misplaced_on.twin.normalized})))
+  (run
+   diff
+   -u
+   %{dep:reject_misplaced_on.here.normalized}
+   %{dep:reject_misplaced_on.twin.normalized})))

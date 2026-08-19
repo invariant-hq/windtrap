@@ -80,7 +80,8 @@ let expect_coverage_failed = function
 (* The value generated for case [index] of [path] under [root], as the engine
    derives it — used to predict and replay engine streams. *)
 let value_at gen ~root ~path ~index =
-  Shrink_tree.root (Gen.Private.sample gen (Seed.make (Seed.derive ~root ~path ~index)))
+  Shrink_tree.root
+    (Gen.Private.sample gen (Seed.make (Seed.derive ~root ~path ~index)))
 
 (* Search for a root whose first failing generated case satisfies
    [first_ok] — keeps same-kind shrink tests deterministic without
@@ -422,9 +423,7 @@ let cover_unsatisfied_fails_at_end () =
   | _ -> failf "expected one unsatisfied coverage entry"
 
 let cover_registers_even_when_condition_is_false () =
-  let body ctx x =
-    if x mod 2 = 0 then Property.cover ctx "never" false
-  in
+  let body ctx x = if x mod 2 = 0 then Property.cover ctx "never" false in
   let stats =
     expect_coverage_failed
       (Property.run ~root ~path:"cover register" ~count:(`Declared 10)
@@ -814,7 +813,8 @@ let a_raising_candidate_stops_the_search_visibly () =
      mapped function raises on the first candidate of any root above the
      bound — while the root itself, being above it, maps fine. *)
   let gen =
-    Gen.map (fun n -> if n = 10 then failwith "forcing raised" else n)
+    Gen.map
+      (fun n -> if n = 10 then failwith "forcing raised" else n)
       (Gen.int_range 10 50)
   in
   let root_value =
@@ -828,8 +828,7 @@ let a_raising_candidate_stops_the_search_visibly () =
       (Property.run ~root ~path:"raising-candidate" gen (fun _ _ ->
            Check.fail "always"))
   in
-  check
-    (shrink_exhausted failure)
+  check (shrink_exhausted failure)
     "a descent stopped by a raising candidate reads as converged"
 
 (* The count and its provenance are one argument, so the engine can never be
@@ -925,5 +924,4 @@ let suite =
   ]
 
 let tests = List.map (fun (name, fn) -> Windtrap.test name fn) suite
-
 let () = Windtrap.run "property" tests

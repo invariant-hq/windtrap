@@ -434,8 +434,7 @@ let () =
 |x}
   in
   let r =
-    run_scenario ~source ~nodes:[] ~name:"t"
-      ~body_wrap:(find source "match")
+    run_scenario ~source ~nodes:[] ~name:"t" ~body_wrap:(find source "match")
       (fun () -> match () with () -> print_string "hi\n")
   in
   let golden =
@@ -1245,8 +1244,7 @@ let () =
         | Ok outcome ->
             ( Private.inline_exit_code outcome,
               Private.corrected_source ~file ~source:skip_source,
-              Private.corrected_source ~file:other_file ~source:other_source
-            ))
+              Private.corrected_source ~file:other_file ~source:other_source ))
   in
   let exit_code, skip_corrected, other_corrected =
     run_partition (fun () ->
@@ -1571,7 +1569,8 @@ let () =
   (* Accepted into the source tree: those corrections never went through
      dune's channel, so the caveat is replaced by where they landed. *)
   (match
-     Private.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[] ~declined:false
+     Private.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[]
+       ~declined:false
        [ "a_mismatch.ml.corrected" ]
    with
   | None -> check "an accepted correction produces a notice" false
@@ -1683,8 +1682,7 @@ let () =
         (report.Private.written = [ corrected_name ]
         && Sys.file_exists corrected_name);
       check "without accept, nothing reaches the source tree"
-        (report.Private.accepted = []
-        && report.Private.refused = []);
+        (report.Private.accepted = [] && report.Private.refused = []);
       let golden =
         {x|let%expect_test "t" =
   print_string "new\n";
@@ -1703,8 +1701,7 @@ let () =
       | exception Sys_error _ -> check "read back .corrected" false);
       (try Sys.remove corrected_name with Sys_error _ -> ());
       check "flush clears the corrections table"
-        ((Private.flush_corrections_report ~accept:false)
-           .Private.written = []))
+        ((Private.flush_corrections_report ~accept:false).Private.written = []))
 
 (* Accepting corrections into the source tree (WINDTRAP_UPDATE)
 
@@ -1833,7 +1830,6 @@ let register_crash ~file =
    per case: every flush above restored it, and a case that laid its
    sandbox copy somewhere else would test nothing. *)
 let sandbox_dir = Sys.getcwd ()
-
 let case_counter = ref 0
 
 let with_case ~root ~sandbox_source ~tree_source f =
@@ -1850,8 +1846,7 @@ let with_case ~root ~sandbox_source ~tree_source f =
         (fun p -> try Sys.remove p with Sys_error _ -> ())
         [ sandbox; sandbox ^ ".corrected" ])
     (fun () ->
-      f ~file:("sub/" ^ name)
-        ~target:(Filename.concat dir name)
+      f ~file:("sub/" ^ name) ~target:(Filename.concat dir name)
         ~corrected:(Filename.concat sandbox_dir (name ^ ".corrected"))
         ~corrected_name:(name ^ ".corrected"))
 
@@ -1889,8 +1884,7 @@ let run_partition ?(ci = false) ~update ~root ~register () =
                   in
                   let report = Private.flush_corrections_report ~accept in
                   let code =
-                    if report.Private.refused = [] then
-                      if clean then 0 else 1
+                    if report.Private.refused = [] then if clean then 0 else 1
                     else 1
                   in
                   let failures =
@@ -1924,8 +1918,7 @@ let () =
               check "stale partition writes its .corrected"
                 (report.Private.written = [ corrected_name ]);
               check "a plain run accepts nothing into the source tree"
-                (report.Private.accepted = []
-                && report.Private.refused = []);
+                (report.Private.accepted = [] && report.Private.refused = []);
               check_string "a plain run leaves the source tree byte-identical"
                 ~expected:stale_source ~actual:(read_text target);
               check_string "the .corrected carries the fresh payload"
@@ -1950,15 +1943,18 @@ let () =
                   ()
               with
               | Error _, _ ->
-                  check ("crash partition (" ^ label ^ "): the run started")
+                  check
+                    ("crash partition (" ^ label ^ "): the run started")
                     false
               | Ok (code, report, failures), stderr ->
-                  check_int ("crash partition exits 1 (" ^ label ^ ")")
+                  check_int
+                    ("crash partition exits 1 (" ^ label ^ ")")
                     ~expected:1 ~actual:code;
                   check_int
                     ("crash partition still reports the crash (" ^ label ^ ")")
                     ~expected:1 ~actual:failures;
-                  check ("crash partition writes nothing (" ^ label ^ ")")
+                  check
+                    ("crash partition writes nothing (" ^ label ^ ")")
                     (report.Private.written = []
                     && report.Private.accepted = []
                     && report.Private.refused = []);
@@ -2000,8 +1996,7 @@ let () =
               check "the correction is still written for dune's channel"
                 (report.Private.written = [ corrected_name ]);
               check "a dirty process accepts nothing into the source tree"
-                (report.Private.accepted = []
-                && report.Private.refused = []);
+                (report.Private.accepted = [] && report.Private.refused = []);
               check_string "a dirty process leaves the source tree untouched"
                 ~expected:stale_source ~actual:(read_text target)))
 
@@ -2104,8 +2099,7 @@ let () =
                 check_int "a symlinked source forces exit 1" ~expected:1
                   ~actual:code;
                 check "the acceptance is a refusal, not a success"
-                  (report.Private.refused <> []
-                  && report.Private.accepted = []);
+                  (report.Private.refused <> [] && report.Private.accepted = []);
                 check_contains "the refusal names the linkness"
                   ~sub:"symbolic link" stderr;
                 check "the link survives as a link"

@@ -156,8 +156,7 @@ let () =
 let () =
   reg "focus_sites finds every flagged node" @@ fun () ->
   let sites tests = List.length (T.focus_sites tests) in
-  check_int "no focus by default" ~expected:0
-    ~actual:(sites [ T.test "t" nop ]);
+  check_int "no focus by default" ~expected:0 ~actual:(sites [ T.test "t" nop ]);
   check_int "ftest sets focus" ~expected:1 ~actual:(sites [ T.ftest "t" nop ]);
   check_int "fgroup sets focus" ~expected:1 ~actual:(sites [ T.fgroup "g" [] ]);
   check_int "focus found in nested groups" ~expected:1
@@ -258,7 +257,9 @@ let () =
   reg "cases forwards timeout and retries to every child" @@ fun () ->
   (match
      T.flatten
-       [ T.cases ~timeout:2.5 ~retries:3 ~name:string_of_int "t" [ 0; 1 ] ignore ]
+       [
+         T.cases ~timeout:2.5 ~retries:3 ~name:string_of_int "t" [ 0; 1 ] ignore;
+       ]
    with
   | [ a; b ] ->
       check "first child carries the declared budget"
@@ -501,5 +502,4 @@ let () =
 (* Suite *)
 
 let tests = List.rev !registered
-
 let () = Windtrap.run "test_tree" tests

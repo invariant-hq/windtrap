@@ -21,8 +21,8 @@ let format =
     dir = "_coverage";
     ext = "coverage";
     remedy =
-      "delete the stale files under _build/_coverage (or run dune clean), \
-       then re-run the instrumented tests";
+      "delete the stale files under _build/_coverage (or run dune clean), then \
+       re-run the instrumented tests";
     who = "Windtrap_coverage";
   }
 
@@ -68,8 +68,8 @@ let pp_error ppf = function
       Format.fprintf ppf
         "%s: coverage point tables disagree across coverage files (executables \
          built from different sources?); re-run all the instrumented tests \
-         together (dune build @cover --instrument-with ppx_windtrap.coverage); dune \
-         clean only if orphaned files remain"
+         together (dune build @cover --instrument-with ppx_windtrap.coverage); \
+         dune clean only if orphaned files remain"
         file
 
 module File_map = Map.Make (String)
@@ -386,4 +386,3 @@ let file_reports ?(source_roots = [ Filename.current_dir_name ]) t =
       :: acc)
     t []
   |> List.rev
-

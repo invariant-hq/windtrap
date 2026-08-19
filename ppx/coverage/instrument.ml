@@ -153,8 +153,7 @@ let point_index st ~key ~start_ofs ~end_ofs =
    (generated code) are not instrumented. The wrapper node carries [e]'s
    own location, so a later mark of the wrapped node (arm marking after
    out-edge wrapping, say) still keys and paints the original source. *)
-let instrument_expr st ?use_loc_of ?(at_end = false) ?(post = false) ?extent e
-    =
+let instrument_expr st ?use_loc_of ?(at_end = false) ?(post = false) ?extent e =
   let attr_holder = match use_loc_of with Some e' -> e' | None -> e in
   let point_loc = attr_holder.pexp_loc in
   if point_loc.loc_ghost || has_off_attribute attr_holder.pexp_attributes then e
@@ -343,8 +342,8 @@ class instrumenter st =
                     [ (l, lhs_traversed); (l', rhs_traversed) ]
                 in
                 if is_in_tail_position then apply
-                else begin
-                  match successor with
+                else
+                  begin match successor with
                   | `None ->
                       let rec head_callee e' =
                         match e'.pexp_desc with
@@ -359,7 +358,7 @@ class instrumenter st =
                   | `Expression succ ->
                       instrument_expr ~use_loc_of:succ ~post:true ~extent:loc
                         apply
-                end
+                  end
             | Pexp_apply
                 (([%expr ( || )] | [%expr ( or )]), [ (_l, left); (_l', right) ])
               ->
@@ -451,8 +450,8 @@ class instrumenter st =
                 if is_in_tail_position || in_tmc_body || all_arguments_labeled
                 then apply
                 else if is_trivial_function fn then apply
-                else begin
-                  match successor with
+                else
+                  begin match successor with
                   | `None ->
                       let use_loc_of =
                         match (fn, arguments) with
@@ -465,28 +464,28 @@ class instrumenter st =
                   | `Expression succ ->
                       instrument_expr ~use_loc_of:succ ~at_end:false ~post:true
                         ~extent:loc apply
-                end
+                  end
             | Pexp_send (obj, meth) ->
                 let obj_new = traverse ~is_in_tail_position:false obj in
                 let apply = Exp.send ~loc ~attrs obj_new meth in
                 if is_in_tail_position || in_tmc_body then apply
-                else begin
-                  match successor with
+                else
+                  begin match successor with
                   | `None -> instrument_expr ~at_end:true ~post:true apply
                   | `Redundant -> apply
                   | `Expression succ ->
                       instrument_expr ~use_loc_of:succ ~post:true ~extent:loc
                         apply
-                end
+                  end
             | Pexp_new _ ->
                 if is_in_tail_position then e
-                else begin
-                  match successor with
+                else
+                  begin match successor with
                   | `None -> instrument_expr ~at_end:true ~post:true e
                   | `Redundant -> e
                   | `Expression succ ->
                       instrument_expr ~use_loc_of:succ ~post:true ~extent:loc e
-                end
+                  end
             | Pexp_assert [%expr false] -> e
             | Pexp_assert inner ->
                 let inner_new = traverse ~is_in_tail_position:false inner in

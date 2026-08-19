@@ -415,21 +415,17 @@ let tests =
         rejects "negative eps" (fun () -> T.float (-1e-9));
         rejects "NaN eps" (fun () -> T.float Float.nan));
     test "float_rel: degenerate bounds are rejected" (fun () ->
-        raises_match ~msg:"negative rel"
-          (Exn.invalid_arg ~substring:"~rel")
+        raises_match ~msg:"negative rel" (Exn.invalid_arg ~substring:"~rel")
           (fun () -> T.float_rel ~rel:(-0.1) ~abs:0.1);
-        raises_match ~msg:"negative abs"
-          (Exn.invalid_arg ~substring:"~abs")
+        raises_match ~msg:"negative abs" (Exn.invalid_arg ~substring:"~abs")
           (fun () -> T.float_rel ~rel:0.1 ~abs:(-0.1));
-        raises_match ~msg:"NaN rel"
-          (Exn.invalid_arg ~substring:"~rel")
+        raises_match ~msg:"NaN rel" (Exn.invalid_arg ~substring:"~rel")
           (fun () -> T.float_rel ~rel:Float.nan ~abs:0.1);
-        raises_match ~msg:"NaN abs"
-          (Exn.invalid_arg ~substring:"~abs")
+        raises_match ~msg:"NaN abs" (Exn.invalid_arg ~substring:"~abs")
           (fun () -> T.float_rel ~rel:0.1 ~abs:Float.nan);
         raises_match ~msg:"both bounds zero"
-          (Exn.invalid_arg ~substring:"float_exact")
-          (fun () -> T.float_rel ~rel:0. ~abs:0.);
+          (Exn.invalid_arg ~substring:"float_exact") (fun () ->
+            T.float_rel ~rel:0. ~abs:0.);
         (* One zero bound stays legal: it switches a component off while the
            other remains a real tolerance. *)
         check_equal "pure relative still constructs"

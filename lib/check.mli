@@ -10,12 +10,11 @@
     author needs, which is the payload each verb builds. Summaries here, the
     contract there, the prose in [doc/manual/assertions.md].
 
-    Two rules hold for all of them. A failing verb constructs one
-    {!Failure.t} — a typed kind, an optional location, the [?msg] annotation
-    when given — and raises {!Failure.Check_failure}; verbs never print, never
-    diff, and never touch run state. And the location is [?pos] when given,
-    else a best-effort call-stack capture, else none ({!Loc.resolve} is the
-    rule).
+    Two rules hold for all of them. A failing verb constructs one {!Failure.t} —
+    a typed kind, an optional location, the [?msg] annotation when given — and
+    raises {!Failure.Check_failure}; verbs never print, never diff, and never
+    touch run state. And the location is [?pos] when given, else a best-effort
+    call-stack capture, else none ({!Loc.resolve} is the rule).
 
     {!skip} is not a failure: it raises {!Failure.Skip_test}. *)
 
@@ -33,8 +32,8 @@ type 'a testable = 'a Testable.t
 (** {1:equalities Equalities}
 
     Every verb here builds a diffable {!Failure.equality} over two rendered
-    values or constructor descriptions, expected first. The witness renders
-    only on failure. *)
+    values or constructor descriptions, expected first. The witness renders only
+    on failure. *)
 
 val equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal t expected actual] is [()] iff [Testable.equal t expected actual]. *)
@@ -52,8 +51,8 @@ val is_false : ?pos:pos -> ?msg:string -> bool -> unit
 (** [is_false b] is [()] iff [not b]. *)
 
 val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
-(** [is_none o] is [()] iff [o] is [None]. The payload compares ["None"]
-    against ["Some " ^ pp v], [pp] defaulting to {!Pp.abstract}. *)
+(** [is_none o] is [()] iff [o] is [None]. The payload compares ["None"] against
+    ["Some " ^ pp v], [pp] defaulting to {!Pp.abstract}. *)
 
 val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
 (** [is_some o] is [()] iff [o] is [Some _]. No [?pp]: the failing side is
@@ -62,8 +61,8 @@ val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
 (** {1:unwrapping Unwrapping}
 
     Assert the constructor and return the payload. The rejected side renders
-    with the caller's printer, {!Pp.abstract} without one, and only on
-    failure. *)
+    with the caller's printer, {!Pp.abstract} without one, and only on failure.
+*)
 
 val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
 (** [require_some o] is [v] iff [o] is [Some v]. *)
@@ -78,15 +77,15 @@ val require_error :
 
 val require_match :
   ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b
-(** [require_match extract v] is [b] iff [extract v] is [Some b]. Its payload
-    is {!Failure.predicate}'s, with ["a match"] as the claim. An exception
-    raised by [extract] propagates unchanged. *)
+(** [require_match extract v] is [b] iff [extract v] is [Some b]. Its payload is
+    {!Failure.predicate}'s, with ["a match"] as the claim. An exception raised
+    by [extract] propagates unchanged. *)
 
 (** {1:predicates Predicates}
 
     Both build a {!Failure.predicate} payload: a claim sentence on the expected
-    side, a rendered value on the actual side, and no diff between them —
-    a description is not a rendering. *)
+    side, a rendered value on the actual side, and no diff between them — a
+    description is not a rendering. *)
 
 val satisfies :
   ?pos:pos ->
@@ -109,8 +108,8 @@ val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
 (** {1:containment String containment}
 
     Every verb here builds a {!Failure.containment} payload: the needle, the
-    haystack's length, the byte offset of the needle's first occurrence
-    anywhere in it when there is one, and a bounded excerpt whose policy
+    haystack's length, the byte offset of the needle's first occurrence anywhere
+    in it when there is one, and a bounded excerpt whose policy
     {!Failure.containment} owns. The [demand] field is how a renderer tells the
     verbs apart. *)
 
@@ -175,17 +174,17 @@ val raises_match :
     separates a rejection from an uncaught exception. *)
 
 (** Exception predicates for {!raises_match}: a constructor check and, with
-    [~substring], a byte-substring check on the message (the empty string
-    always matches). A whole message is {!raises}' job — it holds both
-    exceptions, so it reports a message diff. *)
+    [~substring], a byte-substring check on the message (the empty string always
+    matches). A whole message is {!raises}' job — it holds both exceptions, so
+    it reports a message diff. *)
 module Exn : sig
   val invalid_arg : ?substring:string -> exn -> bool
-  (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m]
-      contains [substring], if given. *)
+  (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m] contains
+      [substring], if given. *)
 
   val failure : ?substring:string -> exn -> bool
-  (** [failure e] is [true] iff [e] is [Failure m] and [m] contains
-      [substring], if given. *)
+  (** [failure e] is [true] iff [e] is [Failure m] and [m] contains [substring],
+      if given. *)
 
   val sys_error : ?substring:string -> exn -> bool
   (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] contains

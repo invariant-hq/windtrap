@@ -68,9 +68,9 @@ val contramap : ('a -> 'b) -> 'b t -> 'a t
     not [a].
 
     {[
-      type user = { id : int; name : string }
+    type user = { id : int; name : string }
 
-      let user_id = Testable.(contramap (fun u -> u.id) int)
+    let user_id = Testable.(contramap (fun u -> u.id) int)
     ]} *)
 
 val pass : 'a t
@@ -143,10 +143,10 @@ val float : float -> float t
     equal only to an infinity of the same sign; no finite [eps] bridges an
     infinite and a finite value. [0.] and [-0.] are equal.
 
-    Raises [Invalid_argument] if [eps] is not strictly positive (NaN
-    included). Every such [eps] degenerates the comparison to exact equality
-    while the call still reads as a tolerance; exactness is spelled
-    {!float_exact}, which is also the only witness that can assert NaN. *)
+    Raises [Invalid_argument] if [eps] is not strictly positive (NaN included).
+    Every such [eps] degenerates the comparison to exact equality while the call
+    still reads as a tolerance; exactness is spelled {!float_exact}, which is
+    also the only witness that can assert NaN. *)
 
 val float_rel : rel:float -> abs:float -> float t
 (** [float_rel ~rel ~abs] compares with combined tolerance: [a] and [b] are
@@ -157,11 +157,10 @@ val float_rel : rel:float -> abs:float -> float t
     with {!float_exact}. An infinity is equal only to an infinity of the same
     sign: no finite tolerance applies when either side is infinite.
 
-    Raises [Invalid_argument] if either bound is negative or NaN, or if both
-    are zero. One zero bound is meaningful — [~rel:0.] is a purely absolute
-    tolerance, [~abs:0.] a purely relative one — but both zero is exact
-    equality wearing a tolerance's syntax, and exactness is spelled
-    {!float_exact}. *)
+    Raises [Invalid_argument] if either bound is negative or NaN, or if both are
+    zero. One zero bound is meaningful — [~rel:0.] is a purely absolute
+    tolerance, [~abs:0.] a purely relative one — but both zero is exact equality
+    wearing a tolerance's syntax, and exactness is spelled {!float_exact}. *)
 
 (** {1:containers Containers} *)
 

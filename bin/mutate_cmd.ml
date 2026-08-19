@@ -41,8 +41,8 @@ OPTIONS:
    is about to read. A verdict comes from a suite asked to test its
    mutants. *)
 let rerun =
-  "  WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
-   <test executable> --"
+  "  WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate <test \
+   executable> --"
 
 (* Flags *)
 
@@ -102,9 +102,7 @@ let load_merged files =
       Error 1
   | Ok entries ->
       let entries = List.rev entries in
-      let kept =
-        List.filter (fun (_, _, f) -> f = Data_files.Fresh) entries
-      in
+      let kept = List.filter (fun (_, _, f) -> f = Data_files.Fresh) entries in
       let excluded =
         List.filter (fun (_, _, f) -> f <> Data_files.Fresh) entries
       in
@@ -164,10 +162,9 @@ let load_merged files =
         in
         Printf.eprintf
           "windtrap mutate: found %d .mutants file%s and every one is %s\n\
-          \  A verdict is written only by a run asked to test its mutants, \
-           and it is\n\
-          \  invalidated by any later build of the executable that wrote it \
-           — an\n\
+          \  A verdict is written only by a run asked to test its mutants, and \
+           it is\n\
+          \  invalidated by any later build of the executable that wrote it — an\n\
           \  ordinary `dune runtest` is enough.\n\
            Re-run the mutation tests:\n\
            %s\n\
@@ -218,13 +215,14 @@ let print_report ~roots collection =
   in
   let renderer = Render.create ~out:Format.std_formatter ~ansi () in
   Render.mutation_report renderer
-    (Mutate_loop.render_data ~resolve_source:(read_source ~roots)
-       (* [loc = None] throughout: a test's declaration site lives in the
+    (Mutate_loop.render_data
+       ~resolve_source:(read_source ~roots)
+         (* [loc = None] throughout: a test's declaration site lives in the
           test tree of the executable that ran it, and this command links
           none of them. The name is what a reader greps for, and it is in
           the report. *)
        ~loc_of:(fun _ -> None)
-       (* The merge ran nothing and seeded nothing, and it is the
+         (* The merge ran nothing and seeded nothing, and it is the
           project's view rather than one executable's — so no duration, no
           seed, and no sibling scoping. *)
        ~duration:None ~seed:None ~siblings:false

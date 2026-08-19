@@ -3,7 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-
 (* Not mutated. This module is part of the machinery a mutation run uses
    to judge mutants — the scheduler, the ambient run state, the reporting
    spine, the loop itself — so a mutant here is armed inside the process
@@ -409,7 +408,6 @@ let counted_failure (r : Run.result) =
    question — it is [2] for a selection that matched nothing, which is a
    statement about a filter and not about a mutant. *)
 let kills (r : Run.result) = counted_failure r
-
 let executed_test (r : Run.result) = r.Run.subject = Run.Test
 
 let killed_by (outcome : Runner.outcome) =
@@ -653,14 +651,13 @@ let probe_line ~armed ~paths ~spine tests (_ : Unix.file_descr) =
                  (Option.value ~default:(-1) (index_of r.Run.path paths)))
              failures)
 
-let check_determinism ~armed ~scratch ~dry_run_wall
-    ~(spine : Driver.t) ~reach ~paths tests =
+let check_determinism ~armed ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach
+    ~paths tests =
   let log_dir = Filename.concat scratch "probe" in
   let child =
     {
       spine with
-      Driver.config =
-        Run.for_subset spine.Driver.config ~log_dir ~bail:None;
+      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:None;
     }
   in
   (* The probe re-runs exactly the dry run's executed tests, so its
@@ -700,23 +697,23 @@ let check_determinism ~armed ~scratch ~dry_run_wall
          number"
   | `No -> (
       match (status, String.split_on_char ' ' (String.trim line)) with
-    | _, "error" :: rest ->
-        Error
-          (spf "the determinism probe refused to run: %s"
-             (String.concat " " rest))
-    | Unix.WEXITED 0, "probe" :: executed :: skipped :: failed :: indices -> (
-        match
-          ( int_of_string_opt executed,
-            int_of_string_opt skipped,
-            int_of_string_opt failed )
-        with
-        | Some executed, Some skipped, Some failed ->
-            if
-              executed <> List.length paths
-              || skipped <> reach.skipped || failed <> 0
-            then Error (disagreement executed skipped failed indices)
-            else Ok ()
-        | _ -> Error "the determinism probe reported an unreadable result")
+      | _, "error" :: rest ->
+          Error
+            (spf "the determinism probe refused to run: %s"
+               (String.concat " " rest))
+      | Unix.WEXITED 0, "probe" :: executed :: skipped :: failed :: indices -> (
+          match
+            ( int_of_string_opt executed,
+              int_of_string_opt skipped,
+              int_of_string_opt failed )
+          with
+          | Some executed, Some skipped, Some failed ->
+              if
+                executed <> List.length paths
+                || skipped <> reach.skipped || failed <> 0
+              then Error (disagreement executed skipped failed indices)
+              else Ok ()
+          | _ -> Error "the determinism probe reported an unreadable result")
       | _ -> Error "the determinism probe died without reporting a result")
 
 (* The bracket both loops open before their first fork: one scratch root
@@ -758,14 +755,13 @@ let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests
 let budget_of hits =
   if hits > (max_int - 1000) / 8 then max_int else (hits * 8) + 1000
 
-let run_mutant ~armed ~scratch ~dry_run_wall ~index
-    ~(spine : Driver.t) ~reach ~paths ~budget ~mutant tests =
+let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
+    ~paths ~budget ~mutant tests =
   let log_dir = Filename.concat scratch (spf "m%d" index) in
   let child =
     {
       spine with
-      Driver.config =
-        Run.for_subset spine.Driver.config ~log_dir ~bail:(Some 1);
+      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:(Some 1);
     }
   in
   let { line; status; killed } =
@@ -800,8 +796,7 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index
    not about the suite. Its verdict is kept either way, which is what
    makes the check cost nothing for a build that passes it. *)
 
-let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~ordered
-    tests =
+let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~ordered tests =
   let verdicts = ref M.empty in
   let forced_fail = ref None in
   let record (mutant : M.mutant) verdict =
@@ -833,12 +828,10 @@ let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~ordered
    two cannot disagree about what focus means). An absent selection is a
    designation too: every test the run executed. *)
 let designates ~(config : Run.config) ~focus =
-  config.Run.filter <> None
-  || config.Run.exclude <> None
+  config.Run.filter <> None || config.Run.exclude <> None
   || config.Run.tags <> []
   || config.Run.exclude_tags <> []
-  || config.Run.failed_only
-  || focus
+  || config.Run.failed_only || focus
 
 (* Whether the run's selection NARROWS THE SUITE, which is the survey's
    question: a designation, or the one knob that narrows work without
@@ -941,9 +934,7 @@ let loop renderer ~armed (spine : Driver.t) tests =
                 | c -> c)
               reached
           in
-          let dry_run_wall =
-            Float.max 0.01 (Unix.gettimeofday () -. started)
-          in
+          let dry_run_wall = Float.max 0.01 (Unix.gettimeofday () -. started) in
           let narrowed =
             narrows_suite ~config ~focus:outcome.Runner.focus_active
           in
@@ -1132,14 +1123,10 @@ let parse_batch_events ~size lines =
           Option.iter (fun i -> outcomes.(i) <- Some `Skip) (index i);
           pending := None
       | [ "t"; i; "fail" ] ->
-          Option.iter
-            (fun i -> outcomes.(i) <- Some (`Fail `Failure))
-            (index i);
+          Option.iter (fun i -> outcomes.(i) <- Some (`Fail `Failure)) (index i);
           pending := None
       | [ "t"; i; "fail"; "fixture" ] ->
-          Option.iter
-            (fun i -> outcomes.(i) <- Some (`Fail `Fixture))
-            (index i);
+          Option.iter (fun i -> outcomes.(i) <- Some (`Fail `Fixture)) (index i);
           pending := None
       | [ "done" ] -> finished := true
       | "error" :: rest -> error := Some (String.concat " " rest)
@@ -1148,14 +1135,13 @@ let parse_batch_events ~size lines =
     lines;
   (outcomes, !pending, !finished, !error)
 
-let run_batch ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
-    ~reach ~batch ~budget ~mutant tests =
+let run_batch ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
+    ~batch ~budget ~mutant tests =
   let log_dir = Filename.concat scratch (spf "a%d" index) in
   let child =
     {
       spine with
-      Driver.config =
-        Run.for_subset spine.Driver.config ~log_dir ~bail:None;
+      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:None;
     }
   in
   let paths = List.map (fun e -> e.test) batch in
@@ -1166,38 +1152,35 @@ let run_batch ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
   in
   Run.remove_tree log_dir;
   let outcomes, pending, finished, error =
-      parse_batch_events ~size:(List.length batch) lines
-    in
-    match error with
-    | Some message ->
-        raise
-          (Supervision (spf "%s: %s" (M.id_to_string mutant.M.id) message))
-    | None ->
-        (* A child that did not leave through [Unix._exit 0] after its
+    parse_batch_events ~size:(List.length batch) lines
+  in
+  match error with
+  | Some message ->
+      raise (Supervision (spf "%s: %s" (M.id_to_string mutant.M.id) message))
+  | None ->
+      (* A child that did not leave through [Unix._exit 0] after its
            terminal line did not finish: the fault is attributed to the
            one test that started and never reported — a hang or crash
            under a fault is a detected fault — and every earlier outcome
            in the buffer is kept. A deadline kill is the hang's name for
            it; anything else that stopped the child is a crash. *)
-        (match (finished, status) with
-        | true, Unix.WEXITED 0 -> ()
-        | _, _ -> (
-            match pending with
-            | Some i when outcomes.(i) = None ->
-                outcomes.(i) <-
-                  Some
-                    (`Fail
-                       (if killed = `Deadline then `Timed_out else `Crashed))
-            | Some _ | None -> ()));
-        outcomes
+      (match (finished, status) with
+      | true, Unix.WEXITED 0 -> ()
+      | _, _ -> (
+          match pending with
+          | Some i when outcomes.(i) = None ->
+              outcomes.(i) <-
+                Some
+                  (`Fail (if killed = `Deadline then `Timed_out else `Crashed))
+          | Some _ | None -> ()));
+      outcomes
 
 (* The admission machine: union-scheduled batches over U, one fork per
    scheduled fault, early stop when U empties. The next fault is the one
    the most still-unruled members carry on their own lists — capped and
    ruled tests have left U and stop weighting the schedule — with the
    site's total hit count and then identifier order as tie-breaks. *)
-let run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach
-    ~entrants tests =
+let run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach ~entrants tests =
   let forked = Hashtbl.create 64 in
   let forks = ref 0 in
   let live () = List.filter (fun e -> e.ruling = None) entrants in
@@ -1307,7 +1290,7 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
   (* The startup message is already on stderr; a refused run never
      produced a verdict. *)
   | Error _ -> Reported 1
-  | Ok outcome ->
+  | Ok outcome -> (
       (* The last test's teardown window. *)
       ignore (M.drain ());
       let executed = List.rev reach.executed in
@@ -1324,16 +1307,15 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
                executed nothing, and the message says that instead. *)
             if selection then
               refuse
-                "the selection matches no test, so there is no test to \
-                 admit. Fix the filter, or run the suite that declares the \
-                 test"
+                "the selection matches no test, so there is no test to admit. \
+                 Fix the filter, or run the suite that declares the test"
             else
               refuse
                 "admit judges the tests this run executes and this run \
                  executed none, so there is no test to admit: the suite \
-                 declares no test, or every declared test was dropped \
-                 before running — a tag the default predicate drops, or an \
-                 empty shard"
+                 declares no test, or every declared test was dropped before \
+                 running — a tag the default predicate drops, or an empty \
+                 shard"
         | `Mirrors ->
             (* The arm precedent's softness (Uncatalogued): one variable
                reaches every partition of a project-wide run, and failing
@@ -1341,16 +1323,15 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
                would report success as failure. One line on stderr, and
                the ordinary run stands. *)
             note
-              "admit: the selection matches no test in this suite, so there \
-               is nothing to admit here; the suite that declares the \
-               selected tests answers for them";
+              "admit: the selection matches no test in this suite, so there is \
+               nothing to admit here; the suite that declares the selected \
+               tests answers for them";
             Ran (Ok outcome))
       else if outcome.Runner.exit_code <> 0 then
         refuse
-          "the dry run is red. Admission judges tests against a green \
-           baseline — a failing test has already proved it can fail, and its \
-           green co-selected tests get no verdict until it is fixed or \
-           deselected"
+          "the dry run is red. Admission judges tests against a green baseline \
+           — a failing test has already proved it can fail, and its green \
+           co-selected tests get no verdict until it is fixed or deselected"
       else if Lazy.force catalogue = [] then refuse_empty_catalogue ()
       else
         (* The admission set: the selection's executed, counted tests. A
@@ -1367,8 +1348,8 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
         if designated = [] then
           refuse
             "every selected test skipped or is marked xfail — a skip ran \
-             nothing and an xfail has already proved it can fail — so there \
-             is nothing to admit"
+             nothing and an xfail has already proved it can fail — so there is \
+             nothing to admit"
         else
           (* A whole-suite admission is a legitimate ask an alias makes,
              and it is also what someone who wanted the survey types by
@@ -1413,12 +1394,9 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
              "reaches" its own way. *)
           let reached_total =
             List.length
-              (List.sort_uniq M.compare_mutant
-                 (List.concat_map snd reached))
+              (List.sort_uniq M.compare_mutant (List.concat_map snd reached))
           in
-          let dry_run_wall =
-            Float.max 0.01 (Unix.gettimeofday () -. started)
-          in
+          let dry_run_wall = Float.max 0.01 (Unix.gettimeofday () -. started) in
           let outcome =
             if entrants = [] then
               (* Nothing reaches a site, so there is no verdict for the
@@ -1464,7 +1442,8 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
                             Render.unjustified_test =
                               Test_tree.path_to_string e.test;
                             unjustified_loc = loc_of e.test;
-                            shown = List.map fault_of (first_n listed_faults watched);
+                            shown =
+                              List.map fault_of (first_n listed_faults watched);
                             tried = List.length watched;
                             candidates = List.length e.own;
                             reached = e.reach_count;
@@ -1475,7 +1454,8 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
               in
               let capped_rulings =
                 List.length
-                  (List.filter (fun (u : Render.unjustified) -> u.capped)
+                  (List.filter
+                     (fun (u : Render.unjustified) -> u.capped)
                      unjustified)
               in
               Render.admission_report renderer
@@ -1505,15 +1485,14 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
                     | [] -> None
                     | prefixes ->
                         Some
-                          (M.scope_variable ^ "="
-                          ^ String.concat "," prefixes));
+                          (M.scope_variable ^ "=" ^ String.concat "," prefixes));
                 };
               flush_descriptors ();
               (* Law 16e's admit clause: completed with no UNJUSTIFIED
                  verdict is 0 — NO SITES alone is never red (Law 17d) —
                  and any UNJUSTIFIED is 1. No verdict file is written and
                  none is read (Law 17b). *)
-              Reported (if unjustified = [] then 0 else 1)
+              Reported (if unjustified = [] then 0 else 1))
 
 (* The two modes that are ordinary runs with something printed around them *)
 
@@ -1582,10 +1561,7 @@ let arm_mode renderer ~armed (spine : Driver.t) tests =
         {
           spine with
           Driver.config =
-            {
-              spine.Driver.config with
-              Run.update = Env.No_update;
-            };
+            { spine.Driver.config with Run.update = Env.No_update };
         }
       in
       Render.mutation_armed renderer
@@ -1660,16 +1636,16 @@ let execute_and_report (spine : Driver.t) tests =
       | `Loop, None -> (
           if Sys.win32 then
             refuse
-              "mutation testing needs Unix.fork, which Windows does not \
-               have; the tests themselves still ran"
+              "mutation testing needs Unix.fork, which Windows does not have; \
+               the tests themselves still ran"
           else
             try loop (renderer ()) ~armed spine tests
             with Supervision message -> refuse "%s" message)
       | `Admit, None -> (
           if Sys.win32 then
             refuse
-              "mutation testing needs Unix.fork, which Windows does not \
-               have; the tests themselves still ran"
+              "mutation testing needs Unix.fork, which Windows does not have; \
+               the tests themselves still ran"
           else
             try admit_loop (renderer ()) ~armed spine ~tries tests
             with Supervision message -> refuse "%s" message))

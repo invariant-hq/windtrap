@@ -412,8 +412,7 @@ let tests =
             check_string "in_order: the cursor is the end of the first match"
               ~expected:(Printf.sprintf "ordered 1 from %d" cursor)
               ~actual:(describe_demand demand);
-            check "in_order: excerpt is bounded"
-              (String.length excerpt <= 8_195);
+            check "in_order: excerpt is bounded" (String.length excerpt <= 8_195);
             check "in_order: the window is cut around the cursor, not the head"
               (excerpt_offset > 0 && excerpt_offset <= cursor);
             check "in_order: the excerpt is the recorded window"
@@ -427,8 +426,7 @@ let tests =
         let path = "sessions/ghost/session.json" in
         passes "starts_with: pass" (fun () ->
             Check.starts_with ~affix:"sessions/" path);
-        passes "ends_with: pass" (fun () ->
-            Check.ends_with ~affix:".json" path);
+        passes "ends_with: pass" (fun () -> Check.ends_with ~affix:".json" path);
         (* The empty affix bounds both ends of every string. *)
         passes "starts_with: empty affix" (fun () ->
             Check.starts_with ~affix:"" path);
@@ -459,7 +457,8 @@ let tests =
             check "located at its first occurrence" (found_at = Some 0));
         (* A suffix that overruns the string is absent, not a crash. *)
         containment_payload "ends_with: affix longer than the haystack"
-          (fun () -> Check.ends_with ~affix:"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" "ab")
+          (fun () ->
+            Check.ends_with ~affix:"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" "ab")
           (fun (_, _, _, found_at, _, _) ->
             check "nothing located" (found_at = None)));
     test "mem" (fun () ->
@@ -564,8 +563,8 @@ let tests =
               (fun s -> s > bound)
               "a")
           (fun (claim, value) ->
-            check_string "string bound is quoted"
-              ~expected:{|greater than "m"|} ~actual:claim;
+            check_string "string bound is quoted" ~expected:{|greater than "m"|}
+              ~actual:claim;
             check_string "string value is quoted" ~expected:{|"a"|}
               ~actual:value);
         (* The witness's equality plays no part: an always-raising equality
@@ -928,8 +927,7 @@ let tests =
               (fun () -> invalid_arg "step: unhandled op HALT"));
         raise_payload "raises_match rejects via Exn.failure ~substring"
           (fun () ->
-            Check.raises_match
-              (Check.Exn.failure ~substring:"underflow")
+            Check.raises_match (Check.Exn.failure ~substring:"underflow")
               (fun () -> failwith "overflow"))
           (fun (_, actual, _) ->
             check "raises_match + Exn: rejected exception rendered"

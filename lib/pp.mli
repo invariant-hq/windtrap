@@ -32,10 +32,10 @@ type style = [ `Bold | `Faint | `Red | `Green | `Yellow | `Cyan | `White ]
 (** {1:output Output} *)
 
 val abstract : string
-(** [abstract] is what a value with no rendering prints as
-    (["<abstract>"]): {!Testable.of_equal}'s witness, and the fallback of
-    every verb taking an optional printer for a rejected value. One spelling,
-    because it is one thing a reader learns to recognise. *)
+(** [abstract] is what a value with no rendering prints as (["<abstract>"]):
+    {!Testable.of_equal}'s witness, and the fallback of every verb taking an
+    optional printer for a rejected value. One spelling, because it is one thing
+    a reader learns to recognise. *)
 
 val str : ('a, Format.formatter, unit, string) format4 -> 'a
 (** [str fmt ...] formats to a string. Equivalent to {!Format.asprintf}. *)

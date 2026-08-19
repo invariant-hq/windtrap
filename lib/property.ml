@@ -83,9 +83,7 @@ let stats_of ~cases ~discards ctx =
   let coverage =
     sorted_bindings ctx.required
     |> List.map (fun (label, ()) ->
-        let hits =
-          Option.value ~default:0 (List.assoc_opt label collected)
-        in
+        let hits = Option.value ~default:0 (List.assoc_opt label collected) in
         { label; hits; satisfied = hits > 0 })
   in
   { cases; discards; collected; coverage }

@@ -112,8 +112,8 @@ let no_data =
   \  dune runtest --instrument-with ppx_windtrap.coverage\n"
 
 let stale_hint =
-  "a re-run made without --instrument-with ppx_windtrap.coverage, or a cached test \
-   dune did not re-run"
+  "a re-run made without --instrument-with ppx_windtrap.coverage, or a cached \
+   test dune did not re-run"
 
 (* Loads [files], excludes the ones the freshness pass flagged, and
    merges the survivors. Warnings and failure details go to stderr;

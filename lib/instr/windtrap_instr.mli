@@ -33,16 +33,16 @@ type format = {
           messages. *)
 }
 (** The type for a runtime's on-disk format: what differs between the two
-    runtimes, declared once beside each magic string. Every function below
-    that names, reads or reports a data file takes one. *)
+    runtimes, declared once beside each magic string. Every function below that
+    names, reads or reports a data file takes one. *)
 
 (** {1:identities Writer identities} *)
 
 type identity = { exe : string; digest : string }
-(** The type for data-file writer identities: [exe] is the writing
-    executable's {!exe_identity} and [digest] the lowercase hex MD5 of its
-    contents at write time. Content, not mtimes: dune's cache restores
-    rebuilt artifacts with their original timestamps. *)
+(** The type for data-file writer identities: [exe] is the writing executable's
+    {!exe_identity} and [digest] the lowercase hex MD5 of its contents at write
+    time. Content, not mtimes: dune's cache restores rebuilt artifacts with
+    their original timestamps. *)
 
 val file_digest : string -> string option
 (** [file_digest path] is the lowercase hex MD5 of the file at [path], [None]
@@ -50,34 +50,33 @@ val file_digest : string -> string option
 
 (** {1:paths Build paths}
 
-    One root rule, shared by output naming, identity recording and the
-    reporting commands' discovery: a path's project root is the parent of its
-    {e topmost} [_build] component, and paths below [_build] are compared with
-    any [.sandbox/<digest>] prefix stripped, so sandboxed and direct runs
-    agree. Every path is normalized lexically first ([.] and empty components
-    dropped, [..] resolved against the component before it), so the spellings
-    one executable is reached by — [test/a.exe], [./test/a.exe],
-    [test/sub/../a.exe] — are one identity and one data file. *)
+    One root rule, shared by output naming, identity recording and the reporting
+    commands' discovery: a path's project root is the parent of its {e topmost}
+    [_build] component, and paths below [_build] are compared with any
+    [.sandbox/<digest>] prefix stripped, so sandboxed and direct runs agree.
+    Every path is normalized lexically first ([.] and empty components dropped,
+    [..] resolved against the component before it), so the spellings one
+    executable is reached by — [test/a.exe], [./test/a.exe], [test/sub/../a.exe]
+    — are one identity and one data file. *)
 
 val absolute : string -> string
 (** [absolute path] resolves [path] against the current directory when it is
     relative. *)
 
 val build_root : path:string -> string option
-(** [build_root ~path] is the parent of the topmost [_build] component of
-    [path] ({!absolute}'d first), and [None] when it has none. *)
+(** [build_root ~path] is the parent of the topmost [_build] component of [path]
+    ({!absolute}'d first), and [None] when it has none. *)
 
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the identity recorded for the executable at [exe]:
     its path below the topmost [_build] (sandbox prefix removed), or its
-    absolute path when it is not under one. Normalized, so two spellings of
-    one executable give one identity. *)
+    absolute path when it is not under one. Normalized, so two spellings of one
+    executable give one identity. *)
 
 val output_file : format -> exe:string -> string
-(** [output_file f ~exe] is
-    [<root>/_build/<f.dir>/windtrap-<hash>.<f.ext>], where [<root>] is
-    {!build_root} and [<hash>] the hex MD5 of {!exe_identity}. When [exe] is
-    not under a [_build], [<root>] is the current directory. *)
+(** [output_file f ~exe] is [<root>/_build/<f.dir>/windtrap-<hash>.<f.ext>],
+    where [<root>] is {!build_root} and [<hash>] the hex MD5 of {!exe_identity}.
+    When [exe] is not under a [_build], [<root>] is the current directory. *)
 
 (** {1:errors Errors} *)
 
@@ -86,28 +85,27 @@ val output_file : format -> exe:string -> string
     [Windtrap_coverage] wraps it beside a merge-time case of its own. *)
 type error =
   | Unknown_format of { path : string; header : string }
-      (** [path] does not start with the format's magic string; [header] is
-          its escaped first line, truncated to 64 bytes. *)
+      (** [path] does not start with the format's magic string; [header] is its
+          escaped first line, truncated to 64 bytes. *)
   | Unreadable of { path : string; reason : string }
       (** [path] cannot be read; [reason] is the system message. *)
   | Corrupt of { path : string; reason : string }
       (** [path] has the right magic but malformed data. *)
 
 val pp_error : format -> Format.formatter -> error -> unit
-(** [pp_error f ppf e] formats [e] in [f]'s vocabulary, ending in [f.remedy].
-*)
+(** [pp_error f ppf e] formats [e] in [f]'s vocabulary, ending in [f.remedy]. *)
 
 (** {1:files Reading and writing} *)
 
 val read_file : string -> (string, error) result
 (** [read_file path] is the whole file at [path], read binary.
-    [Error (Unreadable _)] when it cannot be opened or read,
-    [Error (Corrupt _)] when it shrinks while being read. *)
+    [Error (Unreadable _)] when it cannot be opened or read, [Error (Corrupt _)]
+    when it shrinks while being read. *)
 
 val write_file : string -> string -> unit
 (** [write_file path data] writes [data] atomically — a temporary file next to
-    [path], renamed over it — creating [path]'s directory if needed, so a
-    reader never observes a partial file.
+    [path], renamed over it — creating [path]'s directory if needed, so a reader
+    never observes a partial file.
 
     Raises [Sys_error] if the file cannot be written. *)
 
@@ -122,22 +120,22 @@ val add_header : format -> Buffer.t -> identity option -> unit
     line when given — merged or synthetic data, which has no single writer,
     passes [None].
 
-    Raises [Invalid_argument] (prefixed with [f.who]) if [identity.exe] is
-    [""] or [identity.digest] is not 32 lowercase hex characters. *)
+    Raises [Invalid_argument] (prefixed with [f.who]) if [identity.exe] is [""]
+    or [identity.digest] is not 32 lowercase hex characters. *)
 
 (** {1:parsing Parser scaffolding}
 
-    One strict scanner for both formats: a mutable {!type:cursor} over the
-    whole input, and readers that raise {!Parse_error} — caught by each
-    runtime's [of_string], which turns the reason into a [Corrupt] error.
-    Nothing is repaired and nothing is guessed. *)
+    One strict scanner for both formats: a mutable {!type:cursor} over the whole
+    input, and readers that raise {!Parse_error} — caught by each runtime's
+    [of_string], which turns the reason into a [Corrupt] error. Nothing is
+    repaired and nothing is guessed. *)
 
 type cursor
 (** The type for parse cursors: a position in an input string. *)
 
 exception Parse_error of string
-(** Raised by the readers below, carrying a human-readable reason. Never
-    escapes a runtime's [of_string]. *)
+(** Raised by the readers below, carrying a human-readable reason. Never escapes
+    a runtime's [of_string]. *)
 
 val parse_fail : ('a, unit, string, 'b) format4 -> 'a
 (** [parse_fail fmt ...] raises {!Parse_error} with the formatted reason, so a
@@ -149,9 +147,9 @@ val start : format -> path:string -> string -> (cursor, error) result
     [f.magic] followed by whitespace or the end of input. *)
 
 val read_nat : cursor -> string -> int
-(** [read_nat c what] reads a non-negative decimal integer after any
-    whitespace. Raises {!Parse_error} naming [what] when there is none, it is
-    negative, or it does not fit in an [int]. *)
+(** [read_nat c what] reads a non-negative decimal integer after any whitespace.
+    Raises {!Parse_error} naming [what] when there is none, it is negative, or
+    it does not fit in an [int]. *)
 
 val read_count : cursor -> string -> int
 (** [read_count c what] is {!read_nat} bounded by the remaining input: a count

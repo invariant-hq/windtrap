@@ -195,53 +195,57 @@ let register ~file ~sites =
   validate ~file sites;
   if not (in_scope file) then inert
   else
-  match List.find_opt (fun e -> String.equal e.file file) !registry with
-  | Some prior when not (sites_equal prior.sites sites) ->
-      (* Two incompatible instrumentations of one source file are linked
+    match List.find_opt (fun e -> String.equal e.file file) !registry with
+    | Some prior when not (sites_equal prior.sites sites) ->
+        (* Two incompatible instrumentations of one source file are linked
          into this executable - stale build artifacts, most likely.
          Registration runs at module load inside the user's program, so it
          must not raise; warn loudly and hand back an inert guard, keeping
          the invariant that same-file entries carry equal tables (which is
          what lets [arm] set them all). *)
-      warn
-        "%s: conflicting instrumentation tables in one executable (stale build \
-         artifacts? try dune clean); ignoring one module's sites"
-        file;
-      inert
-  | _ ->
-      let n = Array.length sites in
-      let entry =
-        {
+        warn
+          "%s: conflicting instrumentation tables in one executable (stale \
+           build artifacts? try dune clean); ignoring one module's sites"
           file;
-          sites;
-          reach = Array.make n 0;
-          epoch = Array.make n 0;
-          base = Array.make n 0;
-          armed_index = ref (-1);
-        }
-      in
-      registry := entry :: !registry;
-      let reach = entry.reach
-      and epoch = entry.epoch
-      and base = entry.base
-      and armed_index = entry.armed_index in
-      fun i ->
-        let hits =
-          let c = reach.(i) in
-          if c = max_int then c else c + 1
+        inert
+    | _ ->
+        let n = Array.length sites in
+        let entry =
+          {
+            file;
+            sites;
+            reach = Array.make n 0;
+            epoch = Array.make n 0;
+            base = Array.make n 0;
+            armed_index = ref (-1);
+          }
         in
-        reach.(i) <- hits;
-        if epoch.(i) <> !current_epoch then begin
-          epoch.(i) <- !current_epoch;
-          base.(i) <- hits - 1;
-          dirty := (entry, i) :: !dirty
-        end;
-        if i <> !armed_index then false
-        else if hits > !runaway_budget then
-          raise
-            (Runaway
-               { id = (site_mutant entry i).id; hits; budget = !runaway_budget })
-        else true
+        registry := entry :: !registry;
+        let reach = entry.reach
+        and epoch = entry.epoch
+        and base = entry.base
+        and armed_index = entry.armed_index in
+        fun i ->
+          let hits =
+            let c = reach.(i) in
+            if c = max_int then c else c + 1
+          in
+          reach.(i) <- hits;
+          if epoch.(i) <> !current_epoch then begin
+            epoch.(i) <- !current_epoch;
+            base.(i) <- hits - 1;
+            dirty := (entry, i) :: !dirty
+          end;
+          if i <> !armed_index then false
+          else if hits > !runaway_budget then
+            raise
+              (Runaway
+                 {
+                   id = (site_mutant entry i).id;
+                   hits;
+                   budget = !runaway_budget;
+                 })
+          else true
 
 let mutants_of entry =
   let acc = ref [] in

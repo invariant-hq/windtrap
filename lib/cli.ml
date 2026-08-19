@@ -149,6 +149,7 @@ let set_non_negative_int store =
 
 let seed_expected = "an s1: token with 16 lowercase hexadecimal digits"
 let shard_expected = "K/N with 1 <= K <= N (e.g. 2/4)"
+
 (* "K/N" with K and N plain decimal numerals — the spelling is CI-facing
    and frozen, so int_of_string's 0x/0b/underscore/sign leniency is
    deliberately rejected — and 1 <= K <= N. *)
@@ -187,8 +188,7 @@ let table =
           set_string (fun ~source:_ acc value ->
               Ok { acc with exclude = Some value });
         doc = "Skip tests whose path contains PATTERN";
-        mirror =
-          mirrored "WINDTRAP_EXCLUDE" Raw (fun p -> p.exclude = None);
+        mirror = mirrored "WINDTRAP_EXCLUDE" Raw (fun p -> p.exclude = None);
       };
     Flag_entry
       {
@@ -362,8 +362,8 @@ let table =
             (Own
                (fun acc ->
                  match Env.get_string "WINDTRAP_UPDATE" with
-                 | Some s
-                   when String.lowercase_ascii (String.trim s) = "force" ->
+                 | Some s when String.lowercase_ascii (String.trim s) = "force"
+                   ->
                      { acc with update = Some Env.Force_update }
                  | Some _ when Env.get_bool "WINDTRAP_UPDATE" = Some true ->
                      { acc with update = Some Env.Update }
@@ -481,10 +481,7 @@ let table =
         doc = "Source prefixes the coverage number covers";
       };
     Env_setting
-      {
-        var = "WINDTRAP_MUTATE";
-        doc = "Mutation testing: 1, admit or off";
-      };
+      { var = "WINDTRAP_MUTATE"; doc = "Mutation testing: 1, admit or off" };
     Env_setting
       {
         var = Windtrap_mutate.arm_variable;
@@ -545,10 +542,7 @@ let edit_distance a b =
           (rows.(i - 1).(j - 1) + substitution)
       in
       rows.(i).(j) <-
-        (if
-           i > 1 && j > 1
-           && a.[i - 1] = b.[j - 2]
-           && a.[i - 2] = b.[j - 1]
+        (if i > 1 && j > 1 && a.[i - 1] = b.[j - 2] && a.[i - 2] = b.[j - 1]
          then min best (rows.(i - 2).(j - 2) + 1)
          else best)
     done
@@ -839,9 +833,7 @@ let settings cli =
   let* below = layers cli in
   let config, render = resolved below in
   let* coverage = coverage_enabled () in
-  let output_level =
-    if below.verbose = Some true then `Verbose else `Compact
-  in
+  let output_level = if below.verbose = Some true then `Verbose else `Compact in
   Ok { config; render; coverage; output_level; junit = below.junit }
 
 (* Help *)

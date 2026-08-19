@@ -108,13 +108,12 @@ let tests =
           (Text.first_occurrence ~start:4 ~pattern:"" "hello");
         equal ~msg:"~start at the end is in range" (option int) None
           (Text.first_occurrence ~start:5 ~pattern:"o" "hello");
-        raises_match
-          ~msg:"a negative ~start is a programmer error"
-          (Exn.invalid_arg ~substring:"start")
-          (fun () -> Text.first_occurrence ~start:(-1) ~pattern:"a" "abc");
+        raises_match ~msg:"a negative ~start is a programmer error"
+          (Exn.invalid_arg ~substring:"start") (fun () ->
+            Text.first_occurrence ~start:(-1) ~pattern:"a" "abc");
         raises_match ~msg:"a ~start past the end is a programmer error"
-          (Exn.invalid_arg ~substring:"start")
-          (fun () -> Text.first_occurrence ~start:4 ~pattern:"a" "abc"));
+          (Exn.invalid_arg ~substring:"start") (fun () ->
+            Text.first_occurrence ~start:4 ~pattern:"a" "abc"));
     test "contains_substring" (fun () ->
         is_true ~msg:"finds substring in middle"
           (Text.contains_substring ~pattern:"ell" "hello");

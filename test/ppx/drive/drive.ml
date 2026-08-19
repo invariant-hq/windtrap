@@ -44,8 +44,7 @@ let usage () =
 
 let binding s =
   match String.index_opt s '=' with
-  | Some i ->
-      (String.sub s 0 i, String.sub s (i + 1) (String.length s - i - 1))
+  | Some i -> (String.sub s 0 i, String.sub s (i + 1) (String.length s - i - 1))
   | None -> usage ()
 
 let mask_of_string = function
@@ -84,8 +83,7 @@ let parse argv =
     | arg :: rest ->
         (match !runs with
         | [] -> usage ()
-        | run :: others ->
-            runs := { run with args = arg :: run.args } :: others);
+        | run :: others -> runs := { run with args = arg :: run.args } :: others);
         go rest
   in
   go (List.tl (Array.to_list argv));
@@ -106,8 +104,7 @@ let () =
   let masks, scratch, probe, dirs, runs = parse Sys.argv in
   List.iter
     (fun dir ->
-      try Unix.mkdir dir 0o755
-      with Unix.Unix_error (Unix.EEXIST, _, _) -> ())
+      try Unix.mkdir dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ())
     dirs;
   let start_dir = Sys.getcwd () in
   let absolute p =

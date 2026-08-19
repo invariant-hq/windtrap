@@ -19,11 +19,7 @@
 (executable
  (name suite_main)
  (modules suite_main)
- (libraries
-  windtrap
-  windtrap_mutate
-  mutate_loop_subject
-  unix))
+ (libraries windtrap windtrap_mutate mutate_loop_subject unix))
 
 ; The control: a suite that links no instrumented module, so the seam has
 ; to decline by name instead of reporting nothing. It links the loop —

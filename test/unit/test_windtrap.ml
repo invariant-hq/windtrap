@@ -194,7 +194,13 @@ let () =
       Windtrap.run
         ~argv:
           [|
-            "list-child"; "-o"; log_dir; "--color"; "never"; "-l"; "-f";
+            "list-child";
+            "-o";
+            log_dir;
+            "--color";
+            "never";
+            "-l";
+            "-f";
             "zzznope";
           |]
         "listsuite"
@@ -888,12 +894,13 @@ let () =
   expect_run "b-package" ~config suite @@ fun outcome ->
   (match failure_list (outcome_of outcome [ "satisfies" ]) with
   | [
-      {
-        Failure.kind =
-          Failure.Equality { expected = claim; actual = value; diffable = false; _ };
-        _;
-      };
-    ] ->
+   {
+     Failure.kind =
+       Failure.Equality
+         { expected = claim; actual = value; diffable = false; _ };
+     _;
+   };
+  ] ->
       check "satisfies renders the rejected value" (value = "0");
       (* The claim sentence is what tells the two predicate verbs apart. *)
       check "satisfies names the predicate claim"
@@ -905,11 +912,11 @@ let () =
   | _ -> check "contains carries a Containment payload" false);
   (match failure_list (outcome_of outcome [ "require_match" ]) with
   | [
-      {
-        Failure.kind = Failure.Equality { expected = claim; diffable = false; _ };
-        _;
-      };
-    ] ->
+   {
+     Failure.kind = Failure.Equality { expected = claim; diffable = false; _ };
+     _;
+   };
+  ] ->
       check "require_match names the match claim" (claim = "a match")
   | _ -> check "require_match carries an undiffable Equality payload" false);
   check "Exn predicates satisfy raises_match"
@@ -1251,15 +1258,15 @@ let () =
       ~sub:"stale baseline: src/__snapshots__/a/gone.snap" transcript;
     check_contains "and hands over the removal"
       ~sub:"remove them: rm 'src/__snapshots__/a/gone.snap'" transcript;
-    check "the file is named once" 
+    check "the file is named once"
       (occurrences ~sub:"stale baseline: src/__snapshots__/a/gone.snap"
          transcript
       = 1);
     check "the stale file is still there"
-      (Sys.file_exists
-         (Filename.concat root "src/__snapshots__/a/gone.snap"));
+      (Sys.file_exists (Filename.concat root "src/__snapshots__/a/gone.snap"));
     check "the checked baseline is not called stale"
-      (not (contains "stale baseline: src/__snapshots__/a/kept.snap" transcript));
+      (not
+         (contains "stale baseline: src/__snapshots__/a/kept.snap" transcript));
     let xml = In_channel.with_open_bin junit In_channel.input_all in
     check_contains "JUnit records no failure for it" ~sub:"failures=\"0\"" xml)
 

@@ -9,7 +9,6 @@
    independently.
   ---------------------------------------------------------------------------*)
 
-
 (* Not mutated. This module is part of the machinery a mutation run uses
    to judge mutants — the scheduler, the ambient run state, the reporting
    spine, the loop itself — so a mutant here is armed inside the process
@@ -83,8 +82,7 @@ let prop ?pos ?tags ?timeout ?count ?max_discard ?examples name gen law =
     let path = Test_tree.path_to_string (Run.path frame) in
     let outcome =
       Property.run ?loc ?count ?max_shrink:config.Run.max_shrink ?max_discard
-        ?examples
-        ~root:config.Run.seed ~path gen (fun context value ->
+        ?examples ~root:config.Run.seed ~path gen (fun context value ->
           Run.with_prop_context frame context (fun () -> law value))
     in
     raise (Prop_outcome outcome)
@@ -441,8 +439,7 @@ let run_case ~on_event run (case : Test_tree.case) =
   let total_attempts = case.Test_tree.retries + 1 in
   let rec attempt number spent =
     let frame =
-      Run.frame run ~path:case.Test_tree.path
-        ~loc:case.Test_tree.loc
+      Run.frame run ~path:case.Test_tree.path ~loc:case.Test_tree.loc
     in
     let start = Clock.counter () in
     let outcome, prop_stats =
@@ -649,7 +646,9 @@ let startup (config : Run.config) ~suite ~focus_sites ~allowlist tests paths =
     if not config.Run.failed_only then Ok allowlist
     else
       let asked path =
-        match allowlist with None -> true | Some entries -> List.mem path entries
+        match allowlist with
+        | None -> true
+        | Some entries -> List.mem path entries
       in
       match
         List.filter
@@ -881,16 +880,22 @@ let execute_plan ?(on_event = fun _ -> ())
   update_last_failed (store_path config ~suite) ~full ~results:test_results
     ~failed_paths;
   let orphans =
-    stale_baselines snapshots ~full ~results:test_results
-      ~focused_count:focused
+    stale_baselines snapshots ~full ~results:test_results ~focused_count:focused
   in
   let exit_code =
     if failed_paths <> [] || release_failures <> [] then 1
     else if executed = 0 then 2
     else 0
   in
-  { run; selected; total; focus_active; orphans;
-    duration = Clock.count_s started; exit_code }
+  {
+    run;
+    selected;
+    total;
+    focus_active;
+    orphans;
+    duration = Clock.count_s started;
+    exit_code;
+  }
 
 let execute ?on_event ?allowlist ~config ~suite tests =
   Result.map (execute_plan ?on_event) (plan ?allowlist ~config ~suite tests)

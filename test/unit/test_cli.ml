@@ -356,8 +356,7 @@ let () =
   check "default: no tags" (config.Run.tags = [] && config.Run.exclude_tags = []);
   check "default: flags off"
     ((not config.Run.failed_only)
-    && (not config.Run.stream)
-    && not config.Run.allow_focus);
+    && (not config.Run.stream) && not config.Run.allow_focus);
   check "default: update off" (config.Run.update = Env.No_update);
   check "default: no bail/timeout/prop-count"
     (config.Run.bail = None && config.Run.timeout = None
@@ -405,8 +404,7 @@ let () =
   in
   check "unset is No_update" ((resolve Cli.empty).Run.update = Env.No_update);
   check "force is Force_update" (update "force" = Env.Force_update);
-  check "the force word is case-insensitive"
-    (update "FORCE" = Env.Force_update);
+  check "the force word is case-insensitive" (update "FORCE" = Env.Force_update);
   check "1 is Update" (update "1" = Env.Update);
   check "the truthy spellings are Env's" (update "true" = Env.Update);
   check "0 is No_update" (update "0" = Env.No_update);
@@ -765,5 +763,4 @@ let () =
 (* Suite *)
 
 let tests = List.rev !registered
-
 let () = Windtrap.run "cli" tests

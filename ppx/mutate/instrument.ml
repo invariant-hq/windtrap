@@ -271,8 +271,8 @@ let add_site st ~(loc : Location.t) ~rewrite ~before ~after ~dismissed =
     else begin
       Hashtbl.add st.seen key ();
       let index = st.count in
-      st.rev_sites <- { line; col; rewrite; before; after; dismissed }
-                      :: st.rev_sites;
+      st.rev_sites <-
+        { line; col; rewrite; before; after; dismissed } :: st.rev_sites;
       st.count <- index + 1;
       match dismissed with Some _ -> None | None -> Some index
     end
@@ -480,8 +480,7 @@ let cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs ~original_loc
   binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
     ~armed_arm:(fun ~l ~r ->
       [%expr
-        Stdlib.not
-          [%e pexp_apply ~loc operator [ (Nolabel, r); (Nolabel, l) ]]])
+        Stdlib.not [%e pexp_apply ~loc operator [ (Nolabel, r); (Nolabel, l) ]]])
     left right
 
 (* [con]. [&&] and [||] cannot be lifted to values without losing

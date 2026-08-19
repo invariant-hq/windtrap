@@ -15,7 +15,6 @@
    printing and not the suite dialect. *)
 
 let failed = ref []
-
 let check name cond = if not cond then failed := name :: !failed
 
 let () =

@@ -452,8 +452,8 @@ let pp_hunks ~ansi put ~ind hunks =
 
 let pp_eq_detail ~ansi put ~ind ~expected ~actual =
   let st style s = Pp.styled_string ~ansi style s in
-  if String.contains expected '\n' || String.contains actual '\n' then begin
-    match Diff.hunks ~expected ~actual () with
+  if String.contains expected '\n' || String.contains actual '\n' then
+    begin match Diff.hunks ~expected ~actual () with
     | [] ->
         (* Line lists equal but bytes differ: the only such difference is a
            single trailing newline, which a line diff cannot show. *)
@@ -469,7 +469,7 @@ let pp_eq_detail ~ansi put ~ind ~expected ~actual =
         put (ind ^ st `Faint "--- expected");
         put (ind ^ st `Faint "+++ actual");
         pp_hunks ~ansi put ~ind hunks
-  end
+    end
   else
     (* The marks under the two renderings: the changed regions character
        refinement found, or nothing when it declined. *)
@@ -1638,8 +1638,8 @@ let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
       List.iter
         (fun l ->
           put t
-            (rstrip (spf "%s%*d \u{2502} %s" (gutter l.marked) width l.number
-                       l.text)))
+            (rstrip
+               (spf "%s%*d \u{2502} %s" (gutter l.marked) width l.number l.text)))
         region)
     regions
 
@@ -1735,8 +1735,7 @@ type coverage_file = {
 type coverage = { visited : int; total : int; files : coverage_file list }
 
 let coverage_percentage ~visited ~total =
-  if total = 0 then 100.
-  else 100. *. float_of_int visited /. float_of_int total
+  if total = 0 then 100. else 100. *. float_of_int visited /. float_of_int total
 
 (* The frozen thresholds the runtime's data has always been styled by:
    green at 80% and above, yellow at 60%, red below. *)
@@ -1920,8 +1919,12 @@ let survivor_sections t ~variable ~id_width ~witness_width ~number_width
               margin = indent ^ "  ";
               number_width = Some number_width;
               excerpt =
-                { file = s.file; heading = None; source;
-                  marked_lines = [ s.line ] };
+                {
+                  file = s.file;
+                  heading = None;
+                  source;
+                  marked_lines = [ s.line ];
+                };
             };
         ]
     | None -> []
@@ -1971,8 +1974,7 @@ let survivor_sections t ~variable ~id_width ~witness_width ~number_width
   in
   (* No color in either hint, as everywhere else, and both are one line a
      reader copies whole. *)
-  (head :: excerpt_row)
-  @ (Line [] :: witness_rows)
+  (head :: excerpt_row) @ (Line [] :: witness_rows)
   @ [
       Hint (indent ^ spf "%-9s%s" "arm" (arm_command t ~variable s.id));
       Hint
@@ -2002,15 +2004,14 @@ let mutation_summary_spans (m : mutation) =
     plain "mutants: ";
     survived;
     plain
-      (spf " of %d%s" m.total
-         (if m.siblings then " (this executable)" else ""));
+      (spf " of %d%s" m.total (if m.siblings then " (this executable)" else ""));
   ]
   @ (if terms = [] then [] else plain " \u{00b7} " :: separated terms)
   @ [
       plain
         ((match m.duration with
-         | Some d -> spf " in %s" (pp_duration d)
-         | None -> "")
+           | Some d -> spf " in %s" (pp_duration d)
+           | None -> "")
         ^ (match m.seed with
           | Some s -> spf " (seed %s)" (Seed.to_string s)
           | None -> "")
@@ -2182,7 +2183,11 @@ type fault = {
 
 type admission_cause = [ `Failure | `Fixture | `Crashed | `Timed_out ]
 
-type admitted = { admitted_test : string; witness : fault; cause : admission_cause }
+type admitted = {
+  admitted_test : string;
+  witness : fault;
+  cause : admission_cause;
+}
 
 type unjustified = {
   unjustified_test : string;
@@ -2332,8 +2337,8 @@ let no_sites_sections ~scope (n : no_sites) =
           [
             plain
               (indent
-              ^ spf "(%s is set: a site outside it does not exist for this \
-                     run.)"
+              ^ spf
+                  "(%s is set: a site outside it does not exist for this run.)"
                   binding);
           ];
       ]
@@ -2416,8 +2421,8 @@ let unjustified_sections t ~variable (u : unjustified) =
           Line [];
           Line
             [
-              plain (indent ^ "strengthen the assertion, then watch it catch \
-                              one:");
+              plain
+                (indent ^ "strengthen the assertion, then watch it catch one:");
             ];
           Hint
             (indent ^ "  "
@@ -2437,9 +2442,9 @@ let unjustified_sections t ~variable (u : unjustified) =
                 first.fault_before);
         ]
   in
-  (admission_head ~verb:"UNJUSTIFIED" ~style:`Red ~test:u.unjustified_test
-     ~loc:u.unjustified_loc
-   :: sentence)
+  admission_head ~verb:"UNJUSTIFIED" ~style:`Red ~test:u.unjustified_test
+    ~loc:u.unjustified_loc
+  :: sentence
   @ [ Line [] ]
   @ List.concat_map
       (fun f -> fault_row ~id_width f :: fault_excerpt ~number_width f)
@@ -2478,8 +2483,7 @@ let admission_summary_spans (a : admission) =
   @ [
       plain
         (spf " of %d \u{00b7} %d fork%s%s in %s%s%s" a.designated
-           a.admission_forks
-           (plural a.admission_forks)
+           a.admission_forks (plural a.admission_forks)
            (if a.admission_reached > 0 then
               spf " over %d reached" a.admission_reached
             else "")
@@ -2540,7 +2544,8 @@ let finish t ?coverage ~results ~duration () =
     List.fold_left
       (fun acc (r : Run.result) ->
         match r.outcome with
-        | Failure.Fail fs -> acc + List.length (List.filter is_subtest_failure fs)
+        | Failure.Fail fs ->
+            acc + List.length (List.filter is_subtest_failure fs)
         | _ -> acc)
       0 failed_results
   in

@@ -69,10 +69,10 @@ val compare_id : id -> id -> int
     generates against; user code and the windtrap core never call them. The
     generated code per instrumented file is {b exactly one binding} —
     [let ___windtrap_armed___ = Windtrap_mutate.register ~file ~sites:[| … |]] —
-    and every site in that file expands to a guard on
-    [___windtrap_armed___ i], where [i] is the site's index in [sites]. The
-    instrumenter names no array and allocates nothing: the fewer literals it
-    emits, the fewer ways it can be wrong. *)
+    and every site in that file expands to a guard on [___windtrap_armed___ i],
+    where [i] is the site's index in [sites]. The instrumenter names no array
+    and allocates nothing: the fewer literals it emits, the fewer ways it can be
+    wrong. *)
 
 type site = {
   line : int;  (** 1-based line of the mutated expression's first byte. *)
@@ -82,8 +82,8 @@ type site = {
   after : string;  (** The armed expression's source text. *)
   dismissed : string option;
       (** [Some reason] when the site carries [[@mutate off]]: the loop skips
-          the site, and no report counts it in a denominator. [None]
-          otherwise. *)
+          the site, and no report counts it in a denominator. [None] otherwise.
+      *)
 }
 (** The type for mutation sites: one entry of a file's site table. *)
 
@@ -364,8 +364,8 @@ type witness = string list
 type verdict =
   | Killed
       (** A test failed, or the child crashed or hung: divergence is a detected
-          behaviour change however it arrived, and the report carries one
-          killed count. *)
+          behaviour change however it arrived, and the report carries one killed
+          count. *)
   | Survived of { witness : witness; others : witness list }
       (** Every test that reached the mutant passed; [witness] and [others] are
           those tests, sorted and without duplicates.
@@ -402,8 +402,8 @@ val merge_verdict : verdict -> verdict -> verdict
     already exists.
 
     The operation is commutative, associative and idempotent, with [Unreached]
-    as its unit — so merging any number of files in any order gives one
-    answer. *)
+    as its unit — so merging any number of files in any order gives one answer.
+*)
 
 (** {1:files Verdict files}
 
@@ -420,11 +420,11 @@ val merge_verdict : verdict -> verdict -> verdict
 
     A file is {b self-describing}: each {!type:record} carries not only the
     mutant's identifier and verdict but the [before]/[after] renderings the
-    report draws it with. The catalogue does not travel — it
-    lives inside the instrumented binary, which the merging command never links
-    — so a record naming only an identifier would produce a project-level report
-    strictly worse than the per-executable one it replaces. It is also what lets
-    a report outlive the executable that produced it. *)
+    report draws it with. The catalogue does not travel — it lives inside the
+    instrumented binary, which the merging command never links — so a record
+    naming only an identifier would produce a project-level report strictly
+    worse than the per-executable one it replaces. It is also what lets a report
+    outlive the executable that produced it. *)
 
 (** The type for verdict-file errors. All are recoverable: the reporting command
     prints them via {!pp_error} and exits nonzero. There is no mismatch error
@@ -456,8 +456,8 @@ type record = {
 
 val record_of_mutant : mutant -> verdict -> record
 (** [record_of_mutant m v] is [m]'s record with verdict [v] — the identifier and
-    renderings of [m], which is what the loop holds when a child reports. [m.dismissed] is dropped, having no meaning for a mutant that was
-    tested. *)
+    renderings of [m], which is what the loop holds when a child reports.
+    [m.dismissed] is dropped, having no meaning for a mutant that was tested. *)
 
 type t
 (** The type for verdict collections: a finite map from {!type:id} to its
@@ -490,12 +490,12 @@ val merge : t -> t -> t
 
 type identity = Windtrap_instr.identity = { exe : string; digest : string }
 (** The type for verdict-file writer identities — [Windtrap_instr]'s,
-    re-exported, so the reporting command handles both runtimes' identities
-    with one pass: [exe] is the writing executable's {!exe_identity} and
-    [digest] the lowercase hex MD5 of its contents at write time. An
-    executable at [exe] whose digest differs is {e not} the one that wrote the
-    file — the content comparison survives rebuilds that dune's cache restores
-    with their original timestamps, which mtimes do not. *)
+    re-exported, so the reporting command handles both runtimes' identities with
+    one pass: [exe] is the writing executable's {!exe_identity} and [digest] the
+    lowercase hex MD5 of its contents at write time. An executable at [exe]
+    whose digest differs is {e not} the one that wrote the file — the content
+    comparison survives rebuilds that dune's cache restores with their original
+    timestamps, which mtimes do not. *)
 
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the [exe] field a verdict file records for the
@@ -551,11 +551,10 @@ val of_string : ?path:string -> string -> (t * identity option, error) result
     the recorded writer identity, [None] when [s] carries none. [path], used in
     errors, defaults to ["<string>"]. Errors: [Unknown_format] for a foreign
     header, [Corrupt] for truncated or invalid data — a negative or oversized
-    count, a line that is not 1-based, a rewrite outside {!rewrites}, an
-    unknown verdict tag, a survivor naming no test, a duplicate identifier, a
-    malformed identity line, or trailing garbage.
-    Nothing is repaired and nothing is guessed: a file this module cannot read
-    exactly is not read at all.
+    count, a line that is not 1-based, a rewrite outside {!rewrites}, an unknown
+    verdict tag, a survivor naming no test, a duplicate identifier, a malformed
+    identity line, or trailing garbage. Nothing is repaired and nothing is
+    guessed: a file this module cannot read exactly is not read at all.
 
     Round trip: [of_string (to_string ?identity t)] is [Ok (t, identity)]. *)
 

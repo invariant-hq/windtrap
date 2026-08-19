@@ -67,8 +67,8 @@ val set : string -> string option -> unit
     The change is process-global, immediate, and visible to every reader — the
     lookups above, [Sys.getenv_opt], and any child process spawned after it.
     Nothing else in the library writes the environment: this is the primitive
-    under {!Run.setenv}, which is what test bodies call, and which has the runner
-    put the prior binding back at the attempt boundary.
+    under {!Run.setenv}, which is what test bodies call, and which has the
+    runner put the prior binding back at the attempt boundary.
 
     Raises [Invalid_argument] when [name] is empty or contains ['='] — the names
     POSIX refuses, checked here so one bad name reads the same on every platform
@@ -186,4 +186,3 @@ type update =
   | No_update  (** Check against baselines (the default). *)
   | Update  (** Accept mismatches, refused when {!in_ci}. *)
   | Force_update  (** Accept mismatches even under CI. *)
-

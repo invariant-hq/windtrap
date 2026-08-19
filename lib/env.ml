@@ -114,8 +114,7 @@ let resolve_color mode ~tty ~inside_dune ~term_dumb =
   match mode with
   | Always -> true
   | Never -> false
-  | Auto ->
-      (tty || inside_dune) && (not term_dumb) && get_raw "NO_COLOR" = None
+  | Auto -> (tty || inside_dune) && (not term_dumb) && get_raw "NO_COLOR" = None
 
 (* Settings with no command-line flag
 

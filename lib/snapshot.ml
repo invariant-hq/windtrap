@@ -152,8 +152,8 @@ let check t ?loc ~test ~scope ~name actual =
                 fail ?loc ~name ~path:entry.path
                   (Failure.Duplicate
                      { first = entry.site; first_test = entry.owner })
-              else begin
-                match entry.baseline with
+              else
+                begin match entry.baseline with
                 | Some expected ->
                     if not (String.equal expected actual) then
                       fail ?loc ~name ~path:entry.path
@@ -163,7 +163,7 @@ let check t ?loc ~test ~scope ~name actual =
                     else
                       fail ?loc ~name ~path:entry.path
                         (Failure.Missing { proposed = actual })
-              end
+                end
           | None ->
               let path = dir ^ "/" ^ name ^ ".snap" in
               let entry = { site = loc; owner = test; path; baseline = None } in
@@ -208,4 +208,3 @@ let orphans t =
         acc entries)
     t.dirs []
   |> List.sort String.compare
-

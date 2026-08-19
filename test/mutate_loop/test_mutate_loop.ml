@@ -80,7 +80,9 @@ let environment bindings =
      Omitted when the caller sets it, because [getenv] answers with the
      first match and a default listed first would silently win over the
      scenario's own. *)
-  let sets name = List.exists (String.starts_with ~prefix:(name ^ "=")) bindings in
+  let sets name =
+    List.exists (String.starts_with ~prefix:(name ^ "=")) bindings
+  in
   let default_scope =
     if sets "WINDTRAP_MUTATE_ONLY" then []
     else [ "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
@@ -271,15 +273,13 @@ let discovery_tests =
         says ~msg:"declines by naming the scope, value included" err'
           "WINDTRAP_MUTATE_ONLY=::no-such-source:: left no mutants";
         says ~msg:"and both causes an empty scoped catalogue has" err'
-          "matches no instrumented file, or the matched files have no \
-           mutation sites";
+          "matches no instrumented file, or the matched files have no mutation \
+           sites";
         denies ~msg:"never the missing-backend diagnosis" err'
           "links no instrumented module";
         denies ~msg:"nothing on stderr for the unarmed run" err "mutants:");
     test "a scope that matches keeps the whole fixture catalogue" (fun () ->
-        let code, out, _ =
-          spawn [ "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
-        in
+        let code, out, _ = spawn [ "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ] in
         equal ~msg:"exit code" int 0 code;
         says ~msg:"the fixture's four, undiminished" out "mutants: 4 in 1 file");
   ]
@@ -339,7 +339,9 @@ let loop_tests =
         says ~msg:"the pasted line armed the survivor" armed
           "armed: a + b \u{2192} a - b");
     test "every survivor gets a block, in most-watched order" (fun () ->
-        let _, out, _ = spawn [ "MUTATE_FIXTURE=capped"; "WINDTRAP_MUTATE=1" ] in
+        let _, out, _ =
+          spawn [ "MUTATE_FIXTURE=capped"; "WINDTRAP_MUTATE=1" ]
+        in
         says ~msg:"both blocks" out "survivors (2)";
         says ~msg:"most-watched first" out
           "SURVIVED  test/mutate_loop/subject.ml:18";
@@ -389,7 +391,9 @@ let reach_tests =
            reports a deterministic suite as non-deterministic. *)
         let code, out, err =
           spawn
-            [ "MUTATE_FIXTURE=tagged"; "WINDTRAP_TAG=gated"; "WINDTRAP_MUTATE=1" ]
+            [
+              "MUTATE_FIXTURE=tagged"; "WINDTRAP_TAG=gated"; "WINDTRAP_MUTATE=1";
+            ]
         in
         equal ~msg:"exit code" int 0 code;
         denies ~msg:"the probe agreed" err "not deterministic";
@@ -726,8 +730,8 @@ let armed_tests =
         says ~msg:"the announcement" out "armed: a + b \u{2192} a - b";
         says ~msg:"the suite still passed" out "calc: 2 passed";
         says ~msg:"the closing line disambiguates the green" out
-          "mutant survived: the armed site was evaluated 2 time(s) and no \
-           test failed.";
+          "mutant survived: the armed site was evaluated 2 time(s) and no test \
+           failed.";
         denies ~msg:"nothing killed" out "mutant killed.");
     test "an armed run whose selection never ran the site says so" (fun () ->
         (* The other green: the suite passed and proved nothing, because
@@ -934,8 +938,7 @@ let rendered_verdicts path =
   | Ok (verdicts, _) ->
       List.map
         (fun (r : M.record) ->
-          ( M.id_to_string r.M.id,
-            Format.asprintf "%a" pp_verdict r.M.verdict ))
+          (M.id_to_string r.M.id, Format.asprintf "%a" pp_verdict r.M.verdict))
         (M.records verdicts)
 
 let deadline_tests =
@@ -947,8 +950,9 @@ let deadline_tests =
           spawn [ "MUTATE_FIXTURE=block"; "WINDTRAP_MUTATE=1" ]
         in
         let elapsed = Unix.gettimeofday () -. started in
-        equal ~msg:"the run completes: a blocked child is a score, not a \
-                    refusal" int 0 code;
+        equal
+          ~msg:"the run completes: a blocked child is a score, not a refusal"
+          int 0 code;
         equal ~msg:"stderr" text "" err;
         says ~msg:"the kill counted" out "mutants: 0 survived of 4";
         says ~msg:"summary terms" out "1 killed, 3 unreached";
@@ -959,11 +963,11 @@ let deadline_tests =
           (elapsed < 30.);
         equal ~msg:"the blocked mutant is killed" (list string) [ "killed" ]
           (List.filter_map
-             (fun (id, v) ->
-               if id = mutant_named "add" then Some v else None)
+             (fun (id, v) -> if id = mutant_named "add" then Some v else None)
              (rendered_verdicts verdict_path)));
-    test "a blocking test is admitted with cause timeout, and co-batched \
-          outcomes are kept" (fun () ->
+    test
+      "a blocking test is admitted with cause timeout, and co-batched outcomes \
+       are kept" (fun () ->
         let code, out, err =
           spawn ~args:[ "-f"; "block" ]
             [ "MUTATE_FIXTURE=block"; "WINDTRAP_MUTATE=admit" ]
@@ -975,9 +979,8 @@ let deadline_tests =
           "ADMITTED  block \u{203a} blocks when sub changes";
         says ~msg:"with its cause" out
           ("killed (timeout)  " ^ mutant_named "add");
-        says ~msg:"the watcher keeps the outcome it delivered before the \
-                   kill" out
-          "UNJUSTIFIED  block \u{203a} watches sub without pinning it";
+        says ~msg:"the watcher keeps the outcome it delivered before the kill"
+          out "UNJUSTIFIED  block \u{203a} watches sub without pinning it";
         says ~msg:"ruled on its own try, never timeout-admitted" out
           "killed none of the 1 fault it reaches:";
         says ~msg:"one fork, both rulings" out
@@ -1004,10 +1007,9 @@ let deadline_tests =
           ("killed (timeout)  " ^ mutant_named "add");
         says ~msg:"the outcome delivered before the kill is kept" out
           "UNJUSTIFIED  block \u{203a} watches sub without pinning it";
-        says ~msg:"and ruled a try" out
-          "killed none of the 1 fault it reaches:";
-        says ~msg:"the never-started test is ruled, never timeout-admitted"
-          out "UNJUSTIFIED  block \u{203a} pins sub after the blocker";
+        says ~msg:"and ruled a try" out "killed none of the 1 fault it reaches:";
+        says ~msg:"the never-started test is ruled, never timeout-admitted" out
+          "UNJUSTIFIED  block \u{203a} pins sub after the blocker";
         says ~msg:"and charged no try for the fork it never reached" out
           "killed none of the 0 faults tried on its lines, of 1 reached:";
         says ~msg:"one fork, three rulings" out
@@ -1035,13 +1037,16 @@ let deadline_tests =
            machine too loaded to keep the child inside HALF that bound
            fails here, on the arithmetic, not flakily on the verdict
            below. *)
-        let sleep = 0.25 (* [slow]'s own [sleepf] *) in
+        let sleep =
+          0.25
+          (* [slow]'s own [sleepf] *)
+        in
         let overhead = Float.max 0. ((elapsed -. (3. *. sleep)) /. 3.) in
         is_true
           ~msg:
             (Printf.sprintf
-               "precondition: one child's cost (%.2fs) stays inside half \
-                its %.2fs deadline floor"
+               "precondition: one child's cost (%.2fs) stays inside half its \
+                %.2fs deadline floor"
                (sleep +. overhead) (10. *. sleep))
           (2. *. (sleep +. overhead) <= 10. *. sleep);
         says ~msg:"the mutant died" out "mutants: 0 survived of 4";
@@ -1059,8 +1064,8 @@ let deadline_tests =
              (fun (id, v) -> if id = mutant_named "add" then Some v else None)
              (rendered_verdicts verdict_path)));
     test
-      "an expired child's process group dies whole: no grandchild outlives \
-       the run" (fun () ->
+      "an expired child's process group dies whole: no grandchild outlives the \
+       run" (fun () ->
         incr counter;
         let pidfile =
           Filename.concat scratch_dir ("grandchild" ^ string_of_int !counter)
@@ -1074,8 +1079,7 @@ let deadline_tests =
             ]
         in
         equal ~msg:"the run completed" int 0 code;
-        says ~msg:"and scored the blocked mutant" out
-          "mutants: 0 survived of 4";
+        says ~msg:"and scored the blocked mutant" out "mutants: 0 survived of 4";
         let pids =
           List.filter_map int_of_string_opt
             (String.split_on_char '\n' (read_file pidfile))
@@ -1127,8 +1131,7 @@ let deadline_tests =
         says ~msg:"and stated as a determinism claim" err "not a number";
         is_true
           ~msg:
-            (Printf.sprintf "the probe's deadline cut it short (%.1fs)"
-               elapsed)
+            (Printf.sprintf "the probe's deadline cut it short (%.1fs)" elapsed)
           (elapsed < 30.));
   ]
 
@@ -1183,8 +1186,7 @@ let admission_tests =
         says ~msg:"the excerpt row" out "18 \u{2502} let widen a b = a + b";
         says ~msg:"the remedy path" out
           "strengthen the assertion, then watch it catch one:";
-        says ~msg:"the dismissal hint" out
-          "((a + b) [@mutate off \"reason\"])";
+        says ~msg:"the dismissal hint" out "((a + b) [@mutate off \"reason\"])";
         says ~msg:"the summary states the no beside the zero" out
           "admission: 0 admitted, 1 unjustified of 1 \u{00b7} 1 fork over 1 \
            reached in ";
@@ -1241,15 +1243,14 @@ let admission_tests =
            any fork of it fails: a NO SITES ruling here PROVES no probe
            was forked — there is no verdict for it to validate. *)
         let code, out, err =
-          spawn
-            ~args:[ "-f"; "passes where" ]
+          spawn ~args:[ "-f"; "passes where" ]
             [ "MUTATE_FIXTURE=flaky"; "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code" int 0 code;
         denies ~msg:"the probe never ran" err "not deterministic";
         says ~msg:"the ruling" out "NO SITES";
-        says ~msg:"a test reaching nothing gets the evaluates-nothing form"
-          out "this test evaluates no mutation site";
+        says ~msg:"a test reaching nothing gets the evaluates-nothing form" out
+          "this test evaluates no mutation site";
         says ~msg:"no fork at all" out "0 forks in ");
     test "the TRY cap rules a wide vacuous test capped, and says so" (fun () ->
         let code, out, _ =
@@ -1265,8 +1266,7 @@ let admission_tests =
           "killed none of the 1 most-run fault on its lines, of 2 reached";
         says ~msg:"and the uncapping spell" out
           "(WINDTRAP_MUTATE_TRY=0 tries them all):";
-        says ~msg:"the cap stopped the second fork" out
-          "1 fork over 2 reached";
+        says ~msg:"the cap stopped the second fork" out "1 fork over 2 reached";
         says ~msg:"the summary marks the capped ruling" out
           "\u{00b7} 1 ruling capped at 1");
     test "TRY=0 tries every candidate" (fun () ->
@@ -1298,8 +1298,7 @@ let admission_tests =
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the sentence counts every fault it watched" out
           "killed none of the 4 faults it reaches:";
-        denies ~msg:"the work was not capped, only the listing" out
-          "capped at";
+        denies ~msg:"the work was not capped, only the listing" out "capped at";
         says ~msg:"and the list says what it dropped" out "\u{2026} 1 more");
     test "a fault a test skipped under is watched by nobody" (fun () ->
         (* Under the widen mutant the test skips itself: the fault must
@@ -1317,8 +1316,7 @@ let admission_tests =
           "killed none of the 1 fault tried on its lines, of 2 reached:";
         says ~msg:"the watched fault is listed" out orphan;
         denies ~msg:"the skipped fault is not" out widen;
-        says ~msg:"both were forked all the same" out
-          "2 forks over 2 reached");
+        says ~msg:"both were forked all the same" out "2 forks over 2 reached");
     test "a capped ruling a skip shortened counts only what was tried"
       (fun () ->
         (* The TRY=2 list holds [widen] — the fault the test runs most —
@@ -1379,8 +1377,7 @@ let admission_tests =
       (fun () ->
         let crasher = List.nth (Lazy.force catalogue) 3 in
         let code, out, err =
-          spawn
-            ~args:[ "-f"; "crasher leaves" ]
+          spawn ~args:[ "-f"; "crasher leaves" ]
             [ "MUTATE_FIXTURE=crash"; "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code" int 0 code;
@@ -1388,8 +1385,7 @@ let admission_tests =
         says ~msg:"the witness carries its cause" out
           ("killed (crash)  " ^ crasher);
         says ~msg:"the summary" out "admission: 1 admitted of 1");
-    test "a crash keeps the outcomes the child had already delivered"
-      (fun () ->
+    test "a crash keeps the outcomes the child had already delivered" (fun () ->
         (* One fork of [crasher] carries the watcher and then the test
            that dies under it: the watcher's pass — its only try — is on
            the pipe before the crash. A parent that discarded a crashed
@@ -1442,8 +1438,7 @@ let admission_tests =
         denies ~msg:"and never mentions persistence" out "verdicts not saved";
         equal ~msg:"the survey's file is byte-identical" text saved
           (read_file verdict_path));
-    test "admit with no selection judges every test the run executed"
-      (fun () ->
+    test "admit with no selection judges every test the run executed" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, out, err = spawn [ "WINDTRAP_MUTATE=admit" ] in
         equal ~msg:"exit code (any UNJUSTIFIED is red)" int 1 code;
@@ -1543,16 +1538,14 @@ let admission_tests =
         equal ~msg:"exit code (could-not-answer)" int 1 code;
         says ~msg:"the reason" err "the dry run is red";
         says ~msg:"and what admission judges against" err "green baseline";
-        denies ~msg:"the green co-selected tests got no verdict" out
-          "ADMITTED";
+        denies ~msg:"the green co-selected tests got no verdict" out "ADMITTED";
         denies ~msg:"no summary either" out "admission:");
     test "admit refuses an armed parent and a misspelled TRY, by name"
       (fun () ->
         let code, _, err =
           spawn
             [
-              "WINDTRAP_MUTATE=admit";
-              M.arm_variable ^ "=" ^ mutant_named "add";
+              "WINDTRAP_MUTATE=admit"; M.arm_variable ^ "=" ^ mutant_named "add";
             ]
         in
         equal ~msg:"admit+arm exit code" int 1 code;
@@ -1569,8 +1562,7 @@ let admission_tests =
         let code, _, err =
           spawn ~args:[ "-f"; "calc" ]
             [
-              "WINDTRAP_MUTATE=admit";
-              "WINDTRAP_MUTATE_ONLY=::no-such-source::";
+              "WINDTRAP_MUTATE=admit"; "WINDTRAP_MUTATE_ONLY=::no-such-source::";
             ]
         in
         equal ~msg:"exit code" int 1 code;
@@ -1643,8 +1635,7 @@ let whole_suite_tests =
         says ~msg:"the partition designates its own tests" err
           "tests this run executed";
         says ~msg:"the partition's one test is ruled" out "ADMITTED");
-    test "a run that executed nothing blames the suite, not a filter"
-      (fun () ->
+    test "a run that executed nothing blames the suite, not a filter" (fun () ->
         (* The empty fixture declares no tests, so the dry run executes
            nothing. With no selection there is no filter to fix, and the
            refusal must not claim there is. *)
@@ -1653,8 +1644,7 @@ let whole_suite_tests =
         in
         equal ~msg:"exit code (never 2: Law 16e)" int 1 code;
         says ~msg:"the reason" err
-          "admit judges the tests this run executes and this run executed \
-           none";
+          "admit judges the tests this run executes and this run executed none";
         denies ~msg:"there is no filter to fix" err "Fix the filter";
         denies ~msg:"no ruling was made" out "admission:");
   ]
@@ -1688,7 +1678,8 @@ let cross_executable_tests =
         (* The closing-line trio belongs to a run that armed a mutant; a
            binary that declined made no claim a closing line could
            report. *)
-        denies ~msg:"so no closing line judges the run" out "mutant not evaluated";
+        denies ~msg:"so no closing line judges the run" out
+          "mutant not evaluated";
         denies ~msg:"nor claims a survivor" out "mutant survived";
         says ~msg:"it says whose mutant it is not" err
           "not this executable's mutant";

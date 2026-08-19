@@ -67,8 +67,8 @@ type body =
     preamble); [tags] are extra tag names, unioned with ancestors' at {!flatten}
     time; [timeout] is the per-test limit in seconds covering setup, body and
     teardown (for {!scoped}, the whole [scope] call); [retries] is the number of
-    extra attempts a failing test gets. Constructors raise [Invalid_argument]
-    if [retries < 0] or if [timeout] is given and is not finite and positive. *)
+    extra attempts a failing test gets. Constructors raise [Invalid_argument] if
+    [retries < 0] or if [timeout] is given and is not finite and positive. *)
 
 val test :
   ?pos:Loc.pos ->

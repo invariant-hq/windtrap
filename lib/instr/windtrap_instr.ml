@@ -208,8 +208,7 @@ let start format ~path s =
   let len = String.length s in
   let has_magic =
     String.starts_with ~prefix:format.magic s
-    && (len = String.length format.magic
-       || is_ws s.[String.length format.magic])
+    && (len = String.length format.magic || is_ws s.[String.length format.magic])
   in
   if not has_magic then Error (Unknown_format { path; header = first_line s })
   else Ok { input = s; len; pos = String.length format.magic }

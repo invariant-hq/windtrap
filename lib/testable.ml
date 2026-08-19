@@ -37,6 +37,7 @@ let to_string w v = Pp.to_string w.pp v
 
 let unit =
   { pp = (fun ppf () -> Pp.string ppf "()"); equal = (fun () () -> true) }
+
 let bool = { pp = Pp.bool; equal = Bool.equal }
 let char = { pp = (fun ppf c -> Pp.pf ppf "%C" c); equal = Char.equal }
 let string = { pp = (fun ppf s -> Pp.pf ppf "%S" s); equal = String.equal }
@@ -56,6 +57,7 @@ let bytes =
 let int = { pp = Pp.int; equal = Int.equal }
 let int32 = { pp = Pp.int32; equal = Int32.equal }
 let int64 = { pp = Pp.int64; equal = Int64.equal }
+
 let nativeint =
   { pp = (fun ppf n -> Pp.pf ppf "%nd" n); equal = Nativeint.equal }
 
@@ -97,8 +99,8 @@ let float_rel ~rel ~abs =
     invalid_arg "Testable.float_rel: ~abs is negative or NaN";
   if rel = 0. && abs = 0. then
     invalid_arg
-      "Testable.float_rel: both tolerances are zero; exact equality is \
-       spelled float_exact";
+      "Testable.float_rel: both tolerances are zero; exact equality is spelled \
+       float_exact";
   {
     pp = pp_float;
     equal =

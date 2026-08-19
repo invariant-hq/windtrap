@@ -522,23 +522,22 @@ let text_gen =
 
 let law_tests =
   [
-    prop "hunks applied to expected reconstruct actual"
-      ~count:500
-      (Gen.pair text_gen text_gen)
-      (fun (expected, actual) ->
+    prop "hunks applied to expected reconstruct actual" ~count:500
+      (Gen.pair text_gen text_gen) (fun (expected, actual) ->
         let hs = Diff.hunks ~expected ~actual () in
         match apply_hunks (split_lines expected) hs with
         | patched ->
             equal ~msg:"the patch reconstructs actual" (list string)
               (split_lines actual) patched
-        | exception Bad_patch reason -> failf "the hunks do not apply: %s" reason);
+        | exception Bad_patch reason ->
+            failf "the hunks do not apply: %s" reason);
     (* Identical texts must produce no hunk at all: a diff that reports a
        change where there is none is the failure mode that makes every
        other report untrustworthy. *)
     prop "identical texts have no hunks" text_gen (fun t ->
-        equal ~msg:"no hunks" int 0 (List.length (Diff.hunks ~expected:t ~actual:t ())));
+        equal ~msg:"no hunks" int 0
+          (List.length (Diff.hunks ~expected:t ~actual:t ())));
   ]
 
 let tests = hunk_tests @ refine_tests @ alloc_tests @ law_tests
-
 let () = Windtrap.run "diff" tests

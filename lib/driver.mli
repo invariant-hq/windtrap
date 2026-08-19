@@ -12,14 +12,13 @@
     and they are composed in exactly one order, so the two runners cannot drift
     apart byte-wise. The six producers are renderer construction
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
-    ({!github_start}, {!github_end}, {!github_annotations}), the snapshot
-    report ({!Render.report_snapshots} — every transcript byte leaves through a
+    ({!github_start}, {!github_end}, {!github_annotations}), the snapshot report
+    ({!Render.report_snapshots} — every transcript byte leaves through a
     renderer), the coverage seam ({!snapshot_coverage}, {!coverage_data}), and
     the JUnit sink ({!write_junit}, the one producer that writes a file rather
     than a transcript line); {!execute_and_report} is the order they run in,
-    around
-    {!Runner.execute}. A runner that composed them itself would be free to get
-    that order wrong, which is the same drift by another route.
+    around {!Runner.execute}. A runner that composed them itself would be free
+    to get that order wrong, which is the same drift by another route.
 
     What the runners legitimately do {e not} share stays visible at their call
     sites, as a field of the spine record ({!type:t}) or a line in the thin
@@ -49,14 +48,13 @@ type t = {
       (** What an empty run explains itself with: the facade passes
           {!selection_description}; the inline runner passes [None]
           ({!observe}). *)
-  github : bool;
-      (** The GitHub gating decision ({!Env.in_github_actions}). *)
+  github : bool;  (** The GitHub gating decision ({!Env.in_github_actions}). *)
   output : [ `Compact | `Verbose ];  (** The resolved output level. *)
   coverage : bool;
       (** Whether the inline coverage line prints ({!Cli.settings}). *)
   junit : string option;
-      (** [--junit]/[WINDTRAP_JUNIT]: where to also write a JUnit report,
-          [None] for no report ({!write_junit}). *)
+      (** [--junit]/[WINDTRAP_JUNIT]: where to also write a JUnit report, [None]
+          for no report ({!write_junit}). *)
   render : Render.settings;
       (** The presentation knobs the run's renderer is built from
           ({!val:renderer}). *)
@@ -94,15 +92,15 @@ val renderer :
 
 val selection_description : Run.config -> string option
 (** [selection_description config] describes what narrows the run — the filter,
-    exclusion, tags, [--failed], the shard — in the spelling the
-    reader typed, or [None] when nothing narrows it. It exists so an empty
-    selection can say why it is empty; the phrasing of that sentence is
-    {!Render}'s, the configuration behind it is the driver's. *)
+    exclusion, tags, [--failed], the shard — in the spelling the reader typed,
+    or [None] when nothing narrows it. It exists so an empty selection can say
+    why it is empty; the phrasing of that sentence is {!Render}'s, the
+    configuration behind it is the driver's. *)
 
 val junit_path : suite:string -> string -> string
-(** [junit_path ~suite target] is the file [suite]'s JUnit report is written
-    to. A [target] naming an [.xml] file is that file; anything else is a
-    directory, and the report lands at [<target>/<suite>.xml] with [suite] made
+(** [junit_path ~suite target] is the file [suite]'s JUnit report is written to.
+    A [target] naming an [.xml] file is that file; anything else is a directory,
+    and the report lands at [<target>/<suite>.xml] with [suite] made
     filename-safe ({!Path_ops.sanitize_component}).
 
     The two forms exist because [--junit] and [WINDTRAP_JUNIT] are asked in
@@ -187,8 +185,7 @@ val coverage_data :
     ({!Windtrap_coverage.file_reports}, whose current-directory default it
     keeps). The one builder of that data — this seam links the runtime, so
     Render does not have to — used by the [windtrap coverage] command over
-    merged files, which is the only place a per-file coverage table is drawn.
-*)
+    merged files, which is the only place a per-file coverage table is drawn. *)
 
 (** {1:silent Execution without reporting} *)
 

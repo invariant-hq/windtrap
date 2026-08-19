@@ -127,5 +127,4 @@ let describe ~stale_hint ~path = function
   | Fresh -> assert false
   | Orphan exe -> spf "%s: its executable (%s) no longer exists" path exe
   | Stale exe ->
-      spf "%s: not written by the executable now at %s - %s" path exe
-        stale_hint
+      spf "%s: not written by the executable now at %s - %s" path exe stale_hint

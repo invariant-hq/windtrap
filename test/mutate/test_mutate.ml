@@ -26,7 +26,6 @@ module M = Windtrap_mutate
    diagnostics and assertions, which is a test's business rather than a
    published surface. *)
 let pp_id ppf (i : M.id) = Format.pp_print_string ppf (M.id_to_string i)
-
 let pp_witness ppf w = Format.pp_print_string ppf (String.concat " > " w)
 
 let pp_verdict ppf = function
@@ -107,8 +106,7 @@ let record_t = Testable.structural ~pp:pp_record
 
 (* Most assertions below are about the verdict alone; [find] hands back
    the whole record. *)
-let verdict_of t id =
-  Option.map (fun (r : M.record) -> r.M.verdict) (find t id)
+let verdict_of t id = Option.map (fun (r : M.record) -> r.M.verdict) (find t id)
 
 (* [register] returns the file's guard closure; a test that only needs the
    registration binds it away rather than [ignore]ing a function. *)
@@ -189,13 +187,15 @@ let identity_tests =
           ]
           (List.map M.id_to_string (List.sort M.compare_id ids));
         is_true ~msg:"compare_id is an equality on identifiers"
-          (0 = M.compare_id
-             (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
-             (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or"));
+          (0
+          = M.compare_id
+              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
+              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or"));
         is_false ~msg:"a differing rewrite is a differing id"
-          (0 = M.compare_id
-                 (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
-                 (id ~file:"a" ~line:1 ~col:2 ~rewrite:"and")));
+          (0
+          = M.compare_id
+              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
+              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"and")));
     test "id_of_string round-trips the canonical spelling" (fun () ->
         List.iter
           (fun i ->
@@ -269,14 +269,12 @@ let registry_tests =
           [
             {
               M.mutant =
-                mutant ~file:"t/reach.ml" ~line:1 ~col:0 ~rewrite:"lt"
-                  ();
+                mutant ~file:"t/reach.ml" ~line:1 ~col:0 ~rewrite:"lt" ();
               hits = 2;
             };
             {
               M.mutant =
-                mutant ~file:"t/reach.ml" ~line:2 ~col:0 ~rewrite:"add"
-                  ();
+                mutant ~file:"t/reach.ml" ~line:2 ~col:0 ~rewrite:"add" ();
               hits = 1;
             };
           ]
@@ -384,14 +382,13 @@ let registry_tests =
         register_only ~file:"t/dismiss.ml"
           ~sites:
             [|
-              site ~line:3 ~col:1 ~rewrite:"add" ~before:"a + b"
-                ~after:"a - b" ~dismissed:"equivalent" ();
+              site ~line:3 ~col:1 ~rewrite:"add" ~before:"a + b" ~after:"a - b"
+                ~dismissed:"equivalent" ();
             |];
         equal ~msg:"the dismissed mutant" (list mutant_t)
           [
             mutant ~file:"t/dismiss.ml" ~line:3 ~col:1 ~rewrite:"add"
-              ~before:"a + b" ~after:"a - b"
-              ~dismissed:"equivalent" ();
+              ~before:"a + b" ~after:"a - b" ~dismissed:"equivalent" ();
           ]
           (List.filter
              (fun (m : M.mutant) -> m.M.id.M.file = "t/dismiss.ml")
@@ -432,9 +429,7 @@ let registry_tests =
         (* Both copies must arm: leaving one disarmed would report a false
            survivor for code reached through it. *)
         let armed =
-          match
-            M.arm (id ~file:"t/twice.ml" ~line:2 ~col:4 ~rewrite:"gt")
-          with
+          match M.arm (id ~file:"t/twice.ml" ~line:2 ~col:4 ~rewrite:"gt") with
           | Ok m -> m
           | Error e -> failf "arm: %a" M.pp_arm_error e
         in
@@ -496,10 +491,7 @@ let arming_tests =
            "not mine" and runs on, so it must be a case of its own and
            not an [Unmatched] whose candidate list happens to be
            empty. *)
-        match
-          M.arm
-            (id ~file:"t/absent.ml" ~line:1 ~col:0 ~rewrite:"lt")
-        with
+        match M.arm (id ~file:"t/absent.ml" ~line:1 ~col:0 ~rewrite:"lt") with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Uncatalogued { id } as e) ->
             equal ~msg:"the identifier is returned whole" string
@@ -518,9 +510,7 @@ let arming_tests =
            than someone else's, and a caller must refuse on it. *)
         register_only ~file:"t/stale.ml"
           ~sites:[| site ~line:5 ~col:3 ~rewrite:"lt" () |];
-        match
-          M.arm (id ~file:"t/stale.ml" ~line:9 ~col:0 ~rewrite:"lt")
-        with
+        match M.arm (id ~file:"t/stale.ml" ~line:9 ~col:0 ~rewrite:"lt") with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Unmatched { candidates; _ }) ->
             equal ~msg:"the file's sites are named" (list string)
@@ -537,10 +527,7 @@ let arming_tests =
               site ~line:5 ~col:3 ~rewrite:"lt" ();
               site ~line:8 ~col:1 ~rewrite:"add" ();
             |];
-        match
-          M.arm
-            (id ~file:"t/near.ml" ~line:5 ~col:4 ~rewrite:"lt")
-        with
+        match M.arm (id ~file:"t/near.ml" ~line:5 ~col:4 ~rewrite:"lt") with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Unmatched { candidates; _ } as e) ->
             equal ~msg:"candidates" (list string)
@@ -587,19 +574,13 @@ let arming_tests =
           M.register ~file:"t/refuse.ml"
             ~sites:[| site ~line:1 ~col:0 ~rewrite:"or" () |]
         in
-        (match
-           M.arm
-             (id ~file:"t/refuse.ml" ~line:1 ~col:0 ~rewrite:"or")
-         with
+        (match M.arm (id ~file:"t/refuse.ml" ~line:1 ~col:0 ~rewrite:"or") with
         | Ok _ -> ()
         | Error e -> failf "arm: %a" M.pp_arm_error e);
         fresh ();
         is_true ~msg:"armed" (g 0);
         is_some ~msg:"armed () reports it" (M.armed ());
-        (match
-           M.arm
-             (id ~file:"t/nothing.ml" ~line:1 ~col:0 ~rewrite:"or")
-         with
+        (match M.arm (id ~file:"t/nothing.ml" ~line:1 ~col:0 ~rewrite:"or") with
         | Ok m -> failf "armed %a" pp_mutant m
         | Error _ -> ());
         is_false ~msg:"the previous mutant is no longer armed" (g 0);
@@ -628,8 +609,7 @@ let arming_tests =
         fresh ();
         is_true ~msg:"the first is armed" (ga 0);
         let second =
-          arm_ok "second"
-            (id ~file:"t/rearm_b.ml" ~line:1 ~col:0 ~rewrite:"gt")
+          arm_ok "second" (id ~file:"t/rearm_b.ml" ~line:1 ~col:0 ~rewrite:"gt")
         in
         equal ~msg:"armed () names the second" (option string)
           (Some "t/rearm_b.ml:1:0:gt")
@@ -709,8 +689,7 @@ let arming_tests =
         List.iter
           (fun n ->
             raises_match ~msg:(string_of_int n) Exn.invalid_arg (fun () ->
-                M.arm ~budget:n
-                  (id ~file:"t/x.ml" ~line:1 ~col:0 ~rewrite:"or")))
+                M.arm ~budget:n (id ~file:"t/x.ml" ~line:1 ~col:0 ~rewrite:"or")))
           [ 0; -1 ]);
     test "arm_from_env resolves WINDTRAP_MUTATE_ARM" (fun () ->
         let g =
@@ -809,8 +788,7 @@ let verdict_tests =
               ~msg:(Format.asprintf "idempotent on %a" pp_verdict a)
               verdict_t a (M.merge_verdict a a);
             equal
-              ~msg:
-                (Format.asprintf "unreached is the unit of %a" pp_verdict a)
+              ~msg:(Format.asprintf "unreached is the unit of %a" pp_verdict a)
               verdict_t a
               (M.merge_verdict a M.Unreached);
             List.iter
@@ -824,8 +802,8 @@ let verdict_tests =
                   (fun c ->
                     equal
                       ~msg:
-                        (Format.asprintf "associative on %a, %a, %a"
-                           pp_verdict a pp_verdict b pp_verdict c)
+                        (Format.asprintf "associative on %a, %a, %a" pp_verdict
+                           a pp_verdict b pp_verdict c)
                       verdict_t
                       (M.merge_verdict (M.merge_verdict a b) c)
                       (M.merge_verdict a (M.merge_verdict b c)))
@@ -837,14 +815,12 @@ let verdict_tests =
         (* The whole reason the verdict file exists: reporting the
            surviving executable's view alone is a false survivor. *)
         let m = id ~file:"lib/core.ml" ~line:12 ~col:4 ~rewrite:"add" in
-        let a = M.add M.empty (record m (M.Killed)) in
+        let a = M.add M.empty (record m M.Killed) in
         let b = M.add M.empty (record m (M.survived [ [ "cli"; "runs" ] ])) in
         let c = M.add M.empty (record m M.Unreached) in
         List.iter
           (fun (name, t) ->
-            equal ~msg:name (option verdict_t)
-              (Some (M.Killed))
-              (verdict_of t m))
+            equal ~msg:name (option verdict_t) (Some M.Killed) (verdict_of t m))
           [
             ("a then b then c", M.merge (M.merge a b) c);
             ("c then b then a", M.merge (M.merge c b) a);
@@ -867,9 +843,9 @@ let verdict_tests =
         equal ~msg:"a second add unions" (option verdict_t)
           (Some (M.survived [ [ "a" ]; [ "b" ]; [ "c" ] ]))
           (verdict_of t m);
-        let t = M.add t (record m (M.Killed)) in
-        equal ~msg:"a kill overrides" (option verdict_t)
-          (Some (M.Killed)) (verdict_of t m));
+        let t = M.add t (record m M.Killed) in
+        equal ~msg:"a kill overrides" (option verdict_t) (Some M.Killed)
+          (verdict_of t m));
     test "a record carries the rendering the report draws" (fun () ->
         (* The catalogue lives in the instrumented binary; [windtrap
            mutate] links none of them. A record that named only its
@@ -893,16 +869,9 @@ let verdict_tests =
            is a total order rather than a guess: it is what keeps [merge]
            commutative and associative. *)
         let m = id ~file:"lib/calc.ml" ~line:9 ~col:12 ~rewrite:"add" in
-        let older =
-          record ~before:"a - b" ~after:"a + b" m M.Unreached
-        and newer =
-          record ~before:"a - b" ~after:"a + b" m
-            (M.Killed)
-        in
-        let expected =
-          record ~before:"a - b" ~after:"a + b" m
-            (M.Killed)
-        in
+        let older = record ~before:"a - b" ~after:"a + b" m M.Unreached
+        and newer = record ~before:"a - b" ~after:"a + b" m M.Killed in
+        let expected = record ~before:"a - b" ~after:"a + b" m M.Killed in
         equal ~msg:"older then newer" (option record_t) (Some expected)
           (find (M.add (M.add M.empty older) newer) m);
         equal ~msg:"newer then older" (option record_t) (Some expected)
@@ -1068,8 +1037,7 @@ let format_tests =
             (id ~file:"lib/b.ml" ~line:2 ~col:0 ~rewrite:"lt", M.Unreached);
             ( id ~file:"lib/a.ml" ~line:1 ~col:0 ~rewrite:"or",
               M.survived [ [ "q" ]; [ "p" ] ] );
-            ( id ~file:"lib/a.ml" ~line:9 ~col:0 ~rewrite:"sub",
-              M.Killed );
+            (id ~file:"lib/a.ml" ~line:9 ~col:0 ~rewrite:"sub", M.Killed);
           ]
         in
         let build order =
@@ -1134,9 +1102,7 @@ let rejection_tests =
            must not read as "this executable killed nothing". *)
         ("magic only", "windtrap-mutants-v3", "expected record count");
         ( "negative witness count",
-          "windtrap-mutants-v3\n\
-           1\n\
-           8 lib/a.ml 1 2 3 add 1 b 1 a survived 1 -1\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a survived 1 -1\n",
           "negative test path length" );
         ( "line 0",
           "windtrap-mutants-v3\n1\n8 lib/a.ml 0 2 3 add 1 b 1 a unreached\n",
@@ -1155,19 +1121,13 @@ let rejection_tests =
           "windtrap-mutants-v3\n1\n0  1 2 3 add 0 0 1 b 1 a unreached\n",
           "empty file name" );
         ( "truncated file name",
-          "windtrap-mutants-v3\n\
-           1\n\
-           80 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
+          "windtrap-mutants-v3\n1\n80 lib/a.ml 1 2 3 add 1 b 1 a unreached\n",
           "truncated" );
         ( "unknown rewrite",
-          "windtrap-mutants-v3\n\
-           1\n\
-           8 lib/a.ml 1 2 4 plus 1 b 1 a unreached\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 4 plus 1 b 1 a unreached\n",
           "unknown rewrite" );
         ( "truncated rendering",
-          "windtrap-mutants-v3\n\
-           1\n\
-           8 lib/a.ml 1 2 3 add 80 b 1 a unreached\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 80 b 1 a unreached\n",
           "truncated before" );
         ( "missing rendering",
           "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add unreached\n",
@@ -1192,9 +1152,7 @@ let rejection_tests =
            unreached mutant looks like when a writer confuses the two, and
            it would render as "0 tests ran this line and none failed". *)
         ( "survivor with no witness",
-          "windtrap-mutants-v3\n\
-           1\n\
-           8 lib/a.ml 1 2 3 add 1 b 1 a survived 0\n",
+          "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 3 add 1 b 1 a survived 0\n",
           "names no test" );
         ( "duplicate record",
           "windtrap-mutants-v3\n\

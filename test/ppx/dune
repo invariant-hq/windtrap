@@ -186,11 +186,11 @@
    (with-accepted-exit-codes
     1
     (run
-    ./pp.exe
-    -cookie
-    "inline_tests=\"bogus\""
-    --impl
-    %{dep:test_basic.ml})))))
+     ./pp.exe
+     -cookie
+     "inline_tests=\"bogus\""
+     --impl
+     %{dep:test_basic.ml})))))
 
 (rule
  (alias runtest)

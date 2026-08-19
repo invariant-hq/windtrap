@@ -69,8 +69,8 @@ type node = {
   payload : payload option;  (** [None] for a bare [[%expect]]. *)
 }
 (** The type for declared expect nodes. Ids are the node's index in the body, in
-    source order, from [0]; the rewritten node calls {!expect} with the same
-    id. *)
+    source order, from [0]; the rewritten node calls {!expect} with the same id.
+*)
 
 (** {1:registration Registration}
 
@@ -140,11 +140,11 @@ val add_expect_test :
 
     Everything the body raises propagates to the runner —
     [Failure.Check_failure], [Failure.Skip_test], [Failure.Timeout] and any
-    other exception alike — and none of it is a correction. Nodes reached
-    before an exception still resolve, but nothing is spliced at the trailing
-    point, since a node inserted after a raising statement could never be
-    reached on a future run. To pin an expected exception, catch and print it,
-    then match it with an ordinary node.
+    other exception alike — and none of it is a correction. Nodes reached before
+    an exception still resolve, but nothing is spliced at the trailing point,
+    since a node inserted after a raising statement could never be reached on a
+    future run. To pin an expected exception, catch and print it, then match it
+    with an ordinary node.
 
     A skip makes the test an ordinary skip: nothing is checked and nothing is
     recorded — no correction for any node, the ones reached before the skip
@@ -209,8 +209,8 @@ val exit : unit -> 'a
     [stderr] — naming the registered files, the missing stanza and the runner
     protocol — and exits [2], Law 11's nothing-ran code.
 
-    {b The claim rule.} The registry is claimed, once for the process's life,
-    by {!init} in every mode; by {!Private.collect}, since whoever drains the
+    {b The claim rule.} The registry is claimed, once for the process's life, by
+    {!init} in every mode; by {!Private.collect}, since whoever drains the
     registry owns the execution of what they took, which covers a hand-rolled
     harness driving [Runner] directly; by arming a mutant, through the
     [Mutate_loop.on_armed] hook this module registers, that process's transcript
@@ -231,8 +231,8 @@ val exit : unit -> 'a
     Everything below is the runtime's own test suite reaching into its
     implementation: the seams that let [test/unit/test_ppx_runtime.ml] check
     normalization, collection, correction formatting, the flush and the exit
-    protocol as ordinary functions rather than as process transcripts.
-    Generated code calls none of it, and neither should anything else. *)
+    protocol as ordinary functions rather than as process transcripts. Generated
+    code calls none of it, and neither should anything else. *)
 
 module Private : sig
   val normalize : string -> string
@@ -300,12 +300,11 @@ module Private : sig
     string option
   (** [correction_notice ~accepted ~refused ~declined written] is the [stderr]
       notice for a process that wrote the [.corrected] files [written], or
-      [None] when [written] is empty. Its first line names them
-      unconditionally; the explanation under it names exactly one case — the
-      paths [accepted] into the source tree, the [refused] ones, an acceptance
-      [declined] until the failures are fixed, or dune's rule that a correction
-      is registered for promotion only when every partition of the library
-      exits cleanly. *)
+      [None] when [written] is empty. Its first line names them unconditionally;
+      the explanation under it names exactly one case — the paths [accepted]
+      into the source tree, the [refused] ones, an acceptance [declined] until
+      the failures are fixed, or dune's rule that a correction is registered for
+      promotion only when every partition of the library exits cleanly. *)
 
   val reset : unit -> unit
   (** [reset ()] restores {e every} piece of state this module keeps between

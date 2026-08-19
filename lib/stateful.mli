@@ -17,8 +17,8 @@
 
     {b The pipeline.} A program is drawn at a fixed length ([?steps]) from one
     weight-1 [Gen.frequency] branch per command, {e repaired} against the model
-    before the shrink tree is assembled ([Gen.Private.list_exact]'s [?keep]), and
-    shrunk by that tree's structural move set. Repair keeps a call iff its
+    before the shrink tree is assembled ([Gen.Private.list_exact]'s [?keep]),
+    and shrunk by that tree's structural move set. Repair keeps a call iff its
     [~pre] holds in the model the calls before it produced, and threads [~next]
     through the calls it keeps. Two consequences are the design: the program
     shown is the program that ran — a call whose precondition does not hold is
@@ -169,17 +169,18 @@ val program :
 
     The generator prints, always ([Gen.Private.prints] holds), so a printerless
     stateful counterexample is unreachable and the [Gen.with_pp] remedy line
-    never fires here. A program renders as a summary line — ["5 calls, last:
-    pop"], or ["(no commands)"] — then one numbered line per step: the command's
-    name and its argument through [Gen.Private.render_value], preceded by the
-    model {e before} the step when [pp_model] is given. The printer bounds
-    itself and emits hard newlines only: a ["()"] argument is omitted, arguments
-    cut at 200 bytes (with a marker stating the original size) and model cells
-    at 60 code points flattened to one line, a raising [pp_model] costs its own
-    cell and no more, and a program over 40 steps prints its first and last 20
-    with a ["… (N steps omitted)"] line between. Columns are measured over the
-    rows that print. An argument whose generator has no printer renders as
-    ["<no printer>"]; the step names and the shape survive.
+    never fires here. A program renders as a summary line —
+    ["5 calls, last: pop"], or ["(no commands)"] — then one numbered line per
+    step: the command's name and its argument through
+    [Gen.Private.render_value], preceded by the model {e before} the step when
+    [pp_model] is given. The printer bounds itself and emits hard newlines only:
+    a ["()"] argument is omitted, arguments cut at 200 bytes (with a marker
+    stating the original size) and model cells at 60 code points flattened to
+    one line, a raising [pp_model] costs its own cell and no more, and a program
+    over 40 steps prints its first and last 20 with a ["… (N steps omitted)"]
+    line between. Columns are measured over the rows that print. An argument
+    whose generator has no printer renders as ["<no printer>"]; the step names
+    and the shape survive.
 
     Sampling raises [Invalid_argument] if [commands] is empty or if [steps] is
     negative — inside the running test's exception boundary, where every other
@@ -199,8 +200,8 @@ val execute :
   scope:(('sut -> unit) -> unit) ->
   ('model, 'sut) program ->
   unit
-(** [execute ~scope program] runs [program] against the system [scope] hands
-    its callback, and returns [()] iff every body, every invariant check and the
+(** [execute ~scope program] runs [program] against the system [scope] hands its
+    callback, and returns [()] iff every body, every invariant check and the
     scope itself succeeded. [scope] runs once per [execute] — so once per
     generated case {e and} once per shrink candidate, the search re-running the
     program; {!Windtrap.stateful} states the scope contract for its callers.
@@ -251,13 +252,13 @@ val execute :
     succeeded.
 
     {b Exactly once.} A scope that returns without running the program fails the
-    case with the {!Failure.Message} ["the scope returned without running the
-    program …"] located at [loc]. A scope that runs it twice gets
-    [Invalid_argument] at the second call, and that outranks everything else the
-    case has to say, a swallowed failure included. The search then converges on
-    the empty program — accurately, since such a scope misbehaves whatever the
-    program says — so the report reads [(no commands)] with the misuse as its
-    failure. *)
+    case with the {!Failure.Message}
+    ["the scope returned without running the program …"] located at [loc]. A
+    scope that runs it twice gets [Invalid_argument] at the second call, and
+    that outranks everything else the case has to say, a swallowed failure
+    included. The search then converges on the empty program — accurately, since
+    such a scope misbehaves whatever the program says — so the report reads
+    [(no commands)] with the misuse as its failure. *)
 
 (** {1:declaring Declaring} *)
 
@@ -282,14 +283,13 @@ val stateful :
     It is {!Runner.prop} over {!program} with {!execute} as its law, so
     [timeout], [count] and the run's [--prop-count] / [--max-shrink] knobs
     behave exactly as on a property; [steps], [pp_model] are {!program}'s and
-    [scope], [invariant] are {!execute}'s. The declared
-    tags are extended with ["prop"] — so [--tag prop] selects stateful tests
-    with every other property, and the run header prints the root seed — and
-    ["stateful"], so a suite can select or exclude them on their own cost
-    profile. [pos] fixes the declaration site, which is where a poisoned
-    program's failure and a scope that never ran one are reported: [command]
-    records no position of its own, and a command's name is its identity in the
-    report.
+    [scope], [invariant] are {!execute}'s. The declared tags are extended with
+    ["prop"] — so [--tag prop] selects stateful tests with every other property,
+    and the run header prints the root seed — and ["stateful"], so a suite can
+    select or exclude them on their own cost profile. [pos] fixes the
+    declaration site, which is where a poisoned program's failure and a scope
+    that never ran one are reported: [command] records no position of its own,
+    and a command's name is its identity in the report.
 
     There is no [?examples]: the program type is abstract, so a user cannot
     spell one, and a shrunk counterexample is copied back as a plain test. There

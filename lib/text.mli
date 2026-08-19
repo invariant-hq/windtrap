@@ -55,8 +55,8 @@ val truncate_bytes_utf8 : int -> string -> string
 val first_occurrence : ?start:int -> pattern:string -> string -> int option
 (** [first_occurrence ~pattern s] is the byte offset of the first occurrence of
     [pattern] in [s] as a byte substring at or after [start] (defaults to [0]),
-    and [None] when [pattern] does not occur there. An empty [pattern] occurs
-    at [start].
+    and [None] when [pattern] does not occur there. An empty [pattern] occurs at
+    [start].
 
     Raises [Invalid_argument] if [start] is negative or past the end of [s]. A
     [start] equal to [String.length s] is in range and searches nothing. *)

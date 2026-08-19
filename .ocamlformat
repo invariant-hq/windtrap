@@ -1,8 +1,8 @@
 # OCamlFormat configuration file
 
-# Pin the version of OCamlFormat to ensure consistent formatting across different environments.
-# Uncomment and update this line to specify a version:
-# version = 0.26.2
+# Pin the version of OCamlFormat to ensure consistent formatting across
+# different environments; dune's dev-tool locks to this pin.
+version = 0.29.0
 
 # The formatting style to use. Options include 'default', 'ocamlformat', and 'janestreet'.
 # 'default' is a good starting point for most projects.

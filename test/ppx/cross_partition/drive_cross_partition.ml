@@ -141,8 +141,7 @@ let () =
       clear_corrected ();
       (* 3. The crashing partition under WINDTRAP_UPDATE: nothing. *)
       ignore
-        (update_run ~runner ~partition:"crash.ml" ~name:"update-crash"
-           ~fixtures);
+        (update_run ~runner ~partition:"crash.ml" ~name:"update-crash" ~fixtures);
       clear_corrected ();
       (* 4. The stale partition, plain: exit 0 and the .corrected dune
          would have diffed, left in place as a declared target. *)

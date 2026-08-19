@@ -11,7 +11,7 @@
     test's result is an {!outcome} carrying a failure {e list} — a body failure
     and a teardown failure are two entries, never merged.
 
-Failures are data; renderers are projections. Nothing here holds ANSI
+    Failures are data; renderers are projections. Nothing here holds ANSI
     styling or command text — renderers derive those. What it does hold is
     pp-rendered {e values}, the one thing that cannot outlive the failure site,
     each bounded at construction with a truncation marker stating the original
@@ -94,13 +94,12 @@ type containment_demand =
       (** One occurrence, anywhere: [contains], [not_contains], and the affix
           verbs (whose position demand lives in their claim). *)
   | Ordered of { index : int; resumed_at : int }
-      (** [in_order]: the needle is the chain element at zero-based [index],
-          and the search for it began at byte [resumed_at] — the end of the
-          previous element's match. [found_at] keeps its plain meaning, the
-          needle's first occurrence {e anywhere}, so a renderer distinguishes
-          "not in the string at all" from "in the string, but before the
-          cursor" — the out-of-order bug — exactly as it does for
-          [starts_with]. *)
+      (** [in_order]: the needle is the chain element at zero-based [index], and
+          the search for it began at byte [resumed_at] — the end of the previous
+          element's match. [found_at] keeps its plain meaning, the needle's
+          first occurrence {e anywhere}, so a renderer distinguishes "not in the
+          string at all" from "in the string, but before the cursor" — the
+          out-of-order bug — exactly as it does for [starts_with]. *)
 
 (** The type for typed failure payloads. Never a stringly key-value bag: each
     assertion family has its own case, and renderers pattern match on it. *)
@@ -120,12 +119,12 @@ type kind =
           [not_] is [true] for a negated assertion ([not_equal]): both strings
           then render the same value and renderers print it once.
 
-          [diffable] is [false] when [expected] is a {e description} rather
-          than a rendering — {!predicate}'s claim sentence
-          (["value satisfying the predicate"], ["a match"]). Renderers word
-          such a failure exactly as they word an equality, and refine neither
-          side against the other: there is nothing for a character diff of a
-          sentence against a value to point at. *)
+          [diffable] is [false] when [expected] is a {e description} rather than
+          a rendering — {!predicate}'s claim sentence
+          (["value satisfying the predicate"], ["a match"]). Renderers word such
+          a failure exactly as they word an equality, and refine neither side
+          against the other: there is nothing for a character diff of a sentence
+          against a value to point at. *)
   | Containment of {
       claim : string;
           (** A one-line description of what was asserted
@@ -142,11 +141,11 @@ type kind =
       excerpt : string;
           (** A bounded window of the haystack, centred on the offset the
               failure is about: the {!Ordered} cursor when there is one — the
-              remaining region is what that search was reading — else
-              [found_at] when it is [Some _]. With neither, the window is the
-              haystack's head, bounded to what a reader scans past to reach
-              the verdict. Renderers show what is stored, whole; see
-              {!containment} for the bounds. *)
+              remaining region is what that search was reading — else [found_at]
+              when it is [Some _]. With neither, the window is the haystack's
+              head, bounded to what a reader scans past to reach the verdict.
+              Renderers show what is stored, whole; see {!containment} for the
+              bounds. *)
       excerpt_offset : int;
           (** The byte offset of [excerpt] within the haystack; renderers derive
               the omitted byte counts on either side from it together with
@@ -192,11 +191,10 @@ type kind =
       shrink_exhausted : bool;
           (** [true] iff the shrink search {e stopped} rather than converging:
               it spent its step budget, or forcing a candidate raised and left
-              the siblings behind it unreachable. The two outcomes are
-              otherwise indistinguishable in a report — both read "shrunk N
-              steps" — and they mean different things: a converged search
-              reports the minimal counterexample, a stopped one reports the
-              best it reached. *)
+              the siblings behind it unreachable. The two outcomes are otherwise
+              indistinguishable in a report — both read "shrunk N steps" — and
+              they mean different things: a converged search reports the minimal
+              counterexample, a stopped one reports the best it reached. *)
       timed_out : float option;
       root : Seed.seed;
       count : int option;
@@ -210,23 +208,23 @@ type kind =
               carrying its own advice. *)
       inner : t option;
     }
-      (** A property failed. [rendered] is the printed (shrunk)
-          counterexample, [case_index] the zero-based failing case,
-          [shrink_steps] how many shrinks led to it, and [inner] the assertion
-          failure the body raised at that counterexample when it raised a
-          {!Check_failure}. [examples] is [true] when the case came from the
-          explicit examples list, which is never seeded or shrunk.
+      (** A property failed. [rendered] is the printed (shrunk) counterexample,
+          [case_index] the zero-based failing case, [shrink_steps] how many
+          shrinks led to it, and [inner] the assertion failure the body raised
+          at that counterexample when it raised a {!Check_failure}. [examples]
+          is [true] when the case came from the explicit examples list, which is
+          never seeded or shrunk.
 
-          [timed_out] is [Some limit] when the per-test timeout expired {e
-          during} the shrink search, and [None] on every other path — a timeout
-          before any case failed times out the whole test — so it is never set
-          alongside [examples].
+          [timed_out] is [Some limit] when the per-test timeout expired
+          {e during} the shrink search, and [None] on every other path — a
+          timeout before any case failed times out the whole test — so it is
+          never set alongside [examples].
 
           [root], [count] and [max_shrink] are the replay line's three
           ingredients: the run's root seed, and the two run-configuration knobs
           when configuration supplied them ([None] when the declaration site or
-          the engine default did). A renderer restates exactly the ones that
-          are present: a replay under a different case count or shrink budget
+          the engine default did). A renderer restates exactly the ones that are
+          present: a replay under a different case count or shrink budget
           reaches a different case, or stops the descent at a different node,
           and reports something else. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
@@ -240,9 +238,9 @@ and t = {
       (** The sub-case label's components — the test's leaf name, then the
           enclosing subtest names outermost first — when the failure was
           recorded inside {!Run.subtest}; [[]] for plain failures. Renderers
-          derive the displayed [leaf › name] label from it; classification
-          reads the field, never the [msg] text, so a user annotation can
-          never dress a plain failure as a sub-case. *)
+          derive the displayed [leaf › name] label from it; classification reads
+          the field, never the [msg] text, so a user annotation can never dress
+          a plain failure as a sub-case. *)
   output_tail : tail option;
       (** Attached by the runner after the test completes; [None] until
           {!with_output_tail}. *)
@@ -343,16 +341,15 @@ val containment :
     given (the failed-[not_contains] case), else the head of [haystack] (the
     failed-[contains] case).
 
-    An anchored window is bounded by an implementation constant (currently
-    8 KiB, the captured-output tail bound) — its surroundings are the evidence
-    for the offset the verdict names. A head window has no offset to be
-    evidence for, so it is bounded to a readable head instead (currently the
-    first 10 lines or 1 KiB, whichever comes first). Both are cut on UTF-8
-    code-point boundaries, and an anchored window may therefore exceed its
-    bound by the up to three bytes that complete a sequence. The bound is
-    applied once, here: renderers show the stored excerpt whole. The failure
-    records the excerpt's offset and the haystack's total length so they can
-    state what was omitted.
+    An anchored window is bounded by an implementation constant (currently 8
+    KiB, the captured-output tail bound) — its surroundings are the evidence for
+    the offset the verdict names. A head window has no offset to be evidence
+    for, so it is bounded to a readable head instead (currently the first 10
+    lines or 1 KiB, whichever comes first). Both are cut on UTF-8 code-point
+    boundaries, and an anchored window may therefore exceed its bound by the up
+    to three bytes that complete a sequence. The bound is applied once, here:
+    renderers show the stored excerpt whole. The failure records the excerpt's
+    offset and the haystack's total length so they can state what was omitted.
 
     Raises [Invalid_argument] if [found_at], or an {!Ordered} demand's
     [resumed_at], is negative or past the end of [haystack]. *)

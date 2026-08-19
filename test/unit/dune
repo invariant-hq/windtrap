@@ -123,4 +123,7 @@
  ; exactly the top-level name generated code references.
  (libraries windtrap ppx_windtrap.runtime ppx_windtrap.config unix harness)
  (action
-  (setenv WINDTRAP_COVERAGE off (run %{test}))))
+  (setenv
+   WINDTRAP_COVERAGE
+   off
+   (run %{test}))))

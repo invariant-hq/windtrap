@@ -72,29 +72,28 @@ type config = {
 }
 (** The type for resolved run configuration: one plain record the CLI layer
     populates by merging CLI flags and environment mirrors in that precedence
-    order ({!Cli.settings}). Every field here is one the runner reads; the presentation knobs an invocation also resolves (color,
-    width, the output tail, the slow threshold) live in [Render.settings]
-    instead, where the runner cannot reach them. Consumers read it from
-    {!config}; nothing re-reads flags or the environment mid-run. *)
+    order ({!Cli.settings}). Every field here is one the runner reads; the
+    presentation knobs an invocation also resolves (color, width, the output
+    tail, the slow threshold) live in [Render.settings] instead, where the
+    runner cannot reach them. Consumers read it from {!config}; nothing re-reads
+    flags or the environment mid-run. *)
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration with every field at its built-in
-    default: no filters, no tags, all flags off. Effects:
-    [seed] is drawn fresh from {!Seed.random} and [log_dir] is
-    {!Path_ops.default_log_dir}[ ()]. *)
+    default: no filters, no tags, all flags off. Effects: [seed] is drawn fresh
+    from {!Seed.random} and [log_dir] is {!Path_ops.default_log_dir}[ ()]. *)
 
 val for_subset : config -> log_dir:string -> bail:int option -> config
 (** [for_subset config ~log_dir ~bail] is [config] adjusted for a run over a
     {e subtree} of its own selection — the mutation loop's forked children.
     Path-selecting knobs ([filter], [exclude], [shard], [failed_only]) are
     cleared, because the caller's [Runner.execute] allowlist {e is} that
-    selection
-    and applying them again could only narrow it further; tag-selecting knobs
-    ([tags], [exclude_tags]) and the root [seed] are kept verbatim, because an
-    allowlist cannot express a tag and per-case seeds derive from
-    [(root, path, index)]. Checking is made read-only ([update = No_update]),
-    capture is dropped ([stream]), an in-source focus is allowed, and [log_dir]
-    and [bail] are the caller's.
+    selection and applying them again could only narrow it further;
+    tag-selecting knobs ([tags], [exclude_tags]) and the root [seed] are kept
+    verbatim, because an allowlist cannot express a tag and per-case seeds
+    derive from [(root, path, index)]. Checking is made read-only
+    ([update = No_update]), capture is dropped ([stream]), an in-source focus is
+    allowed, and [log_dir] and [bail] are the caller's.
 
     A new selection knob that this function does not clear gives such a child a
     selection its parent's tree already applied, which is how a deterministic
@@ -259,9 +258,9 @@ val check_snapshot : ?pos:Loc.pos -> name:string -> string -> unit
     failure is [pos], else the surviving call frame, else the declaration; it is
     display and duplicate-identity data and never chooses the path.
 
-    Raises {!Failure.Check_failure} on every snapshot failure ({!Snapshot.check})
-    and the assertions-outside-run error ([Invalid_argument], see
-    {!current_frame}) when no test is running. *)
+    Raises {!Failure.Check_failure} on every snapshot failure
+    ({!Snapshot.check}) and the assertions-outside-run error
+    ([Invalid_argument], see {!current_frame}) when no test is running. *)
 
 (** {1:scratch Runner-owned scratch}
 
@@ -297,25 +296,24 @@ val remove_tree : string -> unit
     filesystem error swallowed — a scratch cleanup must not fail a test or mask
     its outcome. Exposed for the mutation loop, which removes each forked
     child's log directory from the parent: a child killed at its deadline never
-    runs its own cleanup, and an orphaned capture tree is exactly the trace
-    Law 16(e) forbids. *)
+    runs its own cleanup, and an orphaned capture tree is exactly the trace Law
+    16(e) forbids. *)
 
 (** {1:process Runner-restored process state}
 
     The environment and the working directory belong to the process, not to the
     test: nothing scopes them but putting them back. So a test body records what
-    it changed and the runner undoes it at the attempt boundary
-    ({!reclaim}) — on every outcome, and per attempt, on the same terms as the
-    scratch paths above. Both are process-global while the test runs: a thread
-    the test spawns sees them, and a change made from such a thread races the
-    restoration. *)
+    it changed and the runner undoes it at the attempt boundary ({!reclaim}) —
+    on every outcome, and per attempt, on the same terms as the scratch paths
+    above. Both are process-global while the test runs: a thread the test spawns
+    sees them, and a change made from such a thread races the restoration. *)
 
 val setenv : string -> string option -> unit
 (** [setenv name (Some value)] binds the environment variable [name] to [value]
     for the rest of the executing test; [setenv name None] unbinds it
-    ({!Env.set}, so an unbinding is a real one — [Sys.getenv_opt] answers [None],
-    not [Some ""]). The runner restores the prior state of [name] when the
-    attempt ends.
+    ({!Env.set}, so an unbinding is a real one — [Sys.getenv_opt] answers
+    [None], not [Some ""]). The runner restores the prior state of [name] when
+    the attempt ends.
 
     What is restored is what [name] held before the attempt's {e first} [setenv]
     of it: later calls with the same name change the binding without touching
@@ -332,8 +330,8 @@ val chdir : string -> unit
 (** [chdir dir] changes the process's working directory to [dir] for the rest of
     the executing test ([Unix.chdir]). The runner restores the directory
     captured at the attempt's first [chdir] when the attempt ends; later calls
-    move the process without changing what is restored. A restoration that
-    fails is reported at the call that made the change.
+    move the process without changing what is restored. A restoration that fails
+    is reported at the call that made the change.
 
     Raises the assertions-outside-run error ([Invalid_argument], see
     {!current_frame}) when no test is running, and [Unix.Unix_error] when [dir]
@@ -408,10 +406,10 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
 (** The type for what a result row reports on. The runner records one {!Test}
     row per executed test and — because every sink projects the one recorded
     list — one row per end-of-run verdict that no test owns: a fixture-release
-    failure. Consumers that reason about
-    tests (mutation verdicts, the last-failed store, full-run detection)
-    dispatch on this field, never on the reporting path: a test whose name
-    spells a verdict label must not alias a verdict row. *)
+    failure. Consumers that reason about tests (mutation verdicts, the
+    last-failed store, full-run detection) dispatch on this field, never on the
+    reporting path: a test whose name spells a verdict label must not alias a
+    verdict row. *)
 type subject =
   | Test  (** A declared test the runner executed. *)
   | Fixture_release
@@ -469,4 +467,3 @@ val record : t -> result -> unit
 val results : t -> result list
 (** [results t] is the recorded rows in execution order: every executed test's
     row, then any fixture-release rows (release order). *)
-

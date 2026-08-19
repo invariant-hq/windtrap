@@ -28,8 +28,4 @@
    "inline-test-runner"
    %{library-name}
    -list-partitions)
-  (flags
-   "inline-test-runner"
-   %{library-name}
-   -partition
-   %{partition})))
+  (flags "inline-test-runner" %{library-name} -partition %{partition})))

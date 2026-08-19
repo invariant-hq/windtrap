@@ -88,9 +88,9 @@ type settings = {
 }
 (** The type for resolved renderer settings: the presentation knobs the CLI
     layer resolves ({!Cli.settings}) and the runner never reads — they are
-    deliberately not {!Run.config} fields, because no level or width can
-    change outcomes or exit codes. The driver applies them when it constructs
-    the run's renderer ({!Driver.renderer}). *)
+    deliberately not {!Run.config} fields, because no level or width can change
+    outcomes or exit codes. The driver applies them when it constructs the run's
+    renderer ({!Driver.renderer}). *)
 
 val default_settings : settings
 (** [default_settings] is the settings with every knob at its built-in default:
@@ -234,20 +234,20 @@ val note : t -> string -> unit
 (** [note t line] prints the run-scoped notice [line] on its own line and
     flushes, erasing the live display and closing a partial compact glyph row
     first — a notice printed straight to the sink would splice into the open
-    row. While a compact transcript is still deferred
-    the notice buffers with the rows — it prints in position if a noteworthy
-    event flushes, and a green, healthy run keeps its one-line transcript — with
-    an erasable live copy (under [live]) so a hanging fixture release still
-    names itself on a terminal. The runner announces fixture releases with it
-    ([releasing db]). *)
+    row. While a compact transcript is still deferred the notice buffers with
+    the rows — it prints in position if a noteworthy event flushes, and a green,
+    healthy run keeps its one-line transcript — with an erasable live copy
+    (under [live]) so a hanging fixture release still names itself on a
+    terminal. The runner announces fixture releases with it ([releasing db]). *)
 
 val empty_selection_reason :
   declared:int -> selection:string option -> string option
 (** [empty_selection_reason ~declared ~selection] is why a run selected nothing,
-    as the clause {!finish} puts after ["no tests ran: "] — ["the suite declares
-    none"] when [declared] is [0], else ["<selection> matched none of N tests"]
-    when something narrowed it ({!Driver.selection_description}), else [None],
-    a non-empty suite nothing narrowed having nothing to explain.
+    as the clause {!finish} puts after ["no tests ran: "] —
+    ["the suite declares none"] when [declared] is [0], else
+    ["<selection> matched none of N tests"] when something narrowed it
+    ({!Driver.selection_description}), else [None], a non-empty suite nothing
+    narrowed having nothing to explain.
 
     Exported for [--list], which selects and stops: a listing that answered a
     mistyped filter with silence would be the one place the suggestion
@@ -284,12 +284,12 @@ val finish :
       {!pp_failure} with source excerpts for each of its failures, then its
       bounded captured-output tail and full-log path, printed once per test) —
       when any test failed;
-    - the slow warnings: a faint-yellow block over every
-      completed test past the slow threshold whose record is not [slow_tagged] —
-      a [slow tests (n):] heading, then one indented entry per test with the
-      duration in a right-aligned leading column ([  2.50s  parser › tokenize]),
-      slowest first — and one faint hint line naming the opt-outs: the ["slow"]
-      tag, and whichever threshold knob the [invocation] offers
+    - the slow warnings: a faint-yellow block over every completed test past the
+      slow threshold whose record is not [slow_tagged] — a [slow tests (n):]
+      heading, then one indented entry per test with the duration in a
+      right-aligned leading column ([  2.50s  parser › tokenize]), slowest first
+      — and one faint hint line naming the opt-outs: the ["slow"] tag, and
+      whichever threshold knob the [invocation] offers
       ([--slow-threshold SECONDS] under [`Exe], [WINDTRAP_SLOW_THRESHOLD] under
       [`Mirrors]). The duration shown and compared is {!Run.result.duration}
       (attempts summed, as {!result}); a slow test that also failed keeps its
@@ -333,9 +333,8 @@ val report_snapshots : t -> orphans:string list -> Run.t -> unit
     {!stale_lines} over [orphans] ([Runner.outcome.orphans]) and the removal
     hint under them.
 
-    The driver calls it after {!finish}, when the transcript is
-    settled: lines go straight to the sink, outside the compact row and deferral
-    machinery. *)
+    The driver calls it after {!finish}, when the transcript is settled: lines
+    go straight to the sink, outside the compact row and deferral machinery. *)
 
 (** {1:sections Report sections}
 
@@ -406,17 +405,16 @@ val coverage_report : t -> mode:[ `Report | `Full ] -> coverage -> unit
       visited/total, file name, and the uncovered line ranges
       ([uncovered: 88-94, 121]), bounded at eight regions and then
       [(+N more, -u shows them)] — a row no terminal can lay out is not a
-      report. A fully covered file has no range list; a
-      stale file states the staleness and the fix instead of ranges it cannot
-      attribute; a file whose unvisited points have no line attribution notes
-      the missing source;
+      report. A fully covered file has no range list; a stale file states the
+      staleness and the fix instead of ranges it cannot attribute; a file whose
+      unvisited points have no line attribution notes the missing source;
     - under [`Full], source excerpts for each file with uncovered lines and a
       readable source: a heading ([lib/eval.ml — 75.0% (111/148)]), then each
       uncovered region with one line of context, uncovered lines carrying a
       gutter marker, regions separated by [·····].
 
-    The caller prints it after {!finish}, having withheld [finish]'s
-    [coverage] argument. *)
+    The caller prints it after {!finish}, having withheld [finish]'s [coverage]
+    argument. *)
 
 (** {1:mutation Mutation}
 
@@ -436,8 +434,8 @@ val mutation_discovery : t -> mutants:int -> files:int -> unit
     instrumented build that was not asked to mutate anything found, and the one
     spelling that asks it to test them. The caller prints it after {!finish},
     where the coverage line sits — it is the same discoverability shape. Prints
-    nothing when [mutants] is [0]: a build with no mutant has nothing to
-    offer. *)
+    nothing when [mutants] is [0]: a build with no mutant has nothing to offer.
+*)
 
 val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 (** [mutation_armed t ~id ~before ~after] prints the armed announcement
@@ -482,8 +480,8 @@ val mutation_forced_fail : t -> id:string -> tests:int -> unit
     tests reach survived. That is the signature of the commonest first-run
     misconfiguration, the backend on the test executable but not on the library
     under test, so the line names it; it is a warning rather than a refusal
-    because a legitimately weak file produces the same signature and is owed
-    its report. Prints in every mode. *)
+    because a legitimately weak file produces the same signature and is owed its
+    report. Prints in every mode. *)
 
 type witness = {
   test : string;
@@ -594,12 +592,12 @@ val mutation_report : t -> mutation -> unit
 (** {1:admission Admission}
 
     The admission report: per-test rulings and one summary line, for
-    [WINDTRAP_MUTATE=admit]. An admit transcript makes only per-test claims
-    (Law 17e) — never a survivor list, a score, or any other project-level
-    statement — so this layout shares the mutation report's vocabulary (the
-    labelled rule, the [  VERB  subject] head row, the excerpt row, the [arm]
-    and [dismiss] hints) without sharing its record. Presentation only: the
-    ordering, the caps and every count are the loop's. *)
+    [WINDTRAP_MUTATE=admit]. An admit transcript makes only per-test claims (Law
+    17e) — never a survivor list, a score, or any other project-level statement
+    — so this layout shares the mutation report's vocabulary (the labelled rule,
+    the [  VERB  subject] head row, the excerpt row, the [arm] and [dismiss]
+    hints) without sharing its record. Presentation only: the ordering, the caps
+    and every count are the loop's. *)
 
 type fault = {
   fault_id : string;
@@ -623,9 +621,8 @@ type admission_cause = [ `Failure | `Fixture | `Crashed | `Timed_out ]
     counted failure, a counted failure in the test's own setup or teardown (a
     kill through a dependency the test declared counts, and the witness says
     so), a child that died without reporting — a crash under a fault is a
-    detected fault — or a child its own deadline killed ([`Timed_out]): a
-    hang under a fault is a detected fault too, noticed by never
-    finishing. *)
+    detected fault — or a child its own deadline killed ([`Timed_out]): a hang
+    under a fault is a detected fault too, noticed by never finishing. *)
 
 type admitted = {
   admitted_test : string;
@@ -641,22 +638,21 @@ type unjustified = {
   unjustified_loc : Loc.t option;
       (** Where the test is declared, when it is known. *)
   shown : fault list;
-      (** The tried faults to print, already cut to a derived few by the loop;
-          a skipped fault was never watched and is never listed. *)
+      (** The tried faults to print, already cut to a derived few by the loop; a
+          skipped fault was never watched and is never listed. *)
   tried : int;
       (** How many faults the test watched to a pass outcome. Greater than
           [List.length shown] when the list was cut, and the [… n more] line
           says so. *)
   candidates : int;
       (** The candidate list's length after the [WINDTRAP_MUTATE_TRY] cap.
-          [tried] falls short of it when a skip kept a candidate unwatched,
-          and the capped sentence then stops calling the tried faults the
-          most-run ones — they are not. *)
+          [tried] falls short of it when a skip kept a candidate unwatched, and
+          the capped sentence then stops calling the tried faults the most-run
+          ones — they are not. *)
   reached : int;  (** How many undismissed faults the test reaches in all. *)
   capped : bool;
-      (** [true] iff [WINDTRAP_MUTATE_TRY] truncated the test's candidate
-          list — the ruling's sentence then says so instead of posing as
-          exhaustive. *)
+      (** [true] iff [WINDTRAP_MUTATE_TRY] truncated the test's candidate list —
+          the ruling's sentence then says so instead of posing as exhaustive. *)
 }
 (** The type for one UNJUSTIFIED ruling: a defect report about the named test,
     rendered as the failure block it is. *)
@@ -668,8 +664,8 @@ type no_sites = {
 }
 (** The type for one NO SITES ruling: a stated fact, never a finding. A test
     whose whole reach was dismissed lands here indistinguishably: a dismissal
-    removes the guard itself, so the runtime has no reach data that could
-    name it as the cause. *)
+    removes the guard itself, so the runtime has no reach data that could name
+    it as the cause. *)
 
 type admission = {
   admission_arm_variable : string;
@@ -699,9 +695,8 @@ type admission = {
           the header printed one. *)
   scope : string option;
       (** The [WINDTRAP_MUTATE_ONLY=<value>] binding when the scope is set,
-          spelled whole by the loop and echoed in every NO SITES block — a
-          scope typo must not read as "not instrumented" — and [None] when
-          unset. *)
+          spelled whole by the loop and echoed in every NO SITES block — a scope
+          typo must not read as "not instrumented" — and [None] when unset. *)
 }
 (** The type for a whole admission report. Every field is measured, not derived
     here: this module orders nothing and counts nothing. *)
@@ -714,26 +709,25 @@ val admission_report : t -> admission -> unit
       ([    killed  lib/parser.ml:41:8:le   n < len  →  n <= len], the cause
       spelled when it was not an ordinary failure: [killed (crash)],
       [killed (fixture)], [killed (timeout)]);
-    - one block per NO SITES ruling — the head row with the declaration site
-      and the two-line statement of fact, plus the [WINDTRAP_MUTATE_ONLY] echo
-      when [a.scope] is set;
-    - the unjustified section, when [a.unjustified] is not empty — the
-      labelled rule ([unjustified (1)]), then one block per ruling: the head
-      row with the declaration site, the sentence (capped
-      [killed none of the 25 most-run faults on its lines, of 412 reached]
-      with the [WINDTRAP_MUTATE_TRY=0] hint, exhaustive
-      [killed none of the 12 faults it reaches:], or — when a skip kept a
-      fault unwatched — [killed none of the 1 fault tried on its lines, of 2
-      reached:], with the hint kept when the cap also bit), the tried faults
-      with their excerpt rows and the [… n more]
-      line when the cap dropped some, and the [arm] and [dismiss] remedy
-      lines, the arm command narrowed to the ruling's own test;
+    - one block per NO SITES ruling — the head row with the declaration site and
+      the two-line statement of fact, plus the [WINDTRAP_MUTATE_ONLY] echo when
+      [a.scope] is set;
+    - the unjustified section, when [a.unjustified] is not empty — the labelled
+      rule ([unjustified (1)]), then one block per ruling: the head row with the
+      declaration site, the sentence (capped
+      [killed none of the 25 most-run faults on its lines, of 412 reached] with
+      the [WINDTRAP_MUTATE_TRY=0] hint, exhaustive
+      [killed none of the 12 faults it reaches:], or — when a skip kept a fault
+      unwatched —
+      [killed none of the 1 fault tried on its lines, of 2 reached:], with the
+      hint kept when the cap also bit), the tried faults with their excerpt rows
+      and the [… n more] line when the cap dropped some, and the [arm] and
+      [dismiss] remedy lines, the arm command narrowed to the ruling's own test;
     - the summary line
-      ([admission: 1 admitted of 1 · 2 forks over 12 reached in 0.9s
-        (seed s1:…)]) — zero terms elided, except that [0 admitted] prints
-      beside an unjustified ruling, where it is the answer rather than noise;
-      the [… ruling(s) capped at TRY] term only when [a.capped_rulings] is
-      positive.
+      ([admission: 1 admitted of 1 · 2 forks over 12 reached in 0.9s (seed
+        s1:…)]) — zero terms elided, except that [0 admitted] prints beside an
+      unjustified ruling, where it is the answer rather than noise; the
+      [… ruling(s) capped at TRY] term only when [a.capped_rulings] is positive.
 
     Prints in every mode, as {!mutation_report} does. *)
 
@@ -758,17 +752,16 @@ val stale_lines : string list -> string list
     report names the removal rather than performing it. *)
 
 val is_subtest_failure : Failure.t -> bool
-(** [is_subtest_failure f] is [true] iff [f] was recorded inside
-    {!Run.subtest}: the failure's [subtest] components are non-empty. The
-    terminal summary counts such entries as sub-cases and {!Render_junit}
-    projects them as separate testcases. Classification is record-driven — a
-    user [?msg] spelling out a [leaf › name] prefix stays an ordinary
-    annotation. *)
+(** [is_subtest_failure f] is [true] iff [f] was recorded inside {!Run.subtest}:
+    the failure's [subtest] components are non-empty. The terminal summary
+    counts such entries as sub-cases and {!Render_junit} projects them as
+    separate testcases. Classification is record-driven — a user [?msg] spelling
+    out a [leaf › name] prefix stays an ordinary annotation. *)
 
 val labeled_msg : Failure.t -> string option
 (** [labeled_msg f] is [f]'s [msg] slot as reports display it: for a sub-case
-    entry, the [leaf › name] label derived from [f]'s [subtest] components,
-    with the user's [?msg] joined after [": "] when there is one; for a plain
+    entry, the [leaf › name] label derived from [f]'s [subtest] components, with
+    the user's [?msg] joined after [": "] when there is one; for a plain
     failure, the [?msg] annotation itself. The one derivation, shared by the
     failure block, the headline, and {!Render_junit}'s testcase names. *)
 
@@ -791,19 +784,18 @@ val pp_failure :
       {!Diff.refine}. When it declines, the two values share too little for a
       partial mark to point at anything: under [ansi] each side is colored whole
       (green and red are side colors, so this is the same signal extended, not a
-      different one), and under [ansi:false] the two labelled values print
-      alone — a full-width marker line would be exactly the noise the decline
-      exists to avoid. A difference the diff cannot show is stated in words:
-      renderings that are byte-equal (a printer lossier than the equality), or
-      that differ only by a trailing newline;
+      different one), and under [ansi:false] the two labelled values print alone
+      — a full-width marker line would be exactly the noise the decline exists
+      to avoid. A difference the diff cannot show is stated in words: renderings
+      that are byte-equal (a printer lossier than the equality), or that differ
+      only by a trailing newline;
     - negated equality: the value printed once ([both sides equal: <v>]);
     - an equality whose {!Failure.kind} says it is not [diffable] — the
-      predicate verbs ([satisfies], [require_match]): the claim description
-      and the rendered value under the same [expected]/[actual] labels, but
-      never diffed or refined against each other, a description not being a
-      rendering;
-    - containment ([contains], [not_contains], the affix verbs, [in_order]):
-      the needle with its verdict ([needle "secret" — found at byte 10] /
+      predicate verbs ([satisfies], [require_match]): the claim description and
+      the rendered value under the same [expected]/[actual] labels, but never
+      diffed or refined against each other, a description not being a rendering;
+    - containment ([contains], [not_contains], the affix verbs, [in_order]): the
+      needle with its verdict ([needle "secret" — found at byte 10] /
       [needle "NOPE" — not found]), then the stored haystack excerpt —
       occurrence highlighted, or marked with a [~~~] line without color — and,
       when the excerpt is partial, one faint line stating the excerpted byte
@@ -838,14 +830,13 @@ val pp_failure :
     - property: the counterexample with its case index and shrink count — a
       shrink search that did not converge appends one line stating it
       ([timed out after 5s while shrinking; counterexample may not be minimal]
-      from the payload's [timed_out], else
-      [shrinking stopped after 50 steps; …] from its [shrink_exhausted]) — the
-      inner failure under
-      [which failed at:] (recursively, without commands; [which failed with:]
-      when the inner failure has no location), and — for seeded cases only,
-      never explicit examples — the replay line built from the payload's root
-      seed, spelled from the invocation:
-      [replay: <exe> --seed <root token> -f '<filter>'] under [`Exe],
+      from the payload's [timed_out], else [shrinking stopped after 50 steps; …]
+      from its [shrink_exhausted]) — the inner failure under [which failed at:]
+      (recursively, without commands; [which failed with:] when the inner
+      failure has no location), and — for seeded cases only, never explicit
+      examples — the replay line built from the payload's root seed, spelled
+      from the invocation: [replay: <exe> --seed <root token> -f '<filter>']
+      under [`Exe],
       [replay: WINDTRAP_SEED=<root token> WINDTRAP_FILTER='<filter>' dune
        runtest] under [`Mirrors]. A config-sourced case count riding the payload
       ({!Failure.kind.Property}'s [count]) is restated in the line —
@@ -861,39 +852,38 @@ val pp_failure :
     that stays byte-verbatim: a log excerpt is read as a log, and it names the
     full log's path for the rest.
 
-    Every surface above that prints compared data — the two equality
-    renderings on both paths, the negated-equality value, the containment
-    excerpt, the predicate claim and value, the rendered exceptions, the
-    snapshot baseline and proposed content, the counterexample — prints each
-    C0 byte and DEL as a lowercase [\xNN] escape ([\x1b], [\x00], [\x0d]),
-    with LF and TAB the exceptions: line structure and indentation are the
-    block's own layout. One rule, no mnemonics, so [\x] marks every escape a
-    reader sees. Payload text arriving inside [%S] quotes — the containment
-    needle, the two exception messages — carries OCaml's escapes instead and
-    is left alone.
+    Every surface above that prints compared data — the two equality renderings
+    on both paths, the negated-equality value, the containment excerpt, the
+    predicate claim and value, the rendered exceptions, the snapshot baseline
+    and proposed content, the counterexample — prints each C0 byte and DEL as a
+    lowercase [\xNN] escape ([\x1b], [\x00], [\x0d]), with LF and TAB the
+    exceptions: line structure and indentation are the block's own layout. One
+    rule, no mnemonics, so [\x] marks every escape a reader sees. Payload text
+    arriving inside [%S] quotes — the containment needle, the two exception
+    messages — carries OCaml's escapes instead and is left alone.
 
-    The surfaces that are the author's own words rather than a compared
-    value — the [?msg] annotation, a {!Failure.Message} text, a recorded
-    backtrace — keep the [ansi] policy above, as test names do.
+    The surfaces that are the author's own words rather than a compared value —
+    the [?msg] annotation, a {!Failure.Message} text, a recorded backtrace —
+    keep the [ansi] policy above, as test names do.
 
-    This holds under [ansi:true] as much as under [ansi:false]: a terminal
-    is exactly where a payload-borne [ESC] would stop being data and start
-    being a command, coloring the report and eating the label beside it. The
-    renderer's own styling is applied after the escape, so it is the only
-    live sequence in the block.
+    This holds under [ansi:true] as much as under [ansi:false]: a terminal is
+    exactly where a payload-borne [ESC] would stop being data and start being a
+    command, coloring the report and eating the label beside it. The renderer's
+    own styling is applied after the escape, so it is the only live sequence in
+    the block.
 
-    The escape is a projection, like color. Equality, containment, and
-    snapshot storage never see it — raw bytes in, raw bytes compared, raw
-    bytes accepted into a baseline — and neither do the decisions this block
-    makes about the data: whether two renderings are equal, whether their
-    line lists differ, which regions {!Diff.refine} marked. Only the printed
-    glyphs and their column arithmetic move into escaped space, together, so
-    a [~~~] marker covers all four columns of an escape it opened.
+    The escape is a projection, like color. Equality, containment, and snapshot
+    storage never see it — raw bytes in, raw bytes compared, raw bytes accepted
+    into a baseline — and neither do the decisions this block makes about the
+    data: whether two renderings are equal, whether their line lists differ,
+    which regions {!Diff.refine} marked. Only the printed glyphs and their
+    column arithmetic move into escaped space, together, so a [~~~] marker
+    covers all four columns of an escape it opened.
 
-    It is not injective: a value holding the four characters [\x1b] renders
-    like one holding the byte. Escaping the backslash would fix that and
-    double every escape in the [%S] renderings that make up most of a
-    transcript, which is the worse trade.
+    It is not injective: a value holding the four characters [\x1b] renders like
+    one holding the byte. Escaping the backslash would fix that and double every
+    escape in the [%S] renderings that make up most of a transcript, which is
+    the worse trade.
 
     [excerpt], default [false], additionally prints the located source line read
     from disk, best-effort: unreadable files print nothing. Recorded source

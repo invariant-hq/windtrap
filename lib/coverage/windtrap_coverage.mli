@@ -16,11 +16,11 @@
 
     This module computes report {e data} only — point counts, uncovered lines,
     percentages. Styling, layout, and printing belong to the renderers, ranges
-    and excerpt regions included. Enabling coverage
-    never changes what programs or tests mean: entry visits sequence before
-    their block, out-edge visits fire only after the application has returned
-    and are never inserted in tail position, and every failure on the dump path
-    is a warning on [stderr], never an altered exit code. *)
+    and excerpt regions included. Enabling coverage never changes what programs
+    or tests mean: entry visits sequence before their block, out-edge visits
+    fire only after the application has returned and are never inserted in tail
+    position, and every failure on the dump path is a warning on [stderr], never
+    an altered exit code. *)
 
 (** {1:points Points and instrumentation}
 
@@ -164,12 +164,12 @@ val snapshot : unit -> t
 
 type identity = Windtrap_instr.identity = { exe : string; digest : string }
 (** The type for dump writer identities — [Windtrap_instr]'s, re-exported, so
-    the reporting command handles both runtimes' identities with one pass:
-    [exe] is the writing executable's {!Windtrap_instr.exe_identity} and
-    [digest] the lowercase hex MD5 of its contents at dump time. An executable
-    at [exe] whose digest differs is {e not} the one that wrote the dump.
-    Digesting reads the executable once at exit (a few milliseconds for a
-    typical test binary), off the test path. *)
+    the reporting command handles both runtimes' identities with one pass: [exe]
+    is the writing executable's {!Windtrap_instr.exe_identity} and [digest] the
+    lowercase hex MD5 of its contents at dump time. An executable at [exe] whose
+    digest differs is {e not} the one that wrote the dump. Digesting reads the
+    executable once at exit (a few milliseconds for a typical test binary), off
+    the test path. *)
 
 val output_file : exe:string -> string
 (** [output_file ~exe] is the deterministic [.coverage] path for the executable

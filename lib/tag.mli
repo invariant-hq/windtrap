@@ -7,8 +7,8 @@
 
     Tags are plain strings attached to tests and groups ([?tags:string list] on
     the declaration surface); a test's effective tag set is the union of its own
-    tags and its ancestors'. Selection ([--tag], [--exclude-tag]) is
-    expressed as a {!predicate} over tag sets.
+    tags and its ancestors'. Selection ([--tag], [--exclude-tag]) is expressed
+    as a {!predicate} over tag sets.
 
     One tag name carries built-in meaning: {!slow}, pre-applied by the [slow]
     test constructor. It is an ordinary tag: [--exclude-tag slow] drops it. *)
@@ -43,8 +43,8 @@ val slow : string
     ones. A tag cannot be both required and dropped: adding it to one set
     removes it from the other, so the last flag wins.
 
-    Selection starts from {!any} and refines it with {!require} and {!drop},
-    one call per flag. *)
+    Selection starts from {!any} and refines it with {!require} and {!drop}, one
+    call per flag. *)
 
 type predicate
 (** The type for tag selection predicates. *)

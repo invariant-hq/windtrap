@@ -86,9 +86,9 @@
     {e counts as failed} (see {e Expected failures} below — for an [xfail] test
     that is an unexpected pass), up to [n + 1] attempts, each attempt a fresh
     frame and a truncated capture file. The recorded result carries the
-    {e final} attempt's failures and output tail and the attempt count, which
-    is what renderers show ({!Run.result.attempts}). Skips are never retried;
-    the captured-output tail of a failed test is attached to its first failure
+    {e final} attempt's failures and output tail and the attempt count, which is
+    what renderers show ({!Run.result.attempts}). Skips are never retried; the
+    captured-output tail of a failed test is attached to its first failure
     entry.
 
     {b Expected failures.} A test marked {!Test_tree.xfail} still runs, and
@@ -104,12 +104,11 @@
 
     {b Selection.} A test runs iff its path contains [config.filter] (when set),
     does not contain [config.exclude] (when set), its tags satisfy
-    [--tag]/[--exclude-tag] over {!Tag.any}, it survives
-    the [--failed] store and the caller's [?allowlist], it falls in the
-    requested [--shard] bucket (when
-    set), and — when any focused node exists — it is focused. Deselected tests
-    do not execute and are not recorded. Fixture releases run after the last
-    executed test on every path where the runner regains control, including
+    [--tag]/[--exclude-tag] over {!Tag.any}, it survives the [--failed] store
+    and the caller's [?allowlist], it falls in the requested [--shard] bucket
+    (when set), and — when any focused node exists — it is focused. Deselected
+    tests do not execute and are not recorded. Fixture releases run after the
+    last executed test on every path where the runner regains control, including
     under [--bail] and after a fatal exception, announced through
     {!Fixture_release} before each teardown and outside any per-test timeout.
 
@@ -224,9 +223,9 @@ type outcome = {
       (** The run record: results in execution order — every executed test's
           row, then the end-of-run verdict rows ({!Run.type-subject}): one
           {!Run.Fixture_release} row per failed fixture teardown — plus the
-          snapshot registry (acceptance {!Snapshot.writes} included)
-          and the coverage seam. Every sink projects this one list, so a verdict
-          that sets the exit code is always visible in the report. *)
+          snapshot registry (acceptance {!Snapshot.writes} included) and the
+          coverage seam. Every sink projects this one list, so a verdict that
+          sets the exit code is always visible in the report. *)
   selected : Test_tree.case list;
       (** The selected tests in execution order — the [-l] listing data. Under
           [--bail] some may not have executed. *)
@@ -243,11 +242,11 @@ type outcome = {
   exit_code : int;
       (** [1] when any recorded row counted as failed ({!Run.result.counted}) —
           a test the [xfail] annotation did not excuse, or a failed fixture
-          release; else [2] when no test executed (empty suite or
-          empty selection — the filter-typo case); else [0] — a nonempty
-          selection whose every test skipped is deliberate and exits [0], and so
-          does a run whose only failures were expected ([xfail]). List-only runs
-          exit [0]. *)
+          release; else [2] when no test executed (empty suite or empty
+          selection — the filter-typo case); else [0] — a nonempty selection
+          whose every test skipped is deliberate and exits [0], and so does a
+          run whose only failures were expected ([xfail]). List-only runs exit
+          [0]. *)
 }
 (** The type for completed runs: everything renderers project and the facade
     needs to exit. *)
@@ -272,14 +271,13 @@ val execute :
     Effects: registers a process-wide [Stdlib.at_exit] exit guard on first call
     (never removed; inert while no run is active), reads [CI] via {!Env},
     captures test output under [config.log_dir] (unless [config.stream]),
-    rewrites the last-failed store, and — in update mode —
-    writes accepted baselines through the snapshot registry. Raises
-    [Invalid_argument] when called while a run is already active (from a test
-    body, the calling test fails with that error), and when [config.shard]
-    violates [1 <= K <= N] — the CLI layer validates every layer it resolves, so
-    only a hand-built configuration can trip this. If [on_event] raises, the run
-    aborts with that exception — after a best-effort fixture release, like a
-    fatal exception. *)
+    rewrites the last-failed store, and — in update mode — writes accepted
+    baselines through the snapshot registry. Raises [Invalid_argument] when
+    called while a run is already active (from a test body, the calling test
+    fails with that error), and when [config.shard] violates [1 <= K <= N] — the
+    CLI layer validates every layer it resolves, so only a hand-built
+    configuration can trip this. If [on_event] raises, the run aborts with that
+    exception — after a best-effort fixture release, like a fatal exception. *)
 
 val list_selection :
   config:Run.config ->
@@ -296,4 +294,3 @@ val list_selection :
     [Printexc.record_backtrace true], the [CI] read and the [--failed] store
     read. No capture, no log directory, no store rewrite, no baseline. Raises
     [Invalid_argument] as {!execute} does. *)
-

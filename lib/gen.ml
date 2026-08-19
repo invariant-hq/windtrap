@@ -699,8 +699,7 @@ module Private = struct
       pp;
       run =
         (fun state ->
-          if count < 0 then
-            invalid_arg "Gen.Private.list_exact: negative count";
+          if count < 0 then invalid_arg "Gen.Private.list_exact: negative count";
           let trees, state = sample_elements gen count state in
           match keep with
           | None -> (Shrink_tree.list trees, state)
@@ -723,9 +722,7 @@ module Private = struct
   let no_printer_message = "<no printer>"
 
   let render gen v =
-    match gen.pp with
-    | Some pp -> render_with pp v
-    | None -> no_printer_message
+    match gen.pp with Some pp -> render_with pp v | None -> no_printer_message
 
   let render_value gen v = Option.map (fun pp -> render_with pp v) gen.pp
 end

@@ -122,13 +122,13 @@ let strip_ansi s =
       match s.[i] with
       | '\027' ->
           if i + 1 >= len then () (* trailing ESC: drop *)
-          else begin
-            match s.[i + 1] with
+          else
+            begin match s.[i + 1] with
             | '[' -> csi (i + 2)
             | ']' -> osc (i + 2)
             | _ -> loop (i + 2)
             (* two-byte escape: drop both *)
-          end
+            end
       | c ->
           Buffer.add_char b c;
           loop (i + 1)

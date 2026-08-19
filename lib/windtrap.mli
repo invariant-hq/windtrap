@@ -11,18 +11,18 @@
     the suite to {!run}:
 
     {[
-      open Windtrap
+    open Windtrap
 
-      let () =
-        run "mylib"
-          [
-            test "addition" (fun () -> equal int 5 (Calc.add 2 3));
-            group "parser"
-              [
-                test "empty input" (fun () ->
-                    raises (Parse_error "empty") (fun () -> Calc.parse ""));
-              ];
-          ]
+    let () =
+      run "mylib"
+        [
+          test "addition" (fun () -> equal int 5 (Calc.add 2 3));
+          group "parser"
+            [
+              test "empty input" (fun () ->
+                  raises (Parse_error "empty") (fun () -> Calc.parse ""));
+            ];
+        ]
     ]}
 
     Comparisons go through an ['a] {!type:testable} — a printer and an equality
@@ -72,8 +72,8 @@ type pos = string * int * int * int
     failure is attributed to the enclosing test's declaration instead, and when
     even that is unknown, reports omit the location rather than guess.
 
-    That attribution is the symptom to reach for [?pos] on: a report pointing
-    at a test's declaration line rather than the assertion inside it means the
+    That attribution is the symptom to reach for [?pos] on: a report pointing at
+    a test's declaration line rather than the assertion inside it means the
     assertion was the body's last expression, and [~pos:__POS__] at the call
     puts the location back. *)
 
@@ -180,21 +180,21 @@ val cases :
     table.
 
     {[
-      cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
-        (fun input -> ignore (require_ok (parse_port input)))
+    cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
+      (fun input -> ignore (require_ok (parse_port input)))
     ]}
 
     [~name] is required, and a positional [<base>.<i>] default is exactly what
     it is there to prevent: a child's path is its identity — it keys the child's
-    per-case property seeds and its entry in the [--failed] store — so
-    inserting a row at the front would silently re-key every row after it.
+    per-case property seeds and its entry in the [--failed] store — so inserting
+    a row at the front would silently re-key every row after it.
 
     The [inputs] list is evaluated at {e declaration} time, outside any test:
     rows are data, not test code. A row that needs test-scoped work —
     {!temp_dir}, {!setenv}, an assertion, IO against the system under test —
     cannot be a row; keep the list pure and do per-input work inside [fn]. A
-    table whose rows must be computed inside a test does not convert to
-    [cases]: use {!subtest} within one body instead. *)
+    table whose rows must be computed inside a test does not convert to [cases]:
+    use {!subtest} within one body instead. *)
 
 val xfail : ?reason:string -> test -> test
 (** [xfail t] marks [t] — and, through a group, every test under it — as
@@ -225,8 +225,8 @@ val bracket :
     masks the other. Partial application builds reusable constructors:
 
     {[
-      let with_db = bracket ~setup:Db.connect ~teardown:Db.close
-      let tests = [ with_db "count" (fun db -> equal int 0 (Db.count db)) ]
+    let with_db = bracket ~setup:Db.connect ~teardown:Db.close
+    let tests = [ with_db "count" (fun db -> equal int 0 (Db.count db)) ]
     ]} *)
 
 val scoped :
@@ -247,14 +247,14 @@ val scoped :
     {e returned}.
 
     {[
-      let with_eio = scoped Eio_main.run
+    let with_eio = scoped Eio_main.run
 
-      let tests =
-        [
-          with_eio "reads the config" (fun env ->
-              let fs = Eio.Stdenv.fs env in
-              equal string "{}" Eio.Path.(load (fs / "config.json")));
-        ]
+    let tests =
+      [
+        with_eio "reads the config" (fun env ->
+            let fs = Eio.Stdenv.fs env in
+            equal string "{}" Eio.Path.(load (fs / "config.json")));
+      ]
     ]}
 
     [scope] is positional and comes {e before} the optional arguments, so that a
@@ -323,11 +323,11 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 (** {1:assertions Assertions}
 
     The assertion verbs and the {!Exn} predicates. Each verb raises one
-    structured failure that the runner catches at the test boundary; the
-    failure records the call site ([?pos], else a best-effort call-stack
-    capture) and the optional [?msg] annotation. Expected precedes actual,
-    always. An assertion failing outside any run surfaces as an ordinary
-    uncaught exception rendered with the failure's one-line summary. *)
+    structured failure that the runner catches at the test boundary; the failure
+    records the call site ([?pos], else a best-effort call-stack capture) and
+    the optional [?msg] annotation. Expected precedes actual, always. An
+    assertion failing outside any run surfaces as an ordinary uncaught exception
+    rendered with the failure's one-line summary. *)
 
 val equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal t expected actual] asserts that [expected] and [actual] are equal
@@ -357,16 +357,16 @@ val satisfies :
     sentence on the expected side (default ["value satisfying the predicate"]):
 
     {[
-      satisfies ~claim:"greater than 0" int (fun n -> n > 0) n
-      (* expected  greater than 0
+    satisfies ~claim:"greater than 0" int (fun n -> n > 0) n
+    (* expected  greater than 0
          actual    0 *)
     ]}
 
     That is the shape a comparison assertion takes: [is_true (n > 0)] consumes
     both numbers into a boolean and can only report [true] against [false],
     where a claim keeps the bound and the value keeps the value. [claim]
-    describes [pred] and nothing checks that it does — keep the two next to
-    each other. [pred] must be total; the printer runs only on failure. *)
+    describes [pred] and nothing checks that it does — keep the two next to each
+    other. [pred] must be total; the printer runs only on failure. *)
 
 val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
 (** [starts_with ~affix s] asserts that [s] begins with [affix]. The failure
@@ -414,15 +414,15 @@ val in_order : ?pos:pos -> ?msg:string -> subs:string list -> string -> unit
     chain of {!contains} calls would not check it:
 
     {[
-      in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] session_log
+    in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] session_log
     ]}
 
-    The failure names the element that broke the chain — its index and its
-    value — and the byte the search had reached, over an excerpt of the region
-    still to be matched. When that element {e is} in the string but before the
-    cursor, the failure says so and marks it: "out of order" and "missing" are
-    different bugs, and the first is the one you would otherwise read the whole
-    string to find.
+    The failure names the element that broke the chain — its index and its value
+    — and the byte the search had reached, over an excerpt of the region still
+    to be matched. When that element {e is} in the string but before the cursor,
+    the failure says so and marks it: "out of order" and "missing" are different
+    bugs, and the first is the one you would otherwise read the whole string to
+    find.
 
     Matches never re-use bytes, so [["aa"; "aa"]] needs four [a]s. An empty
     element matches without advancing. [subs] must be non-empty; an empty chain
@@ -433,8 +433,8 @@ val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
     path keeps its value.
 
     {[
-      let user = require_some (Store.find store "alice") in
-      equal string "alice" user.name
+    let user = require_some (Store.find store "alice") in
+    equal string "alice" user.name
     ]} *)
 
 val require_ok :
@@ -455,7 +455,7 @@ val require_match :
     [b] — {!require_some} for values that are not already options:
 
     {[
-      let port = require_match (function Tcp p -> Some p | _ -> None) addr
+    let port = require_match (function Tcp p -> Some p | _ -> None) addr
     ]}
 
     On [None] the failure renders [v] with [pp] when given and as [<abstract>]
@@ -486,17 +486,17 @@ val raises_match :
     where a predicate can only reject.
 
     {[
-      raises_match (Exn.invalid_arg ~substring:"unhandled op") (fun () ->
-          Machine.step m op)
+    raises_match (Exn.invalid_arg ~substring:"unhandled op") (fun () ->
+        Machine.step m op)
     ]} *)
 module Exn : sig
   val invalid_arg : ?substring:string -> exn -> bool
-  (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m]
-      contains [substring], if given. *)
+  (** [invalid_arg e] is [true] iff [e] is [Invalid_argument m] and [m] contains
+      [substring], if given. *)
 
   val failure : ?substring:string -> exn -> bool
-  (** [failure e] is [true] iff [e] is [Failure m] and [m] contains
-      [substring], if given. *)
+  (** [failure e] is [true] iff [e] is [Failure m] and [m] contains [substring],
+      if given. *)
 
   val sys_error : ?substring:string -> exn -> bool
   (** [sys_error e] is [true] iff [e] is [Sys_error m] and [m] contains
@@ -564,17 +564,17 @@ val float : float -> float testable
     itself included; assert a NaN result with {!float_exact}. An infinity is
     equal only to an infinity of the same sign; [0.] and [-0.] are equal.
 
-    Raises [Invalid_argument] if [eps] is not strictly positive (NaN
-    included): any such [eps] is exact equality wearing a tolerance's syntax
-    — exactness is spelled {!float_exact}. *)
+    Raises [Invalid_argument] if [eps] is not strictly positive (NaN included):
+    any such [eps] is exact equality wearing a tolerance's syntax — exactness is
+    spelled {!float_exact}. *)
 
 val float_rel : rel:float -> abs:float -> float testable
 (** [float_rel ~rel ~abs] compares with combined tolerance: within [abs] near
     zero, within [rel *. Float.max (abs_float a) (abs_float b)] for large
     values. NaN and infinities behave as in {!float}.
 
-    Raises [Invalid_argument] if either bound is negative or NaN, or if both
-    are zero. One zero bound switches that component off; both zero is exact
+    Raises [Invalid_argument] if either bound is negative or NaN, or if both are
+    zero. One zero bound switches that component off; both zero is exact
     equality in disguise — spell it {!float_exact}. *)
 
 val option : 'a testable -> 'a option testable
@@ -668,10 +668,10 @@ val prop :
       late case needs at least as many cases as the failing run.
     - [max_discard] is how many discarded cases ({!assume}, {!reject}) the
       property tolerates before it {e gives up}; it defaults to twice the
-      effective [count]. Raise it for a law whose precondition is genuinely
-      rare — the discard rate is a fact about that law, which is why there is
-      no run-wide knob for it — but a generator that produced the precondition
-      by construction would not need the budget at all.
+      effective [count]. Raise it for a law whose precondition is genuinely rare
+      — the discard rate is a fact about that law, which is why there is no
+      run-wide knob for it — but a generator that produced the precondition by
+      construction would not need the budget at all.
     - [examples] are explicit inputs run before any generation, unshrunk (they
       are already the reviewed minimal form) — the home for regressions worth
       keeping forever: [prop ~examples:[ Rect (2., 0.) ] ...].
@@ -769,21 +769,21 @@ val stateful :
     there is no moment in those at which the resource could be returned.
 
     {[
-      (* fragment: requires eio_main *)
-      stateful "store replays" ~model:Model.empty
-        ~scope:(fun run ->
-          Eio_main.run @@ fun env ->
-          Eio.Switch.run @@ fun sw -> run (Store.open_ ~sw ~env dir))
-        commands
+    (* fragment: requires eio_main *)
+    stateful "store replays" ~model:Model.empty
+      ~scope:(fun run ->
+        Eio_main.run @@ fun env ->
+        Eio.Switch.run @@ fun sw -> run (Store.open_ ~sw ~env dir))
+      commands
     ]}
 
     The acquire-and-release pair {!bracket} spells is the same shape with the
     release written out — a [~setup:f ~teardown:g] is this [~scope]:
 
     {[
-      let scope run =
-        let sut = f () in
-        Fun.protect ~finally:(fun () -> g sut) (fun () -> run sut)
+    let scope run =
+      let sut = f () in
+      Fun.protect ~finally:(fun () -> g sut) (fun () -> run sut)
     ]}
 
     That [Fun.protect] is yours — windtrap never sees the resource, so releasing
@@ -801,10 +801,10 @@ val stateful :
     hundreds of systems, so the scope should mint its own path and remove it on
     the way out. {!setenv} and {!chdir} are test-scoped the same way — the
     runner restores them at the attempt boundary, not between cases or shrink
-    candidates — so a scope (or a command body) that moves the process or
-    binds a variable carries that state into every later case of the same
-    run: use absolute paths, and if the scope must touch process state, it
-    puts it back itself, per case.
+    candidates — so a scope (or a command body) that moves the process or binds
+    a variable carries that state into every later case of the same run: use
+    absolute paths, and if the scope must touch process state, it puts it back
+    itself, per case.
 
     [invariant] runs on the fresh system before the first call and after every
     call. An operation whose body asserts nothing is checked only by it: bodies
@@ -854,8 +854,8 @@ val cover : string -> bool -> unit
 (** [cover label cond] is {!classify}[ label cond] plus a demand: the property
     fails unless at least one passing case marked [label]. It is the CI gate on
     generator quality — [classify] prints a distribution a human reads under
-    [-v], so a generator that stops reaching the interesting region is
-    otherwise silent.
+    [-v], so a generator that stops reaching the interesting region is otherwise
+    silent.
 
     Presence, not proportion: "this region is reached at all" is the question
     that catches a generator regression, and a percentage gate over a random
@@ -950,10 +950,10 @@ val subtest : string -> (unit -> unit) -> unit
     ([test › outer › inner]).
 
     {[
-      test "backend contract" (fun () ->
-          List.iter
-            (fun (name, backend) -> subtest name (fun () -> check backend))
-            backends)
+    test "backend contract" (fun () ->
+        List.iter
+          (fun (name, backend) -> subtest name (fun () -> check backend))
+          backends)
     ]}
 
     A {!skip} and a timeout abort the whole test (failures already recorded
@@ -980,9 +980,9 @@ val setenv : string -> string option -> unit
     failure, skip, and timeout included, and per attempt under [~retries].
 
     {[
-      test "reads the token from the environment" (fun () ->
-          setenv "API_TOKEN" (Some "t-123");
-          equal (option string) (Some "t-123") (Config.token ()))
+    test "reads the token from the environment" (fun () ->
+        setenv "API_TOKEN" (Some "t-123");
+        equal (option string) (Some "t-123") (Config.token ()))
     ]}
 
     The unbinding is a real one: [Sys.getenv_opt name] answers [None]
@@ -992,11 +992,11 @@ val setenv : string -> string option -> unit
     variable twice still leaves behind what the test found.
 
     {b Process-global.} The environment is the process's, so the binding is
-    visible to every thread the test spawns and to every child process it
-    starts — and a test that changes the environment from a spawned thread
-    races the runner's restoration. Windtrap runs tests sequentially in one
-    domain, so tests never race {e each other} here; threads within one test
-    are the caller's to order. *)
+    visible to every thread the test spawns and to every child process it starts
+    — and a test that changes the environment from a spawned thread races the
+    runner's restoration. Windtrap runs tests sequentially in one domain, so
+    tests never race {e each other} here; threads within one test are the
+    caller's to order. *)
 
 val chdir : string -> unit
 (** [chdir dir] changes the working directory to [dir] for the rest of the test.
@@ -1004,10 +1004,10 @@ val chdir : string -> unit
     first [chdir] when the test ends, on every outcome, per attempt.
 
     {[
-      test "builds in place" (fun () ->
-          chdir (temp_dir ());
-          Builder.run ();
-          is_true (Sys.file_exists "output.txt"))
+    test "builds in place" (fun () ->
+        chdir (temp_dir ());
+        Builder.run ();
+        is_true (Sys.file_exists "output.txt"))
     ]}
 
     Process-global on the same terms as {!setenv}: threads and child processes
@@ -1069,10 +1069,9 @@ val run : ?argv:string array -> string -> test list -> unit
 (** Internal machinery — windtrap's own composition surface, re-exported for the
     library's per-module test suites (the [test/] directories) and for the
     co-versioned client library ([ppx_windtrap]'s runtime). Not part of the
-    public API: these interfaces move
-    without notice and carry no stability guarantee. Everything user-facing is
-    the documented surface above; nothing here escapes into scope on
-    [open Windtrap]. *)
+    public API: these interfaces move without notice and carry no stability
+    guarantee. Everything user-facing is the documented surface above; nothing
+    here escapes into scope on [open Windtrap]. *)
 module Private : sig
   module Atomic_file = Atomic_file
   module Capture = Capture
@@ -1084,6 +1083,7 @@ module Private : sig
   module Env = Env
   module Failure = Failure
   module Loc = Loc
+
   module Mutate_loop = Mutate_loop
   (** Also the Law 16d armed hooks — the one cross-package registration cell;
       [ppx_windtrap]'s runtime registers its hook here at load. *)

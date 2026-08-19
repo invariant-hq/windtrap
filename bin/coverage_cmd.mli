@@ -35,11 +35,10 @@ val run : string list -> int
     and the reason — never a silent narrowing of the merge. A directory argument
     contributes the [.coverage] files found under it, however many that is.
 
-    The gate compares raw percentages, never their renderings. A failed
-    verdict states the threshold as given and the measurement as the report
-    line states it — ["minimum 80%: FAILED — 75.1% (5527/7363 points)"] — so
-    coverage that renders equal to the threshold can still fail, and the
-    fraction says why.
+    The gate compares raw percentages, never their renderings. A failed verdict
+    states the threshold as given and the measurement as the report line states
+    it — ["minimum 80%: FAILED — 75.1% (5527/7363 points)"] — so coverage that
+    renders equal to the threshold can still fail, and the fraction says why.
 
     Reports and the [--min] verdict print on standard output; errors and
     staleness warnings print on standard error, as does the [--min] verdict

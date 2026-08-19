@@ -3,7 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-
 (* Not mutated. This module is part of the machinery a mutation run uses
    to judge mutants — the scheduler, the ambient run state, the reporting
    spine, the loop itself — so a mutant here is armed inside the process
@@ -180,7 +179,6 @@ let prop_context op =
 
 let collect label = Property.collect (prop_context "collect") label
 let classify label cond = Property.classify (prop_context "classify") label cond
-
 let cover label cond = Property.cover (prop_context "cover") label cond
 
 (* Snapshots *)
@@ -358,8 +356,8 @@ let run ?(argv = Sys.argv) suite tests =
              makes, so a refused [--shard] or [--failed] is refused
              here too. It has no mirror, so [parsed] is its whole
              resolution, as for [--help] and [--version]. *)
-          if parsed.Cli.list_only = Some true then begin
-            match Runner.list_selection ~config ~suite tests with
+          if parsed.Cli.list_only = Some true then
+            begin match Runner.list_selection ~config ~suite tests with
             | Error error ->
                 prerr_endline (Runner.startup_message error);
                 exit (Runner.startup_exit_code error)
@@ -369,7 +367,8 @@ let run ?(argv = Sys.argv) suite tests =
                    "(list the suite's tests with -l)" hint leads to. The
                    hint itself is not repeated: the reader is listing. *)
                 Option.iter
-                  (fun reason -> print_endline ("no tests ran: " ^ reason ^ "."))
+                  (fun reason ->
+                    print_endline ("no tests ran: " ^ reason ^ "."))
                   (Render.empty_selection_reason
                      ~declared:(List.length (Test_tree.flatten tests))
                      ~selection:(Driver.selection_description config));
@@ -377,6 +376,6 @@ let run ?(argv = Sys.argv) suite tests =
             | Ok paths ->
                 List.iter print_endline paths;
                 exit 0
-          end;
-          run_suite ~argv ~suite ~config ~coverage ~render
-            ~output:output_level ~junit tests)
+            end;
+          run_suite ~argv ~suite ~config ~coverage ~render ~output:output_level
+            ~junit tests)

@@ -15,8 +15,8 @@
     {b The emission law.} Because all mutants share one binary, an ill-typed arm
     is not one bad mutant, it is a broken build for the whole project. So
     {b every arm must be well-typed without type information, and must mention
-    only identifiers already present in the original expression, plus
-    [Stdlib]-qualified names.} It shapes all four operators: the comparison
+       only identifiers already present in the original expression, plus
+       [Stdlib]-qualified names.} It shapes all four operators: the comparison
     rewrites negate the operator the source already wrote rather than naming its
     partner, the connective rewrite branches on the armed flag rather than
     lifting [&&] to a value, and [ari] — the one admitted exception, since

@@ -25,8 +25,8 @@
 
     [Cli.mutation] decides which mode this process is in;
     [doc/manual/mutation.md] is the chapter that teaches them, and Laws 16 and
-    17 in [doc/dev/architecture.md] are the durable record of what each owes.
-    In an uninstrumented build, in a [--list] run, and whenever the environment
+    17 in [doc/dev/architecture.md] are the durable record of what each owes. In
+    an uninstrumented build, in a [--list] run, and whenever the environment
     asks for nothing, this module does nothing at all.
 
     {b Exit codes} (Law 16e). [0] when the loop completed, {e whatever it found}
@@ -49,6 +49,7 @@
 
 (** {1:running Running} *)
 
+(** The type for what {!execute_and_report} did with the run. *)
 type run =
   | Ran of (Runner.outcome, Runner.startup_error) result
       (** The suite ran once, ordinarily — no loop, or a loop that never
@@ -60,7 +61,6 @@ type run =
           has to say. Nothing about the underlying run is the caller's business
           — a loop's dry run is not the process's verdict — and the process
           exits with this code. *)
-(** The type for what {!execute_and_report} did with the run. *)
 
 val execute_and_report : Driver.t -> Test_tree.t list -> run
 (** [execute_and_report spine tests] is the mutation-aware run entry:
@@ -70,13 +70,13 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     — same transcript, same bytes, same cost.
 
     What a process about to run with a mutant armed owes the inline (ppx)
-    runtime — [Ppx_runtime.enter_armed], which turns checking read-only
-    (Law 16d) and clears the cross-run tables a forked child must not inherit —
+    runtime — [Ppx_runtime.enter_armed], which turns checking read-only (Law
+    16d) and clears the cross-run tables a forked child must not inherit —
     arrives through {!on_armed} rather than as an argument or a dependency: the
     runtime sits {e above} this module and registers at its module load,
-    whatever the link order. The hooks fire in each forked child
-    before its first test, and once in the parent under [WINDTRAP_MUTATE_ARM];
-    never in a run that arms nothing.
+    whatever the link order. The hooks fire in each forked child before its
+    first test, and once in the parent under [WINDTRAP_MUTATE_ARM]; never in a
+    run that arms nothing.
 
     {b Refusals}, each [Reported 1] with its own message naming the variable or
     the candidates, never a silently defaulted run: an unrecognized
@@ -99,10 +99,10 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     expired child's process group, one scratch log directory per run (removed at
     the end), and one verdict file under {!Windtrap_mutate.output_file}.
     Children never reach [Stdlib]'s exit machinery: every exception, fatal
-    included, is caught, reduced to a verdict line, and followed by
-    [Unix._exit] — otherwise a child dying of [Out_of_memory] would run the
-    coverage at-exit dump against a path resolved before the fork and overwrite
-    the parent's [.coverage] (Law 16e). *)
+    included, is caught, reduced to a verdict line, and followed by [Unix._exit]
+    — otherwise a child dying of [Out_of_memory] would run the coverage at-exit
+    dump against a path resolved before the fork and overwrite the parent's
+    [.coverage] (Law 16e). *)
 
 (** {1:armed The armed hooks} *)
 
@@ -114,12 +114,12 @@ val on_armed : (unit -> unit) -> unit
 
     The one cross-package registration point, and the library's second ambient
     cell beside {!Run}'s slot: the inline (ppx) runtime lives {e above} this
-    module and cannot be named from it, so what a process about to arm owes it
-    — read-only checking, and the clearing of the cross-run tables a forked
-    child must not inherit ([Ppx_runtime.enter_armed]) — is registered rather
-    than passed. Registration is a module-load act; hooks are never
-    unregistered, fire in registration order, and are read at fire time, so
-    registration order and link order need not agree. *)
+    module and cannot be named from it, so what a process about to arm owes it —
+    read-only checking, and the clearing of the cross-run tables a forked child
+    must not inherit ([Ppx_runtime.enter_armed]) — is registered rather than
+    passed. Registration is a module-load act; hooks are never unregistered,
+    fire in registration order, and are read at fire time, so registration order
+    and link order need not agree. *)
 
 (** {1:report The report projection} *)
 

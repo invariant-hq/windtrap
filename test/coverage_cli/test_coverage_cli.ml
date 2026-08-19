@@ -201,7 +201,9 @@ let bound_value env name =
 let child ?(env = []) ?(args = []) () =
   incr dump_counter;
   let dump = scratch (Printf.sprintf "dump-%d/self.coverage" !dump_counter) in
-  let only = Option.value (bound_value env "CHILD_FILE") ~default:"lib/fake.ml" in
+  let only =
+    Option.value (bound_value env "CHILD_FILE") ~default:"lib/fake.ml"
+  in
   let code, out, err =
     capture
       ~env:
@@ -877,8 +879,8 @@ let staleness_pass =
   check_contains "the orphan warning names the dump" ~needle:"gone.coverage" err;
   check_contains "the orphan warning names the missing executable"
     ~needle:"default/test/gone.exe" err;
-  check_contains "the orphan warning says what it did"
-    ~needle:"excluding it" err;
+  check_contains "the orphan warning says what it did" ~needle:"excluding it"
+    err;
   (* Stale: the executable was rebuilt since the dump — its content no
      longer matches the recorded digest (its mtime is irrelevant). *)
   let root = stale_root "stale-rebuilt" in
@@ -897,7 +899,8 @@ let staleness_pass =
      pins its own wording. *)
   check_contains "excluding everything is loud" ~needle:"and every one is" err;
   check_contains "the all-excluded remedy is a forced run"
-    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage" err;
+    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage"
+    err;
   (* Stale beside fresh — the revert trap, measured against the blessed
      alias: reverting sources to an already-tested state makes that
      test action a dune cache hit, so its dump is never rewritten and
@@ -919,7 +922,8 @@ let staleness_pass =
   check_contains "the partial-exclusion warning names the dump"
     ~needle:"b.coverage" err;
   check_contains "the partial-exclusion remedy is a forced run"
-    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage" err;
+    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage"
+    err;
   (* An absolute identity resolves without a _build root. *)
   let root = stale_root "stale-abs" in
   write_dump root "abs.coverage"

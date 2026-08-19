@@ -3,7 +3,6 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-
 (* Not mutated. This module is part of the machinery a mutation run uses
    to judge mutants — the scheduler, the ambient run state, the reporting
    spine, the loop itself — so a mutant here is armed inside the process
@@ -127,8 +126,7 @@ let selection_description (config : Run.config) =
    each suite writes its own report into it for CI to glob. *)
 let junit_path ~suite target =
   if Filename.check_suffix target ".xml" then target
-  else
-    Filename.concat target (Path_ops.sanitize_component suite ^ ".xml")
+  else Filename.concat target (Path_ops.sanitize_component suite ^ ".xml")
 
 let write_junit ~invocation ~suite ~duration ~results target =
   let path = junit_path ~suite target in
@@ -144,8 +142,7 @@ let write_junit ~invocation ~suite ~duration ~results target =
       Format.eprintf "warning: could not write JUnit report: %s@." message
   | exception Unix.Unix_error (error, _, _) ->
       Format.eprintf "warning: could not write JUnit report to %s: %s@."
-        (Path_ops.display path)
-        (Unix.error_message error)
+        (Path_ops.display path) (Unix.error_message error)
 
 (* The event observer *)
 

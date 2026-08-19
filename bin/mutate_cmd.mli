@@ -59,14 +59,13 @@ val run : string list -> int
     An orphaned or outdated verdict file is excluded and warned about, never
     merged: a verdict from a previous build can claim a kill the code no longer
     earns, and a false kill hides a live defect where a false survivor merely
-    wastes a reader's time. The warning names the remedy
-    the exclusion actually has, and the two are not interchangeable: a forced
-    re-run rewrites an {e outdated} verdict, while an {e orphan} — one whose
-    recorded executable no longer exists — is a leftover that no run can replace
-    and only deletion removes. The check needs the file's own [_build] to
-    resolve the executable it names: a verdict file copied out of one — a CI
-    artifact, say — records an identity nothing can locate, and is merged rather
-    than guessed about.
+    wastes a reader's time. The warning names the remedy the exclusion actually
+    has, and the two are not interchangeable: a forced re-run rewrites an
+    {e outdated} verdict, while an {e orphan} — one whose recorded executable no
+    longer exists — is a leftover that no run can replace and only deletion
+    removes. The check needs the file's own [_build] to resolve the executable
+    it names: a verdict file copied out of one — a CI artifact, say — records an
+    identity nothing can locate, and is merged rather than guessed about.
 
     The report prints on standard output; errors and staleness warnings print on
     standard error. Witnesses are named but not located: a test's declaration

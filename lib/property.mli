@@ -49,8 +49,8 @@
 exception Discard
 (** Raised inside a property body to discard the current case; the engine counts
     it and moves to the next case. Prefer {!assume} and {!reject} to raising
-    directly. Generation-time discards use [Gen.Private.Rejected] instead; the engine
-    counts both kinds together. *)
+    directly. Generation-time discards use [Gen.Private.Rejected] instead; the
+    engine counts both kinds together. *)
 
 val assume : bool -> unit
 (** [assume cond] is [()] if [cond] and raises {!Discard} otherwise. Discarding
@@ -64,11 +64,11 @@ val reject : unit -> 'a
 
 (** {1:labelling Labelling}
 
-    Labels report the distribution of generated inputs; a {!cover} label
-    turns "this region was reached" into a failure when it was not. Per-case marks accumulate in
-    the engine's {!context} and commit when the case {e passes}: discarded and
-    failing cases contribute nothing, and shrink re-runs accumulate into a
-    scratch context that is thrown away. *)
+    Labels report the distribution of generated inputs; a {!cover} label turns
+    "this region was reached" into a failure when it was not. Per-case marks
+    accumulate in the engine's {!context} and commit when the case {e passes}:
+    discarded and failing cases contribute nothing, and shrink re-runs
+    accumulate into a scratch context that is thrown away. *)
 
 type context
 (** The type for one {!run}'s label accumulator. Created by {!run} for each
@@ -90,8 +90,8 @@ val cover : context -> string -> bool -> unit
     answered once, at the end of a run that completes its case count: an
     unmarked label makes the outcome {!Coverage_failed}.
 
-    {b The demand registers on the first call, not at declaration}, so a
-    [cover] the run never reaches registers nothing and cannot fail: an empty
+    {b The demand registers on the first call, not at declaration}, so a [cover]
+    the run never reaches registers nothing and cannot fail: an empty
     requirement table is a satisfied one. For a plain property the body always
     runs and the distinction is invisible, but a [cover] guarding
     {e "this code path is reached at all"} must sit somewhere that executes
@@ -112,12 +112,11 @@ type stats = {
       (** Cases that ran the body to completion and passed — committed examples
           included. *)
   discards : int;
-      (** Discarded cases: {!Discard} from the body plus [Gen.Private.Rejected] at
-          generation time, examples included. *)
+      (** Discarded cases: {!Discard} from the body plus [Gen.Private.Rejected]
+          at generation time, examples included. *)
   collected : (string * int) list;
-      (** The label distribution over passing cases, sorted by label. A
-          {!cover} label's marks appear here too — it marks through
-          {!classify}. *)
+      (** The label distribution over passing cases, sorted by label. A {!cover}
+          label's marks appear here too — it marks through {!classify}. *)
   coverage : cover_status list;
       (** One entry per {!cover} label, sorted by label. *)
 }

@@ -50,11 +50,7 @@
 (test
  (name test_semantics)
  (modules test_semantics)
- (libraries
-  windtrap
-  windtrap.mutate
-  mutsem_fixtures
-  mutsem_baseline))
+ (libraries windtrap windtrap.mutate mutsem_fixtures mutsem_baseline))
 
 ; The runtime-only link contract (Law 12, interchange contract): this
 ; executable lists mutsem_fixtures alone - no windtrap, no

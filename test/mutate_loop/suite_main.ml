@@ -302,9 +302,9 @@ let probe_block =
         match Sys.getenv_opt "MUTATE_PROBE_MARKER" with
         | None | Some "" -> ()
         | Some path ->
-            if Sys.file_exists path then (
+            if Sys.file_exists path then
               let never_written, _held_open = Unix.pipe () in
-              ignore (Unix.read never_written (Bytes.create 1) 0 1))
+              ignore (Unix.read never_written (Bytes.create 1) 0 1)
             else close_out (open_out path));
   ]
 
