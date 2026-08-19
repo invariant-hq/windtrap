@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
 
   Adapted from windtrap-next's test/internal/test_shrink_tree.ml, extended
-  with bind and greedy-shrink-termination coverage.
+  with greedy-shrink-termination coverage.
   --------------------------------------------------------------------------*)
 
 open Windtrap
@@ -323,68 +323,6 @@ let mapped_child_exception_is_cached () =
     !source_calls;
   check (!map_calls = 2) "exceptional mapper ran %d times" !map_calls
 
-(* bind *)
-
-let bind_substitutes_and_orders_outer_before_inner () =
-  let tree = node 2 [ Shrink_tree.leaf 0; Shrink_tree.leaf 1 ] in
-  let f value = node (value * 10) [ Shrink_tree.leaf ((value * 10) + 1) ] in
-  let actual = Shrink_tree.bind tree f in
-  let expected =
-    Node
-      ( 20,
-        [
-          (* rebound outer candidates, in order *)
-          Node (0, [ Node (1, []) ]);
-          Node (10, [ Node (11, []) ]);
-          (* then the inner tree's own candidates *)
-          Node (21, []);
-        ] )
-  in
-  check (observe actual = expected) "bind shape or candidate order is wrong"
-
-let bind_applies_f_lazily_and_once_per_node () =
-  let f_calls = ref 0 in
-  let source_calls = ref 0 in
-  let tree =
-    Shrink_tree.make ~root:2 ~children:(fun () ->
-        incr source_calls;
-        Seq.Cons (Shrink_tree.leaf 1, Seq.empty))
-  in
-  let f value =
-    incr f_calls;
-    Shrink_tree.leaf (value * 10)
-  in
-  let bound = Shrink_tree.bind tree f in
-  check (!f_calls = 1) "construction applied f %d times instead of once"
-    !f_calls;
-  check (!source_calls = 0) "construction forced the outer children";
-  check (Shrink_tree.root bound = 20) "bound root is not f's root";
-  let children = Shrink_tree.children bound in
-  (match children () with
-  | Seq.Nil -> failf "bound tree lost its rebound candidate"
-  | Seq.Cons (candidate, _) ->
-      check (Shrink_tree.root candidate = 10) "rebound candidate root is wrong");
-  check (!f_calls = 2) "forcing one candidate applied f %d times" !f_calls;
-  ignore (children ());
-  check (!f_calls = 2) "repeated force reran f";
-  check (!source_calls = 1) "outer children were forced %d times" !source_calls
-
-let bind_obeys_the_monad_laws_on_finite_trees () =
-  let f value = node (value + 1) [ Shrink_tree.leaf (value * 2) ] in
-  let g value = node (value * 3) [ Shrink_tree.leaf (value + 5) ] in
-  let tree = finite_tree () in
-  check
-    (observe (Shrink_tree.bind (Shrink_tree.leaf 4) f) = observe (f 4))
-    "bind left identity law failed";
-  check
-    (observe (Shrink_tree.bind tree Shrink_tree.leaf) = observe tree)
-    "bind right identity law failed";
-  let left = Shrink_tree.bind (Shrink_tree.bind tree f) g in
-  let right =
-    Shrink_tree.bind tree (fun value -> Shrink_tree.bind (f value) g)
-  in
-  check (observe left = observe right) "bind associativity law failed"
-
 (* pair *)
 
 let pair_reduces_left_before_right () =
@@ -699,12 +637,6 @@ let suite =
     ("map obeys identity and composition", map_obeys_identity_and_composition);
     ("map is lazy and maps each node once", map_is_lazy_and_maps_each_node_once);
     ("mapped child exception is cached", mapped_child_exception_is_cached);
-    ( "bind substitutes and orders outer before inner",
-      bind_substitutes_and_orders_outer_before_inner );
-    ( "bind applies f lazily and once per node",
-      bind_applies_f_lazily_and_once_per_node );
-    ( "bind obeys the monad laws on finite trees",
-      bind_obeys_the_monad_laws_on_finite_trees );
     ("pair reduces left before right", pair_reduces_left_before_right);
     ( "pair does not force right until left is exhausted",
       pair_does_not_force_right_until_left_is_exhausted );

@@ -102,11 +102,6 @@ val float : float t
     and rejecting non-finite ones, so magnitudes spread over the full exponent
     range, including subnormals. Candidates shrink toward [0.]. *)
 
-val float_any : float t
-(** [float_any] is like {!float} without the finiteness rejection: uniform over
-    all IEEE 754 bit patterns, including NaNs, infinities, and signed zeros.
-    Candidates shrink toward [0.]. *)
-
 val float_range : float -> float -> float t
 (** [float_range low high] generates a float in \[[low];[high]\], uniformly.
     Candidates shrink toward the in-range point closest to [0.] and stay in
@@ -169,13 +164,9 @@ val string_of : ?size:int t -> char t -> string t
     Sampling raises [Invalid_argument] if [size] produces a negative length. *)
 
 val bytes : bytes t
-(** [bytes] is [bytes_of char]: {!string} converted to [bytes] — same length
-    distribution, uniform bytes, same shrinking. *)
-
-val bytes_of : ?size:int t -> char t -> bytes t
-(** [bytes_of ?size char] is [string_of ?size char] converted to [bytes]. *)
-
-(** {1:containers Containers} *)
+(** [bytes] is {!string} converted to [bytes] — same length distribution,
+    uniform bytes, same shrinking. An alphabet- or length-controlled [bytes]
+    is [map Bytes.of_string (string_of …)] under a {!with_pp}. *)
 
 val list : ?size:int t -> 'a t -> 'a list t
 (** [list gen] generates a list of [gen] values whose length follows the size
@@ -211,31 +202,20 @@ val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 (** [triple a b c] is like {!pair} for three components, shrinking
     left-to-right. *)
 
-val quad : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
-(** [quad a b c d] is like {!pair} for four components, shrinking left-to-right.
-*)
+val constant : 'a -> 'a t
+(** [constant v] always generates [v], with no shrink candidates. Its values
+    are arbitrary, so no printer can be inferred: it prints nothing, and so
+    does every composition built over it until {!with_pp} attaches one —
+    [with_pp pp (constant v)] prints like a primitive, through the printers
+    {!list}, {!pair}, {!one_of}, ... derive as well as on its own. *)
 
-(** {1:choice Choice and structure} *)
-
-val constant : ?pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a t
-(** [constant v] always generates [v], with no shrink candidates. Its values are
-    arbitrary, so no printer can be inferred — supply one with [?pp] and the
-    generator prints like a primitive, on its own and through the printers that
-    {!list}, {!pair}, {!one_of}, ... derive. Without [?pp] it prints nothing,
-    and a composition built over it can only be rescued by {!with_pp} at the
-    top. *)
-
-val pure : ?pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a t
-(** [pure] is {!constant}. *)
-
-val of_list : ?pp:(Format.formatter -> 'a -> unit) -> 'a list -> 'a t
+val of_list : 'a list -> 'a t
 (** [of_list values] generates a value of [values], each with equal probability.
     Candidates shrink toward the head: the first candidate of any value is the
     head of [values], then values at intermediate positions — order [values]
     with the simplest value first.
 
-    Like {!constant}, its values are arbitrary and it takes [?pp] for the same
-    reason. Without one, counterexamples render as [<no printer>].
+    Like {!constant} it prints nothing until {!with_pp} says how.
 
     Sampling raises [Invalid_argument] if [values] is empty. *)
 
@@ -263,23 +243,17 @@ val frequency : (int * 'a t) list -> 'a t
     Sampling raises [Invalid_argument] if [weighted] is empty, if any weight is
     negative, or if the weights sum to less than [1]. *)
 
-val sized : (int -> 'a t) -> 'a t
-(** [sized f] draws a size with {!nat} and generates with [f size]. Shrinking
-    first re-generates at smaller sizes, then shrinks the generated value — the
-    usual way to bound recursive generators. Like {!bind}, the result has no
-    printer. [f] must be pure. *)
-
-val such_that : ?max_tries:int -> ('a -> bool) -> 'a t -> 'a t
+val such_that : ('a -> bool) -> 'a t -> 'a t
 (** [such_that p gen] generates [gen] values satisfying [p], re-sampling up to
-    [max_tries] times (default [100]); shrink candidates are filtered by [p], so
-    every candidate satisfies it. The result keeps [gen]'s printer. If no draw
-    satisfies [p], sampling raises {!Rejected} and the property engine counts
-    the case as a discard.
+    100 times; shrink candidates are filtered by [p], so every candidate
+    satisfies it. The result keeps [gen]'s printer. If no draw satisfies [p],
+    sampling raises {!Private.Rejected} and the property engine counts the case
+    as a discard.
 
     [p] is for rare, cheap conditions; when the constraint is structural, build
-    a generator that satisfies it by construction instead.
-
-    Sampling raises [Invalid_argument] if [max_tries < 1]. *)
+    a generator that satisfies it by construction instead. The budget is fixed
+    for the same reason: a predicate that needs a wider one is describing a
+    shape the generator should have produced. *)
 
 (** {1:composition Composition} *)
 
@@ -308,85 +282,68 @@ val ( and+ ) : 'a t -> 'b t -> ('a * 'b) t
 val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
 (** [let* x = gen in e] is [bind gen (fun x -> e)]. *)
 
-(** {1:engine Engine interface}
+(** {1:engine Engine interface} *)
 
-    Low-level API for the property engine and windtrap's own tests. The facade
-    re-exports it with the rest of this module — public, but advanced: beyond
-    the frozen value stream ({!Seed}) it carries no stability promise. *)
+(** The engine interface: what the property runner and {!Stateful} reach for,
+    and nothing a test writes. Not part of the vocabulary above, and carrying
+    no stability promise beyond the frozen value stream ({!Seed}). *)
+module Private : sig
+  exception Rejected
+  (** Raised by {!sample} when a {!Gen.such_that} filter exhausts its resample
+      budget — a generation-time discard, which the engine counts as one.
+      Forcing shrink candidates never raises it: a candidate whose
+      re-generation is rejected is skipped and the search continues with its
+      siblings. *)
 
-val list_exact : ?keep:('a list -> bool list) -> int -> 'a t -> 'a list t
-(** [list_exact n gen] generates a list of exactly [n] [gen] values and shrinks
-    it with {!list}'s default-size move set — the empty list, then removal of
-    contiguous chunks of descending power-of-two length, then elements
-    individually, left to right. [n] fixes the {e drawn} length only: no
-    candidate is longer than the root, every shorter length down to the empty
-    list is reachable, and reducing an element preserves the length it was
-    given. Use it where [list ~size:(constant n)] would fix the same drawn
-    length but offer element-wise shrinking only, with no move that shortens the
-    list.
+  val sample : 'a t -> Seed.state -> 'a Shrink_tree.t
+  (** [sample gen state] draws one value and its shrink tree from [state], a
+      pure function of both. Only the root is drawn eagerly; candidates are
+      forced — memoized, user callbacks included — by traversing the tree.
 
-    [keep values] is a mask as long as [values]; an element flagged [false] is
-    dropped. It runs on the drawn values {e before} the tree is assembled, so a
-    dropped element contributes no subtree: no candidate anywhere holds it, or a
-    value it would have shrunk to, and the root is a fixed point of the mask
-    rather than [n] elements long. It then runs on every node of the assembled
-    tree, so an element that a deletion or a reduction elsewhere invalidates is
-    dropped in the same candidate — which can leave a candidate shorter than the
-    structural move that produced it. That is how a {e state-dependent}
-    well-formedness condition (the calls of a command sequence a precondition
-    admits, the unique keys of an association list) holds at every node, where
-    {!such_that} would drop a rejected candidate with its whole subtree and
-    [assume] would spend the property engine's discard budget.
+      Raises {!Rejected} on a generation-time discard and [Invalid_argument] on
+      malformed generator arguments. Forcing candidates can raise
+      [Invalid_argument] too, but never {!Rejected}. *)
 
-    [keep] must be total and idempotent.
+  val prints : 'a t -> bool
+  (** [prints gen] is [true] iff [gen] carries a printer, so {!render} yields
+      the value rather than [<no printer>]. The engine records it on a failure
+      to name the remedy ({!Gen.with_pp}) once, rather than on every
+      printerless rendering. *)
 
-    - {b Total.} It is handed the drawn list, the sublists the search reaches,
-      and the empty list. An exception escapes {!sample} at the root; on a
-      candidate it is memoized on that node and swallowed by the engine's
-      candidate loop, which abandons the remaining siblings and reports as
-      converged a search that stopped early.
-    - {b Idempotent.} The second pass rewrites the root along with the
-      candidates, so a mask that drops from a list it has already accepted drops
-      from the root twice.
+  val render : 'a t -> 'a -> string
+  (** [render gen v] is the counterexample text for [v]: the printer's output
+      when {!prints} holds, [<no printer>] otherwise. Never raises — a printer
+      that does renders as [<printer raised ...>]. *)
 
-    The printer derives from [gen]'s, exactly as {!list}'s does.
+  val render_value : 'a t -> 'a -> string option
+  (** [render_value gen v] is {!render} with the placeholder left to the
+      caller: [None] when [gen] has no printer, as the engine needs for
+      [~examples] values. *)
 
-    Sampling raises [Invalid_argument] if [n < 0], or if [keep] returns a mask
-    whose length is not that of the list it was given — at sample time for the
-    drawn list, at forcing time for a candidate. *)
+  val list_exact : ?keep:('a list -> bool list) -> int -> 'a t -> 'a list t
+  (** [list_exact n gen] generates a list of exactly [n] [gen] values with
+      {!Gen.list}'s default-size move set, so the length shrinks: [n] fixes the
+      {e drawn} length only. [Gen.list ~size:(Gen.constant n)] fixes the same
+      length but offers element-wise shrinking alone.
 
-exception Rejected
-(** Raised by {!sample} when a {!such_that} filter exhausts its [max_tries]
-    budget — a generation-time discard. Forcing shrink candidates never raises
-    it: a candidate whose re-generation is rejected is skipped and the search
-    continues with its siblings. *)
+      [keep values] is a mask as long as [values], dropping every element
+      flagged [false]. It runs twice: on the drawn values {e before} the tree
+      is assembled, so a dropped element contributes no subtree at all, and
+      then on every node of the assembled tree, so an element that a deletion
+      or reduction elsewhere invalidates is dropped in the same candidate. That
+      pair is what holds a {e state-dependent} well-formedness condition —
+      {!Stateful}'s repair mask — at every node, where {!Gen.such_that} would
+      drop a rejected candidate with its whole subtree.
 
-val sample : 'a t -> Seed.state -> 'a Shrink_tree.t
-(** [sample gen state] draws one value and its shrink tree from [state]. The
-    result is a pure function of [state] and [gen]. Only the root is drawn
-    eagerly; candidates are forced — memoized, user callbacks included — by
-    traversing the tree.
+      [keep] must be {b total}: it is handed the drawn list, the sublists the
+      search reaches, and the empty list, and an exception on a candidate is
+      memoized there and swallowed by the engine's candidate loop. It must be
+      {b idempotent}: the second pass rewrites the root as well, so a mask that
+      drops from a list it has already accepted drops from the root twice.
 
-    Raises {!Rejected} on a generation-time discard and [Invalid_argument] on
-    malformed generator arguments. Forcing candidates can raise
-    [Invalid_argument] too, but never {!Rejected}: rejected candidates are
-    skipped. *)
+      The printer derives from [gen]'s, exactly as {!Gen.list}'s does.
 
-val prints : 'a t -> bool
-(** [prints gen] is [true] iff [gen] carries a printer, attached with {!with_pp}
-    or derived from its components — that is, iff {!render} yields the value
-    rather than [<no printer>]. The property engine records it on a failure so
-    the report can name the remedy ({!with_pp}) once, instead of each
-    printerless rendering carrying its own advice. *)
-
-val render : 'a t -> 'a -> string
-(** [render gen v] is the counterexample text for [v]: the attached or derived
-    printer's output when {!prints} holds, and [<no printer>] otherwise. Never
-    raises: a printer that raises renders as [<printer raised ...>]. *)
-
-val render_value : 'a t -> 'a -> string option
-(** [render_value gen v] is [Some text], [v] rendered by [gen]'s attached or
-    derived printer, or [None] when [gen] has none — used where the caller
-    supplies its own placeholder, as the engine does for [~examples] values.
-    Like {!render}, a raising printer yields [<printer raised ...>] rather than
-    an exception. *)
+      Sampling raises [Invalid_argument] if [n < 0], or if [keep] returns a
+      mask whose length is not that of the list it was given — at sample time
+      for the drawn list, at forcing time for a candidate. *)
+end

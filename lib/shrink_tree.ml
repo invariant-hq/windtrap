@@ -26,14 +26,6 @@ let rec map f tree =
   make ~root:(f tree.root)
     ~children:(Seq.map (fun child -> map f child) tree.children)
 
-let rec bind tree f =
-  let bound = f tree.root in
-  make ~root:bound.root
-    ~children:
-      (Seq.append
-         (Seq.map (fun candidate -> bind candidate f) tree.children)
-         bound.children)
-
 let rec pair left right =
   let left_children = Seq.map (fun child -> pair child right) left.children in
   let right_children = Seq.map (fun child -> pair left child) right.children in

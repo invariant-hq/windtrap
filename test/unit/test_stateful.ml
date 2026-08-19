@@ -28,7 +28,7 @@ let show_ints values = show_names (List.map string_of_int values)
 let root = 0x00c0ffee1234abcdL
 let state index = Seed.make (Seed.derive ~root ~path:"test_stateful" ~index)
 let root_value tree = Shrink_tree.root tree
-let program_at gen index = root_value (Gen.sample gen (state index))
+let program_at gen index = root_value (Gen.Private.sample gen (state index))
 let names = Stateful.command_names
 
 (* [~scope] over a system that needs no acquisition at all: what most of
@@ -36,7 +36,7 @@ let names = Stateful.command_names
 let unit_scope run = run ()
 
 let render gen program =
-  match Gen.render_value gen program with
+  match Gen.Private.render_value gen program with
   | Some text -> text
   | None -> failf "the program generator carries no printer"
 
@@ -287,7 +287,7 @@ let every_forced_node_holds_only_legal_calls () =
   let index = ref 0 in
   (try
      while !nodes < budget do
-       go (Gen.sample gen (state !index));
+       go (Gen.Private.sample gen (state !index));
        incr index;
        if !index > 40 then raise_notrace Exit
      done
@@ -308,7 +308,7 @@ let root_candidates_are_strictly_monotone () =
   let gen = Stateful.program ~steps:12 ~model:0 counter_commands in
   let checked = ref 0 in
   for index = 0 to 19 do
-    let tree = Gen.sample gen (state index) in
+    let tree = Gen.Private.sample gen (state index) in
     let parent = names (root_value tree) in
     if parent <> [] && List.length parent < 12 then begin
       incr checked;
@@ -336,7 +336,7 @@ let root_candidates_of_an_argument_spec_are_no_longer () =
   in
   let checked = ref 0 in
   for index = 0 to 19 do
-    let tree = Gen.sample gen (state index) in
+    let tree = Gen.Private.sample gen (state index) in
     let parent = List.length (names (root_value tree)) in
     if parent < 10 then incr checked;
     Seq.iter
@@ -379,7 +379,7 @@ let no_node_invents_or_substitutes_a_call () =
         (show_names kept) (show_names drawn);
       Seq.iter go (Shrink_tree.children tree)
     in
-    try go (Gen.sample repaired (state index)) with Exit -> ()
+    try go (Gen.Private.sample repaired (state index)) with Exit -> ()
   done;
   check (!nodes >= 2_000) "only %d nodes were forced" !nodes
 
@@ -588,7 +588,7 @@ let control_exceptions_escape_pre_and_next_unconverted () =
           let gen =
             Stateful.program ~steps:4 ~model:0 (control_spec exn phase)
           in
-          match Gen.sample gen (state 0) with
+          match Gen.Private.sample gen (state 0) with
           | exception raised ->
               check (raised = exn) "%s from %s came back as %s" label spelling
                 (Printexc.to_string raised)
@@ -616,7 +616,7 @@ let a_failing_step_points_at_its_command () =
     in
     let program =
       Shrink_tree.root
-        (Gen.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0))
+        (Gen.Private.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0))
     in
     expect_check_failure "a located step" (fun () ->
         Stateful.execute ~scope:unit_scope program)
@@ -655,7 +655,7 @@ let assertions_skips_and_discards_from_pre_poison () =
       (* It reaches the program rather than the generator: sampling
          succeeds, where before it raised. *)
       let program =
-        match Gen.sample gen (state 0) with
+        match Gen.Private.sample gen (state 0) with
         | exception raised ->
             failf "%s from ~pre escaped the generator as %s" label
               (Printexc.to_string raised)
@@ -1270,7 +1270,7 @@ let the_model_column_shows_the_pre_state () =
     "the model column rendered as:\n%s\nnot:\n%s" (render gen program)
     (String.concat "\n" expected)
 
-(* A [pp_model] that raises costs its own cell and no more: [Gen.render]
+(* A [pp_model] that raises costs its own cell and no more: [Gen.Private.render]
    would collapse the whole program to one marker while [printerless] stays
    false, so no remedy line fires and the reader loses the program. *)
 let a_raising_pp_model_costs_one_cell () =
@@ -1350,7 +1350,7 @@ let a_long_model_cell_truncates () =
     "a long model cell rendered %S" (render gen program)
 
 (* An argument whose own generator has no printer renders as the placeholder
-   [Gen.render] would have used for it; the step names and the program shape
+   [Gen.Private.render] would have used for it; the step names and the program shape
    survive, and the program itself still prints. *)
 let a_printerless_argument_degrades_to_a_placeholder () =
   let commands =
@@ -1361,7 +1361,7 @@ let a_printerless_argument_degrades_to_a_placeholder () =
     ]
   in
   let gen = Stateful.program ~steps:2 ~model:0 commands in
-  check (Gen.prints gen) "a printerless argument made the program printerless";
+  check (Gen.Private.prints gen) "a printerless argument made the program printerless";
   let program = program_at gen 0 in
   check
     (lines_of gen program
@@ -1379,7 +1379,7 @@ let a_long_argument_truncates () =
   let commands =
     [
       Stateful.command "write"
-        (Gen.constant ~pp:Format.pp_print_string big)
+        (Gen.with_pp Format.pp_print_string (Gen.constant big))
         ~next:(fun model _ -> model)
         (fun _ _ () -> ());
     ]
@@ -1466,7 +1466,7 @@ let the_model_column_is_measured_over_the_printed_rows () =
 (* Malformed arguments are reported at sample time, inside the running
    test's exception boundary. *)
 let a_malformed_declaration_raises_at_sample_time () =
-  (match Gen.sample (Stateful.program ~steps:4 ~model:0 []) (state 0) with
+  (match Gen.Private.sample (Stateful.program ~steps:4 ~model:0 []) (state 0) with
   | exception Invalid_argument message ->
       check
         (contains "stateful" message)
@@ -1474,14 +1474,14 @@ let a_malformed_declaration_raises_at_sample_time () =
   | _ -> failf "an empty command list sampled successfully");
   (* At [?steps:0] no element is drawn, so the branch-level report never
      fires — a test declaring no commands must not pass vacuously. *)
-  (match Gen.sample (Stateful.program ~steps:0 ~model:0 []) (state 0) with
+  (match Gen.Private.sample (Stateful.program ~steps:0 ~model:0 []) (state 0) with
   | exception Invalid_argument message ->
       check
         (contains "stateful" message)
         "the empty-command error at ?steps:0 said %S" message
   | _ -> failf "an empty command list at ?steps:0 sampled successfully");
   match
-    Gen.sample (Stateful.program ~steps:(-1) ~model:0 counter_draws) (state 0)
+    Gen.Private.sample (Stateful.program ~steps:(-1) ~model:0 counter_draws) (state 0)
   with
   | exception Invalid_argument _ -> ()
   | _ -> failf "a negative ?steps sampled successfully"
@@ -1735,10 +1735,10 @@ let the_program_generator_always_prints () =
     ]
   in
   check
-    (not (Gen.prints (Gen.constant 5)))
+    (not (Gen.Private.prints (Gen.constant 5)))
     "Gen.constant grew a printer — the test is vacuous";
   check
-    (Gen.prints (Stateful.program ~steps:4 ~model:0 opaque))
+    (Gen.Private.prints (Stateful.program ~steps:4 ~model:0 opaque))
     "a program over a printerless command carries no printer";
   let outcome =
     Property.run ~count:(`Declared 5) ~root ~path:"printerless"

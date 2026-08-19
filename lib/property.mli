@@ -49,7 +49,7 @@
 exception Discard
 (** Raised inside a property body to discard the current case; the engine counts
     it and moves to the next case. Prefer {!assume} and {!reject} to raising
-    directly. Generation-time discards use [Gen.Rejected] instead; the engine
+    directly. Generation-time discards use [Gen.Private.Rejected] instead; the engine
     counts both kinds together. *)
 
 val assume : bool -> unit
@@ -124,7 +124,7 @@ type stats = {
       (** Cases that ran the body to completion and passed — committed examples
           included. *)
   discards : int;
-      (** Discarded cases: {!Discard} from the body plus [Gen.Rejected] at
+      (** Discarded cases: {!Discard} from the body plus [Gen.Private.Rejected] at
           generation time, examples included. *)
   collected : (string * int) list;
       (** The label distribution over passing cases, sorted by label. Coverage
@@ -204,7 +204,7 @@ val run :
     generation-time rejections together, discarding [examples] included — so
     [max_discard] of [0] gives up on the first discard. The budget is checked
     before the case-count goal: a run whose examples alone exceed it gives up
-    even when [count] is [0]. A generator that raises [Gen.Rejected] (a
+    even when [count] is [0]. A generator that raises [Gen.Private.Rejected] (a
     [such_that] budget exhausted) discards the attempt; a generator that raises
     anything else fails the case with
     [<generator raised before producing a value>] as the rendered counterexample

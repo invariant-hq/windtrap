@@ -124,7 +124,7 @@ let propagates_from_repair = function
    The model-threading fold that decides which drawn calls a program makes:
    a call is kept iff its [~pre] holds in the model the calls before it
    produced, and [~next] threads through the kept ones only. It returns the
-   three things its two callers need — the mask [Gen.list_exact] applies
+   three things its two callers need — the mask [Gen.Private.list_exact] applies
    before it assembles the shrink tree and again at every node, the calls
    that survive, and the poison.
 
@@ -162,7 +162,7 @@ let repair model calls =
   in
   go model 1 calls
 
-(* [Gen.list_exact]'s mask. It is idempotent, as that interface requires:
+(* [Gen.Private.list_exact]'s mask. It is idempotent, as that interface requires:
    re-running the fold on the calls it kept re-derives the same trajectory,
    under which every one of them is legal. *)
 let keep model calls =
@@ -181,9 +181,9 @@ let interpret model calls =
 
 let empty_program = "(no commands)"
 
-(* [Gen.render_value] answers [None] rather than a placeholder when the
+(* [Gen.Private.render_value] answers [None] rather than a placeholder when the
    argument's own generator has no printer, so the column spells the one
-   [Gen.render] would have used for it. *)
+   [Gen.Private.render] would have used for it. *)
 let missing_printer = "<no printer>"
 
 (* Self-bounding. An argument rides the failure payload, which is capped at
@@ -201,7 +201,7 @@ let one_line text =
 
 let plural count = if count = 1 then "" else "s"
 
-(* [Gen.render] collapses a raising printer to one [<printer raised ...>]
+(* [Gen.Private.render] collapses a raising printer to one [<printer raised ...>]
    for the whole value, which would cost the reader the entire program while
    [printerless] stays false, so no remedy line fires. One bad cell must
    cost one cell. *)
@@ -331,7 +331,7 @@ let branch (Command { name; gen; pre; next; body; loc }) =
       {
         name;
         loc;
-        arg = lazy (Gen.render_value gen argument);
+        arg = lazy (Gen.Private.render_value gen argument);
         pre = (fun model -> pre model argument);
         next = (fun model -> next model argument);
         body = (fun model sut -> body model argument sut);
@@ -359,7 +359,7 @@ let program ?(steps = default_steps) ?pp_model ~model commands =
     (match commands with [] -> invalid_arg no_commands | _ :: _ -> ());
     interpret model calls
   in
-  Gen.list_exact ~keep:(keep model) steps (choice commands)
+  Gen.Private.list_exact ~keep:(keep model) steps (choice commands)
   |> Gen.map read
   |> Gen.with_pp (pp_program ?pp_model)
 

@@ -61,16 +61,6 @@ val map : ('a -> 'b) -> 'a t -> 'b t
     from [f] occur at those points — mapping does not make an effectful callback
     pure. The functor laws hold when [f] is deterministic and effect-free. *)
 
-val bind : 'a t -> ('a -> 'b t) -> 'b t
-(** [bind tree f] substitutes a tree for every value of [tree]. Its root is
-    [root (f (root tree))]. Its immediate candidates first rebind [tree]'s
-    candidates in order — the outer value shrinks before the inner one — then
-    continue with the immediate candidates of [f (root tree)].
-
-    [f] is applied to [tree]'s root during construction and to descendant roots
-    at their forcing points, each at most once, under the same determinism
-    obligation as {!map}. *)
-
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** [pair left right] combines two trees. Its root is [(root left, root right)].
     Its immediate candidates first reduce [left], in order, retaining [right],

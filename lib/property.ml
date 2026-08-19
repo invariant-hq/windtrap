@@ -293,7 +293,7 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
             Printexc.raise_with_backtrace control backtrace
         | Failed cls ->
             let rendered, printerless =
-              match Gen.render_value gen value with
+              match Gen.Private.render_value gen value with
               | Some text -> (text, false)
               | None -> (Printf.sprintf "<example %d>" (index + 1), true)
             in
@@ -316,8 +316,8 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
           else Coverage_failed final
         else
           let state = Seed.make (Seed.derive ~root ~path ~index:attempts) in
-          match Gen.sample gen state with
-          | exception Gen.Rejected ->
+          match Gen.Private.sample gen state with
+          | exception Gen.Private.Rejected ->
               incr discards;
               generate ~passed ~attempts:(attempts + 1)
           | exception ((Failure.Skip_test _ | Failure.Timeout _) as control) ->
@@ -347,10 +347,10 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
                   let final_tree, steps, final_cls, timed_out, exhausted =
                     shrink ~max_shrink:shrink_budget ~body tree cls
                   in
-                  let rendered = Gen.render gen (Shrink_tree.root final_tree) in
+                  let rendered = Gen.Private.render gen (Shrink_tree.root final_tree) in
                   fail ~rendered ~case_index:attempts ~shrink_steps:steps
                     ?timed_out ~shrink_exhausted:exhausted ~examples:false
-                    ~printerless:(not (Gen.prints gen))
+                    ~printerless:(not (Gen.Private.prints gen))
                     final_cls)
       in
       generate ~passed:0 ~attempts:0

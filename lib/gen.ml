@@ -62,10 +62,6 @@ let pp_pair pp_a pp_b ppf (a, b) =
 let pp_triple pp_a pp_b pp_c ppf (a, b, c) =
   Format.fprintf ppf "@[<hov 1>(%a,@ %a,@ %a)@]" pp_a a pp_b b pp_c c
 
-let pp_quad pp_a pp_b pp_c pp_d ppf (a, b, c, d) =
-  Format.fprintf ppf "@[<hov 1>(%a,@ %a,@ %a,@ %a)@]" pp_a a pp_b b pp_c c pp_d
-    d
-
 (* Shrink candidate sequences (adapted from windtrap v1's shrink module)
    Binary search toward a destination: emit [dest] first, then halve the
    remaining distance, converging on the sampled value without reaching
@@ -234,16 +230,6 @@ let int64 =
       (fun state ->
         let word, state = Seed.bits64 state in
         (tree_towards (int64_towards 0L) word, state));
-  }
-
-let float_any =
-  {
-    pp = Some pp_float;
-    run =
-      (fun state ->
-        let word, state = Seed.bits64 state in
-        let value = Int64.float_of_bits word in
-        (tree_towards (float_towards 0.0) value, state));
   }
 
 let float =
@@ -415,8 +401,8 @@ let string_of ?size char_gen =
 
 let string = string_of char
 
-let bytes_of ?size char_gen =
-  let base = string_of ?size char_gen in
+let bytes =
+  let base = string in
   {
     pp = Some pp_bytes;
     run =
@@ -424,8 +410,6 @@ let bytes_of ?size char_gen =
         let tree, state = base.run state in
         (Shrink_tree.map Bytes.of_string tree, state));
   }
-
-let bytes = bytes_of char
 
 let option gen =
   let pp = Option.map pp_option gen.pp in
@@ -501,45 +485,18 @@ let triple a b c =
         (tree, state));
   }
 
-let quad a b c d =
-  let pp =
-    match (a.pp, b.pp, c.pp, d.pp) with
-    | Some pp_a, Some pp_b, Some pp_c, Some pp_d ->
-        Some (pp_quad pp_a pp_b pp_c pp_d)
-    | _ -> None
-  in
-  {
-    pp;
-    run =
-      (fun state ->
-        let ta, state = a.run state in
-        let tb, state = b.run state in
-        let tc, state = c.run state in
-        let td, state = d.run state in
-        let tree =
-          Shrink_tree.map
-            (fun (va, (vb, (vc, vd))) -> (va, vb, vc, vd))
-            (Shrink_tree.pair ta (Shrink_tree.pair tb (Shrink_tree.pair tc td)))
-        in
-        (tree, state));
-  }
-
 (* Choice and structure *)
 
-(* The printerless leaves. Their values are arbitrary, so no printer can
-   be inferred — but the caller usually has one, and these two sit under
-   more compositions than anything else. Taking [?pp] here is what lets a
-   deriving combinator ([pair], [list], [one_of], ...) built over them
-   keep its printer without a [with_pp] wrapped around the whole thing. *)
-let constant ?pp value =
-  { pp; run = (fun state -> (Shrink_tree.leaf value, state)) }
+(* The printerless leaves: their values are arbitrary, so no printer can be
+   inferred. [with_pp] attaches one, and a deriving combinator built over the
+   result keeps it. *)
+let constant value =
+  { pp = None; run = (fun state -> (Shrink_tree.leaf value, state)) }
 
-let pure = constant
-
-let of_list ?pp values =
+let of_list values =
   let values = Array.of_list values in
   {
-    pp;
+    pp = None;
     run =
       (fun state ->
         let count = Array.length values in
@@ -627,8 +584,6 @@ let bind gen f =
         (rebind outer (fun v -> fst ((f v).run fresh)), state));
   }
 
-let sized f = bind nat f
-
 let rec filter_tree keep tree =
   Shrink_tree.make ~root:(Shrink_tree.root tree)
     ~children:
@@ -638,12 +593,16 @@ let rec filter_tree keep tree =
            else None)
          (Shrink_tree.children tree))
 
-let such_that ?(max_tries = 100) keep gen =
+(* The resample budget is fixed: a predicate that needs more than a hundred
+   draws is a generator that should have produced the shape by construction,
+   and no per-call number changes that. *)
+let resample_budget = 100
+
+let such_that keep gen =
   {
     pp = gen.pp;
     run =
       (fun state ->
-        if max_tries < 1 then invalid_arg "Gen.such_that: max_tries < 1";
         let rec attempt tries state =
           if tries = 0 then raise Rejected
           else
@@ -652,7 +611,7 @@ let such_that ?(max_tries = 100) keep gen =
             if keep (Shrink_tree.root tree) then (filter_tree keep tree, state)
             else attempt (tries - 1) state
         in
-        attempt max_tries state);
+        attempt resample_budget state);
   }
 
 let with_pp pp gen = { gen with pp = Some pp }
@@ -660,72 +619,82 @@ let ( let+ ) gen f = map f gen
 let ( and+ ) left right = pair left right
 let ( let* ) = bind
 
-(* Engine interface *)
+(* Engine interface
 
-(* [keep] answers about values, but the pass that runs before assembly must
-   act on element *trees*, so the mask is walked against whichever list
-   produced it — trees before assembly, values at every node after. A mask
-   of the wrong length is a caller error, reported where every other
-   malformed argument is: at sample time for the drawn list, at forcing
-   time for a candidate. *)
-let survivors keep value_of items =
-  let rec select flags items =
-    match (flags, items) with
-    | [], [] -> []
-    | true :: flags, item :: items -> item :: select flags items
-    | false :: flags, _ :: items -> select flags items
-    | _ ->
-        invalid_arg "Gen.list_exact: ~keep returned a mask of the wrong length"
-  in
-  select (keep (List.map value_of items)) items
+   The property engine, Stateful, and this library's own tests reach these;
+   nothing else does, which is why they are behind [Private] rather than in
+   the vocabulary above. [Rejected] stays at the top of the file because
+   [such_that] raises it and [rebind] catches it. *)
+module Private = struct
+  exception Rejected = Rejected
 
-(* A fixed draw count with [list]'s default-size move set, plus a mask no
-   combinator outside this module can express: [sample] hands back a tree
-   but no successor state, so nothing else can sequence [count] draws or
-   drop element trees before assembly. [?keep] therefore runs in two
-   passes, doing different work in each. The pass before assembly decides
-   which element trees exist at all, so a dropped element contributes no
-   subtree and nothing below can restore it — nor the values it would have
-   shrunk to, which is the case masking on top of an assembled tree gets
-   wrong in both directions: a candidate that deletes an element the mask
-   was already dropping equals its parent, and one that reduces a dropped
-   element into a kept one is longer than its parent. The cascade decides
-   which survivors a given candidate keeps, so a deletion or a reduction
-   that invalidates a later element drops it in the same candidate.
-   [Shrink_tree.map] reaches the root as well as every descendant, so the
-   root is masked by both passes — which is why the interface requires
-   [keep] to be idempotent, and what makes the root a fixed point of it. *)
-let list_exact ?keep count gen =
-  let pp = Option.map pp_list gen.pp in
-  {
-    pp;
-    run =
-      (fun state ->
-        if count < 0 then invalid_arg "Gen.list_exact: negative count";
-        let trees, state = sample_elements gen count state in
-        match keep with
-        | None -> (Shrink_tree.list trees, state)
-        | Some keep ->
-            let trees = survivors keep Shrink_tree.root trees in
-            let tree =
-              Shrink_tree.map
-                (fun values -> survivors keep Fun.id values)
-                (Shrink_tree.list trees)
-            in
-            (tree, state));
-  }
+  (* [keep] answers about values, but the pass that runs before assembly must
+     act on element *trees*, so the mask is walked against whichever list
+     produced it — trees before assembly, values at every node after. A mask
+     of the wrong length is a caller error, reported where every other
+     malformed argument is: at sample time for the drawn list, at forcing
+     time for a candidate. *)
+  let survivors keep value_of items =
+    let rec select flags items =
+      match (flags, items) with
+      | [], [] -> []
+      | true :: flags, item :: items -> item :: select flags items
+      | false :: flags, _ :: items -> select flags items
+      | _ ->
+          invalid_arg
+            "Gen.Private.list_exact: ~keep returned a mask of the wrong length"
+    in
+    select (keep (List.map value_of items)) items
 
-let sample gen state = fst (gen.run state)
-let prints gen = Option.is_some gen.pp
+  (* A fixed draw count with [list]'s default-size move set, plus a mask no
+     combinator outside this module can express: [sample] hands back a tree
+     but no successor state, so nothing else can sequence [count] draws or
+     drop element trees before assembly. [?keep] therefore runs in two
+     passes, doing different work in each. The pass before assembly decides
+     which element trees exist at all, so a dropped element contributes no
+     subtree and nothing below can restore it — nor the values it would have
+     shrunk to, which is the case masking on top of an assembled tree gets
+     wrong in both directions: a candidate that deletes an element the mask
+     was already dropping equals its parent, and one that reduces a dropped
+     element into a kept one is longer than its parent. The cascade decides
+     which survivors a given candidate keeps, so a deletion or a reduction
+     that invalidates a later element drops it in the same candidate.
+     [Shrink_tree.map] reaches the root as well as every descendant, so the
+     root is masked by both passes — which is why the interface requires
+     [keep] to be idempotent, and what makes the root a fixed point of it. *)
+  let list_exact ?keep count gen =
+    let pp = Option.map pp_list gen.pp in
+    {
+      pp;
+      run =
+        (fun state ->
+          if count < 0 then
+            invalid_arg "Gen.Private.list_exact: negative count";
+          let trees, state = sample_elements gen count state in
+          match keep with
+          | None -> (Shrink_tree.list trees, state)
+          | Some keep ->
+              let trees = survivors keep Shrink_tree.root trees in
+              let tree =
+                Shrink_tree.map
+                  (fun values -> survivors keep Fun.id values)
+                  (Shrink_tree.list trees)
+              in
+              (tree, state));
+    }
 
-(* The remedy is not spelled here: a printerless counterexample says what it
-   is, and the report says once — under the counterexample, whatever the
-   printerless shape — what to do about it. *)
-let no_printer_message = "<no printer>"
+  let sample gen state = fst (gen.run state)
+  let prints gen = Option.is_some gen.pp
 
-let render gen v =
-  match gen.pp with
-  | Some pp -> render_with pp v
-  | None -> no_printer_message
+  (* The remedy is not spelled here: a printerless counterexample says what it
+     is, and the report says once — under the counterexample, whatever the
+     printerless shape — what to do about it. *)
+  let no_printer_message = "<no printer>"
 
-let render_value gen v = Option.map (fun pp -> render_with pp v) gen.pp
+  let render gen v =
+    match gen.pp with
+    | Some pp -> render_with pp v
+    | None -> no_printer_message
+
+  let render_value gen v = Option.map (fun pp -> render_with pp v) gen.pp
+end

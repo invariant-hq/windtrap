@@ -80,7 +80,7 @@ let expect_coverage_failed = function
 (* The value generated for case [index] of [path] under [root], as the engine
    derives it — used to predict and replay engine streams. *)
 let value_at gen ~root ~path ~index =
-  Shrink_tree.root (Gen.sample gen (Seed.make (Seed.derive ~root ~path ~index)))
+  Shrink_tree.root (Gen.Private.sample gen (Seed.make (Seed.derive ~root ~path ~index)))
 
 (* Search for a root whose first failing generated case satisfies
    [first_ok] — keeps same-kind shrink tests deterministic without

@@ -73,13 +73,12 @@ case budget; the declaration site wins over the flag.
 shrinking, *and* printing, inseparably:
 
 - numeric: `int`, `nat`, `small_int`, `int_range`, `int32`, `int64`,
-  `float`, `float_any`, `float_range`
+  `float`, `float_range`
 - base: `unit`, `bool`, `char`, `char_range`, `string`,
-  `string_of ?size char`, `bytes`, `bytes_of`
+  `string_of ?size char`, `bytes`
 - containers: `list ?size`, `array ?size`, `option`, `result`, `pair`,
-  `triple`, `quad`
-- choice: `constant`/`pure`, `of_list`, `one_of`, `frequency`,
-  `sized`, `such_that`
+  `triple`
+- choice: `constant`, `of_list`, `one_of`, `frequency`, `such_that`
 - composition: `map`, `bind`, `let+`/`and+`/`let*`, `with_pp`
 
 Prefer `small_int` or `nat` for sizes, indices, and arithmetic —

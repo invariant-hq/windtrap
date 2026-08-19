@@ -17,7 +17,7 @@
 
     {b The pipeline.} A program is drawn at a fixed length ([?steps]) from one
     weight-1 [Gen.frequency] branch per command, {e repaired} against the model
-    before the shrink tree is assembled ([Gen.list_exact]'s [?keep]), and
+    before the shrink tree is assembled ([Gen.Private.list_exact]'s [?keep]), and
     shrunk by that tree's structural move set. Repair keeps a call iff its
     [~pre] holds in the model the calls before it produced, and threads [~next]
     through the calls it keeps. Two consequences are the design: the program
@@ -167,12 +167,12 @@ val program :
     the search never leaves that program's vocabulary. Closing the gap needs the
     program re-assembled at every node, which is a different design.
 
-    The generator prints, always: [Gen.prints] holds for the result, so a
+    The generator prints, always: [Gen.Private.prints] holds for the result, so a
     printerless stateful counterexample is unreachable and the report's
     [Gen.with_pp] remedy line never fires here. A program renders as a summary
     line — ["5 calls, last: pop"], or ["(no commands)"] for the empty program —
     followed by one numbered line per step: the command's name and its argument
-    through [Gen.render_value], preceded by the model {e before} the step when
+    through [Gen.Private.render_value], preceded by the model {e before} the step when
     [pp_model] is given. The printer bounds itself and emits hard newlines only:
     an argument that renders as ["()"] is omitted, arguments are cut at 200
     bytes (with a marker stating the original size) and model cells at 60 code
