@@ -30,19 +30,43 @@
   test_snapshot
   test_stateful
   test_test_tree
-  render_fixtures
-  xml_check
   test_render
   test_render_junit
   test_render_github
   test_cli
   test_driver)
- (libraries windtrap windtrap_coverage unix harness)
+ (libraries
+  windtrap
+  windtrap_coverage
+  unix
+  harness
+  render_fixtures
+  xml_check)
  ; test_render's golden transcripts are snapshot baselines, not literals
  ; in the source. They are inputs to the run, so dune must know about
  ; them or a sandboxed action cannot read them.
  (deps
   (glob_files_rec __snapshots__/**)))
+
+; Modules shared by more than one test file are libraries, not extra
+; entries in a test stanza's (modules ...) — the same shape harness
+; already has. Each is a single module named after its library, so call
+; sites spell it exactly as they would a local module.
+
+; Synthetic run data for the four renderer suites (test_render,
+; test_render_junit, test_render_github, test_driver).
+
+(library
+ (name render_fixtures)
+ (modules render_fixtures)
+ (libraries windtrap))
+
+; The JUnit suite's XML well-formedness oracle. Stdlib only, on purpose:
+; it is a test asset, never a dependency of the renderer it checks.
+
+(library
+ (name xml_check)
+ (modules xml_check))
 
 ; The meta suites drive the ambient slot and Runner.execute in-process
 ; with synthetic configs; execute refuses to nest inside an active run,
