@@ -140,17 +140,16 @@ val add_expect_test :
 
     Everything the body raises propagates to the runner —
     [Failure.Check_failure], [Failure.Skip_test], [Failure.Timeout] and any
-    other exception alike — and none of it is a correction. Nodes reached before an exception still resolve,
-    but nothing is spliced at the trailing point: a node inserted after a
-    raising statement could never be reached on a future run, so that correction
-    could never converge. To pin an expected exception, catch and print it, then
-    match it with an ordinary node.
+    other exception alike — and none of it is a correction. Nodes reached
+    before an exception still resolve, but nothing is spliced at the trailing
+    point, since a node inserted after a raising statement could never be
+    reached on a future run. To pin an expected exception, catch and print it,
+    then match it with an ordinary node.
 
     A skip makes the test an ordinary skip: nothing is checked and nothing is
     recorded — no correction for any node, the ones reached before the skip
     included, no trailing insertion, no unreached-node failure — and the test
-    plays no part in the promotion exit rule. Any other reading would blank the
-    goldens of environment-gated expect tests on promote. *)
+    plays no part in the promotion exit rule. *)
 
 (** {1:execution Expect node execution} *)
 
@@ -202,29 +201,21 @@ val exit : unit -> 'a
 
 (** {1:undriven The undriven-registration guard}
 
-    The silent success this closes: [let%expect_test] code preprocessed with
-    [ppx_windtrap] inside a plain [(executable)] or [(test)] stanza registers
-    its tests at module load, and with no [(inline_tests)] stanza nothing ever
-    drives the registry — the binary exits [0] having run nothing, its
-    expectations never checked against anything.
+    The silent success this closes: preprocessed test code inside a plain
+    [(executable)] or [(test)] stanza registers its tests at module load, and
+    with no [(inline_tests)] stanza nothing ever drives the registry — the
+    binary exits [0] having run nothing. So a process that terminates normally
+    with registrations no driving path ever claimed prints a diagnostic on
+    [stderr] — naming the registered files, the missing stanza and the runner
+    protocol — and exits [2], Law 11's nothing-ran code.
 
-    The first registration installs a [Stdlib.at_exit] handler. A process that
-    terminates normally with registrations no driving path ever claimed prints a
-    diagnostic on [stderr] — naming the registered files, the missing
-    [(inline_tests)] stanza and the runner protocol — and exits [2], Law 11's
-    nothing-ran code.
-
-    {b The claim rule.} The registry is claimed, once for the process's life, by
-    any of:
-
-    - {!init}, the runner protocol's entry, in every mode;
-    - {!Private.collect}: whoever drains the registry owns the execution of what
-      they took, which covers a hand-rolled harness driving [Runner] directly;
-    - arming a mutant, through the [Registry.on_armed] hook this module
-      registers: that process's transcript and exit code belong to the mutation
-      loop (Law 16);
-    - {!Private.reset}: a test seam, whose caller owns the registry by
-      construction.
+    {b The claim rule.} The registry is claimed, once for the process's life,
+    by {!init} in every mode; by {!Private.collect}, since whoever drains the
+    registry owns the execution of what they took, which covers a hand-rolled
+    harness driving [Runner] directly; by arming a mutant, through the
+    [Registry.on_armed] hook this module registers, that process's transcript
+    belonging to the mutation loop (Law 16); and by {!Private.reset}, whose
+    caller owns the registry by construction.
 
     Running a suite claims nothing by itself. A standalone [Windtrap.run]
     executable that also links preprocessed test code it never drains dies with
@@ -238,99 +229,68 @@ val exit : unit -> 'a
 (** {1:private The test-only surface}
 
     Everything below is the runtime's own test suite reaching into its
-    implementation. Generated code calls none of it, and neither should anything
-    else: these are the seams that let [test/unit/test_ppx_runtime.ml] check
+    implementation: the seams that let [test/unit/test_ppx_runtime.ml] check
     normalization, collection, correction formatting, the flush and the exit
-    protocol as ordinary functions instead of as process transcripts. *)
+    protocol as ordinary functions rather than as process transcripts.
+    Generated code calls none of it, and neither should anything else. *)
 
 module Private : sig
   val normalize : string -> string
-  (** [normalize s] is the [[%expect]] matching form of [s]: split on [\n] (a
-      ["\r\n"] pair is one newline, a lone [\r] an ordinary byte), every line
-      stripped of surrounding whitespace with indentation counted in leading
-      {e spaces} only, blank edges dropped, and the block dedented by the
+  (** [normalize s] is the [[%expect]] matching form of [s]: lines stripped of
+      surrounding whitespace, blank edges dropped, the block dedented by the
       minimum indentation of its nonempty lines. Two payloads match iff their
       normalizations are equal, which is ppx_expect's default formatting
       flexibility exactly. *)
 
   val collect : unit -> Test_tree.t list
-  (** [collect ()] drains the registry into a test tree: top-level registrations
-      grouped per source file under the file's module name ([my_file.ml] →
-      [My_file]), files in first-registration order, and — when {!init} parsed a
-      [-partition] argument — only that partition's tests. A second call returns
-      [[]] until new registrations arrive. Draining claims the registry (see
-      {!section:undriven}).
+  (** [collect ()] drains the registry into a test tree: registrations grouped
+      per source file under the file's module name ([my_file.ml] → [My_file]),
+      files in first-registration order, restricted to the [-partition] file
+      when {!init} parsed one. A second call is [[]] until new registrations
+      arrive. Draining claims the registry (see {!section:undriven}).
 
       Raises [Invalid_argument] if a group opened by {!enter_group} was never
       closed. *)
 
   val partitions : unit -> string list
-  (** [partitions ()] is the sorted list of partition names seen by registration
-      — one per source file, its basename — the [-list-partitions] answer. *)
+  (** [partitions ()] is the sorted basenames of the source files seen by
+      registration — the [-list-partitions] answer. *)
 
   val corrected_source : file:string -> source:string -> string option
   (** [corrected_source ~file ~source] is [source] with every correction
-      recorded for [file] applied, or [None] when none were. Pure with respect
-      to the filesystem; {!flush_corrections_report} is this plus the read and
-      the write.
-
-      A correction patches the payload literal's extent, as ppx_expect's runtime
-      does: the node head stays where its author wrote it and every other node
-      of the file keeps its bytes. The two shapes with no literal of their own
-      are written whole — a bare [[%expect]], which materializes its payload,
-      and the [{%expect …|}] shorthand, whose literal spans the node and whose
-      retagging keeps the extension id. Multi-line contents sit at node
-      column + 2 with the closing delimiter at node column; a quoted payload is
-      escaped onto one line. *)
+      recorded for [file] applied, or [None] when none were; the filesystem is
+      not touched. A correction patches the payload literal's extent, so every
+      other byte of the file keeps its place — except for the two shapes whose
+      payload {e is} the node, a bare [[%expect]] and the [{%expect …|}]
+      shorthand, which are rewritten whole. *)
 
   type flush_report = {
     written : string list;  (** [.corrected] names written beside the source. *)
     accepted : string list;
         (** Source files rewritten in place, project-root relative. *)
     refused : string list;
-        (** Sources whose correction did not fully land — nothing written, or
-            written but not accepted — each already reported on [stderr]. *)
+        (** Sources whose correction did not fully land, each already reported
+            on [stderr]. *)
   }
   (** The type for what one flush did. *)
 
   val flush_corrections_report : accept:bool -> flush_report
-  (** [flush_corrections_report ~accept] restores the module-load cwd — tests
-      may [chdir] — then writes [<basename>.corrected] there for every file with
-      recorded corrections, where dune's diff action and [dune promote] expect
-      it, and clears the table.
-
-      With [accept], each written correction is {e additionally} accepted into
-      the source tree, the channel snapshot baselines already use: the recorded
-      path is reconstructed against [Path_ops.project_root ()], proven to lie
-      under it, and published with [Atomic_file.write]. That channel does not go
-      through dune, which is what makes one file's correction independent of
-      another file's crash. Acceptance is guarded by a drift check — the patch
-      is by byte offsets into the sandbox {e copy}, so the bytes are compared
-      first and any difference is refused.
-
-      A file whose source cannot be read, whose target cannot be written, or
-      whose acceptance is refused is never skipped silently: a line naming the
-      source path and the reason is printed on [stderr] and the file is returned
-      in [refused], on which {!exit} terminates nonzero. *)
+  (** [flush_corrections_report ~accept] writes [<basename>.corrected] beside
+      each corrected source, where dune's diff action and [dune promote] expect
+      it, and clears the table; with [accept] every correction is
+      {e additionally} accepted into the source tree, guarded by a drift check
+      against the bytes it was computed from. Nothing fails silently: a file
+      that could not be read, written or accepted is named with its reason on
+      [stderr] and returned in [refused]. *)
 
   val inline_exit_code : Runner.outcome -> int
-  (** [inline_exit_code outcome] is the inline runner's exit code for [outcome]
-      — dune's promotion protocol, not the standalone runner's [0]/[1]/[2]
-      contract:
-
-      - [0] when the run passed, and when nothing ran (an empty selection is an
-        empty partition, not a filter typo);
-      - [0] when {e every} failed test's failures are expect mismatches with
-        recorded corrections and no fixture release failed: dune then reaches
-        the [diff?] step, which shows the diff and registers the promotion;
-      - [1] otherwise — any assertion failure, uncaught exception, timeout,
-        unreached expect node, or release failure. Corrections already recorded
-        are still written; under dune they are withheld from promotion until a
-        rerun in which every partition exits cleanly.
-
-      A skip neither forces [1] nor helps reach [0]. {!exit} overrides a [0] to
-      [1] when a correction could not be written, since a failed expect test
-      with nothing for dune to diff would otherwise read as passed. *)
+  (** [inline_exit_code outcome] is the inline runner's exit code — dune's
+      promotion protocol, not the standalone runner's [0]/[1]/[2] contract. It
+      is [0] when the run passed, when nothing ran (an empty selection is an
+      empty partition, not a filter typo), and when {e every} failed test's
+      failures are expect mismatches with recorded corrections, which is what
+      lets dune reach the [diff?] step that registers the promotion; [1]
+      otherwise. A skip neither forces [1] nor helps reach [0]. *)
 
   val correction_notice :
     accepted:string list ->
@@ -339,27 +299,18 @@ module Private : sig
     string list ->
     string option
   (** [correction_notice ~accepted ~refused ~declined written] is the [stderr]
-      notice for a process that wrote the [.corrected] files [written];
-      [accepted] names the source files it also rewrote in place, [refused] the
-      ones whose acceptance was refused, and [declined] says an acceptance was
-      requested but withheld because this process's verdict was not clean.
-      [None] when [written] is empty.
-
-      The first line — [windtrap: wrote <files>] — prints whenever anything was
-      written, unconditionally: it is the only trace of a computed correction
-      that survives a sibling partition's crash. The explanation under it names
-      one case: paths accepted into the source tree, refusals to resolve, an
-      acceptance declined until the failures are fixed, or — for a run that
-      asked for none of it — the caveat that dune registers a correction only
-      when every partition of the library exits cleanly, with both ways out. *)
+      notice for a process that wrote the [.corrected] files [written], or
+      [None] when [written] is empty. Its first line names them
+      unconditionally; the explanation under it names exactly one case — the
+      paths [accepted] into the source tree, the [refused] ones, an acceptance
+      [declined] until the failures are fixed, or dune's rule that a correction
+      is registered for promotion only when every partition of the library
+      exits cleanly. *)
 
   val reset : unit -> unit
   (** [reset ()] restores {e every} piece of state this module keeps between
-      calls to its module-load value: the clearing is total by construction, not
-      by enumeration, since the runtime holds that state in one record and
-      [reset] assigns a fresh one. The module-load cwd is not run state and
-      survives. Calling it claims the registry (see {!section:undriven}).
-
-      For this module's own test suite, which registers synthetic suites
-      repeatedly in one process. Never called by generated code. *)
+      calls to its module-load value; the module-load cwd is not run state and
+      survives. For this module's own test suite, which registers synthetic
+      suites repeatedly in one process, and never called by generated code.
+      Calling it claims the registry (see {!section:undriven}). *)
 end
