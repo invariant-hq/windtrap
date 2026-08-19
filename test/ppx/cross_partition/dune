@@ -12,11 +12,13 @@
 ; still exits 1 having written nothing anywhere.
 ;
 ; runner_main.exe mirrors the backend's generated runner;
-; drive_cross_partition.exe spawns it once per partition under a scrubbed
-; environment and records the transcripts, the exit codes, and what each
-; run wrote. All four runs live in one rule: two rules in one dune
-; directory share a build directory and may run concurrently, so each
-; would see the other's .corrected files.
+; drive_cross_partition.exe spawns it once per partition — through the
+; shared ../drive harness, with its own sequence, since the update runs
+; stage a project root no argv could describe — and records the
+; transcripts, the exit codes, and what each run wrote. All four runs
+; live in one rule: two rules in one dune directory share a build
+; directory and may run concurrently, so each would see the other's
+; .corrected files.
 
 (executable
  (name runner_main)
@@ -28,7 +30,7 @@
 (executable
  (name drive_cross_partition)
  (modules drive_cross_partition)
- (libraries unix))
+ (libraries drive_harness unix))
 
 (rule
  (targets

@@ -4,7 +4,7 @@
 ; instrumented unconditionally (pps, no --instrument-with needed) and its
 ; [false] branch is never exercised, so the report has an uncovered
 ; region to name; runner_main mirrors the inline_tests backend's
-; generated runner (the conformance corpus pattern). drive_inline_coverage
+; generated runner (the conformance corpus pattern). ../drive/drive.exe
 ; spawns it twice under a scrubbed environment — default mode, then
 ; WINDTRAP_COVERAGE=report — with WINDTRAP_COVERAGE_FILE pointed at a
 ; fresh scratch dump per run (nothing lands in the real _build/_coverage,
@@ -24,16 +24,34 @@
  (preprocess
   (pps ppx_windtrap)))
 
-(executable
- (name drive_inline_coverage)
- (modules drive_inline_coverage)
- (libraries unix))
-
 (rule
  (targets run-summary-log run-summary-exit run-report-log run-report-exit)
  (deps covlib.ml)
  (action
-  (run ./drive_inline_coverage.exe run %{dep:runner_main.exe})))
+  (run
+   %{dep:../drive/drive.exe}
+   --mkdir
+   summary-dump
+   --mkdir
+   report-dump
+   --env
+   WINDTRAP_COVERAGE_ONLY=test/ppx/inline_coverage/covlib.ml
+   --run
+   run-summary
+   %{dep:runner_main.exe}
+   --env
+   WINDTRAP_COVERAGE_FILE=summary-dump/self.coverage
+   inline-test-runner
+   inline_cov
+   --run
+   run-report
+   %{dep:runner_main.exe}
+   --env
+   WINDTRAP_COVERAGE=report
+   --env
+   WINDTRAP_COVERAGE_FILE=report-dump/self.coverage
+   inline-test-runner
+   inline_cov)))
 
 (rule
  (alias runtest)

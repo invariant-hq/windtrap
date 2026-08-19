@@ -5,8 +5,8 @@
 ; recorded list — a runner that dropped the row would leave the whole suite
 ; green while still exiting 1, which this fixture pins at process level.
 ; runner_main.exe mirrors the inline_tests backend's generated runner;
-; drive_release_failure.exe spawns it under a scrubbed environment and
-; records the transcript and exit code.
+; ../drive/drive.exe spawns it under a scrubbed environment and records
+; the transcript and exit code.
 
 (executable
  (name runner_main)
@@ -15,16 +15,23 @@
  (preprocess
   (pps ppx_windtrap)))
 
-(executable
- (name drive_release_failure)
- (modules drive_release_failure)
- (libraries unix))
-
 (rule
  (targets runner-log runner-exit)
  (deps inline_release_failure.ml)
  (action
-  (run ./drive_release_failure.exe runner %{dep:runner_main.exe})))
+  (run
+   %{dep:../drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --env
+   WINDTRAP_COVERAGE=off
+   --run
+   runner
+   %{dep:runner_main.exe}
+   inline-test-runner
+   release_failure)))
 
 (rule
  (alias runtest)

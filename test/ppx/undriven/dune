@@ -6,7 +6,7 @@
 ; and a project shipped hundreds of expect tests that way for months,
 ; their goldens never checked against anything. undriven_main.exe
 ; reproduces that shape; runner_main.exe mirrors the inline_tests
-; backend's generated runner; drive_undriven.exe spawns both under a
+; backend's generated runner; ../drive/drive.exe spawns both under a
 ; scrubbed environment — the undriven binary bare, the runner with the
 ; protocol argv, with -list-partitions, and by hand — and records each
 ; transcript and exit code. The goldens pin the guard's diagnostic with
@@ -36,11 +36,6 @@
  (modules runner_main)
  (libraries ppx_windtrap.runtime undriven_inline_lib))
 
-(executable
- (name drive_undriven)
- (modules drive_undriven)
- (libraries unix))
-
 (rule
  (targets
   run-undriven-log
@@ -54,9 +49,27 @@
  (deps inline_undriven.ml)
  (action
   (run
-   ./drive_undriven.exe
-   run
+   %{dep:../drive/drive.exe}
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --env
+   WINDTRAP_COVERAGE=off
+   --run
+   run-undriven
    %{dep:undriven_main.exe}
+   --run
+   run-driven
+   %{dep:runner_main.exe}
+   inline-test-runner
+   undriven
+   --run
+   run-list
+   %{dep:runner_main.exe}
+   inline-test-runner
+   undriven
+   -list-partitions
+   --run
+   run-byhand
    %{dep:runner_main.exe})))
 
 (rule
