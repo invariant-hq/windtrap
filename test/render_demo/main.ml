@@ -137,7 +137,7 @@ let compact_tests =
         equal (Testable.of_equal (fun a b -> a mod 3 = b mod 3)) 4 7);
     test "contramap compares users by id" (fun () ->
         equal by_id { id = 1; name = "alice" } { id = 1; name = "al" });
-    test "custom witnesses: Testable.make and of_module" (fun () ->
+    test "custom witnesses: Testable.make" (fun () ->
         equal point { x = 1; y = 2 } { x = 1; y = 2 };
         equal version (0, 2) (0, 2));
     test "is_false" (fun () -> is_false (3 > 5));
