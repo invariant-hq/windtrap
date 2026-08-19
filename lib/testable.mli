@@ -140,7 +140,6 @@ val bytes : bytes t
 val int : int t
 val int32 : int32 t
 val int64 : int64 t
-val nativeint : nativeint t
 
 val float_exact : float t
 (** [float_exact] compares floats exactly: [a] and [b] are equal iff both are
@@ -188,7 +187,6 @@ val float_rel : rel:float -> abs:float -> float t
 
 val option : 'a t -> 'a option t
 val result : 'a t -> 'e t -> ('a, 'e) result t
-val either : 'a t -> 'b t -> ('a, 'b) Either.t t
 val list : 'a t -> 'a list t
 val array : 'a t -> 'a array t
 
@@ -201,4 +199,3 @@ val slist : 'a t -> ('a -> 'a -> int) -> 'a list t
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
 val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
-val quad : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t

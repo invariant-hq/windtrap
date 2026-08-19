@@ -78,7 +78,6 @@ let tests =
         check_prints "prints negative int" T.int (-7) ~expected:"-7";
         check_prints "prints int32" T.int32 42l ~expected:"42";
         check_prints "prints int64" T.int64 42L ~expected:"42";
-        check_prints "prints nativeint" T.nativeint 42n ~expected:"42";
         check_prints "prints float with %g" (T.float 0.1) 1.5 ~expected:"1.5";
         check_prints "prints whole float compactly" (T.float 0.1) 1.0
           ~expected:"1";
@@ -93,10 +92,6 @@ let tests =
           ~expected:"Ok 1";
         check_prints "prints Error" (T.result T.int T.string) (Error "x")
           ~expected:"Error \"x\"";
-        check_prints "prints Left" (T.either T.int T.string) (Either.Left 1)
-          ~expected:"Left (1)";
-        check_prints "prints Right" (T.either T.int T.string) (Either.Right "h")
-          ~expected:"Right (\"h\")";
         check_prints "prints list" (T.list T.int) [ 1; 2; 3 ]
           ~expected:"[1; 2; 3]";
         check_prints "prints empty list" (T.list T.int) [] ~expected:"[]";
@@ -108,9 +103,6 @@ let tests =
         check_prints "prints triple"
           (T.triple T.int T.int T.int)
           (1, 2, 3) ~expected:"(1, 2, 3)";
-        check_prints "prints quad"
-          (T.quad T.int T.int T.int T.int)
-          (1, 2, 3, 4) ~expected:"(1, 2, 3, 4)";
         (* Failures print the sides in the sorted order the equality
            compared (D5 §3): the diff shows the multiset difference, never
            the incidental arrival order. *)
@@ -153,8 +145,6 @@ let tests =
         check_differ "int differs" T.int 42 43;
         check_equal "int32 equal" T.int32 1l 1l;
         check_equal "int64 equal" T.int64 1L 1L;
-        check_equal "nativeint equal" T.nativeint 42n 42n;
-        check_differ "nativeint differs" T.nativeint 0n 1n;
         check_equal "char equal" T.char 'a' 'a';
         check_differ "char differs" T.char 'a' 'b';
         check_equal "string equal" T.string "hello" "hello";
@@ -183,13 +173,7 @@ let tests =
         check_differ "result: Ok differs from Error" (T.result T.int T.string)
           (Ok 1) (Error "e");
         check_differ "result: differing Ok payloads" (T.result T.int T.string)
-          (Ok 1) (Ok 2);
-        check_equal "either: Left equals Left" (T.either T.int T.string)
-          (Either.Left 1) (Either.Left 1);
-        check_equal "either: Right equals Right" (T.either T.int T.string)
-          (Either.Right "h") (Either.Right "h");
-        check_differ "either: Left differs from Right" (T.either T.int T.int)
-          (Either.Left 1) (Either.Right 1));
+          (Ok 1) (Ok 2));
     test "equality: lists, arrays, slist" (fun () ->
         check_equal "list: equal" (T.list T.int) [ 1; 2; 3 ] [ 1; 2; 3 ];
         check_equal "list: empty" (T.list T.int) [] [];
@@ -232,13 +216,7 @@ let tests =
           (1, 2, 3) (1, 2, 3);
         check_differ "triple: last differs"
           (T.triple T.int T.int T.int)
-          (1, 2, 3) (1, 2, 4);
-        check_equal "quad: componentwise"
-          (T.quad T.int T.int T.int T.int)
-          (1, 2, 3, 4) (1, 2, 3, 4);
-        check_differ "quad: last differs"
-          (T.quad T.int T.int T.int T.int)
-          (1, 2, 3, 4) (1, 2, 3, 5));
+          (1, 2, 3) (1, 2, 4));
     test "constructors and combinators" (fun () ->
         let mod3 =
           T.make ~pp:Format.pp_print_int ~equal:(fun a b -> a mod 3 = b mod 3)
