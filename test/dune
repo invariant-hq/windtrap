@@ -92,7 +92,7 @@
 ; what it buys: dune runs the rules in parallel where a single
 ; executable's rulings came out one after another, and a red ruling
 ; names the executable it came from instead of a position in one
-; 596-test transcript. The roster is unit/'s (names ...) list, and a
+; 570-test transcript. The roster is unit/'s (names ...) list, and a
 ; test file added there without a rule here is simply not judged — the
 ; two lists are kept in step by eye, which is the price of dune having
 ; no way to write this once.

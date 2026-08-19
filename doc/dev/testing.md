@@ -10,9 +10,11 @@ suites honest. `dune runtest` runs everything; scope with a directory
 Eleven directories under `test/`:
 
 - `unit` — the library suite, flat: one `test_<module>.ml` per `lib/`
-  module, aggregated into a single windtrap-run executable
-  (`main.exe`; address one module with
-  `dune exec test/unit/main.exe -- -f <module>`). Four meta suites
+  module, each its own executable ending in its own `run` (address one
+  module by running it: `dune exec test/unit/test_gen.exe -- -f shrink`).
+  One suite per file is the shape `SKILL.md` §3 teaches, and it lets
+  dune parallelize across the twenty-five where the runner is
+  deliberately sequential inside one. Four meta suites
   (`test_run`, `test_runner`, `test_ppx_runtime`, `test_windtrap`)
   drive `Runner.execute` and the ambient slot in-process with
   synthetic configs — the sanctioned way to test runner behavior with
@@ -92,7 +94,12 @@ dune build @cover --instrument-with ppx_windtrap.coverage
 ```
 
 runs every suite and merges their dumps through `windtrap coverage`,
-gated at `--min 87` against a measured baseline. The gate ratchets:
+gated at `--min 87` against a measured baseline. All three verdict
+aliases — `@cover`, `@mutate`, `@admit` — live in `test/dune`, which is
+where `SKILL.md` §3 and `examples/x-blueprint` put them; `@cover`'s run
+half reaches past `test/` on purpose (`(alias_rec ../runtest)`), because
+the merge reads every dump under `_build` and `examples/` carries
+instrumented libraries of its own. The gate ratchets:
 raise it when the margin is comfortable, never lower it to make a red
 build green. Not all of the remaining gap is reachable — `mutate_loop`'s
 Windows-decline paths and `capture`'s C-stub error branches cannot run
@@ -129,17 +136,24 @@ drivers in their scrubbed child environments.
 ## Mutation of windtrap by windtrap
 
 `lib/` carries `(instrumentation (backend ppx_windtrap.mutate))`, inert
-without the flag. Mutate one file at a time:
+without the flag. Mutate one file at a time, from the executable that
+owns that file's tests:
 
 ```
 WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
-  dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
+  dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe --
 dune build @mutate                     # merge verdicts and report
 ```
 
-Measured: 190 mutants in `diff.ml`, **155 killed and 28 survived in
-41s** — an 84.7% kill rate for that file, with the whole suite running
-against each mutant and no test filter needed.
+Measured: 162 mutants in `diff.ml`, **141 killed, 17 survived and 4
+unreached in 2.28s**. The suite split changed both what that costs and
+what it means. Eleven `diff` tests run against each mutant instead of
+all 570, which is why the answer arrives in seconds where the aggregate
+took 41s over its 190 mutants, and why a survivor here is a survivor *of
+those eleven*. `@mutate` is where it becomes the project's answer: the
+merge is killed-anywhere-wins across every executable that armed the
+same site — 17 survived of 167 tree-wide on the run above, `diff.ml`'s
+seventeen plus `test/mutate_loop`'s own fixture.
 
 Admission runs the same way — `WINDTRAP_MUTATE=admit` with a filter,
 against the same instrumented build. The whole-suite question has an
@@ -149,22 +163,29 @@ alias of its own:
 dune build @admit --instrument-with ppx_windtrap.mutate
 ```
 
-`@admit` runs `test/unit/main.exe` under `WINDTRAP_MUTATE=admit` with no
-filter, so every test the run executes is judged. It is scoped to that one executable because it is
-the suite whose subject is `lib/` and exercises it in-process, which is
-where an arming reaches; the suites that drive the machinery through
+`@admit` runs each of the twenty-five unit executables under
+`WINDTRAP_MUTATE=admit` with no filter, so every test each run executes
+is judged — one rule per executable under the one alias, kept in step
+with `unit`'s `(names …)` list by eye. The scope is a statement about
+what an arming can reach: these are the suites whose subject is `lib/`
+and that exercise it in-process. The four meta suites are out, being
+plain harness executables with no windtrap run and so no per-test
+boundary to rule on, and the suites that drive the machinery through
 fixtures they spawn would be ruled on whatever their own assertion code
 happened to evaluate. `--force` is not needed, since `(universe)`
-re-runs the action, but `--instrument-with` is: this tree's workspace
-declares no instrumentation, so an uninstrumented `main.exe` has an
+re-runs the actions, but `--instrument-with` is: this tree's workspace
+declares no instrumentation, so an uninstrumented executable has an
 empty catalogue and the seam declines by name.
 
-Measured on this tree: the alias reports `596 admitted of 596 · 9 forks
-over 912 reached in 8.76s`, where the same run cost 1m38s before the
-per-child deadline shipped. One test admits in single-digit milliseconds
-of admission work, and a 117-test `-f render` selection in 922 ms and 11
-forks — batching plus ride-along admission let one killed fault admit
-hundreds of tests, and no test of this suite has ruled `UNJUSTIFIED`.
+Measured on this tree: **570 admitted of 570 across the twenty-five, in
+2.0s wall** — 4.7s of admission work that dune runs in parallel at
+around 380% CPU, where the one aggregated executable reported `596
+admitted of 596 · 9 forks over 912 reached in 8.76s`, and 1m38s before
+the per-child deadline shipped. One test admits in single-digit
+milliseconds of admission work, and a 73-test `render` executable in
+221 ms and 6 forks — batching plus ride-along admission let one killed
+fault admit hundreds of tests, and no test of this suite has ruled
+`UNJUSTIFIED`.
 The admission machine's own scenarios live in `test/mutate_loop`.
 
 Five core modules opt out with `[@@@mutate exclude_file]`: `runner`,
@@ -194,7 +215,10 @@ The worst cases are unhidden. A suite whose coverage is one integration
 test degenerates to "every test reaches every mutant", and the cost
 approaches mutants × suite. Overlap costs too: a mutant in a file seven
 suites link is dry-run, forked and scored seven times — the merge makes
-the *answer* right, not the bill. Nothing is parallel in this release.
+the *answer* right, not the bill, and the unit split raised that bill by
+turning one linker of `lib/` into twenty-five. Nothing is parallel
+*inside* a loop in this release; across executables dune is, which is
+what `@admit`'s per-executable rules buy.
 
 Every forked child — a survey mutant, an admission batch, the
 determinism probe — runs under a deadline of its own, derived and never
@@ -322,9 +346,14 @@ Two smaller sharp edges, both measured:
   believing it, by arming it against the whole suite:
 
   ```
-  WINDTRAP_MUTATE_ARM=lib/path_ops.ml:183:5:lt \
-    dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
+  WINDTRAP_MUTATE_ARM=lib/path_ops.ml:183:5:lt dune exec \
+    --instrument-with ppx_windtrap.mutate test/unit/test_path_ops.exe --
   ```
+
+  Since the split there is no one executable that is "the whole suite",
+  so widen in two steps: first the executable that owns the mutated
+  file's tests, unnarrowed, then `dune build @mutate` over a full armed
+  run, whose merge is the only view that spans them all.
 
   `mutant survived: …` means it really survives —
   `mutant not evaluated: …` means the run proved nothing and the arming
@@ -354,7 +383,8 @@ about to read.
 The renderer's goldens live under `test/unit/__snapshots__/`, not as
 string literals in the test source: a transcript is an artifact, and the
 point of keeping one is to read the diff when it changes. Accept with
-`dune exec test/unit/main.exe -- -u` and review with `git diff`. The
+`dune exec test/unit/test_render.exe -- -u` and review with `git diff`.
+The
 coloured transcript (`verbose-ansi.snap`) pins escape sequences
 literally — never strip ANSI to compare it, or the comparison is not
 about the thing that broke.
