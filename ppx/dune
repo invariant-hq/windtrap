@@ -18,8 +18,6 @@
  (ppx_runtime_libraries ppx_windtrap.runtime ppx_windtrap.config)
  (preprocess
   (pps ppxlib.metaquot))
- (instrumentation.backend
-  (ppx ppx_windtrap.coverage))
  (inline_tests.backend
   (runner_libraries ppx_windtrap.runtime)
   (generate_runner

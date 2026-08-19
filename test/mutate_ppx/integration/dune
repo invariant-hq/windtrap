@@ -60,7 +60,7 @@
  (name windtrap_mutate_both)
  (modules both)
  (instrumentation
-  (backend ppx_windtrap))
+  (backend ppx_windtrap.coverage))
  (instrumentation
   (backend ppx_windtrap.mutate)))
 

@@ -1,11 +1,8 @@
 ; The library under test: two inert instrumentation stanzas, committed
 ; once — zero overhead until --instrument-with, or the workspace's
 ; instrument_with (../dune-workspace), asks for them — and no PPX or
-; test code in lib/ itself. Coverage is spelled ppx_windtrap.coverage,
-; not the bare ppx_windtrap: both resolve the same rewriter, but the
-; bare spelling's ppx_runtime_libraries link the windtrap core into an
-; instrumented library's closure (ppx/coverage/dune argues it; "prefer
-; the second in new code").
+; test code in lib/ itself. Each backend is named by its own rewriter,
+; so an instrumented library links that runtime and nothing else.
 
 (library
  (name windtrap_example_blueprint)

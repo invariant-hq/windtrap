@@ -25,10 +25,10 @@
 ; action caches against nothing and silently goes stale. This is the
 ; shape examples/09-coverage-aggregation documents, one level up.
 ;
-; The backend spelled here is `ppx_windtrap.coverage`, not the
-; `ppx_windtrap` the manual shows users: only the former keeps the
-; windtrap core out of an instrumented library's closure, and lib/ — the
-; core itself — cannot use the latter at all. See ppx/coverage/dune.
+; `ppx_windtrap.coverage` is the backend's one name: it keeps the
+; windtrap core out of an instrumented library's closure, which lib/ —
+; the core itself — needs to be instrumentable at all. See
+; ppx/coverage/dune.
 
 ; --min 87 is the measured baseline (89.5% at the time of writing) less a
 ; couple of points of headroom, not a round number picked in advance. It

@@ -34,7 +34,7 @@
  (name ppx_windtrap)
  (synopsis "PPX and instrumentation backend for windtrap")
  (description
-  "Inline test syntax for windtrap (let%test, module%test, let%expect_test, [%expect], [%expect_exact], [%expect.output]) with corrections accepted via dune promote, plus the expression-coverage instrumentation backend enabled with dune's --instrument-with ppx_windtrap.")
+  "Inline test syntax for windtrap (let%test, module%test, let%expect_test, [%expect], [%expect_exact], [%expect.output]) with corrections accepted via dune promote, plus the expression-coverage instrumentation backend enabled with dune's --instrument-with ppx_windtrap.coverage.")
  (depends
   (ocaml
    (>= 5.0))

@@ -618,7 +618,7 @@ nothing catch?*
 Both exist only where the precondition holds: the library under test
 carries §3's instrumentation stanza —
 `(instrumentation (backend ppx_windtrap.mutate))`, the mutate twin of
-coverage's `(backend ppx_windtrap)` — and the run passes
+coverage's `(backend ppx_windtrap.coverage)` — and the run passes
 `--instrument-with ppx_windtrap.mutate`. A library without the stanza
 contributes no fault sites: every admission ruling is `NO SITES` and
 the survey has nothing to report. Where instrumentation is absent — a

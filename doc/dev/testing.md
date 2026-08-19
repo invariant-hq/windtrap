@@ -97,15 +97,14 @@ Windows-decline paths and `capture`'s C-stub error branches cannot run
 in a green suite — so chase the branches the report names, not the
 percentage.
 
-**The backend is spelled `ppx_windtrap.coverage`, not the
-`ppx_windtrap` the manual shows users.** Both resolve the same
-rewriter, but the `ppx_windtrap` spelling carries
-`(ppx_runtime_libraries ppx_windtrap.runtime ppx_windtrap.config)`
-because that library's other job is the inline-test rewriter, and dune
-adds a rewriter's runtime libraries to everything it preprocesses —
-instrumentation included. An instrumented library therefore links the
+**The backend is spelled `ppx_windtrap.coverage`, and it is the only
+spelling.** A `ppx_windtrap` backend shipped in 0.2.0 and was cut: that
+library's other job is the inline-test rewriter, so it carries
+`(ppx_runtime_libraries ppx_windtrap.runtime ppx_windtrap.config)`, and
+dune adds a rewriter's runtime libraries to everything it preprocesses —
+instrumentation included. An instrumented library therefore linked the
 windtrap *core*. For `lib/` that is a dependency cycle and the build
-refuses; for a user it is a closure they did not ask for. See
+refuses; for a user it was a closure they did not ask for. See
 `ppx/coverage/dune`.
 
 Self-hosting has one consequence worth internalizing: **the coverage

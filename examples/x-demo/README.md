@@ -288,7 +288,7 @@ dune exec examples/x-demo/main.exe | cat -v   # ESC[31m etc. visible
 ## 10. Coverage
 
 The dune stanza carries an inert `(instrumentation (backend
-ppx_windtrap))`; plain builds have zero overhead. The verified
+ppx_windtrap.coverage))`; plain builds have zero overhead. The verified
 instrumented commands (coverage is measured over `main.ml` itself):
 
 ```sh
