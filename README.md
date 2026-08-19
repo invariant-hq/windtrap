@@ -114,13 +114,14 @@ and promote unchanged, unsupported ones fail loudly at the exact
 location.
 
 **[Resources and structure](doc/manual/resources-and-structure.md)** —
-`bracket` and `scoped` scope a per-test resource with teardown on every
-outcome, `fixture` shares an expensive one across the run, `temp_dir`
-and `temp_file` give runner-cleaned scratch paths, and `setenv`/`chdir`
-bind the environment and the working directory for one test with the
-runner restoring both; `cases` declares one named, individually
-selectable test per input, `subtest` labels sub-cases inside a body, and
-`xfail` keeps known-bug reproductions in-tree without a red run.
+`bracket` scopes a per-test resource with teardown on every outcome and
+`scoped` takes a `with_`-style scoping function whole, `fixture` shares
+an expensive one across the run, `temp_dir` and `temp_file` give
+runner-cleaned scratch paths, and `setenv`/`chdir` bind the environment
+and the working directory for one test with the runner restoring both;
+`cases` declares one named, individually selectable test per input,
+`subtest` labels sub-cases inside a body, and `xfail` keeps known-bug
+reproductions in-tree without a red run.
 
 **[Code coverage](doc/manual/coverage.md)** — expression-level coverage
 from the inert `(instrumentation (backend ppx_windtrap.coverage))`
