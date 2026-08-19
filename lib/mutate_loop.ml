@@ -841,14 +841,23 @@ let backstop_refusal (mutant : M.mutant) =
      budgets"
     (M.id_to_string mutant.M.id)
 
+(* The forced-fail check rides the first child, which the ordering makes
+   the most-reached mutant: a mutant many tests run is the one least
+   likely to survive a correctly instrumented build, so a survivor there
+   is evidence about the build. It is a WARNING and not a refusal,
+   because a legitimately weak file produces the same signature — and
+   locking such a file out of the survey until someone kills or dismisses
+   the mutant costs the reader the score they came for, while the
+   diagnosis it needs fits on one line above it. *)
 let run_children ~armed ~expired ~scratch ~dry_run_wall ~spine ~reach ~ordered
     tests =
   let verdicts = ref M.empty in
+  let forced_fail = ref None in
   let record (mutant : M.mutant) verdict =
     verdicts := M.add !verdicts (M.record_of_mutant mutant verdict)
   in
   let rec go index = function
-    | [] -> Ok !verdicts
+    | [] -> Ok (!verdicts, !forced_fail)
     | mutant :: rest -> (
         let paths = reaching_tests reach mutant in
         let budget = budget_of (site_hits reach mutant) in
@@ -862,21 +871,12 @@ let run_children ~armed ~expired ~scratch ~dry_run_wall ~spine ~reach ~ordered
             Error (backstop_refusal mutant)
         | Ok (verdict, `Reported) ->
             record mutant verdict;
-            let survived =
-              match verdict with M.Survived _ -> true | _ -> false
-            in
-            if index = 0 && survived then
-              Error
-                (spf
-                   "arming %s changed nothing: %d test(s) ran it and none \
-                    failed. Either the library under test was not built with \
-                    --instrument-with ppx_windtrap.mutate — the commonest \
-                    cause, and then the mutants here are the test executable's \
-                    own — or that mutant genuinely survives, in which case \
-                    dismiss it with [@mutate off] and re-run"
-                   (M.id_to_string mutant.M.id)
-                   (List.length paths))
-            else go (index + 1) rest)
+            (match verdict with
+            | M.Survived _ when index = 0 ->
+                forced_fail :=
+                  Some (M.id_to_string mutant.M.id, List.length paths)
+            | M.Survived _ | M.Killed | M.Unreached -> ());
+            go (index + 1) rest)
   in
   go 0 ordered
 
@@ -1060,7 +1060,7 @@ let loop renderer ~armed (spine : Driver.t) tests =
           in
           match outcome with
           | Error message -> refuse "%s" message
-          | Ok reported ->
+          | Ok (reported, forced_fail) ->
               let verdicts =
                 List.fold_left
                   (fun acc (m : M.mutant) ->
@@ -1074,6 +1074,10 @@ let loop renderer ~armed (spine : Driver.t) tests =
                 if narrowed then M.output_file ~exe:Sys.executable_name
                 else write_verdicts verdicts
               in
+              Option.iter
+                (fun (id, tests) ->
+                  Render.mutation_forced_fail renderer ~id ~tests)
+                forced_fail;
               print_report renderer ~population ~unreached ~verdicts
                 ~duration:(Unix.gettimeofday () -. started)
                 ~seed:config.Run.seed ~siblings:(has_siblings path) tests;

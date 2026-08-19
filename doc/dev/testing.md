@@ -244,19 +244,18 @@ time remains the habit, and the better one regardless.
 
 Two smaller sharp edges, both measured:
 
-- The forced-fail check arms only the single most-reached mutant and
-  refuses to start if it survives. Scoped by file this rarely bites; it
-  did for every `-f`-narrowed run, where the most-reached mutant is
-  `lib/path_ops.ml:175:48:not`, killed only by the `path_ops` tests.
-  Its message leads with "the library was not built with
-  --instrument-with", which is the commonest cause in general and the
-  wrong one there. File scoping is not immune either: a file whose
-  most-reached mutant genuinely survives locks the survey out of that
-  file until the mutant is killed or dismissed —
-  `WINDTRAP_MUTATE_ONLY=lib/capture.ml` refuses today on
-  `lib/capture.ml:38:10:le`, reached by 15 tests and caught by none.
-  (An `admit` run skips the check by design, Law 16e, so it is the way
-  to interrogate such a file's tests in the meantime.)
+- The forced-fail check arms only the single most-reached mutant, and
+  it used to *refuse the run* if it survived. Measured here, that
+  refusal fired on legitimate work twice: every `-f`-narrowed run hit it
+  on `lib/path_ops.ml:175:48:not`, killed only by the `path_ops` tests,
+  and `WINDTRAP_MUTATE_ONLY=lib/capture.ml` hit it on
+  `lib/capture.ml:38:10:le`, reached by 15 tests and caught by none — a
+  file whose weakness is the finding, locked out of the survey until
+  someone killed or dismissed the mutant. Fixed: the check and its
+  verdict stay, and its diagnosis is now a warning above the report, so
+  the run completes with its score. The wording no longer *leads* with
+  "the library was not built with --instrument-with" either; it names it
+  as the reading to check, which is what it always was.
 - **A narrowed run's survivors are relative to its selection.** A mutant
   is reported as surviving when no *selected* test killed it. Such a run
   now keeps that to itself — a selection (`-f`, `-e`, tags, `--quick`,

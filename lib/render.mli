@@ -590,6 +590,16 @@ val mutation_not_saved : t -> unit
     executable's whole answer. Prints in every mode: it qualifies what the run
     just did not persist. *)
 
+val mutation_forced_fail : t -> id:string -> tests:int -> unit
+(** [mutation_forced_fail t ~id ~tests] prints
+    [arming <id> changed nothing: <tests> test(s) ran it and none failed. …] —
+    the warning a mutation run prints above its report when the mutant the most
+    tests reach survived. That is the signature of the commonest first-run
+    misconfiguration, the backend on the test executable but not on the library
+    under test, so the line names it; it is a warning rather than a refusal
+    because a legitimately weak file produces the same signature and is owed
+    its report. Prints in every mode. *)
+
 type witness = {
   test : string;
       (** The test's full path, as {!Test_tree.path_to_string} spells it

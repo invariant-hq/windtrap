@@ -337,9 +337,12 @@ them reopens the design**.
     completed — **whatever it found**, and whether or not it persisted:
     a run whose selection narrows the suite completes, reports in full,
     writes no verdict file and says so — and 1 when it refused to start
-    or could not finish: red or empty dry run, probe disagreement,
-    forced-fail failure, or a supervision error, each with its own
-    message. **It never exits 2**, because "nothing ran" is a statement
+    or could not finish: red or empty dry run, probe disagreement, or a
+    supervision error, each with its own message. **The forced-fail
+    check is not among them (2026-08-19): a legitimately weak file and
+    the commonest misconfiguration produce the same signature, so the
+    check states its diagnosis in a warning above the report and the run
+    completes with its score.** **It never exits 2**, because "nothing ran" is a statement
     about a test selection and a mutation run does not make one. A
     survivor-driven nonzero exit is a later addition and is the only
     thing that may ever change this. **Exception, claiming exactly that

@@ -2189,6 +2189,18 @@ let mutation_not_saved t =
        "verdicts not saved: this run's selection narrows the suite, and a \
         partial run's verdicts would stand in the project merge as the whole.")
 
+let mutation_forced_fail t ~id ~tests =
+  clear_live t;
+  close_row t;
+  put t
+    (st t `Yellow
+       (spf
+          "arming %s changed nothing: %d test(s) ran it and none failed. If \
+           the library under test was not built with --instrument-with \
+           ppx_windtrap.mutate, every number below is about this executable's \
+           own mutants."
+          id tests))
+
 let mutation_sections t (m : mutation) =
   let survivor_part =
     match m.survivors with

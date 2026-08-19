@@ -611,16 +611,31 @@ let refusal_tests =
         says ~msg:"and the test that disagreed, by name" err
           "flaky \u{203a} passes where it was measured";
         denies ~msg:"no number was produced" out "mutants: ");
-    test "a suite that kills nothing at all is reported as a build problem"
+    test "a suite that kills nothing is warned about, above its report"
       (fun () ->
-        let code, _, err =
+        (* The commonest first-run misconfiguration and a legitimately
+           weak file produce the same signature, so the run says what it
+           saw and scores anyway: locking the weak file out of the survey
+           would cost the reader the number they came for. *)
+        let code, out, err =
           spawn [ "MUTATE_FIXTURE=weak"; "WINDTRAP_MUTATE=1" ]
         in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the finding" err "changed nothing";
-        says ~msg:"the likeliest cause" err
+        equal ~msg:"exit code (the run completed)" int 0 code;
+        equal ~msg:"and it is not a refusal" text "" err;
+        says ~msg:"the finding" out "changed nothing";
+        says ~msg:"the diagnosis it points at" out
           "--instrument-with ppx_windtrap.mutate";
-        says ~msg:"the other cause" err "[@mutate off]");
+        says ~msg:"the score is still there" out "mutants: 1 survived of 4";
+        let lines = String.split_on_char '\n' out in
+        let index needle =
+          let rec go i = function
+            | [] -> failf "no %S line in:\n%s" needle out
+            | line :: rest -> if has_sub line needle then i else go (i + 1) rest
+          in
+          go 0 lines
+        in
+        is_true ~msg:"the warning stands above the report"
+          (index "changed nothing" < index "mutants: 1 survived"));
     test "a selection that matched nothing is refused, never scored" (fun () ->
         let code, out, err =
           spawn ~args:[ "-f"; "no-such-test" ] [ "WINDTRAP_MUTATE=1" ]

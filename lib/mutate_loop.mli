@@ -102,10 +102,13 @@
       results over a non-deterministic suite are not a weaker number, they are
       not a number.
     + {b Forced-fail check.} The mutant the most tests reach is armed and those
-      tests run. If nothing fails the loop aborts, because the commonest
-      misconfiguration — the backend on the test executable but not on the
-      library under test — produces exactly that, and it costs one child to rule
-      out. Its verdict is kept, so the check is free for a suite that passes it.
+      tests run. If nothing fails the run warns above its report, because the
+      commonest misconfiguration — the backend on the test executable but not
+      on the library under test — produces exactly that, and it costs one child
+      to rule out. Its verdict is kept, so the check is free for a suite that
+      passes it, and it is a warning rather than a refusal because a
+      legitimately weak file produces the same signature and is owed its
+      score.
     + {b The loop.} One [fork] per reached, non-dismissed mutant. The child
       arms, runs that mutant's reaching tests under [bail = Some 1], and writes
       one line on a pipe. {b The verdict never rides an exit code}: the inline
