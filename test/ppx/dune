@@ -146,17 +146,7 @@
  (action
   (diff reject_pattern_attr.expected reject_pattern_attr.actual)))
 
-; Cookie drop modes (Jane Street protocol)
-
-(rule
- (with-stdout-to
-  cookie_drop.actual
-  (run ./pp.exe -cookie "inline-test=drop" --impl %{dep:test_basic.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff cookie_drop.expected cookie_drop.actual)))
+; Dune's inline_tests cookie
 
 (rule
  (with-stdout-to
@@ -195,7 +185,12 @@
    cookie_invalid.actual
    (with-accepted-exit-codes
     1
-    (run ./pp.exe -cookie "inline-test=bogus" --impl %{dep:test_basic.ml})))))
+    (run
+    ./pp.exe
+    -cookie
+    "inline_tests=\"bogus\""
+    --impl
+    %{dep:test_basic.ml})))))
 
 (rule
  (alias runtest)

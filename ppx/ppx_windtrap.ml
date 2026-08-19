@@ -29,25 +29,18 @@
 open Ppxlib
 open Ast_builder.Default
 
-(* Jane Street cookies (inline-test drop modes) *)
+(* Dune's inline_tests cookie
+
+   The one cookie a build sets: dune passes [inline_tests="disabled"] for
+   a library whose (inline_tests) stanza is off and for a profile that
+   disables them, and the registrations are dropped rather than compiled
+   into a runner nothing drives. ppx_inline_test's own [inline-test=drop]
+   spelling is Jenga's, not dune's, and reached this rewriter from
+   nowhere but the golden that tested it. *)
 
 type maybe_drop = Keep | Drop
 
 let maybe_drop_mode = ref Keep
-
-let () =
-  Driver.Cookies.add_simple_handler "inline-test"
-    Ast_pattern.(pexp_ident (lident __'))
-    ~f:(function
-      | None -> ()
-      | Some id -> (
-          match id.txt with
-          | "drop" | "drop_with_deadcode" -> maybe_drop_mode := Drop
-          | s ->
-              Location.raise_errorf ~loc:id.loc
-                "invalid 'inline-test' cookie (%s), expected one of: drop, \
-                 drop_with_deadcode"
-                s))
 
 let () =
   Driver.Cookies.add_simple_handler "inline_tests"
