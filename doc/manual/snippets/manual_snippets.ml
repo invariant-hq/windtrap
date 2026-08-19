@@ -48,6 +48,12 @@ let parse_port input =
   | Some port when port > 0 && port < 65_536 -> Ok port
   | Some _ | None -> Error ("invalid port: " ^ input)
 
+type event = { path : string; kind : string; timestamp : float }
+
+let key e = (e.path, e.kind)
+let event = Testable.contramap key (pair string string)
+let events = slist event (fun a b -> compare (key a) (key b))
+
 type addr = Tcp of int | Unix_socket of string
 
 let tcp_port = function Tcp port -> Some port | Unix_socket _ -> None
@@ -101,6 +107,16 @@ let assertions =
       test "contramap projects before comparing" (fun () ->
           let by_length = Testable.contramap String.length int in
           equal by_length "abc" "xyz");
+      test "slist over contramap ignores order and noisy fields" (fun () ->
+          equal events
+            [
+              { path = "a"; kind = "created"; timestamp = 0. };
+              { path = "b"; kind = "removed"; timestamp = 0. };
+            ]
+            [
+              { path = "b"; kind = "removed"; timestamp = 17.3 };
+              { path = "a"; kind = "created"; timestamp = 42.1 };
+            ]);
       cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
         (fun input -> ignore (require_ok (parse_port input)));
     ]
@@ -224,6 +240,15 @@ module Config = struct
   let token () = Sys.getenv_opt "API_TOKEN"
 end
 
+let probes = ref 0
+
+(* A fixture whose acquisition skips gates every test that uses it; the
+   probe runs once for the whole run. *)
+let device : unit -> unit =
+  fixture (fun () ->
+      incr probes;
+      skip ~reason:"no device in this environment" ())
+
 let with_db = bracket ~setup:Db.connect ~teardown:Db.close
 let with_conn = scoped Pool.with_connection
 let server = fixture ~teardown:Server.stop Server.start
@@ -237,6 +262,10 @@ let resources =
           equal int 1 (Db.count db));
       with_conn "counts rows" (fun conn -> equal int 0 (Pool.count conn));
       test "responds" (fun () -> is_true (Server.ping (server ())));
+      test "gpu elementwise" (fun () -> device ());
+      test "gpu reduction" (fun () -> device ());
+      test "the skipping fixture probed exactly once" (fun () ->
+          equal int 1 !probes);
       test "writes a config" (fun () ->
           let dir = temp_dir () in
           let file = Filename.concat dir "config.json" in

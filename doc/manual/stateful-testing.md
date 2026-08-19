@@ -302,8 +302,19 @@ stateful "store survives any sequence" ~model:Store_model.empty
   commands
 ```
 
-`rm_rf` is [the cookbook's](../cookbook.md#1-temporary-directories-and-files).
-The `Fun.protect` is yours: windtrap never sees the resource, so
+`rm_rf` is yours to write, and this is the whole of it:
+
+```ocaml
+let rec rm_rf path =
+  if Sys.is_directory path then begin
+    Array.iter (fun name -> rm_rf (Filename.concat path name))
+      (Sys.readdir path);
+    Sys.rmdir path
+  end
+  else Sys.remove path
+```
+
+The `Fun.protect` is yours too: windtrap never sees the resource, so
 releasing on the failing path is the scope's own contract — the same
 bargain `scoped` strikes at the test level. `Eio_main.run` and anything
 built on `Fun.protect` release on both paths; `let r = acquire () in

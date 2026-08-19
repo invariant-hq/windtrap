@@ -105,8 +105,25 @@ let tests =
 
 A fixture no selected test touches is never acquired. A `skip` raised
 during acquisition is cached: every test using the fixture skips with
-the same reason — the pattern for suites gated on an unavailable
-device (see the [cookbook](../cookbook.md)).
+the same reason. That is how a whole suite is gated on a resource that
+may not be there — the probe runs once, and an unavailable device never
+turns the run red:
+
+```ocaml
+let cuda =
+  fixture (fun () ->
+      match Cuda.init () with
+      | Ok device -> device
+      | Error msg -> skip ~reason:msg ())
+
+let tests =
+  [ test "elementwise" (fun () -> check_elementwise (cuda ()));
+    test "reduction" (fun () -> check_reduction (cuda ())) ]
+```
+
+For a gate that is not a resource — a platform, a missing binary — the
+per-test spelling stays the honest one: a `require_foo ()` helper whose
+first line is `skip ~reason`.
 
 Release happens after the last test, which puts it outside every
 per-test timeout: there is no window left to inherit and no limit to

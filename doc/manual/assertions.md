@@ -118,6 +118,27 @@ let by_length = Testable.contramap String.length int in
 equal by_length "abc" "xyz"
 ```
 
+The two compose into the assertion most event logs want — *did these
+things happen, in any order, ignoring the noisy fields*:
+
+```ocaml
+type event = { path : string; kind : string; timestamp : float }
+
+let key e = (e.path, e.kind)                             (* drop the noise *)
+let event = Testable.contramap key (pair string string)  (* compare on the key *)
+let events = slist event (fun a b -> compare (key a) (key b))
+
+equal events
+  [ { path = "a"; kind = "created"; timestamp = 0. };
+    { path = "b"; kind = "removed"; timestamp = 0. } ]
+  observed
+```
+
+`slist` sorts both sides with the comparator before comparing
+elementwise, so order is ignored and multiplicity is not; `contramap`
+sends both the equality and the failure rendering through the
+projection, so the diff shows exactly the fields the test is about.
+
 The witnesses are flat (`int`, `list`, `pair`); the constructors stay
 behind `Testable.`, which is what keeps names like `contramap` and
 `make` out of every test file's scope.
@@ -187,8 +208,9 @@ not_contains ~sub:"secret" log
 ```
 
 For an exact occurrence count, fold the count locally and assert
-about the number — cookbook recipe 12 has the eight-line `count` and
-the `satisfies ~claim` that goes with it.
+about the number — [cookbook](../cookbook.md#6-counting-occurrences)
+recipe 6 has the eight-line `count` and the `satisfies ~claim` that goes
+with it.
 
 When the order is the claim, `in_order ~subs` asserts a whole chain of
 substrings at once. Each element must match at or after the end of the
@@ -292,8 +314,9 @@ match find_user "alice" with
 `skip ?reason ()` skips the current test — not a failure; a run whose
 every selected test skipped still exits 0. Use it for unmet
 environment preconditions (`if Sys.win32 then skip ~reason:"unix only" ()`);
-see the [cookbook](../cookbook.md) for skipping a whole suite on a
-missing resource.
+to gate a whole suite on a resource that may be absent, raise the `skip`
+in a `fixture`
+([Resources and structure](resources-and-structure.md#run-scoped-resources-fixture)).
 
 Verbs work anywhere code runs inside a test — bodies, `bracket` setup
 and teardown, fixture acquisition, property bodies. Outside a run they

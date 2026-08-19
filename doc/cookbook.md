@@ -2,88 +2,17 @@
 
 Recipes for needs windtrap deliberately does not absorb: each is a few
 lines of ordinary OCaml over the public surface, and keeping them out of
-the API keeps the API small. Every recipe here compiles — each is
-mirrored as a test in `test/docs/test_cookbook.ml`, so a recipe that
-rots breaks the build. Code blocks that would need a dependency windtrap
-does not have (Eio) are marked as fragments; their *guarantees* are
-tested instead.
+the API keeps the API small. A pattern that only composes windtrap's own
+verbs belongs in the manual chapter that documents them, not here — when
+a recipe becomes a way of using the API, it has stopped being a record
+of declined surface. Every recipe here compiles — each is mirrored as a
+test in `test/docs/test_cookbook.ml`, so a recipe that rots breaks the
+build. Code blocks that would need a dependency windtrap does not have
+(Eio) are marked as fragments; their *guarantees* are tested instead.
 
 The recipes assume `open Windtrap`.
 
-## 1. Temporary directories and files
-
-Prefer the built-ins: `temp_dir ()` and `temp_file ()` are created lazily
-per test and removed by the runner after the test on every outcome —
-failure, skip, and timeout included. There is no lifecycle to write:
-
-```ocaml
-test "writes a config" (fun () ->
-    let dir = temp_dir () in
-    let file = Filename.concat dir "config.json" in
-    Config.write file;
-    is_true (Sys.file_exists file))
-```
-
-Reach for a hand-rolled scope only when the directory must disappear
-*before* the test ends (testing cleanup behavior itself) or outside a
-run. The canonical shape — cleanup on the raise path included:
-
-```ocaml
-let rec rm_rf path =
-  if Sys.is_directory path then begin
-    Array.iter (fun name -> rm_rf (Filename.concat path name))
-      (Sys.readdir path);
-    Sys.rmdir path
-  end
-  else Sys.remove path
-
-let with_temp_dir fn =
-  let dir = Filename.temp_file "test-" ".dir" in
-  Sys.remove dir;
-  Sys.mkdir dir 0o700;
-  Fun.protect ~finally:(fun () -> rm_rf dir) (fun () -> fn dir)
-```
-
-The `Fun.protect` is the point: a version that removes the directory
-after `fn dir` leaks it on every failing test.
-
-## 2. Scoped environment variables
-
-Prefer the built-ins: `setenv name (Some v)` binds and `setenv name
-None` unbinds — a real unbinding, `Sys.getenv_opt` answers `None` — for
-the rest of the test, and the runner restores what the variable held
-before the test's first `setenv` of it, on every outcome: failure,
-skip, and timeout included. There is no lifecycle to write:
-
-```ocaml
-test "a missing token is refused, an empty one is not a token" (fun () ->
-    setenv "API_TOKEN" (Some "test-token");
-    equal string "test-token" (Client.token ());
-    setenv "API_TOKEN" None;
-    raises Missing_token (fun () -> ignore (Client.token ())))
-```
-
-Reach for a hand-rolled scope only outside a run — a setup script, a
-tool. The canonical shape, and the limitation that keeps it inferior to
-the built-in:
-
-```ocaml
-let with_env var value fn =
-  let saved = Sys.getenv_opt var in
-  Unix.putenv var value;
-  Fun.protect
-    ~finally:(fun () ->
-      Unix.putenv var (match saved with Some v -> v | None -> ""))
-    fn
-```
-
-**`putenv` cannot unset.** If `var` was unset before the call, the
-restore above leaves it *set to `""`* — the POSIX interface OCaml's
-`Unix` exposes has no unset, which is exactly why `setenv`'s `None`
-goes through a real `unsetenv` stub instead. Under this recipe, code
-that distinguishes unset from empty stays untestable.
-
-## 3. Testing under Eio
+## 1. Testing under Eio
 
 Windtrap has no Eio integration and needs none: `Eio_main.run` is
 already a scoping function, so `scoped` takes it directly (fragment;
@@ -120,7 +49,7 @@ The guarantees the combination rests on:
    times out, is reported as a timeout of that test, and the run
    continues. It cannot interrupt blocked C calls.
 
-## 4. Subprocess workers: the role-env-var pattern
+## 2. Subprocess workers: the role-env-var pattern
 
 To test process-level behavior (locks, crashes, cache sharing), re-exec
 the test binary itself as a worker, dispatching on an environment
@@ -153,99 +82,7 @@ environment if the child itself ever calls `run` — a leaked
 `WINDTRAP_UPDATE` or `WINDTRAP_STREAM` would change the child run's
 behavior.
 
-## 5. Comparing event sets: `slist` + `Testable.contramap`
-
-"Did these events happen, in any order, ignoring the noisy fields" is a
-projection followed by a multiset comparison — both already exist:
-
-```ocaml
-type event = { path : string; kind : string; timestamp : float }
-
-let key e = (e.path, e.kind)                     (* drop the noise *)
-let event = Testable.contramap key (pair string string)  (* on the key *)
-let events = slist event (fun a b -> compare (key a) (key b))
-
-(* order-insensitive, timestamp-insensitive: *)
-equal events
-  [ { path = "a"; kind = "created"; timestamp = 0. }
-  ; { path = "b"; kind = "removed"; timestamp = 0. } ]
-  observed
-```
-
-`slist` sorts both sides with the comparator before elementwise
-comparison, so order is ignored but multiplicity is not; `contramap`
-makes both equality and the failure rendering go through the projection,
-so the diff shows exactly the fields the test is about.
-
-## 6. Gating on generator reach with `cover`
-
-`cover label cond` fails the property unless at least one passing case
-marked the label — the CI gate on generator quality, where `classify`
-only prints a table a human reads under `-v`:
-
-```ocaml
-prop "parity is exercised" ~count:200 Gen.small_int (fun n ->
-    cover "even" (n mod 2 = 0);
-    cover "odd" (n mod 2 <> 0);
-    equal int n n)
-```
-
-Presence, not proportion, and deliberately: a percentage gate over a
-random sample flakes near its threshold, and the margin that stops it
-flaking is wide enough to stop it catching anything short of the region
-vanishing. When the proportion is what you want to know, read
-`classify`'s table.
-
-Put the `cover` where the body always reaches it. The demand registers
-at the call, so one written inside the branch it is meant to police
-registers nothing on the runs where that branch is never taken — vacuous
-exactly when it should fire.
-
-## 7. Skipping a whole suite on a missing resource
-
-A `skip` raised during fixture acquisition is cached as a skip: the
-acquiring test skips with that reason, and every later use of the
-fixture in the run skips with the same reason — the probe runs once, and
-an unavailable device never turns the run red:
-
-```ocaml
-let cuda =
-  fixture (fun () ->
-      match Cuda.init () with
-      | Ok device -> device
-      | Error msg -> skip ~reason:msg ())
-
-let tests =
-  [ test "elementwise" (fun () -> check_elementwise (cuda ()))
-  ; test "reduction" (fun () -> check_reduction (cuda ())) ]
-```
-
-For a gate that is not a resource (platform, missing binary), the
-per-test spelling stays the honest one: a `require_foo ()` helper
-calling `skip ~reason` as the body's first line.
-
-## 8. Codec round-trips
-
-Every codec gets one property: decoding inverts encoding. Generate the
-*decoded* form, and assert with `equal` so the counterexample prints a
-structured diff at the shrunk input:
-
-```ocaml
-let encode l = String.concat "," (List.map string_of_int l)
-let decode = function
-  | "" -> []
-  | s -> List.map int_of_string (String.split_on_char ',' s)
-
-let tests =
-  [ prop "decode inverts encode" Gen.(list small_int) (fun l ->
-        equal (list int) l (decode (encode l))) ]
-```
-
-When only some values are representable, generate the representable
-subset by construction (not `assume`), and add the one-way property for
-the rest (`decode` of arbitrary input never raises, or errors cleanly).
-
-## 9. Two-phase keyed comparison: shape first, then values
+## 3. Two-phase keyed comparison: shape first, then values
 
 For big structured values (tensors, matrices, tables), a mismatch in the
 *shape* should fail with the shape diff — not a screenful of values that
@@ -266,7 +103,7 @@ marks the few values that differ instead of a wall of misaligned ones.
 Thread `?pos` through helpers like this one so failures point at the
 caller.
 
-## 10. A complex-tolerance testable
+## 4. A complex-tolerance testable
 
 `float` and `float_rel` cover real tolerances; complex numbers are one
 `Testable.make` away — componentwise tolerance, round-trippable
@@ -287,7 +124,7 @@ unequal values from rendering identically. NaN components follow the
 underlying witness: equal to nothing under `float_rel` — build on
 `float_exact` instead when asserting NaN behavior.
 
-## 11. Scripted seams: the tape
+## 5. Scripted seams: the tape
 
 A test double for an effectful dependency wants three things: canned
 responses dealt in order, a failure when the code under test asks for
@@ -377,7 +214,7 @@ this finite interaction budget was consumed, exactly. Faults need no
 machinery at all — script an `Error`, or a thunk that raises, at the
 position where the failure should happen.
 
-## 12. Counting occurrences
+## 6. Counting occurrences
 
 `contains ~sub` asks whether a needle occurs; it never counts. When the
 count is the claim — exactly two retries, more than two, a ratio — fold
@@ -402,7 +239,7 @@ Then assert about the number with the ordinary verbs:
 they got; `not_contains ~sub` is still the verb for "never occurs",
 and its failure marks the occurrence in the haystack.
 
-## 13. Convergence: driving a system until it settles
+## 7. Convergence: driving a system until it settles
 
 Some assertions are about a system that *reaches* a state rather than
 one already in it — a writer that flushes once the scheduler runs, a
