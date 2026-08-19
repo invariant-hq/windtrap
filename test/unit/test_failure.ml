@@ -77,19 +77,23 @@ let tests =
     test "predicate constructor" (fun () ->
         let loc = loc_of "test/t.ml" 7 in
         let f = F.predicate ~loc ~msg:"positive" ~claim:"a match" "None" in
+        (* The claim takes the expected side, and [diffable] is what stops a
+           renderer refining a description against a value. *)
         check "claim and value stored"
           (match f.F.kind with
-          | F.Predicate { claim = "a match"; value = "None" } -> true
+          | F.Equality
+              { expected = "a match"; actual = "None"; diffable = false; _ } ->
+              true
           | _ -> false);
         check "loc stored" (f.F.loc = Some loc);
         check "msg stored" (f.F.msg = Some "positive");
         let f = F.predicate ~claim:big big in
         check "claim and value are bounded"
           (match f.F.kind with
-          | F.Predicate { claim; value } ->
-              String.length claim < 200_000
-              && String.length value < 200_000
-              && has ~needle:"truncated" value
+          | F.Equality { expected; actual; diffable = false; _ } ->
+              String.length expected < 200_000
+              && String.length actual < 200_000
+              && has ~needle:"truncated" actual
           | _ -> false));
     test "payload bounding" (fun () ->
         (let f = F.equality ~expected:big ~actual:"2" () in

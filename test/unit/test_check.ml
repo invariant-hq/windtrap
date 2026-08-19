@@ -47,9 +47,9 @@ let caught name f =
 
 let equality_payload name f k =
   match caught name f with
-  | { F.kind = F.Equality { expected; actual; not_; _ }; _ } ->
+  | { F.kind = F.Equality { expected; actual; not_; diffable = true }; _ } ->
       k (expected, actual, not_)
-  | _ -> fail (name ^ ": kind is Equality")
+  | _ -> fail (name ^ ": kind is a diffable Equality")
 
 (* [k] gets the claim description and the containment payload. The demand is
    projected separately by [containment_demand] below rather than widening
@@ -95,11 +95,13 @@ let describe_offset = function
   | Some i -> Printf.sprintf "Some %d" i
   | None -> "None"
 
-(* [k] gets the claim description and the rejected value. *)
+(* [k] gets the claim description and the rejected value: an Equality whose
+   expected side is a description, which is what [diffable = false] says. *)
 let predicate_payload name f k =
   match caught name f with
-  | { F.kind = F.Predicate { claim; value }; _ } -> k (claim, value)
-  | _ -> fail (name ^ ": kind is Predicate")
+  | { F.kind = F.Equality { expected; actual; diffable = false; _ }; _ } ->
+      k (expected, actual)
+  | _ -> fail (name ^ ": kind is an undiffable Equality")
 
 let raise_payload name f k =
   match caught name f with

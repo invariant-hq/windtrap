@@ -37,7 +37,12 @@ let fail_raise ?pos ?msg ?expected ?actual ?predicate ?backtrace ?message_diff
        (Failure.raised ?loc:(Loc.resolve ?pos ()) ?msg ?expected ?actual
           ?predicate ?backtrace ?message_diff ()))
 
-let abstract = "<abstract>"
+(* The rejected side of a shape assertion, when the caller supplied a
+   printer for it: four verbs render "the branch you did not want" the same
+   way, and the fallback token is [Testable.of_equal]'s, for one
+   unprintable-value spelling across the library. *)
+let render_or_abstract pp v =
+  match pp with Some pp -> Pp.to_string pp v | None -> Pp.abstract
 
 (* Comparisons *)
 
@@ -150,10 +155,9 @@ let satisfies ?pos ?msg ?(claim = "value satisfying the predicate") t pred v =
 let is_none ?pos ?msg ?pp = function
   | None -> ()
   | Some v ->
-      let rendered =
-        match pp with Some pp -> Pp.to_string pp v | None -> abstract
-      in
-      fail_equality ?pos ?msg ~expected:"None" ~actual:("Some " ^ rendered) ()
+      fail_equality ?pos ?msg ~expected:"None"
+        ~actual:("Some " ^ render_or_abstract pp v)
+        ()
 
 (* Unwrapping *)
 
@@ -164,27 +168,21 @@ let require_some ?pos ?msg = function
 let require_ok ?pos ?msg ?pp_error = function
   | Ok v -> v
   | Error e ->
-      let rendered =
-        match pp_error with Some pp -> Pp.to_string pp e | None -> abstract
-      in
-      fail_equality ?pos ?msg ~expected:"Ok _" ~actual:("Error " ^ rendered) ()
+      fail_equality ?pos ?msg ~expected:"Ok _"
+        ~actual:("Error " ^ render_or_abstract pp_error e)
+        ()
 
 let require_error ?pos ?msg ?pp_ok = function
   | Error e -> e
   | Ok v ->
-      let rendered =
-        match pp_ok with Some pp -> Pp.to_string pp v | None -> abstract
-      in
-      fail_equality ?pos ?msg ~expected:"Error _" ~actual:("Ok " ^ rendered) ()
+      fail_equality ?pos ?msg ~expected:"Error _"
+        ~actual:("Ok " ^ render_or_abstract pp_ok v)
+        ()
 
 let require_match ?pos ?msg ?pp extract v =
   match extract v with
   | Some b -> b
-  | None ->
-      let rendered =
-        match pp with Some pp -> Pp.to_string pp v | None -> abstract
-      in
-      fail_predicate ?pos ?msg ~claim:"a match" rendered
+  | None -> fail_predicate ?pos ?msg ~claim:"a match" (render_or_abstract pp v)
 
 (* Exceptions
 

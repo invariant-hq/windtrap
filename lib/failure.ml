@@ -23,7 +23,12 @@ type containment_demand =
   | Ordered of { index : int; resumed_at : int }
 
 type kind =
-  | Equality of { expected : string; actual : string; not_ : bool }
+  | Equality of {
+      expected : string;
+      actual : string;
+      not_ : bool;
+      diffable : bool;
+    }
   | Containment of {
       claim : string;
       needle : string;
@@ -33,7 +38,6 @@ type kind =
       excerpt_offset : int;
       demand : containment_demand;
     }
-  | Predicate of { claim : string; value : string }
   | Raise of {
       expected : string option;
       actual : string option;
@@ -152,9 +156,16 @@ let value_limit = 65_536
    recorded in [omitted_bytes], not as a marker inside the text. *)
 let tail_bytes = 8_192
 
-(* Haystack excerpts in containment failures reuse the tail bound: enough
-   context to read, small enough to store on every failure. *)
+(* Haystack excerpts in containment failures, when there is an occurrence
+   or a cursor to centre on: enough context around it to read, small enough
+   to store on every failure. Reuses the tail bound. *)
 let excerpt_limit = tail_bytes
+
+(* With nothing to centre on — a needle that occurs nowhere — the excerpt is
+   context rather than evidence, so the head is bounded to what a reader
+   scans past to reach the verdict: whichever of these comes first. *)
+let head_excerpt_bytes = 1_024
+let head_excerpt_lines = 10
 let cap s = Text.truncate_bytes_utf8 value_limit s
 let cap_opt o = Option.map cap o
 
@@ -183,28 +194,65 @@ let make ?loc ?msg kind =
 
 let equality ?loc ?msg ?(not_ = false) ~expected ~actual () =
   make ?loc ?msg
-    (Equality { expected = cap expected; actual = cap actual; not_ })
+    (Equality
+       { expected = cap expected; actual = cap actual; not_; diffable = true })
 
-(* The bounded haystack window stored as a containment failure's [excerpt]:
-   around [anchor] when there is one, the head otherwise. Both cuts land on
-   UTF-8 code-point boundaries, so the window may exceed the limit by the up
-   to three bytes needed to complete a sequence. *)
+(* The head window, for a haystack with no anchor: at most
+   [head_excerpt_lines] lines and [head_excerpt_bytes] bytes. Line-structured
+   content cuts after its last complete line, so the block form never ends on
+   a fragment; a long single line cuts at a code-point boundary at or before
+   the byte bound, so a UTF-8 sequence is never split. *)
+let head_window haystack =
+  let len = String.length haystack in
+  let after_line_stop =
+    (* Byte index just after the [head_excerpt_lines]-th newline, when the
+       haystack has that many. *)
+    let rec go i remaining =
+      if remaining = 0 then Some i
+      else
+        match String.index_from_opt haystack i '\n' with
+        | Some j -> go (j + 1) (remaining - 1)
+        | None -> None
+    in
+    go 0 head_excerpt_lines
+  in
+  let byte_stop =
+    if len <= head_excerpt_bytes then len
+    else
+      (* Back off to a code-point boundary; [utf8_boundary_at_or_after]
+         moves the other way, so the scan is written out here. *)
+      let rec boundary i steps =
+        if steps = 0 || i = 0 || Char.code haystack.[i] land 0xC0 <> 0x80 then i
+        else boundary (i - 1) (steps - 1)
+      in
+      boundary head_excerpt_bytes 3
+  in
+  match after_line_stop with
+  | Some line_stop -> min line_stop byte_stop
+  | None -> byte_stop
+
+(* The bounded haystack window stored as a containment failure's [excerpt].
+   One bound, applied here: renderers show what is stored whole. Around
+   [anchor] when there is one — the surroundings are the evidence — and the
+   bounded head otherwise. Both cuts land on UTF-8 code-point boundaries, so
+   an anchored window may exceed its limit by the up to three bytes needed to
+   complete a sequence. *)
 let excerpt_window ~anchor haystack =
   let len = String.length haystack in
-  if len <= excerpt_limit then (0, haystack)
-  else
-    let start =
-      match anchor with
-      | None -> 0
-      | Some i ->
-          let at_or_before = max 0 (i - (excerpt_limit / 2)) in
-          utf8_boundary_at_or_after haystack at_or_before
-    in
-    let stop =
-      let raw = start + excerpt_limit in
-      if raw >= len then len else utf8_boundary_at_or_after haystack raw
-    in
-    (start, String.sub haystack start (stop - start))
+  match anchor with
+  | None ->
+      let stop = head_window haystack in
+      if stop >= len then (0, haystack) else (0, String.sub haystack 0 stop)
+  | Some _ when len <= excerpt_limit -> (0, haystack)
+  | Some i ->
+      let start =
+        utf8_boundary_at_or_after haystack (max 0 (i - (excerpt_limit / 2)))
+      in
+      let stop =
+        let raw = start + excerpt_limit in
+        if raw >= len then len else utf8_boundary_at_or_after haystack raw
+      in
+      (start, String.sub haystack start (stop - start))
 
 (* Which offset the excerpt centres on. An [Ordered] failure is about a
    search that began at the cursor, so the cursor wins over an occurrence
@@ -240,8 +288,19 @@ let containment ?loc ?msg ?found_at ?(demand = Anywhere) ~claim ~needle
          demand;
        })
 
+(* A claim is a description, not a rendering of the expected value, so the
+   payload is an equality whose sides must never be diffed against each
+   other. Same shape, same wording in every renderer; only the refinement
+   differs, which is what [diffable] says. *)
 let predicate ?loc ?msg ~claim value =
-  make ?loc ?msg (Predicate { claim = cap claim; value = cap value })
+  make ?loc ?msg
+    (Equality
+       {
+         expected = cap claim;
+         actual = cap value;
+         not_ = false;
+         diffable = false;
+       })
 
 let bound_message_diff { constructor; expected_message; actual_message } =
   {

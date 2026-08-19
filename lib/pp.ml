@@ -15,6 +15,7 @@ let to_string pp v = Format.asprintf "%a" pp v
 
 (* Printers *)
 
+let abstract = "<abstract>"
 let string = Format.pp_print_string
 let int = Format.pp_print_int
 let int32 ppf n = Format.fprintf ppf "%ld" n

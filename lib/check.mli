@@ -123,7 +123,7 @@ val satisfies :
   'a ->
   unit
 (** [satisfies t pred v] is [()] iff [pred v]. Otherwise it raises
-    {!Failure.Check_failure} with a {!Failure.Predicate} payload carrying
+    {!Failure.Check_failure} with a {!Failure.predicate} payload carrying
     [claim] and [v] rendered by [t]'s printer — [t]'s equality is not consulted.
     [claim] is the sentence on the expected side and defaults to
     ["value satisfying the predicate"]. [pred] must be total; it runs on every
@@ -177,7 +177,7 @@ val require_match :
         require_match ~pp:Uri.pp (function Tcp p -> Some p | _ -> None) addr
     ]}
 
-    On [None] it raises {!Failure.Check_failure} with a {!Failure.Predicate}
+    On [None] it raises {!Failure.Check_failure} with a {!Failure.predicate}
     payload whose claim is ["a match"], carrying [v] rendered by [pp] when given
     and as [<abstract>] otherwise; the printer runs only on failure. An
     exception raised by [extract] propagates unchanged. *)

@@ -308,8 +308,6 @@ let headline ?(invocation = `Mirrors) (f : Failure.t) =
             spf "needle %s found at byte %d" quoted at
         | Failure.Anywhere, None ->
             spf "needle %s not found (%d-byte haystack)" quoted haystack_length)
-    | Failure.Predicate { claim; value } ->
-        spf "expected %s, got %s" (flat claim) (flat value)
     | Failure.Raise { expected = Some e; actual = Some a; _ } ->
         spf "expected exception %s, raised %s" (flat e) (flat a)
     | Failure.Raise { expected = Some e; actual = None; _ } ->
@@ -562,55 +560,6 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
   end
   else pp_eq_detail ~ansi put ~ind ~expected ~actual
 
-(* Containment display bounds. A not-found verdict has no occurrence to
-   mark, so its haystack excerpt is context rather than evidence — and the
-   stored window is payload-sized (8 KiB, Failure's excerpt bound), enough
-   for one big rendered document to scroll the verdict out of sight. The
-   display caps that window to a head small enough to read past; the
-   stored payload is untouched (truncation lives in renderers, Law 4), and
-   the excerpt line under the block states the cut in the same
-   bytes-of-haystack vocabulary it states the stored bound with. *)
-let not_found_excerpt_bytes = 1024
-let not_found_excerpt_lines = 10
-
-(* The head window: at most [not_found_excerpt_lines] lines and
-   [not_found_excerpt_bytes] bytes. Line-structured content cuts after its
-   last complete line so the block form never ends on a fragment; a long
-   single line cuts at a code-point boundary at or before the byte bound,
-   so a UTF-8 sequence is never split. *)
-let not_found_window s =
-  let len = String.length s in
-  let after_line_stop =
-    (* Byte index just after the [not_found_excerpt_lines]-th newline,
-       when the content has that many. *)
-    let rec go i remaining =
-      if remaining = 0 then Some i
-      else
-        match String.index_from_opt s i '\n' with
-        | Some j -> go (j + 1) (remaining - 1)
-        | None -> None
-    in
-    go 0 not_found_excerpt_lines
-  in
-  let byte_stop =
-    if len <= not_found_excerpt_bytes then len
-    else
-      (* Back off to a code-point boundary: continuation bytes are
-         0b10xxxxxx, and a well-formed sequence holds at most three, so
-         the scan is bounded even on malformed input. *)
-      let rec boundary i steps =
-        if steps = 0 || i = 0 || Char.code s.[i] land 0xC0 <> 0x80 then i
-        else boundary (i - 1) (steps - 1)
-      in
-      boundary not_found_excerpt_bytes 3
-  in
-  let stop =
-    match after_line_stop with
-    | Some line_stop -> min line_stop byte_stop
-    | None -> byte_stop
-  in
-  if stop >= len then s else String.sub s 0 stop
-
 let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
     (f : Failure.t) =
   let st style s = Pp.styled_string ~ansi style s in
@@ -664,6 +613,20 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         put_block expected
       end
       else put_ind (spf "both sides equal: %s" expected)
+  | Failure.Equality { expected = claim; actual = value; diffable = false; _ }
+    ->
+      (* A claim is a description, not a rendering: never diff or refine the
+         two (D5 §2). Colour still applies — green and red mark which side is
+         which, and that is as true of a description as of a value, and so is
+         visibility: a [~claim] may be built around a rendered bound
+         ([greater than <x>]). *)
+      let claim = show_controls claim and value = show_controls value in
+      put_ind (st `Faint "expected" ^ "  " ^ st `Green claim);
+      if String.contains value '\n' then begin
+        put_ind (st `Faint "actual:");
+        put_block (st `Red value)
+      end
+      else put_ind (st `Faint "actual" ^ "    " ^ st `Red value)
   | Failure.Equality { expected; actual; _ } ->
       pp_eq ~ansi put ~ind ~expected ~actual
   | Failure.Containment
@@ -680,17 +643,6 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
          byte offset, marked occurrence — never a fake equality diff; the
          claim sentence is a description and stays out of the block. Labels
          pad to the [expected]/[actual] 10-column gutter. *)
-      let excerpt =
-        (* Display cap for the not-found verdict: with nothing to mark, a
-           small head window keeps the verdict adjacent to what it is about.
-           An Ordered break keeps its window even when nothing was found —
-           its excerpt is anchored on the cursor and is itself the region
-           still to be matched — and a found occurrence keeps its
-           surroundings, which are the evidence. *)
-        match (demand, found_at) with
-        | Failure.Anywhere, None -> not_found_window excerpt
-        | (Failure.Anywhere | Failure.Ordered _), _ -> excerpt
-      in
       let verdict =
         (* The demand widens the verdict slot rather than adding lines: a
            chain break answers the same question the other verbs answer
@@ -786,19 +738,6 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
              (spf "(excerpt: bytes %d-%d of a %d-byte haystack)" excerpt_offset
                 (excerpt_offset + String.length excerpt - 1)
                 haystack_length))
-  | Failure.Predicate { claim; value } ->
-      (* Never diff or refine the claim sentence against the value: [claim]
-         is a description, not a rendering. Colour still applies — green and
-         red mark which side is which, and that is as true of a description
-         as of a value, and so is visibility: a [~claim] may be built around
-         a rendered bound ([greater than <x>]). *)
-      let claim = show_controls claim and value = show_controls value in
-      put_ind (st `Faint "expected" ^ "  " ^ st `Green claim);
-      if String.contains value '\n' then begin
-        put_ind (st `Faint "actual:");
-        put_block (st `Red value)
-      end
-      else put_ind (st `Faint "actual" ^ "    " ^ st `Red value)
   | Failure.Raise { expected; actual; predicate; backtrace; message_diff } -> (
       (match message_diff with
       | Some { Failure.constructor; expected_message; actual_message } ->

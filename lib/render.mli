@@ -936,9 +936,11 @@ val pp_failure :
       renderings that are byte-equal (a printer lossier than the equality), or
       that differ only by a trailing newline;
     - negated equality: the value printed once ([both sides equal: <v>]);
-    - predicate ([satisfies], [require_match]): the claim description and the
-      rendered value under the [expected]/[actual] labels, never diffed or
-      refined against each other — a description is not a rendering;
+    - an equality whose {!Failure.kind} says it is not [diffable] — the
+      predicate verbs ([satisfies], [require_match]): the claim description
+      and the rendered value under the same [expected]/[actual] labels, but
+      never diffed or refined against each other, a description not being a
+      rendering;
     - containment ([contains], [not_contains], the affix verbs, [in_order]):
       the needle with its verdict ([needle "secret" — found at byte 10] /
       [needle "NOPE" — not found]), then the stored haystack excerpt —

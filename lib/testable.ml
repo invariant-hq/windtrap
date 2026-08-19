@@ -16,7 +16,7 @@ type 'a t = { pp : Format.formatter -> 'a -> unit; equal : 'a -> 'a -> bool }
 
 let make ~pp ~equal = { pp; equal }
 let structural ~pp = { pp; equal = Stdlib.( = ) }
-let of_equal equal = { pp = (fun ppf _ -> Pp.string ppf "<abstract>"); equal }
+let of_equal equal = { pp = (fun ppf _ -> Pp.string ppf Pp.abstract); equal }
 
 let contramap f w =
   {
@@ -75,31 +75,18 @@ let float_exact =
         || Int64.equal (Int64.bits_of_float a) (Int64.bits_of_float b));
   }
 
-(* NaN is never equal under the tolerance witnesses: [a = b] is false for
-   NaN, and every [<=] comparison against a NaN difference is false. *)
-
-(* Any eps <= 0 (NaN included) degenerates the tolerance test to the [a = b]
-   shortcut — exact equality wearing a tolerance's syntax. Refused loudly:
-   the caller either meant a tolerance and mistyped it, or meant exactness
-   and should say so. [not (eps > 0.)] rather than [eps <= 0.] so NaN is
-   caught by the same comparison. *)
-let float eps =
-  if not (eps > 0.) then
-    invalid_arg
-      "Testable.float: eps is not positive; exact equality is spelled \
-       float_exact";
-  { pp = pp_float; equal = (fun a b -> a = b || Float.abs (a -. b) <= eps) }
-
 (* Combined tolerance: relative handles large magnitudes, absolute handles
-   near-zero values. The relative test requires a finite [max_ab]: with an
-   infinite side, [rel *. max_ab] is [infinity] and [diff <= infinity] would
-   make [infinity] "equal" to any float (v1's behavior, a latent bug). Equal
-   infinities are caught by [a = b]. *)
+   near-zero values. NaN is equal to nothing here — IEEE 754's rule, stated
+   rather than left to fall out of the comparisons. The relative test
+   requires a finite [max_ab]: with an infinite side, [rel *. max_ab] is
+   [infinity] and [diff <= infinity] would make [infinity] "equal" to any
+   float (v1's behavior, a latent bug). Equal infinities are caught by
+   [a = b].
 
-(* One zero bound is a real configuration — it switches that component off
+   One zero bound is a real configuration — it switches that component off
    while the other still tolerates — so each bound is only required
-   non-negative and non-NaN. Both zero, though, is [float 0.] in more
-   letters: exact equality in a tolerance's syntax, refused the same way. *)
+   non-negative and non-NaN. Both zero, though, is exact equality in a
+   tolerance's syntax, refused the same way [float] refuses it. *)
 let float_rel ~rel ~abs =
   if not (rel >= 0.) then
     invalid_arg "Testable.float_rel: ~rel is negative or NaN";
@@ -120,6 +107,23 @@ let float_rel ~rel ~abs =
           let max_ab = Float.max (Float.abs a) (Float.abs b) in
           diff <= abs || (Float.is_finite max_ab && diff <= rel *. max_ab));
   }
+
+(* Absolute tolerance is the combined one with the relative component off:
+   with [rel = 0.] the relative test is [diff <= 0.], which only holds where
+   [a = b] already did. One equality, so the two witnesses cannot drift.
+
+   Any eps <= 0 (NaN included) degenerates the tolerance test to the [a = b]
+   shortcut — exact equality wearing a tolerance's syntax. Refused loudly and
+   here, before [float_rel]'s own wording could name the wrong function: the
+   caller either meant a tolerance and mistyped it, or meant exactness and
+   should say so. [not (eps > 0.)] rather than [eps <= 0.] so NaN is caught
+   by the same comparison. *)
+let float eps =
+  if not (eps > 0.) then
+    invalid_arg
+      "Testable.float: eps is not positive; exact equality is spelled \
+       float_exact";
+  float_rel ~rel:0. ~abs:eps
 
 (* Containers *)
 

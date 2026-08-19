@@ -1785,7 +1785,8 @@ let a_buggy_system_renders_a_diagnosable_failure () =
         "the inner failure was labelled %S" (failure_msg inner);
       check
         (inner.Failure.kind
-        = Failure.Equality { expected = "0"; actual = "1"; not_ = false })
+        = Failure.Equality
+            { expected = "0"; actual = "1"; not_ = false; diffable = true })
         "the inner failure is not the body's own equality"
   | None -> failf "the counterexample reported no inner failure");
   List.iter

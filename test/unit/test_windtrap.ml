@@ -869,20 +869,31 @@ let () =
   in
   expect_run "b-package" ~config suite @@ fun outcome ->
   (match failure_list (outcome_of outcome [ "satisfies" ]) with
-  | [ { Failure.kind = Failure.Predicate { claim; value }; _ } ] ->
+  | [
+      {
+        Failure.kind =
+          Failure.Equality { expected = claim; actual = value; diffable = false; _ };
+        _;
+      };
+    ] ->
       check "satisfies renders the rejected value" (value = "0");
       (* The claim sentence is what tells the two predicate verbs apart. *)
       check "satisfies names the predicate claim"
         (claim = "value satisfying the predicate")
-  | _ -> check "satisfies carries a Predicate payload" false);
+  | _ -> check "satisfies carries an undiffable Equality payload" false);
   (match failure_list (outcome_of outcome [ "contains" ]) with
   | [ { Failure.kind = Failure.Containment { needle; _ }; _ } ] ->
       check "contains carries the needle" (needle = "needle")
   | _ -> check "contains carries a Containment payload" false);
   (match failure_list (outcome_of outcome [ "require_match" ]) with
-  | [ { Failure.kind = Failure.Predicate { claim; _ }; _ } ] ->
+  | [
+      {
+        Failure.kind = Failure.Equality { expected = claim; diffable = false; _ };
+        _;
+      };
+    ] ->
       check "require_match names the match claim" (claim = "a match")
-  | _ -> check "require_match carries a Predicate payload" false);
+  | _ -> check "require_match carries an undiffable Equality payload" false);
   check "Exn predicates satisfy raises_match"
     (outcome_of outcome [ "exn predicate" ] = Some Failure.Pass);
   (match failure_list (outcome_of outcome [ "subtests" ]) with

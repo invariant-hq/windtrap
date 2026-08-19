@@ -107,13 +107,27 @@ type containment_demand =
 (** The type for typed failure payloads. Never a stringly key-value bag: each
     assertion family has its own case, and renderers pattern match on it. *)
 type kind =
-  | Equality of { expected : string; actual : string; not_ : bool }
-      (** A plain (in)equality failed: [equal], [not_equal], the boolean verbs,
-          and the unwrapping verbs. [expected] and [actual] are the pp-rendered
-          values or constructor descriptions (["Some _"], ["Error <abstract>"]),
-          expected first (v1's order). [not_] is [true] for a negated assertion
-          ([not_equal]): both strings then render the same value and renderers
-          print it once. *)
+  | Equality of {
+      expected : string;
+      actual : string;
+      not_ : bool;
+      diffable : bool;
+    }
+      (** Two sides that should have matched did not: [equal], [not_equal], the
+          boolean verbs, the unwrapping verbs, and the predicate verbs
+          ([satisfies], [require_match]). [expected] and [actual] are the
+          pp-rendered values or constructor descriptions (["Some _"],
+          ["Error <abstract>"]), expected first (v1's order).
+
+          [not_] is [true] for a negated assertion ([not_equal]): both strings
+          then render the same value and renderers print it once.
+
+          [diffable] is [false] when [expected] is a {e description} rather
+          than a rendering — {!predicate}'s claim sentence
+          (["value satisfying the predicate"], ["a match"]). Renderers word
+          such a failure exactly as they word an equality, and refine neither
+          side against the other: there is nothing for a character diff of a
+          sentence against a value to point at. *)
   | Containment of {
       claim : string;
           (** A one-line description of what was asserted
@@ -131,9 +145,10 @@ type kind =
           (** A bounded window of the haystack, centred on the offset the
               failure is about: the {!Ordered} cursor when there is one — the
               remaining region is what that search was reading — else
-              [found_at] when it is [Some _], else the haystack's head.
-              Bounded by an implementation constant (currently 8 KiB) and cut
-              on UTF-8 code-point boundaries. *)
+              [found_at] when it is [Some _]. With neither, the window is the
+              haystack's head, bounded to what a reader scans past to reach
+              the verdict. Renderers show what is stored, whole; see
+              {!containment} for the bounds. *)
       excerpt_offset : int;
           (** The byte offset of [excerpt] within the haystack; renderers derive
               the omitted byte counts on either side from it together with
@@ -144,18 +159,6 @@ type kind =
     }
       (** A containment assertion ([contains], [not_contains], the affix verbs,
           [in_order]) failed. *)
-  | Predicate of { claim : string; value : string }
-      (** A [satisfies] or [require_match] assertion failed. [claim] is a
-          one-line description of what was demanded
-          (["value satisfying the predicate"], ["a match"]), [value] the
-          rendered value that failed it (the rejected value, or the scrutinee no
-          pattern matched — ["<abstract>"] without a printer).
-
-          The two verbs share one case deliberately: their payloads have the
-          same shape, and every renderer words them the same way, because the
-          difference between them {e is} the claim sentence and that is already
-          in the payload. Splitting the case would only make renderers rejoin
-          it. *)
   | Raise of {
       expected : string option;
       actual : string option;
@@ -327,10 +330,10 @@ val equality :
   actual:string ->
   unit ->
   t
-(** [equality ~expected ~actual ()] is an {!Equality} failure over the two
-    rendered values; [not_] defaults to [false]. Containment and predicate
-    failures are not equalities: build them with {!containment} — which owns the
-    excerpt policy — and {!predicate}. *)
+(** [equality ~expected ~actual ()] is a diffable {!Equality} failure over the
+    two rendered values; [not_] defaults to [false]. A containment failure is
+    not an equality: build it with {!containment}, which owns the excerpt
+    policy. A claim against a value is {!predicate}. *)
 
 val containment :
   ?loc:Loc.t ->
@@ -344,21 +347,31 @@ val containment :
   t
 (** [containment ~claim ~needle ~haystack ()] is a {!Containment} failure
     storing [claim], [needle] and [demand] as given ([demand] defaults to
-    {!Anywhere}) and a bounded excerpt of [haystack] — a window around an
+    {!Anywhere}) and a bounded excerpt of [haystack]: a window around an
     {!Ordered} demand's cursor when there is one, else around [found_at] when
     given (the failed-[not_contains] case), else the head of [haystack] (the
-    failed-[contains] case). The excerpt is cut on UTF-8 code-point boundaries
-    and bounded by an implementation constant (currently 8 KiB, the
-    captured-output tail bound); the failure records the excerpt's offset and
-    the haystack's total length so renderers can state what was omitted.
+    failed-[contains] case).
+
+    An anchored window is bounded by an implementation constant (currently
+    8 KiB, the captured-output tail bound) — its surroundings are the evidence
+    for the offset the verdict names. A head window has no offset to be
+    evidence for, so it is bounded to a readable head instead (currently the
+    first 10 lines or 1 KiB, whichever comes first). Both are cut on UTF-8
+    code-point boundaries, and an anchored window may therefore exceed its
+    bound by the up to three bytes that complete a sequence. The bound is
+    applied once, here: renderers show the stored excerpt whole. The failure
+    records the excerpt's offset and the haystack's total length so they can
+    state what was omitted.
 
     Raises [Invalid_argument] if [found_at], or an {!Ordered} demand's
     [resumed_at], is negative or past the end of [haystack]. *)
 
 val predicate : ?loc:Loc.t -> ?msg:string -> claim:string -> string -> t
-(** [predicate ~claim value] is a {!Predicate} failure: [claim] describes in one
-    line what the assertion demanded, [value] is the rendered value that failed
-    it. *)
+(** [predicate ~claim value] is an {!Equality} failure with [diffable] unset:
+    [claim] describes in one line what the assertion demanded and takes the
+    expected side, [value] is the rendered value that failed it. The two
+    predicate verbs share it deliberately — the difference between them {e is}
+    the claim sentence, and that is already in the payload. *)
 
 val raised :
   ?loc:Loc.t ->
