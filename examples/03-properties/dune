@@ -1,0 +1,6 @@
+; Property tests: Gen generators, one pp feeding both worlds, ~examples.
+
+(test
+ (name test_geo)
+ (modules test_geo geo)
+ (libraries windtrap))

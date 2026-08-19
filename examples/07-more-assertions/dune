@@ -1,0 +1,7 @@
+; Predicate and containment verbs, require_match, the Exn predicates,
+; subtest sub-cases, and xfail for known-bug reproductions.
+
+(test
+ (name test_more_assertions)
+ (modules test_more_assertions)
+ (libraries windtrap))

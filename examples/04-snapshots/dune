@@ -1,0 +1,11 @@
+; Snapshot tests. Baselines live under __snapshots__/ next to this file and
+; are runtime data, invisible to dune's dependency tracking — the deps glob
+; below re-triggers runtest when a baseline changes. Accept new output with
+; WINDTRAP_UPDATE=1 dune runtest, then review with git diff.
+
+(test
+ (name test_mytool)
+ (modules test_mytool mytool)
+ (libraries windtrap)
+ (deps
+  (glob_files_rec __snapshots__/**)))

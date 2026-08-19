@@ -176,9 +176,9 @@ too.
 - [`doc/cookbook.md`](doc/cookbook.md) — recipes for the things windtrap
   deliberately does not absorb.
 - [`examples/`](examples/) — self-contained projects, wired into `dune
-  runtest`, for the setups a snippet cannot show: the minimal `(test)`
-  stanza, inline tests, the coverage backend and its multi-executable
-  merge, and `x-blueprint`, the canonical layout ready to copy.
+  runtest`: a numbered walkthrough from the first test to stateful
+  testing and coverage, plus `x-blueprint`, the canonical layout ready
+  to copy.
 - [`CHANGES.md`](CHANGES.md) — the 0.2.0 entry maps the windtrap 0.1.x
   surface to this one.
 
