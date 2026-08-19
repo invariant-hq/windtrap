@@ -168,7 +168,8 @@ Ported from the accepted v3 design RFC ("Laws", including the
 Laws 11, 12, 13 and 15 plus the new Law 16; the admission RFC's
 2026-08-12 amendment of Law 16(b), (c) and (e) plus the new Law 17; and
 its slice-2 amendment of 2026-08-16, which extends Law 16(e) to `audit`
-and gives Law 17(a) universal designation); the RFC documents
+and gives Law 17(a) universal designation, folded back into the base
+clause on 2026-08-19); the RFC documents
 themselves were removed from the repo — this copy is the durable
 record. Each law names the failure it prevents; **a change to any of
 them reopens the design**.
@@ -342,13 +343,12 @@ them reopens the design**.
     about a test selection and a mutation run does not make one. A
     survivor-driven nonzero exit is a later addition and is the only
     thing that may ever change this. **Exception, claiming exactly that
-    reserved clause (2026-08-12): an `admit` or `audit` run — which
-    judges a test selection at its author's request — additionally exits
-    1 when a selected test killed nothing it reached. For such runs the
-    refusal causes additionally include a missing selection (`admit`
-    only; `audit` designates the whole suite there instead), an empty
-    one under the standalone runner, and a selection of nothing but
-    skipped and `xfail` tests; the forced-fail check does not apply.**
+    reserved clause (2026-08-12): an `admit` run — which judges a test
+    selection at its author's request — additionally exits 1 when a
+    selected test killed nothing it reached. For such runs the refusal
+    causes additionally include an empty selection under the standalone
+    runner and a selection of nothing but skipped and `xfail` tests; the
+    forced-fail check does not apply.**
     Survey runs are unchanged forever. *Prevents:*
     mutation-gated CI; a mutation build silently reporting different
     test results;
@@ -363,15 +363,19 @@ them reopens the design**.
     exclude, a tag selection, `--failed`, an in-source focus — and
     nothing else: no VCS awareness, no run-to-run comparison, no store
     of tests seen before. `--shard` and `--quick` narrow work rather
-    than naming tests and do not designate on their own; a run that
-    designates nothing refuses, naming the survey as the question it
-    probably meant. **Universal designation is a designation
-    (2026-08-16): `audit` designates every test the run executes, which
-    is the author asking for all of them and is not the same act as
-    asking for none — the ask is the mode itself, spelled once where a
-    per-invocation selection cannot be. The refusal for designating
-    nothing stands unchanged for `admit`, and a run that designates
-    everything and still executes nothing refuses in its own words.**
+    than naming tests and do not designate on their own. A selection the
+    author did not narrow designates every test the run executes, which
+    is the author asking for all of them; the run says so in one line
+    naming the survey as the other question, and a run that designates
+    everything and still executes nothing refuses in its own words.
+    **Fold of 2026-08-19: the 2026-08-16 amendment spelled universal
+    designation as a second mode word, `audit`, so that it could not be
+    read into an absent selection, and kept `admit` refusing there. Two
+    spellings of one machine cost more than the conflation they
+    prevented — the alias's ask and the bare invocation's are the same
+    ask — so `audit` and the no-selection refusal are both withdrawn
+    into the clause above, and the nudge toward the survey survives as a
+    line of output rather than as a refusal.**
     *Prevents:* silent misses that admit by omission; Law 15 violations
     by the back door; a working-tree model the framework cannot own; a
     whole-suite question spelled as a filter nobody can keep in sync.

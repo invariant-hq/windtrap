@@ -148,9 +148,8 @@ alias of its own:
 dune build @admit --instrument-with ppx_windtrap.mutate
 ```
 
-`@admit` runs `test/unit/main.exe` under `WINDTRAP_MUTATE=audit`, which
-is `admit` with universal designation: no filter, and every test the run
-executes is judged. It is scoped to that one executable because it is
+`@admit` runs `test/unit/main.exe` under `WINDTRAP_MUTATE=admit` with no
+filter, so every test the run executes is judged. It is scoped to that one executable because it is
 the suite whose subject is `lib/` and exercises it in-process, which is
 where an arming reaches; the suites that drive the machinery through
 fixtures they spawn would be ruled on whatever their own assertion code
@@ -160,7 +159,7 @@ declares no instrumentation, so an uninstrumented `main.exe` has an
 empty catalogue and the seam declines by name.
 
 Measured on this tree: the alias reports `596 admitted of 596 · 9 forks
-over 912 reached in 8.76s`, where the same audit cost 1m38s before the
+over 912 reached in 8.76s`, where the same run cost 1m38s before the
 per-child deadline shipped. One test admits in single-digit milliseconds
 of admission work, and a 117-test `-f render` selection in 922 ms and 11
 forks — batching plus ride-along admission let one killed fault admit
@@ -235,7 +234,7 @@ child's whole process group is killed and its mutant scored
 change by hanging. Re-measured here, that capture selection answers in
 0.56 s wall (248 ms of admission work, 26 of 26 admitted, 9 forks)
 where it used to burn a silent minute and exit 1, and the full-suite
-audit fell from 1m38s to 8.5 s. The whole-loop deadline stays as the
+admission fell from 1m38s to 8.5 s. The whole-loop deadline stays as the
 backstop, recomputed as the sum of its children's own bounds, so its
 expiry is now a statement about the run rather than about the mutant in
 flight.
@@ -257,9 +256,8 @@ Two smaller sharp edges, both measured:
   file until the mutant is killed or dismissed —
   `WINDTRAP_MUTATE_ONLY=lib/capture.ml` refuses today on
   `lib/capture.ml:38:10:le`, reached by 15 tests and caught by none.
-  (An admission run — `admit` or `audit` — skips the check by design,
-  Law 16e, so it is the way to interrogate such a file's tests in the
-  meantime.)
+  (An `admit` run skips the check by design, Law 16e, so it is the way
+  to interrogate such a file's tests in the meantime.)
 - **A narrowed run's survivors are relative to its selection.** A mutant
   is reported as surviving when no *selected* test killed it. Such a run
   now keeps that to itself — a selection (`-f`, `-e`, tags, `--quick`,

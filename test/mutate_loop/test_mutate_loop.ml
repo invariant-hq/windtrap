@@ -645,7 +645,7 @@ let refusal_tests =
         let code, _, err = spawn [ "WINDTRAP_MUTATE=maybe" ] in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the message" err "invalid value 'maybe' for WINDTRAP_MUTATE";
-        says ~msg:"what it expected" err "1, admit, audit or off");
+        says ~msg:"what it expected" err "1, admit or off");
     test "an unrecognized WINDTRAP_MUTATE_LIMIT names the variable" (fun () ->
         let code, _, err =
           spawn [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_LIMIT=lots" ]
@@ -1435,20 +1435,27 @@ let admission_tests =
         denies ~msg:"and never mentions persistence" out "verdicts not saved";
         equal ~msg:"the survey's file is byte-identical" text saved
           (read_file verdict_path));
-    test "admit with no selection refuses, naming the survey" (fun () ->
+    test "admit with no selection judges every test the run executed"
+      (fun () ->
+        (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, out, err = spawn [ "WINDTRAP_MUTATE=admit" ] in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the reason" err
-          "admit judges a test selection and this run makes none";
-        says ~msg:"the question it probably meant" err "WINDTRAP_MUTATE=1";
-        denies ~msg:"no ruling was made" out "admission:");
+        equal ~msg:"exit code (any UNJUSTIFIED is red)" int 1 code;
+        says ~msg:"the whole suite is the designation, said once" err
+          "admitting all 6 tests this run executed";
+        says ~msg:"the question it might have meant" err "WINDTRAP_MUTATE=1";
+        says ~msg:"every test of the suite is ruled" out
+          "admission: 3 admitted, 2 unjustified, 1 no sites of 6 \u{00b7} 2 \
+           forks over 2 reached in ";
+        says ~msg:"the vacuous tests are the finding" out
+          "UNJUSTIFIED  widen \u{203a} widen is nonzero";
+        is_false ~msg:"and an admission run persists nothing"
+          (Sys.file_exists verdict_path));
     test "a shard narrows work, not designation" (fun () ->
-        let code, _, err =
+        let _, _, err =
           spawn ~args:[ "--shard"; "1/2" ] [ "WINDTRAP_MUTATE=admit" ]
         in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"a shard names no test, so the run makes no selection" err
-          "admit judges a test selection and this run makes none");
+        says ~msg:"a shard names no test, so the run designates them all" err
+          "tests this run executed");
     test "a tag selection designates" (fun () ->
         let code, out, err =
           spawn
@@ -1459,7 +1466,7 @@ let admission_tests =
             ]
         in
         equal ~msg:"exit code (the weak tests are unjustified)" int 1 code;
-        denies ~msg:"never the no-selection refusal" err "makes none";
+        denies ~msg:"a tag knob is a selection" err "tests this run executed";
         says ~msg:"every tagged test is ruled" out
           "admission: 3 admitted, 2 unjustified of 5");
     test "an exclude designates, and a partition mixes all three verdicts"
@@ -1473,7 +1480,7 @@ let admission_tests =
           spawn ~args:[ "-e"; "sub" ] [ "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code" int 1 code;
-        denies ~msg:"an exclude is a selection" err "makes none";
+        denies ~msg:"an exclude is a selection" err "tests this run executed";
         says ~msg:"both watchers ruled" out "unjustified (2)";
         says ~msg:"the dismissed-site test is a fact beside them" out
           "NO SITES  dismissed \u{203a} the dismissed site is run and not \
@@ -1496,6 +1503,8 @@ let admission_tests =
         in
         equal ~msg:"exit code (never 2: Law 16e)" int 1 code;
         says ~msg:"the reason" err "there is no test to admit";
+        says ~msg:"a selection existed, so it is the diagnosis" err
+          "Fix the filter";
         denies ~msg:"no ruling was made" out "admission:");
     test "a selection matching nothing declines in one line under the mirrors"
       (fun () ->
@@ -1583,127 +1592,62 @@ let admission_tests =
         denies ~msg:"and none was attempted" err "correction for");
   ]
 
-(* Audit (WINDTRAP_MUTATE=audit)
+(* Whole-suite admission (WINDTRAP_MUTATE=admit with no selection)
 
-   The admission machine with universal designation: every test the run
-   selects is designated, so the one case admit refuses — no selection —
-   judges the whole suite instead. Everything after the designation check
-   is admit's own code, and the equivalence scenario pins the sharing:
-   the same selection must produce the same transcript, wall clocks
-   aside. *)
+   An absent selection designates every test the run executes — the ask
+   an alias makes, where no per-invocation filter can be written. It is
+   the same machine as a filtered admission and shares every refusal;
+   what is its own is the nudge naming the survey, and the diagnosis for
+   a run that designates everything and still executes nothing. *)
 
-(* A transcript with its wall clocks cut: every duration follows " in "
-   — the dry run's summary line and the admission summary — so each line
-   is truncated at its first occurrence. What remains is deterministic,
-   and equality of two such transcripts is the equivalence claim. *)
-let masked_lines out =
-  let cut line =
-    let n = String.length line in
-    let rec go i =
-      if i + 4 > n then line
-      else if String.sub line i 4 = " in " then String.sub line 0 i
-      else go (i + 1)
-    in
-    go 0
-  in
-  List.map cut (String.split_on_char '\n' out)
-
-let audit_tests =
+let whole_suite_tests =
   [
-    test "audit with no selection judges the whole suite and admits it"
-      (fun () ->
+    test "no selection over a suite that answers admits it whole" (fun () ->
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=fixture"; "WINDTRAP_MUTATE=audit" ]
+          spawn [ "MUTATE_FIXTURE=fixture"; "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code (every test admitted)" int 0 code;
-        equal ~msg:"stderr (no refusal for the missing selection)" text "" err;
+        says ~msg:"the nudge, and nothing else on stderr" err
+          "admitting all 1 tests this run executed";
         says ~msg:"the ruling" out
           "ADMITTED  fixture \u{203a} reads through a fixture";
         says ~msg:"the summary rules the whole suite" out
           "admission: 1 admitted of 1 \u{00b7} 1 fork over 1 reached in ");
-    test "audit over a suite holding a vacuous test rules it unjustified"
-      (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, err = spawn [ "WINDTRAP_MUTATE=audit" ] in
-        equal ~msg:"exit code (any UNJUSTIFIED is red)" int 1 code;
-        equal ~msg:"stderr (the ruling is the report, not a refusal)" text ""
-          err;
-        says ~msg:"every test of the suite is ruled" out
-          "admission: 3 admitted, 2 unjustified, 1 no sites of 6 \u{00b7} 2 \
-           forks over 2 reached in ";
-        says ~msg:"the vacuous tests are the finding" out
-          "UNJUSTIFIED  widen \u{203a} widen is nonzero";
-        is_false ~msg:"and an audit run persists nothing"
-          (Sys.file_exists verdict_path));
-    test "audit with a filter is admit with the same filter" (fun () ->
-        let audit_code, audit_out, _ =
-          spawn ~args:[ "-f"; "widen" ] [ "WINDTRAP_MUTATE=audit" ]
-        in
-        let admit_code, admit_out, _ =
-          spawn ~args:[ "-f"; "widen" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"same exit code" int admit_code audit_code;
-        equal ~msg:"same transcript, wall clocks aside" (list string)
-          (masked_lines admit_out) (masked_lines audit_out);
-        (* Two matching refusals would also satisfy the equality above;
-           only a ruling in the shared transcript makes it a claim. *)
-        says ~msg:"and the shared transcript is a ruling" audit_out
-          "UNJUSTIFIED");
-    test "audit refuses an armed parent: the loop arms itself" (fun () ->
-        let code, _, err =
-          spawn
-            [ "WINDTRAP_MUTATE=audit"; M.arm_variable ^ "=" ^ mutant_named "add" ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"both variables named" err "WINDTRAP_MUTATE and ";
-        says ~msg:"the arming variable" err M.arm_variable);
-    test "audit under a red dry run declines whole, selection or none"
-      (fun () ->
+    test "a red dry run declines before any test is designated" (fun () ->
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=red"; "WINDTRAP_MUTATE=audit" ]
+          spawn [ "MUTATE_FIXTURE=red"; "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code (could-not-answer)" int 1 code;
         says ~msg:"the reason" err "the dry run is red";
-        denies ~msg:"never the no-selection refusal" err "makes none";
+        denies ~msg:"nothing was designated, so nothing was nudged" err
+          "tests this run executed";
         denies ~msg:"no ruling was made" out "admission:");
-    test "audit narrows to a selection, empty-selection refusal included"
-      (fun () ->
-        let code, out, err =
-          spawn ~args:[ "-f"; "no-such-test" ] [ "WINDTRAP_MUTATE=audit" ]
-        in
-        equal ~msg:"exit code (never 2: Law 16e)" int 1 code;
-        says ~msg:"the reason" err "there is no test to admit";
-        says ~msg:"a selection existed, so it is the diagnosis" err
-          "Fix the filter";
-        denies ~msg:"universal designation does not resurrect the run" out
-          "admission:");
-    test "audit with no selection judges an inline partition" (fun () ->
+    test "no selection judges an inline partition" (fun () ->
         (* The alias's deployment shape: one variable over every runner,
-           mirrors included, with nothing to name per invocation — the
-           one case no admit scenario can cover, because admit refuses
-           it. *)
+           mirrors included, with nothing to name per invocation. *)
         let cwd = staged_source_dir () in
         let code, out, err =
           spawn ~exe:inline_exe
             ~args:[ "inline-test-runner"; "inline_armed" ]
             ~cwd
-            [ "WINDTRAP_MUTATE=audit" ]
+            [ "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code" int 0 code;
-        denies ~msg:"no refusal for the missing selection" err "makes none";
+        says ~msg:"the partition designates its own tests" err
+          "tests this run executed";
         says ~msg:"the partition's one test is ruled" out "ADMITTED");
-    test "audit over a run that executed nothing blames the suite, no filter"
+    test "a run that executed nothing blames the suite, not a filter"
       (fun () ->
         (* Every test of the tagged fixture is dropped by the default
            predicate, so the dry run executes nothing. With no selection
            there is no filter to fix, and the refusal must not claim
            there is. *)
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=tagged"; "WINDTRAP_MUTATE=audit" ]
+          spawn [ "MUTATE_FIXTURE=tagged"; "WINDTRAP_MUTATE=admit" ]
         in
         equal ~msg:"exit code (never 2: Law 16e)" int 1 code;
         says ~msg:"the reason" err
-          "audit judges the tests this run executes and this run executed \
+          "admit judges the tests this run executes and this run executed \
            none";
         denies ~msg:"there is no filter to fix" err "Fix the filter";
         denies ~msg:"no ruling was made" out "admission:");
@@ -1845,6 +1789,6 @@ let () =
       group "runaway budget" runaway_tests;
       group "per-child deadline" deadline_tests;
       group "admission" admission_tests;
-      group "audit" audit_tests;
+      group "whole-suite admission" whole_suite_tests;
       group "uninstrumented" uninstrumented_tests;
     ]

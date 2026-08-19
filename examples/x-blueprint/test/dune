@@ -40,10 +40,10 @@
    (run %{bin:windtrap} mutate))))
 
 ; The admission alias completes the trio, and is the only one that runs
-; rather than merges: WINDTRAP_MUTATE=audit is `admit` with universal
-; designation — every test the run executes is judged — so it asks "can
-; every test in this suite fail?" with no filter to keep in sync, and an
-; admission run persists nothing, so there is nothing to merge after it.
+; rather than merges: WINDTRAP_MUTATE=admit with no filter judges every
+; test the run executes, so it asks "can every test in this suite fail?"
+; with nothing to keep in sync, and an admission run persists nothing,
+; so there is nothing to merge after it.
 ;
 ; test_slug only, and the omission is deliberate. test_stats carries the
 ; deliberately weak law that is the manual's living specimen ("Admitting
@@ -59,7 +59,7 @@
 ; the framework's own sites here, and it matches nothing once this
 ; directory is copied out, where windtrap arrives as a dependency and
 ; carries no instrumentation at all. Wide is the safe direction — here
-; the suite audits 9 of 9 where the scoped command reports 8 admitted
+; the suite admits 9 of 9 where the scoped command reports 8 admitted
 ; and 1 no sites, and every ruling is still true about the test it
 ; names.
 
@@ -69,4 +69,4 @@
   (universe)
   unit/test_slug.exe)
  (action
-  (setenv WINDTRAP_MUTATE audit (run %{exe:unit/test_slug.exe}))))
+  (setenv WINDTRAP_MUTATE admit (run %{exe:unit/test_slug.exe}))))

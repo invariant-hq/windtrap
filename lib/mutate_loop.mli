@@ -67,37 +67,27 @@
       block, and the run exits [1]), or NO SITES (it reaches nothing the
       operators can break — a stated fact, never a finding). Selection is the
       author's, never inferred: [-f]/[-e], the tag knobs, [--failed] and an
-      in-source focus designate; [--shard] and [--quick] do not, and an admit
-      run with no selection refuses, naming the survey as the question it
-      probably meant. A selection matching nothing refuses under the standalone
-      runner and, under the inline runner's project-wide invocation, declines
-      in one [stderr] line and lets the ordinary run stand — the
-      {!Windtrap_mutate.Uncatalogued} softness, for the same reason. Per
-      selected test the loop tries the undismissed faults it reaches, most-run
-      first, at most [WINDTRAP_MUTATE_TRY] (default 25, [0] for all): a fault
-      counts as tried only when the test ran to a pass or fail outcome under
-      it — a skip watched nothing, and a shared fork the test merely rode
-      along in charges nothing, though a kill observed there still admits.
-      Batches are union-scheduled across the selection and children run
-      without bail, reporting one incremental line per test event so a crash
-      or a deadline kill is attributable and every earlier outcome kept. The
-      forced-fail check
-      does not apply, the determinism probe is skipped when nothing reaches a
-      site, and {b an admission run persists nothing}: no verdict file is
-      written, none is read, and an existing one is left byte-intact.
-    - [WINDTRAP_MUTATE=audit]: the admission machine with universal
-      designation — every test the run selects is designated, so the run
-      with no selection, which [admit] refuses naming the survey, judges the
-      whole suite and proceeds. It exists so an alias can say "admit every
-      test this executable runs" with no per-invocation selection. A run
-      that executes no test at all still refuses under the standalone
-      runner, naming the suite rather than a filter no one set. A
-      selection present narrows the set to exactly what [admit]'s would be,
-      empty-selection refusal and decline included, and everything else —
-      the red-dry-run refusal, the empty-catalogue refusals, the armed-parent
-      refusal, the skipped forced-fail check, [WINDTRAP_MUTATE_TRY], the
-      per-child deadlines, the rulings, the summary, persist-nothing and the
-      exit codes — is [admit]'s, shared, not duplicated.
+      in-source focus designate; [--shard] and [--quick] do not. A run that
+      makes no selection designates every test it executed — the ask an alias
+      spells where a per-invocation filter cannot — and says so in one
+      [stderr] line naming the survey as the other question. A selection
+      matching nothing refuses under the standalone runner and, under the
+      inline runner's project-wide invocation, declines in one [stderr] line
+      and lets the ordinary run stand — the {!Windtrap_mutate.Uncatalogued}
+      softness, for the same reason; a run that designates everything and
+      still executes nothing refuses in its own words, naming the suite rather
+      than a filter no one set. Per selected test the loop tries the
+      undismissed faults it reaches, most-run first, at most
+      [WINDTRAP_MUTATE_TRY] (default 25, [0] for all): a fault counts as tried
+      only when the test ran to a pass or fail outcome under it — a skip
+      watched nothing, and a shared fork the test merely rode along in charges
+      nothing, though a kill observed there still admits. Batches are
+      union-scheduled across the selection and children run without bail,
+      reporting one incremental line per test event so a crash or a deadline
+      kill is attributable and every earlier outcome kept. The forced-fail
+      check does not apply, the determinism probe is skipped when nothing
+      reaches a site, and {b an admission run persists nothing}: no verdict
+      file is written, none is read, and an existing one is left byte-intact.
 
     {b The loop.}
 
@@ -162,11 +152,9 @@
     to start or could not finish, each with its own message on [stderr]. Never
     [2]: "nothing ran" is a statement about a test selection, and a mutation run
     does not make one. Exception, per the amendment's reserved survivor-driven
-    clause: an [admit] or [audit] run — which judges a test selection at its
-    author's request — additionally exits [1] when a selected test killed
-    nothing it reached (any UNJUSTIFIED ruling); NO SITES alone is never red.
-    For [admit] the refusal causes additionally include a missing selection;
-    [audit] designates the whole suite there instead. *)
+    clause: an [admit] run — which judges a test selection at its author's
+    request — additionally exits [1] when a selected test killed nothing it
+    reached (any UNJUSTIFIED ruling); NO SITES alone is never red. *)
 
 (** {1:running Running} *)
 

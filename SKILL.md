@@ -287,7 +287,7 @@ the last issue dies, the stanza goes with it.
 (rule
  (alias admit)
  (deps (universe) unit/test_parser.exe)
- (action (setenv WINDTRAP_MUTATE audit (run %{exe:unit/test_parser.exe}))))
+ (action (setenv WINDTRAP_MUTATE admit (run %{exe:unit/test_parser.exe}))))
 ```
 
 The snapshot `deps` glob is load-bearing: baselines are runtime data,
@@ -631,7 +631,7 @@ test fail, restore it. Cruder than a ruling, but it is the same
 evidence, and no test is exempt from producing it.
 
 **Admit every test you write or change** — the last step of writing
-one, not a separate audit. The run's selection becomes the admission
+one, not a separate pass. The run's selection becomes the admission
 set: only the faults those tests reach are armed, and each is ruled by
 name, in about a second for a fast test.
 
@@ -651,10 +651,9 @@ WINDTRAP_MUTATE=admit dune exec --instrument-with ppx_windtrap.mutate \
   not a failure, never a reason to delete a test, review it by eye.
 
 The selection designates (`-f`/`-e`, tag knobs, `--failed`, an
-in-source focus; `--shard` does not, and selecting nothing refuses).
-`WINDTRAP_MUTATE=audit` is `admit` with no selection to refuse over —
-it judges every test the run executes — which is the whole-suite
-question, and belongs in an alias rather than in a filter:
+in-source focus; `--shard` does not). Selecting nothing designates
+every test the run executes, which is the whole-suite question and
+belongs in an alias rather than in a filter:
 
 ```
 dune build @admit --instrument-with ppx_windtrap.mutate

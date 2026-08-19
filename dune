@@ -76,11 +76,11 @@
    (run %{bin:windtrap} mutate))))
 
 ; Admission, the third workflow, and the only one an alias can carry on
-; its own. WINDTRAP_MUTATE=audit is `admit` with universal designation:
-; a run that makes no per-invocation selection judges every test it
-; executes, which is the question an alias wants to ask and no filter
-; spells. It needs no merging half, because an admission run persists
-; nothing (Law 17b) — the rulings it prints are the whole product.
+; its own. WINDTRAP_MUTATE=admit with no per-invocation selection judges
+; every test the run executes, which is the question an alias wants to
+; ask and no filter spells. It needs no merging half, because an
+; admission run persists nothing (Law 17b) — the rulings it prints are
+; the whole product.
 ;
 ;   dune build @admit --instrument-with ppx_windtrap.mutate
 ;
@@ -110,4 +110,4 @@
   (universe)
   test/unit/main.exe)
  (action
-  (setenv WINDTRAP_MUTATE audit (run %{exe:test/unit/main.exe}))))
+  (setenv WINDTRAP_MUTATE admit (run %{exe:test/unit/main.exe}))))

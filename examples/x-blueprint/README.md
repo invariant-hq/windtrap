@@ -60,20 +60,19 @@ means mutation has nothing to say about that subject. Nothing is written
 to `_build/_mutants`, so admitting a test never disturbs the verdicts
 `example-mutate` merges.
 
-Drop the `-f` and spell the mode `audit` instead, and the run judges
-every test it executes rather than refusing for want of a selection —
-which is the whole reason an alias can carry it. `@example-admit` is
-that command over `test_slug.exe`, and it reports `9 admitted of 9 · 2
-forks` here. It carries no `WINDTRAP_MUTATE_ONLY`, so inside windtrap's
-tree the framework's own sites are in reach too: the same audit scoped
-to `examples/x-blueprint/lib` reports `8 admitted, 1 no sites` in three
-forks, which is what the alias sees once this directory is copied out
-and windtrap is an uninstrumented dependency. No prefix is right in
-both places, and wide is the safe direction — every ruling is still
-true about the test it names.
+Drop the `-f` and the run judges every test it executes instead of the
+ones a filter names — which is the whole reason an alias can carry it.
+`@example-admit` is that command over `test_slug.exe`, and it reports
+`9 admitted of 9 · 2 forks` here. It carries no `WINDTRAP_MUTATE_ONLY`,
+so inside windtrap's tree the framework's own sites are in reach too:
+the same run scoped to `examples/x-blueprint/lib` reports `8 admitted,
+1 no sites` in three forks, which is what the alias sees once this
+directory is copied out and windtrap is an uninstrumented dependency.
+No prefix is right in both places, and wide is the safe direction —
+every ruling is still true about the test it names.
 
 Its sibling `test_stats.exe` is left out of the alias on purpose:
-scoped that way, auditing it exits 1 by design. The fourth deliberate
+scoped that way, admitting it exits 1 by design. The fourth deliberate
 thing below says why that red is the point rather than a defect.
 
 ## Copied out: the workspace posture
@@ -147,7 +146,7 @@ Four things are deliberate:
   and the comment above it says so. See the ruling itself with
 
   ```
-  WINDTRAP_MUTATE=audit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
+  WINDTRAP_MUTATE=admit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
     dune exec --instrument-with ppx_windtrap.mutate \
     examples/x-blueprint/test/unit/test_stats.exe   # 3 admitted, 1 unjustified
   ```

@@ -392,24 +392,23 @@ previous run, no store of tests seen before — because every one of those
 answers a question about a working tree the framework does not own, and
 a test admission missed by inference is admitted by omission. `--shard`
 and `--quick` narrow the work rather than naming tests, so neither
-designates on its own, and a run that designates nothing refuses instead
-of guessing:
+designates on its own.
+
+A run that narrows nothing designates every test it executes. That is
+the whole-suite question — the ask an alias makes, because an alias
+cannot write a filter — and the run states it in one line before the
+rulings, naming the other question in case that is the one you meant:
 
 ```
-windtrap mutate: admit judges a test selection and this run makes none: name the tests to admit with -f/WINDTRAP_FILTER, -e, a tag knob, --failed or an in-source focus. Judging every mutant is the survey's question — WINDTRAP_MUTATE=1
+windtrap mutate: admitting all 9 tests this run executed; the per-mutant question is WINDTRAP_MUTATE=1
 ```
 
-`WINDTRAP_MUTATE=audit` is that refusal's answer, and it exists because
-an alias cannot write a filter. It is `admit` with *universal
-designation*: every test the run executes is designated, so a command
-that names nothing judges the whole suite instead of refusing. With a
-selection present it narrows to exactly `admit` — same rulings, same
-refusals, same exit code — so the two are one machine asked at two
-widths, and a project alias can carry the wide question while `-f`
-keeps the narrow one:
+One machine at two widths, then: a project alias carries the wide
+question while `-f` keeps the narrow one, with the same rulings, the
+same refusals and the same exit code on both.
 
 ```
-$ WINDTRAP_MUTATE=audit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
+$ WINDTRAP_MUTATE=admit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
     dune exec --instrument-with ppx_windtrap.mutate \
     examples/x-blueprint/test/unit/test_slug.exe
 slug: 9 passed in 0.0235s (seed s1:84441284d8d5c4be).
@@ -456,7 +455,7 @@ one rule at the project root, no filter to keep in sync:
 (rule
  (alias admit)
  (deps (universe) test/test_calc.exe)
- (action (setenv WINDTRAP_MUTATE audit (run %{exe:test/test_calc.exe}))))
+ (action (setenv WINDTRAP_MUTATE admit (run %{exe:test/test_calc.exe}))))
 ```
 
 Unlike `@mutate`, it has no merging half to pair with: an admission run
@@ -465,12 +464,11 @@ the executables whose subject is the instrumented library; a suite that
 observes its subject through a process it spawns has nothing to admit,
 because the arming never reaches the child.
 
-The one state `admit` cannot reach is a run that designates everything
-and still executes nothing, and it gets its own diagnosis rather than
-inheriting advice about a filter nobody set:
+A run that designates everything and still executes nothing gets its
+own diagnosis rather than advice about a filter nobody set:
 
 ```
-windtrap mutate: audit judges the tests this run executes and this run executed none, so there is no test to admit: the suite declares no test, or every declared test was dropped before running — a tag the default predicate drops, or an empty shard
+windtrap mutate: admit judges the tests this run executes and this run executed none, so there is no test to admit: the suite declares no test, or every declared test was dropped before running — a tag the default predicate drops, or an empty shard
 ```
 
 An over-wide selection judges every test it matches rather than erring:
@@ -517,9 +515,8 @@ The exit code follows the question that was asked. `0` when the run
 completed with no unjustified ruling — `NO SITES` alone is never red —
 and `1` either because it *could not answer* (a red or empty dry run, a
 suite that disagrees with itself between runs, nothing instrumented,
-`WINDTRAP_MUTATE_ARM` set at the same time, Windows, and for `admit` a
-missing selection where `audit` would have judged the suite) or because
-it *answered no*. The block above the exit says which. Survey runs are
+`WINDTRAP_MUTATE_ARM` set at the same time, Windows) or because it
+*answered no*. The block above the exit says which. Survey runs are
 untouched: completed still means 0 there, whatever they found.
 
 The bill is the selected tests' own runtime — paid once by the dry run
@@ -550,7 +547,7 @@ The measured case is windtrap's own capture tests, where a flipped
 comparison in path normalization deadlocks the pipe reader.
 `WINDTRAP_MUTATE=admit … -f capture` used to sit at 0% CPU for the
 whole loop's 60 s floor and then refuse; it now answers in **1.03 s,
-26 of 26 admitted**. The full-suite audit fell from **1m38s to
+26 of 26 admitted**. The full-suite admission fell from **1m38s to
 8.47 s** — most of that minute was children blocked in reads, not work
 — with seven of its rulings carrying the `timeout` cause. Every outcome
 a killed child had already delivered is kept, so the rest of its batch
@@ -685,8 +682,9 @@ that code belongs to the runner, and an armed run can still produce it
 by selecting no test at all. A gate over an uncalibrated number is how a
 tool earns a reputation for lying, and the equivalent-mutant rate here
 is a prediction until it is measured. Admission is where an exit code
-carries an answer — `admit` about the tests its caller selected, `audit`
-about every test the run executed — and never about the project.
+carries an answer — `admit`, about the tests its caller selected, or
+about every test the run executed when it selected none — and never
+about the project.
 
 ## What it costs
 
@@ -748,11 +746,11 @@ naming the variable, never a silently defaulted mode.
 
 | variable | values | default |
 | --- | --- | --- |
-| `WINDTRAP_MUTATE` | `1` / `admit` / `audit` / `off` | `off` |
+| `WINDTRAP_MUTATE` | `1` / `admit` / `off` | `off` |
 | `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
 | `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
 | `WINDTRAP_MUTATE_LIMIT` | survivor blocks to print, `0` for all | `10` |
-| `WINDTRAP_MUTATE_TRY` | faults an admission run (`admit`, `audit`) tries per test, `0` for all | `25` |
+| `WINDTRAP_MUTATE_TRY` | faults an `admit` run tries per test, `0` for all | `25` |
 
 All five are read by the test executable and by nothing else.
 
@@ -796,9 +794,9 @@ wide-reaching test, whose exhaustive ruling would otherwise cost its
 whole reach — measured against real suites the ordering kills on the
 first or second fault, so the cap is a bound and not a schedule.
 
-Asking for a loop — `1`, `admit` or `audit` — and an armed mutant at
-once is a refusal, not a guess: the loop arms each mutant itself, so an
-armed parent would mutate its own dry run.
+Asking for a loop — `1` or `admit` — and an armed mutant at once is a
+refusal, not a guess: the loop arms each mutant itself, so an armed
+parent would mutate its own dry run.
 
 windtrap's mutation testing is deliberately the 90% product: one honest
 count after a run you already make, and the names of the tests that let
