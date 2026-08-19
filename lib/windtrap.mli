@@ -932,19 +932,6 @@ val subtest : string -> (unit -> unit) -> unit
     still fail it). Sub-cases are failure labels, not tests: they are not
     separately selectable with [-f] — reach for {!cases} when they should be. *)
 
-val srandom : unit -> Random.State.t
-(** [srandom ()] is a fresh pseudo-random state seeded from the run's root seed
-    and the executing test's path: replaying with [--seed]/[WINDTRAP_SEED]
-    reproduces it, and neither suite composition nor filters perturb it —
-    renaming or regrouping the test intentionally re-keys it. Every call within
-    the same test returns an identically seeded state, so draw all of a test's
-    randomness from one. Property tests should use {!prop} and {!Gen}; [srandom]
-    serves plain tests that want stable stochastic inputs.
-
-    A failing test that drew from [srandom] prints the replay command in its
-    failure block ([replay: … --seed <token> -f '<test path>']), so the root
-    token is in the log exactly when a stochastic failure needs replaying. *)
-
 val temp_dir : ?prefix:string -> unit -> string
 (** [temp_dir ()] is a fresh empty directory owned by the runner: created under
     the system temporary directory and removed after the test on every outcome —

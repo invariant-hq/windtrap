@@ -2049,44 +2049,12 @@ let test_no_rerun_hint () =
   in
   check_absent "nor under Mirrors" ~sub:"--failed" mirrors
 
-(* The srandom replay line (D5 §6) *)
+(* The property replay line, and the fact that it is the only replay line
+   a failure block prints. *)
 
-let test_srandom_replay_line () =
-  let entry =
-    Failure.with_output_tail
-      (Failure.tail "drew 337709\n")
-      (Failure.message "boom")
-  in
-  let failing =
-    Fixtures.result ~srandom_root:Fixtures.root [ "draw" ]
-      (Failure.Fail [ entry ])
-  in
-  let t =
-    with_renderer
-      ~invocation:(`Exe "./_build/default/qa/prop/verify2/v_srandom.exe")
-      (fun r -> Render.finish r ~results:[ failing ] ~duration:0.1 ())
-  in
-  check_contains
-    "srandom failure prints the replay line after the entries, before the tail"
-    ~sub:
-      "    boom\n\
-      \    replay: ./_build/default/qa/prop/verify2/v_srandom.exe --seed \
-       s1:7be1d2c904aa31f5 -f 'draw'\n\
-      \    \u{2500}\u{2500} captured output"
-    t;
-  let mirrors =
-    with_renderer (fun r ->
-        Render.finish r ~results:[ failing ] ~duration:0.1 ())
-  in
-  check_contains "srandom replay under Mirrors spells the env prefixes"
-    ~sub:
-      "    replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='draw' \
-       dune runtest\n"
-    mirrors;
-  (* A property failure already prints its own replay line from the same
-     root: never two replay lines per block. *)
+let test_property_replay_line () =
   let prop_result =
-    Fixtures.result ~srandom_root:Fixtures.root
+    Fixtures.result
       [ "geo"; "area non-negative" ]
       (Failure.Fail [ Fixtures.prop_failure ])
   in
@@ -2094,9 +2062,8 @@ let test_srandom_replay_line () =
     with_renderer (fun r ->
         Render.finish r ~results:[ prop_result ] ~duration:0.1 ())
   in
-  check "a property failure suppresses the per-test replay line"
+  check "a property failure prints exactly one replay line"
     (occurrences_of ~sub:"replay:" t = 1);
-  (* No line without a draw. *)
   let plain =
     with_renderer (fun r ->
         Render.finish r
@@ -2104,7 +2071,7 @@ let test_srandom_replay_line () =
             [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]
           ~duration:0.1 ())
   in
-  check_absent "no replay line without an srandom draw" ~sub:"replay:" plain
+  check_absent "an ordinary failure prints none" ~sub:"replay:" plain
 
 (* Verbose label distributions (D5 §7) *)
 
@@ -2967,7 +2934,6 @@ let strict_run ~orphans =
       duration = 0.;
       attempts = 1;
       prop_stats = None;
-      srandom_root = None;
     };
   run
 
@@ -3073,8 +3039,8 @@ let tests =
     test "hints: accept and replay per invocation (D5 §1)"
       test_hints_per_invocation;
     test "hints: no run advertises --failed" test_no_rerun_hint;
-    test "srandom replay line in failure blocks (D5 §6)"
-      test_srandom_replay_line;
+    test "the property replay line is the only one"
+      test_property_replay_line;
     test "verbose PASS prints the label table (D5 §7)" test_verbose_pass_labels;
     test "terminal name sanitization (render/F-2)" test_name_sanitization;
     test "excerpts resolve against the project root (render/F-1)"

@@ -6,7 +6,7 @@
 (* Tests for Run: the resolved-config defaults, run-record accessors, frame
    bookkeeping, the single ambient slot (set/restore, outside-run error,
    isolation between sequential runs), the test-body operations
-   (current_test, srandom, subtest, temp_dir/temp_file and the
+   (current_test, subtest, temp_dir/temp_file and the
    setenv/chdir bindings, all reclaimed at the attempt boundary),
    the fixture lifecycle over a scripted fake run (first-use acquisition,
    per-run caching, cached acquisition errors and skips, reverse-order
@@ -420,53 +420,6 @@ let () =
   check "current_test is the executing test's full path"
     (!seen = [ "users"; "sessions"; "login" ])
 
-(* srandom (B10) *)
-
-let () =
-  expect_invalid_arg "srandom outside a run raises" (fun () -> Run.srandom ())
-
-let draw_ints run ~path =
-  in_test run ~path (fun _ ->
-      let state = Run.srandom () in
-      List.init 4 (fun _ -> Random.State.bits state))
-
-let () =
-  let run = make_run () in
-  let first = draw_ints run ~path:[ "g"; "t" ] in
-  let again = draw_ints run ~path:[ "g"; "t" ] in
-  check "srandom is a pure function of (root, path): attempts repeat it"
-    (first = again);
-  let other = draw_ints run ~path:[ "g"; "other" ] in
-  check "a different path gets a different stream" (first <> other);
-  let other_root =
-    let config = { (Run.default_config ()) with Run.seed = 0xdeadL } in
-    let run =
-      Run.create config ~capture:Capture.disabled
-        ~snapshots:(Snapshot.create ~mode:Snapshot.Check ())
-    in
-    draw_ints run ~path:[ "g"; "t" ]
-  in
-  check "a different root seed gets a different stream" (first <> other_root)
-
-let () =
-  let run = make_run () in
-  in_test run (fun _ ->
-      let a = Run.srandom () in
-      let b = Run.srandom () in
-      check "every call in a test returns an identically seeded state"
-        (List.init 4 (fun _ -> Random.State.bits a)
-        = List.init 4 (fun _ -> Random.State.bits b)))
-
-let () =
-  (* srandom never touches the ambient global Random state. *)
-  let run = make_run () in
-  Random.init 4242;
-  let expected = Random.int 1_000_000 in
-  Random.init 4242;
-  in_test run (fun _ -> ignore (Random.State.bits (Run.srandom ())));
-  check "srandom leaves the global Random state alone"
-    (Random.int 1_000_000 = expected)
-
 (* subtest (B13) *)
 
 let () =
@@ -746,7 +699,6 @@ let () =
       duration = 0.25;
       attempts = 1;
       prop_stats = None;
-      srandom_root = None;
     }
   in
   let r2 =
@@ -760,7 +712,6 @@ let () =
       duration = 1.5;
       attempts = 3;
       prop_stats = None;
-      srandom_root = None;
     }
   in
   Run.record run r1;

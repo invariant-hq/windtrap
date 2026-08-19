@@ -215,9 +215,3 @@ the rule of thumb.
   bypasses the engine: the case completes unshrunk. Use assertions for
   anything you want shrunk; use `subtest` only to label multi-part
   checks whose failures are self-evident.
-- For a plain test that wants stable stochastic inputs without the
-  property machinery, `srandom ()` gives a `Random.State.t` seeded
-  from the same root-seed derivation — replayable with `--seed`, and
-  immune to suite reordering. A failing test that drew from `srandom`
-  prints the replay command in its failure block, so the root token is
-  in the log exactly when a stochastic failure needs replaying.

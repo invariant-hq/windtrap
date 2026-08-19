@@ -162,11 +162,6 @@ val file : frame -> string option
 val loc : frame -> Loc.t option
 (** [loc frame] is the test's declaration location, as passed to {!frame}. *)
 
-val srandom_used : frame -> bool
-(** [srandom_used frame] is [true] iff the attempt called {!srandom}. The runner
-    copies it into the result's {!result.srandom_root}, so a failing test's
-    report can print the replay command for its stochastic draws. *)
-
 val add_failure : frame -> Failure.t -> unit
 (** [add_failure frame failure] appends [failure] to the attempt's failure list.
     The runner records one entry per phase that failed, already classified with
@@ -241,25 +236,6 @@ val current_test : unit -> string list
     root first, then the test's own name. Never empty; joined with
     {!Test_tree.path_to_string} it is exactly the string selection filters
     match. Stable across attempts of the same test. *)
-
-val srandom : unit -> Random.State.t
-(** [srandom ()] is a fresh pseudo-random state seeded from the run's root seed
-    and the executing test's path — precisely, from
-    [Seed.derive ~root ~path ~index:0] over the canonical joined path. The seed
-    is a pure function of the printed root token and the test's path: replaying
-    with [--seed] reproduces it, suite composition and filters never perturb it,
-    and renaming or regrouping the test intentionally re-keys it. The derivation
-    is frozen; the values drawn from the state additionally follow the stdlib's
-    [Random] algorithm, which the OCaml version pins.
-
-    Every call within the same test returns an identically seeded state — draw
-    all of a test's randomness from one state rather than calling twice.
-    Property tests should use [prop] and [Gen]; [srandom] serves plain tests
-    that want stable stochastic inputs without hand-parsing [WINDTRAP_SEED].
-
-    Calling it also marks the attempt (see {!srandom_used}): the runner records
-    the root in the result's {!result.srandom_root} so a failing test's block
-    can print the replay command. *)
 
 val subtest : string -> (unit -> unit) -> unit
 (** [subtest name fn] runs [fn ()] as a named sub-case of the executing test. If
@@ -480,10 +456,6 @@ type result = {
   prop_stats : Property.stats option;
       (** The property engine's bookkeeping (label distribution, coverage
           statuses) for property tests; [None] otherwise. *)
-  srandom_root : Seed.seed option;
-      (** [Some root] — the run's root seed — iff the test called {!srandom} on
-          its recorded attempt; [None] otherwise. Renderers print the replay
-          line of a failing stochastic test from it. *)
 }
 (** The type for result rows, as recorded by the runner — one per completed
     test, plus the end-of-run verdict rows (see {!type:subject}). Verdict rows

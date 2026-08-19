@@ -252,6 +252,4 @@ A test is named by its path — group names, then its own, joined with
 `" › "`; that string is what `-f` matches, and duplicate paths are a
 startup error. `current_test ()` returns the executing test's path as
 a list — use it to key artifacts by test identity instead of
-duplicating names by hand. `srandom ()` gives a `Random.State.t`
-seeded from the run's root seed and that path
-([Property testing](property-testing.md#notes)).
+duplicating names by hand.

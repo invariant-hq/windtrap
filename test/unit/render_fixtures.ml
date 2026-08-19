@@ -20,7 +20,7 @@ let root =
   | Ok s -> s
   | Error e -> failwith e
 
-let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats ?srandom_root
+let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats
     ?(slow_tagged = false) ?xfail ?counted path outcome =
   (* [counted] defaults to the runner's rule (Runner.counts_failed): a
      [Fail] counts unless the test is xfail-annotated — then it is an
@@ -44,7 +44,6 @@ let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats ?srandom_root
     duration;
     attempts;
     prop_stats;
-    srandom_root;
   }
 
 let tail =

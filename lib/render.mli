@@ -268,11 +268,8 @@ val finish :
 
     - the failure section — every {e counted} failed result of [results]
       re-printed in full ([FAIL] header, then {!pp_failure} with source excerpts
-      for each of its failures, then — for a result whose test drew from
-      [srandom] ({!Run.result.srandom_root}) and recorded no property failure —
-      the replay line spelled from the invocation with the test's path as the
-      filter, then its bounded captured-output tail and full-log path, printed
-      once per test) — when any test failed;
+      for each of its failures, then its bounded captured-output tail and
+      full-log path, printed once per test) — when any test failed;
     - the slow warnings (unless [`Quiet]): a faint-yellow block over every
       completed test past the slow threshold whose record is not [slow_tagged] —
       a [slow tests (n):] heading, then one indented entry per test with the

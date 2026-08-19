@@ -138,7 +138,6 @@ type result = {
   duration : float;
   attempts : int;
   prop_stats : Property.stats option;
-  srandom_root : Seed.seed option;
 }
 
 type summary = { visited : int; total : int; siblings : bool }
@@ -192,7 +191,6 @@ type frame = {
   mutable fr_subtests : string list; (* enclosing subtests, innermost first *)
   mutable fr_temp_root : string option; (* the attempt's scratch dir *)
   mutable fr_temp_seq : int; (* next path number within the scratch dir *)
-  mutable fr_srandom : bool; (* the attempt called [srandom] *)
   mutable fr_env : env_restore list; (* one entry per name, first set wins *)
   mutable fr_cwd : (string * Loc.t option) option; (* dir at the first chdir *)
 }
@@ -208,7 +206,6 @@ let frame t ~path ~file ~loc =
     fr_subtests = [];
     fr_temp_root = None;
     fr_temp_seq = 0;
-    fr_srandom = false;
     fr_env = [];
     fr_cwd = None;
   }
@@ -217,7 +214,6 @@ let run_of_frame frame = frame.owner
 let path frame = frame.fr_path
 let file frame = frame.fr_file
 let loc frame = frame.fr_loc
-let srandom_used frame = frame.fr_srandom
 
 let add_failure frame failure =
   (* The one fallback point of the attribution ladder: a failure recorded
@@ -282,21 +278,6 @@ let current_opt () =
 (* Test-body operations *)
 
 let current_test () = (current_frame ()).fr_path
-
-let srandom () =
-  let frame = current_frame () in
-  (* Record the draw: the runner copies the flag into the result as
-     [srandom_root], and a failing test's block prints the replay line from
-     it — the root token is in the log exactly when a stochastic failure
-     needs replaying. *)
-  frame.fr_srandom <- true;
-  let root = frame.owner.config.seed in
-  let path = Test_tree.path_to_string frame.fr_path in
-  (* The frozen derivation: a pure function of the printed root
-     token and the test's path — index 0, no per-call stream. *)
-  let seed = Seed.derive ~root ~path ~index:0 in
-  Random.State.make
-    [| Int64.to_int seed; Int64.to_int (Int64.shift_right_logical seed 32) |]
 
 (* The sub-case identity rides in the failure's [subtest] slot as data;
    [msg] stays purely the user's annotation. Renderers derive the

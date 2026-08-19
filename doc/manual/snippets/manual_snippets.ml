@@ -257,11 +257,6 @@ let resources =
           List.iter
             (fun (name, count) -> subtest name (fun () -> equal int 12 count))
             backends);
-      test "stable stochastic input" (fun () ->
-          let st = srandom () in
-          let a = Random.State.int st 1000 in
-          let b = Random.State.int st 1000 in
-          is_true (a >= 0 && b >= 0));
       test "artifacts keyed by test identity" (fun () ->
           let key = String.concat "-" (current_test ()) in
           is_true (String.length key > 0));

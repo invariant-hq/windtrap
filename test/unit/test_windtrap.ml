@@ -293,7 +293,6 @@ let () =
   outside "collect" (fun () -> collect "label");
   outside "fixture accessor" (fun () -> probe_fixture ());
   outside "current_test" (fun () -> ignore (current_test ()));
-  outside "srandom" (fun () -> ignore (srandom ()));
   outside "temp_dir" (fun () -> ignore (temp_dir ()));
   outside "temp_file" (fun () -> ignore (temp_file ()));
   (* Both read the frame before touching the process: an ambient operation
@@ -835,7 +834,6 @@ let () =
   let config = base_config ~log_dir:root () in
   let observed_path = ref [] in
   let scratch = ref "" in
-  let draws = ref (0, 1) in
   let home = Sys.getcwd () in
   let facade_env = ref (Some "unset") in
   let facade_cwd = ref "" in
@@ -854,10 +852,7 @@ let () =
       test "body operations" (fun () ->
           observed_path := current_test ();
           scratch := temp_dir ();
-          is_true (Sys.is_directory !scratch);
-          let a = Random.State.bits (srandom ()) in
-          let b = Random.State.bits (srandom ()) in
-          draws := (a, b));
+          is_true (Sys.is_directory !scratch));
       test "scoped process state" (fun () ->
           setenv "WINDTRAP_TEST_FACADE" (Some "inside");
           chdir (temp_dir ());
@@ -913,7 +908,6 @@ let () =
     (!facade_env = Some "inside" && Sys.getenv_opt "WINDTRAP_TEST_FACADE" = None);
   check "chdir took effect inside the test and was undone after it"
     (!facade_cwd <> "" && !facade_cwd <> home && cwd_or_gone () = home);
-  check "srandom is identically seeded within one test" (fst !draws = snd !draws);
   check "an expected failure does not count as failed"
     (not (List.mem "expected failure" outcome.Runner.failed_paths));
   check "an unexpected pass counts as failed"
@@ -923,8 +917,8 @@ let () =
 (* B-package edges
 
    The corners the happy paths above do not reach: empty needles, a raising
-   extractor, xfail composed with cases and with slow selection, scratch
-   paths in teardown phases, and srandom's cross-run stability. *)
+   extractor, xfail composed with cases and with slow selection, and
+   scratch paths in teardown phases. *)
 
 (* Empty needles: contained in every string for [contains], so
    [not_contains ~sub:""] always fails. *)
@@ -1044,32 +1038,6 @@ let () =
     | _ -> false);
   check_int "temp_dir in fixture release exits 1" ~expected:1
     ~actual:outcome.Runner.exit_code
-
-(* srandom is a pure function of (root seed, test path): the stream is
-   identical across runs with the same root, and a filter narrowing the
-   selection does not perturb it. *)
-let () =
-  with_temp_root @@ fun root ->
-  let config = base_config ~log_dir:root () in
-  let draw = ref [] in
-  let suite () =
-    [
-      test "sibling" (fun () -> ());
-      test "draws" (fun () -> draw := Random.State.bits (srandom ()) :: !draw);
-    ]
-  in
-  expect_run "srandom run 1" ~config (suite ()) @@ fun _ ->
-  expect_run "srandom run 2" ~config (suite ()) @@ fun _ ->
-  let filtered = { config with Run.filter = Some "draws" } in
-  expect_run "srandom filtered run" ~config:filtered (suite ())
-  @@ fun outcome ->
-  check "the filter narrowed the selection"
-    (outcome_of outcome [ "sibling" ] = None);
-  match !draw with
-  | [ third; second; first ] ->
-      check "srandom is stable across runs with the same root" (first = second);
-      check "a filter does not perturb srandom" (first = third)
-  | draws -> check_int "srandom draws" ~expected:3 ~actual:(List.length draws)
 
 (* The exit guard, process level (D1) *)
 

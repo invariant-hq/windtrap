@@ -478,11 +478,6 @@ let run_case ~on_event run (case : Test_tree.case) =
           duration;
           attempts = number;
           prop_stats;
-          srandom_root =
-            (* The recorded attempt's draw record: [Some root] exactly when
-               the test called [srandom], so its failure block can print the
-               replay line. *)
-            (if Run.srandom_used frame then Some config.Run.seed else None);
         }
       in
       Run.record run result;
@@ -760,7 +755,6 @@ let verdict_result ~subject ~path failures =
     duration = 0.;
     attempts = 1;
     prop_stats = None;
-    srandom_root = None;
   }
 
 let executed_test (result : Run.result) = result.Run.subject = Run.Test

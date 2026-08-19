@@ -1320,20 +1320,6 @@ let pp_block t (r : Run.result) =
           pp_gen ~ansi:t.ansi ~excerpt:true ~filter:(Some name) ~commands:true
             ~invocation:t.invocation ~ind:indent t.out f)
         failures;
-      (* The test drew from [srandom] and failed: print the replay line —
-         the root token is in the log exactly when a stochastic failure
-         needs replaying. A property failure already prints its own
-         replay line from the same root; never two per block. *)
-      (match r.srandom_root with
-      | Some root
-        when not
-               (List.exists
-                  (fun (f : Failure.t) ->
-                    match f.kind with Failure.Property _ -> true | _ -> false)
-                  failures) ->
-          put t
-            (indent ^ replay_line t.invocation ~seed:root ~filter:(Some name))
-      | _ -> ());
       (match r.prop_stats with Some s -> pp_prop_stats t s | None -> ());
       match List.find_map (fun (f : Failure.t) -> f.output_tail) failures with
       | Some tail -> pp_tail t tail

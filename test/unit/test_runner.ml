@@ -1489,24 +1489,6 @@ let () =
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
-  let draw = ref 0 in
-  let stable =
-    Test_tree.test "stable" (fun () ->
-        draw := Random.State.bits (Run.srandom ()))
-  in
-  expect_run "srandom run A" ~config [ stable ] @@ fun _ ->
-  let first = !draw in
-  expect_run "srandom run B (recomposed suite)" ~config
-    [ Test_tree.test "other" (fun () -> ()); stable ]
-  @@ fun _ ->
-  check "srandom is stable across suite composition" (!draw = first);
-  let reseeded = { config with Run.seed = 0xdeadL } in
-  expect_run "srandom run C (new root)" ~config:reseeded [ stable ] @@ fun _ ->
-  check "srandom re-keys with the root seed" (!draw <> first)
-
-let () =
-  with_temp_root @@ fun root ->
-  let config = base_config ~log_dir:root () in
   let sibling = ref false in
   let tests =
     [
@@ -2506,53 +2488,6 @@ let () =
       check "a tail-position check failure is attributed to the declaration"
         (f.Failure.loc = Some (Loc.of_pos pos))
   | _ -> check "tail-loc: exactly one failure" false
-
-(* srandom recording (D5 §6) *)
-
-let () =
-  with_temp_root @@ fun root ->
-  let config = base_config ~log_dir:root () in
-  let tests =
-    [
-      Test_tree.test "draws and fails" (fun () ->
-          ignore (Random.State.bits (Run.srandom ()));
-          Check.fail "boom");
-      Test_tree.test "draws and passes" (fun () ->
-          ignore (Random.State.bits (Run.srandom ())));
-      Test_tree.test "never draws" (fun () -> Check.fail "boom");
-    ]
-  in
-  expect_run "srandom recording" ~config tests @@ fun outcome ->
-  let root_of path =
-    Option.bind (result_of outcome path) (fun r -> r.Run.srandom_root)
-  in
-  check "a failing test that drew records the run's root seed"
-    (root_of [ "draws and fails" ] = Some config.Run.seed);
-  check "a passing test that drew records it too (per-result data)"
-    (root_of [ "draws and passes" ] = Some config.Run.seed);
-  check "a test that never drew records nothing"
-    (root_of [ "never draws" ] = None)
-
-let () =
-  (* The flag is per attempt and the result records the final attempt's:
-     a retried test that draws on every attempt still carries the root. *)
-  with_temp_root @@ fun root ->
-  let config = base_config ~log_dir:root () in
-  let attempts = ref 0 in
-  let tests =
-    [
-      Test_tree.test ~retries:1 "flaky draw" (fun () ->
-          incr attempts;
-          ignore (Random.State.bits (Run.srandom ()));
-          if !attempts = 1 then Check.fail "first attempt");
-    ]
-  in
-  expect_run "srandom on retries" ~config tests @@ fun outcome ->
-  match result_of outcome [ "flaky draw" ] with
-  | Some r ->
-      check "the final attempt's draw is recorded across retries"
-        (r.Run.attempts = 2 && r.Run.srandom_root = Some config.Run.seed)
-  | None -> check "flaky draw result present" false
 
 (* Summary *)
 

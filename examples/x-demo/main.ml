@@ -145,10 +145,6 @@ let compact_tests =
         equal (list string)
           [ "compact"; "current_test knows its own path" ]
           (current_test ()));
-    test "srandom is stable within a test" (fun () ->
-        let a = Random.State.int (srandom ()) 1_000_000 in
-        let b = Random.State.int (srandom ()) 1_000_000 in
-        equal int a b);
     test "temp_dir and temp_file are runner-cleaned" (fun () ->
         let dir = temp_dir () in
         is_true (Sys.is_directory dir);

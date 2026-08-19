@@ -467,9 +467,7 @@ prop "rect area matches the formula" ~examples:[ Rect (2., 0.) ] gen_rect law
 ```
 
 Replay a failure by pasting the printed replay line (`--seed s1:…`
-plus the filter); fix the bug before touching the generator. For a
-plain test that wants stable stochastic inputs without the property
-machinery, `srandom ()` gives a replayable `Random.State.t`.
+plus the filter); fix the bug before touching the generator.
 
 ## 6. Stateful tests
 

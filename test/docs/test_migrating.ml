@@ -257,9 +257,6 @@ let b_package =
       test "temp_dir replaces with_temp_dir" (fun () ->
           let dir = temp_dir () in
           is_true (Sys.is_directory dir));
-      test "srandom replaces the WINDTRAP_SEED parser" (fun () ->
-          let state = srandom () in
-          ignore (Random.State.bits state));
       test "of_module witnesses a conventional module" (fun () ->
           equal
             (Testable.make ~pp:Point.pp ~equal:Point.equal)

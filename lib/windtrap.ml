@@ -221,7 +221,6 @@ let output ?pos () = Capture.output ?pos (Run.capture (Run.current ()))
 
 let current_test = Run.current_test
 let subtest = Run.subtest
-let srandom = Run.srandom
 let temp_dir = Run.temp_dir
 let temp_file = Run.temp_file
 let setenv = Run.setenv
