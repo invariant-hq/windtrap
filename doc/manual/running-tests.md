@@ -23,8 +23,8 @@ To assert on exit behavior, run the exiting code in a subprocess.
 
 Direct execution takes flags; under `dune runtest` there is no argv,
 so the flags that make sense there have `WINDTRAP_*` environment
-mirrors and *the mirrors are the CLI* (`-l` and `--failed` have none:
-both want a terminal and a build tree that survives between runs):
+mirrors and *the mirrors are the CLI* (`-l`, `--failed`, `-x`, `-h` and
+`-V` have none: they want a command line):
 
 ```
 $ dune exec test/test_mylib.exe -- -f "parser" -x
@@ -58,6 +58,24 @@ inventory. The ones that matter daily:
 Precedence is CLI > environment > default.
 A test's path is its group names then its own, joined with `" › "`;
 `-f`/`-e` match that string as a substring.
+
+A few variables have no flag at all, because a flag would exist for
+half the users — the inline (`inline_tests`) runner accepts only dune's
+protocol on its command line. `--help` lists them under `ENVIRONMENT`;
+two are worth knowing here.
+
+`WINDTRAP_TAIL_ERRORS` bounds the captured-output tail a failure prints
+(Captured output, below).
+
+`WINDTRAP_PROJECT_ROOT` overrides where the runner thinks the project
+starts — the directory it resolves `__snapshots__/` paths against, and
+the root of the default capture-log tree at `_build/_tests`. Unset, it
+walks up from the working directory to the first `dune-project`,
+`dune-workspace` or `.git`, which is right in any dune tree. Set it when
+that walk has nothing to find or finds the wrong thing: a scratch tree
+built by a test harness, a checkout without a VCS directory, or a child
+process you are aiming at a sandbox of your own making. A relative value
+resolves against the working directory.
 
 ## Output
 

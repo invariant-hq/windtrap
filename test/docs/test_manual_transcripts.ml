@@ -3,11 +3,13 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The RFC guide's failing-path walkthroughs, recreated as passing tests:
-   each failing example runs in-process through Runner.execute and the test
-   asserts on the failure's rendering — the printed diff, counterexample,
-   replay command, and acceptance command the guide shows. (Failing examples
-   cannot live under examples/: runtest must stay green.) *)
+(* The manual's failure transcripts, pinned: each failing example the
+   chapters print runs in-process through Runner.execute and the test asserts
+   on the failure's rendering — the diff, the counterexample, the replay
+   command, the acceptance command. The transcripts in doc/manual/ are
+   captured by hand and checked by nothing; this file is what keeps the
+   renderer they were captured from from changing unnoticed. (Failing
+   examples cannot live under examples/: runtest must stay green.) *)
 
 open Windtrap
 open Windtrap.Private
@@ -17,8 +19,8 @@ open Windtrap.Private
    dialect, one implementation. *)
 open Harness
 
-let () = init "guide"
-let with_temp_root f = with_temp_root ~prefix:"windtrap-guide-" f
+let () = init "manual-transcripts"
+let with_temp_root f = with_temp_root ~prefix:"windtrap-manual-" f
 let root_seed = 0x7be1d2c904aa31f5L
 
 let base_config ~log_dir () =
@@ -165,7 +167,7 @@ let () =
   in
   let buffer = Buffer.create 1024 in
   let ppf = Format.formatter_of_buffer buffer in
-  (* The guide's transcript walkthrough shows the line-per-test level. *)
+  (* The manual's transcript walkthrough shows the line-per-test level. *)
   let renderer =
     Render.create ~out:ppf ~ansi:false ~mode:`Verbose
       ~invocation:(`Exe "dune exec test/main.exe --") ()

@@ -52,7 +52,7 @@
   (pps ppx_windtrap.mutate)))
 
 ; Nothing links [windtrap_mutate_both]: its job is to be compiled with
-; both backends enabled at once, which is the stanza pair the guide
+; both backends enabled at once, which is the stanza pair the manual
 ; shows. Coverage wraps application out-edges, mutation replaces
 ; expressions with guards, and each must survive the other's output.
 

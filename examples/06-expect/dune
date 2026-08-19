@@ -1,4 +1,5 @@
-; The guide's expect-test example: a library with (inline_tests) and
+; The manual's expect-test example
+; (doc/manual/snapshots-and-expect.md): a library with (inline_tests) and
 ; (pps ppx_windtrap). dune builds and drives the inline runner; stale
 ; [%expect] payloads show as a diff and are accepted with dune promote.
 

@@ -1,4 +1,5 @@
-; The guide's five-minutes example: a (test) stanza and one run call.
+; The manual's five-minutes example (doc/manual/getting-started.md):
+; a (test) stanza and one run call.
 
 (test
  (name test_mylib)

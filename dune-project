@@ -23,18 +23,18 @@
  (name windtrap)
  (synopsis "One library for all your OCaml tests")
  (description
-  "Unit, property, and snapshot tests behind one flat API: every assertion failure prints the values and marks what changed, generators shrink integrally and replay from a printed seed, snapshot baselines are keyed by name, and the runner handles filtering, sharding, and JUnit output. Inline expect tests and code coverage come from the companion ppx_windtrap package.")
+  "Unit, property, stateful, and snapshot tests behind one flat API: every assertion failure prints the values and marks what changed, generators shrink integrally and replay from a printed seed, snapshot baselines are keyed by name, and the runner handles filtering, sharding, and JUnit output. Inline expect tests, code coverage, and mutation testing come from the companion ppx_windtrap package.")
  (depends
   (ocaml
    (>= 5.0)))
  (tags
-  (testing unit-test property-testing expect-test snapshot-testing coverage)))
+  (testing unit-test property-testing stateful-testing expect-test snapshot-testing coverage mutation-testing)))
 
 (package
  (name ppx_windtrap)
  (synopsis "PPX and instrumentation backend for windtrap")
  (description
-  "Inline test syntax for windtrap (let%test, module%test, let%expect_test, [%expect], [%expect_exact], [%expect.output]) with corrections accepted via dune promote, plus the expression-coverage instrumentation backend enabled with dune's --instrument-with ppx_windtrap.coverage.")
+  "Inline test syntax for windtrap (let%test, module%test, let%expect_test, [%expect], [%expect_exact], [%expect.output]) with corrections accepted via dune promote, plus two instrumentation backends enabled with dune's --instrument-with: ppx_windtrap.coverage for expression coverage and ppx_windtrap.mutate for mutation testing.")
  (depends
   (ocaml
    (>= 5.0))
@@ -43,4 +43,4 @@
   (ppxlib
    (>= 0.37.0)))
  (tags
-  (testing ppx expect-test coverage)))
+  (testing ppx expect-test coverage mutation-testing)))

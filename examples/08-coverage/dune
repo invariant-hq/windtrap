@@ -1,4 +1,4 @@
-; The coverage walkthrough (the guide's "Coverage" section): one stanza
+; The coverage walkthrough (doc/manual/coverage.md): one stanza
 ; on the library under test, committed once and inert without the flag —
 ; this plain `dune runtest` runs uninstrumented, with zero overhead and
 ; no coverage output. For the inline percentage and the reports:

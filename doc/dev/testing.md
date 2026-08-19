@@ -38,9 +38,11 @@ Eleven directories under `test/`:
 
 Three kinds of compiled documentation run in the tree:
 
-- `test/docs/test_guide.ml` — the guide's failing walkthroughs,
-  executed in-process, asserting the printed diff, counterexample,
-  replay and acceptance commands;
+- `test/docs/test_manual_transcripts.ml` — the manual's failing
+  walkthroughs, executed in-process, asserting the printed diff,
+  counterexample, replay and acceptance commands. The transcripts in
+  `doc/manual/` are captured by hand and checked by nothing, so this is
+  what keeps the renderer they were captured from from moving unnoticed;
 - `test/docs/test_cookbook.ml` and `test/docs/test_migrating.ml` —
   compiled mirrors of `doc/cookbook.md` and the migration reference
   (the 0.2.0 entry in `CHANGES.md`);

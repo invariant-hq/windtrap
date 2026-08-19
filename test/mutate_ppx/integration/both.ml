@@ -1,5 +1,5 @@
 (* A library that enables both instrumentation backends at once, which
-   the guide's stanza shows side by side. Nothing links it: its job is to
+   the manual's stanza shows side by side. Nothing links it: its job is to
    be compiled under
    [--instrument-with ppx_windtrap --instrument-with ppx_windtrap.mutate]
    and to prove the two instrumenters compose - one wraps application

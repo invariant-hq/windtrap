@@ -1,4 +1,4 @@
-(* The guide's expect-test walkthrough: print what the code does, let
+(* doc/manual/snapshots-and-expect.md's walkthrough: print what the code does, let
    [%expect] hold the answer, and accept changes with dune promote. *)
 
 type token = Int of int | Plus | Eof
