@@ -457,8 +457,6 @@ let table =
        reader and the report's [arm] line cannot name three different
        variables. *)
     Env_setting
-      { var = "WINDTRAP_COLUMNS"; doc = "Terminal width override for reports" };
-    Env_setting
       {
         var = "WINDTRAP_TAIL_ERRORS";
         doc = "Captured-output lines shown per failure";
@@ -497,16 +495,11 @@ let table =
       };
   ]
 
-(* The flagless settings the resolution itself consumes, read through
-   [Env]'s generic readers beside their rows above. Their tolerance is
-   the setting's vocabulary — a non-positive or unparseable width counts
-   as unset — where a mirror refuses loudly: no flag exists here for a
-   lenient reading to drift from. *)
-
-let columns () =
-  match Env.get_int "WINDTRAP_COLUMNS" with
-  | Some n when n > 0 -> Some n
-  | _ -> None
+(* The flagless setting the resolution itself consumes, read through
+   [Env]'s generic reader beside its row above. Its tolerance is the
+   setting's vocabulary — an unparseable count is unset — where a mirror
+   refuses loudly: no flag exists here for a lenient reading to drift
+   from. *)
 
 let tail_errors () = Env.get_int "WINDTRAP_TAIL_ERRORS"
 
@@ -735,7 +728,6 @@ let resolved below =
     {
       Render.color =
         Option.value below.color ~default:render_defaults.Render.color;
-      columns = columns ();
       tail_errors = tail_errors ();
       slow_threshold =
         Option.value below.slow_threshold

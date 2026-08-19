@@ -77,9 +77,6 @@ type settings = {
       (** [--color]/[WINDTRAP_COLOR]: the color preference. The driver resolves
           it against the sink's terminal status ({!Env.resolve_color}) into
           {!create}'s [ansi] — this module never sniffs. *)
-  columns : int option;
-      (** [WINDTRAP_COLUMNS]: terminal width override; [None] leaves
-          {!create}'s default. *)
   tail_errors : int option;
       (** [WINDTRAP_TAIL_ERRORS]: captured-output lines shown per failure
           ({!create}'s [tail_lines]); [None] leaves the default. *)
@@ -130,8 +127,9 @@ val create :
       with terminal cursor controls. Pass the sink's TTY status; under
       [ansi:false] it is off regardless. Defaults to [false].
     - [columns], the terminal width used to bound rules and the live display.
-      Defaults to [80]. The compact row wraps at 60 glyphs regardless, so rows
-      are byte-stable across terminals.
+      Always [80] for a run — the transcript is a report, not a canvas, and one
+      width keeps a pipe and a wide terminal byte-identical. The compact row
+      wraps at 60 glyphs regardless. Renderer tests pass other widths.
     - [tail_lines], the maximum captured-output lines shown per failure block
       ([WINDTRAP_TAIL_ERRORS]). Defaults to [10].
     - [slow_threshold], the seconds a test not tagged ["slow"] may take before

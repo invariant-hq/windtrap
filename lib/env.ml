@@ -116,9 +116,9 @@ let resolve_color mode ~tty ~inside_dune ~term_dumb =
    The flag mirrors are not here: each is declared beside its flag in
    [Cli]'s table and read through the generic readers above, which is what
    keeps a mirror from parsing differently from the flag it mirrors — and
-   so are the flagless settings the resolution itself consumes
-   (WINDTRAP_COLUMNS, WINDTRAP_TAIL_ERRORS). What remains are the
-   variables read below the CLI layer or beside it. *)
+   so is the flagless setting the resolution itself consumes
+   (WINDTRAP_TAIL_ERRORS). What remains are the variables read below the
+   CLI layer or beside it. *)
 
 let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 

@@ -139,10 +139,9 @@ val resolve_color :
 
 (** {1:standalone Settings with no flag}
 
-    The variables read below the CLI layer or beside it. The flagless settings
-    the resolution itself consumes ([WINDTRAP_COLUMNS], [WINDTRAP_TAIL_ERRORS])
-    are not here either: they are rows of {!Cli}'s table, read there through
-    {!get_int}. *)
+    The variables read below the CLI layer or beside it. The flagless setting
+    the resolution itself consumes ([WINDTRAP_TAIL_ERRORS]) is not here either:
+    it is a row of {!Cli}'s table, read there through {!get_int}. *)
 
 val project_root : unit -> string option
 (** [project_root ()] is [WINDTRAP_PROJECT_ROOT], overriding project-root

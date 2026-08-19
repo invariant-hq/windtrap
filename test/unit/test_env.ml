@@ -77,20 +77,19 @@ let tests =
         clear "WINDTRAP_STREAM";
         equal ~msg:"stream unset" (option bool) None (bool_of "WINDTRAP_STREAM"));
     test "numeric readers" (fun () ->
-        (* The flagless numeric settings (WINDTRAP_COLUMNS,
-           WINDTRAP_TAIL_ERRORS) are rows of Cli's table and their
-           vocabularies are pinned there; this pins the generic reader
-           they go through. *)
-        set "WINDTRAP_COLUMNS" "100";
+        (* The flagless numeric setting (WINDTRAP_TAIL_ERRORS) is a row
+           of Cli's table and its vocabulary is pinned there; this pins
+           the generic reader it goes through. *)
+        set "WINDTRAP_TAIL_ERRORS" "100";
         equal ~msg:"get_int parses" (option int) (Some 100)
-          (Env.get_int "WINDTRAP_COLUMNS");
-        set "WINDTRAP_COLUMNS" " 25 ";
+          (Env.get_int "WINDTRAP_TAIL_ERRORS");
+        set "WINDTRAP_TAIL_ERRORS" " 25 ";
         equal ~msg:"the value is trimmed" (option int) (Some 25)
-          (Env.get_int "WINDTRAP_COLUMNS");
-        set "WINDTRAP_COLUMNS" "wide";
+          (Env.get_int "WINDTRAP_TAIL_ERRORS");
+        set "WINDTRAP_TAIL_ERRORS" "wide";
         equal ~msg:"an unparseable value reads as unset" (option int) None
-          (Env.get_int "WINDTRAP_COLUMNS");
-        clear "WINDTRAP_COLUMNS");
+          (Env.get_int "WINDTRAP_TAIL_ERRORS");
+        clear "WINDTRAP_TAIL_ERRORS");
     test "value mirrors are passed through unparsed, like the seed" (fun () ->
         (* The CLI layer owns validation (prop/F-4): a malformed winning
            token must reach it verbatim so it can error naming the

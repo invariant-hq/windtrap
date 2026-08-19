@@ -67,13 +67,12 @@ type invocation = [ `Exe of string | `Mirrors ]
    is a type boundary, not a discipline. *)
 type settings = {
   color : Env.color_mode;
-  columns : int option;
   tail_errors : int option;
   slow_threshold : float;
 }
 
 let default_settings =
-  { color = Env.Auto; columns = None; tail_errors = None; slow_threshold = 1.0 }
+  { color = Env.Auto; tail_errors = None; slow_threshold = 1.0 }
 
 let accept_line = function
   | `Exe cmd -> spf "accept: %s -u, then review with git diff" cmd

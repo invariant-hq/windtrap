@@ -104,9 +104,8 @@ let read_file path =
 let run_counter = ref 0
 
 (* The environment is stated in full rather than extended: this suite
-   asserts on transcripts byte for byte, and WINDTRAP_COLUMNS,
-   WINDTRAP_VERBOSE or WINDTRAP_MUTATE_TRY in a developer's shell would
-   reshape them. Nothing is inherited but what a process needs to
+   asserts on transcripts byte for byte, and WINDTRAP_VERBOSE or
+   WINDTRAP_MUTATE_TRY in a developer's shell would reshape them. Nothing is inherited but what a process needs to
    start. *)
 let inherited =
   List.concat_map

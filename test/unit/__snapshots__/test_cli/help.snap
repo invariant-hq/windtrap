@@ -49,7 +49,6 @@ ENVIRONMENT:
   WINDTRAP_JUNIT           Mirror of --junit
   WINDTRAP_COLOR           Mirror of --color
   WINDTRAP_OUTPUT          Mirror of --output
-  WINDTRAP_COLUMNS         Terminal width override for reports
   WINDTRAP_TAIL_ERRORS     Captured-output lines shown per failure
   WINDTRAP_PROJECT_ROOT    Project root for snapshot path resolution
   WINDTRAP_COVERAGE        Inline coverage line: on or off

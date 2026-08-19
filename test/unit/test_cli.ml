@@ -358,7 +358,6 @@ let () =
       "WINDTRAP_UPDATE";
       "WINDTRAP_VERBOSE";
       "WINDTRAP_SLOW_THRESHOLD";
-      "WINDTRAP_COLUMNS";
       "WINDTRAP_TAIL_ERRORS";
       "WINDTRAP_PROJECT_ROOT";
       "WINDTRAP_COVERAGE";
@@ -407,8 +406,7 @@ let () =
   check "default: no JUnit report" ((settings Cli.empty).Cli.junit = None);
   let render = render_settings Cli.empty in
   check "default: color auto" (render.Render.color = Env.Auto);
-  check "default: env-only settings unset"
-    (render.Render.columns = None && render.Render.tail_errors = None);
+  check "default: env-only settings unset" (render.Render.tail_errors = None);
   check "default: log dir non-empty" (String.length config.Run.log_dir > 0)
 
 (* Resolution: precedence *)
@@ -472,7 +470,6 @@ let () =
   Unix.putenv "WINDTRAP_TIMEOUT" "1.5";
   Unix.putenv "WINDTRAP_PROP_COUNT" "7";
   Unix.putenv "WINDTRAP_MAX_SHRINK" "40";
-  Unix.putenv "WINDTRAP_COLUMNS" "100";
   Unix.putenv "WINDTRAP_TAIL_ERRORS" "3";
   Unix.putenv "WINDTRAP_EXCLUDE" "skipme";
   let config = resolve Cli.empty in
@@ -481,26 +478,19 @@ let () =
   check "WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
   check "WINDTRAP_MAX_SHRINK" (config.Run.max_shrink = Some 40);
   let render = render_settings Cli.empty in
-  check "WINDTRAP_COLUMNS" (render.Render.columns = Some 100);
   check "WINDTRAP_TAIL_ERRORS" (render.Render.tail_errors = Some 3);
   check "WINDTRAP_EXCLUDE" (config.Run.exclude = Some "skipme");
   clear_env ()
 
-(* The flagless rows keep their own tolerant vocabularies — no flag
-   exists for a lenient reading to drift from, so a hostile or
-   unparseable value counts as unset rather than refusing the run. *)
+(* The flagless row keeps its own tolerant vocabulary — no flag exists
+   for a lenient reading to drift from, so a hostile or unparseable value
+   counts as unset rather than refusing the run. *)
 let () =
   reg "flagless settings vocabulary" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_COLUMNS" "0";
-  check "non-positive columns count as unset"
-    ((render_settings Cli.empty).Render.columns = None);
-  Unix.putenv "WINDTRAP_COLUMNS" "-3";
-  check "negative columns count as unset"
-    ((render_settings Cli.empty).Render.columns = None);
-  Unix.putenv "WINDTRAP_COLUMNS" "wide";
-  check "unparseable columns count as unset"
-    ((render_settings Cli.empty).Render.columns = None);
+  Unix.putenv "WINDTRAP_TAIL_ERRORS" "wide";
+  check "an unparseable tail count is unset"
+    ((render_settings Cli.empty).Render.tail_errors = None);
   clear_env ()
 
 (* The mirrors that only existed as flags. Under `dune runtest` the mirrors

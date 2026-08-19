@@ -57,7 +57,6 @@ let renderer ~render ~mode ~invocation () =
      log. *)
   Render.create ~out:Format.std_formatter ~ansi ~mode
     ~live:(tty && not (Env.in_github_actions ()))
-    ?columns:(Option.map (Int.max 20) render.Render.columns)
     ?tail_lines:(Option.map (Int.max 0) render.Render.tail_errors)
     ~slow_threshold:render.Render.slow_threshold ~invocation ()
 

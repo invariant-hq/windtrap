@@ -20,9 +20,9 @@
     accepts exactly what its flag accepts, refuses exactly what its flag
     refuses, with the same [expected] wording, and differs only in naming the
     variable rather than the flag as the source of a bad value. {!Env} is
-    consulted for the reading, not for the inventory — the flagless rows that
-    resolution itself consumes ([WINDTRAP_COLUMNS], [WINDTRAP_TAIL_ERRORS])
-    are read here through its generic readers; what it
+    consulted for the reading, not for the inventory — the flagless row that
+    resolution itself consumes ([WINDTRAP_TAIL_ERRORS]) is read here through its
+    generic reader; what it
     still owns outright are the variables read below this layer
     ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes) and the two
     vocabularies wider than their flag's ([WINDTRAP_UPDATE]'s [force],
@@ -168,9 +168,9 @@ type settings = {
   config : Run.config;  (** The run configuration. *)
   render : Render.settings;
       (** The renderer settings: the presentation knobs — [--color], the
-          [WINDTRAP_COLUMNS]/[WINDTRAP_TAIL_ERRORS] overrides,
-          [--slow-threshold] — resolved with the same precedence as [config] and
-          handed to the driver's renderer construction. *)
+          [WINDTRAP_TAIL_ERRORS] override, [--slow-threshold] — resolved with
+          the same precedence as [config] and handed to the driver's renderer
+          construction. *)
   coverage : bool;
       (** Whether the inline coverage line prints ([WINDTRAP_COVERAGE], on
           unless the variable says otherwise). *)
