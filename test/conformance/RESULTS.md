@@ -21,8 +21,11 @@ Those goldens are the output of a two-stage pipeline (see
 windtrap build. Windtrap patches the stale payload's extent and leaves
 the rest of the file alone, which is what ppx_expect's *runtime* does;
 the corrected-file goldens below are therefore windtrap's own recorded
-output. Eight of the fifteen are byte-identical to the vendored upstream
-bytes anyway; the seven that are not —
+output. Eight of the fifteen vendored corrected goldens are
+byte-identical to the upstream bytes anyway (the corpus's other three
+`.ml.corrected.expected` files are windtrap-authored
+`=== no correction produced ===` placeholders, not upstream bytes); the
+seven that are not —
 `negative-tests/{escaped_strings,exact,flexible,missing,normal_strings,
 spacing}` and `explicit-strict-false/negative-test/nine` — differ only
 where the style pass used to reach: a node head left where the author
@@ -87,9 +90,10 @@ The findings that pass drove out, all of them still fixed:
    that keeps the extension id: `{%expect xxx|…|xxx}`.
 2. **D3 (quote escaping, raw CR bytes) — FIXED.** Quote-delimited
    corrections render each line and each newline escaped onto one
-   source line (`[%expect " \n a\n b\n "]`), wrapped with
-   line-continuation escapes at the 90-column margin
-   (`normal_strings`' wrapped shape reproduced byte-for-byte).
+   source line (`[%expect " \n a\n b\n "]`) rather than emitting raw
+   bytes. The continuation-wrap at a 90-column margin that once went
+   with it was the style pass's, and went with it: a long quoted
+   payload now stays on its one line (`normal_strings`).
 3. **D4/D6/D7 (node shape, re-indent, bare materialization) — FIXED.**
    A corrected payload is re-indented in standard shape: single-line
    contents collapse onto one line, multi-line contents sit at node
@@ -170,7 +174,8 @@ keep the last instance's splice.
   driven by `drive.exe` (`test/conformance/drive.ml`), which records
   the promotion-protocol exit code and materializes
   `=== no correction produced ===` placeholders so a divergence is
-  always a readable diff. Goldens: upstream `.ml.corrected.expected`.
+  always a readable diff. Goldens: `.ml.corrected.expected`, windtrap's
+  own recorded output (see [The bar](#the-bar)).
 - Rejected set: `pp.exe --impl` per file, exit 1 enforced, stderr
   goldened (`*.rejected.expected`); `hello_async.ml` additionally
   typechecked against monadic shims (`corpus/example/shim/`) with a
