@@ -1,4 +1,4 @@
-# x-demo — the output validation playground
+# render_demo — the output validation playground
 
 One suite that exercises every output surface windtrap has, with most
 tests **failing by design** so every failure report renders. Use it to
@@ -10,26 +10,32 @@ Rules of the house:
 - The default run **exits 1 on purpose**. This directory is a plain
   `(executable)`, deliberately *not* wired into `runtest` — the
   whole-tree `dune runtest` stays green. The default alias still
-  builds it, so it cannot bit-rot.
+  builds it, so it cannot bit-rot. That exit is also why it lives
+  here and not under `examples/`, which ships projects a user copies
+  and runs green.
+- The suite still calls itself `x-demo`, which is what the transcripts
+  below quote: the name is a run's identity and it keys the capture
+  logs under `_build/_tests/`, so renaming the directory left it
+  alone.
 - All commands below run from the repository root and were verified
   as written.
 - When validating escape codes, look at raw bytes (`| cat -v`), and
   judge the live surfaces in a real terminal — a pipe hides them.
 
-The suite runs 100 tests: 67 pass, 1 skip, 1 expected failure,
-31 failures (every failure rendering exactly once), ~2.7 s wall time.
+The suite runs 99 tests: 66 pass, 1 skip, 1 expected failure,
+31 failures (every failure rendering exactly once), ~3 s wall time.
 
 ## 1. The default transcript (compact level)
 
 ```sh
-dune exec examples/x-demo/main.exe
+dune exec test/render_demo/main.exe
 ```
 
 Read it top to bottom; every group is one tour stop.
 
-- **Header** `x-demo: 100 tests (seed s1:…)` — the seed prints because
+- **Header** `x-demo: 99 tests (seed s1:…)` — the seed prints because
   the suite declares properties.
-- **Glyph row** — 60 green dots, then the faint `[60/100]` counter and
+- **Glyph row** — 60 green dots, then the faint `[60/99]` counter and
   the wrap. Row 2 opens with `S` (skip), faint `x` (expected
   failure), then the first `F`: an `xfail` that *passed*, reported
   loudly as `expected to fail (issue #57), but the test passed`.
@@ -37,7 +43,7 @@ Read it top to bottom; every group is one tour stop.
   (test 63): on a TTY you see the header and the buffered row appear
   mid-run, then glyphs stream one by one. A pipe sees byte-identical
   output flushed glyph by glyph.
-- **`releasing fixture (examples/x-demo/main.ml:90)`** — the runner's
+- **`releasing fixture (test/render_demo/main.ml:90)`** — the runner's
   note after the last test, before the failure blocks.
 - **Failure blocks** (see section 3) — each with `file:line`, the
   source-line excerpt, and the kind-specific detail.
@@ -45,7 +51,7 @@ Read it top to bottom; every group is one tour stop.
   (`1.3xs  runtime › reindex …`) with the duration in its own leading
   column, and the hint line naming the `slow` tag and the threshold
   knob. The tagged sibling (`nightly compaction`) earns no warning.
-- **Summary** — `67 passed, 1 skipped, 1 expected failure, 31 failed
+- **Summary** — `66 passed, 1 skipped, 1 expected failure, 31 failed
   (2 subtest failures) in …s.`, and nothing after it: no run advertises
   `--failed`.
 
@@ -54,7 +60,7 @@ Read it top to bottom; every group is one tour stop.
 Run the same command in a real terminal (or through `script`):
 
 ```sh
-script -q /dev/null dune exec examples/x-demo/main.exe
+script -q /dev/null dune exec test/render_demo/main.exe
 ```
 
 Validate: the faint `[k/n] current-test…` tail that trails the row
@@ -69,7 +75,7 @@ The `assertions` group holds one exemplary failure per verb; jump
 straight to it with:
 
 ```sh
-dune exec examples/x-demo/main.exe -- -f assertions
+dune exec test/render_demo/main.exe -- -f assertions
 ```
 
 Checklist for the blocks, in order:
@@ -113,7 +119,7 @@ In the default transcript, validate:
   steps):` with a minimal two-element list (e.g. `[0; -1]`; the exact
   pair varies with the seed, the replayed run reproduces it exactly),
   the inner `equal` diff under `which failed at:`, and the replay line
-  `replay: dune exec examples/x-demo/main.exe -- --seed s1:…
+  `replay: dune exec test/render_demo/main.exe -- --seed s1:…
   -f 'properties › reverse is the identity (it is not)'`;
 - `pinned examples run first` — `counterexample (example 1): 3`,
   unshrunk, and *no* replay line (examples do not need the seed);
@@ -121,18 +127,18 @@ In the default transcript, validate:
   discards exhausted the generation budget (0 cases passed)`: an
   over-constrained `assume` fails loudly instead of silently passing
   on zero cases;
-- `insert keeps lists sorted (under-covered)` — `coverage requirement
-  not met: long (> 10 elements) 0.0% < 75.0% (0 hits)`, the faint
-  `labels (100 passing cases):` distribution from
-  `collect`/`classify`, and the `coverage requirements:` table with
-  `— unsatisfied`.
+- `insert keeps lists sorted (under-covered)` — `never covered:
+  "long (> 10 elements)" (over 100 passing cases)`, followed by the
+  faint `labels (100 passing cases):` distribution from
+  `collect`/`classify`. `cover` asks presence, so the sentence names
+  the label that was never reached rather than a percentage.
 
 Replay determinism — copy the token from the header, then run twice
 and compare the counterexample lines (identical, including the shrink
 count):
 
 ```sh
-dune exec examples/x-demo/main.exe -- --seed s1:PASTE_TOKEN -f "reverse is the identity"
+dune exec test/render_demo/main.exe -- --seed s1:PASTE_TOKEN -f "reverse is the identity"
 ```
 
 `WINDTRAP_SEED=s1:PASTE_TOKEN` is the env mirror of `--seed`.
@@ -146,7 +152,7 @@ transcript:
 - `usage text drifted from its baseline` — `snapshot "usage":
   mismatch with …/__snapshots__/main/usage.snap`, a unified diff
   (baseline lacks `--trace` and says `(default 1)`), and the
-  acceptance line `accept: dune exec examples/x-demo/main.exe -- -u,
+  acceptance line `accept: dune exec test/render_demo/main.exe -- -u,
   then review with git diff`;
 - `release notes have no baseline yet` — `no baseline at …`, the
   `proposed (5 lines):` block with `┆` gutters, and the same accept
@@ -156,17 +162,17 @@ The update/restore cycle (both spellings verified; update requests
 are refused under `CI`):
 
 ```sh
-dune exec examples/x-demo/main.exe -- -u -f snapshots
-# or: WINDTRAP_UPDATE=1 dune exec examples/x-demo/main.exe -- -f snapshots
+dune exec test/render_demo/main.exe -- -u -f snapshots
+# or: WINDTRAP_UPDATE=1 dune exec test/render_demo/main.exe -- -f snapshots
 ```
 
 Validate the acceptance notices, then the on-disk effect and restore
 the demo's deliberate drift:
 
 ```sh
-git diff examples/x-demo/__snapshots__
-git restore examples/x-demo/__snapshots__/main/usage.snap
-rm examples/x-demo/__snapshots__/main/release-notes.snap
+git diff test/render_demo/__snapshots__
+git restore test/render_demo/__snapshots__/main/usage.snap
+rm test/render_demo/__snapshots__/main/release-notes.snap
 ```
 
 (An update run rewrites `usage.snap` to the produced text and creates
@@ -178,13 +184,13 @@ to restore from — recreate the drifted baseline by hand instead:)
 printf '%s\n' 'usage: mytool [OPTION]... FILE...' '' \
   '  -o DIR      write output under DIR' \
   '  -j JOBS     run JOBS rewrites in parallel (default 1)' \
-  > examples/x-demo/__snapshots__/main/usage.snap
+  > test/render_demo/__snapshots__/main/usage.snap
 ```
 
 The CI guard, verified (refuses before anything executes, exit 1):
 
 ```sh
-CI=1 dune exec examples/x-demo/main.exe -- -u -f snapshots
+CI=1 dune exec test/render_demo/main.exe -- -u -f snapshots
 # snapshot update refused: CI is set. Set WINDTRAP_UPDATE=force to
 # update baselines on a CI machine.
 ```
@@ -214,14 +220,14 @@ In the default transcript's `runtime` group, validate:
 Slow-threshold knobs:
 
 ```sh
-WINDTRAP_SLOW_THRESHOLD=0 dune exec examples/x-demo/main.exe   # no slow warning line
-X_DEMO_SLEEP_SCALE=2 dune exec examples/x-demo/main.exe -- -v  # run > 5s: the -v "slowest tests:" list renders
+WINDTRAP_SLOW_THRESHOLD=0 dune exec test/render_demo/main.exe   # no slow warning line
+X_DEMO_SLEEP_SCALE=2 dune exec test/render_demo/main.exe -- -v  # run > 5s: the -v "slowest tests:" list renders
 ```
 
 Streaming (`-s` disables capture entirely):
 
 ```sh
-dune exec examples/x-demo/main.exe -- -s -f "output ()"
+dune exec test/render_demo/main.exe -- -s -f "output ()"
 ```
 
 Validate: `hello, capture` prints directly (before the header — output
@@ -232,7 +238,7 @@ comparing against silence.
 ## 7. The verbosity axis
 
 ```sh
-dune exec examples/x-demo/main.exe -- -v
+dune exec test/render_demo/main.exe -- -v
 ```
 
 `-v`: one status line per test — `PASS name 0.1ms`, `SKIP … (no
@@ -243,32 +249,32 @@ and summary. The level changes what prints, never outcomes.
 ## 8. Selection and exit codes
 
 ```sh
-dune exec examples/x-demo/main.exe -- -l -f "equal on"   # list the selection, run nothing
-dune exec examples/x-demo/main.exe -- -f "assertions › satisfies"
-dune exec examples/x-demo/main.exe -- -e assertions      # exclude by substring
-dune exec examples/x-demo/main.exe -- --tag prop -l      # properties carry the "prop" tag
-dune exec examples/x-demo/main.exe -- --exclude-tag io -l  # the runtime group is tagged "io"
-dune exec examples/x-demo/main.exe -- --exclude-tag slow -l   # drops the slow-tagged test
-dune exec examples/x-demo/main.exe -- --shard 1/3 -l     # deterministic path-hash bucket
-dune exec examples/x-demo/main.exe -- -x                 # bail at the first failure
-dune exec examples/x-demo/main.exe -- --failed           # rerun only the last run's 31 failures
-dune exec examples/x-demo/main.exe -- -f "compact › addition"  # all-green selection: exit 0
-dune exec examples/x-demo/main.exe -- -f "no such test"; echo "exit=$?"
+dune exec test/render_demo/main.exe -- -l -f "equal on"   # list the selection, run nothing
+dune exec test/render_demo/main.exe -- -f "assertions › satisfies"
+dune exec test/render_demo/main.exe -- -e assertions      # exclude by substring
+dune exec test/render_demo/main.exe -- --tag prop -l      # properties carry the "prop" tag
+dune exec test/render_demo/main.exe -- --exclude-tag io -l  # the runtime group is tagged "io"
+dune exec test/render_demo/main.exe -- --exclude-tag slow -l   # drops the slow-tagged test
+dune exec test/render_demo/main.exe -- --shard 1/3 -l     # deterministic path-hash bucket
+dune exec test/render_demo/main.exe -- -x                 # bail at the first failure
+dune exec test/render_demo/main.exe -- --failed           # rerun only the last run's 31 failures
+dune exec test/render_demo/main.exe -- -f "compact › addition"  # all-green selection: exit 0
+dune exec test/render_demo/main.exe -- -f "no such test"; echo "exit=$?"
 ```
 
 Validate: `--failed` runs exactly 31 tests, all `F`; the three
-`--shard K/3` buckets partition the 100 tests (28/36/36, stable across
+`--shard K/3` buckets partition the 99 tests (27/36/36, stable across
 machines); the all-green selection is the healthy-run surface —
 exactly one line, `x-demo: 41 passed in …s (seed s1:…).`, no header,
 no glyphs, exit **0**; the bogus filter prints `x-demo: no tests
-ran: filter "no such test" matched none of 100 tests.` with the `-l`
+ran: filter "no such test" matched none of 99 tests.` with the `-l`
 hint under it
 and exits **2**.
 
 ## 9. Color and raw bytes
 
 ```sh
-WINDTRAP_COLOR=never dune exec examples/x-demo/main.exe | cat -v
+WINDTRAP_COLOR=never dune exec test/render_demo/main.exe | cat -v
 ```
 
 Validate: **zero** escape bytes anywhere, and every highlight degrades
@@ -279,7 +285,7 @@ Compare
 with the default (piped output under dune is still styled):
 
 ```sh
-dune exec examples/x-demo/main.exe | cat -v   # ESC[31m etc. visible
+dune exec test/render_demo/main.exe | cat -v   # ESC[31m etc. visible
 ```
 
 ## 10. Coverage
@@ -289,7 +295,7 @@ ppx_windtrap.coverage))`; plain builds have zero overhead. The verified
 instrumented commands (coverage is measured over `main.ml` itself):
 
 ```sh
-dune exec --instrument-with ppx_windtrap.coverage examples/x-demo/main.exe -- -f "compact › addition"
+dune exec --instrument-with ppx_windtrap.coverage test/render_demo/main.exe -- -f "compact › addition"
 ```
 
 prints the inline line after the summary:
@@ -310,7 +316,7 @@ dune exec windtrap -- coverage
 ## 11. CI artifacts
 
 ```sh
-dune exec examples/x-demo/main.exe -- -f "snapshots › usage" --junit /tmp/junit.xml
+dune exec test/render_demo/main.exe -- -f "snapshots › usage" --junit /tmp/junit.xml
 cat /tmp/junit.xml
 ```
 
@@ -323,7 +329,7 @@ GitHub Actions annotations require `CI` and `GITHUB_ACTIONS` both set
 is emitted. The verified run:
 
 ```sh
-CI=1 GITHUB_ACTIONS=1 dune exec examples/x-demo/main.exe -- -f "snapshots › usage"
+CI=1 GITHUB_ACTIONS=1 dune exec test/render_demo/main.exe -- -f "snapshots › usage"
 ```
 
 wraps the ordinary compact transcript in a collapsed group and then
@@ -334,7 +340,7 @@ failure block bytes — acceptance hint included:
 ::group::x-demo
   …the failure block and summary as in a plain run…
 ::endgroup::
-::error file=examples/x-demo/main.ml,line=311,title=Test failure%3A snapshots › usage text drifted from its baseline::    examples/x-demo/main.ml:311%0A    snapshot "usage": mismatch with …%0A…
+::error file=test/render_demo/main.ml,line=311,title=Test failure%3A snapshots › usage text drifted from its baseline::    test/render_demo/main.ml:311%0A    snapshot "usage": mismatch with …%0A…
 ```
 
 Validate: zero `::` lines when either variable is missing; the

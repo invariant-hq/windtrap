@@ -1,7 +1,8 @@
 # Windtrap examples
 
-Each directory is a self-contained test executable wired into `dune runtest`,
-recreating the walkthrough from the windtrap guide:
+Each directory is a self-contained project wired into `dune runtest`, kept
+for the build setup a documentation snippet cannot show. The prose that
+goes with them is the [manual](../doc/manual/); these are the stanzas.
 
 - `01-first-test` — the five-minutes example: `run`, `test`, `group`, `equal`, `raises`.
 - `06-expect` — `let%expect_test` with `(inline_tests)` and `(pps ppx_windtrap)`; stale `[%expect]` payloads accepted with `dune promote`.
@@ -10,4 +11,6 @@ recreating the walkthrough from the windtrap guide:
 - `x-blueprint` — the canonical project layout, ready to copy: a library with both instrumentation stanzas, `test/{unit,failures,expect,cram}` with one suite per file, the project verdict aliases, a live `xfail` backlog, and a dismissed equivalent mutant — the shape the windtrap skill teaches, as a buildable project.
 
 Run them all with `dune runtest examples`, or one directly, e.g.
-`dune exec examples/01-first-test/test_mylib.exe`.
+`dune exec examples/01-first-test/test_mylib.exe`. Every example here
+passes; the renderer's deliberately-failing validation harness lives in
+[`test/render_demo/`](../test/render_demo/), which is not an example.
