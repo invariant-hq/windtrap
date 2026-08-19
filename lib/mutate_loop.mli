@@ -222,6 +222,31 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     [Out_of_memory] would run the coverage at-exit dump against a path resolved
     before the fork and overwrite the parent's [.coverage] (Law 16e). *)
 
+(** {1:report The report projection} *)
+
+val render_data :
+  resolve_source:(string -> string option) ->
+  loc_of:(string -> Loc.t option) ->
+  duration:float option ->
+  seed:Seed.seed option ->
+  siblings:bool ->
+  total:int ->
+  Windtrap_mutate.t ->
+  Render.mutation
+(** [render_data ~resolve_source ~loc_of ~duration ~seed ~siblings ~total t] is
+    the report [t] draws: survivor blocks ordered by witness count descending,
+    the unreached lines grouped by file, and the counts. Everything comes from
+    the records, which is why they carry the renderings — so this projection is
+    also the one [windtrap mutate] makes over verdict files it did not write,
+    and the two reports cannot drift in data the way [Render] already stops
+    them drifting in layout.
+
+    [resolve_source file] is the file's text for the excerpt row, [None] when it
+    cannot be read; [loc_of test] is a witness's declaration site, [None] for a
+    caller that does not link the test tree. [total] is the population the score
+    reads against — the catalogue minus the dismissed for a run, the merged
+    record count for the merge. *)
+
 (** {1:signal The instrumentation signal} *)
 
 val instrumented : unit -> bool

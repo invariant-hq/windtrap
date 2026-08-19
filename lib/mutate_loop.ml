@@ -569,40 +569,89 @@ let witness_locations tests =
     (Test_tree.flatten tests);
   table
 
-(* From the verdict record, not from the catalogue: the record carries
-   the renderings precisely so that this projection is the same one
-   [windtrap mutate] makes over a file it did not write. The identifier
-   is spelled here, with the runtime's own function — Render carries it
-   into the head row and the arm hint without re-spelling it. *)
-let survivor_of ~locations (r : M.record) witnesses : Render.survivor =
-  {
-    Render.id = M.id_to_string r.M.id;
-    file = r.M.id.M.file;
-    line = r.M.id.M.line;
-    before = r.M.before;
-    after = r.M.after;
-    source = read_source r.M.id.M.file;
-    witnesses =
-      List.map
-        (fun path ->
-          let test = Test_tree.path_to_string path in
-          { Render.test; loc = Option.join (Hashtbl.find_opt locations test) })
-        witnesses;
-  }
-
-let unreached_lines mutants =
+(* The report, from the verdict collection and nothing else — which is
+   why the records carry the renderings: this projection is the one
+   [windtrap mutate] makes over files it did not write, so the two
+   reports cannot drift in DATA the way Law 12's shared renderer already
+   stops them drifting in layout. The two callers differ in exactly two
+   things, and they are the parameters: where a source file is found
+   (a project root here, a roots list there) and whether a witness can
+   name its declaration site (the test tree is linked here and nowhere
+   in the merge command). *)
+let render_data ~resolve_source ~loc_of ~duration ~seed ~siblings ~total t =
+  let records = M.records t in
+  let survivor_of (r : M.record) witnesses : Render.survivor =
+    {
+      (* The identifier is spelled here, with the runtime's own function:
+         Render carries it into the head row and the arm hint without
+         re-spelling it. *)
+      Render.id = M.id_to_string r.M.id;
+      file = r.M.id.M.file;
+      line = r.M.id.M.line;
+      before = r.M.before;
+      after = r.M.after;
+      source = resolve_source r.M.id.M.file;
+      witnesses =
+        List.map
+          (fun path ->
+            let test = Test_tree.path_to_string path in
+            { Render.test; loc = loc_of test })
+          witnesses;
+    }
+  in
+  let survivors =
+    List.filter_map
+      (fun (r : M.record) ->
+        match r.M.verdict with
+        | M.Survived { witness; others } ->
+            Some (survivor_of r (witness :: others))
+        | M.Killed | M.Unreached -> None)
+      records
+  in
+  (* Ordered by reaching-test count descending: the survivor the most
+     tests watched is the one whose block a reader can act on soonest.
+     [List.stable_sort] keeps identifier order within a count. *)
+  let survivors =
+    List.stable_sort
+      (fun (a : Render.survivor) (b : Render.survivor) ->
+        compare (List.length b.witnesses) (List.length a.witnesses))
+      survivors
+  in
+  let unreached =
+    List.filter (fun (r : M.record) -> r.M.verdict = M.Unreached) records
+  in
   let by_file = Hashtbl.create 16 in
   List.iter
-    (fun (m : M.mutant) ->
-      let file = m.M.id.M.file in
+    (fun (r : M.record) ->
+      let file = r.M.id.M.file in
       let prior = Option.value ~default:[] (Hashtbl.find_opt by_file file) in
-      Hashtbl.replace by_file file (m.M.id.M.line :: prior))
-    mutants;
-  Hashtbl.fold
-    (fun file lines acc ->
-      { Render.file; lines = List.sort_uniq compare lines } :: acc)
-    by_file []
-  |> List.sort (fun (a : Render.unreached) b -> compare a.file b.file)
+      Hashtbl.replace by_file file (r.M.id.M.line :: prior))
+    unreached;
+  let unreached_lines =
+    Hashtbl.fold
+      (fun file lines acc ->
+        { Render.file; lines = List.sort_uniq compare lines } :: acc)
+      by_file []
+    |> List.sort (fun (a : Render.unreached) b -> compare a.file b.file)
+  in
+  {
+    (* The arming variable, spelled with the runtime's own function: the
+       report and the runtime cannot disagree about what to type. *)
+    Render.arm_variable = M.arm_variable;
+    survivors;
+    unreached = unreached_lines;
+    unreached_total = List.length unreached;
+    killed =
+      List.length
+        (List.filter
+           (fun (r : M.record) ->
+             match r.M.verdict with M.Killed -> true | _ -> false)
+           records);
+    total;
+    duration;
+    seed;
+    siblings;
+  }
 
 (* The determinism probe
 
@@ -838,50 +887,14 @@ let write_verdicts verdicts =
      note "could not write the verdict file: %s" message);
   path
 
-let print_report renderer ~population ~unreached ~verdicts ~duration ~seed
-    ~siblings tests =
+let print_report renderer ~population ~verdicts ~duration ~seed ~siblings tests
+    =
   let locations = witness_locations tests in
-  let records = M.records verdicts in
-  let survivors =
-    List.filter_map
-      (fun (r : M.record) ->
-        match r.M.verdict with
-        | M.Survived { witness; others } ->
-            Some (survivor_of ~locations r (witness :: others))
-        | M.Killed | M.Unreached -> None)
-      records
-  in
-  (* Ordered by reaching-test count descending: the survivor the most
-     tests watched is the one whose block a reader can act on soonest.
-     [List.stable_sort] keeps identifier order within a count. *)
-  let survivors =
-    List.stable_sort
-      (fun (a : Render.survivor) (b : Render.survivor) ->
-        compare (List.length b.witnesses) (List.length a.witnesses))
-      survivors
-  in
-  let killed =
-    List.length
-      (List.filter
-         (fun (r : M.record) ->
-           match r.M.verdict with M.Killed -> true | _ -> false)
-         records)
-  in
   Render.mutation_report renderer
-    {
-      (* The arming variable, spelled with the runtime's own function:
-         the report and the runtime cannot disagree about what to
-         type. *)
-      Render.arm_variable = M.arm_variable;
-      survivors;
-      unreached = unreached_lines unreached;
-      unreached_total = List.length unreached;
-      killed;
-      total = List.length population;
-      duration = Some duration;
-      seed = Some seed;
-      siblings;
-    }
+    (render_data ~resolve_source:read_source
+       ~loc_of:(fun test -> Option.join (Hashtbl.find_opt locations test))
+       ~duration:(Some duration) ~seed:(Some seed) ~siblings
+       ~total:(List.length population) verdicts)
 
 (* The runtime applies the scope at registration, so a value matching
    nothing leaves the same empty catalogue a missing backend does — a
@@ -991,7 +1004,7 @@ let loop renderer ~armed (spine : Driver.t) tests =
                 (fun (id, tests) ->
                   Render.mutation_forced_fail renderer ~id ~tests)
                 forced_fail;
-              print_report renderer ~population ~unreached ~verdicts
+              print_report renderer ~population ~verdicts
                 ~duration:(Unix.gettimeofday () -. started)
                 ~seed:config.Run.seed ~siblings:(has_siblings path) tests;
               if narrowed then Render.mutation_not_saved renderer;

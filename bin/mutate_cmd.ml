@@ -11,6 +11,7 @@
   ---------------------------------------------------------------------------*)
 
 module Render = Windtrap.Private.Render
+module Mutate_loop = Windtrap.Private.Mutate_loop
 module Env = Windtrap.Private.Env
 module Test_tree = Windtrap.Private.Test_tree
 module M = Windtrap_mutate
@@ -212,93 +213,25 @@ let read_source ~roots =
         Hashtbl.add cache file contents;
         contents
 
-(* [loc = None] throughout: a test's declaration site lives in the test
-   tree of the executable that ran it, and this command links none of
-   them. The name is what a reader greps for, and it is in the file. *)
-let survivor_of ~source (r : M.record) witnesses : Render.survivor =
-  {
-    Render.id = M.id_to_string r.M.id;
-    file = r.M.id.M.file;
-    line = r.M.id.M.line;
-    before = r.M.before;
-    after = r.M.after;
-    source = source r.M.id.M.file;
-    witnesses =
-      List.map
-        (fun path ->
-          { Render.test = Test_tree.path_to_string path; loc = None })
-        witnesses;
-  }
-
-let unreached_lines records =
-  let by_file = Hashtbl.create 16 in
-  List.iter
-    (fun (r : M.record) ->
-      let file = r.M.id.M.file in
-      let prior = Option.value ~default:[] (Hashtbl.find_opt by_file file) in
-      Hashtbl.replace by_file file (r.M.id.M.line :: prior))
-    records;
-  Hashtbl.fold
-    (fun file lines acc ->
-      { Render.file; lines = List.sort_uniq compare lines } :: acc)
-    by_file []
-  |> List.sort (fun (a : Render.unreached) b -> compare a.file b.file)
-
 let print_report ~roots collection =
-  let records = M.records collection in
-  let source = read_source ~roots in
-  let survivors =
-    List.filter_map
-      (fun (r : M.record) ->
-        match r.M.verdict with
-        | M.Survived { witness; others } ->
-            Some (survivor_of ~source r (witness :: others))
-        | M.Killed | M.Unreached -> None)
-      records
-  in
-  (* Ordered by reaching-test count descending, as the loop's report is:
-     the survivor the most tests watched is the one whose block a reader
-     can act on soonest. [List.stable_sort] keeps identifier order within
-     a count. Nothing is capped — a project report a reader cannot page
-     past would send them back to the per-executable one. *)
-  let survivors =
-    List.stable_sort
-      (fun (a : Render.survivor) (b : Render.survivor) ->
-        compare (List.length b.witnesses) (List.length a.witnesses))
-      survivors
-  in
-  let unreached =
-    List.filter (fun (r : M.record) -> r.M.verdict = M.Unreached) records
-  in
-  let killed =
-    List.length
-      (List.filter
-         (fun (r : M.record) ->
-           match r.M.verdict with M.Killed -> true | _ -> false)
-         records)
-  in
   let ansi =
     Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
       ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
   in
   let renderer = Render.create ~out:Format.std_formatter ~ansi () in
   Render.mutation_report renderer
-    {
-      (* The arming variable, spelled with the runtime's own function,
-         as the loop's report spells it. *)
-      Render.arm_variable = M.arm_variable;
-      survivors;
-      unreached = unreached_lines unreached;
-      unreached_total = List.length unreached;
-      killed;
-      total = List.length records;
-      (* The merge ran nothing and seeded nothing, and it is the project's
-         view rather than one executable's — so no duration, no seed, and
-         no sibling scoping. *)
-      duration = None;
-      seed = None;
-      siblings = false;
-    };
+    (Mutate_loop.render_data ~resolve_source:(read_source ~roots)
+       (* [loc = None] throughout: a test's declaration site lives in the
+          test tree of the executable that ran it, and this command links
+          none of them. The name is what a reader greps for, and it is in
+          the report. *)
+       ~loc_of:(fun _ -> None)
+       (* The merge ran nothing and seeded nothing, and it is the
+          project's view rather than one executable's — so no duration, no
+          seed, and no sibling scoping. *)
+       ~duration:None ~seed:None ~siblings:false
+       ~total:(List.length (M.records collection))
+       collection);
   Format.pp_print_flush Format.std_formatter ()
 
 (* The command *)
