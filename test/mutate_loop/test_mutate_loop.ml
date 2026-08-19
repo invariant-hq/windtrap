@@ -221,10 +221,22 @@ let discovery_tests =
         let code, out, _ = spawn [ "WINDTRAP_QUIET=1" ] in
         equal ~msg:"exit code" int 0 code;
         denies ~msg:"quiet" out "WINDTRAP_MUTATE=1 to test them");
-    test "off is off" (fun () ->
-        let code, out, _ = spawn [ "WINDTRAP_MUTATE=off" ] in
+    test "off silences the discovery line, arming aside" (fun () ->
+        (* The line is what an unasked mutation build says, so [off] is
+           the answer to it: a workspace instrumented by default would
+           otherwise announce on every run forever. An arming is still an
+           explicit ask and is still honoured. *)
+        let code, out, err = spawn [ "WINDTRAP_MUTATE=off" ] in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"still discovers" out "mutants: 4 in 1 file");
+        says ~msg:"the suite still runs" out "calc: 6 passed";
+        denies ~msg:"and says nothing about mutants" out "mutants:";
+        equal ~msg:"stderr" text "" err;
+        let code, armed, _ =
+          spawn
+            [ "WINDTRAP_MUTATE=off"; M.arm_variable ^ "=" ^ mutant_named "sub" ]
+        in
+        equal ~msg:"exit code (this mutant survives)" int 0 code;
+        says ~msg:"off does not veto an explicit arming" armed "armed: ");
     (* WINDTRAP_MUTATE_ONLY narrows the registry, not the report, and the
        two consequences below are what the rest of this tree relies on:
        a scope that matches nothing leaves an executable

@@ -25,6 +25,8 @@ mutants: 5 in 1 file · WINDTRAP_MUTATE=1 to test them
 
 That is the whole discovery story: adding the backend never makes a run
 longer than it was; it says what it *could* do and waits to be asked.
+`WINDTRAP_MUTATE=off` is the answer to that line, for a workspace whose
+every build is instrumented and does not want telling every time.
 
 Two rules keep it honest. **A mutant changes meaning only in a forked
 child, only when armed, and only in a build that asked for it** — with
@@ -745,7 +747,7 @@ naming the variable, never a silently defaulted mode.
 
 | variable | values | default |
 | --- | --- | --- |
-| `WINDTRAP_MUTATE` | `1` / `admit` / `off` | `off` |
+| `WINDTRAP_MUTATE` | `1` / `admit` / `off` | unset (discovery only) |
 | `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
 | `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
 | `WINDTRAP_MUTATE_TRY` | faults an `admit` run tries per test, `0` for all | `25` |

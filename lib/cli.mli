@@ -206,11 +206,13 @@ val coverage_mode :
     configuration first and exit on that error, which is where it belongs. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Admit ];
+  mode : [ `Unset | `Off | `Loop | `Admit ];
       (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
           truthy spellings), [`Admit] for [admit] — the per-test admission run
           over the selection, or over every test the run executes when it makes
-          none — [`Off] for a falsy spelling or an unset variable. *)
+          none — [`Off] for a falsy spelling, and [`Unset] for an unset or
+          empty variable. The last two differ: an instrumented build says what
+          it could do unless it was told not to. *)
   arm : string option;
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
           {!Windtrap_mutate.selector_of_string} owns that grammar and reports

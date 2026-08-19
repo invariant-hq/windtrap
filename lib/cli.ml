@@ -993,7 +993,7 @@ let coverage_mode (cli : parsed) =
    different variables. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Admit ];
+  mode : [ `Unset | `Off | `Loop | `Admit ];
   arm : string option;
   tries : int;
 }
@@ -1003,7 +1003,7 @@ let default_mutate_tries = 25
 let mutation () =
   let* mode =
     match Env.get_string "WINDTRAP_MUTATE" with
-    | None -> Ok `Off
+    | None -> Ok `Unset
     | Some value -> (
         match String.lowercase_ascii (String.trim value) with
         | "admit" -> Ok `Admit

@@ -1800,11 +1800,16 @@ let execute_and_report (spine : Driver.t) tests =
             ~invocation:spine.Driver.invocation ()
         in
         match (mode, arm) with
-        | `Off, None ->
+        | `Unset, None ->
             (* The one path an uninstrumented build must not pay for. *)
             if instrumented () then discovery_mode (renderer ()) spine tests
             else Ran (Driver.execute_and_report spine tests)
-        | `Off, Some _ -> arm_mode (renderer ()) ~armed spine tests
+        | `Off, None ->
+            (* [off] is the answer to the discovery line, which is the
+               only thing an unasked mutation build says. An arming is
+               still an explicit ask and still honoured below. *)
+            Ran (Driver.execute_and_report spine tests)
+        | (`Unset | `Off), Some _ -> arm_mode (renderer ()) ~armed spine tests
         | (`Loop | `Admit), Some _ ->
             refuse
               "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
