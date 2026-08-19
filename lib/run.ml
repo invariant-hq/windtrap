@@ -68,6 +68,47 @@ let default_config () =
     allow_focus = false;
   }
 
+(* The configuration for a run over a SUBTREE of another run's selection,
+   used by the mutation loop's forked children. Which knobs to clear and
+   which to keep is a statement about this record, so it lives here,
+   where whoever adds a fourteenth selection knob is already editing.
+
+   The knobs that select by PATH are cleared — filter, exclude, shard, the
+   [--failed] allowlist — because the tree the caller hands its child IS
+   that selection: it was pruned to the paths the parent executed, so
+   applying any of them again could only narrow it further.
+
+   The knobs that select by TAG are kept verbatim, and that distinction is
+   load-bearing rather than tidy. A test's tags are not in its path, so
+   pruning cannot express them: [Tag.default_predicate] drops [disabled]
+   by itself, so a parent run under [--tag disabled] executes tests a
+   child with [tags = []] would deselect. The child would then run fewer
+   tests than the parent measured. The root seed is kept for the same
+   family of reasons: per-case seeds derive from (root, path, index), so a
+   child running 24 of 900 tests sees the same property cases the parent
+   saw.
+
+   [update = No_update] makes snapshot checking read-only by construction
+   — Snapshot maps it to Mode Check and the write is reachable only under
+   Mode Update — and the log directory is the child's own so that its
+   capture files and its last-failed store cannot touch the parent's. *)
+let for_subset config ~log_dir ~bail =
+  {
+    config with
+    filter = None;
+    exclude = None;
+    shard = None;
+    failed_only = false;
+    list_only = false;
+    bail;
+    stream = false;
+    update = Env.No_update;
+    prune = false;
+    junit = None;
+    log_dir;
+    allow_focus = true;
+  }
+
 (* Run records *)
 
 (* A fixture's cache entry. [fx_state] embeds the acquired value in the

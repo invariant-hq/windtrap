@@ -345,49 +345,6 @@ let fork_child ~deadline body =
       let line = match lines with l :: _ -> l | [] -> "" in
       { line; lines; status; killed = !killed }
 
-(* The child's run configuration
-
-   The knobs that select {e by path} are cleared — filter, exclude, shard,
-   the [--failed] allowlist — because the tree the child is handed IS that
-   selection: it was pruned to the paths the dry run executed, so applying
-   any of them again could only narrow it further.
-
-   The knobs that select by TAG are kept verbatim, and that distinction is
-   load-bearing rather than tidy. A test's tags are not in its path, so
-   pruning cannot express them: [Tag.default_predicate] drops [disabled]
-   by itself, so a dry run under [--tag disabled] executes tests a child
-   with [tags = []] would deselect. The child would then run fewer tests
-   than the parent measured — the determinism probe would call a perfectly
-   deterministic suite non-deterministic, and every mutant past it would
-   be scored against a smaller suite than the report claims. Keeping the
-   parent's [tags], [exclude_tags] and [quick] makes the child's selection
-   over the pruned tree provably the dry run's.
-
-   [update = No_update] is what makes snapshot checking read-only by
-   construction — Snapshot maps it to Mode Check and the write is
-   reachable only under Mode Update — [bail] stops at the first kill, and
-   the log directory is the child's own so that its capture files and its
-   last-failed store cannot touch the parent's. The root seed is kept,
-   which is what makes subset execution sound at all: per-case seeds
-   derive from (root, path, index), so a child running 24 of 900 tests
-   sees the same property cases the dry run saw. *)
-let child_config ~(parent : Run.config) ~log_dir ~bail =
-  {
-    parent with
-    Run.filter = None;
-    exclude = None;
-    shard = None;
-    failed_only = false;
-    list_only = false;
-    bail;
-    stream = false;
-    update = Env.No_update;
-    prune = false;
-    junit = None;
-    log_dir;
-    allow_focus = true;
-  }
-
 let pruned_to paths tests =
   let keep = Hashtbl.create (List.length paths * 2) in
   List.iter (fun path -> Hashtbl.replace keep path ()) paths;
@@ -691,7 +648,7 @@ let check_determinism ~armed ~scratch ~dry_run_wall
     {
       spine with
       Driver.config =
-        child_config ~parent:spine.Driver.config ~log_dir ~bail:None;
+        Run.for_subset spine.Driver.config ~log_dir ~bail:None;
     }
   in
   (* The probe re-runs exactly the dry run's executed tests, so its
@@ -750,6 +707,23 @@ let check_determinism ~armed ~scratch ~dry_run_wall
         | _ -> Error "the determinism probe reported an unreadable result")
       | _ -> Error "the determinism probe died without reporting a result")
 
+(* The bracket both loops open before their first fork: one scratch root
+   for the run, removed however the run leaves, and the determinism probe
+   in front — a step added here is added to both, which is what stops the
+   survey and admission from disagreeing about what a fork is preceded
+   by. *)
+let probed ~armed ~dry_run_wall ~spine ~reach ~paths tests forks =
+  let scratch = scratch_root () in
+  Fun.protect
+    ~finally:(fun () -> Run.remove_tree scratch)
+    (fun () ->
+      match
+        check_determinism ~armed ~scratch ~dry_run_wall ~spine ~reach ~paths
+          tests
+      with
+      | Error _ as error -> error
+      | Ok () -> Ok (forks ~scratch))
+
 (* One mutant *)
 
 let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests
@@ -779,7 +753,7 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index
     {
       spine with
       Driver.config =
-        child_config ~parent:spine.Driver.config ~log_dir ~bail:(Some 1);
+        Run.for_subset spine.Driver.config ~log_dir ~bail:(Some 1);
     }
   in
   let { line; status; killed } =
@@ -793,20 +767,18 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index
       (* The suite noticed the change by hanging: a kill, on the crash
          kill's own reasoning. Whatever reached the pipe first is not a
          verdict — the child did not finish. *)
-      Ok (M.Killed, `Reported)
+      M.Killed
   | `No -> (
       match decode_verdict ~paths line with
       | Error message ->
-          Error (spf "%s: %s" (M.id_to_string mutant.M.id) message)
-      | Ok verdict ->
+          raise
+            (Supervision (spf "%s: %s" (M.id_to_string mutant.M.id) message))
+      | Ok verdict -> (
           (* A child that did not leave through [Unix._exit 0] did not
              report: whatever reached the pipe is not a verdict. *)
-          let verdict =
-            match status with
-            | Unix.WEXITED 0 -> verdict
-            | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> M.Killed
-          in
-          Ok (verdict, `Reported))
+          match status with
+          | Unix.WEXITED 0 -> verdict
+          | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> M.Killed))
 
 (* The fork loop
 
@@ -824,48 +796,51 @@ let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~ordered
     verdicts := M.add !verdicts (M.record_of_mutant mutant verdict)
   in
   let rec go index = function
-    | [] -> Ok (!verdicts, !forced_fail)
-    | mutant :: rest -> (
+    | [] -> (!verdicts, !forced_fail)
+    | mutant :: rest ->
         let paths = reaching_tests reach mutant in
         let budget = budget_of (site_hits reach mutant) in
-        match
-          run_mutant ~armed ~scratch ~dry_run_wall ~index ~spine
-            ~reach ~paths ~budget ~mutant tests
-        with
-        | Error message -> raise (Supervision message)
-        | Ok (verdict, `Reported) ->
-            record mutant verdict;
-            (match verdict with
-            | M.Survived _ when index = 0 ->
-                forced_fail :=
-                  Some (M.id_to_string mutant.M.id, List.length paths)
-            | M.Survived _ | M.Killed | M.Unreached -> ());
-            go (index + 1) rest)
+        let verdict =
+          run_mutant ~armed ~scratch ~dry_run_wall ~index ~spine ~reach ~paths
+            ~budget ~mutant tests
+        in
+        record mutant verdict;
+        (match verdict with
+        | M.Survived _ when index = 0 ->
+            forced_fail := Some (M.id_to_string mutant.M.id, List.length paths)
+        | M.Survived _ | M.Killed | M.Unreached -> ());
+        go (index + 1) rest
   in
   go 0 ordered
 
 (* The report *)
 
-(* Whether the run's selection narrows the suite: a path or tag
-   selection, a shard, a [--failed] rerun, or an in-source focus (the
-   runner's own finding, so the two cannot disagree about what focus
-   means). A narrowed run's verdicts are relative to its selection — a
-   mutant only deselected tests reach records Unreached, a survivor
-   survived only the selection — and the file format carries no
-   partial-run marking, so a written file would stand in the project
-   merge as this executable's whole answer until the next full run.
-   WINDTRAP_MUTATE_ONLY is deliberately not here: the scope narrows which
-   mutants exist, not which tests judge them, so an ONLY-scoped run's
-   records are project-true for this executable, merely narrower. *)
-let narrows_suite ~(config : Run.config) ~focus =
+(* Which knobs DESIGNATE, which is admission's question (Law 17a): the
+   selections that name tests — a filter, an exclude, a tag selection, a
+   [--failed] rerun, an in-source focus (the runner's own finding, so the
+   two cannot disagree about what focus means). An absent selection is a
+   designation too: every test the run executed. *)
+let designates ~(config : Run.config) ~focus =
   config.Run.filter <> None
   || config.Run.exclude <> None
   || config.Run.tags <> []
   || config.Run.exclude_tags <> []
-  || config.Run.quick
-  || config.Run.shard <> None
   || config.Run.failed_only
   || focus
+
+(* Whether the run's selection NARROWS THE SUITE, which is the survey's
+   question: a designation, or one of the two knobs that narrow work
+   without naming tests — the documented relationship between the two,
+   spelled as one. A narrowed run's verdicts are relative to its
+   selection — a mutant only deselected tests reach records Unreached, a
+   survivor survived only the selection — and the file format carries no
+   partial-run marking, so a written file would stand in the project
+   merge as this executable's whole answer until the next full run.
+   WINDTRAP_MUTATE_ONLY is deliberately in neither: the scope narrows
+   which mutants exist, not which tests judge them, so an ONLY-scoped
+   run's records are project-true for this executable, merely narrower. *)
+let narrows_suite ~(config : Run.config) ~focus =
+  designates ~config ~focus || config.Run.quick || config.Run.shard <> None
 
 let write_verdicts verdicts =
   let exe = Sys.executable_name in
@@ -959,18 +934,10 @@ let loop renderer ~armed (spine : Driver.t) tests =
             narrows_suite ~config ~focus:outcome.Runner.focus_active
           in
           let outcome =
-            let scratch = scratch_root () in
-            Fun.protect
-              ~finally:(fun () -> Run.remove_tree scratch)
-              (fun () ->
-                match
-                  check_determinism ~armed ~scratch ~dry_run_wall ~spine ~reach
-                    ~paths:executed tests
-                with
-                | Error _ as error -> error
-                | Ok () ->
-                    run_children ~armed ~scratch ~dry_run_wall ~spine ~reach
-                      ~ordered tests)
+            probed ~armed ~dry_run_wall ~spine ~reach ~paths:executed tests
+              (fun ~scratch ->
+                run_children ~armed ~scratch ~dry_run_wall ~spine ~reach
+                  ~ordered tests)
           in
           match outcome with
           | Error message -> refuse "%s" message
@@ -1014,20 +981,6 @@ let loop renderer ~armed (spine : Driver.t) tests =
    surviving first fork is the expected signature of a weak test, not a
    broken build, and the genuinely-uninstrumented case still refuses
    upstream. *)
-
-(* Which knobs designate an admission set: the selections that name tests
-   — a filter, an exclude, a tag selection, a [--failed] rerun, an
-   in-source focus. [--shard] and [--quick] narrow work, not designation:
-   neither names the tests the author just wrote (Law 17a — designation
-   is the author's selection, never inferred). An absent selection is a
-   designation too: every test the run executed. *)
-let designates ~(config : Run.config) ~focus =
-  config.Run.filter <> None
-  || config.Run.exclude <> None
-  || config.Run.tags <> []
-  || config.Run.exclude_tags <> []
-  || config.Run.failed_only
-  || focus
 
 let rec first_n n = function
   | [] -> []
@@ -1187,7 +1140,7 @@ let run_batch ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
     {
       spine with
       Driver.config =
-        child_config ~parent:spine.Driver.config ~log_dir ~bail:None;
+        Run.for_subset spine.Driver.config ~log_dir ~bail:None;
     }
   in
   let paths = List.map (fun e -> e.test) batch in
@@ -1221,7 +1174,7 @@ let run_batch ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
                     (`Fail
                        (if killed = `Deadline then `Timed_out else `Crashed))
             | Some _ | None -> ()));
-        Ok outcomes
+        outcomes
 
 (* The admission machine: union-scheduled batches over U, one fork per
    scheduled fault, early stop when U empties. The next fault is the one
@@ -1282,7 +1235,7 @@ let run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach
   in
   let rec go index =
     match live () with
-    | [] -> Ok !forks
+    | [] -> !forks
     | u -> (
         match next_fault u with
         (* Every live member has an unforked own fault (exhaustion rules
@@ -1290,33 +1243,30 @@ let run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach
            left keeps the loop total anyway. *)
         | None ->
             List.iter rule_exhausted u;
-            Ok !forks
-        | Some mutant -> (
+            !forks
+        | Some mutant ->
             let batch = List.filter (fun e -> reaches e mutant) u in
             let budget = budget_of (site_hits reach mutant) in
-            match
-              run_batch ~armed ~scratch ~dry_run_wall ~index ~spine
-                ~reach ~batch ~budget ~mutant tests
-            with
-            | Error _ as error -> error
-            | Ok outcomes ->
-                incr forks;
-                Hashtbl.replace forked mutant.M.id ();
-                List.iteri
-                  (fun i e ->
-                    match outcomes.(i) with
-                    | Some (`Fail cause) ->
-                        (* A kill admits wherever it was observed — a
-                           ride-along kill included — and a try is never
-                           charged for a fork the test merely rode. *)
-                        e.ruling <- Some (Admitted { fault = mutant; cause })
-                    | Some `Pass ->
-                        if on_own e mutant then
-                          e.tried_rev <- mutant :: e.tried_rev
-                    | Some `Skip | None -> ())
-                  batch;
-                List.iter rule_exhausted u;
-                go (index + 1)))
+            let outcomes =
+              run_batch ~armed ~scratch ~dry_run_wall ~index ~spine ~reach
+                ~batch ~budget ~mutant tests
+            in
+            incr forks;
+            Hashtbl.replace forked mutant.M.id ();
+            List.iteri
+              (fun i e ->
+                match outcomes.(i) with
+                | Some (`Fail cause) ->
+                    (* A kill admits wherever it was observed — a
+                       ride-along kill included — and a try is never
+                       charged for a fork the test merely rode. *)
+                    e.ruling <- Some (Admitted { fault = mutant; cause })
+                | Some `Pass ->
+                    if on_own e mutant then e.tried_rev <- mutant :: e.tried_rev
+                | Some `Skip | None -> ())
+              batch;
+            List.iter rule_exhausted u;
+            go (index + 1))
   in
   go 0
 
@@ -1417,36 +1367,37 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
              runtime rule): zero reached sites is NO SITES, decided before
              any fork and never consulted by the exit predicate; the rest
              form U. *)
-          let no_sites, entrants =
-            let classify (r : Run.result) =
-              let candidates = candidates_of reach r.Run.path in
-              if candidates = [] then Either.Left r.Run.path
-              else
-                Either.Right
-                  {
-                    test = r.Run.path;
-                    own =
-                      (if tries > 0 then first_n tries candidates
-                       else candidates);
-                    reach_count = List.length candidates;
-                    tried_rev = [];
-                    ruling = None;
-                  }
-            in
-            List.partition_map classify designated
+          let reached =
+            List.map
+              (fun (r : Run.result) ->
+                (r.Run.path, candidates_of reach r.Run.path))
+              designated
           in
+          let no_sites, entrants =
+            List.partition_map
+              (fun (path, candidates) ->
+                if candidates = [] then Either.Left path
+                else
+                  Either.Right
+                    {
+                      test = path;
+                      own =
+                        (if tries > 0 then first_n tries candidates
+                         else candidates);
+                      reach_count = List.length candidates;
+                      tried_rev = [];
+                      ruling = None;
+                    })
+              reached
+          in
+          (* The summary's denominator: the distinct undismissed faults
+             the designated tests reach, which is the union of the lists
+             above rather than a second walk of the reach map spelling
+             "reaches" its own way. *)
           let reached_total =
-            Hashtbl.fold
-              (fun _ site count ->
-                if
-                  site.mutant.M.dismissed = None
-                  && List.exists
-                       (fun (r : Run.result) ->
-                         List.mem_assoc r.Run.path site.tests)
-                       designated
-                then count + 1
-                else count)
-              reach.sites 0
+            List.length
+              (List.sort_uniq M.compare_mutant
+                 (List.concat_map snd reached))
           in
           let dry_run_wall =
             Float.max 0.01 (Unix.gettimeofday () -. started)
@@ -1458,18 +1409,10 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
                  the dry run alone, with no fork at all. *)
               Ok 0
             else
-              let scratch = scratch_root () in
-              Fun.protect
-                ~finally:(fun () -> Run.remove_tree scratch)
-                (fun () ->
-                  match
-                    check_determinism ~armed ~scratch ~dry_run_wall ~spine
-                      ~reach ~paths:executed tests
-                  with
-                  | Error _ as error -> error
-                  | Ok () ->
-                      run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach
-                        ~entrants tests)
+              probed ~armed ~dry_run_wall ~spine ~reach ~paths:executed tests
+                (fun ~scratch ->
+                  run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach
+                    ~entrants tests)
           in
           match outcome with
           | Error message -> refuse "%s" message
