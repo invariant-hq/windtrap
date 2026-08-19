@@ -9,7 +9,7 @@
    way to test runner behavior with windtrap itself — and [execute]
    refuses to nest inside an active run, so they cannot host their own
    assertions under the windtrap runner. Everything else lives in the
-   aggregated main.exe suite. *)
+   per-module suites beside them, one executable each. *)
 
 (* Every line printed carries the suite name (set by [init]): the meta
    suites interleave with the windtrap suites under `dune runtest`, and

@@ -54,3 +54,5 @@ let tests =
         is_false ~msg:"require after drop still requires it"
           (Tag.accepts p Tag.empty));
   ]
+
+let () = Windtrap.run "tag" tests

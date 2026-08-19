@@ -1449,3 +1449,5 @@ let law_tests =
   ]
 
 let tests = List.map (fun (name, fn) -> test name fn) suite @ law_tests
+
+let () = Windtrap.run "gen" tests

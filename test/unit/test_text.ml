@@ -154,3 +154,5 @@ let tests =
         equal ~msg:"keeps newlines and text intact" string "a\nb"
           (Text.strip_ansi "\027[1ma\n\027[31mb\027[0m"));
   ]
+
+let () = Windtrap.run "text" tests

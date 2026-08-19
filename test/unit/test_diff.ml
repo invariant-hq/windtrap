@@ -540,3 +540,5 @@ let law_tests =
   ]
 
 let tests = hunk_tests @ refine_tests @ alloc_tests @ law_tests
+
+let () = Windtrap.run "diff" tests

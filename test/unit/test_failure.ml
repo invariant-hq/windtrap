@@ -509,3 +509,5 @@ let tests =
           (not (F.is_fatal (F.Check_failure (F.message "boom"))));
         check "an ordinary exception is not fatal" (not (F.is_fatal Not_found)));
   ]
+
+let () = Windtrap.run "failure" tests

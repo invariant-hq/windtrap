@@ -29,3 +29,5 @@ let tests =
           (s >= Int64.to_float ns /. 1_000_000_000.);
         is_true ~msg:"count_s within a second here" (s < 1.));
   ]
+
+let () = Windtrap.run "clock" tests

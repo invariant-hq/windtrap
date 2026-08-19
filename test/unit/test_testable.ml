@@ -482,3 +482,5 @@ let tests =
           ({ Point.x = 1; y = 2 }, "ignored")
           ({ Point.x = 1; y = 2 }, "also ignored"));
   ]
+
+let () = Windtrap.run "testable" tests

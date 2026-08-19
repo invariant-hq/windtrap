@@ -142,3 +142,5 @@ let tests =
         check "and never keeps a path separator"
           (not (String.contains (Filename.basename awkward) '/')));
   ]
+
+let () = Windtrap.run "driver" tests

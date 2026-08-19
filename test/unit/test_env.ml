@@ -233,3 +233,5 @@ let tests =
         is_false ~msg:"unset TERM is not dumb" (Env.term_dumb ());
         set "TERM" saved);
   ]
+
+let () = Windtrap.run "env" tests

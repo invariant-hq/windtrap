@@ -209,3 +209,5 @@ let tests =
         equal ~msg:"backslashes normalized" string "w/test/foo.ml"
           (Path_ops.display "w\\_build\\default\\test\\foo.ml"));
   ]
+
+let () = Windtrap.run "path_ops" tests

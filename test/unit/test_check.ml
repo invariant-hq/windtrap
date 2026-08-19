@@ -1072,3 +1072,5 @@ let tests =
                ignore (Check.require_match ~msg:"tcp" (fun _ -> None) 1))
           = Some "tcp"));
   ]
+
+let () = Windtrap.run "check" tests

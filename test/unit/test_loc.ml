@@ -118,3 +118,5 @@ let tests =
         is_false ~msg:"equal distinguishes files"
           (Loc.equal loc (Loc.of_pos ("test/zzz.ml", 12, 4, 9))));
   ]
+
+let () = Windtrap.run "loc" tests

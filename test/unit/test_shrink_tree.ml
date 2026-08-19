@@ -664,3 +664,5 @@ let suite =
   ]
 
 let tests = List.map (fun (name, fn) -> test name fn) suite
+
+let () = Windtrap.run "shrink_tree" tests

@@ -544,3 +544,5 @@ let tests =
       split_fresh_streams_are_distinct_across_seeds;
     test "random produces distinct seeds" random_produces_distinct_seeds;
   ]
+
+let () = Windtrap.run "seed" tests

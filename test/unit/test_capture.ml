@@ -515,8 +515,8 @@ let test_saved_descriptors_are_cloexec () =
   check "the pipe closes when the suite exits, not when its sleeper dies"
     (elapsed < 5.0)
 
-(* Re-exec dispatch for the child above; main must call this before
-   starting the runner. Never returns for a child invocation. *)
+(* Re-exec dispatch for the child above; this suite's own toplevel calls
+   it before its run. Never returns for a child invocation. *)
 let dispatch_child () =
   match Array.to_list Sys.argv with
   | [ _; "--capture-cloexec-child"; log_dir ] -> child_spawn_holder log_dir
@@ -567,3 +567,6 @@ let tests =
       test_saved_descriptors_are_cloexec;
     test "the log fd is close-on-exec" test_log_fd_is_cloexec;
   ]
+
+let () = dispatch_child ()
+let () = Windtrap.run "capture" tests

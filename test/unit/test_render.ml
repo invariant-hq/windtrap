@@ -89,8 +89,8 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
    runs — and the reason to keep one is to read the diff when it changes.
    As a literal it could only be reviewed by retyping it; as a baseline
    under __snapshots__/ the review is `git diff` and the acceptance is
-   `dune exec test/unit/main.exe -- -u`. Read every accepted diff: this
-   is the whole of what a windtrap run prints. *)
+   `dune exec test/unit/test_render.exe -- -u`. Read every accepted
+   diff: this is the whole of what a windtrap run prints. *)
 
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
@@ -2750,3 +2750,5 @@ let tests =
     test "mutation: sections stand alone" test_mutation_sections;
     test "tree-wide summary dialect (harness parity)" test_summary_dialect;
   ]
+
+let () = Windtrap.run "render" tests

@@ -1,15 +1,43 @@
-; The unit suite, flat: one test_<module>.ml per lib module, aggregated
-; into a single windtrap-run executable (main.exe) — address one module
-; with `dune exec test/unit/main.exe -- -f <module>`. The four meta
-; suites below drive Runner.execute in-process with synthetic configs
-; (the sanctioned way to test runner behavior with windtrap itself);
-; execute refuses to nest inside an active run, so they stay plain
-; executables.
+; The unit suite: one test_<module>.ml per lib module, each its own
+; executable ending in its own `run` — address one module by building
+; and running it, `dune exec test/unit/test_gen.exe -- -f shrink`. The
+; plural stanza declares them in one block; dune links each executable
+; from its own module's closure and runs them in parallel, where
+; windtrap's runner is deliberately sequential within one process.
+;
+; The four meta suites below drive Runner.execute in-process with
+; synthetic configs (the sanctioned way to test runner behavior with
+; windtrap itself); execute refuses to nest inside an active run, so
+; they stay plain executables over the hand-rolled harness.
 
-(test
- (name main)
+(tests
+ (names
+  test_pp
+  test_text
+  test_clock
+  test_tag
+  test_loc
+  test_env
+  test_path_ops
+  test_seed
+  test_shrink_tree
+  test_atomic_file
+  test_testable
+  test_failure
+  test_diff
+  test_check
+  test_gen
+  test_capture
+  test_property
+  test_snapshot
+  test_stateful
+  test_test_tree
+  test_render
+  test_render_junit
+  test_render_github
+  test_cli
+  test_driver)
  (modules
-  main
   test_pp
   test_text
   test_clock

@@ -318,11 +318,14 @@ let suite =
 
 let tests = List.map (fun (name, fn) -> test name fn) suite
 
-(* The concurrency test re-execs this executable as helper children; main
-   must dispatch here before starting the runner. Never returns for a
-   child invocation. *)
+(* The concurrency test re-execs this executable as helper children, so
+   this suite's own toplevel dispatches here before its run. Never returns
+   for a child invocation. *)
 let dispatch_child () =
   match Array.to_list Sys.argv with
   | [ _; "--atomic-file-child"; path; rounds; writer ] ->
       child_replace path (int_of_string rounds) (int_of_string writer)
   | _ -> ()
+
+let () = dispatch_child ()
+let () = Windtrap.run "atomic_file" tests

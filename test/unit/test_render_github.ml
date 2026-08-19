@@ -195,3 +195,5 @@ let tests =
     test "subtest annotations" test_subtest_annotations;
     test "run-level annotations block" test_annotations;
   ]
+
+let () = Windtrap.run "render_github" tests
