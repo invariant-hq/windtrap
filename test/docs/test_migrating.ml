@@ -193,6 +193,13 @@ let api =
 let point_structural = Testable.structural ~pp:Point.pp
 let point = Testable.make ~pp:Point.pp ~equal:Point.equal
 
+(* [of_equal] and [contramap] are constructors, so they live behind
+   [Testable.] — including the two rows that replace the dropped [seq]
+   and [lazy_t] witnesses. *)
+let point_by_equal = Testable.of_equal Point.equal
+let int_seq = Testable.contramap List.of_seq (list int)
+let int_lazy = Testable.contramap Lazy.force int
+
 let testable_tests =
   group "testables"
     [
@@ -201,6 +208,14 @@ let testable_tests =
       test "made" (fun () ->
           equal point { Point.x = 1; y = 2 } { Point.x = 1; y = 2 });
       test "shape" (fun () -> equal shape (Circle 1.) (Circle 1.));
+      test "of_equal" (fun () ->
+          equal point_by_equal { Point.x = 1; y = 2 } { Point.x = 1; y = 2 });
+      test "seq through contramap" (fun () ->
+          equal int_seq (List.to_seq [ 1; 2 ]) (List.to_seq [ 1; 2 ]));
+      test "lazy through contramap" (fun () ->
+          equal int_lazy (lazy 1) (lazy 1));
+      test "float_exact replaces float 0." (fun () ->
+          equal float_exact Float.nan (0. /. 0.));
     ]
 
 (* Migration reference: odds and ends *)
@@ -254,10 +269,8 @@ let b_package =
       test "temp_dir replaces with_temp_dir" (fun () ->
           let dir = temp_dir () in
           is_true (Sys.is_directory dir));
-      test "of_module witnesses a conventional module" (fun () ->
-          equal
-            (Testable.make ~pp:Point.pp ~equal:Point.equal)
-            { Point.x = 1; y = 2 } { Point.x = 1; y = 2 });
+      test "skip replaces the disabled tag" (fun () ->
+          skip ~reason:"parked; 0.1.0 spelled this ~tags:[\"disabled\"]" ());
     ]
 
 (* Migration reference: Gen renames *)
@@ -279,6 +292,12 @@ let gen_renames =
         Gen.(bytes_of ~size:(int_range 1 8) (char_range 'a' 'z'))
         (fun b -> is_true (Bytes.length b >= 1));
       prop "pure is kept" (Gen.pure 42) (fun n -> equal int 42 n);
+      prop "bind over nat replaces sized"
+        Gen.(bind nat (fun n -> map (fun m -> n + m) nat))
+        (fun n -> is_true (n >= 0));
+      prop "cover is presence-only" Gen.nat (fun n ->
+          cover "nonneg" (n >= 0);
+          is_true (n >= 0));
     ]
 
 (* RFC guide, "A failing assertion" (here with equal sides) *)
