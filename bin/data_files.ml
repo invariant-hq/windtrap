@@ -84,6 +84,18 @@ let discover ~dir ~ext = function
 
 (* Freshness *)
 
+(* This binary may itself be instrumented — windtrap's own is, in
+   windtrap's own tree — and then merely running it registers points and
+   dumps them at exit into the directory it just read, where the next
+   build turns them stale and it warns about itself forever. A file
+   whose recorded writer is this very executable is not data about the
+   suite; it is this command's own exhaust, and is dropped before
+   anything judges its freshness. Inert for an installed windtrap, which
+   carries no instrumentation at all. *)
+let self_written = function
+  | None -> false
+  | Some { Instr.exe; _ } -> exe = Instr.exe_identity ~exe:Sys.executable_name
+
 type freshness = Fresh | Orphan of string | Stale of string
 
 let freshness ~path identity =

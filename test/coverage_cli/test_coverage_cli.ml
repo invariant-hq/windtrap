@@ -719,6 +719,28 @@ let discovery_robustness =
   check_int "a truncated file exits 1" ~expected:1 ~actual:code;
   check_contains "a truncated file is named" ~needle:"cut.coverage" err;
   check_contains "a truncated file is called corrupt" ~needle:"corrupt" err;
+  (* The reporter's own exhaust is never data. windtrap's own binary
+     links the instrumented core, so running it dumps into the very
+     directory it just read; a dump whose recorded writer is that
+     binary is dropped silently — not merged, and not warned about
+     either, because there is nothing for a reader to do. *)
+  let selfish = scratch "selfish" in
+  write_file
+    (Filename.concat selfish "_build/_coverage/self.coverage")
+    (C.to_string
+       ~identity:
+         {
+           C.exe = I.exe_identity ~exe:windtrap_exe;
+           digest = Digest.to_hex (Digest.string "some earlier build");
+         }
+       (collection "self" [ ("lib/ghost.ml", foo_points, [| 1; 1; 1 |]) ]));
+  let code, out, err = coverage_cmd ~cwd:selfish [] in
+  check_int "a directory holding only the reporter's own dump exits 1"
+    ~expected:1 ~actual:code;
+  check_contains "and says there is no data" ~needle:"no .coverage files" err;
+  check_absent "the reporter's own dump is not warned about"
+    ~needle:"self.coverage" err;
+  check_absent "nor merged" ~needle:"ghost.ml" out;
   (* An explicit .coverage FILE argument is honored as-is. *)
   let code, out, _ =
     coverage_cmd ~cwd:scratch_dir

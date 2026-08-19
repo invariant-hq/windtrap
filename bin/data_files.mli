@@ -39,6 +39,14 @@ val discover :
     silent narrowing of the merge. A directory argument contributes the
     [.<ext>] files found under it at any depth, however many that is. *)
 
+val self_written : Windtrap_instr.identity option -> bool
+(** [self_written identity] is [true] when [identity] names the running
+    executable. A reporting binary that is itself instrumented dumps its own
+    data, at exit, into the directory it just read; such a file is this
+    command's exhaust, not the suite's data, and callers drop it before
+    merging. Always [false] for an uninstrumented [windtrap], which writes
+    nothing. *)
+
 (** The type for a data file's freshness, judged from the
     {!Windtrap_instr.identity} it records. [Orphan] and [Stale] carry the
     recorded executable identity. *)

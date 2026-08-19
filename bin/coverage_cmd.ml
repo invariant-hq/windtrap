@@ -101,6 +101,16 @@ let discover paths = Data_files.discover ~dir:"_coverage" ~ext:"coverage" paths
    because a number computed from a dump known to describe another build
    can only mislead. *)
 
+(* The empty-estate message: no dump the merge could use, whether the
+   directory held nothing at all or nothing but this command's own
+   exhaust. The remedy is the same either way — instrument, and run. *)
+let no_data =
+  "no .coverage files found\n\
+   Instrument the library under test\n\
+  \  (instrumentation (backend ppx_windtrap.coverage))\n\
+   and run its tests first:\n\
+  \  dune runtest --instrument-with ppx_windtrap.coverage\n"
+
 let stale_hint =
   "a re-run made without --instrument-with ppx_windtrap.coverage, or a cached test \
    dune did not re-run"
@@ -115,7 +125,8 @@ let load_merged files =
         Result.bind acc (fun entries ->
             Result.map
               (fun (t, exe) ->
-                (path, t, Data_files.freshness ~path exe) :: entries)
+                if Data_files.self_written exe then entries
+                else (path, t, Data_files.freshness ~path exe) :: entries)
               (Windtrap_coverage.load path)))
       (Ok []) files
   in
@@ -162,7 +173,13 @@ let load_merged files =
           "windtrap coverage: a forced run rewrites stale dumps: dune build \
            @cover --force --instrument-with ppx_windtrap.coverage\n\
            %!";
-      if kept = [] then begin
+      if kept = [] && flagged = [] then begin
+        (* Every file found was this command's own exhaust. From the
+           reader's side that is an empty estate, not a stale one. *)
+        prerr_string ("windtrap coverage: " ^ no_data);
+        Error 1
+      end
+      else if kept = [] then begin
         let orphans =
           List.length
             (List.filter
@@ -301,12 +318,7 @@ let run args =
           1
       | Ok (files, source_roots) -> (
           if files = [] then begin
-            Printf.eprintf
-              "windtrap coverage: no .coverage files found\n\
-               Instrument the library under test\n\
-              \  (instrumentation (backend ppx_windtrap.coverage))\n\
-               and run its tests first:\n\
-              \  dune runtest --instrument-with ppx_windtrap.coverage\n";
+            prerr_string ("windtrap coverage: " ^ no_data);
             1
           end
           else
