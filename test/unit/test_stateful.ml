@@ -1509,7 +1509,7 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
          tick_facade)
   in
   let selects tag =
-    Tag.accepts (Tag.require tag Tag.default_predicate) case.Test_tree.tags
+    Tag.accepts (Tag.require tag Tag.any) case.Test_tree.tags
   in
   check (selects "prop") "--tag prop did not select a stateful test";
   check (selects "stateful") "--tag stateful did not select a stateful test";

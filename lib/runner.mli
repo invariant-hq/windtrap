@@ -114,7 +114,7 @@
 
     {b Selection.} A test runs iff its path contains [config.filter] (when set),
     does not contain [config.exclude] (when set), its tags satisfy
-    [--tag]/[--exclude-tag]/[--quick] over {!Tag.default_predicate}, it survives
+    [--tag]/[--exclude-tag]/[--quick] over {!Tag.any}, it survives
     the [--failed] allowlist, it falls in the requested [--shard] bucket (when
     set), and — when any focused node exists — it is focused. Deselected tests
     do not execute and are not recorded. Fixture releases run after the last

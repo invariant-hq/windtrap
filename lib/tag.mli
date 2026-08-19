@@ -10,9 +10,8 @@
     tags and its ancestors'. Selection ([--tag], [--exclude-tag], [--quick]) is
     expressed as a {!predicate} over tag sets.
 
-    Two tag names carry built-in meaning: {!slow} (pre-applied by the [slow]
-    test constructor, dropped by [--quick]) and {!disabled} (dropped by
-    {!default_predicate}). *)
+    One tag name carries built-in meaning: {!slow}, pre-applied by the [slow]
+    test constructor and dropped by [--quick]. *)
 
 (** {1:tags Tag sets} *)
 
@@ -41,10 +40,6 @@ val slow : string
 (** [slow] is ["slow"]: pre-applied by the [slow] declaration constructor and
     dropped by the [--quick] flag. *)
 
-val disabled : string
-(** [disabled] is ["disabled"]: tests carrying it are skipped by
-    {!default_predicate} without any flag. *)
-
 (** {1:predicates Selection predicates}
 
     A predicate holds a set of required tags and a set of dropped tags. A tag
@@ -52,15 +47,14 @@ val disabled : string
     ones. A tag cannot be both required and dropped: adding it to one set
     removes it from the other, so the last flag wins.
 
-    Selection starts from {!default_predicate} and refines it with {!require}
-    and {!drop}, one call per flag. *)
+    Selection starts from {!any} and refines it with {!require} and {!drop},
+    one call per flag. *)
 
 type predicate
 (** The type for tag selection predicates. *)
 
-val default_predicate : predicate
-(** [default_predicate] requires nothing and drops {!disabled} — the runner's
-    starting point, before any [--tag]/[--exclude-tag]/[--quick] flag. *)
+val any : predicate
+(** [any] requires nothing and drops nothing: it accepts every tag set. *)
 
 val require : string -> predicate -> predicate
 (** [require name p] is [p] requiring [name]; [name] is no longer dropped. *)

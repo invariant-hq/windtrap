@@ -20,16 +20,12 @@ let is_empty = String_set.is_empty
 (* Well-known tags *)
 
 let slow = "slow"
-let disabled = "disabled"
 
 (* Selection predicates *)
 
 type predicate = { required : String_set.t; dropped : String_set.t }
 
-(* Tests tagged "disabled" are skipped without any explicit flag: the
-   runner's starting predicate requires nothing and drops that one tag. *)
-let default_predicate =
-  { required = String_set.empty; dropped = String_set.singleton disabled }
+let any = { required = String_set.empty; dropped = String_set.empty }
 
 let require name p =
   {

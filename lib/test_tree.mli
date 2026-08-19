@@ -199,7 +199,7 @@ val xfail : ?reason:string -> t -> t
     one recorded on its flattened {!type:case}.
 
     Use [xfail] to keep a known-bug reproduction in-tree without a red run; use
-    {!Tag.disabled} or [skip] when the body must not run at all. *)
+    [skip] when the body must not run at all. *)
 
 (** {1:focus Focus} *)
 

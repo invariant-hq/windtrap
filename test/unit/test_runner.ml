@@ -784,7 +784,6 @@ let () =
     [
       Test_tree.test "plain" (fun () -> ());
       Test_tree.test ~tags:[ "db" ] "tagged" (fun () -> ());
-      Test_tree.test ~tags:[ Tag.disabled ] "off" (fun () -> ());
       Test_tree.slow "molasses" (fun () -> ());
     ]
   in
@@ -792,7 +791,7 @@ let () =
     { (base_config ~log_dir:root ()) with Run.tags; exclude_tags; quick }
   in
   expect_run "default tag predicate" ~config:(config ()) suite @@ fun outcome ->
-  check "disabled is dropped by default, slow runs"
+  check "no tag flag selects the whole suite"
     (ran_names outcome = [ "plain"; "tagged"; "molasses" ]);
   expect_run "--tag requires" ~config:(config ~tags:[ "db" ] ()) suite
   @@ fun outcome ->
@@ -803,12 +802,7 @@ let () =
   @@ fun outcome ->
   check "--exclude-tag" (ran_names outcome = [ "plain"; "molasses" ]);
   expect_run "-q drops slow" ~config:(config ~quick:true ()) suite
-  @@ fun outcome ->
-  check "-q" (ran_names outcome = [ "plain"; "tagged" ]);
-  expect_run "--tag disabled re-enables"
-    ~config:(config ~tags:[ Tag.disabled ] ())
-    suite
-  @@ fun outcome -> check "--tag disabled" (ran_names outcome = [ "off" ])
+  @@ fun outcome -> check "-q" (ran_names outcome = [ "plain"; "tagged" ])
 
 let () =
   clear_env ();
