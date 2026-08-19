@@ -214,7 +214,7 @@ let snapshot_pp ?pos name pp value =
 
 (* Captured output *)
 
-let output ?pos () = Capture.output ?pos (Run.capture (Run.current ()))
+let output () = Capture.output (Run.capture (Run.current ()))
 
 (* The running test *)
 

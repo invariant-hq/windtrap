@@ -409,7 +409,7 @@ let remove_temp frame =
    same bargain the scratch paths make, holding on every outcome for the
    same reason, that the runner regains control on every outcome. *)
 
-let setenv ?pos name value =
+let setenv name value =
   let frame = current_frame () in
   (* The prior binding is read before [Env.set] changes it, but recorded
      only after [Env.set] returns: [Env.set] validates the name before it
@@ -423,16 +423,16 @@ let setenv ?pos name value =
      twice still leaves behind what it found. *)
   if not (List.exists (fun e -> e.er_name = name) frame.fr_env) then
     frame.fr_env <-
-      { er_name = name; er_prior = prior; er_loc = Loc.resolve ?pos () }
+      { er_name = name; er_prior = prior; er_loc = Loc.capture () }
       :: frame.fr_env
 
-let chdir ?pos dir =
+let chdir dir =
   let frame = current_frame () in
   (* Captured at the first [chdir] rather than at the attempt's start: a
      test that never moves pays nothing, and the directory to return to is
      the same one either way. *)
   if frame.fr_cwd = None then
-    frame.fr_cwd <- Some (Sys.getcwd (), Loc.resolve ?pos ());
+    frame.fr_cwd <- Some (Sys.getcwd (), Loc.capture ());
   Unix.chdir dir
 
 (* A restoration that cannot happen is recorded, never raised: the attempt

@@ -115,7 +115,10 @@ val output : ?pos:Loc.pos -> t -> string
     ["this test requires capture; rerun without --stream"], failing the calling
     test at the call site — under [--stream] there are no captured bytes to
     return, and v1's silent [""] made expect tests pass vacuously. The failure's
-    location is [Loc.resolve ?pos ()]. *)
+    location is [Loc.resolve ?pos ()]: the facade passes no [pos] and lets
+    {!Loc.capture} find its caller, while the ppx runtime passes the
+    [\[%expect\]] node's position — its own compilation unit is not one
+    {!Loc.own_unit} knows, so a capture would name [ppx_runtime.ml]. *)
 
 val output_tail : t -> Failure.tail option
 (** [output_tail t] is the bounded suffix of the current attempt's {e entire}

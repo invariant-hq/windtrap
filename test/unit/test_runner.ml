@@ -1456,14 +1456,16 @@ let () =
   let home = Sys.getcwd () in
   let gone = Filename.concat root "gone" in
   Unix.mkdir gone 0o700;
-  let pos = __POS__ in
+  let site = ref None in
   let tests =
     [
       Test_tree.test "chdir-restore-fails" (fun () ->
           (* Enter [gone] without telling the runner, so it becomes the
-             directory the first [chdir] below captures. *)
+             directory the first [chdir] below captures. Both bindings sit
+             on one line so the captured line number is known. *)
           Unix.chdir gone;
-          Run.chdir ~pos root;
+          let p = __POS__ and () = Run.chdir root in
+          site := Some p;
           Unix.rmdir gone);
     ]
   in
@@ -1478,10 +1480,14 @@ let () =
       check "it names the directory it could not return to"
         (contains "working directory" (message_of f)
         && contains gone (message_of f));
-      (* [?pos] earns its place here: the boundary that discovers the
-         problem is nobody's code, so the report points at the [chdir]. *)
+      (* The boundary that discovers the problem is nobody's code, so the
+         report points at the [chdir] the test made. *)
       check "it is located at the change that could not be undone"
-        (f.Failure.loc = Some (Loc.of_pos pos))
+        (match (f.Failure.loc, !site) with
+        | Some loc, Some (file, line, _, _) ->
+            Filename.basename loc.Loc.file = Filename.basename file
+            && loc.Loc.line = line
+        | _ -> false)
   | fs ->
       check_int "chdir restore failure entries" ~expected:1
         ~actual:(List.length fs)

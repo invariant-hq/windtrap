@@ -903,7 +903,7 @@ val snapshot_pp : ?pos:pos -> string -> 'a printer -> 'a -> unit
 
 (** {1:capture Captured output} *)
 
-val output : ?pos:pos -> unit -> string
+val output : unit -> string
 (** [output ()] consumes the current test's captured output: the bytes written
     to standard output and standard error (C stubs and subprocesses included)
     since the test started or since the previous [output ()] call. Use it to
@@ -958,7 +958,7 @@ val temp_file : ?suffix:string -> unit -> string
 (** [temp_file ()] is the path of a fresh empty file with the same lifecycle as
     {!temp_dir}; [suffix] is appended to the basename (e.g. [".json"]). *)
 
-val setenv : ?pos:pos -> string -> string option -> unit
+val setenv : string -> string option -> unit
 (** [setenv name (Some value)] binds the environment variable [name] to [value]
     for the rest of the test; [setenv name None] unbinds it. The runner puts
     [name] back the way it found it when the test ends, on every outcome —
@@ -983,7 +983,7 @@ val setenv : ?pos:pos -> string -> string option -> unit
     domain, so tests never race {e each other} here; threads within one test
     are the caller's to order. *)
 
-val chdir : ?pos:pos -> string -> unit
+val chdir : string -> unit
 (** [chdir dir] changes the working directory to [dir] for the rest of the test.
     The runner returns the process to the directory it was in at the test's
     first [chdir] when the test ends, on every outcome, per attempt.

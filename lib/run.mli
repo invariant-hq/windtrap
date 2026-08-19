@@ -305,7 +305,7 @@ val remove_tree : string -> unit
     the test spawns sees them, and a change made from such a thread races the
     restoration. *)
 
-val setenv : ?pos:Loc.pos -> string -> string option -> unit
+val setenv : string -> string option -> unit
 (** [setenv name (Some value)] binds the environment variable [name] to [value]
     for the rest of the executing test; [setenv name None] unbinds it
     ({!Env.set}, so an unbinding is a real one — [Sys.getenv_opt] answers [None],
@@ -315,20 +315,20 @@ val setenv : ?pos:Loc.pos -> string -> string option -> unit
     What is restored is what [name] held before the attempt's {e first} [setenv]
     of it: later calls with the same name change the binding without touching
     the restore record, so a test that binds a variable twice still leaves
-    behind what it found, and a variable that was unbound is unbound again.
-    [pos] locates the change, and so locates a restoration that fails.
+    behind what it found, and a variable that was unbound is unbound again. A
+    restoration that fails is reported at the call that made the change.
 
     Raises the assertions-outside-run error ([Invalid_argument], see
     {!current_frame}) when no test is running — the frame is read before the
     process is touched, so nothing is bound that nothing would undo — and
     [Invalid_argument] for a name {!Env.set} refuses. *)
 
-val chdir : ?pos:Loc.pos -> string -> unit
+val chdir : string -> unit
 (** [chdir dir] changes the process's working directory to [dir] for the rest of
     the executing test ([Unix.chdir]). The runner restores the directory
     captured at the attempt's first [chdir] when the attempt ends; later calls
-    move the process without changing what is restored. [pos] locates the
-    change, and so locates a restoration that fails.
+    move the process without changing what is restored. A restoration that
+    fails is reported at the call that made the change.
 
     Raises the assertions-outside-run error ([Invalid_argument], see
     {!current_frame}) when no test is running, and [Unix.Unix_error] when [dir]
