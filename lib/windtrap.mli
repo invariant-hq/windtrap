@@ -5,9 +5,10 @@
 
 (** One library for all your OCaml tests.
 
-    Windtrap runs unit, property, and snapshot tests from one flat surface:
-    declare tests with {!test} and {!group}, assert with the assertion verbs
-    ({!equal}, {!require_some}, {!raises}, ...), and hand the suite to {!run}:
+    Windtrap runs unit, property, stateful, snapshot and inline expect tests
+    from one flat surface: declare tests with {!test} and {!group}, assert with
+    the assertion verbs ({!equal}, {!require_some}, {!raises}, ...), and hand
+    the suite to {!run}:
 
     {[
       open Windtrap
@@ -27,24 +28,34 @@
     Comparisons go through an ['a] {!type:testable} — a printer and an equality
     — so every failure prints a structured diff of the two values. Witnesses for
     base types and containers are re-exported flat ({!int}, {!list}, {!pair},
-    ...); build your own with {!Testable.make}.
+    ...); their constructors stay behind {!Testable} ({!Testable.make},
+    {!Testable.contramap}), which is what keeps those names out of every test
+    file's scope.
 
     Property tests use {!prop} over an ['a] {!Gen.t} generator; shrinking is
-    integrated and every failure prints a replay command. Snapshot tests
-    ({!snapshot}) compare against committed baselines under [__snapshots__/] and
-    print their acceptance command on mismatch. Resources are scoped by
-    {!bracket} (one the setup returns), {!scoped} (one a callback receives) and
-    {!fixture} (one shared by the run); {!temp_dir} and {!temp_file} give
-    runner-cleaned scratch paths, and {!setenv} and {!chdir} bind the
-    environment and the working directory for one test with the runner
-    restoring both; {!output} reads back the test's captured output;
-    {!subtest} names sub-cases inside a body and {!val:xfail} keeps known-bug
-    reproductions in-tree without a red run.
+    integrated and every failure prints a replay command. {!stateful} takes that
+    to sequences of calls: it checks {!command}s against a model and shrinks a
+    failure to a minimal program. Snapshot tests ({!snapshot}) compare against
+    committed baselines under [__snapshots__/] and print their acceptance
+    command on mismatch. Structure and resources: {!cases} declares one named
+    test per input, {!bracket} scopes a resource the setup returns, {!scoped}
+    one a callback receives and {!fixture} one shared by the run; {!temp_dir}
+    and {!temp_file} give runner-cleaned scratch paths, {!setenv} and {!chdir}
+    bind the environment and the working directory for one test with the runner
+    restoring both; {!output} reads back the test's captured output; {!subtest}
+    names sub-cases inside a body and {!val:xfail} keeps known-bug reproductions
+    in-tree without a red run.
 
-    Runnable examples for each feature live under [examples/] in the
-    distribution; [doc/cookbook.md] collects the recipes windtrap deliberately
-    does not absorb; the [CHANGES.md] 0.2.0 entry maps the windtrap 1.x surface
-    to this one. *)
+    The companion [ppx_windtrap] package adds inline expect tests
+    ([let%expect_test] and its expect blocks), accepted through [dune promote],
+    and two dune instrumentation backends: [ppx_windtrap.coverage] for
+    expression coverage and [ppx_windtrap.mutate] for mutation testing, both
+    reported by the [windtrap] command.
+
+    The manual under [doc/manual/] is the long-form companion to this reference,
+    with [doc/cookbook.md] for the recipes windtrap deliberately does not
+    absorb; runnable projects live under [examples/]; the [CHANGES.md] 0.2.0
+    entry maps the windtrap 0.1.x surface to this one. *)
 
 (** {1:types Types} *)
 
