@@ -172,13 +172,12 @@ val github_annotations :
 
 (** {1:coverage The coverage seam} *)
 
-val snapshot_coverage : Run.t -> unit
-(** [snapshot_coverage run] snapshots in-process coverage at run end: when
-    instrumented code registered any data, the summary is recorded into [run]
-    ({!Run.set_coverage}) for renderers to project like any other run data. The
-    core library's entire coverage coupling lives here and in the renderers:
-    three runtime calls, and no rendering decision. Whether the resulting line
-    prints is {!t.coverage}'s. *)
+val snapshot_coverage : unit -> Render.coverage_summary option
+(** [snapshot_coverage ()] is what instrumented code registered in this process,
+    scoped by [WINDTRAP_COVERAGE_ONLY], or [None] when nothing registered. Core
+    windtrap's entire coverage coupling lives here and in the renderers: three
+    runtime calls, and no rendering decision. Whether the resulting line prints
+    is {!t.coverage}'s. *)
 
 val coverage_data :
   ?source_roots:string list -> Windtrap_coverage.t -> Render.coverage

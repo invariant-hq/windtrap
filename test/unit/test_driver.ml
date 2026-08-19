@@ -114,25 +114,17 @@ let test_github_envelope_composed () =
 (* The coverage seam *)
 
 let test_coverage_seam () =
-  let run = make_run () in
-  check "a run records no coverage until the seam runs"
-    (Run.coverage run = None);
-  Run.set_coverage run { Run.visited = 3; total = 4 };
-  check "what the seam records is what renderers project"
-    (Run.coverage run = Some { Run.visited = 3; total = 4 });
   (* The seam's whole contract, stated so that it holds whether or not
      this executable is instrumented — under `--instrument-with` the core
      it tests is, and then the registry is emphatically not empty. The
-     no-op path (nothing registered, nothing recorded) is the left-to-
+     no-op path (nothing registered, nothing measured) is the left-to-
      right reading under a plain `dune runtest`; the right-to-left one is
      what an instrumented run exercises. Asserting the equivalence keeps
      one test honest in both worlds instead of two tests each true in
      one. *)
-  let fresh = make_run () in
-  Driver.snapshot_coverage fresh;
-  check "the seam records on the run exactly when it snapshotted something"
+  check "the seam answers with a summary exactly when it measured something"
     (Windtrap_coverage.is_empty (Windtrap_coverage.snapshot ())
-    = (Run.coverage fresh = None))
+    = (Driver.snapshot_coverage () = None))
 
 let tests =
   [

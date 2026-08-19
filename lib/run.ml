@@ -125,8 +125,6 @@ type result = {
   prop_stats : Property.stats option;
 }
 
-type summary = { visited : int; total : int }
-
 type t = {
   config : config;
   capture : Capture.t;
@@ -135,7 +133,6 @@ type t = {
   mutable acquired : int list; (* fixture ids, most recently acquired first *)
   mutable temp_seq : int; (* next scratch-directory number *)
   mutable rev_results : result list;
-  mutable coverage : summary option;
 }
 
 let create config ~capture ~snapshots =
@@ -147,7 +144,6 @@ let create config ~capture ~snapshots =
     acquired = [];
     temp_seq = 0;
     rev_results = [];
-    coverage = None;
   }
 
 let config t = t.config
@@ -588,7 +584,3 @@ let release_fixtures t ~announce =
 let record t result = t.rev_results <- result :: t.rev_results
 let results t = List.rev t.rev_results
 
-(* Coverage seam *)
-
-let set_coverage t summary = t.coverage <- Some summary
-let coverage t = t.coverage

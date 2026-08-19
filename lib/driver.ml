@@ -191,13 +191,12 @@ let coverage_scope () =
       Windtrap_coverage.filter (fun file ->
           List.exists (fun prefix -> String.starts_with ~prefix file) prefixes)
 
-let snapshot_coverage run =
-  (* When instrumented code registered in-process coverage, snapshot it
-     into the run record; renderers project it like any other run data. *)
+let snapshot_coverage () =
   let collection = coverage_scope () (Windtrap_coverage.snapshot ()) in
-  if not (Windtrap_coverage.is_empty collection) then
+  if Windtrap_coverage.is_empty collection then None
+  else
     let s = Windtrap_coverage.summary collection in
-    Run.set_coverage run { Run.visited = s.visited; total = s.total }
+    Some { Render.visited = s.visited; total = s.total }
 
 (* The one builder of the report's section data ({!Render.coverage}):
    the seam that links the runtime turns what it measured into the
@@ -291,9 +290,9 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
          (fixture-release failures). Every sink projects it, so a verdict
          that sets the exit code is always visible in the report. *)
       let results = Run.results outcome.Runner.run in
-      snapshot_coverage outcome.Runner.run;
+      let measured = snapshot_coverage () in
       Render.finish renderer
-        ?coverage:(if coverage then Run.coverage outcome.Runner.run else None)
+        ?coverage:(if coverage then measured else None)
         ~results ~duration:outcome.Runner.duration ();
       Render.report_snapshots renderer ~orphans:outcome.Runner.orphans
         outcome.Runner.run;

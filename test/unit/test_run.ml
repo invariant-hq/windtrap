@@ -706,18 +706,6 @@ let () =
         (b.Run.path = [ "g"; "b" ] && b.Run.attempts = 3 && b.Run.duration = 1.5)
   | _ -> check "results shape" false
 
-(* Coverage seam *)
-
-let () =
-  let run = make_run () in
-  check "no coverage snapshot by default" (Run.coverage run = None);
-  Run.set_coverage run { Run.visited = 312; total = 358 };
-  match Run.coverage run with
-  | Some summary ->
-      check "the coverage snapshot is exposed to renderers"
-        (summary.Run.visited = 312 && summary.Run.total = 358)
-  | None -> check "coverage snapshot recorded" false
-
 (* Summary *)
 
 let () = finish ()

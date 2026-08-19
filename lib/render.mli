@@ -248,9 +248,16 @@ val note : t -> string -> unit
     names itself on a terminal. The runner announces fixture releases with it
     ([releasing db]). *)
 
+type coverage_summary = {
+  visited : int;  (** Instrumented blocks visited at least once. *)
+  total : int;  (** Instrumented blocks in every registered file. *)
+}
+(** The type for the run-end coverage summary the transcript's last line draws
+    ({!Driver.snapshot_coverage}). *)
+
 val finish :
   t ->
-  ?coverage:Run.summary ->
+  ?coverage:coverage_summary ->
   results:Run.result list ->
   duration:float ->
   unit ->

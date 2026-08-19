@@ -139,9 +139,10 @@ renders but never runs tests or drives a build, and at most one core
 module that drives it.
 
 - **Coverage** — `ppx/coverage/`, `lib/coverage/`, `bin/coverage_cmd.ml`,
-  no core module. Its entire coupling is one summary snapshot read into
-  the run record at run end and rendered, as section data, like any
-  other run data.
+  no core module. Its entire coupling is the named coverage seam of
+  `lib/driver.ml`: one summary read at run end and handed to the
+  transcript's last line, and the section data the reporting command
+  draws from the same builder.
 - **Mutation** — `ppx/mutate/`, `lib/mutate/`, `bin/mutate_cmd.ml`, and
   `lib/mutate_loop.ml(i)`. Its coupling is one dispatch call at run
   entry (the two thin drivers call `Mutate_loop.execute_and_report` in

@@ -2514,6 +2514,8 @@ let admission_report t (a : admission) =
          @ [ Line []; Rule None ])
     @ [ Line []; Line (admission_summary_spans a) ])
 
+type coverage_summary = { visited : int; total : int }
+
 let finish t ?coverage ~results ~duration () =
   clear_live t;
   let failed_results, excused_results =
@@ -2586,7 +2588,7 @@ let finish t ?coverage ~results ~duration () =
      other executables exist is not something a run can know, and a hint
      that is true either way needs no filesystem look to decide. *)
   (match coverage with
-  | Some { Run.visited; total } when t.mode <> `Quiet ->
+  | Some { visited; total } when t.mode <> `Quiet ->
       put t
         (line_str t
            (coverage_line ~hint:"project: dune build @cover" ~visited ~total ()))

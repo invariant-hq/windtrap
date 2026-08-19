@@ -94,7 +94,7 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
 
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
-let golden_coverage = { Run.visited = 312; total = 358 }
+let golden_coverage = { Render.visited = 312; total = 358 }
 
 let test_golden_compact () =
   let actual =

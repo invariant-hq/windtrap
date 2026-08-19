@@ -468,23 +468,3 @@ val results : t -> result list
 (** [results t] is the recorded rows in execution order: every executed test's
     row, then any fixture-release rows (release order). *)
 
-(** {1:coverage Coverage seam}
-
-    Core windtrap's entire coverage coupling: at run end the runner snapshots
-    in-process coverage — when instrumented code registered any — into the field
-    below, and renderers project it like any other run data. No other coverage
-    type or call appears in the core library. *)
-
-type summary = {
-  visited : int;  (** Instrumented blocks visited at least once. *)
-  total : int;  (** Instrumented blocks in every registered file. *)
-}
-(** The type for end-of-run coverage summaries. *)
-
-val set_coverage : t -> summary -> unit
-(** [set_coverage t summary] records the run's coverage snapshot. Called at most
-    once, at run end. *)
-
-val coverage : t -> summary option
-(** [coverage t] is the recorded snapshot, or [None] when no coverage data was
-    registered. *)
