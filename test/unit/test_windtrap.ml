@@ -56,7 +56,7 @@ let () =
       in
       let argv =
         if argv0 = "" then [||]
-        else [| argv0; "-o"; log_dir; "--color"; "never"; "-q" |]
+        else [| argv0; "-o"; log_dir; "--color"; "never" |]
       in
       (* A property, so the transcript carries a replay line: that is the
          surviving hint the invocation spelling reaches. *)

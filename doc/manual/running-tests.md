@@ -50,7 +50,6 @@ inventory. The ones that matter daily:
 | `--shard K/N` | `WINDTRAP_SHARD` | run bucket K of N (see below) |
 | `-s`, `--stream` | `WINDTRAP_STREAM` | stream output instead of capturing |
 | `-v`, `--verbose` | `WINDTRAP_VERBOSE` | one status line per test |
-| `-q`, `--quiet` | `WINDTRAP_QUIET` | failures and summary only |
 | `-x`, `--fail-fast` / `--bail N` | `WINDTRAP_BAIL` | stop after the first / after N failures |
 | `--color MODE` | `WINDTRAP_COLOR` | color output |
 | `--junit PATH` | `WINDTRAP_JUNIT` | also write a JUnit XML report |
@@ -62,9 +61,9 @@ A test's path is its group names then its own, joined with `" › "`;
 
 ## Output
 
-Terminal verbosity is one three-level axis — `-q` ⊂ default ⊂ `-v` —
-not a format: every level prints the same failure blocks and the same
-summary line; the levels only add stream lines and trimmings.
+Terminal verbosity is one axis with two levels — default ⊂ `-v` — not
+a format: both print the same failure blocks and the same summary line;
+`-v` only adds stream lines and trimmings.
 
 By default the transcript earns its size. A green, healthy run is
 exactly one line, named after the suite (with the root seed appended
@@ -168,13 +167,6 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
 
 Verbose also keeps the slowest-tests list and prints the same slow
 warnings; it never defers — every line streams as it happens.
-
-`-q` (`WINDTRAP_QUIET`) prints the failure blocks and the summary,
-nothing else — no slow warnings, no coverage, no
-snapshot notices. A green quiet run is the same named one-liner as the
-default level. The empty-selection line still prints — it names what
-matched nothing and how many tests there were, and explains exit
-code 2.
 
 The level decides *what* prints; the sink only decides color and the
 live tail. Piped output — redirects, CI logs — has the same shape,

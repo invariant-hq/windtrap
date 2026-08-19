@@ -1331,7 +1331,7 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
 (* The thin inline driver: [Driver.execute_and_report] writes the whole
    transcript, shared byte-for-byte with the library runner (one behavior,
    both runners — ppx/F-4). The inline protocol has no CLI, so the
-   WINDTRAP_* mirrors are the CLI: WINDTRAP_QUIET/WINDTRAP_VERBOSE pick the
+   WINDTRAP_* mirrors are the CLI: WINDTRAP_VERBOSE picks the
    verbosity level and WINDTRAP_COVERAGE the inline coverage line (both
    resolved in [exit], beside the config, by the one [Cli.settings]
    call). What is

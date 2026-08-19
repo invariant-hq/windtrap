@@ -79,7 +79,7 @@ let () =
       "2.5";
       "--prop-count";
       "50";
-      "--quiet";
+      "-v";
       "--junit";
       "out.xml";
       "--color";
@@ -99,7 +99,7 @@ let () =
       check "seed" (p.Cli.seed = Some 0xffL);
       check "timeout" (p.Cli.timeout = Some 2.5);
       check "prop_count" (p.Cli.prop_count = Some 50);
-      check "quiet" (p.Cli.output = Some `Quiet);
+      check "verbose" (p.Cli.verbose = Some true);
       check "junit" (p.Cli.junit = Some "out.xml");
       check "color" (p.Cli.color = Some Env.Never);
       check "log_dir" (p.Cli.log_dir = Some "logs");
@@ -126,26 +126,18 @@ let () =
       check "inline tags accumulate"
         (p.Cli.tags = [ "a"; "c" ] && p.Cli.exclude_tags = [ "b" ]))
 
-(* Parsing: the output level (-q ⊂ default ⊂ -v) *)
+(* Parsing: the output level (default ⊂ -v) *)
 
 let () =
   reg "output level parsing" @@ fun () ->
-  expect_ok "-q parses as quiet" [ "-q" ] (fun p ->
-      check "-q" (p.Cli.output = Some `Quiet));
-  expect_ok "--quiet parses" [ "--quiet" ] (fun p ->
-      check "--quiet" (p.Cli.output = Some `Quiet));
   expect_ok "-v parses as verbose" [ "-v" ] (fun p ->
-      check "-v" (p.Cli.output = Some `Verbose));
+      check "-v" (p.Cli.verbose = Some true));
   expect_ok "--verbose parses" [ "--verbose" ] (fun p ->
-      check "--verbose" (p.Cli.output = Some `Verbose));
-  expect_ok "one axis: the last flag wins" [ "-q"; "-v" ] (fun p ->
-      check "-q -v is verbose" (p.Cli.output = Some `Verbose));
-  expect_ok "one axis: the last flag wins (reversed)" [ "-v"; "-q" ] (fun p ->
-      check "-v -q is quiet" (p.Cli.output = Some `Quiet));
+      check "--verbose" (p.Cli.verbose = Some true));
   expect_ok "--exclude-tag is selection only, not the output level"
     [ "--exclude-tag"; "slow" ] (fun p ->
       check "--exclude-tag"
-        (p.Cli.exclude_tags = [ "slow" ] && p.Cli.output = None))
+        (p.Cli.exclude_tags = [ "slow" ] && p.Cli.verbose = None))
 
 (* Parsing: positionals *)
 
@@ -351,7 +343,6 @@ let () =
       "--update";
       "--stream";
       "--verbose";
-      "--quiet";
       "--junit";
       "--color";
       "--output";
@@ -365,7 +356,6 @@ let () =
       "WINDTRAP_SEED";
       "WINDTRAP_SHARD";
       "WINDTRAP_UPDATE";
-      "WINDTRAP_QUIET";
       "WINDTRAP_VERBOSE";
       "WINDTRAP_SLOW_THRESHOLD";
       "WINDTRAP_COLUMNS";
@@ -702,20 +692,16 @@ let () =
         `Compact
   in
   check "default level is compact" (level Cli.empty = `Compact);
-  Unix.putenv "WINDTRAP_QUIET" "1";
-  check "WINDTRAP_QUIET reaches quiet (the dune runtest path)"
-    (level Cli.empty = `Quiet);
-  check "CLI -v beats WINDTRAP_QUIET"
-    (level { Cli.empty with Cli.output = Some `Verbose } = `Verbose);
   Unix.putenv "WINDTRAP_VERBOSE" "1";
-  check "verbose wins within the env layer" (level Cli.empty = `Verbose);
+  check "WINDTRAP_VERBOSE reaches verbose (the dune runtest path)"
+    (level Cli.empty = `Verbose);
   clear_env ();
   Unix.putenv "WINDTRAP_VERBOSE" "maybe";
   check "an unparseable boolean counts as unset" (level Cli.empty = `Compact);
   clear_env ();
-  Unix.putenv "WINDTRAP_QUIET" " 1 ";
+  Unix.putenv "WINDTRAP_VERBOSE" " 1 ";
   check "boolean spellings are trimmed, as WINDTRAP_STREAM's"
-    (level Cli.empty = `Quiet);
+    (level Cli.empty = `Verbose);
   clear_env ()
 
 (* Resolution: the one call both drivers make *)
@@ -732,10 +718,11 @@ let () =
   check "the coverage field defaults to on" s.Cli.coverage;
   check "the level field defaults to compact" (s.Cli.output_level = `Compact);
   Unix.putenv "WINDTRAP_COVERAGE" "off";
-  Unix.putenv "WINDTRAP_QUIET" "1";
+  Unix.putenv "WINDTRAP_VERBOSE" "1";
   let s = settings Cli.empty in
   check "WINDTRAP_COVERAGE reaches the coverage field" (not s.Cli.coverage);
-  check "WINDTRAP_QUIET reaches the level field" (s.Cli.output_level = `Quiet);
+  check "WINDTRAP_VERBOSE reaches the level field"
+    (s.Cli.output_level = `Verbose);
   clear_env ()
 
 let () =

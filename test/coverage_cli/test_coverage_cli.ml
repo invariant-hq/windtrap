@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for coverage's Law-12 seam and reporting surface: the inline
-   line through a real windtrap run (thresholds, hint, quiet, off,
+   line through a real windtrap run (thresholds, hint, off,
    Law-13 exit codes), WINDTRAP_COVERAGE as a switch with its loud
    rejection of malformed and retired values, the
    at_exit dump feeding the reporting command, `windtrap coverage` end
@@ -220,7 +220,7 @@ let dump_of ?(only = "lib/fake.ml") path =
   | Ok (t, id) -> Some (C.filter (fun file -> file = only) t, id)
 
 let inline_line =
-  test "the inline line: thresholds, hint, quiet, off, exit codes" @@ fun () ->
+  test "the inline line: thresholds, hint, off, exit codes" @@ fun () ->
   (* Thresholds: green >= 80, yellow >= 60, red below (v1's, frozen). *)
   let code, out, _, _ =
     child ~env:[ "CHILD_VISITED=9" ] ~args:[ "--color"; "always" ] ()
@@ -244,12 +244,7 @@ let inline_line =
   check_contains "the summary line matches the design shape"
     ~needle:"coverage: 90.0% (9/10 points) \u{00b7} project: dune build @cover"
     out;
-  (* Quiet, off, and uninstrumented runs render nothing. *)
-  let code, out, _, _ =
-    child ~env:[ "CHILD_VISITED=9" ] ~args:[ "--quiet"; "--color"; "never" ] ()
-  in
-  check_int "quiet child exits 0" ~expected:0 ~actual:code;
-  check_absent "quiet suppresses the coverage line" ~needle:"coverage:" out;
+  (* Off and uninstrumented runs render nothing. *)
   let _, out, _, _ =
     child
       ~env:[ "CHILD_VISITED=9"; "WINDTRAP_COVERAGE=off" ]

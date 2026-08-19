@@ -136,44 +136,6 @@ let test_coverage_line_hint () =
   check_contains "the coverage line names the aggregate"
     ~sub:"coverage: 87.2% (312/358 points) · project: dune build @cover\n" t
 
-let test_quiet () =
-  let t = transcript ~mode:`Quiet () in
-  check_absent "quiet: no header" ~sub:"mylib: 11 tests" t;
-  check_absent "quiet: no PASS lines" ~sub:"PASS" t;
-  check_absent "quiet: no SKIP lines" ~sub:"SKIP" t;
-  check_absent "quiet: no glyph row" ~sub:".FFFFFF" t;
-  check_absent "quiet: no stream FAIL lines (no timings at all)" ~sub:"0.2ms" t;
-  check_absent "quiet: no slowest" ~sub:"slowest tests:" t;
-  check_absent "quiet: no slow warnings" ~sub:"slow tests (" t;
-  check_contains "quiet: failure blocks survive"
-    ~sub:"  FAIL  users › sessions after login\n" t;
-  check_contains "quiet: failure rule survives" ~sub:"failures (6)" t;
-  check_contains "quiet: summary survives"
-    ~sub:"4 passed, 1 skipped, 6 failed in 6.5s." t;
-  check "quiet: the blocks open the transcript"
-    (String.length t > 0 && t.[0] = '\xe2' (* the failures rule *))
-
-let test_quiet_green_run () =
-  let t =
-    with_renderer ~mode:`Quiet (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r (Fixtures.result [ "t" ] Failure.Pass);
-        Render.finish r
-          ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
-          ~duration:0.000619 ())
-  in
-  check_string "quiet: a green run is exactly the named summary line"
-    ~expected:"s: 1 passed in 0.000619s.\n" ~actual:t;
-  let unnamed =
-    with_renderer ~mode:`Quiet (fun r ->
-        Render.result r (Fixtures.result [ "t" ] Failure.Pass);
-        Render.finish r
-          ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
-          ~duration:0.000619 ())
-  in
-  check_string "quiet: no header seen, summary stays bare"
-    ~expected:"1 passed in 0.000619s.\n" ~actual:unnamed
-
 let test_ansi () =
   let t = transcript ~ansi:true ~mode:`Verbose () in
   check_contains "ansi: FAIL tag is red" ~sub:"\027[31mFAIL\027[0m" t;
@@ -536,10 +498,6 @@ let test_note () =
   in
   check_string "note: verbose prints the plain line" ~expected:"releasing db\n"
     ~actual:verbose;
-  let quiet =
-    with_renderer ~mode:`Quiet (fun r -> Render.note r "releasing db")
-  in
-  check_string "note: suppressed under quiet" ~expected:"" ~actual:quiet;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
         Render.header r ~suite:"s" ~tests:2 ~seed:None ();
@@ -1333,11 +1291,6 @@ let test_xfail_line () =
   in
   check_contains "xfail line: reasonless form" ~sub:"(expected failure)"
     no_reason;
-  let quiet =
-    with_renderer ~mode:`Quiet (fun r ->
-        Render.result r Fixtures.excused_result)
-  in
-  check_string "xfail line: suppressed under quiet" ~expected:"" ~actual:quiet;
   let pass_ignores =
     with_renderer ~mode:`Verbose (fun r ->
         Render.result r
@@ -2039,8 +1992,6 @@ let test_verbose_pass_labels () =
     (String.starts_with ~prefix:"  PASS  labels visible" verbose);
   let compact = with_renderer (fun r -> Render.result r passing) in
   check_absent "compact: no label table" ~sub:"labels (" compact;
-  let quiet = with_renderer ~mode:`Quiet (fun r -> Render.result r passing) in
-  check_string "quiet: nothing streams" ~expected:"" ~actual:quiet;
   let unlabeled =
     with_renderer ~mode:`Verbose (fun r ->
         Render.result r
@@ -2089,9 +2040,9 @@ let test_name_sanitization () =
   in
   check_contains "live tail escapes the newline" ~sub:{|first\nhalf|} live;
   check_absent "live tail carries no raw newline" ~sub:"first\nhalf" live;
-  (* Suite names: header, deferred one-liner, quiet summary prefix. *)
+  (* Suite names: header, and the deferred one-liner's prefix. *)
   let named =
-    with_renderer ~mode:`Quiet (fun r ->
+    with_renderer (fun r ->
         Render.header r ~suite:"my\tsuite" ~tests:1 ~seed:None ();
         Render.result r (Fixtures.result [ "t" ] Failure.Pass);
         Render.finish r
@@ -2543,10 +2494,6 @@ let test_mutation_report () =
   check_string "the worked survivor report, byte for byte"
     ~expected:expected_rfc_report
     ~actual:(mutation_report ~invocation:arm_invocation rfc_report);
-  (* A survivor is a failure block, and quiet keeps failure blocks and
-     the summary — a mutation report is both. *)
-  check_string "quiet keeps the whole report" ~expected:expected_rfc_report
-    ~actual:(mutation_report ~mode:`Quiet ~invocation:arm_invocation rfc_report);
   (* Without a CLI the arm line mirrors the variable onto dune runtest,
      as every other hint does — and carries the instrumentation flag,
      because a build without the backend has no mutant to arm and the
@@ -2821,9 +2768,7 @@ let test_snapshot_report_writes () =
   in
   check_string "wrote line: Path_ops.display spelling, (new) status"
     ~expected:(Printf.sprintf "wrote %s (new)\n" (Path_ops.display written))
-    ~actual:(snapshot_report (make_run ~snapshots ()));
-  check_string "quiet prints no maintenance lines" ~expected:""
-    ~actual:(snapshot_report ~mode:`Quiet (make_run ~snapshots ()))
+    ~actual:(snapshot_report (make_run ~snapshots ()))
 
 let test_snapshot_report_orphans () =
   (* Stale baselines are always reported after a full, clean run, and the
@@ -2841,8 +2786,6 @@ let test_snapshot_report_orphans () =
     ~expected:(snapshot_report ~invocation:`Mirrors ~orphans (make_run ()))
     ~actual:
       (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans (make_run ()));
-  check_string "quiet prints no stale lines" ~expected:""
-    ~actual:(snapshot_report ~mode:`Quiet ~orphans (make_run ()));
   check_string "no writes and no orphans: nothing prints" ~expected:""
     ~actual:(snapshot_report (make_run ()))
 
@@ -2852,8 +2795,6 @@ let tests =
     test "golden verbose transcript (-v)" test_golden_verbose;
     test "golden verbose transcript, coloured" test_golden_ansi;
     test "coverage line names the project aggregate" test_coverage_line_hint;
-    test "quiet mode (-q)" test_quiet;
-    test "quiet green run is one line" test_quiet_green_run;
     test "ansi styling and diff highlighting" test_ansi;
     test "live progress line (verbose)" test_live;
     test "live compact tail" test_live_compact_tail;

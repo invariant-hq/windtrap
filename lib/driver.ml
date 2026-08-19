@@ -32,7 +32,7 @@ type t = {
   seed : Seed.seed option;
   selection : string option;
   github : bool;
-  output : [ `Quiet | `Compact | `Verbose ];
+  output : [ `Compact | `Verbose ];
   coverage : bool;
   junit : string option;
   render : Render.settings;
@@ -157,9 +157,8 @@ let observe renderer ~seed ~selection = function
   | Runner.Test_started { path } -> Render.begin_test renderer ~path
   | Runner.Test_finished result -> Render.result renderer result
   | Runner.Fixture_release { name } ->
-      (* [Render.note] closes a partial glyph row first — a raw printf
-         would splice the notice into the compact row — and drops the line
-         under [`Quiet]. *)
+      (* [Render.note] closes a partial glyph row first: a raw printf
+         would splice the notice into the compact row. *)
       Render.note renderer ("releasing " ^ name)
 
 (* The GitHub envelope *)

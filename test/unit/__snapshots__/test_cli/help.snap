@@ -24,7 +24,6 @@ OPTIONS:
   -u, --update                  Accept snapshot changes (refused under CI)
   -s, --stream                  Stream test output instead of capturing it
   -v, --verbose                 One status line per test
-  -q, --quiet                   Failures and summary only
       --junit PATH              Also write a JUnit XML report to PATH
       --color MODE              Color output: always, never or auto
   -o, --output DIR              Root directory for capture logs
@@ -47,7 +46,6 @@ ENVIRONMENT:
   WINDTRAP_UPDATE          Mirror of --update
   WINDTRAP_STREAM          Mirror of --stream
   WINDTRAP_VERBOSE         Mirror of --verbose
-  WINDTRAP_QUIET           Mirror of --quiet
   WINDTRAP_JUNIT           Mirror of --junit
   WINDTRAP_COLOR           Mirror of --color
   WINDTRAP_OUTPUT          Mirror of --output

@@ -23,8 +23,8 @@
     event the header and glyphs buffer; the event commits them and everything
     after streams live. A run that stays green and healthy ends as {e one} named
     summary line ([mylib: 48 passed in 1.2s.], with the root seed appended when
-    the header carried one) — see {!result} and {!finish}. [`Quiet] and
-    [`Verbose] never defer.
+    the header carried one) — see {!result} and {!finish}. [`Verbose] never
+    defers.
 
     Deferral deliberately trades crash evidence for silence: a compact run
     killed {e before} its first noteworthy event leaves {b nothing} in a pipe or
@@ -102,7 +102,7 @@ val default_settings : settings
 val create :
   out:Format.formatter ->
   ansi:bool ->
-  ?mode:[ `Quiet | `Compact | `Verbose ] ->
+  ?mode:[ `Compact | `Verbose ] ->
   ?live:bool ->
   ?columns:int ->
   ?tail_lines:int ->
@@ -120,16 +120,15 @@ val create :
       stripped; under [ansi:true] they pass through. Compared {e values} are
       neither stripped nor passed through under either setting — they are
       escaped into visible text, see {!pp_failure}.
-    - [mode], the verbosity level — one axis, each level a superset of the one
-      below. [`Quiet] ([--quiet]) prints the failure blocks and the summary,
-      nothing else. [`Compact] (the default) adds the header and one glyph per
-      test — deferred until the run proves noteworthy (the module preamble; a
+    - [mode], the verbosity level — one axis, [`Verbose] a superset of
+      [`Compact]. [`Compact] (the default) prints the header and one glyph per
+      test, deferred until the run proves noteworthy (the module preamble; a
       green, healthy run is one named line). [`Verbose] ([--verbose]) prints one
-      status line per test instead of the glyph. Every level prints the same
-      failure blocks and the same summary line.
+      status line per test instead of the glyph. Both print the same failure
+      blocks and the same summary line.
     - [live], whether {!begin_test} maintains a self-erasing progress display
       with terminal cursor controls. Pass the sink's TTY status; under
-      [ansi:false] or [`Quiet] it is off regardless. Defaults to [false].
+      [ansi:false] it is off regardless. Defaults to [false].
     - [columns], the terminal width used to bound rules and the live display.
       Defaults to [80]. The compact row wraps at 60 glyphs regardless, so rows
       are byte-stable across terminals.
@@ -169,8 +168,7 @@ val header :
     header ([mylib: 48 tests (seed s1:…)]). Under [`Compact] the line is
     deferred: the first noteworthy event prints it (see {!result}), and a green,
     healthy run never shows it — its named summary line carries [suite] and
-    appends the seed instead. Under [`Quiet] nothing prints, as before; the
-    summary line carries [suite].
+    appends the seed instead.
 
     [seed] is shown when given; the runner passes the root seed iff the suite
     declares property tests — selection never changes it, so the token is stable
@@ -194,8 +192,7 @@ val begin_test : t -> path:string list -> unit
     start of the run, before any noteworthy flush: while the transcript is
     deferred the tail draws from column zero and never forces the header out —
     being erasable, it leaves no residue on a green run's one-line transcript.
-    Prints nothing unless [live] and [ansi] are set and the mode is not
-    [`Quiet]. *)
+    Prints nothing unless [live] and [ansi] are set. *)
 
 val result : t -> Run.result -> unit
 (** [result t r] prints [r]'s per-test progress, by mode:
@@ -219,7 +216,6 @@ val result : t -> Run.result -> unit
       one faint percentage line per label, the same projection as the failure
       blocks) — the calibration view for [collect]/[classify]; the other modes
       show distributions in failure blocks only.
-    - [`Quiet]: nothing — failures re-print in full at {!finish}.
 
     The output derives from [r] alone; [t] only counts marks for the wrap
     counter and the live display.
@@ -240,8 +236,7 @@ val note : t -> string -> unit
 (** [note t line] prints the run-scoped notice [line] on its own line and
     flushes, erasing the live display and closing a partial compact glyph row
     first — a notice printed straight to the sink would splice into the open
-    row. Prints nothing under [`Quiet]: notices are stream trimmings, not
-    failure blocks or the summary. While a compact transcript is still deferred
+    row. While a compact transcript is still deferred
     the notice buffers with the rows — it prints in position if a noteworthy
     event flushes, and a green, healthy run keeps its one-line transcript — with
     an erasable live copy (under [live]) so a hanging fixture release still
@@ -277,7 +272,7 @@ val finish :
       re-printed in full ([FAIL] header, then {!pp_failure} with source excerpts
       for each of its failures, then its bounded captured-output tail and
       full-log path, printed once per test) — when any test failed;
-    - the slow warnings (unless [`Quiet]): a faint-yellow block over every
+    - the slow warnings: a faint-yellow block over every
       completed test past the slow threshold whose record is not [slow_tagged] —
       a [slow tests (n):] heading, then one indented entry per test with the
       duration in a right-aligned leading column ([  2.50s  parser › tokenize]),
@@ -292,17 +287,14 @@ val finish :
       [duration], the run's wall-clock seconds. Expected failures add their own
       segment ([44 passed, 2 expected failures in 1.2s.]), and counted failures
       with subtest-labeled entries (see {!is_subtest_failure}) state the
-      sub-case count ([2 failed (3 subtest failures)]). In quiet mode the line
-      is prefixed with the suite name recorded by {!header}
-      ([unit: 448 passed in 0.4s.]) — quiet prints no header, and nothing may
-      print without a name;
+      sub-case count ([2 failed (3 subtest failures)]);
     - the slowest tests, on runs slow enough to care about — [`Verbose] only:
       the list is diagnosis, not signal;
     - the coverage line
       ([coverage: 87.2% (312/358 points) · project: dune build @cover], the
       percentage styled by the runtime's thresholds — green at 80% and above,
-      yellow at 60%, red below) when [coverage] is given (unless [`Quiet]).
-      The hint is unconditional: an in-process number is one executable's view
+      yellow at 60%, red below) when [coverage] is given. The hint is
+      unconditional: an in-process number is one executable's view
       of the code it links, whatever else the project builds, and the merge is
       the project total. The caller omits [coverage] under the
       [report]/[full]/[off] coverage modes: {!coverage_report} prints its own
@@ -330,8 +322,7 @@ val report_snapshots : t -> orphans:string list -> Run.t -> unit
     {!stale_lines} over [orphans] ([Runner.outcome.orphans]) and the removal
     hint under them.
 
-    Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
-    summary. The driver calls it after {!finish}, when the transcript is
+    The driver calls it after {!finish}, when the transcript is
     settled: lines go straight to the sink, outside the compact row and deferral
     machinery. *)
 
@@ -509,9 +500,8 @@ val coverage_report : t -> mode:[ `Report | `Full ] -> coverage -> unit
       uncovered region with one line of context, uncovered lines carrying a
       gutter marker, regions separated by [·····].
 
-    Prints nothing under [`Quiet] — quiet keeps only the failure blocks and the
-    summary, and the coverage report is neither. The caller prints it after
-    {!finish}, having withheld [finish]'s [coverage] argument. *)
+    The caller prints it after {!finish}, having withheld [finish]'s
+    [coverage] argument. *)
 
 (** {1:mutation Mutation}
 
@@ -530,16 +520,15 @@ val mutation_discovery : t -> mutants:int -> files:int -> unit
     ([mutants: 187 in 4 files · WINDTRAP_MUTATE=1 to test them]): what an
     instrumented build that was not asked to mutate anything found, and the one
     spelling that asks it to test them. The caller prints it after {!finish},
-    where the coverage line sits — it is the same discoverability shape, and it
-    follows the same rule of printing nothing under [`Quiet]. Prints nothing
-    when [mutants] is [0]: a build with no mutant has nothing to offer. *)
+    where the coverage line sits — it is the same discoverability shape. Prints
+    nothing when [mutants] is [0]: a build with no mutant has nothing to
+    offer. *)
 
 val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 (** [mutation_armed t ~id ~before ~after] prints the armed announcement
     ([mutant lib/calc.ml:9:12:add armed: a - b → a + b]). Law 16(b) makes it
     normative: a process with a mutant armed says so before any other output, so
-    a run whose output does not say so has none. Prints in every mode, [`Quiet]
-    included — it is the guarantee, not a stream trimming. *)
+    a run whose output does not say so has none. *)
 
 val mutation_killed : t -> unit
 (** [mutation_killed t] prints [mutant killed.] — the line that closes the
@@ -685,8 +674,7 @@ val mutation_report : t -> mutation -> unit
       ([mutants: 2 survived of 41 (this executable) · … · project: dune build
         @mutate]), in coverage's wording rather than a second one.
 
-    Prints in every mode, [`Quiet] included: quiet keeps the failure blocks and
-    the summary, and a mutation report is both. *)
+    Prints in every mode. *)
 
 (** {1:admission Admission}
 
@@ -832,8 +820,7 @@ val admission_report : t -> admission -> unit
       the [… ruling(s) capped at TRY] term only when [a.capped_rulings] is
       positive.
 
-    Prints in every mode, [`Quiet] included, as {!mutation_report} does: an
-    UNJUSTIFIED ruling is a failure block, and the summary is a summary. *)
+    Prints in every mode, as {!mutation_report} does. *)
 
 (** {1:durations Durations} *)
 

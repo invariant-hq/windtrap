@@ -227,10 +227,6 @@ let discovery_tests =
            same number the reader was invited to test. *)
         says ~msg:"discovery line" out
           "mutants: 4 in 1 file \u{00b7} WINDTRAP_MUTATE=1 to test them");
-    test "the discovery line stays out of a quiet transcript" (fun () ->
-        let code, out, _ = spawn [ "WINDTRAP_QUIET=1" ] in
-        equal ~msg:"exit code" int 0 code;
-        denies ~msg:"quiet" out "WINDTRAP_MUTATE=1 to test them");
     test "off silences the discovery line, arming aside" (fun () ->
         (* The line is what an unasked mutation build says, so [off] is
            the answer to it: a workspace instrumented by default would

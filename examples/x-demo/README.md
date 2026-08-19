@@ -132,7 +132,7 @@ and compare the counterexample lines (identical, including the shrink
 count):
 
 ```sh
-dune exec examples/x-demo/main.exe -- --seed s1:PASTE_TOKEN -f "reverse is the identity" -q
+dune exec examples/x-demo/main.exe -- --seed s1:PASTE_TOKEN -f "reverse is the identity"
 ```
 
 `WINDTRAP_SEED=s1:PASTE_TOKEN` is the env mirror of `--seed`.
@@ -233,15 +233,12 @@ comparing against silence.
 
 ```sh
 dune exec examples/x-demo/main.exe -- -v
-dune exec examples/x-demo/main.exe -- -q
 ```
 
 `-v`: one status line per test — `PASS name 0.1ms`, `SKIP … (no
 database in the demo environment)`, `XFAIL … (expected failure:
 issue #42)`, `FAIL` — streaming as they happen; same failure blocks
-and summary. `-q`: failure blocks and summary (prefixed `x-demo:`)
-only — no header, glyphs, slow warnings, releasing note, or coverage.
-Levels change what prints, never outcomes.
+and summary. The level changes what prints, never outcomes.
 
 ## 8. Selection and exit codes
 
@@ -313,7 +310,7 @@ dune exec windtrap -- coverage
 ## 11. CI artifacts
 
 ```sh
-dune exec examples/x-demo/main.exe -- -q -f "snapshots › usage" --junit /tmp/junit.xml
+dune exec examples/x-demo/main.exe -- -f "snapshots › usage" --junit /tmp/junit.xml
 cat /tmp/junit.xml
 ```
 
@@ -326,7 +323,7 @@ GitHub Actions annotations require `CI` and `GITHUB_ACTIONS` both set
 is emitted. The verified run:
 
 ```sh
-CI=1 GITHUB_ACTIONS=1 dune exec examples/x-demo/main.exe -- -q -f "snapshots › usage"
+CI=1 GITHUB_ACTIONS=1 dune exec examples/x-demo/main.exe -- -f "snapshots › usage"
 ```
 
 wraps the ordinary compact transcript in a collapsed group and then
@@ -335,7 +332,7 @@ failure block bytes — acceptance hint included:
 
 ```
 ::group::x-demo
-  …the failure block and summary as in a plain -q run…
+  …the failure block and summary as in a plain run…
 ::endgroup::
 ::error file=examples/x-demo/main.ml,line=311,title=Test failure%3A snapshots › usage text drifted from its baseline::    examples/x-demo/main.ml:311%0A    snapshot "usage": mismatch with …%0A…
 ```

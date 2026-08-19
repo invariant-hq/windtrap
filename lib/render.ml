@@ -886,7 +886,7 @@ let is_subtest_failure (f : Failure.t) = f.Failure.subtest <> []
 type t = {
   out : Format.formatter;
   ansi : bool;
-  mode : [ `Quiet | `Compact | `Verbose ];
+  mode : [ `Compact | `Verbose ];
   live : bool;
   columns : int;
   tail_lines : int;
@@ -904,7 +904,7 @@ type t = {
       (* compact mode starts here: header and glyphs buffer until a
          noteworthy event (a counted failure, or an untagged test over the
          slow threshold) flushes them; false once flushed, and always false
-         under [`Quiet] and [`Verbose]. *)
+         under [`Verbose]. *)
   mutable total_tests : int;
   mutable seen : int;
   mutable live_pending : bool;
@@ -917,9 +917,9 @@ type t = {
       (* the active selection, described by the driver (which owns the
          config), used only to say why nothing ran. *)
   mutable suite : string option;
-      (* recorded by [header] even in quiet mode: quiet prints no header, so
-         its one-line summary carries the suite name instead — nothing may
-         print without a name. The compact one-liner reuses the mechanism. *)
+      (* recorded by [header] so that a compact run still deferred at the
+         end can name itself in its one-line summary — nothing may print
+         without a name. *)
   mutable seed : Seed.seed option;
       (* recorded by [header] for the deferred header line and the compact
          one-liner's seed suffix. *)
@@ -936,7 +936,7 @@ let create ~out ~ansi ?(mode = `Compact) ?(live = false)
     out;
     ansi;
     mode;
-    live = live && ansi && mode <> `Quiet;
+    live = live && ansi;
     columns;
     tail_lines;
     slow_threshold;
@@ -997,7 +997,6 @@ let header t ~suite ~tests ?declared ?selection ~seed () =
   t.suite <- Some suite;
   t.seed <- seed;
   match t.mode with
-  | `Quiet -> () (* the named summary line carries the suite instead *)
   | `Compact -> () (* deferred: printed by the first noteworthy event *)
   | `Verbose ->
       header_line t;
@@ -1045,7 +1044,6 @@ let begin_test t ~path =
           Pp.flush t.out ();
           t.live_pending <- true
         end
-    | `Quiet -> ()
   end
 
 let has_missing_baseline failures =
@@ -1106,23 +1104,21 @@ let close_row t =
    one-line transcript — with an erasable live copy so a hanging fixture
    release still names itself on a terminal. *)
 let note t line =
-  if t.mode <> `Quiet then begin
-    let line = sanitize_name line in
-    clear_live t;
-    close_row t;
-    if t.deferred then begin
-      Buffer.add_string t.pending
-        ((if t.ansi then line else Text.strip_ansi line) ^ "\n");
-      if t.live then begin
-        Pp.pf t.out "%s" (st t `Faint (Text.truncate_utf8 (t.columns - 1) line));
-        Pp.flush t.out ();
-        t.live_pending <- true
-      end
+  let line = sanitize_name line in
+  clear_live t;
+  close_row t;
+  if t.deferred then begin
+    Buffer.add_string t.pending
+      ((if t.ansi then line else Text.strip_ansi line) ^ "\n");
+    if t.live then begin
+      Pp.pf t.out "%s" (st t `Faint (Text.truncate_utf8 (t.columns - 1) line));
+      Pp.flush t.out ();
+      t.live_pending <- true
     end
-    else begin
-      put t line;
-      Pp.flush t.out ()
-    end
+  end
+  else begin
+    put t line;
+    Pp.flush t.out ()
   end
 
 (* The label-distribution table (one producer, two placements): the failure
@@ -1224,7 +1220,6 @@ let result t (r : Run.result) =
   t.seen <- t.seen + 1;
   clear_live t;
   match t.mode with
-  | `Quiet -> () (* failures re-print in full at the end; nothing streams *)
   | `Compact ->
       (* The noteworthy rule: the first counted failure (an excused
          expected failure is not one), or the first completed untagged
@@ -1317,15 +1312,14 @@ let pp_block t (r : Run.result) =
    arithmetic close would be the real defect: the run failed, and the
    summary would then disagree with the exit code. *)
 let summary_line t ~passed ~failed ~skipped ~excused ~subtests ~duration =
-  (* Quiet prints no header, and neither does a compact run still deferred
-     at the end (green and healthy, the one-line transcript): the summary
-     carries the suite name — nothing may print without a name. The
-     deferred line also appends the root seed the header would have
-     shown, so property runs stay replayable from one line. *)
-  let named = t.mode = `Quiet || t.deferred in
+  (* A compact run still deferred at the end (green and healthy, the
+     one-line transcript) printed no header: the summary carries the suite
+     name — nothing may print without a name. That line also appends the
+     root seed the header would have shown, so property runs stay
+     replayable from one line. *)
   let prefix =
     match t.suite with
-    | Some suite when named -> sanitize_name suite ^ ": "
+    | Some suite when t.deferred -> sanitize_name suite ^ ": "
     | _ -> ""
   in
   if passed + failed + skipped + excused = 0 then begin
@@ -1826,11 +1820,9 @@ let coverage_sections ~mode (c : coverage) =
   :: (if mode = `Full then List.concat_map coverage_excerpt c.files else [])
 
 let coverage_report t ~mode c =
-  if t.mode <> `Quiet then begin
-    clear_live t;
-    close_row t;
-    sections t (coverage_sections ~mode c)
-  end
+  clear_live t;
+  close_row t;
+  sections t (coverage_sections ~mode c)
 
 (* Mutation (run data, rendered late)
 
@@ -2019,14 +2011,13 @@ let mutation_summary_spans (m : mutation) =
 
    The discovery line is the mutation half of the coverage line's
    discoverability shape: what the instrumentation found, then the one
-   spelling that asks it to do something. It is a summary line, so it
-   follows the coverage line's rule and stays out of a quiet transcript;
-   the armed announcement does not, because Law 16(b) makes it the
-   guarantee that a run whose output does not say so has no mutant
-   armed. *)
+   spelling that asks it to do something. It prints only when there is
+   something to discover; the armed announcement prints unconditionally,
+   because Law 16(b) makes it the guarantee that a run whose output does
+   not say so has no mutant armed. *)
 
 let mutation_discovery t ~mutants ~files =
-  if t.mode <> `Quiet && mutants > 0 then begin
+  if mutants > 0 then begin
     clear_live t;
     close_row t;
     put t
@@ -2567,7 +2558,7 @@ let finish t ?coverage ~results ~duration () =
       put t (st t `Faint (dashes (min t.columns rule_width)));
       put t ""
     end;
-    if t.mode <> `Quiet && slow_results <> [] then begin
+    if slow_results <> [] then begin
       slow_warnings t slow_results;
       put t ""
     end;
@@ -2588,11 +2579,11 @@ let finish t ?coverage ~results ~duration () =
      other executables exist is not something a run can know, and a hint
      that is true either way needs no filesystem look to decide. *)
   (match coverage with
-  | Some { visited; total } when t.mode <> `Quiet ->
+  | Some { visited; total } ->
       put t
         (line_str t
            (coverage_line ~hint:"project: dune build @cover" ~visited ~total ()))
-  | _ -> ());
+  | None -> ());
   Pp.flush t.out ()
 
 (* The snapshot report *)
@@ -2602,16 +2593,14 @@ let finish t ?coverage ~results ~duration () =
    compact run's one-line transcript is already committed, and rerouting
    these lines through the row/deferral paths would change their bytes. *)
 let report_snapshots t ~orphans run =
-  if t.mode <> `Quiet then begin
-    let writes = Snapshot.writes (Run.snapshots run) in
-    List.iter
-      (fun (path, status) ->
-        let status =
-          match status with
-          | Snapshot.Created -> "new"
-          | Snapshot.Updated -> "updated"
-        in
-        Format.fprintf t.out "wrote %s (%s)@." (Path_ops.display path) status)
-      writes;
-    List.iter (Format.fprintf t.out "%s@.") (stale_lines orphans)
-  end
+  let writes = Snapshot.writes (Run.snapshots run) in
+  List.iter
+    (fun (path, status) ->
+      let status =
+        match status with
+        | Snapshot.Created -> "new"
+        | Snapshot.Updated -> "updated"
+      in
+      Format.fprintf t.out "wrote %s (%s)@." (Path_ops.display path) status)
+    writes;
+  List.iter (Format.fprintf t.out "%s@.") (stale_lines orphans)

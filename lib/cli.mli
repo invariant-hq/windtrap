@@ -78,10 +78,8 @@ type parsed = {
   max_shrink : int option;
       (** [--max-shrink N]: accepted shrink steps per failing property; must be
           positive. *)
-  output : [ `Quiet | `Verbose ] option;
-      (** [-q]/[--quiet] parse as [Some `Quiet], [-v]/[--verbose] as
-          [Some `Verbose]. One field for one axis: mixing or repeating the flags
-          is last-one-wins, like every single-valued flag. [None] is the compact
+  verbose : bool option;
+      (** [-v], [--verbose]: one status line per test. [None] is the compact
           default. *)
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   color : Env.color_mode option;
@@ -176,8 +174,9 @@ type settings = {
   coverage : bool;
       (** Whether the inline coverage line prints ([WINDTRAP_COVERAGE], on
           unless the variable says otherwise). *)
-  output_level : [ `Quiet | `Compact | `Verbose ];
-      (** The terminal verbosity level: [-q] ⊂ default ⊂ [-v]. *)
+  output_level : [ `Compact | `Verbose ];
+      (** The terminal verbosity level: the compact transcript, or one status
+          line per test. *)
   junit : string option;
       (** [--junit PATH]: also write a JUnit report there ({!Driver.t}). *)
 }

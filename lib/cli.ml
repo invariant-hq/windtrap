@@ -25,7 +25,7 @@ type parsed = {
   slow_threshold : float option;
   prop_count : int option;
   max_shrink : int option;
-  output : [ `Quiet | `Verbose ] option;
+  verbose : bool option;
   junit : string option;
   color : Env.color_mode option;
   log_dir : string option;
@@ -50,7 +50,7 @@ let empty =
     slow_threshold = None;
     prop_count = None;
     max_shrink = None;
-    output = None;
+    verbose = None;
     junit = None;
     color = None;
     log_dir = None;
@@ -97,10 +97,8 @@ type reader =
    decided this flag's field; it carries the precedence law for the mirror.
    A mirror whose flag already lost is never even parsed, so a valid
    [--timeout] shadows a malformed WINDTRAP_TIMEOUT instead of tripping over
-   it; and because the layer is folded in table order, the first mirror to
-   write a field keeps it — which is exactly the documented
-   WINDTRAP_VERBOSE-over-WINDTRAP_QUIET tie-break. Additive fields ([--tag],
-   [--exclude-tag]) are never closed: every layer contributes. *)
+   it. Additive fields ([--tag], [--exclude-tag]) are never closed: every
+   layer contributes. *)
 type mirror = { var : string; reader : reader; absent : parsed -> bool }
 
 type entry = {
@@ -375,22 +373,11 @@ let table =
       };
     Flag_entry
       {
-        (* One verbosity axis, three levels: -q ⊂ default ⊂ -v. Both flags
-         set the same [output] field, so repeating or mixing them is
-         last-one-wins, like every other single-valued flag. *)
         short = Some "-v";
         long = "--verbose";
-        arg = Flag (fun acc -> { acc with output = Some `Verbose });
+        arg = Flag (fun acc -> { acc with verbose = Some true });
         doc = "One status line per test";
-        mirror = mirrored "WINDTRAP_VERBOSE" Truthy (fun p -> p.output = None);
-      };
-    Flag_entry
-      {
-        short = Some "-q";
-        long = "--quiet";
-        arg = Flag (fun acc -> { acc with output = Some `Quiet });
-        doc = "Failures and summary only";
-        mirror = mirrored "WINDTRAP_QUIET" Truthy (fun p -> p.output = None);
+        mirror = mirrored "WINDTRAP_VERBOSE" Truthy (fun p -> p.verbose = None);
       };
     Flag_entry
       {
@@ -528,7 +515,7 @@ let tail_errors () = Env.get_int "WINDTRAP_TAIL_ERRORS"
    Damerau-Levenshtein over the long flag names, bounded. Transposition
    counts as one edit because it is the typo people actually make:
    plain Levenshtein scores [--juint] two from both [--junit] and
-   [--quiet], and the tie would be broken by table order.
+   [--update], and the tie would be broken by table order.
 
    Long names only, and only for an input that looks like one. Any two
    short flags are one edit apart, so a suggestion for [-Z] would be
@@ -838,7 +825,7 @@ type settings = {
   config : Run.config;
   render : Render.settings;
   coverage : bool;
-  output_level : [ `Quiet | `Compact | `Verbose ];
+  output_level : [ `Compact | `Verbose ];
   junit : string option;
 }
 
@@ -847,11 +834,7 @@ let settings cli =
   let config, render = resolved below in
   let* coverage = coverage_enabled () in
   let output_level =
-    (* One verbosity axis, one field: [-q] ⊂ default ⊂ [-v]. *)
-    match below.output with
-    | Some `Quiet -> `Quiet
-    | Some `Verbose -> `Verbose
-    | None -> `Compact
+    if below.verbose = Some true then `Verbose else `Compact
   in
   Ok { config; render; coverage; output_level; junit = below.junit }
 

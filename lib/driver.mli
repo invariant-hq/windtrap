@@ -51,7 +51,7 @@ type t = {
           ({!observe}). *)
   github : bool;
       (** The GitHub gating decision ({!Env.in_github_actions}). *)
-  output : [ `Quiet | `Compact | `Verbose ];  (** The resolved output level. *)
+  output : [ `Compact | `Verbose ];  (** The resolved output level. *)
   coverage : bool;
       (** Whether the inline coverage line prints ({!Cli.settings}). *)
   junit : string option;
@@ -73,7 +73,7 @@ type t = {
 
 val renderer :
   render:Render.settings ->
-  mode:[ `Quiet | `Compact | `Verbose ] ->
+  mode:[ `Compact | `Verbose ] ->
   invocation:Render.invocation ->
   unit ->
   Render.t

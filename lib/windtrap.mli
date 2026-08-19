@@ -1030,10 +1030,9 @@ val run : ?argv:string array -> string -> test list -> unit
     [N] concurrent partitions cover every test exactly once, stable across
     machines and suite composition. Reports go to standard output, styled when
     it is a terminal (or forced with [--color]); under GitHub Actions failures
-    are also emitted as annotations. Terminal verbosity is one three-level axis:
-    by default one glyph per test with failures replayed in full at the end,
-    [-v] ([WINDTRAP_VERBOSE]) for one status line per test, [-q]
-    ([WINDTRAP_QUIET]) for the failure blocks and summary only. The default
+    are also emitted as annotations. Terminal verbosity is one axis with two
+    levels: by default one glyph per test with failures replayed in full at the
+    end, [-v] ([WINDTRAP_VERBOSE]) for one status line per test. The default
     level prints its header and glyph row only when the run is noteworthy — any
     failure, or any test not tagged ["slow"] exceeding the slow threshold
     ([--slow-threshold] seconds, [WINDTRAP_SLOW_THRESHOLD] mirror; default [1],
