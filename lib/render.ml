@@ -856,13 +856,15 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                 minimal"
                limit)
       | None ->
-          (* Same fact, different budget: the search stopped counting
-             rather than running out of candidates, so what is reported is
-             the best it reached. *)
+          (* Same fact, a different stop: the search ran out of budget, or
+             out of reachable candidates because forcing one raised. Either
+             way what is reported is the best it got to, and the step count
+             is what tells the reader which — a count at the budget spent
+             it, a count below it did not. *)
           if shrink_exhausted then
             put_ind
               (spf
-                 "shrink budget of %d steps spent; counterexample may not be \
+                 "shrinking stopped after %d steps; counterexample may not be \
                   minimal"
                  shrink_steps));
       (match inner with

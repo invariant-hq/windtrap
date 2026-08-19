@@ -192,11 +192,13 @@ type kind =
       case_index : int;
       shrink_steps : int;
       shrink_exhausted : bool;
-          (** [true] iff the shrink search stopped on its step budget rather
-              than converging. The two are otherwise indistinguishable in a
-              report — both read "shrunk N steps" — and they mean different
-              things: a converged search reports the minimal counterexample, an
-              exhausted one reports the best it reached. *)
+          (** [true] iff the shrink search {e stopped} rather than converging:
+              it spent its step budget, or forcing a candidate raised and left
+              the siblings behind it unreachable. The two outcomes are
+              otherwise indistinguishable in a report — both read "shrunk N
+              steps" — and they mean different things: a converged search
+              reports the minimal counterexample, a stopped one reports the
+              best it reached. *)
       timed_out : float option;
       root : Seed.seed;
       count : int option;

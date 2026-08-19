@@ -1967,7 +1967,7 @@ let test_budget_spent_marker () =
   check_contains "budget spent: detail line follows the counterexample"
     ~sub:
       "    counterexample (case 4, shrunk 50 steps): 9\n\
-      \    shrink budget of 50 steps spent; counterexample may not be minimal\n"
+      \    shrinking stopped after 50 steps; counterexample may not be minimal\n"
     b;
   check "budget spent: headline carries the mark"
     (Render.headline f

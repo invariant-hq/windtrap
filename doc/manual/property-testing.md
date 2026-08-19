@@ -59,10 +59,12 @@ case index. Consequences worth knowing:
 - `--seed s1:…` (or `WINDTRAP_SEED`) pins the whole run; otherwise
   each run draws a fresh root, so CI keeps exploring.
 
-A shrink search stops after 100 accepted steps. When it does, the
-report says so — `shrink budget of 100 steps spent; counterexample may
-not be minimal` — so a truncated search never reads like a converged
-one; `--max-shrink N` (`WINDTRAP_MAX_SHRINK`) raises the budget.
+A shrink search stops after 100 accepted steps — or earlier, if forcing
+a candidate raises and leaves the rest unreachable. When it stops
+before converging the report says so — `shrinking stopped after 100
+steps; counterexample may not be minimal` — so a truncated search never
+reads like a converged one, and the step count tells the two stops
+apart. `--max-shrink N` (`WINDTRAP_MAX_SHRINK`) raises the budget.
 
 `~count` (or `--prop-count N` / `WINDTRAP_PROP_COUNT`) changes the
 case budget; the declaration site wins over the flag.

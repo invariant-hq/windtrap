@@ -174,16 +174,23 @@ let shrink ~max_shrink ~body tree first_class =
         Printexc.raise_with_backtrace timeout backtrace
     | result -> same_kind first_class result
   in
+  (* Three outcomes, and the third is why this is not an option. Forcing a
+     candidate can raise — a [map]'s function, a [Gen.Private.list_exact]
+     mask — and a memoized cell caches the exception, so the siblings behind
+     it are unreachable and the descent must stop. What it must not do is
+     stop the way convergence stops: that reported a truncated search as a
+     minimal counterexample, which is the one thing a shrink report cannot
+     get wrong. *)
   let rec first_accepted seq =
     match seq () with
     (* The explicit re-raise is load-bearing: the catch-all otherwise eats a
        handler-raised [Timeout] delivered during [Seq] forcing. *)
     | exception (Failure.Timeout _ as timeout) -> raise timeout
-    | exception _ -> None
-    | Seq.Nil -> None
+    | exception _ -> `Stopped
+    | Seq.Nil -> `Converged
     | Seq.Cons (candidate, rest) -> (
         match accept candidate with
-        | Some accepted -> Some (candidate, accepted)
+        | Some accepted -> `Accepted (candidate, accepted)
         | None -> first_accepted rest)
   in
   (* Best-so-far state lives in refs updated at each accepted step, so a
@@ -192,29 +199,28 @@ let shrink ~max_shrink ~body tree first_class =
      consumes a timeout — everywhere else it propagates to the runner. *)
   let best = ref (tree, 0, first_class) in
   let timed_out = ref None in
-  (* The budget stopping the descent is not the same as the descent
-     converging, and the two used to render identically — a truncated
-     search and a minimal counterexample both read "shrunk 100 steps". *)
+  (* A descent that stopped is not a descent that converged, and the two used
+     to render identically — a truncated search and a minimal counterexample
+     both read "shrunk 100 steps". Set by the two stops the search survives:
+     the step budget, and a candidate whose forcing raised. *)
   let exhausted = ref false in
   (try
-     let rec descend steps tree cls =
-       if steps >= max_shrink then begin
-         (* The budget stopped a LIVE descent only if there was somewhere
-            left to go. A search whose last accepted step landed exactly on
-            the budget, with no further candidate, had already converged —
-            reporting it as truncated would tell the reader the
-            counterexample may not be minimal when it is. *)
-         if first_accepted (Shrink_tree.children tree) <> None then
-           exhausted := true
-       end
-       else
-         match first_accepted (Shrink_tree.children tree) with
-         | None -> ()
-         | Some (candidate, accepted) ->
+     (* Probe first, then read the budget: a search whose last accepted step
+        landed exactly on the budget with no further candidate had already
+        converged, and reporting it as truncated would tell the reader the
+        counterexample may not be minimal when it is. *)
+     let rec descend steps tree =
+       match first_accepted (Shrink_tree.children tree) with
+       | `Converged -> ()
+       | `Stopped -> exhausted := true
+       | `Accepted (candidate, accepted) ->
+           if steps >= max_shrink then exhausted := true
+           else begin
              best := (candidate, steps + 1, accepted);
-             descend (steps + 1) candidate accepted
+             descend (steps + 1) candidate
+           end
      in
-     descend 0 tree first_class
+     descend 0 tree
    with Failure.Timeout limit -> timed_out := Some limit);
   let tree, steps, cls = !best in
   (tree, steps, cls, !timed_out, !exhausted)
@@ -277,21 +283,30 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
     in
     Fail { failure; stats = stats () }
   in
+  (* One case, and the bookkeeping every case source shares: a pass commits
+     its labels and counts, a discard spends the budget, a control exception
+     is the runner's and keeps the backtrace it was raised with. Only a
+     failure differs between the two loops, so only a failure comes back. *)
+  let run_one value =
+    match run_case ctx body value with
+    | Passed ->
+        commit_case ctx;
+        incr cases;
+        `Passed
+    | Discarded ->
+        incr discards;
+        `Discarded
+    | Control (control, backtrace) ->
+        Printexc.raise_with_backtrace control backtrace
+    | Failed cls -> `Failed cls
+  in
   (* Examples run first, unshrunk, unseeded, numbered separately. *)
   let rec run_examples index = function
     | [] -> None
     | value :: rest -> (
-        match run_case ctx body value with
-        | Passed ->
-            commit_case ctx;
-            incr cases;
-            run_examples (index + 1) rest
-        | Discarded ->
-            incr discards;
-            run_examples (index + 1) rest
-        | Control (control, backtrace) ->
-            Printexc.raise_with_backtrace control backtrace
-        | Failed cls ->
+        match run_one value with
+        | `Passed | `Discarded -> run_examples (index + 1) rest
+        | `Failed cls ->
             let rendered, printerless =
               match Gen.Private.render_value gen value with
               | Some text -> (text, false)
@@ -333,21 +348,16 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
                 ~case_index:attempts ~shrink_steps:0 ~examples:false
                 (Exception (exn, backtrace))
           | tree -> (
-              match run_case ctx body (Shrink_tree.root tree) with
-              | Passed ->
-                  commit_case ctx;
-                  incr cases;
-                  generate ~passed:(passed + 1) ~attempts:(attempts + 1)
-              | Discarded ->
-                  incr discards;
-                  generate ~passed ~attempts:(attempts + 1)
-              | Control (control, backtrace) ->
-                  Printexc.raise_with_backtrace control backtrace
-              | Failed cls ->
+              match run_one (Shrink_tree.root tree) with
+              | `Passed -> generate ~passed:(passed + 1) ~attempts:(attempts + 1)
+              | `Discarded -> generate ~passed ~attempts:(attempts + 1)
+              | `Failed cls ->
                   let final_tree, steps, final_cls, timed_out, exhausted =
                     shrink ~max_shrink:shrink_budget ~body tree cls
                   in
-                  let rendered = Gen.Private.render gen (Shrink_tree.root final_tree) in
+                  let rendered =
+                    Gen.Private.render gen (Shrink_tree.root final_tree)
+                  in
                   fail ~rendered ~case_index:attempts ~shrink_steps:steps
                     ?timed_out ~shrink_exhausted:exhausted ~examples:false
                     ~printerless:(not (Gen.Private.prints gen))

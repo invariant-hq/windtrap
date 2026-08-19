@@ -834,6 +834,34 @@ let spent_shrink_budget_is_marked () =
     (payload_max_shrink failure = None)
     "the engine default rides nothing: a replay needs no flag to reproduce it"
 
+(* Forcing a candidate can raise — here a [map] whose function divides by
+   the drawn value. The memoized cell caches the exception, so the siblings
+   behind it are unreachable and the descent stops; what it must not do is
+   report that as convergence, which told the reader a counterexample was
+   minimal when the search never finished. *)
+let a_raising_candidate_stops_the_search_visibly () =
+  (* [int_range] shrinks toward the in-range point closest to zero, so the
+     mapped function raises on the first candidate of any root above the
+     bound — while the root itself, being above it, maps fine. *)
+  let gen =
+    Gen.map (fun n -> if n = 10 then failwith "forcing raised" else n)
+      (Gen.int_range 10 50)
+  in
+  let root_value =
+    Shrink_tree.root
+      (Gen.Private.sample gen
+         (Seed.make (Seed.derive ~root ~path:"raising-candidate" ~index:0)))
+  in
+  check (root_value > 10) "the fixture's root is the raising value itself";
+  let failure, _ =
+    expect_fail
+      (Property.run ~root ~path:"raising-candidate" gen (fun _ _ ->
+           Check.fail "always"))
+  in
+  check
+    (shrink_exhausted failure)
+    "a descent stopped by a raising candidate reads as converged"
+
 (* The count and its provenance are one argument, so the engine can never be
    handed a number without being told whether a replay needs the flag. *)
 let count_provenance_decides_the_payload () =
@@ -924,6 +952,8 @@ let suite =
     ("negative configuration is invalid", negative_configuration_is_invalid);
     ("assume and reject raise Discard", assume_and_reject_raise_discard);
     ("a spent shrink budget is distinguishable", spent_shrink_budget_is_marked);
+    ( "a raising candidate stops the search visibly",
+      a_raising_candidate_stops_the_search_visibly );
     ( "count provenance decides the payload",
       count_provenance_decides_the_payload );
   ]

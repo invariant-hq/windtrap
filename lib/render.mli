@@ -975,9 +975,11 @@ val pp_failure :
       [accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff] under
       [`Mirrors];
     - property: the counterexample with its case index and shrink count — a
-      shrink search that hit the per-test budget appends one line stating it
-      ([timed out after 5s while shrinking; counterexample may not be minimal],
-      from the payload's [timed_out]) — the inner failure under
+      shrink search that did not converge appends one line stating it
+      ([timed out after 5s while shrinking; counterexample may not be minimal]
+      from the payload's [timed_out], else
+      [shrinking stopped after 50 steps; …] from its [shrink_exhausted]) — the
+      inner failure under
       [which failed at:] (recursively, without commands; [which failed with:]
       when the inner failure has no location), and — for seeded cases only,
       never explicit examples — the replay line built from the payload's root
