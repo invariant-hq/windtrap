@@ -36,7 +36,6 @@ ENVIRONMENT:
   WINDTRAP_TAG             Mirror of --tag
   WINDTRAP_EXCLUDE_TAG     Mirror of --exclude-tag
   WINDTRAP_SHARD           Mirror of --shard
-  WINDTRAP_FAILED          Mirror of --failed
   WINDTRAP_BAIL            Mirror of --bail
   WINDTRAP_TIMEOUT         Mirror of --timeout
   WINDTRAP_SLOW_THRESHOLD  Mirror of --slow-threshold

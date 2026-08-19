@@ -23,8 +23,8 @@ To assert on exit behavior, run the exiting code in a subprocess.
 
 Direct execution takes flags; under `dune runtest` there is no argv,
 so the flags that make sense there have `WINDTRAP_*` environment
-mirrors and *the mirrors are the CLI* (`-l` has none: listing wants a
-terminal to read it):
+mirrors and *the mirrors are the CLI* (`-l` and `--failed` have none:
+both want a terminal and a build tree that survives between runs):
 
 ```
 $ dune exec test/test_mylib.exe -- -f "parser" -x
@@ -39,7 +39,7 @@ inventory. The ones that matter daily:
 | `-f PATTERN` (or bare `PATTERN`) | `WINDTRAP_FILTER` | run tests whose path contains PATTERN |
 | `-e PATTERN` | `WINDTRAP_EXCLUDE` | skip tests whose path contains PATTERN |
 | `--tag L` / `--exclude-tag L` | `WINDTRAP_TAG` / `WINDTRAP_EXCLUDE_TAG` | select by tag (repeatable; env takes commas) |
-| `--failed` | `WINDTRAP_FAILED` | rerun only the last run's failures |
+| `--failed` | — | rerun only the last run's failures |
 | `-l`, `--list` | — | list the selection without running |
 | `--seed s1:…` | `WINDTRAP_SEED` | pin the root seed (replay) |
 | `--prop-count N` | `WINDTRAP_PROP_COUNT` | generated cases per property |
@@ -195,6 +195,13 @@ format is unstable. `--failed` with no recorded failures for the
 current suite — a fresh checkout, a wiped log directory — refuses the
 run (`no recorded failures match the current suite`, exit 2) rather
 than silently running everything.
+
+`-o`/`--output` moves the store with the logs: it is
+`<output>/<suite>/.last-failed`. Two runs with different `-o` do not
+share a failure set, and the second refuses `--failed` rather than
+rerunning what the first recorded. That is also why `--failed` has no
+mirror — under `dune runtest` the log directory is the sandbox's, so
+no run would ever find the previous one's store.
 
 ## Captured output
 

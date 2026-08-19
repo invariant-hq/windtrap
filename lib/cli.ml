@@ -247,8 +247,12 @@ let table =
         long = "--failed";
         arg = Flag (fun acc -> { acc with failed_only = Some true });
         doc = "Rerun only the last run's failures";
-        mirror =
-          mirrored "WINDTRAP_FAILED" Truthy (fun p -> p.failed_only = None);
+        (* No mirror. The store lives under [--output], which dune's
+           sandbox moves per run, so under [dune runtest] the variable
+           would refuse every suite that did not fail last time — which
+           is every suite, on a fresh build tree. A flag on a directly
+           executed binary is where the loop is real. *)
+        mirror = None;
       };
     Flag_entry
       {

@@ -500,12 +500,10 @@ let () =
   reg "env-only settings: the CI and feedback-loop mirrors" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_BAIL" "3";
-  Unix.putenv "WINDTRAP_FAILED" "1";
   Unix.putenv "WINDTRAP_JUNIT" "reports/junit.xml";
   Unix.putenv "WINDTRAP_OUTPUT" "custom-logs";
   let config = resolve Cli.empty in
   check "WINDTRAP_BAIL" (config.Run.bail = Some 3);
-  check "WINDTRAP_FAILED" config.Run.failed_only;
   check "WINDTRAP_JUNIT"
     ((settings Cli.empty).Cli.junit = Some "reports/junit.xml");
   (* Absolutized like [-o], for the same reason: a test that chdirs must
