@@ -310,12 +310,15 @@ The compat promise ("most ppx_expect suites run unchanged after
 swapping the pps and the backend") is measured, not asserted.
 `test/conformance/` vendors the test suite of a *pinned* ppx_expect
 commit (`54e2846…`, recorded in `test/conformance/NOTICE`) and classifies
-every file in `TRIAGE.md`: HONORED (must pass, or must reproduce
-upstream's `.ml.corrected.expected` byte-identically), REJECTED (must
-fail loudly at expansion with a diagnostic naming the construct — or,
-for the monadic config, fail to compile), N-A (Jane Street internals,
-each justified). `RESULTS.md` records the measured numbers against the
-bar: **≥ 90% of HONORED byte-identical, 100% of REJECTED loud.**
+every file in `TRIAGE.md`: HONORED (must run with matching semantics —
+the same tests pass, the same payloads match, the same mismatches
+produce corrections), REJECTED (must fail loudly at expansion with a
+diagnostic naming the construct — or, for the monadic config, fail to
+compile), N-A (Jane Street internals, each justified). `RESULTS.md`
+records the measured numbers against the bar: **≥ 90% of HONORED runs
+with matching semantics, 100% of REJECTED loud** — and says why
+corrected-file byte-identity is not the bar (upstream's goldens carry a
+second pipeline stage, `bin/apply-style`, that no windtrap user runs).
 
 Triage workflow when a conformance diff appears:
 
@@ -336,8 +339,10 @@ Triage workflow when a conformance diff appears:
 Re-pinning the corpus to a newer ppx_expect is a deliberate act, not
 maintenance: update the pin in `TRIAGE.md`, re-vendor, re-triage every
 new or changed file, re-measure, and record the new numbers in
-`RESULTS.md`. The goldens are upstream truth — regenerating them from
-windtrap's own output would make the bar circular.
+`RESULTS.md`. The vendored *fixtures* are upstream truth — rewriting one
+to make a test pass would make the bar circular. The corrected-file
+goldens are windtrap's own output by decision, so re-recording those is
+ordinary work: say in `RESULTS.md` what changed and why.
 
 One golden is compiler-version-sensitive by nature:
 `hello_async.compile-rejected.expected` pins an OCaml type error
