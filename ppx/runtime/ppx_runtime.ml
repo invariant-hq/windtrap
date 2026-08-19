@@ -114,20 +114,11 @@ type group_frame = {
   mutable children : Test_tree.t list;
 }
 
-(* A styled node: everything the writer needs to re-render one expect
-   node of a corrected file. Registered when the node's test resolves
-   (skips never register). *)
-type snode = {
-  s_kind : node_kind;
-  s_span : int * int;
-  s_col : int;
-  s_delim : delimiter;
-  s_shorthand : bool;
-  s_contents : string; (* original payload contents; "" when bare *)
-}
-
 type correction =
-  | Node_fix of string (* corrected contents for the node at this span *)
+  | Node_fix of { span : int * int; text : string }
+      (* the extent this correction replaces — the payload literal, or
+         the whole node when the payload is the node — and its
+         replacement *)
   | Insert of { body_loc : loc; body_wrap : int option; contents : string }
 (* a trailing node inserted at the trailing point, plus the ";" at
    [body_loc]'s end *)
@@ -180,8 +171,6 @@ type state = {
   top_names : (string * string, int ref) Hashtbl.t;
   (* Recorded while tests run. *)
   corrections : (string, (correction_key, correction) Hashtbl.t) Hashtbl.t;
-  styled : (string, (int * int, snode) Hashtbl.t) Hashtbl.t;
-      (* per file: every node of a resolved expect test, span-keyed *)
   node_pool : (string * int * int, reach list ref) Hashtbl.t;
       (* merged reach histories, keyed (file, node span) *)
   covered : (string list, bool) Hashtbl.t;
@@ -204,7 +193,6 @@ let initial_state () : state =
     partitions_seen = String_set.empty;
     top_names = Hashtbl.create 16;
     corrections = Hashtbl.create 16;
-    styled = Hashtbl.create 16;
     node_pool = Hashtbl.create 16;
     covered = Hashtbl.create 16;
     current_expect = None;
@@ -319,7 +307,6 @@ let enter_armed () =
   claim_registry ();
   !state.read_only <- true;
   Hashtbl.reset !state.corrections;
-  Hashtbl.reset !state.styled;
   Hashtbl.reset !state.node_pool;
   Hashtbl.reset !state.covered;
   !state.current_expect <- None
@@ -605,117 +592,52 @@ let extension_name = function
   | Expect -> "expect"
   | Expect_exact -> "expect_exact"
 
-(* Node source rendering (the corrected-file shapes) *)
+(* Node source rendering *)
 
-(* The shapes below reproduce the corrected files of the conformance
-   corpus byte-for-byte: ppx_expect's runtime writes payload-only patches
-   and Jane Street's style pass then standardizes every expect node of a
-   corrected file — single-line payloads collapse onto the node's line,
-   multi-line payloads put the extension head on its own line with the
-   payload at node column + 2, and quoted payloads are re-escaped onto one
-   line (or continuation-wrapped at the 90-column margin). windtrap folds
-   both steps into one renderer. *)
+(* One corrected node as a patch on the source.
 
-let margin = 90
+   ppx_expect's runtime patches the payload literal in place and leaves
+   the node's head exactly where the author wrote it. The standardized
+   whole-node shapes in the monorepo's corrected-file goldens are its
+   build's own style pass (bin/apply-style, absent from the pinned
+   checkout and from every windtrap user's build), and emulating them
+   made one stale payload re-render every other node of the file. So the
+   patch is the payload's extent — except where the payload IS the node:
+   a bare [%expect] has no literal to patch, and the {%expect|…|}
+   shorthand's literal spans the node. *)
 
 let escaped_segments contents =
   List.map String.escaped (String.split_on_char '\n' contents)
 
 let quote_one_line segs = "\"" ^ String.concat "\\n" segs ^ "\""
 
-(* One logical line of a wrapped quoted payload: [prefix] starts the
-   source line ([<indent>"] on the first, [<indent>\] after), [closing]
-   ends the segment ([\n\] between lines, ["]] on the last). A segment
-   that overflows the margin is wrapped at space boundaries: the
-   separating space stays before the continuation backslash and the
-   remainder resumes at [col + 3] — ocamlformat's escaped-string layout,
-   pinned by the corpus goldens. *)
-let render_wrapped_segment buf ~col ~prefix ~closing seg =
-  let rec fit prefix words =
-    let all = String.concat " " words in
-    let complete = String.length prefix + String.length all in
-    if complete + String.length closing <= margin || List.length words <= 1 then begin
-      Buffer.add_string buf prefix;
-      Buffer.add_string buf all;
-      Buffer.add_string buf closing
-    end
-    else begin
-      (* Longest head fitting [prefix + head + space + backslash] in the
-         margin, at least one word so the loop always progresses. *)
-      let rec take acc words =
-        match (acc, words) with
-        | _, [] -> (Option.value ~default:"" acc, [])
-        | acc, word :: rest ->
-            let candidate =
-              match acc with None -> word | Some a -> a ^ " " ^ word
-            in
-            if
-              Option.is_some acc
-              && String.length prefix + String.length candidate + 2 > margin
-            then (Option.get acc, words)
-            else take (Some candidate) rest
+let node_patch node contents =
+  let name = extension_name node.kind in
+  match node.payload with
+  | None ->
+      let payload = tag_payload ~tag:"" contents in
+      let text =
+        if String.contains contents '\n' then
+          "[%" ^ name ^ "\n" ^ spaces (column node.loc + 2) ^ payload ^ "]"
+        else "[%" ^ name ^ " " ^ payload ^ "]"
       in
-      let head, rest = take None words in
-      Buffer.add_string buf prefix;
-      Buffer.add_string buf head;
-      Buffer.add_string buf " \\\n";
-      fit (spaces (col + 3)) rest
-    end
-  in
-  fit prefix (String.split_on_char ' ' seg)
-
-let render_quote_node ~name ~col contents =
-  let segs = escaped_segments contents in
-  let one = "[%" ^ name ^ " " ^ quote_one_line segs ^ "]" in
-  if col + String.length one <= margin then one
-  else begin
-    let ind = spaces (col + 2) in
-    let buf = Buffer.create 256 in
-    Buffer.add_string buf ("[%" ^ name);
-    let last = List.length segs - 1 in
-    List.iteri
-      (fun i seg ->
-        Buffer.add_char buf '\n';
-        let prefix = if i = 0 then ind ^ "\"" else ind ^ "\\" in
-        let closing = if i = last then "\"]" else "\\n\\" in
-        render_wrapped_segment buf ~col ~prefix ~closing seg)
-      segs;
-    Buffer.contents buf
-  end
-
-let render_node sn contents =
-  let name = extension_name sn.s_kind in
-  match (sn.s_shorthand, sn.s_delim) with
-  | true, Tag tag ->
-      (* {%expect|…|} / {%expect tag|…|tag}: the correction keeps the
-         extension id — retagging must never drop the [%expect] spelling. *)
-      let tag = fix_tag ~contents tag in
-      if tag = "" then "{%" ^ name ^ "|" ^ contents ^ "|}"
-      else "{%" ^ name ^ " " ^ tag ^ "|" ^ contents ^ "|" ^ tag ^ "}"
-  | true, Quote | false, Quote -> render_quote_node ~name ~col:sn.s_col contents
-  | false, Tag tag ->
-      let payload = tag_payload ~tag contents in
-      if String.contains contents '\n' then
-        "[%" ^ name ^ "\n" ^ spaces (sn.s_col + 2) ^ payload ^ "]"
-      else "[%" ^ name ^ " " ^ payload ^ "]"
-
-let snode_of node =
-  let shorthand =
-    match node.payload with
-    | Some p ->
-        p.literal_loc.start_pos <= node.loc.start_pos
-        && p.literal_loc.end_pos >= node.loc.end_pos
-    | None -> false
-  in
-  {
-    s_kind = node.kind;
-    s_span = (node.loc.start_pos, node.loc.end_pos);
-    s_col = column node.loc;
-    s_delim = node_delimiter node;
-    s_shorthand = shorthand;
-    s_contents =
-      (match node.payload with Some { contents; _ } -> contents | None -> "");
-  }
+      ((node.loc.start_pos, node.loc.end_pos), text)
+  | Some { literal_loc; delimiter; _ } ->
+      let shorthand =
+        literal_loc.start_pos <= node.loc.start_pos
+        && literal_loc.end_pos >= node.loc.end_pos
+      in
+      let text =
+        match (shorthand, delimiter) with
+        | true, Tag tag ->
+            (* Retagging must never drop the [%expect] spelling. *)
+            let tag = fix_tag ~contents tag in
+            if tag = "" then "{%" ^ name ^ "|" ^ contents ^ "|}"
+            else "{%" ^ name ^ " " ^ tag ^ "|" ^ contents ^ "|" ^ tag ^ "}"
+        | _, Tag tag -> tag_payload ~tag contents
+        | _, Quote -> quote_one_line (escaped_segments contents)
+      in
+      ((literal_loc.start_pos, literal_loc.end_pos), text)
 
 (* The corrections table *)
 
@@ -733,29 +655,17 @@ let file_corrections file =
       tbl
 
 let record_node_fix ~file node ~contents =
-  if not !state.read_only then
+  if not !state.read_only then begin
+    let span, text = node_patch node contents in
     Hashtbl.replace (file_corrections file)
       (Node_key (node.loc.start_pos, node.loc.end_pos))
-      (Node_fix contents)
+      (Node_fix { span; text })
+  end
 
 let record_insert ~file ~body_loc ~body_wrap ~trailing_loc ~contents =
   if not !state.read_only then
     Hashtbl.replace (file_corrections file) (Insert_key trailing_loc.start_pos)
       (Insert { body_loc; body_wrap; contents })
-
-(* [state.styled] is only consulted for files that also have recorded
-   corrections. *)
-let register_styled ~file node =
-  let tbl =
-    match Hashtbl.find_opt !state.styled file with
-    | Some tbl -> tbl
-    | None ->
-        let tbl = Hashtbl.create 16 in
-        Hashtbl.add !state.styled file tbl;
-        tbl
-  in
-  let sn = snode_of node in
-  Hashtbl.replace tbl sn.s_span sn
 
 (* Applying corrections to source *)
 
@@ -776,38 +686,12 @@ let corrected_source ~file ~source =
   | Some tbl when Hashtbl.length tbl = 0 -> None
   | Some tbl ->
       let length = String.length source in
-      let original (start, stop) =
-        let start = max 0 (min length start) in
-        let stop = max start (min length stop) in
-        String.sub source start (stop - start)
-      in
       let node_patches = ref [] and insert_patches = ref [] in
-      (* Corrected nodes and, in the same corrected file, every other
-         resolved node whose standardized rendering differs from its
-         source — the style pass ppx_expect's corpus goldens include. *)
-      (match Hashtbl.find_opt !state.styled file with
-      | None -> ()
-      | Some nodes ->
-          Hashtbl.iter
-            (fun span sn ->
-              let contents =
-                match Hashtbl.find_opt tbl (Node_key (fst span, snd span)) with
-                | Some (Node_fix contents) -> contents
-                | _ -> (
-                    match sn.s_kind with
-                    | Expect ->
-                        format_pretty ~delimiter:sn.s_delim
-                          ~node_column:sn.s_col sn.s_contents
-                    | Expect_exact -> sn.s_contents)
-              in
-              let text = render_node sn contents in
-              if not (String.equal text (original span)) then
-                node_patches :=
-                  { start = fst span; stop = snd span; text } :: !node_patches)
-            nodes);
       Hashtbl.iter
         (fun key correction ->
           match (key, correction) with
+          | Node_key _, Node_fix { span = start, stop; text } ->
+              node_patches := { start; stop; text } :: !node_patches
           | Insert_key point, Insert { body_loc; body_wrap; contents } ->
               (* A bare [match]/[try]/[function] body takes parentheses in
                  the same patch: otherwise the [;] below binds to its last
@@ -844,9 +728,8 @@ let corrected_source ~file ~source =
                     };
                   ])
                 :: !insert_patches
-          (* Node_fix corrections are applied by the sweep above, which
-             sees every resolved node; the mixed pairs cannot be built. *)
-          | Node_key _, _ | Insert_key _, Node_fix _ -> ())
+          (* The mixed pairs cannot be built. *)
+          | Node_key _, Insert _ | Insert_key _, Node_fix _ -> ())
         tbl;
       let patches = !node_patches @ List.concat !insert_patches in
       if patches = [] then None
@@ -993,7 +876,6 @@ let flush_corrections_report ~accept =
      partial clear — the run's other state (reach pools, covered paths,
      protocol) outlives it. *)
   Hashtbl.reset !state.corrections;
-  Hashtbl.reset !state.styled;
   {
     written = List.rev !written;
     accepted = List.rev !accepted;
@@ -1255,18 +1137,14 @@ let resolve_reached ctx node =
             ~contents:(formatted_contents node cr);
           fail_node ctx node ~shown:cr)
 
-(* Publish this body's reaches into the merged pools and register the
-   nodes with the styled-writer registry. Reached nodes only: a node this
-   body never reached contributes nothing (and an unreached node's stale
-   formatting is left alone by the writer). *)
+(* Publish this body's reaches into the merged pools. Reached nodes only:
+   a node this body never reached contributes nothing. *)
 let publish_reaches ctx =
   Array.iter
     (fun node ->
       match ctx.ctx_results.(node.id) with
       | [] -> ()
-      | local ->
-          pool_publish (node_key ctx node) (List.rev local);
-          register_styled ~file:ctx.ctx_file node)
+      | local -> pool_publish (node_key ctx node) (List.rev local))
     ctx.ctx_nodes
 
 (* End-of-body resolution. [check_reachability] is off when an exception

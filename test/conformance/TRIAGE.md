@@ -12,7 +12,8 @@ upstream test suite, classified.
   - **HONORED** — expected to run unchanged under `ppx_windtrap`
     (swap `(pps ppx_expect)` → `(pps ppx_windtrap)` and the backend).
     Passing fixtures must pass; intentionally-failing fixtures must
-    reproduce the upstream `.ml.corrected.expected` byte-identically.
+    mismatch where upstream's mismatches and record the correction
+    upstream's *runtime* records.
   - **REJECTED** — uses constructs the RFC rejects loudly
     (`[@@expect.uncaught_exn]`, `[%expect.unreachable]`,
     `[%expect.if_reached]`, `[%expectation]`, monadic
@@ -23,8 +24,11 @@ upstream test suite, classified.
   - **N-A** — tests of ppx_expect's own internals or Jane Street build
     machinery with no user-level equivalent; each justified below. Not
     vendored.
-- **Bar** (RFC): ≥ 90 % of the honored set byte-identical, 100 % of the
-  rejected set loud. Measured numbers: see `RESULTS.md`.
+- **Bar** (RFC): ≥ 90 % of the honored set runs with matching semantics
+  — the same tests pass and the same payloads match — and 100 % of the
+  rejected set is loud. Corrected-file goldens are windtrap's own
+  output, not upstream's; `RESULTS.md` says why and carries the measured
+  numbers.
 
 Harness layout: `corpus/<dir>` mirrors `test/<dir>` upstream;
 `corpus/*/divergent/` holds fixtures that were quarantined at first

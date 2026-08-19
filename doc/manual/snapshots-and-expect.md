@@ -261,16 +261,16 @@ Most existing ppx_expect suites run unchanged after swapping the PPX
 and the backend in the `dune` file — `(pps ppx_expect)` becomes
 `(pps ppx_windtrap)`. The compatibility envelope is measured, not
 promised: windtrap vendors the pinned upstream ppx_expect test corpus
-and holds itself to reproducing upstream's `.corrected` files
-byte-identically (see `test/conformance/RESULTS.md` for the current
-numbers). Concretely:
+and runs it — the suite passes where upstream's passes, and is refused
+loudly where windtrap does not implement the construct (see
+`test/conformance/RESULTS.md` for the current numbers). Concretely:
 
 - Honored: `let%expect_test`, `[%expect]`, `[%expect_exact]`,
   `[%expect.output]`, `{%expect|…|}` string-extension syntax, quoted
   payloads, functor-duplicated tests, output from C stubs — with
-  corrections formatted exactly as ppx_expect formats them, so a suite
-  whose payloads already carry ppx_expect's shape sees no formatting
-  churn on first promote (the caveat below covers suites that don't).
+  corrections formatted exactly as ppx_expect formats them, and a
+  correction patching the stale payload alone, so no promote reformats
+  a file.
 - Rejected loudly at expansion, with a diagnostic naming the
   construct: `[@@expect.uncaught_exn]`, `[%expect.unreachable]`,
   `[%expect.if_reached]`, `[%expectation]`. A monadic
@@ -286,19 +286,6 @@ numbers). Concretely:
     (try boom () with e -> print_string (Printexc.to_string e));
     [%expect {| Failure("boom") |}]
   ```
-
-The first-promote caveat: a correction rewrites its file's
-expectations wholesale. In a file with at least one correction, every
-`[%expect]` node of the file's resolved tests is re-rendered in the
-standard shape, not just the failing ones. Payloads already in
-ppx_expect's shape reproduce byte-identically — that is the no-churn
-case above; payloads that carry any other formatting — hand-formatted
-blocks, or a suite adopted from windtrap 0.1 — are canonicalized in
-the same diff. Expect the first promote after such an adoption to
-reformat whole files at once, and review that diff as one-time
-formatting plus the real changes. A file with no corrections is never
-rewritten, so a matching suite stays byte-stable whatever shape its
-payloads are in.
 
 ## Choosing
 

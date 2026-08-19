@@ -364,16 +364,14 @@ let () =
         print_string "done\n";
         Ppx_runtime.expect ~id:1)
   in
-  (* The pinned ppx_expect corpus goldens write multi-line payloads with
-     the extension head on its own line and contents and the closing
-     delimiter both at node column + 2 (see the corrected shapes in
-     upstream ppx_expect's test/negative-tests/*.corrected.expected at
-     the pinned conformance commit, test/conformance/NOTICE). *)
+  (* Multi-line contents sit at node column + 2 with the closing
+     delimiter at node column, as ppx_expect's runtime writes them. The
+     patch is the payload literal: both heads stay exactly where this
+     source put them. *)
   let golden =
     {x|let%expect_test "t" =
   print_string "INT 1\nPLUS\nINT 2\n";
-  [%expect
-    {|
+  [%expect {|
     INT 1
     PLUS
     INT 2
@@ -384,8 +382,7 @@ let () =
   in
   (match r.corrected with
   | Some corrected ->
-      check_string
-        "multi-line + single-line corrections re-indent like ppx_expect"
+      check_string "corrections re-indent payloads and leave heads alone"
         ~expected:golden ~actual:corrected
   | None -> check "corrections were recorded" false);
   check "stale payloads fail the test"
@@ -544,20 +541,17 @@ let () =
   let golden =
     {x|let%expect_test "t" =
   chunk1 ();
-  [%expect
-    {|
+  [%expect {|
     a
     b
     |}];
   chunk2 ();
-  [%expect
-    {|
+  [%expect {|
     c
     d
     |}];
   chunk3 ();
-  [%expect
-    {|
+  [%expect {|
     e
 
     f
@@ -603,50 +597,6 @@ let () =
       check_string "multi-line quote correction escapes onto one line"
         ~expected:golden ~actual:corrected
   | None -> check "multi-line quote correction recorded" false
-
-let () =
-  (* A quote-delimited correction past the 90-column margin wraps with
-     line-continuation escapes at node column + 2, continuation content at
-     node column + 3 — the corpus's wrapped-quote shape
-     (negative-tests/normal_strings.ml.corrected.expected). *)
-  let source = {x|let%expect_test "t" =
-  lines ();
-  [%expect "old"]@END
-|x} in
-  let nodes =
-    [
-      node_of source ~id:0 ~node_text:{|[%expect "old"]|}
-        ~payload:({|"old"|}, "old", Ppx_runtime.Quote)
-        ();
-    ]
-  in
-  let block = String.make 40 'X' in
-  let r =
-    run_scenario ~source ~nodes ~name:"t" (fun () ->
-        print_string (String.concat " " [ block; block; block ]);
-        print_string "\n";
-        print_string block;
-        print_string "\n";
-        Ppx_runtime.expect ~id:0)
-  in
-  let golden =
-    {x|let%expect_test "t" =
-  lines ();
-  [%expect
-    "|x} ^ " "
-    ^ {x|\n\
-    \ |x} ^ block ^ " " ^ block ^ {x| \
-     |x} ^ block
-    ^ {x|\n\
-    \ |x} ^ block ^ {x|\n\
-    \ "]@END
-|x}
-  in
-  match r.corrected with
-  | Some corrected ->
-      check_string "overlong quote correction wraps at the margin"
-        ~expected:golden ~actual:corrected
-  | None -> check "wrapped quote correction recorded" false
 
 let () =
   (* Trailing output: ";" at body end, new node at let-column + 2. *)
@@ -1085,11 +1035,11 @@ let () =
     | None -> false)
 
 let () =
-  (* The style pass: a correction anywhere in the file standardizes every
-     resolved node of that file — a matching node with nonstandard layout
-     is rewritten (collapsed here), and a reached bare [%expect] with empty
-     output materializes as [%expect {| |}]. ppx_expect's corpus goldens
-     pin both (missing.ml, escaped_strings.ml). *)
+  (* A correction is local: the patch is the stale payload's extent, so
+     every other node of the file keeps its bytes — the matching node with
+     nonstandard layout is left as the author wrote it, and the reached
+     bare [%expect] whose output is empty stays bare, having matched. The
+     head of the corrected node stays put too; only its payload moves. *)
   let source =
     {x|let%expect_test "t" =
   print_string "hello";
@@ -1127,23 +1077,24 @@ let () =
   let golden =
     {x|let%expect_test "t" =
   print_string "hello";
-  [%expect {| hello |}];
+  [%expect
+    {|
+       hello
+  |}];
   print_string "wrong";
   [%expect {| wrong |}];
   ignore ();
-  [%expect {| |}]@END
+  [%expect]@END
 |x}
   in
   (match r.corrected with
   | Some corrected ->
-      check_string
-        "the style pass standardizes matching and bare nodes alongside \
-         corrections"
+      check_string "a correction leaves every other node's bytes alone"
         ~expected:golden ~actual:corrected
-  | None -> check "style-pass corrections recorded" false);
+  | None -> check "the stale node's correction was recorded" false);
   check "the matching node is not a failure"
     (List.length (failure_list r.outcome) = 1);
-  check_int "style-pass run exits 0" ~expected:0 ~actual:r.exit_code
+  check_int "a corrections-only run exits 0" ~expected:0 ~actual:r.exit_code
 
 let () =
   (* Without a correction in the file, matching-but-nonstandard nodes are

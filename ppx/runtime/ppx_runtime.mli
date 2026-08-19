@@ -38,9 +38,8 @@
     reachability: a node reached twice and a node reached never can never cancel
     out. Corrections re-indent payloads relative to the node exactly as
     ppx_expect does, so adopting a ppx_expect suite produces no formatting churn
-    on first promote; a corrected file additionally standardizes the shape of
-    every node its resolved tests declare — the corrected-file style the
-    conformance corpus goldens pin (see {!Private.corrected_source}).
+    on first promote, and a correction patches the stale payload's extent alone:
+    nothing else in the file moves (see {!Private.corrected_source}).
 
     {b Duplicated tests.} A functor whose body declares tests, instantiated more
     than once, registers the same names and locations several times. ppx_expect
@@ -94,8 +93,7 @@ type loc = { line : int; start_bol : int; start_pos : int; end_pos : int }
 type delimiter =
   | Quote
       (** ["…"] — corrections escape every line and newline onto one source
-          line, wrapped with line-continuation escapes past the 90-column margin
-          (the corpus's corrected-quote shape). *)
+          line. *)
   | Tag of string  (** [{tag|…|tag}] — corrections re-tag on conflict. *)
 
 type payload = { contents : string; delimiter : delimiter; literal_loc : loc }
@@ -352,23 +350,21 @@ module Private : sig
       content: a stale payload, a whole bare node, or an inserted trailing node.
       Recording happens while tests run; writing happens once, after the run.
 
-      Writing reproduces ppx_expect's corrected files byte-for-byte (the
-      conformance corpus goldens): in a file with at least one correction,
-      {e every} node of the file's resolved tests is re-rendered in standard
-      shape — a single-line payload collapses onto the node's line
-      ([[%expect {| hello |}]]), a multi-line payload puts the extension head on
-      its own line with contents at node column + 2, quoted payloads are
-      re-escaped (see {!type:delimiter}), string-extension nodes keep their
-      [{%expect …|}] spelling, and a reached bare [[%expect]] materializes as
-      [[%expect {| |}]]. A file with no corrections is never rewritten: matching
-      alone causes no churn, whatever the payload's formatting. Nodes of tests
-      that skipped, never ran, or were never reached keep their source bytes. *)
+      The patched range is the payload literal's — ppx_expect's runtime writes
+      payload-only patches, and the node head stays exactly where the author put
+      it. Two shapes have no literal to patch on its own and are rewritten
+      whole: a bare [[%expect]], which materializes its payload, and the
+      [{%expect …|}] shorthand, whose literal spans the node (retagging keeps
+      the extension id). Multi-line contents sit at node column + 2 with the
+      closing delimiter at node column; quoted payloads are escaped onto one
+      line (see {!type:delimiter}). Every other node keeps its bytes: matching
+      causes no churn whatever its formatting, and neither does a node belonging
+      to a test that skipped, never ran, or never reached it. *)
 
   val corrected_source : file:string -> source:string -> string option
   (** [corrected_source ~file ~source] is the corrected content of [file] —
-      [source] with every recorded correction applied and the file's resolved
-      nodes re-rendered in standard shape — or [None] when no corrections were
-      recorded for [file]. Pure with respect to the filesystem;
+      [source] with every recorded correction applied — or [None] when no
+      corrections were recorded for [file]. Pure with respect to the filesystem;
       {!flush_corrections_report} is this plus the read and the write. *)
 
   type flush_report = {
@@ -494,10 +490,10 @@ module Private : sig
   val reset : unit -> unit
   (** [reset ()] restores {e every} piece of state this module keeps between
       calls to its module-load value — registrations and open groups, the
-      partitions seen, the duplicate-name counters, recorded corrections and the
-      nodes {!corrected_source} re-renders with them, the merged per-node reach
-      histories, the covered paths {!inline_exit_code} reads, and the protocol
-      arguments including {!init}'s once-guard. The clearing is total by
+      partitions seen, the duplicate-name counters, the recorded corrections,
+      the merged per-node reach histories, the covered paths
+      {!inline_exit_code} reads, and the protocol arguments including
+      {!init}'s once-guard. The clearing is total by
       construction, not by enumeration: the runtime holds that state in a single
       record and [reset] assigns a fresh one. The module-load cwd is not run
       state and survives (see {!flush_corrections_report}). Calling it claims

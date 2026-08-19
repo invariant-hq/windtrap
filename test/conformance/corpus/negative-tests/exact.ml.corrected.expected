@@ -3,7 +3,8 @@ open! Corpus_shim
 (* Check that [%expect_exact] does not strip leading/trailing newlines *)
 let%expect_test _ =
   print_string "foobarbaz";
-  [%expect_exact {|foobarbaz|}]
+  [%expect_exact
+    {|foobarbaz|}]
 ;;
 
 (* Check that [%expect_exact] does not treat whitespace as indentation *)

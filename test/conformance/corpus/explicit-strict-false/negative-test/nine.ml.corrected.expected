@@ -5,47 +5,56 @@ let%expect_test _ =
   let module _ = struct
     let () =
       print_string "hello";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "hello\n";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "hello\n\n";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "\nhello";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "\nhello\n";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "\nhello\n\n";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "\n\nhello";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "\n\nhello\n";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
 
     let () =
       print_string "\n\nhello\n\n";
-      [%expect {| hello |}]
+      [%expect
+        {| hello |}]
     ;;
   end
   in

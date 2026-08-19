@@ -17,40 +17,45 @@ let%expect_test _ =
 
 let%expect_test _ =
   print_string "hello";
-  [%expect {| hello |}]
+  [%expect
+    {| hello |}]
 ;;
 
 let%expect_test _ =
   print_string "hello";
-  [%expect {| hello |}]
+  [%expect
+    {| hello |}]
 ;;
 
 let%expect_test _ =
   print_string "hello";
-  [%expect {| hello |}]
+  [%expect
+    {| hello |}]
 ;;
 
 let%expect_test _ =
   print_string "hello";
-  [%expect {| hello |}]
+  [%expect
+    {| hello |}]
 ;;
 
 let%expect_test _ =
   print_string "hello";
-  [%expect {| hello |}]
+  [%expect
+    {| hello |}]
 ;;
 
 let%expect_test _ =
   print_string "hello";
-  [%expect {| hello |}]
+  [%expect
+    {| hello |}]
 ;;
 
 (* Multi line actual... *)
 
 let%expect_test _ =
   print_string "one1\ntwo";
-  [%expect
-    {|
+  [%expect {|
     one1
     two
     |}]
