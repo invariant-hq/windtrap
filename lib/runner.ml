@@ -626,7 +626,7 @@ let startup_message = function
 
 let ( let* ) = Result.bind
 
-let startup (config : Run.config) ~suite ~focus_active ~allowlist tests paths =
+let startup (config : Run.config) ~suite ~focus_sites ~allowlist tests paths =
   let in_ci = Env.in_ci () in
   let* () =
     match duplicate_paths paths with
@@ -634,8 +634,8 @@ let startup (config : Run.config) ~suite ~focus_active ~allowlist tests paths =
     | duplicates -> Error (Duplicate_paths duplicates)
   in
   let* () =
-    if focus_active && in_ci && not config.Run.allow_focus then
-      Error (Focused_in_ci (Test_tree.focus_sites tests))
+    if focus_sites <> [] && in_ci && not config.Run.allow_focus then
+      Error (Focused_in_ci focus_sites)
     else Ok ()
   in
   let* mode =
@@ -707,9 +707,10 @@ let plan ?allowlist ~config ~suite tests : (plan, startup_error) result =
   let paths =
     List.map (fun case -> Test_tree.path_to_string case.Test_tree.path) cases
   in
-  let focus_active = Test_tree.has_focus tests in
+  let focus_sites = Test_tree.focus_sites tests in
+  let focus_active = focus_sites <> [] in
   let* mode, allowlist =
-    startup config ~suite ~focus_active ~allowlist tests paths
+    startup config ~suite ~focus_sites ~allowlist tests paths
   in
   let predicate = selection_predicate config in
   (* Hashed once: an allowlist is as long as the selection it names, and

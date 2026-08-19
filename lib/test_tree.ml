@@ -139,13 +139,6 @@ let xfail ?reason = function
 
 (* Focus *)
 
-let rec node_has_focus = function
-  | Test { focused; _ } -> focused
-  | Group { focused; children; _ } ->
-      focused || List.exists node_has_focus children
-
-let has_focus tests = List.exists node_has_focus tests
-
 let focus_sites tests =
   let rec node acc = function
     | Test { focused; loc; _ } -> if focused then (`Ftest, loc) :: acc else acc

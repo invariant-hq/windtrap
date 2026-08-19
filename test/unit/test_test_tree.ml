@@ -154,12 +154,14 @@ let () =
 (* Focus *)
 
 let () =
-  reg "has_focus" @@ fun () ->
-  check "no focus by default" (not (T.has_focus [ T.test "t" nop ]));
-  check "ftest sets focus" (T.has_focus [ T.ftest "t" nop ]);
-  check "fgroup sets focus" (T.has_focus [ T.fgroup "g" [] ]);
-  check "focus found in nested groups"
-    (T.has_focus [ T.group "g" [ T.group "h" [ T.ftest "t" nop ] ] ])
+  reg "focus_sites finds every flagged node" @@ fun () ->
+  let sites tests = List.length (T.focus_sites tests) in
+  check_int "no focus by default" ~expected:0
+    ~actual:(sites [ T.test "t" nop ]);
+  check_int "ftest sets focus" ~expected:1 ~actual:(sites [ T.ftest "t" nop ]);
+  check_int "fgroup sets focus" ~expected:1 ~actual:(sites [ T.fgroup "g" [] ]);
+  check_int "focus found in nested groups" ~expected:1
+    ~actual:(sites [ T.group "g" [ T.group "h" [ T.ftest "t" nop ] ] ])
 
 let () =
   reg "focus propagation" @@ fun () ->
@@ -493,8 +495,8 @@ let () =
 let () =
   reg "xfail preserves focus flags" @@ fun () ->
   check "xfail preserves focus flags"
-    (T.has_focus [ T.xfail (T.ftest "t" nop) ]
-    && T.has_focus [ T.xfail (T.fgroup "g" []) ])
+    (T.focus_sites [ T.xfail (T.ftest "t" nop) ] <> []
+    && T.focus_sites [ T.xfail (T.fgroup "g" []) ] <> [])
 
 (* Suite *)
 

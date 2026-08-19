@@ -16,11 +16,10 @@
     and in {!output} / {!output_tail}) flushes C stdio ([fflush] of the C
     [stdout]/[stderr] streams, via this module's stub) alongside the [Format]
     and channel buffers: output printed from a C stub without an explicit flush
-    is attributed to the consumption point that follows it, as ppx_expect's
-    collector attributes it. Capture is per {e attempt}: every {!with_capture}
-    call truncates the test's log file and resets the consumption cursor, so a
-    retried test starts from an empty file and its report shows the final
-    attempt's output.
+    is attributed to the consumption point that follows it. Capture is per
+    {e attempt}: every {!with_capture} call truncates the test's log file and
+    resets the consumption cursor, so a retried test starts from an empty file
+    and its report shows the final attempt's output.
 
     Log files live at [<log_dir>/<suite>/<groups...>/<test>.output], every
     component made filesystem-safe with {!Path_ops.sanitize_component}. The path
@@ -62,25 +61,21 @@ val with_capture :
   t -> groups:string list -> test_name:string -> (unit -> 'a) -> 'a
 (** [with_capture t ~groups ~test_name fn] runs one attempt of the test named
     [test_name] under group path [groups] and is [fn ()]. When [t] is
-    {!disabled} it is exactly [fn ()]. Otherwise it:
+    {!disabled} it is exactly [fn ()].
 
-    - resolves the test's log file to
-      [<log_dir>/<suite>/<groups...>/<test_name>.output] (each component
-      sanitized), creating directories as needed and truncating
-      the file — each call is one attempt, so a retry starts from an empty file;
-    - resets the {!output} cursor to the start of the file;
-    - flushes the [Format] std/err formatters, the [stdout]/[stderr] channels,
-      and C stdio, so output buffered before the attempt is not attributed to
-      it, then redirects descriptors 1 and 2 into the file with [dup2]. The
-      saved originals are close-on-exec: a subprocess spawned by [fn] inherits
-      the redirected descriptors (its output is captured), never the real ones —
-      a child that outlives the run cannot hold the runner's stdout or stderr
-      open, so a piped reader sees end-of-file when the runner exits;
-    - on every exit of [fn] — return or raise — flushes the formatters,
-      channels, and C stdio again ({e before} restoring, so buffered output
-      reaches the file), restores both descriptors, and closes the file. The
-      descriptors are restored even when that flush fails; the flush error still
-      propagates.
+    Otherwise the attempt writes to
+    [<log_dir>/<suite>/<groups...>/<test_name>.output] (each component
+    sanitized, directories created), truncated on entry with the {!output}
+    cursor reset — one call is one attempt, so a retry starts from an empty
+    file. Descriptors 1 and 2 are redirected into it for the duration of [fn]
+    and restored on every exit, return or raise; both edges drain the [Format]
+    formatters, the channels and C stdio, so output buffered before the attempt
+    is not attributed to it and output buffered at the end still reaches the
+    file. Restoration happens even when the closing drain fails, and that error
+    still propagates. The saved originals and the log descriptor are
+    close-on-exec: a subprocess [fn] spawns writes through the redirected 1 and
+    2 and inherits neither the real descriptors nor the log, so a child that
+    outlives the run cannot hold a piped reader open past the summary.
 
     The file remains [t]'s current log — readable with {!output} and
     {!output_tail} — until the next [with_capture] call.

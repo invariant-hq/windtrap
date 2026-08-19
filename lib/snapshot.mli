@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (** Name-keyed snapshot baselines: the per-run registry, read-only checking,
-    atomic acceptance, orphan reporting and pruning.
+    atomic acceptance and orphan reporting.
 
     A snapshot check compares a produced string against a committed baseline
     file. A baseline's identity is its {e name} — matching [[A-Za-z0-9._-]+],
@@ -27,15 +27,7 @@
 
     Snapshots are line-oriented {e text}: both sides of every comparison, and
     every accepted baseline, are canonicalized by replacing CR and CRLF line
-    endings with LF and forcing a trailing newline. Content in which CR bytes or
-    a missing final newline are significant must be encoded before the call
-    (e.g. [String.escaped]). Redaction is likewise ordinary code applied before
-    the call ([snapshot "log" (mask_timestamps out)]).
-
-    {b Note.} Baselines are runtime data, invisible to dune's dependency
-    tracking: a change under [__snapshots__/] alone does not re-trigger
-    [dune runtest]. Test stanzas close the hole with
-    [(deps (glob_files_rec __snapshots__/** ))]. *)
+    endings with LF and forcing a trailing newline. *)
 
 (** {1:modes Modes and the CI guard} *)
 

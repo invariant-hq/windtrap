@@ -5,31 +5,31 @@
 
 (** The inert test declaration tree.
 
-    A suite is a list of {!type:t} values: leaf tests and nested groups,
-    declared with the constructors below — the declaration surface the facade
-    re-exports. Declaring is pure data construction: no body, setup, or teardown
-    runs until the runner executes the tree. There are no group hooks of any
-    kind — no user callback can run outside a test's exception boundary — and
-    {!bracket} stores its three closures unrun, so the runner captures body and
-    teardown outcomes independently. {!scoped} stores a scoping function and a
-    body for resources that are only ever handed to a callback.
+    A suite is a list of {!type:t} values: leaf tests and nested groups. The
+    constructors below are the declaration surface the facade re-exports, and
+    windtrap.mli documents what each one promises a user. This interface states
+    the three rules the rest of the library depends on.
 
-    {b Paths.} A test is named by its {e path}: the names of its enclosing
-    groups, root first, then its own name. {!flatten} derives every path;
-    {!path_to_string} renders one as the canonical string that selection filters
-    match and per-case seed derivation hashes (the joined form is frozen;
-    renaming or regrouping a test intentionally re-keys its property streams).
-    Duplicate full paths are a startup error detected by the runner; the tree
-    only makes paths derivable.
+    {b Declaring is data construction.} Nothing a user wrote runs until the
+    runner executes the tree — there are no group hooks of any kind, so no user
+    callback can run outside a test's exception boundary, and {!bracket} and
+    {!scoped} store their closures unrun so the runner can attribute each one's
+    outcome separately.
 
-    {b Declaration sites.} Each test records where it was declared, from the
-    constructor's [?pos] when given and otherwise from a best-effort walk of the
-    call stack at declaration time ({!Loc.capture}). Snapshot scoping reads its
-    file ({!Snapshot.check}), so a [snapshot] call without [~pos] keys its
-    baseline by the enclosing test's source file, never by a backtrace frame at
-    snapshot {e call} time. The fallback can mis-attribute when the constructor
-    call is reached through tail calls (the declaring frame is gone), so helpers
-    that wrap constructors should thread [?pos] through. *)
+    {b A test's path is its identity.} The path is its enclosing group names,
+    root first, then its own name; {!path_to_string} renders it, and that
+    rendering is what selection filters match, what per-case seed derivation
+    hashes, and what the last-failed store records. The joined form is frozen,
+    and renaming or regrouping a test intentionally re-keys its property
+    streams. Duplicate paths are the runner's startup error; the tree only makes
+    paths derivable.
+
+    {b Declaration sites come from [?pos], else the call stack.} A node records
+    where it was declared, from its [?pos] when given and otherwise from
+    {!Loc.capture} at declaration time. Snapshot scoping reads that site's file
+    ({!Snapshot.check}), never a frame at snapshot {e call} time. The fallback
+    can mis-attribute when the constructor call is reached through tail calls,
+    so a helper that wraps a constructor threads [?pos] through. *)
 
 (** {1:trees Trees} *)
 
@@ -63,21 +63,12 @@ type body =
 
 (** {1:declaring Declaring tests}
 
-    Constructor arguments common to several constructors:
-
-    - [pos] is the declaration position ([__POS__]). It records the node's
-      location; when omitted it is captured from the call stack, best effort
-      (see the module preamble).
-    - [tags] are extra tag names for the node, unioned with ancestors' tags at
-      {!flatten} time. Defaults to [[]].
-    - [timeout] is the per-test limit in seconds, covering setup, body, and
-      teardown — for {!scoped}, the whole [scope] call. Defaults to the runner's
-      default timeout.
-    - [retries] is the number of extra attempts the runner gives a failing test.
-      Defaults to [0].
-
-    Constructors raise [Invalid_argument] if [retries < 0] or if [timeout] is
-    given and is not finite and positive. *)
+    Shared arguments: [pos] is the declaration position ([__POS__], see the
+    preamble); [tags] are extra tag names, unioned with ancestors' at {!flatten}
+    time; [timeout] is the per-test limit in seconds covering setup, body and
+    teardown (for {!scoped}, the whole [scope] call); [retries] is the number of
+    extra attempts a failing test gets. Constructors raise [Invalid_argument]
+    if [retries < 0] or if [timeout] is given and is not finite and positive. *)
 
 val test :
   ?pos:Loc.pos ->
@@ -87,9 +78,8 @@ val test :
   string ->
   (unit -> unit) ->
   t
-(** [test name fn] declares the test [name] with body [fn]. The body runs inside
-    the runner's per-test boundary; it fails by raising (assertion verbs, any
-    exception) and passes by returning. *)
+(** [test name fn] declares the test [name] with body [fn]: it fails by raising
+    and passes by returning. *)
 
 val ftest :
   ?pos:Loc.pos ->
@@ -132,15 +122,13 @@ val cases :
   ('a -> unit) ->
   t
 (** [cases ~name:render base inputs fn] declares one test per input: a group
-    named [base] whose children, in declaration order, run [fn input] under the
-    name [render input] — applied at declaration time — which makes each
-    sub-test individually selectable by path filter. All children share the
-    [cases] call's declaration position, and each child runs under [timeout] and
-    [retries] — per child, not per table: every input gets the full budget.
+    named [base] whose children, in declaration order, run [fn input] named
+    [render input], applied at declaration time. All children share the [cases]
+    call's declaration position, and [timeout] and [retries] apply per child.
 
-    [name] is required: a child's path keys its per-case seeds ({!Seed.derive})
-    and its entry in the [--failed] store, so a positional default would re-key
-    every later child whenever a row is inserted. *)
+    [name] is required because a child's path is its identity (see the
+    preamble): a positional default would re-key every later child's seeds and
+    store entry whenever a row is inserted. *)
 
 val bracket :
   ?pos:Loc.pos ->
@@ -155,8 +143,7 @@ val bracket :
 (** [bracket ~setup ~teardown name fn] declares a test scoping a resource: the
     runner calls [setup ()], passes the resource to [fn], and calls [teardown]
     on it iff [setup] succeeded — on every outcome, including skip and timeout.
-    The three closures are stored unrun (see {!type:body}); partial application
-    ([let with_db = bracket ~setup ~teardown]) builds reusable constructors. *)
+    The three closures are stored unrun (see {!type:body}). *)
 
 val scoped :
   (('r -> unit) -> unit) ->
@@ -169,51 +156,32 @@ val scoped :
   t
 (** [scoped scope name fn] declares a test whose resource is scoped by [scope] —
     a function that acquires, calls back, and releases on return
-    ([Eio_main.run], [Eio.Switch.run], [In_channel.with_open_text path]). The
-    runner calls [scope] once, with a callback that runs [fn] on the resource;
-    it does not release anything itself, because [scope] already does.
+    ([Eio_main.run], [In_channel.with_open_text path]). The runner calls [scope]
+    once with a callback that runs [fn] on the resource, and releases nothing
+    itself.
 
     [scope] is positional and precedes the optional arguments so that
     [scoped Eio_main.run] is itself a constructor with [?pos], [?tags],
     [?timeout] and [?retries] intact — applying a positional argument only
     erases the optionals declared {e before} it.
 
-    The runner records what the callback saw (see {!Runner}): a failure raised
-    by [fn] is recorded and then re-raised through [scope], so a [scope] that
-    cancels or cleans up on exception still does; anything [scope] raises before
-    the callback is a {!Failure.Setup} entry and anything it raises after the
-    callback returned is a {!Failure.Teardown} entry; a [scope] that returns
-    without ever calling back fails the test rather than passing it, and one
-    that calls back twice runs the body once and fails the test. *)
+    {!Runner} owns the four-way attribution of what comes back out. *)
 
 val xfail : ?reason:string -> t -> t
 (** [xfail t] marks [t] — and, through a group, every test under it — as
-    {e expected to fail}. Marked tests still run; the runner inverts what counts
-    as failed: a failing outcome reports as an expected failure and does not
-    fail the run, while a passing outcome fails loudly
-    (["expected to fail, but the test passed"]). Skips are unaffected. Expected
-    failures never enter the last-failed store; an unexpected pass does (see
-    {!Runner}).
-
-    [reason] names the known defect for reports (e.g. ["issue #42"]). Nested
-    annotations compose innermost-wins: the annotation closest to a test is the
-    one recorded on its flattened {!type:case}.
-
-    Use [xfail] to keep a known-bug reproduction in-tree without a red run; use
-    [skip] when the body must not run at all. *)
+    {e expected to fail}: {!Runner} inverts what counts as failed for it, and
+    [reason] names the known defect for reports. Nested annotations compose
+    innermost-wins, so the annotation closest to a test is the one recorded on
+    its flattened {!type:case}. *)
 
 (** {1:focus Focus} *)
 
-val has_focus : t list -> bool
-(** [has_focus tests] is [true] iff any node in [tests] carries the focus flag
-    ({!ftest}, {!fgroup}). *)
-
 val focus_sites : t list -> ([ `Ftest | `Fgroup ] * Loc.t option) list
-(** [focus_sites tests] is every focus-flagged node in declaration order, with
-    its kind and declaration location — the data behind the CI focus guard's
-    error message
+(** [focus_sites tests] is every focus-flagged node ({!ftest}, {!fgroup}) in
+    declaration order, with its kind and declaration location. Non-empty is what
+    "focus is active" means; the sites themselves are the CI refusal's message
     (["focused tests committed (ftest at test/test_users.ml:31, …)"]) and the
-    runner's out-of-CI warning. *)
+    out-of-CI warning's. *)
 
 (** {1:flattening Flattening} *)
 

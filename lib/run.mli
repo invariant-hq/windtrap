@@ -92,9 +92,8 @@ val for_subset : config -> log_dir:string -> bail:int option -> config
     Path-selecting knobs ([filter], [exclude], [shard], [failed_only]) are
     cleared, because the caller's [Runner.plan] allowlist {e is} that selection
     and applying them again could only narrow it further; tag-selecting knobs
-    ([tags],
-    [exclude_tags]) and the root [seed] are kept verbatim, because
-    pruning cannot express a tag and per-case seeds derive from
+    ([tags], [exclude_tags]) and the root [seed] are kept verbatim, because an
+    allowlist cannot express a tag and per-case seeds derive from
     [(root, path, index)]. Checking is made read-only ([update = No_update]),
     reporting side effects are dropped ([junit], [stream], [list_only]), an
     in-source focus is allowed, and [log_dir] and [bail] are the caller's.
