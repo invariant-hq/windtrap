@@ -4,8 +4,8 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for coverage's Law-12 seam and reporting surface: the inline
-   line through a real windtrap run (thresholds, hint, sibling-scoped
-   wording, quiet, off, Law-13 exit codes), the WINDTRAP_COVERAGE /
+   line through a real windtrap run (thresholds, hint, quiet, off,
+   Law-13 exit codes), the WINDTRAP_COVERAGE /
    --coverage report and full modes with a matching source file,
    flag-over-env precedence and loud rejection of malformed modes, the
    at_exit dump feeding the reporting command, `windtrap coverage` end
@@ -176,10 +176,8 @@ let law12_budget =
 
 let dump_counter = ref 0
 
-(* Each child dumps into its own fresh directory: sibling detection (the
-   inline line's project hint) must stay inert here, so the default
-   single-executable line shape is what these tests pin. The dedicated
-   sibling tests below plant neighbors deliberately. *)
+(* Each child dumps into its own fresh directory, so a run never reads
+   or overwrites another's data. *)
 (* The value the caller bound to [name], if any: the child's own
    CHILD_FILE overrides, read back so the scope below follows it. *)
 let bound_value env name =
@@ -229,8 +227,8 @@ let inline_line =
   in
   check_int "green child exits 0" ~expected:0 ~actual:code;
   check_contains "90% renders green" ~needle:"\027[32m90.0%\027[0m" out;
-  check_contains "the summary line carries the discoverability hint"
-    ~needle:"(9/10 points) \u{00b7} WINDTRAP_COVERAGE=report for detail" out;
+  check_contains "the summary line points at the project aggregate"
+    ~needle:"(9/10 points) \u{00b7} project: dune build @cover" out;
   let _, out, _, _ =
     child ~env:[ "CHILD_VISITED=7" ] ~args:[ "--color"; "always" ] ()
   in
@@ -244,9 +242,7 @@ let inline_line =
     child ~env:[ "CHILD_VISITED=9" ] ~args:[ "--color"; "never" ] ()
   in
   check_contains "the summary line matches the design shape"
-    ~needle:
-      "coverage: 90.0% (9/10 points) \u{00b7} WINDTRAP_COVERAGE=report for \
-       detail"
+    ~needle:"coverage: 90.0% (9/10 points) \u{00b7} project: dune build @cover"
     out;
   (* Quiet, off, and uninstrumented runs render nothing. *)
   let code, out, _, _ =
@@ -311,7 +307,7 @@ let report_full_modes =
   check_contains "report mode prints the summary line"
     ~needle:"coverage: 66.7% (4/6 points)" out;
   check_absent "report mode drops the hint"
-    ~needle:"WINDTRAP_COVERAGE=report for detail" out;
+    ~needle:"project: dune build @cover" out;
   check_contains "the per-file row shows counts and ranges" ~needle:"4/6" out;
   check_contains "uncovered blocks collapse to line ranges"
     ~needle:"uncovered: 5-6" out;
@@ -357,7 +353,7 @@ let report_full_modes =
       ()
   in
   check_contains "the flag beats WINDTRAP_COVERAGE"
-    ~needle:"WINDTRAP_COVERAGE=report for detail" out;
+    ~needle:"project: dune build @cover" out;
   check_absent "the flag beats WINDTRAP_COVERAGE (no excerpts)"
     ~needle:"\u{258c}" out;
   let _, out, _, _ =
@@ -971,70 +967,6 @@ let staleness_pass =
   check_contains "--stale is reported as unknown"
     ~needle:"unknown option '--stale=include'" err
 
-(* The inline line's sibling hint (aggregation design, E6) *)
-
-let sibling_hint =
-  test "the inline line's sibling hint" @@ fun () ->
-  (* Alone: a fresh directory at render time — the single-executable
-     line, already pinned above; re-checked here as the trio's base. *)
-  let code, out, _, dump =
-    child ~env:[ "CHILD_VISITED=9" ] ~args:[ "--color"; "never" ] ()
-  in
-  check_int "a sibling-free child exits 0" ~expected:0 ~actual:code;
-  check_contains "no siblings: the single-executable line"
-    ~needle:"coverage: 90.0% (9/10 points) \u{00b7} WINDTRAP_COVERAGE=report"
-    out;
-  (* A re-run sees only its own previous dump: still no sibling. *)
-  let _, out, _ =
-    capture
-      ~env:
-        [
-          "WINDTRAP_COVERAGE_FILE=" ^ dump;
-          "WINDTRAP_COVERAGE_ONLY=lib/fake.ml";
-          "CHILD_VISITED=9";
-        ]
-      child_exe [ "--color"; "never" ]
-  in
-  check_contains "the process's own previous dump is not a sibling"
-    ~needle:"(9/10 points) \u{00b7} WINDTRAP_COVERAGE=report" out;
-  (* A sibling dump beside the destination rescopes the line. *)
-  write_file
-    (Filename.concat (Filename.dirname dump) "other.coverage")
-    "content is irrelevant to detection\n";
-  let _, out, _ =
-    capture
-      ~env:
-        [
-          "WINDTRAP_COVERAGE_FILE=" ^ dump;
-          "WINDTRAP_COVERAGE_ONLY=lib/fake.ml";
-          "CHILD_VISITED=9";
-        ]
-      child_exe [ "--color"; "never" ]
-  in
-  check_contains "a sibling scopes the line to this executable"
-    ~needle:"coverage: 90.0% (9/10 points, this executable)" out;
-  check_contains "a sibling points at the project aggregate"
-    ~needle:"\u{00b7} project: dune build @cover" out;
-  check_absent "the scoped line drops the report hint"
-    ~needle:"WINDTRAP_COVERAGE=report" out;
-  (* Several siblings say nothing more than one. *)
-  write_file
-    (Filename.concat (Filename.dirname dump) "third.coverage")
-    "still irrelevant\n";
-  let _, out, _ =
-    capture
-      ~env:
-        [
-          "WINDTRAP_COVERAGE_FILE=" ^ dump;
-          "WINDTRAP_COVERAGE_ONLY=lib/fake.ml";
-          "CHILD_VISITED=9";
-        ]
-      child_exe [ "--color"; "never" ]
-  in
-  check_contains "many siblings render the same scoped line"
-    ~needle:"(9/10 points, this executable) \u{00b7} project: dune build @cover"
-    out
-
 (* Raise attribution end to end (Law 14 as amended) *)
 
 (* The one genuinely instrumented path in this test: raise_child drives
@@ -1158,7 +1090,6 @@ let () =
       discovery_robustness;
       explicit_path_contract;
       staleness_pass;
-      sibling_hint;
       raise_attribution;
       junit_rails;
     ]

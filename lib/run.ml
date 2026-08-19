@@ -131,7 +131,7 @@ type result = {
   prop_stats : Property.stats option;
 }
 
-type summary = { visited : int; total : int; siblings : bool }
+type summary = { visited : int; total : int }
 
 type t = {
   config : config;

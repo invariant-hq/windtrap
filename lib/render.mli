@@ -292,18 +292,14 @@ val finish :
     - the slowest tests, on runs slow enough to care about — [`Verbose] only:
       the list is diagnosis, not signal;
     - the coverage line
-      ([coverage: 87.2% (312/358 points) · WINDTRAP_COVERAGE=report for detail],
-      the percentage styled by the runtime's thresholds — green at 80% and
-      above, yellow at 60%, red below) when [coverage] is given (unless
-      [`Quiet]). When the summary's [siblings] field is set — other executables'
-      [.coverage] files sat beside this process's dump destination at snapshot
-      time, several instrumented test stanzas — the line scopes itself and
-      points at the aggregate instead:
-      [coverage: 52.4% (11/21 points, this executable) · project: dune build
-       @cover]. The fact arrives on the record ({!Run.summary}, read by the
-      driver when it snapshots coverage); this renderer touches no filesystem
-      for it. The caller omits [coverage] under the [report]/[full]/[off]
-      coverage modes: {!coverage_report} prints its own line, without the hint.
+      ([coverage: 87.2% (312/358 points) · project: dune build @cover], the
+      percentage styled by the runtime's thresholds — green at 80% and above,
+      yellow at 60%, red below) when [coverage] is given (unless [`Quiet]).
+      The hint is unconditional: an in-process number is one executable's view
+      of the code it links, whatever else the project builds, and the merge is
+      the project total. The caller omits [coverage] under the
+      [report]/[full]/[off] coverage modes: {!coverage_report} prints its own
+      line, without the hint.
 
     Classification is record-driven, as {!result}: excused results — failing
     results that did not count ([r.counted = false]) — leave the failure section

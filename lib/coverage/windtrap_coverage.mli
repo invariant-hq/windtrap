@@ -190,16 +190,6 @@ val exe_identity : exe:string -> string
     against the dump's own {!build_root} to detect deleted or rebuilt
     executables. *)
 
-val dump_destination : unit -> string option
-(** [dump_destination ()] is the path the at_exit dump of this process writes to
-    — {!output_file}[ ~exe:Sys.executable_name] or the [WINDTRAP_COVERAGE_FILE]
-    override — and [None] before the first {!register} (in particular in
-    uninstrumented processes). The runner reads it at render time to detect
-    sibling [.coverage] files (other test executables' data) next to this
-    process's own; on the very first parallel run a sibling's dump may not exist
-    yet, so sibling detection is advisory, deterministic from the second run on.
-*)
-
 val output_file : exe:string -> string
 (** [output_file ~exe] is the deterministic [.coverage] path for the executable
     at path [exe] (resolved against the current directory when relative):

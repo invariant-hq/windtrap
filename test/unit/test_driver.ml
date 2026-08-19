@@ -115,10 +115,10 @@ let test_github_envelope_composed () =
 
 let test_coverage_seam () =
   let run = make_run () in
-  Run.set_coverage run { Run.visited = 3; total = 4; siblings = false };
+  Run.set_coverage run { Run.visited = 3; total = 4 };
   check "Summary hands finish the recorded snapshot"
     (Driver.coverage_summary ~coverage_mode:`Summary run
-    = Some { Run.visited = 3; total = 4; siblings = false });
+    = Some { Run.visited = 3; total = 4 });
   check "Report withholds it (the report prints its own line)"
     (Driver.coverage_summary ~coverage_mode:`Report run = None);
   check "Full withholds it"

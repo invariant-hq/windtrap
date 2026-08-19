@@ -296,7 +296,7 @@ dune exec --instrument-with ppx_windtrap.coverage examples/x-demo/main.exe -- -f
 ```
 
 prints the inline line after the summary:
-`coverage: 28.5% (88/309 points, this executable) · project: dune build @cover`
+`coverage: 28.5% (88/309 points) · project: dune build @cover`
 (exact numbers move with any edit to `main.ml`).
 
 ```sh

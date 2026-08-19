@@ -94,7 +94,7 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
 
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
-let golden_coverage = { Run.visited = 312; total = 358; siblings = false }
+let golden_coverage = { Run.visited = 312; total = 358 }
 
 let test_golden_compact () =
   let actual =
@@ -124,25 +124,17 @@ let test_golden_ansi () =
   snapshot "verbose-ansi" actual;
   check_contains "the ansi golden really is coloured" ~sub:"\027[" actual
 
-let test_coverage_line_siblings () =
-  (* The sibling fact is payload, not filesystem (the driver reads it at
-     snapshot time): a summary recording siblings scopes the line to this
-     executable and points at the aggregate instead of the report hint. *)
+let test_coverage_line_hint () =
+  (* The hint is unconditional: an in-process number is one executable's
+     view of the code it links, and the merge is the project total. *)
   let t =
     with_renderer (fun r ->
         Render.finish r
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
-          ~duration:0.1
-          ~coverage:{ golden_coverage with Run.siblings = true }
-          ())
+          ~duration:0.1 ~coverage:golden_coverage ())
   in
-  check_contains "sibling summary scopes the line and names the aggregate"
-    ~sub:
-      "coverage: 87.2% (312/358 points, this executable) · project: dune build \
-       @cover\n"
-    t;
-  check_absent "the scoped line drops the report hint"
-    ~sub:"WINDTRAP_COVERAGE=report" t
+  check_contains "the coverage line names the aggregate"
+    ~sub:"coverage: 87.2% (312/358 points) · project: dune build @cover\n" t
 
 let test_quiet () =
   let t = transcript ~mode:`Quiet () in
@@ -2830,7 +2822,7 @@ let tests =
     test "golden compact transcript (default)" test_golden_compact;
     test "golden verbose transcript (-v)" test_golden_verbose;
     test "golden verbose transcript, coloured" test_golden_ansi;
-    test "coverage line scopes itself on siblings" test_coverage_line_siblings;
+    test "coverage line names the project aggregate" test_coverage_line_hint;
     test "quiet mode (-q)" test_quiet;
     test "quiet green run is one line" test_quiet_green_run;
     test "ansi styling and diff highlighting" test_ansi;

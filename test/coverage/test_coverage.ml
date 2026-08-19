@@ -94,7 +94,6 @@ let scratch path = Filename.concat scratch_dir path
 
    Later putenv calls (the child tests) do not move it either, for the
    same reason: the path is resolved once. *)
-let parent_dump_name = "test_coverage.coverage"
 
 (* Registry: register / visit / snapshot *)
 
@@ -141,14 +140,6 @@ let registry_tests =
             check "unresolvable source yields no source" (r.C.source = None);
             check "unresolvable source yields no lines"
               (r.C.uncovered_lines = []));
-    test "dump_destination is the resolved override path" (fun () ->
-        (* The dump destination is resolved at first registration — here
-           the WINDTRAP_COVERAGE_FILE override set above — and readable
-           in-process (the runner's sibling detection reads it at render
-           time). *)
-        check "dump_destination is the resolved override path"
-          (Option.map Filename.basename (C.dump_destination ())
-          = Some parent_dump_name));
     test "visit saturates at max_int" (fun () ->
         let counts = [| max_int - 1 |] in
         C.register ~file:"reg_sat.ml" ~points:[| pt 7000 7010 |] ~counts;

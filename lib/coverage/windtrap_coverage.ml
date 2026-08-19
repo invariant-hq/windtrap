@@ -196,7 +196,6 @@ let output_file ~exe = Instr.output_file format ~exe
 let dump_path : string option ref = ref None
 let dump_exe : string option ref = ref None
 let dumped = ref false
-let dump_destination () = !dump_path
 
 let warn fmt =
   Printf.ksprintf (fun m -> Printf.eprintf "windtrap coverage: %s\n%!" m) fmt

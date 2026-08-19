@@ -16,7 +16,7 @@ The percentage appears in the run you already make; no second command:
 ```
 $ dune runtest --instrument-with ppx_windtrap.coverage
 calc: 4 passed in 0.00176s.
-coverage: 77.8% (7/9 points) · WINDTRAP_COVERAGE=report for detail
+coverage: 77.8% (7/9 points) · project: dune build @cover
 ```
 
 Two rules keep it honest. Coverage never changes what programs or
@@ -100,9 +100,10 @@ tooling.
 Each instrumented test executable reports its own percentage — its view
 of the code *it* links. The linker drops modules a binary never
 references, so two stanzas over one library print different
-denominators, and per-executable numbers never sum or average. When
-windtrap detects other executables' data it says so inline:
-`coverage: 52.4% (11/21 points, this executable) · project: dune build @cover`.
+denominators, and per-executable numbers never sum or average. That is
+why every inline line ends with `· project: dune build @cover`: the
+number beside it is one executable's, and the project number is the
+merge.
 
 The project number is the merge. Add one rule, once, at the project
 root:

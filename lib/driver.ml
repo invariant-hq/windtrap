@@ -176,31 +176,6 @@ let github_annotations ~github ~invocation results =
 
 (* The coverage seam *)
 
-(* Sibling detection: other executables'
-   .coverage files beside this process's own dump destination mean the
-   in-process number is one executable's view of the code it links, and
-   the project number is the merge — the coverage line says so instead of
-   posing as the total. Read here, at snapshot time, so renderers stay
-   projections of the run record. Best-effort by design: on a cold
-   parallel first run a sibling's dump may not exist yet (dumps are
-   written atomically at exit, after this snapshot), so the fact can be
-   absent once; it is deterministic from the second run on, and a
-   spurious sibling (an orphaned dump) only makes the hint advisory,
-   never wrong. *)
-let coverage_has_siblings () =
-  match Windtrap_coverage.dump_destination () with
-  | None -> false
-  | Some path -> (
-      let dir = Filename.dirname path in
-      match Sys.readdir dir with
-      | exception Sys_error _ -> false
-      | entries ->
-          Array.exists
-            (fun entry ->
-              Filename.check_suffix entry ".coverage"
-              && Filename.concat dir entry <> path)
-            entries)
-
 (* WINDTRAP_COVERAGE_ONLY: the source prefixes this run's number is about.
    Applied HERE, at the one seam, so the inline line and the report modes
    cannot disagree about what was counted — and not to the .coverage dump,
@@ -221,12 +196,7 @@ let snapshot_coverage run =
   let collection = coverage_scope () (Windtrap_coverage.snapshot ()) in
   if not (Windtrap_coverage.is_empty collection) then begin
     let s = Windtrap_coverage.summary collection in
-    Run.set_coverage run
-      {
-        Run.visited = s.visited;
-        total = s.total;
-        siblings = coverage_has_siblings ();
-      }
+    Run.set_coverage run { Run.visited = s.visited; total = s.total }
   end;
   collection
 

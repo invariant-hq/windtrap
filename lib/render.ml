@@ -2564,20 +2564,16 @@ let finish t ?coverage ~results ~duration () =
     (* Diagnosis, not signal: the slowest list is verbose-only. *)
     if t.mode = `Verbose then slowest t results
   end;
-  (* The sibling fact rides the summary record (the driver read it at
-     snapshot time): siblings mean this number is
-     one executable's view of the code it links, and the project number
-     is the merge — the line says so instead of posing as the total. *)
+  (* An in-process number is always one executable's view of the code it
+     links; the project number is the merge, so the line points at the
+     aggregate rather than posing as the total. Unconditional: which
+     other executables exist is not something a run can know, and a hint
+     that is true either way needs no filesystem look to decide. *)
   (match coverage with
-  | Some { Run.visited; total; siblings } when t.mode <> `Quiet ->
+  | Some { Run.visited; total } when t.mode <> `Quiet ->
       put t
         (line_str t
-           (if siblings then
-              coverage_line ~note:"this executable"
-                ~hint:"project: dune build @cover" ~visited ~total ()
-            else
-              coverage_line ~hint:"WINDTRAP_COVERAGE=report for detail"
-                ~visited ~total ()))
+           (coverage_line ~hint:"project: dune build @cover" ~visited ~total ()))
   | _ -> ());
   Pp.flush t.out ()
 
