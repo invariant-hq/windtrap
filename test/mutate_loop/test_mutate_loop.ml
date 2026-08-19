@@ -924,10 +924,8 @@ let runaway_tests =
    suite's measured dry-run wall clock plus ten times the scheduled
    tests' measured timings, floored at one second — so a loaded machine
    that slows the tests slows the budget with them: no scenario races an
-   absolute sleep against an absolute deadline. The whole-loop backstop
-   is deliberately not scenario-tested: its floor is sixty seconds and
-   every child is bounded below it, so constructing an expiry means
-   genuinely spending a minute of wall clock. *)
+   absolute sleep against an absolute deadline. It is the only clock over
+   a child, and over a run there is none. *)
 
 let rendered_verdicts path =
   match M.load path with
@@ -955,9 +953,7 @@ let deadline_tests =
         says ~msg:"summary terms" out "1 killed, 3 unreached";
         is_true
           ~msg:
-            (Printf.sprintf
-               "the child's own deadline cut it short, not the 60s backstop \
-                (%.1fs)"
+            (Printf.sprintf "the child's own deadline cut it short (%.1fs)"
                elapsed)
           (elapsed < 30.);
         equal ~msg:"the blocked mutant is killed" (list string) [ "killed" ]
@@ -1125,14 +1121,12 @@ let deadline_tests =
         in
         let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"a refusal, not a score" int 1 code;
-        says ~msg:"named as the probe's own deadline, not the backstop's" err
+        says ~msg:"named as the probe's own deadline" err
           "the determinism probe exceeded its deadline";
         says ~msg:"and stated as a determinism claim" err "not a number";
         is_true
           ~msg:
-            (Printf.sprintf
-               "the probe's deadline cut it short, not the 60s backstop \
-                (%.1fs)"
+            (Printf.sprintf "the probe's deadline cut it short (%.1fs)"
                elapsed)
           (elapsed < 30.));
   ]

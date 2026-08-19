@@ -547,8 +547,8 @@ fault, noticed by never finishing.
 
 The measured case is windtrap's own capture tests, where a flipped
 comparison in path normalization deadlocks the pipe reader.
-`WINDTRAP_MUTATE=admit … -f capture` used to sit at 0% CPU for the
-whole loop's 60 s floor and then refuse; it now answers in **1.03 s,
+`WINDTRAP_MUTATE=admit … -f capture` used to sit at 0% CPU for a
+whole minute and then refuse; it now answers in **1.03 s,
 26 of 26 admitted**. The full-suite admission fell from **1m38s to
 8.47 s** — most of that minute was children blocked in reads, not work
 — with seven of its rulings carrying the `timeout` cause. Every outcome
@@ -728,15 +728,10 @@ the hit count the dry run measured there; a child that blows it dies and
 is scored killed too. But a mutant that *blocks* evaluates nothing, sits
 at 0% CPU and consumes no budget at all, and only a clock ever ends it.
 
-Behind both sits the whole-loop deadline, now the backstop rather than
-the mechanism: the sum of what the scheduled children are each allowed
-to spend, plus the dry run and the probe, never under 60 s. Because
-every child is bounded on its own, the alarm firing is a statement about
-the run and not about the mutant in flight, and the refusal says so —
-it names the mutant it was on, then disowns the diagnosis: *a mutant
-that spins or blocks is killed by its child's own deadline, so the run
-as a whole overran the sum of its children's budgets*. Mutation needs `Unix.fork`, so it declines by name
-on Windows.
+The per-child deadline is the only clock: nothing caps a whole run, so
+a run of a thousand mutants takes as long as its thousand children do
+and it is you who stops it. Mutation needs `Unix.fork`, so it declines
+by name on Windows.
 
 ## Knobs
 

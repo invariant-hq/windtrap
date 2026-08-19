@@ -137,12 +137,11 @@
       not which tests judge them, so a scoped run's records are project-true for
       this executable and still write.
 
-    {b Not in this slice.} Children run one at a time. The whole-loop
-    [Unix.setitimer] remains as the backstop behind the per-child deadlines —
-    the sum of what the scheduled children may each spend, plus the dry run and
-    the probe, never under a minute — so its expiry is a supervision refusal
-    about the run, not a score about the mutant in flight. There is no
-    not-armable table, so a site the dry run only evaluated {e outside} a test
+    {b Not in this slice.} Children run one at a time, and the per-child
+    deadline is the only clock: there is no ceiling on a whole run, so a
+    parent-side pathology is stopped by the user rather than by the tool.
+    There is no not-armable table, so a site the dry run only evaluated
+    {e outside} a test
     (module initialization, a fixture release) is listed as unreached rather
     than as not armable. Both are "no test evaluates this" and neither is
     forked, so the score is right and only the remedy the reader is offered is
@@ -213,7 +212,7 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     place that reads it.
 
     Effects: the union of [Driver.execute_and_report]'s and, under the loop,
-    [fork]/[waitpid]/[pipe]/[select]/[setitimer], [setsid] in each child and
+    [fork]/[waitpid]/[pipe]/[select], [setsid] in each child and
     [kill] of an expired child's process group, one scratch log directory per
     run
     (removed at the end), and one verdict file under

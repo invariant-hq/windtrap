@@ -242,11 +242,9 @@ type report = {
          batch protocol reads these; [line] keeps the one-line children's
          reading, partial trailing bytes included, exactly as it was. *)
   status : Unix.process_status;
-  killed : [ `No | `Deadline | `Backstop ];
-      (* [`Deadline] is the child's own deadline — the mutant is scored,
-         the loop goes on — and [`Backstop] the whole-loop alarm, which
-         aborts the run: every child is bounded below, so the backstop
-         firing is a statement about the run, not about one mutant. *)
+  killed : [ `No | `Deadline ];
+      (* [`Deadline] is the child's own deadline: the mutant is scored
+         and the loop goes on. It is the only clock over a child. *)
 }
 
 (* One child, one process group, one deadline. [setsid] at fork puts the
@@ -260,7 +258,7 @@ type report = {
    deadline while it reads. The pipe is close-on-exec: a process a test
    [exec]s must not inherit the write end and hold the drain open past
    its group's death. *)
-let spawn_child ~expired ~deadline body =
+let fork_child ~deadline body =
   flush_descriptors ();
   let read_fd, write_fd =
     match Unix.pipe ~cloexec:true () with
@@ -275,9 +273,6 @@ let spawn_child ~expired ~deadline body =
       raise (Supervision (spf "fork failed: %s" (Unix.error_message e)))
   | 0 ->
       (try Unix.close read_fd with _ -> ());
-      (* Interval timers do not survive fork, but the handler's
-         disposition does; a child must not carry the loop's. *)
-      (try Sys.set_signal Sys.sigalrm Sys.Signal_default with _ -> ());
       (try ignore (Unix.setsid ()) with _ -> ());
       child_body write_fd body
   | pid ->
@@ -300,15 +295,13 @@ let spawn_child ~expired ~deadline body =
         | exception Unix.Unix_error (Unix.EINTR, _, _) -> true
       in
       let rec watch () =
-        if !expired then kill_group `Backstop
+        let remaining = expires_at -. Unix.gettimeofday () in
+        if remaining <= 0. then kill_group `Deadline
         else
-          let remaining = expires_at -. Unix.gettimeofday () in
-          if remaining <= 0. then kill_group `Deadline
-          else
-            match Unix.select [ read_fd ] [] [] remaining with
-            | [], _, _ -> watch ()
-            | _ -> if read_ready () then watch ()
-            | exception Unix.Unix_error (Unix.EINTR, _, _) -> watch ()
+          match Unix.select [ read_fd ] [] [] remaining with
+          | [], _, _ -> watch ()
+          | _ -> if read_ready () then watch ()
+          | exception Unix.Unix_error (Unix.EINTR, _, _) -> watch ()
       in
       (* After a group kill the complete lines already on the pipe are
          exactly the outcomes the admission parser must keep, so the
@@ -350,19 +343,6 @@ let spawn_child ~expired ~deadline body =
         | [] -> []
       in
       { line; lines; status; killed = !killed }
-
-(* A backstop the loop has not spent yet is honoured HERE, before the
-   fork, and not only in the select loop above, because the alarm is
-   one-shot: if it fired anywhere other than a blocking wait — between
-   two children, in the scratch cleanup, in the report — nothing would
-   ever observe it again and the deadline would go silently unenforced
-   for the rest of the loop. A child that is never forked reports exactly
-   as one killed at the backstop does, so no caller needs a second
-   shape. *)
-let fork_child ~expired ~deadline body =
-  if !expired then
-    { line = ""; lines = []; status = Unix.WEXITED 0; killed = `Backstop }
-  else spawn_child ~expired ~deadline body
 
 (* The child's run configuration
 
@@ -485,34 +465,6 @@ let decode_verdict ~paths line =
   (* "killed", the wrapper's own "crashed", no line at all, or a partial
      one: a child that did not report a survivor proved none. *)
   | _ -> Ok M.Killed
-
-(* The whole-loop deadline
-
-   One [Unix.setitimer] over the loop, kept as the backstop behind the
-   per-child deadlines: every child is bounded on its own, so the alarm
-   fires only when the run as a whole overran the sum of what its
-   children were each allowed to spend — a statement about the run, not
-   about one mutant. The budget is computed by the caller as exactly
-   that sum: the dry run's wall clock, plus the probe's own deadline,
-   plus the scheduled children's per-child deadlines, never under a
-   minute. *)
-let with_deadline seconds fn =
-  let expired = ref false in
-  if seconds <= 0. || not (Float.is_finite seconds) then fn expired
-  else
-    let previous =
-      Sys.signal Sys.sigalrm (Sys.Signal_handle (fun _ -> expired := true))
-    in
-    let clear () =
-      ignore
-        (Unix.setitimer Unix.ITIMER_REAL
-           { Unix.it_interval = 0.; it_value = 0. });
-      Sys.set_signal Sys.sigalrm previous
-    in
-    ignore
-      (Unix.setitimer Unix.ITIMER_REAL
-         { Unix.it_interval = 0.; it_value = seconds });
-    Fun.protect ~finally:clear (fun () -> fn expired)
 
 (* Scratch: one directory for the whole loop, one subdirectory per child,
    removed by the PARENT — a child killed at the deadline never runs its
@@ -695,7 +647,7 @@ let probe_line ~armed ~paths ~spine tests (_ : Unix.file_descr) =
                  (Option.value ~default:(-1) (index_of r.Run.path paths)))
              failures)
 
-let check_determinism ~armed ~expired ~scratch ~dry_run_wall
+let check_determinism ~armed ~scratch ~dry_run_wall
     ~(spine : Driver.t) ~reach ~paths tests =
   let log_dir = Filename.concat scratch "probe" in
   let child =
@@ -708,7 +660,7 @@ let check_determinism ~armed ~expired ~scratch ~dry_run_wall
   (* The probe re-runs exactly the dry run's executed tests, so its
      deadline is the same formula over the same schedule. *)
   let { line; status; killed } =
-    fork_child ~expired
+    fork_child
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
       (probe_line ~armed ~paths ~spine:child tests)
   in
@@ -734,7 +686,6 @@ let check_determinism ~armed ~expired ~scratch ~dry_run_wall
       | names -> " (" ^ String.concat ", " names ^ ")")
   in
   match killed with
-  | `Backstop -> Error "the determinism probe exceeded the loop deadline"
   | `Deadline ->
       Error
         "the determinism probe exceeded its deadline: the dry run completed \
@@ -784,7 +735,7 @@ let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests
 let budget_of hits =
   if hits > (max_int - 1000) / 8 then max_int else (hits * 8) + 1000
 
-let run_mutant ~armed ~expired ~scratch ~dry_run_wall ~index
+let run_mutant ~armed ~scratch ~dry_run_wall ~index
     ~(spine : Driver.t) ~reach ~paths ~budget ~mutant tests =
   let log_dir = Filename.concat scratch (spf "m%d" index) in
   let child =
@@ -795,13 +746,12 @@ let run_mutant ~armed ~expired ~scratch ~dry_run_wall ~index
     }
   in
   let { line; status; killed } =
-    fork_child ~expired
+    fork_child
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
       (mutant_line ~armed ~paths ~budget ~spine:child ~mutant tests)
   in
   remove_tree log_dir;
   match killed with
-  | `Backstop -> Ok (M.Killed, `Backstop)
   | `Deadline ->
       (* The suite noticed the change by hanging: a kill, on the crash
          kill's own reasoning. Whatever reached the pipe first is not a
@@ -829,27 +779,7 @@ let run_mutant ~armed ~expired ~scratch ~dry_run_wall ~index
    not about the suite. Its verdict is kept either way, which is what
    makes the check cost nothing for a build that passes it. *)
 
-(* The backstop's refusal. Both loops share the sentence because both
-   mean the same thing by it: every child is bounded by its own deadline,
-   so the whole-loop alarm firing anyway says the run overran the sum of
-   its children's budgets, not that one mutant hung. *)
-let backstop_refusal (mutant : M.mutant) =
-  spf
-    "the loop exceeded its whole-run deadline while running %s. A mutant that \
-     spins or blocks is killed by its child's own deadline and scored killed \
-     (timeout), so the run as a whole overran the sum of its children's \
-     budgets"
-    (M.id_to_string mutant.M.id)
-
-(* The forced-fail check rides the first child, which the ordering makes
-   the most-reached mutant: a mutant many tests run is the one least
-   likely to survive a correctly instrumented build, so a survivor there
-   is evidence about the build. It is a WARNING and not a refusal,
-   because a legitimately weak file produces the same signature — and
-   locking such a file out of the survey until someone kills or dismisses
-   the mutant costs the reader the score they came for, while the
-   diagnosis it needs fits on one line above it. *)
-let run_children ~armed ~expired ~scratch ~dry_run_wall ~spine ~reach ~ordered
+let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~ordered
     tests =
   let verdicts = ref M.empty in
   let forced_fail = ref None in
@@ -862,13 +792,10 @@ let run_children ~armed ~expired ~scratch ~dry_run_wall ~spine ~reach ~ordered
         let paths = reaching_tests reach mutant in
         let budget = budget_of (site_hits reach mutant) in
         match
-          run_mutant ~armed ~expired ~scratch ~dry_run_wall ~index ~spine
+          run_mutant ~armed ~scratch ~dry_run_wall ~index ~spine
             ~reach ~paths ~budget ~mutant tests
         with
         | Error message -> raise (Supervision message)
-        | Ok (verdict, `Backstop) ->
-            record mutant verdict;
-            Error (backstop_refusal mutant)
         | Ok (verdict, `Reported) ->
             record mutant verdict;
             (match verdict with
@@ -1027,36 +954,22 @@ let loop renderer ~armed (spine : Driver.t) tests =
           let dry_run_wall =
             Float.max 0.01 (Unix.gettimeofday () -. started)
           in
-          (* The backstop: the dry run's wall clock, the probe's own
-             deadline, and every scheduled child's — the sum of what the
-             loop below is allowed to spend, since each child is bounded
-             by [child_deadline] on its own. *)
-          let budget =
-            List.fold_left
-              (fun acc mutant ->
-                acc
-                +. child_deadline ~dry_run_wall ~reach
-                     (reaching_tests reach mutant))
-              (dry_run_wall +. child_deadline ~dry_run_wall ~reach executed)
-              ordered
-          in
           let narrowed =
             narrows_suite ~config ~focus:outcome.Runner.focus_active
           in
           let outcome =
-            with_deadline (Float.max 60. budget) (fun expired ->
-                let scratch = scratch_root () in
-                Fun.protect
-                  ~finally:(fun () -> remove_tree scratch)
-                  (fun () ->
-                    match
-                      check_determinism ~armed ~expired ~scratch ~dry_run_wall
-                        ~spine ~reach ~paths:executed tests
-                    with
-                    | Error _ as error -> error
-                    | Ok () ->
-                        run_children ~armed ~expired ~scratch ~dry_run_wall
-                          ~spine ~reach ~ordered tests))
+            let scratch = scratch_root () in
+            Fun.protect
+              ~finally:(fun () -> remove_tree scratch)
+              (fun () ->
+                match
+                  check_determinism ~armed ~scratch ~dry_run_wall ~spine ~reach
+                    ~paths:executed tests
+                with
+                | Error _ as error -> error
+                | Ok () ->
+                    run_children ~armed ~scratch ~dry_run_wall ~spine ~reach
+                      ~ordered tests)
           in
           match outcome with
           | Error message -> refuse "%s" message
@@ -1090,7 +1003,7 @@ let loop renderer ~armed (spine : Driver.t) tests =
    "A test is justified by the fault it kills", as one command over the
    run's ordinary selection. The survey's spine is reused whole — the dry
    run and its reach map, the determinism probe, the fork-and-arm child,
-   the whole-loop deadline — and only the scheduling policy differs: the
+   the per-child deadline — and only the scheduling policy differs: the
    loop arms the faults the selected tests reach, stops as soon as every
    selected test has killed one, and rules per TEST, not per mutant.
    Nothing is persisted (Law 17b): early stop means most reached mutants
@@ -1266,7 +1179,7 @@ let parse_batch_events ~size lines =
     lines;
   (outcomes, !pending, !finished, !error)
 
-let run_batch ~armed ~expired ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
+let run_batch ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
     ~reach ~batch ~budget ~mutant tests =
   let log_dir = Filename.concat scratch (spf "a%d" index) in
   let child =
@@ -1278,14 +1191,12 @@ let run_batch ~armed ~expired ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
   in
   let paths = List.map (fun e -> e.test) batch in
   let { lines; status; killed; _ } =
-    fork_child ~expired
+    fork_child
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
       (admit_line ~armed ~paths ~budget ~spine:child ~mutant tests)
   in
   remove_tree log_dir;
-  if killed = `Backstop then Error (backstop_refusal mutant)
-  else
-    let outcomes, pending, finished, error =
+  let outcomes, pending, finished, error =
       parse_batch_events ~size:(List.length batch) lines
     in
     match error with
@@ -1316,7 +1227,7 @@ let run_batch ~armed ~expired ~scratch ~dry_run_wall ~index ~(spine : Driver.t)
    the most still-unruled members carry on their own lists — capped and
    ruled tests have left U and stop weighting the schedule — with the
    site's total hit count and then identifier order as tie-breaks. *)
-let run_admission ~armed ~expired ~scratch ~dry_run_wall ~spine ~reach
+let run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach
     ~entrants tests =
   let forked = Hashtbl.create 64 in
   let forks = ref 0 in
@@ -1383,7 +1294,7 @@ let run_admission ~armed ~expired ~scratch ~dry_run_wall ~spine ~reach
             let batch = List.filter (fun e -> reaches e mutant) u in
             let budget = budget_of (site_hits reach mutant) in
             match
-              run_batch ~armed ~expired ~scratch ~dry_run_wall ~index ~spine
+              run_batch ~armed ~scratch ~dry_run_wall ~index ~spine
                 ~reach ~batch ~budget ~mutant tests
             with
             | Error _ as error -> error
@@ -1536,36 +1447,8 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
                 else count)
               reach.sites 0
           in
-          let scheduled =
-            List.sort_uniq M.compare_mutant
-              (List.concat_map (fun e -> e.own) entrants)
-          in
-          (* The backstop, recomputed from admission's own bounds — the
-             faults that can be scheduled and the probe, never the
-             survey's full reached population, which an admit run never
-             forks: the dry run's wall clock, the probe's deadline, and
-             one per-child deadline per scheduled fault over the
-             designated tests that reach it, which is the widest batch
-             its child could be handed. *)
           let dry_run_wall =
             Float.max 0.01 (Unix.gettimeofday () -. started)
-          in
-          let batch_paths (mutant : M.mutant) =
-            List.filter_map
-              (fun (r : Run.result) ->
-                match Hashtbl.find_opt reach.sites mutant.M.id with
-                | Some site when List.mem_assoc r.Run.path site.tests ->
-                    Some r.Run.path
-                | Some _ | None -> None)
-              designated
-          in
-          let budget =
-            List.fold_left
-              (fun acc mutant ->
-                acc
-                +. child_deadline ~dry_run_wall ~reach (batch_paths mutant))
-              (dry_run_wall +. child_deadline ~dry_run_wall ~reach executed)
-              scheduled
           in
           let outcome =
             if entrants = [] then
@@ -1574,19 +1457,18 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
                  the dry run alone, with no fork at all. *)
               Ok 0
             else
-              with_deadline (Float.max 60. budget) (fun expired ->
-                  let scratch = scratch_root () in
-                  Fun.protect
-                    ~finally:(fun () -> remove_tree scratch)
-                    (fun () ->
-                      match
-                        check_determinism ~armed ~expired ~scratch
-                          ~dry_run_wall ~spine ~reach ~paths:executed tests
-                      with
-                      | Error _ as error -> error
-                      | Ok () ->
-                          run_admission ~armed ~expired ~scratch ~dry_run_wall
-                            ~spine ~reach ~entrants tests))
+              let scratch = scratch_root () in
+              Fun.protect
+                ~finally:(fun () -> remove_tree scratch)
+                (fun () ->
+                  match
+                    check_determinism ~armed ~scratch ~dry_run_wall ~spine
+                      ~reach ~paths:executed tests
+                  with
+                  | Error _ as error -> error
+                  | Ok () ->
+                      run_admission ~armed ~scratch ~dry_run_wall ~spine ~reach
+                        ~entrants tests)
           in
           match outcome with
           | Error message -> refuse "%s" message

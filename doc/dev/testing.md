@@ -230,13 +230,14 @@ exactly the 60 s floor before refusing. Every forked child now runs
 under a deadline derived from the dry run — its wall clock, plus
 `max(1 s, 10 × that child's own scheduled tests)` — and on expiry the
 child's whole process group is killed and its mutant scored killed,
-which is the right verdict: the suite noticed the change by hanging. Re-measured here, that capture selection answers in
-0.56 s wall (248 ms of admission work, 26 of 26 admitted, 9 forks)
+which is the right verdict: the suite noticed the change by hanging.
+Re-measured here, that capture selection answers in 0.56 s wall (248 ms of admission work, 26 of 26 admitted, 9 forks)
 where it used to burn a silent minute and exit 1, and the full-suite
-admission fell from 1m38s to 8.5 s. The whole-loop deadline stays as the
-backstop, recomputed as the sum of its children's own bounds, so its
-expiry is now a statement about the run rather than about the mutant in
-flight.
+admission fell from 1m38s to 8.5 s. The whole-loop deadline that used to
+sit behind it is gone: every child is bounded on its own, and a budget
+computed as the sum of those bounds can only fire on parent-side
+overhead it never counted — which is a spurious refusal, not a
+backstop.
 
 What is left is the bill rather than a hang: an unscoped survey still
 forks once per mutant across the whole core, so mutating one file at a
