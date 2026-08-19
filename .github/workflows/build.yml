@@ -76,9 +76,9 @@ jobs:
       - name: Install OCaml dependencies
         run: opam install . --deps-only --with-test
 
-      # ppx_windtrap.coverage, not ppx_windtrap: only that spelling keeps
-      # the windtrap core out of an instrumented library's closure, and
-      # lib/ — the core itself — cannot use the other one at all. See
+      # ppx_windtrap.coverage is the backend's one name: it keeps the
+      # windtrap core out of an instrumented library's closure, which
+      # lib/ — the core itself — needs to be instrumentable at all. See
       # ppx/coverage/dune.
       - name: Coverage
         run: opam exec -- dune build @cover --instrument-with ppx_windtrap.coverage
