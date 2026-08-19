@@ -139,9 +139,6 @@ let prop_area =
 
 (* Migration reference: cases *)
 
-let cases_indexed =
-  cases "ports parse" [ 1; 80; 8080 ] (fun p -> ignore (require_ok (parse p)))
-
 let cases_named =
   cases "ports parse" ~name:string_of_int [ 1; 80; 8080 ] (fun p ->
       ignore (require_ok (parse p)))
@@ -295,13 +292,12 @@ let sessions =
 
 (* Construction and execution *)
 
-(* Snapshot-bearing and name-colliding trees only construct: baselines do
-   not exist in this synthetic suite, and [cases_indexed]/[cases_named]
-   share a path. *)
+(* Snapshot-bearing trees only construct: baselines do not exist in this
+   synthetic suite. *)
 let () =
   let constructed =
     Windtrap.Private.Test_tree.flatten
-      [ cases_indexed; snap_help; guide_help; snap_report; greets_snapshot ]
+      [ cases_named; snap_help; guide_help; snap_report; greets_snapshot ]
   in
   check "documented spellings construct" (List.length constructed = 7)
 

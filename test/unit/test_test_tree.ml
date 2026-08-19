@@ -234,17 +234,15 @@ let () =
 (* cases *)
 
 let () =
-  reg "cases derives indexed sub-paths" @@ fun () ->
+  reg "cases derives sub-paths from the naming function" @@ fun () ->
   let seen = ref [] in
-  let tree = T.cases "double" [ 1; 2; 3 ] (fun n -> seen := n :: !seen) in
+  let tree =
+    T.cases ~name:string_of_int "double" [ 1; 2; 3 ] (fun n ->
+        seen := n :: !seen)
+  in
   let flat = T.flatten [ tree ] in
-  check_paths "cases derives <name>.<index> sub-paths"
-    ~expected:
-      [
-        [ "double"; "double.0" ];
-        [ "double"; "double.1" ];
-        [ "double"; "double.2" ];
-      ]
+  check_paths "cases derives <base>/<name input> sub-paths"
+    ~expected:[ [ "double"; "1" ]; [ "double"; "2" ]; [ "double"; "3" ] ]
     ~actual:(List.map (fun (c : T.case) -> c.path) flat);
   check_int "cases bodies do not run at declaration" ~expected:0
     ~actual:(List.length !seen);
@@ -256,7 +254,10 @@ let () =
 
 let () =
   reg "cases forwards timeout and retries to every child" @@ fun () ->
-  (match T.flatten [ T.cases ~timeout:2.5 ~retries:3 "t" [ 0; 1 ] ignore ] with
+  (match
+     T.flatten
+       [ T.cases ~timeout:2.5 ~retries:3 ~name:string_of_int "t" [ 0; 1 ] ignore ]
+   with
   | [ a; b ] ->
       check "first child carries the declared budget"
         (a.T.timeout = Some 2.5 && a.T.retries = 3);
@@ -264,21 +265,17 @@ let () =
         (b.T.timeout = Some 2.5 && b.T.retries = 3)
   | _ -> check "cases budget flatten shape" false);
   expect_invalid_arg "cases rejects a zero timeout" (fun () ->
-      T.cases ~timeout:0. "t" [ 0 ] ignore);
+      T.cases ~timeout:0. ~name:string_of_int "t" [ 0 ] ignore);
   expect_invalid_arg "cases rejects negative retries" (fun () ->
-      T.cases ~retries:(-1) "t" [ 0 ] ignore)
-
-let () =
-  reg "cases ?name names sub-tests from values" @@ fun () ->
-  let tree = T.cases ~name:string_of_int "n" [ 10; 20 ] ignore in
-  check_paths "cases ?name names sub-tests from values"
-    ~expected:[ [ "n"; "10" ]; [ "n"; "20" ] ]
-    ~actual:(List.map (fun (c : T.case) -> c.path) (T.flatten [ tree ]))
+      T.cases ~retries:(-1) ~name:string_of_int "t" [ 0 ] ignore)
 
 let () =
   reg "cases metadata and empty input" @@ fun () ->
   let pos = ("test/fake_cases.ml", 5, 0, 0) in
-  let flat = T.flatten [ T.cases ~pos ~tags:[ "tbl" ] "c" [ 0; 1 ] ignore ] in
+  let flat =
+    T.flatten
+      [ T.cases ~pos ~tags:[ "tbl" ] ~name:string_of_int "c" [ 0; 1 ] ignore ]
+  in
   check "cases tags reach every sub-test"
     (List.for_all (fun (c : T.case) -> Tag.mem "tbl" c.T.tags) flat);
   check "cases sub-tests share the declaration site"
@@ -289,7 +286,7 @@ let () =
          | None -> false)
        flat);
   check "cases with no inputs flattens to nothing"
-    (T.flatten [ T.cases "empty" [] ignore ] = [])
+    (T.flatten [ T.cases ~name:string_of_int "empty" [] ignore ] = [])
 
 (* bracket *)
 

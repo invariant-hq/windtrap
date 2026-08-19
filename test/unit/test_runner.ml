@@ -588,7 +588,8 @@ let () =
           ~name:(function `Slow -> "slow" | `Fast -> "fast")
           [ `Slow; `Fast ]
           (fun input -> if input = `Slow then busy_forever ());
-        Test_tree.cases ~retries:2 "flaky-table" [ () ] (fun () ->
+        Test_tree.cases ~retries:2 ~name:(fun () -> "row") "flaky-table" [ () ]
+          (fun () ->
             incr attempts;
             if !attempts < 3 then Check.fail "not yet");
       ]
@@ -606,11 +607,11 @@ let () =
     | _ -> check "table › slow: one failure" false);
     check "the sibling gets its own full budget"
       (outcome_of outcome [ "table"; "fast" ] = Some Failure.Pass);
-    match result_of outcome [ "flaky-table"; "flaky-table.0" ] with
+    match result_of outcome [ "flaky-table"; "row" ] with
     | Some r ->
         check "cases ~retries gives each child the extra attempts"
           (r.Run.outcome = Failure.Pass && r.Run.attempts = 3)
-    | None -> check "flaky-table.0 recorded" false)
+    | None -> check "flaky-table row recorded" false)
 
 (* Retries *)
 

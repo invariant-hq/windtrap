@@ -95,7 +95,7 @@ printer plus an equality, composed like the type itself.
 | `prop name gen fn` | property test over an `'a Gen.t`; failures shrink and replay |
 | `snapshot name actual` | compare to `__snapshots__/<file>/<name>.snap`; accept with `-u` |
 | `let%expect_test` + `[%expect {|…|}]` | inline output tests (`ppx_windtrap`); accept with `dune promote` |
-| `cases name inputs fn` | one selectable test per input |
+| `cases ~name base inputs fn` | one selectable test per input |
 | `bracket ~setup ~teardown name fn` | per-test resource |
 | `fixture ?teardown create` | shared resource, released by the runner |
 | `ftest` / `fgroup` | focus while debugging (refused under CI) |

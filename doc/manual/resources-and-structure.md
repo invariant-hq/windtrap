@@ -176,16 +176,20 @@ test is that test's own job.
 
 ## One test per input: `cases`
 
-`cases name inputs fn` declares a group with one child per input, so
-one bad input does not mask the rest and each is selectable with `-f`:
+`cases ~name base inputs fn` declares a group with one child per input,
+so one bad input does not mask the rest and each is selectable with
+`-f`:
 
 ```ocaml
 cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
   (fun input -> ignore (require_ok (parse_port input)))
 ```
 
-`?name` derives the child's name from the input (here the string
-itself); without it children are numbered `ports parse.0`, `.1`, ….
+`~name` derives the child's name from the input (here the string
+itself). It is required, and the numbered default it replaced is why: a
+child's path is its identity — it keys the child's per-case property
+seeds and its entry in the `--failed` store — so inserting a row at the
+front silently re-keyed every row after it.
 
 The row list — and each `?name` application — is evaluated at
 *declaration* time, before any test runs: rows are data, not test

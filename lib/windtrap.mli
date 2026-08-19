@@ -156,18 +156,27 @@ val cases :
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
-  ?name:('a -> string) ->
+  name:('a -> string) ->
   string ->
   'a list ->
   ('a -> unit) ->
   test
-(** [cases name inputs fn] declares one test per input: a group named [name]
-    whose [i]th child (zero-based, declaration order) runs [fn input]. A child
-    is named by applying the [?name] function to its input — at declaration time
-    — when given, and ["<name>.<i>"] otherwise; either way each sub-test is
-    individually selectable ([-f "name › 8080"]) and one bad input does not mask
-    the rest. [timeout] and [retries] apply to each child — per input, not per
+(** [cases ~name base inputs fn] declares one test per input: a group named
+    [base] whose children, in declaration order, run [fn input] under the name
+    [name input], applied at declaration time. Each sub-test is individually
+    selectable ([-f "ports parse › 8080"]) and one bad input does not mask the
+    rest. [timeout] and [retries] apply to each child — per input, not per
     table.
+
+    {[
+      cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
+        (fun input -> ignore (require_ok (parse_port input)))
+    ]}
+
+    [~name] is required, and a positional [<base>.<i>] default is exactly what
+    it is there to prevent: a child's path is its identity — it keys the child's
+    per-case property seeds and its entry in the [--failed] store — so
+    inserting a row at the front would silently re-key every row after it.
 
     The [inputs] list is evaluated at {e declaration} time, outside any test:
     rows are data, not test code. A row that needs test-scoped work —

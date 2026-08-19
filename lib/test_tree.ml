@@ -104,20 +104,14 @@ let group ?pos ?tags name children =
 let fgroup ?pos ?tags name children =
   make_group ?pos ?tags ~focused:true name children
 
-let cases ?pos ?(tags = []) ?timeout ?(retries = 0) ?name:name_of base inputs fn
-    =
+let cases ?pos ?(tags = []) ?timeout ?(retries = 0) ~name base inputs fn =
   check_timeout timeout;
   check_retries retries;
   let loc = Loc.resolve ?pos () in
-  let child index input =
-    let child_name =
-      match name_of with
-      | Some render -> render input
-      | None -> base ^ "." ^ string_of_int index
-    in
+  let child input =
     Test
       {
-        name = child_name;
+        name = name input;
         body = Body (fun () -> fn input);
         loc;
         tags = Tag.empty;
@@ -130,7 +124,7 @@ let cases ?pos ?(tags = []) ?timeout ?(retries = 0) ?name:name_of base inputs fn
   Group
     {
       name = base;
-      children = List.mapi child inputs;
+      children = List.map child inputs;
       loc;
       tags = Tag.of_list tags;
       focused = false;

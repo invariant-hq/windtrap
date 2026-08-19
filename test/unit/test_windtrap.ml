@@ -334,8 +334,7 @@ let () =
       test "plain" (fun () -> ());
       group "outer" [ group "inner" [ test "nested" (fun () -> ()) ] ];
       slow "big" (fun () -> ());
-      cases "squares" [ 1; 2 ] (fun _ -> ());
-      cases "named" ~name:string_of_int [ 7 ] (fun _ -> ());
+      cases "squares" ~name:string_of_int [ 1; 2 ] (fun _ -> ());
       prop "law" Gen.int (fun _ -> ());
       bracket
         ~setup:(fun () -> ())
@@ -355,9 +354,8 @@ let () =
         "plain";
         "outer › inner › nested";
         "big";
-        "squares › squares.0";
-        "squares › squares.1";
-        "named › 7";
+        "squares › 1";
+        "squares › 2";
         "law";
         "bracketed";
         "in a scope";
@@ -966,15 +964,16 @@ let () =
   let suite =
     [
       xfail ~reason:"issue #7"
-        (cases "mixed" [ 1; 2; 3 ] (fun n -> if n = 2 then fail "boom"));
+        (cases "mixed" ~name:string_of_int [ 1; 2; 3 ] (fun n ->
+             if n = 2 then fail "boom"));
     ]
   in
   expect_run "xfail over cases" ~config suite @@ fun outcome ->
   check "the failing child is excused"
-    (not (List.mem "mixed › mixed.1" outcome.Runner.failed_paths));
+    (not (List.mem "mixed › 2" outcome.Runner.failed_paths));
   check "each passing child is an unexpected pass"
-    (List.mem "mixed › mixed.0" outcome.Runner.failed_paths
-    && List.mem "mixed › mixed.2" outcome.Runner.failed_paths);
+    (List.mem "mixed › 1" outcome.Runner.failed_paths
+    && List.mem "mixed › 3" outcome.Runner.failed_paths);
   check_int "xfail over cases exit code" ~expected:1
     ~actual:outcome.Runner.exit_code
 

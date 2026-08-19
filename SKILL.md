@@ -731,8 +731,10 @@ paste it. `--shard K/N` partitions a suite deterministically across CI
 jobs. `-s`/`--stream` disables capture for printf-debugging a hang; the
 live tail under a run names a hung test.
 
-Structure and resources, in one pass: `cases name inputs fn` declares
-one selectable test per input (`?name` derives names from values);
+Structure and resources, in one pass: `cases ~name base inputs fn`
+declares one selectable test per input, named by `~name` from the value
+(required: a child's path keys its seeds and its `--failed` entry, so
+numbered names would shift when a row is inserted);
 `subtest` labels sub-cases inside one body. `bracket ~setup ~teardown`
 scopes a per-test resource with teardown on every outcome; `scoped`
 adapts callback-style resources (`Eio_main.run`, `with_open_text`) —

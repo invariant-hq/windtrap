@@ -126,19 +126,21 @@ val cases :
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
-  ?name:('a -> string) ->
+  name:('a -> string) ->
   string ->
   'a list ->
   ('a -> unit) ->
   t
-(** [cases ?name:render name inputs fn] declares one test per input: a group
-    named [name] whose [i]th child (zero-based, declaration order) runs
-    [fn input]. The child is named [render input] when [render] is given —
-    applied at declaration time — and ["<name>.<i>"] otherwise, making each
+(** [cases ~name:render base inputs fn] declares one test per input: a group
+    named [base] whose children, in declaration order, run [fn input] under the
+    name [render input] — applied at declaration time — which makes each
     sub-test individually selectable by path filter. All children share the
-    [cases] call's declaration position, and each child runs under
-    [timeout] and [retries] — per child, not per table: every input gets the
-    full budget. *)
+    [cases] call's declaration position, and each child runs under [timeout] and
+    [retries] — per child, not per table: every input gets the full budget.
+
+    [name] is required: a child's path keys its per-case seeds ({!Seed.derive})
+    and its entry in the [--failed] store, so a positional default would re-key
+    every later child whenever a row is inserted. *)
 
 val bracket :
   ?pos:Loc.pos ->
