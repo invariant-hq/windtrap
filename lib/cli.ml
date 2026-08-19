@@ -877,12 +877,13 @@ let help ~prog =
         | Flag_entry e -> Some (flag_heading e, e.doc) | Env_setting _ -> None)
       table
   in
-  let mirror_rows =
+  (* Only the variables no flag can spell get a row. The mirrors are one
+     mechanical rule — twenty-four rows reading "Mirror of --x" said it
+     twenty-four times, and said nothing the sentence above does not. *)
+  let setting_rows =
     List.filter_map
       (function
-        | Flag_entry e ->
-            Option.map (fun m -> (m.var, Pp.str "Mirror of %s" e.long)) e.mirror
-        | Env_setting { var; doc } -> Some (var, doc))
+        | Env_setting { var; doc } -> Some (var, doc) | Flag_entry _ -> None)
       table
   in
   String.concat "\n"
@@ -892,10 +893,14 @@ let help ~prog =
        usage ~prog;
        "";
        "A bare PATTERN runs only tests whose full path contains it (same as";
-       "-f PATTERN). Under `dune runtest`, set options through their";
-       "WINDTRAP_* environment mirrors instead.";
+       "-f PATTERN). Under `dune runtest` there is no command line, so";
+       "almost every option has a WINDTRAP_* mirror — WINDTRAP_FILTER for";
+       "--filter, and so on — and there the mirrors are the CLI. -l,";
+       "--failed, -x, -h and -V have none: they want a command line.";
        "";
        "OPTIONS:";
      ]
-    @ two_columns flag_rows @ [ ""; "ENVIRONMENT:" ] @ two_columns mirror_rows)
+    @ two_columns flag_rows
+    @ [ ""; "ENVIRONMENT (no flag):" ]
+    @ two_columns setting_rows)
   ^ "\n"

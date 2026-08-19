@@ -3,8 +3,10 @@ mytests.exe - windtrap test runner
 usage: mytests.exe [OPTIONS] [PATTERN]
 
 A bare PATTERN runs only tests whose full path contains it (same as
--f PATTERN). Under `dune runtest`, set options through their
-WINDTRAP_* environment mirrors instead.
+-f PATTERN). Under `dune runtest` there is no command line, so
+almost every option has a WINDTRAP_* mirror — WINDTRAP_FILTER for
+--filter, and so on — and there the mirrors are the CLI. -l,
+--failed, -x, -h and -V have none: they want a command line.
 
 OPTIONS:
   -f, --filter PATTERN          Run only tests whose path contains PATTERN
@@ -30,30 +32,13 @@ OPTIONS:
   -V, --version                 Print the version and exit
   -h, --help                    Print this help and exit
 
-ENVIRONMENT:
-  WINDTRAP_FILTER          Mirror of --filter
-  WINDTRAP_EXCLUDE         Mirror of --exclude
-  WINDTRAP_TAG             Mirror of --tag
-  WINDTRAP_EXCLUDE_TAG     Mirror of --exclude-tag
-  WINDTRAP_SHARD           Mirror of --shard
-  WINDTRAP_BAIL            Mirror of --bail
-  WINDTRAP_TIMEOUT         Mirror of --timeout
-  WINDTRAP_SLOW_THRESHOLD  Mirror of --slow-threshold
-  WINDTRAP_SEED            Mirror of --seed
-  WINDTRAP_PROP_COUNT      Mirror of --prop-count
-  WINDTRAP_MAX_SHRINK      Mirror of --max-shrink
-  WINDTRAP_UPDATE          Mirror of --update
-  WINDTRAP_STREAM          Mirror of --stream
-  WINDTRAP_VERBOSE         Mirror of --verbose
-  WINDTRAP_JUNIT           Mirror of --junit
-  WINDTRAP_COLOR           Mirror of --color
-  WINDTRAP_OUTPUT          Mirror of --output
-  WINDTRAP_TAIL_ERRORS     Captured-output lines shown per failure
-  WINDTRAP_PROJECT_ROOT    Project root for snapshot path resolution
-  WINDTRAP_COVERAGE        Inline coverage line: on or off
-  WINDTRAP_COVERAGE_ONLY   Source prefixes the coverage number covers
-  WINDTRAP_MUTATE          Mutation testing: 1, admit or off
-  WINDTRAP_MUTATE_ARM      Arm one mutant, by identifier
-  WINDTRAP_MUTATE_TRY      Faults an admit run tries per test (0 for all)
-  WINDTRAP_MUTATE_ONLY     Source prefixes whose mutants a run considers
-  NO_COLOR                 Any value: never style output (--color auto)
+ENVIRONMENT (no flag):
+  WINDTRAP_TAIL_ERRORS    Captured-output lines shown per failure
+  WINDTRAP_PROJECT_ROOT   Project root for snapshot path resolution
+  WINDTRAP_COVERAGE       Inline coverage line: on or off
+  WINDTRAP_COVERAGE_ONLY  Source prefixes the coverage number covers
+  WINDTRAP_MUTATE         Mutation testing: 1, admit or off
+  WINDTRAP_MUTATE_ARM     Arm one mutant, by identifier
+  WINDTRAP_MUTATE_TRY     Faults an admit run tries per test (0 for all)
+  WINDTRAP_MUTATE_ONLY    Source prefixes whose mutants a run considers
+  NO_COLOR                Any value: never style output (--color auto)

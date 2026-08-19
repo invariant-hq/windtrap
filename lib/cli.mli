@@ -216,5 +216,7 @@ val usage : prog:string -> string
 
 val help : prog:string -> string
 (** [help ~prog] is the full help page: usage, the flag table with one line per
-    flag, and the environment-variable inventory (flag mirrors and the env-only
-    variables). Generated from the same table that drives {!parse}. *)
+    flag, and the variables no flag can spell. Generated from the same table
+    that drives {!parse}. The mirrors get one sentence rather than a row each:
+    the rule is mechanical, and twenty-four lines reading [Mirror of --x] said
+    nothing the sentence does not. *)

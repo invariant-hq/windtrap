@@ -311,57 +311,16 @@ let () =
 
 (* Help and usage *)
 
-(* --help is the CLI's whole user-facing surface and it had no golden:
-   the list below pins that each flag is MENTIONED, which a help text
-   could satisfy while its columns, ordering, wording and ENVIRONMENT
-   section drifted freely. The snapshot pins the bytes; the list stays,
-   because it says which flags must exist and reads as the contract. *)
+(* --help is the CLI's whole user-facing surface, and the snapshot pins
+   every byte of it: its columns, its ordering, its wording, and which
+   flags and variables exist at all. A second list asserting that each
+   flag is MENTIONED said less than the golden already says. *)
 let () =
   reg "help text, whole" @@ fun () ->
   Windtrap.snapshot "help" (Cli.help ~prog:"/some/path/mytests.exe")
 
 let () =
-  reg "help and usage text" @@ fun () ->
-  let help = Cli.help ~prog:"/some/path/mytests.exe" in
-  check "help names the program" (contains "mytests.exe" help);
-  List.iter
-    (fun flag -> check ("help lists " ^ flag) (contains flag help))
-    [
-      "--filter";
-      "--exclude";
-      "--tag";
-      "--exclude-tag";
-      "--shard";
-      "--failed";
-      "--list";
-      "--fail-fast";
-      "--bail";
-      "--timeout";
-      "--slow-threshold";
-      "--seed";
-      "--prop-count";
-      "--update";
-      "--stream";
-      "--verbose";
-      "--junit";
-      "--color";
-      "--output";
-      "--version";
-      "--help";
-    ];
-  List.iter
-    (fun var -> check ("help lists " ^ var) (contains var help))
-    [
-      "WINDTRAP_FILTER";
-      "WINDTRAP_SEED";
-      "WINDTRAP_SHARD";
-      "WINDTRAP_UPDATE";
-      "WINDTRAP_VERBOSE";
-      "WINDTRAP_SLOW_THRESHOLD";
-      "WINDTRAP_TAIL_ERRORS";
-      "WINDTRAP_PROJECT_ROOT";
-      "WINDTRAP_COVERAGE";
-    ];
+  reg "usage line" @@ fun () ->
   check_string "usage is one line with the basename"
     ~expected:"usage: mytests.exe [OPTIONS] [PATTERN]"
     ~actual:(Cli.usage ~prog:"/some/path/mytests.exe")
