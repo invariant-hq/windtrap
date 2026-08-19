@@ -8,14 +8,12 @@
     One declarative table drives everything here — every knob is one row, a flag
     beside its optional [WINDTRAP_*] mirror or a setting only the environment
     can spell: {!parse} reads an argument vector into a {!type:parsed} record of
-    raw flag values, {!settings} merges programmatic overrides, parsed flags,
-    and the environment mirrors into a {!Run.config} and the three rendering
-    decisions kept out of it — with the precedence
-    {e programmatic > CLI > env > default} (under [dune runtest] the environment
+    raw flag values, {!settings} merges parsed flags and environment mirrors
+    into a {!Run.config} and the three rendering decisions kept out of it — with
+    the precedence {e CLI > env > default} (under [dune runtest] the environment
     mirrors {e are} the CLI) — and {!help} renders the flag and variable
     inventory from the same rows. {!settings} is the one call a driver makes,
-    one pass over one environment layer; {!resolve}, {!coverage_enabled} and
-    {!output_level} are its layers, documented and testable on their own.
+    one pass over one environment layer.
 
     A flag's mirror is declared in that table beside the flag, and its value is
     applied through the flag's own parser, so the two cannot drift: a variable
@@ -33,10 +31,7 @@
     Nothing in this module prints or exits: parse and resolution failures are
     returned as a typed {!type:error} — the caller renders {!error_message} and
     exits [2] — and [--help]/[--version] come back as flags on {!type:parsed}
-    for the caller to act on. The flag inventory is v1's minus the cut
-    [--format] axis — terminal verbosity is one three-level axis ([-q] ⊂ default
-    ⊂ [-v], {!output_level}), not a format — plus [--quiet], [--verbose] and
-    [--shard]. *)
+    for the caller to act on. *)
 
 (** {1:parsed Parsed flags} *)
 
@@ -87,7 +82,7 @@ type parsed = {
       (** [-q]/[--quiet] parse as [Some `Quiet], [-v]/[--verbose] as
           [Some `Verbose]. One field for one axis: mixing or repeating the flags
           is last-one-wins, like every single-valued flag. [None] is the compact
-          default (see {!output_level}). *)
+          default. *)
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   color : Env.color_mode option;
       (** [--color MODE]: [always], [never], or [auto]. *)
@@ -99,7 +94,7 @@ type parsed = {
 }
 (** The type for raw parse results: one field per flag, [None] (or [[]], or
     [false] for {!parsed.help} and {!parsed.version}) when the flag was absent.
-    Also the shape of {!resolve}'s programmatic overrides. *)
+*)
 
 val empty : parsed
 (** [empty] is the record with every flag absent. *)
@@ -139,52 +134,6 @@ val parse : string array -> (parsed, error) result
 
 (** {1:resolution Resolution} *)
 
-val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
-(** [resolve ~overrides cli] is the run configuration obtained by taking, for
-    each field, the first value present in [overrides] (programmatic, defaults
-    to {!empty}), then [cli], then the field's [WINDTRAP_*] environment mirror,
-    then {!Run.default_config} — except [tags] and [exclude_tags], which are
-    additive across all three layers, overrides first.
-
-    Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
-    when no layer provides one.
-
-    [Error (Invalid_value _)] with source [WINDTRAP_SEED] when the seed falls
-    through to a malformed environment token; a well-formed [overrides] or [cli]
-    seed leaves the variable unparsed. [WINDTRAP_SHARD] and the numeric mirrors
-    [WINDTRAP_TIMEOUT], [WINDTRAP_SLOW_THRESHOLD], [WINDTRAP_PROP_COUNT] and
-    [WINDTRAP_MAX_SHRINK] are treated the same way, and by the same code: a
-    mirror is read through its flag's parser, so a value the flag would reject
-    is an error naming the variable, never silently ignored — a misread shard
-    would silently rerun the whole suite in every bucket, and a misread count or
-    limit would silently run with the default. A mirror whose flag a higher
-    layer already decided is not even parsed.
-
-    The winning [timeout], [prop_count], [max_shrink] and [bail] must be
-    positive ([timeout] finite as well), the winning [slow_threshold] — a
-    renderer setting {!settings} resolves, checked here all the same — must be
-    finite and non-negative, and the winning [shard] must satisfy [1 <= K <= N].
-    {!parse} and the mirrors enforce this already, each naming its own source; a
-    violation that arrives through [overrides] — the one layer with no parser
-    between it and the run — is [Error (Invalid_value _)] naming the flag
-    spelling, never a config that detonates mid-run. {!parsed.help} and
-    {!parsed.version} are ignored — acting on them is the caller's job. *)
-
-val coverage_enabled : unit -> (bool, error) result
-(** [coverage_enabled ()] is whether a run prints its inline coverage line:
-    [WINDTRAP_COVERAGE] in {!Env}'s shared boolean spellings, [true] when unset.
-    Environment only, and resolved apart from {!resolve} because it is a
-    rendering decision, not run configuration — {!Run.config} carries no
-    coverage field, and neither value changes outcomes or exit codes. The
-    per-file table and the uncovered excerpts are not a mode of a run: they are
-    [windtrap coverage] and [windtrap coverage -u], over the merge of every
-    executable's dumps rather than this one's view.
-
-    Effects: reads the environment. [Error (Invalid_value _)] naming
-    [WINDTRAP_COVERAGE] when its value is neither truthy nor falsy — the
-    message names the reporting command, which is where the retired [report]
-    and [full] modes went. *)
-
 type mutation = {
   mode : [ `Unset | `Off | `Loop | `Admit ];
       (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
@@ -209,65 +158,52 @@ type mutation = {
 
 val mutation : unit -> (mutation, error) result
 (** [mutation ()] reads the three mutation variables. Resolved apart from
-    {!resolve} like {!coverage_enabled}, and for the same reason — none of them is
-    run configuration, and nothing in the runner may read them — with the same
-    loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] or
-    [WINDTRAP_MUTATE_TRY] when its value is not one the variable accepts, never
-    a silently defaulted mode.
+    {!settings} because none of them is run configuration and nothing in the
+    runner may read them, but with the same loudness:
+    [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] or [WINDTRAP_MUTATE_TRY]
+    when its value is not one the variable accepts, never a silently defaulted
+    mode.
 
     Effects: reads the environment. *)
 
-val output_level :
-  ?overrides:parsed -> parsed -> [ `Quiet | `Compact | `Verbose ]
-(** [output_level ~overrides cli] is the terminal verbosity level: the first
-    {!parsed.output} present in [overrides] (defaults to {!empty}) then [cli],
-    else the [WINDTRAP_QUIET]/[WINDTRAP_VERBOSE] environment mirrors (boolean
-    spellings, as [WINDTRAP_STREAM]; when both are truthy, verbose wins — the
-    variables carry no order for last-one-wins), else [`Compact]. Resolved apart
-    from {!resolve} like {!coverage_enabled}, because it is a rendering decision,
-    not run configuration — {!Run.config} carries no verbosity field. Levels
-    never change outcomes or exit codes; the renderer projects the same run data
-    at every level.
-
-    Effects: reads the environment when no layer above it decides. Never errors:
-    unparseable boolean values count as unset, and a malformed value in some
-    other mirror — which stops the shared environment layer short — leaves the
-    level at what the layers above the environment say, the caller's {!resolve}
-    having reported that error already. *)
-
 type settings = {
-  config : Run.config;  (** The run configuration ({!resolve}). *)
+  config : Run.config;  (** The run configuration. *)
   render : Render.settings;
       (** The renderer settings: the presentation knobs — [--color], the
           [WINDTRAP_COLUMNS]/[WINDTRAP_TAIL_ERRORS] overrides,
           [--slow-threshold] — resolved with the same precedence as [config] and
           handed to the driver's renderer construction. *)
   coverage : bool;
-      (** Whether the inline coverage line prints ({!coverage_enabled}). *)
+      (** Whether the inline coverage line prints ([WINDTRAP_COVERAGE], on
+          unless the variable says otherwise). *)
   output_level : [ `Quiet | `Compact | `Verbose ];
-      (** The terminal verbosity level ({!output_level}). *)
+      (** The terminal verbosity level: [-q] ⊂ default ⊂ [-v]. *)
 }
 (** The type for everything one invocation resolves to. Four fields, not one
     configuration: the three rendering decisions stay {e out} of {!Run.config},
     because none of them can change outcomes or exit codes and nothing in the
     runner may read them. *)
 
-val settings : ?overrides:parsed -> parsed -> (settings, error) result
-(** [settings ~overrides cli] is what a driver needs from one invocation, with
-    one error to render instead of four: one pass builds the environment layer
-    that {!resolve} and {!output_level} each describe, and every field is a fold
-    over it or, for coverage, one further variable ({!coverage_enabled}). The verbosity level resolves first and
-    tolerantly, exactly as {!output_level} does — a malformed mirror is the
-    error the caller reports (it prints it and exits [2]), and the level that
-    error renders at must survive the failed fold — and the fresh root seed
-    {!resolve} may draw is drawn exactly once.
+val settings : parsed -> (settings, error) result
+(** [settings cli] is everything one invocation resolves to: [cli] with each
+    field's [WINDTRAP_*] mirror filled into what the command line left open,
+    then split into the run configuration and the three rendering decisions.
+    [tags] and [exclude_tags] are additive across both layers; every other field
+    is the first layer that decided it, else the default.
 
-    [overrides] is the programmatic layer {!resolve} and {!output_level} take
-    (defaults to {!empty}); the coverage line has no programmatic layer and no
-    flag, and comes from [WINDTRAP_COVERAGE] alone.
+    A mirror is read through its own flag's parser, so a value the flag would
+    reject is [Error (Invalid_value _)] naming the variable, never silently
+    ignored — a misread [WINDTRAP_SHARD] would rerun the whole suite in every
+    bucket, and a misread count or limit would run with the default. A mirror
+    whose flag the command line already decided is not even parsed, so a valid
+    [--timeout] shadows a malformed [WINDTRAP_TIMEOUT]. [WINDTRAP_COVERAGE] is
+    read the same way, and errors the same way; its message names
+    [windtrap coverage], where the retired [report] and [full] modes went.
+    {!parsed.help} and {!parsed.version} are ignored — acting on them is the
+    caller's job.
 
-    Effects: reads the environment, and draws a fresh root seed when no layer
-    provides one. *)
+    Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
+    when no layer provides one. *)
 
 (** {1:help Help} *)
 

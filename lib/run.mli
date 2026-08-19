@@ -73,16 +73,15 @@ type config = {
           cleared the guard. *)
 }
 (** The type for resolved run configuration: one plain record the CLI layer
-    populates by merging programmatic arguments, CLI flags, and environment
-    mirrors in that precedence order ({!Cli.resolve}). Every field here is one
-    the runner reads; the presentation knobs an invocation also resolves (color,
+    populates by merging CLI flags and environment mirrors in that precedence
+    order ({!Cli.settings}). Every field here is one the runner reads; the presentation knobs an invocation also resolves (color,
     width, the output tail, the slow threshold) live in [Render.settings]
     instead, where the runner cannot reach them. Consumers read it from
     {!config}; nothing re-reads flags or the environment mid-run. *)
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration with every field at its built-in
-    default: no filters, no tags, all flags off, and no overrides. Effects:
+    default: no filters, no tags, all flags off. Effects:
     [seed] is drawn fresh from {!Seed.random} and [log_dir] is
     {!Path_ops.default_log_dir}[ ()]. *)
 

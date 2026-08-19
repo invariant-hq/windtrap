@@ -23,8 +23,8 @@ To assert on exit behavior, run the exiting code in a subprocess.
 
 Direct execution takes flags; under `dune runtest` there is no argv,
 so the flags that make sense there have `WINDTRAP_*` environment
-mirrors and *the mirrors are the CLI* (the interactive ones — `-x`,
-`-l`, `--failed` — have none):
+mirrors and *the mirrors are the CLI* (`-l` has none: listing wants a
+terminal to read it):
 
 ```
 $ dune exec test/test_mylib.exe -- -f "parser" -x
@@ -39,7 +39,6 @@ inventory. The ones that matter daily:
 | `-f PATTERN` (or bare `PATTERN`) | `WINDTRAP_FILTER` | run tests whose path contains PATTERN |
 | `-e PATTERN` | `WINDTRAP_EXCLUDE` | skip tests whose path contains PATTERN |
 | `--tag L` / `--exclude-tag L` | `WINDTRAP_TAG` / `WINDTRAP_EXCLUDE_TAG` | select by tag (repeatable; env takes commas) |
-| `-x` / `--bail N` | — | stop after the first / N failures |
 | `--failed` | `WINDTRAP_FAILED` | rerun only the last run's failures |
 | `-l`, `--list` | — | list the selection without running |
 | `--seed s1:…` | `WINDTRAP_SEED` | pin the root seed (replay) |
@@ -57,7 +56,7 @@ inventory. The ones that matter daily:
 | `--junit PATH` | `WINDTRAP_JUNIT` | also write a JUnit XML report |
 | `-o`, `--output DIR` | `WINDTRAP_OUTPUT` | root directory for capture logs |
 
-Precedence is programmatic (`?argv`) > CLI > environment > default.
+Precedence is CLI > environment > default.
 A test's path is its group names then its own, joined with `" › "`;
 `-f`/`-e` match that string as a substring.
 

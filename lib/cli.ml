@@ -665,9 +665,6 @@ let parse argv =
 
 (* Resolution *)
 
-let first_some higher lower =
-  match higher with Some _ -> higher | None -> lower
-
 (* The environment layer, folded out of the same table that drives parsing
    and [--help]: every WINDTRAP_* mirror is read here and nowhere else, and
    every value reaches [parsed] through its flag's own [arg]. That is what
@@ -675,12 +672,11 @@ let first_some higher lower =
    fails exactly as [--shard 9/2] does, because it runs the same [set], with
    the variable named as the source instead of the flag.
 
-   [layers ~overrides cli] is [cli] with each mirror filled into the fields
-   neither [overrides] nor an earlier entry closed: the CLI and environment
-   layers already merged, for the caller to lay the programmatic layer over.
-   A malformed value in a mirror that wins is [Error] naming the variable,
-   and the fold stops there — never a silently defaulted run. *)
-let layers ~overrides cli =
+   [layers cli] is [cli] with each mirror filled into the fields the command
+   line left open — the CLI and environment layers merged, in that
+   precedence. A malformed value in a mirror that wins is [Error] naming the
+   variable, and the fold stops there — never a silently defaulted run. *)
+let layers cli =
   let contribute acc entry mirror raw =
     let apply acc token =
       let* acc = acc in
@@ -703,154 +699,63 @@ let layers ~overrides cli =
       | Env_setting _ -> Ok acc
       | Flag_entry entry -> (
           match entry.mirror with
-          | Some mirror when mirror.absent overrides && mirror.absent acc -> (
+          | Some mirror when mirror.absent acc -> (
               match Env.get_string mirror.var with
               | Some raw -> contribute acc entry mirror raw
               | None -> Ok acc)
           | Some _ | None -> Ok acc))
     (Ok cli) table
 
-(* The level fold, shared by [output_level] and [settings]: never errors,
-   so verbosity is resolved even when configuration resolution fails. *)
-let level_of ~overrides below =
-  match first_some overrides.output below.output with
-  | Some `Quiet -> `Quiet
-  | Some `Verbose -> `Verbose
-  | None -> `Compact
-
-let output_level ?(overrides = empty) cli =
-  (* [layers] stops at the first malformed mirror, which may well be one the
-     output level does not depend on. The caller resolves the configuration
-     first and exits on that error, so the layers above the environment are
-     answer enough when the fold did not finish. *)
-  level_of ~overrides (Result.value (layers ~overrides cli) ~default:cli)
-
-(* [parse] checks every value the command line offers and the mirror readers
-   check every value the environment offers, each naming its own source. A
-   programmatic override goes through neither — [overrides] is a record the
-   caller fills in directly — so the value the precedence picks is checked
-   once more before it reaches the run: WINDTRAP_TIMEOUT=-5 must not reach
-   [Unix.setitimer], and neither may a [-5.] written in OCaml. Only an
-   override can fail here, which is why the source is always [flag]: the
-   flag spelling is the nearest thing to a name a programmatic argument
-   has. *)
-let checked ~flag ~valid ~render ~expected value =
-  match value with
-  | Some v when not (valid v) ->
-      invalid ~source:flag ~value:(render v) ~expected
-  | picked -> Ok picked
-
 (* One fold from the fully-layered record to the two resolved records —
    the runner's configuration and the renderer's settings, split along
    the line the architecture draws: after it, no field is consulted by
-   both sides. The validation order below is kept stable so a caller
-   holding two invalid overrides is told about the same one as always. *)
-let resolved ~overrides below =
+   both sides. Nothing is range-checked here: every value arrived through
+   its flag's own parser, the command line's or the mirror's, and each
+   named its own source when it refused. *)
+let resolved below =
   let defaults = Run.default_config () in
   let render_defaults = Render.default_settings in
-  let seconds ~flag ~valid ~expected value =
-    checked ~flag ~valid ~render:(Pp.str "%g") ~expected value
-  in
-  let positive_int ~flag value =
-    checked ~flag
-      ~valid:(fun n -> n > 0)
-      ~render:string_of_int ~expected:"a positive integer" value
-  in
-  let* timeout =
-    seconds ~flag:"--timeout"
-      ~valid:(fun t -> Float.is_finite t && t > 0.)
-      ~expected:"a positive number"
-      (first_some overrides.timeout below.timeout)
-  in
-  let* slow_threshold =
-    seconds ~flag:"--slow-threshold"
-      ~valid:(fun t -> Float.is_finite t && t >= 0.)
-      ~expected:"a non-negative number"
-      (first_some overrides.slow_threshold below.slow_threshold)
-  in
-  let* prop_count =
-    positive_int ~flag:"--prop-count"
-      (first_some overrides.prop_count below.prop_count)
-  in
-  let* max_shrink =
-    positive_int ~flag:"--max-shrink"
-      (first_some overrides.max_shrink below.max_shrink)
-  in
-  let* bail =
-    positive_int ~flag:"--bail" (first_some overrides.bail below.bail)
-  in
-  let* shard =
-    match first_some overrides.shard below.shard with
-    | Some (k, n) when not (1 <= k && k <= n) ->
-        invalid ~source:"--shard" ~value:(Pp.str "%d/%d" k n)
-          ~expected:shard_expected
-    | picked -> Ok picked
-  in
-  Ok
-    ( {
-        Run.seed =
-          Option.value
-            (first_some overrides.seed below.seed)
-            ~default:defaults.Run.seed;
-        filter = first_some overrides.filter below.filter;
-        exclude = first_some overrides.exclude below.exclude;
-        tags = overrides.tags @ below.tags;
-        exclude_tags = overrides.exclude_tags @ below.exclude_tags;
-        shard;
-        failed_only =
-          Option.value
-            (first_some overrides.failed_only below.failed_only)
-            ~default:false;
-        list_only =
-          Option.value
-            (first_some overrides.list_only below.list_only)
-            ~default:false;
-        bail;
-        stream =
-          Option.value (first_some overrides.stream below.stream) ~default:false;
-        update =
-          Option.value
-            (first_some overrides.update below.update)
-            ~default:Env.No_update;
-        timeout;
-        prop_count;
-        max_shrink;
-        junit = first_some overrides.junit below.junit;
-        log_dir =
-          (* Resolved against the cwd once, here, before any test body runs.
-             A relative [-o DIR] otherwise follows the process around: a test
-             that chdirs sends the rest of the run's capture logs somewhere
-             else, or nowhere, and the failure reports point at paths that do
-             not exist. The default is already absolute. *)
-          (let dir =
-             Option.value
-               (first_some overrides.log_dir below.log_dir)
-               ~default:defaults.Run.log_dir
-           in
-           if not (Filename.is_relative dir) then dir
-           else
-             match Sys.getcwd () with
-             | cwd -> Filename.concat cwd dir
-             | exception Sys_error _ -> dir);
-        (* No flag and no mirror: only a forked mutation child sets it,
-           through [Run.for_subset]. *)
-        allow_focus = false;
-      },
-      {
-        Render.color =
-          Option.value
-            (first_some overrides.color below.color)
-            ~default:render_defaults.Render.color;
-        columns = columns ();
-        tail_errors = tail_errors ();
-        slow_threshold =
-          Option.value slow_threshold
-            ~default:render_defaults.Render.slow_threshold;
-      } )
-
-let resolve ?(overrides = empty) cli =
-  let* below = layers ~overrides cli in
-  Result.map fst (resolved ~overrides below)
+  ( {
+      Run.seed = Option.value below.seed ~default:defaults.Run.seed;
+      filter = below.filter;
+      exclude = below.exclude;
+      tags = below.tags;
+      exclude_tags = below.exclude_tags;
+      shard = below.shard;
+      failed_only = Option.value below.failed_only ~default:false;
+      list_only = Option.value below.list_only ~default:false;
+      bail = below.bail;
+      stream = Option.value below.stream ~default:false;
+      update = Option.value below.update ~default:Env.No_update;
+      timeout = below.timeout;
+      prop_count = below.prop_count;
+      max_shrink = below.max_shrink;
+      junit = below.junit;
+      log_dir =
+        (* Resolved against the cwd once, here, before any test body runs.
+           A relative [-o DIR] otherwise follows the process around: a test
+           that chdirs sends the rest of the run's capture logs somewhere
+           else, or nowhere, and the failure reports point at paths that do
+           not exist. The default is already absolute. *)
+        (let dir = Option.value below.log_dir ~default:defaults.Run.log_dir in
+         if not (Filename.is_relative dir) then dir
+         else
+           match Sys.getcwd () with
+           | cwd -> Filename.concat cwd dir
+           | exception Sys_error _ -> dir);
+      (* No flag and no mirror: only a forked mutation child sets it,
+         through [Run.for_subset]. *)
+      allow_focus = false;
+    },
+    {
+      Render.color =
+        Option.value below.color ~default:render_defaults.Render.color;
+      columns = columns ();
+      tail_errors = tail_errors ();
+      slow_threshold =
+        Option.value below.slow_threshold
+          ~default:render_defaults.Render.slow_threshold;
+    } )
 
 (* WINDTRAP_COVERAGE: whether a run prints its inline coverage line.
    Environment only, and a boolean — the truthy and falsy spellings are
@@ -938,16 +843,17 @@ type settings = {
   output_level : [ `Quiet | `Compact | `Verbose ];
 }
 
-let settings ?(overrides = empty) cli =
-  let layered = layers ~overrides cli in
-  (* Verbosity first, and tolerantly: a malformed mirror stops the
-     environment layer short, the error below is the one the caller
-     reports, and the level it renders that error at must come from the
-     layers above the environment rather than be lost with the fold. *)
-  let output_level = level_of ~overrides (Result.value layered ~default:cli) in
-  let* below = layered in
-  let* config, render = resolved ~overrides below in
+let settings cli =
+  let* below = layers cli in
+  let config, render = resolved below in
   let* coverage = coverage_enabled () in
+  let output_level =
+    (* One verbosity axis, one field: [-q] ⊂ default ⊂ [-v]. *)
+    match below.output with
+    | Some `Quiet -> `Quiet
+    | Some `Verbose -> `Verbose
+    | None -> `Compact
+  in
   Ok { config; render; coverage; output_level }
 
 (* Help *)

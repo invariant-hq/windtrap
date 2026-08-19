@@ -51,8 +51,7 @@ type t = {
           runs in the facade). *)
   output : [ `Quiet | `Compact | `Verbose ];  (** The resolved output level. *)
   coverage : bool;
-      (** Whether the inline coverage line prints ({!Cli.coverage_enabled}).
-      *)
+      (** Whether the inline coverage line prints ({!Cli.settings}). *)
   render : Render.settings;
       (** The presentation knobs the run's renderer is built from
           ({!val:renderer}). *)

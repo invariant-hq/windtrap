@@ -379,18 +379,18 @@ let () =
 
 (* Resolution: defaults *)
 
-let resolve ?overrides parsed =
-  match Cli.resolve ?overrides parsed with
-  | Ok config -> config
+let resolve parsed =
+  match Cli.settings parsed with
+  | Ok s -> s.Cli.config
   | Error error ->
-      check "resolve succeeds" false;
-      Printf.printf "  resolve error: %s\n%!" (Cli.error_message error);
+      check "settings succeeds" false;
+      Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
       Run.default_config ()
 
 (* The renderer half of the resolution: the four presentation knobs land
    in [settings]'s render field, not in [Run.config]. *)
-let render_settings ?overrides parsed =
-  match Cli.settings ?overrides parsed with
+let render_settings parsed =
+  match Cli.settings parsed with
   | Ok s -> s.Cli.render
   | Error error ->
       check "settings succeeds" false;
@@ -422,19 +422,13 @@ let () =
 (* Resolution: precedence *)
 
 let () =
-  reg "resolution precedence: programmatic > CLI > env" @@ fun () ->
+  reg "resolution precedence: CLI > env" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_FILTER" "envpat";
   let config = resolve Cli.empty in
   check "env fills an absent flag" (config.Run.filter = Some "envpat");
   let config = resolve { Cli.empty with Cli.filter = Some "clipat" } in
   check "CLI beats env" (config.Run.filter = Some "clipat");
-  let config =
-    resolve
-      ~overrides:{ Cli.empty with Cli.filter = Some "progpat" }
-      { Cli.empty with Cli.filter = Some "clipat" }
-  in
-  check "programmatic beats CLI" (config.Run.filter = Some "progpat");
   clear_env ()
 
 let () =
@@ -443,14 +437,12 @@ let () =
   Unix.putenv "WINDTRAP_TAG" "e1, e2";
   Unix.putenv "WINDTRAP_EXCLUDE_TAG" "x1 ,, x2 ";
   let config =
-    resolve
-      ~overrides:{ Cli.empty with Cli.tags = [ "o" ]; exclude_tags = [ "xo" ] }
-      { Cli.empty with Cli.tags = [ "c" ]; exclude_tags = [ "xc" ] }
+    resolve { Cli.empty with Cli.tags = [ "c" ]; exclude_tags = [ "xc" ] }
   in
-  check "tags are additive across layers, overrides first"
-    (config.Run.tags = [ "o"; "c"; "e1"; "e2" ]);
+  check "tags are additive across layers, the CLI's first"
+    (config.Run.tags = [ "c"; "e1"; "e2" ]);
   check "exclude tags are additive too, commas split and trimmed"
-    (config.Run.exclude_tags = [ "xo"; "xc"; "x1"; "x2" ]);
+    (config.Run.exclude_tags = [ "xc"; "x1"; "x2" ]);
   clear_env ()
 
 let () =
@@ -473,7 +465,7 @@ let () =
   let config = resolve Cli.empty in
   check "env seed is parsed" (config.Run.seed = 0xaaL);
   Unix.putenv "WINDTRAP_SEED" "not-a-seed";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_SEED"; value; _ }) ->
       check "malformed env seed errors with its source" (value = "not-a-seed")
   | Ok _ | Error _ -> check "malformed env seed errors" false);
@@ -554,16 +546,17 @@ let () =
      WINDTRAP_PROP_COUNT rule, not a silent default. *)
   clear_env ();
   Unix.putenv "WINDTRAP_BAIL" "0";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Ok _ -> check "WINDTRAP_BAIL=0 is rejected" false
   | Error e ->
       check "the error names the variable, not the flag"
         (contains "WINDTRAP_BAIL" (Cli.error_message e)));
   (* A losing layer stays unread: a valid flag shadows a malformed mirror. *)
   Unix.putenv "WINDTRAP_BAIL" "not-a-number";
-  (match Cli.resolve { Cli.empty with Cli.bail = Some 2 } with
-  | Ok config ->
-      check "a valid flag shadows a malformed mirror" (config.Run.bail = Some 2)
+  (match Cli.settings { Cli.empty with Cli.bail = Some 2 } with
+  | Ok s ->
+      check "a valid flag shadows a malformed mirror"
+        (s.Cli.config.Run.bail = Some 2)
   | Error e ->
       check
         ("malformed mirror leaked past the flag: " ^ Cli.error_message e)
@@ -589,13 +582,13 @@ let () =
     && Filename.is_relative config.Run.log_dir = false
     && Filename.basename config.Run.log_dir = "custom-logs")
 
-(* Resolution: numeric limits stay validated past the parser *)
+(* Resolution: a mirror is validated by its flag's own parser *)
 
 let () =
-  reg "numeric limits stay validated past the parser" @@ fun () ->
+  reg "numeric mirrors are validated by their flag's parser" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_TIMEOUT" "-5";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value = "-5"; _ })
     ->
       check "a negative env timeout errors with its source" true
@@ -606,7 +599,7 @@ let () =
     (config.Run.timeout = Some 1.0);
   clear_env ();
   Unix.putenv "WINDTRAP_PROP_COUNT" "0";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_PROP_COUNT"; value = "0"; _ })
     ->
       check "a zero env prop count errors with its source" true
@@ -615,7 +608,7 @@ let () =
   (* Malformed mirror tokens error like their flags (prop/F-4): same knob,
      same garbage, same loud refusal in every layer. *)
   Unix.putenv "WINDTRAP_PROP_COUNT" "1O0";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value { source = "WINDTRAP_PROP_COUNT"; value = "1O0"; _ })
     ->
@@ -627,7 +620,7 @@ let () =
     (config.Run.prop_count = Some 50);
   clear_env ();
   Unix.putenv "WINDTRAP_TIMEOUT" "banana";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value = "banana"; _ })
     ->
@@ -642,32 +635,18 @@ let () =
      is what the user wrote and "-5.0" is what the message must show, not
      the shortest spelling of the float it parsed to. *)
   Unix.putenv "WINDTRAP_TIMEOUT" "-5.0";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
       check "a mirror quotes the token as written" (value = "-5.0")
   | Ok _ | Error _ -> check "a mirror quotes the token as written" false);
   Unix.putenv "WINDTRAP_TIMEOUT" "1e400";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
       check "an overflowing token is quoted, not printed as 'inf'"
         (value = "1e400")
   | Ok _ | Error _ ->
       check "an overflowing token is quoted, not printed as 'inf'" false);
-  clear_env ();
-  (match
-     Cli.resolve ~overrides:{ Cli.empty with Cli.bail = Some 0 } Cli.empty
-   with
-  | Error (Cli.Invalid_value { source = "--bail"; value = "0"; _ }) ->
-      check "a non-positive programmatic bail errors" true
-  | Ok _ | Error _ -> check "a non-positive programmatic bail errors" false);
-  match
-    Cli.resolve
-      ~overrides:{ Cli.empty with Cli.timeout = Some infinity }
-      Cli.empty
-  with
-  | Error (Cli.Invalid_value { source = "--timeout"; _ }) ->
-      check "an infinite programmatic timeout errors" true
-  | Ok _ | Error _ -> check "an infinite programmatic timeout errors" false
+  clear_env ()
 
 let () =
   reg "color precedence" @@ fun () ->
@@ -685,10 +664,10 @@ let () =
   reg "coverage line resolution" @@ fun () ->
   clear_env ();
   let enabled () =
-    match Cli.coverage_enabled () with
-    | Ok enabled -> enabled
+    match Cli.settings Cli.empty with
+    | Ok s -> s.Cli.coverage
     | Error error ->
-        check ("coverage_enabled succeeds: " ^ Cli.error_message error) false;
+        check ("settings succeeds: " ^ Cli.error_message error) false;
         true
   in
   check "an unset WINDTRAP_COVERAGE prints the line" (enabled ());
@@ -698,7 +677,7 @@ let () =
   Unix.putenv "WINDTRAP_COVERAGE" " 1 ";
   check "the truthy spellings are Env's, trimmed" (enabled ());
   Unix.putenv "WINDTRAP_COVERAGE" "report";
-  (match Cli.coverage_enabled () with
+  (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value
          { source = "WINDTRAP_COVERAGE"; value = "report"; expected }) ->
@@ -713,34 +692,34 @@ let () =
 let () =
   reg "output level resolution" @@ fun () ->
   clear_env ();
-  check "default level is compact" (Cli.output_level Cli.empty = `Compact);
+  let level parsed =
+    match Cli.settings parsed with
+    | Ok s -> s.Cli.output_level
+    | Error error ->
+        check ("settings succeeds: " ^ Cli.error_message error) false;
+        `Compact
+  in
+  check "default level is compact" (level Cli.empty = `Compact);
   Unix.putenv "WINDTRAP_QUIET" "1";
   check "WINDTRAP_QUIET reaches quiet (the dune runtest path)"
-    (Cli.output_level Cli.empty = `Quiet);
+    (level Cli.empty = `Quiet);
   check "CLI -v beats WINDTRAP_QUIET"
-    (Cli.output_level { Cli.empty with Cli.output = Some `Verbose } = `Verbose);
+    (level { Cli.empty with Cli.output = Some `Verbose } = `Verbose);
   Unix.putenv "WINDTRAP_VERBOSE" "1";
-  check "verbose wins within the env layer"
-    (Cli.output_level Cli.empty = `Verbose);
+  check "verbose wins within the env layer" (level Cli.empty = `Verbose);
   clear_env ();
   Unix.putenv "WINDTRAP_VERBOSE" "maybe";
-  check "an unparseable boolean counts as unset"
-    (Cli.output_level Cli.empty = `Compact);
+  check "an unparseable boolean counts as unset" (level Cli.empty = `Compact);
   clear_env ();
   Unix.putenv "WINDTRAP_QUIET" " 1 ";
   check "boolean spellings are trimmed, as WINDTRAP_STREAM's"
-    (Cli.output_level Cli.empty = `Quiet);
-  clear_env ();
-  check "programmatic override beats CLI"
-    (Cli.output_level
-       ~overrides:{ Cli.empty with Cli.output = Some `Quiet }
-       { Cli.empty with Cli.output = Some `Verbose }
-    = `Quiet)
+    (level Cli.empty = `Quiet);
+  clear_env ()
 
 (* Resolution: the one call both drivers make *)
 
-let settings ?overrides parsed =
-  match Cli.settings ?overrides parsed with
+let settings parsed =
+  match Cli.settings parsed with
   | Ok settings -> settings
   | Error error ->
       check "settings succeeds" false;
@@ -753,14 +732,13 @@ let settings ?overrides parsed =
       }
 
 let () =
-  reg "settings resolves the three layers in one call" @@ fun () ->
+  reg "settings resolves both layers in one call" @@ fun () ->
   clear_env ();
-  (* A pinned seed keeps the two configurations comparable: an absent one
-     is drawn fresh on every [resolve]. *)
   Unix.putenv "WINDTRAP_SEED" "s1:0123456789abcdef";
-  let cli = { Cli.empty with Cli.filter = Some "geo" } in
-  let s = settings cli in
-  check "the config field is [resolve]'s" (s.Cli.config = resolve cli);
+  let s = settings { Cli.empty with Cli.filter = Some "geo" } in
+  check "the flag reaches the config field"
+    (s.Cli.config.Run.filter = Some "geo");
+  check "the mirror reaches it too" (s.Cli.config.Run.seed = 0x0123456789abcdefL);
   check "the render field defaults" (s.Cli.render = Render.default_settings);
   check "the coverage field defaults to on" s.Cli.coverage;
   check "the level field defaults to compact" (s.Cli.output_level = `Compact);
@@ -769,14 +747,6 @@ let () =
   let s = settings Cli.empty in
   check "WINDTRAP_COVERAGE reaches the coverage field" (not s.Cli.coverage);
   check "WINDTRAP_QUIET reaches the level field" (s.Cli.output_level = `Quiet);
-  let s =
-    settings
-      ~overrides:
-        { Cli.empty with Cli.output = Some `Verbose; Cli.stream = Some true }
-      Cli.empty
-  in
-  check "overrides reach the config field" s.Cli.config.Run.stream;
-  check "overrides reach the level field" (s.Cli.output_level = `Verbose);
   clear_env ()
 
 let () =
@@ -813,7 +783,7 @@ let () =
   check "--slow-threshold beats the env mirror"
     (render.Render.slow_threshold = 0.5);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "-2";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value { source = "WINDTRAP_SLOW_THRESHOLD"; value = "-2"; _ })
     ->
@@ -826,7 +796,7 @@ let () =
   check "a CLI threshold shadows the bad env value"
     (render.Render.slow_threshold = 1.5);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "soon";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value
          { source = "WINDTRAP_SLOW_THRESHOLD"; value = "soon"; _ }) ->
@@ -835,15 +805,7 @@ let () =
   | Ok _ | Error _ ->
       check "a malformed winning env threshold errors, as WINDTRAP_TIMEOUT's"
         false);
-  clear_env ();
-  match
-    Cli.resolve
-      ~overrides:{ Cli.empty with Cli.slow_threshold = Some Float.infinity }
-      Cli.empty
-  with
-  | Error (Cli.Invalid_value { source = "--slow-threshold"; _ }) ->
-      check "a non-finite programmatic threshold errors" true
-  | Ok _ | Error _ -> check "a non-finite programmatic threshold errors" false
+  clear_env ()
 
 (* Resolution: --shard and WINDTRAP_SHARD (amendment B14) *)
 
@@ -858,7 +820,7 @@ let () =
   let config = resolve { Cli.empty with Cli.shard = Some (1, 2) } in
   check "--shard beats WINDTRAP_SHARD" (config.Run.shard = Some (1, 2));
   Unix.putenv "WINDTRAP_SHARD" "9/2";
-  (match Cli.resolve Cli.empty with
+  (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_SHARD"; value = "9/2"; _ }) ->
       check "a malformed winning env shard errors with its source" true
   | Ok _ | Error _ ->
@@ -866,13 +828,7 @@ let () =
   let config = resolve { Cli.empty with Cli.shard = Some (1, 2) } in
   check "a CLI shard leaves a malformed env shard unread"
     (config.Run.shard = Some (1, 2));
-  clear_env ();
-  match
-    Cli.resolve ~overrides:{ Cli.empty with Cli.shard = Some (0, 4) } Cli.empty
-  with
-  | Error (Cli.Invalid_value { source = "--shard"; value = "0/4"; _ }) ->
-      check "an out-of-range programmatic shard errors" true
-  | Ok _ | Error _ -> check "an out-of-range programmatic shard errors" false
+  clear_env ()
 
 (* Suite *)
 
