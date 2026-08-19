@@ -378,8 +378,7 @@ The vocabulary worth knowing rather than reinventing:
   side, so a comparison keeps its bound and its value
   (`satisfies ~claim:"greater than 0" int (fun n -> n > 0) n`) where
   `is_true (n > 0)` reports only `false`.
-- Strings: `contains ~sub` (with `~count:n` for exactly `n`
-  non-overlapping occurrences) / `not_contains ~sub` /
+- Strings: `contains ~sub` / `not_contains ~sub` /
   `in_order ~subs:[...]` for substrings that must appear in that order /
   `starts_with ~affix` / `ends_with ~affix`; lists: `mem`.
 - Exceptions: `raises exn fn` (structural; distinguishes "nothing

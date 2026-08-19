@@ -369,14 +369,14 @@ let count ~sub s =
 let count_tests =
   group "counting occurrences"
     [
-      test "the local count matches contains ~count's semantics" (fun () ->
+      test "the local count is leftmost-first and non-overlapping" (fun () ->
           let log = "retry retry retry" in
-          (* Same number the verb asserts: leftmost-first, non-overlapping. *)
-          contains ~count:(count ~sub:"retry" log) ~sub:"retry" log;
+          equal int 3 (count ~sub:"retry" log);
           equal int 1 (count ~sub:"aa" "aaa");
           equal int 0 (count ~sub:"absent" log);
-          (* The point of the query form: the number feeds a sharper verb. *)
-          satisfies ~claim:"greater than 2" int
+          (* The two shapes the recipe hands the reader. *)
+          equal int 3 (count ~sub:"retry" log);
+          satisfies ~claim:"more than 2 retries" int
             (fun n -> n > 2)
             (count ~sub:"retry" log));
     ]

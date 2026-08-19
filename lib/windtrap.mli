@@ -372,17 +372,10 @@ val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
     want the assertion and not the value. No [?pp]: the failing side is [None].
 *)
 
-val contains :
-  ?pos:pos -> ?msg:string -> ?count:int -> sub:string -> string -> unit
+val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] asserts that [s] contains [sub] as a byte substring (the
     empty needle is contained in every string). The failure prints the needle
-    and a bounded excerpt of [s], never a bare [false].
-
-    [~count:n] demands exactly [n] occurrences instead of at least one, counted
-    leftmost-first and non-overlapping — each match resumes the count at its
-    end, so ["aa"] occurs once in ["aaa"]. The failure prints both counts and
-    marks the first occurrence. [~count:0] is the counted spelling of
-    {!not_contains}; a negative count raises [Invalid_argument]. *)
+    and a bounded excerpt of [s], never a bare [false]. *)
 
 val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [not_contains ~sub s] asserts that [s] does {e not} contain [sub] as a byte

@@ -111,21 +111,6 @@ let first_occurrence ?(start = 0) ~pattern s =
 
 let contains_substring ~pattern s = first_occurrence ~pattern s <> None
 
-let count_occurrences ~pattern s =
-  let len = String.length s in
-  (* An empty pattern matches everywhere without consuming, so the scan
-     steps a byte per match rather than standing still: that is what makes
-     its count [len + 1] instead of a loop that never ends. *)
-  let step = max (String.length pattern) 1 in
-  let rec go start count =
-    if start > len then count
-    else
-      match first_occurrence ~start ~pattern s with
-      | None -> count
-      | Some i -> go (i + step) (count + 1)
-  in
-  go 0 0
-
 (* ANSI escapes *)
 
 let strip_ansi s =

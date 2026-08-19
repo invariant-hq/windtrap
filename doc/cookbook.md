@@ -379,11 +379,10 @@ position where the failure should happen.
 
 ## 12. Counting occurrences
 
-`contains ~count:n` asserts an exact occurrence count — and deliberately
-returns nothing, because an assertion is not a query. When the count
-itself feeds further logic (a bound, a ratio, an assertion sharper than
-equality), fold it locally with the same semantics the verb uses —
-leftmost-first, non-overlapping:
+`contains ~sub` asks whether a needle occurs; it never counts. When the
+count is the claim — exactly two retries, more than two, a ratio — fold
+the count locally, leftmost-first and non-overlapping (each match
+resumes the scan at its end, so `"aa"` occurs once in `"aaa"`):
 
 ```ocaml
 let count ~sub s =
@@ -396,8 +395,9 @@ let count ~sub s =
   go 0 0
 ```
 
-Then assert about the number with `satisfies ~claim` —
-`satisfies ~claim:"greater than 2" int (fun n -> n > 2)
-(count ~sub:"retry" log)` — and keep `contains ~count` for the
-exact-count claim, whose failure prints both counts and marks the
-first occurrence.
+Then assert about the number with the ordinary verbs:
+`equal int 2 (count ~sub:"retry" log)` for an exact count, or
+`satisfies ~claim:"more than 2 retries" int (fun n -> n > 2)
+(count ~sub:"retry" log)` for a bound. Both failures print the number
+they got; `not_contains ~sub` is still the verb for "never occurs",
+and its failure marks the occurrence in the haystack.

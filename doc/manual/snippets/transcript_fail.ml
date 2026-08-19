@@ -23,22 +23,14 @@ let failing_equal =
           equal int 3 (List.length sessions));
     ]
 
-(* assertions.md: the two demanded-occurrence blocks. The log shows the last
-   two events the wrong way round, which three [contains] calls cannot fail
-   on, and one retry too many. *)
+(* assertions.md: the chain-break block. The log shows the last two events
+   the wrong way round, which three [contains] calls cannot fail on. *)
 
 let session_log = "connect send disconnect authenticate"
 
 let failing_occurrences =
-  group "session"
-    [
-      test "the handshake runs in order" (fun () ->
-          in_order
-            ~subs:[ "connect"; "authenticate"; "disconnect" ]
-            session_log);
-      test "the client retries twice" (fun () ->
-          contains ~count:2 ~sub:"retry" "retry retry retry");
-    ]
+  test "the handshake runs in order" (fun () ->
+      in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] session_log)
 
 (* assertions.md: a spent convergence budget. The step never drains the
    queue, so the diagnosis reports the state the probe kept seeing. *)

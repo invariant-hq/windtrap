@@ -1702,17 +1702,6 @@ let test_containment_not_found_cap () =
   check_absent "cap: the eleventh line does not" ~sub:"line 10" b;
   check_contains "cap: the multi-line elision line states the shown range"
     ~sub:"    (excerpt: bytes 0-219 of a 879-byte haystack)\n" b;
-  (* contains ~count with zero occurrences is the same not-found shape and
-     caps the same way. *)
-  let f =
-    Failure.containment
-      ~demand:(Failure.Counted { expected = 2; found = 0 })
-      ~claim:{|string containing "NOPE" exactly 2 times|} ~needle:"NOPE"
-      ~haystack:(String.make 20_006 'a') ()
-  in
-  check_contains "cap: a zero-occurrence count is capped too"
-    ~sub:"    (excerpt: bytes 0-1023 of a 20006-byte haystack)\n"
-    (failure_block f);
   (* A found occurrence keeps the stored window whole: not_contains on a
      3 KiB haystack shows all of it, uncapped and unelided. *)
   let haystack = String.make 2_994 'x' ^ "secret" in
@@ -1748,10 +1737,9 @@ let test_containment_headlines () =
     (Render.headline contains_failure
     = {|needle "NOPE" not found (20006-byte haystack)|})
 
-(* The demanded-occurrence blocks: [in_order]'s chain break and
-   [contains ~count]'s counts. Both fixtures are the payloads the assertions
-   chapter's transcripts come from, so the manual cannot drift from the
-   renderer without failing here.
+(* The demanded-occurrence block: [in_order]'s chain break. The fixtures
+   are the payloads the assertions chapter's transcripts come from, so the
+   manual cannot drift from the renderer without failing here.
 
    Byte offsets in the chain haystack: connect 0, send 8, disconnect 13,
    authenticate 24, end 36. *)
@@ -1773,12 +1761,6 @@ let missing_element_failure =
     ~demand:(Failure.Ordered { index = 2; resumed_at = 36 })
     ~claim:{|string containing "teardown" at or after byte 36|}
     ~needle:"teardown" ~haystack:chain_haystack ()
-
-let counted_failure =
-  Failure.containment ~found_at:0
-    ~demand:(Failure.Counted { expected = 2; found = 3 })
-    ~claim:{|string containing "retry" exactly 2 times|} ~needle:"retry"
-    ~haystack:"retry retry retry" ()
 
 let test_in_order_block () =
   let b = failure_block out_of_order_failure in
@@ -1812,32 +1794,6 @@ let test_in_order_block () =
     b;
   check_absent "in_order: nothing is marked when nothing occurs" ~sub:"~~~" b
 
-let test_counted_block () =
-  let b = failure_block counted_failure in
-  (* Expected precedes actual, on the verdict slot the other containment
-     verbs already own — the counts are the failure, so they go where the
-     reader is already looking, and no line is added. *)
-  check_contains "contains ~count: the verdict is the two counts"
-    ~sub:"    needle    \"retry\" \u{2014} expected 2 occurrences, found 3\n" b;
-  check_absent "contains ~count: no element line" ~sub:"element" b;
-  (* Only the first occurrence is marked: with a count mismatch the numbers
-     carry the verdict, and painting all three would add red without adding
-     an answer. *)
-  check_contains "contains ~count: the first occurrence is marked"
-    ~sub:("    haystack  retry retry retry\n" ^ String.make 14 ' ' ^ "~~~~~\n")
-    b;
-  check_absent "contains ~count: the later occurrences are not marked"
-    ~sub:"~~~~~ ~~~~~" b;
-  let zero =
-    Failure.containment ~found_at:0
-      ~demand:(Failure.Counted { expected = 0; found = 3 })
-      ~claim:{|string containing "retry" exactly 0 times|} ~needle:"retry"
-      ~haystack:"retry retry retry" ()
-  in
-  check_contains "contains ~count:0: the counted spelling of not_contains"
-    ~sub:"    needle    \"retry\" \u{2014} expected 0 occurrences, found 3\n"
-    (failure_block zero)
-
 let test_demand_headlines () =
   check "headline: in_order names the element, its offset and the cursor"
     (Render.headline out_of_order_failure
@@ -1846,10 +1802,7 @@ let test_demand_headlines () =
     {|element 2 "teardown" not found at or after byte 36 (36-byte haystack)|}
   in
   check "headline: a missing element names the cursor and the haystack size"
-    (Render.headline missing_element_failure = missing);
-  check "headline: contains ~count states expected before found"
-    (Render.headline counted_failure
-    = {|expected 2 occurrences of needle "retry", found 3|})
+    (Render.headline missing_element_failure = missing)
 
 (* Convergence blocks: the spent budget, then whatever [?diagnose] said. *)
 
@@ -3175,7 +3128,6 @@ let tests =
     test "containment: not-found display cap" test_containment_not_found_cap;
     test "containment: headline forms" test_containment_headlines;
     test "containment: in_order chain-break block" test_in_order_block;
-    test "containment: contains ~count block" test_counted_block;
     test "containment: demanded-occurrence headlines" test_demand_headlines;
     test "convergence: budget and diagnosis block" test_convergence_block;
     test "convergence: headline forms" test_convergence_headlines;

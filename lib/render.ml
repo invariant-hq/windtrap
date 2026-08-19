@@ -305,9 +305,6 @@ let headline ?(invocation = `Mirrors) (f : Failure.t) =
            and neither reads as "found / not found". *)
         let quoted = flat (spf "%S" needle) in
         match (demand, found_at) with
-        | Failure.Counted { expected; found }, _ ->
-            spf "expected %d occurrences of needle %s, found %d" expected quoted
-              found
         | Failure.Ordered { index; resumed_at }, Some at ->
             spf "element %d %s out of order: at byte %d, before byte %d" index
               quoted at resumed_at
@@ -706,27 +703,21 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
          claim sentence is a description and stays out of the block. Labels
          pad to the [expected]/[actual] 10-column gutter. *)
       let excerpt =
-        (* Display cap for the not-found verdicts (nothing anywhere, and a
-           count that found no occurrence): with nothing to mark, a small
-           head window keeps the verdict adjacent to what it is about. An
-           Ordered break keeps its window even when nothing was found —
+        (* Display cap for the not-found verdict: with nothing to mark, a
+           small head window keeps the verdict adjacent to what it is about.
+           An Ordered break keeps its window even when nothing was found —
            its excerpt is anchored on the cursor and is itself the region
            still to be matched — and a found occurrence keeps its
            surroundings, which are the evidence. *)
         match (demand, found_at) with
-        | (Failure.Anywhere | Failure.Counted _), None ->
-            not_found_window excerpt
-        | (Failure.Anywhere | Failure.Counted _ | Failure.Ordered _), _ ->
-            excerpt
+        | Failure.Anywhere, None -> not_found_window excerpt
+        | (Failure.Anywhere | Failure.Ordered _), _ -> excerpt
       in
       let verdict =
         (* The demand widens the verdict slot rather than adding lines: a
-           chain break and a count mismatch answer the same question the
-           other two verbs answer there, in more words. Expected precedes
-           found, as everywhere else. *)
+           chain break answers the same question the other verbs answer
+           there, in more words. *)
         match (demand, found_at) with
-        | Failure.Counted { expected; found }, _ ->
-            spf "expected %d occurrences, found %d" expected found
         | Failure.Ordered { resumed_at; _ }, Some at ->
             spf "found at byte %d, before the search resumed at byte %d" at
               resumed_at
@@ -740,7 +731,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       (match demand with
       | Failure.Ordered { index; _ } ->
           put_ind (st `Faint "element" ^ "   " ^ string_of_int index)
-      | Failure.Anywhere | Failure.Counted _ -> ());
+      | Failure.Anywhere -> ());
       (* [%S] carries its own escapes, OCaml's decimal ones, so the needle
          needs none of [show_controls]'s — as do the [%S]-quoted exception
          messages [pp_eq] diffs below. Only the unquoted surfaces do. *)
@@ -749,11 +740,9 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
          mark: a failed [not_contains] window always contains it, and an
          out-of-order chain break carries one that a cursor-anchored window
          may have left behind — hence the bounds test rather than a plain
-         subtraction. A count mismatch marks its first occurrence only; the
-         counts on the verdict line are the finding, and painting every
-         occurrence would add red without adding an answer. Offsets are the
-         payload's own, so the span is computed in raw bytes and moved into
-         display coordinates where it is drawn. *)
+         subtraction. Offsets are the payload's own, so the span is computed
+         in raw bytes and moved into display coordinates where it is
+         drawn. *)
       let occurrence =
         match found_at with
         | None -> None

@@ -89,7 +89,7 @@ type message_diff = {
 
 (** The type for what a containment assertion demanded of the needle's
     occurrences, beyond the "occurs / does not occur" that [found_at] already
-    records. The four containment verbs share one payload; this field is how a
+    records. The containment verbs share one payload; this field is how a
     renderer tells them apart. *)
 type containment_demand =
   | Anywhere
@@ -103,11 +103,6 @@ type containment_demand =
           "not in the string at all" from "in the string, but before the
           cursor" — the out-of-order bug — exactly as it does for
           [starts_with]. *)
-  | Counted of { expected : int; found : int }
-      (** [contains ~count]: [expected] non-overlapping occurrences were
-          demanded and [found] occur. The two always differ, since an equal
-          count passes. [found_at] is the first occurrence, the one the
-          excerpt marks; the counts, not the marks, carry the verdict. *)
 
 (** The type for typed failure payloads. Never a stringly key-value bag: each
     assertion family has its own case, and renderers pattern match on it. *)

@@ -90,8 +90,6 @@ let describe_demand = function
   | F.Anywhere -> "anywhere"
   | F.Ordered { index; resumed_at } ->
       Printf.sprintf "ordered %d from %d" index resumed_at
-  | F.Counted { expected; found } ->
-      Printf.sprintf "counted %d found %d" expected found
 
 let describe_offset = function
   | Some i -> Printf.sprintf "Some %d" i
@@ -324,74 +322,14 @@ let tests =
                 check "not_contains: haystack_length is the full byte length"
                   (haystack_length = String.length haystack)
             | None -> check "not_contains: the occurrence is recorded" false));
-    test "contains ~count" (fun () ->
+    test "contains: presence, and nothing beyond it" (fun () ->
         let log = "ab-ab-ab" in
-        passes "contains ~count: the exact number of occurrences" (fun () ->
-            Check.contains ~count:3 ~sub:"ab" log);
-        (* [count:0] is the counted spelling of [not_contains]. *)
-        passes "contains ~count:0: an absent needle" (fun () ->
-            Check.contains ~count:0 ~sub:"zz" log);
-        (* Occurrences are non-overlapping and leftmost-first: the match at
-           byte 0 consumes both bytes, so "aaa" holds one "aa", not two. *)
-        passes "contains ~count: occurrences do not overlap" (fun () ->
-            Check.contains ~count:1 ~sub:"aa" "aaa");
-        passes "contains ~count: a needle equal to the haystack" (fun () ->
-            Check.contains ~count:1 ~sub:"ab" "ab");
-        (* [contains] holds the empty needle to occur in every string;
-           counting inherits that — it occurs at every byte position and at
-           the end, so its count is the length plus one. *)
-        passes "contains ~count: the empty needle counts length+1" (fun () ->
-            Check.contains ~count:4 ~sub:"" "abc");
-        check "contains ~count: a negative count is a programmer error"
-          (match
-             outcome (fun () -> Check.contains ~count:(-1) ~sub:"ab" log)
-           with
-          | Raised (Invalid_argument _) -> true
-          | _ -> false);
-        containment_demand "contains ~count: too few occurrences"
-          (fun () -> Check.contains ~count:5 ~sub:"ab" log)
-          (fun (demand, found_at, _, _) ->
-            check_string "contains ~count: the two counts are the payload"
-              ~expected:"counted 5 found 3" ~actual:(describe_demand demand);
-            check_string "contains ~count: found_at is the first occurrence"
-              ~expected:"Some 0" ~actual:(describe_offset found_at));
-        containment_demand "contains ~count: too many occurrences"
-          (fun () -> Check.contains ~count:1 ~sub:"ab" log)
-          (fun (demand, _, _, _) ->
-            check_string "contains ~count: an excess reads the same way"
-              ~expected:"counted 1 found 3" ~actual:(describe_demand demand));
-        containment_demand "contains ~count:0 on a present needle"
-          (fun () -> Check.contains ~count:0 ~sub:"ab" log)
-          (fun (demand, found_at, _, _) ->
-            check_string "contains ~count:0: fails where not_contains fails"
-              ~expected:"counted 0 found 3" ~actual:(describe_demand demand);
-            check_string "contains ~count:0: the occurrence is recorded"
-              ~expected:"Some 0" ~actual:(describe_offset found_at));
-        containment_demand "contains ~count: a needle that never occurs"
-          (fun () -> Check.contains ~count:2 ~sub:"zz" log)
-          (fun (demand, found_at, _, _) ->
-            check_string "contains ~count: zero found is still a count"
-              ~expected:"counted 2 found 0" ~actual:(describe_demand demand);
-            check_string "contains ~count: nothing to record"
-              ~expected:"None" ~actual:(describe_offset found_at));
-        containment_payload "contains ~count: fail payload"
-          (fun () -> Check.contains ~count:5 ~sub:"ab" log)
-          (fun (claim, _, needle, _, haystack_length, _) ->
-            check_string "contains ~count: claim names the demanded count"
-              ~expected:{|string containing "ab" exactly 5 times|}
-              ~actual:claim;
-            check_string "contains ~count: needle stored verbatim"
-              ~expected:"ab" ~actual:needle;
-            check "contains ~count: haystack_length is the full byte length"
-              (haystack_length = String.length log));
-        (* Without [?count] the verb is what it always was: one occurrence
-           is enough, and the failure demands nothing beyond presence. *)
-        passes "contains: no count still means at least one" (fun () ->
+        passes "contains: one occurrence is enough" (fun () ->
             Check.contains ~sub:"ab" log);
-        containment_demand "contains: no count leaves the demand plain"
+        containment_demand "contains: the demand stays plain"
           (fun () -> Check.contains ~sub:"zz" log)
           (fun (demand, _, _, _) ->
-            check_string "contains: an uncounted failure demands nothing more"
+            check_string "contains: a failure demands nothing more"
               ~expected:"anywhere" ~actual:(describe_demand demand)));
     test "in_order" (fun () ->
         (* Byte offsets: start 0, connect 6, send 14, receive 19, stop 27. *)
@@ -1302,8 +1240,6 @@ let tests =
             Check.contains ~pos:fake_pos ~sub:"z" "abc");
         with_pos "not_contains: ?pos" (fun () ->
             Check.not_contains ~pos:fake_pos ~sub:"a" "abc");
-        with_pos "contains ~count: ?pos" (fun () ->
-            Check.contains ~pos:fake_pos ~count:2 ~sub:"a" "abc");
         with_pos "in_order: ?pos" (fun () ->
             Check.in_order ~pos:fake_pos ~subs:[ "b"; "a" ] "abc");
         with_pos "eventually: ?pos" (fun () ->
@@ -1368,10 +1304,6 @@ let tests =
         check "not_contains: ?msg stored"
           (msg_of "not_contains: ?msg" (fun () ->
                Check.not_contains ~msg:"log" ~sub:"a" "abc")
-          = Some "log");
-        check "contains ~count: ?msg stored"
-          (msg_of "contains ~count: ?msg" (fun () ->
-               Check.contains ~msg:"log" ~count:2 ~sub:"a" "abc")
           = Some "log");
         check "in_order: ?msg stored"
           (msg_of "in_order: ?msg" (fun () ->

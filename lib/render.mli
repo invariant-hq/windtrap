@@ -948,9 +948,7 @@ val pp_failure :
       ([(excerpt: bytes 0-8191 of a 20006-byte haystack)]). The claim
       description never prints: the verdict says more than the sentence would.
       The payload's {!Failure.containment_demand} widens that verdict rather
-      than adding lines of its own — a {!Failure.Counted} mismatch reads
-      [expected 2 occurrences, found 3] and marks only its first occurrence,
-      since the counts are the finding; a {!Failure.Ordered} chain break reads
+      than adding lines of its own — a {!Failure.Ordered} chain break reads
       [not found at or after byte 36], or names the out-of-order occurrence
       ([found at byte 13, before the search resumed at byte 36]) and marks it.
       Only [Ordered] adds a line, the [element] index, which says which

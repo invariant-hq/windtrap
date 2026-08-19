@@ -21,7 +21,6 @@ type message_diff = {
 type containment_demand =
   | Anywhere
   | Ordered of { index : int; resumed_at : int }
-  | Counted of { expected : int; found : int }
 
 type kind =
   | Equality of { expected : string; actual : string; not_ : bool }
@@ -214,7 +213,7 @@ let excerpt_window ~anchor haystack =
 let excerpt_anchor ~found_at ~demand =
   match demand with
   | Ordered { resumed_at; _ } -> Some resumed_at
-  | Anywhere | Counted _ -> found_at
+  | Anywhere -> found_at
 
 let containment ?loc ?msg ?found_at ?(demand = Anywhere) ~claim ~needle
     ~haystack () =
@@ -226,7 +225,7 @@ let containment ?loc ?msg ?found_at ?(demand = Anywhere) ~claim ~needle
   (match demand with
   | Ordered { resumed_at; _ } when outside resumed_at ->
       invalid_arg "Failure.containment: resumed_at is outside the haystack"
-  | Anywhere | Ordered _ | Counted _ -> ());
+  | Anywhere | Ordered _ -> ());
   let excerpt_offset, excerpt =
     excerpt_window ~anchor:(excerpt_anchor ~found_at ~demand) haystack
   in

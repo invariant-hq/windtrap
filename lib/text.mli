@@ -66,15 +66,6 @@ val contains_substring : pattern:string -> string -> bool
     byte substring, i.e. iff {!first_occurrence} finds an occurrence. An empty
     [pattern] always matches. *)
 
-val count_occurrences : pattern:string -> string -> int
-(** [count_occurrences ~pattern s] is the number of occurrences of [pattern] in
-    [s], counted leftmost-first and non-overlapping: each match resumes the
-    scan at its end, so ["aa"] occurs once in ["aaa"] and twice in ["aaaa"].
-
-    The empty pattern occurs at every byte position and at the end, so its
-    count is [String.length s + 1] — the one reading under which an empty match
-    advances the scan by a byte instead of never terminating. *)
-
 (** {1:ansi ANSI escapes} *)
 
 val strip_ansi : string -> string

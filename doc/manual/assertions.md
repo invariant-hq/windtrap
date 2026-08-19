@@ -174,25 +174,9 @@ contains ~sub:"user=alice" log;
 not_contains ~sub:"secret" log
 ```
 
-`contains ~count:n` demands exactly `n` occurrences rather than at
-least one. Occurrences are counted leftmost-first and never overlap —
-each match resumes the count at its end, so `"aa"` occurs once in
-`"aaa"` — and the failure states both numbers:
-
-```ocaml
-contains ~count:2 ~sub:"retry" log
-```
-
-```
-needle    "retry" — expected 2 occurrences, found 3
-haystack  retry retry retry
-          ~~~~~
-```
-
-The excerpt marks the first occurrence and not all of them: when the
-counts disagree the two numbers *are* the finding, and painting every
-match would add red without adding an answer. `~count:0` is the
-counted spelling of `not_contains`.
+For an exact occurrence count, fold the count locally and assert
+about the number — cookbook recipe 12 has the eight-line `count` and
+the `satisfies ~claim` that goes with it.
 
 When the order is the claim, `in_order ~subs` asserts a whole chain of
 substrings at once. Each element must match at or after the end of the

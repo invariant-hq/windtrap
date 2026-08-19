@@ -76,8 +76,6 @@ let assertions =
           let log = "user=alice token=REDACTED\n" in
           contains ~sub:"user=alice" log;
           not_contains ~sub:"secret" log);
-      test "contains ~count demands an exact number" (fun () ->
-          contains ~count:2 ~sub:"retry" "retry once, retry twice");
       test "in_order asserts a chain of substrings" (fun () ->
           let log = "connect authenticate send disconnect" in
           in_order ~subs:[ "connect"; "authenticate"; "disconnect" ] log);

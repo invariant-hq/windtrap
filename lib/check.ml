@@ -72,30 +72,13 @@ let fail_containment ?pos ?msg ?found_at ?demand ~claim ~needle ~haystack () =
        (Failure.containment ?loc:(Loc.resolve ?pos ()) ?msg ?found_at ?demand
           ~claim ~needle ~haystack ()))
 
-(* Counting is the same containment question asked of every occurrence
-   rather than the first, so it is the same payload with the two counts
-   attached. [found_at] stays the first occurrence: it is what the excerpt
-   marks, and the counts are what the verdict says. *)
-let contains_count ?pos ?msg ~expected ~sub haystack =
-  if expected < 0 then invalid_arg "Check.contains: ~count is negative";
-  let found = Text.count_occurrences ~pattern:sub haystack in
-  if found <> expected then
-    fail_containment ?pos ?msg
-      ?found_at:(Text.first_occurrence ~pattern:sub haystack)
-      ~demand:(Failure.Counted { expected; found })
-      ~claim:(Pp.str "string containing %S exactly %d times" sub expected)
-      ~needle:sub ~haystack ()
-
-let contains ?pos ?msg ?count ~sub haystack =
-  match count with
-  | Some expected -> contains_count ?pos ?msg ~expected ~sub haystack
-  | None -> (
-      match Text.first_occurrence ~pattern:sub haystack with
-      | Some _ -> ()
-      | None ->
-          fail_containment ?pos ?msg
-            ~claim:(Pp.str "string containing %S" sub)
-            ~needle:sub ~haystack ())
+let contains ?pos ?msg ~sub haystack =
+  match Text.first_occurrence ~pattern:sub haystack with
+  | Some _ -> ()
+  | None ->
+      fail_containment ?pos ?msg
+        ~claim:(Pp.str "string containing %S" sub)
+        ~needle:sub ~haystack ()
 
 (* Each element is searched for from the end of the previous element's
    match, so the chain never re-uses bytes and never runs backwards. On a

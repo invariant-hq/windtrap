@@ -66,24 +66,12 @@ val is_false : ?pos:pos -> ?msg:string -> bool -> unit
 
 (** {1:containment String containment} *)
 
-val contains :
-  ?pos:pos -> ?msg:string -> ?count:int -> sub:string -> string -> unit
+val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] is [()] iff [s] contains [sub] as a byte substring; the
     empty needle is contained in every string. Otherwise it raises
     {!Failure.Check_failure} with a {!Failure.Containment} payload carrying
     [sub] and a bounded excerpt of [s]'s head (see {!Failure.containment} for
-    the excerpt policy).
-
-    [contains ~count:n ~sub s] instead demands exactly [n] occurrences of
-    [sub], counted leftmost-first and non-overlapping — each match resumes the
-    count at its end, so ["aa"] occurs once in ["aaa"]. The failure carries a
-    {!Failure.Counted} demand holding both counts, and [found_at] stays the
-    first occurrence, which is the one the excerpt marks. [count:0] is the
-    counted spelling of {!not_contains}. The empty needle occurs at every byte
-    position and at the end, so its count is [String.length s + 1].
-
-    Raises [Invalid_argument] if [count] is negative: a count no string can
-    have is a programmer error, not a failing assertion. *)
+    the excerpt policy). *)
 
 val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [not_contains ~sub s] is [()] iff [s] does {e not} contain [sub] as a byte
