@@ -454,9 +454,10 @@ let gen_rect =
   counterexamples.
 - A property that never fails may never reach the interesting region.
   `classify`/`collect` report the input distribution (visible under
-  `-v`); `cover ~label ~at_least` fails the test when a region is
-  under-sampled. Keep `at_least` 10–15 points below the achieved rate
-  at `~count:100` (binomial noise), or raise `~count`.
+  `-v`); `cover label cond` fails the test when no passing case reached
+  the region at all. Presence, not proportion — put the `cover` where
+  the body always reaches it, or it is vacuous exactly when it should
+  fire.
 
 **Pin every fixed counterexample.** When a property finds a bug and you
 fix it, add the shrunk counterexample to `~examples` — it runs before

@@ -1539,20 +1539,8 @@ let test_prop_stats () =
       collected = [ ("empty", 36); ("nonempty", 64) ];
       coverage =
         [
-          {
-            Property.label = "collision";
-            required = 5.0;
-            actual = 4.0;
-            hits = 4;
-            satisfied = false;
-          };
-          {
-            Property.label = "singleton";
-            required = 5.0;
-            actual = 9.0;
-            hits = 9;
-            satisfied = true;
-          };
+          { Property.label = "collision"; hits = 0; satisfied = false };
+          { Property.label = "singleton"; hits = 9; satisfied = true };
         ];
     }
   in
@@ -1568,14 +1556,14 @@ let test_prop_stats () =
   check_contains "prop stats: label distribution"
     ~sub:"labels (100 passing cases):" b;
   check_contains "prop stats: percentages" ~sub:"36.0%  empty" b;
-  check_contains "prop stats: unsatisfied coverage"
-    ~sub:"collision  4.0% (required 5.0%) — unsatisfied" b;
-  (* The list carries the satisfied requirement too — that is what it adds
-     over the failure headline, which names only the one that failed. *)
-  check_contains "prop stats: satisfied coverage listed alongside"
-    ~sub:"singleton  9.0% (required 5.0%)" b;
-  (* With a single requirement the list would only restate the headline, so
-     it does not print at all. *)
+  check_contains "prop stats: uncovered label"
+    ~sub:"collision  0 — never covered" b;
+  (* The list carries the covered label too — that is what it adds over the
+     failure headline, which names only the ones that were not. *)
+  check_contains "prop stats: covered label listed alongside"
+    ~sub:"singleton  9" b;
+  (* With a single label the list would only restate the headline, so it
+     does not print at all. *)
   let single =
     { stats with Property.coverage = [ List.hd stats.Property.coverage ] }
   in
@@ -1590,8 +1578,8 @@ let test_prop_stats () =
             ]
           ~duration:0.01 ())
   in
-  check_absent "prop stats: a lone requirement is not restated"
-    ~sub:"coverage requirements:" b1;
+  check_absent "prop stats: a lone label is not restated"
+    ~sub:"covered labels:" b1;
   check_contains "prop stats: its labels still print"
     ~sub:"labels (100 passing cases):" b1
 

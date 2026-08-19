@@ -177,29 +177,29 @@ comparison, so order is ignored but multiplicity is not; `contramap`
 makes both equality and the failure rendering go through the projection,
 so the diff shows exactly the fields the test is about.
 
-## 6. `cover` thresholds and the noise floor
+## 6. Gating on generator reach with `cover`
 
-`cover ~label ~at_least` turns a distribution expectation into a test
-outcome — and a threshold set too close to the true rate flakes on
-unlucky seeds. At the default 100 cases the observed percentage of a
-50% condition swings roughly ±10 points either way (binomial noise), so:
-
-**Rule of thumb: keep `at_least` at least 10–15 percentage points below
-the rate the generator actually achieves at `count = 100`, or raise
-`~count` until the margin holds.**
+`cover label cond` fails the property unless at least one passing case
+marked the label — the CI gate on generator quality, where `classify`
+only prints a table a human reads under `-v`:
 
 ```ocaml
-(* even numbers are ~50% of small_int draws; demand far less *)
 prop "parity is exercised" ~count:200 Gen.small_int (fun n ->
-    cover ~label:"even" ~at_least:20. (n mod 2 = 0);
-    cover ~label:"odd" ~at_least:20. (n mod 2 <> 0);
+    cover "even" (n mod 2 = 0);
+    cover "odd" (n mod 2 <> 0);
     equal int n n)
 ```
 
-`classify` and `collect` report the achieved distribution without
-failing anything — run with `-v` to see the distribution of a passing
-property, then set the threshold with margin (a failing property's
-block always includes the table).
+Presence, not proportion, and deliberately: a percentage gate over a
+random sample flakes near its threshold, and the margin that stops it
+flaking is wide enough to stop it catching anything short of the region
+vanishing. When the proportion is what you want to know, read
+`classify`'s table.
+
+Put the `cover` where the body always reaches it. The demand registers
+at the call, so one written inside the branch it is meant to police
+registers nothing on the runs where that branch is never taken — vacuous
+exactly when it should fire.
 
 ## 7. Skipping a whole suite on a missing resource
 

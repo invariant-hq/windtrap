@@ -64,8 +64,8 @@ val reject : unit -> 'a
 
 (** {1:labelling Labelling}
 
-    Labels report the distribution of generated inputs; coverage requirements
-    turn a distribution expectation into a failure. Per-case marks accumulate in
+    Labels report the distribution of generated inputs; a {!cover} label
+    turns "this region was reached" into a failure when it was not. Per-case marks accumulate in
     the engine's {!context} and commit when the case {e passes}: discarded and
     failing cases contribute nothing, and shrink re-runs accumulate into a
     scratch context that is thrown away. *)
@@ -83,41 +83,29 @@ val classify : context -> string -> bool -> unit
 (** [classify ctx label cond] is [collect ctx label] when [cond] and [()]
     otherwise. *)
 
-val cover : context -> label:string -> at_least:float -> bool -> unit
-(** [cover ctx ~label ~at_least cond] requires [label] to be marked in at least
-    [at_least] percent of the run's passing cases, and marks it (as {!collect}
-    does, plus a coverage hit) when [cond] is true. The requirement registers
-    even when [cond] is false — a label that never hits still reports.
-    Thresholds are evaluated once, at the end of a run that completes its case
-    count: unsatisfied requirements make the outcome {!Coverage_failed}.
+val cover : context -> string -> bool -> unit
+(** [cover ctx label cond] is {!classify}[ ctx label cond] plus the demand that
+    [label] be marked by {e at least one} passing case. The demand registers
+    even when [cond] is false — a label that never hits still reports — and is
+    answered once, at the end of a run that completes its case count: an
+    unmarked label makes the outcome {!Coverage_failed}.
 
-    {b The requirement registers on the first call, not at declaration}, so a
+    {b The demand registers on the first call, not at declaration}, so a
     [cover] the run never reaches registers nothing and cannot fail: an empty
     requirement table is a satisfied one. For a plain property the body always
     runs and the distinction is invisible, but a [cover] guarding
     {e "this code path is reached at all"} must sit somewhere that executes
     unconditionally — placing it inside the branch it is meant to police makes
-    it vacuous exactly when it should fire.
-
-    Raises [Invalid_argument] if [at_least] is not in \[[0.];[100.]\] (NaN
-    included) or if [label] was already registered in this run with a different
-    threshold. The engine treats an [Invalid_argument] from the body like any
-    other exception: the case fails. *)
+    it vacuous exactly when it should fire. *)
 
 (** {1:outcomes Outcomes} *)
 
 type cover_status = {
-  label : string;  (** The requirement's label. *)
-  required : float;  (** The [at_least] threshold, in percent. *)
-  actual : float;
-      (** The achieved percentage: [hits] over the passing cases counted so far
-          ([0.] when no case passed). *)
-  hits : int;  (** Passing cases that marked the label. *)
-  satisfied : bool;
-      (** Whether [actual] meets [required], up to a small tolerance ([1e-9]
-          percentage points, absorbing float division noise). *)
+  label : string;  (** The demanded label. *)
+  hits : int;  (** Passing cases that marked it. *)
+  satisfied : bool;  (** Whether [hits] is above zero. *)
 }
-(** The type for the end-of-run state of one {!cover} requirement. *)
+(** The type for the end-of-run state of one {!cover} label. *)
 
 type stats = {
   cases : int;
@@ -127,18 +115,19 @@ type stats = {
       (** Discarded cases: {!Discard} from the body plus [Gen.Private.Rejected] at
           generation time, examples included. *)
   collected : (string * int) list;
-      (** The label distribution over passing cases, sorted by label. Coverage
-          hits appear here too. *)
+      (** The label distribution over passing cases, sorted by label. A
+          {!cover} label's marks appear here too — it marks through
+          {!classify}. *)
   coverage : cover_status list;
       (** One entry per {!cover} label, sorted by label. *)
 }
 (** The type for a run's bookkeeping tables. Every outcome carries the tables as
-    of the moment it was decided; percentages in [coverage] are judged only on
-    the {!Pass}/{!Coverage_failed} boundary. *)
+    of the moment it was decided; [coverage] is judged only on the
+    {!Pass}/{!Coverage_failed} boundary. *)
 
 (** The type for engine results, consumed by the runner. *)
 type outcome =
-  | Pass of stats  (** Every case passed and every coverage threshold held. *)
+  | Pass of stats  (** Every case passed and every {!cover} label was hit. *)
   | Fail of { failure : Failure.t; stats : stats }
       (** A case failed. [failure] carries a [Failure.kind.Property] payload:
           the rendered (shrunk) counterexample, the failing case index, the

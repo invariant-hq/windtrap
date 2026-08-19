@@ -93,7 +93,7 @@ let cover_test =
     ~scope:(fun run -> run (Bounded_queue.create capacity))
     ~pp_model:(Testable.pp (list int))
     ~invariant:(fun m q ->
-      cover ~label:"reached capacity" ~at_least:5. (List.length m = capacity);
+      cover "reached capacity" (List.length m = capacity);
       equal int (List.length m) (Bounded_queue.size q))
     commands
 

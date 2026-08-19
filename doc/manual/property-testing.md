@@ -183,22 +183,28 @@ region. `classify label cond` (and `collect label`) report the
 distribution of labels over passing cases: a failing property's block
 always includes it, and a passing property prints it under `-v` — run
 verbose to calibrate, then drop back to the one-line transcript.
-`cover ~label ~at_least` turns a distribution expectation into a test
-outcome:
+`cover label cond` turns that from a table a human reads into a test
+outcome: the property fails unless at least one passing case marked
+the label.
 
 ```ocaml
 prop "parity is exercised" ~count:200 Gen.small_int (fun n ->
-    cover ~label:"even" ~at_least:20. (n mod 2 = 0);
-    cover ~label:"odd" ~at_least:20. (n mod 2 <> 0);
+    cover "even" (n mod 2 = 0);
+    cover "odd" (n mod 2 <> 0);
     classify "zero" (n = 0);
     equal int n n)
 ```
 
-Set `at_least` well below the rate the generator actually achieves —
-at 100 cases the observed rate of a 50% condition swings by roughly
-±10 points — or raise `~count`; the
-[cookbook](../cookbook.md#6-cover-thresholds-and-the-noise-floor) has
-the rule of thumb.
+Presence, not proportion. "This region is reached at all" is what
+catches a generator that stopped reaching it — a percentage gate over
+a random sample flakes near its threshold, and calibrating one costs
+more margin than the signal is worth. When you want the proportion,
+`classify` prints it and you read it.
+
+The demand registers wherever `cover` is written, even on a case where
+the condition is false, so put it somewhere the body always reaches: a
+`cover` inside the branch it is meant to police is vacuous exactly when
+it should fire.
 
 ## Notes
 

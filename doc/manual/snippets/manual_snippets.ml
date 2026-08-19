@@ -159,8 +159,8 @@ let properties =
           assume (b <> 0);
           equal int a ((a / b * b) + (a mod b)));
       prop "parity is exercised" ~count:200 Gen.small_int (fun n ->
-          cover ~label:"even" ~at_least:20. (n mod 2 = 0);
-          cover ~label:"odd" ~at_least:20. (n mod 2 <> 0);
+          cover "even" (n mod 2 = 0);
+          cover "odd" (n mod 2 <> 0);
           classify "zero" (n = 0);
           equal int n n);
     ]

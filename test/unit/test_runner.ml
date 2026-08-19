@@ -1973,7 +1973,7 @@ let () =
             | Some ctx -> ctx
             | None -> Check.fail "no property context"
           in
-          Property.cover ctx ~label:"never" ~at_least:99.0 false);
+          Property.cover ctx "never" false);
     ]
   in
   expect_run "prop-edge suite runs" ~config tests @@ fun outcome ->
@@ -1994,9 +1994,10 @@ let () =
   | _ -> check "gives-up: one failure" false);
   match failure_list (outcome_of outcome [ "under-covered" ]) with
   | [ f ] ->
-      check "an unsatisfied cover threshold names its label"
-        (contains "coverage requirement not met" (message_of f)
-        && contains "never" (message_of f))
+      check "an uncovered label is named, with the cases it went unmarked in"
+        (contains "never covered" (message_of f)
+        && contains {|"never"|} (message_of f)
+        && contains "5 passing cases" (message_of f))
   | _ -> check "under-covered: one failure" false
 
 (* Nested runs *)

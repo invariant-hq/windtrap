@@ -17,68 +17,49 @@ let reject () = raise Discard
 (* Labelling context
 
    One context per [run] invocation (nothing here is global).
-   [case_collect]/[case_cover_hits] hold the current case's marks; they
-   commit into [collect_counts]/[cover_hits] only when the case passes, so
-   discarded and failing cases contribute nothing. [cover_requirements] is
-   run-scoped: a requirement registers on first call and must keep one
-   threshold for the whole run. *)
+   [case_collect] holds the current case's marks; they commit into
+   [collect_counts] only when the case passes, so discarded and failing
+   cases contribute nothing. [required] is run-scoped: a label registers on
+   first call and is answered at the end of the run. *)
 
 type context = {
   case_collect : (string, unit) Hashtbl.t;
-  case_cover_hits : (string, unit) Hashtbl.t;
   collect_counts : (string, int) Hashtbl.t;
-  cover_requirements : (string, float) Hashtbl.t;
-  cover_hits : (string, int) Hashtbl.t;
+  required : (string, unit) Hashtbl.t;
 }
 
 let make_context () =
   {
     case_collect = Hashtbl.create 8;
-    case_cover_hits = Hashtbl.create 8;
     collect_counts = Hashtbl.create 32;
-    cover_requirements = Hashtbl.create 16;
-    cover_hits = Hashtbl.create 16;
+    required = Hashtbl.create 16;
   }
 
-let reset_case ctx =
-  Hashtbl.reset ctx.case_collect;
-  Hashtbl.reset ctx.case_cover_hits
+let reset_case ctx = Hashtbl.reset ctx.case_collect
 
 let commit_case ctx =
-  let bump counts label =
-    let next = Option.value ~default:0 (Hashtbl.find_opt counts label) + 1 in
-    Hashtbl.replace counts label next
-  in
-  Hashtbl.iter (fun label () -> bump ctx.collect_counts label) ctx.case_collect;
-  Hashtbl.iter (fun label () -> bump ctx.cover_hits label) ctx.case_cover_hits
+  Hashtbl.iter
+    (fun label () ->
+      let next =
+        Option.value ~default:0 (Hashtbl.find_opt ctx.collect_counts label) + 1
+      in
+      Hashtbl.replace ctx.collect_counts label next)
+    ctx.case_collect
 
 let collect ctx label = Hashtbl.replace ctx.case_collect label ()
 let classify ctx label condition = if condition then collect ctx label
 
-let cover ctx ~label ~at_least condition =
-  if Float.is_nan at_least || at_least < 0.0 || at_least > 100.0 then
-    invalid_arg "cover: at_least must be in [0.0, 100.0]";
-  (match Hashtbl.find_opt ctx.cover_requirements label with
-  | None -> Hashtbl.add ctx.cover_requirements label at_least
-  | Some previous when Float.equal previous at_least -> ()
-  | Some previous ->
-      invalid_arg
-        (Printf.sprintf "cover: label %S has conflicting thresholds (%g vs %g)"
-           label previous at_least));
-  if condition then begin
-    Hashtbl.replace ctx.case_collect label ();
-    Hashtbl.replace ctx.case_cover_hits label ()
-  end
+(* Presence, not proportion. The requirement registers wherever [cover] is
+   written, and the marks are [classify]'s — so a label the run never marks
+   on a passing case is the failure, and one it marks on every case is the
+   same pass as one it marks on a tenth of them. *)
+let cover ctx label condition =
+  Hashtbl.replace ctx.required label ();
+  classify ctx label condition
 
 (* Outcomes *)
 
-type cover_status = {
-  label : string;
-  required : float;
-  actual : float;
-  hits : int;
-  satisfied : bool;
-}
+type cover_status = { label : string; hits : int; satisfied : bool }
 
 type stats = {
   cases : int;
@@ -98,22 +79,16 @@ let sorted_bindings table =
   |> List.sort (fun (a, _) (b, _) -> compare a b)
 
 let stats_of ~cases ~discards ctx =
+  let collected = sorted_bindings ctx.collect_counts in
   let coverage =
-    sorted_bindings ctx.cover_requirements
-    |> List.map (fun (label, required) ->
+    sorted_bindings ctx.required
+    |> List.map (fun (label, ()) ->
         let hits =
-          Option.value ~default:0 (Hashtbl.find_opt ctx.cover_hits label)
+          Option.value ~default:0 (List.assoc_opt label collected)
         in
-        let actual =
-          if cases <= 0 then 0.0
-          else float_of_int hits *. 100.0 /. float_of_int cases
-        in
-        (* The tolerance absorbs float division noise so an exactly met
-           threshold never reads as missed. *)
-        let satisfied = not (actual +. 1e-9 < required) in
-        { label; required; actual; hits; satisfied })
+        { label; hits; satisfied = hits > 0 })
   in
-  { cases; discards; collected = sorted_bindings ctx.collect_counts; coverage }
+  { cases; discards; collected; coverage }
 
 (* Running one case
 

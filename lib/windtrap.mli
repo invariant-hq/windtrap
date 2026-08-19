@@ -825,14 +825,21 @@ val classify : string -> bool -> unit
 
     Raises [Invalid_argument] when no property body is running. *)
 
-val cover : label:string -> at_least:float -> bool -> unit
-(** [cover ~label ~at_least cond] is {!classify}[ label cond] plus a
-    requirement: the property fails unless [label] was marked in at least
-    [at_least] percent of passing cases — a distribution expectation turned into
-    a test outcome.
+val cover : string -> bool -> unit
+(** [cover label cond] is {!classify}[ label cond] plus a demand: the property
+    fails unless at least one passing case marked [label]. It is the CI gate on
+    generator quality — [classify] prints a distribution a human reads under
+    [-v], so a generator that stops reaching the interesting region is
+    otherwise silent.
 
-    Raises [Invalid_argument] when no property body is running, or if [at_least]
-    is outside \[[0.];[100.]\]. *)
+    Presence, not proportion: "this region is reached at all" is the question
+    that catches a generator regression, and a percentage gate over a random
+    sample flakes near its threshold. The demand registers wherever [cover] is
+    written, even on a case where [cond] is false, so put it somewhere the body
+    always reaches — a [cover] inside the branch it is meant to police is
+    vacuous exactly when it should fire.
+
+    Raises [Invalid_argument] when no property body is running. *)
 
 (** {1:snapshots Snapshots}
 

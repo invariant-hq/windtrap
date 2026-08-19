@@ -589,7 +589,7 @@ let () =
       prop "labelled" ~count:25 Gen.small_int (fun n ->
           collect (if n mod 2 = 0 then "even" else "odd");
           classify "small" (abs n < 100);
-          cover ~label:"any" ~at_least:50. true);
+          cover "any" true);
       prop "assumes" ~count:10 Gen.small_int (fun n ->
           assume (n mod 2 = 0);
           equal int 0 (n mod 2));

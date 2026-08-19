@@ -183,14 +183,14 @@ let projection_tests =
             ]);
     ]
 
-(* Recipe 6: cover with a noise-floor margin *)
+(* Recipe 6: gating on generator reach with cover *)
 
 let cover_tests =
-  group "cover noise floor"
+  group "cover gates on reach"
     [
       prop "parity is exercised" ~count:200 Gen.small_int (fun n ->
-          cover ~label:"even" ~at_least:20. (n mod 2 = 0);
-          cover ~label:"odd" ~at_least:20. (n mod 2 <> 0);
+          cover "even" (n mod 2 = 0);
+          cover "odd" (n mod 2 <> 0);
           equal int n n);
     ]
 

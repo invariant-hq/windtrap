@@ -213,7 +213,7 @@ let discarding_example_is_counted_and_skipped () =
   check (stats.Property.discards >= 1) "the discarded example must be counted"
 
 let examples_count_in_coverage_denominator () =
-  let body ctx x = Property.cover ctx ~label:"zero" ~at_least:60.0 (x = 0) in
+  let body ctx x = Property.cover ctx "zero" (x = 0) in
   let stats =
     expect_pass
       (Property.run ~root ~path:"examples cover" ~count:(`Declared 2)
@@ -396,21 +396,21 @@ let shrink_runs_do_not_pollute_tables () =
 (* Coverage *)
 
 let cover_satisfied_passes () =
-  let body ctx _ = Property.cover ctx ~label:"all" ~at_least:100.0 true in
+  (* Presence, not proportion: one passing case marking the label is the
+     whole demand, so a label hit once in twenty-five passes as surely as
+     one hit every time. *)
+  let body ctx x = Property.cover ctx "zero" (x = 0) in
   let stats =
     expect_pass
-      (Property.run ~root ~path:"cover pass" ~count:(`Declared 25) Gen.int body)
+      (Property.run ~root ~path:"cover pass" ~count:(`Declared 25)
+         ~examples:[ 0 ] (Gen.constant 1) body)
   in
   match stats.Property.coverage with
-  | [
-   { Property.label = "all"; required; actual; hits = 25; satisfied = true };
-  ] ->
-      check (required = 100.0) "requirement must be recorded";
-      check (actual = 100.0) "actual must be 100 percent"
+  | [ { Property.label = "zero"; hits = 1; satisfied = true } ] -> ()
   | _ -> failf "expected one satisfied coverage entry"
 
 let cover_unsatisfied_fails_at_end () =
-  let body ctx x = Property.cover ctx ~label:"zero" ~at_least:50.0 (x = 0) in
+  let body ctx x = Property.cover ctx "zero" (x = 0) in
   let stats =
     expect_coverage_failed
       (Property.run ~root ~path:"cover fail" ~count:(`Declared 10)
@@ -418,15 +418,12 @@ let cover_unsatisfied_fails_at_end () =
   in
   check (stats.Property.cases = 10) "the full case count must still pass";
   match stats.Property.coverage with
-  | [
-   { Property.label = "zero"; hits = 0; actual = 0.0; satisfied = false; _ };
-  ] ->
-      ()
+  | [ { Property.label = "zero"; hits = 0; satisfied = false } ] -> ()
   | _ -> failf "expected one unsatisfied coverage entry"
 
 let cover_registers_even_when_condition_is_false () =
   let body ctx x =
-    if x mod 2 = 0 then Property.cover ctx ~label:"never" ~at_least:5.0 false
+    if x mod 2 = 0 then Property.cover ctx "never" false
   in
   let stats =
     expect_coverage_failed
@@ -434,35 +431,8 @@ let cover_registers_even_when_condition_is_false () =
          (Gen.constant 0) body)
   in
   match stats.Property.coverage with
-  | [ { Property.label = "never"; hits = 0; satisfied = false; _ } ] -> ()
-  | _ -> failf "a requirement must register even when its condition is false"
-
-let cover_conflicting_thresholds_fail_the_case () =
-  let body ctx _ =
-    Property.cover ctx ~label:"same" ~at_least:10.0 true;
-    Property.cover ctx ~label:"same" ~at_least:20.0 true
-  in
-  let failure, _ =
-    expect_fail (Property.run ~root ~path:"cover conflict" Gen.int body)
-  in
-  let _, _, _, _, _, _, inner = property_payload failure in
-  match inner with
-  | Some { Failure.kind = Failure.Raise { actual = Some text; _ }; _ } ->
-      check
-        (contains "Invalid_argument" text)
-        "the inner failure must render the Invalid_argument, got %S" text
-  | _ -> failf "expected an inner Raise failure for the conflicting thresholds"
-
-let cover_invalid_threshold_fails_the_case () =
-  let body ctx _ = Property.cover ctx ~label:"bad" ~at_least:120.0 true in
-  let failure, _ =
-    expect_fail (Property.run ~root ~path:"cover invalid" Gen.int body)
-  in
-  let _, _, _, _, _, _, inner = property_payload failure in
-  match inner with
-  | Some { Failure.kind = Failure.Raise { actual = Some text; _ }; _ } ->
-      check (contains "at_least" text) "the message must name the argument"
-  | _ -> failf "expected an inner Raise failure for the invalid threshold"
+  | [ { Property.label = "never"; hits = 0; satisfied = false } ] -> ()
+  | _ -> failf "a demand must register even when its condition is false"
 
 (* Shrinking *)
 
@@ -918,10 +888,6 @@ let suite =
     ("cover unsatisfied fails at end", cover_unsatisfied_fails_at_end);
     ( "cover registers even when condition is false",
       cover_registers_even_when_condition_is_false );
-    ( "cover conflicting thresholds fail the case",
-      cover_conflicting_thresholds_fail_the_case );
-    ( "cover invalid threshold fails the case",
-      cover_invalid_threshold_fails_the_case );
     ("shrinks to minimal counterexample", shrinks_to_minimal_counterexample);
     ("shrink cap zero disables shrinking", shrink_cap_zero_disables_shrinking);
     ("shrink cap bounds steps", shrink_cap_bounds_steps);

@@ -96,13 +96,11 @@ let coverage_failure ?loc (stats : Property.stats) =
   let unsatisfied =
     List.filter (fun c -> not c.Property.satisfied) stats.Property.coverage
   in
-  let describe c =
-    Pp.str "%s %.1f%% < %.1f%% (%d hits)" c.Property.label c.Property.actual
-      c.Property.required c.Property.hits
-  in
   Failure.message ?loc
-    ("coverage requirement not met: "
-    ^ String.concat "; " (List.map describe unsatisfied))
+    ("never covered: "
+    ^ String.concat ", "
+        (List.map (fun c -> Pp.str "%S" c.Property.label) unsatisfied)
+    ^ Pp.str " (over %d passing cases)" stats.Property.cases)
 
 let gave_up_failure ?loc (stats : Property.stats) =
   Failure.message ?loc

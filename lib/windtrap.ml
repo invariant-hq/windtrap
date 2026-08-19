@@ -182,8 +182,7 @@ let prop_context op =
 let collect label = Property.collect (prop_context "collect") label
 let classify label cond = Property.classify (prop_context "classify") label cond
 
-let cover ~label ~at_least cond =
-  Property.cover (prop_context "cover") ~label ~at_least cond
+let cover label cond = Property.cover (prop_context "cover") label cond
 
 (* Snapshots *)
 

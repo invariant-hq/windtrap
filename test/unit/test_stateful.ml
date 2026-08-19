@@ -1684,7 +1684,7 @@ let collect_and_cover_work_inside_command_bodies () =
         (fun model () ->
           Windtrap.collect "ticked";
           Windtrap.classify "past three" (model > 3);
-          Windtrap.cover ~label:"reached five" ~at_least:1.
+          Windtrap.cover "reached five"
             (if unreachable then model >= 500 else model >= 5));
     ]
   in
@@ -1707,8 +1707,8 @@ let collect_and_cover_work_inside_command_bodies () =
   | [ status ] ->
       check
         (status.Property.label = "reached five" && status.Property.satisfied)
-        "the coverage requirement was %s at %.1f%%" status.Property.label
-        status.Property.actual
+        "the coverage demand %s went unmarked over %d cases"
+        status.Property.label stats.Property.cases
   | statuses ->
       failf "expected one coverage entry, got %d" (List.length statuses));
   (* And a requirement registered from a command body can fail the run. *)

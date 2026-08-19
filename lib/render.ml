@@ -1165,20 +1165,20 @@ let pp_prop_stats t (s : Property.stats) =
         put t (indent ^ st t `Faint line))
       s.collected
   end;
-  (* The failure headline already names the first unsatisfied requirement, so
-     with a single requirement this list restates it in different words. It
-     earns its place only when there are others to show alongside. *)
+  (* The failure headline already names every label that was never covered,
+     so this list earns its place only by showing the ones that were —
+     which is the question a reader asks next. *)
   if
     List.length s.coverage > 1
     && List.exists (fun c -> not c.Property.satisfied) s.coverage
   then begin
-    put t (indent ^ "coverage requirements:");
+    put t (indent ^ "covered labels:");
     List.iter
       (fun (c : Property.cover_status) ->
         put t
           (indent
-          ^ spf "  %s  %.1f%% (required %.1f%%)%s" c.label c.actual c.required
-              (if c.satisfied then "" else " \u{2014} unsatisfied")))
+          ^ spf "  %s  %d%s" c.label c.hits
+              (if c.satisfied then "" else " \u{2014} never covered")))
       s.coverage
   end
 

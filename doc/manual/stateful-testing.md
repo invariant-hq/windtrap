@@ -170,15 +170,14 @@ stateful "behaves like a list" ~model:[]
   ~scope:(fun run -> run (Bounded_queue.create capacity))
   ~pp_model:(Testable.pp (list int))
   ~invariant:(fun m q ->
-    cover ~label:"reached capacity" ~at_least:5. (List.length m = capacity);
+    cover "reached capacity" (List.length m = capacity);
     equal int (List.length m) (Bounded_queue.size q))
   commands
 ```
 
-`~at_least:1.` catches "never reached"; a higher figure calibrates the
-mix — this one runs at about 30%, and the
-[cookbook](../cookbook.md#6-cover-thresholds-and-the-noise-floor) has
-the rule of thumb for the margin.
+A `cover` in the invariant catches "never reached": the run fails
+unless some passing program reached capacity at some point. For the
+proportion, read `classify`'s table under `-v`.
 
 `~next` is required for the same reason `~pre` is optional: its absence
 would be the claim *this call does not change the model*, and that
@@ -423,9 +422,9 @@ them on their own.
 - `assume`, `collect`, `classify` and `cover` work inside command
   bodies and inside `~invariant`. Their unit is the *case*, not the
   step: a label marked at any step counts once for the program, so
-  `cover ~label:"filled to capacity" ~at_least:5. (List.length m = capacity)`
-  in the invariant means *5% of passing programs reached capacity at
-  some point*. An `assume` that fails discards the whole program, and
+  `cover "filled to capacity" (List.length m = capacity)` in the
+  invariant means *some passing program reached capacity at some
+  point*. An `assume` that fails discards the whole program, and
   a run gives up after twice `~count` discards.
 - There is no `~examples`: the program type is abstract, so a program
   cannot be spelled by hand. Copy a shrunk counterexample back as a

@@ -294,7 +294,7 @@ let property_tests =
         classify "empty" (l = []);
         classify "nonempty" (l <> []);
         collect (if List.length l > 3 then "len > 3" else "len <= 3");
-        cover ~label:"long (> 10 elements)" ~at_least:75.0 (List.length l > 10);
+        cover "long (> 10 elements)" (List.length l > 10);
         equal (list int) sorted (List.sort compare sorted));
   ]
 
