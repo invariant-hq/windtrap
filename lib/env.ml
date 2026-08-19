@@ -146,16 +146,8 @@ let mutate_only () =
   | None -> []
   | Some s -> split_comma s
 
-(* Snapshot update modes
-
-   The one mirror still parsed here, because its vocabulary is wider than
-   its flag's: [-u] cannot spell [force]. *)
+(* Snapshot update modes. The vocabulary, not the reading:
+   WINDTRAP_UPDATE is parsed beside its row in [Cli]'s table, like every
+   other mirror. *)
 
 type update = No_update | Update | Force_update
-
-let update () =
-  match get_string "WINDTRAP_UPDATE" with
-  | None -> No_update
-  | Some s -> (
-      if String.lowercase_ascii (String.trim s) = "force" then Force_update
-      else match parse_bool s with Some true -> Update | _ -> No_update)

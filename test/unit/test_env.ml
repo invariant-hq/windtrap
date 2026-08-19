@@ -126,25 +126,6 @@ let tests =
           (Env.split_comma "slow");
         equal ~msg:"separators alone are no labels" (list string) []
           (Env.split_comma " , "));
-    test "update mode: 1/truthy, force, everything else off" (fun () ->
-        clear "WINDTRAP_UPDATE";
-        is_true ~msg:"update unset is No_update" (Env.update () = Env.No_update);
-        set "WINDTRAP_UPDATE" "1";
-        is_true ~msg:"update 1 is Update" (Env.update () = Env.Update);
-        set "WINDTRAP_UPDATE" "true";
-        is_true ~msg:"update true is Update" (Env.update () = Env.Update);
-        set "WINDTRAP_UPDATE" "force";
-        is_true ~msg:"update force is Force_update"
-          (Env.update () = Env.Force_update);
-        set "WINDTRAP_UPDATE" "FORCE";
-        is_true ~msg:"update FORCE is Force_update"
-          (Env.update () = Env.Force_update);
-        set "WINDTRAP_UPDATE" "0";
-        is_true ~msg:"update 0 is No_update" (Env.update () = Env.No_update);
-        set "WINDTRAP_UPDATE" "sometimes";
-        is_true ~msg:"unknown update value is No_update"
-          (Env.update () = Env.No_update);
-        clear "WINDTRAP_UPDATE");
     test "settings with no flag" (fun () ->
         set "WINDTRAP_PROJECT_ROOT" "/tmp/proj";
         equal ~msg:"project_root passed through" (option string)

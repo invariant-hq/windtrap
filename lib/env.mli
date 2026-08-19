@@ -189,9 +189,3 @@ type update =
   | Update  (** Accept mismatches, refused when {!in_ci}. *)
   | Force_update  (** Accept mismatches even under CI. *)
 
-val update : unit -> update
-(** [update ()] parses [WINDTRAP_UPDATE]: truthy values are {!Update}, [force]
-    (case-insensitively) is {!Force_update}, anything else (including unset) is
-    {!No_update}. The vocabulary is the variable's own — the [-u] flag it
-    mirrors has no way to spell [force] — so, unlike the mirrors read through
-    {!get_string}, it is parsed here and the CLI layer defers to it. *)

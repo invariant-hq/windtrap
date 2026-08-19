@@ -435,17 +435,26 @@ let () =
     (config.Run.exclude_tags = [ "xc"; "x1"; "x2" ]);
   clear_env ()
 
+(* WINDTRAP_UPDATE is the one mirror parsed beside its row rather than
+   through its flag's own arg: [-u] has no way to spell [force]. *)
 let () =
-  reg "update precedence" @@ fun () ->
+  reg "update precedence and the force vocabulary" @@ fun () ->
   clear_env ();
+  let update value =
+    Unix.putenv "WINDTRAP_UPDATE" value;
+    (resolve Cli.empty).Run.update
+  in
+  check "unset is No_update" ((resolve Cli.empty).Run.update = Env.No_update);
+  check "force is Force_update" (update "force" = Env.Force_update);
+  check "the force word is case-insensitive"
+    (update "FORCE" = Env.Force_update);
+  check "1 is Update" (update "1" = Env.Update);
+  check "the truthy spellings are Env's" (update "true" = Env.Update);
+  check "0 is No_update" (update "0" = Env.No_update);
+  check "an unknown word is No_update" (update "sometimes" = Env.No_update);
   Unix.putenv "WINDTRAP_UPDATE" "force";
-  let config = resolve Cli.empty in
-  check "WINDTRAP_UPDATE=force" (config.Run.update = Env.Force_update);
   let config = resolve { Cli.empty with Cli.update = Some Env.Update } in
   check "an explicit -u beats the env value" (config.Run.update = Env.Update);
-  Unix.putenv "WINDTRAP_UPDATE" "1";
-  let config = resolve Cli.empty in
-  check "WINDTRAP_UPDATE=1" (config.Run.update = Env.Update);
   clear_env ()
 
 let () =

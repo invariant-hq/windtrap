@@ -50,14 +50,13 @@ let rec exit_guard () =
     raise Failure.Exit_attempt
   end
 
-let exit_guard_installed = ref false
-
 let install_exit_guard () =
-  exit_guard_owner := Some (Unix.getpid ());
-  if not !exit_guard_installed then begin
-    exit_guard_installed := true;
-    at_exit exit_guard
-  end
+  (* One ref, not two: an unset owner is exactly "never registered in
+     this process tree". A forked child inherits [Some parent_pid] along
+     with the registration itself, so it correctly registers nothing and
+     only claims ownership. *)
+  if !exit_guard_owner = None then at_exit exit_guard;
+  exit_guard_owner := Some (Unix.getpid ())
 
 (* Property tests *)
 

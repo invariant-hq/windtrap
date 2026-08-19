@@ -24,9 +24,10 @@
     resolution itself consumes ([WINDTRAP_TAIL_ERRORS]) is read here through its
     generic reader; what it
     still owns outright are the variables read below this layer
-    ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes) and the two
-    vocabularies wider than their flag's ([WINDTRAP_UPDATE]'s [force],
-    [WINDTRAP_COLOR]'s lenient fall back to {!Env.Auto}).
+    ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes). The two
+    variables whose vocabulary is wider than their flag's —
+    [WINDTRAP_UPDATE]'s [force] and [WINDTRAP_COLOR]'s lenient fall back to
+    {!Env.Auto} — are parsed beside their own rows.
 
     Nothing in this module prints or exits: parse and resolution failures are
     returned as a typed {!type:error} — the caller renders {!error_message} and

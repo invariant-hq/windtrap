@@ -80,17 +80,15 @@ type arg =
    from validating differently from the flag it mirrors: same parser, same
    range check, same [expected] text, only the error source differs.
 
-   [Token] is the whole value as one token, shaped — [Fun.id] where it is
-   read as written, [String.trim] for the numeric tokens. [Comma] is one
-   token per comma-separated item, trimmed, empties dropped. [Truthy] is a
-   boolean spelling: a truthy value applies a value-less flag. [Own] is a
-   vocabulary the variable owns and [Env] parses — WINDTRAP_UPDATE's
-   [force], WINDTRAP_COLOR's silent fall back to [Auto]. *)
-type reader =
-  | Token of (string -> string)
-  | Comma
-  | Truthy
-  | Own of (parsed -> parsed)
+   [Raw] is the whole value as one token, exactly as written — the four
+   variables whose value can legitimately start or end with a space (a
+   test path contains " \u{203a} "). [Trimmed] is the same, trimmed: the
+   spelling every other single-token variable wants, so that " 2/4 "
+   works as a shard where " 3 " already worked as a bail. [Comma] is one
+   token per comma-separated item, trimmed, empties dropped. [Truthy] is
+   a boolean spelling: a truthy value applies a value-less flag. [Own] is
+   a vocabulary wider than its flag's, parsed beside the row. *)
+type reader = Raw | Trimmed | Comma | Truthy | Own of (parsed -> parsed)
 
 (* A flag's WINDTRAP_* environment mirror, declared beside the flag it
    mirrors. [absent p] is [true] while no layer above the environment has
@@ -122,8 +120,6 @@ let invalid ~source ~value ~expected =
   Error (Invalid_value { source; value; expected })
 
 let mirrored var reader absent = Some { var; reader; absent }
-let verbatim = Token Fun.id
-let trimmed = Token String.trim
 let additive _ = true
 let set_string set = Value { metavar = "PATTERN"; set }
 
@@ -181,7 +177,7 @@ let table =
           set_string (fun ~source:_ acc value ->
               Ok { acc with filter = Some value });
         doc = "Run only tests whose path contains PATTERN";
-        mirror = mirrored "WINDTRAP_FILTER" verbatim (fun p -> p.filter = None);
+        mirror = mirrored "WINDTRAP_FILTER" Raw (fun p -> p.filter = None);
       };
     Flag_entry
       {
@@ -192,7 +188,7 @@ let table =
               Ok { acc with exclude = Some value });
         doc = "Skip tests whose path contains PATTERN";
         mirror =
-          mirrored "WINDTRAP_EXCLUDE" verbatim (fun p -> p.exclude = None);
+          mirrored "WINDTRAP_EXCLUDE" Raw (fun p -> p.exclude = None);
       };
     Flag_entry
       {
@@ -239,7 +235,7 @@ let table =
                   | None -> invalid ~source ~value ~expected:shard_expected);
             };
         doc = "Run only the Kth of N deterministic path-hash buckets";
-        mirror = mirrored "WINDTRAP_SHARD" verbatim (fun p -> p.shard = None);
+        mirror = mirrored "WINDTRAP_SHARD" Trimmed (fun p -> p.shard = None);
       };
     Flag_entry
       {
@@ -276,7 +272,7 @@ let table =
         long = "--bail";
         arg = set_positive_int (fun acc n -> { acc with bail = Some n });
         doc = "Stop after N failures";
-        mirror = mirrored "WINDTRAP_BAIL" trimmed (fun p -> p.bail = None);
+        mirror = mirrored "WINDTRAP_BAIL" Trimmed (fun p -> p.bail = None);
       };
     Flag_entry
       {
@@ -294,7 +290,7 @@ let table =
                   | _ -> invalid ~source ~value ~expected:"a positive number");
             };
         doc = "Default per-test timeout in seconds";
-        mirror = mirrored "WINDTRAP_TIMEOUT" trimmed (fun p -> p.timeout = None);
+        mirror = mirrored "WINDTRAP_TIMEOUT" Trimmed (fun p -> p.timeout = None);
       };
     Flag_entry
       {
@@ -314,7 +310,7 @@ let table =
             };
         doc = "Warn when an untagged test runs longer than SECONDS (0 disables)";
         mirror =
-          mirrored "WINDTRAP_SLOW_THRESHOLD" trimmed (fun p ->
+          mirrored "WINDTRAP_SLOW_THRESHOLD" Trimmed (fun p ->
               p.slow_threshold = None);
       };
     Flag_entry
@@ -332,7 +328,7 @@ let table =
                   | Error _ -> invalid ~source ~value ~expected:seed_expected);
             };
         doc = "Root seed for property tests (s1:<16 hex>)";
-        mirror = mirrored "WINDTRAP_SEED" verbatim (fun p -> p.seed = None);
+        mirror = mirrored "WINDTRAP_SEED" Trimmed (fun p -> p.seed = None);
       };
     Flag_entry
       {
@@ -341,7 +337,7 @@ let table =
         arg = set_positive_int (fun acc n -> { acc with prop_count = Some n });
         doc = "Generated cases per property";
         mirror =
-          mirrored "WINDTRAP_PROP_COUNT" trimmed (fun p -> p.prop_count = None);
+          mirrored "WINDTRAP_PROP_COUNT" Trimmed (fun p -> p.prop_count = None);
       };
     Flag_entry
       {
@@ -350,7 +346,7 @@ let table =
         arg = set_positive_int (fun acc n -> { acc with max_shrink = Some n });
         doc = "Accepted shrink steps per failing property";
         mirror =
-          mirrored "WINDTRAP_MAX_SHRINK" trimmed (fun p -> p.max_shrink = None);
+          mirrored "WINDTRAP_MAX_SHRINK" Trimmed (fun p -> p.max_shrink = None);
       };
     Flag_entry
       {
@@ -360,11 +356,18 @@ let table =
         doc = "Accept snapshot changes (refused under CI)";
         mirror =
           mirrored "WINDTRAP_UPDATE"
+            (* Parsed here rather than through [-u]'s own arg: this
+               variable's vocabulary is wider than the flag's, which has
+               no way to spell [force]. *)
             (Own
                (fun acc ->
-                 match Env.update () with
-                 | Env.No_update -> acc
-                 | mode -> { acc with update = Some mode }))
+                 match Env.get_string "WINDTRAP_UPDATE" with
+                 | Some s
+                   when String.lowercase_ascii (String.trim s) = "force" ->
+                     { acc with update = Some Env.Force_update }
+                 | Some _ when Env.get_bool "WINDTRAP_UPDATE" = Some true ->
+                     { acc with update = Some Env.Update }
+                 | Some _ | None -> acc))
             (fun p -> p.update = None);
       };
     Flag_entry
@@ -395,7 +398,7 @@ let table =
                 (fun ~source:_ acc value -> Ok { acc with junit = Some value });
             };
         doc = "Also write a JUnit XML report to PATH";
-        mirror = mirrored "WINDTRAP_JUNIT" verbatim (fun p -> p.junit = None);
+        mirror = mirrored "WINDTRAP_JUNIT" Raw (fun p -> p.junit = None);
       };
     Flag_entry
       {
@@ -433,7 +436,7 @@ let table =
                   Ok { acc with log_dir = Some value });
             };
         doc = "Root directory for capture logs";
-        mirror = mirrored "WINDTRAP_OUTPUT" verbatim (fun p -> p.log_dir = None);
+        mirror = mirrored "WINDTRAP_OUTPUT" Raw (fun p -> p.log_dir = None);
       };
     Flag_entry
       {
@@ -675,7 +678,8 @@ let layers cli =
     in
     match mirror.reader with
     | Own read -> Ok (read acc)
-    | Token shape -> apply (Ok acc) (shape raw)
+    | Raw -> apply (Ok acc) raw
+    | Trimmed -> apply (Ok acc) (String.trim raw)
     | Comma -> List.fold_left apply (Ok acc) (Env.split_comma raw)
     | Truthy ->
         if Env.get_bool mirror.var = Some true then apply (Ok acc) raw
@@ -702,10 +706,9 @@ let layers cli =
    its flag's own parser, the command line's or the mirror's, and each
    named its own source when it refused. *)
 let resolved below =
-  let defaults = Run.default_config () in
   let render_defaults = Render.default_settings in
   ( {
-      Run.seed = Option.value below.seed ~default:defaults.Run.seed;
+      Run.seed = Option.value below.seed ~default:(Seed.random ());
       filter = below.filter;
       exclude = below.exclude;
       tags = below.tags;
@@ -724,7 +727,9 @@ let resolved below =
            that chdirs sends the rest of the run's capture logs somewhere
            else, or nowhere, and the failure reports point at paths that do
            not exist. The default is already absolute. *)
-        (let dir = Option.value below.log_dir ~default:defaults.Run.log_dir in
+        (let dir =
+           Option.value below.log_dir ~default:(Path_ops.default_log_dir ())
+         in
          if not (Filename.is_relative dir) then dir
          else
            match Sys.getcwd () with
