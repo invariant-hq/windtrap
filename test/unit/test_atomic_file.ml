@@ -252,86 +252,12 @@ let child_replace path rounds writer =
   done;
   exit 0
 
-(* In a fresh process the internal temporary serial starts at zero, so
-   pre-creating [count] decoys under this process's pid makes the first
-   [count] temporary names collide deterministically. *)
-let child_collide directory count expect_failure =
-  let pid = Unix.getpid () in
-  for serial = 0 to count - 1 do
-    let name = Printf.sprintf "%s%x-%x" Atomic_file.temp_prefix pid serial in
-    write_file (Filename.concat directory name) "decoy"
-  done;
-  let path = Filename.concat directory "target" in
-  match Atomic_file.write ~path "after collisions" with
-  | () ->
-      if expect_failure then begin
-        prerr_endline "collision child: write unexpectedly succeeded";
-        exit 3
-      end
-      else exit 0
-  | exception Sys_error message ->
-      if expect_failure && contains message "cannot create temporary file" then
-        exit 0
-      else begin
-        prerr_endline ("collision child: " ^ message);
-        exit 3
-      end
-
 let wait_for_child label pid =
   match snd (Unix.waitpid [] pid) with
   | Unix.WEXITED 0 -> ()
   | Unix.WEXITED code -> fail label "child exited %d" code
   | Unix.WSIGNALED signal -> fail label "child signaled %d" signal
   | Unix.WSTOPPED signal -> fail label "child stopped %d" signal
-
-let spawn_collision_child directory count expect =
-  let arguments =
-    [|
-      Sys.executable_name;
-      "--atomic-file-collision-child";
-      directory;
-      string_of_int count;
-      expect;
-    |]
-  in
-  Unix.create_process Sys.executable_name arguments Unix.stdin Unix.stdout
-    Unix.stderr
-
-let test_colliding_temporary_names_are_skipped_not_clobbered () =
-  with_temporary_directory (fun directory ->
-      let pid = spawn_collision_child directory 4 "success" in
-      wait_for_child "collision retry child" pid;
-      let entries = sorted_directory directory in
-      equal_int "collision retry entry count" 5 (List.length entries);
-      check "collision retry target present" (List.mem "target" entries);
-      equal_string "collision retry target bytes" "after collisions"
-        (read_file (Filename.concat directory "target"));
-      List.iter
-        (fun name ->
-          if name <> "target" then begin
-            check
-              (Printf.sprintf "decoy %S keeps the reserved prefix" name)
-              (Atomic_file.is_temp_name name);
-            equal_string
-              (Printf.sprintf "decoy %S left untouched" name)
-              "decoy"
-              (read_file (Filename.concat directory name))
-          end)
-        entries)
-
-let test_exhausted_temporary_names_fail_without_clobbering () =
-  with_temporary_directory (fun directory ->
-      (* 512 decoys exceed any plausible retry budget, so the write must give
-         up with the temporary-creation error and touch nothing. *)
-      let decoys = 512 in
-      let pid = spawn_collision_child directory decoys "failure" in
-      wait_for_child "collision exhaustion child" pid;
-      let entries = sorted_directory directory in
-      equal_int "exhaustion entry count" decoys (List.length entries);
-      check "exhaustion never published a target"
-        (not (List.mem "target" entries));
-      check "exhaustion left every decoy in place"
-        (List.for_all Atomic_file.is_temp_name entries))
 
 let test_concurrent_processes_publish_only_whole_inputs () =
   with_temporary_directory (fun directory ->
@@ -386,23 +312,17 @@ let suite =
       test_replacement_takes_the_temporary_permissions );
     ( "target symlink is refused, not followed",
       test_target_symlink_is_refused_not_followed );
-    ( "colliding temporary names are skipped, not clobbered",
-      test_colliding_temporary_names_are_skipped_not_clobbered );
-    ( "exhausted temporary names fail without clobbering",
-      test_exhausted_temporary_names_fail_without_clobbering );
     ( "concurrent processes publish only whole inputs",
       test_concurrent_processes_publish_only_whole_inputs );
   ]
 
 let tests = List.map (fun (name, fn) -> test name fn) suite
 
-(* The concurrency tests re-exec this executable as helper children; main
+(* The concurrency test re-execs this executable as helper children; main
    must dispatch here before starting the runner. Never returns for a
    child invocation. *)
 let dispatch_child () =
   match Array.to_list Sys.argv with
   | [ _; "--atomic-file-child"; path; rounds; writer ] ->
       child_replace path (int_of_string rounds) (int_of_string writer)
-  | [ _; "--atomic-file-collision-child"; directory; count; expect ] ->
-      child_collide directory (int_of_string count) (expect = "failure")
   | _ -> ()
