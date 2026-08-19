@@ -102,14 +102,21 @@ let color_mode () =
       | _ -> Auto)
   | None -> Auto
 
-(* Pure, and the only colour decision this module makes: a caller names
-   the sink by passing its terminal status, so nothing here sniffs the
-   environment on a renderer's behalf. *)
+(* The only colour decision this module makes: a caller names the sink by
+   passing its terminal status, so nothing here sniffs a renderer's sink
+   on its behalf. NO_COLOR is the one thing read here rather than passed:
+   it is the de-facto standard for "this environment wants no escape
+   codes at all" (any non-empty value, whatever it says), it is a fact
+   about the environment and not about one sink, and reading it here is
+   what makes every caller honour it — the two reporting commands
+   included, neither of which has a --color flag. An explicit [Always]
+   still wins: the user asked. *)
 let resolve_color mode ~tty ~inside_dune ~term_dumb =
   match mode with
   | Always -> true
   | Never -> false
-  | Auto -> (tty || inside_dune) && not term_dumb
+  | Auto ->
+      (tty || inside_dune) && (not term_dumb) && get_raw "NO_COLOR" = None
 
 (* Settings with no command-line flag
 

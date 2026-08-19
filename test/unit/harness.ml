@@ -128,6 +128,9 @@ let windtrap_vars =
     "WINDTRAP_MUTATE_ARM";
     "WINDTRAP_MUTATE_TRY";
     "WINDTRAP_MUTATE_ONLY";
+    (* Not a windtrap variable, but it turns styling off in Auto mode,
+       so a developer's shell setting would reshape a pinned transcript. *)
+    "NO_COLOR";
   ]
 
 (* Unset is neutral for every variable above but one. lib/ carries an

@@ -172,7 +172,8 @@ The level decides *what* prints; the sink only decides color and the
 live tail. Piped output — redirects, CI logs — has the same shape,
 with glyphs flushed one by one so a crashed run leaves its partial row
 visible: uncolored for a plain pipe, still colored under dune (dune
-relays to your terminal), never colored when `TERM=dumb`. Under GitHub
+relays to your terminal), never colored when `TERM=dumb` or `NO_COLOR`
+is set. Under GitHub
 Actions the same compact transcript sits inside a collapsed
 `::group::` block, with failures also emitted as annotations (see
 [CI](#ci) below).
@@ -266,8 +267,8 @@ focus refusal has no override — remove the `ftest`).
   as workflow annotations — they appear inline on the PR diff with no
   configuration.
 - **Color**: on by default on a terminal and under dune, off when
-  `TERM=dumb`; `--color always|never|auto` (`WINDTRAP_COLOR`)
-  overrides either way.
+  `TERM=dumb` or `NO_COLOR` is set to anything;
+  `--color always|never|auto` (`WINDTRAP_COLOR`) overrides either way.
 - The run header prints the root seed token whenever the suite
   declares property tests — filters do not remove it, so a CI log line
   is all you need to replay a red property locally.

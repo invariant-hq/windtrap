@@ -126,16 +126,21 @@ val resolve_color :
   color_mode -> tty:bool -> inside_dune:bool -> term_dumb:bool -> bool
 (** [resolve_color mode ~tty ~inside_dune ~term_dumb] is the ANSI decision for
     [mode] on a sink whose terminal status is [tty]: [Always] is [true], [Never]
-    is [false], and [Auto] is [(tty || inside_dune) && not term_dumb] (dune
-    captures output but renders escape codes back to the user; a dumb terminal —
-    {!term_dumb} — renders none, so [Auto] never styles it, while an explicit
-    [Always] still wins). Pure; shared with the [--color] flag.
+    is [false], and [Auto] styles iff [tty || inside_dune], the terminal is not
+    dumb ({!term_dumb}), and [NO_COLOR] is unset (dune captures output but
+    renders escape codes back to the user; a dumb terminal renders none). An
+    explicit [Always] wins over all three: the user asked.
 
     This is the whole of the colour decision: there is no reader that resolves
     it for a sink of its own choosing. A caller passes the mode that won its own
-    precedence — [Run.config]'s for the runner, {!color_mode} for a command with
-    no [--color] flag — together with the sink's terminal status, so the ANSI
-    decision is always made where the sink is known. *)
+    precedence — [Render.settings.color] for the runner, {!color_mode} for a
+    command with no [--color] flag — together with the sink's terminal status,
+    so the decision is made where the sink is known.
+
+    Effects: reads [NO_COLOR] — the one input taken from the environment rather
+    than the caller, because it is a fact about the environment and not about
+    any one sink, and every command must honour it. Any non-empty value counts,
+    whatever it says; an empty one reads as unset, as everywhere here. *)
 
 (** {1:standalone Settings with no flag}
 

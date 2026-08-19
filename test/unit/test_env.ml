@@ -180,7 +180,7 @@ let tests =
         set "INSIDE_DUNE" "false";
         is_false ~msg:"INSIDE_DUNE=false does not count" (Env.inside_dune ());
         set "INSIDE_DUNE" saved);
-    test "color mode parsing and the pure resolution rule" (fun () ->
+    test "color mode parsing and the resolution rule" (fun () ->
         clear "WINDTRAP_COLOR";
         is_true ~msg:"color defaults to Auto" (Env.color_mode () = Env.Auto);
         set "WINDTRAP_COLOR" "always";
@@ -219,6 +219,23 @@ let tests =
         is_true ~msg:"always beats a dumb terminal"
           (Env.resolve_color Env.Always ~tty:true ~inside_dune:false
              ~term_dumb:true);
+        (* NO_COLOR, the de-facto standard: any non-empty value, whatever
+           it says, and Auto only — an explicit request still wins. *)
+        set "NO_COLOR" "1";
+        is_false ~msg:"NO_COLOR silences auto on a tty"
+          (Env.resolve_color Env.Auto ~tty:true ~inside_dune:false
+             ~term_dumb:false);
+        set "NO_COLOR" "0";
+        is_false ~msg:"NO_COLOR counts by presence, not by value"
+          (Env.resolve_color Env.Auto ~tty:true ~inside_dune:false
+             ~term_dumb:false);
+        is_true ~msg:"always beats NO_COLOR"
+          (Env.resolve_color Env.Always ~tty:false ~inside_dune:false
+             ~term_dumb:false);
+        clear "NO_COLOR";
+        is_true ~msg:"an empty NO_COLOR is unset"
+          (Env.resolve_color Env.Auto ~tty:true ~inside_dune:false
+             ~term_dumb:false);
         (* Composing the two — a mode read from the environment applied to
            a named sink — is the caller's job, not this module's:
            [Driver.renderer] does it for the runner and [coverage_cmd] for

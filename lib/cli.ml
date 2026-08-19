@@ -497,6 +497,11 @@ let table =
         var = "WINDTRAP_MUTATE_ONLY";
         doc = "Source prefixes whose mutants a run considers";
       };
+    (* Not windtrap's, and last for that reason: the de-facto standard
+       every command-line tool honours. Rostered so --color's reader can
+       find out here that something else can turn styling off. *)
+    Env_setting
+      { var = "NO_COLOR"; doc = "Any value: never style output (--color auto)" };
   ]
 
 (* The flagless setting the resolution itself consumes, read through

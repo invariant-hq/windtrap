@@ -56,3 +56,4 @@ ENVIRONMENT:
   WINDTRAP_MUTATE_ARM      Arm one mutant, by identifier
   WINDTRAP_MUTATE_TRY      Faults an admit run tries per test (0 for all)
   WINDTRAP_MUTATE_ONLY     Source prefixes whose mutants a run considers
+  NO_COLOR                 Any value: never style output (--color auto)
