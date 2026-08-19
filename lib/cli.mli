@@ -19,15 +19,12 @@
     applied through the flag's own parser, so the two cannot drift: a variable
     accepts exactly what its flag accepts, refuses exactly what its flag
     refuses, with the same [expected] wording, and differs only in naming the
-    variable rather than the flag as the source of a bad value. {!Env} is
-    consulted for the reading, not for the inventory — the flagless row that
-    resolution itself consumes ([WINDTRAP_TAIL_ERRORS]) is read here through its
-    generic reader; what it
-    still owns outright are the variables read below this layer
-    ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes). The two
-    variables whose vocabulary is wider than their flag's —
-    [WINDTRAP_UPDATE]'s [force] and [WINDTRAP_COLOR]'s lenient fall back to
-    {!Env.Auto} — are parsed beside their own rows.
+    variable rather than the flag as the source of a bad value. The two
+    variables whose vocabulary is wider than their flag's — [WINDTRAP_UPDATE]'s
+    [force] and [WINDTRAP_COLOR]'s lenient fall back to {!Env.Auto} — are parsed
+    beside their own rows all the same. {!Env} is consulted for the reading, not
+    for the inventory: what it still owns outright are the variables read below
+    this layer ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes).
 
     Nothing in this module prints or exits: parse and resolution failures are
     returned as a typed {!type:error} — the caller renders {!error_message} and

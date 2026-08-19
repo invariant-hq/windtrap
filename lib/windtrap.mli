@@ -1074,16 +1074,15 @@ module Private : sig
   module Failure = Failure
   module Loc = Loc
   module Mutate_loop = Mutate_loop
+  (** Also the Law 16d armed hooks — the one cross-package registration cell;
+      [ppx_windtrap]'s runtime registers its hook here at load. *)
+
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property
   module Render = Render
   module Render_github = Render_github
   module Render_junit = Render_junit
-
-  (** The Law 16d armed hooks — the one cross-package registration cell;
-      [ppx_windtrap]'s runtime registers its hook here at load. *)
-
   module Run = Run
   module Runner = Runner
   module Seed = Seed

@@ -7,14 +7,13 @@
 
     This module owns {e how} the environment is read — the generic typed readers
     below, the value vocabularies they share (booleans, comma-separated lists,
-    colour modes, snapshot update modes), platform and CI detection, and the few
-    settings that have no command-line flag — and, in {!set}, the one way it is
-    written. It is not the inventory of
-    variables: every [WINDTRAP_*] mirror of a runner flag is declared beside
-    that flag in {!Cli}'s table and read through {!get_string}, {!get_bool} and
-    {!split_comma} from there, which is what stops a mirror from parsing or
-    validating differently from the flag it mirrors. One further lookup lives
-    elsewhere by design: the coverage runtime reads its own
+    colour modes), platform and CI detection, and the few settings that have no
+    command-line flag — and, in {!set}, the one way it is written. It is not the
+    inventory of variables: every [WINDTRAP_*] mirror of a runner flag is
+    declared beside that flag in {!Cli}'s table and read through {!get_string},
+    {!get_bool} and {!split_comma} from there, which is what stops a mirror from
+    parsing or validating differently from the flag it mirrors. One further
+    lookup lives elsewhere by design: the coverage runtime reads its own
     [WINDTRAP_COVERAGE_FILE] (windtrap links the coverage library, not the
     reverse, so it cannot depend on this module).
 
@@ -27,9 +26,8 @@
     conventionally set to arbitrary values by other tools, so any value other
     than an explicit falsy spelling counts as set.
 
-    Precedence (programmatic > CLI > env > default) is resolved by the CLI
-    layer, which is why most readers return an [option] rather than a default.
-*)
+    Precedence (CLI > env > default) is resolved by the CLI layer, which is why
+    most readers return an [option] rather than a default. *)
 
 (** {1:readers Readers}
 

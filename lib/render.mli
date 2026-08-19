@@ -306,11 +306,10 @@ val finish :
       ([coverage: 87.2% (312/358 points) · project: dune build @cover], the
       percentage styled by the runtime's thresholds — green at 80% and above,
       yellow at 60%, red below) when [coverage] is given. The hint is
-      unconditional: an in-process number is one executable's view
-      of the code it links, whatever else the project builds, and the merge is
-      the project total. The caller omits [coverage] under the
-      [report]/[full]/[off] coverage modes: {!coverage_report} prints its own
-      line, without the hint.
+      unconditional: an in-process number is one executable's view of the code
+      it links, whatever else the project builds, and the merge is the project
+      total. The caller omits [coverage] when [WINDTRAP_COVERAGE] switched the
+      line off.
 
     Classification is record-driven, as {!result}: excused results — failing
     results that did not count ([r.counted = false]) — leave the failure section

@@ -29,17 +29,6 @@ module Fixtures = Render_fixtures
 let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
 
-(* Synthetic runs *)
-
-let make_run ?config ?snapshots () =
-  let snapshots =
-    match snapshots with
-    | Some s -> s
-    | None -> Snapshot.create ~mode:Snapshot.Check ()
-  in
-  let config = Option.value config ~default:(Run.default_config ()) in
-  Run.create config ~capture:Capture.disabled ~snapshots
-
 (* The observer's header-seed policy *)
 
 let test_observe_seed_policy () =

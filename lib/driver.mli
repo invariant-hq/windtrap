@@ -213,21 +213,20 @@ val execute_and_report :
   t ->
   Test_tree.t list ->
   (Runner.outcome, Runner.startup_error) result
-(** [execute_and_report t tests] runs [tests] as suite [t.suite] — [t.config] is
-    what the runner reads, [t.render] the presentation knobs the run's renderer
-    is built from ({!val:renderer}) — and writes the run's whole report on
-    standard output, composing the producers above in the one order both runners
-    use: {!val:renderer} and {!observe}, {!github_start}, {!Runner.execute},
-    then — for a run that happened — {!snapshot_coverage}, {!Render.finish} (its
-    [?coverage] from {!coverage_summary}) over {!Run.results},
-    {!coverage_report}, {!Render.report_snapshots}, {!github_end},
-    {!github_annotations}, {!write_junit} over [t.junit], and a flush of both
-    standard formatters.
+(** [execute_and_report t tests] runs [tests] as suite [t.suite] and writes the
+    run's whole report on standard output, composing the producers above in the
+    one order both runners use: {!val:renderer} and {!observe}, {!github_start},
+    {!Runner.execute}, then — for a run that happened — {!snapshot_coverage},
+    {!Render.finish} over {!Run.results}, {!Render.report_snapshots},
+    {!github_end}, {!github_annotations}, {!write_junit} over [t.junit], and a
+    flush of both standard formatters.
 
     [Ok outcome] is {!Runner.execute}'s outcome, reported. {!Run.results} is the
     list every sink projected — the runner's verdict rows included
-    ({!Run.type-subject}) — so a caller's own transport (JUnit) reads the same
-    rows the terminal showed.
+    ({!Run.type-subject}) — so a caller's own transport reads the same rows the
+    terminal showed. [Error error] is a refused startup: the envelope is closed
+    and {!Runner.startup_message} is already on [stderr], so all the caller
+    decides is what to do with {!Runner.startup_exit_code}.
 
     [t.seed] and [t.selection] are {!observe}'s two header policies, passed
     through rather than derived: the runners genuinely disagree about both, and
@@ -236,33 +235,19 @@ val execute_and_report :
     mirror is not a mistyped filter.
 
     [on_event] is a {e second} subscriber to {!Runner.execute}'s single
-    [?on_event] slot, composed here after {!observe} rather than replacing it —
-    replacing it would silently delete the run's whole transcript. The order is
-    fixed here and not the caller's: the transcript sees every event first.
-    Defaults to ignoring. It is subject to {!Runner.execute}'s observer
-    contract: it cannot alter status, counts or scheduling, and if it raises the
-    run aborts with that exception, so a subscriber must be total. The mutation
-    loop subscribes with it to build its reach map while the dry run prints its
-    ordinary output.
+    [?on_event] slot, composed after {!observe} rather than replacing it —
+    replacing it would silently delete the run's whole transcript — and subject
+    to {!Runner.execute}'s observer contract, so it must be total. Defaults to
+    ignoring. The mutation loop subscribes with it to build its reach map while
+    the dry run prints its ordinary output.
 
-    {!github_annotations} runs {e after} {!github_end}, deliberately: an
-    [::error::] block written inside the [::group::] envelope folds away with
-    the transcript, and annotations are the part a reviewer must see without
-    unfolding anything.
-
-    [Error error] is a refused startup: {!github_end} has closed the envelope
-    and {!Runner.startup_message} is already on [stderr], so all the caller
-    decides is what to do with {!Runner.startup_exit_code} — the library runner
-    exits on it, the inline runner folds it into dune's promotion protocol.
-
-    Reporting state must be flushed or fork-inert at fork points: everything
-    here reports through [Format.std_formatter] and the standard descriptors,
-    and a caller that forks mid-run (the mutation loop) must flush both
-    formatters and both descriptors before every fork, or buffered transcript
-    bytes duplicate into the child. Nothing here holds hidden buffers beyond the
-    formatters.
+    Everything here reports through [Format.std_formatter] and the standard
+    descriptors, so a caller that forks mid-run (the mutation loop) must flush
+    both formatters and both descriptors before every fork, or buffered
+    transcript bytes duplicate into the child. Nothing here holds hidden buffers
+    beyond the formatters.
 
     Effects: the union of the producers' — reads the environment, writes the
-    transcript on [Format.std_formatter] and the GitHub envelope on standard
-    output, and everything {!Runner.execute} itself does (capture logs, the
+    transcript and the GitHub envelope on standard output, writes [t.junit] when
+    set, and everything {!Runner.execute} itself does (capture logs, the
     last-failed store, accepted baselines, the exit guard). *)

@@ -36,21 +36,13 @@
     others.
 
     {b Scoped tests.} A {!Test_tree.Scoped} node is one call the runner does not
-    control: [scope] acquires, invokes its callback, and reclaims on return. The
-    runner runs the body inside that callback and, after recording the body's
-    failure, re-raises it through [scope] — so a scope that cancels or cleans up
-    on the exception path still sees it, and a scope that swallows it still
-    fails the test. What [scope] raises on its own is attributed by how far the
-    callback got: {!Failure.Setup} before it was entered, {!Failure.Teardown}
-    after it returned, so a scope that cannot acquire reads differently from one
-    that cannot release. The callback must be entered exactly once: a [scope]
-    that returns without entering it fails the test — a body that never ran is
-    not a pass — unless it raised or skipped instead, in which case that failure
-    or skip is the whole story; a second entry is refused rather than served,
-    because one execution per test is what snapshot registration, subtest labels
-    and scratch paths are keyed by. The timeout window covers the whole [scope]
-    call and is re-armed as the body leaves the callback, on the same terms as a
-    bracket teardown.
+    control; [Windtrap.scoped] specifies the protocol enforced here — one
+    callback entry, attribution by how far the callback got, the body's failure
+    re-raised through [scope]. What is the runner's: the body runs inside the
+    callback, its failure is recorded {e before} being re-raised, a second entry
+    is refused rather than served, and the timeout window covers the whole
+    [scope] call, re-armed as the body leaves the callback on the same terms as
+    a bracket teardown.
 
     Outcomes are classified per phase: {!Failure.Check_failure} keeps its
     payload, {!Failure.Skip_test} skips the test, {!Failure.Timeout} becomes a
@@ -83,34 +75,32 @@
     likewise inert while no run is active: exits before, after, and by the
     runner itself pass through untouched.
 
-    A {!Test_tree.bracket}'s stored closures run as data — setup, then body,
-    then teardown iff setup succeeded, teardown on every body outcome including
-    skip and timeout — with the body and teardown outcomes captured
-    {e independently}, one failure-list entry per failed phase, never composed
-    with [Fun.protect] at the reporting boundary — body and release failures are
-    both reported. A timeout during teardown is a [Teardown]-phase failure
-    alongside any body failure.
+    A {!Test_tree.bracket}'s stored closures run as data, in the order
+    [Windtrap.bracket] specifies. What is the runner's: the body and teardown
+    outcomes are captured {e independently}, one failure-list entry per failed
+    phase, never composed with [Fun.protect] at the reporting boundary — body
+    and release failures are both reported — and a timeout during teardown is a
+    [Teardown]-phase failure alongside any body failure.
 
     {b Retries.} A test with [retries = n] reruns while its outcome
     {e counts as failed} (see {e Expected failures} below — for an [xfail] test
     that is an unexpected pass), up to [n + 1] attempts, each attempt a fresh
     frame and a truncated capture file. The recorded result carries the
-    {e final} attempt's failures and output tail and the attempt count —
-    renderers mark ["attempt N of M"] and pass-after-retries from
-    {!Run.result.attempts}. Skips are never retried; the captured-output tail of
-    a failed test is attached to its first failure entry.
+    {e final} attempt's failures and output tail and the attempt count, which
+    is what renderers show ({!Run.result.attempts}). Skips are never retried;
+    the captured-output tail of a failed test is attached to its first failure
+    entry.
 
-    {b Expected failures.} A test marked {!Test_tree.xfail} still runs, but what
-    counts as failed inverts: a failing outcome is recorded with its real
-    failures yet counts as {e expected} — it does not consume the [--bail]
-    budget, enter the last-failed store, or turn the exit code [1] — while a
-    passing outcome counts as failed and is recorded as [Fail] with one message
-    failure (["expected to fail, but the test passed"], naming the [?reason]).
-    Skips are unaffected. Each recorded result carries the decision
-    ({!Run.result.counted}) and the annotation ({!Run.result.xfail}): renderers
-    distinguish an expected failure ([Fail], not counted) from an unexpected
-    pass ([Fail], counted) from the record alone. For baseline maintenance
-    (below), {e every} [Fail] result — expected or not — makes the run unclean.
+    {b Expected failures.} A test marked {!Test_tree.xfail} still runs, and
+    [Windtrap.xfail] states what its outcomes mean. What inverts here is what
+    {e counts}: an expected failure keeps its real failures but consumes no
+    [--bail] budget, enters no last-failed store entry and leaves the exit code
+    alone, while an unexpected pass does all three and is recorded as [Fail]
+    with one message failure. Skips are unaffected. Each recorded result carries
+    the decision ({!Run.result.counted}) and the annotation
+    ({!Run.result.xfail}), so renderers classify from the record alone. For
+    baseline maintenance (below), {e every} [Fail] result — expected or not —
+    makes the run unclean.
 
     {b Selection.} A test runs iff its path contains [config.filter] (when set),
     does not contain [config.exclude] (when set), its tags satisfy
@@ -125,12 +115,10 @@
 
     {b Sharding.} [--shard K/N] partitions the suite into [N] buckets by a
     deterministic hash of each test's full path ({!Seed.derive} under a frozen
-    constant root) and selects bucket [K]. Buckets are stable across runs,
-    machines, and suite composition — the hash is frozen — so [N] concurrent
-    [dune] partitions cover every test exactly once; renaming or regrouping a
-    test may move it between buckets. Sharding composes with every other
-    selection layer (the bucket applies to the already-filtered set), and an
-    empty shard exits [2] like any empty selection.
+    constant root) and selects bucket [K] — the stability [Windtrap.run]'s
+    overview promises, since the hash never changes. Renaming or regrouping a
+    test may move it between buckets. The bucket applies to the already-filtered
+    set, and an empty shard exits [2] like any empty selection.
 
     {b Baseline maintenance.} A run that executed the whole declared suite with
     nothing filtered, focused, bailed, skipped or failed — and only such a run —
