@@ -117,11 +117,11 @@ type scenario = {
 }
 
 let run_scenario ?(sanitize = fun s -> s) ?(run = fun f -> f ())
-    ?(tweak_config = fun c -> c) ~source ~nodes ~name body =
+    ?(tweak_config = fun c -> c) ?body_wrap ~source ~nodes ~name body =
   Ppx_runtime.reset ();
   let body_loc, trailing_loc = body_locs source in
   Ppx_runtime.add_expect_test ~file ~loc:body_loc ~tags:[] ~run ~sanitize ~nodes
-    ~body_loc ~body_wrap:None ~trailing_loc name body;
+    ~body_loc ~body_wrap ~trailing_loc name body;
   let tests = Ppx_runtime.collect () in
   with_temp_root (fun log_dir ->
       let config = tweak_config (base_config ~log_dir ()) in
@@ -417,6 +417,37 @@ let () =
         ~actual:corrected
   | None -> check "bare-node correction recorded" false);
   check_int "bare-node mismatch exits 0" ~expected:0 ~actual:r.exit_code
+
+let () =
+  (* [body_wrap]: a body that ends in a bare [match] takes parentheses in
+     the same patch as the trailing insert. Without them the [;] this
+     correction appends binds to the match's LAST ARM, the inserted node
+     runs on one branch only, and the next run appends another beside it —
+     the correction never converges. The PPX passes the body's start
+     offset when it sees such a shape; here it is passed directly. *)
+  let source =
+    {x|let%expect_test "t" =
+  match () with
+  | () -> print_string "hi\n"@END
+|x}
+  in
+  let r =
+    run_scenario ~source ~nodes:[] ~name:"t"
+      ~body_wrap:(find source "match")
+      (fun () -> match () with () -> print_string "hi\n")
+  in
+  let golden =
+    {x|let%expect_test "t" =
+  (match () with
+  | () -> print_string "hi\n");
+  [%expect {| hi |}]@END
+|x}
+  in
+  match r.corrected with
+  | Some corrected ->
+      check_string "a swallowing body is parenthesized with the insert"
+        ~expected:golden ~actual:corrected
+  | None -> check "trailing-insert correction recorded" false
 
 let () =
   (* Quote-delimited payloads stay quoted, with escaping. *)
