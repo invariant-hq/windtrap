@@ -31,13 +31,18 @@
 ; the core itself — needs to be instrumentable at all. See
 ; ppx/coverage/dune.
 
-; --min 87 is the measured baseline (89.5% at the time of writing) less a
-; couple of points of headroom, not a round number picked in advance. It
-; ratchets: raise it when the margin is comfortable, and never lower it to
-; make a red build green. The remaining gap is not all reachable —
-; mutate_loop's Windows-decline paths and capture's C-stub error branches
-; cannot run in a green suite — so chase the branches the report names,
-; not the percentage.
+; --min 87 is the measured baseline less a couple of points of headroom,
+; not a round number picked in advance. It ratchets: raise it when the
+; margin is comfortable, and never lower it to make a red build green.
+; Measured 87.5% on 2026-08-19 — the margin is thin because the campaign
+; deleted test suites the earlier 89.5% counted, and what is left is
+; mostly not reachable: lib/mutate_loop.ml alone is 400 of the ~860
+; uncovered points, and structurally so, because its loop body runs only
+; under the mutation backend and its children _exit past the at_exit
+; dump; mutate_loop's Windows-decline paths and capture's C-stub error
+; branches cannot run in a green suite at all. Chase the branches the
+; report names, not the percentage — and read mutate_loop's number as
+; the report's own blind spot rather than a debt.
 ;
 ; ../runtest, not runtest, and the `..` is the whole point: the merge
 ; reads every .coverage dump under _build, tree-wide, so the run half
@@ -104,7 +109,7 @@
 ; plain executables over the hand-rolled harness, with no windtrap run
 ; and so no per-test boundary to rule on. The other test directories are
 ; left out not because admission would be wrong over them but because
-; their subject is not lib/'s behaviour: mutate_loop, mutate_cli,
+; their subject is not lib/'s behaviour: facade, mutate_loop, mutate_cli,
 ; coverage_ppx, ppx and conformance observe the machinery through
 ; fixtures they spawn or expansions they diff, so the code under test
 ; runs where no arming reaches it, and a ruling would name whichever
