@@ -2,6 +2,11 @@
 
 (name windtrap)
 
+; test/facade drives the facade's command line as a shell session
+; (SKILL.md's blackbox level); x-blueprint's test/cram is the same
+; workflow in the walkthrough, under its own dune-project.
+(cram enable)
+
 (generate_opam_files true)
 
 (implicit_transitive_deps false)

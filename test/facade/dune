@@ -1,13 +1,18 @@
-; The facade's command line, end to end. [Windtrap.run] ends every branch
-; in [exit], so half its contract — Law 11's nothing-ran 2, the startup
-; refusals' 1, the informational 0 of --help and -l — is only visible to
-; a process that waited on it. [suite_main] is that process: a five-test
-; suite small enough for the driver to pin whole streams, spawned once
-; per scenario with a scrubbed environment. The shape is
-; test/mutate_loop's, for the same reason.
+; The facade's command line, end to end, as a shell session — the level
+; SKILL.md §5 gives argument parsing, error messages and exit codes,
+; and the level windtrap's own walkthrough teaches
+; (examples/x-blueprint/test/cram). [Windtrap.run] ends every branch in
+; [exit], so half its contract is an exit code, which is the one thing
+; cram pins natively: a bare command asserts 0, and a trailing [N]
+; asserts N.
+;
+; suite_main is the suite under the flags — five tests, no clock and no
+; network, small enough for a session to pin whole streams. The deps
+; line is load-bearing: without it dune would not rebuild the fixture
+; before running a session, and every .t here would exercise stale code.
 ;
 ; Not under @admit, like every other directory whose subject runs where
-; no arming reaches it (see ../dune): the code these tests are about
+; no arming reaches it (see ../dune): the code these sessions are about
 ; executes in the child.
 
 (executable
@@ -15,8 +20,6 @@
  (modules suite_main)
  (libraries windtrap))
 
-(test
- (name test_facade)
- (modules test_facade)
- (libraries windtrap windtrap_coverage windtrap_instr unix)
+(cram
+ (applies_to :whole_subtree)
  (deps suite_main.exe))
