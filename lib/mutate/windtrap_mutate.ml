@@ -65,8 +65,6 @@ let compare_id a b =
       let c = Int.compare a.col b.col in
       if c <> 0 then c else String.compare a.rewrite b.rewrite
 
-let equal_id a b = compare_id a b = 0
-
 (* Sites and the Registry *)
 
 type site = {
@@ -514,18 +512,6 @@ let merge_verdict a b =
       survived (s.witness :: s.others)
   | Unreached, Unreached -> Unreached
 
-let pp_witness ppf w = Format.pp_print_string ppf (String.concat " > " w)
-
-let pp_verdict ppf = function
-  | Killed -> Format.pp_print_string ppf "killed"
-  | Survived s ->
-      Format.fprintf ppf "survived by %a"
-        (Format.pp_print_list
-           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
-           pp_witness)
-        (s.witness :: s.others)
-  | Unreached -> Format.pp_print_string ppf "unreached"
-
 (* Collections *)
 
 (* The shared plumbing's error type, re-exported with its constructors: a
@@ -565,7 +551,6 @@ let compare_rendering a b =
 type t = (rendering * verdict) Id_map.t
 
 let empty = Id_map.empty
-let is_empty = Id_map.is_empty
 
 let record_of id (r, verdict) =
   { id; before = r.r_before; after = r.r_after; verdict }
@@ -587,7 +572,6 @@ let add t r =
               merge_verdict prior_verdict verdict ))
     t
 
-let find t id = Option.map (record_of id) (Id_map.find_opt id t)
 let records t = List.map (fun (id, v) -> record_of id v) (Id_map.bindings t)
 let merge a b = Id_map.fold (fun id v acc -> add acc (record_of id v)) b a
 

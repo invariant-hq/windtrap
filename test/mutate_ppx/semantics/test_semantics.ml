@@ -511,7 +511,8 @@ let tests =
         List.iter
           (fun (m : M.mutant) ->
             match M.id_of_string (M.id_to_string m.id) with
-            | Ok id -> check "the identifier round-trips" (M.equal_id id m.id)
+            | Ok id ->
+                check "the identifier round-trips" (M.compare_id id m.id = 0)
             | Error e -> failf "%a" M.pp_arm_error e)
           (M.catalogue ()));
   ]

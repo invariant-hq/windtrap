@@ -57,17 +57,11 @@ val id_to_string : id -> string
     — [file], [line], [col], [rewrite], separated by colons. This is the
     spelling {!arm_variable} documents and verdict files record. *)
 
-val pp_id : Format.formatter -> id -> unit
-(** [pp_id ppf id] formats [id] as {!id_to_string}. *)
-
 val compare_id : id -> id -> int
 (** [compare_id a b] orders identifiers lexicographically by [file], then
     [line], then [col], then [rewrite]. This is the order {!catalogue},
     {!records} and {!to_string} use, so equal collections serialize identically.
 *)
-
-val equal_id : id -> id -> bool
-(** [equal_id a b] is [compare_id a b = 0]. *)
 
 (** {1:catalogue Sites and registration}
 
@@ -426,11 +420,6 @@ val merge_verdict : verdict -> verdict -> verdict
     as its unit — so merging any number of files in any order gives one
     answer. *)
 
-val pp_verdict : Format.formatter -> verdict -> unit
-(** [pp_verdict ppf v] formats [v] for diagnostics — ["killed"],
-    ["survived by calc > adds"], ["unreached"]. The report renders its own
-    layout; this output is not stable. *)
-
 (** {1:files Verdict files}
 
     Each instrumented test executable's mutation run writes one verdict file
@@ -492,9 +481,6 @@ type t
 val empty : t
 (** [empty] is the collection with no records. *)
 
-val is_empty : t -> bool
-(** [is_empty t] is [true] iff [t] holds no records. *)
-
 val add : t -> record -> t
 (** [add t r] is [t] with [r] recorded, combined with any record already under
     [r.id]: the verdicts through {!merge_verdict}, and the renderings by keeping
@@ -507,9 +493,6 @@ val add : t -> record -> t
     and {!merge} commutative, associative and idempotent, so a report never
     depends on the order the files happened to be read in. Survivor witnesses
     are sorted and deduplicated for the same reason. *)
-
-val find : t -> id -> record option
-(** [find t id] is [id]'s record in [t], [None] when [t] has none. *)
 
 val records : t -> record list
 (** [records t] is [t]'s records ordered by {!compare_id}. *)

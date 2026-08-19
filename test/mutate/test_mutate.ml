@@ -22,8 +22,29 @@
 open Windtrap
 module M = Windtrap_mutate
 
-let id_t = Testable.structural ~pp:M.pp_id
-let verdict_t = Testable.structural ~pp:M.pp_verdict
+(* Printers and lookups the runtime does not export: they are for
+   diagnostics and assertions, which is a test's business rather than a
+   published surface. *)
+let pp_id ppf (i : M.id) = Format.pp_print_string ppf (M.id_to_string i)
+
+let pp_witness ppf w = Format.pp_print_string ppf (String.concat " > " w)
+
+let pp_verdict ppf = function
+  | M.Killed -> Format.pp_print_string ppf "killed"
+  | M.Survived { witness; others } ->
+      Format.fprintf ppf "survived by %a"
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
+           pp_witness)
+        (witness :: others)
+  | M.Unreached -> Format.pp_print_string ppf "unreached"
+
+let find t id =
+  List.find_opt (fun (r : M.record) -> M.compare_id r.M.id id = 0) (M.records t)
+
+let is_empty t = M.records t = []
+let id_t = Testable.structural ~pp:pp_id
+let verdict_t = Testable.structural ~pp:pp_verdict
 
 (* This suite's own registrations, told apart from the process's
 
@@ -53,7 +74,7 @@ let catalogue () =
   List.filter (fun (m : M.mutant) -> mine m.M.id.M.file) (M.catalogue ())
 
 let pp_mutant ppf (m : M.mutant) =
-  Format.fprintf ppf "%a%s" M.pp_id m.M.id
+  Format.fprintf ppf "%a%s" pp_id m.M.id
     (match m.M.dismissed with None -> "" | Some r -> " off:" ^ r)
 
 let mutant_t = Testable.structural ~pp:pp_mutant
@@ -79,15 +100,15 @@ let record ?(before = "b") ?(after = "a") id verdict =
   { M.id; before; after; verdict }
 
 let pp_record ppf (r : M.record) =
-  Format.fprintf ppf "%a %s -> %s: %a" M.pp_id r.M.id r.M.before r.M.after
-    M.pp_verdict r.M.verdict
+  Format.fprintf ppf "%a %s -> %s: %a" pp_id r.M.id r.M.before r.M.after
+    pp_verdict r.M.verdict
 
 let record_t = Testable.structural ~pp:pp_record
 
 (* Most assertions below are about the verdict alone; [find] hands back
    the whole record. *)
 let verdict_of t id =
-  Option.map (fun (r : M.record) -> r.M.verdict) (M.find t id)
+  Option.map (fun (r : M.record) -> r.M.verdict) (find t id)
 
 (* [register] returns the file's guard closure; a test that only needs the
    registration binds it away rather than [ignore]ing a function. *)
@@ -167,14 +188,14 @@ let identity_tests =
             "lib/b.ml:1:0:add";
           ]
           (List.map M.id_to_string (List.sort M.compare_id ids));
-        is_true ~msg:"equal_id agrees with compare_id"
-          (M.equal_id
+        is_true ~msg:"compare_id is an equality on identifiers"
+          (0 = M.compare_id
              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
              (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or"));
         is_false ~msg:"a differing rewrite is a differing id"
-          (M.equal_id
-             (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
-             (id ~file:"a" ~line:1 ~col:2 ~rewrite:"and")));
+          (0 = M.compare_id
+                 (id ~file:"a" ~line:1 ~col:2 ~rewrite:"or")
+                 (id ~file:"a" ~line:1 ~col:2 ~rewrite:"and")));
     test "id_of_string round-trips the canonical spelling" (fun () ->
         List.iter
           (fun i ->
@@ -218,7 +239,7 @@ let identity_tests =
         match M.id_of_string spec with
         | Ok i ->
             failf "%S parsed as %a, expected a rejection mentioning %S" spec
-              M.pp_id i needle
+              pp_id i needle
         | Error (M.Malformed { reason; _ }) ->
             contains ~msg:"reason" ~sub:needle reason
         | Error e ->
@@ -483,7 +504,7 @@ let arming_tests =
         | Error (M.Uncatalogued { id } as e) ->
             equal ~msg:"the identifier is returned whole" string
               "t/absent.ml:1:0:lt"
-              (Format.asprintf "%a" M.pp_id id);
+              (Format.asprintf "%a" pp_id id);
             let rendered = Format.asprintf "%a" M.pp_arm_error e in
             contains ~msg:"the message says whose mutant it is not"
               ~sub:"not this executable's mutant" rendered;
@@ -747,8 +768,8 @@ let verdict_tests =
               (fun other ->
                 equal
                   ~msg:
-                    (Format.asprintf "%a merged with %a" M.pp_verdict killed
-                       M.pp_verdict other)
+                    (Format.asprintf "%a merged with %a" pp_verdict killed
+                       pp_verdict other)
                   verdict_t killed
                   (M.merge_verdict killed other);
                 equal ~msg:"the other way round" verdict_t killed
@@ -785,26 +806,26 @@ let verdict_tests =
         List.iter
           (fun a ->
             equal
-              ~msg:(Format.asprintf "idempotent on %a" M.pp_verdict a)
+              ~msg:(Format.asprintf "idempotent on %a" pp_verdict a)
               verdict_t a (M.merge_verdict a a);
             equal
               ~msg:
-                (Format.asprintf "unreached is the unit of %a" M.pp_verdict a)
+                (Format.asprintf "unreached is the unit of %a" pp_verdict a)
               verdict_t a
               (M.merge_verdict a M.Unreached);
             List.iter
               (fun b ->
                 equal
                   ~msg:
-                    (Format.asprintf "commutative on %a, %a" M.pp_verdict a
-                       M.pp_verdict b)
+                    (Format.asprintf "commutative on %a, %a" pp_verdict a
+                       pp_verdict b)
                   verdict_t (M.merge_verdict a b) (M.merge_verdict b a);
                 List.iter
                   (fun c ->
                     equal
                       ~msg:
                         (Format.asprintf "associative on %a, %a, %a"
-                           M.pp_verdict a M.pp_verdict b M.pp_verdict c)
+                           pp_verdict a pp_verdict b pp_verdict c)
                       verdict_t
                       (M.merge_verdict (M.merge_verdict a b) c)
                       (M.merge_verdict a (M.merge_verdict b c)))
@@ -860,12 +881,12 @@ let verdict_tests =
             (M.survived [ [ "calc"; "adds" ] ])
         in
         let t = M.add M.empty r in
-        equal ~msg:"kept whole" (option record_t) (Some r) (M.find t m);
+        equal ~msg:"kept whole" (option record_t) (Some r) (find t m);
         let round_tripped, _ =
           ok_error "round trip" (M.of_string (M.to_string t))
         in
         equal ~msg:"and survives the file" (option record_t) (Some r)
-          (M.find round_tripped m));
+          (find round_tripped m));
     test "records disagreeing on a rendering merge deterministically" (fun () ->
         (* Only two builds of one source can produce this, and the data
            says nothing about which one the reader has open. So the rule
@@ -883,9 +904,9 @@ let verdict_tests =
             (M.Killed)
         in
         equal ~msg:"older then newer" (option record_t) (Some expected)
-          (M.find (M.add (M.add M.empty older) newer) m);
+          (find (M.add (M.add M.empty older) newer) m);
         equal ~msg:"newer then older" (option record_t) (Some expected)
-          (M.find (M.add (M.add M.empty newer) older) m);
+          (find (M.add (M.add M.empty newer) older) m);
         equal ~msg:"through merge, either way" text
           (M.to_string (M.merge (M.add M.empty older) (M.add M.empty newer)))
           (M.to_string (M.merge (M.add M.empty newer) (M.add M.empty older))));
@@ -949,7 +970,7 @@ let verdict_tests =
           ]
           (List.map
              (fun (r : M.record) ->
-               Format.asprintf "%a %a" M.pp_id r.M.id M.pp_verdict r.M.verdict)
+               Format.asprintf "%a %a" pp_id r.M.id pp_verdict r.M.verdict)
              (M.records (M.merge (M.merge c b) a))));
     test "collections order their bindings by identifier" (fun () ->
         let t =
@@ -963,13 +984,13 @@ let verdict_tests =
               ("lib/a.ml", 2, M.Killed);
             ]
         in
-        is_false ~msg:"not empty" (M.is_empty t);
-        is_true ~msg:"empty is empty" (M.is_empty M.empty);
+        is_false ~msg:"not empty" (is_empty t);
+        is_true ~msg:"empty is empty" (is_empty M.empty);
         equal ~msg:"bindings" (list string)
           [ "lib/a.ml:2:0:lt"; "lib/a.ml:9:0:lt"; "lib/z.ml:1:0:lt" ]
           (List.map (fun (r : M.record) -> M.id_to_string r.M.id) (M.records t));
         is_none ~msg:"an absent identifier"
-          (M.find t (id ~file:"lib/a.ml" ~line:3 ~col:0 ~rewrite:"lt")));
+          (find t (id ~file:"lib/a.ml" ~line:3 ~col:0 ~rewrite:"lt")));
   ]
 
 (* The verdict file format *)
@@ -1063,7 +1084,7 @@ let format_tests =
         let parsed, _ =
           ok_error "parse" (M.of_string "windtrap-mutants-v3\n0\n")
         in
-        is_true ~msg:"still empty" (M.is_empty parsed));
+        is_true ~msg:"still empty" (is_empty parsed));
   ]
 
 (* Rejections *)
@@ -1267,7 +1288,7 @@ let file_tests =
         (* Re-saving replaces; verdicts never accumulate on disk. *)
         M.save path M.empty;
         let parsed, recorded = ok_error "reload" (M.load path) in
-        is_true ~msg:"replaced" (M.is_empty parsed);
+        is_true ~msg:"replaced" (is_empty parsed);
         is_none ~msg:"the identity is gone too" recorded);
     test "save refuses a malformed identity before touching the disk" (fun () ->
         let path = scratch "unwritten.mutants" in
@@ -1389,7 +1410,7 @@ let child_tests =
              (record ~before:"l < r" ~after:"not (r < l)"
                 (id ~file:"lib/child.ml" ~line:3 ~col:10 ~rewrite:"lt")
                 (M.survived [ [ "child"; "less" ] ])))
-          (M.find t (id ~file:"lib/child.ml" ~line:3 ~col:10 ~rewrite:"lt"));
+          (find t (id ~file:"lib/child.ml" ~line:3 ~col:10 ~rewrite:"lt"));
         equal ~msg:"the writer identity"
           (option (pair string string))
           (Some

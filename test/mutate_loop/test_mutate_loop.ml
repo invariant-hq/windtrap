@@ -21,6 +21,16 @@ module M = Windtrap_mutate
 let exe_dir = Filename.dirname Sys.executable_name
 let suite_exe = Filename.concat exe_dir "suite_main.exe"
 
+(* The verdict file records no cause and the runtime publishes no
+   printer, so a scenario that reads verdicts back spells them here. *)
+let pp_verdict ppf = function
+  | M.Killed -> Format.pp_print_string ppf "killed"
+  | M.Survived { witness; others } ->
+      Format.fprintf ppf "survived by %s"
+        (String.concat ", "
+           (List.map (String.concat " > ") (witness :: others)))
+  | M.Unreached -> Format.pp_print_string ppf "unreached"
+
 (* [lstat], not [Sys.is_directory]: the runner leaves a [latest] symlink
    in every log directory, and following it would delete outside the
    scratch tree. *)
@@ -461,7 +471,7 @@ let verdict_file_tests =
               List.map
                 (fun (r : M.record) ->
                   ( M.id_to_string r.M.id,
-                    Format.asprintf "%a" M.pp_verdict r.M.verdict ))
+                    Format.asprintf "%a" pp_verdict r.M.verdict ))
                 (M.records verdicts)
             in
             equal ~msg:"one verdict per mutant" int 4 (List.length rendered);
@@ -567,7 +577,7 @@ let crash_tests =
               List.map
                 (fun (r : M.record) ->
                   ( M.id_to_string r.M.id,
-                    Format.asprintf "%a" M.pp_verdict r.M.verdict ))
+                    Format.asprintf "%a" pp_verdict r.M.verdict ))
                 (M.records verdicts)
             in
             (* A verdict file names no cause, so the assertion is the one
@@ -914,7 +924,7 @@ let runaway_tests =
             equal ~msg:"and the mutant is killed" (list string) [ "killed" ]
               (List.map
                  (fun (r : M.record) ->
-                   Format.asprintf "%a" M.pp_verdict r.M.verdict)
+                   Format.asprintf "%a" pp_verdict r.M.verdict)
                  (M.records verdicts)));
   ]
 
@@ -934,7 +944,7 @@ let rendered_verdicts path =
       List.map
         (fun (r : M.record) ->
           ( M.id_to_string r.M.id,
-            Format.asprintf "%a" M.pp_verdict r.M.verdict ))
+            Format.asprintf "%a" pp_verdict r.M.verdict ))
         (M.records verdicts)
 
 let deadline_tests =
