@@ -923,8 +923,8 @@ let write_verdicts verdicts =
      note "could not write the verdict file: %s" message);
   path
 
-let print_report renderer ~limit ~population ~unreached ~verdicts ~duration
-    ~seed ~siblings tests =
+let print_report renderer ~population ~unreached ~verdicts ~duration ~seed
+    ~siblings tests =
   let locations = witness_locations tests in
   let records = M.records verdicts in
   let survivors =
@@ -945,10 +945,6 @@ let print_report renderer ~limit ~population ~unreached ~verdicts ~duration
         compare (List.length b.witnesses) (List.length a.witnesses))
       survivors
   in
-  let shown =
-    if limit <= 0 then survivors
-    else List.filteri (fun i _ -> i < limit) survivors
-  in
   let killed =
     List.length
       (List.filter
@@ -962,8 +958,7 @@ let print_report renderer ~limit ~population ~unreached ~verdicts ~duration
          the report and the runtime cannot disagree about what to
          type. *)
       Render.arm_variable = M.arm_variable;
-      survivors = shown;
-      survivors_total = List.length survivors;
+      survivors;
       unreached = unreached_lines unreached;
       unreached_total = List.length unreached;
       killed;
@@ -997,7 +992,7 @@ let refuse_empty_catalogue () =
 
 (* The loop, end to end *)
 
-let loop renderer ~armed (spine : Driver.t) ~limit tests =
+let loop renderer ~armed (spine : Driver.t) tests =
   let config = spine.Driver.config in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
@@ -1091,7 +1086,7 @@ let loop renderer ~armed (spine : Driver.t) ~limit tests =
                 if narrowed then M.output_file ~exe:Sys.executable_name
                 else write_verdicts verdicts
               in
-              print_report renderer ~limit ~population ~unreached ~verdicts
+              print_report renderer ~population ~unreached ~verdicts
                 ~duration:(Unix.gettimeofday () -. started)
                 ~seed:config.Run.seed ~siblings:(has_siblings path) tests;
               if narrowed then Render.mutation_not_saved renderer;
@@ -1132,6 +1127,13 @@ let rec first_n n = function
   | [] -> []
   | _ when n <= 0 -> []
   | x :: rest -> x :: first_n (n - 1) rest
+
+(* Faults listed inside one UNJUSTIFIED ruling. Derived, never a knob:
+   the block's job is to show what the test watched and did not notice,
+   and the first few are the most-run ones — a reader who needs the rest
+   strengthens the test, which is what the block asks for anyway. The
+   count that matters, [tried], is stated in the sentence above them. *)
+let listed_faults = 3
 
 (* A test's own candidate list: the undismissed faults on lines it
    reaches, ordered by ITS OWN hit count at each site — most-run first —
@@ -1426,7 +1428,7 @@ let fault_of (m : M.mutant) : Render.fault =
     fault_source = read_source m.M.id.M.file;
   }
 
-let admit_loop renderer ~armed (spine : Driver.t) ~limit ~tries tests =
+let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
   let config = spine.Driver.config in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
@@ -1627,10 +1629,7 @@ let admit_loop renderer ~armed (spine : Driver.t) ~limit ~tries tests =
                             Render.unjustified_test =
                               Test_tree.path_to_string e.test;
                             unjustified_loc = loc_of e.test;
-                            shown =
-                              List.map fault_of
-                                (if limit > 0 then first_n limit watched
-                                 else watched);
+                            shown = List.map fault_of (first_n listed_faults watched);
                             tried = List.length watched;
                             candidates = List.length e.own;
                             reached = e.reach_count;
@@ -1807,7 +1806,7 @@ let execute_and_report (spine : Driver.t) tests =
     | Error error ->
         note "%s" (Cli.error_message error);
         Reported 1
-    | Ok { Cli.mode; arm; limit; tries } -> (
+    | Ok { Cli.mode; arm; tries } -> (
         let renderer () =
           Driver.renderer ~render:spine.Driver.render ~mode:spine.Driver.output
             ~invocation:spine.Driver.invocation ()
@@ -1830,7 +1829,7 @@ let execute_and_report (spine : Driver.t) tests =
                 "mutation testing needs Unix.fork, which Windows does not \
                  have; the tests themselves still ran"
             else
-              try loop (renderer ()) ~armed spine ~limit tests
+              try loop (renderer ()) ~armed spine tests
               with Supervision message -> refuse "%s" message)
         | `Admit, None -> (
             if Sys.win32 then
@@ -1838,5 +1837,5 @@ let execute_and_report (spine : Driver.t) tests =
                 "mutation testing needs Unix.fork, which Windows does not \
                  have; the tests themselves still ran"
             else
-              try admit_loop (renderer ()) ~armed spine ~limit ~tries tests
+              try admit_loop (renderer ()) ~armed spine ~tries tests
               with Supervision message -> refuse "%s" message))

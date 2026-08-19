@@ -215,10 +215,6 @@ type mutation = {
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
           {!Windtrap_mutate.selector_of_string} owns that grammar and reports
           its own errors. [None] when the variable is unset or empty. *)
-  limit : int;
-      (** [WINDTRAP_MUTATE_LIMIT]: survivor blocks to print — and, under
-          [`Admit], tried faults listed per UNJUSTIFIED ruling — [0] for all.
-          Defaults to [10]. *)
   tries : int;
       (** [WINDTRAP_MUTATE_TRY]: faults an [`Admit] run tries per selected test
           before ruling it unjustified, [0] for all it reaches. Defaults to
@@ -230,12 +226,12 @@ type mutation = {
     nothing else, so a flag would exist for half the users. *)
 
 val mutation : unit -> (mutation, error) result
-(** [mutation ()] reads the four mutation variables. Resolved apart from
+(** [mutation ()] reads the three mutation variables. Resolved apart from
     {!resolve} like {!coverage_mode}, and for the same reason — none of them is
     run configuration, and nothing in the runner may read them — with the same
-    loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE],
-    [WINDTRAP_MUTATE_LIMIT] or [WINDTRAP_MUTATE_TRY] when its value is not one
-    the variable accepts, never a silently defaulted mode.
+    loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] or
+    [WINDTRAP_MUTATE_TRY] when its value is not one the variable accepts, never
+    a silently defaulted mode.
 
     Effects: reads the environment. *)
 

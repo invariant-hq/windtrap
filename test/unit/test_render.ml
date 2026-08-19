@@ -2673,7 +2673,6 @@ let rfc_report =
             ];
         };
       ];
-    survivors_total = 2;
     unreached =
       [
         { Render.file = "lib/calc.ml"; lines = [ 52; 61 ] };
@@ -2785,7 +2784,6 @@ let test_mutation_summary_forms () =
     {
       rfc_report with
       Render.survivors = [];
-      survivors_total = 0;
       unreached = [];
       unreached_total = 0;
       killed = 187;
@@ -2822,20 +2820,19 @@ let test_mutation_summary_forms () =
        { rfc_report with Render.siblings = true; total = 41; killed = 37 })
 
 let test_mutation_sections () =
-  (* The cap is in the label so nobody thinks they saw everything. *)
-  let capped =
-    {
-      rfc_report with
-      Render.survivors = [ List.hd rfc_report.Render.survivors ];
-      survivors_total = 37;
-    }
-  in
-  check_contains "the cap is named in the rule label"
-    ~sub:"survivors (1 of 37) " (mutation_report capped);
+  (* Every survivor gets a block: a survivor is a failure block, and
+     windtrap caps no failure block. *)
+  check_contains "the label counts the blocks it printed"
+    ~sub:"survivors (1) "
+    (mutation_report
+       {
+         rfc_report with
+         Render.survivors = [ List.hd rfc_report.Render.survivors ];
+       });
   (* Each finding stands alone: unreached without survivors, and
      survivors without unreached. *)
   let unreached_only =
-    { rfc_report with Render.survivors = []; survivors_total = 0; killed = 183 }
+    { rfc_report with Render.survivors = []; killed = 183 }
   in
   check_string "unreached alone: no rule, no blocks"
     ~expected:

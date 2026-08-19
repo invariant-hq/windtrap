@@ -1983,7 +1983,6 @@ type unreached = { file : string; lines : int list }
 type mutation = {
   arm_variable : string;
   survivors : survivor list;
-  survivors_total : int;
   unreached : unreached list;
   unreached_total : int;
   killed : int;
@@ -2100,10 +2099,9 @@ let survivor_sections t ~variable ~id_width ~witness_width ~number_width
     ]
 
 let mutation_summary_spans (m : mutation) =
+  let total = List.length m.survivors in
   let survived =
-    styled
-      (if m.survivors_total = 0 then `Green else `Red)
-      (spf "%d survived" m.survivors_total)
+    styled (if total = 0 then `Green else `Red) (spf "%d survived" total)
   in
   (* Zero terms are omitted, the way a passing suite prints no failure
      count: a run with nothing to report is one line. *)
@@ -2196,13 +2194,7 @@ let mutation_sections t (m : mutation) =
     match m.survivors with
     | [] -> []
     | survivors ->
-        let shown = List.length survivors in
-        (* The cap is in the label so nobody thinks they saw everything. *)
-        let label =
-          if shown < m.survivors_total then
-            spf "survivors (%d of %d)" shown m.survivors_total
-          else spf "survivors (%d)" m.survivors_total
-        in
+        let label = spf "survivors (%d)" (List.length survivors) in
         let id_width =
           List.fold_left
             (fun w (s : survivor) -> max w (Text.length_utf8 s.id))
@@ -2519,8 +2511,7 @@ let unjustified_sections t ~variable (u : unjustified) =
           [
             plain
               (indent ^ "  "
-              ^ spf "\u{2026} %d more (WINDTRAP_MUTATE_LIMIT=0 for all)"
-                  (u.tried - List.length u.shown));
+              ^ spf "\u{2026} %d more" (u.tried - List.length u.shown));
           ];
       ]
     else []

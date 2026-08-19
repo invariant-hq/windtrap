@@ -288,7 +288,6 @@ let print_report ~roots collection =
          as the loop's report spells it. *)
       Render.arm_variable = M.arm_variable;
       survivors;
-      survivors_total = List.length survivors;
       unreached = unreached_lines unreached;
       unreached_total = List.length unreached;
       killed;

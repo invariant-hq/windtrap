@@ -590,11 +590,6 @@ let table =
       };
     Env_setting
       {
-        var = "WINDTRAP_MUTATE_LIMIT";
-        doc = "Survivor blocks to print (0 for all)";
-      };
-    Env_setting
-      {
         var = "WINDTRAP_MUTATE_TRY";
         doc = "Faults an admit run tries per test (0 for all)";
       };
@@ -1000,11 +995,9 @@ let coverage_mode (cli : parsed) =
 type mutation = {
   mode : [ `Off | `Loop | `Admit ];
   arm : string option;
-  limit : int;
   tries : int;
 }
 
-let default_mutate_limit = 10
 let default_mutate_tries = 25
 
 let mutation () =
@@ -1022,16 +1015,6 @@ let mutation () =
                 invalid ~source:"WINDTRAP_MUTATE" ~value
                   ~expected:"1, admit or off"))
   in
-  let* limit =
-    match Env.get_string "WINDTRAP_MUTATE_LIMIT" with
-    | None -> Ok default_mutate_limit
-    | Some value -> (
-        match int_of_string_opt (String.trim value) with
-        | Some n when n >= 0 -> Ok n
-        | _ ->
-            invalid ~source:"WINDTRAP_MUTATE_LIMIT" ~value
-              ~expected:"a non-negative integer (0 prints every survivor)")
-  in
   let* tries =
     match Env.get_string "WINDTRAP_MUTATE_TRY" with
     | None -> Ok default_mutate_tries
@@ -1042,7 +1025,7 @@ let mutation () =
             invalid ~source:"WINDTRAP_MUTATE_TRY" ~value
               ~expected:"a non-negative integer (0 tries every fault)")
   in
-  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable; limit; tries }
+  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable; tries }
 
 (* One invocation, one resolution pass. Both drivers want all four
    answers and neither wants four error paths to reach them, so the

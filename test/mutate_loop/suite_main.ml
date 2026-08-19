@@ -128,6 +128,9 @@ let fatal =
 
    - [vacuous] reaches two sites and pins neither, so the TRY cap has
      something to truncate and an exhaustive ruling something to list.
+   - [wide] reaches every undismissed site and pins none, so its ruling
+     has more faults than a block lists and the [… n more] line has
+     something to count.
    - [skipper] skips when [widen] changes: a fault a test skipped under
      was never watched — it advances no tried count and appears in no
      UNJUSTIFIED list.
@@ -155,6 +158,15 @@ let vacuous =
   [
     test "touches widen and orphan and pins neither" (fun () ->
         is_true (Subject.widen 1 2 + Subject.orphan 3 4 <> 99));
+  ]
+
+let wide =
+  [
+    test "watches every fault and pins none" (fun () ->
+        is_true
+          (Subject.sub 10 4 + Subject.widen 1 2 + Subject.orphan 3 4
+           + Subject.crasher 3 1
+          <> 9999));
   ]
 
 let skipper =
@@ -322,6 +334,7 @@ let () =
         (Windtrap_mutate.catalogue ())
   | "weak" -> run "calc" [ group "widen" weak ]
   | "vacuous" -> run "calc" [ group "vacuous" vacuous ]
+  | "wide" -> run "calc" [ group "wide" wide ]
   | "skipper" -> run "calc" [ group "skipper" skipper ]
   | "capped_skipper" -> run "calc" [ group "capped" capped_skipper ]
   | "shared" -> run "calc" [ group "shared" shared ]

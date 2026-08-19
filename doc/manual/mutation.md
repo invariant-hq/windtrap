@@ -739,7 +739,7 @@ on Windows.
 
 ## Knobs
 
-Five environment variables, and no flag on any runner: the inline
+Four environment variables, and no flag on any runner: the inline
 runner's argument parser accepts only dune's inline-test protocol, so a
 flag would exist for half the users. An unrecognized value is an error
 naming the variable, never a silently defaulted mode.
@@ -749,10 +749,9 @@ naming the variable, never a silently defaulted mode.
 | `WINDTRAP_MUTATE` | `1` / `admit` / `off` | `off` |
 | `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
 | `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
-| `WINDTRAP_MUTATE_LIMIT` | survivor blocks to print, `0` for all | `10` |
 | `WINDTRAP_MUTATE_TRY` | faults an `admit` run tries per test, `0` for all | `25` |
 
-All five are read by the test executable and by nothing else.
+All four are read by the test executable and by nothing else.
 
 `WINDTRAP_MUTATE_ONLY=lib/calc.ml,lib/eval.ml` is how a real project is
 mutated: one file, or one directory, at a time. It is not coverage's
@@ -775,14 +774,15 @@ Scoping a run states what that run's mutation surface *is*, rather than
 offering a view over a larger one — which is also why it does not count
 as narrowing the suite, and why a scoped run still writes its verdicts.
 
-Survivor blocks are ordered by reaching-test count descending; a run's
-own report caps them at `WINDTRAP_MUTATE_LIMIT` and prints the cap in
-the rule label (`survivors (10 of 37)`) so nobody thinks they saw
-everything, while `windtrap mutate` caps nothing — a project report a
-reader cannot page past would send them back to the per-executable one.
-The unreached list is never capped either. The same variable caps the
-faults listed inside an unjustified ruling, which says how many it
-dropped and how to see them all.
+Survivor blocks are ordered by reaching-test count descending, and
+nothing caps them: a survivor is a failure block, and windtrap caps no
+failure block. The unreached list is uncapped for the same reason, and
+so is `windtrap mutate`'s merged report — a report a reader cannot page
+past would send them back to the per-executable one. The remedy for a
+file with a hundred survivors is `WINDTRAP_MUTATE_ONLY`, not paging.
+The faults listed inside an unjustified ruling are the one exception,
+cut to the first few with a `… n more` line under them; the count that
+matters, how many the test tried, is in the sentence above the list.
 
 `WINDTRAP_MUTATE_TRY` bounds the work behind such a ruling rather than
 its printing. Each selected test tries the faults it reaches in its own

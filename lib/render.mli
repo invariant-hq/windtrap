@@ -636,11 +636,9 @@ type mutation = {
           with each survivor's [id] and the invocation, so the report and the
           runtime cannot disagree about what to type. *)
   survivors : survivor list;
-      (** The survivor blocks to print, in the order they print — ordered by
-          witness count descending and already capped by the loop. *)
-  survivors_total : int;
-      (** How many mutants survived. Greater than [List.length survivors] when
-          the cap dropped blocks, and the label says so. *)
+      (** Every mutant that survived, one block each, ordered by witness count
+          descending. Never capped: a survivor is a failure block, and windtrap
+          caps no failure block. *)
   unreached : unreached list;  (** The unreached list, ordered by file. *)
   unreached_total : int;
       (** How many mutants are unreached. Not the number of lines: one line can
@@ -650,7 +648,7 @@ type mutation = {
       (** The population: every mutant the run could test — the catalogue
           {e minus} the mutants dismissed by [[@mutate off]], which the reader
           took out of scope and which no remedy applies to. It is therefore
-          [killed + survivors_total + unreached_total], which is what the
+          [killed + List.length survivors + unreached_total], which is what the
           summary line reads as. *)
   duration : float option;
       (** The mutation run's wall-clock seconds, [None] for a merge, which ran
@@ -749,13 +747,12 @@ type unjustified = {
   unjustified_loc : Loc.t option;
       (** Where the test is declared, when it is known. *)
   shown : fault list;
-      (** The tried faults to print, already capped by the loop
-          ([WINDTRAP_MUTATE_LIMIT]); a skipped fault was never watched and is
-          never listed. *)
+      (** The tried faults to print, already cut to a derived few by the loop;
+          a skipped fault was never watched and is never listed. *)
   tried : int;
       (** How many faults the test watched to a pass outcome. Greater than
-          [List.length shown] when the cap dropped lines, and the [… n more]
-          line says so. *)
+          [List.length shown] when the list was cut, and the [… n more] line
+          says so. *)
   candidates : int;
       (** The candidate list's length after the [WINDTRAP_MUTATE_TRY] cap.
           [tried] falls short of it when a skip kept a candidate unwatched,

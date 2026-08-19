@@ -134,7 +134,6 @@ let windtrap_vars =
        named here. *)
     "WINDTRAP_MUTATE";
     "WINDTRAP_MUTATE_ARM";
-    "WINDTRAP_MUTATE_LIMIT";
     "WINDTRAP_MUTATE_TRY";
     "WINDTRAP_MUTATE_ONLY";
   ]

@@ -320,44 +320,14 @@ let loop_tests =
         equal ~msg:"the armed run's exit code (this mutant survives)" int 0 code;
         says ~msg:"the pasted line armed the survivor" armed
           "armed: a + b \u{2192} a - b");
-    test "the survivor cap drops blocks and says how many it dropped" (fun () ->
-        let uncapped () =
-          let _, out, _ =
-            spawn [ "MUTATE_FIXTURE=capped"; "WINDTRAP_MUTATE=1" ]
-          in
-          out
-        in
-        let out = uncapped () in
+    test "every survivor gets a block, in most-watched order" (fun () ->
+        let _, out, _ = spawn [ "MUTATE_FIXTURE=capped"; "WINDTRAP_MUTATE=1" ] in
         says ~msg:"both blocks" out "survivors (2)";
         says ~msg:"most-watched first" out
           "SURVIVED  test/mutate_loop/subject.ml:18";
         says ~msg:"then the one-witness survivor" out
           "SURVIVED  test/mutate_loop/subject.ml:21";
-        let _, capped, _ =
-          spawn
-            [
-              "MUTATE_FIXTURE=capped";
-              "WINDTRAP_MUTATE=1";
-              "WINDTRAP_MUTATE_LIMIT=1";
-            ]
-        in
-        says ~msg:"the label says what the reader did not see" capped
-          "survivors (1 of 2)";
-        says ~msg:"the block kept is the most-watched one" capped
-          "SURVIVED  test/mutate_loop/subject.ml:18";
-        denies ~msg:"the dropped block is gone" capped
-          "SURVIVED  test/mutate_loop/subject.ml:21";
-        says ~msg:"the summary still counts both" capped
-          "mutants: 2 survived of 4";
-        let _, uncapped_by_zero, _ =
-          spawn
-            [
-              "MUTATE_FIXTURE=capped";
-              "WINDTRAP_MUTATE=1";
-              "WINDTRAP_MUTATE_LIMIT=0";
-            ]
-        in
-        says ~msg:"0 means every block" uncapped_by_zero "survivors (2)");
+        says ~msg:"and the summary counts both" out "mutants: 2 survived of 4");
   ]
 
 (* The reach map's boundaries. Every claim here has a wrong answer the
@@ -646,13 +616,6 @@ let refusal_tests =
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the message" err "invalid value 'maybe' for WINDTRAP_MUTATE";
         says ~msg:"what it expected" err "1, admit or off");
-    test "an unrecognized WINDTRAP_MUTATE_LIMIT names the variable" (fun () ->
-        let code, _, err =
-          spawn [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_LIMIT=lots" ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the message" err
-          "invalid value 'lots' for WINDTRAP_MUTATE_LIMIT");
     test "asking for the loop and an armed mutant at once is refused" (fun () ->
         let code, _, err =
           spawn
@@ -1272,8 +1235,7 @@ let admission_tests =
           "1 fork over 2 reached";
         says ~msg:"the summary marks the capped ruling" out
           "\u{00b7} 1 ruling capped at 1");
-    test "TRY=0 tries every candidate, and LIMIT caps only the listing"
-      (fun () ->
+    test "TRY=0 tries every candidate" (fun () ->
         let widen = List.nth (Lazy.force catalogue) 1 in
         let orphan = List.nth (Lazy.force catalogue) 2 in
         let code, out, _ =
@@ -1282,7 +1244,6 @@ let admission_tests =
               "MUTATE_FIXTURE=vacuous";
               "WINDTRAP_MUTATE=admit";
               "WINDTRAP_MUTATE_TRY=0";
-              "WINDTRAP_MUTATE_LIMIT=1";
             ]
         in
         equal ~msg:"exit code" int 1 code;
@@ -1290,10 +1251,22 @@ let admission_tests =
           "killed none of the 2 faults it reaches:";
         denies ~msg:"nothing was capped" out "capped at";
         says ~msg:"both candidates forked" out "2 forks over 2 reached";
-        says ~msg:"the most-run fault is the one listed" out widen;
-        denies ~msg:"the listing cap dropped the other" out orphan;
-        says ~msg:"and says what it dropped" out
-          "\u{2026} 1 more (WINDTRAP_MUTATE_LIMIT=0 for all)");
+        says ~msg:"both faults are listed" out widen;
+        says ~msg:"the second too" out orphan);
+    test "a ruling lists a few faults and counts the rest" (fun () ->
+        (* The listing cut is derived and has no variable: a test that
+           watches more faults than a block shows still states how many
+           it tried, and the line under the list says what is missing. *)
+        let code, out, _ =
+          spawn ~args:[ "-f"; "wide" ]
+            [ "MUTATE_FIXTURE=wide"; "WINDTRAP_MUTATE=admit" ]
+        in
+        equal ~msg:"exit code" int 1 code;
+        says ~msg:"the sentence counts every fault it watched" out
+          "killed none of the 4 faults it reaches:";
+        denies ~msg:"the work was not capped, only the listing" out
+          "capped at";
+        says ~msg:"and the list says what it dropped" out "\u{2026} 1 more");
     test "a fault a test skipped under is watched by nobody" (fun () ->
         (* Under the widen mutant the test skips itself: the fault must
            advance no tried count and appear in no UNJUSTIFIED list —
