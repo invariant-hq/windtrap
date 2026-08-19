@@ -349,109 +349,13 @@ val report_snapshots : t -> orphans:string list -> Run.t -> unit
     pre-spelled with the runtime's own functions, so the report and the runtime
     cannot disagree about what to type.
 
-    Styling is data here ({!type:span}): the renderer applies it under the
-    [ansi] decision made at {!create}, so section data never carries escape
-    codes and never has to know what sink it will meet. *)
-
-type span = {
-  style : Pp.style option;
-      (** The style [text] is wrapped in whole, or [None] for plain text.
-          Applied by the renderer iff it emits styling; an empty [text] is
-          never wrapped. *)
-  text : string;  (** The run of text. *)
-}
-(** The type for one styled run of a section line. *)
-
-val plain : string -> span
-(** [plain text] is [text] with no style. *)
-
-val styled : Pp.style -> string -> span
-(** [styled style text] is [text] wrapped whole in [style]. *)
-
-type excerpt = {
-  file : string;
-      (** The source file the lines come from. Printed on the heading line and
-          nowhere else, so it is unused — and may be anything — when [heading]
-          is [None]. *)
-  heading : span list option;
-      (** What follows ["<file> — "] on the heading line — coverage's
-          percentage and point counts. [None] prints no heading and no blank
-          lines around it, for an excerpt that sits inside a block whose head
-          row already named the file. *)
-  source : string;  (** The file's text, as read. *)
-  marked_lines : int list;
-      (** The 1-based lines the excerpt is about: what the regions are built
-          around, and what the marker column points at. Lines outside [source]
-          are ignored. *)
-}
-(** The type for one source-excerpt block: which lines of which file to show,
-    and what to call them. Subsystem-neutral — the data is the caller's, the
-    layout is this module's. *)
-
-(** {1:excerpts Source excerpts}
-
-    The one gutter renderer, shared by every subsystem that shows source: the
-    right-aligned line number, the [│] rule, the source text, the region marker,
-    and the [·····] between regions live here and nowhere else. Two subsystems
-    may not own two copies of one renderer — coverage's file blocks and
-    mutation's survivor blocks are two projections of {!type:excerpt}, not two
-    layouts. The region and range computations below moved here from the
-    coverage runtime with the vocabulary: layout lives with the renderer, not
-    with the instrumentation that measured the lines. *)
-
-val format_ranges : (int * int) list -> string
-(** [format_ranges ranges] is the ranges rendered as ["1-3, 7-8"]; a single-line
-    range appears without a dash, as in ["88-94, 121"] — the one dialect for
-    the coverage table's uncovered lists and the mutation report's unreached
-    list. *)
-
-type excerpt_line = {
-  number : int;  (** 1-based source line number. *)
-  text : string;  (** The line's text, without its newline. *)
-  marked : bool;  (** Whether the line is in the marked set. *)
-}
-(** The type for one line of source-excerpt data. *)
-
-val excerpts :
-  ?context:int -> source:string -> int list -> excerpt_line list list
-(** [excerpts ~source lines] is the excerpt regions for the marked [lines] of
-    [source]: each region is a contiguous run of lines covering one or more
-    marked ranges plus [context] lines around each (default [1]). Regions whose
-    context windows touch or overlap are one region. Line numbers outside
-    [source] are ignored; the result is [[]] when no valid marked line remains
-    (in particular when [source] is empty). {!val:excerpt} draws the gutter,
-    markers, and separators between regions. *)
-
-val excerpt :
-  t ->
-  ?context:int ->
-  ?marker:bool ->
-  ?margin:string ->
-  ?number_width:int ->
-  excerpt ->
-  unit
-(** [excerpt t e] prints [e]'s heading, when it has one, then one region per run
-    of [e.marked_lines] ({!excerpts}), each line as
-    [<margin><marker><number> │ <text>] with trailing spaces stripped, and
-    [·····] between regions. With:
-
-    - [context], the lines shown around each marked line. Defaults to [1]; [0]
-      shows the marked lines alone.
-    - [marker], whether marked lines carry the red [▌] gutter. Defaults to
-      [true]. Pass [false] for an excerpt that {e is} its marked lines, where a
-      marker on every row would mark nothing; the column then disappears rather
-      than printing blank.
-    - [margin], the left margin every row carries. Defaults to ["  "], which
-      with the marker column is coverage's three-column gutter; a block that
-      indents (a survivor's excerpt sits under a four-space indent) passes its
-      own.
-    - [number_width], the width the line numbers are right-aligned in. Defaults
-      to the widest number in this excerpt, floored at [4]. A caller aligning
-      several excerpts against each other passes the width it computed across
-      all of them.
-
-    A marked line outside [source] contributes no region; an excerpt left with
-    no region prints its heading, if it has one, and nothing else. *)
+    Styling is data too: the renderer applies it under the [ansi] decision made
+    at {!create}, so section data never carries escape codes and never has to
+    know what sink it will meet. The source excerpts both reports show — the
+    right-aligned line number, the [│] rule, the marker column, the [·····]
+    between regions, and the [1-3, 7] range dialect — are one gutter renderer
+    inside this module, not two layouts: a subsystem hands over which lines of
+    which file, never how to draw them. *)
 
 (** {1:coverage Coverage}
 
@@ -833,15 +737,6 @@ val admission_report : t -> admission -> unit
       positive.
 
     Prints in every mode, as {!mutation_report} does. *)
-
-(** {1:durations Durations} *)
-
-val pp_run_duration : float -> string
-(** [pp_run_duration secs] is the summary line's rendering of a run's wall-clock
-    seconds: three significant digits, never scientific notation ([0.463],
-    [1.46], [5400]; [0] below 0.1ms). Exposed so out-of-tree harnesses (the test
-    tree's hand-rolled meta harness) print the same duration bytes as the
-    summary line — one formatter tree-wide. *)
 
 (** {1:projections Failure projections}
 

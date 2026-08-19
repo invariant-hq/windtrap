@@ -2091,151 +2091,20 @@ let test_excerpt_project_root () =
     ~sub:"1 \u{2502} (*---"
     (failure_block ~excerpt:true f)
 
-(* The shared excerpt projection (Law 12)
-
-   One gutter renderer serves coverage and mutation. These pin the bytes
-   coverage has always printed — the three-column gutter, the number
-   right-aligned in at least four, the [│] rule, [·····] between regions,
-   trailing spaces stripped — and the marker's escape sequence opening at
-   column zero, which is where a green-vs-plain inconsistency would hide
-   from a stripped-output review. *)
-
-let excerpt_source =
-  String.concat ""
-    (List.init 12 (fun i -> Printf.sprintf "line %d  \n" (i + 1)))
-
-let test_shared_excerpt () =
-  let render ?ansi ?context ?marker ?margin ?number_width e =
-    with_renderer ?ansi (fun r ->
-        Render.excerpt r ?context ?marker ?margin ?number_width e)
-  in
-  let coverage =
-    {
-      Render.file = "lib/eval.ml";
-      heading = Some [ Render.plain "75.0% (111/148)" ];
-      source = excerpt_source;
-      marked_lines = [ 2; 9 ];
-    }
-  in
-  check_string "coverage excerpt: heading, gutter, regions, separator"
-    ~expected:
-      "\n\
-       lib/eval.ml \u{2014} 75.0% (111/148)\n\n\
-      \      1 \u{2502} line 1\n\
-      \  \u{258c}   2 \u{2502} line 2\n\
-      \      3 \u{2502} line 3\n\
-      \   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}\n\
-      \      8 \u{2502} line 8\n\
-      \  \u{258c}   9 \u{2502} line 9\n\
-      \     10 \u{2502} line 10\n"
-    ~actual:(render coverage);
-  (* The regression this guards: styling that starts after the margin
-     looks identical once the escapes are stripped. *)
-  check_contains "coverage excerpt: the marker's escape opens at column zero"
-    ~sub:"\027[31m  \u{258c}\027[0m   2 \u{2502} line 2"
-    (render ~ansi:true coverage);
-  check_absent "coverage excerpt: no escape after the margin" ~sub:"  \027[31m"
-    (render ~ansi:true coverage);
-  (* A block whose head row already named the file, whose excerpt is its
-     marked line, and which sits under an indent: no heading, no marker
-     column, its own margin and its own number column. *)
-  check_string "in-block excerpt: no heading, no marker column"
-    ~expected:"      12 \u{2502} line 12\n"
-    ~actual:
-      (render ~context:0 ~marker:false ~margin:"      " ~number_width:2
-         {
-           Render.file = "lib/eval.ml";
-           heading = None;
-           source = excerpt_source;
-           marked_lines = [ 12 ];
-         });
-  check_string "excerpt: a marked line outside the source draws nothing"
-    ~expected:""
-    ~actual:
-      (render ~context:0
-         {
-           Render.file = "lib/eval.ml";
-           heading = None;
-           source = excerpt_source;
-           marked_lines = [ 99 ];
-         })
-
-(* The excerpt regions and the range dialect
-
-   Moved here from the coverage runtime with the layout they serve: the
-   regions are what [Render.excerpt] draws, the ranges what the coverage
-   table's uncovered lists and the mutation report's unreached list
-   print. *)
-
-let ten_lines =
-  String.concat "" (List.init 10 (fun i -> Printf.sprintf "l%d\n" (i + 1)))
-
-let test_excerpt_regions () =
-  let numbers region = List.map (fun l -> l.Render.number) region in
-  let marked region =
-    List.filter_map
-      (fun l -> if l.Render.marked then Some l.Render.number else None)
-      region
-  in
-  (match Render.excerpts ~source:ten_lines [ 3; 4; 8 ] with
-  | [ first; second ] ->
-      check "first region spans the range plus context"
-        (numbers first = [ 2; 3; 4; 5 ]);
-      check "first region marks only marked lines" (marked first = [ 3; 4 ]);
-      check "second region spans its range plus context"
-        (numbers second = [ 7; 8; 9 ]);
-      check "second region marks its marked line" (marked second = [ 8 ]);
-      check "excerpt text is the source line"
-        ((List.nth first 1).Render.text = "l3")
-  | regions ->
-      equal ~msg:"separated ranges yield two regions" int 2
-        (List.length regions));
-  (match Render.excerpts ~source:ten_lines [ 3; 6 ] with
-  | [ only ] ->
-      check "touching context windows merge into one region"
-        (numbers only = [ 2; 3; 4; 5; 6; 7 ])
-  | regions ->
-      equal ~msg:"touching windows yield one region" int 1
-        (List.length regions));
-  (match Render.excerpts ~context:0 ~source:ten_lines [ 5 ] with
-  | [ [ line ] ] ->
-      check "zero context keeps the bare line"
-        (line.Render.number = 5 && line.Render.marked)
-  | _ -> check "zero context keeps the bare line" false);
-  (match Render.excerpts ~source:ten_lines [ 1; 10 ] with
-  | [ first; second ] ->
-      check "context clamps at the top" (numbers first = [ 1; 2 ]);
-      check "context clamps at the bottom" (numbers second = [ 9; 10 ])
-  | _ -> check "boundary lines clamp their context" false);
-  check "out-of-range lines are ignored"
-    (Render.excerpts ~source:ten_lines [ 0; 11; 99 ] = []);
-  check "an empty source yields no excerpts"
-    (Render.excerpts ~source:"" [ 1 ] = []);
-  match Render.excerpts ~source:"a\nb\n" [ 2 ] with
-  | [ region ] ->
-      check "a trailing newline opens no phantom line"
-        (numbers region = [ 1; 2 ] && (List.nth region 1).Render.text = "b")
-  | _ -> check "a trailing newline opens no phantom line" false
-
-let test_line_ranges () =
-  check_string "range formatting matches the report shape"
-    ~expected:"88-94, 121"
-    ~actual:(Render.format_ranges [ (88, 94); (121, 121) ]);
-  check_string "single-range formatting" ~expected:"1-3"
-    ~actual:(Render.format_ranges [ (1, 3) ]);
-  check_string "empty-range formatting" ~expected:""
-    ~actual:(Render.format_ranges [])
-
 (* The coverage detail block, escape for escape
 
-   Coverage's rendered bytes are frozen, and the shared projection above
-   had to leave every one of them where it was. The difference a review
-   over stripped output cannot see is *where* an escape opens: a marker
-   spelled [margin ^ red "▌"] prints the same glyphs as [red (margin ^
-   "▌")]. So this drives the real [coverage_report] over a real
-   collection and pins the plain bytes whole, then pins that colour adds
-   escapes and nothing else, and that the marker's escape opens at column
-   zero. *)
+   One gutter renderer serves coverage and mutation (Law 12), and this is
+   where its bytes are pinned: the three-column gutter, the number
+   right-aligned in at least four, the [│] rule, [·····] between regions,
+   the regions themselves (touching windows merged, the first clipped
+   against the top of the file), and the [1, 5-6, 11] range dialect the
+   table prints. Driven through the real [coverage_report] over a real
+   collection rather than through the projection's own vals, because the
+   difference a review over stripped output cannot see is *where* an
+   escape opens: a marker spelled [margin ^ red "▌"] prints the same
+   glyphs as [red (margin ^ "▌")]. So this pins the plain bytes whole,
+   then pins that colour adds escapes and nothing else, and that the
+   marker's escape opens at column zero. *)
 
 let coverage_fixture_lines =
   List.init 12 (fun i -> Printf.sprintf "let v%d = %d" (i + 1) (i + 1))
@@ -2867,9 +2736,6 @@ let tests =
     test "terminal name sanitization (render/F-2)" test_name_sanitization;
     test "excerpts resolve against the project root (render/F-1)"
       test_excerpt_project_root;
-    test "the shared excerpt projection (Law 12)" test_shared_excerpt;
-    test "excerpt regions window their context" test_excerpt_regions;
-    test "line ranges collapse and format" test_line_ranges;
     test "snapshot report: wrote lines and the quiet gate"
       test_snapshot_report_writes;
     test "snapshot report: stale baselines and the removal hint"
