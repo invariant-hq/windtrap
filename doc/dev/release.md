@@ -3,14 +3,16 @@
 The checklist for cutting a windtrap release. Two packages ship
 together from this repository: `windtrap` (the library, the runner,
 the `windtrap` binary) and `ppx_windtrap` (the expect/inline PPX and
-the coverage backend, pinned to `windtrap` with `(= :version)`).
+the coverage and mutation backends, pinned to `windtrap` with
+`(= :version)`).
 
 ## Bars to verify — all of them, before tagging
 
 - [ ] `dune build` — zero warnings; warnings are treated as broken
       implementation, never silenced.
 - [ ] `dune runtest` — green, which includes the examples, the
-      compiled doc mirrors (`test/docs/test_{guide,cookbook,migrating}`,
+      compiled doc mirrors
+      (`test/docs/test_{manual_transcripts,cookbook,migrating,stateful}`,
       `doc/manual/snippets/`), the PPX expansion pins, and the
       conformance corpus's conforming sets.
 - [ ] `dune fmt` — clean.
@@ -25,9 +27,14 @@ the coverage backend, pinned to `windtrap` with `(= :version)`).
       the summary line present (Law 13: outcomes unchanged).
 - [ ] Docs current: `doc/manual/` chapters against `lib/windtrap.mli`
       (the `.mli` is the truth), the migration notes in `CHANGES.md`
-      against the surface, README against reality. Regenerated
-      transcripts if the renderer changed
-      (`doc/manual/snippets/transcript_fail.ml`).
+      against the surface, README against reality.
+- [ ] `SKILL.md` against reality — it names commands, knob values,
+      alias shapes and `--min` examples, and nothing compiles it.
+- [ ] Manual transcripts regenerated if the renderer changed. They are
+      captured by hand and checked by nothing: `doc/manual/snippets/
+      transcript_fail.ml` regenerates the failure blocks, and the
+      mutation chapter's are re-run against `examples/x-blueprint/`
+      under `--instrument-with ppx_windtrap.mutate`.
 
 ## Versioning
 
