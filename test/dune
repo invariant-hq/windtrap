@@ -1,12 +1,13 @@
-; Project-level instrumentation aliases — the two workflows windtrap
-; tells its users to adopt, adopted here. Both are opt-in: neither is
+; The project verdict aliases, once, at the top of the test tree — the
+; two workflows windtrap tells its users to adopt, adopted here, plus
+; the third that only an alias can ask. All three are opt-in: none is
 ; attached to @default or @runtest, and a plain `dune runtest` stays
 ; uninstrumented, zero-overhead and free of coverage and mutation output.
 ;
 ;   dune build @cover --instrument-with ppx_windtrap.coverage
 ;
 ;   WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
-;     test/unit/main.exe -- -f p
+;     test/unit/test_diff.exe --
 ;   dune build @mutate
 ;
 ; The two are not symmetric, and the asymmetry is the runtimes'. Coverage
@@ -37,11 +38,19 @@
 ; mutate_loop's Windows-decline paths and capture's C-stub error branches
 ; cannot run in a green suite — so chase the branches the report names,
 ; not the percentage.
+;
+; ../runtest, not runtest, and the `..` is the whole point: the merge
+; reads every .coverage dump under _build, tree-wide, so the run half
+; must be tree-wide too. examples/08-coverage, 09-coverage-aggregation
+; and x-blueprint each carry an instrumented library, and their points
+; are in this report; scoped to test/ the alias would leave them to
+; whatever ran last, which is one number locally and another on a fresh
+; checkout.
 
 (rule
  (alias cover)
  (deps
-  (alias_rec runtest)
+  (alias_rec ../runtest)
   (universe))
  (action
   (run %{bin:windtrap} coverage --min 87)))
@@ -54,7 +63,7 @@
 ; WINDTRAP_MUTATE_ONLY narrows the work rather than the report:
 ;
 ;   WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
-;     dune exec --instrument-with ppx_windtrap.mutate test/unit/main.exe --
+;     dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe --
 ;
 (rule
  (alias mutate)
@@ -96,6 +105,6 @@
  (alias admit)
  (deps
   (universe)
-  test/unit/main.exe)
+  unit/main.exe)
  (action
-  (setenv WINDTRAP_MUTATE admit (run %{exe:test/unit/main.exe}))))
+  (setenv WINDTRAP_MUTATE admit (run %{exe:unit/main.exe}))))
