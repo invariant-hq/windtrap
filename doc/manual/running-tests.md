@@ -241,8 +241,8 @@ suite composition. An empty bucket exits 2 like any empty selection.
 Detection is ambient: `CI` set means CI. Under CI the runner refuses
 runs that would lie — focused tests (`ftest`/`fgroup`) and snapshot
 update requests refuse to start before anything executes
-(`WINDTRAP_ALLOW_FOCUS=1` / `WINDTRAP_UPDATE=force` override
-deliberately).
+(`WINDTRAP_UPDATE=force` overrides the snapshot half deliberately; the
+focus refusal has no override — remove the `ftest`).
 
 - **JUnit**: `--junit PATH` (`WINDTRAP_JUNIT`) also writes a JUnit XML
   report. A target ending in `.xml` is that exact file; anything else

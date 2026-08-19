@@ -78,7 +78,9 @@ type config = {
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   log_dir : string;  (** [-o]/[--output]: root directory for capture logs. *)
   allow_focus : bool;
-      (** [WINDTRAP_ALLOW_FOCUS]: lift the CI guard on focused tests. *)
+      (** Lift the CI guard on focused tests. No flag and no mirror sets it:
+          only {!for_subset}, for a forked mutation child whose parent already
+          cleared the guard. *)
 }
 (** The type for resolved run configuration: one plain record the CLI layer
     populates by merging programmatic arguments, CLI flags, and environment

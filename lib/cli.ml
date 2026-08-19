@@ -524,17 +524,12 @@ let table =
       };
     (* The settings no flag can set, after the flags so [--help] lists
        them where the mirror rows end. Each is read where its owner
-       consumes it: the first three by the resolution below,
+       consumes it: the first two by the resolution below,
        WINDTRAP_PROJECT_ROOT by [Path_ops], WINDTRAP_COVERAGE_ONLY by
        [Driver]'s coverage seam, and the mutation knobs by [mutation]
        and [Mutate_loop]. The arm row spells the runtime's own constant,
        so this roster, the reader and the report's [arm] line cannot
        name three different variables. *)
-    Env_setting
-      {
-        var = "WINDTRAP_ALLOW_FOCUS";
-        doc = "Lift the CI guard on focused tests";
-      };
     Env_setting
       { var = "WINDTRAP_COLUMNS"; doc = "Terminal width override for reports" };
     Env_setting
@@ -579,8 +574,6 @@ let table =
    the setting's vocabulary — a non-positive or unparseable width counts
    as unset — where a mirror refuses loudly: no flag exists here for a
    lenient reading to drift from. *)
-
-let allow_focus () = Env.get_bool "WINDTRAP_ALLOW_FOCUS" = Some true
 
 let columns () =
   match Env.get_int "WINDTRAP_COLUMNS" with
@@ -906,7 +899,9 @@ let resolved ~overrides below =
              match Sys.getcwd () with
              | cwd -> Filename.concat cwd dir
              | exception Sys_error _ -> dir);
-        allow_focus = allow_focus ();
+        (* No flag and no mirror: only a forked mutation child sets it,
+           through [Run.for_subset]. *)
+        allow_focus = false;
       },
       {
         Render.color =

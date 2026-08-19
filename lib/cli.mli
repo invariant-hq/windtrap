@@ -23,8 +23,8 @@
     refuses, with the same [expected] wording, and differs only in naming the
     variable rather than the flag as the source of a bad value. {!Env} is
     consulted for the reading, not for the inventory — the flagless rows that
-    resolution itself consumes ([WINDTRAP_ALLOW_FOCUS], [WINDTRAP_COLUMNS],
-    [WINDTRAP_TAIL_ERRORS]) are read here through its generic readers; what it
+    resolution itself consumes ([WINDTRAP_COLUMNS], [WINDTRAP_TAIL_ERRORS])
+    are read here through its generic readers; what it
     still owns outright are the variables read below this layer
     ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes) and the two
     vocabularies wider than their flag's ([WINDTRAP_UPDATE]'s [force],
@@ -154,8 +154,7 @@ val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
     each field, the first value present in [overrides] (programmatic, defaults
     to {!empty}), then [cli], then the field's [WINDTRAP_*] environment mirror,
     then {!Run.default_config} — except [tags] and [exclude_tags], which are
-    additive across all three layers, overrides first. [WINDTRAP_ALLOW_FOCUS],
-    which no flag can set, is filled from the environment alone.
+    additive across all three layers, overrides first.
 
     Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
     when no layer provides one.

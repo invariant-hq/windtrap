@@ -228,9 +228,9 @@ attempts — for the flaky-by-nature, not as a way of life.
 
 While debugging, promote `test` to `ftest` (or `group` to `fgroup`):
 when any focused node exists, only focused tests run. Focus is a local
-tool — under CI a run containing focused tests refuses to start
-(`WINDTRAP_ALLOW_FOCUS=1` overrides), and a successful focused run
-prints a warning so it cannot slip into a commit silently.
+tool — under CI a run containing focused tests refuses to start, and a
+successful focused run prints a warning so it cannot slip into a commit
+silently.
 
 ## Known bugs: `xfail`
 

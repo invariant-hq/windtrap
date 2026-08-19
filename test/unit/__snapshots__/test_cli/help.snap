@@ -58,7 +58,6 @@ ENVIRONMENT:
   WINDTRAP_COLOR             Mirror of --color
   WINDTRAP_COVERAGE          Mirror of --coverage
   WINDTRAP_OUTPUT            Mirror of --output
-  WINDTRAP_ALLOW_FOCUS       Lift the CI guard on focused tests
   WINDTRAP_COLUMNS           Terminal width override for reports
   WINDTRAP_TAIL_ERRORS       Captured-output lines shown per failure
   WINDTRAP_PROJECT_ROOT      Project root for snapshot path resolution

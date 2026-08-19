@@ -609,9 +609,7 @@ let startup_message = function
         | Some loc -> Pp.str "%s at %s" name (Loc.to_string loc)
         | None -> name
       in
-      Pp.str
-        "focused tests committed (%s); remove ftest/fgroup or set \
-         WINDTRAP_ALLOW_FOCUS=1 to run them under CI"
+      Pp.str "focused tests committed (%s); remove ftest/fgroup to run under CI"
         (String.concat ", " (List.map site sites))
   | Update_refused_in_ci ->
       "snapshot update refused: CI is set. Set WINDTRAP_UPDATE=force to update \

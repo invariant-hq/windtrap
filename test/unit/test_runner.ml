@@ -833,12 +833,13 @@ let () =
   (match Runner.execute ~config ~suite:"suite" suite with
   | Error error ->
       check "the focus refusal exits 1" (Runner.startup_exit_code error = 1);
-      check "the focus message names the override"
-        (contains "WINDTRAP_ALLOW_FOCUS" (Runner.startup_message error))
+      check "the focus message names the remedy"
+        (contains "remove ftest/fgroup" (Runner.startup_message error))
   | Ok _ -> check "focus refusal expected" false);
+  (* [allow_focus] has no flag and no mirror: a forked mutation child is
+     its only setter, through [Run.for_subset]. *)
   let config = { config with Run.allow_focus = true } in
-  expect_run "WINDTRAP_ALLOW_FOCUS lifts the guard" ~config suite
-  @@ fun outcome ->
+  expect_run "a subset run lifts the guard" ~config suite @@ fun outcome ->
   check "focused test ran" (ran_names outcome = [ "starred" ]);
   clear_env ()
 

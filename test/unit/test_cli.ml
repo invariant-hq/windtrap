@@ -377,7 +377,6 @@ let () =
       "WINDTRAP_QUIET";
       "WINDTRAP_VERBOSE";
       "WINDTRAP_SLOW_THRESHOLD";
-      "WINDTRAP_ALLOW_FOCUS";
       "WINDTRAP_COLUMNS";
       "WINDTRAP_TAIL_ERRORS";
       "WINDTRAP_PROJECT_ROOT";
@@ -525,7 +524,6 @@ let () =
   Unix.putenv "WINDTRAP_TIMEOUT" "1.5";
   Unix.putenv "WINDTRAP_PROP_COUNT" "7";
   Unix.putenv "WINDTRAP_MAX_SHRINK" "40";
-  Unix.putenv "WINDTRAP_ALLOW_FOCUS" "1";
   Unix.putenv "WINDTRAP_COLUMNS" "100";
   Unix.putenv "WINDTRAP_TAIL_ERRORS" "3";
   Unix.putenv "WINDTRAP_EXCLUDE" "skipme";
@@ -536,7 +534,6 @@ let () =
   check "WINDTRAP_TIMEOUT" (config.Run.timeout = Some 1.5);
   check "WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
   check "WINDTRAP_MAX_SHRINK" (config.Run.max_shrink = Some 40);
-  check "WINDTRAP_ALLOW_FOCUS" config.Run.allow_focus;
   let render = render_settings Cli.empty in
   check "WINDTRAP_COLUMNS" (render.Render.columns = Some 100);
   check "WINDTRAP_TAIL_ERRORS" (render.Render.tail_errors = Some 3);
@@ -549,9 +546,6 @@ let () =
 let () =
   reg "flagless settings vocabulary" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_ALLOW_FOCUS" "nonsense";
-  check "an unparseable allow_focus is false"
-    (not (resolve Cli.empty).Run.allow_focus);
   Unix.putenv "WINDTRAP_COLUMNS" "0";
   check "non-positive columns count as unset"
     ((render_settings Cli.empty).Render.columns = None);

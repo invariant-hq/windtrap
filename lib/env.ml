@@ -5,8 +5,8 @@
 
 (* Adapted from windtrap 0.1's lib/env.ml. v3 drops the color globals
    (renderers make the ANSI decision explicitly) and adds the
-   WINDTRAP_ALLOW_FOCUS / WINDTRAP_PRUNE / WINDTRAP_COVERAGE variables and
-   the [force] update mode. *)
+   WINDTRAP_PRUNE / WINDTRAP_COVERAGE variables and the [force] update
+   mode. *)
 
 (* Parsing helpers *)
 
@@ -117,8 +117,8 @@ let resolve_color mode ~tty ~inside_dune ~term_dumb =
    [Cli]'s table and read through the generic readers above, which is what
    keeps a mirror from parsing differently from the flag it mirrors — and
    so are the flagless settings the resolution itself consumes
-   (WINDTRAP_ALLOW_FOCUS, WINDTRAP_COLUMNS, WINDTRAP_TAIL_ERRORS). What
-   remains are the variables read below the CLI layer or beside it. *)
+   (WINDTRAP_COLUMNS, WINDTRAP_TAIL_ERRORS). What remains are the
+   variables read below the CLI layer or beside it. *)
 
 let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
 

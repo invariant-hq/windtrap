@@ -133,9 +133,8 @@ val ftest :
   test
 (** [ftest] is {!test} with the focus flag set: when any focused test or group
     exists, only focused tests run. Focus is a debugging tool — when [CI] is set
-    a run containing focused tests refuses to start (unless
-    [WINDTRAP_ALLOW_FOCUS=1]), and outside CI a successful focused run prints a
-    warning. *)
+    a run containing focused tests refuses to start, and outside CI a successful
+    focused run prints a warning. *)
 
 val fgroup : ?pos:pos -> ?tags:string list -> string -> test list -> test
 (** [fgroup] is {!group} with the focus flag set: every test under it is focused

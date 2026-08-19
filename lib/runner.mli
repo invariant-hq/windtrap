@@ -213,8 +213,8 @@ type startup_error =
       (** Two tests flattened to the same full path; the offending paths,
           sorted, each listed once. *)
   | Focused_in_ci of ([ `Ftest | `Fgroup ] * Loc.t option) list
-      (** Focused nodes exist, [CI] is set, and [WINDTRAP_ALLOW_FOCUS] is not:
-          the focus sites, in declaration order. *)
+      (** Focused nodes exist and [CI] is set: the focus sites, in declaration
+          order. *)
   | Update_refused_in_ci
       (** A snapshot update was requested under [CI] without
           [WINDTRAP_UPDATE=force] ({!Snapshot.resolve_mode}). *)
@@ -230,8 +230,7 @@ val startup_exit_code : startup_error -> int
 val startup_message : startup_error -> string
 (** [startup_message error] is a plain-text (no ANSI) explanation of [error] for
     users, including the lifting spell where one exists
-    ([WINDTRAP_ALLOW_FOCUS=1], [WINDTRAP_UPDATE=force]). Not stable for
-    programmatic matching. *)
+    ([WINDTRAP_UPDATE=force]). Not stable for programmatic matching. *)
 
 (** {1:outcomes Outcomes} *)
 
@@ -300,9 +299,8 @@ val execute :
     outcome carries the selection with exit code [0].
 
     Effects: registers a process-wide [Stdlib.at_exit] exit guard on first call
-    (never removed; inert while no run is active), reads [CI] via {!Env} (the
-    [WINDTRAP_ALLOW_FOCUS] lift arrives already resolved in
-    [config.allow_focus]), captures test output under a fresh run directory in
+    (never removed; inert while no run is active), reads [CI] via {!Env},
+    captures test output under a fresh run directory in
     [config.log_dir] and points the [latest] links at it (unless
     [config.stream]), rewrites the last-failed store, and — in update mode —
     writes accepted baselines through the snapshot registry. Raises
