@@ -1820,13 +1820,13 @@ let execute_and_report (spine : Driver.t) tests =
             if instrumented () then discovery_mode (renderer ()) spine tests
             else Ran (Driver.execute_and_report spine tests)
         | `Off, Some _ -> arm_mode (renderer ()) ~armed spine tests
-        | (`Loop | `Report | `Admit | `Audit), Some _ ->
+        | (`Loop | `Admit | `Audit), Some _ ->
             refuse
               "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
                each mutant itself, so an armed parent would mutate its own dry \
                run. Unset one"
               M.arm_variable
-        | (`Loop | `Report), None -> (
+        | `Loop, None -> (
             if Sys.win32 then
               refuse
                 "mutation testing needs Unix.fork, which Windows does not \

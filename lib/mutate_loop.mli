@@ -57,8 +57,8 @@
       {e because} the one binary that has the mutant armed it correctly. Nothing
       is hidden by running on: an executable holding none of that file's sites
       produces no verdict about them either way.
-    - [WINDTRAP_MUTATE=1] (or [report]): the loop below, which takes the process
-      over and reports on its own.
+    - [WINDTRAP_MUTATE=1]: the loop below, which takes the process over and
+      reports on its own.
     - [WINDTRAP_MUTATE=admit]: the admission machine — the run's ordinary test
       selection becomes an admission set, the loop arms only faults those tests
       reach, and every selected test is ruled ADMITTED (it named the fault it
@@ -144,15 +144,12 @@
       not which tests judge them, so a scoped run's records are project-true for
       this executable and still write.
 
-    {b Not in this slice.} [WINDTRAP_MUTATE_JOBS]: children run one at a
-    time. The whole-loop [Unix.setitimer] remains as the backstop behind the
-    per-child deadlines — the sum of what the scheduled children may each
-    spend, plus the dry run and the probe, never under a minute — so its
-    expiry is a supervision refusal about the run, not a score about the
-    mutant in flight. [report] mode's
-    dismissed, not-armable and timeout tables are likewise later, so [report]
-    currently runs the loop and prints the default report — and with no
-    not-armable table, a site the dry run only evaluated {e outside} a test
+    {b Not in this slice.} Children run one at a time. The whole-loop
+    [Unix.setitimer] remains as the backstop behind the per-child deadlines —
+    the sum of what the scheduled children may each spend, plus the dry run and
+    the probe, never under a minute — so its expiry is a supervision refusal
+    about the run, not a score about the mutant in flight. There is no
+    not-armable table, so a site the dry run only evaluated {e outside} a test
     (module initialization, a fixture release) is listed as unreached rather
     than as not armable. Both are "no test evaluates this" and neither is
     forked, so the score is right and only the remedy the reader is offered is

@@ -748,7 +748,7 @@ naming the variable, never a silently defaulted mode.
 
 | variable | values | default |
 | --- | --- | --- |
-| `WINDTRAP_MUTATE` | `1` / `report` / `admit` / `audit` / `off` | `off` |
+| `WINDTRAP_MUTATE` | `1` / `admit` / `audit` / `off` | `off` |
 | `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
 | `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
 | `WINDTRAP_MUTATE_LIMIT` | survivor blocks to print, `0` for all | `10` |
@@ -796,17 +796,9 @@ wide-reaching test, whose exhaustive ruling would otherwise cost its
 whole reach — measured against real suites the ordering kills on the
 first or second fault, so the cap is a bound and not a schedule.
 
-`report` mode runs the same loop and prints the same report today — the
-dismissed, not-armable and timeout tables it will add are not in this
-release — and `WINDTRAP_MUTATE_JOBS` and `WINDTRAP_MUTATE_TIMEOUT` are
-specified but deliberately not read, because a knob that is read and
-ignored is worse than one that is not. `TIMEOUT` in particular stays
-unread on purpose: the per-child deadline is derived from the dry run's
-own measurements, and a number a user has to guess would be worse than
-one the run already knows.
-Asking for a loop — `1`, `report`, `admit` or `audit` — and an armed
-mutant at once is a refusal, not a guess: the loop arms each mutant
-itself, so an armed parent would mutate its own dry run.
+Asking for a loop — `1`, `admit` or `audit` — and an armed mutant at
+once is a refusal, not a guess: the loop arms each mutant itself, so an
+armed parent would mutate its own dry run.
 
 windtrap's mutation testing is deliberately the 90% product: one honest
 count after a run you already make, and the names of the tests that let

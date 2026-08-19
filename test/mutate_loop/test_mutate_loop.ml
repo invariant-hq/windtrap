@@ -320,10 +320,6 @@ let loop_tests =
         equal ~msg:"the armed run's exit code (this mutant survives)" int 0 code;
         says ~msg:"the pasted line armed the survivor" armed
           "armed: a + b \u{2192} a - b");
-    test "report mode runs the loop" (fun () ->
-        let code, out, _ = spawn [ "WINDTRAP_MUTATE=report" ] in
-        equal ~msg:"exit code" int 0 code;
-        says ~msg:"the report" out "mutants: 1 survived of 4");
     test "the survivor cap drops blocks and says how many it dropped" (fun () ->
         let uncapped () =
           let _, out, _ =
@@ -649,7 +645,7 @@ let refusal_tests =
         let code, _, err = spawn [ "WINDTRAP_MUTATE=maybe" ] in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the message" err "invalid value 'maybe' for WINDTRAP_MUTATE";
-        says ~msg:"what it expected" err "1, report, admit, audit or off");
+        says ~msg:"what it expected" err "1, admit, audit or off");
     test "an unrecognized WINDTRAP_MUTATE_LIMIT names the variable" (fun () ->
         let code, _, err =
           spawn [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_LIMIT=lots" ]

@@ -206,13 +206,13 @@ val coverage_mode :
     configuration first and exit on that error, which is where it belongs. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Report | `Admit | `Audit ];
+  mode : [ `Off | `Loop | `Admit | `Audit ];
       (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
-          truthy spellings), [`Report] for [report], [`Admit] for [admit] — the
-          per-test admission run over the selection — [`Audit] for [audit] —
-          the same admission run with universal designation, so a run that
-          makes no selection judges every test it runs — [`Off] for a falsy
-          spelling or an unset variable. *)
+          truthy spellings), [`Admit] for [admit] — the per-test admission run
+          over the selection — [`Audit] for [audit] — the same admission run
+          with universal designation, so a run that makes no selection judges
+          every test it runs — [`Off] for a falsy spelling or an unset
+          variable. *)
   arm : string option;
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
           {!Windtrap_mutate.selector_of_string} owns that grammar and reports
@@ -238,10 +238,6 @@ val mutation : unit -> (mutation, error) result
     loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE],
     [WINDTRAP_MUTATE_LIMIT] or [WINDTRAP_MUTATE_TRY] when its value is not one
     the variable accepts, never a silently defaulted mode.
-
-    [WINDTRAP_MUTATE_JOBS] and [WINDTRAP_MUTATE_TIMEOUT] are specified but do
-    not ship yet, and are deliberately not read here: a knob that is read and
-    ignored is worse than one that is not read.
 
     Effects: reads the environment. *)
 

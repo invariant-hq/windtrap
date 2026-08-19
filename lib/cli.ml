@@ -581,7 +581,7 @@ let table =
     Env_setting
       {
         var = "WINDTRAP_MUTATE";
-        doc = "Mutation testing: 1, report, admit, audit or off";
+        doc = "Mutation testing: 1, admit, audit or off";
       };
     Env_setting
       {
@@ -998,7 +998,7 @@ let coverage_mode (cli : parsed) =
    different variables. *)
 
 type mutation = {
-  mode : [ `Off | `Loop | `Report | `Admit | `Audit ];
+  mode : [ `Off | `Loop | `Admit | `Audit ];
   arm : string option;
   limit : int;
   tries : int;
@@ -1013,7 +1013,6 @@ let mutation () =
     | None -> Ok `Off
     | Some value -> (
         match String.lowercase_ascii (String.trim value) with
-        | "report" -> Ok `Report
         | "admit" -> Ok `Admit
         | "audit" -> Ok `Audit
         | _ -> (
@@ -1022,7 +1021,7 @@ let mutation () =
             | Some false -> Ok `Off
             | None ->
                 invalid ~source:"WINDTRAP_MUTATE" ~value
-                  ~expected:"1, report, admit, audit or off"))
+                  ~expected:"1, admit, audit or off"))
   in
   let* limit =
     match Env.get_string "WINDTRAP_MUTATE_LIMIT" with
