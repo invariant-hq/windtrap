@@ -178,11 +178,13 @@ type settings = {
           unless the variable says otherwise). *)
   output_level : [ `Quiet | `Compact | `Verbose ];
       (** The terminal verbosity level: [-q] ⊂ default ⊂ [-v]. *)
+  junit : string option;
+      (** [--junit PATH]: also write a JUnit report there ({!Driver.t}). *)
 }
-(** The type for everything one invocation resolves to. Four fields, not one
-    configuration: the three rendering decisions stay {e out} of {!Run.config},
-    because none of them can change outcomes or exit codes and nothing in the
-    runner may read them. *)
+(** The type for everything one invocation resolves to. Not one configuration:
+    only [config] is what the runner reads — the rendering decisions and the
+    JUnit sink stay {e out} of it, because none of them can change outcomes or
+    exit codes and nothing in the runner may read them. *)
 
 val settings : parsed -> (settings, error) result
 (** [settings cli] is everything one invocation resolves to: [cli] with each

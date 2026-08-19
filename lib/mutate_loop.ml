@@ -73,6 +73,14 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
    builds it from the registered hooks and threads it below exactly as an
    argument would travel. *)
 
+(* The spine a loop hands its dry run. A mutation run's output never
+   reports a test outcome (Law 16e) and its exit code is its own, so the
+   dry run — whose whole job is to fill the reach map and prove the suite
+   green — writes no JUnit. The two modes that hand the caller an
+   ordinary [Ran] outcome (discovery, and a run with one mutant armed)
+   write theirs, exactly as an uninstrumented run would. *)
+let dry_run (spine : Driver.t) = { spine with Driver.junit = None }
+
 (* The reach map
 
    Built from the runner's events while the dry run prints its ordinary
@@ -891,7 +899,9 @@ let loop renderer ~armed (spine : Driver.t) tests =
   let config = spine.Driver.config in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
-  match Driver.execute_and_report ~on_event:(observe reach) spine tests with
+  match
+    Driver.execute_and_report ~on_event:(observe reach) (dry_run spine) tests
+  with
   (* The startup message is already on stderr; a refused run never
      produced a number. *)
   | Error _ -> Reported 1
@@ -1291,7 +1301,9 @@ let admit_loop renderer ~armed (spine : Driver.t) ~tries tests =
   let config = spine.Driver.config in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
-  match Driver.execute_and_report ~on_event:(observe reach) spine tests with
+  match
+    Driver.execute_and_report ~on_event:(observe reach) (dry_run spine) tests
+  with
   (* The startup message is already on stderr; a refused run never
      produced a verdict. *)
   | Error _ -> Reported 1

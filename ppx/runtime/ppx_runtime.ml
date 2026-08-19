@@ -26,7 +26,7 @@
    expect runtime consumes, kept deliberately minimal — the greppable
    census of the one out-of-core client's reach (Law 12). Drive-side:
    Cli (settings resolution over empty), Driver (the spine and
-   execute_and_report, write_junit), Runner (outcome readers, startup
+   execute_and_report), Runner (outcome readers, startup
    exit codes), Run (result rows, the run's snapshot registry, the
    ambient slot the body-side one-liners below read), Env (GitHub
    gating), Mutate_loop (the mutation-aware run entry both thin drivers
@@ -1341,7 +1341,7 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
    are not the mistyped filter the sentence diagnoses), the .corrected
    files, and the returned exit code that [exit] combines with the
    correction protocol. *)
-let run_inline_suite ~suite ~config ~coverage ~render ~output tests =
+let run_inline_suite ~suite ~config ~coverage ~render ~output ~junit tests =
   let spine =
     {
       Driver.invocation = `Mirrors;
@@ -1350,6 +1350,7 @@ let run_inline_suite ~suite ~config ~coverage ~render ~output tests =
       github = Env.in_github_actions ();
       output;
       coverage;
+      junit;
       render;
       config;
       suite;
@@ -1372,15 +1373,6 @@ let run_inline_suite ~suite ~config ~coverage ~render ~output tests =
          for [exit] to combine with the correction protocol. *)
           Runner.startup_exit_code error
       | Ok outcome ->
-          (* An inline partition is a suite like any other, and WINDTRAP_JUNIT
-         is the only spelling that reaches it — the protocol has no CLI. It
-         writes its own file under the directory form, which is what makes
-         a report per partition possible at all. *)
-          Option.iter
-            (Driver.write_junit ~invocation:`Mirrors ~suite
-               ~duration:outcome.Runner.duration
-               ~results:(Run.results outcome.Runner.run))
-            config.Run.junit;
           (* The update mode is read off the registry the runner built for
          this run, not re-resolved here: [Runner.startup] has already put
          WINDTRAP_UPDATE through [Snapshot.resolve_mode], so the CI
@@ -1437,10 +1429,10 @@ let exit () =
   | Error error ->
       prerr_endline (Cli.error_message error);
       Stdlib.exit 2
-  | Ok { Cli.config; render; coverage; output_level } ->
+  | Ok { Cli.config; render; coverage; output_level; junit } ->
       Stdlib.exit
         (run_inline_suite ~suite ~config ~coverage ~render
-           ~output:output_level tests)
+           ~output:output_level ~junit tests)
 
 (* Test seams *)
 

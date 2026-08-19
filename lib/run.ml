@@ -31,7 +31,6 @@ type config = {
   timeout : float option;
   prop_count : int option;
   max_shrink : int option;
-  junit : string option;
   log_dir : string;
   allow_focus : bool;
 }
@@ -51,7 +50,6 @@ let default_config () =
     timeout = None;
     prop_count = None;
     max_shrink = None;
-    junit = None;
     log_dir = Path_ops.default_log_dir ();
     allow_focus = false;
   }
@@ -88,7 +86,6 @@ let for_subset config ~log_dir ~bail =
     bail;
     stream = false;
     update = Env.No_update;
-    junit = None;
     log_dir;
     allow_focus = true;
   }

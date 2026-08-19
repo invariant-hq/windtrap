@@ -267,8 +267,8 @@ let print_cli_error ~prog error =
    legitimately this runner's own stays visible here: the parsed-CLI
    resolution sources, the argv-computed invocation, the two header
    policies (the property-aware seed and the selection description),
-   GitHub gating, JUnit, the focus warning, and the process exit. *)
-let run_suite ~argv ~suite ~config ~coverage ~render ~output tests =
+   GitHub gating, the focus warning, and the process exit. *)
+let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
   let github = Env.in_github_actions () in
   (* The one invocation every command hint derives from: computed
      here, at startup, and threaded to the renderer and both transports. *)
@@ -292,6 +292,7 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output tests =
       github;
       output;
       coverage;
+      junit;
       render;
       config;
       suite;
@@ -312,11 +313,6 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output tests =
           (* The message is already on stderr; this runner owns the exit. *)
           exit (Runner.startup_exit_code error)
       | Ok outcome ->
-          Option.iter
-            (Driver.write_junit ~invocation ~suite
-               ~duration:outcome.Runner.duration
-               ~results:(Run.results outcome.Runner.run))
-            config.Run.junit;
           if
             outcome.Runner.focus_active
             && outcome.Runner.exit_code = 0
@@ -356,7 +352,7 @@ let run ?(argv = Sys.argv) suite tests =
       | Error error ->
           print_cli_error ~prog error;
           exit 2
-      | Ok { Cli.config; render; coverage; output_level } ->
+      | Ok { Cli.config; render; coverage; output_level; junit } ->
           (* [-l] before the drive spine: a listing is not a transcript
              and must not be folded into a ::group:: section, and a run
              that runs nothing is a concept no module below needs to
@@ -374,4 +370,4 @@ let run ?(argv = Sys.argv) suite tests =
                 exit 0
           end;
           run_suite ~argv ~suite ~config ~coverage ~render
-            ~output:output_level tests)
+            ~output:output_level ~junit tests)

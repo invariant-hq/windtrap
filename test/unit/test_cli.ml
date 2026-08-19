@@ -379,23 +379,25 @@ let () =
 
 (* Resolution: defaults *)
 
-let resolve parsed =
+let settings parsed =
   match Cli.settings parsed with
-  | Ok s -> s.Cli.config
+  | Ok settings -> settings
   | Error error ->
       check "settings succeeds" false;
       Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
-      Run.default_config ()
+      {
+        Cli.config = Run.default_config ();
+        render = Render.default_settings;
+        coverage = true;
+        output_level = `Compact;
+        junit = None;
+      }
 
-(* The renderer half of the resolution: the four presentation knobs land
-   in [settings]'s render field, not in [Run.config]. *)
-let render_settings parsed =
-  match Cli.settings parsed with
-  | Ok s -> s.Cli.render
-  | Error error ->
-      check "settings succeeds" false;
-      Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
-      Render.default_settings
+let resolve parsed = (settings parsed).Cli.config
+
+(* The renderer half of the resolution: the presentation knobs land in
+   [settings]'s render field, not in [Run.config]. *)
+let render_settings parsed = (settings parsed).Cli.render
 
 let () =
   reg "resolution defaults" @@ fun () ->
@@ -409,10 +411,10 @@ let () =
     && (not config.Run.stream)
     && not config.Run.allow_focus);
   check "default: update off" (config.Run.update = Env.No_update);
-  check "default: no bail/timeout/prop-count/junit"
+  check "default: no bail/timeout/prop-count"
     (config.Run.bail = None && config.Run.timeout = None
-    && config.Run.prop_count = None
-    && config.Run.junit = None);
+    && config.Run.prop_count = None);
+  check "default: no JUnit report" ((settings Cli.empty).Cli.junit = None);
   let render = render_settings Cli.empty in
   check "default: color auto" (render.Render.color = Env.Auto);
   check "default: env-only settings unset"
@@ -524,7 +526,8 @@ let () =
   let config = resolve Cli.empty in
   check "WINDTRAP_BAIL" (config.Run.bail = Some 3);
   check "WINDTRAP_FAILED" config.Run.failed_only;
-  check "WINDTRAP_JUNIT" (config.Run.junit = Some "reports/junit.xml");
+  check "WINDTRAP_JUNIT"
+    ((settings Cli.empty).Cli.junit = Some "reports/junit.xml");
   (* Absolutized like [-o], for the same reason: a test that chdirs must
      not move the rest of the run's logs. *)
   check "WINDTRAP_OUTPUT"
@@ -537,11 +540,10 @@ let () =
   clear_env ();
   Unix.putenv "WINDTRAP_BAIL" "3";
   Unix.putenv "WINDTRAP_JUNIT" "from-env.xml";
-  let config =
-    resolve { Cli.empty with Cli.bail = Some 1; junit = Some "from-cli.xml" }
-  in
-  check "flag beats WINDTRAP_BAIL" (config.Run.bail = Some 1);
-  check "flag beats WINDTRAP_JUNIT" (config.Run.junit = Some "from-cli.xml");
+  let cli = { Cli.empty with Cli.bail = Some 1; junit = Some "from-cli.xml" } in
+  check "flag beats WINDTRAP_BAIL" ((resolve cli).Run.bail = Some 1);
+  check "flag beats WINDTRAP_JUNIT"
+    ((settings cli).Cli.junit = Some "from-cli.xml");
   (* A malformed mirror is a usage error naming the *variable* — the
      WINDTRAP_PROP_COUNT rule, not a silent default. *)
   clear_env ();
@@ -717,19 +719,6 @@ let () =
   clear_env ()
 
 (* Resolution: the one call both drivers make *)
-
-let settings parsed =
-  match Cli.settings parsed with
-  | Ok settings -> settings
-  | Error error ->
-      check "settings succeeds" false;
-      Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
-      {
-        Cli.config = Run.default_config ();
-        render = Render.default_settings;
-        coverage = true;
-        output_level = `Compact;
-      }
 
 let () =
   reg "settings resolves both layers in one call" @@ fun () ->

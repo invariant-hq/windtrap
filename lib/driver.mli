@@ -10,12 +10,14 @@
     ([Ppx_runtime]) — and one behavior serves both (the "one behavior, both
     runners" doctrine): every transcript line class has exactly one producer,
     and they are composed in exactly one order, so the two runners cannot drift
-    apart byte-wise. The five producers are renderer construction
+    apart byte-wise. The six producers are renderer construction
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
     ({!github_start}, {!github_end}, {!github_annotations}), the snapshot
     report ({!Render.report_snapshots} — every transcript byte leaves through a
-    renderer), and the coverage seam ({!snapshot_coverage}, {!coverage_data});
-    {!execute_and_report} is the order they run in, around
+    renderer), the coverage seam ({!snapshot_coverage}, {!coverage_data}), and
+    the JUnit sink ({!write_junit}, the one producer that writes a file rather
+    than a transcript line); {!execute_and_report} is the order they run in,
+    around
     {!Runner.execute}. A runner that composed them itself would be free to get
     that order wrong, which is the same drift by another route.
 
@@ -26,8 +28,8 @@
     both), the output-level and coverage-mode resolution sources (parsed CLI vs
     the [WINDTRAP_*] mirrors of [Cli.empty]), the GitHub gating decision, the
     [--list] listing ({!Runner.list_selection}, which never reaches this
-    module), JUnit, the correction protocol, and the exit discipline. This
-    module never decides them.
+    module), the correction protocol, and the exit discipline. This module never
+    decides them.
 
     This module sits below both drivers: it depends only on the runner, the
     renderers, and the environment — never on [Cli] resolution or either driver.
@@ -52,6 +54,9 @@ type t = {
   output : [ `Quiet | `Compact | `Verbose ];  (** The resolved output level. *)
   coverage : bool;
       (** Whether the inline coverage line prints ({!Cli.settings}). *)
+  junit : string option;
+      (** [--junit]/[WINDTRAP_JUNIT]: where to also write a JUnit report,
+          [None] for no report ({!write_junit}). *)
   render : Render.settings;
       (** The presentation knobs the run's renderer is built from
           ({!val:renderer}). *)
@@ -217,7 +222,8 @@ val execute_and_report :
     then — for a run that happened — {!snapshot_coverage}, {!Render.finish} (its
     [?coverage] from {!coverage_summary}) over {!Run.results},
     {!coverage_report}, {!Render.report_snapshots}, {!github_end},
-    {!github_annotations}, and a flush of both standard formatters.
+    {!github_annotations}, {!write_junit} over [t.junit], and a flush of both
+    standard formatters.
 
     [Ok outcome] is {!Runner.execute}'s outcome, reported. {!Run.results} is the
     list every sink projected — the runner's verdict rows included

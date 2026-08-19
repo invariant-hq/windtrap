@@ -729,7 +729,6 @@ let resolved below =
       timeout = below.timeout;
       prop_count = below.prop_count;
       max_shrink = below.max_shrink;
-      junit = below.junit;
       log_dir =
         (* Resolved against the cwd once, here, before any test body runs.
            A relative [-o DIR] otherwise follows the process around: a test
@@ -840,6 +839,7 @@ type settings = {
   render : Render.settings;
   coverage : bool;
   output_level : [ `Quiet | `Compact | `Verbose ];
+  junit : string option;
 }
 
 let settings cli =
@@ -853,7 +853,7 @@ let settings cli =
     | Some `Verbose -> `Verbose
     | None -> `Compact
   in
-  Ok { config; render; coverage; output_level }
+  Ok { config; render; coverage; output_level; junit = below.junit }
 
 (* Help *)
 

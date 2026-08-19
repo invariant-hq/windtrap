@@ -64,7 +64,6 @@ type config = {
           engine's default is 100; a search that spends the budget reports so,
           because a truncated search and a converged one otherwise read alike.
       *)
-  junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   log_dir : string;  (** [-o]/[--output]: root directory for capture logs. *)
   allow_focus : bool;
       (** Lift the CI guard on focused tests. No flag and no mirror sets it:
@@ -94,8 +93,8 @@ val for_subset : config -> log_dir:string -> bail:int option -> config
     ([tags], [exclude_tags]) and the root [seed] are kept verbatim, because an
     allowlist cannot express a tag and per-case seeds derive from
     [(root, path, index)]. Checking is made read-only ([update = No_update]),
-    reporting side effects are dropped ([junit], [stream]), an in-source focus
-    is allowed, and [log_dir] and [bail] are the caller's.
+    capture is dropped ([stream]), an in-source focus is allowed, and [log_dir]
+    and [bail] are the caller's.
 
     A new selection knob that this function does not clear gives such a child a
     selection its parent's tree already applied, which is how a deterministic

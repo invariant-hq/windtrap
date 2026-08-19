@@ -34,6 +34,7 @@ type t = {
   github : bool;
   output : [ `Quiet | `Compact | `Verbose ];
   coverage : bool;
+  junit : string option;
   render : Render.settings;
   config : Run.config;
   suite : string;
@@ -263,6 +264,7 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
        github;
        output;
        coverage;
+       junit;
        render;
        config;
        suite;
@@ -301,6 +303,14 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
          and the annotations are the part a reviewer must see without
          unfolding anything. *)
       github_annotations ~github ~invocation results;
+      (* The fifth producer, and the only one that does not write to the
+         transcript: a per-run output sink both runners produced
+         identically until it lived here. Last, so a report is written
+         from the rows the terminal has already shown. *)
+      Option.iter
+        (write_junit ~invocation ~suite ~duration:outcome.Runner.duration
+           ~results)
+        junit;
       Format.pp_print_flush Format.std_formatter ();
       Format.pp_print_flush Format.err_formatter ();
       Ok outcome
