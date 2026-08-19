@@ -32,7 +32,6 @@ F
     which failed at:
       test/test_codec.ml:17
       expected  [""]
-                 ~~
       actual    []
     replay: dune exec test/test_codec.exe -- --seed s1:fdf792804ac422b3 -f 'decode inverts encode'
 ──────────────────────────────────────────────────────

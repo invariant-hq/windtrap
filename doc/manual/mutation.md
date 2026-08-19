@@ -539,10 +539,14 @@ has to be the step that runs everything.
 **A survivor never fails a build in this release.** A survey run exits
 0 whatever it finds, and 1 only when it could not produce a number at
 all: a red or empty dry run, a suite that disagrees with itself between
-runs, instrumentation that is not actually armed, a deadline it overran,
-or a supervision error, each with its own message. It never exits 2 —
-that code belongs to the runner, and an armed run can still produce it
-by selecting no test at all. A gate over an uncalibrated number is how a
+runs, or a supervision error, each with its own message. Arming the
+most-reached mutant and watching nothing fail is not among them: that is
+the commonest first-run misconfiguration — the backend on the test
+executable but not on the library under test — and equally what a
+legitimately weak file looks like, so it prints a warning above the
+report and the run keeps its score. It never exits 2 — that code belongs
+to the runner, and an armed run can still produce it by selecting no
+test at all. A gate over an uncalibrated number is how a
 tool earns a reputation for lying, and the equivalent-mutant rate here
 is a prediction until it is measured. Admission is where an exit code
 carries an answer, and never about the project.

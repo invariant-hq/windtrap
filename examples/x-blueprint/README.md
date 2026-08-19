@@ -52,7 +52,7 @@ slug: 1 passed in 0.0221s (seed s1:cd98c762bb757a06).
   ADMITTED  slugify › is idempotent
     killed  examples/x-blueprint/lib/slug.ml:2:3:gt   c >= 'a'  →  c > 'a'
 
-admission: 1 admitted of 1 · 2 forks over 62 reached in 77ms (seed s1:cd98c762bb757a06)
+admission: 1 admitted of 1 · 2 forks over 61 reached in 77ms (seed s1:cd98c762bb757a06)
 ```
 
 `UNJUSTIFIED` would mean the test cannot fail, and exits 1; `NO SITES`
