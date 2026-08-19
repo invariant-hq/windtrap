@@ -1614,55 +1614,50 @@ let execute_and_report (spine : Driver.t) tests =
      the loop must honor every hook the link produced, however the
      initializers were ordered. *)
   let armed () = List.iter (fun hook -> hook ()) (List.rev !armed_hooks) in
-  (* A listing is not a run: nothing executes, so there is nothing to
-     observe, announce or mutate. Everything else goes through the knobs,
-     instrumented or not — a variable the user set and misspelled must be
-     loud in every build, and an identifier that names a site of a file
-     this build does catalogue and matches none of them comes back
-     [Unmatched] with the file's candidates, which is the whole
-     diagnosis. *)
-  if spine.Driver.config.Run.list_only then
-    Ran (Driver.execute_and_report spine tests)
-  else
-    match Cli.mutation () with
-    | Error error ->
-        note "%s" (Cli.error_message error);
-        Reported 1
-    | Ok { Cli.mode; arm; tries } -> (
-        let renderer () =
-          Driver.renderer ~render:spine.Driver.render ~mode:spine.Driver.output
-            ~invocation:spine.Driver.invocation ()
-        in
-        match (mode, arm) with
-        | `Unset, None ->
-            (* The one path an uninstrumented build must not pay for. *)
-            if instrumented () then discovery_mode (renderer ()) spine tests
-            else Ran (Driver.execute_and_report spine tests)
-        | `Off, None ->
-            (* [off] is the answer to the discovery line, which is the
-               only thing an unasked mutation build says. An arming is
-               still an explicit ask and still honoured below. *)
-            Ran (Driver.execute_and_report spine tests)
-        | (`Unset | `Off), Some _ -> arm_mode (renderer ()) ~armed spine tests
-        | (`Loop | `Admit), Some _ ->
+  (* Every run goes through the knobs, instrumented or not: a variable
+     the user set and misspelled must be loud in every build, and an
+     identifier that names a site of a file this build does catalogue and
+     matches none of them comes back [Unmatched] with the file's
+     candidates, which is the whole diagnosis. *)
+  match Cli.mutation () with
+  | Error error ->
+      note "%s" (Cli.error_message error);
+      Reported 1
+  | Ok { Cli.mode; arm; tries } -> (
+      let renderer () =
+        Driver.renderer ~render:spine.Driver.render ~mode:spine.Driver.output
+          ~invocation:spine.Driver.invocation ()
+      in
+      match (mode, arm) with
+      | `Unset, None ->
+          (* The one path an uninstrumented build must not pay for. *)
+          if instrumented () then discovery_mode (renderer ()) spine tests
+          else Ran (Driver.execute_and_report spine tests)
+      | `Off, None ->
+          (* [off] is the answer to the discovery line, which is the
+             only thing an unasked mutation build says. An arming is
+             still an explicit ask and still honoured below. *)
+          Ran (Driver.execute_and_report spine tests)
+      | (`Unset | `Off), Some _ -> arm_mode (renderer ()) ~armed spine tests
+      | (`Loop | `Admit), Some _ ->
+          refuse
+            "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
+             each mutant itself, so an armed parent would mutate its own dry \
+             run. Unset one"
+            M.arm_variable
+      | `Loop, None -> (
+          if Sys.win32 then
             refuse
-              "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
-               each mutant itself, so an armed parent would mutate its own dry \
-               run. Unset one"
-              M.arm_variable
-        | `Loop, None -> (
-            if Sys.win32 then
-              refuse
-                "mutation testing needs Unix.fork, which Windows does not \
-                 have; the tests themselves still ran"
-            else
-              try loop (renderer ()) ~armed spine tests
-              with Supervision message -> refuse "%s" message)
-        | `Admit, None -> (
-            if Sys.win32 then
-              refuse
-                "mutation testing needs Unix.fork, which Windows does not \
-                 have; the tests themselves still ran"
-            else
-              try admit_loop (renderer ()) ~armed spine ~tries tests
-              with Supervision message -> refuse "%s" message))
+              "mutation testing needs Unix.fork, which Windows does not \
+               have; the tests themselves still ran"
+          else
+            try loop (renderer ()) ~armed spine tests
+            with Supervision message -> refuse "%s" message)
+      | `Admit, None -> (
+          if Sys.win32 then
+            refuse
+              "mutation testing needs Unix.fork, which Windows does not \
+               have; the tests themselves still ran"
+          else
+            try admit_loop (renderer ()) ~armed spine ~tries tests
+            with Supervision message -> refuse "%s" message))

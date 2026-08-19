@@ -1817,13 +1817,11 @@ let () =
         (r1.Run.path = [ "one" ] && r2.Run.path = [ "two" ])
   | _ -> check "events stream in execution order" false);
   events := [];
-  let config = { config with Run.list_only = true } in
-  expect_run "list-only run" ~on_event ~config tests @@ fun outcome ->
-  check "list-only: nothing executed, selection listed, exit 0"
-    (Run.results outcome.Runner.run = []
-    && List.length outcome.Runner.selected = 2
-    && outcome.Runner.exit_code = 0);
-  check "list-only: no events" (!events = [])
+  match Runner.list_selection ~config ~suite:"suite" tests with
+  | Error _ -> check "--list is the selection, and runs nothing" false
+  | Ok paths ->
+      check "--list is the selection, and runs nothing"
+        (paths = [ "one"; "two" ] && !events = [])
 
 (* Property wiring *)
 

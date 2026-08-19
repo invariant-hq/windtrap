@@ -25,7 +25,6 @@ type config = {
   exclude_tags : string list;
   shard : (int * int) option;
   failed_only : bool;
-  list_only : bool;
   bail : int option;
   stream : bool;
   update : Env.update;
@@ -46,7 +45,6 @@ let default_config () =
     exclude_tags = [];
     shard = None;
     failed_only = false;
-    list_only = false;
     bail = None;
     stream = false;
     update = Env.No_update;
@@ -87,7 +85,6 @@ let for_subset config ~log_dir ~bail =
     exclude = None;
     shard = None;
     failed_only = false;
-    list_only = false;
     bail;
     stream = false;
     update = Env.No_update;

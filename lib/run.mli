@@ -48,7 +48,6 @@ type config = {
           bucket [K] of [N] ({!Runner}, {e Selection}). Invariant [1 <= K <= N],
           validated by the CLI layer. *)
   failed_only : bool;  (** [--failed]: rerun only the last run's failures. *)
-  list_only : bool;  (** [-l]: list selected tests without running them. *)
   bail : int option;
       (** [--bail N] ([-x] is [Some 1]): stop after [N] failures. *)
   stream : bool;
@@ -89,13 +88,14 @@ val for_subset : config -> log_dir:string -> bail:int option -> config
 (** [for_subset config ~log_dir ~bail] is [config] adjusted for a run over a
     {e subtree} of its own selection — the mutation loop's forked children.
     Path-selecting knobs ([filter], [exclude], [shard], [failed_only]) are
-    cleared, because the caller's [Runner.plan] allowlist {e is} that selection
+    cleared, because the caller's [Runner.execute] allowlist {e is} that
+    selection
     and applying them again could only narrow it further; tag-selecting knobs
     ([tags], [exclude_tags]) and the root [seed] are kept verbatim, because an
     allowlist cannot express a tag and per-case seeds derive from
     [(root, path, index)]. Checking is made read-only ([update = No_update]),
-    reporting side effects are dropped ([junit], [stream], [list_only]), an
-    in-source focus is allowed, and [log_dir] and [bail] are the caller's.
+    reporting side effects are dropped ([junit], [stream]), an in-source focus
+    is allowed, and [log_dir] and [bail] are the caller's.
 
     A new selection knob that this function does not clear gives such a child a
     selection its parent's tree already applied, which is how a deterministic

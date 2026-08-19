@@ -288,10 +288,6 @@ val execute :
     children, which run one mutant's reaching tests. It composes with every
     other selection layer by intersection, [--failed] included.
 
-    When [config.list_only] is set, startup checks and selection still apply but
-    nothing executes, no event fires, no store or log is touched, and the
-    outcome carries the selection with exit code [0].
-
     Effects: registers a process-wide [Stdlib.at_exit] exit guard on first call
     (never removed; inert while no run is active), reads [CI] via {!Env},
     captures test output under [config.log_dir] (unless [config.stream]),
@@ -303,4 +299,20 @@ val execute :
     only a hand-built configuration can trip this. If [on_event] raises, the run
     aborts with that exception — after a best-effort fixture release, like a
     fatal exception. *)
+
+val list_selection :
+  config:Run.config ->
+  suite:string ->
+  Test_tree.t list ->
+  (string list, startup_error) result
+(** [list_selection ~config ~suite tests] is the full paths
+    ({!Test_tree.path_to_string}) {!execute} would run, in declaration order:
+    the startup checks and the selection, with nothing executed. [Error error]
+    on a refused run, exactly when {!execute} would refuse — [--list] does not
+    excuse a mistyped [--shard] or a missing [--failed] store.
+
+    Effects: the startup ones only — the exit-guard registration,
+    [Printexc.record_backtrace true], the [CI] read and the [--failed] store
+    read. No capture, no log directory, no store rewrite, no baseline. Raises
+    [Invalid_argument] as {!execute} does. *)
 

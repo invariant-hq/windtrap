@@ -284,11 +284,6 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
       github_end ~github;
       prerr_endline (Runner.startup_message error);
       Error error
-  | Ok outcome when config.Run.list_only ->
-      (* Nothing ran, so there is nothing to project: [Runner.execute]
-         applied the startup checks and the selection and stopped. The
-         caller prints the listing it asked for. *)
-      Ok outcome
   | Ok outcome ->
       (* The one recorded list: test rows plus the runner's verdict rows
          (fixture-release failures). Every sink projects it, so a verdict

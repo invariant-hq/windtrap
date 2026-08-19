@@ -172,9 +172,9 @@ let () =
 
 (* The list-only child (driver, [--list]): re-exec'd to run the facade's
    [run] on a two-test suite with [-l]. A list run selects and stops —
-   [Driver.execute_and_report] projects nothing, the driver prints the
-   selection — so the whole transcript must be the paths and nothing
-   else: no header, no glyph row, no summary line. *)
+   the facade answers it from [Runner.list_selection], before the drive
+   spine — so the whole transcript must be the paths and nothing else: no
+   header, no glyph row, no summary line. *)
 let () =
   match Array.to_list Sys.argv with
   | [ _; "--list-child"; log_dir ] ->

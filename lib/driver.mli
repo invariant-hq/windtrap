@@ -25,8 +25,9 @@
     policies ([seed] and [selection] — the inline runner passes [None] for
     both), the output-level and coverage-mode resolution sources (parsed CLI vs
     the [WINDTRAP_*] mirrors of [Cli.empty]), the GitHub gating decision, the
-    [--list] listing, JUnit, the correction protocol, and the exit discipline.
-    This module never decides them.
+    [--list] listing ({!Runner.list_selection}, which never reaches this
+    module), JUnit, the correction protocol, and the exit discipline. This
+    module never decides them.
 
     This module sits below both drivers: it depends only on the runner, the
     renderers, and the environment — never on [Cli] resolution or either driver.
@@ -47,8 +48,7 @@ type t = {
           {!selection_description}; the inline runner passes [None]
           ({!observe}). *)
   github : bool;
-      (** The GitHub gating decision ({!Env.in_github_actions}, minus list-only
-          runs in the facade). *)
+      (** The GitHub gating decision ({!Env.in_github_actions}). *)
   output : [ `Quiet | `Compact | `Verbose ];  (** The resolved output level. *)
   coverage : bool;
       (** Whether the inline coverage line prints ({!Cli.settings}). *)
@@ -244,10 +244,6 @@ val execute_and_report :
     [::error::] block written inside the [::group::] envelope folds away with
     the transcript, and annotations are the part a reviewer must see without
     unfolding anything.
-
-    A [t.config.list_only] run reports nothing: {!Runner.execute} applied the
-    startup checks and the selection without running a test, so there is no run
-    to project — the caller prints the listing.
 
     [Error error] is a refused startup: {!github_end} has closed the envelope
     and {!Runner.startup_message} is already on [stderr], so all the caller

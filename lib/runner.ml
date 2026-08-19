@@ -853,73 +853,72 @@ let execute_plan ?(on_event = fun _ -> ())
     invalid_arg
       "windtrap: run is already active — a test body cannot start another run";
   let snapshots = Snapshot.create ~mode () in
-  if config.Run.list_only then
-    {
-      run = Run.create config ~capture:Capture.disabled ~snapshots;
-      selected;
-      total;
-      focus_active;
-      bailed = false;
-      failed_paths = [];
-      orphans = [];
-      duration = Clock.count_s started;
-      exit_code = 0;
-    }
-  else
-    let capture =
-      if config.Run.stream then Capture.disabled
-      else Capture.create ~log_dir:config.Run.log_dir ~suite ()
-    in
-    let run = Run.create config ~capture ~snapshots in
-    (* The executing span: everything from the first event to the completed
-       outcome runs with the slot marked, so the exit guard covers fixture
-       release, observers, and store maintenance — not only test attempts. On
-       the fatal path the protect empties the slot before the exception leaves
-       [execute], so the guard is inert during fatal termination. *)
-    Run.with_active run @@ fun () ->
-    on_event (Run_started { suite; total; selected = List.length selected });
-    let bailed, executed, failed_paths = drive ~on_event run selected in
-    (* Releases run after the last test, outside any per-test timeout,
-       including under --bail. A failure here is part of the run's verdict,
-       so it is recorded the moment it happens: one row per failure, after
-       every test row. *)
-    let release_failures = release ~on_event run in
-    List.iter
-      (fun failure ->
-        Run.record run
-          (verdict_result ~subject:Run.Fixture_release
-             ~path:Run.fixture_release_path [ failure ]))
-      release_failures;
-    (* Store and snapshot maintenance range over executed tests: a verdict
-       row is not a test — counting one as skipped, failed, or executed
-       would silently disable orphan reporting and corrupt the last-failed
-       store. *)
-    let test_results = List.filter executed_test (Run.results run) in
-    (* A full run executed the entire declared suite: only such a run may drop
-       store entries for tests that no longer exist, or report orphans. *)
-    let full = (not bailed) && executed = total in
-    update_last_failed (store_path config ~suite) ~full ~results:test_results
-      ~failed_paths;
-    let orphans =
-      stale_baselines snapshots ~full ~results:test_results
-        ~focused_count:focused
-    in
-    let exit_code =
-      if failed_paths <> [] || release_failures <> [] then 1
-      else if executed = 0 then 2
-      else 0
-    in
-    {
-      run;
-      selected;
-      total;
-      focus_active;
-      bailed;
-      failed_paths;
-      orphans;
-      duration = Clock.count_s started;
-      exit_code;
-    }
+  let capture =
+    if config.Run.stream then Capture.disabled
+    else Capture.create ~log_dir:config.Run.log_dir ~suite ()
+  in
+  let run = Run.create config ~capture ~snapshots in
+  (* The executing span: everything from the first event to the completed
+     outcome runs with the slot marked, so the exit guard covers fixture
+     release, observers, and store maintenance — not only test attempts. On
+     the fatal path the protect empties the slot before the exception leaves
+     [execute], so the guard is inert during fatal termination. *)
+  Run.with_active run @@ fun () ->
+  on_event (Run_started { suite; total; selected = List.length selected });
+  let bailed, executed, failed_paths = drive ~on_event run selected in
+  (* Releases run after the last test, outside any per-test timeout,
+     including under --bail. A failure here is part of the run's verdict,
+     so it is recorded the moment it happens: one row per failure, after
+     every test row. *)
+  let release_failures = release ~on_event run in
+  List.iter
+    (fun failure ->
+      Run.record run
+        (verdict_result ~subject:Run.Fixture_release
+           ~path:Run.fixture_release_path [ failure ]))
+    release_failures;
+  (* Store and snapshot maintenance range over executed tests: a verdict
+     row is not a test — counting one as skipped, failed, or executed
+     would silently disable orphan reporting and corrupt the last-failed
+     store. *)
+  let test_results = List.filter executed_test (Run.results run) in
+  (* A full run executed the entire declared suite: only such a run may drop
+     store entries for tests that no longer exist, or report orphans. *)
+  let full = (not bailed) && executed = total in
+  update_last_failed (store_path config ~suite) ~full ~results:test_results
+    ~failed_paths;
+  let orphans =
+    stale_baselines snapshots ~full ~results:test_results
+      ~focused_count:focused
+  in
+  let exit_code =
+    if failed_paths <> [] || release_failures <> [] then 1
+    else if executed = 0 then 2
+    else 0
+  in
+  {
+    run;
+    selected;
+    total;
+    focus_active;
+    bailed;
+    failed_paths;
+    orphans;
+    duration = Clock.count_s started;
+    exit_code;
+  }
 
 let execute ?on_event ?allowlist ~config ~suite tests =
   Result.map (execute_plan ?on_event) (plan ?allowlist ~config ~suite tests)
+
+(* [--list]: the deciding half alone. A listing is not a run — nothing
+   executes, so there is no capture, no store rewrite and no report — and
+   the caller that asked for it prints it. *)
+let list_selection ~config ~suite tests =
+  Result.map
+    (fun (p : plan) ->
+      List.map
+        (fun (case : Test_tree.case) ->
+          Test_tree.path_to_string case.Test_tree.path)
+        p.selected)
+    (plan ~config ~suite tests)

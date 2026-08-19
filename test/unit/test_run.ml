@@ -48,7 +48,7 @@ let () =
     (config.Run.tags = [] && config.Run.exclude_tags = []);
   check "default config: flags off"
     ((not config.Run.failed_only)
-    && (not config.Run.list_only) && (not config.Run.stream)
+    && (not config.Run.stream)
     && not config.Run.allow_focus);
   check "default config: no update request" (config.Run.update = Env.No_update);
   check "default config: no overrides"

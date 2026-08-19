@@ -406,7 +406,7 @@ let () =
   check "default: no tags" (config.Run.tags = [] && config.Run.exclude_tags = []);
   check "default: flags off"
     ((not config.Run.failed_only)
-    && (not config.Run.list_only) && (not config.Run.stream)
+    && (not config.Run.stream)
     && not config.Run.allow_focus);
   check "default: update off" (config.Run.update = Env.No_update);
   check "default: no bail/timeout/prop-count/junit"

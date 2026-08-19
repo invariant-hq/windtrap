@@ -723,7 +723,6 @@ let resolved below =
       exclude_tags = below.exclude_tags;
       shard = below.shard;
       failed_only = Option.value below.failed_only ~default:false;
-      list_only = Option.value below.list_only ~default:false;
       bail = below.bail;
       stream = Option.value below.stream ~default:false;
       update = Option.value below.update ~default:Env.No_update;
