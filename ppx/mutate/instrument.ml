@@ -412,18 +412,23 @@ let armed ~loc ~module_name index =
 let stdlib ~loc name =
   pexp_ident ~loc { txt = Ldot (Lident "Stdlib", name); loc }
 
-(* [neg]: branch on the guard, with the condition bound once so that it
-   is evaluated exactly as often as before. [Stdlib.not] rather than
-   [not]: the emission law admits identifiers of the original expression
-   plus Stdlib-qualified names, and nothing else. *)
-let neg_guard ~loc ~module_name ~index condition =
+(* [neg], and [cmp]'s self-negating form for [=] and [<>]: one shape, and
+   the same one, because both negate a boolean the source already wrote.
+   The value is bound once so that it is evaluated exactly as often as
+   before; [=] and [<>] bind the whole comparison rather than its two
+   operands, since their identities do not swap, which leaves the
+   operands the evaluation order the compiler chose for them instead of
+   fixing it here. [Stdlib.not] rather than [not]: the emission law
+   admits identifiers of the original expression plus Stdlib-qualified
+   names, and nothing else. *)
+let negating_guard ~loc ~module_name ~index value =
   let p = binder index "p" in
   [%expr
-    let [%p pvar ~loc p] = [%e condition] in
+    let [%p pvar ~loc p] = [%e value] in
     if [%e armed ~loc ~module_name index] then Stdlib.not [%e evar ~loc p]
     else [%e evar ~loc p]]
 
-(* [cmp], swapping form. The operands are lifted through ONE tuple
+(* [cmp]'s swapping form and [ari], which are one skeleton. The operands are lifted through ONE tuple
    binding, [let (l, r) = (left, right)], and both arms apply the
    operator the source wrote - the armed one to the swapped operands,
    under [Stdlib.not].
@@ -451,36 +456,33 @@ let neg_guard ~loc ~module_name ~index condition =
      uninstrumented application, still allocates nothing, and Law 16(a)
      holds bit for bit; test/mutate_ppx/semantics/ checks all of it
      against an uninstrumented twin. *)
-let cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs ~original_loc
-    left right =
+let binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
+    ~armed_arm left right =
   let l = binder index "l" and r = binder index "r" in
-  let apply ~loc first second =
-    pexp_apply ~loc operator [ (Nolabel, first); (Nolabel, second) ]
-  in
   let disarmed =
     {
-      (apply ~loc:original_loc (evar ~loc l) (evar ~loc r)) with
+      (pexp_apply ~loc:original_loc operator
+         [ (Nolabel, evar ~loc l); (Nolabel, evar ~loc r) ])
+      with
       pexp_attributes = attrs;
     }
   in
-  let armed_arm =
-    [%expr Stdlib.not [%e apply ~loc (evar ~loc r) (evar ~loc l)]]
-  in
   [%expr
     let [%p pvar ~loc l], [%p pvar ~loc r] = ([%e left], [%e right]) in
-    if [%e armed ~loc ~module_name index] then [%e armed_arm] else [%e disarmed]]
+    if [%e armed ~loc ~module_name index] then
+      [%e armed_arm ~l:(evar ~loc l) ~r:(evar ~loc r)]
+    else [%e disarmed]]
 
-(* [cmp], self-negating form, for [=] and [<>]. Their identities do not
-   swap operands, so the whole comparison is bound once instead of its
-   two operands: one binder rather than two, and the operands keep the
-   evaluation order the compiler chose for them rather than having it
-   fixed by the instrumenter. *)
-let cmp_guard_direct ~loc ~module_name ~index comparison =
-  let p = binder index "p" in
-  [%expr
-    let [%p pvar ~loc p] = [%e comparison] in
-    if [%e armed ~loc ~module_name index] then Stdlib.not [%e evar ~loc p]
-    else [%e evar ~loc p]]
+(* [cmp], swapping form: the armed arm applies the operator the source
+   wrote to the swapped operands, under [Stdlib.not]. *)
+let cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs ~original_loc
+    left right =
+  binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
+    ~armed_arm:(fun ~l ~r ->
+      [%expr
+        Stdlib.not
+          [%e pexp_apply ~loc operator [ (Nolabel, r); (Nolabel, l) ]]])
+    left right
 
 (* [con]. [&&] and [||] cannot be lifted to values without losing
    short-circuiting, and branching on the armed flag around the whole
@@ -526,27 +528,15 @@ let con_guard ~loc ~module_name ~index ~is_and left right =
 
 (* [ari]. The one operator whose well-typedness is not structural: the
    armed arm names an operator the source did not write, which is why
-   [capabilities.ari] must hold for it to be emitted at all. Operands
-   are lifted through one tuple binding, as for [cmp] and for the same
-   two reasons: components are TYPE-CHECKED left to right, preserving
-   the source's typing context, and COMPILED into the right-operand-
-   first [let]-chain, preserving the source's compiled evaluation order
-   - and neither arm duplicates an operand. *)
+   [capabilities.ari] must hold for it to be emitted at all. *)
 let ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
     ~original_loc left right =
-  let l = binder index "l" and r = binder index "r" in
-  let apply ~loc callee =
-    pexp_apply ~loc callee [ (Nolabel, evar ~loc l); (Nolabel, evar ~loc r) ]
-  in
-  let disarmed =
-    { (apply ~loc:original_loc operator) with pexp_attributes = attrs }
-  in
-  let armed_arm =
-    apply ~loc (pexp_ident ~loc { txt = Lident replacement; loc })
-  in
-  [%expr
-    let [%p pvar ~loc l], [%p pvar ~loc r] = ([%e left], [%e right]) in
-    if [%e armed ~loc ~module_name index] then [%e armed_arm] else [%e disarmed]]
+  binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
+    ~armed_arm:(fun ~l ~r ->
+      pexp_apply ~loc
+        (pexp_ident ~loc { txt = Lident replacement; loc })
+        [ (Nolabel, l); (Nolabel, r) ])
+    left right
 
 (* [lazy] applied to a trivial syntactic value compiles as already
    forced, so a guard under such a [lazy] would change the compilation of
@@ -578,12 +568,24 @@ type context = [ `Cond | `Bool | `Ordinary ]
 (* What guard, if any, [e] carries in a given context. Computed from the
    expression as written, so that the guard emitter and the dismissal
    recorder answer the same question. *)
+(* A binary application as [binary] destructured it: the operator's name,
+   the operator expression, and the two operands. Carried on the shape so
+   that the guard emitter destructures nothing a second time — the four
+   impossible-case handlers that cost, one per shape, are what a shape
+   that forgets its own operands buys. *)
+type application = {
+  name : string;
+  operator : expression;
+  left : expression;
+  right : expression;
+}
+
 type shape =
   | Neg
-  | Cmp_swapped of expression (* the operator the source wrote *)
-  | Cmp_direct
-  | Con of bool (* [true] for [&&] *)
-  | Ari of expression * string (* the operator, and its replacement *)
+  | Cmp_swapped of application
+  | Cmp_direct of application
+  | Con of application (* [name] is ["&&"] or ["||"] *)
+  | Ari of application * string (* the replacement operator's name *)
 
 let shape_of capabilities (context : context) e =
   let loc = e.pexp_loc in
@@ -608,18 +610,19 @@ let shape_of capabilities (context : context) e =
               then None
               else
                 Some
-                  ( Con (String.equal name "&&"),
+                  ( Con { name; operator; left; right },
                     rewrite,
                     render_binary ~loc replacement left right )
           | _, Some (rewrite, replacement, swap), _
             when capabilities.cmp && context <> `Ordinary ->
+              let site = { name; operator; left; right } in
               Some
-                ( (if swap then Cmp_swapped operator else Cmp_direct),
+                ( (if swap then Cmp_swapped site else Cmp_direct site),
                   rewrite,
                   render_binary ~loc replacement left right )
           | _, _, Some (rewrite, replacement) when capabilities.ari ->
               Some
-                ( Ari (operator, replacement),
+                ( Ari ({ name; operator; left; right }, replacement),
                   rewrite,
                   render_binary ~loc replacement left right )
           | _ ->
@@ -679,61 +682,50 @@ class instrumenter st capabilities module_name =
       | Neg -> (
           let inner = self#descend e in
           match index with
-          | Some index -> neg_guard ~loc ~module_name ~index inner
+          | Some index -> negating_guard ~loc ~module_name ~index inner
           | None -> inner)
-      | Con is_and -> (
-          match binary e with
-          | None -> assert false
-          | Some (name, operator, left, right) -> (
-              suppress_chain st name left;
-              let left = self#mutate `Bool left
-              and right = self#mutate `Bool right in
-              match index with
-              | Some index ->
-                  (* The [con] guard is the one shape in which no single
-                     generated node is the original expression, so the
-                     original's attributes go on the outermost node
-                     rather than on an arm. Every other shape has a
-                     disarmed arm to carry them. *)
-                  {
-                    (con_guard ~loc ~module_name ~index ~is_and left right) with
-                    pexp_attributes = attrs;
-                  }
-              | None -> rebuild operator left right))
-      | Cmp_direct -> (
-          match binary e with
-          | None -> assert false
-          | Some (_, operator, left, right) -> (
-              let left = self#mutate `Ordinary left
-              and right = self#mutate `Ordinary right in
-              let comparison = rebuild operator left right in
-              match index with
-              | Some index ->
-                  cmp_guard_direct ~loc ~module_name ~index comparison
-              | None -> comparison))
-      | Cmp_swapped operator -> (
-          match binary e with
-          | None -> assert false
-          | Some (_, _, left, right) -> (
-              let left = self#mutate `Ordinary left
-              and right = self#mutate `Ordinary right in
-              match index with
-              | Some index ->
-                  cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs
-                    ~original_loc left right
-              | None -> rebuild operator left right))
-      | Ari (operator, replacement) -> (
-          match binary e with
-          | None -> assert false
-          | Some (name, _, left, right) -> (
-              suppress_chain st name left;
-              let left = self#mutate `Ordinary left
-              and right = self#mutate `Ordinary right in
-              match index with
-              | Some index ->
-                  ari_guard ~loc ~module_name ~index ~operator ~replacement
-                    ~attrs ~original_loc left right
-              | None -> rebuild operator left right))
+      | Con { name; operator; left; right } -> (
+          suppress_chain st name left;
+          let left = self#mutate `Bool left
+          and right = self#mutate `Bool right in
+          match index with
+          | Some index ->
+              (* The [con] guard is the one shape in which no single
+                 generated node is the original expression, so the
+                 original's attributes go on the outermost node rather
+                 than on an arm. Every other shape has a disarmed arm to
+                 carry them. *)
+              {
+                (con_guard ~loc ~module_name ~index
+                   ~is_and:(String.equal name "&&") left right)
+                with
+                pexp_attributes = attrs;
+              }
+          | None -> rebuild operator left right)
+      | Cmp_direct { operator; left; right; _ } -> (
+          let left = self#mutate `Ordinary left
+          and right = self#mutate `Ordinary right in
+          let comparison = rebuild operator left right in
+          match index with
+          | Some index -> negating_guard ~loc ~module_name ~index comparison
+          | None -> comparison)
+      | Cmp_swapped { operator; left; right; _ } -> (
+          let left = self#mutate `Ordinary left
+          and right = self#mutate `Ordinary right in
+          match index with
+          | Some index ->
+              cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs
+                ~original_loc left right
+          | None -> rebuild operator left right)
+      | Ari ({ name; operator; left; right }, replacement) -> (
+          suppress_chain st name left;
+          let left = self#mutate `Ordinary left
+          and right = self#mutate `Ordinary right in
+          match index with
+          | Some index ->
+              ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
+                ~original_loc left right
+          | None -> rebuild operator left right)
 
     (* Traverses [e]'s children without guarding [e] itself. The forms
        that create a context are handled here; everything else goes
@@ -761,22 +753,20 @@ class instrumenter st capabilities module_name =
             pexp_desc =
               Pexp_while (self#mutate `Cond condition, self#expression body);
           }
-      | _ when is_connective_apply capabilities e -> (
+      | Pexp_apply (operator, [ (Nolabel, left); (Nolabel, right) ])
+        when is_connective_apply capabilities e ->
           (* A connective rule 2 skipped: its operands are boolean
              positions all the same. *)
-          match binary e with
-          | None -> assert false
-          | Some (_, operator, left, right) ->
-              {
-                e with
-                pexp_desc =
-                  Pexp_apply
-                    ( operator,
-                      [
-                        (Nolabel, self#mutate `Bool left);
-                        (Nolabel, self#mutate `Bool right);
-                      ] );
-              })
+          {
+            e with
+            pexp_desc =
+              Pexp_apply
+                ( operator,
+                  [
+                    (Nolabel, self#mutate `Bool left);
+                    (Nolabel, self#mutate `Bool right);
+                  ] );
+          }
       | _ -> super#expression e
 
     method! expression e =
