@@ -136,6 +136,16 @@ let ends_with ?pos ?msg ~affix haystack =
       ~claim:(Pp.str "string ending with %S" affix)
       ~needle:affix ~haystack ()
 
+(* Membership is containment over a witnessed element type, so it cannot
+   reuse [Failure.Containment] — that payload is byte offsets into a
+   haystack. The claim sentence names the element, the value is the list
+   the reader has to look at. *)
+let mem ?pos ?msg t x xs =
+  if not (List.exists (Testable.equal t x) xs) then
+    fail_predicate ?pos ?msg
+      ~claim:(Pp.str "a list containing %s" (Testable.to_string t x))
+      (Testable.to_string (Testable.list t) xs)
+
 (* Predicates *)
 
 (* [?claim] is the sentence the report puts on the expected side, so a
@@ -146,11 +156,10 @@ let satisfies ?pos ?msg ?(claim = "value satisfying the predicate") t pred v =
 
 (* Options
 
-   The shape assertion, for when the value is not wanted: a witness would
-   be a printer and an equality for a type it never compares, so it takes
+   The shape assertions, for when the value is not wanted: a witness would
+   be a printer and an equality for a type these never compare, so they take
    the same optional printer the unwrapping verbs do — "render the branch
-   you did not want" — and nothing more. [Some _] is asserted by
-   [require_some], whose payload this one is the mirror of. *)
+   you did not want" — and nothing more. *)
 
 let is_none ?pos ?msg ?pp = function
   | None -> ()
@@ -158,6 +167,11 @@ let is_none ?pos ?msg ?pp = function
       fail_equality ?pos ?msg ~expected:"None"
         ~actual:("Some " ^ render_or_abstract pp v)
         ()
+
+(* No [?pp]: the failing side is [None], which has nothing to render. *)
+let is_some ?pos ?msg = function
+  | Some _ -> ()
+  | None -> fail_equality ?pos ?msg ~expected:"Some _" ~actual:"None" ()
 
 (* Unwrapping *)
 

@@ -219,21 +219,34 @@ haystack  sessions/ghost/session.json
                    ~~~~~
 ```
 
-## Options
-
-Asserting that an option is *empty* needs no witness: `is_none` never
-compares the value, so it takes the same optional printer the
-`require_*` verbs do — print the branch you did not want:
+`mem` is the same idea one type up — membership in a list, through a
+witness, so the failure shows the element you wanted and the list you
+got rather than a bare `false`:
 
 ```ocaml
-is_none ~pp:User.pp (Store.find store "nobody")
+mem int 42 [ 2; 3; 5 ]
+```
+
+```
+expected  a list containing 42
+actual    [2; 3; 5]
+```
+
+## Options
+
+Asserting an option's *shape* needs no witness: `is_none` and
+`is_some` never compare the value, so they take the same optional
+printer the `require_*` verbs do — print the branch you did not want:
+
+```ocaml
+is_none ~pp:User.pp (Store.find store "nobody");
+is_some (Store.find store "alice")
 ```
 
 Without `~pp` the rejected value renders as `<abstract>`, which is
-often all you need. The other direction is `require_some`, which
-asserts and hands the value back; when you want only the assertion,
-`ignore (require_some o)` is the spelling — one wording for one
-claim.
+often all you need. Reach for `require_some` when you want the value
+too; `is_some` exists so that asserting presence alone does not mean
+discarding a result.
 
 ## Exceptions
 

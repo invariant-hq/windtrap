@@ -112,6 +112,16 @@ val ends_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
 (** [ends_with ~affix s] is [()] iff [s] ends with [affix]; the payload is
     {!starts_with}'s. *)
 
+val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
+(** [mem t x xs] is [()] iff [xs] has an element equal to [x] under [t].
+    Otherwise it raises {!Failure.Check_failure} with a {!Failure.Predicate}
+    payload whose claim names [x] and whose value is [xs], both rendered by
+    [t]'s printer — the data an [is_true (List.mem x xs)] would have thrown
+    away. Elements are rendered only on failure.
+
+    Membership over bytes is {!contains}; this is membership over a witnessed
+    element type, so the two cannot share a payload. *)
+
 (** {1:predicates Predicates} *)
 
 val satisfies :
@@ -131,10 +141,10 @@ val satisfies :
 
 (** {1:options Options}
 
-    The shape assertion, for when the value is not wanted. It takes the same
+    The shape assertions, for when the value is not wanted. They take the same
     optional printer the unwrapping verbs do rather than a {!Testable.t}: a
-    witness carries an equality it never consults, and demanding one for a type
-    the assertion does not inspect is what drives call sites to
+    witness carries an equality these never consult, and demanding one for a
+    type the assertion does not inspect is what drives call sites to
     [equal (option pass) None x]. *)
 
 val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
@@ -142,6 +152,11 @@ val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
     {!Failure.Check_failure} comparing [None] against [Some <v>], with [v]
     rendered by [pp] when given and as [<abstract>] otherwise; the printer runs
     only on failure. *)
+
+val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
+(** [is_some o] is [()] iff [o] is [Some _] — {!require_some} for callers that
+    want the assertion and not the value, instead of discarding it. There is no
+    [?pp]: the failing side is [None], which has nothing to render. *)
 
 (** {1:unwrapping Unwrapping}
 
