@@ -15,7 +15,6 @@ type parsed = {
   tags : string list;
   exclude_tags : string list;
   shard : (int * int) option;
-  quick : bool option;
   failed_only : bool option;
   list_only : bool option;
   bail : int option;
@@ -44,7 +43,6 @@ let empty =
     tags = [];
     exclude_tags = [];
     shard = None;
-    quick = None;
     failed_only = None;
     list_only = None;
     bail = None;
@@ -260,14 +258,6 @@ let table =
             };
         doc = "Run only the Kth of N deterministic path-hash buckets";
         mirror = mirrored "WINDTRAP_SHARD" verbatim (fun p -> p.shard = None);
-      };
-    Flag_entry
-      {
-        short = None;
-        long = "--quick";
-        arg = Flag (fun acc -> { acc with quick = Some true });
-        doc = "Skip slow-tagged tests";
-        mirror = None;
       };
     Flag_entry
       {
@@ -856,8 +846,6 @@ let resolved ~overrides below =
         tags = overrides.tags @ below.tags;
         exclude_tags = overrides.exclude_tags @ below.exclude_tags;
         shard;
-        quick =
-          Option.value (first_some overrides.quick below.quick) ~default:false;
         failed_only =
           Option.value
             (first_some overrides.failed_only below.failed_only)

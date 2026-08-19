@@ -103,7 +103,6 @@ let selection_description (config : Run.config) =
         (match config.Run.exclude_tags with
         | [] -> []
         | ts -> [ Pp.str "excluded tag %s" (quoted ts) ]);
-        (if config.Run.quick then [ "--quick" ] else []);
         (if config.Run.failed_only then [ "--failed" ] else []);
         (match config.Run.shard with
         | Some (k, n) -> [ Pp.str "shard %d/%d" k n ]

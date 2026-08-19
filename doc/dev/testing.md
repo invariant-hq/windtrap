@@ -259,8 +259,8 @@ Two smaller sharp edges, both measured:
   as the reading to check, which is what it always was.
 - **A narrowed run's survivors are relative to its selection.** A mutant
   is reported as surviving when no *selected* test killed it. Such a run
-  now keeps that to itself — a selection (`-f`, `-e`, tags, `--quick`,
-  `--shard`, `--failed`, an in-source focus) reports in full but writes
+  now keeps that to itself — a selection (`-f`, `-e`, tags, `--shard`,
+  `--failed`, an in-source focus) reports in full but writes
   no verdict file and prints `verdicts not saved: …`, so `@mutate` never
   merges a partial answer. `WINDTRAP_MUTATE_ONLY` is not such a
   selection and still writes. Confirm a narrowed survivor before

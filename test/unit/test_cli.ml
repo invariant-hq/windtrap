@@ -67,7 +67,6 @@ let () =
       "b";
       "--exclude-tag";
       "c";
-      "--quick";
       "--failed";
       "-l";
       "--bail";
@@ -94,7 +93,6 @@ let () =
       check "exclude" (p.Cli.exclude = Some "ex");
       check "tags accumulate in order" (p.Cli.tags = [ "a"; "b" ]);
       check "exclude_tags" (p.Cli.exclude_tags = [ "c" ]);
-      check "quick" (p.Cli.quick = Some true);
       check "failed_only" (p.Cli.failed_only = Some true);
       check "list_only" (p.Cli.list_only = Some true);
       check "bail" (p.Cli.bail = Some 3);
@@ -148,8 +146,10 @@ let () =
       check "-q -v is verbose" (p.Cli.output = Some `Verbose));
   expect_ok "one axis: the last flag wins (reversed)" [ "-v"; "-q" ] (fun p ->
       check "-v -q is quiet" (p.Cli.output = Some `Quiet));
-  expect_ok "--quick is selection only, not the output level" [ "--quick" ]
-    (fun p -> check "--quick" (p.Cli.quick = Some true && p.Cli.output = None))
+  expect_ok "--exclude-tag is selection only, not the output level"
+    [ "--exclude-tag"; "slow" ] (fun p ->
+      check "--exclude-tag"
+        (p.Cli.exclude_tags = [ "slow" ] && p.Cli.output = None))
 
 (* Parsing: positionals *)
 
@@ -344,7 +344,6 @@ let () =
       "--tag";
       "--exclude-tag";
       "--shard";
-      "--quick";
       "--failed";
       "--list";
       "--fail-fast";
@@ -414,8 +413,7 @@ let () =
     (config.Run.filter = None && config.Run.exclude = None);
   check "default: no tags" (config.Run.tags = [] && config.Run.exclude_tags = []);
   check "default: flags off"
-    ((not config.Run.quick)
-    && (not config.Run.failed_only)
+    ((not config.Run.failed_only)
     && (not config.Run.list_only) && (not config.Run.stream)
     && (not config.Run.prune)
     && (not config.Run.strict_snapshots)
@@ -615,13 +613,13 @@ let () =
     resolve
       {
         Cli.empty with
-        Cli.quick = Some true;
+        Cli.stream = Some true;
         bail = Some 2;
         log_dir = Some "custom-logs";
       }
   in
   check "parsed booleans and values land in the config"
-    (config.Run.quick && config.Run.bail = Some 2
+    (config.Run.stream && config.Run.bail = Some 2
     (* Absolutized at resolve time so a test that chdirs cannot move the
        run's logs; the relative spelling is still what it ends with. *)
     && Filename.is_relative config.Run.log_dir = false
@@ -812,10 +810,10 @@ let () =
   let s =
     settings
       ~overrides:
-        { Cli.empty with Cli.output = Some `Verbose; Cli.quick = Some true }
+        { Cli.empty with Cli.output = Some `Verbose; Cli.stream = Some true }
       Cli.empty
   in
-  check "overrides reach the config field" s.Cli.config.Run.quick;
+  check "overrides reach the config field" s.Cli.config.Run.stream;
   check "overrides reach the level field" (s.Cli.output_level = `Verbose);
   clear_env ()
 

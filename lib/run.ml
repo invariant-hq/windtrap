@@ -24,7 +24,6 @@ type config = {
   tags : string list;
   exclude_tags : string list;
   shard : (int * int) option;
-  quick : bool;
   failed_only : bool;
   list_only : bool;
   bail : int option;
@@ -48,7 +47,6 @@ let default_config () =
     tags = [];
     exclude_tags = [];
     shard = None;
-    quick = false;
     failed_only = false;
     list_only = false;
     bail = None;

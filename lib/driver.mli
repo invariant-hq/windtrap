@@ -90,7 +90,7 @@ val renderer :
 
 val selection_description : Run.config -> string option
 (** [selection_description config] describes what narrows the run — the filter,
-    exclusion, tags, [--quick], [--failed], the shard — in the spelling the
+    exclusion, tags, [--failed], the shard — in the spelling the
     reader typed, or [None] when nothing narrows it. It exists so an empty
     selection can say why it is empty; the phrasing of that sentence is
     {!Render}'s, the configuration behind it is the driver's. *)

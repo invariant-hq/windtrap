@@ -166,8 +166,8 @@ contract, and they belong in the same file. Splitting `test/unit/` from
 across three trees and leaves "what constrains Parser?" with no answer
 location. Kinds are already selectable at run time: property and
 stateful tests carry automatic tags (`--exclude-tag prop` for an
-example-only pass), slow tests carry `slow` (`--quick` drops them),
-and `-f` filters by path. Extra executables also carry a real bill:
+example-only pass), slow tests carry `slow` (`--exclude-tag slow` drops
+them), and `-f` filters by path. Extra executables also carry a real bill:
 each one links the library, splits the coverage denominator, and
 re-runs the mutation loop over every file it links — the `@mutate`
 merge makes the *answer* right, not the cost.
@@ -723,8 +723,9 @@ WINDTRAP_FILTER=roundtrip dune runtest           # filter within suites, under d
 
 The daily loop: `-f`/`-e` filter by path substring, `--tag`/
 `--exclude-tag` by tag, `--failed` reruns only the last run's failures,
-`-x`/`--bail N` stop early, `-l` previews a selection, `--quick` drops
-`slow`-tagged tests. Every property failure prints its replay line;
+`-x`/`--bail N` stop early, `-l` previews a selection, and
+`--exclude-tag slow` drops the tests the `slow` constructor tags.
+Every property failure prints its replay line;
 paste it. `--shard K/N` partitions a suite deterministically across CI
 jobs. `-s`/`--stream` disables capture for printf-debugging a hang; the
 live tail under a run names a hung test.

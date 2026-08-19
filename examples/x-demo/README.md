@@ -251,7 +251,7 @@ dune exec examples/x-demo/main.exe -- -f "assertions › satisfies"
 dune exec examples/x-demo/main.exe -- -e assertions      # exclude by substring
 dune exec examples/x-demo/main.exe -- --tag prop -l      # properties carry the "prop" tag
 dune exec examples/x-demo/main.exe -- --exclude-tag io -l  # the runtime group is tagged "io"
-dune exec examples/x-demo/main.exe -- --quick -l         # drops the slow-tagged test
+dune exec examples/x-demo/main.exe -- --exclude-tag slow -l   # drops the slow-tagged test
 dune exec examples/x-demo/main.exe -- --shard 1/3 -l     # deterministic path-hash bucket
 dune exec examples/x-demo/main.exe -- -x                 # bail at the first failure
 dune exec examples/x-demo/main.exe -- --failed           # rerun only the last run's 31 failures

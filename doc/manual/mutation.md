@@ -393,8 +393,8 @@ What designates the admission set is the run's ordinary selection:
 previous run, no store of tests seen before — because every one of those
 answers a question about a working tree the framework does not own, and
 a test admission missed by inference is admitted by omission. `--shard`
-and `--quick` narrow the work rather than naming tests, so neither
-designates on its own.
+narrows the work rather than naming tests, so it does not designate on
+its own.
 
 A run that narrows nothing designates every test it executes. That is
 the whole-suite question — the ask an alias makes, because an alias
@@ -608,8 +608,8 @@ survivor merely wastes time.
 
 Two runs feed the merge nothing. One is the admission run above, which
 writes no verdict file at all. The other is the survey run that narrowed
-its own suite. Selecting tests — `-f`/`-e`, a tag selection, `--quick`,
-`--shard`, `--failed`, or an in-source `ftest`/`fgroup` — makes every
+its own suite. Selecting tests — `-f`/`-e`, a tag selection, `--shard`,
+`--failed`, or an in-source `ftest`/`fgroup` — makes every
 verdict relative to that selection: a mutant only deselected tests reach is
 recorded *unreached*, and a survivor survived the selection rather than
 the suite. The file format carries no partial-run marking, so a written

@@ -148,8 +148,8 @@ val slow :
   string ->
   (unit -> unit) ->
   test
-(** [slow] is {!test} with the ["slow"] tag pre-applied; [--quick] drops
-    slow-tagged tests. *)
+(** [slow] is {!test} with the ["slow"] tag pre-applied; [--exclude-tag slow]
+    drops slow-tagged tests. *)
 
 val cases :
   ?pos:pos ->

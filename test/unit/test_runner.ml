@@ -7,7 +7,7 @@
    timeout), the scoped boundary (cleanup owned by the scope, phase
    attribution by how far the callback got, the call-back-exactly-once
    contract), classification, retries, capture-tail attachment, the global
-   Random reseed, selection (filters, tags, quick, focus, sharding, the CI
+   Random reseed, selection (filters, tags, focus, sharding, the CI
    guards), exit codes including the all-skipped ratification, expected
    failures (xfail), subtest and scratch-path cleanup through the boundary,
    fixture release under bail and on release failure (acquisition skips
@@ -787,8 +787,8 @@ let () =
       Test_tree.slow "molasses" (fun () -> ());
     ]
   in
-  let config ?(tags = []) ?(exclude_tags = []) ?(quick = false) () =
-    { (base_config ~log_dir:root ()) with Run.tags; exclude_tags; quick }
+  let config ?(tags = []) ?(exclude_tags = []) () =
+    { (base_config ~log_dir:root ()) with Run.tags; exclude_tags }
   in
   expect_run "default tag predicate" ~config:(config ()) suite @@ fun outcome ->
   check "no tag flag selects the whole suite"
@@ -801,8 +801,11 @@ let () =
     suite
   @@ fun outcome ->
   check "--exclude-tag" (ran_names outcome = [ "plain"; "molasses" ]);
-  expect_run "-q drops slow" ~config:(config ~quick:true ()) suite
-  @@ fun outcome -> check "-q" (ran_names outcome = [ "plain"; "tagged" ])
+  expect_run "--exclude-tag slow drops slow"
+    ~config:(config ~exclude_tags:[ "slow" ] ())
+    suite
+  @@ fun outcome ->
+  check "--exclude-tag slow" (ran_names outcome = [ "plain"; "tagged" ])
 
 let () =
   clear_env ();

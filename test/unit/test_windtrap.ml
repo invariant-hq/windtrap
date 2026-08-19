@@ -979,21 +979,24 @@ let () =
   check_int "xfail over cases exit code" ~expected:1
     ~actual:outcome.Runner.exit_code
 
-(* xfail composes with [slow]: the tag survives the annotation, so [-q]
-   deselects the test before the inversion could apply. *)
+(* xfail composes with [slow]: the tag survives the annotation, so
+   [--exclude-tag slow] deselects the test before the inversion could
+   apply. *)
 let () =
   with_temp_root @@ fun root ->
-  let config = { (base_config ~log_dir:root ()) with Run.quick = true } in
+  let config =
+    { (base_config ~log_dir:root ()) with Run.exclude_tags = [ "slow" ] }
+  in
   let suite =
     [
       test "fast" (fun () -> ());
       xfail (slow "sluggish" (fun () -> fail "known"));
     ]
   in
-  expect_run "xfail over slow under -q" ~config suite @@ fun outcome ->
-  check "-q drops an xfail-marked slow test"
+  expect_run "xfail over an excluded slow tag" ~config suite @@ fun outcome ->
+  check "--exclude-tag slow drops an xfail-marked slow test"
     (outcome_of outcome [ "sluggish" ] = None);
-  check_int "xfail over slow under -q exit code" ~expected:0
+  check_int "xfail over an excluded slow tag: exit code" ~expected:0
     ~actual:outcome.Runner.exit_code
 
 (* Scratch paths work in every phase of a test attempt — a bracket

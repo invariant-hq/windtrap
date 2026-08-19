@@ -4,8 +4,8 @@
   ---------------------------------------------------------------------------*)
 
 (* Adapted from windtrap 0.1's lib/tag.ml. v3 drops the separate speed
-   type: "slow" is an ordinary tag pre-applied by the [slow] constructor
-   and dropped by [-q]. *)
+   type: "slow" is an ordinary tag, pre-applied by the [slow] constructor
+   and dropped like any other. *)
 
 module String_set = Set.Make (String)
 

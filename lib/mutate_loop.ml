@@ -829,9 +829,9 @@ let designates ~(config : Run.config) ~focus =
   || focus
 
 (* Whether the run's selection NARROWS THE SUITE, which is the survey's
-   question: a designation, or one of the two knobs that narrow work
-   without naming tests — the documented relationship between the two,
-   spelled as one. A narrowed run's verdicts are relative to its
+   question: a designation, or the one knob that narrows work without
+   naming tests — the documented relationship between the two, spelled as
+   one. A narrowed run's verdicts are relative to its
    selection — a mutant only deselected tests reach records Unreached, a
    survivor survived only the selection — and the file format carries no
    partial-run marking, so a written file would stand in the project
@@ -840,7 +840,7 @@ let designates ~(config : Run.config) ~focus =
    which mutants exist, not which tests judge them, so an ONLY-scoped
    run's records are project-true for this executable, merely narrower. *)
 let narrows_suite ~(config : Run.config) ~focus =
-  designates ~config ~focus || config.Run.quick || config.Run.shard <> None
+  designates ~config ~focus || config.Run.shard <> None
 
 let write_verdicts verdicts =
   let exe = Sys.executable_name in

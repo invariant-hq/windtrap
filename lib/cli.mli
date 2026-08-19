@@ -56,7 +56,6 @@ type parsed = {
       (** [--shard K/N]: run only tests whose path hashes into bucket [K] of
           [N]. [K] and [N] are plain decimal numerals; parses only with
           [1 <= K <= N]. *)
-  quick : bool option;  (** [--quick]: skip slow-tagged tests. *)
   failed_only : bool option;
       (** [--failed]: rerun only the last run's recorded failures. *)
   list_only : bool option;

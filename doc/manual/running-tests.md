@@ -39,7 +39,6 @@ inventory. The ones that matter daily:
 | `-f PATTERN` (or bare `PATTERN`) | `WINDTRAP_FILTER` | run tests whose path contains PATTERN |
 | `-e PATTERN` | `WINDTRAP_EXCLUDE` | skip tests whose path contains PATTERN |
 | `--tag L` / `--exclude-tag L` | `WINDTRAP_TAG` / `WINDTRAP_EXCLUDE_TAG` | select by tag (repeatable; env takes commas) |
-| `--quick` | — | skip `slow`-tagged tests |
 | `-x` / `--bail N` | — | stop after the first / N failures |
 | `--failed` | `WINDTRAP_FAILED` | rerun only the last run's failures |
 | `-l`, `--list` | — | list the selection without running |
@@ -130,8 +129,8 @@ slow tests (1):
 
 Tests that are *supposed* to take time opt out with the `slow` tag
 (the `slow` declaration constructor, `~tags:[ "slow" ]`, or a tagged
-group) — they are exempt everywhere, and `--quick` skips them
-entirely. `--slow-threshold SECONDS` (`WINDTRAP_SLOW_THRESHOLD`)
+group) — they are exempt everywhere, and `--exclude-tag slow` skips
+them entirely. `--slow-threshold SECONDS` (`WINDTRAP_SLOW_THRESHOLD`)
 moves the bar; `0` disables the warnings and the noteworthy trigger,
 so the row then appears on failures only. The slowest-tests list —
 diagnosis rather than signal — prints under `-v` only.
@@ -144,7 +143,8 @@ deliberately: raise the bar with `--slow-threshold`
 (`WINDTRAP_SLOW_THRESHOLD`) when that pace is the suite's normal and
 every test should still run everywhere, or tag the tests `slow` when
 a fast loop may also drop them — the tag silences the warning *and*
-removes the test from `--quick` runs, so it trades noise for absence.
+lets `--exclude-tag slow` remove the test, so it trades noise for
+absence.
 
 `-v` (`WINDTRAP_VERBOSE`) prints one status line per test instead of
 the glyph, and a passing property that collected labels prints its

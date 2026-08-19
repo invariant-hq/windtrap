@@ -212,8 +212,9 @@ siblings still run; the test fails at the end with every entry.
 
 `~tags` on `test`/`group` label tests (group tags extend every
 descendant); select with `--tag`/`--exclude-tag`. `slow name fn` is
-`test` with the `"slow"` tag pre-applied, and `--quick` drops
-slow-tagged tests. Property tests carry `"prop"` automatically.
+`test` with the `"slow"` tag pre-applied; it is an ordinary tag, so
+`--exclude-tag slow` drops those tests. Property tests carry `"prop"`
+automatically.
 
 `~timeout:60.` caps one test in seconds (setup and body share the
 window, and teardown is re-armed with what is left of it — or with a

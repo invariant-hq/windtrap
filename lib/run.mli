@@ -47,7 +47,6 @@ type config = {
       (** [--shard K/N]/[WINDTRAP_SHARD]: run only tests whose path hashes into
           bucket [K] of [N] ({!Runner}, {e Selection}). Invariant [1 <= K <= N],
           validated by the CLI layer. *)
-  quick : bool;  (** [--quick]: drop {!Tag.slow}-tagged tests. *)
   failed_only : bool;  (** [--failed]: rerun only the last run's failures. *)
   list_only : bool;  (** [-l]: list selected tests without running them. *)
   bail : int option;
@@ -102,7 +101,7 @@ val for_subset : config -> log_dir:string -> bail:int option -> config
     Path-selecting knobs ([filter], [exclude], [shard], [failed_only]) are
     cleared, because the pruned tree {e is} that selection and applying them
     again could only narrow it further; tag-selecting knobs ([tags],
-    [exclude_tags], [quick]) and the root [seed] are kept verbatim, because
+    [exclude_tags]) and the root [seed] are kept verbatim, because
     pruning cannot express a tag and per-case seeds derive from
     [(root, path, index)]. Checking is made read-only ([update = No_update],
     [prune = false]), reporting side effects are dropped ([junit],

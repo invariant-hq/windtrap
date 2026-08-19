@@ -367,7 +367,7 @@ them reopens the design**.
     admission set is the run's ordinary test selection — a filter, an
     exclude, a tag selection, `--failed`, an in-source focus — and
     nothing else: no VCS awareness, no run-to-run comparison, no store
-    of tests seen before. `--shard` and `--quick` narrow work rather
+    of tests seen before. `--shard` narrows work rather
     than naming tests and do not designate on their own. A selection the
     author did not narrow designates every test the run executes, which
     is the author asking for all of them; the run says so in one line

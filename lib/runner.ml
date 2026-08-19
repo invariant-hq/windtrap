@@ -502,8 +502,7 @@ let shard_bucket ~shards path =
 let selection_predicate (config : Run.config) =
   let require p tag = Tag.require tag p and drop p tag = Tag.drop tag p in
   let predicate = List.fold_left require Tag.any config.Run.tags in
-  let predicate = List.fold_left drop predicate config.Run.exclude_tags in
-  if config.Run.quick then Tag.drop Tag.slow predicate else predicate
+  List.fold_left drop predicate config.Run.exclude_tags
 
 let case_selected (config : Run.config) ~predicate ~allowlist ~focus_active
     (case : Test_tree.case) =

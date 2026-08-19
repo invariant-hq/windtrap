@@ -12,7 +12,6 @@ OPTIONS:
       --tag LABEL               Run only tests tagged LABEL (repeatable)
       --exclude-tag LABEL       Skip tests tagged LABEL (repeatable)
       --shard K/N               Run only the Kth of N deterministic path-hash buckets
-      --quick                   Skip slow-tagged tests
       --failed                  Rerun only the last run's failures
   -l, --list                    List selected tests without running them
   -x, --fail-fast               Stop after the first failure (same as --bail 1)

@@ -118,8 +118,8 @@ val slow :
   string ->
   (unit -> unit) ->
   t
-(** [slow] is {!test} with the {!Tag.slow} tag pre-applied ([--quick] drops it).
-*)
+(** [slow] is {!test} with the {!Tag.slow} tag pre-applied ([--exclude-tag slow]
+    drops it). *)
 
 val cases :
   ?pos:Loc.pos ->
