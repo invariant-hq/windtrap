@@ -28,7 +28,6 @@ type parsed = {
   output : [ `Quiet | `Verbose ] option;
   junit : string option;
   color : Env.color_mode option;
-  coverage : [ `Summary | `Report | `Full | `Off ] option;
   log_dir : string option;
   help : bool;
   version : bool;
@@ -54,7 +53,6 @@ let empty =
     output = None;
     junit = None;
     color = None;
-    coverage = None;
     log_dir = None;
     help = false;
     version = false;
@@ -157,16 +155,6 @@ let set_non_negative_int store =
 
 let seed_expected = "an s1: token with 16 lowercase hexadecimal digits"
 let shard_expected = "K/N with 1 <= K <= N (e.g. 2/4)"
-let coverage_expected = "summary, report, full or off"
-
-let coverage_of_string value =
-  match String.lowercase_ascii value with
-  | "summary" -> Some `Summary
-  | "report" -> Some `Report
-  | "full" -> Some `Full
-  | "off" -> Some `Off
-  | _ -> None
-
 (* "K/N" with K and N plain decimal numerals — the spelling is CI-facing
    and frozen, so int_of_string's 0x/0b/underscore/sign leniency is
    deliberately rejected — and 1 <= K <= N. *)
@@ -443,24 +431,6 @@ let table =
       };
     Flag_entry
       {
-        short = None;
-        long = "--coverage";
-        arg =
-          Value
-            {
-              metavar = "MODE";
-              set =
-                (fun ~source acc value ->
-                  match coverage_of_string value with
-                  | Some mode -> Ok { acc with coverage = Some mode }
-                  | None -> invalid ~source ~value ~expected:coverage_expected);
-            };
-        doc = "Coverage output: summary, report, full or off";
-        mirror =
-          mirrored "WINDTRAP_COVERAGE" verbatim (fun p -> p.coverage = None);
-      };
-    Flag_entry
-      {
         short = Some "-o";
         long = "--output";
         arg =
@@ -493,11 +463,12 @@ let table =
     (* The settings no flag can set, after the flags so [--help] lists
        them where the mirror rows end. Each is read where its owner
        consumes it: the first two by the resolution below,
-       WINDTRAP_PROJECT_ROOT by [Path_ops], WINDTRAP_COVERAGE_ONLY by
-       [Driver]'s coverage seam, and the mutation knobs by [mutation]
-       and [Mutate_loop]. The arm row spells the runtime's own constant,
-       so this roster, the reader and the report's [arm] line cannot
-       name three different variables. *)
+       WINDTRAP_PROJECT_ROOT by [Path_ops], WINDTRAP_COVERAGE by
+       [coverage_enabled], WINDTRAP_COVERAGE_ONLY by [Driver]'s coverage
+       seam, and the mutation knobs by [mutation] and [Mutate_loop]. The
+       arm row spells the runtime's own constant, so this roster, the
+       reader and the report's [arm] line cannot name three different
+       variables. *)
     Env_setting
       { var = "WINDTRAP_COLUMNS"; doc = "Terminal width override for reports" };
     Env_setting
@@ -510,6 +481,8 @@ let table =
         var = "WINDTRAP_PROJECT_ROOT";
         doc = "Project root for snapshot path resolution";
       };
+    Env_setting
+      { var = "WINDTRAP_COVERAGE"; doc = "Inline coverage line: on or off" };
     Env_setting
       {
         var = "WINDTRAP_COVERAGE_ONLY";
@@ -879,25 +852,35 @@ let resolve ?(overrides = empty) cli =
   let* below = layers ~overrides cli in
   Result.map fst (resolved ~overrides below)
 
-(* The coverage fold, shared by [coverage_mode] and [settings]. *)
-let coverage_of below = Option.value below.coverage ~default:`Summary
-
-(* The coverage mode resolves outside [resolve] because it is not run
-   configuration: it is a rendering decision the facade's [run] applies
-   after the run record is complete — the run's [config] carries no
-   coverage field. Same precedence and same loudness as the config mirrors,
-   because it is the same environment layer: CLI beats [WINDTRAP_COVERAGE];
-   a malformed winning value is an error, never a silently defaulted mode. *)
-let coverage_mode (cli : parsed) =
-  let* below = layers ~overrides:empty cli in
-  Ok (coverage_of below)
+(* WINDTRAP_COVERAGE: whether a run prints its inline coverage line.
+   Environment only, and a boolean — the truthy and falsy spellings are
+   [Env]'s shared ones, so it accepts what every other boolean variable
+   accepts. It resolves apart from [resolve] because it is not run
+   configuration but a rendering decision the drivers apply after the
+   run record is complete, and with the same loudness: an unrecognized
+   value is an error naming the variable, never a silently defaulted
+   mode. The retired mode words land there too, and the message says
+   where their output went — the per-file table and the excerpts are the
+   reporting command's, over the merge of every executable's dumps
+   rather than this one's view. *)
+let coverage_enabled () =
+  match Env.get_string "WINDTRAP_COVERAGE" with
+  | None -> Ok true
+  | Some value -> (
+      match Env.get_bool "WINDTRAP_COVERAGE" with
+      | Some enabled -> Ok enabled
+      | None ->
+          invalid ~source:"WINDTRAP_COVERAGE" ~value
+            ~expected:
+              "on or off; the per-file report is `windtrap coverage', its \
+               uncovered excerpts `windtrap coverage -u'")
 
 (* The mutation knobs
 
    Environment only, and deliberately so: the inline runner's argument
    parser accepts dune's inline-test protocol and nothing else, so a flag
    would exist for half the users. They resolve apart from [resolve] for
-   the reason [coverage_mode] does — none of them is run configuration and
+   the reason [coverage_enabled] does — none is run configuration and
    nothing in the runner may read them — but with the same loudness: an
    unrecognized value is an error naming the variable, never a silently
    defaulted mode. WINDTRAP_MUTATE's truthy and falsy spellings come from
@@ -951,14 +934,11 @@ let mutation () =
 type settings = {
   config : Run.config;
   render : Render.settings;
-  coverage_mode : [ `Summary | `Report | `Full | `Off ];
+  coverage : bool;
   output_level : [ `Quiet | `Compact | `Verbose ];
 }
 
 let settings ?(overrides = empty) cli =
-  (* The coverage mode has no programmatic layer; blanking the field keeps
-     the shared fold from treating [overrides] as one. *)
-  let overrides = { overrides with coverage = None } in
   let layered = layers ~overrides cli in
   (* Verbosity first, and tolerantly: a malformed mirror stops the
      environment layer short, the error below is the one the caller
@@ -967,7 +947,8 @@ let settings ?(overrides = empty) cli =
   let output_level = level_of ~overrides (Result.value layered ~default:cli) in
   let* below = layered in
   let* config, render = resolved ~overrides below in
-  Ok { config; render; coverage_mode = coverage_of below; output_level }
+  let* coverage = coverage_enabled () in
+  Ok { config; render; coverage; output_level }
 
 (* Help *)
 

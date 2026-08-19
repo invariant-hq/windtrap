@@ -115,18 +115,11 @@ let test_github_envelope_composed () =
 
 let test_coverage_seam () =
   let run = make_run () in
+  check "a run records no coverage until the seam runs"
+    (Run.coverage run = None);
   Run.set_coverage run { Run.visited = 3; total = 4 };
-  check "Summary hands finish the recorded snapshot"
-    (Driver.coverage_summary ~coverage_mode:`Summary run
-    = Some { Run.visited = 3; total = 4 });
-  check "Report withholds it (the report prints its own line)"
-    (Driver.coverage_summary ~coverage_mode:`Report run = None);
-  check "Full withholds it"
-    (Driver.coverage_summary ~coverage_mode:`Full run = None);
-  check "Off withholds it"
-    (Driver.coverage_summary ~coverage_mode:`Off run = None);
-  check "Summary without a recorded snapshot is None"
-    (Driver.coverage_summary ~coverage_mode:`Summary (make_run ()) = None);
+  check "what the seam records is what renderers project"
+    (Run.coverage run = Some { Run.visited = 3; total = 4 });
   (* The seam's whole contract, stated so that it holds whether or not
      this executable is instrumented — under `--instrument-with` the core
      it tests is, and then the registry is emphatically not empty. The
@@ -136,9 +129,10 @@ let test_coverage_seam () =
      one test honest in both worlds instead of two tests each true in
      one. *)
   let fresh = make_run () in
-  let collection = Driver.snapshot_coverage fresh in
+  Driver.snapshot_coverage fresh;
   check "the seam records on the run exactly when it snapshotted something"
-    (Windtrap_coverage.is_empty collection = (Run.coverage fresh = None))
+    (Windtrap_coverage.is_empty (Windtrap_coverage.snapshot ())
+    = (Run.coverage fresh = None))
 
 let tests =
   [
@@ -146,8 +140,7 @@ let tests =
     test "github envelope: bytes and gating" test_github_envelope;
     test "github envelope: composed around a transcript"
       test_github_envelope_composed;
-    test "coverage seam: mode selection and the empty snapshot"
-      test_coverage_seam;
+    test "coverage seam: what it records, and when" test_coverage_seam;
     (* One process per suite is the normal case under `dune runtest`, so a
        single fixed path would have each suite overwrite the last. The
        [.xml] suffix is what tells the two intents apart. *)

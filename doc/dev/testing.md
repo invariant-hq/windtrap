@@ -114,9 +114,9 @@ new test that reads coverage should use one:
 
 - `Windtrap_coverage.filter` narrows a collection to chosen files;
 - `WINDTRAP_COVERAGE_ONLY` scopes a whole *run*'s number to source
-  prefixes, applied once at `Driver.snapshot_coverage` so the inline
-  line and the report modes cannot disagree. The `.coverage` dump is
-  deliberately not scoped — it is what `windtrap coverage` merges.
+  prefixes, applied once at `Driver.snapshot_coverage`. The `.coverage`
+  dump is deliberately not scoped — it is what `windtrap coverage`
+  merges.
 
 A suite that pins a transcript byte for byte must set
 `WINDTRAP_COVERAGE=off`. Unset is *not* neutral once the core is

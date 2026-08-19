@@ -299,12 +299,9 @@ prints the inline line after the summary:
 `coverage: 28.5% (88/309 points) · project: dune build @cover`
 (exact numbers move with any edit to `main.ml`).
 
-```sh
-WINDTRAP_COVERAGE=report dune exec --instrument-with ppx_windtrap.coverage examples/x-demo/main.exe -- -f "compact › addition"
-```
-
-adds the per-file table with uncovered line ranges. The merged view
-across all instrumented executables:
+The per-file table with its uncovered line ranges is the merged view
+across all instrumented executables, one command away (`-u` adds the
+source excerpts):
 
 ```sh
 dune exec windtrap -- coverage

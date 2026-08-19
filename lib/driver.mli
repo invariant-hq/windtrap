@@ -14,8 +14,8 @@
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
     ({!github_start}, {!github_end}, {!github_annotations}), the snapshot
     report ({!Render.report_snapshots} — every transcript byte leaves through a
-    renderer), and the coverage seam ({!snapshot_coverage}, {!coverage_summary},
-    {!coverage_report}); {!execute_and_report} is the order they run in, around
+    renderer), and the coverage seam ({!snapshot_coverage}, {!coverage_data});
+    {!execute_and_report} is the order they run in, around
     {!Runner.execute}. A runner that composed them itself would be free to get
     that order wrong, which is the same drift by another route.
 
@@ -50,8 +50,8 @@ type t = {
       (** The GitHub gating decision ({!Env.in_github_actions}, minus list-only
           runs in the facade). *)
   output : [ `Quiet | `Compact | `Verbose ];  (** The resolved output level. *)
-  coverage_mode : [ `Summary | `Report | `Full | `Off ];
-      (** The resolved coverage mode ({!coverage_summary}, {!coverage_report}).
+  coverage : bool;
+      (** Whether the inline coverage line prints ({!Cli.coverage_enabled}).
       *)
   render : Render.settings;
       (** The presentation knobs the run's renderer is built from
@@ -168,21 +168,13 @@ val github_annotations :
 
 (** {1:coverage The coverage seam} *)
 
-val snapshot_coverage : Run.t -> Windtrap_coverage.t
+val snapshot_coverage : Run.t -> unit
 (** [snapshot_coverage run] snapshots in-process coverage at run end: when
     instrumented code registered any data, the summary is recorded into [run]
-    ({!Run.set_coverage}) for renderers to project like any other run data.
-    Returns the collection for {!coverage_report}. The core library's entire
-    coverage coupling lives here and in the renderers. *)
-
-val coverage_summary :
-  coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
-  Run.t ->
-  Run.summary option
-(** [coverage_summary ~coverage_mode run] is the [?coverage] argument for
-    {!Render.finish}: the recorded snapshot under [`Summary], [None] otherwise —
-    the report modes print their own line ({!coverage_report}), and [`Off]
-    prints nothing. *)
+    ({!Run.set_coverage}) for renderers to project like any other run data. The
+    core library's entire coverage coupling lives here and in the renderers:
+    three runtime calls, and no rendering decision. Whether the resulting line
+    prints is {!t.coverage}'s. *)
 
 val coverage_data :
   ?source_roots:string list -> Windtrap_coverage.t -> Render.coverage
@@ -191,23 +183,9 @@ val coverage_data :
     per file, sources resolved under [source_roots]
     ({!Windtrap_coverage.file_reports}, whose current-directory default it
     keeps). The one builder of that data — this seam links the runtime, so
-    Render does not have to — shared with the
-    [windtrap coverage] command over merged files, so the inline report and the
-    CI report cannot drift. *)
-
-val coverage_report :
-  Render.t ->
-  coverage_mode:[ `Summary | `Report | `Full | `Off ] ->
-  Run.t ->
-  Windtrap_coverage.t ->
-  unit
-(** [coverage_report renderer ~coverage_mode run collection] prints the per-file
-    coverage report ({!Render.coverage_report} over {!coverage_data}) after
-    {!Render.finish} when [coverage_mode] is [`Report] or [`Full] and the run
-    recorded coverage; a no-op otherwise. Sources are recorded
-    workspace-relative, so they resolve against {!Path_ops.project_root} —
-    under [dune runtest] the cwd is inside [_build], where the recorded paths
-    never open. *)
+    Render does not have to — used by the [windtrap coverage] command over
+    merged files, which is the only place a per-file coverage table is drawn.
+*)
 
 (** {1:staged Staged internals}
 

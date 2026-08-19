@@ -2,12 +2,12 @@
 ; instrumenter: inline_child fabricates in-process registrations exactly
 ; as PPX-generated initializers would (the frozen interchange contract)
 ; and runs a real windtrap suite — the seam, the inline line, and the
-; WINDTRAP_COVERAGE / --coverage modes are exercised through the real
+; WINDTRAP_COVERAGE switch are exercised through the real
 ; facade; `windtrap coverage` (bin/main.exe) is driven as a subprocess
 ; over synthetic .coverage files written with the runtime's serializer.
 ; A windtrap suite (see test/coverage). The lib/ globs feed
 ; the Law-12 budget check: the test counts the core's coverage-runtime
-; mentions and fails when the seam grows past its ~25-line cap.
+; mentions and fails when the seam grows past its cap.
 
 (test
  (name test_coverage_cli)

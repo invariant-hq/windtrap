@@ -27,7 +27,6 @@ OPTIONS:
   -q, --quiet                   Failures and summary only
       --junit PATH              Also write a JUnit XML report to PATH
       --color MODE              Color output: always, never or auto
-      --coverage MODE           Coverage output: summary, report, full or off
   -o, --output DIR              Root directory for capture logs
   -V, --version                 Print the version and exit
   -h, --help                    Print this help and exit
@@ -51,11 +50,11 @@ ENVIRONMENT:
   WINDTRAP_QUIET           Mirror of --quiet
   WINDTRAP_JUNIT           Mirror of --junit
   WINDTRAP_COLOR           Mirror of --color
-  WINDTRAP_COVERAGE        Mirror of --coverage
   WINDTRAP_OUTPUT          Mirror of --output
   WINDTRAP_COLUMNS         Terminal width override for reports
   WINDTRAP_TAIL_ERRORS     Captured-output lines shown per failure
   WINDTRAP_PROJECT_ROOT    Project root for snapshot path resolution
+  WINDTRAP_COVERAGE        Inline coverage line: on or off
   WINDTRAP_COVERAGE_ONLY   Source prefixes the coverage number covers
   WINDTRAP_MUTATE          Mutation testing: 1, admit or off
   WINDTRAP_MUTATE_ARM      Arm one mutant, by identifier

@@ -26,30 +26,10 @@ test outcomes, counts, or exit codes. And coverage data is transient:
 named per executable and overwritten on re-run — nothing to commit,
 nothing to go stale silently.
 
-## Report modes
-
-`WINDTRAP_COVERAGE` (or `--coverage` on the executable) selects the
-rendering — `summary` (the default one-liner), `report`, `full`, or
-`off`:
-
-```
-$ WINDTRAP_COVERAGE=report dune runtest --instrument-with ppx_windtrap.coverage
-...
-coverage: 77.8% (7/9 points)
-   77.8%  7/9  lib/calc.ml   uncovered: 9-10
-```
-
-`full` renders the uncovered points as source excerpts — the most
-useful mode for finding the missing test:
-
-```
-lib/calc.ml — 77.8% (7/9)
-
-      8 │   | Add -> a + b
-  ▌   9 │   | Sub -> a - b
-  ▌  10 │   | Mul -> a * b
-     11 │   | Div -> if b = 0 then invalid_arg "division by zero" else a / b
-```
+`WINDTRAP_COVERAGE=off` silences the line; there is nothing else to
+set. Which file, which lines — the detail that turns a percentage into
+a test to write — is `windtrap coverage` below, over every executable's
+data rather than this one's.
 
 ## What is measured
 
@@ -95,6 +75,21 @@ never a silent fall-through to the no-data report.
 uncovered lines) on standard output for dashboards and diff-coverage
 tooling.
 
+`-u` (`--show-uncovered`) adds the uncovered points as source
+excerpts — the fastest way from a percentage to the missing test:
+
+```
+$ dune build @cover --instrument-with ppx_windtrap.coverage
+$ dune exec windtrap -- coverage -u
+...
+lib/calc.ml — 77.8% (7/9)
+
+      8 │   | Add -> a + b
+  ▌   9 │   | Sub -> a - b
+  ▌  10 │   | Mul -> a * b
+     11 │   | Div -> if b = 0 then invalid_arg "division by zero" else a / b
+```
+
 ## Several test stanzas
 
 Each instrumented test executable reports its own percentage — its view
@@ -105,8 +100,7 @@ why every inline line ends with `· project: dune build @cover`: the
 number beside it is one executable's, and the project number is the
 merge.
 
-The project number is the merge. Add one rule, once, at the project
-root:
+Add that alias once, at the project root:
 
 ```lisp
 (rule

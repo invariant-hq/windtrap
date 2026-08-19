@@ -697,14 +697,16 @@ Coverage finds *missing* tests (unreached branches); mutation finds
 
 ```
 dune runtest --instrument-with ppx_windtrap.coverage    # inline % after the results
-WINDTRAP_COVERAGE=full dune runtest --instrument-with ppx_windtrap.coverage
 dune build @cover --instrument-with ppx_windtrap.coverage   # project merge + --min gate
+dune exec windtrap -- coverage -u                      # the uncovered source, excerpted
 ```
 
-`full` renders uncovered points as source excerpts — the mode that
-shows the exact arms you forgot. Coverage is expression-grade, and a
-call that raises leaves its out-edge unvisited, so raising paths show
-up as uncovered instead of being painted green for having been entered.
+The run prints one number; `windtrap coverage` draws the per-file
+table, and `-u` renders the uncovered points as source excerpts — what
+shows the exact arms you forgot. `WINDTRAP_COVERAGE=off` silences the
+inline line. Coverage is expression-grade, and a call that raises
+leaves its out-edge unvisited, so raising paths show up as uncovered
+instead of being painted green for having been entered.
 
 Chase the uncovered branches in code you touched, never the
 percentage: an uncovered error branch is a missing test; an uncovered

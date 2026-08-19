@@ -14,7 +14,7 @@
     {e programmatic > CLI > env > default} (under [dune runtest] the environment
     mirrors {e are} the CLI) — and {!help} renders the flag and variable
     inventory from the same rows. {!settings} is the one call a driver makes,
-    one pass over one environment layer; {!resolve}, {!coverage_mode} and
+    one pass over one environment layer; {!resolve}, {!coverage_enabled} and
     {!output_level} are its layers, documented and testable on their own.
 
     A flag's mirror is declared in that table beside the flag, and its value is
@@ -91,9 +91,6 @@ type parsed = {
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   color : Env.color_mode option;
       (** [--color MODE]: [always], [never], or [auto]. *)
-  coverage : [ `Summary | `Report | `Full | `Off ] option;
-      (** [--coverage MODE]: the coverage rendering mode, resolved by
-          {!coverage_mode} — [summary], [report], [full], or [off]. *)
   log_dir : string option;
       (** [-o DIR], [--output DIR]: root directory for capture logs. *)
   help : bool;  (** [-h], [--help]: the caller prints {!help} and exits [0]. *)
@@ -173,23 +170,20 @@ val resolve : ?overrides:parsed -> parsed -> (Run.config, error) result
     spelling, never a config that detonates mid-run. {!parsed.help} and
     {!parsed.version} are ignored — acting on them is the caller's job. *)
 
-val coverage_mode :
-  parsed -> ([ `Summary | `Report | `Full | `Off ], error) result
-(** [coverage_mode cli] is the coverage rendering mode: [cli]'s
-    {!parsed.coverage} when present, else the [WINDTRAP_COVERAGE] environment
-    mirror, else [`Summary]. Resolved apart from {!resolve} because it is a
+val coverage_enabled : unit -> (bool, error) result
+(** [coverage_enabled ()] is whether a run prints its inline coverage line:
+    [WINDTRAP_COVERAGE] in {!Env}'s shared boolean spellings, [true] when unset.
+    Environment only, and resolved apart from {!resolve} because it is a
     rendering decision, not run configuration — {!Run.config} carries no
-    coverage field, and enabling any mode never changes outcomes or exit codes.
-    The caller applies it: [`Summary] renders the one-line percentage when the
-    run was instrumented, [`Report] and [`Full] add the per-file detail, [`Off]
-    renders nothing.
+    coverage field, and neither value changes outcomes or exit codes. The
+    per-file table and the uncovered excerpts are not a mode of a run: they are
+    [windtrap coverage] and [windtrap coverage -u], over the merge of every
+    executable's dumps rather than this one's view.
 
-    Effects: reads the environment when {!parsed.coverage} is [None].
-    [Error (Invalid_value _)] with source [WINDTRAP_COVERAGE] when the winning
-    environment value is not one of [summary], [report], [full], [off]. It
-    builds the same environment layer {!resolve} does, so a malformed value in
-    any {e other} winning mirror is reported here too; callers resolve the
-    configuration first and exit on that error, which is where it belongs. *)
+    Effects: reads the environment. [Error (Invalid_value _)] naming
+    [WINDTRAP_COVERAGE] when its value is neither truthy nor falsy — the
+    message names the reporting command, which is where the retired [report]
+    and [full] modes went. *)
 
 type mutation = {
   mode : [ `Unset | `Off | `Loop | `Admit ];
@@ -215,7 +209,7 @@ type mutation = {
 
 val mutation : unit -> (mutation, error) result
 (** [mutation ()] reads the three mutation variables. Resolved apart from
-    {!resolve} like {!coverage_mode}, and for the same reason — none of them is
+    {!resolve} like {!coverage_enabled}, and for the same reason — none of them is
     run configuration, and nothing in the runner may read them — with the same
     loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] or
     [WINDTRAP_MUTATE_TRY] when its value is not one the variable accepts, never
@@ -230,7 +224,7 @@ val output_level :
     else the [WINDTRAP_QUIET]/[WINDTRAP_VERBOSE] environment mirrors (boolean
     spellings, as [WINDTRAP_STREAM]; when both are truthy, verbose wins — the
     variables carry no order for last-one-wins), else [`Compact]. Resolved apart
-    from {!resolve} like {!coverage_mode}, because it is a rendering decision,
+    from {!resolve} like {!coverage_enabled}, because it is a rendering decision,
     not run configuration — {!Run.config} carries no verbosity field. Levels
     never change outcomes or exit codes; the renderer projects the same run data
     at every level.
@@ -248,8 +242,8 @@ type settings = {
           [WINDTRAP_COLUMNS]/[WINDTRAP_TAIL_ERRORS] overrides,
           [--slow-threshold] — resolved with the same precedence as [config] and
           handed to the driver's renderer construction. *)
-  coverage_mode : [ `Summary | `Report | `Full | `Off ];
-      (** The coverage rendering mode ({!coverage_mode}). *)
+  coverage : bool;
+      (** Whether the inline coverage line prints ({!coverage_enabled}). *)
   output_level : [ `Quiet | `Compact | `Verbose ];
       (** The terminal verbosity level ({!output_level}). *)
 }
@@ -261,16 +255,16 @@ type settings = {
 val settings : ?overrides:parsed -> parsed -> (settings, error) result
 (** [settings ~overrides cli] is what a driver needs from one invocation, with
     one error to render instead of four: one pass builds the environment layer
-    that {!resolve}, {!coverage_mode} and {!output_level} each describe, and
-    every field is a fold over it. The verbosity level resolves first and
+    that {!resolve} and {!output_level} each describe, and every field is a fold
+    over it or, for coverage, one further variable ({!coverage_enabled}). The verbosity level resolves first and
     tolerantly, exactly as {!output_level} does — a malformed mirror is the
     error the caller reports (it prints it and exits [2]), and the level that
     error renders at must survive the failed fold — and the fresh root seed
     {!resolve} may draw is drawn exactly once.
 
     [overrides] is the programmatic layer {!resolve} and {!output_level} take
-    (defaults to {!empty}); the coverage mode has no programmatic layer and
-    comes from [cli] and [WINDTRAP_COVERAGE] alone.
+    (defaults to {!empty}); the coverage line has no programmatic layer and no
+    flag, and comes from [WINDTRAP_COVERAGE] alone.
 
     Effects: reads the environment, and draws a fresh root seed when no layer
     provides one. *)

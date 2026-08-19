@@ -5,9 +5,8 @@
 
 (* Tests for coverage's Law-12 seam and reporting surface: the inline
    line through a real windtrap run (thresholds, hint, quiet, off,
-   Law-13 exit codes), the WINDTRAP_COVERAGE /
-   --coverage report and full modes with a matching source file,
-   flag-over-env precedence and loud rejection of malformed modes, the
+   Law-13 exit codes), WINDTRAP_COVERAGE as a switch with its loud
+   rejection of malformed and retired values, the
    at_exit dump feeding the reporting command, `windtrap coverage` end
    to end (walk-up discovery, merge across two executables, the
    orphan/stale matrix, --min matrix, --json
@@ -168,9 +167,9 @@ let law12_budget =
       0 sources
   in
   check
-    (Printf.sprintf "Law-12 budget: %d core lines mention the runtime (<= 27)"
+    (Printf.sprintf "Law-12 budget: %d core lines mention the runtime (<= 16)"
        mentions)
-    (mentions > 0 && mentions <= 27)
+    (mentions > 0 && mentions <= 16)
 
 (* The inline line (seam end to end) *)
 
@@ -271,17 +270,18 @@ let inline_line =
   (* Law 13: coverage never changes outcomes or exit codes. *)
   let code, out, _, _ =
     child
-      ~env:[ "CHILD_VISITED=9"; "CHILD_FAIL=1"; "WINDTRAP_COVERAGE=report" ]
+      ~env:[ "CHILD_VISITED=9"; "CHILD_FAIL=1" ]
       ~args:[ "--color"; "never" ] ()
   in
   check_int "a failing instrumented run still exits 1" ~expected:1 ~actual:code;
-  check_contains "the report still renders after failures"
+  check_contains "the line still renders after failures"
     ~needle:"coverage: 90.0% (9/10 points)" out
 
-(* Report and full modes over a real source *)
+(* WINDTRAP_COVERAGE, the switch *)
 
 (* Six lines of nine characters: block [i] is line [i + 1]'s text. Four
-   of six blocks visited leaves lines 5-6 uncovered. *)
+   of six blocks visited leaves lines 5-6 uncovered — the shape the
+   reporting command renders from this run's dump. *)
 let child_source =
   "line1----\nline2----\nline3----\nline4----\nline5----\nline6----\n"
 
@@ -296,23 +296,18 @@ let child_src_env =
     "CHILD_LINE_LEN=10";
   ]
 
-let report_full_modes =
-  test "report and full modes over a real source" @@ fun () ->
+let coverage_switch =
+  test "WINDTRAP_COVERAGE is a switch, and the dump is the report" @@ fun () ->
   let code, out, _, dump =
-    child
-      ~env:("WINDTRAP_COVERAGE=report" :: child_src_env)
-      ~args:[ "--color"; "never" ] ()
+    child ~env:child_src_env ~args:[ "--color"; "never" ] ()
   in
-  check_int "report-mode child exits 0" ~expected:0 ~actual:code;
-  check_contains "report mode prints the summary line"
+  check_int "an instrumented child exits 0" ~expected:0 ~actual:code;
+  check_contains "the line reports what the run measured"
     ~needle:"coverage: 66.7% (4/6 points)" out;
-  check_absent "report mode drops the hint"
-    ~needle:"project: dune build @cover" out;
-  check_contains "the per-file row shows counts and ranges" ~needle:"4/6" out;
-  check_contains "uncovered blocks collapse to line ranges"
-    ~needle:"uncovered: 5-6" out;
-  check_absent "report mode paints no excerpts" ~needle:"\u{258c}" out;
-  (* The at_exit dump of the same run feeds the reporting command. *)
+  check_absent "the run draws no per-file table" ~needle:"uncovered:" out;
+  (* The at_exit dump of the same run is what carries the detail: it
+     agrees with the inline number, and names the executable that wrote
+     it, so `windtrap coverage` can merge and vet it. *)
   (match dump_of ~only:child_src_path dump with
   | Some (t, exe) ->
       let s = C.summary t in
@@ -326,75 +321,35 @@ let report_full_modes =
               digest = Digest.to_hex (Digest.file child_exe);
             })
   | None -> check "the dump agrees with the inline summary" false);
-  let _, out, _, _ =
+  (* Off, in Env's shared falsy spellings. *)
+  let code, out, _, _ =
     child
-      ~env:("WINDTRAP_COVERAGE=full" :: child_src_env)
+      ~env:("WINDTRAP_COVERAGE=no" :: child_src_env)
       ~args:[ "--color"; "never" ] ()
   in
-  check_contains "full mode names the file with its percentage"
-    ~needle:"\u{2014} 66.7% (4/6)" out;
-  check_contains "full mode paints uncovered lines" ~needle:"\u{258c}" out;
-  check_contains "excerpts show the uncovered source" ~needle:"line5----" out;
-  check_contains "excerpts include context lines" ~needle:"line4----" out;
-  check_absent "covered regions stay out of the excerpts" ~needle:"line1----"
+  check_int "a silenced run still exits 0" ~expected:0 ~actual:code;
+  check_absent "a falsy WINDTRAP_COVERAGE renders nothing" ~needle:"coverage:"
     out;
-  (* Flag mirrors and precedence. *)
-  let _, out, _, _ =
-    child ~env:child_src_env
-      ~args:[ "--coverage"; "report"; "--color"; "never" ]
-      ()
-  in
-  check_contains "--coverage report equals the env spelling"
-    ~needle:"uncovered: 5-6" out;
-  let _, out, _, _ =
-    child
-      ~env:("WINDTRAP_COVERAGE=full" :: child_src_env)
-      ~args:[ "--coverage"; "summary"; "--color"; "never" ]
-      ()
-  in
-  check_contains "the flag beats WINDTRAP_COVERAGE"
-    ~needle:"project: dune build @cover" out;
-  check_absent "the flag beats WINDTRAP_COVERAGE (no excerpts)"
-    ~needle:"\u{258c}" out;
-  let _, out, _, _ =
-    child
-      ~env:("WINDTRAP_COVERAGE=report" :: child_src_env)
-      ~args:[ "--quiet"; "--color"; "never" ]
-      ()
-  in
-  check_absent "quiet suppresses the report mode too" ~needle:"coverage:" out;
-  (* Workspace-relative recorded paths (the instrumenter's spelling)
-     resolve against the project root, not the in-_build cwd — the
-     snapshot layer's WINDTRAP_PROJECT_ROOT override pins it here. *)
-  let fake_root = scratch "fakeproj" in
-  write_file (Filename.concat fake_root "lib/rel.ml") child_source;
-  let _, out, _, _ =
-    child
-      ~env:
-        [
-          "CHILD_FILE=lib/rel.ml";
-          "CHILD_TOTAL=6";
-          "CHILD_VISITED=4";
-          "CHILD_LINE_LEN=10";
-          "WINDTRAP_COVERAGE=report";
-          "WINDTRAP_PROJECT_ROOT=" ^ fake_root;
-        ]
-      ~args:[ "--color"; "never" ] ()
-  in
-  check_contains "relative sources resolve against the project root"
-    ~needle:"uncovered: 5-6" out;
-  (* Malformed modes are loud (house rule: never silently defaulted). *)
-  let code, _, err, _ = child ~args:[ "--coverage"; "sideways" ] () in
-  check_int "a malformed --coverage exits 2" ~expected:2 ~actual:code;
-  check_contains "a malformed --coverage names the vocabulary"
-    ~needle:"summary, report, full or off" err;
+  (* The retired mode words are loud, and name where their output went. *)
+  let code, _, err, _ = child ~env:[ "WINDTRAP_COVERAGE=full" ] () in
+  check_int "a retired mode word exits 2" ~expected:2 ~actual:code;
+  check_contains "the error names the variable" ~needle:"WINDTRAP_COVERAGE" err;
+  check_contains "and points at the reporting command"
+    ~needle:"windtrap coverage" err;
   let code, _, err, _ = child ~env:[ "WINDTRAP_COVERAGE=sideways" ] () in
   check_int "a malformed WINDTRAP_COVERAGE exits 2" ~expected:2 ~actual:code;
-  check_contains "a malformed WINDTRAP_COVERAGE names its source"
+  check_contains "a malformed value names its source"
     ~needle:"WINDTRAP_COVERAGE" err;
+  (* The flag is gone: an unknown option, never a silently ignored one. *)
+  let code, _, err, _ = child ~args:[ "--coverage"; "report" ] () in
+  check_int "--coverage is no longer an option" ~expected:2 ~actual:code;
+  check_contains "--coverage is reported as unknown"
+    ~needle:"unknown option '--coverage'" err;
   let code, out, _, _ = child ~args:[ "--help" ] () in
   check_int "--help exits 0" ~expected:0 ~actual:code;
-  check_contains "--help lists the coverage flag" ~needle:"--coverage MODE" out
+  check_absent "--help lists no coverage flag" ~needle:"--coverage" out;
+  check_contains "--help lists the variable instead"
+    ~needle:"WINDTRAP_COVERAGE " out
 
 (* A fake merged project for `windtrap coverage` *)
 
@@ -1055,23 +1010,12 @@ let junit_rails =
   check_contains "the JUnit report is JUnit" ~needle:"<testsuites" xml;
   check_absent "JUnit carries no coverage line" ~needle:"coverage:" xml;
   check_absent "JUnit carries no coverage counts" ~needle:"points)" xml;
-  (* Report and full modes render nothing without instrumentation — no
-     line, no empty table. *)
+  (* An uninstrumented run renders nothing — no line, no empty table. *)
   let code, out, _, _ =
-    child
-      ~env:[ "CHILD_TOTAL=0"; "WINDTRAP_COVERAGE=report" ]
-      ~args:[ "--color"; "never" ] ()
+    child ~env:[ "CHILD_TOTAL=0" ] ~args:[ "--color"; "never" ] ()
   in
-  check_int "report mode without instrumentation exits 0" ~expected:0
-    ~actual:code;
-  check_absent "report mode without instrumentation renders nothing"
-    ~needle:"coverage:" out;
-  let _, out, _, _ =
-    child
-      ~env:[ "CHILD_TOTAL=0"; "WINDTRAP_COVERAGE=full" ]
-      ~args:[ "--color"; "never" ] ()
-  in
-  check_absent "full mode without instrumentation renders nothing"
+  check_int "an uninstrumented run exits 0" ~expected:0 ~actual:code;
+  check_absent "an uninstrumented run renders no coverage line"
     ~needle:"coverage:" out
 
 (* The suite *)
@@ -1081,7 +1025,7 @@ let () =
     [
       law12_budget;
       inline_line;
-      report_full_modes;
+      coverage_switch;
       reporting_command;
       min_matrix;
       json_shape;

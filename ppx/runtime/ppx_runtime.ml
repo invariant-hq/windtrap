@@ -1333,15 +1333,16 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
    transcript, shared byte-for-byte with the library runner (one behavior,
    both runners — ppx/F-4). The inline protocol has no CLI, so the
    WINDTRAP_* mirrors are the CLI: WINDTRAP_QUIET/WINDTRAP_VERBOSE pick the
-   verbosity level and WINDTRAP_COVERAGE the coverage mode (both resolved in
-   [exit], beside the config, by the one [Cli.settings] call). What is
+   verbosity level and WINDTRAP_COVERAGE the inline coverage line (both
+   resolved in [exit], beside the config, by the one [Cli.settings]
+   call). What is
    legitimately this runner's own stays visible here: the [`Mirrors] hint
    context, the seedless and selectionless header (a mirror empties every
    partition it narrows, and [inline_exit_code] passes those runs — they
    are not the mistyped filter the sentence diagnoses), the .corrected
    files, and the returned exit code that [exit] combines with the
    correction protocol. *)
-let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
+let run_inline_suite ~suite ~config ~coverage ~render ~output tests =
   let spine =
     {
       Driver.invocation = `Mirrors;
@@ -1349,7 +1350,7 @@ let run_inline_suite ~suite ~config ~coverage_mode ~render ~output tests =
       selection = None;
       github = Env.in_github_actions ();
       output;
-      coverage_mode;
+      coverage;
       render;
       config;
       suite;
@@ -1437,9 +1438,9 @@ let exit () =
   | Error error ->
       prerr_endline (Cli.error_message error);
       Stdlib.exit 2
-  | Ok { Cli.config; render; coverage_mode; output_level } ->
+  | Ok { Cli.config; render; coverage; output_level } ->
       Stdlib.exit
-        (run_inline_suite ~suite ~config ~coverage_mode ~render
+        (run_inline_suite ~suite ~config ~coverage ~render
            ~output:output_level tests)
 
 (* Test seams *)

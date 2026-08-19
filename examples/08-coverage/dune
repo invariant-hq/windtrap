@@ -4,7 +4,7 @@
 ; no coverage output. For the inline percentage and the reports:
 ;
 ;   dune runtest --instrument-with ppx_windtrap.coverage
-;   WINDTRAP_COVERAGE=report dune runtest --instrument-with ppx_windtrap.coverage
+;   dune exec windtrap -- coverage -u
 ;   dune exec windtrap -- coverage --min 80
 ;
 ; The Sub and Mul arms in calc.ml are deliberately untested: instrumented

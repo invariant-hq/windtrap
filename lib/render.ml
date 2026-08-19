@@ -1724,17 +1724,16 @@ let coverage_style ~visited ~total : Pp.style =
   if pct >= 80. then `Green else if pct >= 60. then `Yellow else `Red
 
 (* The one producer of the coverage line, shared by [finish]'s inline
-   form (hinting at the report modes) and [coverage_report]'s bare
-   form. *)
-let coverage_line ?(note = "") ?hint ~visited ~total () =
-  let note = if note = "" then "" else ", " ^ note in
+   form (which points at the project aggregate) and [coverage_report]'s
+   bare form, which already is the aggregate. *)
+let coverage_line ?hint ~visited ~total () =
   let hint = match hint with None -> "" | Some h -> " \u{00b7} " ^ h in
   [
     plain "coverage: ";
     styled
       (coverage_style ~visited ~total)
       (spf "%.1f%%" (coverage_percentage ~visited ~total));
-    plain (spf " (%d/%d points%s)%s" visited total note hint);
+    plain (spf " (%d/%d points)%s" visited total hint);
   ]
 
 (* One source-excerpt block: file heading, then each uncovered region

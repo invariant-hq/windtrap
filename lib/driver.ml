@@ -33,7 +33,7 @@ type t = {
   selection : string option;
   github : bool;
   output : [ `Quiet | `Compact | `Verbose ];
-  coverage_mode : [ `Summary | `Report | `Full | `Off ];
+  coverage : bool;
   render : Render.settings;
   config : Run.config;
   suite : string;
@@ -194,16 +194,9 @@ let snapshot_coverage run =
   (* When instrumented code registered in-process coverage, snapshot it
      into the run record; renderers project it like any other run data. *)
   let collection = coverage_scope () (Windtrap_coverage.snapshot ()) in
-  if not (Windtrap_coverage.is_empty collection) then begin
+  if not (Windtrap_coverage.is_empty collection) then
     let s = Windtrap_coverage.summary collection in
     Run.set_coverage run { Run.visited = s.visited; total = s.total }
-  end;
-  collection
-
-let coverage_summary ~coverage_mode run =
-  match coverage_mode with
-  | `Summary -> Run.coverage run
-  | `Report | `Full | `Off -> None
 
 (* The one builder of the report's section data ({!Render.coverage}):
    the seam that links the runtime turns what it measured into the
@@ -231,23 +224,6 @@ let coverage_data ?source_roots collection : Render.coverage =
       List.map file_line
         (Windtrap_coverage.file_reports ?source_roots collection);
   }
-
-let coverage_report renderer ~coverage_mode run collection =
-  match coverage_mode with
-  | (`Report | `Full) as mode when Run.coverage run <> None ->
-      (* Sources are recorded workspace-relative; under `dune runtest` the
-         cwd is inside _build, so resolve them like snapshots do. *)
-      (* Root discovery reads the cwd, which a test may have removed: the
-         report degrades to unresolved sources rather than raising out of
-         the reporting path after the tests are already done. *)
-      let source_roots =
-        match Path_ops.project_root () with
-        | root -> [ root ]
-        | exception Sys_error _ -> []
-      in
-      Render.coverage_report renderer ~mode
-        (coverage_data ~source_roots collection)
-  | `Report | `Full | `Summary | `Off -> ()
 
 (* The staged internals *)
 
@@ -288,7 +264,7 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
        selection;
        github;
        output;
-       coverage_mode;
+       coverage;
        render;
        config;
        suite;
@@ -320,11 +296,10 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
          (fixture-release failures). Every sink projects it, so a verdict
          that sets the exit code is always visible in the report. *)
       let results = Run.results outcome.Runner.run in
-      let collection = snapshot_coverage outcome.Runner.run in
+      snapshot_coverage outcome.Runner.run;
       Render.finish renderer
-        ?coverage:(coverage_summary ~coverage_mode outcome.Runner.run)
+        ?coverage:(if coverage then Run.coverage outcome.Runner.run else None)
         ~results ~duration:outcome.Runner.duration ();
-      coverage_report renderer ~coverage_mode outcome.Runner.run collection;
       Render.report_snapshots renderer ~orphans:outcome.Runner.orphans
         outcome.Runner.run;
       github_end ~github;

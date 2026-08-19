@@ -679,34 +679,33 @@ let () =
   check "--color beats WINDTRAP_COLOR" (render.Render.color = Env.Always);
   clear_env ()
 
-(* Resolution: the coverage mode *)
+(* Resolution: the inline coverage line *)
 
 let () =
-  reg "coverage mode resolution" @@ fun () ->
+  reg "coverage line resolution" @@ fun () ->
   clear_env ();
-  let mode cli =
-    match Cli.coverage_mode cli with
-    | Ok mode -> mode
+  let enabled () =
+    match Cli.coverage_enabled () with
+    | Ok enabled -> enabled
     | Error error ->
-        check ("coverage_mode succeeds: " ^ Cli.error_message error) false;
-        `Summary
+        check ("coverage_enabled succeeds: " ^ Cli.error_message error) false;
+        true
   in
-  check "default coverage mode is summary" (mode Cli.empty = `Summary);
-  Unix.putenv "WINDTRAP_COVERAGE" "REPORT";
-  check "WINDTRAP_COVERAGE fills an absent flag, case-insensitively"
-    (mode Cli.empty = `Report);
-  check "--coverage beats WINDTRAP_COVERAGE"
-    (mode { Cli.empty with Cli.coverage = Some `Off } = `Off);
-  Unix.putenv "WINDTRAP_COVERAGE" "loads";
-  (match Cli.coverage_mode Cli.empty with
+  check "an unset WINDTRAP_COVERAGE prints the line" (enabled ());
+  Unix.putenv "WINDTRAP_COVERAGE" "OFF";
+  check "a falsy WINDTRAP_COVERAGE silences it, case-insensitively"
+    (not (enabled ()));
+  Unix.putenv "WINDTRAP_COVERAGE" " 1 ";
+  check "the truthy spellings are Env's, trimmed" (enabled ());
+  Unix.putenv "WINDTRAP_COVERAGE" "report";
+  (match Cli.coverage_enabled () with
   | Error
-      (Cli.Invalid_value { source = "WINDTRAP_COVERAGE"; value = "loads"; _ })
-    ->
-      check "a malformed winning coverage mode errors with its source" true
-  | Ok _ | Error _ ->
-      check "a malformed winning coverage mode errors with its source" false);
-  check "a CLI coverage mode leaves a malformed mirror unread"
-    (mode { Cli.empty with Cli.coverage = Some `Full } = `Full);
+      (Cli.Invalid_value
+         { source = "WINDTRAP_COVERAGE"; value = "report"; expected }) ->
+      check "a retired mode word errors with its source" true;
+      check "and the message names the reporting command"
+        (contains "windtrap coverage" expected)
+  | Ok _ | Error _ -> check "a retired mode word errors with its source" false);
   clear_env ()
 
 (* Resolution: the output level *)
@@ -749,7 +748,7 @@ let settings ?overrides parsed =
       {
         Cli.config = Run.default_config ();
         render = Render.default_settings;
-        coverage_mode = `Summary;
+        coverage = true;
         output_level = `Compact;
       }
 
@@ -763,13 +762,12 @@ let () =
   let s = settings cli in
   check "the config field is [resolve]'s" (s.Cli.config = resolve cli);
   check "the render field defaults" (s.Cli.render = Render.default_settings);
-  check "the coverage field defaults to summary" (s.Cli.coverage_mode = `Summary);
+  check "the coverage field defaults to on" s.Cli.coverage;
   check "the level field defaults to compact" (s.Cli.output_level = `Compact);
-  Unix.putenv "WINDTRAP_COVERAGE" "report";
+  Unix.putenv "WINDTRAP_COVERAGE" "off";
   Unix.putenv "WINDTRAP_QUIET" "1";
   let s = settings Cli.empty in
-  check "WINDTRAP_COVERAGE reaches the coverage field"
-    (s.Cli.coverage_mode = `Report);
+  check "WINDTRAP_COVERAGE reaches the coverage field" (not s.Cli.coverage);
   check "WINDTRAP_QUIET reaches the level field" (s.Cli.output_level = `Quiet);
   let s =
     settings
@@ -787,8 +785,8 @@ let () =
   Unix.putenv "WINDTRAP_COVERAGE" "sideways";
   (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_COVERAGE"; _ }) ->
-      check "a malformed coverage mirror is an error" true
-  | Ok _ | Error _ -> check "a malformed coverage mirror is an error" false);
+      check "a malformed WINDTRAP_COVERAGE is an error" true
+  | Ok _ | Error _ -> check "a malformed WINDTRAP_COVERAGE is an error" false);
   clear_env ();
   Unix.putenv "WINDTRAP_SEED" "garbage";
   (match Cli.settings Cli.empty with
