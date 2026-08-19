@@ -147,21 +147,16 @@ let point_index st ~key ~start_ofs ~end_ofs =
      use [post] in tail position.
 
    The point's attribution location is [use_loc_of]'s (which also carries
-   the [@coverage off] check), else [override_loc], else [e]'s own; its key
-   offset is that location's start, or end-1 under [at_end]; its extent is
-   [extent] when given, the attribution location otherwise. Ghost
-   attribution locations (generated code) are not instrumented. The
-   wrapper node carries [e]'s own location, so a later mark of the wrapped
-   node (arm marking after out-edge wrapping, say) still keys and paints
-   the original source. *)
-let instrument_expr st ?override_loc ?use_loc_of ?(at_end = false)
-    ?(post = false) ?extent e =
+   the [@coverage off] check), else [e]'s own; its key offset is that
+   location's start, or end-1 under [at_end]; its extent is [extent] when
+   given, the attribution location otherwise. Ghost attribution locations
+   (generated code) are not instrumented. The wrapper node carries [e]'s
+   own location, so a later mark of the wrapped node (arm marking after
+   out-edge wrapping, say) still keys and paints the original source. *)
+let instrument_expr st ?use_loc_of ?(at_end = false) ?(post = false) ?extent e
+    =
   let attr_holder = match use_loc_of with Some e' -> e' | None -> e in
-  let point_loc =
-    match use_loc_of with
-    | Some e' -> e'.pexp_loc
-    | None -> ( match override_loc with Some l -> l | None -> e.pexp_loc)
-  in
+  let point_loc = attr_holder.pexp_loc in
   if point_loc.loc_ghost || has_off_attribute attr_holder.pexp_attributes then e
   else begin
     let key =
@@ -291,8 +286,8 @@ let is_trivial_function = function
    wrappers are never re-traversed. Extension and attribute payloads are
    left entirely untouched. *)
 class instrumenter st =
-  let instrument_expr ?override_loc ?use_loc_of ?at_end ?post ?extent e =
-    instrument_expr st ?override_loc ?use_loc_of ?at_end ?post ?extent e
+  let instrument_expr ?use_loc_of ?at_end ?post ?extent e =
+    instrument_expr st ?use_loc_of ?at_end ?post ?extent e
   in
   let instrument_cases cases = instrument_cases st cases in
   object (self)
