@@ -534,13 +534,10 @@ let pretty_lines raw =
         if contents = "" then acc else min acc indent)
       max_int indented
   in
-  match indented with
-  | [] -> []
-  | _ ->
-      List.map
-        (fun (indent, contents) ->
-          ((if contents = "" then 0 else max 0 (indent - min_indent)), contents))
-        indented
+  List.map
+    (fun (indent, contents) ->
+      ((if contents = "" then 0 else max 0 (indent - min_indent)), contents))
+    indented
 
 let spaces n = String.make n ' '
 
@@ -702,7 +699,7 @@ let render_node sn contents =
         "[%" ^ name ^ "\n" ^ spaces (sn.s_col + 2) ^ payload ^ "]"
       else "[%" ^ name ^ " " ^ payload ^ "]"
 
-let snode_of ~file:_ node =
+let snode_of node =
   let shorthand =
     match node.payload with
     | Some p ->
@@ -757,7 +754,7 @@ let register_styled ~file node =
         Hashtbl.add !state.styled file tbl;
         tbl
   in
-  let sn = snode_of ~file node in
+  let sn = snode_of node in
   Hashtbl.replace tbl sn.s_span sn
 
 (* Applying corrections to source *)
@@ -808,22 +805,9 @@ let corrected_source ~file ~source =
                 node_patches :=
                   { start = fst span; stop = snd span; text } :: !node_patches)
             nodes);
-      (* A corrected node whose test never resolved cannot happen (only
-         resolutions record corrections), but a recorded Node_fix without
-         a styled entry would be silently dropped above; keep the writer
-         total by patching such spans directly. *)
       Hashtbl.iter
         (fun key correction ->
           match (key, correction) with
-          | Node_key (start, stop), Node_fix contents ->
-              if
-                match Hashtbl.find_opt !state.styled file with
-                | Some nodes -> not (Hashtbl.mem nodes (start, stop))
-                | None -> true
-              then
-                node_patches :=
-                  { start; stop; text = tag_payload ~tag:"" contents }
-                  :: !node_patches
           | Insert_key point, Insert { body_loc; body_wrap; contents } ->
               (* A bare [match]/[try]/[function] body takes parentheses in
                  the same patch: otherwise the [;] below binds to its last
@@ -860,7 +844,9 @@ let corrected_source ~file ~source =
                     };
                   ])
                 :: !insert_patches
-          | Node_key _, Insert _ | Insert_key _, Node_fix _ -> ())
+          (* Node_fix corrections are applied by the sweep above, which
+             sees every resolved node; the mixed pairs cannot be built. *)
+          | Node_key _, _ | Insert_key _, Node_fix _ -> ())
         tbl;
       let patches = !node_patches @ List.concat !insert_patches in
       if patches = [] then None
@@ -1387,11 +1373,6 @@ let resolve_trailing ctx ~raw =
 let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
     ~trailing_loc body () =
   let nodes_array = Array.of_list nodes in
-  Array.iteri
-    (fun index node ->
-      if node.id <> index then
-        invalid_arg "Ppx_runtime: expect node ids must be 0, 1, … in order")
-    nodes_array;
   let ctx =
     {
       ctx_file = file;
