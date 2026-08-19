@@ -381,6 +381,22 @@ let bytes_shrink_to_empty () =
   let rendered = Gen.Private.render Gen.bytes (Shrink_tree.root tree) in
   check (starts_with "Bytes.of_string" rendered) "bytes rendered %S" rendered
 
+let bytes_of_respects_size_and_character_generator () =
+  let gen = Gen.(bytes_of ~size:(constant 3) (char_range 'a' 'z')) in
+  for index = 0 to 9 do
+    let tree = Gen.Private.sample gen (state index) in
+    explore ~limit:100 tree (fun b ->
+        check
+          (Bytes.length b = 3)
+          "sized bytes candidate has length %d" (Bytes.length b);
+        Bytes.iter
+          (fun c -> check (c >= 'a' && c <= 'z') "bytes_of produced %C" c)
+          b)
+  done;
+  let tree = Gen.Private.sample gen (state 0) in
+  let rendered = Gen.Private.render gen (Shrink_tree.root tree) in
+  check (starts_with "Bytes.of_string" rendered) "bytes_of rendered %S" rendered
+
 (* Containers *)
 
 let list_shrinks_structurally () =
@@ -695,10 +711,13 @@ let pair_shrinks_left_first_to_zeroes () =
     "pair rendered %S"
     (Gen.Private.render gen (Shrink_tree.root tree))
 
-let triple_minimizes_to_zeroes () =
+let triple_and_quad_minimize_to_zeroes () =
   let triple_tree = Gen.Private.sample Gen.(triple nat nat nat) (state 2) in
   let minimum, _ = minimize (fun _ -> true) triple_tree in
-  check (minimum = (0, 0, 0)) "triple minimized elsewhere"
+  check (minimum = (0, 0, 0)) "triple minimized elsewhere";
+  let quad_tree = Gen.Private.sample Gen.(quad nat nat nat nat) (state 3) in
+  let minimum, _ = minimize (fun _ -> true) quad_tree in
+  check (minimum = (0, 0, 0, 0)) "quad minimized elsewhere"
 
 (* Choice and structure *)
 
@@ -716,6 +735,13 @@ let constant_is_a_leaf_and_asks_for_a_printer () =
     (Gen.Private.render gen (Shrink_tree.root tree));
   check (not (Gen.Private.prints gen)) "constant reports a printer";
   check (Gen.Private.render_value gen 42 = None) "constant has a printer"
+
+let pure_is_constant () =
+  let gen = Gen.pure 42 in
+  let tree = Gen.Private.sample gen (state 0) in
+  check (root_value tree = 42) "pure produced %d" (root_value tree);
+  check (no_children tree) "pure has shrink candidates";
+  check (Gen.Private.render_value gen 42 = None) "pure has a printer"
 
 let of_list_picks_uniformly_and_shrinks_toward_head () =
   let gen = Gen.of_list [ 10; 20; 30 ] in
@@ -1290,11 +1316,14 @@ let suite =
     ("option offers None first", option_offers_none_first);
     ("result generates both constructors", result_generates_both_constructors);
     ("pair shrinks left first to zeroes", pair_shrinks_left_first_to_zeroes);
-    ("triple minimizes to zeroes", triple_minimizes_to_zeroes);
+    ("triple and quad minimize to zeroes", triple_and_quad_minimize_to_zeroes);
+    ( "bytes_of respects size and character generator",
+      bytes_of_respects_size_and_character_generator );
     ( "constant is a leaf and asks for a printer",
       constant_is_a_leaf_and_asks_for_a_printer );
     ( "leaf printers feed the derivation law",
       leaf_printers_feed_the_derivation_law );
+    ("pure is constant", pure_is_constant);
     ( "of_list picks uniformly and shrinks toward the head",
       of_list_picks_uniformly_and_shrinks_toward_head );
     ( "of_list singleton is a leaf and empty raises",

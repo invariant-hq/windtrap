@@ -606,21 +606,22 @@ module Gen = Gen
     - numeric — {!Gen.int}, {!Gen.nat}, {!Gen.small_int}, {!Gen.int_range},
       {!Gen.int32}, {!Gen.int64}, {!Gen.float}, {!Gen.float_range};
     - base — {!Gen.unit}, {!Gen.bool}, {!Gen.char}, {!Gen.char_range},
-      {!Gen.string}, {!Gen.string_of}, {!Gen.bytes};
+      {!Gen.string}, {!Gen.string_of}, {!Gen.bytes}, {!Gen.bytes_of};
     - containers — {!Gen.list}, {!Gen.array}, {!Gen.option}, {!Gen.result},
-      {!Gen.pair}, {!Gen.triple};
-    - choice — {!Gen.constant}, {!Gen.of_list}, {!Gen.one_of},
-      {!Gen.frequency}, {!Gen.such_that};
+      {!Gen.pair}, {!Gen.triple}, {!Gen.quad};
+    - choice — {!Gen.constant} (alias {!Gen.pure}), {!Gen.of_list},
+      {!Gen.one_of}, {!Gen.frequency}, {!Gen.such_that};
     - composition — {!Gen.map}, {!Gen.bind}, the binding operators, and
       {!Gen.with_pp}, which takes the same {!type:printer} the assertion side
       uses and is the one way to give a printerless generator a rendering.
 
     {b Note.} Length- and alphabet-controlled strings are spelled
-    {!Gen.string_of}[ ?size char] — the natural [string ?size ?char] spelling
-    cannot exist (optional arguments on a value are unerasable, warning 16), so
-    the knobs live on [string_of], aligned with {!Gen.list}. See {!Gen} for
-    each generator's distribution, shrink order, and the printer-derivation
-    law; {!Gen.Private} holds the engine interface, which no test writes. *)
+    {!Gen.string_of}[ ?size char] and {!Gen.bytes_of} — the natural
+    [string ?size ?char] spelling cannot exist (optional arguments on a value
+    are unerasable, warning 16), so the knobs live on [string_of]/[bytes_of],
+    aligned with {!Gen.list}. See {!Gen} for each generator's distribution,
+    shrink order, and the printer-derivation law; {!Gen.Private} holds the
+    engine interface, which no test writes. *)
 
 val prop :
   ?pos:pos ->

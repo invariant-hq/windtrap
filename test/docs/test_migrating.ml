@@ -278,14 +278,10 @@ let gen_renames =
       prop "string_of ~size"
         Gen.(string_of ~size:(int_range 1 8) (char_range 'a' 'z'))
         (fun s -> is_true (String.length s >= 1));
-      prop "bytes over a size-controlled string"
-        Gen.(
-          with_pp
-            (fun ppf b -> Format.fprintf ppf "%S" (Bytes.to_string b))
-            (map Bytes.of_string
-               (string_of ~size:(int_range 1 8) (char_range 'a' 'z'))))
+      prop "bytes_of ~size"
+        Gen.(bytes_of ~size:(int_range 1 8) (char_range 'a' 'z'))
         (fun b -> is_true (Bytes.length b >= 1));
-      prop "constant" (Gen.constant 42) (fun n -> equal int 42 n);
+      prop "pure is kept" (Gen.pure 42) (fun n -> equal int 42 n);
     ]
 
 (* RFC guide, "A failing assertion" (here with equal sides) *)

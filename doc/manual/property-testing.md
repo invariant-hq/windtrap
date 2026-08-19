@@ -77,10 +77,11 @@ shrinking, *and* printing, inseparably:
 - numeric: `int`, `nat`, `small_int`, `int_range`, `int32`, `int64`,
   `float`, `float_range`
 - base: `unit`, `bool`, `char`, `char_range`, `string`,
-  `string_of ?size char`, `bytes`
+  `string_of ?size char`, `bytes`, `bytes_of`
 - containers: `list ?size`, `array ?size`, `option`, `result`, `pair`,
-  `triple`
-- choice: `constant`, `of_list`, `one_of`, `frequency`, `such_that`
+  `triple`, `quad`
+- choice: `constant`/`pure`, `of_list`, `one_of`, `frequency`,
+  `such_that`
 - composition: `map`, `bind`, `let+`/`and+`/`let*`, `with_pp`
 
 Prefer `small_int` or `nat` for sizes, indices, and arithmetic —

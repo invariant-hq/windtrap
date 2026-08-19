@@ -40,23 +40,23 @@
     Primitives print out of the box — {!string_of} and {!bytes_of} always print,
     quoted, whatever their character generator; {!list}, {!array}, {!option},
     {!result}, {!pair}, {!triple}, {!quad}, {!one_of}, and {!frequency} derive
-    their printer from their components' printers; {!map}, {!bind}, and {!sized}
-    produce printerless generators as above, and {!constant}, {!pure}, and
-    {!of_list} print only when given [?pp], because their values are arbitrary.
-    Those two are worth passing: they are the leaves that most often sit under a
-    deriving combinator, and one printerless leaf forfeits the derived printer
-    of the whole composition. {!such_that} keeps its generator's printer. A
-    printerless counterexample renders as [<no printer>], and the failure
-    report names the remedy ({!with_pp}) once, under the counterexample.
+    their printer from their components' printers; {!map} and {!bind} produce
+    printerless generators as above, and so do {!constant}, {!pure} and
+    {!of_list}, whose values are arbitrary. Those leaves are the ones worth
+    wrapping in {!with_pp}: they most often sit under a deriving combinator,
+    and one printerless leaf forfeits the derived printer of the whole
+    composition. {!such_that} keeps its generator's printer. A printerless
+    counterexample renders as [<no printer>], and the failure report names the
+    remedy ({!with_pp}) once, under the counterexample.
 
     {b Validation.} Generator constructors never raise: malformed arguments
     ([one_of []], [int_range 3 1]) are reported by raising [Invalid_argument]
     when the generator first samples, inside the running test's exception
     boundary — a test list that constructs is a test list that runs.
 
-    Callbacks passed to {!map}, {!bind}, {!such_that}, and generator-valued
-    functions given to {!sized} must be pure: the shrink search runs them —
-    memoized, at most once per tree node — when it forces candidates. *)
+    Callbacks passed to {!map}, {!bind} and {!such_that} must be pure: the
+    shrink search runs them — memoized, at most once per tree node — when it
+    forces candidates. *)
 
 (** {1:generators Generators} *)
 
@@ -114,9 +114,9 @@ val float_range : float -> float -> float t
 
 val unit : unit t
 (** [unit] generates [()], with no shrink candidates, and prints [()]. It is not
-    [pure ()]: {!pure} without [?pp] carries no printer, so a deriving
-    composition over it — a variant arm for a nullary operation, say — would
-    forfeit its own printer too. *)
+    [pure ()]: {!pure} carries no printer, so a deriving composition over it — a
+    variant arm for a nullary operation, say — would forfeit its own printer
+    too. *)
 
 val bool : bool t
 (** [bool] generates [true] or [false] with equal probability. [true] shrinks to
@@ -164,9 +164,13 @@ val string_of : ?size:int t -> char t -> string t
     Sampling raises [Invalid_argument] if [size] produces a negative length. *)
 
 val bytes : bytes t
-(** [bytes] is {!string} converted to [bytes] — same length distribution,
-    uniform bytes, same shrinking. An alphabet- or length-controlled [bytes]
-    is [map Bytes.of_string (string_of …)] under a {!with_pp}. *)
+(** [bytes] is [bytes_of char]: {!string} converted to [bytes] — same length
+    distribution, uniform bytes, same shrinking. *)
+
+val bytes_of : ?size:int t -> char t -> bytes t
+(** [bytes_of char_gen] is {!string_of} converted to [bytes]: same length and
+    alphabet control, same shrinking, and it keeps a printer where a
+    [map Bytes.of_string] over {!string_of} would forfeit one. *)
 
 val list : ?size:int t -> 'a t -> 'a list t
 (** [list gen] generates a list of [gen] values whose length follows the size
@@ -202,12 +206,19 @@ val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 (** [triple a b c] is like {!pair} for three components, shrinking
     left-to-right. *)
 
+val quad : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
+(** [quad a b c d] is like {!pair} for four components, shrinking
+    left-to-right. *)
+
 val constant : 'a -> 'a t
 (** [constant v] always generates [v], with no shrink candidates. Its values
     are arbitrary, so no printer can be inferred: it prints nothing, and so
     does every composition built over it until {!with_pp} attaches one —
     [with_pp pp (constant v)] prints like a primitive, through the printers
     {!list}, {!pair}, {!one_of}, ... derive as well as on its own. *)
+
+val pure : 'a -> 'a t
+(** [pure] is {!constant}, under the applicative's name. *)
 
 val of_list : 'a list -> 'a t
 (** [of_list values] generates a value of [values], each with equal probability.

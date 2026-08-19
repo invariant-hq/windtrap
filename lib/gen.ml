@@ -62,6 +62,10 @@ let pp_pair pp_a pp_b ppf (a, b) =
 let pp_triple pp_a pp_b pp_c ppf (a, b, c) =
   Format.fprintf ppf "@[<hov 1>(%a,@ %a,@ %a)@]" pp_a a pp_b b pp_c c
 
+let pp_quad pp_a pp_b pp_c pp_d ppf (a, b, c, d) =
+  Format.fprintf ppf "@[<hov 1>(%a,@ %a,@ %a,@ %a)@]" pp_a a pp_b b pp_c c pp_d
+    d
+
 (* Shrink candidate sequences (adapted from windtrap v1's shrink module)
    Binary search toward a destination: emit [dest] first, then halve the
    remaining distance, converging on the sampled value without reaching
@@ -401,8 +405,8 @@ let string_of ?size char_gen =
 
 let string = string_of char
 
-let bytes =
-  let base = string in
+let bytes_of ?size char_gen =
+  let base = string_of ?size char_gen in
   {
     pp = Some pp_bytes;
     run =
@@ -410,6 +414,8 @@ let bytes =
         let tree, state = base.run state in
         (Shrink_tree.map Bytes.of_string tree, state));
   }
+
+let bytes = bytes_of char
 
 let option gen =
   let pp = Option.map pp_option gen.pp in
@@ -485,6 +491,29 @@ let triple a b c =
         (tree, state));
   }
 
+let quad a b c d =
+  let pp =
+    match (a.pp, b.pp, c.pp, d.pp) with
+    | Some pp_a, Some pp_b, Some pp_c, Some pp_d ->
+        Some (pp_quad pp_a pp_b pp_c pp_d)
+    | _ -> None
+  in
+  {
+    pp;
+    run =
+      (fun state ->
+        let ta, state = a.run state in
+        let tb, state = b.run state in
+        let tc, state = c.run state in
+        let td, state = d.run state in
+        let tree =
+          Shrink_tree.map
+            (fun (va, (vb, (vc, vd))) -> (va, vb, vc, vd))
+            (Shrink_tree.pair ta (Shrink_tree.pair tb (Shrink_tree.pair tc td)))
+        in
+        (tree, state));
+  }
+
 (* Choice and structure *)
 
 (* The printerless leaves: their values are arbitrary, so no printer can be
@@ -492,6 +521,8 @@ let triple a b c =
    result keeps it. *)
 let constant value =
   { pp = None; run = (fun state -> (Shrink_tree.leaf value, state)) }
+
+let pure = constant
 
 let of_list values =
   let values = Array.of_list values in
