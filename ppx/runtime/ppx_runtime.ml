@@ -303,7 +303,12 @@ let install_undriven_guard () =
    report ppx_expect's "test ran multiple times" CR block instead of the
    mismatch that killed the mutant. Registration and the protocol
    arguments are deliberately kept: the child runs the tests the parent
-   registered. *)
+   registered.
+
+   Snapshots need no counterpart: [Snapshot.resolve_mode] maps
+   [Env.No_update] to [Snapshot.Check] and writing is reachable only
+   under [Snapshot.Update], so an armed run's No_update already makes
+   snapshot checking read-only by construction. *)
 
 let enter_armed () =
   (* A process with a mutant armed belongs to the mutation loop: its

@@ -462,9 +462,9 @@ val correction_notice :
     - {!collect}: whoever drains the registry owns the execution of what they
       took — the rule that covers hand-rolled harnesses driving [Runner]
       directly;
-    - {{!section:armed} [enter_armed]}: a process with a mutant armed belongs to
-      the mutation loop, whose transcript and exit code are Law 16's — the guard
-      must write into neither;
+    - arming a mutant (the [Registry.on_armed] hook this module registers): a
+      process with a mutant armed belongs to the mutation loop, whose transcript
+      and exit code are Law 16's — the guard must write into neither;
     - {!reset}: a test seam; its caller owns the registry by construction.
 
     Running a suite claims nothing by itself: a standalone [Windtrap.run]
@@ -478,50 +478,6 @@ val correction_notice :
     installed mid-run, later in the [at_exit] chain, so an in-run exit it
     cancels ([Failure.Exit_attempt]) never reaches this handler, which fires
     only at the exit that finally proceeds. *)
-
-(** {1:armed Armed processes}
-
-    The mutation subsystem's one reach into this module's behaviour (Law 16d).
-    It reaches in to stop a write, never to start one. *)
-
-val enter_armed : unit -> unit
-(** [enter_armed ()] puts this module into the state a process with a mutant
-    armed requires, and does not come back out — a process that arms stays armed
-    for its life. It also claims the registry for the undriven-registration
-    guard: an armed process's transcript and exit code are Law 16's, and the
-    guard must write into neither (see {!section:undriven}). Beyond that, two
-    things, always needed together:
-
-    - {b Checking becomes read-only.} An [[%expect]] or [[%expect_exact]]
-      mismatch is a plain failure: no correction is recorded, so
-      {!flush_corrections_report} writes no [.corrected] file, accepts nothing
-      into the source tree whatever [WINDTRAP_UPDATE] says, and finds nothing to
-      name on [stderr], and no failed test is recorded as covered, so
-      {!inline_exit_code} never downgrades a failing run to [0] on dune's
-      promotion protocol. Matching, normalization, per-node reachability and the
-      failures they report are unchanged. An armed mutant changes program output
-      on purpose, and a run that rewrote the source tree from mutated output
-      would violate Law 1 outright.
-    - {b The cross-run tables are cleared}: recorded corrections, the
-      styled-writer registry, the merged per-node reach histories and the
-      covered paths. A forked mutation child inherits the parent dry run's reach
-      histories, and its first mismatch would otherwise resolve against the
-      {e parent's} outputs as ppx_expect's "test ran multiple times" CR block
-      instead of as the mismatch that killed the mutant. Registration, the
-      protocol arguments and the duplicate-name counters are kept: the child
-      runs the tests the parent registered.
-
-    Snapshots need no counterpart. [Snapshot.resolve_mode] maps [Env.No_update]
-    to [Snapshot.Check] and writing is reachable only under [Snapshot.Update],
-    so an armed run's [update = No_update] already makes snapshot checking
-    read-only by construction.
-
-    The mutation loop fires it in every process that has a mutant armed — each
-    forked child, and an interactive [WINDTRAP_MUTATE_ARM] run — and reaches it
-    through [Registry.on_armed], where this module registers it at load time,
-    rather than as a dependency: this module sits {e above} the loop, and the
-    registry is the seam that keeps the two from naming each other (see
-    [Mutate_loop.execute_and_report]). *)
 
 (** {1:seams Test seams} *)
 
