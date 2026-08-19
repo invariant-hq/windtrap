@@ -1254,7 +1254,15 @@ let filename_tests =
         is_true ~msg:"named .mutants" (Filename.check_suffix direct ".mutants");
         not_equal ~msg:"a different executable gets a different file" string
           direct
-          (M.output_file ~exe:"/home/p/_build/default/test/other.exe"));
+          (M.output_file ~exe:"/home/p/_build/default/test/other.exe");
+        (* One executable is one verdict file, whichever way the run that
+           wrote it named the binary: a key that kept [.] and [..] would
+           file one per spelling and leave all but the last for the
+           report to call stale. *)
+        equal ~msg:"a . component is not a directory" string direct
+          (M.output_file ~exe:"/home/p/_build/default/test/./t.exe");
+        equal ~msg:"a .. is the directory above it" string direct
+          (M.output_file ~exe:"/home/p/_build/default/test/sub/../t.exe"));
     test "writer_identity digests the executable" (fun () ->
         let exe = Filename.concat exe_dir "arm_child.exe" in
         match M.writer_identity ~exe with

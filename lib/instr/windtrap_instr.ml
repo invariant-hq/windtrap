@@ -38,15 +38,36 @@ let absolute path =
   if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
   else path
 
+(* One executable reached two ways is one executable, and the key below
+   is what decides how many data files it gets. Dune spells the same
+   binary [test/a.exe] here and [./test/a.exe] there, and a suite that
+   spawns a sibling names it [../../bin/main.exe]; without this, each
+   spelling files its own dump, every rebuild leaves all but the last
+   one behind, and the report calls them stale for the rest of the
+   build directory's life.
+
+   Lexical, like [Path_ops.display]: these are paths under [_build],
+   which dune builds out of plain directories, so no [..] can mean
+   something a symlink redefined. The first component is the root ("" for
+   "/x", "C:" for "C:/x") and is never touched. *)
+let canonical path =
+  let path = String.map (function '\\' -> '/' | c -> c) (absolute path) in
+  match String.split_on_char '/' path with
+  | [] -> path
+  | first :: rest ->
+      let step above = function
+        | "" | "." -> above
+        | ".." -> ( match above with [] -> [] | _ :: outer -> outer)
+        | c -> c :: above
+      in
+      String.concat "/" (first :: List.rev (List.fold_left step [] rest))
+
 (* The one root rule: [Some (root, below)] when [path] has a [_build]
    component - [root] the parent of the topmost one, [below] the path
    under it with any [.sandbox/<digest>] prefix stripped, so sandboxed and
    direct runs agree. *)
 let split_build path =
-  let components =
-    String.map (function '\\' -> '/' | c -> c) (absolute path)
-    |> String.split_on_char '/'
-  in
+  let components = String.split_on_char '/' (canonical path) in
   let rec split_at_build before = function
     | [] -> None
     | "_build" :: below -> Some (List.rev before, below)
@@ -65,13 +86,13 @@ let split_build path =
 let build_root ~path = Option.map fst (split_build path)
 
 let exe_identity ~exe =
-  match split_build exe with Some (_, below) -> below | None -> absolute exe
+  match split_build exe with Some (_, below) -> below | None -> canonical exe
 
 let output_file format ~exe =
   let root, key =
     match split_build exe with
     | Some (root, below) -> (root, below)
-    | None -> (Sys.getcwd (), absolute exe)
+    | None -> (Sys.getcwd (), canonical exe)
   in
   Printf.sprintf "%s/_build/%s/windtrap-%s.%s" root format.dir (hex_hash key)
     format.ext

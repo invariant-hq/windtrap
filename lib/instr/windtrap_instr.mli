@@ -54,7 +54,10 @@ val file_digest : string -> string option
     reporting commands' discovery: a path's project root is the parent of its
     {e topmost} [_build] component, and paths below [_build] are compared with
     any [.sandbox/<digest>] prefix stripped, so sandboxed and direct runs
-    agree. *)
+    agree. Every path is normalized lexically first ([.] and empty components
+    dropped, [..] resolved against the component before it), so the spellings
+    one executable is reached by — [test/a.exe], [./test/a.exe],
+    [test/sub/../a.exe] — are one identity and one data file. *)
 
 val absolute : string -> string
 (** [absolute path] resolves [path] against the current directory when it is
@@ -67,7 +70,8 @@ val build_root : path:string -> string option
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the identity recorded for the executable at [exe]:
     its path below the topmost [_build] (sandbox prefix removed), or its
-    absolute path when it is not under one. *)
+    absolute path when it is not under one. Normalized, so two spellings of
+    one executable give one identity. *)
 
 val output_file : format -> exe:string -> string
 (** [output_file f ~exe] is

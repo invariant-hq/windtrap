@@ -617,6 +617,37 @@ let filename_tests =
         check "the identity is what output_file hashes"
           (C.output_file ~exe:"/w/p/_build/default/test/a.exe"
           = C.output_file ~exe:"/w/p/_build/.sandbox/9f/default/test/a.exe"));
+    (* One executable is one dump. Dune spells the same binary
+       [runner_main.exe] in one rule and [./runner_main.exe] in another,
+       and a suite that spawns a sibling names it [../../bin/main.exe];
+       a key that kept the spelling would file a dump per spelling and
+       leave every one but the last for the report to call stale. *)
+    test "one executable is one identity, however it is spelled" (fun () ->
+        let direct = "/w/p/_build/default/test/a.exe" in
+        check_string "a . component is not a directory"
+          ~expected:"default/test/a.exe"
+          ~actual:(I.exe_identity ~exe:"/w/p/_build/default/test/./a.exe");
+        check_string "nor is a chain of them" ~expected:"default/test/a.exe"
+          ~actual:(I.exe_identity ~exe:"/w/p/./_build/./default/test/a.exe");
+        check_string "a .. is the directory above it"
+          ~expected:"default/test/a.exe"
+          ~actual:(I.exe_identity ~exe:"/w/p/_build/default/test/sub/../a.exe");
+        check_string "a doubled separator is one" ~expected:"default/test/a.exe"
+          ~actual:(I.exe_identity ~exe:"/w/p/_build/default//test/a.exe");
+        check "and every one of them shares the direct run's file"
+          (List.for_all
+             (fun spelling ->
+               C.output_file ~exe:spelling = C.output_file ~exe:direct)
+             [
+               "/w/p/_build/default/test/./a.exe";
+               "/w/p/_build/default/test/sub/../a.exe";
+               "/w/p/_build/default/test/a.exe";
+             ]);
+        check_string "the rule reaches outside _build too"
+          ~expected:"/opt/tools/mytool.exe"
+          ~actual:(I.exe_identity ~exe:"/opt/tools/bin/./../mytool.exe");
+        check ".. above the root stops at the root"
+          (I.exe_identity ~exe:"/../../opt/mytool.exe" = "/opt/mytool.exe"));
   ]
 
 (* Extent -> line derivation *)
