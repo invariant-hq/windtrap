@@ -10,3 +10,5 @@ dune.lock/
 #
 _qa/
 qa/
+# macOS
+.DS_Store
