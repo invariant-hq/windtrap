@@ -366,14 +366,13 @@ let temp_dir ?(prefix = "dir") () =
   Unix.mkdir dir 0o700;
   dir
 
-let temp_file ?(prefix = "file") ?(suffix = "") () =
+let temp_file ?(suffix = "") () =
   let frame = current_frame () in
   let root = temp_root frame in
   let n = frame.fr_temp_seq in
   frame.fr_temp_seq <- n + 1;
-  let prefix = Path_ops.sanitize_component prefix in
   let suffix = if suffix = "" then "" else Path_ops.sanitize_component suffix in
-  let path = Filename.concat root (prefix ^ "-" ^ string_of_int n ^ suffix) in
+  let path = Filename.concat root ("file-" ^ string_of_int n ^ suffix) in
   let fd =
     Unix.openfile path
       [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_EXCL; Unix.O_CLOEXEC ]

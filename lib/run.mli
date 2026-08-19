@@ -278,12 +278,11 @@ val temp_dir : ?prefix:string -> unit -> string
     Raises [Unix.Unix_error] if the directory cannot be created — inside a test
     this fails the test. *)
 
-val temp_file : ?prefix:string -> ?suffix:string -> unit -> string
+val temp_file : ?suffix:string -> unit -> string
 (** [temp_file ()] is the path of a fresh empty file, created with permissions
     [0o600] in the executing test's scratch directory and removed with it.
-    [prefix] is the file's basename prefix (defaults to ["file"]), as in
-    {!temp_dir}; [suffix] is appended to the basename (e.g. [".json"];
-    defaults to none). Both are sanitized to a safe path component.
+    [suffix] is appended to the basename (e.g. [".json"]; defaults to none),
+    sanitized to a safe path component.
 
     Raises [Unix.Unix_error] if the file cannot be created. *)
 

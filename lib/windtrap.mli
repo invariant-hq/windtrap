@@ -954,10 +954,9 @@ val temp_dir : ?prefix:string -> unit -> string
     must outlive the test (one acquired by a {!fixture}) must not live in them.
 *)
 
-val temp_file : ?prefix:string -> ?suffix:string -> unit -> string
+val temp_file : ?suffix:string -> unit -> string
 (** [temp_file ()] is the path of a fresh empty file with the same lifecycle as
-    {!temp_dir}; [prefix] is the basename prefix as in {!temp_dir} (defaults
-    to ["file"]) and [suffix] is appended to the basename (e.g. [".json"]). *)
+    {!temp_dir}; [suffix] is appended to the basename (e.g. [".json"]). *)
 
 val setenv : ?pos:pos -> string -> string option -> unit
 (** [setenv name (Some value)] binds the environment variable [name] to [value]
