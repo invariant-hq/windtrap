@@ -67,28 +67,12 @@ val compare_id : id -> id -> int
 
     The functions of this section are the contract [ppx_windtrap.mutate]
     generates against; user code and the windtrap core never call them. The
-    generated code per instrumented file is {b exactly one binding}:
-
-    {[
-      let ___windtrap_armed___ =
-        Windtrap_mutate.register ~file:"lib/calc.ml"
-          ~sites:
-            [|
-              {
-                line = 9;
-                col = 12;
-                rewrite = "add";
-                before = "a - b";
-                after = "a + b";
-                dismissed = None;
-              };
-            |]
-    ]}
-
-    and every site in that file expands to a guard on [___windtrap_armed___ i],
-    where [i] is the site's index in [sites]. The instrumenter names no array
-    and allocates nothing: the fewer literals it emits, the fewer ways it can be
-    wrong. *)
+    generated code per instrumented file is {b exactly one binding} —
+    [let ___windtrap_armed___ = Windtrap_mutate.register ~file ~sites:[| … |]] —
+    and every site in that file expands to a guard on
+    [___windtrap_armed___ i], where [i] is the site's index in [sites]. The
+    instrumenter names no array and allocates nothing: the fewer literals it
+    emits, the fewer ways it can be wrong. *)
 
 type site = {
   line : int;  (** 1-based line of the mutated expression's first byte. *)
@@ -97,8 +81,9 @@ type site = {
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   dismissed : string option;
-      (** [Some reason] when the site carries [[@mutate off]]; the loop skips it
-          and [report] mode lists it with its reason. [None] otherwise. *)
+      (** [Some reason] when the site carries [[@mutate off]]: the loop skips
+          the site, and no report counts it in a denominator. [None]
+          otherwise. *)
 }
 (** The type for mutation sites: one entry of a file's site table. *)
 

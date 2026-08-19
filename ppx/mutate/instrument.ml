@@ -541,7 +541,23 @@ let ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
 (* [lazy] applied to a trivial syntactic value compiles as already
    forced, so a guard under such a [lazy] would change the compilation of
    the [lazy] itself. Coverage's predicate, verbatim; the subtree is left
-   alone. *)
+   alone.
+
+   This predicate is also where placement rule 3 - no guard on a value
+   spine - would be implemented, and the rule is VACUOUS today: every
+   site of the four operators is an application or a conditional, which
+   is never a syntactic value, so a binding carrying one was already
+   non-generalizable and the guard changes nothing. The operator that
+   would bind is [bool], whose site is a constructor and therefore IS a
+   syntactic value: making part of a binding's value spine non-syntactic
+   weakens [let flags = (true, [])] from [bool * 'a list] to
+   [bool * '_weak1], and an [.mli] declaring the former stops matching.
+   Whoever adds it must thread a positional flag through the traversal -
+   set at a binding's right-hand side, preserved through tuple
+   components, constructor arguments, record fields, [lazy] bodies,
+   [let ... in] bodies and type constraints, cleared at function bodies -
+   and must make this predicate gate guard PLACEMENT rather than only
+   subtree descent. *)
 let rec is_trivial_syntactic_value e =
   match e.pexp_desc with
   | Pexp_function _ | Pexp_poly _ | Pexp_ident _ | Pexp_constant _
