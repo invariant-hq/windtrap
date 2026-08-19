@@ -35,8 +35,6 @@ type config = {
   timeout : float option;
   prop_count : int option;
   max_shrink : int option;
-  max_discard : int option;
-  max_prop_count : int option;
   junit : string option;
   log_dir : string;
   allow_focus : bool;
@@ -61,8 +59,6 @@ let default_config () =
     timeout = None;
     prop_count = None;
     max_shrink = None;
-    max_discard = None;
-    max_prop_count = None;
     junit = None;
     log_dir = Path_ops.default_log_dir ();
     allow_focus = false;

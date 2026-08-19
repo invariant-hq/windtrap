@@ -312,9 +312,9 @@ val stateful :
     satisfied.
 
     It is {!Runner.prop} over {!program} with {!execute} as its law, so
-    [timeout], [count] and the run's [--prop-count] / [--max-shrink] /
-    [--max-discard] knobs behave exactly as on a property; [steps], [pp_model]
-    are {!program}'s and [scope], [invariant] are {!execute}'s. The declared
+    [timeout], [count] and the run's [--prop-count] / [--max-shrink] knobs
+    behave exactly as on a property; [steps], [pp_model] are {!program}'s and
+    [scope], [invariant] are {!execute}'s. The declared
     tags are extended with ["prop"] — so [--tag prop] selects stateful tests
     with every other property, and the run header prints the root seed — and
     ["stateful"], so a suite can select or exclude them on their own cost

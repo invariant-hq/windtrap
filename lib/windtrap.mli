@@ -643,11 +643,11 @@ val prop :
       [--prop-count]-supplied count restates it in the replay hint — replaying a
       late case needs at least as many cases as the failing run.
     - [max_discard] is how many discarded cases ({!assume}, {!reject}) the
-      property tolerates before it {e gives up}; the declaration site wins over
-      [--max-discard], which wins over the default of twice the effective
-      [count]. Raise it for a law whose precondition is genuinely rare — but a
-      generator that produced the precondition by construction would not need
-      the budget at all.
+      property tolerates before it {e gives up}; it defaults to twice the
+      effective [count]. Raise it for a law whose precondition is genuinely
+      rare — the discard rate is a fact about that law, which is why there is
+      no run-wide knob for it — but a generator that produced the precondition
+      by construction would not need the budget at all.
     - [examples] are explicit inputs run before any generation, unshrunk (they
       are already the reviewed minimal form) — the home for regressions worth
       keeping forever: [prop ~examples:[ Rect (2., 0.) ] ...].

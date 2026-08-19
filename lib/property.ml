@@ -221,6 +221,9 @@ let shrink ~max_shrink ~body tree first_class =
 
 (* The engine *)
 
+(* The generated-case count when none is supplied. Not exported: the only
+   caller that ever needed the number was a ceiling that no longer exists,
+   and [run]'s .mli states it. *)
 let default_count = 100
 let default_max_shrink = 100
 

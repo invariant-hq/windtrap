@@ -28,8 +28,6 @@ type parsed = {
   slow_threshold : float option;
   prop_count : int option;
   max_shrink : int option;
-  max_discard : int option;
-  max_prop_count : int option;
   output : [ `Quiet | `Verbose ] option;
   junit : string option;
   color : Env.color_mode option;
@@ -59,8 +57,6 @@ let empty =
     slow_threshold = None;
     prop_count = None;
     max_shrink = None;
-    max_discard = None;
-    max_prop_count = None;
     output = None;
     junit = None;
     color = None;
@@ -379,28 +375,6 @@ let table =
         doc = "Accepted shrink steps per failing property";
         mirror =
           mirrored "WINDTRAP_MAX_SHRINK" trimmed (fun p -> p.max_shrink = None);
-      };
-    Flag_entry
-      {
-        short = None;
-        long = "--max-prop-count";
-        arg =
-          set_positive_int (fun acc n -> { acc with max_prop_count = Some n });
-        doc = "Ceiling on every property's case count";
-        mirror =
-          mirrored "WINDTRAP_MAX_PROP_COUNT" trimmed (fun p ->
-              p.max_prop_count = None);
-      };
-    Flag_entry
-      {
-        short = None;
-        long = "--max-discard";
-        arg =
-          set_non_negative_int (fun acc n -> { acc with max_discard = Some n });
-        doc = "Discarded cases tolerated per property (default 2x the count)";
-        mirror =
-          mirrored "WINDTRAP_MAX_DISCARD" trimmed (fun p ->
-              p.max_discard = None);
       };
     Flag_entry
       {
@@ -868,18 +842,6 @@ let resolved ~overrides below =
     positive_int ~flag:"--max-shrink"
       (first_some overrides.max_shrink below.max_shrink)
   in
-  let* max_prop_count =
-    positive_int ~flag:"--max-prop-count"
-      (first_some overrides.max_prop_count below.max_prop_count)
-  in
-  let* max_discard =
-    (* Non-negative, not positive: zero is a coherent budget — "tolerate no
-       discards" — and the engine already accepted it. *)
-    checked ~flag:"--max-discard"
-      ~valid:(fun n -> n >= 0)
-      ~render:string_of_int ~expected:"a non-negative integer"
-      (first_some overrides.max_discard below.max_discard)
-  in
   let* bail =
     positive_int ~flag:"--bail" (first_some overrides.bail below.bail)
   in
@@ -927,8 +889,6 @@ let resolved ~overrides below =
         timeout;
         prop_count;
         max_shrink;
-        max_discard;
-        max_prop_count;
         junit = first_some overrides.junit below.junit;
         log_dir =
           (* Resolved against the cwd once, here, before any test body runs.

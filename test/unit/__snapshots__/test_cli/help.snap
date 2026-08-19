@@ -22,8 +22,6 @@ OPTIONS:
       --seed TOKEN              Root seed for property tests (s1:<16 hex>)
       --prop-count N            Generated cases per property
       --max-shrink N            Accepted shrink steps per failing property
-      --max-prop-count N        Ceiling on every property's case count
-      --max-discard N           Discarded cases tolerated per property (default 2x the count)
   -u, --update                  Accept snapshot changes (refused under CI)
       --prune                   Delete orphaned baselines after a full, clean update run
       --strict-snapshots        Fail the run on a stale baseline left by a full, clean run
@@ -50,8 +48,6 @@ ENVIRONMENT:
   WINDTRAP_SEED              Mirror of --seed
   WINDTRAP_PROP_COUNT        Mirror of --prop-count
   WINDTRAP_MAX_SHRINK        Mirror of --max-shrink
-  WINDTRAP_MAX_PROP_COUNT    Mirror of --max-prop-count
-  WINDTRAP_MAX_DISCARD       Mirror of --max-discard
   WINDTRAP_UPDATE            Mirror of --update
   WINDTRAP_PRUNE             Mirror of --prune
   WINDTRAP_STRICT_SNAPSHOTS  Mirror of --strict-snapshots

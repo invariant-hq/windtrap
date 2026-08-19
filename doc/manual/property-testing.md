@@ -169,11 +169,11 @@ it where a precondition is genuinely rare:
 prop ~count:500 ~max_discard:1500 "…" gen law
 ```
 
-`--max-discard N` (`WINDTRAP_MAX_DISCARD`) sets it for a whole run;
-the declaration site wins, as with `~count`. Giving up is a failure,
-not a silent pass on however few cases got through — so a budget that
-is too small shows up red rather than as a property that quietly
-tested nothing.
+There is no run-wide knob for it: the discard rate is a fact about
+this law's precondition, and nothing at the command line knows which
+property needs the room. Giving up is a failure, not a silent pass on
+however few cases got through — so a budget that is too small shows up
+red rather than as a property that quietly tested nothing.
 
 ## Is the generator testing anything? `collect`, `classify`, `cover`
 

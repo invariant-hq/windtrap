@@ -90,12 +90,6 @@ type parsed = {
   max_shrink : int option;
       (** [--max-shrink N]: accepted shrink steps per failing property; must be
           positive. *)
-  max_discard : int option;
-      (** [--max-discard N]: discarded cases tolerated per property; must be
-          non-negative, [0] tolerates none. *)
-  max_prop_count : int option;
-      (** [--max-prop-count N]: ceiling on every property's case count; must be
-          positive. *)
   output : [ `Quiet | `Verbose ] option;
       (** [-q]/[--quiet] parse as [Some `Quiet], [-v]/[--verbose] as
           [Some `Verbose]. One field for one axis: mixing or repeating the flags

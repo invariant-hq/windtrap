@@ -75,11 +75,6 @@ type config = {
           engine's default is 100; a search that spends the budget reports so,
           because a truncated search and a converged one otherwise read alike.
       *)
-  max_discard : int option;
-      (** [--max-discard]: discarded cases tolerated per property; the engine
-          defaults to twice the case count. *)
-  max_prop_count : int option;
-      (** [--max-prop-count]: ceiling on every property's case count. *)
   junit : string option;  (** [--junit PATH]: also write JUnit XML to [PATH]. *)
   log_dir : string;  (** [-o]/[--output]: root directory for capture logs. *)
   allow_focus : bool;

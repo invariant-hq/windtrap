@@ -81,28 +81,8 @@ let prop ?pos ?tags ?timeout ?count ?max_discard ?examples name gen law =
       | Some n -> Some (`Declared n)
       | None -> Option.map (fun n -> `Config n) config.Run.prop_count
     in
-    (* A ceiling on whatever won, the engine default included:
-       [--prop-count] can only raise a pinned count, and a local smoke run
-       needs a way down. A capped count reports as config-sourced, so the
-       replay hint restates [--prop-count <cap>] and reproduces it. *)
-    let count =
-      match config.Run.max_prop_count with
-      | None -> count
-      | Some cap ->
-          let effective =
-            match count with
-            | Some (`Declared n) | Some (`Config n) -> n
-            | None -> Property.default_count
-          in
-          if effective <= cap then count else Some (`Config cap)
-    in
     let path = Test_tree.path_to_string (Run.path frame) in
     let outcome =
-      (* Declaration site wins over the run's knob, as [count] does: a
-         property that needs a wider budget says so where it is written. *)
-      let max_discard =
-        match max_discard with Some _ -> max_discard | None -> config.Run.max_discard
-      in
       Property.run ?loc ?count ?max_shrink:config.Run.max_shrink ?max_discard
         ?examples
         ~root:config.Run.seed ~path gen (fun context value ->

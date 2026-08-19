@@ -1560,9 +1560,8 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
          Fun.protect ~finally:(fun () -> incr releases) (fun () -> run ()))
        commands);
   check (!scopes > 0) "the declared body ran no case at all";
-  (* The declared ?count is an upper bound here rather than an equality: a
-     run may lower it with --max-prop-count, but nothing may raise it, and
-     the engine default of 100 would. *)
+  (* The declared ?count is an upper bound here rather than an equality:
+     nothing may raise it, and the engine default of 100 would. *)
   check (!scopes <= 3) "the declared ?count of 3 ran %d cases" !scopes;
   check (!releases = !scopes) "%d releases for %d systems" !releases !scopes;
   (* Every call of every case is legal, so ?steps is the program's length:
