@@ -5,10 +5,8 @@ lines of ordinary OCaml over the public surface, and keeping them out of
 the API keeps the API small. A pattern that only composes windtrap's own
 verbs belongs in the manual chapter that documents them, not here — when
 a recipe becomes a way of using the API, it has stopped being a record
-of declined surface. Every recipe here compiles — each is mirrored as a
-test in `test/docs/test_cookbook.ml`, so a recipe that rots breaks the
-build. Code blocks that would need a dependency windtrap does not have
-(Eio) are marked as fragments; their *guarantees* are tested instead.
+of declined surface. Code blocks that would need a dependency windtrap does not have
+(Eio) are marked as fragments.
 
 The recipes assume `open Windtrap`.
 

@@ -38,20 +38,14 @@ Eleven directories under `test/`:
   driver's output, rejects included) and the inline-runner fixtures
   (`inline/`, `inline_coverage/`, `slow_knobs/`, `tail_loc/`).
 
-Three kinds of compiled documentation run in the tree:
-
-- `test/docs/test_manual_transcripts.ml` — the manual's failing
-  walkthroughs, executed in-process, asserting the printed diff,
-  counterexample, replay and acceptance commands. The transcripts in
-  `doc/manual/` are captured by hand and checked by nothing, so this is
-  what keeps the renderer they were captured from from moving unnoticed;
-- `test/docs/test_cookbook.ml` and `test/docs/test_migrating.ml` —
-  compiled mirrors of `doc/cookbook.md` and the migration reference
-  (the 0.2.0 entry in `CHANGES.md`);
-- `doc/manual/snippets/` — compiled mirrors of every manual chapter
-  (passing snippets run green; failing walkthroughs are build-only in
-  `transcript_fail.ml`, which also regenerates the manual's
-  transcripts by hand).
+One kind of compiled documentation runs in the tree:
+`doc/manual/snippets/` — compiled mirrors of every manual chapter
+(passing snippets run green; failing walkthroughs are build-only in
+`transcript_fail.ml`, which also regenerates the manual's transcripts
+by hand). The cookbook's recipes and the migration reference's
+replacement spellings (the 0.2.0 entry in `CHANGES.md`) are checked by
+nothing since their mirrors were removed; a release edits them against
+the tree by hand.
 
 `examples/` are real test executables wired into runtest; they double
 as the run-and-exit path coverage the in-process suites cannot give.

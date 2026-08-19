@@ -11,10 +11,12 @@ the coverage and mutation backends, pinned to `windtrap` with
 - [ ] `dune build` — zero warnings; warnings are treated as broken
       implementation, never silenced.
 - [ ] `dune runtest` — green, which includes the examples, the
-      compiled doc mirrors
-      (`test/docs/test_{manual_transcripts,cookbook,migrating,stateful}`,
-      `doc/manual/snippets/`), the PPX expansion pins, and the
-      conformance corpus's conforming sets.
+      compiled manual snippets (`doc/manual/snippets/`), the PPX
+      expansion pins, and the conformance corpus's conforming sets.
+- [ ] The migration reference (the 0.2.0 entry in `CHANGES.md`) and the
+      cookbook compile against the tree by hand — their mirrors are
+      gone, so every replacement spelling and recipe is checked by
+      reading, or not at all.
 - [ ] `dune fmt` — clean.
 - [ ] Conformance bar (`test/conformance/RESULTS.md`): HONORED
       byte-identical ≥ 90%, REJECTED loud = 100%. If either number

@@ -18,5 +18,4 @@ is the [manual](../doc/manual/); the numbering follows its chapters.
 
 Run them all with `dune runtest examples`, or one directly, e.g.
 `dune exec examples/01-first-test/test_mylib.exe`. Every example here
-passes; the renderer's deliberately-failing validation harness lives in
-[`test/render_demo/`](../test/render_demo/), which is not an example.
+passes.

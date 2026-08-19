@@ -22,10 +22,8 @@ are independent — go where your suite needs you:
 | [Mutation testing](mutation.md) | The second backend, survivors and their witnesses, arming one mutant, admitting a test, `windtrap mutate` |
 | [Cookbook](../cookbook.md) | Recipes windtrap deliberately does not absorb |
 
-Every OCaml snippet in these chapters is compiled by a mirror — those
-in [`snippets/`](snippets/), and the stateful chapter's in
-[`test/docs/test_stateful.ml`](../../test/docs/test_stateful.ml) — so a
-snippet that rots breaks the build.
+Every OCaml snippet in these chapters is compiled by a mirror in
+[`snippets/`](snippets/), so a snippet that rots breaks the build.
 
 Transcripts are different, and deliberately so: each is captured from a
 real run and then adapted by hand to the chapter's story — paths, line
