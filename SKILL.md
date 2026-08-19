@@ -20,11 +20,10 @@ passed, 1 any failure, 2 nothing ran (the filter-typo case — treat it as
 failure, never as success).
 
 This file is the decision layer — which test, which conventions, which
-discipline. The full mechanics live on disk: `doc/manual/` (one chapter
-each for assertions, property testing, stateful testing, snapshots and
-expect, running tests, coverage, mutation) and `doc/cookbook.md`
-(recipes windtrap deliberately does not absorb). Read the matching
-chapter whenever you need mechanics beyond what this file carries.
+discipline. The mechanics live in the manual, one chapter per subject;
+§4 says which chapter answers which question, and §4's own content is
+only what the chapters do not say. Read the matching chapter whenever
+you need mechanics beyond what this file carries.
 
 ## 1. Survey, then derive the obligations
 
@@ -96,12 +95,12 @@ Reject these shapes on sight — in review, and in your own output.
 - **Self-confirming** — the expected value was captured by running the
   code under test. It agrees with every bug the code has. If the
   expected value cannot be derived by hand from the spec, the test is
-  a snapshot; write it as one (§7) so the acceptance workflow and its
+  a snapshot; write it as one (§4) so the acceptance workflow and its
   reviewer own it.
 - **Vacuous** — executes code but checks nothing that can break: no
   assertion at all, `is_some` where the *value* matters, "does not
   raise" on a function that cannot raise. Green from the day it was
-  born; an admit run rules it `UNJUSTIFIED` (§9).
+  born; an admit run rules it `UNJUSTIFIED` (§6).
 - **Tautological** — re-derives the answer with the implementation's
   own algorithm (a "property" computing the same fold), or tests the
   language: that a record field holds what the constructor assigned,
@@ -119,7 +118,7 @@ Reject these shapes on sight — in review, and in your own output.
   check one flag, exact float equality where a tolerance witness
   belongs, the order of an unordered collection (`slist` exists),
   timestamps, absolute paths. It breaks on unrelated edits, which
-  trains everyone to update tests reflexively — the exact habit §12
+  trains everyone to update tests reflexively — the exact habit §7
   forbids.
 - **Coupled** — depends on another test's side effects, shared mutable
   state, the wall clock, the network, or directory-listing order. It
@@ -127,7 +126,7 @@ Reject these shapes on sight — in review, and in your own output.
   `--failed`, and `--shard` all change which tests run. Use
   `bracket`/`fixture`/`temp_dir` for state, `setenv`/`chdir` for the
   environment and the working directory (the runner puts both back);
-  mask time (§7).
+  mask time (§4).
 
 *Tests at the wrong level:*
 
@@ -145,7 +144,7 @@ Reject these shapes on sight — in review, and in your own output.
   `cases` instead.
 
 The catalog is mechanically checkable: nearly every entry either
-survives mutants — §9's loop finds it — or fails with a message that
+survives mutants — §6's loop finds it — or fails with a message that
 cannot diagnose, which §4's rules catch. When reviewing tests, run the
 file-scoped mutation loop before trusting your eyes.
 
@@ -189,11 +188,11 @@ test/
     __snapshots__/     ; committed baselines
   failures/            ; known-bug reproductions, one suite per issue (below)
     dune               ; (tests (names issue_42))
-    issue_42.ml        ; run "issue-42" [ xfail ... ]
+    issue_42.ml        ; run "issue-42" [ xfail ~reason:"issue #42" (test …) ]
   expect/              ; expect tests — no test code in lib/ (below)
     dune
     expect_render.ml
-  cram/                ; blackbox tests of the binary (§8)
+  cram/                ; blackbox tests of the binary (§5)
     dune               ; (cram (applies_to :whole_subtree) (deps %{bin:mytool}))
     help.t
   integration/         ; only when a service or heavier closure forces its own suite
@@ -206,106 +205,42 @@ leads with its property (the normative core), then the pinned examples
 and edge cases, then descriptive snapshots.
 
 **No test code in `lib/`.** Expect tests live in `test/expect/`, a
-library stanza that depends on the code under test:
-
-```lisp
-(library
- (name mylib_expect)
- (inline_tests)
- (libraries mylib)
- (preprocess
-  (pps ppx_windtrap)))
-```
-
-`dune runtest` drives it like any suite; `dune promote` accepts its
-corrections (§7). Keeping `lib/` clean also pays an instrumentation
-dividend: mutation skips any file that declares inline tests, so a
-library with none is mutable end to end.
+`(library (inline_tests) (preprocess (pps ppx_windtrap)))` that depends
+on the code under test; `dune runtest` drives it like any suite and
+`dune promote` accepts its corrections. Keeping `lib/` clean also pays
+an instrumentation dividend: mutation skips any file that declares
+inline tests, so a library with none is mutable end to end.
 
 **Known bugs live in `test/failures/`** — one suite per issue, so the
 backlog is discoverable with `ls test/failures/` and each reproduction
-names its ticket:
+names its ticket in `xfail ~reason:"issue #42"`. `dune runtest
+test/failures` runs the backlog. Each suite stays green while its bug
+exists — an `xfail` failure is expected — and goes loudly red the day a
+change cures it: `xfail`'s unexpected-pass is the "bug fixed" signal.
+Fixing a bug means unwrapping the `xfail`, moving the test into the
+owning module's file in `unit/` as a regression test, and deleting the
+issue file with its entry in `(names …)` — when the last issue dies,
+the stanza goes with it.
 
-```ocaml
-(* test/failures/issue_42.ml *)
-open Windtrap
+Two things in those stanzas are load-bearing and easy to omit. A unit
+suite with baselines declares them — `(deps (glob_files_rec
+__snapshots__/**))` — because baselines are runtime data, invisible to
+dune, and without the glob editing a baseline does not re-trigger the
+test. The `@cover` and `@mutate` rules declare `(deps (universe))`,
+because the `.coverage` and `.mutants` files test executables write at
+exit are not declarable dependencies, so without it the merge action
+caches against nothing and silently goes stale.
 
-let () =
-  run "issue-42"
-    [
-      xfail ~reason:"issue #42"
-        (test "http resolves to its TCP port" (fun () ->
-             equal int 8080 (require_match tcp_port (resolve "http"))));
-    ]
-```
-
-```lisp
-(tests
- (names issue_42)
- (libraries windtrap mylib))
-```
-
-`dune runtest test/failures` runs the backlog. Each suite stays green
-while its bug exists — an `xfail` failure is expected — and goes
-loudly red the day a change cures it: `xfail`'s unexpected-pass is the
-"bug fixed" signal. Fixing a bug means unwrapping the `xfail`, moving
-the test into the owning module's file in `unit/` as a regression
-test, and deleting the issue file with its entry in `(names …)` — when
-the last issue dies, the stanza goes with it.
-
-`test/unit/dune` — one stanza, one test per file:
-
-```lisp
-(tests
- (names test_parser test_eval)
- (libraries windtrap mylib)
- (deps
-  (glob_files_rec __snapshots__/**)))
-```
-
-`test/dune` — the three project verdict aliases:
-
-```lisp
-(rule
- (alias cover)
- (deps
-  (alias_rec runtest)
-  (universe))
- (action
-  (chdir
-   %{workspace_root}
-   (run %{bin:windtrap} coverage --min 80))))
-
-(rule
- (alias mutate)
- (deps (universe))
- (action
-  (chdir
-   %{workspace_root}
-   (run %{bin:windtrap} mutate))))
-
-(rule
- (alias admit)
- (deps (universe) unit/test_parser.exe)
- (action (setenv WINDTRAP_MUTATE admit (run %{exe:unit/test_parser.exe}))))
-```
-
-The snapshot `deps` glob is load-bearing: baselines are runtime data,
-invisible to dune, and without it editing a baseline does not re-trigger
-the test. `(universe)` is load-bearing in both rules: the `.coverage`
-and `.mutants` files test executables write at exit are not declarable
-dependencies, so it makes the milliseconds-cheap merge re-run every
-build. The `chdir %{workspace_root}` keeps the rules correct wherever
-they live. The first two are asymmetric on purpose: coverage
-accumulates as a side effect of any instrumented run, so `@cover` both
-runs the suites and merges; a mutation *verdict* only exists if a run
-was asked to test mutants (`WINDTRAP_MUTATE=1`), so `@mutate` merges
-what previous runs left. `@admit` neither merges nor gates — an
-admission run persists nothing, so its rulings are the whole product.
-Repeat its rule for each unit executable whose subject is the
-instrumented library; a suite that tests its subject through a process
-it spawns has nothing to admit, because the arming never reaches the
-child.
+The three verdict aliases in `test/dune` are asymmetric on purpose.
+`@cover` both runs the suites (`(alias_rec runtest)`) and merges, since
+coverage accumulates as a side effect of any instrumented run; `@mutate`
+only merges what previous runs left, since a mutation *verdict* exists
+only if a run was asked to test mutants; `@admit` neither merges nor
+gates — an admission run persists nothing, so its rulings are the whole
+product, and its rule is repeated for each unit executable whose subject
+is the instrumented library. A suite that tests its subject through a
+process it spawns has nothing to admit, because the arming never reaches
+the child.
 
 Set `--min` to the measured baseline minus a couple of points of
 headroom, not a round number. It ratchets: raise it when the margin is
@@ -323,10 +258,9 @@ and no PPX or test code in `lib/` itself:
 ```
 
 Coverage is spelled `ppx_windtrap.coverage`, never the bare
-`ppx_windtrap`: both resolve the same rewriter, but the bare spelling's
-`ppx_runtime_libraries` link the windtrap core into every instrumented
-library's closure — a test framework in your production dependency
-cone.
+`ppx_windtrap`, which no longer resolves at all: it once linked the
+windtrap core into every instrumented library's closure — a test
+framework in your production dependency cone.
 
 CI runs four things: the suite, the coverage gate, the mutation report,
 and JUnit output for ingestion:
@@ -342,66 +276,46 @@ Under GitHub Actions failures also surface as inline annotations with no
 configuration. Under CI the runner refuses runs that would lie: focused
 tests (`ftest`/`fgroup`) and snapshot updates refuse to start.
 
-A complete, buildable instance of this whole layout — aliases, backlog,
-dismissed mutant included — lives in windtrap's `examples/x-blueprint/`.
+A complete, buildable instance of this whole layout — every stanza this
+section describes, written out and commented, plus the backlog, a live
+`xfail` and a dismissed mutant — lives in windtrap's
+`examples/x-blueprint/`. Copy the stanzas from there rather than from
+memory.
 
-## 4. Unit assertions
+## 4. Where the mechanics live
 
-Assert through testables — a printer plus an equality — so failures
-print both values with a structural diff. Expected first, always.
+Each subject has one chapter. Read the row you need; this file carries
+only the judgment the chapters leave implicit.
 
-```ocaml
-equal (list (pair string int)) [ ("a", 1) ] (bindings t);
-let id = require_some (find_user "alice") in     (* assert AND unwrap *)
-equal int 1 id;
-let msg = require_error (parse_port "0") in
-equal string "invalid port: 0" msg
-```
+| You need | Read |
+|---|---|
+| the assertion verbs, the witnesses, `Exn`, what a failure prints | `doc/manual/assertions.md` |
+| `prop`, `Gen`, shrinking, seeds and replay, `collect`/`classify`/`cover` | `doc/manual/property-testing.md` |
+| `stateful`, `command`/`call`, models, `~pre`/`~next`, per-case systems | `doc/manual/stateful-testing.md` |
+| `snapshot` and `__snapshots__/`, `[%expect]` and `dune promote`, adopting a ppx_expect suite | `doc/manual/snapshots-and-expect.md` |
+| `bracket`, `scoped`, `fixture`, temp paths, `setenv`/`chdir`, `cases`, tags, focus, `xfail` | `doc/manual/resources-and-structure.md` |
+| the flags, their `WINDTRAP_*` mirrors, selection, sharding, CI output | `doc/manual/running-tests.md` |
+| the coverage stanza, `windtrap coverage`, `[@coverage off]` | `doc/manual/coverage.md` |
+| the mutation stanza, survivor blocks, arming one mutant, `windtrap mutate` | `doc/manual/mutation.md` |
+| convergence loops, Eio, subprocess workers, scripted seams | `doc/cookbook.md` |
 
-The vocabulary worth knowing rather than reinventing:
+Those paths are a windtrap checkout's. The package installs neither
+`doc/` nor this file, so from a consumer repo read the same chapters at
+`https://github.com/invariant-hq/windtrap/tree/main/doc/manual/` (and
+the cookbook at `.../blob/main/doc/cookbook.md`). The API reference —
+`lib/windtrap.mli`, which is the contract the chapters narrate — *is*
+installed, and odoc renders it.
 
-- `equal` / `not_equal` through witnesses: `int`, `string`, `bool`,
-  `char`, `bytes`, `int32`, `int64`, `option`, `result`, `either`,
-  `list`, `array`, `pair`, `triple`, `quad`, `float eps`,
-  `float_rel ~rel ~abs`, `float_exact` (the only one where NaN = NaN).
-- `text` — strings printed verbatim and diffed line by line. Use it for
-  any multi-line string; `string`'s `%S` rendering buries the difference
-  in `\n` soup.
-- `slist t cmp` — lists as multisets (order ignored, multiplicity kept);
-  `Testable.contramap proj t` — compare and print through a projection.
-  Together they make "these events happened, in any order, ignoring
-  noisy fields" a one-liner.
-- `require_some` / `require_ok` / `require_error` / `require_match` —
-  assert a shape and hand back its payload; the happy path keeps its
-  value instead of drowning in `match`.
-- `satisfies ?claim t pred v` — `claim` is the sentence on the expected
-  side, so a comparison keeps its bound and its value
-  (`satisfies ~claim:"greater than 0" int (fun n -> n > 0) n`) where
-  `is_true (n > 0)` reports only `false`.
-- Strings: `contains ~sub` / `not_contains ~sub` /
-  `in_order ~subs:[...]` for substrings that must appear in that order /
-  `starts_with ~affix` / `ends_with ~affix`; lists: `mem`.
-- Exceptions: `raises exn fn` (structural; distinguishes "nothing
-  raised" from "raised something else"), `raises_match pred fn` with
-  the `Exn` helpers (`Exn.invalid_arg ~substring:"negative"`).
-- Convergence has no verb: the probe/step loop is seven lines of your
-  own (cookbook recipe 13). Windtrap never sleeps — the budget counts
-  probes, and the thing that advances the system (mock clock tick,
-  event-loop turn, queue drain) goes in the step, never a sleep. A
-  sleeping step hides a race instead of exposing it.
-- Escape hatches: `fail` / `failf` for unreachable branches,
-  `skip ~reason ()` for unmet environment preconditions.
-
+**Assertions.** Expected first, always: `equal t expected actual`.
+`text`, not `string`, for any multi-line value — `%S` buries the
+difference in `\n` soup. `require_some`/`require_ok`/`require_error`/
+`require_match` assert a shape *and* hand back its payload, so the happy
+path keeps its value instead of drowning in `match`. One behavior per
+test, named by the behavior: `"rejects empty input"` diagnoses a failure
+from the list alone, `"test_parse_2"` forces reading the body. Add
+`~msg` to assertions inside loops so the failure says which iteration.
 Custom types: expose `pp` and `equal` in the tested module's `.mli`,
-then `let point = Testable.make ~pp:Point.pp ~equal:Point.equal` (or
-`Testable.structural ~pp` to use `( = )`).
-
-Style: one behavior per test, named by the behavior — `"rejects empty
-input"` diagnoses a failure from the list alone; `"test_parse_2"` forces
-reading the body. Assert the property you care about, not incidental
-detail: matching full help text to check one flag exists breaks on every
-unrelated help edit — `contains ~sub` the flag. Add `~msg` to
-assertions inside loops so the failure says which iteration.
+then `Testable.make ~pp:Point.pp ~equal:Point.equal`.
 
 Pick example inputs adversarially, not representatively. For each
 obligation, work the list: the empty/zero case, the singleton, a
@@ -409,190 +323,79 @@ boundary and both its neighbors (capacity, length, `0`, `-1`),
 duplicates, extremes (`min_int`, `max_int`, `nan` where floats flow),
 non-ASCII text, inputs containing the format's own delimiters (the
 comma in a CSV codec), and every documented error input. `cases` keeps
-the table readable and each row individually selectable; §5's
-generators are this list's exhaustive twin.
+the table readable and each row individually selectable; generators are
+this list's exhaustive twin.
 
-## 5. Property tests
+**Properties.** The laws to reach for: round-trip (generate the
+*decoded* form), agreement with a simpler oracle, invariants after an
+operation, algebraic identities, metamorphic relations, and
+total-behavior claims (`parse` of arbitrary junk never raises). Sizes,
+indices and arithmetic draw from `small_int` or `nat` — full-range `int`
+drowns most laws in overflow noise. `assume` is for rare, cheap
+preconditions; structural ones (nonempty, sorted) belong in the
+generator. Write one `pp` and feed both worlds: `Testable.make ~pp` for
+assertions, `Gen.with_pp pp` for counterexamples. **Pin every fixed
+counterexample** in `~examples` when a property finds a bug you fix — it
+runs before any generation, forever. Replay a failure by pasting the
+printed replay line; fix the bug before touching the generator.
 
-`prop name gen law` draws from an `'a Gen.t` (100 cases by default),
-runs an ordinary assertion body on each, and shrinks failures to a
-minimal counterexample — there is never a shrink function to write.
-Every failure prints an exact replay command with the run's `s1:` seed
-token.
+**Stateful.** The model is the specification — a persistent value
+(`list`, `Map`), never a mutable structure, and never a second
+implementation. Bodies check what a call *returns*; `~invariant` checks
+what the state *is*. `~next` is required, so read-only calls say
+`~next:Fun.id`. `~pre` both filters and *selects*: a command whose
+`~pre` demands a full queue is generated exactly at capacity — that is
+how you test "raises when full" — but a precondition no state satisfies
+deletes the command silently, so guard it with `cover` in `~invariant`,
+never in the command's own body, which is exactly the code that never
+runs. Generated arguments cannot be handles that don't exist yet:
+generate an *index* into the model's live set and let `~pre` keep the
+lookup total. The scope runs once per case **and per shrink candidate**
+— hundreds on a failing run — so `temp_dir`, `setenv` and `chdir`, all
+scoped to the *test*, are the wrong tools inside one: mint scratch paths
+in the scope and remove them on the way out, use absolute paths, restore
+process state yourself.
 
-```ocaml
-prop "decode inverts encode" Gen.(list small_int) (fun l ->
-    equal (list int) l (decode (encode l)))
-```
+**Snapshots and expect tests.** Both are descriptive (§2): they pin
+behavior, so they need a normative core beside them. Nondeterminism must
+be masked *before* comparison or every run diffs — redact in code, or
+shadow `Expect_test_config` with a `sanitize` for a whole file, and sort
+anything whose order is incidental. `output ()` hands you the test's
+captured stdout/stderr for post-processing when masking or a custom
+comparison is needed. Everything about promotion is §7.
 
-The laws to reach for: round-trip (`decode (encode x) = x` — generate
-the *decoded* form), agreement with a simpler oracle (`fast_sort` vs
-`List.sort`), invariants (`size` after `add`), algebraic identities
-(idempotence, commutativity), metamorphic relations (`search (q ^ " ")
-= search q`) and total-behavior claims (`parse` of arbitrary junk never
-raises).
+**Convergence has no verb.** The probe/step loop is seven lines of your
+own (`doc/cookbook.md`). Windtrap never sleeps: the budget counts
+probes, and the thing that advances the system — mock clock tick,
+event-loop turn, queue drain — goes in the step, never a sleep. A
+sleeping step hides a race instead of exposing it. Probe first, and make
+the probe carry evidence that the work actually happened: a probe true
+of a system nobody started converges immediately, having driven nothing.
 
-Generator discipline is where properties quietly go wrong:
+**Coverage.** Chase the uncovered branches in code you touched, never
+the percentage: an uncovered error branch is a missing test; an
+uncovered debug helper is what `[@coverage off]` is for. Coverage is
+expression-grade, and a call that raises leaves its out-edge unvisited,
+so raising paths show up as uncovered rather than painted green for
+having been entered. The gate lives in the `@cover` alias only — test
+runs never fail on coverage. Coverage finds *missing* tests; mutation
+(§6) finds *weak* ones. Run both, routinely.
 
-- Sizes, indices, and arithmetic use `small_int` or `nat` — full-range
-  `int` drowns most laws in overflow noise.
-- `assume cond` is for rare, cheap preconditions (`assume (b <> 0)`).
-  Structural preconditions (nonempty, sorted) belong in the generator —
-  `Gen.such_that`, or correct-by-construction with `let+`/`and+`:
+**The daily loop.** `-f`/`-e` filter by path substring, `--tag`/
+`--exclude-tag` by tag, `--failed` reruns the last run's failures,
+`-x`/`--bail N` stop early, `-l` previews a selection, `--shard K/N`
+partitions across CI jobs, `-s` disables capture for printf-debugging a
+hang. Under `dune runtest` there is no command line, so the `WINDTRAP_*`
+mirrors *are* the CLI (`WINDTRAP_FILTER=roundtrip dune runtest`).
 
-```ocaml
-let gen_nonempty = Gen.(list ~size:(int_range 1 20) small_int)
-let gen_rect =
-  Gen.(let+ w = float_range 0. 10. and+ h = float_range 0. 10. in Rect (w, h))
-  |> Gen.with_pp pp_shape
-```
+When a run fails, triage before editing: read the failure block to its
+end — it already carries the diff, the counterexample or program, the
+captured-output tail, and the replay command. Reproduce with the replay
+line or `--failed`, narrow with `-f`/`-x` if needed, and only then
+decide which side is wrong (§7). Never touch the generator, the
+baseline, or the assertion while the failure is still unexplained.
 
-- Composite generators print their counterexamples automatically;
-  after `map`/`bind` attach `Gen.with_pp` (the report tells you when
-  it is missing). Write one `pp` and feed both worlds:
-  `Testable.make ~pp` for assertions, `Gen.with_pp pp` for
-  counterexamples.
-- A property that never fails may never reach the interesting region.
-  `classify`/`collect` report the input distribution (visible under
-  `-v`); `cover label cond` fails the test when no passing case reached
-  the region at all. Presence, not proportion — put the `cover` where
-  the body always reaches it, or it is vacuous exactly when it should
-  fire.
-
-**Pin every fixed counterexample.** When a property finds a bug and you
-fix it, add the shrunk counterexample to `~examples` — it runs before
-any generation, forever:
-
-```ocaml
-prop "rect area matches the formula" ~examples:[ Rect (2., 0.) ] gen_rect law
-```
-
-Replay a failure by pasting the printed replay line (`--seed s1:…`
-plus the filter); fix the bug before touching the generator.
-
-## 6. Stateful tests
-
-For anything with internal state, `stateful` is the strongest test you
-can write: it checks the API against a *model* over generated call
-sequences, and shrinks failures to a minimal program.
-
-```ocaml
-let commands =
-  [
-    command "push" (Gen.int_range 0 9)
-      ~pre:(fun m _ -> List.length m < capacity)
-      ~next:(fun m x -> m @ [ x ])
-      (fun _ x q -> Bounded_queue.push q x);
-    call "pop"
-      ~pre:(fun m -> m <> [])
-      ~next:List.tl
-      (fun m q -> equal int (List.hd m) (Bounded_queue.pop q));
-  ]
-
-let () =
-  run "bounded_queue"
-    [
-      stateful "behaves like a list" ~model:[]
-        ~scope:(fun run -> run (Bounded_queue.create capacity))
-        ~pp_model:(Testable.pp (list int))
-        ~invariant:(fun m q -> equal int (List.length m) (Bounded_queue.size q))
-        commands;
-    ]
-```
-
-The model is the specification (a persistent value — `list`, `Map` —
-never a mutable structure), not a second implementation. Bodies check
-what a call *returns*; `~invariant` (run before the first call and
-after every call) checks what the state *is*. What to know:
-
-- `~pre` both filters and *selects*: a command whose `~pre` demands a
-  full queue is generated exactly at capacity — that is how you test
-  "raises when full" without the generator stumbling into it. But a
-  precondition no state satisfies deletes the command silently; guard
-  against that with `cover` in `~invariant` (not in the command's own
-  body, which is exactly the code that never runs).
-- `~next` is required; read-only calls say so with `~next:Fun.id`.
-  `~pre`/`~next` must be pure and must neither assert nor discard —
-  assert in bodies.
-- Generated arguments cannot be handles that don't exist yet: generate
-  an *index* into the model's live set and let `~pre` keep the lookup
-  total.
-- `~scope` builds the system and reclaims it, and it takes a callback:
-  a resource that only exists *inside* one (`Eio_main.run`, any
-  `with_`-style API) is the plain case. An acquire/release pair binds
-  `let s = acquire ()` and runs `run s` under
-  `Fun.protect ~finally:(fun () -> release s)` — that `Fun.protect` is
-  yours, windtrap never sees the resource, but a release failure never
-  replaces the counterexample you were shown. Call the callback exactly
-  once: never fails the case, twice raises `Invalid_argument`.
-- The scope runs once per case **and per shrink candidate** — hundreds
-  on a failing run. `temp_dir ()` is test-scoped, wrong here; mint
-  scratch paths inside the scope and remove them on the way out. So are
-  `setenv`/`chdir` — restored per attempt, not per case: a scope that
-  moves the process or binds a variable leaks it into later cases; use
-  absolute paths, restore process state yourself.
-  `~steps` (default 20) is quadratic on the failing path — lower it
-  first when the test is expensive; `~timeout` is the only per-test
-  bound there.
-- There is no `~examples` for programs: pin a fixed regression by
-  copying the shrunk counterexample's steps into a plain `test`.
-- These tests carry the `prop` and `stateful` tags —
-  `--exclude-tag stateful` keeps them out of a fast inner loop.
-
-## 7. Snapshot and expect tests
-
-Both are descriptive: they pin current behavior behind an explicit
-acceptance step. Choose by where the expectation lives:
-
-| Output | Use |
-|---|---|
-| Short, review-worthy, produced by printing | `[%expect]` in the `test/expect/` library (§3) |
-| Large or generated — help text, JSON, renders | `snapshot` under `__snapshots__/` |
-| Needs masking or custom comparison first | `output ()` + ordinary assertions |
-
-Mechanics that matter:
-
-- `snapshot "name" value` — identity is the **name** (stable across
-  refactors), storage is
-  `__snapshots__/<src_basename>/<name>.snap`. Nothing is silently
-  created: a missing baseline fails and prints the acceptance command.
-  Accept with `-u` / `WINDTRAP_UPDATE=1`, review with `git diff`.
-  `snapshot_pp` snapshots a pretty-printed value. Comparison
-  canonicalizes newlines on *both* sides (CR/CRLF become LF, a trailing
-  newline is forced), so a byte-exact golden test migrated to `snapshot`
-  silently loses that strictness — when CR bytes or the missing final
-  newline are the point, encode before snapshotting.
-- Stale baselines — a baseline whose test was deleted or renamed — are
-  reported after a full clean run, with the `rm` that removes them. The
-  report is advisory: it never deletes and never fails the run, because
-  a baseline is a committed file and removing one is your edit to
-  review.
-- `[%expect]` matches with ppx_expect's whitespace flexibility;
-  `[%expect_exact]` is byte-for-byte. Corrections are accepted with
-  `dune promote`, which must directly follow the failing `dune runtest`
-  (any other dune command clears the pending set). The same trap holds
-  for `dune build @fmt`: re-running the check clears the pending set,
-  so "Nothing to promote" after a second run means the corrections were
-  lost, not applied — `dune fmt`, which formats in place, avoids it.
-  Assertion failures
-  and uncaught exceptions are ordinary failures — promotion can never
-  bless them; to pin an expected exception, catch and print it.
-- Nondeterminism must be masked *before* comparison or every run
-  diffs: redact in code (`snapshot "log" (mask_timestamps out)`), or
-  shadow `Expect_test_config` with a `sanitize` for a whole file. Sort
-  anything whose order is incidental.
-- `output ()` consumes the test's captured stdout/stderr (C stubs and
-  subprocesses included) for post-processing; `[%expect.output]` is the
-  inline spelling.
-
-**Promotion discipline — this is where bugs get blessed as expected
-output.** Read every promoted or `-u`-accepted diff as a code change
-you are authoring, hunk by hunk. If a diff surprises you, that is a bug
-found by the suite — investigate, don't accept. Never batch-accept
-output you have not read; never update a baseline to absorb a failure
-you cannot explain.
-
-## 8. Cram tests (executables)
+## 5. Cram tests (executables)
 
 For "user runs a command and sees output", a cram test through the real
 binary beats any unit test: a `foo.t` file (or `foo.t/` directory with
@@ -608,7 +411,7 @@ with `dune promote`. Non-obvious mechanics:
   durations, home paths, versions you sanitize yourself with `sed`, or
   assert on stable fragments with `grep -o`. Sort `ls` output.
 
-## 9. Prove every test can fail (mutation)
+## 6. Prove every test can fail (mutation)
 
 A test nobody has seen fail is unverified, and windtrap mechanizes the
 verification by breaking the code on purpose. Two modes: `admit` asks
@@ -690,77 +493,7 @@ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/foo.ml \
   and decline by name on Windows, where `WINDTRAP_MUTATE_ARM=<id>` on
   one mutant is the fallback.
 
-## 10. Coverage
-
-Coverage finds *missing* tests (unreached branches); mutation finds
-*weak* ones. Both, routinely:
-
-```
-dune runtest --instrument-with ppx_windtrap.coverage    # inline % after the results
-dune build @cover --instrument-with ppx_windtrap.coverage   # project merge + --min gate
-dune exec windtrap -- coverage -u                      # the uncovered source, excerpted
-```
-
-The run prints one number; `windtrap coverage` draws the per-file
-table, and `-u` renders the uncovered points as source excerpts — what
-shows the exact arms you forgot. `WINDTRAP_COVERAGE=off` silences the
-inline line. Coverage is expression-grade, and a call that raises
-leaves its out-edge unvisited, so raising paths show up as uncovered
-instead of being painted green for having been entered.
-
-Chase the uncovered branches in code you touched, never the
-percentage: an uncovered error branch is a missing test; an uncovered
-debug helper is what `[@coverage off]` is for. The gate (`--min`) lives
-in the `@cover` alias only — test runs themselves never fail on
-coverage. `windtrap coverage --json` is the machine-readable form.
-
-## 11. Run and iterate
-
-Direct execution takes flags; under `dune runtest` the `WINDTRAP_*`
-environment mirrors *are* the CLI:
-
-```
-dune exec test/unit/test_parser.exe -- -x        # one module's suite, stop early
-WINDTRAP_FILTER=roundtrip dune runtest           # filter within suites, under dune
-```
-
-The daily loop: `-f`/`-e` filter by path substring, `--tag`/
-`--exclude-tag` by tag, `--failed` reruns only the last run's failures,
-`-x`/`--bail N` stop early, `-l` previews a selection, and
-`--exclude-tag slow` drops the tests the `slow` constructor tags.
-Every property failure prints its replay line;
-paste it. `--shard K/N` partitions a suite deterministically across CI
-jobs. `-s`/`--stream` disables capture for printf-debugging a hang; the
-live tail under a run names a hung test.
-
-Structure and resources, in one pass: `cases ~name base inputs fn`
-declares one selectable test per input, named by `~name` from the value
-(required: a child's path keys its seeds and its `--failed` entry, so
-numbered names would shift when a row is inserted);
-`subtest` labels sub-cases inside one body. `bracket ~setup ~teardown`
-scopes a per-test resource with teardown on every outcome; `scoped`
-adapts callback-style resources (`Eio_main.run`, `with_open_text`) —
-partial application builds reusable constructors from both. `fixture`
-shares one expensive resource across the run (a `skip` raised during
-acquisition skips every dependent test — the pattern for suites gated
-on a missing device). `temp_dir ()`/`temp_file ()` are runner-cleaned
-scratch paths; `setenv name value_opt` and `chdir dir` bind the
-environment and the working directory for one test and the runner puts
-both back on every outcome (`setenv name None` really unbinds, so the
-missing-variable path is testable). `~timeout` caps a test; `~retries` is for the
-flaky-by-nature only, never a way of life. `slow name fn` tags tests
-that legitimately take time. `ftest`/`fgroup` focus while debugging —
-remove before committing (CI refuses them; a successful focused run
-warns).
-
-When a run fails, triage before editing: read the failure block to its
-end — it already carries the diff, the counterexample or program, the
-captured-output tail, and the replay command. Reproduce with the
-replay line or `--failed`, narrow with `-f`/`-x` if needed, and only
-then decide which side is wrong (§12). Never touch the generator, the
-baseline, or the assertion while the failure is still unexplained.
-
-## 12. The suite is a contract
+## 7. The suite is a contract
 
 Agents under pressure to go green reach, in escalating order, for:
 weakening an assertion, hardcoding an expected value, special-casing
@@ -779,14 +512,17 @@ of these is visible in a diff, and none may happen silently:
   bug is fixed. Deletion is for behavior that no longer exists.
 - **Never special-case test inputs in implementation code.**
 - **Promotion and `-u` are assertion authorship**, held to the same
-  standard as writing the assertion by hand: every hunk read, every
-  surprise investigated before acceptance.
+  standard as writing the assertion by hand. Read every promoted or
+  `-u`-accepted diff as a code change you are authoring, hunk by hunk.
+  If a diff surprises you, that is a bug found by the suite —
+  investigate, don't accept. Never batch-accept output you have not
+  read; never update a baseline to absorb a failure you cannot explain.
 - **A skip is a deliberate environmental statement** (`~reason`
   required in spirit), never a disguise for a failure.
 - **When you conclude the test is wrong, stop.** Changing a normative
   test is a contract change: name the spec source that contradicts it
   and surface the case to the maintainer instead of editing and moving
-  on. Descriptive baselines (§7) are the ones you may re-accept
+  on. Descriptive baselines (§4) are the ones you may re-accept
   yourself — with every hunk read.
 - **When the spec is silent, don't legislate silently.** A test you
   could only write by choosing the behavior yourself carries that
@@ -825,5 +561,5 @@ merely recall having read the rule:
       aliases present; `--min` ratcheted, never lowered
 - [ ] Layout: suites split only along mechanical boundaries; files by
       subject; no test code in `lib/`; known bugs in `test/failures/`
-- [ ] No §12 violation: nothing weakened, deleted, skipped, or
+- [ ] No §7 violation: nothing weakened, deleted, skipped, or
       blind-promoted, anywhere, without a stated justification
