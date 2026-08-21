@@ -1,11 +1,11 @@
 ; The project verdict aliases, once, at the top of the test tree.
 ;
-; In your own project these are called `cover`, `mutate` and `admit` —
-; the names windtrap's manual, skill, and own root dune use. They are
-; renamed `example-*` HERE for one reason: this example lives inside
-; windtrap's tree, all three of those aliases are recursive there, and
-; same-named aliases in a subdirectory would silently widen the project
-; aggregate every time someone ran one at the root.
+; In your own project these are called `cover` and `mutate` — the names
+; windtrap's manual, skill, and own root dune use. They are renamed
+; `example-*` HERE for one reason: this example lives inside windtrap's
+; tree, both of those aliases are recursive there, and same-named
+; aliases in a subdirectory would silently widen the project aggregate
+; every time someone ran one at the root.
 ;
 ; The two are asymmetric on purpose: coverage accumulates as a side
 ; effect of any instrumented run, so the cover alias both runs the
@@ -29,36 +29,3 @@
  (deps (universe))
  (action
   (run %{bin:windtrap} mutate)))
-
-; The admission alias completes the trio, and is the only one that runs
-; rather than merges: WINDTRAP_MUTATE=admit with no filter judges every
-; test the run executes, so it asks "can every test in this suite fail?"
-; with nothing to keep in sync, and an admission run persists nothing,
-; so there is nothing to merge after it.
-;
-; test_slug only, and the omission is deliberate. test_stats carries the
-; deliberately weak law that is the manual's living specimen ("Admitting
-; a test"): UNJUSTIFIED by construction, so an alias over it would be
-; red forever, and a scaffold whose alias is red teaches that a red
-; alias is normal — the opposite of what UNJUSTIFIED means. The specimen
-; keeps its own command, in the README, where the red is the lesson. In
-; your own project this alias names every unit executable, because
-; nothing in yours is a specimen.
-;
-; Unscoped, unlike that command, because no one prefix is right in both
-; places: WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib is what excludes
-; the framework's own sites here, and it matches nothing once this
-; directory is copied out, where windtrap arrives as a dependency and
-; carries no instrumentation at all. Wide is the safe direction — here
-; the suite admits 9 of 9 where the scoped command reports 8 admitted
-; and 1 no sites, and every ruling is still true about the test it
-; names.
-
-(rule
- (alias example-admit)
- (deps (universe) unit/test_slug.exe)
- (action
-  (setenv
-   WINDTRAP_MUTATE
-   admit
-   (run %{exe:unit/test_slug.exe}))))

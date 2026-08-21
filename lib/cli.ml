@@ -481,16 +481,11 @@ let table =
         doc = "Source prefixes the coverage number covers";
       };
     Env_setting
-      { var = "WINDTRAP_MUTATE"; doc = "Mutation testing: 1, admit or off" };
+      { var = "WINDTRAP_MUTATE"; doc = "Mutation testing: 1 to run it, 0 not to" };
     Env_setting
       {
         var = Windtrap_mutate.arm_variable;
         doc = "Arm one mutant, by identifier";
-      };
-    Env_setting
-      {
-        var = "WINDTRAP_MUTATE_TRY";
-        doc = "Faults an admit run tries per test (0 for all)";
       };
     Env_setting
       {
@@ -773,47 +768,26 @@ let coverage_enabled () =
    the reason [coverage_enabled] does — none is run configuration and
    nothing in the runner may read them — but with the same loudness: an
    unrecognized value is an error naming the variable, never a silently
-   defaulted mode. WINDTRAP_MUTATE's truthy and falsy spellings come from
-   [Env]'s shared boolean reader, so it accepts exactly what every other
-   boolean variable accepts, plus the mode words. The variable a mutant
-   identifier travels in is the runtime's own constant, so the roster
-   above, this reader and the report's [arm] line cannot name three
-   different variables. *)
+   defaulted mode. WINDTRAP_MUTATE is a boolean, read by [Env]'s shared
+   reader so it accepts exactly the spellings every other boolean
+   variable does; a falsy one asks for nothing, which is what an unset
+   variable asks for. The variable a mutant identifier travels in is the
+   runtime's own constant, so the roster above, this reader and the
+   report's reproduce line cannot name two different variables. *)
 
-type mutation = {
-  mode : [ `Unset | `Off | `Loop | `Admit ];
-  arm : string option;
-  tries : int;
-}
-
-let default_mutate_tries = 25
+type mutation = { mode : [ `Unset | `Loop ]; arm : string option }
 
 let mutation () =
   let* mode =
     match Env.get_string "WINDTRAP_MUTATE" with
     | None -> Ok `Unset
     | Some value -> (
-        match String.lowercase_ascii (String.trim value) with
-        | "admit" -> Ok `Admit
-        | _ -> (
-            match Env.get_bool "WINDTRAP_MUTATE" with
-            | Some true -> Ok `Loop
-            | Some false -> Ok `Off
-            | None ->
-                invalid ~source:"WINDTRAP_MUTATE" ~value
-                  ~expected:"1, admit or off"))
+        match Env.get_bool "WINDTRAP_MUTATE" with
+        | Some true -> Ok `Loop
+        | Some false -> Ok `Unset
+        | None -> invalid ~source:"WINDTRAP_MUTATE" ~value ~expected:"1 or 0")
   in
-  let* tries =
-    match Env.get_string "WINDTRAP_MUTATE_TRY" with
-    | None -> Ok default_mutate_tries
-    | Some value -> (
-        match int_of_string_opt (String.trim value) with
-        | Some n when n >= 0 -> Ok n
-        | _ ->
-            invalid ~source:"WINDTRAP_MUTATE_TRY" ~value
-              ~expected:"a non-negative integer (0 tries every fault)")
-  in
-  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable; tries }
+  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable }
 
 (* One invocation, one resolution pass. Both drivers want all four
    answers and neither wants four error paths to reach them, so the

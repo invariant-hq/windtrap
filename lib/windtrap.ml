@@ -300,9 +300,8 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
      Without a mutation backend and without the variables it is exactly
      [Driver.execute_and_report] — same transcript, same bytes, same
      cost; with them it wraps the run on both sides (an armed mutant is
-     announced before any output, the discovery line follows the summary,
-     and the loop forks after the dry run) and may take the process
-     over. *)
+     announced before any output, and the loop forks after the dry run)
+     and may take the process over. *)
   match Mutate_loop.execute_and_report spine tests with
   | Mutate_loop.Reported code -> exit code
   | Mutate_loop.Ran result -> (

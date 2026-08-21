@@ -4,7 +4,7 @@ names the selection back to the reader in the words they typed.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_COVERAGE=off WINDTRAP_MUTATE=off \
+  >       WINDTRAP_COVERAGE=off \
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
 

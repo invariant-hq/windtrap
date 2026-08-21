@@ -123,109 +123,6 @@ let fatal =
    most-reached mutant is one that dies and the forced-fail check passes
    on its own merits rather than on a tie-break. *)
 
-(* Admission's shapes, one group each. Every group is built so a wrong
-   answer from the machine changes a string the scenarios pin.
-
-   - [vacuous] reaches two sites and pins neither, so the TRY cap has
-     something to truncate and an exhaustive ruling something to list.
-   - [wide] reaches every undismissed site and pins none, so its ruling
-     has more faults than a block lists and the [… n more] line has
-     something to count.
-   - [skipper] skips when [widen] changes: a fault a test skipped under
-     was never watched — it advances no tried count and appears in no
-     UNJUSTIFIED list.
-   - [capped_skipper] runs [widen] most and skips under it, with three
-     sites in reach: a TRY=2 list is capped AND skip-shortened, so a
-     ruling claiming its tried faults are the most-run ones would be
-     false — the most-run one is exactly the one it skipped under.
-   - [shared] declares a killer BEFORE a watcher of the same line, and
-     the killer's own TRY=1 list holds [orphan], not [widen]: one no-bail
-     fork of [widen] must admit the first through a ride-along kill and
-     still deliver the second's pass outcome. Bail would starve the
-     watcher of the one try it owns; an own-list-only batch would never
-     run the killer under [widen] at all.
-   - [fixture_kill] stands on [sub] through a bracket's setup: a kill
-     through a dependency the test declared counts, and the witness says
-     so.
-   - [crash_pair] declares a watcher of [crasher]'s line BEFORE the test
-     that dies under the same fault: the watcher's pass — its only try —
-     is on the pipe when the child crashes, and the ruling must count it
-     rather than discard the buffer with the child.
-   - [always_skips] skips wherever it runs: an admission set with
-     nothing executed in it is a refusal, not an empty report. *)
-
-let vacuous =
-  [
-    test "touches widen and orphan and pins neither" (fun () ->
-        is_true (Subject.widen 1 2 + Subject.orphan 3 4 <> 99));
-  ]
-
-let wide =
-  [
-    test "watches every fault and pins none" (fun () ->
-        is_true
-          (Subject.sub 10 4 + Subject.widen 1 2 + Subject.orphan 3 4
-           + Subject.crasher 3 1
-          <> 9999));
-  ]
-
-let skipper =
-  [
-    test "skips when widen changes" (fun () ->
-        let w = Subject.widen 3 4 in
-        ignore (Subject.orphan 1 2);
-        ignore (Subject.orphan 2 3);
-        if w <> 7 then skip ~reason:"the subject changed under this test" ();
-        is_true (Subject.orphan 1 2 <> 99));
-  ]
-
-let capped_skipper =
-  [
-    test "skips under the fault it runs most" (fun () ->
-        let w = Subject.widen 3 4 in
-        ignore (Subject.widen 1 2);
-        ignore (Subject.widen 2 3);
-        ignore (Subject.orphan 1 2);
-        ignore (Subject.sub 10 4);
-        if w <> 7 then skip ~reason:"the subject changed under this test" ();
-        is_true (Subject.orphan 1 2 <> 99));
-  ]
-
-let shared =
-  [
-    test "pins widen through a shared fork" (fun () ->
-        ignore (Subject.orphan 1 2);
-        ignore (Subject.orphan 2 3);
-        equal int 7 (Subject.widen 3 4));
-    test "watches widen and pins nothing" (fun () ->
-        is_true (Subject.widen 3 4 <> 0));
-  ]
-
-let fixture_kill =
-  [
-    bracket
-      ~setup:(fun () ->
-        equal ~msg:"the fixture stands on sub" int 6 (Subject.sub 10 4))
-      ~teardown:(fun () -> ())
-      "reads through a fixture"
-      (fun () -> is_true true);
-  ]
-
-let crash_pair =
-  [
-    test "watches crasher and pins nothing" (fun () ->
-        is_true (Subject.crasher 3 1 <> 99));
-    test "dies when crasher changes" (fun () ->
-        if Subject.crasher 3 1 <> 2 then Unix._exit 3;
-        equal int 2 (Subject.crasher 3 1));
-  ]
-
-let always_skips =
-  [
-    test "skips wherever it runs" (fun () ->
-        skip ~reason:"never runs on this fixture" ());
-  ]
-
 (* The per-child deadline's fixtures.
 
    - [block] pairs a watcher of [sub] that pins nothing with a test that
@@ -239,11 +136,6 @@ let always_skips =
      them, so only an unignorable signal to the whole group clears it —
      and records its pid: the file is how the harness finds the
      grandchild to poll.
-   - [block_mid] puts the blocker in the MIDDLE of the admission batch:
-     a delivered outcome before it, and after it a test that never
-     starts. The trailing test pins [sub] — under the fault it would
-     fail — so what the parent charges it for the fork it never reached
-     is the claim.
    - [slow] sleeps on every run, armed and unarmed alike, then pins
      [sub]: the dry run measures the sleep, so the derived deadline grows
      tenfold with it, and a kill here must come from the assertion and
@@ -280,13 +172,6 @@ let block =
           ignore (Unix.read never_written (Bytes.create 1) 0 1));
         equal int 6 (Subject.sub 10 4));
   ]
-
-let block_mid =
-  block
-  @ [
-      test "pins sub after the blocker" (fun () ->
-          equal int 6 (Subject.sub 10 4));
-    ]
 
 let slow =
   [
@@ -333,16 +218,7 @@ let () =
           print_endline (Windtrap_mutate.id_to_string m.Windtrap_mutate.id))
         (Windtrap_mutate.catalogue ())
   | "weak" -> run "calc" [ group "widen" weak ]
-  | "vacuous" -> run "calc" [ group "vacuous" vacuous ]
-  | "wide" -> run "calc" [ group "wide" wide ]
-  | "skipper" -> run "calc" [ group "skipper" skipper ]
-  | "capped_skipper" -> run "calc" [ group "capped" capped_skipper ]
-  | "shared" -> run "calc" [ group "shared" shared ]
-  | "fixture" -> run "calc" [ group "fixture" fixture_kill ]
-  | "crash_pair" -> run "calc" [ group "crash" crash_pair ]
-  | "skips" -> run "calc" [ group "skip" always_skips ]
   | "block" -> run "calc" [ group "block" block ]
-  | "block_mid" -> run "calc" [ group "block" block_mid ]
   | "slow" -> run "calc" [ group "slow" slow ]
   | "probe_block" -> run "calc" [ group "probe" probe_block ]
   | "crash" ->
@@ -372,10 +248,6 @@ let () =
           group ~tags:[ "gated" ] "calc" strong;
           group ~tags:[ "gated" ] "widen" weak;
         ]
-  | "empty" ->
-      (* Nothing declared: a run that executes nothing with nothing
-         selecting against it. *)
-      run "calc" []
   | _ ->
       run "calc"
         [ group "calc" strong; group "widen" weak; group "dismissed" dismissed ]

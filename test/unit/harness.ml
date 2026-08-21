@@ -126,7 +126,6 @@ let windtrap_vars =
        named here. *)
     "WINDTRAP_MUTATE";
     "WINDTRAP_MUTATE_ARM";
-    "WINDTRAP_MUTATE_TRY";
     "WINDTRAP_MUTATE_ONLY";
     (* Not a windtrap variable, but it turns styling off in Auto mode,
        so a developer's shell setting would reshape a pinned transcript. *)
@@ -143,11 +142,7 @@ let windtrap_vars =
    re-exec'd children call this directly, before [init]. *)
 let clear_env () =
   List.iter (fun var -> Unix.putenv var "") windtrap_vars;
-  Unix.putenv "WINDTRAP_COVERAGE" "off";
-  (* And mutation's equivalent: unset advertises the discovery line on
-     every instrumented run, which every transcript below would then have
-     to carry. [off] is the answer to that line. *)
-  Unix.putenv "WINDTRAP_MUTATE" "off"
+  Unix.putenv "WINDTRAP_COVERAGE" "off"
 
 let init name =
   suite := name;

@@ -15,28 +15,25 @@
     the forced-fail check, the fork loop, the verdict file, and the report.
 
     {b Why this module wraps the run rather than being called around it.} The
-    three things a mutation run must do — announce an armed mutant {e before}
-    any other output, print the discovery line {e after} the summary, and run
-    the suite again once per mutant {e after} the dry run — bracket the run on
-    both sides. A seam that only fired at run entry would need a second seam at
-    run end, and a seam that only fired at run end could not announce. So the
-    run is this module's argument, not its caller's: it is one call, in one
-    place, and there is nothing for a runner to get out of order.
+    two things a mutation run must do — announce an armed mutant {e before} any
+    other output, and run the suite again once per mutant {e after} the dry run
+    — bracket the run on both sides. A seam that only fired at run entry would
+    need a second seam at run end, and a seam that only fired at run end could
+    not announce. So the run is this module's argument, not its caller's: it is
+    one call, in one place, and there is nothing for a runner to get out of
+    order.
 
     [Cli.mutation] decides which mode this process is in;
-    [doc/manual/mutation.md] is the chapter that teaches them, and Laws 16 and
-    17 in [doc/dev/architecture.md] are the durable record of what each owes. In
-    an uninstrumented build, in a [--list] run, and whenever the environment
-    asks for nothing, this module does nothing at all.
+    [doc/manual/mutation.md] is the chapter that teaches them, and Law 16 in
+    [doc/dev/architecture.md] is the durable record of what each owes. In an
+    uninstrumented build, in a [--list] run, and whenever the environment asks
+    for nothing, this module does nothing at all.
 
     {b Exit codes} (Law 16e). [0] when the loop completed, {e whatever it found}
     — a survivor never fails a build in this release — and [1] when it refused
     to start or could not finish, each with its own message on [stderr]. Never
     [2]: "nothing ran" is a statement about a test selection, and a mutation run
-    does not make one. Exception, per the amendment's reserved survivor-driven
-    clause: an [admit] run — which judges a test selection at its author's
-    request — additionally exits [1] when a selected test killed nothing it
-    reached (any UNJUSTIFIED ruling); NO SITES alone is never red.
+    does not make one.
 
     {b Not in this slice.} Children run one at a time, and the per-child
     deadline is the only clock: nothing bounds a whole run, so a parent-side
@@ -80,8 +77,8 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
 
     {b Refusals}, each [Reported 1] with its own message naming the variable or
     the candidates, never a silently defaulted run: an unrecognized
-    [WINDTRAP_MUTATE] or [WINDTRAP_MUTATE_TRY]; asking for the loop and an armed
-    mutant at once; a [WINDTRAP_MUTATE_ARM] that is malformed, ambiguous, or
+    [WINDTRAP_MUTATE]; asking for the loop and an armed mutant at once; a
+    [WINDTRAP_MUTATE_ARM] that is malformed, ambiguous, or
     {!Windtrap_mutate.Unmatched} within a file this executable catalogues; a red
     or empty dry run; a probe disagreement; and a supervision error. The one
     arming failure that is {e not} a refusal is {!Windtrap_mutate.Uncatalogued}

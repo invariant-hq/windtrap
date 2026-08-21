@@ -170,14 +170,14 @@ val mutate_only : unit -> string list
     This is not coverage's reporting filter with a different name. The loop
     forks once per mutant, so narrowing the catalogue narrows the {e work}: an
     executable whose mutants all fall outside the prefixes has nothing to test
-    and behaves exactly as an uninstrumented one, discovery line included.
-    Mutation runs are expensive and a whole-project catalogue is rarely what a
-    reader wants to spend an afternoon on; naming a file or a directory is how
-    they spend it on the code they are actually working on. The scope binds at
-    registration, so it also bounds explicit arming
-    ({!Windtrap_mutate.arm_variable}): a mutant of an out-of-scope file was
-    never registered and cannot be armed — the scope states what the run's
-    mutation surface {e is}, not a view over a larger one. *)
+    and behaves exactly as an uninstrumented one. Mutation runs are expensive
+    and a whole-project catalogue is rarely what a reader wants to spend an
+    afternoon on; naming a file or a directory is how they spend it on the code
+    they are actually working on. The scope binds at registration, so it also
+    bounds explicit arming ({!Windtrap_mutate.arm_variable}): a mutant of an
+    out-of-scope file was never registered and cannot be armed — the scope
+    states what the run's mutation surface {e is}, not a view over a larger one.
+*)
 
 (** {1:snapshots Snapshot update modes} *)
 

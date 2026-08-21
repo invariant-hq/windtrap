@@ -217,52 +217,31 @@ let catalogue_tests =
           (List.length (Lazy.force catalogue)));
   ]
 
-let discovery_tests =
+let unasked_tests =
   [
-    test "an instrumented run that was not asked to mutate says what it found"
+    test "an instrumented run that was not asked to mutate runs ordinarily"
       (fun () ->
-        let code, out, _ = spawn [] in
+        let code, out, err = spawn [] in
         equal ~msg:"exit code" int 0 code;
         says ~msg:"summary" out "calc: 6 passed";
-        (* Four, not the catalogue's five: the discovery line offers what
-           the loop would test, and the report's denominator must be the
-           same number the reader was invited to test. *)
-        says ~msg:"discovery line" out
-          "mutants: 4 in 1 file \u{00b7} WINDTRAP_MUTATE=1 to test them");
-    test "off silences the discovery line, arming aside" (fun () ->
-        (* The line is what an unasked mutation build says, so [off] is
-           the answer to it: a workspace instrumented by default would
-           otherwise announce on every run forever. An arming is still an
-           explicit ask and is still honoured. *)
-        let code, out, err = spawn [ "WINDTRAP_MUTATE=off" ] in
-        equal ~msg:"exit code" int 0 code;
-        says ~msg:"the suite still runs" out "calc: 6 passed";
         denies ~msg:"and says nothing about mutants" out "mutants:";
-        equal ~msg:"stderr" text "" err;
-        let code, armed, _ =
-          spawn
-            [ "WINDTRAP_MUTATE=off"; M.arm_variable ^ "=" ^ mutant_named "sub" ]
-        in
-        equal ~msg:"exit code (this mutant survives)" int 0 code;
-        says ~msg:"off does not veto an explicit arming" armed "armed: ");
-    (* WINDTRAP_MUTATE_ONLY narrows the registry, not the report, and the
-       two consequences below are what the rest of this tree relies on:
-       a scope that matches nothing leaves an executable
-       indistinguishable from an uninstrumented one, and a scope that
-       matches keeps the fixture's own catalogue whole. Every other
-       scenario in this file passes the directory scope through
-       [environment], so without this test the feature would only ever be
-       exercised incidentally. *)
+        equal ~msg:"stderr" text "" err);
+  ]
+
+(* WINDTRAP_MUTATE_ONLY narrows the registry, not the report, and the two
+   consequences below are what the rest of this tree relies on: a scope
+   that matches nothing leaves an executable indistinguishable from an
+   uninstrumented one, and a scope that matches keeps the fixture's own
+   catalogue whole. Every other scenario in this file passes the
+   directory scope through [environment], so without these the feature
+   would only ever be exercised incidentally. *)
+let scope_tests =
+  [
     test "a scope that matches nothing makes a build look uninstrumented"
       (fun () ->
-        let code, out, err =
-          spawn [ "WINDTRAP_MUTATE_ONLY=::no-such-source::" ]
-        in
-        equal ~msg:"exit code" int 0 code;
-        denies ~msg:"no discovery line" out "mutants:";
-        (* And the seam declines by name rather than reporting nothing,
-           which is the uninstrumented contract. *)
-        let code, _, err' =
+        (* The seam declines by name rather than reporting nothing, which
+           is the uninstrumented contract. *)
+        let code, _, err =
           spawn
             [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=::no-such-source::" ]
         in
@@ -270,18 +249,21 @@ let discovery_tests =
         (* The build is instrumented and fine; the scope is what emptied
            the catalogue, so the refusal must name it — blaming
            instrumentation would send the reader to rebuild. *)
-        says ~msg:"declines by naming the scope, value included" err'
+        says ~msg:"declines by naming the scope, value included" err
           "WINDTRAP_MUTATE_ONLY=::no-such-source:: left no mutants";
-        says ~msg:"and both causes an empty scoped catalogue has" err'
+        says ~msg:"and both causes an empty scoped catalogue has" err
           "matches no instrumented file, or the matched files have no mutation \
            sites";
-        denies ~msg:"never the missing-backend diagnosis" err'
-          "links no instrumented module";
-        denies ~msg:"nothing on stderr for the unarmed run" err "mutants:");
+        denies ~msg:"never the missing-backend diagnosis" err
+          "links no instrumented module");
     test "a scope that matches keeps the whole fixture catalogue" (fun () ->
-        let code, out, _ = spawn [ "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ] in
+        let code, out, _ =
+          spawn
+            [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
+        in
         equal ~msg:"exit code" int 0 code;
-        says ~msg:"the fixture's four, undiminished" out "mutants: 4 in 1 file");
+        says ~msg:"the fixture's four, undiminished" out
+          "mutants: 1 survived of 4");
   ]
 
 let loop_tests =
@@ -654,7 +636,16 @@ let refusal_tests =
         let code, _, err = spawn [ "WINDTRAP_MUTATE=maybe" ] in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the message" err "invalid value 'maybe' for WINDTRAP_MUTATE";
-        says ~msg:"what it expected" err "1, admit or off");
+        says ~msg:"what it expected" err ": expected 1 or 0");
+    test "a falsy WINDTRAP_MUTATE is an ordinary run" (fun () ->
+        (* The variable is a boolean like every other switch: [off] asks
+           for nothing, exactly as unset does, so a CI recipe can turn the
+           loop off without unsetting anything. *)
+        let code, out, err = spawn [ "WINDTRAP_MUTATE=off" ] in
+        equal ~msg:"exit code" int 0 code;
+        says ~msg:"the ordinary transcript" out "calc: 6 passed";
+        denies ~msg:"no mutation line" out "mutants:";
+        equal ~msg:"stderr" string "" err);
     test "asking for the loop and an armed mutant at once is refused" (fun () ->
         let code, _, err =
           spawn
@@ -965,56 +956,6 @@ let deadline_tests =
           (List.filter_map
              (fun (id, v) -> if id = mutant_named "add" then Some v else None)
              (rendered_verdicts verdict_path)));
-    test
-      "a blocking test is admitted with cause timeout, and co-batched outcomes \
-       are kept" (fun () ->
-        let code, out, err =
-          spawn ~args:[ "-f"; "block" ]
-            [ "MUTATE_FIXTURE=block"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (the watcher is unjustified)" int 1 code;
-        equal ~msg:"stderr (the ruling is the report, not a refusal)" text ""
-          err;
-        says ~msg:"the hang admits the one test in flight" out
-          "ADMITTED  block \u{203a} blocks when sub changes";
-        says ~msg:"with its cause" out
-          ("killed (timeout)  " ^ mutant_named "add");
-        says ~msg:"the watcher keeps the outcome it delivered before the kill"
-          out "UNJUSTIFIED  block \u{203a} watches sub without pinning it";
-        says ~msg:"ruled on its own try, never timeout-admitted" out
-          "killed none of the 1 fault it reaches:";
-        says ~msg:"one fork, both rulings" out
-          "admission: 1 admitted, 1 unjustified of 2 \u{00b7} 1 fork over 1 \
-           reached in ");
-    test "a blocker mid-batch: the never-started member is charged no try"
-      (fun () ->
-        (* Outcomes on BOTH sides of the kill: the watcher's pass is on
-           the pipe before the blocker hangs, and the trailing test never
-           starts. The trailing test would fail under the fault, so both
-           wrong attributions are loud — timeout-admitting it, or billing
-           it a try for a fork it never reached. Its one fault is spent
-           (one fork per mutant), so it is ruled on its exhausted list,
-           with zero tried and the sentence saying so. *)
-        let code, out, err =
-          spawn ~args:[ "-f"; "block" ]
-            [ "MUTATE_FIXTURE=block_mid"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (two unjustified)" int 1 code;
-        equal ~msg:"stderr" text "" err;
-        says ~msg:"the hang admits the one test in flight" out
-          "ADMITTED  block \u{203a} blocks when sub changes";
-        says ~msg:"with its cause" out
-          ("killed (timeout)  " ^ mutant_named "add");
-        says ~msg:"the outcome delivered before the kill is kept" out
-          "UNJUSTIFIED  block \u{203a} watches sub without pinning it";
-        says ~msg:"and ruled a try" out "killed none of the 1 fault it reaches:";
-        says ~msg:"the never-started test is ruled, never timeout-admitted" out
-          "UNJUSTIFIED  block \u{203a} pins sub after the blocker";
-        says ~msg:"and charged no try for the fork it never reached" out
-          "killed none of the 0 faults tried on its lines, of 1 reached:";
-        says ~msg:"one fork, three rulings" out
-          "admission: 1 admitted, 2 unjustified of 3 \u{00b7} 1 fork over 1 \
-           reached in ");
     test "a slow but finite test is never killed by the clock" (fun () ->
         (* The regression the multiplier guards: the sleep runs armed and
            unarmed alike, so the dry run prices it into the deadline at
@@ -1135,520 +1076,6 @@ let deadline_tests =
           (elapsed < 30.));
   ]
 
-(* Admission (WINDTRAP_MUTATE=admit)
-
-   "A test is justified by the fault it kills", ruled per selected test.
-   The scenarios pin the three ruling shapes and the exit codes (Law
-   16e's admit clause: any UNJUSTIFIED is 1, NO SITES alone never is),
-   the try accounting the RFC makes normative — own-list only, a skip is
-   not a try, a ride-along kill still admits — and the one thing an admit
-   run must never do: persist. The [shared], [vacuous] and [skipper]
-   fixtures are built so each rule has a wrong answer that changes a
-   string asserted here; see suite_main.ml. *)
-
-let admission_tests =
-  [
-    test "a designated test that kills its fault is admitted" (fun () ->
-        let code, out, err =
-          spawn
-            ~args:[ "-f"; "sub of two positives" ]
-            [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (admitted is green)" int 0 code;
-        equal ~msg:"stderr" text "" err;
-        says ~msg:"the dry run printed its ordinary summary" out
-          "calc: 1 passed";
-        says ~msg:"the ruling" out
-          "ADMITTED  calc \u{203a} sub of two positives";
-        says ~msg:"the witness names the fault and its rewrite" out
-          ("killed  " ^ mutant_named "add" ^ "   a - b  \u{2192}  a + b");
-        says ~msg:"the summary" out
-          "admission: 1 admitted of 1 \u{00b7} 1 fork over 1 reached in ";
-        (* The run header's own rule: no property in the suite, no seed
-           anywhere — the summary included. *)
-        denies ~msg:"no seed without a property" out "(seed");
-    test "a designated vacuous test is ruled unjustified, as a failure block"
-      (fun () ->
-        let widen = List.nth (Lazy.force catalogue) 1 in
-        let code, out, err =
-          spawn ~args:[ "-f"; "widen is nonzero" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (a vacuous test stops the loop)" int 1 code;
-        equal ~msg:"stderr (the ruling is the report, not a refusal)" text ""
-          err;
-        says ~msg:"the labelled rule" out "unjustified (1)";
-        says ~msg:"the head row" out
-          "UNJUSTIFIED  widen \u{203a} widen is nonzero";
-        says ~msg:"the exhaustive sentence" out
-          "killed none of the 1 fault it reaches:";
-        says ~msg:"the tried fault, with its rewrite" out
-          (widen ^ "   a + b  \u{2192}  a - b");
-        says ~msg:"the excerpt row" out "18 \u{2502} let widen a b = a + b";
-        says ~msg:"the remedy path" out
-          "strengthen the assertion, then watch it catch one:";
-        says ~msg:"the dismissal hint" out "((a + b) [@mutate off \"reason\"])";
-        says ~msg:"the summary states the no beside the zero" out
-          "admission: 0 admitted, 1 unjustified of 1 \u{00b7} 1 fork over 1 \
-           reached in ";
-        (* The arm hint is pasted back rather than pattern-matched, as the
-           survivor block's is: the identifier the ruling prints has to be
-           one the runtime resolves. *)
-        let binding = arm_binding_of out in
-        let code, armed, _ = spawn [ binding ] in
-        equal ~msg:"the armed run completes (this fault survives)" int 0 code;
-        says ~msg:"the pasted binding armed the listed fault" armed
-          "armed: a + b \u{2192} a - b");
-    test "co-selected tests over one line share one fork" (fun () ->
-        let code, out, _ =
-          spawn ~args:[ "-f"; "widen" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"both ruled" out "unjustified (2)";
-        (* One fork, two verdicts: the union schedule deduplicates the
-           shared fault and the no-bail child credits both watchers. *)
-        says ~msg:"one fork served both rulings" out
-          "admission: 0 admitted, 2 unjustified of 2 \u{00b7} 1 fork over 1 \
-           reached in ");
-    test "a test reaching no undismissed site is no sites, and forks nothing"
-      (fun () ->
-        let code, out, err =
-          spawn ~args:[ "-f"; "dismissed" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (no sites is never a finding)" int 0 code;
-        equal ~msg:"stderr" text "" err;
-        says ~msg:"the ruling" out
-          "NO SITES  dismissed \u{203a} the dismissed site is run and not \
-           pinned";
-        says ~msg:"the statement of fact" out
-          "so there is nothing to admit it against.";
-        (* The harness's default scope is in force, so the block closes
-           audit Q1's trap: a scope typo must not read as "no sites". *)
-        says ~msg:"the scope is echoed" out
-          "(WINDTRAP_MUTATE_ONLY=test/mutate_loop/ is set";
-        says ~msg:"the summary, with no reached term" out
-          "admission: 1 no sites of 1 \u{00b7} 0 forks in ";
-        denies ~msg:"nothing was reached" out "reached";
-        (* Same ruling with the scope unset: the echo has no cause to
-           name and does not print. *)
-        let code, out, _ =
-          spawn ~args:[ "-f"; "dismissed" ]
-            [ "WINDTRAP_MUTATE=admit"; "WINDTRAP_MUTATE_ONLY=" ]
-        in
-        equal ~msg:"unscoped exit code" int 0 code;
-        says ~msg:"the same ruling" out "NO SITES";
-        denies ~msg:"no echo without a scope" out "WINDTRAP_MUTATE_ONLY");
-    test "a siteless selection skips the probe: a fork-flaky suite still rules"
-      (fun () ->
-        (* The flaky test passes only in the process that measured it, so
-           any fork of it fails: a NO SITES ruling here PROVES no probe
-           was forked — there is no verdict for it to validate. *)
-        let code, out, err =
-          spawn ~args:[ "-f"; "passes where" ]
-            [ "MUTATE_FIXTURE=flaky"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 0 code;
-        denies ~msg:"the probe never ran" err "not deterministic";
-        says ~msg:"the ruling" out "NO SITES";
-        says ~msg:"a test reaching nothing gets the evaluates-nothing form" out
-          "this test evaluates no mutation site";
-        says ~msg:"no fork at all" out "0 forks in ");
-    test "the TRY cap rules a wide vacuous test capped, and says so" (fun () ->
-        let code, out, _ =
-          spawn ~args:[ "-f"; "vacuous" ]
-            [
-              "MUTATE_FIXTURE=vacuous";
-              "WINDTRAP_MUTATE=admit";
-              "WINDTRAP_MUTATE_TRY=1";
-            ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the capped sentence" out
-          "killed none of the 1 most-run fault on its lines, of 2 reached";
-        says ~msg:"and the uncapping spell" out
-          "(WINDTRAP_MUTATE_TRY=0 tries them all):";
-        says ~msg:"the cap stopped the second fork" out "1 fork over 2 reached";
-        says ~msg:"the summary marks the capped ruling" out
-          "\u{00b7} 1 ruling capped at 1");
-    test "TRY=0 tries every candidate" (fun () ->
-        let widen = List.nth (Lazy.force catalogue) 1 in
-        let orphan = List.nth (Lazy.force catalogue) 2 in
-        let code, out, _ =
-          spawn ~args:[ "-f"; "vacuous" ]
-            [
-              "MUTATE_FIXTURE=vacuous";
-              "WINDTRAP_MUTATE=admit";
-              "WINDTRAP_MUTATE_TRY=0";
-            ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the exhaustive sentence" out
-          "killed none of the 2 faults it reaches:";
-        denies ~msg:"nothing was capped" out "capped at";
-        says ~msg:"both candidates forked" out "2 forks over 2 reached";
-        says ~msg:"both faults are listed" out widen;
-        says ~msg:"the second too" out orphan);
-    test "a ruling lists a few faults and counts the rest" (fun () ->
-        (* The listing cut is derived and has no variable: a test that
-           watches more faults than a block shows still states how many
-           it tried, and the line under the list says what is missing. *)
-        let code, out, _ =
-          spawn ~args:[ "-f"; "wide" ]
-            [ "MUTATE_FIXTURE=wide"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the sentence counts every fault it watched" out
-          "killed none of the 4 faults it reaches:";
-        denies ~msg:"the work was not capped, only the listing" out "capped at";
-        says ~msg:"and the list says what it dropped" out "\u{2026} 1 more");
-    test "a fault a test skipped under is watched by nobody" (fun () ->
-        (* Under the widen mutant the test skips itself: the fault must
-           advance no tried count and appear in no UNJUSTIFIED list —
-           only [orphan], watched to a pass, is the test's to answer
-           for. *)
-        let widen = List.nth (Lazy.force catalogue) 1 in
-        let orphan = List.nth (Lazy.force catalogue) 2 in
-        let code, out, _ =
-          spawn ~args:[ "-f"; "skipper" ]
-            [ "MUTATE_FIXTURE=skipper"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the sentence counts only what was watched" out
-          "killed none of the 1 fault tried on its lines, of 2 reached:";
-        says ~msg:"the watched fault is listed" out orphan;
-        denies ~msg:"the skipped fault is not" out widen;
-        says ~msg:"both were forked all the same" out "2 forks over 2 reached");
-    test "a capped ruling a skip shortened counts only what was tried"
-      (fun () ->
-        (* The TRY=2 list holds [widen] — the fault the test runs most —
-           and the test skips under it: the tried faults are then NOT the
-           most-run ones, and a capped sentence claiming so would be
-           false. The ruling counts what was tried and still names the
-           cap. *)
-        let widen = List.nth (Lazy.force catalogue) 1 in
-        let code, out, _ =
-          spawn ~args:[ "-f"; "skips under" ]
-            [
-              "MUTATE_FIXTURE=capped_skipper";
-              "WINDTRAP_MUTATE=admit";
-              "WINDTRAP_MUTATE_TRY=2";
-            ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the sentence counts the tried fault" out
-          "killed none of the 1 fault tried on its lines, of 3 reached";
-        denies ~msg:"and does not call it the most-run one" out "most-run";
-        says ~msg:"the cap still names itself" out
-          "(WINDTRAP_MUTATE_TRY=0 tries them all):";
-        denies ~msg:"the skipped fault is in no list" out widen;
-        says ~msg:"the summary marks the capped ruling" out
-          "\u{00b7} 1 ruling capped at 2";
-        says ~msg:"both listed faults forked, the third never" out
-          "2 forks over 3 reached");
-    test "a ride-along kill admits, and no-bail delivers the later outcome"
-      (fun () ->
-        (* One fork of [widen] carries both tests: the killer rides along
-           (its own TRY=1 list holds [orphan]) and still admits; the
-           watcher runs AFTER the kill and still gets the pass that
-           exhausts its list. Bail would starve the watcher of the one
-           try it owns — its sentence would count 0 tried of 1 — and an
-           own-list-only batch would never run the killer under [widen]
-           at all. *)
-        let widen = List.nth (Lazy.force catalogue) 1 in
-        let code, out, _ =
-          spawn ~args:[ "-f"; "shared" ]
-            [
-              "MUTATE_FIXTURE=shared";
-              "WINDTRAP_MUTATE=admit";
-              "WINDTRAP_MUTATE_TRY=1";
-            ]
-        in
-        equal ~msg:"exit code (the watcher is unjustified)" int 1 code;
-        says ~msg:"the ride-along kill admits the killer" out
-          "ADMITTED  shared \u{203a} pins widen through a shared fork";
-        says ~msg:"naming the shared fault" out ("killed  " ^ widen);
-        says ~msg:"the watcher is ruled on its own try" out
-          "UNJUSTIFIED  shared \u{203a} watches widen and pins nothing";
-        says ~msg:"whose pass outcome survived the earlier kill" out
-          "killed none of the 1 fault it reaches:";
-        says ~msg:"one fork produced both rulings" out
-          "admission: 1 admitted, 1 unjustified of 2 \u{00b7} 1 fork over 2 \
-           reached in ");
-    test "a child that dies without an outcome admits the test in flight"
-      (fun () ->
-        let crasher = List.nth (Lazy.force catalogue) 3 in
-        let code, out, err =
-          spawn ~args:[ "-f"; "crasher leaves" ]
-            [ "MUTATE_FIXTURE=crash"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 0 code;
-        equal ~msg:"stderr" text "" err;
-        says ~msg:"the witness carries its cause" out
-          ("killed (crash)  " ^ crasher);
-        says ~msg:"the summary" out "admission: 1 admitted of 1");
-    test "a crash keeps the outcomes the child had already delivered" (fun () ->
-        (* One fork of [crasher] carries the watcher and then the test
-           that dies under it: the watcher's pass — its only try — is on
-           the pipe before the crash. A parent that discarded a crashed
-           child's buffer would rule the watcher on zero tries; one that
-           attributed the crash to the whole batch would admit it. *)
-        let crasher = List.nth (Lazy.force catalogue) 3 in
-        let code, out, _ =
-          spawn ~args:[ "-f"; "crash" ]
-            [ "MUTATE_FIXTURE=crash_pair"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (the watcher is unjustified)" int 1 code;
-        says ~msg:"the crash admits the one test in flight" out
-          "ADMITTED  crash \u{203a} dies when crasher changes";
-        says ~msg:"with its cause" out ("killed (crash)  " ^ crasher);
-        says ~msg:"the watcher is ruled, never crash-admitted" out
-          "UNJUSTIFIED  crash \u{203a} watches crasher and pins nothing";
-        says ~msg:"on the try the crash did not erase" out
-          "killed none of the 1 fault it reaches:";
-        says ~msg:"one fork, both rulings" out
-          "admission: 1 admitted, 1 unjustified of 2 \u{00b7} 1 fork over 1 \
-           reached in ");
-    test "a kill through the test's own fixture counts, and says so" (fun () ->
-        let code, out, _ =
-          spawn ~args:[ "-f"; "fixture" ]
-            [ "MUTATE_FIXTURE=fixture"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 0 code;
-        says ~msg:"the ruling" out
-          "ADMITTED  fixture \u{203a} reads through a fixture";
-        says ~msg:"the witness names the dependency kill" out
-          ("killed (fixture)  " ^ mutant_named "add"));
-    test "an admit run persists nothing and disturbs nothing" (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, _, _ =
-          spawn
-            ~args:[ "-f"; "sub of two positives" ]
-            [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"the admitted run's exit code" int 0 code;
-        is_false ~msg:"no file appears when none existed"
-          (Sys.file_exists verdict_path);
-        let code, _, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
-        equal ~msg:"the survey writes as it always has" int 0 code;
-        let saved = read_file verdict_path in
-        is_true ~msg:"and wrote the file" (saved <> "");
-        let code, out, _ =
-          spawn ~args:[ "-f"; "widen is nonzero" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"an unjustified admit run exits 1" int 1 code;
-        denies ~msg:"and never mentions persistence" out "verdicts not saved";
-        equal ~msg:"the survey's file is byte-identical" text saved
-          (read_file verdict_path));
-    test "admit with no selection judges every test the run executed" (fun () ->
-        (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, err = spawn [ "WINDTRAP_MUTATE=admit" ] in
-        equal ~msg:"exit code (any UNJUSTIFIED is red)" int 1 code;
-        says ~msg:"the whole suite is the designation, said once" err
-          "admitting all 6 tests this run executed";
-        says ~msg:"the question it might have meant" err "WINDTRAP_MUTATE=1";
-        says ~msg:"every test of the suite is ruled" out
-          "admission: 3 admitted, 2 unjustified, 1 no sites of 6 \u{00b7} 2 \
-           forks over 2 reached in ";
-        says ~msg:"the vacuous tests are the finding" out
-          "UNJUSTIFIED  widen \u{203a} widen is nonzero";
-        is_false ~msg:"and an admission run persists nothing"
-          (Sys.file_exists verdict_path));
-    test "a shard narrows work, not designation" (fun () ->
-        let _, _, err =
-          spawn ~args:[ "--shard"; "1/2" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        says ~msg:"a shard names no test, so the run designates them all" err
-          "tests this run executed");
-    test "a tag selection designates" (fun () ->
-        let code, out, err =
-          spawn
-            [
-              "MUTATE_FIXTURE=tagged";
-              "WINDTRAP_TAG=gated";
-              "WINDTRAP_MUTATE=admit";
-            ]
-        in
-        equal ~msg:"exit code (the weak tests are unjustified)" int 1 code;
-        denies ~msg:"a tag knob is a selection" err "tests this run executed";
-        says ~msg:"every tagged test is ruled" out
-          "admission: 3 admitted, 2 unjustified of 5");
-    test "an exclude designates, and a partition mixes all three verdicts"
-      (fun () ->
-        (* [-e sub] leaves the two [widen] watchers and the test of the
-           dismissed site: one fork rules the watchers, the dismissed
-           test is a fact beside them, and the summary spells all three
-           terms — beside an unjustified ruling the zero admitted is the
-           answer, not noise. *)
-        let code, out, err =
-          spawn ~args:[ "-e"; "sub" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        denies ~msg:"an exclude is a selection" err "tests this run executed";
-        says ~msg:"both watchers ruled" out "unjustified (2)";
-        says ~msg:"the dismissed-site test is a fact beside them" out
-          "NO SITES  dismissed \u{203a} the dismissed site is run and not \
-           pinned";
-        says ~msg:"the full grammar, zero admitted included" out
-          "admission: 0 admitted, 2 unjustified, 1 no sites of 3 \u{00b7} 1 \
-           fork over 1 reached in ");
-    test "a selection that only skips refuses: nothing was executed" (fun () ->
-        let code, out, err =
-          spawn ~args:[ "-f"; "skips" ]
-            [ "MUTATE_FIXTURE=skips"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (could-not-answer)" int 1 code;
-        says ~msg:"the reason" err "every selected test skipped";
-        denies ~msg:"no ruling was made" out "admission:");
-    test "a selection matching nothing is refused under the standalone runner"
-      (fun () ->
-        let code, out, err =
-          spawn ~args:[ "-f"; "no-such-test" ] [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (never 2: Law 16e)" int 1 code;
-        says ~msg:"the reason" err "there is no test to admit";
-        says ~msg:"a selection existed, so it is the diagnosis" err
-          "Fix the filter";
-        denies ~msg:"no ruling was made" out "admission:");
-    test "a selection matching nothing declines in one line under the mirrors"
-      (fun () ->
-        (* The arm precedent's softness: one variable reaches every
-           partition of a project-wide run, and failing the siblings of
-           the suite that owns the selected tests would report success as
-           failure. The ordinary run stands — an empty partition is not a
-           filter typo — and the decline is the whole mutation output. *)
-        let code, out, err =
-          spawn ~exe:inline_exe
-            ~args:[ "inline-test-runner"; "inline_armed" ]
-            [ "WINDTRAP_MUTATE=admit"; "WINDTRAP_FILTER=no-such-test" ]
-        in
-        equal ~msg:"the inline partition passes" int 0 code;
-        says ~msg:"the decline line" err "nothing to admit here";
-        equal ~msg:"said once" int 1
-          (List.length
-             (List.filter
-                (fun line -> has_sub line "nothing to admit here")
-                (String.split_on_char '\n' err)));
-        denies ~msg:"no ruling was made" out "admission:";
-        denies ~msg:"and no verdict words" out "UNJUSTIFIED");
-    test "a red dry run declines whole: no verdict over a red baseline"
-      (fun () ->
-        let code, out, err =
-          spawn ~args:[ "-f"; "calc" ]
-            [ "MUTATE_FIXTURE=red"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (could-not-answer)" int 1 code;
-        says ~msg:"the reason" err "the dry run is red";
-        says ~msg:"and what admission judges against" err "green baseline";
-        denies ~msg:"the green co-selected tests got no verdict" out "ADMITTED";
-        denies ~msg:"no summary either" out "admission:");
-    test "admit refuses an armed parent and a misspelled TRY, by name"
-      (fun () ->
-        let code, _, err =
-          spawn
-            [
-              "WINDTRAP_MUTATE=admit"; M.arm_variable ^ "=" ^ mutant_named "add";
-            ]
-        in
-        equal ~msg:"admit+arm exit code" int 1 code;
-        says ~msg:"both variables named" err "WINDTRAP_MUTATE and ";
-        says ~msg:"the arming variable" err M.arm_variable;
-        let code, _, err =
-          spawn [ "WINDTRAP_MUTATE=admit"; "WINDTRAP_MUTATE_TRY=lots" ]
-        in
-        equal ~msg:"the TRY refusal's exit code" int 1 code;
-        says ~msg:"the message" err
-          "invalid value 'lots' for WINDTRAP_MUTATE_TRY");
-    test "admit composes with a scope, and a scope typo is named as one"
-      (fun () ->
-        let code, _, err =
-          spawn ~args:[ "-f"; "calc" ]
-            [
-              "WINDTRAP_MUTATE=admit"; "WINDTRAP_MUTATE_ONLY=::no-such-source::";
-            ]
-        in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the scope is blamed, value included" err
-          "WINDTRAP_MUTATE_ONLY=::no-such-source:: left no mutants";
-        denies ~msg:"never the missing-backend diagnosis" err
-          "links no instrumented module");
-    test "an inline expect test admits through its mismatch, writing nothing"
-      (fun () ->
-        (* Armed checking is read-only (Law 16d), so the mutant's changed
-           output is a plain failure — a kill. A descriptive oracle is
-           still an oracle, and no .corrected may appear. *)
-        let widen = List.nth (Lazy.force catalogue) 1 in
-        let cwd = staged_source_dir () in
-        let code, out, err =
-          spawn ~exe:inline_exe
-            ~args:[ "inline-test-runner"; "inline_armed" ]
-            ~cwd
-            [ "WINDTRAP_MUTATE=admit"; "WINDTRAP_FILTER=widen" ]
-        in
-        equal ~msg:"exit code" int 0 code;
-        says ~msg:"the ruling" out "ADMITTED";
-        says ~msg:"the witness" out ("killed  " ^ widen);
-        is_false ~msg:"no correction was written"
-          (Sys.file_exists (Filename.concat cwd "inline_armed.ml.corrected"));
-        denies ~msg:"and none was attempted" err "correction for");
-  ]
-
-(* Whole-suite admission (WINDTRAP_MUTATE=admit with no selection)
-
-   An absent selection designates every test the run executes — the ask
-   an alias makes, where no per-invocation filter can be written. It is
-   the same machine as a filtered admission and shares every refusal;
-   what is its own is the nudge naming the survey, and the diagnosis for
-   a run that designates everything and still executes nothing. *)
-
-let whole_suite_tests =
-  [
-    test "no selection over a suite that answers admits it whole" (fun () ->
-        let code, out, err =
-          spawn [ "MUTATE_FIXTURE=fixture"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (every test admitted)" int 0 code;
-        says ~msg:"the nudge, and nothing else on stderr" err
-          "admitting all 1 tests this run executed";
-        says ~msg:"the ruling" out
-          "ADMITTED  fixture \u{203a} reads through a fixture";
-        says ~msg:"the summary rules the whole suite" out
-          "admission: 1 admitted of 1 \u{00b7} 1 fork over 1 reached in ");
-    test "a red dry run declines before any test is designated" (fun () ->
-        let code, out, err =
-          spawn [ "MUTATE_FIXTURE=red"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (could-not-answer)" int 1 code;
-        says ~msg:"the reason" err "the dry run is red";
-        denies ~msg:"nothing was designated, so nothing was nudged" err
-          "tests this run executed";
-        denies ~msg:"no ruling was made" out "admission:");
-    test "no selection judges an inline partition" (fun () ->
-        (* The alias's deployment shape: one variable over every runner,
-           mirrors included, with nothing to name per invocation. *)
-        let cwd = staged_source_dir () in
-        let code, out, err =
-          spawn ~exe:inline_exe
-            ~args:[ "inline-test-runner"; "inline_armed" ]
-            ~cwd
-            [ "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code" int 0 code;
-        says ~msg:"the partition designates its own tests" err
-          "tests this run executed";
-        says ~msg:"the partition's one test is ruled" out "ADMITTED");
-    test "a run that executed nothing blames the suite, not a filter" (fun () ->
-        (* The empty fixture declares no tests, so the dry run executes
-           nothing. With no selection there is no filter to fix, and the
-           refusal must not claim there is. *)
-        let code, out, err =
-          spawn [ "MUTATE_FIXTURE=empty"; "WINDTRAP_MUTATE=admit" ]
-        in
-        equal ~msg:"exit code (never 2: Law 16e)" int 1 code;
-        says ~msg:"the reason" err
-          "admit judges the tests this run executes and this run executed none";
-        denies ~msg:"there is no filter to fix" err "Fix the filter";
-        denies ~msg:"no ruling was made" out "admission:");
-  ]
-
 (* One identifier, every executable — the report's own remedy
 
    The report tells the reader to arm a survivor with
@@ -1700,19 +1127,6 @@ let cross_executable_tests =
         equal ~msg:"the mutant made a test fail" int 1 code;
         says ~msg:"it armed the named mutant" out
           ("mutant " ^ id ^ " armed: a - b \u{2192} a + b"));
-    test "a declining executable still takes the ordinary instrumented path"
-      (fun () ->
-        (* Declining is not arming: nothing is armed, so the process is
-           observationally the original program and owes no read-only
-           checking. The discovery line is the proof that it took the
-           ordinary instrumented path rather than a hushed one. *)
-        let id = mutant_named "add" in
-        let code, out, _ =
-          spawn ~exe:runaway_exe [ M.arm_variable ^ "=" ^ id ]
-        in
-        equal ~msg:"exit code" int 0 code;
-        says ~msg:"the discovery line, as on any unarmed instrumented run" out
-          "mutants: 1 in 1 file");
   ]
 
 (* The control: no instrumented module in the executable at all. *)
@@ -1756,8 +1170,6 @@ let uninstrumented_tests =
         says ~msg:"the suite ran exactly as it would unarmed" out
           "plain: 1 passed";
         denies ~msg:"nothing armed" out " armed: ";
-        denies ~msg:"and no discovery line, there being nothing to discover" out
-          "mutants:";
         says ~msg:"the identifier" err "lib/absent.ml:1:0:add";
         says ~msg:"the diagnosis" err "not this executable's mutant";
         says ~msg:"and the misconfiguration it could still be" err
@@ -1773,7 +1185,8 @@ let () =
   run "mutate loop"
     [
       group "catalogue" catalogue_tests;
-      group "discovery" discovery_tests;
+      group "unasked" unasked_tests;
+      group "scope" scope_tests;
       group "loop" loop_tests;
       group "reach map" reach_tests;
       group "no trace outside the pipe" no_trace_tests;
@@ -1785,7 +1198,5 @@ let () =
       group "read-only checking" read_only_tests;
       group "runaway budget" runaway_tests;
       group "per-child deadline" deadline_tests;
-      group "admission" admission_tests;
-      group "whole-suite admission" whole_suite_tests;
       group "uninstrumented" uninstrumented_tests;
     ]

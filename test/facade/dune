@@ -10,10 +10,6 @@
 ; network, small enough for a session to pin whole streams. The deps
 ; line is load-bearing: without it dune would not rebuild the fixture
 ; before running a session, and every .t here would exercise stale code.
-;
-; Not under @admit, like every other directory whose subject runs where
-; no arming reaches it (see ../dune): the code these sessions are about
-; executes in the child.
 
 (executable
  (name suite_main)
