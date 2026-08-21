@@ -11,7 +11,6 @@
   ---------------------------------------------------------------------------*)
 
 module Render = Windtrap.Private.Render
-module Mutate_loop = Windtrap.Private.Mutate_loop
 module Env = Windtrap.Private.Env
 module Test_tree = Windtrap.Private.Test_tree
 module M = Windtrap_mutate
@@ -27,22 +26,23 @@ are found under _build/_mutants, walking up from the current directory to the
 enclosing project root; PATH arguments (.mutants files, or directories
 searched recursively) replace that default.
 
-Runs no tests and drives no build. A survivor never fails the build.
+Runs no tests and drives no build.
+Exits 1 when any mutant survived every executable that reached it.
 
 OPTIONS:
   -h, --help  Print this help and exit|}
 
-(* The re-run, spelled once. Every remedy this command prints names it,
-   and it is the alias recipe from the manual with --force, which is
-   load-bearing: a mutation run is not a cached artifact. *)
-(* The remedy is a RUN, not this alias: @mutate merges verdicts and runs
-   nothing, because an ordinary `dune runtest` in front of the merge would
-   rebuild the executables uninstrumented and invalidate the very files it
-   is about to read. A verdict comes from a suite asked to test its
-   mutants. *)
+(* The one command, spelled once: every remedy this command prints names
+   it. It is the @mutate alias — every suite run with its mutants, then
+   this merge — and each piece is load-bearing: the variable because the
+   suites read it, the flag because the suites must carry the mutants,
+   --force because a mutation run is not a cached artifact. A plain
+   `dune build @mutate` without them rebuilds the executables
+   uninstrumented, which stales every verdict, and the merge then refuses
+   loudly. *)
 let rerun =
-  "  WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate <test \
-   executable> --"
+  "  WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with \
+   ppx_windtrap.mutate"
 
 (* Flags *)
 
@@ -82,17 +82,41 @@ let stale_hint =
   "a re-run made without --instrument-with ppx_windtrap.mutate, or a mutation \
    run dune did not repeat"
 
-(* Loads [files], drops the orphaned and stale ones loudly, and merges
-   what is left. Warnings and failure details go to stderr; [Error code]
-   is the exit code (data problems are 1). *)
-let load_merged files =
+(* The executable a verdict file speaks for, as the witness column names
+   it: the basename of the recorded identity (`test_slug.exe`). Dune's
+   inline-test runner is `inline-test-runner.exe` in every library's
+   `.<lib>.inline-tests` directory, so it is named by the library whose
+   inline tests ran (`<lib>`) instead. A file that records no identity —
+   hand-written, or a merge, which has no single writer — is named by its
+   own basename. *)
+let executable_label ~path identity =
+  match (identity : M.identity option) with
+  | None -> Filename.basename path
+  | Some { exe; _ } ->
+      let base = Filename.basename exe in
+      let dir = Filename.basename (Filename.dirname exe) in
+      let suffix = ".inline-tests" in
+      if
+        base = "inline-test-runner.exe"
+        && String.length dir > String.length suffix + 1
+        && dir.[0] = '.'
+        && Filename.check_suffix dir suffix
+      then String.sub dir 1 (String.length dir - 1 - String.length suffix)
+      else base
+
+(* Loads [files], drops the orphaned and stale ones loudly, and returns
+   what is left, each collection labelled with its executable. Warnings
+   and failure details go to stderr; [Error code] is the exit code (data
+   problems are 1). *)
+let load_fresh files =
   let loaded =
     List.fold_left
       (fun acc path ->
         Result.bind acc (fun entries ->
             Result.map
               (fun (t, identity) ->
-                (path, t, Data_files.freshness ~path identity) :: entries)
+                (path, t, identity, Data_files.freshness ~path identity)
+                :: entries)
               (M.load path)))
       (Ok []) files
   in
@@ -102,9 +126,8 @@ let load_merged files =
       Error 1
   | Ok entries ->
       let entries = List.rev entries in
-      let kept = List.filter (fun (_, _, f) -> f = Data_files.Fresh) entries in
-      let excluded =
-        List.filter (fun (_, _, f) -> f <> Data_files.Fresh) entries
+      let kept, excluded =
+        List.partition (fun (_, _, _, f) -> f = Data_files.Fresh) entries
       in
       (* Per-file detail is what a reader wants when a verdict or two is
          stale among many: it names the executable and the reason. When
@@ -115,7 +138,7 @@ let load_merged files =
       let detail_cap = 3 in
       let excluded_count = List.length excluded in
       List.iteri
-        (fun i (path, _, f) ->
+        (fun i (path, _, _, f) ->
           if i < detail_cap then
             Printf.eprintf "windtrap mutate: %s; excluding it\n%!"
               (Data_files.describe ~stale_hint ~path f))
@@ -130,7 +153,9 @@ let load_merged files =
          there would send the reader round a loop that cannot terminate.
          Skipped when everything was excluded: the epilogue below carries
          both. *)
-      let any predicate = List.exists (fun (_, _, f) -> predicate f) excluded in
+      let any predicate =
+        List.exists (fun (_, _, _, f) -> predicate f) excluded
+      in
       if kept <> [] then begin
         if
           any (function
@@ -154,7 +179,7 @@ let load_merged files =
         let orphans =
           List.length
             (List.filter
-               (fun (_, _, f) ->
+               (fun (_, _, _, f) ->
                  match f with
                  | Data_files.Orphan _ -> true
                  | Data_files.Fresh | Data_files.Stale _ -> false)
@@ -180,8 +205,10 @@ let load_merged files =
       end
       else
         Ok
-          ( List.fold_left (fun acc (_, t, _) -> M.merge acc t) M.empty kept,
-            List.length kept )
+          (List.map
+             (fun (path, t, identity, _) ->
+               (executable_label ~path identity, t))
+             kept)
 
 (* Report data *)
 
@@ -211,22 +238,77 @@ let read_source ~roots =
         Hashtbl.add cache file contents;
         contents
 
-let print_report ~roots ~executables collection =
-  let ansi =
-    Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
-      ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
+(* The aggregate report, from the labelled collections and nothing else.
+
+   The verdicts and the counts are the merge's: [M.merge] is
+   killed-anywhere-wins, the one algebra of the file format, and this
+   projection never re-derives it. What the merge cannot carry is who ran
+   a witness — a merged survivor's witnesses are a union with the
+   executables folded away — so those are collected beside it: every
+   survived record's witnesses, tagged with its file's executable. A file
+   that killed the mutant contributes none; its tests noticed. A merged
+   survivor's witnesses are then the tagged union from every file that
+   reported it survived, sorted by (executable, test), without
+   duplicates. The ordering mirrors the loop's per-executable report: by
+   witness count descending, then by identifier. *)
+let render_data ~resolve_source files =
+  let merged = List.fold_left (fun acc (_, t) -> M.merge acc t) M.empty files in
+  let tagged = Hashtbl.create 64 in
+  List.iter
+    (fun (exe, t) ->
+      List.iter
+        (fun (r : M.record) ->
+          match r.M.verdict with
+          | M.Survived { witness; others } ->
+              List.iter
+                (fun path ->
+                  Hashtbl.add tagged r.M.id (exe, Test_tree.path_to_string path))
+                (witness :: others)
+          | M.Killed | M.Unreached -> ())
+        (M.records t))
+    files;
+  let mutant_of (r : M.record) : Render.mutant =
+    {
+      (* The identifier is spelled here, with the runtime's own function:
+         Render carries it into the head row without re-spelling it. *)
+      Render.id = M.id_to_string r.M.id;
+      file = r.M.id.M.file;
+      line = r.M.id.M.line;
+      before = r.M.before;
+      after = r.M.after;
+      source = resolve_source r.M.id.M.file;
+    }
   in
-  let renderer = Render.create ~out:Format.std_formatter ~ansi () in
-  let resolve_source = read_source ~roots in
-  let data =
-    Mutate_loop.render_data
-      ~resolve_source
-        (* [loc = None] throughout: a test's declaration site lives in the
-         test tree of the executable that ran it, and this command links
-         none of them. The name is what a reader greps for, and it is in
-         the report. *)
-      ~loc_of:(fun _ -> None)
-      ~scope:(Render.Executables executables) ~filter:None collection
+  let survivor_of (r : M.record) : Render.survivor =
+    {
+      Render.mutant = mutant_of r;
+      witnesses =
+        List.map
+          (fun (exe, test) ->
+            (* [loc = None] throughout: a test's declaration site lives
+               in the test tree of the executable that ran it, and this
+               command links none of them. The name is what a reader
+               greps for, and it is in the report. *)
+            { Render.test; loc = None; exe = Some exe })
+          (List.sort_uniq compare (Hashtbl.find_all tagged r.M.id));
+    }
+  in
+  let records = M.records merged in
+  let survivors =
+    List.filter_map
+      (fun (r : M.record) ->
+        match r.M.verdict with
+        | M.Survived _ -> Some (survivor_of r)
+        | M.Killed | M.Unreached -> None)
+      records
+  in
+  (* [List.stable_sort] keeps identifier order within a count, as the
+     loop's does. *)
+  let survivors =
+    List.stable_sort
+      (fun (a : Render.survivor) (b : Render.survivor) ->
+        compare (List.length b.witnesses) (List.length a.witnesses))
+      survivors
   in
   (* The merge is the one report that can call a mutant unreached: a
      mutant no executable's tests evaluate is a finding here, where one
@@ -235,20 +317,30 @@ let print_report ~roots ~executables collection =
     List.filter_map
       (fun (r : M.record) ->
         match r.M.verdict with
-        | M.Unreached ->
-            Some
-              {
-                Render.id = M.id_to_string r.M.id;
-                file = r.M.id.M.file;
-                line = r.M.id.M.line;
-                before = r.M.before;
-                after = r.M.after;
-                source = resolve_source r.M.id.M.file;
-              }
+        | M.Unreached -> Some (mutant_of r)
         | M.Killed | M.Survived _ -> None)
-      (M.records collection)
+      records
   in
-  Render.mutation_report renderer { data with Render.unreached };
+  {
+    (* The arming variable, spelled with the runtime's own function: the
+       report and the runtime cannot disagree about what to type. *)
+    Render.arm_variable = M.arm_variable;
+    survivors;
+    unreached;
+    killed =
+      List.length
+        (List.filter (fun (r : M.record) -> r.M.verdict = M.Killed) records);
+    scope = Render.Executables (List.length files);
+    filter = None;
+  }
+
+let print_report report =
+  let ansi =
+    Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
+      ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
+  in
+  let renderer = Render.create ~out:Format.std_formatter ~ansi () in
+  Render.mutation_report renderer report;
   Format.pp_print_flush Format.std_formatter ()
 
 (* The command *)
@@ -272,14 +364,21 @@ let run args =
               "windtrap mutate: no .mutants files found\n\
                Instrument the library under test\n\
               \  (instrumentation (backend ppx_windtrap.mutate))\n\
-               and mutation-test it first:\n\
+               and run every suite with its mutants:\n\
                %s\n"
               rerun;
             1
           end
           else
-            match load_merged files with
+            match load_fresh files with
             | Error code -> code
-            | Ok (collection, executables) ->
-                print_report ~roots ~executables collection;
-                0))
+            | Ok files ->
+                let report =
+                  render_data ~resolve_source:(read_source ~roots) files
+                in
+                print_report report;
+                (* A survivor is the project's failure: a fault every
+                   executable that reached it let through. An unreached
+                   mutant is a coverage-style finding, listed and not
+                   scored. *)
+                if report.Render.survivors = [] then 0 else 1))

@@ -25,17 +25,23 @@
     why the verdict file exists.
 
     It runs no tests and drives no build, which is what makes it legitimate
-    under Law 12 where a subcommand that {e drives} the run was rejected. There
-    is no gate in this release (Law 16e). *)
+    under Law 12 where a subcommand that {e drives} the run was rejected; the
+    [@mutate] alias runs every suite with its mutants and then runs this. It is
+    the project's gate: a mutant that survived every executable that reached it
+    fails the merge. *)
 
 val run : string list -> int
 (** [run args] executes the subcommand on [args] (the arguments after [mutate])
     and is the process exit code:
 
-    - [0] — report rendered, {e whatever it found}: a survivor never fails a
-      build in this release, because the equivalent-mutant rate is a prediction
-      until it is measured. There is deliberately no [--min] and no
-      [--max-survivors];
+    - [0] — report rendered and no mutant survived the merge. Unreached mutants
+      alone are not red: a mutant no executable's tests evaluate is a
+      coverage-style finding, listed and not scored;
+    - [1] — report rendered and at least one mutant survived every executable
+      that reached it. There is deliberately no [--min] and no
+      [--max-survivors]: one survivor is the failure, and an equivalent mutant
+      is dismissed at its site with [[@mutate off]], not absorbed by a
+      threshold;
     - [1] — no [.mutants] files were found; an explicit [PATH] argument named a
       missing file or a file without the [.mutants] suffix; a file was
       unreadable, corrupt or of a foreign format version; or every file was
@@ -68,6 +74,8 @@ val run : string list -> int
     identity nothing can locate, and is merged rather than guessed about.
 
     The report prints on standard output; errors and staleness warnings print on
-    standard error. Witnesses are named but not located: a test's declaration
-    site lives in the executable's test tree, which this command does not link.
-*)
+    standard error. Each witness names the executable that ran it — the basename
+    of the identity its verdict file records, or the library's [.inline-tests]
+    directory for dune's inline-test runner, whose basename is the same in every
+    library — but is not located: a test's declaration site lives in the
+    executable's test tree, which this command does not link. *)

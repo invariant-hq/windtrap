@@ -118,31 +118,6 @@ val on_armed : (unit -> unit) -> unit
     fire in registration order, and are read at fire time, so registration order
     and link order need not agree. *)
 
-(** {1:report The report projection} *)
-
-val render_data :
-  resolve_source:(string -> string option) ->
-  loc_of:(string -> Loc.t option) ->
-  scope:Render.scope ->
-  filter:string option ->
-  Windtrap_mutate.t ->
-  Render.mutation
-(** [render_data ~resolve_source ~loc_of ~scope ~filter t] is the per-executable
-    report [t] draws: the survivor blocks ordered by witness count descending,
-    then by identifier, and the killed count, under [scope] — [Suite] for a run
-    over the whole suite, [Selected n] for one whose selection narrowed it to
-    [n] tests — with [filter], the run's [-f] filter, for the reproduce footer.
-    Everything comes from the records, which is why they carry the renderings.
-
-    No witness names an executable and [unreached] is [[]]: this is one
-    executable's report, and a mutant its tests never reach is usually reached
-    by another's — only the merge can call a mutant unreached, and the verdict
-    file still records every one for it to.
-
-    [resolve_source file] is the file's text for the excerpt row, [None] when it
-    cannot be read; [loc_of test] is a witness's declaration site, [None] for a
-    caller that does not link the test tree. *)
-
 (** {1:signal The instrumentation signal} *)
 
 val instrumented : unit -> bool

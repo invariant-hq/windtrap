@@ -5,18 +5,15 @@
 ; and mutation output.
 ;
 ;   dune build @cover --instrument-with ppx_windtrap.coverage
+;   WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
 ;
-;   WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate \
-;     test/unit/test_diff.exe --
-;   dune build @mutate
-;
-; The two are not symmetric, and the asymmetry is the runtimes'. Coverage
-; accumulates as a side effect of running: an instrumented suite writes
-; its .coverage dump at exit whatever it was asked to do, so one alias
-; both runs and merges. A mutation VERDICT only exists if a suite was
-; asked to test its mutants — WINDTRAP_MUTATE=1 takes the process over
-; and runs the fork loop — so `@mutate` merges what previous runs left
-; and, on its own, correctly reports that it found nothing.
+; Each runs every suite in the tree and merges what the suites wrote.
+; Coverage accumulates as a side effect of running: an instrumented
+; suite writes its .coverage dump at exit whatever it was asked to do. A
+; mutation VERDICT only exists if a suite was asked to test its mutants
+; — WINDTRAP_MUTATE=1 takes the process over and runs the fork loop — so
+; the mutation command carries the variable, and --force, because a
+; mutation run is not a cached artifact.
 ;
 ; Why an alias and not a script: `.coverage` and `.mutants` files are
 ; written by test executables at exit and are not declarable dependencies,
@@ -76,19 +73,29 @@
  (action
   (run %{bin:windtrap} coverage --min 84)))
 
-; Mutation has no gate and deliberately never will (Law 16e): the
-; equivalent-mutant rate is a prediction until it is measured, so a
-; survivor is a reading list, not a build failure.
+; One command runs every suite with its mutants and merges the verdicts;
+; the merge exits 1 when a mutant survived every executable that reached
+; it:
 ;
-; Mutate one file at a time — the loop forks once per mutant, and
-; WINDTRAP_MUTATE_ONLY narrows the work rather than the report:
+;   WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+;
+; Each piece is load-bearing: the variable because the suites read it,
+; the flag because the suites must carry the mutants, --force because a
+; mutation run is not a cached artifact. A plain `dune build @mutate`
+; without them rebuilds the executables uninstrumented, which stales
+; every verdict, and the merge then refuses loudly.
+;
+; While working on one file, mutate that file alone — the loop forks
+; once per mutant, and WINDTRAP_MUTATE_ONLY narrows the work rather than
+; the report:
 ;
 ;   WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
 ;     dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe --
-;
 
 (rule
  (alias mutate)
- (deps (universe))
+ (deps
+  (alias_rec ../runtest)
+  (universe))
  (action
   (run %{bin:windtrap} mutate)))
