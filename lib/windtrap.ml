@@ -38,6 +38,7 @@ module Private = struct
   module Failure = Failure
   module Loc = Loc
   module Mutate_loop = Mutate_loop
+  module Mutate_verdicts = Mutate_verdicts
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property

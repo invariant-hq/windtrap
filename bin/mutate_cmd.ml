@@ -14,6 +14,7 @@ module Render = Windtrap.Private.Render
 module Env = Windtrap.Private.Env
 module Test_tree = Windtrap.Private.Test_tree
 module M = Windtrap_mutate
+module V = Windtrap.Private.Mutate_verdicts
 
 let spf = Printf.sprintf
 
@@ -90,7 +91,7 @@ let stale_hint =
    hand-written, or a merge, which has no single writer — is named by its
    own basename. *)
 let executable_label ~path identity =
-  match (identity : M.identity option) with
+  match (identity : V.identity option) with
   | None -> Filename.basename path
   | Some { exe; _ } ->
       let base = Filename.basename exe in
@@ -117,12 +118,12 @@ let load_fresh files =
               (fun (t, identity) ->
                 (path, t, identity, Data_files.freshness ~path identity)
                 :: entries)
-              (M.load path)))
+              (V.load path)))
       (Ok []) files
   in
   match loaded with
   | Error error ->
-      Format.eprintf "windtrap mutate: %a@." M.pp_error error;
+      Format.eprintf "windtrap mutate: %a@." V.pp_error error;
       Error 1
   | Ok entries ->
       let entries = List.rev entries in
@@ -240,7 +241,7 @@ let read_source ~roots =
 
 (* The aggregate report, from the labelled collections and nothing else.
 
-   The verdicts and the counts are the merge's: [M.merge] is
+   The verdicts and the counts are the merge's: [V.merge] is
    killed-anywhere-wins, the one algebra of the file format, and this
    projection never re-derives it. What the merge cannot carry is who ran
    a witness — a merged survivor's witnesses are a union with the
@@ -252,34 +253,34 @@ let read_source ~roots =
    duplicates. The ordering mirrors the loop's per-executable report: by
    witness count descending, then by identifier. *)
 let render_data ~resolve_source files =
-  let merged = List.fold_left (fun acc (_, t) -> M.merge acc t) M.empty files in
+  let merged = List.fold_left (fun acc (_, t) -> V.merge acc t) V.empty files in
   let tagged = Hashtbl.create 64 in
   List.iter
     (fun (exe, t) ->
       List.iter
-        (fun (r : M.record) ->
-          match r.M.verdict with
-          | M.Survived { witness; others } ->
+        (fun (r : V.record) ->
+          match r.V.verdict with
+          | V.Survived { witness; others } ->
               List.iter
                 (fun path ->
-                  Hashtbl.add tagged r.M.id (exe, Test_tree.path_to_string path))
+                  Hashtbl.add tagged r.V.id (exe, Test_tree.path_to_string path))
                 (witness :: others)
-          | M.Killed | M.Unreached -> ())
-        (M.records t))
+          | V.Killed | V.Unreached -> ())
+        (V.records t))
     files;
-  let mutant_of (r : M.record) : Render.mutant =
+  let mutant_of (r : V.record) : Render.mutant =
     {
       (* The identifier is spelled here, with the runtime's own function:
          Render carries it into the head row without re-spelling it. *)
-      Render.id = M.id_to_string r.M.id;
-      file = r.M.id.M.file;
-      line = r.M.id.M.line;
-      before = r.M.before;
-      after = r.M.after;
-      source = resolve_source r.M.id.M.file;
+      Render.id = M.id_to_string r.V.id;
+      file = r.V.id.M.file;
+      line = r.V.id.M.line;
+      before = r.V.before;
+      after = r.V.after;
+      source = resolve_source r.V.id.M.file;
     }
   in
-  let survivor_of (r : M.record) : Render.survivor =
+  let survivor_of (r : V.record) : Render.survivor =
     {
       Render.mutant = mutant_of r;
       witnesses =
@@ -290,16 +291,16 @@ let render_data ~resolve_source files =
                command links none of them. The name is what a reader
                greps for, and it is in the report. *)
             { Render.test; loc = None; exe = Some exe })
-          (List.sort_uniq compare (Hashtbl.find_all tagged r.M.id));
+          (List.sort_uniq compare (Hashtbl.find_all tagged r.V.id));
     }
   in
-  let records = M.records merged in
+  let records = V.records merged in
   let survivors =
     List.filter_map
-      (fun (r : M.record) ->
-        match r.M.verdict with
-        | M.Survived _ -> Some (survivor_of r)
-        | M.Killed | M.Unreached -> None)
+      (fun (r : V.record) ->
+        match r.V.verdict with
+        | V.Survived _ -> Some (survivor_of r)
+        | V.Killed | V.Unreached -> None)
       records
   in
   (* [List.stable_sort] keeps identifier order within a count, as the
@@ -315,10 +316,10 @@ let render_data ~resolve_source files =
      executable's unreached mutant was merely not its own. *)
   let unreached =
     List.filter_map
-      (fun (r : M.record) ->
-        match r.M.verdict with
-        | M.Unreached -> Some (mutant_of r)
-        | M.Killed | M.Survived _ -> None)
+      (fun (r : V.record) ->
+        match r.V.verdict with
+        | V.Unreached -> Some (mutant_of r)
+        | V.Killed | V.Survived _ -> None)
       records
   in
   {
@@ -329,7 +330,7 @@ let render_data ~resolve_source files =
     unreached;
     killed =
       List.length
-        (List.filter (fun (r : M.record) -> r.M.verdict = M.Killed) records);
+        (List.filter (fun (r : V.record) -> r.V.verdict = V.Killed) records);
     scope = Render.Executables (List.length files);
     filter = None;
   }

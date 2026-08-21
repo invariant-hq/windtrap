@@ -17,6 +17,7 @@
 
 open Windtrap
 module M = Windtrap_mutate
+module V = Windtrap.Private.Mutate_verdicts
 
 let exe_dir = Filename.dirname Sys.executable_name
 let suite_exe = Filename.concat exe_dir "suite_main.exe"
@@ -24,12 +25,12 @@ let suite_exe = Filename.concat exe_dir "suite_main.exe"
 (* The verdict file records no cause and the runtime publishes no
    printer, so a scenario that reads verdicts back spells them here. *)
 let pp_verdict ppf = function
-  | M.Killed -> Format.pp_print_string ppf "killed"
-  | M.Survived { witness; others } ->
+  | V.Killed -> Format.pp_print_string ppf "killed"
+  | V.Survived { witness; others } ->
       Format.fprintf ppf "survived by %s"
         (String.concat ", "
            (List.map (String.concat " > ") (witness :: others)))
-  | M.Unreached -> Format.pp_print_string ppf "unreached"
+  | V.Unreached -> Format.pp_print_string ppf "unreached"
 
 (* [lstat], not [Sys.is_directory]: the runner leaves a [latest] symlink
    in every log directory, and following it would delete outside the
@@ -195,7 +196,7 @@ let reproduce_binding_of report =
 (* The verdict file this executable writes, deleted before every scenario
    that is meant to produce one so that a stale file cannot pass a test
    the loop failed to write. *)
-let verdict_path = M.output_file ~exe:suite_exe
+let verdict_path = V.output_file ~exe:suite_exe
 
 let catalogue_tests =
   [
@@ -370,16 +371,16 @@ let reach_tests =
            two as unreached. *)
         says ~msg:"the two out-of-test sites are not reached" out
           "mutants: 1 survived of 2 reached by this suite \u{00b7} 1 killed";
-        (match M.load verdict_path with
-        | Error e -> failf "verdict file unreadable: %a" M.pp_error e
+        (match V.load verdict_path with
+        | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
             equal ~msg:"orphan and crasher, by line, unreached in the file"
               (list int) [ 21; 27 ]
               (List.filter_map
-                 (fun (r : M.record) ->
-                   if r.M.verdict = M.Unreached then Some r.M.id.M.line
+                 (fun (r : V.record) ->
+                   if r.V.verdict = V.Unreached then Some r.V.id.M.line
                    else None)
-                 (M.records verdicts)));
+                 (V.records verdicts)));
         says ~msg:"exactly one survivor" out "survivors (1)";
         (* The witness list is the whole product of the run: the first and
            third tests reach the line, the second, fourth and fifth do
@@ -468,16 +469,16 @@ let verdict_file_tests =
         let code, _, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
         equal ~msg:"exit code" int 0 code;
         is_true ~msg:"the file exists" (Sys.file_exists verdict_path);
-        match M.load verdict_path with
-        | Error e -> failf "verdict file unreadable: %a" M.pp_error e
+        match V.load verdict_path with
+        | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, identity) ->
             is_true ~msg:"the writer identity is recorded" (identity <> None);
             let rendered =
               List.map
-                (fun (r : M.record) ->
-                  ( M.id_to_string r.M.id,
-                    Format.asprintf "%a" pp_verdict r.M.verdict ))
-                (M.records verdicts)
+                (fun (r : V.record) ->
+                  ( M.id_to_string r.V.id,
+                    Format.asprintf "%a" pp_verdict r.V.verdict ))
+                (V.records verdicts)
             in
             equal ~msg:"one verdict per mutant" int 4 (List.length rendered);
             let killed =
@@ -555,15 +556,15 @@ let crash_tests =
         equal ~msg:"stderr" text "" err;
         says ~msg:"both kills counted, one survivor still reported" out
           "mutants: 1 survived of 3 reached by this suite \u{00b7} 2 killed";
-        match M.load verdict_path with
-        | Error e -> failf "verdict file unreadable: %a" M.pp_error e
+        match V.load verdict_path with
+        | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
             let rendered =
               List.map
-                (fun (r : M.record) ->
-                  ( M.id_to_string r.M.id,
-                    Format.asprintf "%a" pp_verdict r.M.verdict ))
-                (M.records verdicts)
+                (fun (r : V.record) ->
+                  ( M.id_to_string r.V.id,
+                    Format.asprintf "%a" pp_verdict r.V.verdict ))
+                (V.records verdicts)
             in
             (* A verdict file names no cause, so the assertion is the one
                that matters: the crashing child's mutant is recorded
@@ -871,7 +872,7 @@ let runaway_tests =
   [
     test "a mutant that would never terminate is killed by its hit budget"
       (fun () ->
-        let path = M.output_file ~exe:runaway_exe in
+        let path = V.output_file ~exe:runaway_exe in
         (try Sys.remove path with Sys_error _ -> ());
         let started = Unix.gettimeofday () in
         let code, out, err = spawn ~exe:runaway_exe [ "WINDTRAP_MUTATE=1" ] in
@@ -887,14 +888,14 @@ let runaway_tests =
                 floor (%.2fs)"
                elapsed)
           (elapsed < 0.9);
-        match M.load path with
-        | Error e -> failf "verdict file unreadable: %a" M.pp_error e
+        match V.load path with
+        | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
             equal ~msg:"and the mutant is killed" (list string) [ "killed" ]
               (List.map
-                 (fun (r : M.record) ->
-                   Format.asprintf "%a" pp_verdict r.M.verdict)
-                 (M.records verdicts)));
+                 (fun (r : V.record) ->
+                   Format.asprintf "%a" pp_verdict r.V.verdict)
+                 (V.records verdicts)));
   ]
 
 (* The per-child deadline, end to end.
@@ -907,13 +908,13 @@ let runaway_tests =
    a child, and over a run there is none. *)
 
 let rendered_verdicts path =
-  match M.load path with
-  | Error e -> failf "verdict file unreadable: %a" M.pp_error e
+  match V.load path with
+  | Error e -> failf "verdict file unreadable: %a" V.pp_error e
   | Ok (verdicts, _) ->
       List.map
-        (fun (r : M.record) ->
-          (M.id_to_string r.M.id, Format.asprintf "%a" pp_verdict r.M.verdict))
-        (M.records verdicts)
+        (fun (r : V.record) ->
+          (M.id_to_string r.V.id, Format.asprintf "%a" pp_verdict r.V.verdict))
+        (V.records verdicts)
 
 let deadline_tests =
   [

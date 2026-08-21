@@ -1,0 +1,19 @@
+; A windtrap suite over Mutate_verdicts: the verdict lattice, the
+; collection, the file format and its rejections, the deterministic
+; output filenames, and the atomic write - the last also end to end
+; through a child executable that stands in for a mutation run's writing
+; side. The runtime suite next door (test/mutate) covers what stayed in
+; windtrap.mutate: identifiers, the registry, arming. Nothing here
+; writes under _build/_mutants: every path the suite writes to lives in
+; a private scratch directory removed at exit.
+
+(executable
+ (name save_child)
+ (modules save_child)
+ (libraries windtrap windtrap_mutate))
+
+(test
+ (name test_mutate_verdicts)
+ (modules test_mutate_verdicts)
+ (libraries windtrap windtrap_mutate unix)
+ (deps save_child.exe))

@@ -10,9 +10,9 @@
     [Driver.execute_and_report] — plus one read-only flag on the expect
     correction path ([Ppx_runtime.enter_armed], Law 16d, registered in
     {!on_armed} and fired here, never a dependency in either direction).
-    Everything else lives here and in the stdlib-only runtime
-    {!Windtrap_mutate}: the dry run and its reach map, the determinism probe,
-    the fork loop, the verdict file, and the report.
+    Everything else lives here, in the stdlib-only runtime {!Windtrap_mutate}
+    and in {!Mutate_verdicts}: the dry run and its reach map, the determinism
+    probe, the fork loop, the verdict file, and the report.
 
     {b Why this module wraps the run rather than being called around it.} The
     two things a mutation run must do — announce an armed mutant {e before} any
@@ -94,7 +94,7 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     Effects: the union of [Driver.execute_and_report]'s and, under the loop,
     [fork]/[waitpid]/[pipe]/[select], [setsid] in each child, [kill] of an
     expired child's process group, one scratch log directory per run (removed at
-    the end), and one verdict file under {!Windtrap_mutate.output_file}.
+    the end), and one verdict file under {!Mutate_verdicts.output_file}.
     Children never reach [Stdlib]'s exit machinery: every exception, fatal
     included, is caught, reduced to a verdict line, and followed by [Unix._exit]
     — otherwise a child dying of [Out_of_memory] would run the coverage at-exit

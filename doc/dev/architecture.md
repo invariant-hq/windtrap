@@ -28,10 +28,10 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, snapshots, capture, the run/driver spine, the mutation loop, renderers, CLI and the client facade; links `unix`, `windtrap.coverage` and `windtrap.mutate` only — both in-package, so Law 10's no-third-party-weight posture is untouched |
-| `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation runtimes share; stdlib only |
+| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, snapshots, capture, the run/driver spine, the mutation loop and its verdict file, renderers, CLI and the client facade; links `unix`, `windtrap.coverage`, `windtrap.mutate` and `windtrap.instr` only — all in-package, so Law 10's no-third-party-weight posture is untouched |
+| `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation formats share; stdlib only |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
-| `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map, `.mutants` verdict files; stdlib only, for the same reason |
+| `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map; stdlib only and dependency-free, for the same reason — the `.mutants` verdict file is tool currency and lives in the core (`Mutate_verdicts`) |
 | binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`) and `mutate` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared verdict-file lookup and staleness in `data_files` |
 | package `ppx_windtrap` | `ppx/` | the expect/inline PPX, the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`) over shared scaffolding (`ppx/scaffold/`), and the expect runtime itself — `Ppx_runtime` (`ppx/runtime/`) and the ambient `Expect_test_config` (`ppx/config/`) — the only unit that sees ppxlib |
 
@@ -68,6 +68,7 @@ its own, never downward.
 | | `Render`, `Render_junit`, `Render_github` | the pure projections of the run record. `Render` also owns the subsystem-neutral report-section vocabulary: instrumentation reports arrive as section data, and `Render` names no instrumentation runtime |
 | | `Driver` | the spine: `Driver.t` is one invocation's reporting inputs, `execute_and_report` the one order every driver shares, `execute` the reporting-free run a mutation child needs |
 | | `Mutate_loop` | the mutation seam and the Law-16d armed hooks: the dry run and its reach map, the determinism probe, the fork loop — one child per reached mutant, in catalogue order, each running only the tests that reach it — the verdict file and the per-executable report. It *wraps* `Driver.execute_and_report` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
+| | `Mutate_verdicts` | the verdict lattice (killed anywhere wins), the collection, and the `.mutants` file format the loop writes and `windtrap mutate` merges — tool currency, deliberately out of the runtime: generated code never holds a verdict |
 | | `Windtrap` | the facade |
 
 The expect runtime is a client, not a resident: `Ppx_runtime`
@@ -109,19 +110,25 @@ escapes `open Windtrap`.
 
 ## Instrumentation containment
 
-Two instrumentation subsystems, each in the same four places and no
-others (Law 12): an instrumenter inside `ppx_windtrap`, a stdlib-only
-runtime sub-library, one `windtrap` reporting subcommand that merges and
-renders but never runs tests or drives a build, and at most one core
-module that drives it.
+Two instrumentation subsystems, each in the same places and no others
+(Law 12): an instrumenter inside `ppx_windtrap`, a stdlib-only runtime
+sub-library, one `windtrap` reporting subcommand that merges and renders
+but never runs tests or drives a build, at most one core module that
+drives it, and at most one core module that owns its data-file format —
+in the runtime only when the runtime is the writer.
 
 - **Coverage** — `ppx/coverage/`, `lib/coverage/`, `bin/coverage_cmd.ml`,
   no core module. Its entire coupling is the named coverage seam of
   `lib/driver.ml`: one summary read at run end and handed to the
   transcript's last line, and the section data the reporting command
   draws from the same builder.
-- **Mutation** — `ppx/mutate/`, `lib/mutate/`, `bin/mutate_cmd.ml`, and
-  `lib/mutate_loop.ml(i)`. Its coupling is one dispatch call at run
+- **Mutation** — `ppx/mutate/`, `lib/mutate/`, `bin/mutate_cmd.ml`,
+  `lib/mutate_loop.ml(i)`, and `lib/mutate_verdicts.ml(i)` — the verdict
+  collection and file format, in the core rather than in the runtime
+  because its writer is the loop and its reader is the subcommand, never
+  generated code; coverage's format stays in `lib/coverage/` because
+  coverage's writer *is* the runtime — the `at_exit` dump fires in any
+  instrumented process. Its coupling is one dispatch call at run
   entry (the two thin drivers call `Mutate_loop.execute_and_report` in
   place of `Driver.execute_and_report`), one *composed* observer on
   `Runner.execute`'s existing `?on_event` hook — never a replacement
@@ -216,7 +223,13 @@ design**.
     dump-file protocol is `windtrap.instr`), one `windtrap` reporting
     subcommand that merges and renders but never runs tests or drives a
     build, and at most one core module that drives it — coverage needs
-    none; mutation's is `lib/mutate_loop.ml`. Out-of-core client code
+    none; mutation's is `lib/mutate_loop.ml`. A subsystem's data-file
+    format lives in its runtime only when the runtime is the writer:
+    coverage's is (the `at_exit` dump), so `lib/coverage/` owns
+    `.coverage`; a mutation verdict is earned by a run that asked, so
+    the `.mutants` format is tool currency in one more core module,
+    `lib/mutate_verdicts.ml` — written by the loop, read by the
+    subcommand, never by generated code. Out-of-core client code
     (the expect runtime) is a client of the core through
     `Windtrap.Private`, its diet documented at its alias block. Core
     windtrap's

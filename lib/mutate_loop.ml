@@ -15,13 +15,15 @@
 [@@@mutate exclude_file]
 
 (* The parent of a mutation run: dry run, probe, fork loop, verdict
-   file, report. The runtime below (Windtrap_mutate) owns
-   the catalogue, the arming slot, the reach counters and the file format;
-   this module owns the protocol over them and every decision the report
-   shows — the ordering, the cap, the counts. Render orders nothing and
-   counts nothing, and neither does the runtime. *)
+   file, report. The runtime below (Windtrap_mutate) owns the catalogue,
+   the arming slot and the reach counters, and Mutate_verdicts owns the
+   verdict collection and its file; this module owns the protocol over
+   them and every decision the report shows — the ordering, the cap, the
+   counts. Render orders nothing and counts nothing, and neither does
+   the runtime. *)
 
 module M = Windtrap_mutate
+module V = Mutate_verdicts
 
 let spf = Printf.sprintf
 
@@ -398,11 +400,11 @@ let encode_outcome ~paths (outcome : Runner.outcome) =
 
 let decode_verdict ~paths line =
   match String.split_on_char ' ' (String.trim line) with
-  | [ "survived" ] -> Ok (M.survived paths)
+  | [ "survived" ] -> Ok (V.survived paths)
   | "error" :: rest -> Error (String.concat " " rest)
   (* "killed", the wrapper's own "crashed", no line at all, or a partial
      one: a child that did not report a survivor proved none. *)
-  | _ -> Ok M.Killed
+  | _ -> Ok V.Killed
 
 (* Scratch: one directory for the whole loop, one subdirectory per child,
    removed by the PARENT — a child killed at the deadline never runs its
@@ -486,20 +488,20 @@ let witness_locations tests =
    this report's to list: one executable's unreached mutant is usually
    another's reached one, and only the merge knows. *)
 let render_data ~resolve_source ~loc_of ~scope ~filter t =
-  let records = M.records t in
-  let survivor_of (r : M.record) witnesses : Render.survivor =
+  let records = V.records t in
+  let survivor_of (r : V.record) witnesses : Render.survivor =
     {
       Render.mutant =
         {
           (* The identifier is spelled here, with the runtime's own
              function: Render carries it into the head row without
              re-spelling it. *)
-          Render.id = M.id_to_string r.M.id;
-          file = r.M.id.M.file;
-          line = r.M.id.M.line;
-          before = r.M.before;
-          after = r.M.after;
-          source = resolve_source r.M.id.M.file;
+          Render.id = M.id_to_string r.V.id;
+          file = r.V.id.M.file;
+          line = r.V.id.M.line;
+          before = r.V.before;
+          after = r.V.after;
+          source = resolve_source r.V.id.M.file;
         };
       witnesses =
         List.map
@@ -511,11 +513,11 @@ let render_data ~resolve_source ~loc_of ~scope ~filter t =
   in
   let survivors =
     List.filter_map
-      (fun (r : M.record) ->
-        match r.M.verdict with
-        | M.Survived { witness; others } ->
+      (fun (r : V.record) ->
+        match r.V.verdict with
+        | V.Survived { witness; others } ->
             Some (survivor_of r (witness :: others))
-        | M.Killed | M.Unreached -> None)
+        | V.Killed | V.Unreached -> None)
       records
   in
   (* Ordered by reaching-test count descending: the survivor the most
@@ -535,7 +537,7 @@ let render_data ~resolve_source ~loc_of ~scope ~filter t =
     unreached = [];
     killed =
       List.length
-        (List.filter (fun (r : M.record) -> r.M.verdict = M.Killed) records);
+        (List.filter (fun (r : V.record) -> r.V.verdict = V.Killed) records);
     scope;
     filter;
   }
@@ -703,7 +705,7 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
       (* The suite noticed the change by hanging: a kill, on the crash
          kill's own reasoning. Whatever reached the pipe first is not a
          verdict — the child did not finish. *)
-      M.Killed
+      V.Killed
   | `No -> (
       match decode_verdict ~paths line with
       | Error message ->
@@ -714,7 +716,7 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
              report: whatever reached the pipe is not a verdict. *)
           match status with
           | Unix.WEXITED 0 -> verdict
-          | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> M.Killed))
+          | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> V.Killed))
 
 (* The fork loop: one child per reached mutant, in catalogue order. *)
 
@@ -728,9 +730,9 @@ let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~reached tests =
           run_mutant ~armed ~scratch ~dry_run_wall ~index ~spine ~reach ~paths
             ~budget ~mutant tests
         in
-        go (index + 1) (M.add verdicts (M.record_of_mutant mutant verdict)) rest
+        go (index + 1) (V.add verdicts (V.record_of_mutant mutant verdict)) rest
   in
-  go 0 M.empty reached
+  go 0 V.empty reached
 
 (* The report *)
 
@@ -753,7 +755,7 @@ let narrows_suite ~(config : Run.config) ~focus =
 
 let write_verdicts verdicts =
   let exe = Sys.executable_name in
-  try M.save ?identity:(M.writer_identity ~exe) (M.output_file ~exe) verdicts
+  try V.save ?identity:(V.writer_identity ~exe) (V.output_file ~exe) verdicts
   with Sys_error message ->
     note "could not write the verdict file: %s" message
 
@@ -841,7 +843,7 @@ let loop renderer ~armed (spine : Driver.t) tests =
               let verdicts =
                 List.fold_left
                   (fun acc (m : M.mutant) ->
-                    M.add acc (M.record_of_mutant m M.Unreached))
+                    V.add acc (V.record_of_mutant m V.Unreached))
                   reported unreached
               in
               (* A narrowed run's verdicts are never persisted — and the

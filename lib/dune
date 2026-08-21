@@ -5,13 +5,17 @@
 ; identifiers and the arming variable with the runtime's own functions
 ; before they enter section data, so the report and the runtime cannot
 ; disagree about what to type — Render draws sections and names neither
-; runtime. Both dependencies point downward only — neither runtime
-; links windtrap.
+; runtime. All three dependencies point downward only — neither runtime
+; links windtrap. windtrap_instr is the versioned dump-file plumbing
+; both instrumentation formats share: Mutate_verdicts serializes the
+; verdict file over it, because the verdict is written by the loop
+; and read by `windtrap mutate`, never by instrumented code, so its
+; format lives in the core rather than in the runtime.
 
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix windtrap_coverage windtrap_mutate)
+ (libraries unix windtrap_coverage windtrap_mutate windtrap_instr)
  ; Windtrap measures its own coverage. The backend is spelled
  ; `ppx_windtrap.coverage`, not the `ppx_windtrap` the manual shows
  ; users: that name resolves to the inline-test rewriter, whose

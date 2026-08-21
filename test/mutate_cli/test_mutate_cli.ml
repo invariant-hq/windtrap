@@ -35,6 +35,7 @@
 
 open Windtrap
 module M = Windtrap_mutate
+module V = Windtrap.Private.Mutate_verdicts
 
 let check name cond = is_true ~msg:name cond
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
@@ -173,7 +174,7 @@ let util = "lib/util.ml"
    would have recorded, renderings included — the report is drawn from
    them and from nothing else. *)
 let mutant ~file ~line ~col ~rewrite ~before ~after verdict =
-  { M.id = { M.file; line; col; rewrite }; before; after; verdict }
+  { V.id = { M.file; line; col; rewrite }; before; after; verdict }
 
 let m_add =
   mutant ~file:calc ~line:1 ~col:14 ~rewrite:"add" ~before:"a + b"
@@ -195,7 +196,7 @@ let m_and =
   mutant ~file:util ~line:3 ~col:22 ~rewrite:"and" ~before:"p && q"
     ~after:"p || q"
 
-let collection records = List.fold_left M.add M.empty records
+let collection records = List.fold_left V.add V.empty records
 
 (* The summary line is the report's last word and its whole contract for
    a project with nothing else to say; assert it whole rather than by
@@ -236,31 +237,31 @@ let without_executables_term out =
 let file_a =
   collection
     [
-      m_add M.Killed;
-      m_sub M.Unreached;
-      m_lt (M.survived [ [ "calc"; "compares" ] ]);
-      m_or M.Unreached;
-      m_and M.Unreached;
+      m_add V.Killed;
+      m_sub V.Unreached;
+      m_lt (V.survived [ [ "calc"; "compares" ] ]);
+      m_or V.Unreached;
+      m_and V.Unreached;
     ]
 
 let file_b =
   collection
     [
-      m_add (M.survived [ [ "cli"; "runs" ] ]);
-      m_sub (M.survived [ [ "cli"; "subtracts" ] ]);
-      m_lt M.Killed;
-      m_or M.Unreached;
-      m_and M.Unreached;
+      m_add (V.survived [ [ "cli"; "runs" ] ]);
+      m_sub (V.survived [ [ "cli"; "subtracts" ] ]);
+      m_lt V.Killed;
+      m_or V.Unreached;
+      m_and V.Unreached;
     ]
 
 let file_c =
   collection
     [
-      m_add M.Unreached;
-      m_sub (M.survived [ [ "prop"; "sub law" ] ]);
-      m_lt M.Unreached;
-      m_or M.Unreached;
-      m_and M.Unreached;
+      m_add V.Unreached;
+      m_sub (V.survived [ [ "prop"; "sub law" ] ]);
+      m_lt V.Unreached;
+      m_or V.Unreached;
+      m_and V.Unreached;
     ]
 
 let plant_sources root =
@@ -280,7 +281,7 @@ let proj =
     (fun (name, t) ->
       write_file
         (Filename.concat root (Filename.concat "_build/_mutants" name))
-        (M.to_string t))
+        (V.to_string t))
     [
       ("windtrap-a.mutants", file_a);
       ("windtrap-b.mutants", file_b);
@@ -403,11 +404,12 @@ let two_executables =
 
 (* Law 12: core windtrap's coupling to the mutation subsystem is one
    dispatch call at run entry plus the survivor projection the shared
-   renderer needs. lib/mutate is the runtime and lib/mutate_loop is the
-   one core module the law allows to drive it, so both are excluded from
-   the count; what is counted is the lines of the remaining lib/*.ml{,i}
-   that name either. Growth past the cap is a law violation, not a test
-   to update. *)
+   renderer needs. lib/mutate is the runtime, lib/mutate_loop is the one
+   core module the law allows to drive it, and lib/mutate_verdicts is
+   the subsystem's verdict side (tool currency, moved out of the
+   runtime), so all three are excluded from the count; what is counted
+   is the lines of the remaining lib/*.ml{,i} that name any of them.
+   Growth past the cap is a law violation, not a test to update. *)
 (* An instrumented build leaves dune's ppx output beside each source as
    <module>.pp.ml, and those files are nothing but generated calls into
    the runtime. The law is about the coupling a maintainer WRITES, so
@@ -426,12 +428,15 @@ let law12_budget =
     |> List.filter (fun name ->
         (Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
         && (not (is_preprocessed name))
-        && not (String.starts_with ~prefix:"mutate_loop." name))
+        && (not (String.starts_with ~prefix:"mutate_loop." name))
+        && not (String.starts_with ~prefix:"mutate_verdicts." name))
     |> List.sort String.compare
   in
   check "lib sources are visible to the budget check" (sources <> []);
   check "the driver module is excluded, not missing"
     (Sys.file_exists (Filename.concat lib_dir "mutate_loop.ml"));
+  check "the verdict module is excluded, not missing"
+    (Sys.file_exists (Filename.concat lib_dir "mutate_verdicts.ml"));
   let mentions =
     List.fold_left
       (fun acc name ->
@@ -443,7 +448,8 @@ let law12_budget =
             (List.filter
                (fun line ->
                  contains_sub ~sub:"Windtrap_mutate" line
-                 || contains_sub ~sub:"Mutate_loop" line)
+                 || contains_sub ~sub:"Mutate_loop" line
+                 || contains_sub ~sub:"Mutate_verdicts" line)
                lines))
       0 sources
   in
@@ -575,7 +581,7 @@ let merge_is_total =
   plant_sources reference;
   write_file
     (Filename.concat reference "_build/_mutants/merged.mutants")
-    (M.to_string (M.merge (M.merge file_a file_b) file_c));
+    (V.to_string (V.merge (V.merge file_a file_b) file_c));
   let _, expected, _ = mutate ~cwd:reference [] in
   check "the reference report is not empty" (expected <> "");
   let expected = without_executables_term expected in
@@ -630,7 +636,7 @@ let clean_report =
   plant_sources root;
   write_file
     (Filename.concat root "_build/_mutants/all.mutants")
-    (M.to_string (collection [ m_add M.Killed; m_sub M.Killed; m_lt M.Killed ]));
+    (V.to_string (collection [ m_add V.Killed; m_sub V.Killed; m_lt V.Killed ]));
   let code, out, err = mutate ~cwd:root [] in
   check_int "a clean project exits 0" ~expected:0 ~actual:code;
   check "a clean project keeps stderr empty" (err = "");
@@ -646,8 +652,8 @@ let only_unreached =
   plant_sources root;
   write_file
     (Filename.concat root "_build/_mutants/all.mutants")
-    (M.to_string
-       (collection [ m_add M.Killed; m_sub M.Killed; m_or M.Unreached ]));
+    (V.to_string
+       (collection [ m_add V.Killed; m_sub V.Killed; m_or V.Unreached ]));
   let code, out, err = mutate ~cwd:root [] in
   check_int "only unreached mutants exit 0" ~expected:0 ~actual:code;
   check "and warn about nothing" (err = "");
@@ -722,7 +728,7 @@ let explicit_paths =
   (* An existing file without the .mutants suffix is equally loud,
      whatever its content. *)
   let renamed = scratch "renamed.verdicts" in
-  write_file renamed (M.to_string file_a);
+  write_file renamed (V.to_string file_a);
   let code, _, err = mutate ~cwd:scratch_dir [ renamed ] in
   check_int "a wrong-suffix explicit file exits 1" ~expected:1 ~actual:code;
   check_contains "a wrong-suffix explicit file is named" ~needle:renamed err;
@@ -747,9 +753,9 @@ let explicit_paths =
      killed-anywhere-wins is exactly how a kill turns back into a
      survivor: here the file holding [add]'s kill is the deepest one. *)
   let nested = scratch "explicit-nested" in
-  write_file (Filename.concat nested "one/two/a.mutants") (M.to_string file_a);
-  write_file (Filename.concat nested "one/b.mutants") (M.to_string file_b);
-  write_file (Filename.concat nested "c.mutants") (M.to_string file_c);
+  write_file (Filename.concat nested "one/two/a.mutants") (V.to_string file_a);
+  write_file (Filename.concat nested "one/b.mutants") (V.to_string file_b);
+  write_file (Filename.concat nested "c.mutants") (V.to_string file_c);
   let code, out, _ = mutate ~cwd:scratch_dir [ nested ] in
   check_int "a nested explicit directory finds the survivor" ~expected:1
     ~actual:code;
@@ -762,7 +768,7 @@ let explicit_paths =
 
 let plant_exe root exe contents =
   write_file (Filename.concat root (Filename.concat "_build" exe)) contents;
-  { M.exe; digest = Digest.to_hex (Digest.string contents) }
+  { V.exe; digest = Digest.to_hex (Digest.string contents) }
 
 let stale_root name =
   let root = scratch name in
@@ -770,7 +776,7 @@ let stale_root name =
   let identity = plant_exe root "default/test/a.exe" "the instrumented build" in
   write_file
     (Filename.concat root "_build/_mutants/a.mutants")
-    (M.to_string ~identity file_a);
+    (V.to_string ~identity file_a);
   (root, identity)
 
 let staleness =
@@ -796,13 +802,13 @@ let staleness =
   let root, _ = stale_root "stale-orphan" in
   write_file
     (Filename.concat root "_build/_mutants/gone.mutants")
-    (M.to_string
+    (V.to_string
        ~identity:
          {
-           M.exe = "default/test/gone.exe";
+           V.exe = "default/test/gone.exe";
            digest = Digest.to_hex (Digest.string "gone");
          }
-       (collection [ m_lt M.Killed ]));
+       (collection [ m_lt V.Killed ]));
   let code, out, err = mutate ~cwd:root [] in
   check_int "an orphan still reports the live data" ~expected:1 ~actual:code;
   equal ~msg:"the orphan's kill never reaches the report" text
@@ -826,7 +832,7 @@ let staleness =
   let other = plant_exe root "default/test/b.exe" "the sibling build" in
   write_file
     (Filename.concat root "_build/_mutants/b.mutants")
-    (M.to_string ~identity:other (collection [ m_lt M.Killed ]));
+    (V.to_string ~identity:other (collection [ m_lt V.Killed ]));
   write_file (Filename.concat root "_build/default/test/b.exe") "rebuilt since";
   let code, out, err = mutate ~cwd:root [] in
   check_int "a stale file beside a fresh one still reports" ~expected:1
@@ -848,7 +854,7 @@ let staleness =
     (Filename.concat root "_build/default/test/a.exe")
     "a different build";
   check "the fixture really changed the executable"
-    (Digest.to_hex (Digest.string "a different build") <> identity.M.digest);
+    (Digest.to_hex (Digest.string "a different build") <> identity.V.digest);
   let code, _, err = mutate ~cwd:root [] in
   check_int "every file stale exits 1" ~expected:1 ~actual:code;
   check_contains "the stale warning names the executable"
@@ -877,17 +883,17 @@ let executable_labels =
   in
   let unit = plant_exe root "default/test/test_calc.exe" "the unit suite" in
   let inline = plant_exe root inline_exe "the inline runner" in
-  let verdicts tests = collection [ m_add (M.survived tests) ] in
+  let verdicts tests = collection [ m_add (V.survived tests) ] in
   write_file
     (Filename.concat root "_build/_mutants/unit.mutants")
-    (M.to_string ~identity:unit
+    (V.to_string ~identity:unit
        (verdicts [ [ "calc"; "adds" ]; [ "calc"; "adds zero" ] ]));
   write_file
     (Filename.concat root "_build/_mutants/inline.mutants")
-    (M.to_string ~identity:inline (verdicts [ [ "my_lib_expect"; "add" ] ]));
+    (V.to_string ~identity:inline (verdicts [ [ "my_lib_expect"; "add" ] ]));
   write_file
     (Filename.concat root "_build/_mutants/plain.mutants")
-    (M.to_string (verdicts [ [ "hand"; "written" ] ]));
+    (V.to_string (verdicts [ [ "hand"; "written" ] ]));
   let code, out, err = mutate ~cwd:root [] in
   check_int "the survivor exits 1" ~expected:1 ~actual:code;
   check "nothing is stale" (err = "");
@@ -924,15 +930,15 @@ let survivor_order =
   plant_sources root;
   write_file
     (Filename.concat root "_build/_mutants/one.mutants")
-    (M.to_string
+    (V.to_string
        (collection
           [
-            m_add (M.survived [ [ "t"; "a" ] ]);
-            m_sub (M.survived [ [ "t"; "b" ]; [ "t"; "c" ] ]);
+            m_add (V.survived [ [ "t"; "a" ] ]);
+            m_sub (V.survived [ [ "t"; "b" ]; [ "t"; "c" ] ]);
           ]));
   write_file
     (Filename.concat root "_build/_mutants/two.mutants")
-    (M.to_string (collection [ m_sub (M.survived [ [ "u"; "d" ] ]) ]));
+    (V.to_string (collection [ m_sub (V.survived [ [ "u"; "d" ] ]) ]));
   let code, out, _ = mutate ~cwd:root [] in
   check_int "two survivors exit 1" ~expected:1 ~actual:code;
   check_contains "the most-watched survivor's sentence"
@@ -961,7 +967,7 @@ let loud_failures =
   check_contains "an empty _build/_mutants prints the no-files hint"
     ~needle:"no .mutants files found" err;
   (* A truncated file is corrupt and named, never partially merged. *)
-  let serialized = M.to_string file_a in
+  let serialized = V.to_string file_a in
   write_file
     (scratch "trunc/_build/_mutants/cut.mutants")
     (String.sub serialized 0 (String.length serialized - 6));

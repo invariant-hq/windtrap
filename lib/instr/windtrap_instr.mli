@@ -3,17 +3,16 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Shared plumbing of the instrumentation runtimes.
+(** Shared plumbing of the instrumentation data files.
 
-    [Windtrap_coverage] and [Windtrap_mutate] are separate sub-libraries —
-    neither links the other — yet both name their output file by the same
-    build-path rule, record the same writer identity, write through the same
-    atomic rename, and parse their files back with the same scanner. This is
-    that shared ground. The two runtimes are its only intended callers, and
-    everything that varies between them is a {!type:format} constant, never a
-    hook.
+    [Windtrap_coverage] and the core's [Mutate_verdicts] never link each other,
+    yet both name their output file by the same build-path rule, record the same
+    writer identity, write through the same atomic rename, and parse their files
+    back with the same scanner. This is that shared ground. Those two are its
+    only intended callers, and everything that varies between the two formats is
+    a {!type:format} constant, never a hook.
 
-    Stdlib only: either runtime puts this module into the closure of every
+    Stdlib only: the coverage runtime puts this module into the closure of every
     instrumented library, so it must never pull the windtrap core (or anything
     else) along. *)
 
@@ -29,11 +28,11 @@ type format = {
   remedy : string;
       (** The fix an {!Unknown_format} message names, as a full clause. *)
   who : string;
-      (** The runtime's module name — the prefix of its [Invalid_argument]
+      (** The owning module's name — the prefix of its [Invalid_argument]
           messages. *)
 }
-(** The type for a runtime's on-disk format: what differs between the two
-    runtimes, declared once beside each magic string. Every function below that
+(** The type for an instrumentation on-disk format: what differs between the two
+    formats, declared once beside each magic string. Every function below that
     names, reads or reports a data file takes one. *)
 
 (** {1:identities Writer identities} *)
@@ -81,7 +80,7 @@ val output_file : format -> exe:string -> string
 (** {1:errors Errors} *)
 
 (** The type for data-file errors — the three ways a file fails that both
-    formats share. [Windtrap_mutate] re-exports it as its [error];
+    formats share. [Mutate_verdicts] re-exports it as its [error];
     [Windtrap_coverage] wraps it beside a merge-time case of its own. *)
 type error =
   | Unknown_format of { path : string; header : string }
@@ -126,7 +125,7 @@ val add_header : format -> Buffer.t -> identity option -> unit
 (** {1:parsing Parser scaffolding}
 
     One strict scanner for both formats: a mutable {!type:cursor} over the whole
-    input, and readers that raise {!Parse_error} — caught by each runtime's
+    input, and readers that raise {!Parse_error} — caught by each format's
     [of_string], which turns the reason into a [Corrupt] error. Nothing is
     repaired and nothing is guessed. *)
 
@@ -135,11 +134,11 @@ type cursor
 
 exception Parse_error of string
 (** Raised by the readers below, carrying a human-readable reason. Never escapes
-    a runtime's [of_string]. *)
+    a format's [of_string]. *)
 
 val parse_fail : ('a, unit, string, 'b) format4 -> 'a
 (** [parse_fail fmt ...] raises {!Parse_error} with the formatted reason, so a
-    runtime's own checks read in the scaffolding's vocabulary. *)
+    caller's own checks read in the scaffolding's vocabulary. *)
 
 val start : format -> path:string -> string -> (cursor, error) result
 (** [start f ~path s] is a cursor over [s] past [f]'s magic string, or

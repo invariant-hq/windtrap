@@ -15,8 +15,7 @@
    answer; [budget n times] arms with a runaway budget and evaluates a
    guard in a loop; [reach] drains the reach map in a process whose epoch
    counter is untouched, which is the only place module initialization is
-   distinguishable; [save path] writes a verdict file, exercising the
-   atomic write from a process the parent does not share a heap with. *)
+   distinguishable. *)
 
 module M = Windtrap_mutate
 
@@ -124,21 +123,6 @@ let () =
       ignore (less 2 2 : bool);
       show "window" (M.drain ());
       show "drained" (M.drain ())
-  | _ :: "save" :: path :: _ ->
-      let id =
-        { M.file = "lib/child.ml"; line = 3; col = 10; rewrite = "lt" }
-      in
-      let t =
-        M.add M.empty
-          {
-            M.id;
-            before = "l < r";
-            after = "not (r < l)";
-            verdict = M.survived [ [ "child"; "less" ] ];
-          }
-      in
-      M.save ?identity:(M.writer_identity ~exe:Sys.executable_name) path t
   | _ ->
-      prerr_endline
-        "arm_child: expected run | budget <n> <times> | reach | save <path>";
+      prerr_endline "arm_child: expected run | budget <n> <times> | reach";
       exit 2
