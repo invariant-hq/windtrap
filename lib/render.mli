@@ -418,15 +418,17 @@ val coverage_report : t -> mode:[ `Report | `Full ] -> coverage -> unit
 
 (** {1:mutation Mutation}
 
-    The mutation report: the survivor blocks, the unreached list, and the one
-    summary line. One layout serving the mutation loop's in-process report and,
-    through the facade's [Private], the [windtrap mutate] command over merged
-    verdict files — the interactive report and the CI report cannot drift apart.
+    The mutation report: the survivor blocks, the unreached blocks, the one
+    summary line and the reproduce footer. One layout serving the mutation
+    loop's per-executable report and, through the facade's [Private], the
+    [windtrap mutate] command's aggregate over merged verdict files — the
+    interactive report and the CI report cannot drift apart.
 
     A survivor is a failure block, not a new vocabulary: the same labelled rule,
     the same [  VERB  subject] head row, the same excerpt row, and red, because
-    it is a defect report about a named test. Presentation only — the ordering,
-    the cap, the witness lists and every count are the loop's. *)
+    it is a defect report about a named test. An unreached mutant is the same
+    block without the sentence, in yellow. Presentation only — the ordering and
+    the witness lists are the producer's; the counts are the lists'. *)
 
 val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 (** [mutation_armed t ~id ~before ~after] prints the armed announcement
@@ -464,29 +466,25 @@ val mutation_not_saved : t -> unit
     executable's whole answer. Prints in every mode: it qualifies what the run
     just did not persist. *)
 
-val mutation_forced_fail : t -> id:string -> tests:int -> unit
-(** [mutation_forced_fail t ~id ~tests] prints
-    [arming <id> changed nothing: <tests> test(s) ran it and none failed. …] —
-    the warning a mutation run prints above its report when the mutant the most
-    tests reach survived. That is the signature of the commonest first-run
-    misconfiguration, the backend on the test executable but not on the library
-    under test, so the line names it; it is a warning rather than a refusal
-    because a legitimately weak file produces the same signature and is owed its
-    report. Prints in every mode. *)
-
 type witness = {
   test : string;
       (** The test's full path, as {!Test_tree.path_to_string} spells it
           ([calc › sub of two positives]). *)
   loc : Loc.t option;  (** Where the test is declared, when it is known. *)
+  exe : string option;
+      (** The test executable that ran the test, shown as the row's first
+          column. [None] in a per-executable report, where every witness is this
+          executable's and the column is omitted; the aggregate names each
+          witness's executable, and a block whose witnesses span several says so
+          in its sentence. *)
 }
 (** The type for survivor witnesses: a test that evaluated the mutated line and
     did not fail when it changed. *)
 
-type survivor = {
+type mutant = {
   id : string;
       (** The mutant's identifier in the runtime's canonical spelling
-          ([lib/calc.ml:9:12:add]) — spelled by the loop, which holds the
+          ([lib/calc.ml:9:12:add]) — spelled by the producer, which holds the
           runtime, so this module spends none of the Law-12 coupling budget
           re-spelling it. *)
   file : string;  (** The mutated source file, for the excerpt row. *)
@@ -494,8 +492,14 @@ type survivor = {
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   source : string option;
-      (** The mutated file's text, when the loop could read it; the excerpt row
-          is dropped when it could not, as every excerpt is best-effort. *)
+      (** The mutated file's text, when the producer could read it; the excerpt
+          row is dropped when it could not, as every excerpt is best-effort. *)
+}
+(** The type for one mutant as a block draws it: the head row and the excerpt
+    row a survivor and an unreached mutant share. *)
+
+type survivor = {
+  mutant : mutant;  (** The mutant that survived. *)
   witnesses : witness list;
       (** The tests that ran the line and did not fail. Never empty for a
           verdict — a mutant no test evaluated is {e unreached}, a different
@@ -506,77 +510,85 @@ type survivor = {
 }
 (** The type for one survived mutant, as the report shows it. *)
 
-type unreached = {
-  file : string;  (** The source file. *)
-  lines : int list;  (** Its unreached mutants' 1-based lines, sorted. *)
-}
-(** The type for one line of the unreached list: the mutants of one file that no
-    test evaluates. *)
+(** The type for what a report's reached count is relative to. It spells the
+    summary line's subject — [5 reached by this suite],
+    [2 reached by the 2 selected tests], [12 reached · 3 executables] — and
+    nothing else. *)
+type scope =
+  | Suite  (** A per-executable run over its whole suite. *)
+  | Selected of int
+      (** A per-executable run whose selection narrowed the suite to this many
+          tests — the reach is theirs, not the suite's. *)
+  | Executables of int
+      (** The aggregate over this many executables' verdict files. *)
 
 type mutation = {
   arm_variable : string;
       (** The runtime's arming variable ([WINDTRAP_MUTATE_ARM]), spelled by the
-          loop with the runtime's own function — the [arm] hints complete it
-          with each survivor's [id] and the invocation, so the report and the
-          runtime cannot disagree about what to type. *)
+          producer with the runtime's own function — the reproduce footer
+          completes it with the [<id>] placeholder and the invocation, so the
+          report and the runtime cannot disagree about what to type. *)
   survivors : survivor list;
       (** Every mutant that survived, one block each, ordered by witness count
-          descending. Never capped: a survivor is a failure block, and windtrap
-          caps no failure block. *)
-  unreached : unreached list;  (** The unreached list, ordered by file. *)
-  unreached_total : int;
-      (** How many mutants are unreached. Not the number of lines: one line can
-          carry several. *)
+          descending, then by identifier. Never capped: a survivor is a failure
+          block, and windtrap caps no failure block. *)
+  unreached : mutant list;
+      (** Every mutant no test evaluated, one block each, ordered by identifier.
+          Aggregate only: a per-executable report never lists or counts them —
+          one executable's unreached mutant is usually another's reached one,
+          and only the merge knows — so the loop hands over [[]]. *)
   killed : int;  (** How many mutants were killed. *)
-  total : int;
-      (** The population: every mutant the run could test — the catalogue
-          {e minus} the mutants dismissed by [[@mutate off]], which the reader
-          took out of scope and which no remedy applies to. It is therefore
-          [killed + List.length survivors + unreached_total], which is what the
-          summary line reads as. *)
-  duration : float option;
-      (** The mutation run's wall-clock seconds, [None] for a merge, which ran
-          nothing. *)
-  seed : Seed.seed option;  (** The run's root seed, when it had one. *)
-  siblings : bool;
-      (** [true] when other executables' verdict files sat beside this one's:
-          the numbers are then one executable's view of the code it links, and
-          the summary line scopes itself and points at the merge instead of
-          posing as the total. *)
+  scope : scope;  (** What the reached count is relative to. *)
+  filter : string option;
+      (** The run's [-f] filter, when it had one, restated in the reproduce
+          footer as the property replay line restates its own — a survivor of a
+          filtered run survived that selection, so the footer reproduces that
+          run. [None] for the aggregate, which ran nothing. *)
 }
-(** The type for a whole mutation report. Every field is measured, not derived
-    here: this module orders nothing and counts nothing. *)
+(** The type for a whole mutation report. The reached count is
+    [killed + List.length survivors], a count of the lists, not a field: the
+    summary cannot disagree with the blocks above it. *)
 
 val mutation_report : t -> mutation -> unit
 (** [mutation_report t m] prints [m]:
 
     - the survivor section, when [m.survivors] is not empty — the labelled rule
-      ([survivors (2)], or [survivors (10 of 37)] when the cap dropped blocks),
-      then one block per survivor separated by a blank line, then the closing
-      rule. A block is the head row
+      ([survivors (2)]) and one block per survivor, separated by a blank line. A
+      block is the head row
       ([  SURVIVED  lib/calc.ml:9:12:add    a - b  →  a + b], the identifier
-      column aligned across the report), the excerpt row for the mutated line,
-      the sentence that is the product
-      ([3 tests ran this line and none failed when it changed:], singular
-      [1 test ran this line and did not fail when it changed:]) with one
-      indented line per witness — name and declaration site, in columns aligned
-      across the report — and the [arm] and [dismiss] lines. [arm] is the
-      command that arms this one mutant, spelled from the [invocation], from
-      [m.arm_variable] and the survivor's [id] — under [`Mirrors] it carries
-      [--instrument-with ppx_windtrap.mutate], because a build without the
-      backend has no mutant to arm; [dismiss] is the attribute to paste,
-      [((a - b) [@mutate off "reason"])];
-    - the unreached list, when [m.unreached] is not empty — a heading carrying
-      the mutant count ([unreached (4) — no test evaluates these]) and one
-      compact line per file with its lines as ranges, in the shape coverage's
-      per-file report uses;
-    - the summary line
-      ([mutants: 2 survived of 187 · 181 killed, 4 unreached in 1m44s (seed
-        s1:…)]). Terms that are zero are omitted, the way a passing suite prints
-      no failure count, so a report with nothing to say is {e one} line. Under
-      [m.siblings] the total is scoped and the merge named
-      ([mutants: 2 survived of 41 (this executable) · … · project: dune build
-        @mutate]), in coverage's wording rather than a second one.
+      column aligned across the section), the excerpt row for the mutated line,
+      and the sentence that is the product
+      ([3 tests ran this line and none failed:], singular
+      [1 test ran this line and did not fail:], and
+      [3 tests in 2 executables ran this line and none failed:] when the
+      witnesses name more than one executable) over one indented row per witness
+      — the executable when any witness of the report names one, the test's
+      name, and its declaration site, in columns aligned across the report;
+    - the unreached section, when [m.unreached] is not empty — the labelled rule
+      ([never reached (2)]) and one block per mutant: the head row
+      ([  UNREACHED  lib/calc.ml:22:5:le   n < limit  →  n <= limit]) and the
+      excerpt row, no sentence;
+    - the closing rule, when either section printed;
+    - the summary line, terms separated by [·] and the zero terms omitted —
+      [0 survived] never prints, the reached count standing alone as the clean
+      form, and neither does [0 killed] or [0 never reached]:
+      [mutants: 1 survived of 5 reached by this suite · 4 killed],
+      [mutants: 5 reached by this suite · 5 killed],
+      [mutants: 2 reached by the 2 selected tests · 2 killed],
+      [mutants: 1 survived of 12 reached · 11 killed · 2 never reached · 3
+       executables]. [N survived] is red, [N killed] green, [N never reached]
+      yellow; the rest is plain;
+    - the reproduce footer, when either section printed: the command that arms
+      one mutant with the literal [<id>] where the reader pastes one, spelled
+      from the invocation and [m.arm_variable]
+      ([reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with
+        ppx_windtrap.mutate test/test_calc.exe]) — under [`Mirrors] it is
+      [dune runtest --force --instrument-with ppx_windtrap.mutate], because a
+      build without the backend has no mutant to arm and a warm tree would
+      replay the cached run. [m.filter] rides it as the replay line's filter
+      does: [-f '<filter>'] after the command under [`Exe],
+      [WINDTRAP_FILTER='<filter>'] before [dune runtest] under [`Mirrors]. No
+      colour, as in every hint.
 
     Prints in every mode. *)
 

@@ -24,8 +24,10 @@ let indent = "    "
 (* Gap between a survivor witness's name and its declaration site. Wide,
    like the verbose status line's duration column and unlike the tight
    table gutters: test names vary enough in length that a two-space gap
-   reads as a ragged wall. *)
+   reads as a ragged wall. The executable column before it is tight:
+   executable names are of a length. *)
 let witness_gap = 6
+let exe_gap = 3
 
 (* Small helpers *)
 
@@ -1503,11 +1505,10 @@ let line_str t spans = String.concat "" (List.map (span_str t) spans)
 
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 
-(* Line numbers as ranges ([88-94, 121]) — one dialect for the coverage
-   table's uncovered lists and the mutation report's unreached list.
-   Moved here from the coverage runtime with [excerpts]: layout lives
-   with the vocabulary, not with the instrumentation that measured the
-   lines. *)
+(* Line numbers as ranges ([88-94, 121]), the coverage table's uncovered
+   lists. Moved here from the coverage runtime with [excerpts]: layout
+   lives with the vocabulary, not with the instrumentation that measured
+   the lines. *)
 
 let collapse_ranges lines =
   let rec loop acc range_start range_end = function
@@ -1524,8 +1525,6 @@ let format_ranges ranges =
   |> List.map (fun (s, e) ->
       if s = e then string_of_int s else Printf.sprintf "%d-%d" s e)
   |> String.concat ", "
-
-let ranges lines = format_ranges (collapse_ranges lines)
 
 (* The table's uncovered cell, bounded. A barely-tested file has
    hundreds of uncovered regions, and their ranges render as one cell of
@@ -1836,185 +1835,205 @@ let coverage_report t ~mode c =
 
    A survivor is a failure block: the same 54-column labelled rule, the
    same [  VERB  subject] head row, the same excerpt row, the same red —
-   because a survivor is a defect report about a named test. No second
-   failure vocabulary is invented here, and no ordering, no cap and no
-   witness list is decided here: the loop hands over what it measured and
-   this projects it. *)
+   because a survivor is a defect report about a named test. An unreached
+   mutant is the same block without the sentence, in yellow, because no
+   test is to blame. No second failure vocabulary is invented here, and
+   no ordering and no witness list is decided here: the producer hands
+   over what it measured and this projects it. *)
 
-type witness = { test : string; loc : Loc.t option }
+type witness = { test : string; loc : Loc.t option; exe : string option }
 
-(* The identifier arrives spelled: the loop holds the runtime, whose
+(* The identifier arrives spelled: the producer holds the runtime, whose
    [id_to_string] is the canonical spelling, so this module spends none
    of the Law-12 coupling budget re-spelling it. *)
-type survivor = {
+type mutant = {
   id : string;
   file : string;
   line : int;
   before : string;
   after : string;
   source : string option;
-  witnesses : witness list;
 }
 
-type unreached = { file : string; lines : int list }
+type survivor = { mutant : mutant; witnesses : witness list }
+type scope = Suite | Selected of int | Executables of int
 
 type mutation = {
   arm_variable : string;
   survivors : survivor list;
-  unreached : unreached list;
-  unreached_total : int;
+  unreached : mutant list;
   killed : int;
-  total : int;
-  duration : float option;
-  seed : Seed.seed option;
-  siblings : bool;
+  scope : scope;
+  filter : string option;
 }
 
-(* The command that arms this one mutant, in the invocation's spelling —
-   the variable's name arrives on the record, spelled by the loop with
-   the runtime's own function, so the report and the runtime cannot
-   disagree about what to type. Under [`Mirrors] the instrumentation
-   flag is part of the spelling: arming needs a build that carries the
-   mutants, and a bare [dune runtest] builds one that does not, so the
-   plain mirror would name a command that cannot do what its line
-   says. *)
-let arm_command t ~variable id =
-  match t.invocation with
-  | `Exe cmd -> spf "%s=%s %s" variable id cmd
-  | `Mirrors ->
+(* The command that arms a mutant under the run's selection, in the
+   invocation's spelling, with the literal [<id>] where the reader pastes
+   one — the variable's name arrives on the record, spelled by the
+   producer with the runtime's own function, so the report and the
+   runtime cannot disagree about what to type. The filter is restated the
+   way [replay_line] restates it — [-f] under [`Exe], [WINDTRAP_FILTER]
+   under [`Mirrors] — because a survivor of a filtered run survived that
+   selection, and the line must reproduce that run. Under [`Mirrors] the
+   instrumentation flag is part of the spelling: arming needs a build
+   that carries the mutants, and a bare [dune runtest] builds one that
+   does not, so the plain mirror would name a command that cannot do
+   what its line says. *)
+let reproduce_line t ~variable ~filter =
+  match (t.invocation, filter) with
+  | `Exe cmd, Some flt ->
+      spf "reproduce: %s=<id> %s -f %s" variable cmd (shell_quote flt)
+  | `Exe cmd, None -> spf "reproduce: %s=<id> %s" variable cmd
+  | `Mirrors, filter ->
       (* [--force] is not decoration. Dune does not key an action's digest
          on an ambient variable it was not told about, so a warm tree
          replays the cached run and the arming silently does nothing —
          a hint that appears to work and does not is worse than none. *)
-      spf "%s=%s dune runtest --force --instrument-with ppx_windtrap.mutate"
-        variable id
+      spf
+        "reproduce: %s=<id>%s dune runtest --force --instrument-with \
+         ppx_windtrap.mutate"
+        variable
+        (match filter with
+        | Some flt -> " WINDTRAP_FILTER=" ^ shell_quote flt
+        | None -> "")
 
 let pad_to width s = String.make (max 0 (width - Text.length_utf8 s)) ' '
 
-let survivor_sections t ~variable ~id_width ~witness_width ~number_width
-    (s : survivor) =
+(* The head row and the excerpt row, shared by both block kinds. The
+   excerpt is best-effort, as every excerpt is: a mutant whose source the
+   producer could not read still names its line in the head row. *)
+let mutant_sections ~verb ~id_width ~number_width (m : mutant) =
   let head =
     Line
       [
         plain "  ";
-        styled `Red "SURVIVED";
+        verb;
         plain "  ";
-        styled `Bold s.id;
+        styled `Bold m.id;
         plain
-          (pad_to id_width s.id ^ "   " ^ s.before ^ "  \u{2192}  " ^ s.after);
+          (pad_to id_width m.id ^ "   " ^ m.before ^ "  \u{2192}  " ^ m.after);
       ]
   in
-  (* Best-effort, as every excerpt is: a survivor whose source the loop
-     could not read still names its line in the head row. *)
-  let excerpt_row =
-    match s.source with
-    | Some source ->
-        [
-          Excerpt
-            {
-              context = 0;
-              marker = false;
-              margin = indent ^ "  ";
-              number_width = Some number_width;
-              excerpt =
-                {
-                  file = s.file;
-                  heading = None;
-                  source;
-                  marked_lines = [ s.line ];
-                };
-            };
-        ]
-    | None -> []
-  in
+  match m.source with
+  | None -> [ head ]
+  | Some source ->
+      [
+        head;
+        Excerpt
+          {
+            context = 0;
+            marker = false;
+            margin = indent ^ "  ";
+            number_width = Some number_width;
+            excerpt =
+              {
+                file = m.file;
+                heading = None;
+                source;
+                marked_lines = [ m.line ];
+              };
+          };
+      ]
+
+(* One witness row: the executable column only when the report has one
+   ([exe_width] is [None] in a per-executable report, where every witness
+   is this executable's), then the name, then the faint declaration site
+   — empty for a producer that does not link the test tree. *)
+let witness_row ~exe_width (w : witness) =
+  (match exe_width with
+    | Some _ -> [ plain (Option.value w.exe ~default:"") ]
+    | None -> [])
+  @ [
+      plain (sanitize_name w.test);
+      styled `Faint (match w.loc with Some l -> Loc.to_string l | None -> "");
+    ]
+
+let survivor_sections ~id_width ~exe_width ~witness_width ~number_width
+    (s : survivor) =
   (* The sentence that is the product. A survivor always names at least
      one test (an unreached mutant is a different finding with a different
-     remedy), so the empty case cannot arise from a verdict. *)
+     remedy), so the empty case cannot arise from a verdict. The
+     executables are counted only when the witnesses name more than one:
+     a per-executable report names none, and one executable's tests are
+     just tests. *)
   let witness_rows =
     match s.witnesses with
     | [] -> []
     | witnesses ->
         let n = List.length witnesses in
+        let executables =
+          List.length
+            (List.sort_uniq compare
+               (List.filter_map (fun (w : witness) -> w.exe) witnesses))
+        in
+        let sentence =
+          if n = 1 then "1 test ran this line and did not fail:"
+          else if executables > 1 then
+            spf "%d tests in %d executables ran this line and none failed:" n
+              executables
+          else spf "%d tests ran this line and none failed:" n
+        in
+        let column width = { gap = ""; align = `Left; width } in
         [
-          Line
-            [
-              plain
-                (indent
-                ^
-                if n = 1 then
-                  "1 test ran this line and did not fail when it changed:"
-                else
-                  spf "%d tests ran this line and none failed when it changed:"
-                    n);
-            ];
+          Line [];
+          Line [ plain (indent ^ sentence) ];
           Rows
             {
               margin = indent ^ "  ";
               columns =
-                [
-                  { gap = ""; align = `Left; width = Some witness_width };
-                  { gap = ""; align = `Left; width = None };
-                ];
-              rows =
-                List.map
-                  (fun w ->
-                    [
-                      plain (sanitize_name w.test);
-                      styled `Faint
-                        (match w.loc with
-                        | Some l -> Loc.to_string l
-                        | None -> "");
-                    ])
-                  witnesses;
+                (match exe_width with
+                  | Some w -> [ column (Some w) ]
+                  | None -> [])
+                @ [ column (Some witness_width); column None ];
+              rows = List.map (witness_row ~exe_width) witnesses;
             };
-          Line [];
         ]
   in
-  (* No color in either hint, as everywhere else, and both are one line a
-     reader copies whole. *)
-  (head :: excerpt_row) @ (Line [] :: witness_rows)
-  @ [
-      Hint (indent ^ spf "%-9s%s" "arm" (arm_command t ~variable s.id));
-      Hint
-        (indent ^ spf "%-9s((%s) [@mutate off \"reason\"])" "dismiss" s.before);
-    ]
+  mutant_sections ~verb:(styled `Red "SURVIVED") ~id_width ~number_width
+    s.mutant
+  @ witness_rows
 
+(* Zero terms are omitted, the way a passing suite prints no failure
+   count: [0 survived] never prints — the clean form is its absence, the
+   reached count standing alone — and neither does [0 killed] or
+   [0 never reached]. The reached count is [killed + survived], a count of
+   the lists and not a measurement, so the summary cannot disagree with
+   the blocks above it. *)
 let mutation_summary_spans (m : mutation) =
-  let total = List.length m.survivors in
-  let survived =
-    styled (if total = 0 then `Green else `Red) (spf "%d survived" total)
+  let survived = List.length m.survivors in
+  let unreached = List.length m.unreached in
+  let reached =
+    let n = m.killed + survived in
+    match m.scope with
+    | Suite -> spf "%d reached by this suite" n
+    | Selected tests ->
+        spf "%d reached by the %d selected test%s" n tests
+          (if tests = 1 then "" else "s")
+    | Executables _ -> spf "%d reached" n
   in
-  (* Zero terms are omitted, the way a passing suite prints no failure
-     count: a run with nothing to report is one line. *)
   let terms =
-    (if m.killed > 0 then [ plain (spf "%d killed" m.killed) ] else [])
+    (if survived > 0 then
+       [
+         [ styled `Red (spf "%d survived" survived); plain (" of " ^ reached) ];
+       ]
+     else [ [ plain reached ] ])
+    @ (if m.killed > 0 then [ [ styled `Green (spf "%d killed" m.killed) ] ]
+       else [])
+    @ (if unreached > 0 then
+         [ [ styled `Yellow (spf "%d never reached" unreached) ] ]
+       else [])
     @
-    if m.unreached_total > 0 then
-      [ styled `Yellow (spf "%d unreached" m.unreached_total) ]
-    else []
+    match m.scope with
+    | Executables n ->
+        [ [ plain (spf "%d executable%s" n (if n = 1 then "" else "s")) ] ]
+    | Suite | Selected _ -> []
   in
   let rec separated = function
     | [] -> []
-    | [ last ] -> [ last ]
-    | term :: rest -> term :: plain ", " :: separated rest
+    | [ last ] -> last
+    | term :: rest -> term @ (plain " \u{00b7} " :: separated rest)
   in
-  [
-    plain "mutants: ";
-    survived;
-    plain
-      (spf " of %d%s" m.total (if m.siblings then " (this executable)" else ""));
-  ]
-  @ (if terms = [] then [] else plain " \u{00b7} " :: separated terms)
-  @ [
-      plain
-        ((match m.duration with
-           | Some d -> spf " in %s" (pp_duration d)
-           | None -> "")
-        ^ (match m.seed with
-          | Some s -> spf " (seed %s)" (Seed.to_string s)
-          | None -> "")
-        ^ if m.siblings then " \u{00b7} project: dune build @mutate" else "");
-    ]
+  plain "mutants: " :: separated terms
 
 (* The lines an armed run is owed. The announcement prints
    unconditionally, because Law 16(b) makes it the guarantee that a run
@@ -2053,91 +2072,79 @@ let mutation_not_saved t =
        "verdicts not saved: this run's selection narrows the suite, and a \
         partial run's verdicts would stand in the project merge as the whole.")
 
-let mutation_forced_fail t ~id ~tests =
-  clear_live t;
-  close_row t;
-  put t
-    (st t `Yellow
-       (spf
-          "arming %s changed nothing: %d test(s) ran it and none failed. If \
-           the library under test was not built with --instrument-with \
-           ppx_windtrap.mutate, every number below is about this executable's \
-           own mutants."
-          id tests))
-
+(* Column widths are one per report, not one per block: the identifiers
+   of a section, the witness names and the executables of the whole
+   report, and the excerpt gutters throughout are meant to be read
+   down. *)
 let mutation_sections t (m : mutation) =
-  let survivor_part =
-    match m.survivors with
-    | [] -> []
-    | survivors ->
-        let label = spf "survivors (%d)" (List.length survivors) in
-        let id_width =
-          List.fold_left
-            (fun w (s : survivor) -> max w (Text.length_utf8 s.id))
-            0 survivors
-        in
-        (* One column across the whole report, not one per block: the
-           locations are meant to be read down. *)
-        let witness_width =
-          List.fold_left
-            (fun w (s : survivor) ->
-              List.fold_left
-                (fun w (wit : witness) ->
-                  max w (Text.length_utf8 (sanitize_name wit.test)))
-                w s.witnesses)
-            0 survivors
-          + witness_gap
-        in
-        let number_width =
-          List.fold_left
-            (fun w (s : survivor) ->
-              max w (String.length (string_of_int s.line)))
-            1 survivors
-        in
-        [ Line []; Rule (Some label); Line [] ]
-        @ List.concat
-            (List.mapi
-               (fun i s ->
-                 (if i > 0 then [ Line [] ] else [])
-                 @ survivor_sections t ~variable:m.arm_variable ~id_width
-                     ~witness_width ~number_width s)
-               survivors)
-        @ [ Line []; Rule None ]
+  let widest f l = List.fold_left (fun w x -> max w (f x)) 0 l in
+  let id_width_of = widest (fun (x : mutant) -> Text.length_utf8 x.id) in
+  let survivor_mutants =
+    List.map (fun (s : survivor) -> s.mutant) m.survivors
   in
-  let unreached_part =
-    match m.unreached with
+  let number_width =
+    max 1
+      (widest
+         (fun (x : mutant) -> String.length (string_of_int x.line))
+         (survivor_mutants @ m.unreached))
+  in
+  let witnesses =
+    List.concat_map (fun (s : survivor) -> s.witnesses) m.survivors
+  in
+  let witness_width =
+    widest
+      (fun (w : witness) -> Text.length_utf8 (sanitize_name w.test))
+      witnesses
+    + witness_gap
+  in
+  let exe_width =
+    if List.exists (fun (w : witness) -> w.exe <> None) witnesses then
+      Some
+        (widest
+           (fun (w : witness) ->
+             Text.length_utf8 (Option.value w.exe ~default:""))
+           witnesses
+        + exe_gap)
+    else None
+  in
+  let section label blocks =
+    match blocks with
     | [] -> []
-    | unreached ->
+    | blocks ->
         [
           Line [];
-          Line
-            [
-              styled `Faint
-                (spf "unreached (%d) \u{2014} no test evaluates these"
-                   m.unreached_total);
-            ];
-          (* One compact line per file, in the shape of the coverage
-             table's file column: an unreached mutant is a gap, not a
-             block. *)
-          Rows
-            {
-              margin = "   ";
-              columns =
-                [
-                  { gap = ""; align = `Left; width = None };
-                  { gap = "   "; align = `Left; width = None };
-                ];
-              rows =
-                List.map
-                  (fun (u : unreached) ->
-                    [ plain u.file; plain (ranges u.lines) ])
-                  unreached;
-            };
+          Rule (Some (spf "%s (%d)" label (List.length blocks)));
+          Line [];
         ]
+        @ List.concat
+            (List.mapi
+               (fun i block -> (if i > 0 then [ Line [] ] else []) @ block)
+               blocks)
   in
+  let survivor_part =
+    let id_width = id_width_of survivor_mutants in
+    section "survivors"
+      (List.map
+         (survivor_sections ~id_width ~exe_width ~witness_width ~number_width)
+         m.survivors)
+  in
+  let unreached_part =
+    let id_width = id_width_of m.unreached in
+    section "never reached"
+      (List.map
+         (mutant_sections
+            ~verb:(styled `Yellow "UNREACHED")
+            ~id_width ~number_width)
+         m.unreached)
+  in
+  let reported = m.survivors <> [] || m.unreached <> [] in
   survivor_part @ unreached_part
-  @ (if m.survivors <> [] || m.unreached <> [] then [ Line [] ] else [])
+  @ (if reported then [ Line []; Rule None; Line [] ] else [])
   @ [ Line (mutation_summary_spans m) ]
+  @
+  if reported then
+    [ Hint (reproduce_line t ~variable:m.arm_variable ~filter:m.filter) ]
+  else []
 
 let mutation_report t (m : mutation) =
   clear_live t;

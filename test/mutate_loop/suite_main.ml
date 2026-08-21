@@ -119,9 +119,7 @@ let fatal =
      last test finishes and belongs to no test. It must stay unreached
      too.
 
-   [sub] is pinned by three tests and [widen] reached by two, so the
-   most-reached mutant is one that dies and the forced-fail check passes
-   on its own merits rather than on a tie-break. *)
+   [sub] is pinned by three tests and [widen] reached by two. *)
 
 (* The per-child deadline's fixtures.
 

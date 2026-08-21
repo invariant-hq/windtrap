@@ -14,8 +14,8 @@
    diffing, the renderers — is mutated. *)
 [@@@mutate exclude_file]
 
-(* The parent of a mutation run: dry run, probe, forced-fail check, fork
-   loop, verdict file, report. The runtime below (Windtrap_mutate) owns
+(* The parent of a mutation run: dry run, probe, fork loop, verdict
+   file, report. The runtime below (Windtrap_mutate) owns
    the catalogue, the arming slot, the reach counters and the file format;
    this module owns the protocol over them and every decision the report
    shows — the ordering, the cap, the counts. Render orders nothing and
@@ -470,21 +470,6 @@ let read_source =
         Hashtbl.add cache file contents;
         contents
 
-(* Other executables' verdict files beside this one's: the numbers are
-   then this executable's view of the code it links, and the summary line
-   scopes itself and points at the merge instead of posing as the total —
-   coverage's wording, not a second one. *)
-let has_siblings path =
-  let dir = Filename.dirname path in
-  match Sys.readdir dir with
-  | exception Sys_error _ -> false
-  | entries ->
-      Array.exists
-        (fun entry ->
-          Filename.check_suffix entry ".mutants"
-          && Filename.concat dir entry <> path)
-        entries
-
 let witness_locations tests =
   let table = Hashtbl.create 256 in
   List.iter
@@ -495,33 +480,33 @@ let witness_locations tests =
     (Test_tree.flatten tests);
   table
 
-(* The report, from the verdict collection and nothing else — which is
-   why the records carry the renderings: this projection is the one
-   [windtrap mutate] makes over files it did not write, so the two
-   reports cannot drift in DATA the way Law 12's shared renderer already
-   stops them drifting in layout. The two callers differ in exactly two
-   things, and they are the parameters: where a source file is found
-   (a project root here, a roots list there) and whether a witness can
-   name its declaration site (the test tree is linked here and nowhere
-   in the merge command). *)
-let render_data ~resolve_source ~loc_of ~duration ~seed ~siblings ~total t =
+(* The per-executable report, from the verdict collection and nothing
+   else — which is why the records carry the renderings. The loop links
+   the test tree, so a witness names its declaration site; it is one
+   executable, so no witness names one and the unreached mutants are not
+   this report's to list: one executable's unreached mutant is usually
+   another's reached one, and only the merge knows. *)
+let render_data ~resolve_source ~loc_of ~scope ~filter t =
   let records = M.records t in
   let survivor_of (r : M.record) witnesses : Render.survivor =
     {
-      (* The identifier is spelled here, with the runtime's own function:
-         Render carries it into the head row and the arm hint without
-         re-spelling it. *)
-      Render.id = M.id_to_string r.M.id;
-      file = r.M.id.M.file;
-      line = r.M.id.M.line;
-      before = r.M.before;
-      after = r.M.after;
-      source = resolve_source r.M.id.M.file;
+      Render.mutant =
+        {
+          (* The identifier is spelled here, with the runtime's own
+             function: Render carries it into the head row without
+             re-spelling it. *)
+          Render.id = M.id_to_string r.M.id;
+          file = r.M.id.M.file;
+          line = r.M.id.M.line;
+          before = r.M.before;
+          after = r.M.after;
+          source = resolve_source r.M.id.M.file;
+        };
       witnesses =
         List.map
           (fun path ->
             let test = Test_tree.path_to_string path in
-            { Render.test; loc = loc_of test })
+            { Render.test; loc = loc_of test; exe = None })
           witnesses;
     }
   in
@@ -543,40 +528,17 @@ let render_data ~resolve_source ~loc_of ~duration ~seed ~siblings ~total t =
         compare (List.length b.witnesses) (List.length a.witnesses))
       survivors
   in
-  let unreached =
-    List.filter (fun (r : M.record) -> r.M.verdict = M.Unreached) records
-  in
-  let by_file = Hashtbl.create 16 in
-  List.iter
-    (fun (r : M.record) ->
-      let file = r.M.id.M.file in
-      let prior = Option.value ~default:[] (Hashtbl.find_opt by_file file) in
-      Hashtbl.replace by_file file (r.M.id.M.line :: prior))
-    unreached;
-  let unreached_lines =
-    Hashtbl.fold
-      (fun file lines acc ->
-        { Render.file; lines = List.sort_uniq compare lines } :: acc)
-      by_file []
-    |> List.sort (fun (a : Render.unreached) b -> compare a.file b.file)
-  in
   {
     (* The arming variable, spelled with the runtime's own function: the
        report and the runtime cannot disagree about what to type. *)
     Render.arm_variable = M.arm_variable;
     survivors;
-    unreached = unreached_lines;
-    unreached_total = List.length unreached;
+    unreached = [];
     killed =
       List.length
-        (List.filter
-           (fun (r : M.record) ->
-             match r.M.verdict with M.Killed -> true | _ -> false)
-           records);
-    total;
-    duration;
-    seed;
-    siblings;
+        (List.filter (fun (r : M.record) -> r.M.verdict = M.Killed) records);
+    scope;
+    filter;
   }
 
 (* The determinism probe
@@ -755,22 +717,11 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
           | Unix.WEXITED 0 -> verdict
           | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> M.Killed))
 
-(* The fork loop
+(* The fork loop: one child per reached mutant, in catalogue order. *)
 
-   Most-reached mutant first, and its child is the forced-fail check: a
-   mutant many tests run is the one least likely to survive a correctly
-   instrumented build, so a survivor there is evidence about the build and
-   not about the suite. Its verdict is kept either way, which is what
-   makes the check cost nothing for a build that passes it. *)
-
-let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~ordered tests =
-  let verdicts = ref M.empty in
-  let forced_fail = ref None in
-  let record (mutant : M.mutant) verdict =
-    verdicts := M.add !verdicts (M.record_of_mutant mutant verdict)
-  in
-  let rec go index = function
-    | [] -> (!verdicts, !forced_fail)
+let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~reached tests =
+  let rec go index verdicts = function
+    | [] -> verdicts
     | mutant :: rest ->
         let paths = reaching_tests reach mutant in
         let budget = budget_of (site_hits reach mutant) in
@@ -778,14 +729,9 @@ let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~ordered tests =
           run_mutant ~armed ~scratch ~dry_run_wall ~index ~spine ~reach ~paths
             ~budget ~mutant tests
         in
-        record mutant verdict;
-        (match verdict with
-        | M.Survived _ when index = 0 ->
-            forced_fail := Some (M.id_to_string mutant.M.id, List.length paths)
-        | M.Survived _ | M.Killed | M.Unreached -> ());
-        go (index + 1) rest
+        go (index + 1) (M.add verdicts (M.record_of_mutant mutant verdict)) rest
   in
-  go 0 ordered
+  go 0 M.empty reached
 
 (* The report *)
 
@@ -808,20 +754,16 @@ let narrows_suite ~(config : Run.config) ~focus =
 
 let write_verdicts verdicts =
   let exe = Sys.executable_name in
-  let path = M.output_file ~exe in
-  (try M.save ?identity:(M.writer_identity ~exe) path verdicts
-   with Sys_error message ->
-     note "could not write the verdict file: %s" message);
-  path
+  try M.save ?identity:(M.writer_identity ~exe) (M.output_file ~exe) verdicts
+  with Sys_error message ->
+    note "could not write the verdict file: %s" message
 
-let print_report renderer ~population ~verdicts ~duration ~seed ~siblings tests
-    =
+let print_report renderer ~scope ~filter ~verdicts tests =
   let locations = witness_locations tests in
   Render.mutation_report renderer
     (render_data ~resolve_source:read_source
        ~loc_of:(fun test -> Option.join (Hashtbl.find_opt locations test))
-       ~duration:(Some duration) ~seed:(Some seed) ~siblings
-       ~total:(List.length population) verdicts)
+       ~scope ~filter verdicts)
 
 (* The runtime applies the scope at registration, so a value matching
    nothing leaves the same empty catalogue a missing backend does — a
@@ -884,15 +826,6 @@ let loop renderer ~armed (spine : Driver.t) tests =
               (fun mutant -> reaching_tests reach mutant <> [])
               population
           in
-          let ordered =
-            List.stable_sort
-              (fun a b ->
-                let count m = List.length (reaching_tests reach m) in
-                match compare (count b) (count a) with
-                | 0 -> M.compare_mutant a b
-                | c -> c)
-              reached
-          in
           let dry_run_wall = Float.max 0.01 (Unix.gettimeofday () -. started) in
           let narrowed =
             narrows_suite ~config ~focus:outcome.Runner.focus_active
@@ -901,11 +834,11 @@ let loop renderer ~armed (spine : Driver.t) tests =
             probed ~armed ~dry_run_wall ~spine ~reach ~paths:executed tests
               (fun ~scratch ->
                 run_children ~armed ~scratch ~dry_run_wall ~spine ~reach
-                  ~ordered tests)
+                  ~reached tests)
           in
           match outcome with
           | Error message -> refuse "%s" message
-          | Ok (reported, forced_fail) ->
+          | Ok reported ->
               let verdicts =
                 List.fold_left
                   (fun acc (m : M.mutant) ->
@@ -915,17 +848,15 @@ let loop renderer ~armed (spine : Driver.t) tests =
               (* A narrowed run's verdicts are never persisted — and the
                  previous file is left alone, never deleted: the run says
                  so instead, after the report it still prints in full. *)
-              let path =
-                if narrowed then M.output_file ~exe:Sys.executable_name
-                else write_verdicts verdicts
+              if not narrowed then write_verdicts verdicts;
+              (* A narrowed run's reach is its selection's, and the
+                 summary says so by the count the dry run executed. *)
+              let scope =
+                if narrowed then Render.Selected (List.length executed)
+                else Render.Suite
               in
-              Option.iter
-                (fun (id, tests) ->
-                  Render.mutation_forced_fail renderer ~id ~tests)
-                forced_fail;
-              print_report renderer ~population ~verdicts
-                ~duration:(Unix.gettimeofday () -. started)
-                ~seed:config.Run.seed ~siblings:(has_siblings path) tests;
+              print_report renderer ~scope ~filter:config.Run.filter ~verdicts
+                tests;
               if narrowed then Render.mutation_not_saved renderer;
               flush_descriptors ();
               Reported 0)

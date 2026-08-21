@@ -178,10 +178,25 @@ let collection records = List.fold_left M.add M.empty records
    fragment. *)
 let summary out =
   match
-    List.rev (List.filter (fun l -> l <> "") (String.split_on_char '\n' out))
+    List.filter
+      (String.starts_with ~prefix:"mutants: ")
+      (String.split_on_char '\n' out)
   with
-  | last :: _ -> last
-  | [] -> ""
+  | [ line ] -> line
+  | _ -> ""
+
+(* The one term that legitimately differs between a merge of three files
+   and the same data written as one: the executables count. *)
+let without_executables_term out =
+  String.concat "\n"
+    (List.map
+       (fun line ->
+         if String.starts_with ~prefix:"mutants: " line then
+           match String.rindex_opt line '\xb7' with
+           | Some i -> String.sub line 0 (i - 2)
+           | None -> line
+         else line)
+       (String.split_on_char '\n' out))
 
 (* Three executables over one library, which is the normal case:
    - [add] is killed by A and merely reached by B. The truth is killed;
@@ -340,7 +355,7 @@ let two_executables =
   check_contains "the survivor is the one neither executable pinned"
     ~needle:("SURVIVED  " ^ shared) out;
   check_contains "its witnesses are both executables' tests"
-    ~needle:"2 tests ran this line and none failed when it changed:" out;
+    ~needle:"2 tests ran this line and none failed:" out;
   check_contains "the first executable's witness" ~needle:"shared is nonzero"
     out;
   check_contains "the second executable's witness" ~needle:"shared is not 99"
@@ -349,10 +364,13 @@ let two_executables =
     ~needle:"let shared a b = a + b" out;
   check_contains "the mutant neither executable reached is still a finding"
     ~needle:
-      (Printf.sprintf "test/mutate_cli/calc.ml   %d" (calc_line "let never"))
+      (Printf.sprintf "UNREACHED  test/mutate_cli/calc.ml:%d:"
+         (calc_line "let never"))
     out;
   equal ~msg:"the project's summary, whole" text
-    "mutants: 1 survived of 4 \u{00b7} 2 killed, 1 unreached" (summary out)
+    "mutants: 1 survived of 3 reached \u{00b7} 2 killed \u{00b7} 1 never \
+     reached \u{00b7} 2 executables"
+    (summary out)
 
 (* The Law-12 budget (grep-based) *)
 
@@ -435,29 +453,33 @@ let merge_report =
      strictly worse than the per-executable one. *)
   check_contains "the excerpt is drawn from the planted source"
     ~needle:"2 \u{2502} let sub a b = a - b" out;
-  check_contains "the dismissal names the original expression"
-    ~needle:"dismiss  ((a - b) [@mutate off \"reason\"])" out;
-  check_contains "the arm line names this mutant"
+  check_contains
+    "the reproduce footer mirrors onto the forced, instrumented run"
     ~needle:
-      "arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force \
-       --instrument-with ppx_windtrap.mutate"
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force \
+       --instrument-with ppx_windtrap.mutate\n"
     out;
   (* Witnesses union across the two executables that reached it. *)
   check_contains "the sentence counts both witnesses"
-    ~needle:"2 tests ran this line and none failed when it changed:" out;
+    ~needle:"2 tests ran this line and none failed:" out;
   check_contains "the first executable's witness"
     ~needle:"cli \u{203a} subtracts" out;
   check_contains "the second executable's witness"
     ~needle:"prop \u{203a} sub law" out;
   (* Unreached is a finding with its own remedy, and prints by default. *)
-  check_contains "the unreached heading counts mutants, not files or lines"
-    ~needle:"unreached (2) \u{2014} no test evaluates these" out;
-  check_contains "the unreached file carries both its lines"
-    ~needle:"lib/util.ml   1, 3" out;
-  (* The summary is the project's, not one executable's, and a merge ran
-     nothing and seeded nothing - so no duration and no seed. *)
+  check_contains "the never-reached section counts mutants, not files or lines"
+    ~needle:"never reached (2)" out;
+  check_contains "the first never-reached mutant has its block"
+    ~needle:"UNREACHED  lib/util.ml:1:" out;
+  check_contains "and so does the second" ~needle:"UNREACHED  lib/util.ml:3:"
+    out;
+  (* The summary is the project's, not one executable's: the reached
+     count, and how many executables it is over. *)
   equal ~msg:"the summary line, whole" text
-    "mutants: 1 survived of 5 \u{00b7} 2 killed, 2 unreached" (summary out)
+    "mutants: 1 survived of 3 reached \u{00b7} 2 killed \u{00b7} 2 never \
+     reached \u{00b7} 3 executables"
+    (summary out)
 
 let merge_is_total =
   test "every discovered file reaches the merge" @@ fun () ->
@@ -472,8 +494,10 @@ let merge_is_total =
     (M.to_string (M.merge (M.merge file_a file_b) file_c));
   let _, expected, _ = mutate ~cwd:reference [] in
   check "the reference report is not empty" (expected <> "");
+  let expected = without_executables_term expected in
   let _, out, _ = mutate ~cwd:proj [] in
-  equal ~msg:"three files merge to the runtime's answer" text expected out;
+  equal ~msg:"three files merge to the runtime's answer" text expected
+    (without_executables_term out);
   (* And the argument order is not part of the answer. *)
   let named name = Filename.concat proj ("_build/_mutants/" ^ name) in
   let _, reversed, _ =
@@ -485,7 +509,7 @@ let merge_is_total =
       ]
   in
   equal ~msg:"reversed argument order renders identically" text expected
-    reversed
+    (without_executables_term reversed)
 
 let single_file =
   test "one executable's file alone still reports its own view" @@ fun () ->
@@ -502,7 +526,9 @@ let single_file =
     ~needle:"SURVIVED  lib/calc.ml:1:14:add" out;
   check_contains "B alone counts two survivors" ~needle:"survivors (2)" out;
   equal ~msg:"B alone scores itself" text
-    "mutants: 2 survived of 5 \u{00b7} 1 killed, 2 unreached" (summary out)
+    "mutants: 2 survived of 3 reached \u{00b7} 1 killed \u{00b7} 2 never \
+     reached \u{00b7} 1 executable"
+    (summary out)
 
 let clean_report =
   test "a project with nothing to report is one line" @@ fun () ->
@@ -515,7 +541,7 @@ let clean_report =
   check_int "a clean project exits 0" ~expected:0 ~actual:code;
   check "a clean project keeps stderr empty" (err = "");
   equal ~msg:"and prints exactly the summary" text
-    "mutants: 0 survived of 3 \u{00b7} 3 killed\n" out
+    "mutants: 3 reached \u{00b7} 3 killed \u{00b7} 1 executable\n" out
 
 (* Discovery *)
 
@@ -525,7 +551,7 @@ let discovery =
   let code, out, _ = mutate ~cwd:(Filename.concat proj "lib") [] in
   check_int "walk-up discovery exits 0" ~expected:0 ~actual:code;
   check_contains "walk-up discovery finds the same data"
-    ~needle:"mutants: 1 survived of 5" out;
+    ~needle:"mutants: 1 survived of 3 reached" out;
   check_contains "walk-up discovery still resolves sources"
     ~needle:"let sub a b = a - b" out;
   (* A rule-action cwd — inside _build — resolves the root by the
@@ -536,7 +562,7 @@ let discovery =
   in
   check_int "a cwd inside _build exits 0" ~expected:0 ~actual:code;
   check_contains "a cwd inside _build resolves the workspace root"
-    ~needle:"mutants: 1 survived of 5" out;
+    ~needle:"mutants: 1 survived of 3 reached" out;
   check_contains "sources resolve from that root too"
     ~needle:"let sub a b = a - b" out;
   (* Garbage planted at _build/.sandbox/_build/_mutants must not capture
@@ -550,7 +576,7 @@ let discovery =
   in
   check_int "a sandboxed cwd escapes planted garbage" ~expected:0 ~actual:code;
   check_contains "a sandboxed cwd reports the workspace data"
-    ~needle:"mutants: 1 survived of 5" out;
+    ~needle:"mutants: 1 survived of 3 reached" out;
   check_absent "the planted file is never read" ~needle:"junk.mutants" err
 
 let explicit_paths =
@@ -562,7 +588,7 @@ let explicit_paths =
   in
   check_int "an explicit directory exits 0" ~expected:0 ~actual:code;
   check_contains "an explicit directory merges the same data"
-    ~needle:"mutants: 1 survived of 5" out;
+    ~needle:"mutants: 1 survived of 3 reached" out;
   (* A nonexistent explicit path is an error naming the path and the
      reason — never a silent narrowing, which under killed-anywhere-wins
      would turn another executable's kill back into a survivor. *)
@@ -608,7 +634,9 @@ let explicit_paths =
   let code, out, _ = mutate ~cwd:scratch_dir [ nested ] in
   check_int "a nested explicit directory exits 0" ~expected:0 ~actual:code;
   equal ~msg:"and every depth reaches the merge" text
-    "mutants: 1 survived of 5 \u{00b7} 2 killed, 2 unreached" (summary out)
+    "mutants: 1 survived of 3 reached \u{00b7} 2 killed \u{00b7} 2 never \
+     reached \u{00b7} 3 executables"
+    (summary out)
 
 (* The staleness pass *)
 
@@ -634,7 +662,9 @@ let staleness =
   check_int "a fresh identity-carrying file exits 0" ~expected:0 ~actual:code;
   check "a fresh identity-carrying file warns about nothing" (err = "");
   equal ~msg:"and is merged" text
-    "mutants: 1 survived of 5 \u{00b7} 1 killed, 3 unreached" (summary out);
+    "mutants: 1 survived of 2 reached \u{00b7} 1 killed \u{00b7} 3 never \
+     reached \u{00b7} 1 executable"
+    (summary out);
   (* Orphan: a second file whose executable no longer exists. Its data
      must not reach the report — under killed-anywhere-wins an excluded
      kill is the difference between a survivor and none, which is what
@@ -653,7 +683,9 @@ let staleness =
   let code, out, err = mutate ~cwd:root [] in
   check_int "an orphan still reports the live data" ~expected:0 ~actual:code;
   equal ~msg:"the orphan's kill never reaches the report" text
-    "mutants: 1 survived of 5 \u{00b7} 1 killed, 3 unreached" (summary out);
+    "mutants: 1 survived of 2 reached \u{00b7} 1 killed \u{00b7} 3 never \
+     reached \u{00b7} 1 executable"
+    (summary out);
   check_contains "the orphan warning names the file" ~needle:"gone.mutants" err;
   check_contains "the orphan warning names the missing executable"
     ~needle:"default/test/gone.exe" err;
@@ -677,7 +709,9 @@ let staleness =
   check_int "a stale file beside a fresh one still reports" ~expected:0
     ~actual:code;
   equal ~msg:"the stale file's kill never reaches the report" text
-    "mutants: 1 survived of 5 \u{00b7} 1 killed, 3 unreached" (summary out);
+    "mutants: 1 survived of 2 reached \u{00b7} 1 killed \u{00b7} 3 never \
+     reached \u{00b7} 1 executable"
+    (summary out);
   check_contains "a stale file's remedy is the forced re-run"
     ~needle:"a forced run rewrites stale verdicts" err;
   check_contains "and the re-run is spelled in full"

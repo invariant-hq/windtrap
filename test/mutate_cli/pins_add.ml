@@ -6,12 +6,7 @@
 (* One of the two test executables over Mutcli_fixture.Calc. It pins
    [add] and merely reaches [sub], so its own mutation report calls
    [sub]'s mutant a survivor — which is a lie about the project, because
-   the sibling executable kills it.
-
-   [add] is the most-reached mutant here, and the loop's forced-fail
-   check arms the most-reached one first and refuses the run if it
-   survives; pinning it with three tests is therefore load-bearing and
-   not decoration. *)
+   the sibling executable kills it. *)
 
 open Windtrap
 module Calc = Mutcli_fixture.Calc

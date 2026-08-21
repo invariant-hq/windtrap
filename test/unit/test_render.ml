@@ -2250,28 +2250,46 @@ let test_coverage_thresholds () =
   check_contains "an empty summary is 100% and green"
     ~sub:"\027[32m100.0%\027[0m (0/0 points)" (line ~visited:0 ~total:0)
 
-(* The mutation report (RFC §Asking, byte for byte)
+(* The mutation report (SPEC transcripts, byte for byte)
 
    The survivor block is the ordinary failure block: the same 54-column
    labelled rule, the same [  VERB  subject] head row, the same excerpt
-   row. The fixture is the RFC's worked example, with the seed token the
-   one the shared fixtures carry. *)
+   row. One fixture serves both reports the type carries: the
+   per-executable one (no executable column, no unreached) and the
+   aggregate (both). *)
 
 let calc_source =
   String.concat "\n"
-    (List.init 11 (fun i ->
+    (List.init 31 (fun i ->
          match i + 1 with
          | 9 -> "  | Sub -> a - b"
          | 11 ->
              "  | Div -> if b = 0 then invalid_arg \"division by zero\" else a \
               / b"
+         | 22 -> "  if n < limit then"
+         | 31 -> "  List.fold_left (fun acc x -> acc + x) 0"
          | n -> Printf.sprintf "(* line %d *)" n))
   ^ "\n"
 
-let witness test file line =
-  { Render.test; loc = Some { Loc.file; line; column = 0 } }
+let witness ?exe test file line =
+  { Render.test; loc = Some { Loc.file; line; column = 0 }; exe }
 
-let rfc_report =
+let mutant id line before after =
+  {
+    Render.id;
+    file = "lib/calc.ml";
+    line;
+    before;
+    after;
+    source = Some calc_source;
+  }
+
+let add_mutant = mutant "lib/calc.ml:9:12:add" 9 "a - b" "a + b"
+let neq_mutant = mutant "lib/calc.ml:11:15:neq" 11 "b = 0" "b <> 0"
+let le_mutant = mutant "lib/calc.ml:22:5:le" 22 "n < limit" "n <= limit"
+let sub_mutant = mutant "lib/calc.ml:31:14:sub" 31 "acc + x" "acc - x"
+
+let suite_report =
   {
     (* Pre-spelled, as the loop spells them with the runtime's own
        functions: the identifier in its canonical form, the arming
@@ -2280,12 +2298,7 @@ let rfc_report =
     survivors =
       [
         {
-          Render.id = "lib/calc.ml:9:12:add";
-          file = "lib/calc.ml";
-          line = 9;
-          before = "a - b";
-          after = "a + b";
-          source = Some calc_source;
+          Render.mutant = add_mutant;
           witnesses =
             [
               witness "calc \u{203a} sub of two positives" "test/test_calc.ml"
@@ -2295,159 +2308,300 @@ let rfc_report =
             ];
         };
         {
-          Render.id = "lib/calc.ml:11:15:neq";
-          file = "lib/calc.ml";
-          line = 11;
-          before = "b = 0";
-          after = "b <> 0";
-          source = Some calc_source;
+          Render.mutant = neq_mutant;
           witnesses =
             [
               witness "calc \u{203a} div by zero raises" "test/test_calc.ml" 24;
             ];
         };
       ];
-    unreached =
-      [
-        { Render.file = "lib/calc.ml"; lines = [ 52; 61 ] };
-        { Render.file = "lib/lexer.ml"; lines = [ 14; 96 ] };
-      ];
-    unreached_total = 4;
+    unreached = [];
     killed = 181;
-    total = 187;
-    duration = Some 104.;
-    seed = Some Fixtures.root;
-    siblings = false;
+    scope = Render.Suite;
+    filter = None;
+  }
+
+let aggregate_report =
+  {
+    Render.arm_variable = "WINDTRAP_MUTATE_ARM";
+    survivors =
+      [
+        {
+          Render.mutant = add_mutant;
+          witnesses =
+            [
+              witness ~exe:"test_calc.exe" "calc \u{203a} sub of two positives"
+                "test/test_calc.ml" 14;
+              witness ~exe:"test_calc.exe" "calc \u{203a} sub to zero"
+                "test/test_calc.ml" 19;
+              witness ~exe:"test_eval.exe" "eval \u{203a} Sub node"
+                "test/test_eval.ml" 31;
+            ];
+        };
+      ];
+    unreached = [ le_mutant; sub_mutant ];
+    killed = 11;
+    scope = Render.Executables 3;
+    filter = None;
   }
 
 let mutation_report ?ansi ?mode ?invocation m =
   with_renderer ?ansi ?mode ?invocation (fun r -> Render.mutation_report r m)
 
-let expected_rfc_report =
+let exe_invocation =
+  `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe"
+
+let expected_suite_report =
   {|
 ─────────────────── survivors (2) ────────────────────
 
   SURVIVED  lib/calc.ml:9:12:add    a - b  →  a + b
        9 │   | Sub -> a - b
 
-    3 tests ran this line and none failed when it changed:
+    3 tests ran this line and none failed:
       calc › sub of two positives      test/test_calc.ml:14
       calc › sub to zero               test/test_calc.ml:19
       eval › Sub node                  test/test_eval.ml:31
 
-    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
-    dismiss  ((a - b) [@mutate off "reason"])
-
   SURVIVED  lib/calc.ml:11:15:neq   b = 0  →  b <> 0
       11 │   | Div -> if b = 0 then invalid_arg "division by zero" else a / b
 
-    1 test ran this line and did not fail when it changed:
+    1 test ran this line and did not fail:
       calc › div by zero raises        test/test_calc.ml:24
-
-    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:11:15:neq dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
-    dismiss  ((b = 0) [@mutate off "reason"])
 
 ──────────────────────────────────────────────────────
 
-unreached (4) — no test evaluates these
-   lib/calc.ml    52, 61
-   lib/lexer.ml   14, 96
-
-mutants: 2 survived of 187 · 181 killed, 4 unreached in 1m44s (seed s1:7be1d2c904aa31f5)
+mutants: 2 survived of 183 reached by this suite · 181 killed
+reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
 |}
 
-let arm_invocation =
-  `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe"
+let expected_aggregate_report =
+  {|
+─────────────────── survivors (1) ────────────────────
+
+  SURVIVED  lib/calc.ml:9:12:add   a - b  →  a + b
+       9 │   | Sub -> a - b
+
+    3 tests in 2 executables ran this line and none failed:
+      test_calc.exe   calc › sub of two positives      test/test_calc.ml:14
+      test_calc.exe   calc › sub to zero               test/test_calc.ml:19
+      test_eval.exe   eval › Sub node                  test/test_eval.ml:31
+
+───────────────── never reached (2) ──────────────────
+
+  UNREACHED  lib/calc.ml:22:5:le     n < limit  →  n <= limit
+      22 │   if n < limit then
+
+  UNREACHED  lib/calc.ml:31:14:sub   acc + x  →  acc - x
+      31 │   List.fold_left (fun acc x -> acc + x) 0
+
+──────────────────────────────────────────────────────
+
+mutants: 1 survived of 12 reached · 11 killed · 2 never reached · 3 executables
+reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with ppx_windtrap.mutate
+|}
 
 let test_mutation_report () =
-  check_string "the worked survivor report, byte for byte"
-    ~expected:expected_rfc_report
-    ~actual:(mutation_report ~invocation:arm_invocation rfc_report);
-  (* Without a CLI the arm line mirrors the variable onto dune runtest,
-     as every other hint does — and carries the instrumentation flag,
-     because a build without the backend has no mutant to arm and the
-     line would name a command that cannot do what it says. *)
-  check_contains "the arm line follows the invocation"
+  check_string "the per-executable report, byte for byte"
+    ~expected:expected_suite_report
+    ~actual:(mutation_report ~invocation:exe_invocation suite_report);
+  check_string "the aggregate report, byte for byte"
+    ~expected:expected_aggregate_report
+    ~actual:(mutation_report aggregate_report);
+  let out = mutation_report ~invocation:exe_invocation suite_report in
+  (* The block is the finding and the footer is the remedy: no per-block
+     command, no attribute to paste. *)
+  check_absent "no arm line in a block" ~sub:"arm " out;
+  check_absent "no dismiss line in a block" ~sub:"dismiss" out;
+  check_absent "no [@mutate off] to paste" ~sub:"[@mutate off" out
+
+let test_mutation_sentence () =
+  let block witnesses =
+    mutation_report
+      {
+        suite_report with
+        Render.survivors = [ { Render.mutant = add_mutant; witnesses } ];
+      }
+  in
+  let one = witness "calc \u{203a} sub to zero" "test/test_calc.ml" 19 in
+  let other = witness "eval \u{203a} Sub node" "test/test_eval.ml" 31 in
+  check_contains "singular"
+    ~sub:"\n    1 test ran this line and did not fail:\n" (block [ one ]);
+  check_contains "plural" ~sub:"\n    2 tests ran this line and none failed:\n"
+    (block [ one; other ]);
+  (* The executable column appears exactly when a witness names one, and
+     it is one column for the report: a row without an executable still
+     leaves the column. *)
+  let named = { one with Render.exe = Some "test_calc.exe" } in
+  check_absent "no executable column without an executable" ~sub:"test_calc.exe"
+    (block [ one; other ]);
+  check_contains "the column appears when one witness names an executable"
     ~sub:
-      "    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:9:12:add dune runtest \
-       --force --instrument-with ppx_windtrap.mutate\n"
-    (mutation_report rfc_report)
+      "\n\
+      \      test_calc.exe   calc \u{203a} sub to zero      test/test_calc.ml:19\n\
+      \                      eval \u{203a} Sub node         test/test_eval.ml:31\n"
+    (block [ named; other ]);
+  check_contains "one executable is just tests"
+    ~sub:"\n    2 tests ran this line and none failed:\n"
+    (block [ named; { other with Render.exe = Some "test_calc.exe" } ]);
+  check_contains "several executables are counted"
+    ~sub:"\n    2 tests in 2 executables ran this line and none failed:\n"
+    (block [ named; { other with Render.exe = Some "test_eval.exe" } ])
 
 let test_mutation_colors () =
-  let out = mutation_report ~ansi:true ~invocation:arm_invocation rfc_report in
+  let out =
+    mutation_report ~ansi:true ~invocation:exe_invocation suite_report
+  in
   check_contains "SURVIVED wears the failure red, the identifier the bold"
     ~sub:"  \027[31mSURVIVED\027[0m  \027[1mlib/calc.ml:9:12:add\027[0m" out;
   check_contains "the witness location is faint"
     ~sub:"\027[2mtest/test_calc.ml:14\027[0m" out;
-  check_contains "the survivor count is red, the unreached count yellow"
-    ~sub:
-      "mutants: \027[31m2 survived\027[0m of 187 \u{00b7} 181 killed, \
-       \027[33m4 unreached\027[0m in 1m44s"
-    out;
-  (* The section furniture is faint, as the failure rules are, and the
-     rows it introduces are not — pinned together so a style that leaked
-     from the heading onto the list fails here. *)
-  check_contains "the rules and the unreached heading are faint, the rows plain"
-    ~sub:
-      "\027[2munreached (4) \u{2014} no test evaluates these\027[0m\n\
-      \   lib/calc.ml    52, 61\n"
-    out;
   check_contains "the labelled rule is faint" ~sub:"\027[2m\u{2500}" out;
-  (* No color in any hint, as everywhere else in the transcript — pinned
-     by the whole line, so a hint that went missing fails too. *)
-  let line ~sub =
-    match List.filter (has ~sub) (String.split_on_char '\n' out) with
-    | l :: _ -> l
-    | [] -> "\u{ab}no line matching " ^ sub ^ "\u{bb}"
-  in
-  check_string "the arm hint carries no color"
-    ~expected:
-      "    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:11:15:neq dune exec \
-       --instrument-with ppx_windtrap.mutate test/test_calc.exe"
-    ~actual:(line ~sub:"arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:11:15");
-  check_string "the dismiss hint carries no color"
-    ~expected:"    dismiss  ((b = 0) [@mutate off \"reason\"])"
-    ~actual:(line ~sub:"dismiss  ((b = 0)")
+  check_contains "the survived count is red, the killed count green"
+    ~sub:
+      "mutants: \027[31m2 survived\027[0m of 183 reached by this suite \
+       \u{00b7} \027[32m181 killed\027[0m\n"
+    out;
+  (* No color in the footer, as in every hint — pinned by the whole
+     line, so a footer that went missing fails too. *)
+  check_contains "the reproduce footer carries no color"
+    ~sub:
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
+       ppx_windtrap.mutate test/test_calc.exe\n"
+    out;
+  let out = mutation_report ~ansi:true aggregate_report in
+  check_contains "UNREACHED wears yellow, the identifier the bold"
+    ~sub:"  \027[33mUNREACHED\027[0m  \027[1mlib/calc.ml:22:5:le\027[0m" out;
+  check_contains "the never-reached count is yellow, the rest plain"
+    ~sub:
+      "mutants: \027[31m1 survived\027[0m of 12 reached \u{00b7} \027[32m11 \
+       killed\027[0m \u{00b7} \027[33m2 never reached\027[0m \u{00b7} 3 \
+       executables\n"
+    out;
+  (* The same lines without color carry no escape at all: the styling is
+     the renderer's decision, never the data's. *)
+  check_absent "no escape without color" ~sub:"\027["
+    (mutation_report ~invocation:exe_invocation suite_report);
+  check_absent "no escape without color, aggregate" ~sub:"\027["
+    (mutation_report aggregate_report)
 
 let test_mutation_summary_forms () =
-  let clean =
-    {
-      rfc_report with
-      Render.survivors = [];
-      unreached = [];
-      unreached_total = 0;
-      killed = 187;
-      duration = Some 101.;
-    }
+  let summary ?(survivors = []) ?(unreached = []) ~killed scope =
+    mutation_report ~invocation:exe_invocation
+      { suite_report with Render.survivors; unreached; killed; scope }
   in
-  check_string "a report with nothing to say is one line"
+  let survivor =
+    { Render.mutant = add_mutant; witnesses = [ witness "t" "test/t.ml" 1 ] }
+  in
+  (* A report with nothing to say is one line, and the clean form is the
+     absence of a survived term, not a zero. *)
+  check_string "suite, clean"
+    ~expected:"mutants: 5 reached by this suite \u{00b7} 5 killed\n"
+    ~actual:(summary ~killed:5 Render.Suite);
+  check_string "selected, clean"
+    ~expected:"mutants: 2 reached by the 2 selected tests \u{00b7} 2 killed\n"
+    ~actual:(summary ~killed:2 (Render.Selected 2));
+  check_string "one selected test"
+    ~expected:"mutants: 1 reached by the 1 selected test \u{00b7} 1 killed\n"
+    ~actual:(summary ~killed:1 (Render.Selected 1));
+  check_string "executables, clean"
+    ~expected:"mutants: 14 reached \u{00b7} 14 killed \u{00b7} 3 executables\n"
+    ~actual:(summary ~killed:14 (Render.Executables 3));
+  check_string "one executable"
+    ~expected:"mutants: 3 reached \u{00b7} 3 killed \u{00b7} 1 executable\n"
+    ~actual:(summary ~killed:3 (Render.Executables 1));
+  (* Zero terms are omitted: nothing killed and nothing reached. *)
+  check_string "nothing reached, nothing killed"
+    ~expected:"mutants: 0 reached by this suite\n"
+    ~actual:(summary ~killed:0 Render.Suite);
+  let line out =
+    match
+      List.filter
+        (String.starts_with ~prefix:"mutants: ")
+        (String.split_on_char '\n' out)
+    with
+    | [ l ] -> l
+    | _ -> "\u{ab}no single mutants line\u{bb}"
+  in
+  check_string "nothing reached in the aggregate is all never reached"
     ~expected:
-      "mutants: 0 survived of 187 \u{00b7} 187 killed in 1m41s (seed \
-       s1:7be1d2c904aa31f5)\n"
-    ~actual:(mutation_report clean);
-  check_string "zero terms are omitted, and so is an absent seed"
-    ~expected:"mutants: 0 survived of 0 in 0.0ms\n"
+      "mutants: 0 reached \u{00b7} 2 never reached \u{00b7} 1 executable"
     ~actual:
-      (mutation_report
-         {
-           clean with
-           Render.killed = 0;
-           total = 0;
-           duration = Some 0.;
-           seed = None;
-         });
-  check_string "a merge ran nothing and times nothing"
-    ~expected:"mutants: 0 survived of 187 \u{00b7} 187 killed\n"
-    ~actual:(mutation_report { clean with Render.duration = None; seed = None });
-  (* Siblings: this executable's view, pointing at the merge, in
-     coverage's wording. *)
-  check_contains "siblings scope the total and name the merge"
+      (line
+         (summary ~unreached:[ le_mutant; sub_mutant ] ~killed:0
+            (Render.Executables 1)));
+  (* With survivors the reached count is the sum of both lists. *)
+  check_string "suite, survivors"
+    ~expected:"mutants: 1 survived of 5 reached by this suite \u{00b7} 4 killed"
+    ~actual:(line (summary ~survivors:[ survivor ] ~killed:4 Render.Suite));
+  check_string "selected, survivors"
+    ~expected:
+      "mutants: 1 survived of 2 reached by the 3 selected tests \u{00b7} 1 \
+       killed"
+    ~actual:
+      (line (summary ~survivors:[ survivor ] ~killed:1 (Render.Selected 3)));
+  check_string "executables, survivors and never reached"
+    ~expected:
+      "mutants: 1 survived of 12 reached \u{00b7} 11 killed \u{00b7} 2 never \
+       reached \u{00b7} 3 executables"
+    ~actual:
+      (line
+         (summary ~survivors:[ survivor ] ~unreached:[ le_mutant; sub_mutant ]
+            ~killed:11 (Render.Executables 3)));
+  check_string "every kill a survivor: no killed term"
+    ~expected:"mutants: 1 survived of 1 reached by this suite"
+    ~actual:(line (summary ~survivors:[ survivor ] ~killed:0 Render.Suite))
+
+let test_mutation_footer () =
+  (* The footer is the one command, under the summary, with the
+     placeholder where the identifier goes; it follows the invocation,
+     and under [`Mirrors] carries the instrumentation flag and --force,
+     because a build without the backend has no mutant to arm and a warm
+     tree would replay the cached run. *)
+  check_contains "the footer follows the exe invocation"
     ~sub:
-      "mutants: 2 survived of 41 (this executable) \u{00b7} 37 killed, 4 \
-       unreached in 1m44s (seed s1:7be1d2c904aa31f5) \u{00b7} project: dune \
-       build @mutate\n"
+      "mutants: 2 survived of 183 reached by this suite \u{00b7} 181 killed\n\
+       reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
+       ppx_windtrap.mutate test/test_calc.exe\n"
+    (mutation_report ~invocation:exe_invocation suite_report);
+  check_contains "the footer mirrors onto dune runtest"
+    ~sub:
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force \
+       --instrument-with ppx_windtrap.mutate\n"
+    (mutation_report suite_report);
+  (* A clean report has nothing to reproduce. *)
+  let clean = { suite_report with Render.survivors = []; killed = 183 } in
+  check_absent "no footer on a clean report" ~sub:"reproduce:"
+    (mutation_report ~invocation:exe_invocation clean);
+  (* Never-reached mutants alone are still something to arm. *)
+  check_contains "never reached alone keeps the footer" ~sub:"\nreproduce: "
     (mutation_report
-       { rfc_report with Render.siblings = true; total = 41; killed = 37 })
+       { aggregate_report with Render.survivors = []; killed = 12 });
+  (* A filtered run's survivor survived that selection, so the footer
+     restates the filter exactly as the replay line does: [-f], quoted,
+     after the command under [`Exe]; [WINDTRAP_FILTER] before [dune
+     runtest] under [`Mirrors]. *)
+  let filtered =
+    { suite_report with Render.scope = Render.Selected 2; filter = Some "sub" }
+  in
+  check_contains "the exe footer carries the filter"
+    ~sub:
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
+       ppx_windtrap.mutate test/test_calc.exe -f 'sub'\n"
+    (mutation_report ~invocation:exe_invocation filtered);
+  check_contains "the mirror footer carries the filter"
+    ~sub:
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=<id> WINDTRAP_FILTER='sub' dune runtest \
+       --force --instrument-with ppx_windtrap.mutate\n"
+    (mutation_report filtered);
+  check_contains "the filter is shell-quoted, as the replay line's is"
+    ~sub:" -f 'it'\\''s'\n"
+    (mutation_report ~invocation:exe_invocation
+       { filtered with Render.filter = Some "it's" })
 
 let test_mutation_sections () =
   (* Every survivor gets a block: a survivor is a failure block, and
@@ -2455,49 +2609,57 @@ let test_mutation_sections () =
   check_contains "the label counts the blocks it printed" ~sub:"survivors (1) "
     (mutation_report
        {
-         rfc_report with
-         Render.survivors = [ List.hd rfc_report.Render.survivors ];
+         suite_report with
+         Render.survivors = [ List.hd suite_report.Render.survivors ];
        });
-  (* Each finding stands alone: unreached without survivors, and
-     survivors without unreached. *)
+  (* Each finding stands alone: never reached without survivors, and
+     survivors without never reached. *)
   let unreached_only =
-    { rfc_report with Render.survivors = []; killed = 183 }
+    { aggregate_report with Render.survivors = []; killed = 12 }
   in
-  check_string "unreached alone: no rule, no blocks"
+  check_string "never reached alone: its rule, its blocks, the summary"
     ~expected:
       "\n\
-       unreached (4) \u{2014} no test evaluates these\n\
-      \   lib/calc.ml    52, 61\n\
-      \   lib/lexer.ml   14, 96\n\n\
-       mutants: 0 survived of 187 \u{00b7} 183 killed, 4 unreached in 1m44s \
-       (seed s1:7be1d2c904aa31f5)\n"
+       \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500} \
+       never reached (2) \
+       \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n\
+      \  UNREACHED  lib/calc.ml:22:5:le     n < limit  \u{2192}  n <= limit\n\
+      \      22 \u{2502}   if n < limit then\n\n\
+      \  UNREACHED  lib/calc.ml:31:14:sub   acc + x  \u{2192}  acc - x\n\
+      \      31 \u{2502}   List.fold_left (fun acc x -> acc + x) 0\n\n\
+       \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n\
+       mutants: 12 reached \u{00b7} 12 killed \u{00b7} 2 never reached \
+       \u{00b7} 3 executables\n\
+       reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force \
+       --instrument-with ppx_windtrap.mutate\n"
     ~actual:(mutation_report unreached_only);
-  check_absent "survivors alone: no unreached heading" ~sub:"unreached"
-    (mutation_report ~invocation:arm_invocation
-       { rfc_report with Render.unreached = []; unreached_total = 0 });
-  (* Consecutive lines collapse into ranges, in coverage's dialect. *)
-  check_contains "unreached lines collapse into ranges"
-    ~sub:"   lib/calc.ml   52-54, 61\n"
-    (mutation_report
-       {
-         unreached_only with
-         Render.unreached =
-           [ { Render.file = "lib/calc.ml"; lines = [ 52; 53; 54; 61 ] } ];
-       });
+  check_absent "survivors alone: no never-reached section" ~sub:"never reached"
+    (mutation_report ~invocation:exe_invocation suite_report);
   (* An unreadable source drops the excerpt row and nothing else. *)
   let sourceless =
     {
-      rfc_report with
+      aggregate_report with
       Render.survivors =
         List.map
-          (fun (s : Render.survivor) -> { s with Render.source = None })
-          rfc_report.Render.survivors;
+          (fun (s : Render.survivor) ->
+            {
+              s with
+              Render.mutant = { s.Render.mutant with Render.source = None };
+            })
+          aggregate_report.Render.survivors;
+      unreached =
+        List.map
+          (fun (m : Render.mutant) -> { m with Render.source = None })
+          aggregate_report.Render.unreached;
     }
   in
   check_absent "an unreadable source drops the excerpt row" ~sub:"\u{2502}"
     (mutation_report sourceless);
-  check_contains "an unreadable source keeps the head row"
+  check_contains "an unreadable source keeps the survivor head row"
     ~sub:"  SURVIVED  lib/calc.ml:9:12:add"
+    (mutation_report sourceless);
+  check_contains "an unreadable source keeps the unreached head row"
+    ~sub:"  UNREACHED  lib/calc.ml:22:5:le"
     (mutation_report sourceless)
 
 (* Tree-wide summary dialect
@@ -2742,9 +2904,13 @@ let tests =
     test "the coverage report's frozen bytes" test_coverage_report_bytes;
     test "the uncovered cell is bounded" test_coverage_uncovered_cap;
     test "the coverage thresholds are the renderer's" test_coverage_thresholds;
-    test "mutation: the worked survivor report" test_mutation_report;
-    test "mutation: the block wears the failure colours" test_mutation_colors;
+    test "mutation: both reports, byte for byte" test_mutation_report;
+    test "mutation: the sentence and the executable column"
+      test_mutation_sentence;
+    test "mutation: the blocks and the summary wear the palette"
+      test_mutation_colors;
     test "mutation: summary line forms" test_mutation_summary_forms;
+    test "mutation: the reproduce footer" test_mutation_footer;
     test "mutation: sections stand alone" test_mutation_sections;
     test "tree-wide summary dialect (harness parity)" test_summary_dialect;
   ]

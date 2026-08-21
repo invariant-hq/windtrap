@@ -178,7 +178,10 @@ let load_merged files =
           rerun;
         Error 1
       end
-      else Ok (List.fold_left (fun acc (_, t, _) -> M.merge acc t) M.empty kept)
+      else
+        Ok
+          ( List.fold_left (fun acc (_, t, _) -> M.merge acc t) M.empty kept,
+            List.length kept )
 
 (* Report data *)
 
@@ -208,26 +211,44 @@ let read_source ~roots =
         Hashtbl.add cache file contents;
         contents
 
-let print_report ~roots collection =
+let print_report ~roots ~executables collection =
   let ansi =
     Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
       ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
   in
   let renderer = Render.create ~out:Format.std_formatter ~ansi () in
-  Render.mutation_report renderer
-    (Mutate_loop.render_data
-       ~resolve_source:(read_source ~roots)
-         (* [loc = None] throughout: a test's declaration site lives in the
-          test tree of the executable that ran it, and this command links
-          none of them. The name is what a reader greps for, and it is in
-          the report. *)
-       ~loc_of:(fun _ -> None)
-         (* The merge ran nothing and seeded nothing, and it is the
-          project's view rather than one executable's — so no duration, no
-          seed, and no sibling scoping. *)
-       ~duration:None ~seed:None ~siblings:false
-       ~total:(List.length (M.records collection))
-       collection);
+  let resolve_source = read_source ~roots in
+  let data =
+    Mutate_loop.render_data
+      ~resolve_source
+        (* [loc = None] throughout: a test's declaration site lives in the
+         test tree of the executable that ran it, and this command links
+         none of them. The name is what a reader greps for, and it is in
+         the report. *)
+      ~loc_of:(fun _ -> None)
+      ~scope:(Render.Executables executables) ~filter:None collection
+  in
+  (* The merge is the one report that can call a mutant unreached: a
+     mutant no executable's tests evaluate is a finding here, where one
+     executable's unreached mutant was merely not its own. *)
+  let unreached =
+    List.filter_map
+      (fun (r : M.record) ->
+        match r.M.verdict with
+        | M.Unreached ->
+            Some
+              {
+                Render.id = M.id_to_string r.M.id;
+                file = r.M.id.M.file;
+                line = r.M.id.M.line;
+                before = r.M.before;
+                after = r.M.after;
+                source = resolve_source r.M.id.M.file;
+              }
+        | M.Killed | M.Survived _ -> None)
+      (M.records collection)
+  in
+  Render.mutation_report renderer { data with Render.unreached };
   Format.pp_print_flush Format.std_formatter ()
 
 (* The command *)
@@ -259,6 +280,6 @@ let run args =
           else
             match load_merged files with
             | Error code -> code
-            | Ok collection ->
-                print_report ~roots collection;
+            | Ok (collection, executables) ->
+                print_report ~roots ~executables collection;
                 0))
