@@ -203,6 +203,12 @@ which runs every suite mutated and merges what they wrote:
 $ WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
 ```
 
+(That command, verbatim, is for your project. This chapter's capture,
+made inside windtrap's tree, used the example's `@example-mutate` alias
+and added `WINDTRAP_MUTATE_ONLY=examples/x-blueprint` — windtrap's own
+library carries the backend here, and an unscoped run would survey the
+framework's mutants too.)
+
 Each suite prints its own report as it runs, then `windtrap mutate`
 unions the verdict files under **killed anywhere wins** and reports the
 mutants that survived *everywhere*, each witness beside the executable

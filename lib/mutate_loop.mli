@@ -30,10 +30,10 @@
     for nothing, this module does nothing at all.
 
     {b Exit codes} (Law 16e). [0] when the loop completed, {e whatever it found}
-    — a survivor never fails a build in this release — and [1] when it refused
-    to start or could not finish, each with its own message on [stderr]. Never
-    [2]: "nothing ran" is a statement about a test selection, and a mutation run
-    does not make one.
+    — a survivor is one suite's view, and only the aggregate ([windtrap mutate])
+    gates on survivors — and [1] when it refused to start or could not finish,
+    each with its own message on [stderr]. Never [2]: "nothing ran" is a
+    statement about a test selection, and a mutation run does not make one.
 
     {b Not in this slice.} Children run one at a time, and the per-child
     deadline is the only clock: nothing bounds a whole run, so a parent-side
@@ -117,14 +117,3 @@ val on_armed : (unit -> unit) -> unit
     passed. Registration is a module-load act; hooks are never unregistered,
     fire in registration order, and are read at fire time, so registration order
     and link order need not agree. *)
-
-(** {1:signal The instrumentation signal} *)
-
-val instrumented : unit -> bool
-(** [instrumented ()] is [true] iff this executable links any instrumented
-    module — iff {!Windtrap_mutate.catalogue} is non-empty. A binary with
-    mutants registered was necessarily built with the mutation backend, so this
-    is what command hints key on: a hint that spelled a [dune exec] without
-    [--instrument-with ppx_windtrap.mutate] would have dune rebuild the target
-    {e uninstrumented}, and the report's [reproduce] line would name a command
-    that arms nothing. *)

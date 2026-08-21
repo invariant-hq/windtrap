@@ -165,14 +165,16 @@ val catalogue : unit -> mutant list
     The one case that is not a mistake is {!Uncatalogued}, and it is separated
     from {!Unmatched} here because only the registry can tell the two apart. One
     identifier is normally handed to {e every} test executable of a project at
-    once — [WINDTRAP_MUTATE_ARM=<id> dune runtest] is the spelling the report
-    prints, because a command that links no test executable has no single binary
-    to name — and in a project with several [(test)] stanzas most of those
-    executables were built from other sources entirely. Such an executable holds
-    no such mutant, produces no verdict, and hides nothing by running on.
-    Whether that is worth refusing over is the caller's decision — the mutation
-    loop makes it, and lets such a run proceed — but only this module can say
-    which of the two cases the identifier is in. *)
+    once —
+    [WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
+     ppx_windtrap.mutate] is the spelling the report prints, because a command
+    that links no test executable has no single binary to name — and in a
+    project with several [(test)] stanzas most of those executables were built
+    from other sources entirely. Such an executable holds no such mutant,
+    produces no verdict, and hides nothing by running on. Whether that is worth
+    refusing over is the caller's decision — the mutation loop makes it, and
+    lets such a run proceed — but only this module can say which of the two
+    cases the identifier is in. *)
 
 (** The type for arming errors. All are recoverable: the loop prints them via
     {!pp_arm_error}, and refuses to start on all but {!Uncatalogued}. *)
@@ -304,8 +306,8 @@ exception Runaway of { id : id; hits : int; budget : int }
 
     - on [Test_started]: {!drain} — whatever accumulated since the previous
       drain was evaluated {e outside} any test (module initialization before the
-      first test, fixture release after the previous one), and is reported as
-      not armable rather than unreached — then {!next_epoch};
+      first test, fixture release after the previous one) and belongs to no test
+      — then {!next_epoch};
     - on [Test_finished]: {!drain}, whose result is the set of mutants that test
       evaluated, with their hit counts;
     - at run end: {!drain} once more, for the last test's teardown.

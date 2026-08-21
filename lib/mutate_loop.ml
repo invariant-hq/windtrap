@@ -32,7 +32,6 @@ let spf = Printf.sprintf
    applies it at registration, so an out-of-scope file is not in the
    registry at all and its guard is inert. Nothing to filter here. *)
 let catalogue = lazy (M.catalogue ())
-let instrumented () = Lazy.force catalogue <> []
 
 type run =
   | Ran of (Runner.outcome, Runner.startup_error) result
@@ -868,7 +867,7 @@ let arm_mode renderer ~armed (spine : Driver.t) tests =
   | Error (M.Uncatalogued _ as error) ->
       (* Not a refusal. One identifier is handed to every test
          executable at once — the report's own remedy is
-         [WINDTRAP_MUTATE_ARM=<id> dune runtest --instrument-with
+         [WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
          ppx_windtrap.mutate], because a command that links no test
          executable has no single binary to name — and in a project with
          several (test) stanzas most of them were built from other
