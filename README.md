@@ -133,19 +133,17 @@ the machine-readable form), and `--min 80` gates CI.
 **[Mutation testing](doc/manual/mutation.md)** — the second inert
 stanza, `(instrumentation (backend ppx_windtrap.mutate))`, makes the
 test executable its own mutation runner: `WINDTRAP_MUTATE=1` turns the
-run you already make into a mutation run, which forks once per mutant
-and prints every survivor as a failure block naming the line, the
-rewrite, and *the tests that ran that line and did not fail when it
-changed*. Copy the block's `arm` line to watch one mutant live through
-your green suite, and dismiss an equivalent one in the source with
-`[@mutate off "reason"]`. `dune exec windtrap -- mutate` merges the
-several test executables that cover a library, because a mutant one
-suite kills and another merely reaches is killed and an unmerged report
-would call it a survivor. Writing a test rather than reading a module?
-`WINDTRAP_MUTATE=admit` asks the other question — *can this test fail?*
-— ruling every test the run selects `ADMITTED` (it named the fault it
-kills), `UNJUSTIFIED` (it watched faults on its lines and never failed,
-which exits 1) or `NO SITES`, in about a second for one test.
+run you already make into a mutation run, which re-runs the tests once
+per mutant they reach and prints every survivor as a failure block
+naming the line, the rewrite, and *the tests that ran that line and did
+not fail when it changed*. Scope it to the file you are working on with
+`WINDTRAP_MUTATE_ONLY=lib/foo.ml`, filter to the test you just wrote
+with `-f`, and dismiss an equivalent mutant in the source with
+`[@mutate off "reason"]`. The project answer is one command,
+`WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with
+ppx_windtrap.mutate`, which runs every suite mutated and merges them
+under killed-anywhere-wins — a mutant one suite kills and another
+merely reaches is killed — and exits 1 on any survivor.
 
 **[Test runner](doc/manual/running-tests.md)** — filtering by name and
 tag, `--failed` reruns, `--shard K/N` for CI partitioning, fail-fast,

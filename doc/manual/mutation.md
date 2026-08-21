@@ -14,55 +14,52 @@ library you want mutated, inert without the flag:
 ```
 
 The `(instrumentation …)` field repeats, so a library can carry both
-backends. An instrumented build that was not asked to mutate anything
-says what it found, where the coverage percentage sits:
-
-```
-$ dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
-calc: 7 passed in 0.00107s.
-mutants: 5 in 1 file · WINDTRAP_MUTATE=1 to test them
-```
-
-That is the whole discovery story: adding the backend never makes a run
-longer than it was; it says what it *could* do and waits to be asked.
-`WINDTRAP_MUTATE=off` is the answer to that line, for a workspace whose
-every build is instrumented and does not want telling every time.
+backends. Then: run your tests with `WINDTRAP_MUTATE=1`; for every
+mutant in the code those tests reach, windtrap re-runs them with the
+mutant armed; a mutant none of them notice is reported, naming the tests
+that ran it.
 
 Two rules keep it honest. **A mutant changes meaning only in a forked
 child, only when armed, and only in a build that asked for it** — with
 the backend on and `WINDTRAP_MUTATE` unset the program is the original
 program, and a process running with a mutant armed announces it before
-any other output, so a run whose output does not say so has none. And
-**nothing is catalogued on disk**: the mutants are a data literal
-compiled into the binary, so a catalogue cannot go stale against the
-code it describes. Only verdicts touch disk, under `_build/_mutants`,
-deterministically named per executable and overwritten on re-run — by a
-run that judged the whole suite, never by a narrowed one.
+any other output. And **nothing is catalogued on disk**: the mutants are
+a data literal compiled into the binary, so a catalogue cannot go stale
+against the code it describes. Only verdicts touch disk, under
+`_build/_mutants`, one file per executable, overwritten on re-run.
 
-## Asking
+The transcripts below are from [`examples/x-blueprint`](../../examples/x-blueprint),
+run inside windtrap's own tree — which is why its paths carry that
+prefix and every command carries `--instrument-with`. Copied out, the
+example's `dune-workspace` declares the backend once and the flag
+disappears from every command in this chapter.
+
+## Running it on a file
+
+Name the file you are working on and the suite that tests it:
 
 ```
-$ WINDTRAP_MUTATE=1 dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
-calc: 7 passed in 0.00116s.
+$ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib/slug.ml \
+    dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe
+slug: 8 passed in 0.0171s (seed s1:4fb09fe9d4bf9267).
 
-─────────────────── survivors (1) ────────────────────
+─────────────────── survivors (4) ────────────────────
 
-  SURVIVED  lib/calc.ml:9:11:add   a - b  →  a + b
-      9 │   | Sub -> a - b
+  SURVIVED  examples/x-blueprint/lib/slug.ml:2:29:gt   c >= 'A'  →  c > 'A'
+      2 │   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 
-    2 tests ran this line and none failed when it changed:
-      sub › of a negative         test/test_calc.ml:16
-      sub › of two positives      test/test_calc.ml:15
+    7 tests ran this line and none failed:
+      slugify › emits lowercase alphanumerics and single inner dashes      examples/x-blueprint/test/unit/test_slug.ml:17
+      slugify › is idempotent                                              examples/x-blueprint/test/unit/test_slug.ml:15
+      slugify › specified points › "  OCaml 5.x  "                         examples/x-blueprint/test/unit/test_slug.ml:28
+      …
 
-    arm      WINDTRAP_MUTATE_ARM=lib/calc.ml:9:11:add dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe --
-    dismiss  ((a - b) [@mutate off "reason"])
+  …
 
 ──────────────────────────────────────────────────────
 
-unreached (2) — no test evaluates these
-   lib/calc.ml   14
-
-mutants: 1 survived of 5 · 2 killed, 2 unreached in 17ms (seed s1:c18ab9d2624ed5ca)
+mutants: 4 survived of 16 reached by this suite · 12 killed
+reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe --
 ```
 
 The suite runs once as a dry run — proving it green, and recording per
@@ -70,98 +67,47 @@ mutant exactly which tests evaluated it — then the process forks itself
 once per reached mutant and runs only those tests.
 
 A survivor is an ordinary failure block, because a survivor *is* a
-failure: a defect report about named tests. The sentence in the middle
-is the product. Naming the tests that watched the line change and said
-nothing turns a score into a work item, and windtrap has it because it
-is the runner and owns the per-test boundary. A run with nothing to
-report is one line, the way a passing suite is — and "nothing to
-report" means no survivors *and* nothing unreached.
-
-## Watching it happen
-
-Copy the `arm` line. It arms that one mutant in this one process:
+failure: a defect report about named tests. The header is the rewrite —
+`c >= 'A'` became `c > 'A'` — and the sentence in the middle is the
+product: naming the tests that watched the line change and said nothing
+turns a score into a work item, and windtrap has it because it is the
+runner and owns the per-test boundary. Blocks are ordered by witness
+count, most-watched first, and never capped. A run with nothing to
+report is one line, the way a passing suite is:
 
 ```
-$ WINDTRAP_MUTATE_ARM=lib/calc.ml:9:11:add dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
-mutant lib/calc.ml:9:11:add armed: a - b → a + b
-calc: 7 passed in 0.00116s.
-mutant survived: the armed site was evaluated 2 time(s) and no test failed.
+slug: 9 passed in 0.0457s (seed s1:c0e74ad8abd96b7d).
+mutants: 16 reached by this suite · 16 killed
 ```
 
-Seven green with subtraction turned into addition, and the closing line
-says the tests ran that line twice while it was wrong. Those three lines
-are the entire argument for mutation testing, made on your own suite in
-a few seconds. Open `test/test_calc.ml:15`; it says
+The report is about *this executable's* tests, and the run exits 0
+whatever it finds: one suite's survivor may be another suite's kill,
+and the project's answer is the aggregate below. Test selection is the
+ordinary `-f` and tag flags — `-- -f idempotent` mutates only what the
+idempotence law reaches, the summary says `of 16 reached by the 1
+selected test`, and the footer carries the filter.
+
+## Reading a survivor
+
+All four survivors above are boundaries of a character class, and the
+witnesses say why: two laws that cannot see one character's fate, and
+specified points none of which sits on an edge. The remedy is a test
+that does — one input touching every edge at once, added to the
+`cases` beside the others:
 
 ```ocaml
-test "of two positives" (fun () -> is_true (apply Sub 10 4 > 0));
+cases "specified points"
+  ~name:(fun (input, _) -> Printf.sprintf "%S" input)
+  [ ("Hello, World!", "hello-world"); ("MiXeD", "mixed"); ("Az Za 09", "az-za-09") ]
+  (fun (input, expected) -> equal string expected (Slug.slugify input));
 ```
 
-and you write the assertion you meant:
+Same command again: `mutants: 16 reached by this suite · 16 killed`.
 
-```ocaml
-test "of two positives" (fun () -> equal int 6 (apply Sub 10 4));
-```
-
-Same command again:
-
-```
-mutant lib/calc.ml:9:11:add armed: a - b → a + b
-calc: 7 tests
-...F...
-──────────────────── failures (1) ────────────────────
-  FAIL  sub › of two positives
-    test/test_calc.ml:15
-      15 │           test "of two positives" (fun () -> equal int 6 (apply Sub 10 4));
-
-    expected  6
-    actual    14
-──────────────────────────────────────────────────────
-
-6 passed, 1 failed in 0.00106s.
-mutant killed.
-```
-
-`mutant killed.` closes the loop. An armed run is an ordinary run
-otherwise — it exits 1 because a test failed — except that checking is
-read-only while a mutant is armed: a snapshot or `[%expect]` mismatch is
-a plain failure, no `.corrected` is written, and dune's promotion
-protocol is not consulted.
-
-Green needs a closing line too, because green has two meanings and they
-ask for opposite work. A completed run that killed nothing ends in
-exactly one of
-
-```
-mutant survived: the armed site was evaluated 2 time(s) and no test failed.
-mutant not evaluated: no selected test ran the site.
-```
-
-— *your tests watched this change and said nothing*, or *no test you
-selected ran the line at all*, the second a statement about the
-selection and not about the tests; without the pair the two transcripts
-are the same bytes. The count starts at the arming, so a site evaluated
-during module initialization is not billed to the run. A run that exited
-2 gets no closing line at all — a selection that matched nothing says
-something about the filter and nothing about the mutant.
-
-An identifier that names a file this executable catalogues but matches
-no site in it, or matches more than one, is refused with the candidates
-listed: a silently ignored arming would report a green run as a
-survivor. An identifier naming a file this executable catalogues
-*nothing* in is not a refusal, because one identifier is normally armed
-across a whole project at once — `WINDTRAP_MUTATE_ARM=<id> dune runtest
---force --instrument-with ppx_windtrap.mutate` — where most binaries
-were built from other sources. Such a run says so on standard error and
-proceeds; a binary holding none of a file's sites produces no verdict
-about them either way.
-
-## Dismissing a mutant that cannot be caught
-
-`a - b → a + b` above is real. Some are not: `want > 16` and
-`want >= 16` differ only at `want = 16`, where both arms yield `16`.
-That is an *equivalent mutant*, dismissed in the source, with a reason,
-in the attribute grammar you already learned for coverage:
+Some survivors cannot be caught. `want > 16` and `want >= 16` differ
+only at `want = 16`, where both arms yield `16`. That is an *equivalent
+mutant*, dismissed in the source, with a reason, in the attribute
+grammar you already learned for coverage:
 
 ```ocaml
 let cap want =
@@ -173,35 +119,168 @@ let cap want =
 value or module binding, `[@@@mutate off]` / `[@@@mutate on]` around a
 region, `[@@@mutate exclude_file]` for a file; each takes an optional
 reason string. A dismissed site is never forked, never scored, and
-absent from the denominator, so the discovery line's count drops when
-you add one. Dismissals live in the source because that is the only
-place they cannot rot — they move with the code and `git blame` says who
-decided and when. There is no suppression database and no baseline file,
-and windtrap will never write the attribute for you: auto-dismissal is
-auto-suppression of real defects.
+absent from the denominator. Dismissals live in the source because that
+is the only place they cannot rot — they move with the code and
+`git blame` says who decided and when. There is no suppression database
+and no baseline file, and windtrap never writes the attribute for you:
+auto-dismissal is auto-suppression of real defects.
 
-## The unreached list
+## Reproducing one
 
-Two kinds of finding, two remedies. A survivor says *strengthen one of
-these tests*. An unreached mutant says *write one*: no test evaluates
-that expression at all, so no assertion, however sharp, can catch it.
-Unreached mutants are never forked — a child would have no test to run
-and the verdict is known in advance — but they are always listed, one
-compact line per file.
+The `reproduce:` footer is a command with a hole. Fill it with a
+survivor's identifier and that one mutant is armed in this one process,
+which otherwise runs normally:
 
-Neither finding needs the coverage backend, and the populations differ:
-coverage points are block entries and application out-edges, mutation
-sites are conditions, comparisons, connectives and arithmetic. "No test
-evaluates `lib/calc.ml:14`'s comparison" is sharper than "line 14 is
-uncovered". Coverage remains the better tool for whole-file gaps; the
-two are complementary and neither is a prerequisite.
+```
+$ WINDTRAP_MUTATE_ARM=examples/x-blueprint/lib/slug.ml:2:41:lt \
+    dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe
+mutant examples/x-blueprint/lib/slug.ml:2:41:lt armed: c <= 'Z' → c < 'Z'
+slug: 8 passed in 0.0161s (seed s1:bccabc5682ff4d3e).
+mutant survived: the armed site was evaluated 54544 time(s) and no test failed.
+```
 
-One imprecision in this release: a site the dry run evaluates only
-*outside* any test — a toplevel binding's right-hand side, which runs
-before the fork, or a global fixture release, which runs after the last
-test — is listed as unreached rather than as *not armable*. Both mean
-"no test evaluates this" and neither is forked, so the counts are right;
-only the remedy the list offers is imprecise.
+Eight green with `Z` no longer a letter, and the closing line says the
+tests ran that comparison tens of thousands of times while it was
+wrong. Those three lines are the entire argument for mutation testing,
+made on your own suite in a second. With the boundary row in place:
+
+```
+mutant examples/x-blueprint/lib/slug.ml:2:41:lt armed: c <= 'Z' → c < 'Z'
+slug: 9 tests (seed s1:25cc6d0339147053)
+........F
+──────────────────── failures (1) ────────────────────
+  FAIL  slugify › specified points › "Az Za 09"
+    …
+──────────────────────────────────────────────────────
+
+8 passed, 1 failed in 0.0209s.
+mutant killed.
+```
+
+`mutant killed.` closes the loop. An armed run is an ordinary run
+otherwise — it exits 1 because a test failed — except that checking is
+read-only while a mutant is armed: a snapshot or `[%expect]` mismatch is
+a plain failure, no `.corrected` is written, and dune's promotion
+protocol is not consulted.
+
+Green needs a closing line too, because green has two meanings and they
+ask for opposite work: `mutant survived` above — *your tests watched
+this change and said nothing* — or `mutant not evaluated: no selected
+test ran the site.`, a statement about the selection and not about the
+tests. The count starts at the arming, so a site evaluated during
+module initialization is not billed to the run.
+
+An identifier that matches more than one site, or names a file this
+executable catalogues but matches no site in it, is refused with the
+candidates listed: a silently ignored arming would report a green run
+as a survivor. One naming a file this executable catalogues *nothing*
+in is noted on standard error and the run proceeds — the project
+report's footer arms one identifier across every suite at once, where
+most binaries were built from other sources.
+
+## The whole project
+
+A library is usually covered by several `(test)` stanzas, and each
+executable scores only what its own tests reach. Verdicts do not merge
+the way coverage counts do: a mutant can be **killed** by one suite and
+merely **reached** by another, and the truth about the project is
+*killed*. Reporting the second suite alone produces a **false
+survivor**, which sends the reader to write a test that already exists.
+In the example, the expect suite alone reports seven survivors of
+`slug.ml`; the unit suite kills every one of them.
+
+So the project's answer is one alias at the top of the test tree,
+which runs every suite mutated and merges what they wrote:
+
+```lisp
+(rule
+ (alias mutate)
+ (deps (alias_rec runtest) (universe))
+ (action (run %{bin:windtrap} mutate)))
+```
+
+```
+$ WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+```
+
+Each suite prints its own report as it runs, then `windtrap mutate`
+unions the verdict files under **killed anywhere wins** and reports the
+mutants that survived *everywhere*, each witness beside the executable
+that ran it. Here, with the boundary row removed again:
+
+```
+─────────────────── survivors (4) ────────────────────
+
+  SURVIVED  examples/x-blueprint/lib/slug.ml:2:29:gt   c >= 'A'  →  c > 'A'
+      2 │   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+
+    9 tests in 3 executables ran this line and none failed:
+      issue_1.exe                         keeps UTF-8 letters
+      test_slug.exe                       slugify › emits lowercase alphanumerics and single inner dashes
+      test_slug.exe                       slugify › is idempotent
+      test_slug.exe                       slugify › specified points › "  OCaml 5.x  "
+      …
+      windtrap_example_blueprint_expect   Expect_slug › slugify, at a glance
+
+  …
+
+──────────────────────────────────────────────────────
+
+mutants: 4 survived of 18 reached · 14 killed · 4 executables
+reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with ppx_windtrap.mutate
+```
+
+That run exits 1: every survivor in it is a test to strengthen or an
+equivalent mutant to dismiss, which makes it the one mutation exit code
+a build may gate on. With the row restored the project has nothing to
+report and exits 0:
+
+```
+mutants: 18 reached · 18 killed · 4 executables
+```
+
+A mutant no suite in the project reaches is a second kind of finding
+with a second remedy — *write a test*, where a survivor says
+*strengthen one*. It is never forked, it is never red, and it renders
+in its own section of the project report — only there, because one
+executable sees only the files it links and cannot know what no test
+reaches. Here the verdicts on disk came from the bug-backlog suite
+alone, whose one input never reaches the dash insertion:
+
+```
+  …
+
+───────────────── never reached (1) ──────────────────
+
+  UNREACHED  examples/x-blueprint/lib/slug.ml:12:27:ge   (Buffer.length buf) > 0  →  (Buffer.length buf) >= 0
+      12 │         if !pending_sep && Buffer.length buf > 0 then Buffer.add_char buf '-';
+
+──────────────────────────────────────────────────────
+
+mutants: 12 survived of 15 reached · 3 killed · 1 never reached · 1 executable
+```
+
+Three facts about the command. `--force` is required and is not a wart:
+a mutation run is not a cached artifact, and dune would otherwise treat
+a `runtest` action whose inputs have not changed as already done. A
+plain `dune build @mutate`, without the variable and the flag, rebuilds
+the executables uninstrumented, which stales every verdict — a verdict
+is invalidated by any later build of the executable that wrote it — and
+the merge refuses loudly, naming the command above. And
+`WINDTRAP_MUTATE_ONLY` scopes the work without narrowing the suite, so
+a scoped run still writes its verdicts; selecting tests — `-f`, tags,
+`--shard`, `--failed`, an in-source `ftest` — does narrow it, and such a
+run reports in full, leaves any existing verdict file where it was, and
+says so:
+
+```
+verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
+```
+
+`windtrap mutate` on its own runs no tests and drives no build; it
+reads `_build/_mutants`, or the `.mutants` files and directories named
+as arguments, and a missing path is a loud error, never a silent
+narrowing of the merge.
 
 ## What is mutated
 
@@ -218,338 +297,21 @@ an ill-typed arm is not one bad mutant, it is a broken build.
 
 A boolean context is an `if`/`while` condition, a `when` guard, or a
 direct operand of `&&`/`||`. The restriction is what makes `cmp`
-typing-closed — there the comparison can only be `bool`, so negating it
-is well-typed however `<` has been shadowed — and its cost is real:
-`let ok = a < b` carries no mutant. (On floats `cmp` is exact away from
-`NaN`, where `a < b` and `not (b < a)` differ.)
+typing-closed — there the comparison can only be `bool` — and its cost
+is real: `let ok = a < b` carries no mutant. (On floats `cmp` is exact
+away from `NaN`.)
 
 Never mutated: `assert` and everything under it; attribute and extension
 payloads; any file declaring `let%test`, `let%expect_test` or
 `module%test`, because a file declaring inline tests is test code; sites
 at generated (ghost) locations; and every node of an operator chain but
-the outermost — `a + b + c` carries one `sub` mutant, not two, since
-both nodes start at the same byte and no identifier could separate them.
-A file that visibly rebinds `+ - +. -.` loses `ari`, one that rebinds
-the comparisons loses `cmp`, one that rebinds `&&`/`||` loses `con`.
+the outermost — `a + b + c` carries one `sub` mutant, not two. A file
+that visibly rebinds `+ - +. -.` loses `ari`, one that rebinds the
+comparisons loses `cmp`, one that rebinds `&&`/`||` loses `con`.
 
-A mutant is named `<file>:<line>:<col>:<rewrite>` — the first byte of the
-mutated expression, and the *replacement*, from the closed vocabulary
-these four operators emit: `not`, `lt le gt ge eq neq`,
+The `<rewrite>` in a mutant's name is the *replacement*, from the closed
+vocabulary these four operators emit: `not`, `lt le gt ge eq neq`,
 `add sub fadd fsub`, `and or`.
-
-## Admitting a test
-
-The survey asks a question about the code: which of its faults nothing
-notices. There is a smaller question, asked far more often, that the
-same machinery answers — *can the test I just wrote fail at all?* A test
-nobody has watched fail is unverified: it may assert nothing that can
-break, agree with every bug the code has, or never reach the line it
-claims to constrain. The survey answers that only by inference, over a
-whole file, in a report about mutants rather than about your test.
-
-`WINDTRAP_MUTATE=admit` asks it directly. The run's ordinary test
-selection becomes an *admission set*: the loop arms only the faults
-those tests reach, stops as soon as every selected test has killed one,
-and rules on each test by name. It is the command you were going to run
-anyway, with one variable in front of it:
-
-```
-$ WINDTRAP_MUTATE=admit dune exec --instrument-with ppx_windtrap.mutate \
-    examples/x-blueprint/test/unit/test_slug.exe -- -f idempotent
-slug: 1 passed in 0.0221s (seed s1:cd98c762bb757a06).
-
-  ADMITTED  slugify › is idempotent
-    killed  examples/x-blueprint/lib/slug.ml:2:3:gt   c >= 'a'  →  c > 'a'
-
-admission: 1 admitted of 1 · 2 forks over 61 reached in 77ms (seed s1:cd98c762bb757a06)
-```
-
-It opens with the ordinary transcript for your selection, because the
-dry run *is* the ordinary run: verdicts are measured against a green
-baseline, and a selected test that fails gets its ordinary failure
-report while admission declines the question — a failing test has
-already proved it can fail. Then the loop breaks the code that selection
-runs, one fault at a time, until each test notices one. `ADMITTED` names
-the fault the test exists to catch: one line, and the thing to paste
-into the pull request. (That run is inside windtrap's own tree, where
-the framework carries the backend too, so `over 61 reached` counts its
-sites as well as the example's; the run below scopes the catalogue with
-`WINDTRAP_MUTATE_ONLY` to get your project's effect here.)
-
-The ruling that earns the mode is the other one:
-
-```
-$ WINDTRAP_MUTATE=admit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
-    dune exec --instrument-with ppx_windtrap.mutate \
-    examples/x-blueprint/test/unit/test_stats.exe -- -f "one line per row"
-stats: 1 passed in 0.0365s (seed s1:68c172c3ca402dd9).
-
-────────────────── unjustified (1) ───────────────────
-
-  UNJUSTIFIED  render › prints one line per row plus the total    examples/x-blueprint/test/unit/test_stats.ml:28
-    killed none of the 2 faults it reaches:
-
-      examples/x-blueprint/lib/stats.ml:14:18:add   width - (String.length label)  →  width + (String.length label)
-        14 │     ^ String.make (width - String.length label) ' '
-      examples/x-blueprint/lib/stats.ml:18:48:sub   acc + (clamp n)  →  acc - (clamp n)
-        18 │   let total = List.fold_left (fun acc (_, n) -> acc + clamp n) 0 rows in
-
-    strengthen the assertion, then watch it catch one:
-      arm      WINDTRAP_MUTATE_ARM=examples/x-blueprint/lib/stats.ml:14:18:add dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_stats.exe -- -f 'render › prints one line per row plus the total'
-    a fault whose two versions compute the same value is equivalent — dismiss it in the source:
-      dismiss  ((width - (String.length label)) [@mutate off "reason"])
-
-──────────────────────────────────────────────────────
-
-admission: 0 admitted, 1 unjustified of 1 · 2 forks over 2 reached in 156ms (seed s1:68c172c3ca402dd9)
-$ echo $?
-1
-```
-
-An unjustified ruling is the survivor sentence inverted. A survivor says
-*two tests ran this line and none failed when it changed*; this says
-*this test ran the changed lines and never failed* — a defect report
-about one named test, which is why it renders as a failure block and why
-the run exits 1. A vacuous test stops the line. The two printed commands
-are the whole remedy path, and `arm` is the first one: paste it and the
-fault is reproduced under that one test, the round trip of "Watching it
-happen" narrowed to the test you are fixing.
-
-Read the ruling as being about that test and nothing else. The property
-here asserts the *line count* of the rendered table, and no arithmetic
-inside a line moves a line count — a hundred generated cases, several
-hundred evaluations of the changed site, all unnoticed. Its remedy is
-the stronger law, not the `dismiss` line: both faults it watched are
-killed by the example tests beside it, so dismissing one would suppress
-a fault the suite demonstrably catches. Dismissal is for the fault whose
-two versions compute the same value, and it is the same attribute, in
-the same place, as the survey's.
-
-Rulings are capped, not exhaustive, unless the block says otherwise.
-Each test tries the faults it reaches in its own most-run-first order,
-at most `WINDTRAP_MUTATE_TRY` of them — 25 by default — and a capped
-ruling says so, both in its sentence (`killed none of the N most-run
-faults on its lines, of M reached`) and as `· 1 ruling capped at N` on
-the summary line, so a capped answer cannot pose as a searched one.
-
-The third ruling is `NO SITES`: a test that evaluates no mutation site —
-no condition, comparison, connective or arithmetic — has nothing to
-admit it against. Pure data, construction and glue land there
-legitimately, so it states a fact and is never red; the word is
-deliberately not `ADMITTED`, so a reviewer can tell *vouched for by a
-kill* from *mutation had nothing to say* without re-running anything. A
-set `WINDTRAP_MUTATE_ONLY` is echoed in the ruling, because otherwise a
-mistyped prefix and a genuinely site-free test print the same sentence.
-
-What designates the admission set is the run's ordinary selection:
-`-f`/`WINDTRAP_FILTER`, `-e`, the tag knobs, `--failed`, or an in-source
-`ftest`/`fgroup`. Nothing is inferred — no git, no diff against a
-previous run, no store of tests seen before — because a test admission
-missed by inference is admitted by omission. `--shard` narrows the work
-rather than naming tests, so it does not designate on its own. An
-over-wide selection judges every test it matches rather than erring, and
-the summary states the count; skipped and `xfail` tests are excluded, a
-skip having run nothing and an `xfail` having already demonstrated it
-can fail.
-
-A run that narrows nothing designates every test it executes. That is
-the whole-suite question — the ask an alias makes, because an alias
-cannot write a filter — and the run states it in one line before the
-rulings, naming the other question in case that is the one you meant:
-
-```
-windtrap mutate: admitting all 9 tests this run executed; the per-mutant question is WINDTRAP_MUTATE=1
-```
-
-It is affordable because one killed fault admits every designated test
-that failed under it: the blueprint's nine slug tests are ruled in three
-forks, six falling to the same `or`, and windtrap's own suite — some six
-hundred tests — whole, in nine forks. So the wide question is one rule
-at the project root, with no filter to keep in sync:
-
-```lisp
-(rule
- (alias admit)
- (deps (universe) test/test_calc.exe)
- (action (setenv WINDTRAP_MUTATE admit (run %{exe:test/test_calc.exe}))))
-```
-
-Unlike `@mutate`, it has no merging half to pair with: an admission run
-persists nothing, so the rulings it prints are the whole product. Name
-the executables whose subject is the instrumented library; a suite that
-observes its subject through a process it spawns has nothing to admit,
-because the arming never reaches the child.
-
-Under `dune runtest` the environment mirrors are the CLI, as everywhere
-else in this chapter:
-
-```
-WINDTRAP_MUTATE=admit WINDTRAP_FILTER="rejects empty input" \
-  dune runtest test/unit --force --instrument-with ppx_windtrap.mutate
-```
-
-Scope matters more there than it does for the survey, because one
-variable reaches every suite the command runs. A named executable that
-matches none of *its* tests refuses — you named one binary and an empty
-selection there is a mistake — while an inline (`inline_tests`) suite,
-reached by the same project-wide `dune runtest` as every other, declines
-in one line on standard error and runs normally, since failing the
-siblings of the suite that owns the test would report success as
-failure. The sharp consequence: a directory of several `(test)`
-executables runs all of them, so the ones that do not declare your test
-refuse, and their refusal fails the dune action even though the owning
-suite admitted. Naming the executable has none of that ambiguity, which
-is why it leads this section.
-
-**An admission run writes no verdict file.** The early stop leaves most
-of the reached faults untried, so a file recording them would fabricate
-or mislabel verdicts, and a narrowed run's file would stand in the
-project merge as this executable's whole answer. So you can admit all
-afternoon without perturbing `dune build @mutate`; the durable artifact
-is the strengthened test, in git.
-
-The exit code follows the question that was asked. `0` when the run
-completed with no unjustified ruling — `NO SITES` alone is never red —
-and `1` either because it *could not answer* (a red or empty dry run, a
-suite that disagrees with itself between runs, nothing instrumented,
-`WINDTRAP_MUTATE_ARM` set at the same time, Windows) or because it
-*answered no*. The block above the exit says which. Survey runs are
-untouched: completed still means 0 there, whatever they found.
-
-A fault that makes a child *block* — a deadlock rather than a spin — is
-ruled rather than fatal: the child's deadline expires (What it costs,
-below), it is killed with its process group, and the kill is attributed
-to the one test that had started and never reported, admitting it with
-cause `killed (timeout)`. A hang under a fault is a detected fault,
-noticed by never finishing.
-
-## Several test executables: `windtrap mutate`
-
-**This is the normal case, not the corner case.** A library is usually
-covered by several `(test)` stanzas — windtrap's own `lib/` is exercised
-by seven suites under `test/` — and each executable catalogues only the
-files it links and scores only what its own tests reach.
-
-Verdicts do not merge the way coverage counts do. Coverage merges by
-addition, so two executables over one file can only agree more. A mutant
-can be **killed** by one suite and merely **reached** by another, and the
-truth about the project is *killed*: reporting the second suite's view
-alone produces a **false survivor**, which sends the reader to write a
-test that already exists.
-
-So each run writes one verdict file under `_build/_mutants`, and when
-another executable's verdicts sit beside its own it says so inline
-instead of posing as the total — here `test/test_eval.exe`, run after
-`test/test_calc.exe` above:
-
-```
-mutants: 1 survived of 5 (this executable) · 1 killed, 3 unreached in 13ms (seed s1:7a0e9b949425a66d) · project: dune build @mutate
-```
-
-The two disagree, and predictably: `test/test_calc.exe` pins `Add` and
-merely reaches `Sub`, `test/test_eval.exe` is its mirror image, and each
-calls the other's kill a survivor. Each is right about what it ran and
-wrong about the project. `windtrap mutate` finds the verdict files,
-unions them under **killed anywhere wins**, and reports the mutants that
-survived *everywhere*:
-
-```
-$ dune exec windtrap -- mutate
-
-unreached (2) — no test evaluates these
-   lib/calc.ml   14
-
-mutants: 0 survived of 5 · 3 killed, 2 unreached
-```
-
-Neither false survivor survives the merge. The command runs no tests and
-drives no build; it reads, merges and renders through the same renderer
-the interactive report uses, so the two cannot drift. Explicit `PATH`
-arguments (`.mutants` files, or directories searched recursively)
-replace the default search, and naming a missing file, or one without
-the `.mutants` suffix, is a loud error naming the path — never a silent
-narrowing of the merge. A verdict file whose executable was deleted or
-rebuilt since the run is excluded with a warning, never merged: a stale
-verdict can claim a kill the code no longer earns, and a false kill hides
-a live defect where a false survivor merely wastes time.
-
-Two runs feed the merge nothing. One is the admission run above, which
-writes no verdict file at all. The other is the survey run that narrowed
-its own suite. Selecting tests — `-f`/`-e`, a tag selection, `--shard`,
-`--failed`, or an in-source `ftest`/`fgroup` — makes every verdict
-relative to that selection: a mutant only deselected tests reach is
-recorded *unreached*, and a survivor survived the selection rather than
-the suite. The file format carries no partial-run marking, so a written
-one would stand in the project merge as this executable's whole answer
-until the next full run. Such a run therefore completes, reports in
-full, leaves any existing verdict file exactly where it was, and says
-what it did not do:
-
-```
-verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
-```
-
-`WINDTRAP_MUTATE_ONLY` (below) is deliberately *not* one of those
-selections. It changes which mutants exist, not which tests judge them,
-so a scoped run's records are project-true for this executable — merely
-fewer of them — and it writes.
-
-The alias is the `@cover` recipe ([Coverage](coverage.md)) minus its
-first dependency. Add one rule, once, at the project root:
-
-```lisp
-(rule
- (alias mutate)
- (deps (universe))
- (action (run %{bin:windtrap} mutate)))
-```
-
-`@cover` both runs and merges; `@mutate` only merges. A coverage dump is
-written by any instrumented run, but a verdict exists only if a suite was
-*asked* to test its mutants, so `(alias_rec runtest)` in front of this
-merge would not produce one — and would do worse than nothing, rebuilding
-every test executable *uninstrumented* and thereby staling the very
-verdicts the merge was about to read. `(universe)` is load-bearing for
-coverage's reason: verdict files are not declarable dependencies, so it
-makes the milliseconds-cheap merge re-run on every build.
-
-Running is the other half, and it is yours to scope: the loop forks once
-per mutant, so on a real library you name the file you are working on
-and pay for that file alone. In CI, where the whole catalogue is the
-point, the two halves are two steps:
-
-```
-$ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/calc.ml \
-    dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
-$ dune build @mutate
-```
-
-```yaml
-- run: WINDTRAP_MUTATE=1 dune build @runtest --force --instrument-with ppx_windtrap.mutate
-- run: dune build @mutate
-```
-
-`--force` on the running half is required and is not a wart — a mutation
-run is not a cached artifact, and dune would otherwise treat a `runtest`
-action whose declared inputs have not changed as already done. Note
-which run this puts under the selection rule above: a CI job that shards
-or filters its suite writes no verdicts at all, so the step that mutates
-has to be the step that runs everything.
-
-**A survivor never fails a build in this release.** A survey run exits
-0 whatever it finds, and 1 only when it could not produce a number at
-all: a red or empty dry run, a suite that disagrees with itself between
-runs, or a supervision error, each with its own message. Arming the
-most-reached mutant and watching nothing fail is not among them: that is
-the commonest first-run misconfiguration — the backend on the test
-executable but not on the library under test — and equally what a
-legitimately weak file looks like, so it prints a warning above the
-report and the run keeps its score. It never exits 2 — that code belongs
-to the runner, and an armed run can still produce it by selecting no
-test at all. A gate over an uncalibrated number is how a
-tool earns a reputation for lying, and the equivalent-mutant rate here
-is a prediction until it is measured. Admission is where an exit code
-carries an answer, and never about the project.
 
 ## What it costs
 
@@ -567,64 +329,34 @@ process group and its mutant scored killed, which is the right verdict:
 a fault that makes the suite hang is a fault the suite noticed. Nothing
 caps a whole run, so a run of a thousand mutants takes as long as its
 thousand children do. Mutation needs `Unix.fork` and declines by name on
-Windows.
-
-The derivation, the worst cases and the measurements behind those
-sentences are in
+Windows. The derivation and the measurements behind those sentences are
+in
 [`doc/dev/testing.md`](../dev/testing.md#what-a-run-costs-and-where-the-deadline-comes-from).
 
 ## Knobs
 
-Four environment variables — the mode, and three that shape it — and no
-flag on any runner: the inline runner's argument parser accepts only
-dune's inline-test protocol, so a flag would exist for half the users.
-An unrecognized value is an error naming the variable, never a silently
-defaulted mode. All four are read by the test executable and by nothing
-else.
+Three environment variables and no flag on any runner: the inline
+runner's argument parser accepts only dune's inline-test protocol, so a
+flag would exist for half the users. All three are read by the test
+executable and by nothing else, and an unrecognized value is an error
+naming the variable.
 
 | variable | values | default |
 | --- | --- | --- |
-| `WINDTRAP_MUTATE` | `1` / `admit` / `off` | unset (discovery only) |
-| `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
+| `WINDTRAP_MUTATE` | `1` to run the survey, `0` for an ordinary run | unset (ordinary run) |
 | `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
-| `WINDTRAP_MUTATE_TRY` | faults an `admit` run tries per test, `0` for all | `25` |
+| `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
 
 `WINDTRAP_MUTATE_ONLY=lib/calc.ml,lib/eval.ml` is how a real project is
 mutated: one file, or one directory, at a time. The runtime applies it
 **at registration**, so a file outside the prefixes never enters the
 catalogue — narrowing the *work*, which a filter over the report would
-not, and which is why it is not coverage's reporting filter under
-another name. Scoping a run states what that run's mutation surface
-*is*, so it does not count as narrowing the suite and a scoped run still
-writes its verdicts; and it bounds `WINDTRAP_MUTATE_ARM`, since a mutant
-of an out-of-scope file was never registered. An executable with nothing
-in scope is indistinguishable from an uninstrumented one, discovery line
-included, so asking such a run to mutate names the scope rather than the
-build — the build is fine:
-
-```
-windtrap mutate: WINDTRAP_MUTATE_ONLY=lib/nosuch.ml left no mutants in this executable's catalogue — the prefix matches no instrumented file, or the matched files have no mutation sites
-```
-
-`WINDTRAP_MUTATE_TRY` bounds the work behind an unjustified ruling
-rather than its printing: each selected test tries the faults it reaches
-in its own most-run-first order, and after that many without a kill the
-loop rules it unjustified and says the ruling was capped. `0` tries
-every fault the test reaches, which is the answer to a suspicion that a
-lenient cap produced a lenient ruling. Why 25, and what it buys, is in
-[`doc/dev/testing.md`](../dev/testing.md#what-a-run-costs-and-where-the-deadline-comes-from).
-
-Nothing else caps a report. Survivor blocks are ordered by reaching-test
-count descending and are uncapped — a survivor is a failure block, and
-windtrap caps no failure block — as are the unreached list and
-`windtrap mutate`'s merged report. The remedy for a file with a hundred
-survivors is `WINDTRAP_MUTATE_ONLY`, not paging. The faults listed
-inside an unjustified ruling are the one exception, cut to the first few
-with a `… n more` line under them.
-
-Asking for a loop — `1` or `admit` — and an armed mutant at once is a
-refusal, not a guess: the loop arms each mutant itself, so an armed
-parent would mutate its own dry run.
+not. It also bounds `WINDTRAP_MUTATE_ARM`, since a mutant of an
+out-of-scope file was never registered. A prefix that leaves nothing in
+the catalogue is an error naming the scope, not the build; asking for
+the survey and an armed mutant at once is a refusal, not a guess — the
+loop arms each mutant itself, so an armed parent would mutate its own
+dry run.
 
 windtrap's mutation testing is deliberately the 90% product: one honest
 count after a run you already make, and the names of the tests that let

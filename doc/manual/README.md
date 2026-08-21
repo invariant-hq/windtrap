@@ -19,7 +19,7 @@ are independent — go where your suite needs you:
 | [Resources and structure](resources-and-structure.md) | `bracket`, `scoped`, `fixture`, temp paths, `setenv`, `chdir`, `cases`, tags, focus, `xfail` |
 | [Running tests](running-tests.md) | The CLI and its `WINDTRAP_*` mirrors, selection, sharding, CI output |
 | [Coverage](coverage.md) | The one-stanza setup, the inline number, `windtrap coverage` and its gate |
-| [Mutation testing](mutation.md) | The second backend, survivors and their witnesses, arming one mutant, admitting a test, `windtrap mutate` |
+| [Mutation testing](mutation.md) | The second backend, survivors and their witnesses, arming one mutant, the `@mutate` aggregate |
 | [Cookbook](../cookbook.md) | Recipes windtrap deliberately does not absorb |
 
 Every OCaml snippet in these chapters is compiled by a mirror in

@@ -32,7 +32,7 @@ They never merge again (that was v1's mistake).
 | `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation runtimes share; stdlib only |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
 | `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map, `.mutants` verdict files; stdlib only, for the same reason |
-| binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`) and `mutate` (merge verdicts, report the survivors that survived everywhere); shared discovery and staleness in `data_files` |
+| binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`) and `mutate` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared verdict-file lookup and staleness in `data_files` |
 | package `ppx_windtrap` | `ppx/` | the expect/inline PPX, the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`) over shared scaffolding (`ppx/scaffold/`), and the expect runtime itself — `Ppx_runtime` (`ppx/runtime/`) and the ambient `Expect_test_config` (`ppx/config/`) — the only unit that sees ppxlib |
 
 ## Module graph (`lib/`)
@@ -67,7 +67,7 @@ its own, never downward.
 | | `Cli` | one declarative item table — flags and flagless settings — resolved once into `Run.config` and `Render.settings`, plus `--help`. Each flag's mirror is declared beside it and read through the flag's own parser, so a variable cannot accept what its flag rejects |
 | | `Render`, `Render_junit`, `Render_github` | the pure projections of the run record. `Render` also owns the subsystem-neutral report-section vocabulary: instrumentation reports arrive as section data, and `Render` names no instrumentation runtime |
 | | `Driver` | the spine: `Driver.t` is one invocation's reporting inputs, `execute_and_report` the one order every driver shares, `execute` the reporting-free run a mutation child needs |
-| | `Mutate_loop` | the mutation seam and the Law-16d armed hooks: the dry run and its reach map, the determinism probe, the forced-fail check, the fork loop, the admission machine, the verdict file and the report. It *wraps* `Driver.execute_and_report` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
+| | `Mutate_loop` | the mutation seam and the Law-16d armed hooks: the dry run and its reach map, the determinism probe, the fork loop — one child per reached mutant, in catalogue order, each running only the tests that reach it — the verdict file and the per-executable report. It *wraps* `Driver.execute_and_report` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
 | | `Windtrap` | the facade |
 
 The expect runtime is a client, not a resident: `Ppx_runtime`
@@ -78,10 +78,10 @@ ambient `Expect_test_config` live in `ppx_windtrap`, against the
 facades.
 
 Two thin drivers sit on top of `Mutate_loop.execute_and_report` — which
-in every uninstrumented build and every `--list` run *is*
-`Driver.execute_and_report`, same transcript, same bytes, and which in
-an instrumented build the environment asked nothing of adds the one
-discovery line and nothing else — and nothing else sits between them and
+in every uninstrumented build, every `--list` run, and every
+instrumented build the environment asked nothing of *is*
+`Driver.execute_and_report`, same transcript, same bytes — and nothing
+else sits between them and
 it: the facade's `run` (in core) and `Ppx_runtime.exit` (in
 `ppx_windtrap`, through the facades). Each resolves one invocation
 (`Cli.settings`), calls `execute_and_report`, and adds only what is
@@ -134,25 +134,28 @@ module that drives it.
 No instrumentation type appears in `windtrap.mli`, and neither
 subsystem owns a copy of the other's layout — nor does `Render` name
 either runtime: reports arrive as the subsystem-neutral section
-vocabulary (rows, hints, source excerpts), which coverage's per-file
-report and mutation's survivor blocks both project into, spelling
-mutant identifiers and arm variables with the runtime's own functions
-at the builder site.
+vocabulary (labelled rules, rows, source excerpts), which coverage's
+per-file report and mutation's survivor and unreached blocks both
+project into, spelling mutant identifiers and arm variables with the
+runtime's own functions at the builder site. The mutation loop and the
+`mutate` subcommand each build a `Render.mutation` record of their own —
+one scoped to a suite, one to the merge — and draw it through the same
+projection, so the interactive report and the aggregate cannot drift
+apart.
 
 ## The Laws
 
 Ported from the accepted v3 design RFC ("Laws", including the
 2026-07-28 amendment of Law 14, and the mutation RFC's amendments to
-Laws 11, 12, 13 and 15 plus the new Law 16; the admission RFC's
-2026-08-12 amendment of Law 16(b), (c) and (e) plus the new Law 17; and
-its slice-2 amendment of 2026-08-16, which extends Law 16(e) to `audit`
-and gives Law 17(a) universal designation, folded back into the base
-clause on 2026-08-19; Law 2's parenthetical amended on 2026-08-19, when
-`WINDTRAP_UPDATE` began accepting expect payloads into the source tree
-and `dune promote` stopped being their only channel); the RFC documents
-themselves were removed from the repo — this copy is the durable
-record. Each law names the failure it prevents; **a change to any of
-them reopens the design**.
+Laws 11, 12, 13 and 15 plus the new Law 16; Law 2's parenthetical
+amended on 2026-08-19, when `WINDTRAP_UPDATE` began accepting expect
+payloads into the source tree and `dune promote` stopped being their
+only channel; Law 16(e) rewritten and Law 17 withdrawn on 2026-08-21,
+when admission was removed and the project aggregate became the one
+place a survivor fails a build); the RFC documents themselves were
+removed from the repo — this copy is the durable record. Each law
+names the failure it prevents; **a change to any of them reopens the
+design**.
 
 1. **Checking never writes to the source tree.** Within an executed
    run, no test creates, updates, or deletes a baseline or any source
@@ -299,8 +302,7 @@ them reopens the design**.
     (c) *A verdict is data.* Killed, survived, or unreached — never a
     boolean, and never an exit code: an armed run
     states its own verdict in (b)'s closing line, and the loop's live in
-    its report and its verdict file. An `admit` run's per-test rulings
-    are the same rule under Law 17(c).
+    its report and its verdict file.
     (d) *Armed checking is read-only.* While a mutant is armed, a
     snapshot or `[%expect]` mismatch is a plain failure: no
     `.corrected` is written and dune's promotion protocol is not
@@ -308,81 +310,30 @@ them reopens the design**.
     cross-run tables — node pool, corrections, styled registry, covered
     set — before its first test, so a mismatch is reported as a
     mismatch and not as a merged-history CR against the parent's run.
-    (e) *No trace outside the pipe.* A mutation child's whole body is
-    wrapped so no path reaches Stdlib's exit machinery: every
-    exception, fatal included, is caught, reduced to a verdict line,
-    and followed by `Unix._exit`. Each child runs under its own log
-    directory, and the loop removes the lot when it ends. A mutation
-    run's own exit code is 0 when it
-    completed — **whatever it found**, and whether or not it persisted:
-    a run whose selection narrows the suite completes, reports in full,
-    writes no verdict file and says so — and 1 when it refused to start
-    or could not finish: red or empty dry run, probe disagreement, or a
-    supervision error, each with its own message. **The forced-fail
-    check is not among them (2026-08-19): a legitimately weak file and
-    the commonest misconfiguration produce the same signature, so the
-    check states its diagnosis in a warning above the report and the run
-    completes with its score.** **It never exits 2**, because "nothing ran" is a statement
-    about a test selection and a mutation run does not make one. A
-    survivor-driven nonzero exit is a later addition and is the only
-    thing that may ever change this. **Exception, claiming exactly that
-    reserved clause (2026-08-12): an `admit` run — which judges a test
-    selection at its author's request — additionally exits 1 when a
-    selected test killed nothing it reached. For such runs the refusal
-    causes additionally include an empty selection under the standalone
-    runner and a selection of nothing but skipped and `xfail` tests; the
-    forced-fail check does not apply.**
-    Survey runs are unchanged forever. *Prevents:*
-    mutation-gated CI; a mutation build silently reporting different
-    test results;
-    meaning-change escaping the child; multi-mutant interaction making
-    a survivor unattributable; a mutated run being mistaken for a real
-    one; a mutation run rewriting the source tree through the promotion
-    protocol; a crashing child overwriting the parent's `.coverage`
-    dump through `at_exit`.
-17. **Admission judges tests, one selection at a time.**
-    (a) *Designation is the author's selection, never inferred.* The
-    admission set is the run's ordinary test selection — a filter, an
-    exclude, a tag selection, `--failed`, an in-source focus — and
-    nothing else: no VCS awareness, no run-to-run comparison, no store
-    of tests seen before. `--shard` narrows work rather
-    than naming tests and do not designate on their own. A selection the
-    author did not narrow designates every test the run executes, which
-    is the author asking for all of them; the run says so in one line
-    naming the survey as the other question, and a run that designates
-    everything and still executes nothing refuses in its own words.
-    **Fold of 2026-08-19: the 2026-08-16 amendment spelled universal
-    designation as a second mode word, `audit`, so that it could not be
-    read into an absent selection, and kept `admit` refusing there. Two
-    spellings of one machine cost more than the conflation they
-    prevented — the alias's ask and the bare invocation's are the same
-    ask — so `audit` and the no-selection refusal are both withdrawn
-    into the clause above, and the nudge toward the survey survives as a
-    line of output rather than as a refusal.**
-    *Prevents:* silent misses that admit by omission; Law 15 violations
-    by the back door; a working-tree model the framework cannot own; a
-    whole-suite question spelled as a filter nobody can keep in sync.
-    (b) *An admission run persists nothing.* No verdict file is
-    written, none is read, and an existing one is left byte-intact.
-    *Prevents:* fabricated claims about the mutants an early stop never
-    tried; selection-relative poisoning of the merge; the forbidden
-    cache.
-    (c) *A per-test ruling is three-valued data, and a capped ruling
-    says so* — admitted (with its witness and, when unusual, its
-    cause), unjustified (the faults tried, with the cap stated when it
-    bit), no sites (the cause when determinable). A fault counts as
-    tried for a test only when that test ran to an outcome of its own
-    under it: a skip watched nothing, and a fork the test merely rode
-    along in charges no try, though a kill observed there still admits.
-    *Prevents:* capped rulings posing as exhaustive; conflating
-    "couldn't be tested" with "wasn't caught"; a skipped test billed as
-    an unobservant one.
-    (d) *NO SITES never fails a run.* The partition is decided before
-    any fork and is never consulted by the exit predicate.
-    *Prevents:* punishing legitimate tests of data and glue; teaching
-    agents to delete tests to go green.
-    (e) *An admit transcript makes only per-test claims* — never a
-    survivor list, a mutation score, or any other project-level
-    statement. *Prevents:* an admission report posing as the survey's
-    answer; killed-anywhere-wins confusion read into a one-suite
-    question.
+    (e) *No trace outside the pipe, and the exit code follows who can
+    claim the truth.* A mutation child's whole body is wrapped so no
+    path reaches Stdlib's exit machinery: every exception, fatal
+    included, is caught, reduced to a verdict line, and followed by
+    `Unix._exit`. Each child runs under its own log directory, and the
+    loop removes the lot when it ends. A per-executable mutation run
+    exits 0 when it completed — **whatever it found**, because its view
+    is one suite's and a survivor there may be another suite's kill —
+    and 1 when it refused to start or could not finish: red or empty dry
+    run, probe disagreement, or a supervision error, each with its own
+    message. A run whose selection narrows the suite completes, reports
+    in full, writes no verdict file and says so. It never exits 2,
+    because "nothing ran" is a statement about a test selection and a
+    mutation run does not make one. **The aggregate — `windtrap mutate`,
+    and the `@mutate` alias that runs every suite mutated and then
+    merges — exits 1 when any mutant survived every executable that
+    reached it.** That is the project's answer, and every survivor in it
+    is one of two work items: a test to strengthen, or an equivalent
+    mutant to dismiss in the source with `[@mutate off "reason"]`. A
+    clean aggregate is the goal state, so it is the one mutation exit
+    code a build may gate on. *Prevents:* a one-suite view failing a
+    build over another suite's test; a mutation build silently reporting
+    different test results; meaning-change escaping the child;
+    multi-mutant interaction making a survivor unattributable; a mutated
+    run being mistaken for a real one; a mutation run rewriting the
+    source tree through the promotion protocol; a crashing child
+    overwriting the parent's `.coverage` dump through `at_exit`.

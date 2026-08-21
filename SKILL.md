@@ -47,7 +47,7 @@ on a behavior you must test, the spec has a gap: surface it to the
 maintainer, or record the assumption visibly in the test's name,
 rather than silently inventing the contract.
 
-## 2. Choose the strongest oracle the behavior admits
+## 2. Choose the strongest oracle the behavior allows
 
 Work down this ladder and take the **first** row that fits. Each row
 constrains strictly more behavior per line of test code than the rows
@@ -100,7 +100,8 @@ Reject these shapes on sight — in review, and in your own output.
 - **Vacuous** — executes code but checks nothing that can break: no
   assertion at all, `is_some` where the *value* matters, "does not
   raise" on a function that cannot raise. Green from the day it was
-  born; an admit run rules it `UNJUSTIFIED` (§6).
+  born; the mutation survey prints it under every mutant it ran and
+  failed to notice (§6).
 - **Tautological** — re-derives the answer with the implementation's
   own algorithm (a "property" computing the same fold), or tests the
   language: that a record field holds what the constructor assigned,
@@ -180,7 +181,7 @@ only the project verdict aliases:
 
 ```
 test/
-  dune                 ; the @cover/@mutate/@admit verdict aliases (below)
+  dune                 ; the @cover/@mutate verdict aliases (below)
   unit/                ; THE windtrap suite: laws, examples, stateful, snapshots
     dune               ; (tests (names test_parser test_eval) ...)
     test_parser.ml     ; everything that constrains Parser — its own run
@@ -231,16 +232,17 @@ because the `.coverage` and `.mutants` files test executables write at
 exit are not declarable dependencies, so without it the merge action
 caches against nothing and silently goes stale.
 
-The three verdict aliases in `test/dune` are asymmetric on purpose.
-`@cover` both runs the suites (`(alias_rec runtest)`) and merges, since
-coverage accumulates as a side effect of any instrumented run; `@mutate`
-only merges what previous runs left, since a mutation *verdict* exists
-only if a run was asked to test mutants; `@admit` neither merges nor
-gates — an admission run persists nothing, so its rulings are the whole
-product, and its rule is repeated for each unit executable whose subject
-is the instrumented library. A suite that tests its subject through a
-process it spawns has nothing to admit, because the arming never reaches
-the child.
+The two verdict aliases in `test/dune` have the same shape — `(deps
+(alias_rec runtest) (universe))` and a `windtrap` merge as the action —
+and differ in what the run must carry. Coverage accumulates as a side
+effect of any instrumented run, so `dune build @cover --instrument-with
+ppx_windtrap.coverage` is the whole command. A mutation *verdict* exists
+only if a suite was asked to test its mutants, so `@mutate` is run with
+`WINDTRAP_MUTATE=1` in the environment, the backend flag, and `--force`
+(a mutation run is not a cached artifact); the merge exits 1 when a
+mutant survived every executable that reached it. Without those three a
+plain `dune build @mutate` rebuilds the suites uninstrumented, which
+stales every verdict, and the merge refuses loudly.
 
 Set `--min` to the measured baseline minus a couple of points of
 headroom, not a round number. It ratchets: raise it when the margin is
@@ -262,14 +264,13 @@ Coverage is spelled `ppx_windtrap.coverage`, never the bare
 windtrap core into every instrumented library's closure — a test
 framework in your production dependency cone.
 
-CI runs four things: the suite, the coverage gate, the mutation report,
-and JUnit output for ingestion:
+CI runs three things: the suite with JUnit output for ingestion, the
+coverage gate, and the mutation gate:
 
 ```yaml
 - run: WINDTRAP_JUNIT=_build/junit dune runtest
 - run: dune build @cover --instrument-with ppx_windtrap.coverage
-- run: WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
-- run: dune build @mutate
+- run: WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
 ```
 
 Under GitHub Actions failures also surface as inline annotations with no
@@ -296,7 +297,7 @@ only the judgment the chapters leave implicit.
 | `bracket`, `scoped`, `fixture`, temp paths, `setenv`/`chdir`, `cases`, tags, focus, `xfail` | `doc/manual/resources-and-structure.md` |
 | the flags, their `WINDTRAP_*` mirrors, selection, sharding, CI output | `doc/manual/running-tests.md` |
 | the coverage stanza, `windtrap coverage`, `[@coverage off]` | `doc/manual/coverage.md` |
-| the mutation stanza, survivor blocks, arming one mutant, `windtrap mutate` | `doc/manual/mutation.md` |
+| the mutation stanza, survivor blocks, `WINDTRAP_MUTATE_ONLY`, arming one mutant, `windtrap mutate` | `doc/manual/mutation.md` |
 | convergence loops, Eio, subprocess workers, scripted seams | `doc/cookbook.md` |
 
 Those paths are a windtrap checkout's. The package installs neither
@@ -414,84 +415,77 @@ with `dune promote`. Non-obvious mechanics:
 ## 6. Prove every test can fail (mutation)
 
 A test nobody has seen fail is unverified, and windtrap mechanizes the
-verification by breaking the code on purpose. Two modes: `admit` asks
-*can this test fail?*, the survey *which of this file's faults does
-nothing catch?*
+verification by breaking the code on purpose: run the tests with
+`WINDTRAP_MUTATE=1`, and for every mutant in the code those tests
+reach, windtrap re-runs them with the mutant armed. A mutant none of
+them notice is reported, naming the tests that ran it.
 
-Both exist only where the precondition holds: the library under test
-carries §3's instrumentation stanza —
+The survey exists only where the precondition holds: the library under
+test carries §3's instrumentation stanza —
 `(instrumentation (backend ppx_windtrap.mutate))`, the mutate twin of
 coverage's `(backend ppx_windtrap.coverage)` — and the run passes
 `--instrument-with ppx_windtrap.mutate`. A library without the stanza
-contributes no fault sites: every admission ruling is `NO SITES` and
-the survey has nothing to report. Where instrumentation is absent — a
-vendored dependency, a stanza not yet landed — fall back to falsifying
-by hand: edit the assertion's expected value to a wrong one, watch the
-test fail, restore it. Cruder than a ruling, but it is the same
-evidence, and no test is exempt from producing it.
+contributes no mutants, and the survey has nothing to report. Where
+instrumentation is absent — a vendored dependency, a stanza not yet
+landed — fall back to falsifying by hand: edit the assertion's expected
+value to a wrong one, watch the test fail, restore it. Cruder than a
+report, but it is the same evidence, and no test is exempt from
+producing it.
 
-**Admit every test you write or change** — the last step of writing
-one, not a separate pass. The run's selection becomes the admission
-set: only the faults those tests reach are armed, and each is ruled by
-name, in about a second for a fast test.
-
-```
-WINDTRAP_MUTATE=admit dune exec --instrument-with ppx_windtrap.mutate \
-  test/unit/test_foo.exe -- -f "<test name>"
-```
-
-- **`ADMITTED`** names the fault the test kills. Done — that line
-  belongs in the PR description.
-- **`UNJUSTIFIED`** is stop-the-line, and exits 1: the test ran faults
-  on its lines and never failed. Strengthen the assertion or dismiss a
-  genuine equivalent with a reason — the block prints both commands,
-  its `arm` line reproducing the fault under that one test. Never
-  proceed past one.
-- **`NO SITES`** means mutation had nothing to say about that subject:
-  not a failure, never a reason to delete a test, review it by eye.
-
-The selection designates (`-f`/`-e`, tag knobs, `--failed`, an
-in-source focus; `--shard` does not). Selecting nothing designates
-every test the run executes, which is the whole-suite question and
-belongs in an alias rather than in a filter:
-
-```
-dune build @admit --instrument-with ppx_windtrap.mutate
-```
-
-An admission run writes no verdict file, so it never perturbs
-`@mutate`; each test tries at most 25 faults and says when that cap
-decided the ruling (`WINDTRAP_MUTATE_TRY=0` tries every fault it
-reaches).
-
-**Survey the module when auditing or reviewing one** — file-scoped, so
-it stays seconds-fast; it names the tests that watched a change and
-stayed green:
+**Survey every test you write or change** — the last step of writing
+one, not a separate pass. Filter to the test and scope the mutants to
+the file it exercises; the run mutates only what the selected tests
+reach, so it takes about as long as those tests:
 
 ```
 WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/foo.ml \
-  dune exec --instrument-with ppx_windtrap.mutate test/unit/test_foo.exe
+  dune exec --instrument-with ppx_windtrap.mutate \
+  test/unit/test_foo.exe -- -f "<test name>"
 ```
 
-- A **survivor** means "strengthen one of these named tests" — usually
-  a weak assertion (`is_true`, a shape check where an exact `equal`
-  belongs). An **unreached** mutant means "write a test": no assertion,
-  however sharp, can catch what no test evaluates.
-- **When fixing a bug, write the failing test first** and see it fail;
-  admission is for every other test.
-- Dismiss a genuinely equivalent mutant in the source, with a reason —
+Read the survivors it reached. Each `SURVIVED` block names the line,
+the rewrite, and the tests that ran that line and did not fail — for a
+filtered run, the test you just wrote. Every block is one of two
+things, and resolving it is the point; never the green:
+
+- **A weak assertion** — `is_true`, `is_some`, a shape check where an
+  exact `equal` belongs, an expected value the mutant also satisfies.
+  Strengthen the assertion until the mutant dies. `WINDTRAP_MUTATE_ARM=<id>`
+  on the `reproduce:` footer runs the test with that one mutant armed,
+  to watch it live through the assertion before you change it.
+- **An equivalent mutant** — the rewrite cannot change the program's
+  observable behavior. Dismiss it in the source, with a reason —
   `((want > 16) [@mutate off "both arms yield 16 at the boundary"])` —
   never to silence a real finding, and never one you have not reasoned
   about. There is no suppression database: dismissals live in the
   source, where `git blame` sees them.
-- With several test executables over one library, per-executable
-  reports disagree by construction (one suite's kill is another's
-  survivor); `dune build @mutate` merges under killed-anywhere-wins.
-  Trust the merged report, not the per-suite one.
-- Survivors never fail the build — the survey is a reading list, not a
-  gate; only admission answers with its exit code. Both need `Unix.fork`
-  and decline by name on Windows, where `WINDTRAP_MUTATE_ARM=<id>` on
-  one mutant is the fallback.
+
+A filtered run is a reading list: it exits 0 whatever it finds and
+writes no verdict file, so it never perturbs the project answer. Drop
+the `-f` to survey the whole module when reviewing one — still
+file-scoped by `WINDTRAP_MUTATE_ONLY`, so still seconds-fast — and the
+summary reads `mutants: 1 survived of 5 reached by this suite · 4
+killed`. **When fixing a bug, write the failing test first** and see it
+fail; the survey is for every other test.
+
+**The project question is `@mutate`.** A library is normally covered by
+several test executables, and per-executable reports disagree by
+construction — one suite's kill is another's survivor — so the project
+answer is the merge, under killed-anywhere-wins:
+
+```
+WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+```
+
+One command runs every suite with its mutants and merges. The report is
+the same survivor blocks with the executable beside each witness, plus
+`UNREACHED` blocks for mutants no suite's tests evaluate — those mean
+*write a test*: no assertion, however sharp, can catch what no test
+runs. It exits 1 on any survivor, which is the one mutation exit code a
+build gates on; unreached mutants alone are never red. Trust the merged
+report, not a per-suite one. The survey needs `Unix.fork` and declines
+by name on Windows, where `WINDTRAP_MUTATE_ARM=<id>` on one mutant is
+the fallback.
 
 ## 7. The suite is a contract
 
@@ -540,7 +534,7 @@ merely recall having read the rule:
 - [ ] Obligations derived from the `.mli` before reading the
       implementation, each checked off; spec gaps surfaced, not
       silently filled
-- [ ] Every behavior at the strongest oracle its shape admits (§2
+- [ ] Every behavior at the strongest oracle its shape allows (§2
       ladder); every module has a normative core; no bad-test-catalog
       offender survives review
 - [ ] Expected values derived from the spec; example inputs
@@ -554,11 +548,12 @@ merely recall having read the rule:
       declared in the stanza's `deps`; every promoted / `-u` diff read
       as a code change
 - [ ] Cram stanzas declare `(deps %{bin:…})`; exit codes asserted
-- [ ] Every new test seen failing — failing-first for bugfixes,
-      `WINDTRAP_MUTATE=admit` otherwise — with no `UNJUSTIFIED` ruling
-      left standing, and survivors resolved or dismissed with a reason
-- [ ] Coverage read on touched code; `@cover`/`@mutate`/`@admit`
-      aliases present; `--min` ratcheted, never lowered
+- [ ] Every new test seen failing — failing-first for bugfixes, the
+      filtered `WINDTRAP_MUTATE=1` survey otherwise — with every
+      survivor it reached resolved: assertion strengthened, or an
+      equivalent mutant dismissed with a reason
+- [ ] Coverage read on touched code; `@cover`/`@mutate` aliases
+      present; `--min` ratcheted, never lowered; `@mutate` green
 - [ ] Layout: suites split only along mechanical boundaries; files by
       subject; no test code in `lib/`; known bugs in `test/failures/`
 - [ ] No §7 violation: nothing weakened, deleted, skipped, or

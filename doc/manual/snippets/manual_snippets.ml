@@ -297,34 +297,38 @@ let resources =
 
 (* ───── mutation.md ───── *)
 
-module Arith = struct
-  type op = Add | Sub | Mul | Div
-
-  let apply op a b =
-    match op with
-    | Add -> a + b
-    | Sub -> a - b
-    | Mul -> a * b
-    | Div -> if b = 0 then invalid_arg "division by zero" else a / b
-
-  (* The equivalent mutant the chapter dismisses: [>] and [>=] agree at
-     the boundary, so no test can tell them apart. *)
-  let cap want =
-    if (want > 16) [@mutate off "both arms yield 16 at the boundary"] then want
-    else 16
+(* A stand-in for the example's [Slug.slugify], enough to compile the
+   chapter's boundary-row snippet against. *)
+module Slug = struct
+  let slugify s =
+    let is_alnum c =
+      (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+    in
+    String.map (fun c -> if is_alnum c then Char.lowercase_ascii c else ' ') s
+    |> String.split_on_char ' '
+    |> List.filter (fun word -> word <> "")
+    |> String.concat "-"
 end
 
-open Arith
+(* The equivalent mutant the chapter dismisses: [>] and [>=] agree at
+   the boundary, so no test can tell them apart. *)
+let cap want =
+  if (want > 16) [@mutate off "both arms yield 16 at the boundary"] then want
+  else 16
 
 let mutation =
   group "mutation"
     [
-      (* The weak assertion a survivor block sends you to, and the one
-         that kills the mutant. *)
-      group "before"
-        [ test "of two positives" (fun () -> is_true (apply Sub 10 4 > 0)) ];
-      group "after"
-        [ test "of two positives" (fun () -> equal int 6 (apply Sub 10 4)) ];
+      (* The boundary row a survivor block sends you to write: one input
+         sitting on every character-class edge at once. *)
+      cases "specified points"
+        ~name:(fun (input, _) -> Printf.sprintf "%S" input)
+        [
+          ("Hello, World!", "hello-world");
+          ("MiXeD", "mixed");
+          ("Az Za 09", "az-za-09");
+        ]
+        (fun (input, expected) -> equal string expected (Slug.slugify input));
       test "the boundary is the same either way" (fun () ->
           equal int 16 (cap 16));
     ]

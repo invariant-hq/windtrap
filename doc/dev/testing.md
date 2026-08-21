@@ -88,11 +88,11 @@ dune build @cover --instrument-with ppx_windtrap.coverage
 ```
 
 runs every suite and merges their dumps through `windtrap coverage`,
-gated at `--min 87` against a measured baseline. All three verdict
-aliases — `@cover`, `@mutate`, `@admit` — live in `test/dune`, which is
-where `SKILL.md` §3 and `examples/x-blueprint` put them; `@cover`'s run
-half reaches past `test/` on purpose (`(alias_rec ../runtest)`), because
-the merge reads every dump under `_build` and `examples/` carries
+gated at `--min 84` against a measured baseline. Both verdict
+aliases — `@cover` and `@mutate` — live in `test/dune`, which is
+where `SKILL.md` §3 and `examples/x-blueprint` put them; their run
+halves reach past `test/` on purpose (`(alias_rec ../runtest)`), because
+each merge reads every dump under `_build` and `examples/` carries
 instrumented libraries of its own. The gate ratchets:
 raise it when the margin is comfortable, never lower it to make a red
 build green. Not all of the remaining gap is reachable — `mutate_loop`'s
@@ -136,51 +136,37 @@ owns that file's tests:
 ```
 WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
   dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe --
-dune build @mutate                     # merge verdicts and report
 ```
 
-Measured: 162 mutants in `diff.ml`, **141 killed, 17 survived and 4
-unreached in 2.28s**. The suite split changed both what that costs and
-what it means. Eleven `diff` tests run against each mutant instead of
-all 570, which is why the answer arrives in seconds where the aggregate
-took 41s over its 190 mutants, and why a survivor here is a survivor *of
-those eleven*. `@mutate` is where it becomes the project's answer: the
-merge is killed-anywhere-wins across every executable that armed the
-same site — 17 survived of 167 tree-wide on the run above, `diff.ml`'s
-seventeen plus `test/mutate_loop`'s own fixture.
-
-Admission runs the same way — `WINDTRAP_MUTATE=admit` with a filter,
-against the same instrumented build. The whole-suite question has an
-alias of its own:
+Measured on this tree (2026-08-21): `mutants: 17 survived of 158
+reached by this suite · 141 killed`, **3.2 s wall including
+`dune exec`**. The suite split is what makes that cheap and what it
+means. Eleven `diff` tests run against each mutant instead of all 570,
+which is why the answer arrives in seconds where one aggregated
+executable took 41 s over its 190 mutants, and why a survivor here is a
+survivor *of those eleven* — the summary line says so, and the run
+exits 0 whatever it found. The project's answer is the aggregate, one
+command:
 
 ```
-dune build @admit --instrument-with ppx_windtrap.mutate
+WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
 ```
 
-`@admit` runs each of the twenty-five unit executables under
-`WINDTRAP_MUTATE=admit` with no filter, so every test each run executes
-is judged — one rule per executable under the one alias, kept in step
-with `unit`'s `(names …)` list by eye. The scope is a statement about
-what an arming can reach: these are the suites whose subject is `lib/`
-and that exercise it in-process. The four meta suites are out, being
-plain harness executables with no windtrap run and so no per-test
-boundary to rule on, and the suites that drive the machinery through
-fixtures they spawn would be ruled on whatever their own assertion code
-happened to evaluate. `--force` is not needed, since `(universe)`
-re-runs the actions, but `--instrument-with` is: this tree's workspace
-declares no instrumentation, so an uninstrumented executable has an
-empty catalogue and the seam declines by name.
-
-Measured on this tree: **570 admitted of 570 across the twenty-five, in
-2.0s wall** — 4.7s of admission work that dune runs in parallel at
-around 380% CPU, where the one aggregated executable reported `596
-admitted of 596 · 9 forks over 912 reached in 8.76s`, and 1m38s before
-the per-child deadline shipped. One test admits in single-digit
-milliseconds of admission work, and a 73-test `render` executable in
-221 ms and 6 forks — batching plus ride-along admission let one killed
-fault admit hundreds of tests, and no test of this suite has ruled
-`UNJUSTIFIED`.
-The admission machine's own scenarios live in `test/mutate_loop`.
+`@mutate` depends on `(alias_rec ../runtest)` and `(universe)`, so it
+runs every suite in the tree under the variable and then runs
+`windtrap mutate`, whose merge is killed-anywhere-wins across every
+executable that armed the same site. Each piece of the command is
+load-bearing: the variable because the suites read it, the flag because
+the suites must carry the mutants — this tree's workspace declares no
+instrumentation, so an uninstrumented executable has an empty catalogue
+and the seam declines by name — and `--force` because a mutation run is
+not a cached artifact. A plain `dune build @mutate` without them
+rebuilds the executables uninstrumented, which stales every verdict,
+and the merge then refuses loudly. The merge exits 1 when a mutant
+survived every executable that reached it; a mutant no executable
+reached is listed as `UNREACHED` and never red on its own. The loop's
+own scenarios live in `test/mutate_loop`, the merge's in
+`test/mutate_cli`.
 
 Five core modules opt out with `[@@@mutate exclude_file]`: `runner`,
 `run`, `driver`, `mutate_loop` and `windtrap`; the expect runtime, a
@@ -212,9 +198,9 @@ suites link is dry-run, forked and scored seven times — the merge makes
 the *answer* right, not the bill, and the unit split raised that bill by
 turning one linker of `lib/` into twenty-five. Nothing is parallel
 *inside* a loop in this release; across executables dune is, which is
-what `@admit`'s per-executable rules buy.
+what `@mutate`'s one-run-per-suite shape buys.
 
-Every forked child — a survey mutant, an admission batch, the
+Every forked child — a survey mutant, the
 determinism probe — runs under a deadline of its own, derived and never
 a knob: **the dry run's wall clock, plus `max(1 s, 10 × the dry run's
 own timings for exactly the tests that child is scheduled to run)`**.
@@ -242,15 +228,6 @@ run of a thousand mutants takes as long as its thousand children do and
 it is you who stops it. Mutation needs `Unix.fork`, so it declines by
 name on Windows.
 
-Admission's own cap is the other end of the bill.
-`WINDTRAP_MUTATE_TRY` — 25 by default — bounds the faults a *single*
-test tries before the loop rules it unjustified, so the exhaustive
-ruling of one vacuous wide-reaching test cannot cost its whole reach.
-Measured against real suites the most-run-first ordering kills on the
-first or second fault, so the cap is a bound and not a schedule; a
-ruling the cap decided says so, and `0` tries every fault the test
-reaches.
-
 ### WINDTRAP_MUTATE_ONLY, and why it is not coverage's filter
 
 The scope is applied by the **runtime, at registration** — an
@@ -264,7 +241,7 @@ the registry narrows the work.
 
 It also makes one equivalence true, and the tree depends on it: **an
 executable with nothing in scope is indistinguishable from an
-uninstrumented one** — empty catalogue, no discovery line, and the seam
+uninstrumented one** — empty catalogue, and the seam
 declines by name. The equivalence stops at the refusal text: asking such
 a run to mutate names the scope and its value (`WINDTRAP_MUTATE_ONLY=…
 left no mutants in this executable's catalogue`), never the
@@ -281,9 +258,7 @@ accident:
 
 Both name their scope (`test/mutate_loop/`), so they keep a *genuine*
 catalogue rather than a simulated one. `test/mutate_cli`'s two-executable
-scenario names `test/mutate_cli/calc.ml` for the same reason, and the
-meta harness sets a scope no file can match so a pinned transcript never
-grows a discovery line.
+scenario names `test/mutate_cli/calc.ml` for the same reason.
 
 Two suites cannot use the scope, because they test the registry itself
 with synthetic file names that deliberately look real (`lib/calc.ml`).
@@ -299,15 +274,12 @@ The blocking mutant is fixed, and what it cost is worth recording. A
 child whose fault *blocks* rather than spins — a flipped comparison in
 `lib/path_ops.ml` deadlocking capture's pipe reader — stops hitting
 sites, so the runaway hit-count budget structurally cannot see it, and
-it used to ride the whole-loop deadline: an unscoped survey never
-finished, and `WINDTRAP_MUTATE=admit … -f capture` sat at 0% CPU for
-exactly the 60 s floor before refusing. The per-child deadline above
+it used to ride a whole-loop deadline: an unscoped survey never
+finished, and a `-f capture` selection sat at 0% CPU for
+exactly a 60 s floor before refusing. The per-child deadline above
 ended that, and on expiry the mutant is scored killed, which is the
-right verdict: the suite noticed the change by hanging. Re-measured
-here, that capture selection answers in **0.56 s wall** (248 ms of
-admission work, 26 of 26 admitted, 9 forks) where it used to burn a
-silent minute and exit 1, and the full-suite admission fell from
-**1m38s to 8.5 s**. The whole-loop deadline that used to sit behind it
+right verdict: the suite noticed the change by hanging. The whole-loop
+deadline that used to sit behind it
 is gone: every child is bounded on its own, and a budget computed as the
 sum of those bounds can only fire on parent-side overhead it never
 counted — which is a spurious refusal, not a backstop.
@@ -316,20 +288,8 @@ What is left is the bill rather than a hang: an unscoped survey still
 forks once per mutant across the whole core, so mutating one file at a
 time remains the habit, and the better one regardless.
 
-Two smaller sharp edges, both measured:
+One smaller sharp edge, measured:
 
-- The forced-fail check arms only the single most-reached mutant, and
-  it used to *refuse the run* if it survived. Measured here, that
-  refusal fired on legitimate work twice: every `-f`-narrowed run hit it
-  on `lib/path_ops.ml:175:48:not`, killed only by the `path_ops` tests,
-  and `WINDTRAP_MUTATE_ONLY=lib/capture.ml` hit it on
-  `lib/capture.ml:38:10:le`, reached by 15 tests and caught by none — a
-  file whose weakness is the finding, locked out of the survey until
-  someone killed or dismissed the mutant. Fixed: the check and its
-  verdict stay, and its diagnosis is now a warning above the report, so
-  the run completes with its score. The wording no longer *leads* with
-  "the library was not built with --instrument-with" either; it names it
-  as the reading to check, which is what it always was.
 - **A narrowed run's survivors are relative to its selection.** A mutant
   is reported as surviving when no *selected* test killed it. Such a run
   now keeps that to itself — a selection (`-f`, `-e`, tags, `--shard`,
@@ -346,8 +306,10 @@ Two smaller sharp edges, both measured:
 
   Since the split there is no one executable that is "the whole suite",
   so widen in two steps: first the executable that owns the mutated
-  file's tests, unnarrowed, then `dune build @mutate` over a full armed
-  run, whose merge is the only view that spans them all.
+  file's tests, unnarrowed, then
+  `WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
+  ppx_windtrap.mutate` — the aggregate report's own reproduce shape —
+  which arms the mutant in every suite at once.
 
   `mutant survived: …` means it really survives —
   `mutant not evaluated: …` means the run proved nothing and the arming
@@ -362,15 +324,15 @@ Two smaller sharp edges, both measured:
   lib/property.ml:258:17:ge  count > (max_int / 2)      ->  >=
   ```
 
-There is no gate and there deliberately will not be one (Law 16e): the
-equivalent-mutant rate is a prediction until it is measured, so a
-survivor is a reading list, not a build failure.
-
-`@mutate` deliberately depends on nothing. Putting `(alias_rec runtest)`
-in front of the merge — which is right for `@cover`, since running the
-suite is how a coverage dump comes to exist — would rebuild every test
-executable *uninstrumented* and invalidate the verdicts the merge is
-about to read.
+The aggregate is the one gate (Law 16e): a per-executable run exits 0
+whatever it found, because its view is one suite's, and `@mutate` exits
+1 on any mutant that survived every executable that reached it — each
+survivor a test to strengthen or an equivalent mutant to dismiss with
+`[@mutate off "reason"]`. `@mutate`'s dependency on
+`(alias_rec ../runtest)` is safe only because the one command carries
+`--instrument-with ppx_windtrap.mutate`: the same alias driven without
+it rebuilds every test executable *uninstrumented*, stales every
+verdict, and the merge refuses loudly rather than reading them.
 
 ## Golden transcripts are snapshots
 

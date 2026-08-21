@@ -34,46 +34,49 @@ dune runtest examples/x-blueprint                 # every suite
 dune runtest examples/x-blueprint/test/failures   # just the bug backlog
 dune build @examples/x-blueprint/test/example-cover \
   --instrument-with ppx_windtrap.coverage         # coverage, gated
-dune build @examples/x-blueprint/test/example-admit \
-  --instrument-with ppx_windtrap.mutate           # can every slug test fail?
 WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib/slug.ml \
   dune exec --instrument-with ppx_windtrap.mutate \
   examples/x-blueprint/test/unit/test_slug.exe        # the mutation loop
+WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
+  dune build @examples/x-blueprint/test/example-mutate \
+  --force --instrument-with ppx_windtrap.mutate       # the project aggregate
 ```
 
-Writing a new test here ends the way the skill teaches (`SKILL.md` §9):
-admit it, and let the run name the fault it kills.
+Writing a new test here ends with the mutation loop: filter the survey
+to it, and the report says which of the faults it reaches it lets
+through. The deliberately weak law in `test_stats.ml` (the fourth
+deliberate thing below) shows what that looks like:
 
 ```
-$ WINDTRAP_MUTATE=admit dune exec --instrument-with ppx_windtrap.mutate \
-    examples/x-blueprint/test/unit/test_slug.exe -- -f idempotent
-slug: 1 passed in 0.0221s (seed s1:cd98c762bb757a06).
+$ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
+    dune exec --instrument-with ppx_windtrap.mutate \
+    examples/x-blueprint/test/unit/test_stats.exe -- -f "one line per row"
+stats: 1 passed in 0.0444s (seed s1:9af2e80ab07716a2).
 
-  ADMITTED  slugify › is idempotent
-    killed  examples/x-blueprint/lib/slug.ml:2:3:gt   c >= 'a'  →  c > 'a'
+─────────────────── survivors (2) ────────────────────
 
-admission: 1 admitted of 1 · 2 forks over 61 reached in 77ms (seed s1:cd98c762bb757a06)
+  SURVIVED  examples/x-blueprint/lib/stats.ml:14:18:add   width - (String.length label)  →  width + (String.length label)
+      14 │     ^ String.make (width - String.length label) ' '
+
+    1 test ran this line and did not fail:
+      render › prints one line per row plus the total      examples/x-blueprint/test/unit/test_stats.ml:28
+
+  …
+
+──────────────────────────────────────────────────────
+
+mutants: 2 survived of 2 reached by the 1 selected test
+reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_stats.exe -- -f 'one line per row'
+verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
 ```
 
-`UNJUSTIFIED` would mean the test cannot fail, and exits 1; `NO SITES`
-means mutation has nothing to say about that subject. Nothing is written
-to `_build/_mutants`, so admitting a test never disturbs the verdicts
-`example-mutate` merges.
-
-Drop the `-f` and the run judges every test it executes instead of the
-ones a filter names — which is the whole reason an alias can carry it.
-`@example-admit` is that command over `test_slug.exe`, and it reports
-`9 admitted of 9 · 2 forks` here. It carries no `WINDTRAP_MUTATE_ONLY`,
-so inside windtrap's tree the framework's own sites are in reach too:
-the same run scoped to `examples/x-blueprint/lib` reports `8 admitted,
-1 no sites` in three forks, which is what the alias sees once this
-directory is copied out and windtrap is an uninstrumented dependency.
-No prefix is right in both places, and wide is the safe direction —
-every ruling is still true about the test it names.
-
-Its sibling `test_stats.exe` is left out of the alias on purpose:
-scoped that way, admitting it exits 1 by design. The fourth deliberate
-thing below says why that red is the point rather than a defect.
+A filtered run exits 0 whatever it finds and writes no verdicts, so you
+can probe one test all afternoon without disturbing what
+`example-mutate` merges. The `WINDTRAP_MUTATE_ONLY` prefix is for this
+tree only: here windtrap's own library carries the backend too, so an
+unscoped run reaches the framework's sites as well; copied out,
+windtrap is an ordinary uninstrumented dependency and the prefix can
+go.
 
 ## Copied out: the workspace posture
 
@@ -100,29 +103,23 @@ dune runtest                                          # every suite
 dune build @example-cover                             # coverage, gated
 WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/slug.ml \
   dune exec test/unit/test_slug.exe                   # the mutation loop
-WINDTRAP_MUTATE=admit \
-  dune exec test/unit/test_slug.exe -- -f idempotent  # admit a test
-dune build @example-admit                             # admit a whole suite
-dune build @example-mutate                            # merge verdicts
+WINDTRAP_MUTATE=1 dune build @example-mutate --force  # the project aggregate
 ```
 
 Measured on a copy pinned to this tree: the whole suite runs in under
-three seconds with both backends on, `admit` answers in tens of
-milliseconds, and every suite's transcript ends with the two discovery
-lines — the coverage percentage and the mutant count — standing
-reminders of the verdicts a green run has not yet earned. The built
-programs mean exactly what they meant uninstrumented: marks only
-count, and a mutant changes meaning only in a forked child that armed
-it.
+three seconds with both backends on, and every suite's transcript ends
+with the coverage percentage — a standing reminder of the verdicts a
+green run has not yet earned. The built programs mean exactly what
+they meant uninstrumented: marks only count, and a mutant changes
+meaning only in a forked child that armed it.
 
 Four things are deliberate:
 
-- **The aliases are named `example-cover` / `example-mutate` /
-  `example-admit`.** In your own project they are `cover`, `mutate` and
-  `admit` — the names windtrap's manual, skill, and own root `dune`
-  use. They are renamed here only because this example lives inside
-  windtrap's tree, where those aliases are recursive and already mean
-  the project's own aggregate.
+- **The aliases are named `example-cover` / `example-mutate`.** In
+  your own project they are `cover` and `mutate` — the names windtrap's
+  manual, skill, and own root `dune` use. They are renamed here only
+  because this example lives inside windtrap's tree, where those
+  aliases are recursive and already mean the project's own aggregate.
 - **Issue #1 is a real, intentional bug.** `Slug.slugify` treats UTF-8
   letters as separators (`"Café"` → `"caf"`, not `"café"`).
   `test/failures/issue_1.ml` keeps the reproduction running as an
@@ -135,31 +132,20 @@ Four things are deliberate:
   and its mutant `n >= 0` agree at zero, so no test can distinguish
   them; the `[@mutate off "reason"]` attribute records that reasoning
   in the source, where `git blame` keeps it, and drops the site from
-  the mutation denominator. Both scoped loops above report
-  `0 survived` — the suites here practice the discipline the skill
+  the mutation denominator. The aggregate above reports every reached
+  mutant killed — the suites here practice the discipline the skill
   teaches.
 
-- **`test_stats.ml` keeps one deliberately weak law.** The
-  line-count property cannot fail under either arithmetic fault in
-  `lib/stats.ml`, so a scoped admission run rules it `UNJUSTIFIED` and
-  exits 1 — it is the manual's living specimen ("Admitting a test"),
-  and the comment above it says so. See the ruling itself with
-
-  ```
-  WINDTRAP_MUTATE=admit WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
-    dune exec --instrument-with ppx_windtrap.mutate \
-    examples/x-blueprint/test/unit/test_stats.exe   # 3 admitted, 1 unjustified
-  ```
-
-  In a real project that ruling is stop-the-line: strengthen the law
-  (here, that would orphan the manual's transcripts, so the exercise is
-  left to the reader — and the faults it misses are killed by the
-  example tests beside it, so the survey still reports `0 survived`).
-  It is also why `@example-admit` names only `test_slug.exe`: a
-  scaffold whose alias is red on the day it is copied teaches that a
-  red alias is normal, which is the opposite of what `UNJUSTIFIED`
-  means. Yours names every unit executable, because nothing in yours is
-  a specimen.
+- **`test_stats.ml` keeps one deliberately weak law.** The line-count
+  property cannot fail under either arithmetic fault in `lib/stats.ml`
+  — no arithmetic inside a line moves a line count — so the survey
+  filtered to it reports both as survivors (the transcript above), and
+  the comment above the law says why it stays. The tests beside it
+  kill both faults, which is the point: one test's survivor is another
+  test's kill, and the suite — and the project aggregate — still
+  report every mutant killed. In your project the remedy for that
+  transcript is a stronger law; here that would orphan the transcript
+  above, so the exercise is left to the reader.
 
 A stateful suite slots into `unit/` the same way (see
 `examples/10-stateful`); this example keeps the surface small.
