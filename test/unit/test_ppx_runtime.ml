@@ -1536,10 +1536,7 @@ let () =
    that exits 1 wrote nothing. *)
 
 let () =
-  (match
-     Private.correction_notice ~accepted:[] ~refused:[] ~declined:false
-       [ "a_mismatch.ml.corrected" ]
-   with
+  (match Private.correction_notice [ "a_mismatch.ml.corrected" ] with
   | None -> check "a written correction produces a notice" false
   | Some notice ->
       check "a written correction produces a notice" true;
@@ -1552,77 +1549,20 @@ let () =
         notice;
       check_contains "the caveat names the dune way out"
         ~sub:"Fix the failures, rerun, then 'dune promote'" notice;
-      check_contains "the caveat names the update way out"
-        ~sub:"rerun with WINDTRAP_UPDATE=1" notice);
-  (* The notice no longer takes an exit code, so no shape of the
-     arguments brings the old silence back. *)
-  (match
-     Private.correction_notice ~accepted:[] ~refused:[] ~declined:false
-       [ "a.ml.corrected"; "b.ml.corrected" ]
-   with
+      check "the caveat names no environment variable"
+        (match find notice "WINDTRAP_" with
+        | _ -> false
+        | exception Invalid_argument _ -> true));
+  (* The notice takes no exit code, so no shape of the arguments brings
+     the old silence back. *)
+  (match Private.correction_notice [ "a.ml.corrected"; "b.ml.corrected" ] with
   | None -> check "two corrections produce a notice" false
   | Some notice ->
       check_contains "two corrections: the wrote line lists both"
         ~sub:"windtrap: wrote a.ml.corrected, b.ml.corrected" notice;
       check_contains "two corrections: the caveat still fires"
         ~sub:"dune registers a correction for promotion only" notice);
-  (* Accepted into the source tree: those corrections never went through
-     dune's channel, so the caveat is replaced by where they landed. *)
-  (match
-     Private.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[]
-       ~declined:false
-       [ "a_mismatch.ml.corrected" ]
-   with
-  | None -> check "an accepted correction produces a notice" false
-  | Some notice ->
-      check_contains "accepted: the wrote line still prints"
-        ~sub:"windtrap: wrote a_mismatch.ml.corrected" notice;
-      check_contains "accepted: the source path is named"
-        ~sub:"windtrap: accepted into the source tree: lib/a.ml" notice;
-      check "accepted: no dune caveat"
-        (match find notice "dune registers" with
-        | _ -> false
-        | exception Invalid_argument _ -> true));
-  check "no corrections: no notice"
-    (Private.correction_notice ~accepted:[] ~refused:[] ~declined:false []
-     = None
-    && Private.correction_notice ~accepted:[ "lib/a.ml" ] ~refused:[]
-         ~declined:false []
-       = None);
-  (* A declined acceptance says fixing comes first — and never advises
-     the update that was already requested. *)
-  (match
-     Private.correction_notice ~accepted:[] ~refused:[] ~declined:true
-       [ "a_mismatch.ml.corrected" ]
-   with
-  | None -> check "a declined acceptance produces a notice" false
-  | Some notice ->
-      check_contains "declined: acceptance never blesses failing output"
-        ~sub:"acceptance never blesses output produced beside one" notice;
-      check_contains "declined: fixing comes first"
-        ~sub:"Fix the failures and rerun" notice;
-      check "declined: no advice to rerun with the update already on"
-        (match find notice "rerun with WINDTRAP_UPDATE=1" with
-        | _ -> false
-        | exception Invalid_argument _ -> true));
-  (* A refusal points back at its reasons, and never advises the
-     acceptance that just failed. *)
-  match
-    Private.correction_notice ~accepted:[] ~refused:[ "lib/a.ml" ]
-      ~declined:false
-      [ "a_mismatch.ml.corrected" ]
-  with
-  | None -> check "a refused acceptance produces a notice" false
-  | Some notice ->
-      check_contains "refused: the count and the way out"
-        ~sub:
-          "1 correction was not accepted into the source tree — resolve the \
-           reasons above and rerun"
-        notice;
-      check "refused: no advice to rerun with the update that failed"
-        (match find notice "rerun with WINDTRAP_UPDATE=1" with
-        | _ -> false
-        | exception Invalid_argument _ -> true)
+  check "no corrections: no notice" (Private.correction_notice [] = None)
 
 (* Corrections round-trip on a real temp source file *)
 
@@ -1674,15 +1614,14 @@ let () =
           | Ok _ -> ());
       check "the test body left the cwd changed"
         (not (String.equal (Sys.getcwd ()) start_dir));
-      let report = Private.flush_corrections_report ~accept:false in
+      let report = Private.flush_corrections_report () in
       check "flush restores the module-load cwd"
         (String.equal (Sys.getcwd ()) start_dir);
       let corrected_name = Filename.basename temp ^ ".corrected" in
       check "flush writes <basename>.corrected in the start cwd"
         (report.Private.written = [ corrected_name ]
         && Sys.file_exists corrected_name);
-      check "without accept, nothing reaches the source tree"
-        (report.Private.accepted = [] && report.Private.refused = []);
+      check "nothing was refused" (report.Private.refused = []);
       let golden =
         {x|let%expect_test "t" =
   print_string "new\n";
@@ -1701,26 +1640,16 @@ let () =
       | exception Sys_error _ -> check "read back .corrected" false);
       (try Sys.remove corrected_name with Sys_error _ -> ());
       check "flush clears the corrections table"
-        ((Private.flush_corrections_report ~accept:false).Private.written = []))
+        ((Private.flush_corrections_report ()).Private.written = []))
 
-(* Accepting corrections into the source tree (WINDTRAP_UPDATE)
-
-   The second channel, and the one that makes a correction independent of
-   the rest of its library: dune registers a .corrected only when every
-   partition of the library exits 0, so one file's crash withholds
-   another file's correction — and no partition can see that happen.
-   Under an update run the correction goes to the source tree directly
-   instead, through the machinery snapshot baselines already use.
-
-   The layout below is dune's situation in miniature, and the two copies
-   have to stay distinct for any of it to mean anything. The recorded
-   path is workspace-relative ("sub/<name>.ml"); the copy the runtime
-   reads and patches is the SANDBOX copy, which [absolute_path] resolves
-   to <module-load cwd>/<name>.ml; the source tree is a scratch root
-   named by WINDTRAP_PROJECT_ROOT, holding <root>/sub/<name>.ml. The
-   correction is a set of byte offsets into the first, applied to the
-   second — which is sound only while their bytes are equal, and is what
-   the drift guard is for. *)
+(* The two halves of dune's per-library promotion rule, as one partition
+   sees them: a stale payload writes its .corrected and exits 0; a crash
+   writes nothing and exits 1; and a partition holding both writes the
+   correction but exits 1, so dune withholds every correction of the
+   library until the crash is fixed. The recorded path is
+   workspace-relative ("sub/<name>.ml"); the copy the runtime reads and
+   patches is the sandbox copy, which [absolute_path] resolves to
+   <module-load cwd>/<name>.ml. *)
 
 let read_text path =
   let ic = open_in_bin path in
@@ -1793,8 +1722,8 @@ let register_stale ~file =
 
 (* A payload that matches, then a raise: the whole of what a crashing
    partition contributes. Nothing mismatched, so nothing is recorded, so
-   there is nothing for either channel to carry — and the exception is
-   not itself a correction on any channel. *)
+   there is nothing to write — and the exception is not itself a
+   correction. *)
 let crash_source =
   {x|let%expect_test "t" =
   print_string "before";
@@ -1832,313 +1761,102 @@ let register_crash ~file =
 let sandbox_dir = Sys.getcwd ()
 let case_counter = ref 0
 
-let with_case ~root ~sandbox_source ~tree_source f =
+let with_case ~sandbox_source f =
   incr case_counter;
   let name = Printf.sprintf "ppxrt_case%d.ml" !case_counter in
-  let dir = Filename.concat root "sub" in
-  (try Unix.mkdir dir 0o700 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
   let sandbox = Filename.concat sandbox_dir name in
   write_text sandbox sandbox_source;
-  write_text (Filename.concat dir name) tree_source;
   Fun.protect
     ~finally:(fun () ->
       List.iter
         (fun p -> try Sys.remove p with Sys_error _ -> ())
         [ sandbox; sandbox ^ ".corrected" ])
     (fun () ->
-      f ~file:("sub/" ^ name) ~target:(Filename.concat dir name)
+      f ~file:("sub/" ^ name)
         ~corrected:(Filename.concat sandbox_dir (name ^ ".corrected"))
         ~corrected_name:(name ^ ".corrected"))
 
-(* One partition, run and flushed exactly as [exit] does it: the update
-   decision is read off the registry the runner built, so the CI refusal
-   and the [force] override are the run's own, not restated here. *)
-let run_partition ?(ci = false) ~update ~root ~register () =
+(* One partition, run and flushed exactly as [exit] does it. *)
+let run_partition ~register () =
   Private.reset ();
   register ();
   let tests = Private.collect () in
-  let saved_ci = Sys.getenv_opt "CI" in
-  Unix.putenv "CI" (if ci then "1" else "");
-  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
-  Fun.protect
-    ~finally:(fun () ->
-      Unix.putenv "CI" (Option.value ~default:"" saved_ci);
-      Unix.putenv "WINDTRAP_PROJECT_ROOT" "")
-    (fun () ->
-      with_temp_root (fun log_dir ->
-          let config = { (base_config ~log_dir ()) with Run.update } in
-          capturing_stderr (fun () ->
-              match Runner.execute ~config ~suite:"ppxrt" tests with
-              | Error error -> Error error
-              | Ok outcome ->
-                  (* Mirrors [run_inline_suite]'s wiring exactly: acceptance
-                     is gated on the process's own clean verdict as well as
-                     the update mode, so output produced beside a non-expect
-                     failure is never accepted (the per-file half of the
-                     masked-assertion veto), and a refusal forces the exit. *)
-                  let clean = Private.inline_exit_code outcome = 0 in
-                  let accept =
-                    clean
-                    && Snapshot.mode (Run.snapshots outcome.Runner.run)
-                       = Snapshot.Update
-                  in
-                  let report = Private.flush_corrections_report ~accept in
-                  let code =
-                    if report.Private.refused = [] then if clean then 0 else 1
-                    else 1
-                  in
-                  let failures =
-                    List.length
-                      (List.filter
-                         (fun r ->
-                           match r.Run.outcome with
-                           | Failure.Fail _ -> true
-                           | Failure.Pass | Failure.Skip _ -> false)
-                         (Run.results outcome.Runner.run))
-                  in
-                  Ok (code, report, failures))))
+  with_temp_root (fun log_dir ->
+      let config = base_config ~log_dir () in
+      capturing_stderr (fun () ->
+          match Runner.execute ~config ~suite:"ppxrt" tests with
+          | Error error -> Error error
+          | Ok outcome ->
+              let clean = Private.inline_exit_code outcome = 0 in
+              let report = Private.flush_corrections_report () in
+              let code =
+                if report.Private.refused = [] then if clean then 0 else 1
+                else 1
+              in
+              let failures =
+                List.length
+                  (List.filter
+                     (fun r ->
+                       match r.Run.outcome with
+                       | Failure.Fail _ -> true
+                       | Failure.Pass | Failure.Skip _ -> false)
+                     (Run.results outcome.Runner.run))
+              in
+              Ok (code, report, failures)))
 
-(* A stale-only partition: exit 0 and a .corrected, and — without an
-   update run — nothing at all in the source tree. *)
+(* A stale-only partition: exit 0 and a .corrected. *)
 let () =
-  with_temp_root (fun root ->
-      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
-        (fun ~file ~target ~corrected ~corrected_name ->
-          match
-            run_partition ~update:Env.No_update ~root
-              ~register:(fun () -> register_stale ~file)
-              ()
-          with
-          | Error _, _ -> check "stale partition: the run started" false
-          | Ok (code, report, failures), stderr ->
-              check_int "stale partition exits 0 (its correction covers it)"
-                ~expected:0 ~actual:code;
-              check_int "a plain run reports the mismatch as a failure"
-                ~expected:1 ~actual:failures;
-              check "stale partition writes its .corrected"
-                (report.Private.written = [ corrected_name ]);
-              check "a plain run accepts nothing into the source tree"
-                (report.Private.accepted = [] && report.Private.refused = []);
-              check_string "a plain run leaves the source tree byte-identical"
-                ~expected:stale_source ~actual:(read_text target);
-              check_string "the .corrected carries the fresh payload"
-                ~expected:stale_corrected ~actual:(read_text corrected);
-              check_string "a clean flush says nothing on stderr" ~expected:""
-                ~actual:stderr))
+  with_case ~sandbox_source:stale_source
+    (fun ~file ~corrected ~corrected_name ->
+      match run_partition ~register:(fun () -> register_stale ~file) () with
+      | Error _, _ -> check "stale partition: the run started" false
+      | Ok (code, report, failures), stderr ->
+          check_int "stale partition exits 0 (its correction covers it)"
+            ~expected:0 ~actual:code;
+          check_int "the mismatch is reported as a failure" ~expected:1
+            ~actual:failures;
+          check "stale partition writes its .corrected"
+            (report.Private.written = [ corrected_name ]
+            && report.Private.refused = []);
+          check_string "the .corrected carries the fresh payload"
+            ~expected:stale_corrected ~actual:(read_text corrected);
+          check_string "a clean flush says nothing on stderr" ~expected:""
+            ~actual:stderr)
 
-(* A crashing partition: exit 1 and nothing written, on either channel —
-   under WINDTRAP_UPDATE too. This is the guard that option C did not
-   quietly make a crash promotable: the update channel can only carry
-   what the correction table holds, and a raise never puts anything
-   there. *)
+(* A crashing partition: exit 1 and nothing written. *)
 let () =
-  List.iter
-    (fun (label, update) ->
-      with_temp_root (fun root ->
-          with_case ~root ~sandbox_source:crash_source ~tree_source:crash_source
-            (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
-              match
-                run_partition ~update ~root
-                  ~register:(fun () -> register_crash ~file)
-                  ()
-              with
-              | Error _, _ ->
-                  check
-                    ("crash partition (" ^ label ^ "): the run started")
-                    false
-              | Ok (code, report, failures), stderr ->
-                  check_int
-                    ("crash partition exits 1 (" ^ label ^ ")")
-                    ~expected:1 ~actual:code;
-                  check_int
-                    ("crash partition still reports the crash (" ^ label ^ ")")
-                    ~expected:1 ~actual:failures;
-                  check
-                    ("crash partition writes nothing (" ^ label ^ ")")
-                    (report.Private.written = []
-                    && report.Private.accepted = []
-                    && report.Private.refused = []);
-                  check_string
-                    ("crash partition leaves the source alone (" ^ label ^ ")")
-                    ~expected:crash_source ~actual:(read_text target);
-                  check_string
-                    ("crash partition is silent on stderr (" ^ label ^ ")")
-                    ~expected:"" ~actual:stderr)))
-    [ ("plain run", Env.No_update); ("update run", Env.Update) ]
+  with_case ~sandbox_source:crash_source
+    (fun ~file ~corrected:_ ~corrected_name:_ ->
+      match run_partition ~register:(fun () -> register_crash ~file) () with
+      | Error _, _ -> check "crash partition: the run started" false
+      | Ok (code, report, failures), stderr ->
+          check_int "crash partition exits 1" ~expected:1 ~actual:code;
+          check_int "crash partition reports the crash" ~expected:1
+            ~actual:failures;
+          check "crash partition writes nothing"
+            (report.Private.written = [] && report.Private.refused = []);
+          check_string "crash partition is silent on stderr" ~expected:""
+            ~actual:stderr)
 
-(* A partition holding both a stale payload and a crash: the process is
-   not clean, so an update run declines the acceptance — the per-file
-   half of the masked-assertion veto, kept under WINDTRAP_UPDATE too.
-   The .corrected is still written (dune promote works once the crash is
-   fixed), the source tree stays byte-identical, and the exit is 1. *)
+(* A partition holding both a stale payload and a crash: the .corrected
+   is still written (dune promote works once the crash is fixed) and the
+   exit is 1. *)
 let () =
-  with_temp_root (fun root ->
-      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
-        (fun ~file ~target ~corrected:_ ~corrected_name ->
-          match
-            run_partition ~update:Env.Update ~root
-              ~register:(fun () ->
-                register_stale ~file;
-                register_crash ~file)
-              ()
-          with
-          | Error _, _ -> check "mixed partition: the run started" false
-          | Ok (code, report, failures), _stderr ->
-              check_int "a dirty process exits 1 under WINDTRAP_UPDATE"
-                ~expected:1 ~actual:code;
-              (* The mismatch's failure block was suppressed at record
-                 time — the update mode speaks there, and cleanliness is
-                 unknowable until the run ends — so the crash is the one
-                 reported failure; the declined notice and the exit code
-                 carry the mismatch. *)
-              check_int "the crash is the reported failure" ~expected:1
-                ~actual:failures;
-              check "the correction is still written for dune's channel"
-                (report.Private.written = [ corrected_name ]);
-              check "a dirty process accepts nothing into the source tree"
-                (report.Private.accepted = [] && report.Private.refused = []);
-              check_string "a dirty process leaves the source tree untouched"
-                ~expected:stale_source ~actual:(read_text target)))
-
-(* An update run rewrites the source tree, reports the path it wrote
-   project-root relative, and exits 0 — with no help from dune. *)
-let () =
-  with_temp_root (fun root ->
-      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
-        (fun ~file ~target ~corrected ~corrected_name ->
-          match
-            run_partition ~update:Env.Update ~root
-              ~register:(fun () -> register_stale ~file)
-              ()
-          with
-          | Error _, _ -> check "update run: the run started" false
-          | Ok (code, report, failures), stderr ->
-              check_int "an accepted correction exits 0" ~expected:0
-                ~actual:code;
-              (* Snapshot parity: an update run writes the new expectation
-                 and passes. Reporting the mismatch it just accepted would
-                 be noise — and fifty of them, noise fifty times over. *)
-              check_int "an accepted mismatch is not reported as a failure"
-                ~expected:0 ~actual:failures;
-              check "the update run reports the accepted path, root-relative"
-                (report.Private.accepted
-                = [ Filename.concat "sub" (Filename.basename target) ]);
-              check "the update run still writes the .corrected"
-                (report.Private.written = [ corrected_name ]
-                && report.Private.refused = []);
-              check_string "the source tree carries the corrected payload"
-                ~expected:stale_corrected ~actual:(read_text target);
-              check_string "the sandbox .corrected matches what was accepted"
-                ~expected:stale_corrected ~actual:(read_text corrected);
-              check_string "an accepted flush says nothing on stderr"
-                ~expected:"" ~actual:stderr))
-
-(* The drift guard. The source-tree file differs from the copy the
-   correction was computed against, so its offsets describe something
-   else: refuse, name the file and the reason, leave both files exactly
-   as they were, and report the refusal so [exit] forces a nonzero code
-   over an exit rule that would otherwise read 0. *)
-let () =
-  let drifted =
-    "let%expect_test \"t\" = (* edited while the tests ran *) ()\n"
-  in
-  with_temp_root (fun root ->
-      with_case ~root ~sandbox_source:stale_source ~tree_source:drifted
-        (fun ~file ~target ~corrected ~corrected_name ->
-          match
-            run_partition ~update:Env.Update ~root
-              ~register:(fun () -> register_stale ~file)
-              ()
-          with
-          | Error _, _ -> check "drift guard: the run started" false
-          | Ok (code, report, _), stderr ->
-              check_string "the drift guard leaves the source untouched"
-                ~expected:drifted ~actual:(read_text target);
-              check "the drift guard accepts nothing"
-                (report.Private.accepted = []);
-              check "the refused file is reported unwritable"
-                (report.Private.refused = [ file ]);
-              check "the .corrected is still written for dune's channel"
-                (report.Private.written = [ corrected_name ]
-                && String.equal (read_text corrected) stale_corrected);
-              check_contains "the refusal names the file" ~sub:file stderr;
-              check_contains "the refusal names the reason"
-                ~sub:"differs from the copy the correction was computed against"
-                stderr;
-              (* The run itself was green — the mismatch was accepted, and
-                 the refusal happens after it, at flush — so the refusal is
-                 the only thing failing this partition, exactly as an
-                 unwritable .corrected is, and the combined code says so. *)
-              check_int "a refused acceptance forces exit 1" ~expected:1
-                ~actual:code;
-              check "the refusal is recorded on the report"
-                (report.Private.refused <> [])))
-
-(* A source path that is a symbolic link is refused: acceptance replaces
-   the file a path names, and publication never turns a link into a
-   regular file behind its owner's back. The link and its target must
-   both survive byte-intact, and the report must say why. *)
-let () =
-  if not Sys.win32 then
-    with_temp_root (fun root ->
-        with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
-          (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
-            (* Re-point the tree path at a link to a sibling holding the
-               same bytes, so linkness is the only difference — the drift
-               guard passes and the refusal is the write's alone. *)
-            let real = target ^ ".real" in
-            Sys.rename target real;
-            Unix.symlink real target;
-            match
-              run_partition ~update:Env.Update ~root
-                ~register:(fun () -> register_stale ~file)
-                ()
-            with
-            | Error _, _ -> check "symlink: the run started" false
-            | Ok (code, report, _), stderr ->
-                check_int "a symlinked source forces exit 1" ~expected:1
-                  ~actual:code;
-                check "the acceptance is a refusal, not a success"
-                  (report.Private.refused <> [] && report.Private.accepted = []);
-                check_contains "the refusal names the linkness"
-                  ~sub:"symbolic link" stderr;
-                check "the link survives as a link"
-                  ((Unix.lstat target).Unix.st_kind = Unix.S_LNK);
-                check_string "the link's target keeps its bytes"
-                  ~expected:stale_source ~actual:(read_text real)))
-
-(* The CI guard, inherited whole from snapshots: WINDTRAP_UPDATE under CI
-   is refused before a single test runs, and [force] overrides it. *)
-let () =
-  with_temp_root (fun root ->
-      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
-        (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
-          (match
-             run_partition ~ci:true ~update:Env.Update ~root
-               ~register:(fun () -> register_stale ~file)
-               ()
-           with
-          | Error Runner.Update_refused_in_ci, _ ->
-              check "an update run under CI is refused" true
-          | Error _, _ | Ok _, _ ->
-              check "an update run under CI is refused" false);
-          check_string "a refused update run leaves the source tree alone"
-            ~expected:stale_source ~actual:(read_text target)));
-  with_temp_root (fun root ->
-      with_case ~root ~sandbox_source:stale_source ~tree_source:stale_source
-        (fun ~file ~target ~corrected:_ ~corrected_name:_ ->
-          match
-            run_partition ~ci:true ~update:Env.Force_update ~root
-              ~register:(fun () -> register_stale ~file)
-              ()
-          with
-          | Error _, _ -> check "force overrides the CI refusal" false
-          | Ok (code, report, _), _ ->
-              check "force overrides the CI refusal"
-                (report.Private.accepted <> []);
-              check_int "a forced update run exits 0" ~expected:0 ~actual:code;
-              check_string "force writes the corrected payload to the source"
-                ~expected:stale_corrected ~actual:(read_text target)))
+  with_case ~sandbox_source:stale_source
+    (fun ~file ~corrected:_ ~corrected_name ->
+      match
+        run_partition
+          ~register:(fun () ->
+            register_stale ~file;
+            register_crash ~file)
+          ()
+      with
+      | Error _, _ -> check "mixed partition: the run started" false
+      | Ok (code, report, failures), _stderr ->
+          check_int "a dirty process exits 1" ~expected:1 ~actual:code;
+          check_int "both failures are reported" ~expected:2 ~actual:failures;
+          check "the correction is still written for dune's channel"
+            (report.Private.written = [ corrected_name ]))
 
 (* reset: the seam every scenario above leans on *)
 

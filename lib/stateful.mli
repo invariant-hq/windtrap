@@ -38,7 +38,7 @@ type ('model, 'sut) command
     different types. *)
 
 val command :
-  ?pos:Loc.pos ->
+  ?__POS__:Loc.pos ->
   ?pre:('model -> 'arg -> bool) ->
   string ->
   'arg Gen.t ->
@@ -58,11 +58,11 @@ val command :
       is checked only by [stateful]'s [?invariant].
 
     [name] identifies the command in reports; newlines in it become spaces.
-    [pos] is the declaration site, captured here by default, and is what a
+    [__POS__] is the declaration site, captured here by default, and is what a
     failing step reports when its assertion recorded no location of its own. *)
 
 val call :
-  ?pos:Loc.pos ->
+  ?__POS__:Loc.pos ->
   ?pre:('model -> bool) ->
   string ->
   next:('model -> 'model) ->
@@ -155,7 +155,7 @@ val execute :
 (** {1:declaring Declaring} *)
 
 val stateful :
-  ?pos:Loc.pos ->
+  ?__POS__:Loc.pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
@@ -176,8 +176,8 @@ val stateful :
     [timeout], [count] and the run's [--prop-count] / [--max-shrink] knobs
     behave exactly as on a property; [steps], [pp_model] are {!program}'s and
     [scope], [invariant] are {!execute}'s. The declared tags are extended with
-    ["prop"] and ["stateful"]. [pos] fixes the declaration site, which a scope
-    that never ran the program reports.
+    ["prop"] and ["stateful"]. [__POS__] fixes the declaration site, which a
+    scope that never ran the program reports.
 
     There is no [?examples] — a shrunk counterexample is copied back as a plain
     test — and no [?retries]: a program replays deterministically from the root

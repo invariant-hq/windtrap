@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Adapted from windtrap 0.1's lib/path_ops.ml and the path helpers of
-   its lib/snapshot.ml. v3 adds [reconstruct]: sandbox path
+   its baseline layer. v3 adds [reconstruct]: sandbox path
    reconstruction that fails when the result cannot be proven to lie under
    the project root. *)
 
@@ -63,15 +63,37 @@ let trim_trailing_slashes s =
 (* Not exported: [reconstruct] and [display] are the two ways out of this
    module, and both prove or relativize the result. A bare strip is the
    unproven guess the module header refuses to hand out. *)
+(* The components after a build directory and its context: a sandboxed
+   action runs under [_build/.sandbox/<hash>/<context>/], an unsandboxed
+   one under [_build/<context>/]. [None] when [comps] holds no build
+   directory followed by a context. *)
+let rec after_build_context = function
+  | build :: ".sandbox" :: _hash :: _context :: rest when is_build_dir build ->
+      Some rest
+  | build :: _context :: rest when is_build_dir build -> Some rest
+  | _ :: rest -> after_build_context rest
+  | [] -> None
+
 let strip_build_prefix path =
   let p = normalize_sep path in
   let comps = String.split_on_char '/' p in
   let rec drop acc = function
-    | "_build" :: _context :: rest -> List.rev_append acc rest
+    | build :: _ as comps when is_build_dir build -> (
+        match after_build_context comps with
+        | Some rest -> List.rev_append acc rest
+        | None -> List.rev_append acc comps)
     | c :: rest -> drop (c :: acc) rest
     | [] -> List.rev acc
   in
   String.concat "/" (drop [] comps)
+
+let build_root dir =
+  let comps = String.split_on_char '/' (normalize_sep dir) in
+  match after_build_context comps with
+  | None -> None
+  | Some rest ->
+      let kept = List.length comps - List.length rest in
+      Some (String.concat "/" (List.filteri (fun i _ -> i < kept) comps))
 
 let is_drive c0 c1 =
   (('A' <= c0 && c0 <= 'Z') || ('a' <= c0 && c0 <= 'z')) && c1 = ':'
@@ -141,16 +163,24 @@ let relative_to_root path =
           (String.length path - String.length prefix)
       else path
 
+(* Relativized before the build prefix is stripped: a project root that
+   itself lies inside a build tree (a scratch root under a sandbox) would
+   otherwise never prefix its own paths. The build prefix is then
+   stripped from the remainder, so a build copy under the root prints as
+   its source. *)
 let display path =
-  let path = strip_build_prefix path in
-  let path =
+  let normalize path =
+    let keep seg = seg <> "." && seg <> "" in
     match String.split_on_char '/' path with
-    | [] -> path
-    | first :: rest ->
-        String.concat "/"
-          (first :: List.filter (fun seg -> seg <> "." && seg <> "") rest)
+    | "" :: rest -> "/" ^ String.concat "/" (List.filter keep rest)
+    | segments -> (
+        match List.filter keep segments with
+        | [] -> "."
+        | kept -> String.concat "/" kept)
   in
-  relative_to_root path
+  let relative = relative_to_root path in
+  if relative != path then normalize (strip_build_prefix relative)
+  else relative_to_root (normalize (strip_build_prefix path))
 
 let display_artifact = relative_to_root
 

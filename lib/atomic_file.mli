@@ -7,14 +7,14 @@
 
     {!write} publishes a file by writing a temporary sibling and renaming it
     over the target, so no reader — including a concurrent or crashed run — ever
-    observes a partially written target. Snapshot acceptance and the last-failed
-    store write through this module and nothing else.
+    observes a partially written target. Baseline corrections and the
+    last-failed store write through this module and nothing else.
 
     Temporaries live in the target's directory under the reserved {!temp_prefix}
-    name prefix; directory scans such as snapshot orphan reporting and pruning
-    must skip entries recognized by {!is_temp_name}. Writes are atomic with
-    respect to observers but are not synced to stable storage: durability across
-    power failure is out of scope for test artifacts. *)
+    name prefix; a directory scan must skip entries recognized by
+    {!is_temp_name}. Writes are atomic with respect to observers but are not
+    synced to stable storage: durability across power failure is out of scope
+    for test artifacts. *)
 
 (** {1:naming Reserved temporary names} *)
 

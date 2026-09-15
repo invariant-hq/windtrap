@@ -1,10 +1,18 @@
 ; THE windtrap suite: one test stanza per file, one file per source
-; module. The snapshot deps glob is load-bearing: baselines are runtime
-; data, invisible to dune, and without it editing a baseline would not
-; re-trigger the test.
+; module. test_stats holds an expect literal: its stanza runs the suite
+; with --corrected and diffs the corrected file, so a stale render
+; shows as a diff under `dune runtest` and `dune promote` accepts it.
 
-(tests
- (names test_slug test_stats)
+(test
+ (name test_slug)
+ (modules test_slug)
+ (libraries windtrap windtrap_example_blueprint))
+
+(test
+ (name test_stats)
+ (modules test_stats)
  (libraries windtrap windtrap_example_blueprint)
- (deps
-  (glob_files_rec __snapshots__/**)))
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_stats.ml test_stats.ml.corrected))))

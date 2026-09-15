@@ -5,7 +5,7 @@
 
 (* Adapted from windtrap 0.1's lib/env.ml. v3 drops the color globals
    (renderers make the ANSI decision explicitly) and adds the
-   WINDTRAP_COVERAGE switch and the [force] update mode. *)
+   WINDTRAP_COVERAGE switch. *)
 
 (* Parsing helpers *)
 
@@ -143,9 +143,3 @@ let mutate_only () =
   match get_string "WINDTRAP_MUTATE_ONLY" with
   | None -> []
   | Some s -> split_comma s
-
-(* Snapshot update modes. The vocabulary, not the reading:
-   WINDTRAP_UPDATE is parsed beside its row in [Cli]'s table, like every
-   other mirror. *)
-
-type update = No_update | Update | Force_update

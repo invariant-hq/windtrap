@@ -6,7 +6,7 @@
 (* The suite test_facade.ml drives. What the facade's [run] does with a
    command line is the subject, so the suite itself stays small enough
    for the driver to pin its transcripts byte for byte: five tests, no
-   clock, no network, one snapshot.
+   clock, no network, one file baseline.
 
    Three declarations, selected by FACADE_FIXTURE, because two of the
    things [run] refuses are properties of a suite rather than of a flag —
@@ -26,16 +26,14 @@ let default =
        exclude it by name to pass one. *)
     test "boom" (fun () -> equal ~msg:"deliberate" int 1 2);
     slow "crawls" (fun () -> is_true true);
-    (* [~pos] rather than the captured location: the baseline the driver
-       plants is addressed by this file's name, and a heuristic is no
-       basis for a path two files have to agree on. *)
-    test ~pos:__POS__ "greeting" (fun () ->
-        snapshot ~pos:__POS__ "greeting" "hello from the fixture\n");
+    (* The baseline the sessions plant, at a path both files agree on. *)
+    test "greeting" (fun () ->
+        expect_file "hello from the fixture\n" "test/facade/greeting.expected");
   ]
 
-let focus =
+let focused =
   [
-    ftest "focused" (fun () -> is_true true);
+    focus (test "focused" (fun () -> is_true true));
     test "unfocused" (fun () -> is_true true);
   ]
 
@@ -49,7 +47,7 @@ let () =
   exit
   @@ run "fixture"
        (match Sys.getenv_opt "FACADE_FIXTURE" with
-       | Some "focus" -> focus
+       | Some "focus" -> focused
        | Some "duplicate" -> duplicate
        | Some ("" | "default") | None -> default
        | Some other ->

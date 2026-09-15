@@ -8,12 +8,13 @@
 
     {!execute} drives a declared {!Test_tree.t} list under a resolved
     {!Run.config}: it applies the startup checks (duplicate paths, the CI focus
-    guard, the snapshot CI guard, the [--failed] store), selects tests, runs
+    guard, the baseline CI guard, the [--failed] store), selects tests, runs
     them one at a time in declaration order (one process, one domain,
-    sequential), releases fixtures, maintains the last-failed store, and
-    computes the [0]/[1]/[2] exit code. It prints nothing: progress streams
-    through typed {!type:event}s and everything else is data in the returned
-    {!type:outcome} for renderers to project.
+    sequential), releases fixtures, maintains the last-failed store, writes the
+    baseline corrections the run kept, and computes the [0]/[1]/[2] exit code.
+    It prints nothing: progress streams through typed {!type:event}s and
+    everything else is data in the returned {!type:outcome} for renderers to
+    project.
 
     {b The per-test boundary.} Every attempt gets a fresh {!Run.frame} installed
     in the ambient slot, the global [Random] state reseeded to a pure function
@@ -75,12 +76,12 @@
     likewise inert while no run is active: exits before, after, and by the
     runner itself pass through untouched.
 
-    A {!Test_tree.bracket}'s stored closures run as data, in the order
-    [Windtrap.bracket] specifies. What is the runner's: the body and teardown
-    outcomes are captured {e independently}, one failure-list entry per failed
-    phase, never composed with [Fun.protect] at the reporting boundary — body
-    and release failures are both reported — and a timeout during teardown is a
-    [Teardown]-phase failure alongside any body failure.
+    A {!Test_tree.bracket} is a scoped test whose scope [Test_tree] derives from
+    its setup and teardown, so its guarantees are the scoped protocol's: body
+    and teardown outcomes are captured {e independently}, one failure-list entry
+    per failed phase, never composed with [Fun.protect] at the reporting
+    boundary — body and release failures are both reported — and a timeout
+    during teardown is a [Teardown]-phase failure alongside any body failure.
 
     {b Retries.} A test with [retries = n] reruns while its outcome
     {e counts as failed} (see {e Expected failures} below — for an [xfail] test
@@ -98,9 +99,7 @@
     alone, while an unexpected pass does all three and is recorded as [Fail]
     with one message failure. Skips are unaffected. Each recorded result carries
     the decision ({!Run.result.counted}) and the annotation
-    ({!Run.result.xfail}), so renderers classify from the record alone. For
-    baseline maintenance (below), {e every} [Fail] result — expected or not —
-    makes the run unclean.
+    ({!Run.result.xfail}), so renderers classify from the record alone.
 
     {b Selection.} A test runs iff its path contains [config.filter] (when set),
     does not contain [config.exclude] (when set), its tags satisfy
@@ -119,15 +118,20 @@
     test may move it between buckets. The bucket applies to the already-filtered
     set, and an empty shard exits [2] like any empty selection.
 
-    {b Baseline maintenance.} A run that executed the whole declared suite with
-    nothing filtered, focused, bailed, skipped or failed — and only such a run —
-    knows the full set of baseline names the suite claims, so only such a run
-    may say that a stored baseline is stale ({!Snapshot.orphans}, reported in
-    {!outcome.orphans}). After any other run the set is empty: a filtered run
-    cannot tell a stale baseline from one this invocation did not select. The
-    report never deletes and never fails the run — a baseline is a committed
-    file, so removing one is the user's edit, and the report names every path
-    for it.
+    {b Corrections.} A baseline check that fails in {!Baseline.Corrected} or
+    {!Baseline.Update} mode records a correction ({!Baseline.check}). After
+    every attempt the runner keeps the attempt's corrections iff every failure
+    of the attempt is a baseline failure and the attempt did not skip
+    ({!Baseline.settle}): a correction never blesses output produced beside an
+    assertion failure, a raise or a timeout, or a withheld verdict. An attempt
+    of a test marked {!Test_tree.xfail} checks baselines read-only in every mode
+    ({!Run.frame}): its mismatch is the failure the annotation expects, so it is
+    reported and excused, never corrected. After the last test the kept
+    corrections are written once ({!Baseline.write}), before any report. A test
+    whose failures are all kept corrections is recorded as failed like any other
+    but leaves the exit code alone: under [--corrected] the [diff?] that follows
+    is the verdict. A correction that could not be written
+    ({!Baseline.refusals}) fails the run.
 
     {b The last-failed store} lives at [<log_dir>/<suite>/.last-failed], written
     atomically ({!Atomic_file}) after every executing run. Its format is
@@ -140,7 +144,7 @@
 (** {1:props Property tests} *)
 
 val prop :
-  ?pos:Loc.pos ->
+  ?__POS__:Loc.pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
@@ -196,12 +200,11 @@ type startup_error =
   | Duplicate_paths of string list
       (** Two tests flattened to the same full path; the offending paths,
           sorted, each listed once. *)
-  | Focused_in_ci of ([ `Ftest | `Fgroup ] * Loc.t option) list
-      (** Focused nodes exist and [CI] is set: the focus sites, in declaration
-          order. *)
+  | Focused_in_ci of Loc.t option list
+      (** Focused nodes exist and [CI] is set: their declaration sites, in
+          declaration order. *)
   | Update_refused_in_ci
-      (** A snapshot update was requested under [CI] without
-          [WINDTRAP_UPDATE=force] ({!Snapshot.resolve_mode}). *)
+      (** [-u] was given under [CI]; there is no override. *)
   | No_recorded_failures
       (** [--failed] was given but no stored entry names a test of the current
           suite. *)
@@ -213,8 +216,7 @@ val startup_exit_code : startup_error -> int
 
 val startup_message : startup_error -> string
 (** [startup_message error] is a plain-text (no ANSI) explanation of [error] for
-    users, including the lifting spell where one exists
-    ([WINDTRAP_UPDATE=force]). Not stable for programmatic matching. *)
+    users. Not stable for programmatic matching. *)
 
 (** {1:outcomes Outcomes} *)
 
@@ -223,9 +225,9 @@ type outcome = {
       (** The run record: results in execution order — every executed test's
           row, then the end-of-run verdict rows ({!Run.type-subject}): one
           {!Run.Fixture_release} row per failed fixture teardown — plus the
-          snapshot registry (acceptance {!Snapshot.writes} included) and the
-          coverage seam. Every sink projects this one list, so a verdict that
-          sets the exit code is always visible in the report. *)
+          baseline registry (what it wrote, {!Baseline.writes}, included) and
+          the coverage seam. Every sink projects this one list, so a verdict
+          that sets the exit code is always visible in the report. *)
   selected : Test_tree.case list;
       (** The selected tests in execution order — the [-l] listing data. Under
           [--bail] some may not have executed. *)
@@ -233,20 +235,16 @@ type outcome = {
   focus_active : bool;
       (** [true] iff a focused node narrowed the selection — renderers warn on
           successful focused runs outside CI. *)
-  orphans : string list;
-      (** Baselines still stale when the run ended ({!Snapshot.orphans}),
-          reported only after a full, clean run — no filters, focus, bail,
-          skips, or failures — and [[]] otherwise. Advisory: it never deletes
-          and never changes {!outcome.exit_code}. *)
   duration : float;  (** Wall-clock seconds from startup checks to release. *)
   exit_code : int;
       (** [1] when any recorded row counted as failed ({!Run.result.counted}) —
           a test the [xfail] annotation did not excuse, or a failed fixture
-          release; else [2] when no test executed (empty suite or empty
-          selection — the filter-typo case); else [0] — a nonempty selection
-          whose every test skipped is deliberate and exits [0], and so does a
-          run whose only failures were expected ([xfail]). List-only runs exit
-          [0]. *)
+          release — except a test whose failures are all kept corrections
+          ({e Corrections} above), or when a correction could not be written;
+          else [2] when no test executed (empty suite or empty selection — the
+          filter-typo case); else [0] — a nonempty selection whose every test
+          skipped is deliberate and exits [0], and so does a run whose only
+          failures were expected ([xfail]). List-only runs exit [0]. *)
 }
 (** The type for completed runs: everything renderers project and the facade
     needs to exit. *)
@@ -271,13 +269,14 @@ val execute :
     Effects: registers a process-wide [Stdlib.at_exit] exit guard on first call
     (never removed; inert while no run is active), reads [CI] via {!Env},
     captures test output under [config.log_dir] (unless [config.stream]),
-    rewrites the last-failed store, and — in update mode — writes accepted
-    baselines through the snapshot registry. Raises [Invalid_argument] when
-    called while a run is already active (from a test body, the calling test
-    fails with that error), and when [config.shard] violates [1 <= K <= N] — the
-    CLI layer validates every layer it resolves, so only a hand-built
-    configuration can trip this. If [on_event] raises, the run aborts with that
-    exception — after a best-effort fixture release, like a fatal exception. *)
+    rewrites the last-failed store, and writes the kept corrections through the
+    baseline registry ([.corrected] files or, under [-u], the files themselves).
+    Raises [Invalid_argument] when called while a run is already active (from a
+    test body, the calling test fails with that error), and when [config.shard]
+    violates [1 <= K <= N] — the CLI layer validates every layer it resolves, so
+    only a hand-built configuration can trip this. If [on_event] raises, the run
+    aborts with that exception — after a best-effort fixture release, like a
+    fatal exception. *)
 
 val list_selection :
   config:Run.config ->

@@ -1,11 +1,16 @@
-; Snapshot tests. Baselines live under __snapshots__/ next to this file and
-; are runtime data, invisible to dune's dependency tracking — the deps glob
-; below re-triggers runtest when a baseline changes. Accept new output with
-; WINDTRAP_UPDATE=1 dune runtest, then review with git diff.
+; Baselines: an expect literal in the test file and an expect_file
+; against help.expected. The stanza runs the suite with --corrected and
+; diffs each corrected file, so a stale expectation shows as a diff
+; under `dune runtest` and `dune promote` accepts it — the same
+; promotion protocol as for [%expect] and cram tests.
 
 (test
  (name test_mytool)
  (modules test_mytool mytool)
  (libraries windtrap)
- (deps
-  (glob_files_rec __snapshots__/**)))
+ (deps help.expected)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_mytool.ml test_mytool.ml.corrected)
+   (diff? help.expected help.expected.corrected))))

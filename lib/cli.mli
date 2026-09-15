@@ -19,12 +19,14 @@
     applied through the flag's own parser, so the two cannot drift: a variable
     accepts exactly what its flag accepts, refuses exactly what its flag
     refuses, with the same [expected] wording, and differs only in naming the
-    variable rather than the flag as the source of a bad value. The two
-    variables whose vocabulary is wider than their flag's — [WINDTRAP_UPDATE]'s
-    [force] and [WINDTRAP_COLOR]'s lenient fall back to {!Env.Auto} — are parsed
-    beside their own rows all the same. {!Env} is consulted for the reading, not
-    for the inventory: what it still owns outright are the variables read below
-    this layer ([WINDTRAP_PROJECT_ROOT] and the coverage/mutation scopes).
+    variable rather than the flag as the source of a bad value. The one variable
+    whose vocabulary is wider than its flag's — [WINDTRAP_COLOR]'s lenient fall
+    back to {!Env.Auto} — is parsed beside its own row all the same. {!Env} is
+    consulted for the reading, not for the inventory: what it still owns
+    outright are the variables read below this layer ([WINDTRAP_PROJECT_ROOT]
+    and the coverage/mutation scopes). The two acceptance flags, [-u] and
+    [--corrected], have no mirror: a build action accepts a baseline through
+    [--corrected] in its own action and never through its environment.
 
     Nothing in this module prints or exits: parse and resolution failures are
     returned as a typed {!type:error} — the caller renders {!error_message} and
@@ -59,9 +61,13 @@ type parsed = {
   stream : bool option;
       (** [-s], [--stream]: run against the real descriptors instead of
           capturing. *)
-  update : Env.update option;
-      (** [-u], [--update]: parse as [Some Env.Update]. Forcing past the CI
-          guard is spelled [WINDTRAP_UPDATE=force]. *)
+  update : bool option;
+      (** [-u], [--update]: accept baseline changes in place
+          ({!Baseline.Update}); refused under CI by the runner, with no
+          override. *)
+  corrected : bool option;
+      (** [--corrected]: write every correction as [<file>.corrected]
+          ({!Baseline.Corrected}), for a [diff?] action and [dune promote]. *)
   seed : Seed.seed option;
       (** [--seed TOKEN]: the root seed, an [s1:] token parsed by
           {!Seed.of_string}. *)
@@ -109,6 +115,9 @@ type error =
   | Extra_positional of { filter : string; extra : string }
       (** A second positional argument [extra] arrived with the filter already
           set to [filter]. *)
+  | Incompatible_flags of string * string
+      (** Both flags were given and they contradict each other: [-u] and
+          [--corrected]. *)
 
 val error_message : error -> string
 (** [error_message error] is a one-line description of [error] for users, naming
@@ -126,7 +135,8 @@ val parse : string array -> (parsed, error) result
     [--flag=value] spelling. The first bare argument becomes {!parsed.filter} (a
     second one is {!Extra_positional}); arguments after a [--] separator are all
     treated as positionals. Parsing stops at [-h]/[--help] and [-V]/[--version]:
-    flags after them are not validated. *)
+    flags after them are not validated. [-u] together with [--corrected] is
+    {!Incompatible_flags}. *)
 
 (** {1:resolution Resolution} *)
 
@@ -207,5 +217,5 @@ val help : prog:string -> string
 (** [help ~prog] is the full help page: usage, the flag table with one line per
     flag, and the variables no flag can spell. Generated from the same table
     that drives {!parse}. The mirrors get one sentence rather than a row each:
-    the rule is mechanical, and twenty-four lines reading [Mirror of --x] said
+    the rule is mechanical, and twenty-odd lines reading [Mirror of --x] said
     nothing the sentence does not. *)

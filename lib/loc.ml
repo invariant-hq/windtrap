@@ -101,8 +101,8 @@ let capture () =
   | Found loc -> Some loc
   | Stop -> None
 
-let resolve ?pos () =
-  match pos with Some p -> Some (of_pos p) | None -> capture ()
+let resolve ?__POS__ () =
+  match __POS__ with Some p -> Some (of_pos p) | None -> capture ()
 
 (* Observers *)
 

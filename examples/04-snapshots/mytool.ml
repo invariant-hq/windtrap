@@ -1,4 +1,4 @@
-(* The tool under test: output worth pinning as a snapshot baseline. *)
+(* The tool under test: output worth pinning as a baseline. *)
 
 let help () =
   String.concat "\n"

@@ -907,15 +907,14 @@ let arm_mode renderer ~armed ~spec (spine : Driver.t) tests =
       (* An armed run never writes: no .corrected (Law 16d) and no
          accepted baseline. An armed mutant changes program output on
          purpose, and a run that promoted that output would rewrite the
-         source tree from a lie. Snapshots need no flag beyond No_update:
-         Snapshot maps it to Mode Check, and the write is reachable only
-         under Mode Update. *)
+         source tree from a lie. Baselines need no flag beyond Check: a
+         correction is recorded only under Corrected and Update. *)
       armed ();
       let spine =
         {
           spine with
           Driver.config =
-            { spine.Driver.config with Run.update = Env.No_update };
+            { spine.Driver.config with Run.baseline = Baseline.Check };
         }
       in
       Render.mutation_armed renderer

@@ -8,12 +8,12 @@ names the selection back to the reader in the words they typed.
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
 
-The fixture's one snapshot, planted where WINDTRAP_PROJECT_ROOT sends
-the child's baseline lookup — the runs below that execute tests execute
+The fixture's one file baseline, planted where WINDTRAP_PROJECT_ROOT
+sends the child's lookup — the runs below that execute tests execute
 that one too:
 
-  $ mkdir -p test/facade/__snapshots__/suite_main
-  $ echo 'hello from the fixture' > test/facade/__snapshots__/suite_main/greeting.snap
+  $ mkdir -p test/facade
+  $ echo 'hello from the fixture' > test/facade/greeting.expected
 
 -l lists the selection in declaration order, and runs nothing:
 
@@ -48,7 +48,7 @@ transcript byte for byte.
   ──────────────────── failures (1) ────────────────────
     FAIL  boom
       test/facade/suite_main.ml:LINE
-      (assertion in tail position: its line is unknown; ~pos:__POS__ names it)
+      (assertion in tail position: its line is unknown; ~__POS__ names it)
       deliberate
       expected  1
       actual    2
@@ -58,7 +58,7 @@ transcript byte for byte.
 
 
 A selection that passes exits 0 — the four tests left when the one
-failing test is excluded, snapshot and slow-tagged test included:
+failing test is excluded, baseline and slow-tagged test included:
 
   $ run ./suite_main.exe -e boom > out 2> err
   $ sed -E 's/ in [0-9.e+-]+s\./ in DURATION./' out

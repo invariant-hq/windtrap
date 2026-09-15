@@ -83,15 +83,15 @@ F
 1 failed in 0.000781s.
 ```
 
-No `~pos` annotation, no printer boilerplate: the location comes from
+No `~__POS__` annotation, no printer boilerplate: the location comes from
 the assertion's call stack, and the diff is computed from the printed
 values — every type gets it, not just strings. The one case the call
 stack cannot serve is an assertion in tail position — the last
 expression of a body such as `test "adds" (fun () -> equal int 4 (add 2 2))`
 — whose frame is gone by the time it raises: the report then names the
 test's declaration line and says so underneath
-(`(assertion in tail position: its line is unknown; ~pos:__POS__ names it)`);
-`~pos:__POS__` on that assertion puts its own line back. `equal` takes a
+(`(assertion in tail position: its line is unknown; ~__POS__ names it)`);
+`~__POS__` on that assertion puts its own line back. `equal` takes a
 *testable* (`int`, `string`, `list (pair string (list int))`, …): a
 printer plus an equality, composed like the type itself.
 
@@ -104,23 +104,24 @@ printer plus an equality, composed like the type itself.
 | `require_some o` / `require_ok r` | assert *and unwrap*: `let v = require_some (find k) in …` |
 | `raises exn fn` / `raises_match pred fn` | exceptions |
 | `prop name gen fn` | property test over an `'a Gen.t`; failures shrink and replay |
-| `snapshot name actual` | compare to `__snapshots__/<file>/<name>.snap`; accept with `-u` |
+| `expect actual @@ __POS_OF__ {|…|}` | compare to the literal at the call; accept with `dune promote` (a `--corrected` stanza) or `-u` |
+| `expect_file actual path` | compare to a committed file; accepted the same way |
 | `let%expect_test` + `[%expect {|…|}]` | inline output tests (`ppx_windtrap`); accept with `dune promote` |
 | `cases ~name base inputs fn` | one selectable test per input |
 | `bracket ~setup ~teardown name fn` | per-test resource |
 | `fixture ?teardown create` | shared resource, released by the runner |
-| `ftest` / `fgroup` | focus while debugging (refused under CI) |
+| `focus t` | focus a test or a group while debugging (refused under CI) |
 | `fail` / `failf` / `skip ~reason ()` | escape hatches |
 
 Custom types are one line:
 `let point = Testable.make ~pp:Point.pp ~equal:Point.equal`.
 
 Every failure that needs a command to resolve it prints that command:
-the acceptance line under a snapshot mismatch, the replay line under a
+the acceptance line under a baseline mismatch, the replay line under a
 property failure.
 From here: [Assertions](assertions.md) for the full verb set,
 [Property testing](property-testing.md) and [Stateful
-testing](stateful-testing.md), [Snapshots and expect
+testing](stateful-testing.md), [Baselines and expect
 tests](snapshots-and-expect.md), or [Running tests](running-tests.md)
 for the CLI. Runnable versions of each chapter's code live under
 `examples/` in the distribution.

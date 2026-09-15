@@ -19,7 +19,8 @@ type parsed = {
   list_only : bool option;
   bail : int option;
   stream : bool option;
-  update : Env.update option;
+  update : bool option;
+  corrected : bool option;
   seed : Seed.seed option;
   timeout : float option;
   slow_threshold : float option;
@@ -45,6 +46,7 @@ let empty =
     bail = None;
     stream = None;
     update = None;
+    corrected = None;
     seed = None;
     timeout = None;
     slow_threshold = None;
@@ -65,6 +67,7 @@ type error =
   | Missing_value of string
   | Invalid_value of { source : string; value : string; expected : string }
   | Extra_positional of { filter : string; extra : string }
+  | Incompatible_flags of string * string
 
 (* The flag table *)
 
@@ -348,27 +351,25 @@ let table =
         mirror =
           mirrored "WINDTRAP_MAX_SHRINK" Trimmed (fun p -> p.max_shrink = None);
       };
+    (* Acceptance has no mirror, deliberately: a build action must never
+       accept a baseline because of a variable in its environment. Under
+       dune the acceptance is a [--corrected] run followed by
+       [dune promote]; [-u] is for a command line. *)
     Flag_entry
       {
         short = Some "-u";
         long = "--update";
-        arg = Flag (fun acc -> { acc with update = Some Env.Update });
-        doc = "Accept snapshot changes (refused under CI)";
-        mirror =
-          mirrored "WINDTRAP_UPDATE"
-            (* Parsed here rather than through [-u]'s own arg: this
-               variable's vocabulary is wider than the flag's, which has
-               no way to spell [force]. *)
-            (Own
-               (fun acc ->
-                 match Env.get_string "WINDTRAP_UPDATE" with
-                 | Some s when String.lowercase_ascii (String.trim s) = "force"
-                   ->
-                     { acc with update = Some Env.Force_update }
-                 | Some _ when Env.get_bool "WINDTRAP_UPDATE" = Some true ->
-                     { acc with update = Some Env.Update }
-                 | Some _ | None -> acc))
-            (fun p -> p.update = None);
+        arg = Flag (fun acc -> { acc with update = Some true });
+        doc = "Accept baseline changes in place (refused under CI)";
+        mirror = None;
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--corrected";
+        arg = Flag (fun acc -> { acc with corrected = Some true });
+        doc = "Write corrections as <file>.corrected, for dune promote";
+        mirror = None;
       };
     Flag_entry
       {
@@ -471,7 +472,7 @@ let table =
     Env_setting
       {
         var = "WINDTRAP_PROJECT_ROOT";
-        doc = "Project root for snapshot path resolution";
+        doc = "Project root that baseline paths resolve under";
       };
     Env_setting
       { var = "WINDTRAP_COVERAGE"; doc = "Inline coverage line: on or off" };
@@ -575,6 +576,8 @@ let error_message = function
       Pp.str "invalid value '%s' for %s: expected %s" value source expected
   | Extra_positional { filter; extra } ->
       Pp.str "unexpected argument '%s': the filter is already '%s'" extra filter
+  | Incompatible_flags (first, second) ->
+      Pp.str "options '%s' and '%s' cannot be combined" first second
 
 (* Parsing *)
 
@@ -645,7 +648,13 @@ and apply entry ~source ~inline acc rest =
 let parse argv =
   match Array.to_list argv with
   | [] -> Ok empty
-  | _prog :: args -> parse_args empty args
+  | _prog :: args -> (
+      let* parsed = parse_args empty args in
+      (* Two acceptances at once say two different things about where
+         the produced text goes. *)
+      match (parsed.update, parsed.corrected) with
+      | Some true, Some true -> Error (Incompatible_flags ("-u", "--corrected"))
+      | _ -> Ok parsed)
 
 (* Resolution *)
 
@@ -709,7 +718,11 @@ let resolved below =
       failed_only = Option.value below.failed_only ~default:false;
       bail = below.bail;
       stream = Option.value below.stream ~default:false;
-      update = Option.value below.update ~default:Env.No_update;
+      baseline =
+        (match (below.update, below.corrected) with
+        | Some true, _ -> Baseline.Update
+        | _, Some true -> Baseline.Corrected
+        | _ -> Baseline.Check);
       timeout = below.timeout;
       prop_count = below.prop_count;
       max_shrink = below.max_shrink;
@@ -865,7 +878,8 @@ let help ~prog =
        "-f PATTERN). Under `dune runtest` there is no command line, so";
        "almost every option has a WINDTRAP_* mirror — WINDTRAP_FILTER for";
        "--filter, and so on — and there the mirrors are the CLI. -l,";
-       "--failed, -x, -h and -V have none: they want a command line.";
+       "--failed, -x, -u, --corrected, -h and -V have none: they belong";
+       "on a command line (a build action accepts nothing by environment).";
        "";
        "OPTIONS:";
      ]

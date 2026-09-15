@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* End-to-end tests of the Windtrap facade: suites declared with the public
-   surface (verbs, testables, prop, snapshot, output, fixture) executed
+   surface (verbs, testables, prop, expect, output, fixture) executed
    in-process through Runner.execute under a synthetic config, asserting on
    typed outcomes. Plain executable: [run] and [execute] both refuse to
    nest inside an active run, so a windtrap suite could drive neither.
@@ -122,48 +122,6 @@ let () =
              |]
            "releasesuite"
            [ test "touches the fixture" (fun () -> leaky_release ()) ]
-  | _ -> ()
-
-(* The stale-baseline child (snapshots): re-exec'd to run the facade's
-   [run] on a green one-test suite that leaves one stale baseline beside
-   the one it checks. The run is full and clean, so the stale file is
-   reported — and the part a runner-level test cannot see is that the
-   report reaches the transcript, names the file, and hands over the
-   removal without performing it or failing the run. *)
-let stale_scope = ("src/a.ml", 1, 0, 0)
-
-let write_baseline root name contents =
-  let path = Filename.concat root ("src/__snapshots__/a/" ^ name ^ ".snap") in
-  Path_ops.mkdir_p (Filename.dirname path);
-  Out_channel.with_open_bin path (fun oc ->
-      Out_channel.output_string oc contents)
-
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--stale-baseline-child"; root; junit ] ->
-      clear_env ();
-      (* After [clear_env], which owns this variable. Baselines resolve
-         under the project root, so the throwaway root is the project. *)
-      Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
-      write_baseline root "kept" "hello\n";
-      write_baseline root "gone" "no test claims me\n";
-      exit
-      @@ Windtrap.run
-           ~argv:
-             [|
-               "stale-child";
-               "-o";
-               Filename.concat root "_logs";
-               "--color";
-               "never";
-               "--junit";
-               junit;
-             |]
-           "stalesuite"
-           [
-             test "checks its baseline" (fun () ->
-                 snapshot ~pos:stale_scope "kept" "hello\n");
-           ]
   | _ -> ()
 
 (* Re-exec this executable with [args], returning its exit status and its
@@ -302,7 +260,7 @@ let () =
     | exception _ -> check (label ^ " raises Invalid_argument") false
   in
   outside "output ()" (fun () -> ignore (output ()));
-  outside "snapshot" (fun () -> snapshot "name" "x");
+  outside "expect_file" (fun () -> expect_file "x" "name.expected");
   outside "collect" (fun () -> collect "label");
   outside "fixture accessor" (fun () -> probe_fixture ());
   outside "current_test" (fun () -> ignore (current_test ()));
@@ -704,54 +662,61 @@ let () =
         (contains "--stream" message)
   | _ -> check "output () under --stream fails the test" false
 
-(* Snapshots through the facade *)
+(* Baselines through the facade *)
 
 let with_project_root root f =
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
   Fun.protect ~finally:(fun () -> Unix.putenv "WINDTRAP_PROJECT_ROOT" "") f
 
+let read_file path = In_channel.with_open_bin path In_channel.input_all
+
 let () =
   with_temp_root @@ fun root ->
   with_project_root root @@ fun () ->
   let config = base_config ~log_dir:(Filename.concat root "logs") () in
-  let snap_test = test "greets" (fun () -> snapshot "greeting" "hello\n") in
+  let file_test =
+    test "greets" (fun () -> expect_file "hello\n" "src/greeting.expected")
+  in
+  let path = Filename.concat root "src/greeting.expected" in
   (* 1. Check mode, no baseline: read-only failure carrying the proposal. *)
-  ( expect_run "snapshot missing" ~config [ snap_test ] @@ fun outcome ->
+  ( expect_run "file baseline missing" ~config [ file_test ] @@ fun outcome ->
     match failure_list (outcome_of outcome [ "greets" ]) with
     | [
      {
        Failure.kind =
-         Failure.Snapshot { name; state = Failure.Missing { proposed }; path };
+         Failure.Baseline
+           { baseline = Failure.File p; state = Failure.Missing { proposed } };
        _;
      };
     ] ->
-        check "missing snapshot proposes the canonical content"
-          (name = "greeting" && proposed = "hello\n"
-          && contains "__snapshots__" path);
-        check "missing snapshot wrote nothing" (not (Sys.file_exists path))
-    | _ -> check "missing snapshot fails with a Snapshot payload" false );
+        check "a missing baseline proposes the canonical content"
+          (p = "src/greeting.expected" && proposed = "hello\n");
+        check "a missing baseline writes nothing" (not (Sys.file_exists path))
+    | _ -> check "a missing baseline fails with a Baseline payload" false );
   (* 2. Update mode accepts, reports the write, and exits 0. *)
-  let update_config = { config with Run.update = Env.Update } in
-  ( expect_run "snapshot acceptance" ~config:update_config [ snap_test ]
+  let update_config = { config with Run.baseline = Baseline.Update } in
+  ( expect_run "file baseline acceptance" ~config:update_config [ file_test ]
   @@ fun outcome ->
     check_int "update run exits 0" ~expected:0 ~actual:outcome.Runner.exit_code;
-    match Snapshot.writes (Run.snapshots outcome.Runner.run) with
-    | [ (path, Snapshot.Created) ] ->
-        check "acceptance wrote the baseline"
-          (Sys.file_exists path && contains "__snapshots__" path)
-    | _ -> check "acceptance recorded one Created write" false );
+    match Baseline.writes (Run.baselines outcome.Runner.run) with
+    | [ { Baseline.path = written; literals = 0 } ] ->
+        check "acceptance wrote the file"
+          (written = path && read_file path = "hello\n")
+    | _ -> check "acceptance recorded one write" false );
   (* 3. Check mode now passes; a changed actual mismatches. *)
-  ( expect_run "snapshot green" ~config [ snap_test ] @@ fun outcome ->
-    check_int "snapshot matches its committed baseline" ~expected:0
+  ( expect_run "file baseline green" ~config [ file_test ] @@ fun outcome ->
+    check_int "the baseline matches its committed file" ~expected:0
       ~actual:outcome.Runner.exit_code );
-  expect_run "snapshot mismatch" ~config
-    [ test "greets" (fun () -> snapshot "greeting" "goodbye\n") ]
+  expect_run "file baseline mismatch" ~config
+    [
+      test "greets" (fun () -> expect_file "goodbye\n" "src/greeting.expected");
+    ]
   @@ fun outcome ->
   match failure_list (outcome_of outcome [ "greets" ]) with
   | [
    {
      Failure.kind =
-       Failure.Snapshot { state = Failure.Mismatch { expected; actual }; _ };
+       Failure.Baseline { state = Failure.Mismatch { expected; actual }; _ };
      _;
    };
   ] ->
@@ -759,45 +724,57 @@ let () =
         (expected = "hello\n" && actual = "goodbye\n")
   | _ -> check "mismatch fails with a Mismatch payload" false
 
-(* snapshot_pp shares the namespace and renders through the printer. *)
+(* Literals through the facade: the literal is last, compared flexibly by
+   [expect] and byte for byte by [expect_exact]; a mismatch sits at the
+   literal's own position. *)
 let () =
   with_temp_root @@ fun root ->
   with_project_root root @@ fun () ->
-  let config =
-    {
-      (base_config ~log_dir:(Filename.concat root "logs") ()) with
-      Run.update = Env.Update;
-    }
-  in
+  let config = base_config ~log_dir:(Filename.concat root "logs") () in
   let suite =
     [
-      test "pp" (fun () ->
-          snapshot_pp "pair"
-            (fun ppf (a, b) -> Format.fprintf ppf "%d/%s" a b)
-            (1, "one"));
+      test "flexible" (fun () ->
+          expect "a\n  b\n"
+          @@ __POS_OF__ {|
+            a
+              b
+          |});
+      test "exact" (fun () -> expect_exact "a\n" @@ __POS_OF__ "a\n");
+      test "stale" (fun () -> expect "new" @@ __POS_OF__ {| old |});
     ]
   in
-  expect_run "snapshot_pp" ~config suite @@ fun outcome ->
-  match Snapshot.writes (Run.snapshots outcome.Runner.run) with
-  | [ (path, Snapshot.Created) ] ->
-      let ic = open_in_bin path in
-      let content =
-        Fun.protect
-          ~finally:(fun () -> close_in ic)
-          (fun () -> really_input_string ic (in_channel_length ic))
-      in
-      check "snapshot_pp stores the printer's rendering" (content = "1/one\n")
-  | _ -> check "snapshot_pp accepted a baseline" false
+  expect_run "literal baselines" ~config suite @@ fun outcome ->
+  check "flexible and exact match; the stale literal fails"
+    (failed_paths outcome = [ "stale" ]);
+  match failure_list (outcome_of outcome [ "stale" ]) with
+  | [
+   ({
+      Failure.kind =
+        Failure.Baseline
+          {
+            baseline = Failure.Literal;
+            state = Failure.Mismatch { expected; actual };
+          };
+      _;
+    } as f);
+  ] ->
+      check "the mismatch carries the normalized forms"
+        (expected = "old" && actual = "new");
+      check "the failure sits at the literal's position"
+        (match f.Failure.loc with
+        | Some loc -> String.ends_with ~suffix:"test_windtrap.ml" loc.Loc.file
+        | None -> false)
+  | _ -> check "a stale literal fails with a Literal payload" false
 
-(* A snapshot inside a bracket body scopes to the bracket's declaration
-   file — the RFC's resolution rule (2) — never a call-time frame. *)
+(* A baseline check inside a bracket body reaches the run's registry like
+   any ambient operation. *)
 let () =
   with_temp_root @@ fun root ->
   with_project_root root @@ fun () ->
   let config =
     {
       (base_config ~log_dir:(Filename.concat root "logs") ()) with
-      Run.update = Env.Update;
+      Run.baseline = Baseline.Update;
     }
   in
   let suite =
@@ -806,17 +783,17 @@ let () =
         ~setup:(fun () -> ())
         ~teardown:(fun () -> ())
         "bracketed"
-        (fun () -> snapshot "bracketed-baseline" "content\n");
+        (fun () -> expect_file "content\n" "src/bracketed.expected");
     ]
   in
-  expect_run "snapshot in bracket" ~config suite @@ fun outcome ->
-  check_int "snapshot in bracket: exit code" ~expected:0
+  expect_run "baseline in bracket" ~config suite @@ fun outcome ->
+  check_int "baseline in bracket: exit code" ~expected:0
     ~actual:outcome.Runner.exit_code;
-  match Snapshot.writes (Run.snapshots outcome.Runner.run) with
-  | [ (path, Snapshot.Created) ] ->
-      check "bracket snapshot scopes to the declaring file's basename"
-        (contains (Filename.concat "__snapshots__" "test_windtrap") path)
-  | _ -> check "bracket snapshot accepted a baseline" false
+  match Baseline.writes (Run.baselines outcome.Runner.run) with
+  | [ { Baseline.path; literals = 0 } ] ->
+      check "the bracket's baseline is accepted under the root"
+        (path = Filename.concat root "src/bracketed.expected")
+  | _ -> check "bracket baseline accepted a file" false
 
 (* Nested runs *)
 
@@ -1083,7 +1060,7 @@ let () =
     Run.create
       (base_config ~log_dir:root ())
       ~capture:Capture.disabled
-      ~snapshots:(Snapshot.create ~mode:Snapshot.Check ())
+      ~baselines:(Baseline.create ~mode:Baseline.Check ())
   in
   match
     Run.with_active run_record (fun () -> Windtrap.run ~argv:[| "x" |] "s" [])
@@ -1286,41 +1263,6 @@ let () =
     check_contains "the JUnit case is the release's own path"
       ~sub:"fixture release" xml)
 
-(* The stale-baseline report at process level *)
-
-let occurrences ~sub s =
-  let n = String.length sub in
-  let rec count i acc =
-    if i + n > String.length s then acc
-    else if String.sub s i n = sub then count (i + n) (acc + 1)
-    else count (i + 1) acc
-  in
-  if n = 0 then 0 else count 0 0
-
-let () =
-  if not Sys.win32 then (
-    with_temp_root @@ fun root ->
-    let junit = Filename.concat root "junit.xml" in
-    let status, transcript =
-      spawn_child ~merge_stderr:true [ "--stale-baseline-child"; root; junit ]
-    in
-    check "a stale baseline does not fail the run" (status = Unix.WEXITED 0);
-    check_contains "the transcript names the offending file"
-      ~sub:"stale baseline: src/__snapshots__/a/gone.snap" transcript;
-    check_contains "and hands over the removal"
-      ~sub:"remove them: rm 'src/__snapshots__/a/gone.snap'" transcript;
-    check "the file is named once"
-      (occurrences ~sub:"stale baseline: src/__snapshots__/a/gone.snap"
-         transcript
-      = 1);
-    check "the stale file is still there"
-      (Sys.file_exists (Filename.concat root "src/__snapshots__/a/gone.snap"));
-    check "the checked baseline is not called stale"
-      (not
-         (contains "stale baseline: src/__snapshots__/a/kept.snap" transcript));
-    let xml = In_channel.with_open_bin junit In_channel.input_all in
-    check_contains "JUnit records no failure for it" ~sub:"failures=\"0\"" xml)
-
 (* The focus warning (testing/T3) *)
 
 let () =
@@ -1339,10 +1281,10 @@ let () =
   in
   let focused =
     run_focus "focused"
-      [ ftest "picked" (fun () -> is_true true); pass "other" ]
+      [ focus (test "picked" (fun () -> is_true true)); pass "other" ]
   in
   check_contains "outside CI a successful focused run warns"
-    ~sub:"warning: focus is active (ftest/fgroup) — 1 of 2 tests ran" focused;
+    ~sub:"warning: focus is active — 1 of 2 tests ran" focused;
   check_contains "the warning tells the committer what to do"
     ~sub:"remove the focus before committing" focused;
   let plain = run_focus "plain" [ pass "picked"; pass "other" ] in

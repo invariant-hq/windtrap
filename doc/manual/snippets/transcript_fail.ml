@@ -56,8 +56,9 @@ let help () =
       "  test     Run the tests";
     ]
 
-let missing_snapshot =
-  group "cli" [ test "cli help" (fun () -> snapshot "help" (help ())) ]
+let missing_baseline =
+  group "cli"
+    [ test "cli help" (fun () -> expect_file (help ()) "test/help.expected") ]
 
 (* stateful-testing.md: the bounded queue whose ring buffer wraps on the
    queue's length instead of its capacity, so a slot goes stale. *)
@@ -162,7 +163,7 @@ let suite =
     failing_equal;
     failing_occurrences;
     failing_prop;
-    missing_snapshot;
+    missing_baseline;
     failing_stateful;
     raising_pre;
   ]

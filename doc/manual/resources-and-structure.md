@@ -4,7 +4,8 @@ Windtrap has no group-level hooks — no user code ever runs outside a
 test's exception boundary. Resources are scoped by three constructors
 instead — one for a resource setup can return, one for a resource that
 is only ever handed to a callback, one shared by the whole run — and
-everything else here shapes the suite: table-driven tests, tags,
+everything else here shapes the suite: table-driven tests, tags, per-test
+limits and retries (declared on a test or, as defaults, on a group),
 focus, and known-bug bookkeeping.
 
 ## Per-test resources: `bracket`
@@ -53,15 +54,16 @@ let tests =
 
 The scope is positional and comes *before* the optional arguments, so
 a partially applied constructor keeps them:
-`with_conn ~timeout:30. "slow query" fn` is well typed.
+`with_conn ~timeout:30. "slow query" fn` is well typed. `bracket` is `scoped` with the scope
+written from its `~setup`/`~teardown` pair — setup, the callback,
+teardown, the teardown skipped only on a fatal exception — so the two
+share one protocol, and you write a scope by hand exactly when the
+resource is callback-shaped:
 
-**Cleanup is the scope's, not windtrap's.** This is the one place the
-library promises less than `bracket` does. With `bracket`, windtrap
-calls `teardown` and guarantees it on every outcome. With `scoped`,
-windtrap never sees the resource: it records the body's failure — an
+**Cleanup is the scope's.** windtrap records the body's failure — an
 assertion, a `skip`, a timeout — and re-raises it *through* the scope,
-so a scope that cancels or cleans up on the exception path does so.
-Whether it does is the scope's contract. `Eio_main.run` and anything
+so a scope that cleans up on the exception path does so, and one that
+swallows it cannot turn the test green. `Eio_main.run` and anything
 built on `Fun.protect` reclaim on both paths;
 `let r = acquire () in fn r; release r` leaks whenever the body fails,
 and windtrap cannot fix that from the outside.
@@ -70,22 +72,22 @@ and windtrap cannot fix that from the outside.
 without calling it fails the test — a body that never ran is not a
 pass, and a silent green here would be the worst outcome available. A
 scope that calls it twice runs the body on the first call only and
-fails the test: one execution per test is what snapshot registration,
+fails the test: one execution per test is what baseline registration,
 `subtest` labels and scratch paths are keyed by (use `cases` or
-`~retries` to repeat a body). A scope that *skips* instead of calling
+`retries` to repeat a body). A scope that *skips* instead of calling
 back is a skip, not a missing body — the pattern for a suite gated on
 a resource the machine does not have.
 
 **Failures are attributed by how far the callback got.** What the body
 raises is the body's failure. What the scope raises before the
 callback is a `[setup]` failure and what it raises after the callback
-returned is a `[teardown]` failure, so a scope that cannot acquire
-reads differently from one that cannot release; a release failure that
-replaces the body's exception is reported alongside it, two entries,
-as under `bracket`. `~timeout` covers the whole scope call, and the
-window is re-armed as the body leaves the callback, so a release that
-blocks after a body timeout is cut short rather than left to hang the
-run.
+returned is a `[teardown]` failure — reported beside the body's, two
+entries — so a scope that cannot acquire reads differently from one
+that cannot release, and a `bracket` teardown that fails after a
+failing body shows both. `~timeout` covers the whole scope call, and
+the window is re-armed as the body leaves the callback, so a release
+that blocks after a body timeout is cut short rather than left to hang
+the run.
 
 ## Run-scoped resources: `fixture`
 
@@ -231,11 +233,29 @@ siblings still run; the test fails at the end with every entry.
 
 ## Tags, slow tests, timeouts, retries
 
-`~tags` on `test`/`group` label tests (group tags extend every
-descendant); select with `--tag`/`--exclude-tag`. `slow name fn` is
-`test` with the `"slow"` tag pre-applied; it is an ordinary tag, so
-`--exclude-tag slow` drops those tests. Property tests carry `"prop"`
-automatically.
+Every constructor — `test`, `group`, `slow`, `cases`, `bracket`,
+`scoped`, `prop`, `stateful` — takes `?tags`, `?timeout` and
+`?retries` (properties take no `?retries`; they replay from the seed).
+On a group they are defaults for every test under it, so a limit for an
+integration group is one argument, not one per test, and the innermost
+declaration wins:
+
+```ocaml
+let integration =
+  group ~timeout:30. "integration"
+    [
+      with_db "migrates" (fun db -> ...);
+      slow "reindexes" (fun () -> ...);
+      test ~retries:2 "fetches the manifest" (fun () -> ...);
+      test ~timeout:60. "keeps its own limit" (fun () -> ...);
+    ]
+```
+
+`~tags` label tests, and group tags extend every descendant's; select
+with `--tag`/`--exclude-tag`. `slow name fn` is `test` with the
+`"slow"` tag pre-applied; it is an ordinary tag, so `--exclude-tag slow`
+drops those tests, and it exempts them from the slow-test warning.
+Property tests carry `"prop"` automatically.
 
 `~timeout:60.` caps one test in seconds (setup and body share the
 window, and teardown is re-armed with what is left of it — or with a
@@ -244,12 +264,15 @@ fresh window if they used it all, since cleanup still has to happen; a
 the same terms; and for properties, generation and shrinking too, see
 [Property testing](property-testing.md#notes); the runner's
 `--timeout` sets the default); `~retries:2` gives a failing test extra
-attempts — for the flaky-by-nature, not as a way of life.
+attempts, each a fresh setup, body and teardown — for the
+flaky-by-nature, not as a way of life.
 
-## Focus: `ftest` and `fgroup`
+## Focus: `focus`
 
-While debugging, promote `test` to `ftest` (or `group` to `fgroup`):
-when any focused node exists, only focused tests run. Focus is a local
+While debugging, wrap the test — or the whole group — in `focus`: when
+any focused node exists, only focused tests run. It applies to every
+kind of test, `cases`, `prop` and `bracket` included, and leaves the
+declaration site where the constructor captured it. Focus is a local
 tool — under CI a run containing focused tests refuses to start, and a
 successful focused run prints a warning so it cannot slip into a commit
 silently.

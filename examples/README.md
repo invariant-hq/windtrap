@@ -7,8 +7,8 @@ is the [manual](../doc/manual/); the numbering follows its chapters.
 - `01-first-test` — the five-minutes example: `run`, `test`, `group`, `equal`, `raises`.
 - `02-assertions` — the core assertion verbs, testable composition, `cases`, and `Testable.make`.
 - `03-properties` — property tests over `Gen`: one `pp` feeds assertions and counterexamples; `~examples` pins regressions.
-- `04-snapshots` — name-keyed snapshot baselines under `__snapshots__/`; accept changes with `WINDTRAP_UPDATE=1 dune runtest`.
-- `05-resources` — `bracket` for per-test resources and `fixture` for run-scoped shared ones.
+- `04-snapshots` — baselines: an `expect` literal at the call and an `expect_file` against a committed `help.expected`, in a `(test)` stanza whose `--corrected` run lets `dune promote` accept a change.
+- `05-resources` — `bracket` and `scoped` for per-test resources, `fixture` for run-scoped shared ones, a group-level `~timeout` and a `slow` test.
 - `06-expect` — `let%expect_test` with `(inline_tests)` and `(pps ppx_windtrap)`; stale `[%expect]` payloads accepted with `dune promote`.
 - `07-more-assertions` — `satisfies`/`contains`/`require_match`, the `Exn` predicates, `subtest` sub-cases, and `xfail` for known bugs.
 - `08-coverage` — expression-level coverage from one inert `(instrumentation (backend ppx_windtrap.coverage))` stanza: `dune runtest --instrument-with ppx_windtrap.coverage` prints the inline percentage, `dune exec windtrap -- coverage -u` shows the uncovered source, and `dune exec windtrap -- coverage --min 80` gates CI.

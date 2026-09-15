@@ -28,7 +28,7 @@ filtered; the rest is what the committer is told.
   $ sed -E 's/ in [0-9.e+-]+s\./ in DURATION./' out
   fixture: 1 passed in DURATION.
   $ sed -E 's/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' err
-  warning: focus is active (ftest/fgroup) — 1 of 2 tests ran; remove the focus before committing
+  warning: focus is active — 1 of 2 tests ran; remove the focus before committing
 
 Under CI the same suite refuses to start, and says which site to
 remove:
@@ -37,4 +37,4 @@ remove:
   [1]
   $ cat out
   $ sed -E 's/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' err
-  focused tests committed (ftest at test/facade/suite_main.ml:LINE); remove ftest/fgroup to run under CI
+  focused tests committed (focus at test/facade/suite_main.ml:LINE); remove focus to run under CI

@@ -1,6 +1,6 @@
 (* Stats mixes the ladder's rungs in one place — its own suite: a shape
-   law, two hand-derived points, and a snapshot for the render nobody
-   wants to hand-maintain. Labels are generated [a-z] only — the
+   law, two hand-derived points, and an expect literal for the render
+   nobody wants to hand-maintain. Labels are generated [a-z] only — the
    line-count law is about rows, so newline-bearing labels are excluded
    by construction rather than by [assume]. *)
 
@@ -35,7 +35,13 @@ let () =
              test "clamps negative counts to zero" (fun () ->
                  equal text "x  \ntotal 0" (Stats.render [ ("x", -2) ]));
              test "renders a small table" (fun () ->
-                 snapshot "histogram"
-                   (Stats.render [ ("reds", 3); ("greens", 5); ("blues", 0) ]));
+                 expect (Stats.render [ ("reds", 3); ("greens", 5); ("blues", 0) ])
+                 @@ __POS_OF__
+                      {|
+                   reds    ###
+                   greens  #####
+                   blues
+                   total 8
+                   |});
            ];
        ]

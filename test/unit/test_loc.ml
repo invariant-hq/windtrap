@@ -89,8 +89,8 @@ let tests =
           (Loc.delimit (fun () -> 7));
         raises ~msg:"delimit re-raises fn's exception" (Stdlib.Failure "boom")
           (fun () -> Loc.delimit (fun () -> failwith "boom")));
-    test "resolve prefers ?pos over the backtrace" (fun () ->
-        (match Loc.resolve ~pos:("other.ml", 42, 7, 20) () with
+    test "resolve prefers ?__POS__ over the backtrace" (fun () ->
+        (match Loc.resolve ~__POS__:("other.ml", 42, 7, 20) () with
         | Some loc ->
             equal ~msg:"resolve prefers pos file" string "other.ml" loc.Loc.file;
             equal ~msg:"resolve prefers pos line" int 42 loc.Loc.line;

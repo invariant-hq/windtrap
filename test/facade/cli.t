@@ -4,7 +4,7 @@ the two ways a bad invocation is refused.
 Every command goes through `run`, which states the child's whole
 environment rather than inheriting one: a developer's CI, NO_COLOR or
 WINDTRAP_* setting would otherwise reshape transcripts pinned below.
-WINDTRAP_PROJECT_ROOT keeps the runs' capture logs and snapshot lookups
+WINDTRAP_PROJECT_ROOT keeps the runs' capture logs and baseline lookups
 inside this sandbox.
 
   $ run() {
@@ -14,7 +14,7 @@ inside this sandbox.
   > }
 
 --help prints the usage banner and exits 0 — the whole page is pinned
-by test/unit's help.snap, so what is asserted here is that the facade
+by test/unit's help.expected, so what is asserted here is that the facade
 prints it, on stdout, and gets out of the way:
 
   $ run ./suite_main.exe --help > out 2> err

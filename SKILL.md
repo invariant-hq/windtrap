@@ -13,7 +13,7 @@ bug the code has. Everything in this skill serves one principle:
 to satisfy by accident, prove every test can fail, and never let an
 acceptance workflow bless behavior nobody reviewed.
 
-Windtrap is one library for unit, property, stateful, snapshot, and
+Windtrap is one library for unit, property, stateful, expect, and
 expect tests, plus code coverage and mutation testing. `open Windtrap`;
 `test`/`group` declare inert data; `run` executes and returns the exit
 code, which `main` applies — `let () = exit @@ run "mylib" […]`: 0 all
@@ -60,7 +60,7 @@ below it.
 | A stateful API — container, cache, store, pool, anything with a lifecycle | `stateful` against a model | Checks laws over *sequences* of calls; finds interaction bugs no unit test reaches |
 | A pure function where only specific points are specified | `test` + `equal` through a testable | Exact expected values, written by hand from the spec |
 | An executable's observable behavior — CLI parsing, exit codes, error messages, file effects | Cram test through the real binary | Tests the wiring no unit test reaches; doubles as CLI documentation |
-| Rendered or serialized output too large to hand-write — help pages, reports, formatted trees | `snapshot` / `[%expect]` | A reviewed baseline beats a hand-copied string; promotion keeps it current |
+| Rendered or serialized output too large to hand-write — help pages, reports, formatted trees | `expect` / `expect_file` / `[%expect]` | A reviewed baseline beats a hand-copied string; promotion keeps it current |
 | A value against a bound | `less`/`at_most`/`greater`/`at_least` with `~than` | The failure prints the bound and the value; `is_true (n > 0)` prints `true` against `false` |
 | A claim about a value no equality or order captures | `satisfies ~msg` | Last resort — the failure at least prints the value and names the predicate |
 
@@ -68,16 +68,16 @@ Three rules outrank the table:
 
 - **Expected values come from the spec, never from running the code
   under test.** An expected value captured from the implementation's own
-  output is a snapshot with extra steps and none of the review
+  output is a baseline with extra steps and none of the review
   discipline — if you cannot derive the expected value by hand, write it
-  as a `snapshot` so the acceptance workflow (and its reviewer) owns it.
+  as an `expect` so the acceptance workflow (and its reviewer) owns it.
   The operational tell: write the assertion *before* first running the
   test. If you had to run the code to learn the value, it was a
-  snapshot all along.
+  baseline all along.
 - **Normative vs descriptive.** Properties, stateful models, and
   hand-derived `equal` expectations are *normative*: they encode the
-  spec, and when one fails, suspect the code. Snapshots and expect tests
-  are *descriptive*: they pin current behavior, and when one fails the
+  spec, and when one fails, suspect the code. Expect tests, inline or
+  in files, are *descriptive*: they pin current behavior, and when one fails the
   question is "was this change intended?". A suite of only descriptive
   tests asserts nothing except that the code does what it does — every
   module needs a normative core.
@@ -97,7 +97,7 @@ Reject these shapes on sight — in review, and in your own output.
 - **Self-confirming** — the expected value was captured by running the
   code under test. It agrees with every bug the code has. If the
   expected value cannot be derived by hand from the spec, the test is
-  a snapshot; write it as one (§4) so the acceptance workflow and its
+  a baseline; write it as one (§4) so the acceptance workflow and its
   reviewer own it.
 - **Vacuous** — executes code but checks nothing that can break: no
   assertion at all, `is_some` where the *value* matters, "does not
@@ -137,9 +137,9 @@ Reject these shapes on sight — in review, and in your own output.
   the mocks call each other and calcifies the current decomposition.
   Move up to a cram test of the real binary, or extract the pure core
   and test that.
-- **Snapshot-of-everything** — one giant baseline nobody reads,
+- **Baseline-of-everything** — one giant expectation nobody reads,
   churning on every change until promotion becomes a reflex. A
-  snapshot must earn its size: small, focused, masked — with the parts
+  baseline must earn its size: small, focused, masked — with the parts
   that matter asserted via `equal`/`contains` beside it.
 - **Property without a law** — when there is no genuine law
   (round-trip, invariant, oracle agreement, algebraic identity,
@@ -162,9 +162,9 @@ need a running service), a different cadence (a nightly soak suite),
 or a different lifecycle (`failures/`, the bug backlog). What never
 justifies one is *test kind*. The §2
 ladder is a per-behavior choice — the parser's round-trip law, its
-example tests, and its error-message snapshot together form Parser's
+example tests, and its error-message baseline together form Parser's
 contract, and they belong in the same file. Splitting `test/unit/` from
-`test/property/` from `test/snapshot/` scatters one module's contract
+`test/property/` from `test/expect/` scatters one module's contract
 across three trees and leaves "what constrains Parser?" with no answer
 location. Kinds are already selectable at run time: property and
 stateful tests carry automatic tags (`--exclude-tag prop` for an
@@ -184,11 +184,11 @@ only the project verdict aliases:
 ```
 test/
   dune                 ; the @cover/@mutate verdict aliases, if you want them (below)
-  unit/                ; THE windtrap suite: laws, examples, stateful, snapshots
-    dune               ; (tests (names test_parser test_eval) ...)
+  unit/                ; THE windtrap suite: laws, examples, stateful, expectations
+    dune               ; one (test) stanza per file, --corrected and diff? for baselines
     test_parser.ml     ; everything that constrains Parser — its own run
     test_eval.ml
-    __snapshots__/     ; committed baselines
+    help.expected      ; a committed file baseline, named in the stanza's deps
   failures/            ; known-bug reproductions, one suite per issue (below)
     dune               ; (tests (names issue_42))
     issue_42.ml        ; exit @@ run "issue-42" [ xfail ~reason:"issue #42" (test …) ]
@@ -205,7 +205,7 @@ test/
 
 Within a module's test file, state the law first: each behavior group
 leads with its property (the normative core), then the pinned examples
-and edge cases, then descriptive snapshots.
+and edge cases, then descriptive expectations.
 
 **No test code in `lib/`.** Expect tests live in `test/expect/`, a
 `(library (inline_tests) (preprocess (pps ppx_windtrap)))` that depends
@@ -225,11 +225,15 @@ owning module's file in `unit/` as a regression test, and deleting the
 issue file with its entry in `(names …)` — when the last issue dies,
 the stanza goes with it.
 
-One thing in those stanzas is load-bearing and easy to omit: a unit
-suite with baselines declares them — `(deps (glob_files_rec
-__snapshots__/**))` — because baselines are runtime data, invisible to
-dune, and without the glob editing a baseline does not re-trigger the
-test.
+One thing in those stanzas is load-bearing and easy to omit: a suite
+with baselines runs its executable with `--corrected` and diffs each
+corrected file — `(action (progn (run %{test} --corrected) (diff?
+test_parser.ml test_parser.ml.corrected) (diff? help.expected
+help.expected.corrected)))` — which is what lets `dune promote` accept a
+change; a file baseline must exist before dune can diff it, so a new one
+starts empty (`touch`) or is accepted once with `-u`. Without the action
+a stale expectation is a plain failure whose acceptance is
+`dune exec test/unit/test_parser.exe -- -u`.
 
 The project verdicts are two commands each: a run of the whole suite
 with the backend on, then a `windtrap` merge of what the executables
@@ -281,7 +285,7 @@ coverage gate, and the mutation gate:
 
 Under GitHub Actions failures also surface as inline annotations with no
 configuration. Under CI the runner refuses runs that would lie: focused
-tests (`ftest`/`fgroup`) and snapshot updates refuse to start.
+tests (`focus`) and in-place baseline updates (`-u`) refuse to start.
 
 A complete, buildable instance of this whole layout — every stanza this
 section describes, written out and commented, plus the backlog, a live
@@ -299,7 +303,7 @@ only the judgment the chapters leave implicit.
 | the assertion verbs, the witnesses, `Exn`, what a failure prints | `doc/manual/assertions.md` |
 | `prop`, `Gen`, shrinking, seeds and replay, `collect`/`classify`/`cover` | `doc/manual/property-testing.md` |
 | `stateful`, `command`/`call`, models, `~pre`/`~next`, per-case systems | `doc/manual/stateful-testing.md` |
-| `snapshot` and `__snapshots__/`, `[%expect]` and `dune promote`, adopting a ppx_expect suite | `doc/manual/snapshots-and-expect.md` |
+| `expect` and `expect_file`, `--corrected` and `dune promote`, `-u`, `[%expect]`, adopting a ppx_expect suite | `doc/manual/snapshots-and-expect.md` |
 | `bracket`, `scoped`, `fixture`, temp paths, `setenv`/`chdir`, `cases`, tags, focus, `xfail` | `doc/manual/resources-and-structure.md` |
 | the flags, their `WINDTRAP_*` mirrors, selection, sharding, CI output | `doc/manual/running-tests.md` |
 | the coverage stanza, `windtrap coverage`, `[@coverage off]` | `doc/manual/coverage.md` |
@@ -363,7 +367,7 @@ scoped to the *test*, are the wrong tools inside one: mint scratch paths
 in the scope and remove them on the way out, use absolute paths, restore
 process state yourself.
 
-**Snapshots and expect tests.** Both are descriptive (§2): they pin
+**Baselines and expect tests.** Both are descriptive (§2): they pin
 behavior, so they need a normative core beside them. Nondeterminism must
 be masked *before* comparison or every run diffs — redact in code, or
 shadow `Expect_test_config` with a `sanitize` for a whole file, and sort
@@ -557,9 +561,9 @@ merely recall having read the rule:
       `~examples`
 - [ ] Stateful models are persistent values; read-only commands say
       `~next:Fun.id`; rare states covered via `cover` in `~invariant`
-- [ ] Snapshots named, deterministic (masked before comparison), and
-      declared in the stanza's `deps`; every promoted / `-u` diff read
-      as a code change
+- [ ] Baselines deterministic (masked before comparison), their stanza
+      running `--corrected` and diffing each corrected file; every
+      promoted / `-u` diff read as a code change
 - [ ] Cram stanzas declare `(deps %{bin:…})`; exit codes asserted
 - [ ] Every new test seen failing — failing-first for bugfixes, the
       filtered `WINDTRAP_MUTATE=1` survey otherwise — with every

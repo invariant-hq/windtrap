@@ -16,9 +16,10 @@ lib/            the code under test — two inert instrumentation
 bin/            a tiny CLI over the library (what cram/ tests)
 test/
   dune          the project verdict aliases (see the rename note below)
-  unit/         THE windtrap suite: laws, examples, snapshots — one
-                test file per source module, one test stanza per file,
-                each file its own run
+  unit/         THE windtrap suite: laws, examples, expect literals —
+                one test file per source module, one test stanza per
+                file, each file its own run; a stanza with baselines
+                runs with --corrected so dune promote accepts them
   failures/     the known-bug backlog: one xfail suite per issue
   expect/       expect tests, as a library with (inline_tests) —
                 no test code lives in lib/

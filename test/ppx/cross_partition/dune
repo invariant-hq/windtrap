@@ -5,20 +5,16 @@
 ; concurrent diffs]). So a partition's exit code decides whether the
 ; whole LIBRARY's corrections register, siblings included, and no
 ; partition can see enough to say so. This directory pins the facts dune
-; turns into that outcome — the crashing partition exits 1 and writes
-; nothing; the stale partition exits 0 and writes its correction — and
-; the way out: under WINDTRAP_UPDATE the stale partition writes its
-; correction into the source tree directly, and the crashing partition
-; still exits 1 having written nothing anywhere.
+; turns into that outcome: the crashing partition exits 1 and writes
+; nothing; the stale partition exits 0 and writes its correction.
 ;
 ; runner_main.exe mirrors the backend's generated runner;
 ; drive_cross_partition.exe spawns it once per partition — through the
-; shared ../drive harness, with its own sequence, since the update runs
-; stage a project root no argv could describe — and records the
-; transcripts, the exit codes, and what each run wrote. All four runs
-; live in one rule: two rules in one dune directory share a build
-; directory and may run concurrently, so each would see the other's
-; .corrected files.
+; shared ../drive harness, with its own sequence — and records the
+; transcripts, the exit codes, and what each run wrote. Both runs live
+; in one rule: two rules in one dune directory share a build directory
+; and may run concurrently, so each would see the other's .corrected
+; files.
 
 (executable
  (name runner_main)
@@ -37,13 +33,6 @@
   crash-log
   crash-exit
   crash-corrected
-  update-log
-  update-exit
-  update-rewritten
-  update-source
-  update-crash-log
-  update-crash-exit
-  update-crash-rewritten
   stale-log
   stale-exit
   stale.ml.corrected)
@@ -82,41 +71,3 @@
  (alias runtest)
  (action
   (diff stale.ml.corrected.expected stale.ml.corrected)))
-
-; The update runs: the correction that reaches the source tree, and the
-; crash that still reaches nothing.
-
-(rule
- (alias runtest)
- (action
-  (diff update-exit.expected update-exit)))
-
-(rule
- (alias runtest)
- (action
-  (diff update-rewritten.expected update-rewritten)))
-
-(rule
- (alias runtest)
- (action
-  (diff update-source.expected update-source)))
-
-(rule
- (alias runtest)
- (action
-  (diff update-log.expected update-log)))
-
-(rule
- (alias runtest)
- (action
-  (diff update-crash-exit.expected update-crash-exit)))
-
-(rule
- (alias runtest)
- (action
-  (diff update-crash-rewritten.expected update-crash-rewritten)))
-
-(rule
- (alias runtest)
- (action
-  (diff update-crash-log.expected update-crash-log)))

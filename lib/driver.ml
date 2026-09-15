@@ -248,7 +248,7 @@ let execute ?on_event ?allowlist (t : t) tests =
    startup message here and hands the error back, because the library
    runner exits on it while the inline runner folds its code into dune's
    promotion protocol. Everything after the report — JUnit, the focus
-   warning, .corrected flushing, the exit — is the caller's, and so are
+   warning, the exit — is the caller's, and so are
    the invocation context, the GitHub gating decision, and the listing a
    [--list] run prints. *)
 let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
@@ -290,8 +290,7 @@ let execute_and_report ?(on_event = fun (_ : Runner.event) -> ())
       Render.finish renderer
         ?coverage:(if coverage then measured else None)
         ~results ~duration:outcome.Runner.duration ();
-      Render.report_snapshots renderer ~orphans:outcome.Runner.orphans
-        outcome.Runner.run;
+      Render.report_baselines renderer outcome.Runner.run;
       github_end ~github;
       (* After [github_end], deliberately: an ::error:: block written
          inside the ::group:: envelope folds away with the transcript,

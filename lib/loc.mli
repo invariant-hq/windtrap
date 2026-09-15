@@ -3,14 +3,16 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Source locations for failures, test declarations, and snapshot scoping.
+(** Source locations for failures and test declarations.
 
     A location names a point in user source. It comes from exactly two places,
-    in this order of authority: an explicit [?pos:pos] argument ([__POS__] at
-    the call site), or a best-effort walk of the current call stack
-    ({!capture}). [?pos] always wins; when neither yields a location there is
-    none — a report without a location beats a report with a wrong one.
-    {!resolve} packages that rule for failure sites.
+    in this order of authority: an explicit {!type:pos} value (the [~__POS__]
+    the caller passed on), or a best-effort walk of the current call stack
+    ({!capture}). The explicit value always wins; when neither yields a location
+    there is none — a report without a location beats a report with a wrong one.
+    {!resolve} packages that rule for failure sites. Capture reads debug
+    information, so a program built without [-g] gets no automatic location
+    anywhere.
 
     Capture is a provisional heuristic: it takes the first call-stack slot whose
     compilation unit is neither windtrap's nor the standard library's, inlined
@@ -55,8 +57,8 @@ val delimit : (unit -> 'a) -> 'a
     debug name and pinned: never inlined, and the call to [fn] is not a tail
     call. Raises whatever [fn] raises, backtrace preserved. *)
 
-val resolve : ?pos:pos -> unit -> t option
-(** [resolve ?pos ()] is [Some (of_pos p)] when [pos] is [Some p], and
+val resolve : ?__POS__:pos -> unit -> t option
+(** [resolve ?__POS__ ()] is [Some (of_pos p)] when [__POS__] is [Some p], and
     [capture ()] otherwise — the one location rule for every failure site. *)
 
 val own_unit : string -> bool
@@ -77,4 +79,4 @@ val to_string : t -> string
 
 val equal : t -> t -> bool
 (** [equal a b] is structural equality, column included — two checks on one line
-    are two distinct sites (snapshot duplicate detection turns on this). *)
+    are two distinct sites. *)

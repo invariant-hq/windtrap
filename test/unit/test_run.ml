@@ -25,11 +25,11 @@ exception Boom
 exception No_db
 
 (* A scripted fake run: disabled capture (no filesystem), a check-mode
-   snapshot registry, and a fixed seed. *)
+   baseline registry, and a fixed seed. *)
 let make_run () =
   let config = { (Run.default_config ()) with Run.seed = 0x5eedL } in
   Run.create config ~capture:Capture.disabled
-    ~snapshots:(Snapshot.create ~mode:Snapshot.Check ())
+    ~baselines:(Baseline.create ~mode:Baseline.Check ())
 
 (* Run [fn] as one scripted test attempt of [run]. *)
 let in_test ?(path = [ "suite"; "t" ]) ?loc run fn =
@@ -49,7 +49,8 @@ let () =
   check "default config: flags off"
     ((not config.Run.failed_only)
     && (not config.Run.stream) && not config.Run.allow_focus);
-  check "default config: no update request" (config.Run.update = Env.No_update);
+  check "default config: baselines are checked, not written"
+    (config.Run.baseline = Baseline.Check);
   check "default config: no limits"
     (config.Run.bail = None && config.Run.timeout = None
     && config.Run.prop_count = None
@@ -58,11 +59,11 @@ let () =
 
 let () =
   let config = { (Run.default_config ()) with Run.seed = 0xabcL } in
-  let snapshots = Snapshot.create ~mode:Snapshot.Check () in
-  let run = Run.create config ~capture:Capture.disabled ~snapshots in
+  let baselines = Baseline.create ~mode:Baseline.Check () in
+  let run = Run.create config ~capture:Capture.disabled ~baselines in
   check "create keeps the config" (Run.config run == config);
   check "create keeps the capture state" (Run.capture run == Capture.disabled);
-  check "create keeps the snapshot registry" (Run.snapshots run == snapshots)
+  check "create keeps the baseline registry" (Run.baselines run == baselines)
 
 (* Frames *)
 

@@ -76,10 +76,13 @@ type settings = {
 let default_settings =
   { color = Env.Auto; tail_errors = None; slow_threshold = 1.0 }
 
+(* The acceptance line under a baseline failure. An executable invoked by
+   hand accepts in place with [-u]; a run dune drives — the inline runner,
+   or a stanza's [--corrected] action, both [`Mirrors] — wrote its
+   corrections beside the file for [dune promote]. *)
 let accept_line = function
   | `Exe cmd -> spf "accept: %s -u, then review with git diff" cmd
-  | `Mirrors ->
-      "accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff"
+  | `Mirrors -> "accept: dune promote"
 
 (* [count] and [max_shrink] are a property failure's config-sourced knobs
    (Failure.kind.Property): the hint restates both — [--prop-count]/
@@ -108,22 +111,6 @@ let replay_line ?count ?max_shrink invocation ~seed ~filter =
       spf "replay: WINDTRAP_SEED=%s%s WINDTRAP_FILTER=%s dune runtest" token env
         (shell_quote flt)
   | `Mirrors, None -> spf "replay: WINDTRAP_SEED=%s%s dune runtest" token env
-
-(* The stale-baseline lines: the offending files, then the removal under
-   them. This hint is not spelled from the invocation like the others,
-   because it does not re-run anything — a baseline is a committed file,
-   so the report hands over the exact [rm] and leaves the edit to the
-   user. *)
-let stale_lines orphans =
-  match orphans with
-  | [] -> []
-  | _ ->
-      let paths = List.map Path_ops.display orphans in
-      List.map (spf "stale baseline: %s") paths
-      @ [
-          spf "remove them: rm %s"
-            (String.concat " " (List.map shell_quote paths));
-        ]
 
 let pp_duration secs =
   if secs >= 60. then
@@ -222,7 +209,7 @@ let sanitize_name s =
    and indentation ARE the layout the block is built from.
 
    This is a projection, exactly like colour: equality, containment, and
-   snapshot storage never see it. The transform is not injective — a value
+   baseline storage never see it. The transform is not injective — a value
    holding the four characters [\x1b] renders like one holding the byte —
    because the alternative is escaping the backslash, which would double
    every escape in the [%S] renderings that make up most of a transcript.
@@ -317,14 +304,17 @@ let headline (f : Failure.t) =
         else spf "uncaught exception: %s" (flat a)
     | Failure.Raise { expected = None; actual = None; _ } ->
         "expected an exception, none raised"
-    | Failure.Snapshot { name; state = Failure.Missing _; _ } ->
-        spf "snapshot %S: no baseline" name
-    | Failure.Snapshot { name; state = Failure.Mismatch _; _ } ->
-        spf "snapshot %S: mismatch" name
-    | Failure.Snapshot { name; state = Failure.Unresolvable; _ } ->
-        spf "snapshot %S: cannot resolve a source file" name
-    | Failure.Snapshot { name; state = Failure.Duplicate _; _ } ->
-        spf "snapshot %S: duplicate name" name
+    | Failure.Baseline { baseline; state } -> (
+        let subject =
+          match baseline with
+          | Failure.Literal -> "expect"
+          | Failure.File path -> spf "expect_file %S" path
+        in
+        match state with
+        | Failure.Missing _ -> spf "%s: no baseline" subject
+        | Failure.Mismatch _ -> spf "%s: mismatch" subject
+        | Failure.Unresolvable _ ->
+            spf "%s: cannot resolve the path under the project root" subject)
     | Failure.Property
         {
           rendered;
@@ -591,18 +581,20 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
      is named here, at the point of use. Not for a property failure, whose
      location is its declaration by construction (the assertion's site is
      on [inner]), nor for an uncaught exception, which no verb raised —
-     nothing to pass [~pos] to, and its backtrace names the line. *)
+     nothing to pass [~__POS__] to, and its backtrace names the line — nor
+     for a file baseline, whose call takes no position and whose subject
+     line names the file. *)
   (match (f.attribution, f.kind) with
   | Failure.Recorded, _
   | Failure.Declaration, Failure.Property _
   | Failure.Declaration, Failure.Raise { expected = None; predicate = false; _ }
-    ->
+  | Failure.Declaration, Failure.Baseline { baseline = Failure.File _; _ } ->
       ()
   | Failure.Declaration, _ ->
       put_ind
         (st `Faint
-           "(assertion in tail position: its line is unknown; ~pos:__POS__ \
-            names it)"));
+           "(assertion in tail position: its line is unknown; ~__POS__ names \
+            it)"));
   (* Source excerpt, best-effort. *)
   (if excerpt then
      match f.loc with
@@ -782,12 +774,20 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       | Some bt ->
           List.iter (fun l -> put_ind (st `Faint l)) (Text.split_lines bt)
       | None -> ())
-  | Failure.Snapshot { name; path; state } -> (
+  | Failure.Baseline { baseline; state } -> (
       let accept () = if commands then put_ind (accept_line invocation) in
+      (* Plain quotes, not %S: a path's UTF-8 must not be byte-escaped;
+         [sanitize_name] guards the line against control bytes exactly as
+         on every other name surface. *)
+      let subject =
+        match baseline with
+        | Failure.Literal -> "expect"
+        | Failure.File path ->
+            spf "expect_file \"%s\"" (sanitize_name (Path_ops.display path))
+      in
       match state with
       | Failure.Missing { proposed } ->
-          put_ind
-            (spf "snapshot %S: no baseline at %s" name (Path_ops.display path));
+          put_ind (spf "%s: no baseline" subject);
           let lines = Text.split_lines (show_controls proposed) in
           let n = List.length lines in
           put_ind (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
@@ -799,31 +799,31 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
               ("  " ^ st `Cyan "\u{2506}" ^ " "
               ^ st `Faint
                   (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines)));
-          accept ()
+          (* Promotion fills a file but never creates one: under dune the
+             file must exist before a [diff?] step can register the
+             correction, so the acceptance starts by creating it. *)
+          if commands then
+            begin match (invocation, baseline) with
+            | `Mirrors, Failure.File path ->
+                put_ind
+                  (spf "accept: touch %s && dune runtest, then dune promote"
+                     (shell_quote (Path_ops.display path)))
+            | _ -> put_ind (accept_line invocation)
+            end
       | Failure.Mismatch { expected; actual } ->
-          put_ind
-            (spf "snapshot %S: mismatch with %s" name (Path_ops.display path));
+          put_ind (spf "%s: mismatch" subject);
           pp_hunks ~ansi put ~ind (Diff.hunks ~expected ~actual ());
           accept ()
-      | Failure.Unresolvable ->
+      | Failure.Unresolvable { candidate } ->
           put_ind
-            (spf
-               "snapshot %S: cannot resolve a source file \u{2014} pass \
-                ~pos:__POS__"
-               name);
-          if path <> "" then
-            put_ind (spf "unverified path: %s" (Path_ops.display path))
-      | Failure.Duplicate { first = Some first; _ } ->
+            (spf "%s: the path cannot be proven to lie under the project root"
+               subject);
           put_ind
-            (spf "snapshot %S: duplicate name \u{2014} first checked at %s" name
-               (Loc.to_string first))
-      | Failure.Duplicate { first = None; first_test } ->
-          (* Plain quotes, not %S: the joined path's UTF-8 [›] must not be
-             byte-escaped. [sanitize_name] guards the line against
-             control bytes exactly as on every other name surface. *)
+            (spf "unverified path: %s"
+               (sanitize_name (Path_ops.display candidate)));
           put_ind
-            (spf "snapshot %S: duplicate name \u{2014} first checked by \"%s\""
-               name (sanitize_name first_test)))
+            "(set WINDTRAP_PROJECT_ROOT to the directory the path is relative \
+             to)")
   | Failure.Property
       {
         rendered;
@@ -1084,7 +1084,7 @@ let has_missing_baseline failures =
   List.exists
     (fun (f : Failure.t) ->
       match f.kind with
-      | Failure.Snapshot { state = Failure.Missing _; _ } -> true
+      | Failure.Baseline { state = Failure.Missing _; _ } -> true
       | _ -> false)
     failures
 
@@ -2264,21 +2264,31 @@ let finish t ?coverage ~results ~duration () =
   | None -> ());
   Pp.flush t.out ()
 
-(* The snapshot report *)
+(* The baseline report *)
 
 (* Printed after [finish], so the transcript is settled: plain lines on
    the sink, never through [put] or the deferral machinery — a green
    compact run's one-line transcript is already committed, and rerouting
    these lines through the row/deferral paths would change their bytes. *)
-let report_snapshots t ~orphans run =
-  let writes = Snapshot.writes (Run.snapshots run) in
+let report_baselines t run =
+  let baselines = Run.baselines run in
+  let verb =
+    match Baseline.mode baselines with
+    | Baseline.Update -> "accepted"
+    | Baseline.Corrected | Baseline.Check -> "wrote"
+  in
   List.iter
-    (fun (path, status) ->
-      let status =
-        match status with
-        | Snapshot.Created -> "new"
-        | Snapshot.Updated -> "updated"
+    (fun { Baseline.path; literals } ->
+      let count =
+        match literals with
+        | 0 -> ""
+        | 1 -> " (1 expectation)"
+        | n -> spf " (%d expectations)" n
       in
-      Format.fprintf t.out "wrote %s (%s)@." (Path_ops.display path) status)
-    writes;
-  List.iter (Format.fprintf t.out "%s@.") (stale_lines orphans)
+      Format.fprintf t.out "%s %s%s@." verb (Path_ops.display path) count)
+    (Baseline.writes baselines);
+  List.iter
+    (fun (path, reason) ->
+      Format.fprintf t.out "could not write %s: %s@." (Path_ops.display path)
+        reason)
+    (Baseline.refusals baselines)

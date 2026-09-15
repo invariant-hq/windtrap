@@ -6,7 +6,7 @@
 (** Filesystem path operations: project-root discovery, dune sandbox path
     reconstruction with containment proof, and safe path components.
 
-    Reconstruction serves the snapshot layer: compile-time source paths (from
+    Reconstruction serves the baseline layer: compile-time source paths (from
     [__POS__] or debug info) are mapped back to the source tree of the project,
     and a path that cannot be {e proven} to lie under the project root is an
     error, never a guess — update mode must not create directories from an
@@ -42,24 +42,37 @@ val reconstruct : root:string -> string -> (string, string) result
     lexical: symlinks are not resolved, and the target need not exist (update
     mode creates it).
 
-    The strip is of the {e first} [_build] component and the context component
-    after it, keeping any absolute prefix before it and normalizing separators
-    to ['/']: ["/w/_build/default/test/t.ml"] resolves as ["/w/test/t.ml"]
-    would. A [_build] with no component after it is not a sandbox prefix and is
-    kept. There is no export for the strip alone: a reconstruction that is not
-    proven to lie under the root is exactly what this module refuses to hand
-    out. *)
+    The strip is of the {e first} build directory component (a basename starting
+    with [_build]) and the context component after it — or, for a sandboxed
+    action, the [.sandbox/<hash>/<context>] components after it — keeping any
+    absolute prefix before it and normalizing separators to ['/']:
+    ["/w/_build/default/test/t.ml"] resolves as ["/w/test/t.ml"] would. A build
+    directory with no context after it is not a build prefix and is kept. There
+    is no export for the strip alone: a reconstruction that is not proven to lie
+    under the root is exactly what this module refuses to hand out. *)
+
+val build_root : string -> string option
+(** [build_root dir] is the build context [dir] lies in — [dir] cut after its
+    first build directory component and the context after it, e.g.
+    ["/w/_build/default"] for ["/w/_build/default/test"] and
+    ["/w/_build/.sandbox/3f/default"] for a sandboxed action's directory — or
+    [None] when [dir] holds no such prefix. Lexical: nothing is checked on disk.
+    A run started inside a build context is a build action, and dune's copy of a
+    source file [f] under the project root is
+    [<build root>/<f relative to the root>]. *)
 
 (** {1:display Display paths} *)
 
 val display : string -> string
-(** [display path] is [path] as printed in reports and command hints: a
-    [_build/<context>/] segment stripped as {!reconstruct} strips it, interior
-    ["."] and empty segments dropped ([".."] untouched), and a leading
-    {!project_root} prefix removed — so the printed path is project-root
-    relative and byte-identical across every producer of the line class, the
-    library and inline runners alike. Best effort: a path outside the root is
-    returned normalized, otherwise unchanged. *)
+(** [display path] is [path] as printed in reports and command hints: a leading
+    {!project_root} prefix removed and then a [_build/<context>/] segment
+    stripped from the remainder, as {!reconstruct} strips it — or, for a path
+    not under the root, the segment stripped first and the root prefix removed
+    from the result; interior ["."] and empty segments dropped ([".."]
+    untouched) — so the printed path is project-root relative and byte-identical
+    across every producer of the line class, the library and inline runners
+    alike. Best effort: a path outside the root is returned normalized,
+    otherwise unchanged. *)
 
 val display_artifact : string -> string
 (** [display_artifact path] is [path] with a leading {!project_root} prefix

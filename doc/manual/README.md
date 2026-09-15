@@ -1,6 +1,6 @@
 # Windtrap manual
 
-One library for all your OCaml tests: unit, property, stateful, snapshot
+One library for all your OCaml tests: unit, property, stateful, expect
 and expect tests from one flat API, plus coverage and mutation testing.
 This manual is the long-form companion to the API reference in
 `lib/windtrap.mli` — the reference is the contract; these chapters show
@@ -15,7 +15,7 @@ are independent — go where your suite needs you:
 | [Assertions](assertions.md) | The assertion verbs, testables, `Exn` predicates, failure output |
 | [Property testing](property-testing.md) | `prop`, `Gen`, shrinking, seeds and replay, distribution checks |
 | [Stateful testing](stateful-testing.md) | `stateful`, `command`, models and preconditions, per-case systems, cost |
-| [Snapshots and expect tests](snapshots-and-expect.md) | File baselines, `[%expect]` + `dune promote`, adopting ppx_expect |
+| [Baselines and expect tests](snapshots-and-expect.md) | `expect` literals, `expect_file` baselines, `[%expect]`, `dune promote` and `-u`, adopting ppx_expect |
 | [Resources and structure](resources-and-structure.md) | `bracket`, `scoped`, `fixture`, temp paths, `setenv`, `chdir`, `cases`, tags, focus, `xfail` |
 | [Running tests](running-tests.md) | The CLI and its `WINDTRAP_*` mirrors, selection, sharding, CI output |
 | [Coverage](coverage.md) | The one-stanza setup, the inline number, `windtrap coverage` and its gate |

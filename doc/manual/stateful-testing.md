@@ -130,7 +130,7 @@ declaration — `call "pop"`, not the `stateful` line above it, and not
 the assertion. A body is idiomatically one assertion in tail position,
 whose stack frame is gone by the time it raises, so windtrap has no
 site to capture there; the command records its own when you declare it,
-which is the line you want anyway. Pass `~pos:__POS__` to `command` or
+which is the line you want anyway. Pass `~__POS__` to `command` or
 `call` to override it. The locator that always holds is
 `step 6 of 6: pop`: a command's name is its identity in the report and
 nowhere else, and `-f` filters test paths, not commands.

@@ -61,7 +61,7 @@ size of the module.
 | --- | --- | --- |
 | An algebraic law over a large domain | `prop` | The law *is* the spec, and integrated shrinking makes the counterexample free |
 | A finite table of interesting inputs | `cases` | One named, individually selectable sub-test per row |
-| Bytes a human reads | `snapshot` | The value *is* the artifact; review is `git diff`, not retyping |
+| Bytes a human reads | `expect_file` | The value *is* the artifact; review is `git diff`, not retyping |
 | Bytes produced next to the assertion | `let%expect_test` | Output sits inline with the call that made it |
 | A mutable object with an operation vocabulary | `stateful` | Sequences are where the bugs are |
 | Generated code | golden `.expected` + `dune promote` | It is a compiler; byte-exact expansion is the contract |
@@ -332,9 +332,9 @@ survivor a test to strengthen or an equivalent mutant to dismiss with
 it rebuilds every test executable *uninstrumented*, stales every
 verdict, and the merge refuses loudly rather than reading them.
 
-## Golden transcripts are snapshots
+## Golden transcripts are file baselines
 
-The renderer's goldens live under `test/unit/__snapshots__/`, not as
+The renderer's goldens live under `test/unit/expected/`, not as
 string literals in the test source: a transcript is an artifact, and the
 point of keeping one is to read the diff when it changes. Accept with
 `dune exec test/unit/test_render.exe -- -u` and review with `git diff`.
@@ -420,10 +420,10 @@ is where bugs get blessed. The conformance goldens are the exception:
 they are upstream's bytes and are never promoted from windtrap output
 (see above).
 
-Windtrap's own snapshot baselines and `[%expect]` payloads (examples,
-manual snippets, `test/unit/__snapshots__`, `test/ppx/inline`) follow the
-user-facing workflows: `WINDTRAP_UPDATE=1 dune runtest` and
-`dune promote`, reviewed with `git diff`.
+Windtrap's own baselines and `[%expect]` payloads (examples, manual
+snippets, `test/unit/expected`, `test/ppx/inline`) follow the
+user-facing workflows: `dune promote` after a stanza's `--corrected`
+run, or `-u` for the goldens no rule diffs, reviewed with `git diff`.
 
 ## CI
 

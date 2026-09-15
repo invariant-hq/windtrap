@@ -28,6 +28,7 @@ module Gen = Gen
 
 module Private = struct
   module Atomic_file = Atomic_file
+  module Baseline = Baseline
   module Capture = Capture
   module Check = Check
   module Cli = Cli
@@ -48,7 +49,7 @@ module Private = struct
   module Runner = Runner
   module Seed = Seed
   module Shrink_tree = Shrink_tree
-  module Snapshot = Snapshot
+  module Source_patch = Source_patch
   module Stateful = Stateful
   module Tag = Tag
   module Test_tree = Test_tree
@@ -66,13 +67,12 @@ type 'a testable = 'a Testable.t
 
 let test = Test_tree.test
 let group = Test_tree.group
-let ftest = Test_tree.ftest
-let fgroup = Test_tree.fgroup
 let slow = Test_tree.slow
 let cases = Test_tree.cases
-let xfail = Test_tree.xfail
 let bracket = Test_tree.bracket
 let scoped = Test_tree.scoped
+let focus = Test_tree.focus
+let xfail = Test_tree.xfail
 let fixture = Run.fixture
 
 (* Assertions *)
@@ -93,9 +93,9 @@ let greater = Check.greater
 let at_least = Check.at_least
 let mem = Check.mem
 let is_none = Check.is_none
+let is_some = Check.is_some
 let is_ok = Check.is_ok
 let is_error = Check.is_error
-let is_some = Check.is_some
 let require_some = Check.require_some
 let require_ok = Check.require_ok
 let require_error = Check.require_error
@@ -157,9 +157,9 @@ let pass = Testable.pass
    when the suite declares property tests. *)
 let prop_tag = "prop"
 
-let prop ?pos ?tags ?timeout ?count ?max_discard ?examples name gen law =
+let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
   let tags = prop_tag :: Option.value ~default:[] tags in
-  Runner.prop ?pos ~tags ?timeout ?count ?max_discard ?examples name gen law
+  Runner.prop ?__POS__ ~tags ?timeout ?count ?max_discard ?examples name gen law
 
 let assume = Property.assume
 let reject = Property.reject
@@ -187,12 +187,22 @@ let collect label = Property.collect (prop_context "collect") label
 let classify label cond = Property.classify (prop_context "classify") label cond
 let cover label cond = Property.cover (prop_context "cover") label cond
 
-(* Snapshots *)
+(* Baselines *)
 
-let snapshot ?pos name actual = Run.check_snapshot ?pos ~name actual
+(* The literal's position is the failure's location: it is what the
+   compiler recorded for the call, and what the correction rewrites. *)
+let expect actual (pos, value) =
+  Run.check_baseline ~loc:(Loc.of_pos pos)
+    (Baseline.Literal { pos; value; exact = false })
+    actual
 
-let snapshot_pp ?pos name pp value =
-  Run.check_snapshot ?pos ~name (Pp.to_string pp value)
+let expect_exact actual (pos, value) =
+  Run.check_baseline ~loc:(Loc.of_pos pos)
+    (Baseline.Literal { pos; value; exact = true })
+    actual
+
+let expect_file actual path =
+  Run.check_baseline ?loc:(Loc.capture ()) (Baseline.File path) actual
 
 (* Captured output *)
 
@@ -276,8 +286,14 @@ let print_cli_error ~prog error =
 let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
   let github = Env.in_github_actions () in
   (* The one invocation every command hint derives from: computed
-     here, at startup, and threaded to the renderer and both transports. *)
-  let invocation = invocation_of ~inside_dune:(Env.inside_dune ()) argv in
+     here, at startup, and threaded to the renderer and both transports.
+     A [--corrected] run is dune's — a stanza's action, or the inline
+     runner — so its hints spell the mirrors and its acceptance is
+     [dune promote], whatever argv says. *)
+  let invocation =
+    if config.Run.baseline = Baseline.Corrected then `Mirrors
+    else invocation_of ~inside_dune:(Env.inside_dune ()) argv
+  in
   (* Header-seed policy: the root seed iff the suite declares property
      tests — selection never changes it, so the token stays stable across
      filtered runs. The inline runner always passes [None]. *)
@@ -321,8 +337,8 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
         && not (Env.in_ci ())
       then
         Format.eprintf
-          "warning: focus is active (ftest/fgroup) — %d of %d tests ran; \
-           remove the focus before committing@."
+          "warning: focus is active — %d of %d tests ran; remove the focus \
+           before committing@."
           (List.length outcome.Runner.selected)
           outcome.Runner.total;
       outcome.Runner.exit_code
@@ -359,11 +375,11 @@ let run ?(argv = Sys.argv) suite tests =
   let prog =
     if Array.length argv > 0 && argv.(0) <> "" then argv.(0) else suite
   in
-  match Cli.parse argv with
   (* Every branch ends in a code, never in [exit]: the caller applies it,
      which is what lets one binary host two suites or post-process a
      run. The two informational pages flush themselves, so the output is
      complete when [run] returns whether or not [exit] follows. *)
+  match Cli.parse argv with
   | Error error ->
       print_cli_error ~prog error;
       2

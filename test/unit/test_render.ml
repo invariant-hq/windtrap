@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Render: golden transcripts over a synthetic run covering every
-   failure kind (equality with diff, raise, snapshot missing/mismatch,
+   failure kind (equality with diff, raise, baseline missing/mismatch,
    property with inner failure, body + teardown pair, captured tail with a
    drop count) at each of the three levels — compact (the default glyph
    row), verbose (line per test), quiet (failures and summary only) — the
@@ -84,13 +84,16 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
    second result, so the compact transcript still opens with the header
    and the glyph row — byte-identical to streaming from the start.
 
-   These are snapshots, not string literals in this file. A transcript IS
-   an artifact — box-drawing rules, column alignment, a glyph row, ANSI
-   runs — and the reason to keep one is to read the diff when it changes.
-   As a literal it could only be reviewed by retyping it; as a baseline
-   under __snapshots__/ the review is `git diff` and the acceptance is
-   `dune exec test/unit/test_render.exe -- -u`. Read every accepted
+   These are file baselines, not string literals in this file. A
+   transcript IS an artifact — box-drawing rules, column alignment, a
+   glyph row, ANSI runs — and the reason to keep one is to read the diff
+   when it changes. As a literal it could only be reviewed by retyping it;
+   as a file under expected/ the review is `git diff` and the acceptance
+   is `dune exec test/unit/test_render.exe -- -u`. Read every accepted
    diff: this is the whole of what a windtrap run prints. *)
+
+let golden name actual =
+  expect_file actual ("test/unit/expected/test_render/" ^ name ^ ".expected")
 
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
@@ -100,7 +103,7 @@ let test_golden_compact () =
   let actual =
     transcript ~invocation:golden_invocation ~coverage:golden_coverage ()
   in
-  snapshot "compact" actual;
+  golden "compact" actual;
   check_absent "plain transcript has no escape codes" ~sub:"\027" actual
 
 let test_golden_verbose () =
@@ -108,20 +111,20 @@ let test_golden_verbose () =
     transcript ~mode:`Verbose ~invocation:golden_invocation
       ~coverage:golden_coverage ()
   in
-  snapshot "verbose" actual;
+  golden "verbose" actual;
   check_absent "plain transcript has no escape codes" ~sub:"\027" actual
 
 (* The coloured transcript, which had no golden at all: [test_ansi] pins
    nine substrings, so every escape run BETWEEN them was unpinned — and a
-   colour bug is exactly a wrong byte next to a right one. Snapshotting
-   the whole thing costs one baseline and pins the escapes literally,
-   which is the only way to review them. *)
+   colour bug is exactly a wrong byte next to a right one. A baseline of
+   the whole thing costs one file and pins the escapes literally, which
+   is the only way to review them. *)
 let test_golden_ansi () =
   let actual =
     transcript ~ansi:true ~mode:`Verbose ~invocation:golden_invocation
       ~coverage:golden_coverage ()
   in
-  snapshot "verbose-ansi" actual;
+  golden "verbose-ansi" actual;
   check_contains "the ansi golden really is coloured" ~sub:"\027[" actual
 
 let test_coverage_line_hint () =
@@ -751,10 +754,15 @@ let test_headline () =
     (h (Failure.raised ~actual:"Not_found" ()) = "uncaught exception: Not_found");
   check "headline: raise wanted any"
     (h (Failure.raised ()) = "expected an exception, none raised");
-  check "headline: snapshot missing"
-    (h Fixtures.snap_missing = {|snapshot "help": no baseline|});
-  check "headline: snapshot mismatch"
-    (h Fixtures.snap_mismatch = {|snapshot "version": mismatch|});
+  check "headline: file baseline missing"
+    (h Fixtures.snap_missing = {|expect_file "test/help.expected": no baseline|});
+  check "headline: literal mismatch"
+    (h Fixtures.snap_mismatch = "expect: mismatch");
+  check "headline: unresolvable"
+    (h
+       (Failure.baseline (Failure.File "../x")
+          (Failure.Unresolvable { candidate = "/tmp/x" }))
+    = {|expect_file "../x": cannot resolve the path under the project root|});
   check "headline: property"
     (h Fixtures.prop_failure
    = "property failed (case 12, shrunk 4 steps): Rect (2, 0)");
@@ -897,30 +905,25 @@ let test_kind_details () =
   check_contains "msg annotation printed" ~sub:"    context note\n" b;
   let b =
     failure_block
-      (Failure.snapshot ~name:"n" ~path:"some/candidate" Failure.Unresolvable)
+      (Failure.baseline (Failure.File "../n.expected")
+         (Failure.Unresolvable { candidate = "some/candidate" }))
   in
-  check_contains "unresolvable: RFC message"
-    ~sub:{|snapshot "n": cannot resolve a source file — pass ~pos:__POS__|} b;
+  check_contains "unresolvable: the subject and the rule"
+    ~sub:
+      {|expect_file "../n.expected": the path cannot be proven to lie under the project root|}
+    b;
   check_contains "unresolvable: candidate path shown"
     ~sub:"unverified path: some/candidate" b;
+  check_contains "unresolvable: the remedy names the variable"
+    ~sub:"WINDTRAP_PROJECT_ROOT" b;
+  check_absent "unresolvable: no acceptance line" ~sub:"accept:" b;
   let b =
     failure_block
-      (Failure.snapshot ~name:"n" ~path:"p"
-         (Failure.Duplicate
-            {
-              first = Some (Fixtures.loc "test/a.ml" 3);
-              first_test = "g › first";
-            }))
+      (Failure.baseline Failure.Literal
+         (Failure.Unresolvable { candidate = "/elsewhere/t.ml" }))
   in
-  check_contains "duplicate: first site shown"
-    ~sub:{|snapshot "n": duplicate name — first checked at test/a.ml:3|} b;
-  let b =
-    failure_block
-      (Failure.snapshot ~name:"n" ~path:"p"
-         (Failure.Duplicate { first = None; first_test = "g › first" }))
-  in
-  check_contains "duplicate without a site renders the first checking test"
-    ~sub:{|snapshot "n": duplicate name — first checked by "g › first"|} b;
+  check_contains "unresolvable literal: the subject is expect"
+    ~sub:"expect: the path cannot be proven" b;
   let b =
     failure_block (Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" ())
   in
@@ -1088,14 +1091,14 @@ let test_control_bytes_hunks () =
   in
   check_contains "hunks: CR renders as its hex escape" ~sub:"- two\\x0d\n" cr;
   check_absent "hunks: no raw CR survives" ~sub:"two\r" cr;
-  (* Snapshot mismatches share [pp_hunks] — the single producer. *)
+  (* Baseline mismatches share [pp_hunks] — the single producer. *)
   let snap =
     failure_block
-      (Failure.snapshot ~name:"tui" ~path:"p.snap"
+      (Failure.baseline Failure.Literal
          (Failure.Mismatch
             { expected = "\027[1mbold\027[0m\n"; actual = "bold\n" }))
   in
-  check_contains "hunks: snapshot baselines escape as well"
+  check_contains "hunks: baselines escape as well"
     ~sub:"- \\x1b[1mbold\\x1b[0m\n" snap
 
 let test_control_bytes_containment () =
@@ -1182,13 +1185,13 @@ let test_diff_truncation () =
   check_absent "huge diffs are display-bounded" ~sub:"+ a299" b;
   let snap =
     failure_block
-      (Failure.snapshot ~name:"big" ~path:"p.snap"
+      (Failure.baseline (Failure.File "p.expected")
          (Failure.Mismatch
             { expected = text "e" ^ "\n"; actual = text "a" ^ "\n" }))
   in
-  check_contains "snapshot diff truncation mark" ~sub:"more diff lines)" snap;
+  check_contains "baseline diff truncation mark" ~sub:"more diff lines)" snap;
   check_contains "acceptance survives a truncated diff"
-    ~sub:"accept: WINDTRAP_UPDATE=1" snap
+    ~sub:"accept: dune promote" snap
 
 let test_proposed_truncation () =
   let proposed =
@@ -1196,13 +1199,13 @@ let test_proposed_truncation () =
   in
   let b =
     failure_block
-      (Failure.snapshot ~name:"big" ~path:"p.snap"
+      (Failure.baseline (Failure.File "p.expected")
          (Failure.Missing { proposed }))
   in
   check_contains "proposed content bounded with a mark" ~sub:"(+5 more lines)" b;
   check_absent "proposed lines over the bound absent" ~sub:"line 24" b;
   check_contains "acceptance survives a bounded proposal"
-    ~sub:"accept: WINDTRAP_UPDATE=1" b
+    ~sub:"accept: touch 'p.expected' && dune runtest, then dune promote" b
 
 let test_excerpt () =
   (* The excerpt source is generated in the test's scratch directory: the
@@ -1812,13 +1815,13 @@ let test_trailing_whitespace_hunks () =
     ~sub:"\027[31m+ actual\027[0m" hunks;
   check_absent "hunk path: no diff-tool colouring survives"
     ~sub:"\027[31m- expected" hunks;
-  (* Snapshot mismatch diffs share pp_hunks — the single producer. *)
+  (* Baseline mismatch diffs share pp_hunks — the single producer. *)
   let snap =
     failure_block
-      (Failure.snapshot ~name:"n" ~path:"p.snap"
+      (Failure.baseline Failure.Literal
          (Failure.Mismatch { expected = "a \nb\n"; actual = "a\nb\n" }))
   in
-  check_contains "snapshot diffs visualize trailing whitespace too"
+  check_contains "baseline diffs visualize trailing whitespace too"
     ~sub:"- a\u{00B7}\n" snap
 
 (* Uncaught exceptions (D5 §5) *)
@@ -1931,8 +1934,8 @@ let test_hints_per_invocation () =
     ~sub:
       "    accept: ./_build/default/qa/x/t.exe -u, then review with git diff\n"
     accept;
-  check_absent "accept hint under Exe never spells the mirror"
-    ~sub:"WINDTRAP_UPDATE" accept;
+  check_absent "accept hint under Exe never spells dune promote"
+    ~sub:"dune promote" accept;
   let replay =
     failure_block ~invocation:exe ~filter:"mod7" Fixtures.prop_failure
   in
@@ -1947,10 +1950,19 @@ let test_hints_per_invocation () =
     bare;
   (* The Mirrors spellings — the default — are pinned by the golden
      transcript's standalone block tests above. *)
-  let mirrors = failure_block Fixtures.snap_missing in
-  check_contains "Mirrors accept spelling is the dune-runtest mirror"
-    ~sub:"accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff"
-    mirrors
+  let mirrors = failure_block Fixtures.snap_mismatch in
+  check_contains "Mirrors accept spelling is dune promote"
+    ~sub:"    accept: dune promote\n" mirrors;
+  check_absent "Mirrors accept spelling names no flag" ~sub:" -u" mirrors;
+  (* Promotion never creates a file: a missing file baseline under dune
+     is accepted by creating it first, and the hint says so. *)
+  let missing = failure_block Fixtures.snap_missing in
+  check_contains "Mirrors accept spelling for a missing file creates it first"
+    ~sub:
+      "    accept: touch 'test/help.expected' && dune runtest, then dune promote\n"
+    missing;
+  check_absent "and never spells a bare dune promote"
+    ~sub:"    accept: dune promote\n" missing
 
 (* [--failed] is an optimization, not a step, so no run advertises it. The
    acceptance commands are the opposite case — they name a verb nobody can
@@ -2106,7 +2118,7 @@ let test_name_sanitization () =
    from the declaration, and nowhere else. *)
 let test_tail_position_hint () =
   let hint =
-    "(assertion in tail position: its line is unknown; ~pos:__POS__ names it)"
+    "(assertion in tail position: its line is unknown; ~__POS__ names it)"
   in
   let declared = Fixtures.loc "test/test_users.ml" 88 in
   let attributed f =
@@ -2121,15 +2133,18 @@ let test_tail_position_hint () =
   check_contains "tail: ansi renders the hint faint"
     ~sub:("\027[2m" ^ hint ^ "\027[0m")
     (failure_block ~ansi:true tail);
-  (* Every verb-raised kind draws it: a snapshot or a [fail] in tail
-     position is as common as an [equal]. *)
-  check_contains "tail: a snapshot failure draws the hint" ~sub:hint
+  (* Every verb-raised kind draws it: a [fail] in tail position is as
+     common as an [equal] — except a file baseline, whose call takes no
+     position and whose subject is named by its path. *)
+  check_absent "tail: a file baseline failure draws no hint" ~sub:hint
     (failure_block (attributed Fixtures.snap_missing));
+  check_contains "tail: a literal baseline failure draws the hint" ~sub:hint
+    (failure_block (attributed Fixtures.snap_mismatch));
   check_contains "tail: a message failure draws the hint" ~sub:hint
     (failure_block (attributed (Failure.message "boom")));
   check_contains "tail: a raise-verb failure draws the hint" ~sub:hint
     (failure_block (attributed Fixtures.raise_failure));
-  (* As recorded — a given [?pos], a captured frame — there is nothing to
+  (* As recorded — a given [?__POS__], a captured frame — there is nothing to
      say. *)
   check_absent "recorded: no hint" ~sub:"tail position"
     (failure_block Fixtures.eq_failure);
@@ -2142,7 +2157,7 @@ let test_tail_position_hint () =
      assertion's own site rides on [inner]. *)
   check_absent "property: no hint on the outer failure" ~sub:"tail position"
     (failure_block (attributed Fixtures.prop_failure));
-  (* An uncaught exception was raised by no verb: nothing to pass [~pos]
+  (* An uncaught exception was raised by no verb: nothing to pass [~__POS__]
      to, and its backtrace names the line. *)
   let uncaught =
     attributed
@@ -2852,60 +2867,84 @@ let test_summary_dialect () =
   check_string "harness monochrome FAIL tag is bare" ~expected:"FAIL"
     ~actual:(Harness.fail_tag ~ansi:false)
 
-(* The snapshot report
+(* The baseline report
 
-   The baseline-maintenance lines the driver prints after [finish] — a
-   projection of run data, so every transcript byte leaves through the
-   renderer (Law 4). One producer for both runners: the line classes and
-   the quiet gate are pinned here. *)
+   The lines the driver prints after [finish] naming what the run wrote —
+   a projection of run data, so every transcript byte leaves through the
+   renderer (Law 4). The line classes and the quiet gate are pinned here. *)
 
-let make_run ?snapshots () =
-  let snapshots =
-    match snapshots with
-    | Some s -> s
-    | None -> Snapshot.create ~mode:Snapshot.Check ()
+let make_run ?baselines () =
+  let baselines =
+    match baselines with
+    | Some b -> b
+    | None -> Baseline.create ~mode:Baseline.Check ()
   in
-  Run.create (Run.default_config ()) ~capture:Capture.disabled ~snapshots
+  Run.create (Run.default_config ()) ~capture:Capture.disabled ~baselines
 
-let snapshot_report ?mode ?invocation ?(orphans = []) run =
-  with_renderer ?mode ?invocation (fun r ->
-      Render.report_snapshots r ~orphans run)
+let baseline_report ?mode ?invocation run =
+  with_renderer ?mode ?invocation (fun r -> Render.report_baselines r run)
 
-let test_snapshot_report_writes () =
-  (* One [wrote] line per accepted baseline, paths spelled by
-     [Path_ops.display] — the one producer for both runners (ppx/F-6). *)
+let write_source root =
+  let path = Filename.concat root "t.ml" in
+  Path_ops.mkdir_p root;
+  Out_channel.with_open_bin path (fun oc ->
+      Out_channel.output_string oc "let () = expect x @@ __POS_OF__ {| a |}\n");
+  path
+
+let test_baseline_report_writes () =
+  (* One line per file written, paths spelled by [Path_ops.display]: the
+     verb names the mode, and a source file counts its literals. *)
   let root = temp_dir () in
-  let snapshots = Snapshot.create ~root ~mode:Snapshot.Update () in
-  Snapshot.check snapshots ~test:"t" ~scope:(Some "qa/x.ml") ~name:"greeting"
-    "hello\n";
-  let written =
-    match Snapshot.writes snapshots with
-    | [ (path, Snapshot.Created) ] -> path
-    | _ -> failf "expected exactly one Created write"
-  in
-  check_string "wrote line: Path_ops.display spelling, (new) status"
-    ~expected:(Printf.sprintf "wrote %s (new)\n" (Path_ops.display written))
-    ~actual:(snapshot_report (make_run ~snapshots ()))
-
-let test_snapshot_report_orphans () =
-  (* Stale baselines are always reported after a full, clean run, and the
-     report hands over the removal rather than performing it: a baseline
-     is a committed file. *)
-  let orphans = [ "/tmp/a.snap"; "/tmp/b.snap" ] in
-  let a = Path_ops.display "/tmp/a.snap"
-  and b = Path_ops.display "/tmp/b.snap" in
-  check_string "orphans: one line each, then the rm that removes them"
+  let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Update () in
+  Baseline.check baselines (Baseline.File "help.expected") "hello\n";
+  ignore (Baseline.settle baselines ~keep:true);
+  Baseline.write baselines;
+  check_string "update: an accepted line per file"
     ~expected:
-      (Printf.sprintf
-         "stale baseline: %s\nstale baseline: %s\nremove them: rm '%s' '%s'\n" a
-         b a b)
-    ~actual:(snapshot_report ~orphans (make_run ()));
-  check_string "the hint does not depend on the invocation"
-    ~expected:(snapshot_report ~invocation:`Mirrors ~orphans (make_run ()))
+      (Printf.sprintf "accepted %s\n"
+         (Path_ops.display (Filename.concat root "help.expected")))
+    ~actual:(baseline_report (make_run ~baselines ()));
+  let root = temp_dir () in
+  let source = write_source root in
+  let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Corrected () in
+  (try
+     Baseline.check baselines
+       (Baseline.Literal
+          { pos = ("t.ml", 1, 21, 0); value = " a "; exact = false })
+       "b"
+   with Failure.Check_failure _ -> ());
+  (try Baseline.check baselines (Baseline.File "help.expected") "hello\n"
+   with Failure.Check_failure _ -> ());
+  ignore (Baseline.settle baselines ~keep:true);
+  Baseline.write baselines;
+  check_string "corrected: a wrote line per .corrected, literals counted"
+    ~expected:
+      (Printf.sprintf "wrote %s\nwrote %s (1 expectation)\n"
+         (Path_ops.display (Filename.concat root "help.expected.corrected"))
+         (Path_ops.display (source ^ ".corrected")))
+    ~actual:(baseline_report (make_run ~baselines ()));
+  check_string "the report does not depend on the invocation"
+    ~expected:(baseline_report ~invocation:`Mirrors (make_run ~baselines ()))
     ~actual:
-      (snapshot_report ~invocation:(`Exe "./t.exe") ~orphans (make_run ()));
-  check_string "no writes and no orphans: nothing prints" ~expected:""
-    ~actual:(snapshot_report (make_run ()))
+      (baseline_report ~invocation:(`Exe "./t.exe") (make_run ~baselines ()))
+
+let test_baseline_report_quiet () =
+  check_string "nothing written: nothing prints" ~expected:""
+    ~actual:(baseline_report (make_run ()));
+  (* A refusal is named with its reason: the correction reached nothing. *)
+  let root = temp_dir () in
+  let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Update () in
+  Baseline.check baselines
+    (Baseline.Literal
+       { pos = ("missing.ml", 1, 0, 0); value = "a"; exact = true })
+    "b";
+  ignore (Baseline.settle baselines ~keep:true);
+  Baseline.write baselines;
+  check_contains "a refusal names the file and the reason"
+    ~sub:
+      (Printf.sprintf "could not write %s: "
+         (Path_ops.display (Filename.concat root "missing.ml")))
+    (baseline_report (make_run ~baselines ()))
 
 let tests =
   [
@@ -2985,10 +3024,10 @@ let tests =
     test "the tail-position hint" test_tail_position_hint;
     test "excerpts resolve against the project root (render/F-1)"
       test_excerpt_project_root;
-    test "snapshot report: wrote lines and the quiet gate"
-      test_snapshot_report_writes;
-    test "snapshot report: stale baselines and the removal hint"
-      test_snapshot_report_orphans;
+    test "baseline report: the written files, per mode"
+      test_baseline_report_writes;
+    test "baseline report: the quiet gate and refusals"
+      test_baseline_report_quiet;
     test "the coverage report's frozen bytes" test_coverage_report_bytes;
     test "the uncovered cell is bounded" test_coverage_uncovered_cap;
     test "the coverage thresholds are the renderer's" test_coverage_thresholds;

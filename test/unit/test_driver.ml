@@ -10,7 +10,7 @@
    comparing two drivers' transcripts: the observer's header policies
    (the seed and the selection description, the two the runners disagree
    about), the GitHub envelope's gating, and the coverage seam's mode
-   selection. The snapshot report is [Render.report_snapshots] —
+   selection. The baseline report is [Render.report_baselines] —
    every transcript byte leaves through a renderer — and its line classes
    are pinned in test_render.ml.
 

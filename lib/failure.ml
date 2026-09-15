@@ -5,12 +5,12 @@
 
 type phase = Body | Setup | Teardown | Release
 type tail = { text : string; omitted_bytes : int; log_path : string option }
+type baseline = Literal | File of string
 
-type snapshot_state =
+type baseline_state =
   | Missing of { proposed : string }
   | Mismatch of { expected : string; actual : string }
-  | Unresolvable
-  | Duplicate of { first : Loc.t option; first_test : string }
+  | Unresolvable of { candidate : string }
 
 type message_diff = {
   constructor : string;
@@ -45,7 +45,7 @@ type kind =
       backtrace : string option;
       message_diff : message_diff option;
     }
-  | Snapshot of { name : string; path : string; state : snapshot_state }
+  | Baseline of { baseline : baseline; state : baseline_state }
   | Property of {
       rendered : string;
       case_index : int;
@@ -325,16 +325,16 @@ let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace
          message_diff = Option.map bound_message_diff message_diff;
        })
 
-let bound_snapshot_state = function
+let bound_baseline_state = function
   | Missing { proposed } -> Missing { proposed = cap proposed }
   | Mismatch { expected; actual } ->
       Mismatch { expected = cap expected; actual = cap actual }
-  | (Unresolvable | Duplicate _) as state -> state
+  | Unresolvable _ as state -> state
 
-let snapshot ?loc ~name ~path state =
-  (* [name] and [path] are identities: renderers derive acceptance commands
-     from them, so they are stored unmodified. *)
-  make ?loc (Snapshot { name; path; state = bound_snapshot_state state })
+let baseline ?loc baseline state =
+  (* The path is an identity: renderers name the file from it, so it is
+     stored unmodified. *)
+  make ?loc (Baseline { baseline; state = bound_baseline_state state })
 
 let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
     ~shrink_steps ?(shrink_exhausted = false) ~root ~examples

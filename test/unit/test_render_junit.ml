@@ -41,7 +41,7 @@ let test_golden () =
   let actual =
     Render_junit.render ~suite:"mylib" ~results:small_results ~duration:1.234 ()
   in
-  snapshot "document" actual;
+  expect_file actual "test/unit/expected/test_render_junit/document.expected";
   check_well_formed "golden document is well-formed" actual
 
 (* The full fixture run *)
@@ -56,7 +56,7 @@ let test_full_run () =
   check_contains "counts derive from results"
     ~sub:{|tests="11" failures="6" errors="0" skipped="1" time="6.500"|} doc;
   check_contains "acceptance command inside failure text"
-    ~sub:"accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff" doc;
+    ~sub:"accept: dune promote" doc;
   check_contains "replay line inside failure text"
     ~sub:
       "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='geo › area \
@@ -65,7 +65,8 @@ let test_full_run () =
   check_contains "teardown failure is a second element"
     ~sub:{|<failure message="teardown exploded">|} doc;
   check_contains "headline in message attribute"
-    ~sub:{|message="snapshot &quot;help&quot;: no baseline"|} doc
+    ~sub:{|message="expect_file &quot;test/help.expected&quot;: no baseline"|}
+    doc
 
 (* The invocation-spelled hints (D5 §1) *)
 
@@ -163,7 +164,7 @@ let test_subtests_as_testcases () =
       ~results:[ Fixtures.subtest_result ]
       ~duration:0.7 ()
   in
-  snapshot "subtests" doc;
+  expect_file doc "test/unit/expected/test_render_junit/subtests.expected";
   check_well_formed "subtest document is well-formed" doc
 
 let test_subtests_only () =

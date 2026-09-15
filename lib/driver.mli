@@ -12,8 +12,8 @@
     and they are composed in exactly one order, so the two runners cannot drift
     apart byte-wise. The six producers are renderer construction
     ({!val:renderer}), the event observer ({!observe}), the GitHub envelope
-    ({!github_start}, {!github_end}, {!github_annotations}), the snapshot report
-    ({!Render.report_snapshots} — every transcript byte leaves through a
+    ({!github_start}, {!github_end}, {!github_annotations}), the baseline report
+    ({!Render.report_baselines} — every transcript byte leaves through a
     renderer), the coverage seam ({!snapshot_coverage}, {!coverage_data}), and
     the JUnit sink ({!write_junit}, the one producer that writes a file rather
     than a transcript line); {!execute_and_report} is the order they run in,
@@ -196,7 +196,7 @@ val execute :
   Test_tree.t list ->
   (Runner.outcome, Runner.startup_error) result
 (** [execute t tests] is {!Runner.execute} over [t]'s [config] and [suite],
-    reporting {e nothing} — no renderer, no envelope, no snapshot report. For
+    reporting {e nothing} — no renderer, no envelope, no baseline report. For
     the one caller population that needs that: mutation children, which run a
     session with the standard descriptors on [/dev/null] and the verdict on a
     pipe. Drivers use {!execute_and_report}, always. [on_event] and [allowlist]
@@ -214,7 +214,7 @@ val execute_and_report :
     run's whole report on standard output, composing the producers above in the
     one order both runners use: {!val:renderer} and {!observe}, {!github_start},
     {!Runner.execute}, then — for a run that happened — {!snapshot_coverage},
-    {!Render.finish} over {!Run.results}, {!Render.report_snapshots},
+    {!Render.finish} over {!Run.results}, {!Render.report_baselines},
     {!github_end}, {!github_annotations}, {!write_junit} over [t.junit], and a
     flush of both standard formatters.
 

@@ -21,9 +21,8 @@
     main is [init Sys.argv; exit ()]: under dune's [inline_tests] backend the
     argument vector carries the [inline-test-runner <lib> -partition <file>]
     protocol, and {!exit} collects the partition, executes it, writes pending
-    [.corrected] files beside the copied source in dune's sandbox — accepting
-    them into the source tree as well under [WINDTRAP_UPDATE] — and terminates
-    with the promotion-protocol exit code.
+    [.corrected] files beside the copied source in dune's sandbox, and
+    terminates with the promotion-protocol exit code.
 
     Registration state is module-global by nature, since module initializers run
     before any run record exists; everything per-run — capture, results,
@@ -34,6 +33,7 @@
    modules without this signature re-exporting them. *)
 module Test_tree := Windtrap.Private.Test_tree
 module Runner := Windtrap.Private.Runner
+module Source_patch := Windtrap.Private.Source_patch
 
 (** {1:locations Locations} *)
 
@@ -45,8 +45,8 @@ type loc = { line : int; start_bol : int; start_pos : int; end_pos : int }
 (** {1:nodes Expect nodes} *)
 
 (** The type for payload delimiters, preserved so corrections keep the author's
-    spelling. *)
-type delimiter =
+    spelling: the core's {!Source_patch.delimiter}. *)
+type delimiter = Source_patch.delimiter =
   | Quote
       (** ["…"] — corrections escape every line and newline onto one source
           line. *)
@@ -191,13 +191,11 @@ val exit : unit -> 'a
     registered: exit [0]); resolves configuration from the [WINDTRAP_*] mirrors
     alone, which are the CLI under [dune runtest] (a resolution error prints and
     exits [2]); executes through [Runner.execute] with the terminal renderer,
-    wired exactly as the library runner wires it, so verbosity, slow warnings,
-    accepted-baseline paths and GitHub annotations behave identically under both
-    runners; flushes the corrections, accepting them into the source tree when
-    the run resolved to [Snapshot.Update] {e and} this partition's own verdict
-    was clean; names on [stderr] what it wrote; and exits with
-    {!Private.inline_exit_code}, forced to [1] when a correction reached neither
-    channel — dune's promotion diff can only surface corrections that exist. *)
+    wired exactly as the library runner wires it, so verbosity, slow warnings
+    and GitHub annotations behave identically under both runners; flushes the
+    corrections; names on [stderr] what it wrote; and exits with
+    {!Private.inline_exit_code}, forced to [1] when a correction could not be
+    written — dune's promotion diff can only surface corrections that exist. *)
 
 (** {1:undriven The undriven-registration guard}
 
@@ -236,11 +234,8 @@ val exit : unit -> 'a
 
 module Private : sig
   val normalize : string -> string
-  (** [normalize s] is the [[%expect]] matching form of [s]: lines stripped of
-      surrounding whitespace, blank edges dropped, the block dedented by the
-      minimum indentation of its nonempty lines. Two payloads match iff their
-      normalizations are equal, which is ppx_expect's default formatting
-      flexibility exactly. *)
+  (** [normalize s] is {!Source_patch.normalize}[ s], the [[%expect]] matching
+      form of [s]. *)
 
   val collect : unit -> Test_tree.t list
   (** [collect ()] drains the registry into a test tree: registrations grouped
@@ -266,22 +261,18 @@ module Private : sig
 
   type flush_report = {
     written : string list;  (** [.corrected] names written beside the source. *)
-    accepted : string list;
-        (** Source files rewritten in place, project-root relative. *)
     refused : string list;
-        (** Sources whose correction did not fully land, each already reported
+        (** Sources whose correction could not be written, each already reported
             on [stderr]. *)
   }
   (** The type for what one flush did. *)
 
-  val flush_corrections_report : accept:bool -> flush_report
-  (** [flush_corrections_report ~accept] writes [<basename>.corrected] beside
-      each corrected source, where dune's diff action and [dune promote] expect
-      it, and clears the table; with [accept] every correction is
-      {e additionally} accepted into the source tree, guarded by a drift check
-      against the bytes it was computed from. Nothing fails silently: a file
-      that could not be read, written or accepted is named with its reason on
-      [stderr] and returned in [refused]. *)
+  val flush_corrections_report : unit -> flush_report
+  (** [flush_corrections_report ()] writes [<basename>.corrected] beside each
+      corrected source, where dune's diff action and [dune promote] expect it,
+      and clears the table. Nothing fails silently: a file that could not be
+      read or written is named with its reason on [stderr] and returned in
+      [refused]. *)
 
   val inline_exit_code : Runner.outcome -> int
   (** [inline_exit_code outcome] is the inline runner's exit code — dune's
@@ -292,18 +283,10 @@ module Private : sig
       lets dune reach the [diff?] step that registers the promotion; [1]
       otherwise. A skip neither forces [1] nor helps reach [0]. *)
 
-  val correction_notice :
-    accepted:string list ->
-    refused:string list ->
-    declined:bool ->
-    string list ->
-    string option
-  (** [correction_notice ~accepted ~refused ~declined written] is the [stderr]
-      notice for a process that wrote the [.corrected] files [written], or
-      [None] when [written] is empty. Its first line names them unconditionally;
-      the explanation under it names exactly one case — the paths [accepted]
-      into the source tree, the [refused] ones, an acceptance [declined] until
-      the failures are fixed, or dune's rule that a correction is registered for
+  val correction_notice : string list -> string option
+  (** [correction_notice written] is the [stderr] notice for a process that
+      wrote the [.corrected] files [written], or [None] when [written] is empty:
+      their names, then dune's rule that a correction is registered for
       promotion only when every partition of the library exits cleanly. *)
 
   val reset : unit -> unit

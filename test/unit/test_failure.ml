@@ -313,56 +313,52 @@ let tests =
               && String.length needle < 200_000
               && has ~needle:"truncated" needle
           | _ -> false));
-    test "snapshot constructor" (fun () ->
+    test "baseline constructor" (fun () ->
         let f =
-          F.snapshot ~name:"greeting"
-            ~path:"test/__snapshots__/t.ml/greeting.snap"
+          F.baseline (F.File "test/greeting.expected")
             (F.Mismatch { expected = "hi\n"; actual = "ho\n" })
         in
         check "identity and state stored"
           (match f.F.kind with
-          | F.Snapshot
+          | F.Baseline
               {
-                name = "greeting";
-                path = "test/__snapshots__/t.ml/greeting.snap";
+                baseline = F.File "test/greeting.expected";
                 state = F.Mismatch { expected = "hi\n"; actual = "ho\n" };
               } ->
               true
           | _ -> false);
-        (* Renderers derive acceptance commands from name and path (Law 3):
-           they are identities and must never be truncated. *)
+        (* Renderers name the file from the path: it is an identity and must
+           never be truncated. *)
         let path = String.make 100_000 'p' in
-        let f = F.snapshot ~name:"n" ~path F.Unresolvable in
+        let f =
+          F.baseline (F.File path) (F.Unresolvable { candidate = path })
+        in
         check "path is stored unmodified"
           (match f.F.kind with
-          | F.Snapshot { path = p; _ } -> String.equal p path
+          | F.Baseline
+              { baseline = F.File p; state = F.Unresolvable { candidate } } ->
+              String.equal p path && String.equal candidate path
           | _ -> false);
         let f =
-          F.snapshot ~name:"n" ~path:"p"
-            (F.Mismatch { expected = big; actual = "a" })
+          F.baseline F.Literal (F.Mismatch { expected = big; actual = "a" })
         in
         check "mismatch contents are bounded"
           (match f.F.kind with
-          | F.Snapshot { state = F.Mismatch { expected; _ }; _ } ->
+          | F.Baseline { state = F.Mismatch { expected; _ }; _ } ->
               String.length expected < 200_000
           | _ -> false);
-        let f = F.snapshot ~name:"n" ~path:"p" (F.Missing { proposed = big }) in
+        let f = F.baseline (F.File "p") (F.Missing { proposed = big }) in
         check "proposed content is bounded"
           (match f.F.kind with
-          | F.Snapshot { state = F.Missing { proposed }; _ } ->
+          | F.Baseline { state = F.Missing { proposed }; _ } ->
               String.length proposed < 200_000
           | _ -> false);
-        let first = loc_of "test/a.ml" 3 in
-        let second = loc_of "test/b.ml" 9 in
+        let site = loc_of "test/a.ml" 3 in
         let f =
-          F.snapshot ~loc:second ~name:"n" ~path:"p"
-            (F.Duplicate { first = Some first; first_test = "a › t" })
+          F.baseline ~loc:site F.Literal
+            (F.Mismatch { expected = "a"; actual = "b" })
         in
-        check "duplicate carries both sites and the first checker"
-          (match f.F.kind with
-          | F.Snapshot { state = F.Duplicate { first = l; first_test }; _ } ->
-              l = Some first && first_test = "a › t" && f.F.loc = Some second
-          | _ -> false));
+        check "a literal failure carries its site" (f.F.loc = Some site));
     test "property constructor" (fun () ->
         let inner = F.equality ~expected:"true" ~actual:"false" () in
         let f =

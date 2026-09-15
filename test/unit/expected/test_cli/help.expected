@@ -6,7 +6,8 @@ A bare PATTERN runs only tests whose full path contains it (same as
 -f PATTERN). Under `dune runtest` there is no command line, so
 almost every option has a WINDTRAP_* mirror — WINDTRAP_FILTER for
 --filter, and so on — and there the mirrors are the CLI. -l,
---failed, -x, -h and -V have none: they want a command line.
+--failed, -x, -u, --corrected, -h and -V have none: they belong
+on a command line (a build action accepts nothing by environment).
 
 OPTIONS:
   -f, --filter PATTERN          Run only tests whose path contains PATTERN
@@ -23,7 +24,8 @@ OPTIONS:
       --seed TOKEN              Root seed for property tests (s1:<16 hex>)
       --prop-count N            Generated cases per property
       --max-shrink N            Accepted shrink steps per failing property
-  -u, --update                  Accept snapshot changes (refused under CI)
+  -u, --update                  Accept baseline changes in place (refused under CI)
+      --corrected               Write corrections as <file>.corrected, for dune promote
   -s, --stream                  Stream test output instead of capturing it
   -v, --verbose                 One status line per test
       --junit PATH              Also write a JUnit XML report to PATH
@@ -34,7 +36,7 @@ OPTIONS:
 
 ENVIRONMENT (no flag):
   WINDTRAP_TAIL_ERRORS    Captured-output lines shown per failure
-  WINDTRAP_PROJECT_ROOT   Project root for snapshot path resolution
+  WINDTRAP_PROJECT_ROOT   Project root that baseline paths resolve under
   WINDTRAP_COVERAGE       Inline coverage line: on or off
   WINDTRAP_COVERAGE_ONLY  Source prefixes the coverage number covers
   WINDTRAP_MUTATE         Mutation testing: 1 to run it, 0 not to

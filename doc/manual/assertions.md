@@ -3,17 +3,23 @@
 One design rule behind every verb: a failure must print the data that
 would let you fix the bug without adding a `Printf`. Every checking
 verb takes optional `?msg` (an annotation shown in the report) and
-`?pos` (a `__POS__` override for the automatic call-stack location);
-of the escape hatches, `fail` and `failf` take only `?pos`, and `skip`
-only `?reason`. Expected precedes actual, always.
+`?__POS__` (an explicit position in place of the automatic call-stack
+location); of the escape hatches, `fail` and `failf` take only
+`?__POS__`, and `skip` only `?reason`. Expected precedes actual,
+always.
 
-`?pos` is for one symptom: a failure that points at the test's
-declaration line instead of the assertion. That happens when the
-failing call sits in tail position — the capture walks the stack and
-the frame it wanted is not there any more — and the fix is to hand the
-location in, `equal ~pos:__POS__ int 3 (f x)`. The report says when it
-has happened, one line under the location: `(assertion in tail
-position: its line is unknown; ~pos:__POS__ names it)`.
+The automatic location comes from the call stack, so it needs the
+program compiled with debug information (`-g`, which dune passes by
+default). `~__POS__` — the label puns with the builtin, so that is the
+whole spelling — is the explicit form, for two places. A helper that
+wraps a verb threads it through (`let equal_tensor ?__POS__ a b =
+equal ?__POS__ ...`, see the cookbook), so a failure points at the
+helper's caller. And an assertion in tail position — the last
+expression of a body — has no frame left when it raises, so the report
+attributes it to the test's declaration line and says so underneath:
+`(assertion in tail position: its line is unknown; ~__POS__ names it)`.
+Writing `equal ~__POS__ int 3 (f x)` there puts the assertion's own
+line back.
 
 ## Equality: testables
 

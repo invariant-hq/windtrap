@@ -8,7 +8,7 @@ the map of what sits behind it and the laws that keep it coherent.
 **Every test outcome flows into one `Run.t` record as typed
 `Failure.t` data; every byte of output leaves that record through a
 renderer.** Producers — assertions (`Check`), the property engine
-(`Property`), snapshot checking (`Snapshot`), capture, the executor
+(`Property`), baseline checking (`Baseline`), capture, the executor
 (`Runner`) — construct failure data and write it into the run record.
 Renderers (`Render`, `Render_junit`, `Render_github`) are pure
 projections of that record: styling, diffing, and truncation exist
@@ -28,7 +28,7 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, snapshots, capture, the run/driver spine, the mutation loop, renderers, CLI and the client facade; links `unix` and `windtrap.runtime` only — in-package, so Law 10's no-third-party-weight posture is untouched |
+| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, baselines, capture, the run/driver spine, the mutation loop, renderers, CLI and the client facade; links `unix` and `windtrap.runtime` only — in-package, so Law 10's no-third-party-weight posture is untouched |
 | `windtrap.runtime` | `lib/runtime/` | the one runtime every instrumented closure links, through both backends' `ppx_runtime_libraries`: `Windtrap_runtime.Coverage` (registration, the `.coverage` dump, report data), `Windtrap_runtime.Mutate` (the catalogue, the arming guard, the reach map), `Windtrap_runtime.Verdicts` (the verdict lattice and the `.mutants` format the loop writes and `windtrap mutants` merges) and `Windtrap_runtime.Instr` (the versioned, exe-identified file plumbing both formats share). Stdlib only — it must never pull anything into the closure of every instrumented library — and it reads no environment variable but `WINDTRAP_COVERAGE_FILE`: which mutants a run tests and which one it arms are the core's to read and hand down |
 | binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--expect`, `--json`, `--lcov`) and `mutants` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared data-file lookup and staleness in `data_files`. Both merge and render, never run a test or drive a build, and every remedy they print says what to do in words rather than spelling a build tool's command |
 | package `ppx_windtrap` | `ppx/` | the expect/inline PPX, the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`) over shared scaffolding (`ppx/scaffold/`), and the expect runtime itself — `Ppx_runtime` (`ppx/runtime/`) and the ambient `Expect_test_config` (`ppx/config/`) — the only unit that sees ppxlib |
@@ -58,7 +58,7 @@ its own, never downward.
 | | `Property` | the case loop: examples-first, derived per-case seeds, discard/give-up, shrink search, collect tables |
 | | `Stateful` | model-based testing: the command vocabulary, compiled into programs `Property` runs |
 | Subsystems | `Capture` | fd-level dup2 capture into per-test log files, C stdio flushing |
-| | `Snapshot` | name-keyed baselines, read-only checking, atomic acceptance, orphan tracking |
+| | `Baseline`, `Source_patch` | baselines keyed by literal position or file path, read-only checking, corrections gated per test and written once as `.corrected` files or in place, literal rewriting |
 | | `Test_tree` | the declaration tree: tests, groups, focus, xfail, flatten |
 | Drive and render | `Run` | THE run record and the one ambient slot; a result row carries its `subject` — test, fixture release, or the stale-baselines verdict — so every sink projects the one recorded list |
 | | `Runner` | sequential executor: startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, Law 11 exit codes. Emits typed events with immutable payloads; prints nothing |
@@ -93,9 +93,9 @@ is a driver's own line, named as such.** That is what keeps the two
 runners byte-identical.
 
 The cycle-avoidance rule is load-bearing: subsystem modules operate on
-explicit state values (`Capture.output st`, `Snapshot.check st …`);
+explicit state values (`Capture.output st`, `Baseline.check st …`);
 `Run` aggregates the instances; the *ambient-reading wrappers* —
-`output ()`, `snapshot`, `collect`, fixture accessors — live in the
+`output ()`, `expect`, `collect`, fixture accessors — live in the
 facade, which reads `Run.current ()` and dispatches. Core modules
 never read the ambient slot. Keeping the slot the only ambient thing
 is what would make a parallel runner an extension rather than a
@@ -151,10 +151,11 @@ apart.
 
 Ported from the accepted v3 design RFC ("Laws", including the
 2026-07-28 amendment of Law 14, and the mutation RFC's amendments to
-Laws 11, 12, 13 and 15 plus the new Law 16; Law 2's parenthetical
-amended on 2026-08-19, when `WINDTRAP_UPDATE` began accepting expect
-payloads into the source tree and `dune promote` stopped being their
-only channel; Law 16(e) rewritten and Law 17 withdrawn on 2026-08-21,
+Laws 11, 12, 13 and 15 plus the new Law 16; Law 2 rewritten and Law 1's
+acceptance list amended on 2026-09-15, when `snapshot` and the
+`WINDTRAP_UPDATE` channel were replaced by position- and path-keyed
+baselines corrected through `--corrected` and `-u`; Law 16(e) rewritten
+and Law 17 withdrawn on 2026-08-21,
 when admission was removed and the project aggregate became the one
 place a survivor fails a build); the RFC documents themselves were
 removed from the repo — this copy is the durable record. Each law
@@ -163,14 +164,15 @@ design**.
 
 1. **Checking never writes to the source tree.** Within an executed
    run, no test creates, updates, or deletes a baseline or any source
-   file; only explicit acceptance (`-u`/`WINDTRAP_UPDATE`,
-   `dune promote`) writes, atomically. *Prevents:* green runs that
-   mean "baseline just got invented"; sandbox violations.
-2. **Persisted snapshot identity is a name.** No baseline stored
-   outside the source file is keyed by a source position. (Inline
-   `[%expect]` payloads are positional by nature; they persist only
-   inside the source itself and are rewritten only by explicit
-   acceptance.) *Prevents:* baselines orphaned by unrelated edits.
+   file; only explicit acceptance writes — `-u` in place, atomically
+   and refused under `CI`; `--corrected` as `<file>.corrected` beside
+   the file for `dune promote`, never the file itself. *Prevents:*
+   green runs that mean "baseline just got invented"; sandbox
+   violations.
+2. **A baseline is where the source says it is.** A literal at its own
+   position, which the compiler recomputes on every build, or a file at
+   the path the call names; nothing is derived from a test's name or
+   declaration site. *Prevents:* baselines orphaned by an edit.
 3. **Every mismatch prints its own acceptance command.** *Prevents:*
    memorized verbs; silent updates.
 4. **Failures are data; renderers are projections.** Styling, diff
@@ -313,8 +315,8 @@ design**.
     boolean, and never an exit code: an armed run
     states its own verdict in (b)'s closing line, and the loop's live in
     its report and its verdict file.
-    (d) *Armed checking is read-only.* While a mutant is armed, a
-    snapshot or `[%expect]` mismatch is a plain failure: no
+    (d) *Armed checking is read-only.* While a mutant is armed, an
+    `expect` or `[%expect]` mismatch is a plain failure: no
     `.corrected` is written and dune's promotion protocol is not
     consulted. The child additionally clears the inline runtime's
     cross-run tables — node pool, corrections, styled registry, covered

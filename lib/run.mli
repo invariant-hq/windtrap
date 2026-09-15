@@ -7,18 +7,18 @@
 
     All mutable run state lives in one {!type:t} created per [run] invocation —
     no global mutable per-run state: the resolved {!type:config}, the capture
-    state, the snapshot registry, the fixture cache, accumulated
+    state, the baseline registry, the fixture cache, accumulated
     {!type:result}s, and the coverage seam field. Nothing here is a global; a
     later [run] in the same process builds a fresh record, which is what makes
-    fixtures re-acquire and snapshot registries start empty.
+    fixtures re-acquire and baseline registries start empty.
 
     Test bodies reach that record through exactly one documented ambient slot —
     a single [ref] in this module, the only run-state [ref] in the library —
     holding what the process is currently executing: the run itself while
     {!with_active} brackets an executing run, overlaid by the {!type:frame} of
     the test attempt while {!with_frame} brackets an attempt. The facade's
-    ambient operations ([output ()], [snapshot], [collect], fixture accessors,
-    and the {{!section-body}test-body operations} below) read the slot with
+    ambient operations ([output ()], [expect], [collect], fixture accessors, and
+    the {{!section-body}test-body operations} below) read the slot with
     {!current_frame}/{!current} and dispatch on explicit state. When the slot
     holds no frame, reading it raises the assertions-outside-run error:
     [Invalid_argument] with a message explaining that the operation only works
@@ -53,10 +53,11 @@ type config = {
   stream : bool;
       (** [--stream]: run against the real descriptors instead of capturing
           (capture state is {!Capture.disabled}). *)
-  update : Env.update;
-      (** [-u]/[WINDTRAP_UPDATE]: the snapshot update request, merged from all
-          sources but before the CI guard — the runner applies
-          {!Snapshot.resolve_mode}. *)
+  baseline : Baseline.mode;
+      (** [-u] ({!Baseline.Update}), [--corrected] ({!Baseline.Corrected}) or
+          neither ({!Baseline.Check}): what the run writes for a baseline that
+          differs. Neither flag has a mirror. The runner refuses
+          {!Baseline.Update} under [CI]. *)
   timeout : float option;  (** [--timeout]: default per-test limit, seconds. *)
   prop_count : int option;  (** [--prop-count]: generated cases per property. *)
   max_shrink : int option;
@@ -92,7 +93,7 @@ val for_subset : config -> log_dir:string -> bail:int option -> config
     tag-selecting knobs ([tags], [exclude_tags]) and the root [seed] are kept
     verbatim, because an allowlist cannot express a tag and per-case seeds
     derive from [(root, path, index)]. Checking is made read-only
-    ([update = No_update]), capture is dropped ([stream]), an in-source focus is
+    ([baseline = Check]), capture is dropped ([stream]), an in-source focus is
     allowed, and [log_dir] and [bail] are the caller's.
 
     A new selection knob that this function does not clear gives such a child a
@@ -105,12 +106,12 @@ type t
 (** The type for per-run records. Created by the runner at the start of a run
     and dead at its end; never reused. *)
 
-val create : config -> capture:Capture.t -> snapshots:Snapshot.t -> t
-(** [create config ~capture ~snapshots] is a fresh run record over the given
-    capture state and snapshot registry, with an empty fixture cache, no
+val create : config -> capture:Capture.t -> baselines:Baseline.t -> t
+(** [create config ~capture ~baselines] is a fresh run record over the given
+    capture state and baseline registry, with an empty fixture cache, no
     results, and no coverage snapshot. The runner constructs [capture] (possibly
-    {!Capture.disabled}) and [snapshots] (after applying the CI guard to
-    [config.update]) before creating the record. *)
+    {!Capture.disabled}) and [baselines] (after applying the CI guard to
+    [config.baseline]) before creating the record. *)
 
 val config : t -> config
 (** [config t] is the run's resolved configuration. *)
@@ -118,8 +119,8 @@ val config : t -> config
 val capture : t -> Capture.t
 (** [capture t] is the run's capture state. *)
 
-val snapshots : t -> Snapshot.t
-(** [snapshots t] is the run's snapshot registry. *)
+val baselines : t -> Baseline.t
+(** [baselines t] is the run's baseline registry. *)
 
 (** {1:frames Per-test frames} *)
 
@@ -127,15 +128,17 @@ type frame
 (** The type for per-attempt frames: the executing test's identity (path and
     declaration file), its accumulated failures, and the property context while
     a property body runs. The runner creates a fresh frame for every attempt;
-    the frame's run gives ambient operations the capture, snapshot, and fixture
+    the frame's run gives ambient operations the capture, baseline, and fixture
     state. *)
 
-val frame : t -> path:string list -> loc:Loc.t option -> frame
+val frame :
+  ?corrections:bool -> t -> path:string list -> loc:Loc.t option -> frame
 (** [frame t ~path ~loc] is a fresh frame for one attempt of the test at [path]
     (as flattened by [Test_tree.flatten]), declared at [loc] — the fallback
-    attribution for failures recorded without a location, and the
-    snapshot-scoping input ({!Snapshot.check}'s [~scope] fallback reads its
-    file). *)
+    attribution for failures recorded without a location. [corrections] is
+    whether the attempt may record baseline corrections ({!check_baseline});
+    defaults to [true]. The runner clears it for an [xfail] test, whose mismatch
+    is the failure it expects. *)
 
 val run_of_frame : frame -> t
 (** [run_of_frame frame] is the run record [frame] belongs to. *)
@@ -201,7 +204,7 @@ val current_frame : unit -> frame
 (** [current_frame ()] is the frame of the attempt currently executing.
 
     Raises [Invalid_argument] — the assertions-outside-run error — when no test
-    is running: ambient operations ([output ()], [snapshot], [collect], fixture
+    is running: ambient operations ([output ()], [expect], [collect], fixture
     accessors) only work inside a test body executed by [run], not at module
     toplevel or after the run. *)
 
@@ -244,22 +247,17 @@ val subtest : string -> (unit -> unit) -> unit
     {!Failure.Body} phase — calling it inside a bracket's setup or teardown
     still labels and records, but the entries are not re-phased. *)
 
-(** {1:snapshots Snapshots} *)
+(** {1:baselines Baselines} *)
 
-val check_snapshot : ?pos:Loc.pos -> name:string -> string -> unit
-(** [check_snapshot ~name actual] is {!Snapshot.check} against the executing
-    test's registry, with the two ladders the check needs resolved from the
-    frame.
+val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
+(** [check_baseline subject actual] is {!Baseline.check} against the executing
+    test's registry, read-only when the frame was created without [corrections]
+    ({!frame}), [loc] the failure's location: the literal's position, or the
+    call frame for a file, and none when the call sat in tail position — the
+    runner then attributes the failure to the test's declaration.
 
-    The {e scope} — which baseline directory [name] resolves in — is [pos]'s
-    file when given, else the test's declaration file, and never a backtrace
-    frame at call time: a snapshot reached through a helper in another file must
-    keep the baseline of the test that owns it. The {e site} recorded on the
-    failure is [pos], else the surviving call frame, else the declaration; it is
-    display and duplicate-identity data and never chooses the path.
-
-    Raises {!Failure.Check_failure} on every snapshot failure
-    ({!Snapshot.check}) and the assertions-outside-run error
+    Raises {!Failure.Check_failure} on every baseline failure
+    ({!Baseline.check}) and the assertions-outside-run error
     ([Invalid_argument], see {!current_frame}) when no test is running. *)
 
 (** {1:scratch Runner-owned scratch}
@@ -427,7 +425,7 @@ type result = {
   path : string list;
       (** The row's reporting path: the test's full path (groups first) for a
           {!Test} row, the verdict's one-component label otherwise
-          ({!fixture_release_path}, [["stale baselines"]]). *)
+          ({!fixture_release_path}). *)
   subject : subject;  (** What the row reports on; see {!type:subject}. *)
   outcome : Failure.outcome;  (** The classified outcome, failures inside. *)
   counted : bool;

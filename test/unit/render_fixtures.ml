@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Synthetic run data shared by the renderer tests: one result per failure
-   kind (equality with diff, raise, snapshot missing and mismatch, property
+   kind (equality with diff, raise, baseline missing and mismatch, property
    with inner failure, body + teardown pair), plus pass/skip/retry results,
    and a bounded captured tail with a drop count. Everything is deterministic:
    fixed durations, a fixed root seed, locations pointing at files that do not
@@ -66,19 +66,19 @@ let raise_failure =
     ~backtrace:"Raised at Parser.parse in file \"lib/parser.ml\", line 40" ()
 
 let snap_missing =
-  Failure.snapshot ~loc:(loc "test/test_cli.ml" 9) ~name:"help"
-    ~path:"test/__snapshots__/test_cli/help.snap"
+  Failure.baseline ~loc:(loc "test/test_cli.ml" 9)
+    (Failure.File "test/help.expected")
     (Failure.Missing
        { proposed = "Usage: mytool [OPTIONS] COMMAND\nCommands:\n  run\n" })
 
 let snap_mismatch =
-  Failure.snapshot
+  Failure.baseline
     ~loc:(loc "test/test_cli.ml" 14)
-    ~name:"version" ~path:"test/__snapshots__/test_cli/version.snap"
+    Failure.Literal
     (Failure.Mismatch
        {
-         expected = "line one\nline two\nline three\n";
-         actual = "line one\nline 2\nline three\n";
+         expected = "line one\nline two\nline three";
+         actual = "line one\nline 2\nline three";
        })
 
 let prop_failure =
@@ -169,7 +169,7 @@ let results =
     result [ "parser"; "rejects empty" ] (Failure.Fail [ raise_failure ]);
     result [ "cli"; "cli help" ] (Failure.Fail [ snap_missing ])
       ~duration:0.0003;
-    result [ "cli"; "snapshot drift" ] (Failure.Fail [ snap_mismatch ]);
+    result [ "cli"; "version drift" ] (Failure.Fail [ snap_mismatch ]);
     result
       [ "geo"; "area non-negative" ]
       (Failure.Fail [ prop_failure ]) ~duration:0.018;

@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Check: every verb's pass and fail path, payload shapes, [?pos]
+(* Tests for Check: every verb's pass and fail path, payload shapes, [?__POS__]
    and [?msg] propagation, unwrap semantics, [?pp] rendering,
    structural exception equality, and the control-exception re-raise guard.
 
@@ -1118,49 +1118,52 @@ let tests =
           | _ -> false
           | exception F.Skip_test None -> true
           | exception _ -> false));
-    test "?pos wins over the captured location on every verb" (fun () ->
+    test "?__POS__ wins over the captured location on every verb" (fun () ->
         let with_pos name f =
           let fl = caught name f in
-          check (name ^ ": ?pos wins") (fl.F.loc = Some fake_loc)
+          check (name ^ ": ?__POS__ wins") (fl.F.loc = Some fake_loc)
         in
-        with_pos "equal: ?pos" (fun () ->
-            Check.equal ~pos:fake_pos Testable.int 1 2);
-        with_pos "not_equal: ?pos" (fun () ->
-            Check.not_equal ~pos:fake_pos Testable.int 1 1);
-        with_pos "is_true: ?pos" (fun () -> Check.is_true ~pos:fake_pos false);
-        with_pos "is_false: ?pos" (fun () -> Check.is_false ~pos:fake_pos true);
-        with_pos "require_some: ?pos" (fun () ->
-            ignore (Check.require_some ~pos:fake_pos None));
-        with_pos "require_ok: ?pos" (fun () ->
-            ignore (Check.require_ok ~pos:fake_pos (Error ())));
-        with_pos "require_error: ?pos" (fun () ->
-            ignore (Check.require_error ~pos:fake_pos (Ok ())));
-        with_pos "raises: ?pos" (fun () ->
-            Check.raises ~pos:fake_pos Not_found (fun () -> ()));
-        with_pos "raises_match: ?pos" (fun () ->
-            Check.raises_match ~pos:fake_pos (fun _ -> false) (fun () -> ()));
-        with_pos "contains: ?pos" (fun () ->
-            Check.contains ~pos:fake_pos ~sub:"z" "abc");
-        with_pos "not_contains: ?pos" (fun () ->
-            Check.not_contains ~pos:fake_pos ~sub:"a" "abc");
-        with_pos "in_order: ?pos" (fun () ->
-            Check.in_order ~pos:fake_pos ~subs:[ "b"; "a" ] "abc");
-        with_pos "satisfies: ?pos" (fun () ->
-            Check.satisfies ~pos:fake_pos Testable.int (fun _ -> false) 1);
-        with_pos "less: ?pos" (fun () ->
-            Check.less ~pos:fake_pos Testable.int ~than:1 1);
-        with_pos "at_most: ?pos" (fun () ->
-            Check.at_most ~pos:fake_pos Testable.int ~than:1 2);
-        with_pos "greater: ?pos" (fun () ->
-            Check.greater ~pos:fake_pos Testable.int ~than:1 1);
-        with_pos "at_least: ?pos" (fun () ->
-            Check.at_least ~pos:fake_pos Testable.int ~than:1 0);
-        with_pos "require_match: ?pos" (fun () ->
-            ignore (Check.require_match ~pos:fake_pos (fun _ -> None) 1));
-        with_pos "fail: ?pos" (fun () -> Check.fail ~pos:fake_pos "x");
-        with_pos "failf: ?pos" (fun () -> Check.failf ~pos:fake_pos "x %d" 1));
+        with_pos "equal: ?__POS__" (fun () ->
+            Check.equal ~__POS__:fake_pos Testable.int 1 2);
+        with_pos "not_equal: ?__POS__" (fun () ->
+            Check.not_equal ~__POS__:fake_pos Testable.int 1 1);
+        with_pos "is_true: ?__POS__" (fun () ->
+            Check.is_true ~__POS__:fake_pos false);
+        with_pos "is_false: ?__POS__" (fun () ->
+            Check.is_false ~__POS__:fake_pos true);
+        with_pos "require_some: ?__POS__" (fun () ->
+            ignore (Check.require_some ~__POS__:fake_pos None));
+        with_pos "require_ok: ?__POS__" (fun () ->
+            ignore (Check.require_ok ~__POS__:fake_pos (Error ())));
+        with_pos "require_error: ?__POS__" (fun () ->
+            ignore (Check.require_error ~__POS__:fake_pos (Ok ())));
+        with_pos "raises: ?__POS__" (fun () ->
+            Check.raises ~__POS__:fake_pos Not_found (fun () -> ()));
+        with_pos "raises_match: ?__POS__" (fun () ->
+            Check.raises_match ~__POS__:fake_pos (fun _ -> false) (fun () -> ()));
+        with_pos "contains: ?__POS__" (fun () ->
+            Check.contains ~__POS__:fake_pos ~sub:"z" "abc");
+        with_pos "not_contains: ?__POS__" (fun () ->
+            Check.not_contains ~__POS__:fake_pos ~sub:"a" "abc");
+        with_pos "in_order: ?__POS__" (fun () ->
+            Check.in_order ~__POS__:fake_pos ~subs:[ "b"; "a" ] "abc");
+        with_pos "satisfies: ?__POS__" (fun () ->
+            Check.satisfies ~__POS__:fake_pos Testable.int (fun _ -> false) 1);
+        with_pos "less: ?__POS__" (fun () ->
+            Check.less ~__POS__:fake_pos Testable.int ~than:1 1);
+        with_pos "at_most: ?__POS__" (fun () ->
+            Check.at_most ~__POS__:fake_pos Testable.int ~than:1 2);
+        with_pos "greater: ?__POS__" (fun () ->
+            Check.greater ~__POS__:fake_pos Testable.int ~than:1 1);
+        with_pos "at_least: ?__POS__" (fun () ->
+            Check.at_least ~__POS__:fake_pos Testable.int ~than:1 0);
+        with_pos "require_match: ?__POS__" (fun () ->
+            ignore (Check.require_match ~__POS__:fake_pos (fun _ -> None) 1));
+        with_pos "fail: ?__POS__" (fun () -> Check.fail ~__POS__:fake_pos "x");
+        with_pos "failf: ?__POS__" (fun () ->
+            Check.failf ~__POS__:fake_pos "x %d" 1));
     test "default location is captured from the call stack" (fun () ->
-        (* Without ?pos the location is captured from the call stack and
+        (* Without ?__POS__ the location is captured from the call stack and
            points at this file — user code, not windtrap's frames. *)
         (match
            caught "equal: default location" (fun () ->

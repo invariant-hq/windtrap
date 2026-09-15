@@ -11,7 +11,8 @@
     as a {!predicate} over tag sets.
 
     One tag name carries built-in meaning: {!slow}, pre-applied by the [slow]
-    test constructor. It is an ordinary tag: [--exclude-tag slow] drops it. *)
+    test constructor and exempting a test from the slow-test warning. It is an
+    ordinary tag: [--exclude-tag slow] drops it. *)
 
 (** {1:tags Tag sets} *)
 

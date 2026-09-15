@@ -4,13 +4,15 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Test_tree: inert construction, path derivation and the frozen
-   separator, tag inheritance, focus propagation and sites, declaration-file
-   capture (?pos preferred, backtrace fallback), cases naming, bracket kept
-   as three independent closures, scoped kept as a scope and a body (with
-   the argument order that keeps its optionals through a partial
-   application), and xfail annotation propagation (innermost wins). The
-   trees under test are inert data built with [Test_tree] directly — never
-   executed by the hosting runner. *)
+   separator, the optional arguments (tags, timeout, retries) on every
+   constructor — group-level defaults, innermost-wins, tag union, [slow] —
+   the two annotations (focus, xfail) and the sites they preserve,
+   declaration-site capture (?__POS__ preferred, backtrace fallback), cases
+   naming, bracket as a scope derived from its setup and teardown, and scoped
+   kept as a scope and a body (with the argument order that keeps its
+   optionals through a partial application). The trees under test are inert
+   data built with [Test_tree] directly — never executed by the hosting
+   runner. *)
 
 open Windtrap
 open Windtrap.Private
@@ -33,6 +35,15 @@ let expect_invalid_arg name fn =
 let nop () = ()
 
 exception Boom
+
+(* The one flattened case of a single-test tree. *)
+let only name tree =
+  match T.flatten [ tree ] with
+  | [ c ] -> c
+  | cases -> failf "%s: expected one case, got %d" name (List.length cases)
+
+let loc_file (c : T.case) =
+  match c.T.loc with Some loc -> loc.Loc.file | None -> "<none>"
 
 (* Construction and path derivation *)
 
@@ -84,25 +95,53 @@ let () =
 
 let () =
   reg "defaults" @@ fun () ->
-  match T.flatten [ T.test "t" nop ] with
-  | [ c ] ->
-      check "default: no tags" (not (Tag.mem "slow" c.T.tags));
-      check "default: not focused" (not c.T.focused);
-      check "default: no timeout" (c.T.timeout = None);
-      check_int "default: zero retries" ~expected:0 ~actual:c.T.retries;
-      check "default: loc captured from the declaration backtrace"
-        (match c.T.loc with
-        | Some loc -> Filename.basename loc.Loc.file = "test_test_tree.ml"
-        | None -> false)
-  | _ -> check "default flatten shape" false
+  let c = only "defaults" (T.test "t" nop) in
+  check "default: no tags" (not (Tag.mem "slow" c.T.tags));
+  check "default: not focused" (not c.T.focused);
+  check "default: no timeout" (c.T.timeout = None);
+  check_int "default: zero retries" ~expected:0 ~actual:c.T.retries;
+  check "default: not expected to fail" (c.T.xfail = None);
+  check "default: loc captured from the declaration backtrace"
+    (Filename.basename (loc_file c) = "test_test_tree.ml")
+
+(* The optional arguments, one at a time *)
 
 let () =
-  reg "timeout and retries recorded" @@ fun () ->
-  match T.flatten [ T.test ~timeout:2.5 ~retries:3 "t" nop ] with
-  | [ c ] ->
-      check "timeout recorded" (c.T.timeout = Some 2.5);
-      check_int "retries recorded" ~expected:3 ~actual:c.T.retries
-  | _ -> check "timeout/retries flatten shape" false
+  reg "each optional argument records on the case" @@ fun () ->
+  let c = only "timeout" (T.test ~timeout:2.5 "t" nop) in
+  check "timeout recorded" (c.T.timeout = Some 2.5);
+  let c = only "retries" (T.test ~retries:3 "t" nop) in
+  check_int "retries recorded" ~expected:3 ~actual:c.T.retries;
+  let c = only "tags" (T.test ~tags:[ "db"; "slow" ] "t" nop) in
+  check "tags recorded" (Tag.mem "db" c.T.tags && Tag.mem Tag.slow c.T.tags);
+  let c = only "slow" (T.slow ~tags:[ "x" ] "s" nop) in
+  check "slow pre-applies the slow tag and keeps the declared ones"
+    (Tag.mem Tag.slow c.T.tags && Tag.mem "x" c.T.tags)
+
+let () =
+  reg "every constructor takes the optional arguments" @@ fun () ->
+  let carries name tree =
+    List.iter
+      (fun (c : T.case) ->
+        check (name ^ ": timeout") (c.T.timeout = Some 1.5);
+        check (name ^ ": retries") (c.T.retries = 2);
+        check (name ^ ": tag") (Tag.mem "x" c.T.tags))
+      (T.flatten [ tree ])
+  in
+  carries "test" (T.test ~tags:[ "x" ] ~timeout:1.5 ~retries:2 "t" nop);
+  carries "slow" (T.slow ~tags:[ "x" ] ~timeout:1.5 ~retries:2 "s" nop);
+  carries "group"
+    (T.group ~tags:[ "x" ] ~timeout:1.5 ~retries:2 "g" [ T.test "t" nop ]);
+  carries "cases"
+    (T.cases ~tags:[ "x" ] ~timeout:1.5 ~retries:2 ~name:string_of_int "c"
+       [ 0; 1 ] ignore);
+  carries "bracket"
+    (T.bracket ~tags:[ "x" ] ~timeout:1.5 ~retries:2 ~setup:nop ~teardown:ignore
+       "b" ignore);
+  carries "scoped"
+    (T.scoped
+       (fun fn -> fn ())
+       ~tags:[ "x" ] ~timeout:1.5 ~retries:2 "s" ignore)
 
 (* Validation *)
 
@@ -118,17 +157,19 @@ let () =
       T.test ~timeout:Float.nan "t" nop);
   expect_invalid_arg "infinite timeout rejected" (fun () ->
       T.test ~timeout:Float.infinity "t" nop);
+  expect_invalid_arg "a group validates retries too" (fun () ->
+      T.group ~retries:(-2) "g" []);
+  expect_invalid_arg "a group validates timeouts too" (fun () ->
+      T.group ~timeout:0. "g" []);
   expect_invalid_arg "bracket validates retries too" (fun () ->
       T.bracket ~retries:(-2) ~setup:nop ~teardown:ignore "t" ignore);
-  expect_invalid_arg "scoped validates retries too" (fun () ->
-      T.scoped (fun fn -> fn ()) ~retries:(-2) "t" ignore);
   expect_invalid_arg "scoped validates timeouts too" (fun () ->
       T.scoped (fun fn -> fn ()) ~timeout:0. "t" ignore)
 
 (* Tags *)
 
 let () =
-  reg "tag inheritance" @@ fun () ->
+  reg "tags union with the enclosing groups'" @@ fun () ->
   let tree =
     [
       T.group ~tags:[ "db" ] "g"
@@ -143,94 +184,193 @@ let () =
         (Tag.mem "db" b.T.tags && not (Tag.mem "net" b.T.tags))
   | _ -> check "tag flatten shape" false
 
+(* Group-level defaults and innermost-wins *)
+
 let () =
-  reg "slow pre-applies the slow tag" @@ fun () ->
-  match T.flatten [ T.slow ~tags:[ "x" ] "s" nop ] with
-  | [ c ] ->
-      check "slow pre-applies the slow tag"
-        (Tag.mem Tag.slow c.T.tags && Tag.mem "x" c.T.tags)
-  | _ -> check "slow flatten shape" false
+  reg "a group's timeout and retries are defaults for every descendant"
+  @@ fun () ->
+  let tree =
+    [
+      T.group ~timeout:2. ~retries:2 "g"
+        [ T.test "a" nop; T.group "h" [ T.test "b" nop ] ];
+    ]
+  in
+  match T.flatten tree with
+  | [ a; b ] ->
+      check "direct child inherits the timeout" (a.T.timeout = Some 2.);
+      check "nested child inherits the timeout" (b.T.timeout = Some 2.);
+      check "direct child inherits the retries" (a.T.retries = 2);
+      check "nested child inherits the retries" (b.T.retries = 2)
+  | _ -> check "group default shape" false
+
+let () =
+  reg "the innermost timeout and retries win" @@ fun () ->
+  let tree =
+    [
+      T.group ~timeout:5. ~retries:5 "g"
+        [
+          T.test ~timeout:1. ~retries:1 "own" nop;
+          T.test "inherits" nop;
+          T.group ~timeout:2. "h" [ T.test "inner group" nop ];
+        ];
+    ]
+  in
+  match T.flatten tree with
+  | [ own; inherits; inner ] ->
+      check "a test's own timeout beats the group's" (own.T.timeout = Some 1.);
+      check "a test's own retries beat the group's" (own.T.retries = 1);
+      check "an undeclared sibling takes the group's timeout"
+        (inherits.T.timeout = Some 5.);
+      check "an undeclared sibling takes the group's retries"
+        (inherits.T.retries = 5);
+      check "an inner group's timeout beats the outer group's"
+        (inner.T.timeout = Some 2.);
+      check "an inner group without retries passes the outer's through"
+        (inner.T.retries = 5)
+  | _ -> check "innermost shape" false
 
 (* Focus *)
 
 let () =
-  reg "focus_sites finds every flagged node" @@ fun () ->
+  reg "focus_sites finds every focused node" @@ fun () ->
   let sites tests = List.length (T.focus_sites tests) in
   check_int "no focus by default" ~expected:0 ~actual:(sites [ T.test "t" nop ]);
-  check_int "ftest sets focus" ~expected:1 ~actual:(sites [ T.ftest "t" nop ]);
-  check_int "fgroup sets focus" ~expected:1 ~actual:(sites [ T.fgroup "g" [] ]);
+  check_int "focus on a test" ~expected:1
+    ~actual:(sites [ T.focus (T.test "t" nop) ]);
+  check_int "focus on a group" ~expected:1
+    ~actual:(sites [ T.focus (T.group "g" []) ]);
   check_int "focus found in nested groups" ~expected:1
-    ~actual:(sites [ T.group "g" [ T.group "h" [ T.ftest "t" nop ] ] ])
+    ~actual:(sites [ T.group "g" [ T.group "h" [ T.focus (T.test "t" nop) ] ] ])
 
 let () =
   reg "focus propagation" @@ fun () ->
   let tree =
     [
-      T.fgroup "g" [ T.test "in-focused-group" nop ];
-      T.group "h" [ T.ftest "focused" nop; T.test "plain" nop ];
+      T.focus (T.group "g" [ T.test "in-focused-group" nop ]);
+      T.group "h" [ T.focus (T.test "focused" nop); T.test "plain" nop ];
     ]
   in
   match T.flatten tree with
   | [ a; b; c ] ->
-      check "fgroup focuses its descendants" a.T.focused;
-      check "ftest is focused" b.T.focused;
+      check "a focused group focuses its descendants" a.T.focused;
+      check "a focused test is focused" b.T.focused;
       check "sibling of a focused test is not focused" (not c.T.focused)
   | _ -> check "focus flatten shape" false
 
 let () =
-  reg "focus_sites records kinds and locations" @@ fun () ->
+  reg "focus_sites records the constructors' locations" @@ fun () ->
   let pos_t = ("test/fake_t.ml", 31, 2, 10) in
   let pos_g = ("test/fake_g.ml", 7, 0, 4) in
   let tree =
     [
-      T.group "outer" [ T.ftest ~pos:pos_t "t" nop; T.fgroup ~pos:pos_g "g" [] ];
+      T.group "outer"
+        [
+          T.focus (T.test ~__POS__:pos_t "t" nop);
+          T.focus (T.group ~__POS__:pos_g "g" []);
+        ];
       T.test "plain" nop;
     ]
   in
   match T.focus_sites tree with
-  | [ (`Ftest, Some lt); (`Fgroup, Some lg) ] ->
-      check_string "focus site records the ftest file"
+  | [ Some lt; Some lg ] ->
+      check_string "focus site records the test's file"
         ~expected:"test/fake_t.ml" ~actual:lt.Loc.file;
-      check_int "focus site records the ftest line" ~expected:31
+      check_int "focus site records the test's line" ~expected:31
         ~actual:lt.Loc.line;
-      check_string "focus site records the fgroup file"
+      check_string "focus site records the group's file"
         ~expected:"test/fake_g.ml" ~actual:lg.Loc.file
-  | _ -> check "focus_sites shape (declaration order, kinds, locs)" false
+  | _ -> check "focus_sites shape (declaration order, locs)" false
+
+let () =
+  reg "focus applies to every constructor's result" @@ fun () ->
+  let focused tree =
+    List.for_all (fun (c : T.case) -> c.T.focused) (T.flatten [ T.focus tree ])
+  in
+  check "focus on a slow test" (focused (T.slow "s" nop));
+  check "focus on cases"
+    (focused (T.cases ~name:string_of_int "c" [ 0 ] ignore));
+  check "focus on a bracket"
+    (focused (T.bracket ~setup:nop ~teardown:ignore "b" ignore));
+  check "focus on a scoped test"
+    (focused (T.scoped (fun fn -> fn ()) "s" ignore))
 
 (* Declaration sites *)
 
 let () =
-  reg "?pos wins for the declaration site" @@ fun () ->
+  reg "?__POS__ wins for the declaration site" @@ fun () ->
   let pos = ("src/elsewhere.ml", 12, 0, 8) in
-  match T.flatten [ T.test ~pos "t" nop ] with
-  | [ c ] ->
-      check "?pos wins for the declaration site"
-        (match c.T.loc with
-        | Some loc -> loc.Loc.file = "src/elsewhere.ml" && loc.Loc.line = 12
-        | None -> false)
-  | _ -> check "?pos flatten shape" false
+  let c = only "?__POS__" (T.test ~__POS__:pos "t" nop) in
+  check "?__POS__ wins for the declaration site"
+    (match c.T.loc with
+    | Some loc -> loc.Loc.file = "src/elsewhere.ml" && loc.Loc.line = 12
+    | None -> false)
 
 let () =
   reg "backtrace fallback records the declaring file" @@ fun () ->
-  match T.flatten [ T.test "t" nop ] with
-  | [ c ] ->
-      check "backtrace fallback records this file"
-        (match c.T.loc with
-        | Some loc -> Filename.basename loc.Loc.file = "test_test_tree.ml"
-        | None -> false)
-  | _ -> check "backtrace flatten shape" false
+  let c = only "backtrace" (T.test "t" nop) in
+  check "backtrace fallback records this file"
+    (Filename.basename (loc_file c) = "test_test_tree.ml")
 
 let () =
   reg "nested tests keep their own declaration site" @@ fun () ->
   (* The declaration site belongs to the test, not its group: a child keeps
      its own capture even when nested. *)
-  match T.flatten [ T.group "g" [ T.test "t" nop ] ] with
-  | [ c ] ->
-      check "nested test still records its own declaration site"
-        (match c.T.loc with
-        | Some loc -> Filename.basename loc.Loc.file = "test_test_tree.ml"
-        | None -> false)
-  | _ -> check "nested declaration-site shape" false
+  let c = only "nested" (T.group "g" [ T.test "t" nop ]) in
+  check "nested test still records its own declaration site"
+    (Filename.basename (loc_file c) = "test_test_tree.ml")
+
+let () =
+  reg "annotations keep the site the constructor captured" @@ fun () ->
+  let pos = ("src/declared.ml", 12, 0, 8) in
+  let c =
+    only "wrapped test"
+      (T.xfail
+         (T.focus (T.test ~__POS__:pos ~tags:[ "x" ] ~timeout:1. "t" nop)))
+  in
+  check "a wrapped test keeps its constructor's site"
+    (c.T.loc = Some (Loc.of_pos pos));
+  (match T.focus_sites [ T.xfail (T.focus (T.group ~__POS__:pos "g" [])) ] with
+  | [ Some site ] ->
+      check "a wrapped group keeps its constructor's site"
+        (site = Loc.of_pos pos)
+  | _ -> check "wrapped group focus site shape" false);
+  (* The fallback capture happens at construction, before any annotation
+     runs, so an annotation applied later in another function cannot move
+     it either. *)
+  let c = only "wrapped fallback" (T.focus (T.test "t" nop)) in
+  check "the fallback site is captured at construction"
+    (Filename.basename (loc_file c) = "test_test_tree.ml")
+
+let () =
+  reg "backtrace fallback attributes every constructor to the declaring file"
+  @@ fun () ->
+  (* The fallback walks past windtrap's own frames — [make_test], the
+     derived bracket's scope builder, the [cases] child loop — and lands on
+     the user frame that applied the constructor, whichever constructor it
+     was and whatever optional arguments it took. *)
+  let declared_here name tree =
+    List.iter
+      (fun (c : T.case) ->
+        check
+          (name ^ ": the fallback site is this file")
+          (Filename.basename (loc_file c) = "test_test_tree.ml"))
+      (T.flatten [ tree ])
+  in
+  declared_here "group child" (T.group ~tags:[ "g" ] "g" [ T.test "t" nop ]);
+  declared_here "cases"
+    (T.cases ~timeout:1. ~name:string_of_int "c" [ 0; 1 ] ignore);
+  declared_here "bracket"
+    (T.bracket ~retries:1 ~setup:nop ~teardown:ignore "b" ignore);
+  declared_here "scoped" (T.scoped (fun fn -> fn ()) ~tags:[ "s" ] "s" ignore);
+  (* A partially applied bracket — the [with_db] idiom — captures where the
+     resulting constructor is applied, still user code. *)
+  let with_unit = T.bracket ~setup:nop ~teardown:ignore in
+  declared_here "partially applied bracket" (with_unit ~timeout:1. "b" ignore);
+  match T.focus_sites [ T.focus (T.group ~retries:1 "g" []) ] with
+  | [ Some site ] ->
+      check "a group's own fallback site is this file"
+        (Filename.basename site.Loc.file = "test_test_tree.ml")
+  | _ -> check "group fallback site shape" false
 
 (* cases *)
 
@@ -249,49 +389,44 @@ let () =
     ~actual:(List.length !seen);
   List.iter
     (fun (c : T.case) ->
-      match c.T.body with T.Body fn -> fn () | T.Bracket _ | T.Scoped _ -> ())
+      match c.T.body with T.Body fn -> fn () | T.Scoped _ -> ())
     flat;
   check "each cases body receives its own input" (List.rev !seen = [ 1; 2; 3 ])
 
 let () =
-  reg "cases forwards timeout and retries to every child" @@ fun () ->
-  (match
-     T.flatten
-       [
-         T.cases ~timeout:2.5 ~retries:3 ~name:string_of_int "t" [ 0; 1 ] ignore;
-       ]
-   with
-  | [ a; b ] ->
-      check "first child carries the declared budget"
-        (a.T.timeout = Some 2.5 && a.T.retries = 3);
-      check "second child carries the declared budget"
-        (b.T.timeout = Some 2.5 && b.T.retries = 3)
-  | _ -> check "cases budget flatten shape" false);
-  expect_invalid_arg "cases rejects a zero timeout" (fun () ->
-      T.cases ~timeout:0. ~name:string_of_int "t" [ 0 ] ignore);
-  expect_invalid_arg "cases rejects negative retries" (fun () ->
-      T.cases ~retries:(-1) ~name:string_of_int "t" [ 0 ] ignore)
-
-let () =
-  reg "cases metadata and empty input" @@ fun () ->
+  reg "cases forwards its optional arguments to every child" @@ fun () ->
   let pos = ("test/fake_cases.ml", 5, 0, 0) in
   let flat =
     T.flatten
-      [ T.cases ~pos ~tags:[ "tbl" ] ~name:string_of_int "c" [ 0; 1 ] ignore ]
+      [
+        T.cases ~__POS__:pos ~tags:[ "tbl" ] ~timeout:2.5 ~retries:3
+          ~name:string_of_int "c" [ 0; 1 ] ignore;
+      ]
   in
-  check "cases tags reach every sub-test"
-    (List.for_all (fun (c : T.case) -> Tag.mem "tbl" c.T.tags) flat);
-  check "cases sub-tests share the declaration site"
-    (List.for_all
-       (fun (c : T.case) ->
-         match c.T.loc with
-         | Some loc -> loc.Loc.file = "test/fake_cases.ml"
-         | None -> false)
-       flat);
+  check_int "two children" ~expected:2 ~actual:(List.length flat);
+  List.iter
+    (fun (c : T.case) ->
+      check "child carries the declared budget"
+        (c.T.timeout = Some 2.5 && c.T.retries = 3);
+      check "child carries the tags" (Tag.mem "tbl" c.T.tags);
+      check "child shares the declaration site"
+        (loc_file c = "test/fake_cases.ml"))
+    flat;
+  expect_invalid_arg "cases rejects a zero timeout" (fun () ->
+      T.cases ~timeout:0. ~name:string_of_int "t" [ 0 ] ignore);
+  expect_invalid_arg "cases rejects negative retries" (fun () ->
+      T.cases ~retries:(-1) ~name:string_of_int "t" [ 0 ] ignore);
   check "cases with no inputs flattens to nothing"
     (T.flatten [ T.cases ~name:string_of_int "empty" [] ignore ] = [])
 
-(* bracket *)
+(* bracket: a scope derived from setup and teardown *)
+
+(* The derived scope, applied to its body by hand — what the runner does
+   through [Runner]'s scoped path. *)
+let scope_of name tree =
+  match T.flatten [ tree ] with
+  | [ { T.body = T.Scoped { scope; body }; _ } ] -> fun () -> scope body
+  | _ -> failf "%s: expected one scoped case" name
 
 let () =
   reg "bracket phases run in order with the resource" @@ fun () ->
@@ -307,19 +442,13 @@ let () =
       (fun r -> mark (Printf.sprintf "body %d" r))
   in
   check "declaring a bracket runs nothing" (!log = []);
-  match T.flatten [ tree ] with
-  | [ { T.body = T.Bracket { setup; body; teardown }; _ } ] ->
-      let resource = setup () in
-      body resource;
-      teardown resource;
-      check "bracket phases run in order with the exact resource"
-        (List.rev !log = [ "setup"; "body 42"; "teardown 42" ])
-  | _ -> check "bracket flatten shape" false
+  scope_of "bracket" tree ();
+  check "bracket phases run in order with the exact resource"
+    (List.rev !log = [ "setup"; "body 42"; "teardown 42" ])
 
 let () =
-  reg "bracket teardown is reachable after a body failure" @@ fun () ->
-  (* The three closures are independent: a body failure cannot prevent the
-     runner from running teardown, because they were never composed. *)
+  reg "bracket runs the teardown after a body failure and re-raises"
+  @@ fun () ->
   let log = ref [] in
   let mark step = log := step :: !log in
   let tree =
@@ -333,33 +462,83 @@ let () =
         mark "body";
         raise Boom)
   in
-  match T.flatten [ tree ] with
-  | [ { T.body = T.Bracket { setup; body; teardown }; _ } ] ->
-      let resource = setup () in
-      let body_failed =
-        match body resource with () -> false | exception Boom -> true
-      in
-      teardown resource;
-      check "bracket teardown is reachable after a body failure"
-        (body_failed && List.rev !log = [ "setup"; "body"; "teardown" ])
-  | _ -> check "bracket independence shape" false
+  let body_failed =
+    match scope_of "bracket" tree () with () -> false | exception Boom -> true
+  in
+  check "the body's exception comes back out of the scope" body_failed;
+  check "the teardown ran on the failure path"
+    (List.rev !log = [ "setup"; "body"; "teardown" ])
+
+let () =
+  reg "bracket skips the teardown when setup fails" @@ fun () ->
+  let log = ref [] in
+  let mark step = log := step :: !log in
+  let tree =
+    T.bracket
+      ~setup:(fun () ->
+        mark "setup";
+        raise Boom)
+      ~teardown:(fun () -> mark "teardown")
+      "b"
+      (fun () -> mark "body")
+  in
+  let setup_failed =
+    match scope_of "bracket" tree () with () -> false | exception Boom -> true
+  in
+  check "the setup failure comes back out of the scope" setup_failed;
+  check "neither the body nor the teardown ran" (List.rev !log = [ "setup" ])
+
+let () =
+  reg "bracket skips the teardown on a fatal exception" @@ fun () ->
+  let log = ref [] in
+  let mark step = log := step :: !log in
+  let tree =
+    T.bracket
+      ~setup:(fun () -> mark "setup")
+      ~teardown:(fun () -> mark "teardown")
+      "b"
+      (fun () ->
+        mark "body";
+        raise Stack_overflow)
+  in
+  let fatal =
+    match scope_of "bracket" tree () with
+    | () -> false
+    | exception Stack_overflow -> true
+  in
+  check "the fatal exception propagates" fatal;
+  check "the teardown did not run" (List.rev !log = [ "setup"; "body" ])
+
+exception Teardown_boom
+
+let () =
+  reg "bracket lets a teardown failure replace the body's" @@ fun () ->
+  (* The runner has already recorded the body's failure inside the callback
+     by the time the teardown raises; the scope's own exception is then the
+     teardown's, which the runner attributes to the teardown phase. *)
+  let tree =
+    T.bracket ~setup:nop
+      ~teardown:(fun () -> raise Teardown_boom)
+      "b"
+      (fun () -> raise Boom)
+  in
+  check "the teardown's exception is the one that escapes"
+    (match scope_of "bracket" tree () with
+    | () -> false
+    | exception Teardown_boom -> true
+    | exception _ -> false)
 
 let () =
   reg "bracket records its metadata" @@ fun () ->
-  match
-    T.flatten
-      [
-        T.bracket ~pos:("f.ml", 1, 0, 0) ~tags:[ "db" ] ~timeout:1.5 ~retries:2
-          ~setup:nop ~teardown:ignore "b" ignore;
-      ]
-  with
-  | [ c ] ->
-      check "bracket records tags" (Tag.mem "db" c.T.tags);
-      check "bracket records timeout" (c.T.timeout = Some 1.5);
-      check_int "bracket records retries" ~expected:2 ~actual:c.T.retries;
-      check "bracket records the declaration site"
-        (match c.T.loc with Some loc -> loc.Loc.file = "f.ml" | None -> false)
-  | _ -> check "bracket metadata shape" false
+  let c =
+    only "bracket"
+      (T.bracket ~__POS__:("f.ml", 1, 0, 0) ~tags:[ "db" ] ~timeout:1.5
+         ~retries:2 ~setup:nop ~teardown:ignore "b" ignore)
+  in
+  check "bracket records tags" (Tag.mem "db" c.T.tags);
+  check "bracket records timeout" (c.T.timeout = Some 1.5);
+  check_int "bracket records retries" ~expected:2 ~actual:c.T.retries;
+  check "bracket records the declaration site" (loc_file c = "f.ml")
 
 (* scoped *)
 
@@ -377,31 +556,23 @@ let () =
       (fun r -> mark (Printf.sprintf "body %d" r))
   in
   check "declaring a scoped test runs nothing" (!log = []);
-  match T.flatten [ tree ] with
-  | [ { T.body = T.Scoped { scope; body }; _ } ] ->
-      scope body;
-      check "the scope brackets the body around the resource it supplies"
-        (List.rev !log = [ "acquire"; "body 42"; "release" ])
-  | _ -> check "scoped flatten shape" false
+  scope_of "scoped" tree ();
+  check "the scope brackets the body around the resource it supplies"
+    (List.rev !log = [ "acquire"; "body 42"; "release" ])
 
 let () =
   reg "scoped records its metadata" @@ fun () ->
-  match
-    T.flatten
-      [
-        T.scoped
-          (fun fn -> fn ())
-          ~pos:("f.ml", 1, 0, 0) ~tags:[ "eio" ] ~timeout:1.5 ~retries:2 "s"
-          ignore;
-      ]
-  with
-  | [ c ] ->
-      check "scoped records tags" (Tag.mem "eio" c.T.tags);
-      check "scoped records timeout" (c.T.timeout = Some 1.5);
-      check_int "scoped records retries" ~expected:2 ~actual:c.T.retries;
-      check "scoped records the declaration site"
-        (match c.T.loc with Some loc -> loc.Loc.file = "f.ml" | None -> false)
-  | _ -> check "scoped metadata shape" false
+  let c =
+    only "scoped"
+      (T.scoped
+         (fun fn -> fn ())
+         ~__POS__:("f.ml", 1, 0, 0) ~tags:[ "eio" ] ~timeout:1.5 ~retries:2 "s"
+         ignore)
+  in
+  check "scoped records tags" (Tag.mem "eio" c.T.tags);
+  check "scoped records timeout" (c.T.timeout = Some 1.5);
+  check_int "scoped records retries" ~expected:2 ~actual:c.T.retries;
+  check "scoped records the declaration site" (loc_file c = "f.ml")
 
 let () =
   (* [scope] precedes the optional arguments so that applying it does not
@@ -409,36 +580,25 @@ let () =
      point of the argument order. *)
   reg "a partially applied scoped keeps its optional arguments" @@ fun () ->
   let with_unit = T.scoped (fun fn -> fn ()) in
-  match T.flatten [ with_unit ~tags:[ "eio" ] ~timeout:3. "s" ignore ] with
-  | [ c ] ->
-      check "the partial application still takes ~tags" (Tag.mem "eio" c.T.tags);
-      check "the partial application still takes ~timeout"
-        (c.T.timeout = Some 3.)
-  | _ -> check "partially applied scoped flatten shape" false
+  let c =
+    only "partial"
+      (with_unit ~__POS__:("f.ml", 3, 0, 0) ~tags:[ "eio" ] ~timeout:3. "s"
+         ignore)
+  in
+  check "the partial application still takes ~tags" (Tag.mem "eio" c.T.tags);
+  check "the partial application still takes ~timeout" (c.T.timeout = Some 3.);
+  check "the partial application still takes ?__POS__" (loc_file c = "f.ml")
 
-(* xfail (amendment B12) *)
-
-let () =
-  reg "xfail defaults to None" @@ fun () ->
-  match T.flatten [ T.test "t" nop ] with
-  | [ c ] -> check "default: not expected to fail" (c.T.xfail = None)
-  | _ -> check "default xfail shape" false
+(* xfail *)
 
 let () =
   reg "xfail marks a leaf with its reason" @@ fun () ->
-  match T.flatten [ T.xfail ~reason:"issue #42" (T.test "t" nop) ] with
-  | [ c ] ->
-      check "xfail marks a leaf with its reason"
-        (c.T.xfail = Some { T.reason = Some "issue #42" })
-  | _ -> check "xfail leaf shape" false
-
-let () =
-  reg "xfail without a reason still marks" @@ fun () ->
-  match T.flatten [ T.xfail (T.test "t" nop) ] with
-  | [ c ] ->
-      check "xfail without a reason still marks"
-        (c.T.xfail = Some { T.reason = None })
-  | _ -> check "xfail reasonless shape" false
+  let c = only "xfail" (T.xfail ~reason:"issue #42" (T.test "t" nop)) in
+  check "xfail marks a leaf with its reason"
+    (c.T.xfail = Some { T.reason = Some "issue #42" });
+  let c = only "xfail" (T.xfail (T.test "t" nop)) in
+  check "xfail without a reason still marks"
+    (c.T.xfail = Some { T.reason = None })
 
 let () =
   reg "xfail on a group reaches every descendant" @@ fun () ->
@@ -477,27 +637,22 @@ let () =
   | _ -> check "nested xfail shape" false
 
 let () =
-  reg "xfail composes with node attributes" @@ fun () ->
-  (* xfail composes with the other node attributes instead of clobbering
-     them. *)
-  match
-    T.flatten
-      [
-        T.xfail ~reason:"r"
-          (T.test ~tags:[ "db" ] ~timeout:1.5 ~retries:2 "t" nop);
-      ]
-  with
-  | [ c ] ->
-      check "xfail keeps tags" (Tag.mem "db" c.T.tags);
-      check "xfail keeps timeout and retries"
-        (c.T.timeout = Some 1.5 && c.T.retries = 2)
-  | _ -> check "xfail attribute shape" false
-
-let () =
-  reg "xfail preserves focus flags" @@ fun () ->
-  check "xfail preserves focus flags"
-    (T.focus_sites [ T.xfail (T.ftest "t" nop) ] <> []
-    && T.focus_sites [ T.xfail (T.fgroup "g" []) ] <> [])
+  reg "xfail keeps the node's arguments and composes with focus" @@ fun () ->
+  let c =
+    only "xfail over arguments"
+      (T.xfail ~reason:"r"
+         (T.test ~tags:[ "db" ] ~timeout:1.5 ~retries:2 "t" nop))
+  in
+  check "xfail keeps tags" (Tag.mem "db" c.T.tags);
+  check "xfail keeps timeout and retries"
+    (c.T.timeout = Some 1.5 && c.T.retries = 2);
+  let a = only "xfail then focus" (T.xfail (T.focus (T.test "t" nop))) in
+  let b = only "focus then xfail" (T.focus (T.xfail (T.test "t" nop))) in
+  check "focus and xfail compose in either order"
+    (a.T.focused && b.T.focused && a.T.xfail = b.T.xfail
+    && a.T.xfail = Some { T.reason = None });
+  check "xfail preserves focus sites"
+    (T.focus_sites [ T.xfail (T.focus (T.group "g" [])) ] <> [])
 
 (* Suite *)
 

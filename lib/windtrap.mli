@@ -5,10 +5,10 @@
 
 (** One library for all your OCaml tests.
 
-    Windtrap runs unit, property, stateful, snapshot and inline expect tests
-    from one flat surface: declare tests with {!test} and {!group}, assert with
-    the assertion verbs ({!equal}, {!require_some}, {!raises}, ...), and hand
-    the suite to {!run}:
+    Windtrap runs unit, property, stateful and expect tests, inline or not, from
+    one flat surface: declare tests with {!test} and {!group}, assert with the
+    assertion verbs ({!equal}, {!require_some}, {!raises}, ...), and hand the
+    suite to {!run}:
 
     {[
     open Windtrap
@@ -36,16 +36,16 @@
     Property tests use {!prop} over an ['a] {!Gen.t} generator; shrinking is
     integrated and every failure prints a replay command. {!stateful} takes that
     to sequences of calls: it checks {!command}s against a model and shrinks a
-    failure to a minimal program. Snapshot tests ({!snapshot}) compare against
-    committed baselines under [__snapshots__/] and print their acceptance
-    command on mismatch. Structure and resources: {!cases} declares one named
-    test per input, {!bracket} scopes a resource the setup returns, {!scoped}
-    one a callback receives and {!fixture} one shared by the run; {!temp_dir}
-    and {!temp_file} give runner-cleaned scratch paths, {!setenv} and {!chdir}
-    bind the environment and the working directory for one test with the runner
-    restoring both; {!output} reads back the test's captured output; {!subtest}
-    names sub-cases inside a body and {!val:xfail} keeps known-bug reproductions
-    in-tree without a red run.
+    failure to a minimal program. Baselines ({!expect}, {!expect_file}) compare
+    produced text with a literal in the source or a committed file and print
+    their acceptance command on mismatch. Structure and resources: {!cases}
+    declares one named test per input, {!bracket} scopes a resource the setup
+    returns, {!scoped} one a callback receives and {!fixture} one shared by the
+    run; {!temp_dir} and {!temp_file} give runner-cleaned scratch paths,
+    {!setenv} and {!chdir} bind the environment and the working directory for
+    one test with the runner restoring both; {!output} reads back the test's
+    captured output; {!subtest} names sub-cases inside a body and {!val:xfail}
+    keeps known-bug reproductions in-tree without a red run.
 
     The companion [ppx_windtrap] package adds inline expect tests
     ([let%expect_test] and its expect blocks), accepted through [dune promote],
@@ -67,24 +67,19 @@ type test = Test_tree.t
 
 type pos = string * int * int * int
 (** The type of [__POS__] payloads: file, line, start column, end column. Every
-    [?pos] below overrides the best-effort call-stack location. Without [?pos],
-    a failure names the failing call's own line when that call's frame is still
-    on the stack; when it is not — a call in tail position leaves no frame — the
-    failure is attributed to the enclosing test's declaration instead, and when
-    even that is unknown, reports omit the location rather than guess.
-
-    That attribution is the symptom to reach for [?pos] on: a report pointing at
-    a test's declaration line rather than the assertion inside it means the
-    assertion was the body's last expression, and [~pos:__POS__] at the call
-    puts the location back. The report says so when it happens — one line under
-    such a location,
-    [(assertion in tail position: its line is unknown; ~pos:__POS__ names it)] —
-    so the symptom never has to be recognized from the line alone. *)
+    [?__POS__] below overrides the automatic call-stack location, which needs
+    the program compiled with debug information ([-g], dune's default); the
+    explicit form — [~__POS__], punning with the builtin — is for a helper that
+    wraps a verb or a constructor, and for an assertion in tail position, whose
+    frame is gone when it raises and which the report otherwise attributes to
+    the enclosing test's declaration, saying so in one line under the location
+    ([(assertion in tail position: its line is unknown; ~__POS__ names it)]).
+    When no location is known at all, reports omit it rather than guess. *)
 
 type 'a printer = Format.formatter -> 'a -> unit
 (** The type for value printers: the one printer type used by testables,
-    generators ({!Gen.with_pp}), {!snapshot_pp}, and the [?pp] arguments of the
-    shape assertions. *)
+    generators ({!Gen.with_pp}), and the [?pp] arguments of the shape
+    assertions. *)
 
 module Testable = Testable
 (** Witness constructors: {!Testable.make}, {!Testable.structural}. See
@@ -101,29 +96,39 @@ type 'a testable = 'a Testable.t
 (** {1:declaring Declaring tests}
 
     Declaring is pure data construction: bodies run only when {!run} executes
-    the tree, inside a per-test exception boundary. Constructor arguments common
-    to several constructors:
+    the tree, inside a per-test exception boundary. Five constructors build the
+    tree — {!test}, {!group}, {!cases}, {!bracket} and {!scoped} — plus {!slow},
+    which is {!test} with the ["slow"] tag; {!focus} and {!val:xfail} wrap a
+    test or a group. Every constructor takes:
 
-    - [pos] records the declaration site (defaults to a best-effort call-stack
-      capture); it also scopes {!snapshot} baselines declared in the test.
-    - [tags] name extra tags, unioned with enclosing groups' tags; select with
-      [--tag]/[--exclude-tag].
-    - [timeout] is the per-test limit in seconds, covering setup, body, and
+    - [__POS__], the declaration site (defaults to a best-effort call-stack
+      capture; see {!type:pos});
+    - [tags], extra tag names, unioned with the enclosing groups' tags; select
+      with [--tag]/[--exclude-tag];
+    - [timeout], the per-test limit in seconds, covering setup, body and
       teardown (defaults to the runner's [--timeout]). Setup and body share the
       window; teardown is then given whatever is left of it, or a fresh window
       if they consumed it — releasing a resource is not optional, so a body that
       times out still gets bounded cleanup rather than none. A {!scoped} test
       spends the window on the whole scope call, re-armed on the same terms when
-      the body leaves the callback.
-    - [retries] is the number of extra attempts given to a failing test
-      (defaults to [0]).
+      the body leaves the callback; a {!prop} spends it on generation and
+      shrinking together;
+    - [retries], the number of extra attempts a test gets while it counts as
+      failed (defaults to [0]), each a fresh setup, body and teardown with a
+      fresh capture; the run records how many attempts a test took.
+
+    A group's [tags] extend every descendant's; its [timeout] and [retries] are
+    defaults for every test under it, and the innermost declaration wins — a
+    test's own value beats its group's, an inner group's its outer group's.
+    Constructors raise [Invalid_argument] if [retries < 0] or if [timeout] is
+    not finite and positive.
 
     A test is named by its {e path} — enclosing group names, then its own —
     rendered with [" › "] between components; filters match that string and
     duplicate full paths are a startup error. *)
 
 val test :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
@@ -133,42 +138,35 @@ val test :
 (** [test name fn] declares the test [name] with body [fn]. The body passes by
     returning and fails by raising — assertion verbs, or any exception. *)
 
-val group : ?pos:pos -> ?tags:string list -> string -> test list -> test
-(** [group name children] declares a group. Groups nest freely; [name] becomes a
-    path component and [tags] extend every descendant's tags. Groups have no
-    hooks: scope resources with {!bracket}, {!scoped} or {!fixture} instead, so
-    no user code ever runs outside a test's exception boundary. *)
-
-val ftest :
-  ?pos:pos ->
+val group :
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   string ->
-  (unit -> unit) ->
+  test list ->
   test
-(** [ftest] is {!test} with the focus flag set: when any focused test or group
-    exists, only focused tests run. Focus is a debugging tool — when [CI] is set
-    a run containing focused tests refuses to start, and outside CI a successful
-    focused run prints a warning. *)
-
-val fgroup : ?pos:pos -> ?tags:string list -> string -> test list -> test
-(** [fgroup] is {!group} with the focus flag set: every test under it is focused
-    (see {!ftest}). *)
+(** [group name children] declares a group. Groups nest freely; [name] becomes a
+    path component, [tags] extend every descendant's tags, and [timeout] and
+    [retries] are defaults for every test under it —
+    [group ~timeout:30. "integration" [ ... ]] caps each test in the group that
+    declares no limit of its own. Groups have no hooks: scope resources with
+    {!bracket}, {!scoped} or {!fixture} instead, so no user code ever runs
+    outside a test's exception boundary. *)
 
 val slow :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
   string ->
   (unit -> unit) ->
   test
-(** [slow] is {!test} with the ["slow"] tag pre-applied; [--exclude-tag slow]
-    drops slow-tagged tests. *)
+(** [slow] is {!test} with the ["slow"] tag pre-applied: the tag exempts the
+    test from the slow-test warning, and [--exclude-tag slow] drops it. *)
 
 val cases :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
@@ -179,10 +177,12 @@ val cases :
   test
 (** [cases ~name base inputs fn] declares one test per input: a group named
     [base] whose children, in declaration order, run [fn input] under the name
-    [name input], applied at declaration time. Each sub-test is individually
-    selectable ([-f "ports parse › 8080"]) and one bad input does not mask the
-    rest. [timeout] and [retries] apply to each child — per input, not per
-    table.
+    [name input] — that is
+    [group base (List.map (fun i -> test (name i) (fun () -> fn i)) inputs)],
+    every child recording the [cases] call's declaration site. Each sub-test is
+    individually selectable ([-f "ports parse › 8080"]) and one bad input does
+    not mask the rest; [tags], [timeout] and [retries] sit on the group and
+    reach every child — per input, not per table.
 
     {[
     cases "ports parse" ~name:Fun.id [ "1"; "80"; "8080"; "65535" ]
@@ -192,29 +192,13 @@ val cases :
     [~name] is required, and a positional [<base>.<i>] default is exactly what
     it is there to prevent: a child's path is its identity — it keys the child's
     per-case property seeds and its entry in the [--failed] store — so inserting
-    a row at the front would silently re-key every row after it.
-
-    The [inputs] list is evaluated at {e declaration} time, outside any test:
-    rows are data, not test code. A row that needs test-scoped work —
-    {!temp_dir}, {!setenv}, an assertion, IO against the system under test —
-    cannot be a row; keep the list pure and do per-input work inside [fn]. A
-    table whose rows must be computed inside a test does not convert to [cases]:
-    use {!subtest} within one body instead. *)
-
-val xfail : ?reason:string -> test -> test
-(** [xfail t] marks [t] — and, through a group, every test under it — as
-    {e expected to fail}. Marked tests still run, but what counts as failed
-    inverts: a failing outcome reports as an expected failure ([XFAIL]) without
-    failing the run, while a passing outcome fails loudly
-    (["expected to fail, but the test passed"]). Skips are unaffected. [reason]
-    names the known defect for reports (e.g. ["issue #42"]); nested annotations
-    compose innermost-wins.
-
-    Use [xfail] to keep a known-bug reproduction in-tree without a red run; use
-    {!skip} when the body must not run at all. *)
+    a row at the front would silently re-key every row after it. The [inputs]
+    list is evaluated at declaration time, outside any test: rows are data, so a
+    row that needs test-scoped work ({!temp_dir}, {!setenv}, an assertion) is a
+    {!subtest} inside one body instead. *)
 
 val bracket :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
@@ -225,9 +209,14 @@ val bracket :
   test
 (** [bracket ~setup ~teardown name fn] declares a test scoping a resource: the
     runner calls [setup ()], passes the resource to [fn], and calls [teardown]
-    on it iff [setup] succeeded — on every outcome, including skip and timeout.
-    A body failure and a teardown failure are reported independently; neither
-    masks the other. Partial application builds reusable constructors:
+    on it iff [setup] succeeded — on every outcome, including skip and timeout,
+    except a fatal exception ([Sys.Break], [Out_of_memory], [Stack_overflow]),
+    which skips the teardown and ends the run. It is {!scoped} over the scope
+    that runs the three in that order, so its failures are attributed by
+    {!scoped}'s phase rule: what [setup] raises is a [[setup]] failure, and a
+    teardown failure is a [[teardown]] failure reported beside the body's — two
+    entries, neither masking the other. Partial application builds reusable
+    constructors:
 
     {[
     let with_db = bracket ~setup:Db.connect ~teardown:Db.close
@@ -236,7 +225,7 @@ val bracket :
 
 val scoped :
   (('r -> unit) -> unit) ->
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?retries:int ->
@@ -245,11 +234,11 @@ val scoped :
   test
 (** [scoped scope name fn] declares a test whose resource is scoped by [scope]:
     a function that acquires a resource, hands it to a callback, and reclaims it
-    when that callback returns. It is the shape most OCaml resources come in —
-    [Eio_main.run], [Eio.Switch.run], [In_channel.with_open_text path],
-    [Mutex.protect m] — and the one {!bracket} cannot express, because between
-    the acquire and the release there is no moment at which a resource can be
-    {e returned}.
+    when that callback returns — the shape most OCaml resources come in
+    ([Eio_main.run], [Eio.Switch.run], [In_channel.with_open_text path],
+    [Mutex.protect m]). The runner calls [scope] exactly once, with a callback
+    that runs [fn]; {!bracket} is this with the scope written from a setup and a
+    teardown, so write a scope by hand when the resource is callback-shaped.
 
     {[
     let with_eio = scoped Eio_main.run
@@ -262,43 +251,46 @@ val scoped :
       ]
     ]}
 
-    [scope] is positional and comes {e before} the optional arguments, so that a
-    partially applied constructor keeps them: [with_eio ~timeout:30. "slow" fn]
-    is well typed, because applying a positional argument erases only the
-    optionals declared before it.
+    [scope] precedes the optional arguments so that a partially applied
+    constructor keeps them: [with_eio ~timeout:30. "slow" fn] is well typed,
+    because applying a positional argument erases only the optionals declared
+    before it. The protocol: a failure raised by [fn] — an assertion, a {!skip},
+    a timeout — is recorded and then re-raised through [scope], so a scope that
+    cleans up on the exception path does so and one that swallows it cannot turn
+    the test green; the callback must be called exactly once — a scope that
+    returns without calling it fails the test, one that calls it twice runs the
+    body on the first call only and fails the test; a scope that raises or skips
+    instead of calling back reports as that failure or skip; and what [scope]
+    raises {e before} the callback is a [[setup]] failure, {e after} the
+    callback returned a [[teardown]] failure, reported beside the body's. A
+    [timeout] covers the whole [scope] call and is re-armed as the body leaves
+    the callback, so a release that blocks after a body timeout is cut short
+    rather than left to hang the run. *)
 
-    The runner calls [scope] exactly once, and that call is all it does — which
-    makes the contract differ from {!bracket}'s on four points:
+(** {2:annotations Annotations}
 
-    - {b Cleanup is [scope]'s, not windtrap's.} {!bracket} guarantees [teardown]
-      on every outcome; here windtrap guarantees nothing, because it never sees
-      the resource. A failure raised by [fn] — an assertion, a {!skip}, a
-      timeout — is recorded and then re-raised through [scope], so a scope that
-      cancels or cleans up on the exception path does so. Whether it does is
-      [scope]'s contract: [Eio_main.run] and anything built on [Fun.protect]
-      release on both paths, while [let r = acquire () in fn r; release r] leaks
-      whenever the body fails.
-    - {b The callback must be called exactly once.} A [scope] that returns
-      without calling it fails the test — a body that never ran is not a pass,
-      and silently green would be the worst outcome available here. A [scope]
-      that calls it twice runs the body on the first call only and fails the
-      test: one execution per test is what {!snapshot} registration, {!subtest}
-      labels and {!temp_dir} paths are keyed by. To repeat a body, use {!cases}
-      or [~retries].
-    - {b A [scope] that raises or skips instead of calling back} reports as that
-      failure or that skip, not as a missing body — the pattern for a suite
-      gated on a resource the machine does not have.
-    - {b Failures are attributed by how far the callback got.} What [fn] raises
-      is the body's own failure. What [scope] raises {e before} the callback is
-      a [[setup]] failure and what it raises {e after} the callback returned is
-      a [[teardown]] failure, so a scope that cannot acquire reads differently
-      from one that cannot release. A release failure that replaces the body's
-      exception is reported alongside it — two entries, as under {!bracket}.
+    The two annotations wrap a declared test — its declaration site stays the
+    one its constructor captured — and, on a group, reach every test under it:
+    [focus (test "the broken one" (fun () -> ...))],
+    [xfail ~reason:"issue #42" (group "parser" [ ... ])]. *)
 
-    [timeout] covers the whole [scope] call, acquisition and release included;
-    the runner re-arms the window when the body leaves the callback, so a
-    release that blocks after a body timeout is cut short rather than left to
-    hang the run. *)
+val focus : test -> test
+(** [focus t] focuses [t] — and, through a group, every test under it: when any
+    focused test exists, only focused tests run. Focus is a debugging tool —
+    when [CI] is set a run containing focused tests refuses to start, and
+    outside CI a successful focused run prints a warning. *)
+
+val xfail : ?reason:string -> test -> test
+(** [xfail t] marks [t] — and, through a group, every test under it — as
+    {e expected to fail}. Marked tests still run, but what counts as failed
+    inverts: a failing outcome reports as an expected failure ([XFAIL]) without
+    failing the run, while a passing outcome fails loudly
+    (["expected to fail, but the test passed"]). Skips are unaffected. [reason]
+    names the known defect for reports (e.g. ["issue #42"]); nested annotations
+    resolve innermost-wins.
+
+    Use [xfail] to keep a known-bug reproduction in-tree without a red run; use
+    {!skip} when the body must not run at all. *)
 
 val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 (** [fixture ?teardown create] is an accessor for a run-scoped shared resource.
@@ -329,21 +321,21 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
     The assertion verbs and the {!Exn} predicates. Each verb raises one
     structured failure that the runner catches at the test boundary; the failure
-    records the call site ([?pos], else a best-effort call-stack capture) and
-    the optional [?msg] annotation. Expected precedes actual, always. An
+    records the call site ([?__POS__], else a best-effort call-stack capture)
+    and the optional [?msg] annotation. Expected precedes actual, always. An
     assertion failing outside any run surfaces as an ordinary uncaught exception
     rendered with the failure's one-line summary. *)
 
-val equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
+val equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [equal t expected actual] asserts that [expected] and [actual] are equal
     under [t]. The failure renders both values with [t]'s printer and the report
     shows their diff — for every type, not just strings. *)
 
-val not_equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
+val not_equal : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [not_equal t a b] asserts that [a] and [b] are {e not} equal under [t]. The
     failure prints the value once ([both sides equal: <v>]). *)
 
-val less : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+val less : ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
 (** [less t ~than v] asserts that [v] is strictly below [than] under [t]'s
     order. The failure prints the bound and the value, both with [t]'s printer,
     where an [is_true (v < bound)] could only report [true] against [false]:
@@ -366,30 +358,33 @@ val less : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
     every float, as in [Float.compare]; assert a NaN result with
     [equal float_exact]. *)
 
-val at_most : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+val at_most :
+  ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
 (** [at_most t ~than v] asserts that [v] is below or the same as [than] under
     [t]'s order; the failure reads [expected  at most <than>]. See {!less} for
     the order. *)
 
-val greater : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+val greater :
+  ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
 (** [greater t ~than v] asserts that [v] is strictly above [than] under [t]'s
     order; the failure reads [expected  greater than <than>]. See {!less} for
     the order. *)
 
-val at_least : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+val at_least :
+  ?__POS__:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
 (** [at_least t ~than v] asserts that [v] is above or the same as [than] under
     [t]'s order; the failure reads [expected  at least <than>]. See {!less} for
     the order. A range is two assertions, each naming the bound it breaks:
     [greater t ~than:lo v; less t ~than:hi v]. *)
 
-val is_true : ?pos:pos -> ?msg:string -> bool -> unit
+val is_true : ?__POS__:pos -> ?msg:string -> bool -> unit
 (** [is_true b] asserts [b]. *)
 
-val is_false : ?pos:pos -> ?msg:string -> bool -> unit
+val is_false : ?__POS__:pos -> ?msg:string -> bool -> unit
 (** [is_false b] asserts [not b]. *)
 
 val satisfies :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?msg:string ->
   ?claim:string ->
   'a testable ->
@@ -412,22 +407,22 @@ val satisfies :
     {!greater} or {!at_least}, whose claim is derived from the bound and cannot
     drift. [pred] must be total; the printer runs only on failure. *)
 
-val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+val starts_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
 (** [starts_with ~affix s] asserts that [s] begins with [affix]. The failure
     prints the affix and a bounded excerpt of [s], and when [affix] occurs
     elsewhere in [s] it says where — "not there at all" and "there, but not at
     the start" are different bugs. *)
 
-val ends_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
+val ends_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
 (** [ends_with ~affix s] asserts that [s] ends with [affix]. *)
 
-val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
+val mem : ?__POS__:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
 (** [mem t x xs] asserts that [xs] has an element equal to [x] under [t]. The
     failure prints the element it wanted and the whole list — the data an
     [is_true (List.mem x xs)] would have thrown away. For a byte substring of a
     string, use {!contains}. *)
 
-val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
+val is_none : ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
 (** [is_none o] asserts that [o] is [None]. On [Some v] the failure renders [v]
     with [pp] when given and as [<abstract>] otherwise.
 
@@ -435,34 +430,35 @@ val is_none : ?pos:pos -> ?msg:string -> ?pp:'a printer -> 'a option -> unit
     compares the value, and demanding a witness for a type it does not inspect
     is what turns call sites into [equal (option pass) None x]. *)
 
-val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
+val is_some : ?__POS__:pos -> ?msg:string -> 'a option -> unit
 (** [is_some o] asserts that [o] is [Some _] — {!require_some} for callers that
     want the assertion and not the value. No [?pp]: the failing side is [None].
 *)
 
-val is_ok : ?pos:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> unit
+val is_ok :
+  ?__POS__:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> unit
 (** [is_ok r] asserts that [r] is [Ok _] — {!require_ok} for callers that want
     the assertion and not the value. On [Error e] the failure renders [e] with
     [pp] when given and as [<abstract>] otherwise. *)
 
 val is_error :
-  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> unit
+  ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> unit
 (** [is_error r] asserts that [r] is [Error _] — {!require_error} for callers
     that want the assertion and not the value. On [Ok v] the failure renders [v]
     with [pp] when given and as [<abstract>] otherwise. *)
 
-val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
+val contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] asserts that [s] contains [sub] as a byte substring (the
     empty needle is contained in every string). The failure prints the needle
     and a bounded excerpt of [s], never a bare [false]. *)
 
-val not_contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
+val not_contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
 (** [not_contains ~sub s] asserts that [s] does {e not} contain [sub] as a byte
     substring — so it always fails when [sub] is empty. The failure prints the
     needle, the byte offset of its first occurrence, and a bounded excerpt of
     [s] around it. *)
 
-val in_order : ?pos:pos -> ?msg:string -> subs:string list -> string -> unit
+val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
 (** [in_order ~subs s] asserts that each element of [subs] occurs in [s], each
     match beginning at or after the end of the previous element's match — the
     assertion for a log or a transcript, where the order is the claim and a
@@ -483,7 +479,7 @@ val in_order : ?pos:pos -> ?msg:string -> subs:string list -> string -> unit
     element matches without advancing. [subs] must be non-empty; an empty chain
     raises [Invalid_argument]. *)
 
-val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
+val require_some : ?__POS__:pos -> ?msg:string -> 'a option -> 'a
 (** [require_some o] asserts that [o] is [Some v] {e and unwraps}: the happy
     path keeps its value.
 
@@ -493,18 +489,18 @@ val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
     ]} *)
 
 val require_ok :
-  ?pos:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> 'a
+  ?__POS__:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> 'a
 (** [require_ok r] asserts that [r] is [Ok v] and returns [v]. On [Error e] the
     failure renders [e] with [pp] when given and as [<abstract>] otherwise. *)
 
 val require_error :
-  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> 'e
+  ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> 'e
 (** [require_error r] asserts that [r] is [Error e] and returns [e]. On [Ok v]
     the failure renders [v] with [pp] when given and as [<abstract>] otherwise.
 *)
 
 val require_match :
-  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b
+  ?__POS__:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b
 (** [require_match extract v] asserts that [extract v] is [Some b] and returns
     [b] — {!require_some} for values that are not already options:
 
@@ -517,7 +513,7 @@ val require_match :
     [extract] propagates unchanged — it is the test's failure, not a match
     failure. *)
 
-val raises : ?pos:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
+val raises : ?__POS__:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
 (** [raises e f] asserts that [f ()] raises an exception structurally equal to
     [e]. The failure distinguishes "nothing raised" from "raised a different
     exception", carries the raised exception's backtrace when the runtime
@@ -528,7 +524,7 @@ val raises : ?pos:pos -> ?msg:string -> exn -> (unit -> 'a) -> unit
     {!raises_match}. *)
 
 val raises_match :
-  ?pos:pos -> ?msg:string -> (exn -> bool) -> (unit -> 'a) -> unit
+  ?__POS__:pos -> ?msg:string -> (exn -> bool) -> (unit -> 'a) -> unit
 (** [raises_match pred f] asserts that [f ()] raises an exception satisfying
     [pred]; the failure prints the actually raised exception. [pred] must be
     total. {!Exn} provides the common predicates. *)
@@ -557,11 +553,11 @@ module Exn : sig
       [substring], if given. *)
 end
 
-val fail : ?pos:pos -> string -> 'a
+val fail : ?__POS__:pos -> string -> 'a
 (** [fail msg] fails the current test with [msg]. It never returns — use it for
     branches the test must not reach. *)
 
-val failf : ?pos:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
+val failf : ?__POS__:pos -> ('a, Format.formatter, unit, 'b) format4 -> 'a
 (** [failf fmt ...] is {!fail} with a [Format] message. *)
 
 val skip : ?reason:string -> unit -> 'a
@@ -692,7 +688,7 @@ module Gen = Gen
     generator's distribution, shrink order, and printing. *)
 
 val prop :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
@@ -736,7 +732,7 @@ type ('model, 'sut) command
     with {!command} or {!val-call}. *)
 
 val command :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?pre:('model -> 'arg -> bool) ->
   string ->
   'arg Gen.t ->
@@ -760,7 +756,7 @@ val command :
 
     [next] is required; read-only operations say so with [~next:Fun.const].
 
-    [pos] is the command's declaration site, and it is what a failing step
+    [__POS__] is the command's declaration site, and it is what a failing step
     points at: a body is idiomatically one assertion in tail position, which
     leaves no frame to capture, so without it the step would report no location
     at all.
@@ -772,7 +768,7 @@ val command :
     and step it raised at. *)
 
 val call :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?pre:('model -> bool) ->
   string ->
   next:('model -> 'model) ->
@@ -782,7 +778,7 @@ val call :
     operations, in most APIs. [call "pop" ~pre ~next:List.tl body]. *)
 
 val stateful :
-  ?pos:pos ->
+  ?__POS__:pos ->
   ?tags:string list ->
   ?timeout:float ->
   ?count:int ->
@@ -867,55 +863,62 @@ val cover : string -> bool -> unit
 
     Raises [Invalid_argument] when no property body is running. *)
 
-(** {1:snapshots Snapshots}
+(** {1:baselines Baselines}
 
-    A snapshot compares a produced string against a committed baseline at
-    [<src_dir>/__snapshots__/<src_basename>/<name>.snap]. Checking is read-only:
-    a missing baseline or a mismatch fails with the proposed content or a diff,
-    plus the acceptance command for the way the run was invoked — [-u] on the
-    executable ([dune exec <exe> -- -u] under dune), or
-    [WINDTRAP_UPDATE=1 dune runtest] for inline suites — then review with
-    [git diff]. A green run always means "matched a committed baseline".
+    A baseline is a reviewed expectation the source names: the literal at an
+    {!expect} or {!expect_exact} call, or the file an {!expect_file} call names,
+    relative to the project root. Checking is read-only: a mismatch or a missing
+    file fails with a diff (or the proposed content) and the acceptance command
+    for the way the run was invoked. Under dune a [(test)] stanza runs the
+    executable with [--corrected], which writes each correction as
+    [<file>.corrected] beside dune's copy of the file, and diffs the two, so
+    [dune promote] accepts:
 
-    A baseline whose test was deleted or renamed is {e stale}. Only a full,
-    clean run can say so — the whole declared suite executed, nothing filtered,
-    focused, bailed, skipped or failed — because only such a run knows every
-    name the suite claims; after one, stale baselines are listed
-    ([stale baseline: <path>]) with the [rm] that removes them. The report is
-    advisory and has no flag: it never deletes and never fails the run, because
-    a baseline is a committed file and removing one is an edit to make and
-    review like any other. After any other run it says nothing, because a
-    filtered run cannot tell a stale baseline from one it did not select.
+    {[
+      (test
+       (name test_mylib)
+       (libraries windtrap mylib)
+       (deps help.expected)
+       (action
+        (progn
+         (run %{test} --corrected)
+         (diff? test_mylib.ml test_mylib.ml.corrected)
+         (diff? help.expected help.expected.corrected))))
+    ]}
 
-    Baselines are invisible to dune's dependency tracking; add
-    [(deps (glob_files_rec __snapshots__/** ))] to the test stanza so editing a
-    baseline re-triggers [dune runtest]. *)
+    Without dune, [-u] rewrites the literals and files in place, atomically, for
+    review with [git diff]; it is refused under [CI]. A correction is written
+    only for a test whose every failure is a baseline mismatch: an assertion
+    failure or a raise beside one withholds it until it is fixed, and a test
+    marked {!xfail} never records one, its mismatch being the failure it
+    expects. The [expect] family takes the produced text first and the literal
+    last, so a [{|…|}] block reads as a block; {!equal} and the assertion verbs
+    stay expected-first. *)
 
-val snapshot : ?pos:pos -> string -> string -> unit
-(** [snapshot name actual] compares [actual] against the baseline [name]. [name]
-    is the baseline's identity: it must match [[A-Za-z0-9._-]+] and be unique,
-    case-insensitively, among the snapshots of one source file ({!snapshot} and
-    {!snapshot_pp} share the namespace). A duplicate — the same name checked
-    again from a different call site, or by a different test when a site is
-    unknown — fails at the second check with both locations shown; repeating one
-    call site (a loop, a retry, a [cases] family) is a recheck against the same
-    baseline, not a duplicate.
+val expect : string -> pos * string -> unit
+(** [expect actual @@ __POS_OF__ {|…|}] compares [actual] with the literal
+    whitespace-flexibly: lines trimmed, blank leading and trailing lines
+    dropped, the block dedented. A mismatch fails with the diff and is corrected
+    by rewriting the literal, re-indented to its line. The literal's position is
+    what the compiler recorded for the call, so a moved call cannot orphan its
+    baseline; a call shared by several tests (a [cases] family) must produce one
+    text, or fail. *)
 
-    The scoping source file is the file of [?pos] when given, else the file the
-    enclosing test was declared in — never the caller's frame, so a snapshot
-    reached through a helper in another file does not relocate its baseline.
+val expect_exact : string -> pos * string -> unit
+(** [expect_exact actual @@ __POS_OF__ {|…|}] is {!expect} comparing byte for
+    byte. *)
 
-    Snapshots are line-oriented text: CR/CRLF are normalized to LF and a
-    trailing newline is forced on both sides. Content where CR bytes or the
-    missing final newline are significant must be encoded first (e.g.
-    [String.escaped]); redaction is ordinary code applied before the call
-    ([snapshot "log" (mask_timestamps out)]).
-
-    Raises [Invalid_argument] if [name] is empty or contains a character outside
-    [[A-Za-z0-9._-]]. *)
-
-val snapshot_pp : ?pos:pos -> string -> 'a printer -> 'a -> unit
-(** [snapshot_pp name pp v] is {!snapshot}[ name] of [v] rendered by [pp]. *)
+val expect_file : string -> string -> unit
+(** [expect_file actual path] compares [actual] with the file at [path],
+    relative to the project root, as line-oriented text: CR and CRLF read as LF
+    and a final newline is forced on both sides. A missing file is a mismatch
+    whose correction is the file. Under dune, a [(diff? path path.corrected)]
+    step in the stanza makes the file an input of the action — the run reads
+    dune's copy of it — and promotes the correction onto it; promotion fills a
+    file but never creates one, so a new file starts empty ([touch]) or is
+    accepted once with [-u]. Content where CR bytes or the missing final newline
+    are significant must be encoded first (e.g. [String.escaped]); redaction is
+    ordinary code applied before the call. *)
 
 (** {1:capture Captured output} *)
 
@@ -924,7 +927,7 @@ val output : unit -> string
     to standard output and standard error (C stubs and subprocesses included)
     since the test started or since the previous [output ()] call. Use it to
     assert on printed output — [equal string "hello\n" (output ())] — or feed it
-    to {!snapshot}.
+    to {!expect}.
 
     Under [--stream] there is no captured output; the call fails the test with
     "this test requires capture; rerun without --stream" instead of comparing
@@ -978,7 +981,7 @@ val setenv : string -> string option -> unit
 (** [setenv name (Some value)] binds the environment variable [name] to [value]
     for the rest of the test; [setenv name None] unbinds it. The runner puts
     [name] back the way it found it when the test ends, on every outcome —
-    failure, skip, and timeout included, and per attempt under [~retries].
+    failure, skip, and timeout included, and per attempt under [?retries].
 
     {[
     test "reads the token from the environment" (fun () ->
@@ -1040,14 +1043,16 @@ val run : ?argv:string array -> string -> test list -> int
     [Invalid_argument] inside an active run: a test body cannot start another
     run.
 
-    Duplicate test paths, focused tests under [CI] and a snapshot update under
-    [CI] refuse the run before anything executes. [--shard K/N] partitions the
-    selected tests into [N] buckets by a frozen hash of each test's path, so the
-    buckets cover every test exactly once, stable across machines and suite
-    composition. Code under test that calls [exit] does not end the run: the
-    call is intercepted and recorded as that test's failure. A green run prints
-    one line, a noteworthy one its header, glyph row and failure blocks, [-v]
-    one line per test; see [doc/manual/running-tests.md]. *)
+    Duplicate test paths, focused tests under [CI] and [-u] under [CI] refuse
+    the run before anything executes. Under [--corrected] a test whose failures
+    are all recorded corrections leaves the exit code alone: the [diff?] that
+    follows is the verdict. [--shard K/N] partitions the selected tests into [N]
+    buckets by a frozen hash of each test's path, so the buckets cover every
+    test exactly once, stable across machines and suite composition. Code under
+    test that calls [exit] does not end the run: the call is intercepted and
+    recorded as that test's failure. A green run prints one line, a noteworthy
+    one its header, glyph row and failure blocks, [-v] one line per test; see
+    [doc/manual/running-tests.md]. *)
 
 (** {1:private Private} *)
 
@@ -1059,6 +1064,7 @@ val run : ?argv:string array -> string -> test list -> int
     here escapes into scope on [open Windtrap]. *)
 module Private : sig
   module Atomic_file = Atomic_file
+  module Baseline = Baseline
   module Capture = Capture
   module Check = Check
   module Cli = Cli
@@ -1083,7 +1089,7 @@ module Private : sig
   module Runner = Runner
   module Seed = Seed
   module Shrink_tree = Shrink_tree
-  module Snapshot = Snapshot
+  module Source_patch = Source_patch
   module Stateful = Stateful
   module Tag = Tag
   module Test_tree = Test_tree

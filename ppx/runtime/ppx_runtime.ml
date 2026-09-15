@@ -27,26 +27,18 @@
    census of the one out-of-core client's reach (Law 12). Drive-side:
    Cli (settings resolution over empty), Driver (the spine and
    execute_and_report), Runner (outcome readers, startup
-   exit codes), Run (result rows, the run's snapshot registry, the
-   ambient slot the body-side one-liners below read), Env (GitHub
-   gating), Mutate_loop (the mutation-aware run entry both thin drivers
-   call, and the Law 16d hook registration). Body-side: Capture,
-   through [captured_output] below. Shared vocabulary: Failure,
-   Test_tree, Loc, Text.
-
-   Accepting corrections into the source tree (WINDTRAP_UPDATE) adds the
-   three modules that already carry snapshot acceptance, so this runtime
-   restates none of it: Snapshot for the resolved update mode — read off
-   the registry the runner built, which is where its CI refusal and the
-   [force] override have already been applied — Path_ops for the project
-   root and the proof that a reconstructed path lies under it, and
-   Atomic_file for the publication. See [accept_into_source_tree].
+   exit codes), Run (result rows, the ambient slot the body-side
+   one-liners below read), Env (GitHub gating), Mutate_loop (the
+   mutation-aware run entry both thin drivers call, and the Law 16d hook
+   registration). Body-side: Capture, through [captured_output] below.
+   Shared vocabulary: Failure, Test_tree, Loc, Text, and Source_patch
+   for the flexible normalization and the payload formatting the core's
+   [expect] shares with [%expect].
 
    All of it arrives through [Windtrap.Private]: this library sits
    outside the core, and Private is the core's one export surface for
    co-versioned clients. Widening this list is a design act; record the
    reason here. *)
-module Atomic_file = Windtrap.Private.Atomic_file
 module Capture = Windtrap.Private.Capture
 module Cli = Windtrap.Private.Cli
 module Driver = Windtrap.Private.Driver
@@ -54,19 +46,19 @@ module Env = Windtrap.Private.Env
 module Failure = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
 module Mutate_loop = Windtrap.Private.Mutate_loop
-module Path_ops = Windtrap.Private.Path_ops
 module Run = Windtrap.Private.Run
 module Runner = Windtrap.Private.Runner
-module Snapshot = Windtrap.Private.Snapshot
+module Source_patch = Windtrap.Private.Source_patch
 module Test_tree = Windtrap.Private.Test_tree
-module Text = Windtrap.Private.Text
 
 (* Ambient-reading one-liners: read the one documented slot, dispatch on
    explicit state. Semantics live in Run and Capture. *)
 let add_failure failure = Run.add_failure (Run.current_frame ()) failure
 let current_path () = Run.path (Run.current_frame ())
 let failure_count () = List.length (Run.failures (Run.current_frame ()))
-let captured_output ?pos () = Capture.output ?pos (Run.capture (Run.current ()))
+
+let captured_output ?pos () =
+  Capture.output ?__POS__:pos (Run.capture (Run.current ()))
 
 (* Initialization *)
 
@@ -80,7 +72,7 @@ let initial_dir = Sys.getcwd ()
 (* Locations and nodes *)
 
 type loc = { line : int; start_bol : int; start_pos : int; end_pos : int }
-type delimiter = Quote | Tag of string
+type delimiter = Source_patch.delimiter = Quote | Tag of string
 
 (* [literal_loc], not [loc]: field names are unique across this module's
    record types so generated record literals resolve every field by
@@ -277,12 +269,10 @@ let install_undriven_guard () =
    protocol's coverage bit are the whole of the correction path's write
    side, so silencing them is what makes an armed [%expect] mismatch a
    plain failure: nothing is recorded, so [flush_corrections_report]
-   finds nothing to write, nothing to accept into the source tree
-   whatever WINDTRAP_UPDATE says, and [inline_exit_code] sees no failure
+   finds nothing to write, and [inline_exit_code] sees no failure
    covered by a correction. Checking, matching and failure reporting are
-   untouched — [accepting] reads the read-only bit for the same reason.
-   Nothing ever turns it back off — a process that arms stays read-only
-   for its life.
+   untouched. Nothing ever turns it back off — a process that arms stays
+   read-only for its life.
 
    Clearing the cross-run tables. A forked mutation child inherits the
    parent dry run's merged reach histories; left in place they would
@@ -292,10 +282,8 @@ let install_undriven_guard () =
    arguments are deliberately kept: the child runs the tests the parent
    registered.
 
-   Snapshots need no counterpart: [Snapshot.resolve_mode] maps
-   [Env.No_update] to [Snapshot.Check] and writing is reachable only
-   under [Snapshot.Update], so an armed run's No_update already makes
-   snapshot checking read-only by construction. *)
+   Baselines need no counterpart: the loop runs an armed process in
+   [Baseline.Check] mode, under which no correction is recorded. *)
 
 let enter_armed () =
   (* A process with a mutant armed belongs to the mutation loop: its
@@ -401,7 +389,7 @@ let register ~file tree =
 let add_test ~file ~loc ~tags name fn =
   note_partition file;
   let name = scoped_name ~file name in
-  register ~file (Test_tree.test ~pos:(pos_of ~file loc) ~tags name fn)
+  register ~file (Test_tree.test ~__POS__:(pos_of ~file loc) ~tags name fn)
 
 let enter_group ~file ~tags name =
   note_partition file;
@@ -464,102 +452,12 @@ let collect () =
 
 let partitions () = String_set.elements !state.partitions_seen
 
-(* Normalization (ppx_expect's pretty-payload pipeline) *)
+(* Normalization and payload formatting are the core's ([Source_patch]):
+   the facade's [expect] and [%expect] match and correct through one
+   implementation. *)
 
-(* Whitespace is Base.Char.is_whitespace — the set ppx_expect strips with. *)
-let is_ws = function
-  | ' ' | '\t' | '\n' | '\011' | '\012' | '\r' -> true
-  | _ -> false
-
-let rstrip s =
-  let stop = ref (String.length s) in
-  while !stop > 0 && is_ws s.[!stop - 1] do
-    decr stop
-  done;
-  if !stop = String.length s then s else String.sub s 0 !stop
-
-let strip s =
-  let start = ref 0 and stop = ref (String.length s) in
-  while !start < !stop && is_ws s.[!start] do
-    incr start
-  done;
-  while !stop > !start && is_ws s.[!stop - 1] do
-    decr stop
-  done;
-  String.sub s !start (!stop - !start)
-
-let leading_spaces s =
-  let n = ref 0 in
-  while !n < String.length s && s.[!n] = ' ' do
-    incr n
-  done;
-  !n
-
-(* ppx_expect splits on '\n' treating "\r\n" as one separator; every
-   consumer right-strips each line, which removes the '\r' of a "\r\n"
-   pair, so a plain split suffices. A lone '\r' inside a line stays a
-   literal byte, exactly as upstream. *)
-let split_lines s = String.split_on_char '\n' s
-
-let drop_blank_edges lines =
-  let rec drop = function "" :: rest -> drop rest | lines -> lines in
-  List.rev (drop (List.rev (drop lines)))
-
-(* [(relative indent, stripped contents)] per line of pretty output.
-   Indentation counts leading spaces only; contents are stripped of all
-   whitespace, tabs included — ppx_expect's legacy rule, kept for
-   byte-compatible matching and corrections. *)
-let pretty_lines raw =
-  let lines = drop_blank_edges (List.map rstrip (split_lines raw)) in
-  let indented =
-    List.map (fun line -> (leading_spaces line, strip line)) lines
-  in
-  let min_indent =
-    List.fold_left
-      (fun acc (indent, contents) ->
-        if contents = "" then acc else min acc indent)
-      max_int indented
-  in
-  List.map
-    (fun (indent, contents) ->
-      ((if contents = "" then 0 else max 0 (indent - min_indent)), contents))
-    indented
-
+let normalize = Source_patch.normalize
 let spaces n = String.make n ' '
-
-(* The canonical (dedented) form of pretty output. Two [%expect] payloads
-   match iff their normalizations are equal, which is exactly ppx_expect's
-   rule of comparing both sides through its payload formatter: the
-   formatter is [normalize] plus a uniform re-indent, so equality
-   coincides. *)
-let normalize s =
-  String.concat "\n"
-    (List.map
-       (fun (indent, contents) ->
-         if contents = "" then "" else spaces indent ^ contents)
-       (pretty_lines s))
-
-(* Correction formatting (ppx_expect's re-indentation) *)
-
-(* Format raw output as the contents of a pretty payload whose node starts at
-   column [node_column]: multi-line contents are indented [node_column + 2],
-   matching ppx_expect so first promotes after adoption produce no churn. *)
-let format_pretty ~delimiter ~node_column raw =
-  match pretty_lines raw with
-  | [] -> ( match delimiter with Tag _ -> " " | Quote -> "")
-  | [ (_, line) ] -> (
-      match delimiter with Tag _ -> " " ^ line ^ " " | Quote -> line)
-  | lines ->
-      let contents_indent = node_column + 2 in
-      let first, indentation, last =
-        match delimiter with
-        | Quote -> (" ", 1, " ")
-        | Tag _ -> ("", contents_indent, spaces contents_indent)
-      in
-      let render (indent, contents) =
-        if contents = "" then "" else spaces (indentation + indent) ^ contents
-      in
-      String.concat "\n" ((first :: List.map render lines) @ [ last ])
 
 let node_delimiter node =
   match node.payload with Some { delimiter; _ } -> delimiter | None -> Tag ""
@@ -568,24 +466,11 @@ let formatted_contents node raw =
   match node.kind with
   | Expect_exact -> raw
   | Expect ->
-      format_pretty ~delimiter:(node_delimiter node)
-        ~node_column:(column node.loc) raw
-
-(* Delimiter conflict fixing: grow the tag until neither delimiter occurs in
-   the contents. *)
-let fix_tag ~contents tag =
-  let rec fix tag =
-    if
-      Text.contains_substring ~pattern:("{" ^ tag ^ "|") contents
-      || Text.contains_substring ~pattern:("|" ^ tag ^ "}") contents
-    then fix (tag ^ "xxx")
-    else tag
-  in
-  fix tag
+      Source_patch.format_flexible ~delimiter:(node_delimiter node)
+        ~column:(column node.loc) raw
 
 let tag_payload ~tag contents =
-  let tag = fix_tag ~contents tag in
-  "{" ^ tag ^ "|" ^ contents ^ "|" ^ tag ^ "}"
+  Source_patch.literal ~delimiter:(Tag tag) contents
 
 let extension_name = function
   | Expect -> "expect"
@@ -604,11 +489,6 @@ let extension_name = function
    patch is the payload's extent — except where the payload IS the node:
    a bare [%expect] has no literal to patch, and the {%expect|…|}
    shorthand's literal spans the node. *)
-
-let escaped_segments contents =
-  List.map String.escaped (String.split_on_char '\n' contents)
-
-let quote_one_line segs = "\"" ^ String.concat "\\n" segs ^ "\""
 
 let node_patch node contents =
   let name = extension_name node.kind in
@@ -630,11 +510,11 @@ let node_patch node contents =
         match (shorthand, delimiter) with
         | true, Tag tag ->
             (* Retagging must never drop the [%expect] spelling. *)
-            let tag = fix_tag ~contents tag in
+            let tag = Source_patch.fix_tag ~contents tag in
             if tag = "" then "{%" ^ name ^ "|" ^ contents ^ "|}"
             else "{%" ^ name ^ " " ^ tag ^ "|" ^ contents ^ "|" ^ tag ^ "}"
         | _, Tag tag -> tag_payload ~tag contents
-        | _, Quote -> quote_one_line (escaped_segments contents)
+        | _, Quote -> Source_patch.literal ~delimiter:Quote contents
       in
       ((literal_loc.start_pos, literal_loc.end_pos), text)
 
@@ -769,117 +649,46 @@ let read_file path =
     ~finally:(fun () -> close_in_noerr ic)
     (fun () -> really_input_string ic (in_channel_length ic))
 
-type flush_report = {
-  written : string list;
-  accepted : string list;
-  refused : string list;
-}
-
-(* Accepting a correction into the source tree (WINDTRAP_UPDATE).
-
-   The [.corrected] file is a sandbox artifact, and dune registers it for
-   promotion only if every partition of the library exits 0 — so one
-   file's stale payload is held hostage by another file's crash, and no
-   partition can see enough to say so. This is the other channel, the one
-   snapshot baselines have always used from inside the same sandboxed
-   action: [Path_ops.project_root] walks above any _build tree to the
-   real root, [Path_ops.reconstruct] proves the reconstructed path lies
-   under it, [Atomic_file.write] publishes. Nothing here is new
-   machinery; the asymmetry was that expect payloads were the one
-   accepted output still going through dune.
-
-   The drift guard is the part to get right. The corrected content is a
-   patch by byte offsets into the SANDBOX copy of the source, and those
-   offsets describe the source-tree file only while the two are
-   byte-identical. A source edited while the tests ran, a stale sandbox,
-   a WINDTRAP_PROJECT_ROOT aimed elsewhere: any of them makes the offsets
-   describe something else, and splicing fresh output at them corrupts a
-   file the user did not ask to have touched. So compare the bytes first
-   and refuse loudly on any difference — the caller reports the refusal
-   and exits nonzero, leaving both the source and the [.corrected] alone.
-   Never clobber. *)
-let accept_into_source_tree ~file ~source ~corrected =
-  let root = Path_ops.project_root () in
-  match Path_ops.reconstruct ~root file with
-  | Error candidate ->
-      Error
-        (Printf.sprintf "%s is not under the project root %s" candidate root)
-  | Ok target -> (
-      match read_file target with
-      | exception Sys_error reason -> Error reason
-      | current when not (String.equal current source) ->
-          (* [target] is not named again: the caller's line already leads
-             with the recorded path, and under dune the two spell the
-             same file. *)
-          Error
-            "the source file differs from the copy the correction was computed \
-             against"
-      | _ -> (
-          match Atomic_file.write ~path:target corrected with
-          | () -> Ok (Path_ops.display target)
-          | exception Sys_error reason -> Error reason))
+type flush_report = { written : string list; refused : string list }
 
 (* One write attempt per file with recorded corrections. A file whose
-   source cannot be read, whose target cannot be written, or whose
-   acceptance is refused is a flush failure: reported on stderr right
-   here — a line naming the recorded source path and the reason — never
-   skipped silently, and returned so the exit path can refuse to call the
-   partition passed (a correction that reached neither dune's diff nor
-   the source tree cannot surface at all).
-
-   [accept] is the run's resolved update mode: with it, each written
-   correction is additionally accepted into the source tree, which is
-   what makes it independent of the rest of the library. It is only ever
-   [true] for corrections this process recorded from unmutated code —
-   [enter_armed] empties the table an armed process could have filled
-   (Law 16d), so there is nothing here to accept from mutated output. *)
-let flush_corrections_report ~accept =
+   source cannot be read or whose target cannot be written is a flush
+   failure: reported on stderr right here — a line naming the recorded
+   source path and the reason — never skipped silently, and returned so
+   the exit path can refuse to call the partition passed (a correction
+   that never reached dune's diff cannot surface at all). *)
+let flush_corrections_report () =
   Sys.chdir initial_dir;
   let files =
     Hashtbl.fold (fun file _ acc -> file :: acc) !state.corrections []
   in
-  let written = ref [] and accepted = ref [] and refused = ref [] in
-  (* Both refusals name the recorded source path and the reason, and both
-     put the file in [refused] — the exit path treats "the correction did
-     not fully land" as one fact. They are worded apart because they are
-     different states on disk: nothing was written, versus the
-     [.corrected] is there and the source tree was left alone. *)
-  let refuse ~what file reason =
-    Printf.eprintf "Error: correction for %s %s: %s\n%!" file what reason;
-    refused := file :: !refused
-  in
+  let written = ref [] and refused = ref [] in
   List.iter
     (fun file ->
       let write () =
         let source = read_file (absolute_path file) in
         match corrected_source ~file ~source with
         | None -> ()
-        | Some corrected -> (
+        | Some corrected ->
             let target = Filename.basename file ^ ".corrected" in
             let oc = open_out_bin target in
             Fun.protect
               ~finally:(fun () -> close_out_noerr oc)
               (fun () -> output_string oc corrected);
-            written := target :: !written;
-            if accept then
-              match accept_into_source_tree ~file ~source ~corrected with
-              | Ok path -> accepted := path :: !accepted
-              | Error reason ->
-                  refuse ~what:"not accepted into the source tree" file reason)
+            written := target :: !written
       in
       match write () with
       | () -> ()
-      | exception Sys_error reason -> refuse ~what:"not written" file reason)
+      | exception Sys_error reason ->
+          Printf.eprintf "Error: correction for %s not written: %s\n%!" file
+            reason;
+          refused := file :: !refused)
     (List.sort compare files);
   (* Cleared in place, not by a fresh [state]: this is the flush's own
      partial clear — the run's other state (reach pools, covered paths,
      protocol) outlives it. *)
   Hashtbl.reset !state.corrections;
-  {
-    written = List.rev !written;
-    accepted = List.rev !accepted;
-    refused = List.rev !refused;
-  }
+  { written = List.rev !written; refused = List.rev !refused }
 
 (* Coverage of failures by corrections (the exit protocol) *)
 
@@ -932,41 +741,18 @@ let inline_exit_code (outcome : Runner.outcome) =
 
    Under dune one partition is one file, so [written] has at most one
    element; the plural-safe spelling keeps by-hand multi-file runs
-   honest. [accepted] names the source files this run wrote directly
-   under WINDTRAP_UPDATE: those went nowhere near dune's channel, so
-   the caveat does not apply to them and is replaced by the line that
-   says where they landed. *)
-let correction_notice ~accepted ~refused ~declined written =
+   honest. *)
+let correction_notice written =
   match written with
   | [] -> None
   | files ->
       let notice = Buffer.create 256 in
       Printf.bprintf notice "windtrap: wrote %s\n" (String.concat ", " files);
-      if accepted <> [] then
-        Printf.bprintf notice "windtrap: accepted into the source tree: %s\n"
-          (String.concat ", " accepted);
-      (* One explanation, matched to what actually happened: a refusal must
-         not advise the acceptance that just failed, a declined acceptance
-         must say why fixing the failures comes first, and only a run that
-         never asked gets the WINDTRAP_UPDATE suggestion. *)
-      if refused <> [] then
-        Printf.bprintf notice
-          "windtrap: %d correction%s not accepted into the source tree — \
-           resolve the reasons above and rerun.\n"
-          (List.length refused)
-          (if List.length refused = 1 then " was" else "s were")
-      else if declined then
-        Printf.bprintf notice
-          "windtrap: corrections were not accepted into the source tree: a \
-           failure above is not an expect mismatch, and acceptance never \
-           blesses output produced beside one. Fix the failures and rerun.\n"
-      else if accepted = [] then
-        Printf.bprintf notice
-          "windtrap: dune registers a correction for promotion only when every \
-           inline-test process of the library exits cleanly, so a failure in \
-           any of its files withholds this one too. Fix the failures, rerun, \
-           then 'dune promote' — or rerun with WINDTRAP_UPDATE=1 to accept \
-           corrections into the source tree directly.\n";
+      Printf.bprintf notice
+        "windtrap: dune registers a correction for promotion only when every \
+         inline-test process of the library exits cleanly, so a failure in any \
+         of its files withholds this one too. Fix the failures, rerun, then \
+         'dune promote'.\n";
       Some (Buffer.contents notice)
 
 (* Expect-test execution *)
@@ -1062,33 +848,11 @@ let shown_expected node =
       | Expect_exact -> contents)
   | None -> ""
 
-(* Whether this run accepts a mismatch instead of failing on it.
-
-   WINDTRAP_UPDATE means "take the output I just produced as the new
-   expectation". For a snapshot baseline that is a write and a passing
-   check; an expect payload is the same act on a different file, so a
-   mismatch that comes with a recorded correction is not a failure here
-   either — reporting fifty failures for fifty payloads the same run is
-   busy accepting is noise, not information. Only mismatches: an
-   unreached node, an assertion, a raise are not output anybody produced
-   and stay failures, which is why this guards the three sites that
-   record a correction and nothing else.
-
-   The mode is read off the registry the runner built for this run, so
-   the CI refusal and the [force] override are applied once, by Snapshot,
-   for baselines and payloads alike. A read-only (armed) process records
-   no correction, so it has nothing to accept and must keep failing —
-   the two facts are kept together here rather than left to the caller. *)
-let accepting () =
-  (not !state.read_only)
-  && Snapshot.mode (Run.snapshots (Run.current ())) = Snapshot.Update
-
 let fail_node ctx node ~shown =
-  if not (accepting ()) then
-    add_failure
-      (Failure.equality
-         ~loc:(loc_t ~file:ctx.ctx_file node.loc)
-         ~expected:(shown_expected node) ~actual:shown ())
+  add_failure
+    (Failure.equality
+       ~loc:(loc_t ~file:ctx.ctx_file node.loc)
+       ~expected:(shown_expected node) ~actual:shown ())
 
 (* Deduplicate a reach history by reconciled result — a pass, or the
    formatted correction — as ppx_expect does: two raw outputs that format
@@ -1201,10 +965,10 @@ let record_covered value =
 let resolve_trailing ctx ~raw =
   let insert_column = column ctx.ctx_body_loc + 2 in
   let formatted =
-    format_pretty ~delimiter:(Tag "") ~node_column:insert_column raw
+    Source_patch.format_flexible ~delimiter:(Tag "") ~column:insert_column raw
   in
   let result =
-    if String.equal (strip raw) "" then Pass
+    if String.equal (normalize raw) "" then Pass
     else Fail { formatted; shown = normalize raw }
   in
   let key = trailing_key ctx in
@@ -1224,13 +988,13 @@ let resolve_trailing ctx ~raw =
   | [ { formatted; shown } ], false ->
       record formatted;
       (match result with
-      | Fail _ when not (accepting ()) ->
+      | Fail _ ->
           add_failure
             (Failure.equality
                ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
                ~msg:"trailing output not matched by [%expect]" ~expected:""
                ~actual:shown ())
-      | Fail _ | Pass -> ());
+      | Pass -> ());
       true
   | _ ->
       let cr =
@@ -1238,13 +1002,14 @@ let resolve_trailing ctx ~raw =
           ~outputs:(List.map (fun r -> r.raw) reaches)
           ()
       in
-      record (format_pretty ~delimiter:(Tag "") ~node_column:insert_column cr);
-      if not (accepting ()) then
-        add_failure
-          (Failure.equality
-             ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
-             ~msg:"trailing output not matched by [%expect]" ~expected:""
-             ~actual:cr ());
+      record
+        (Source_patch.format_flexible ~delimiter:(Tag "") ~column:insert_column
+           cr);
+      add_failure
+        (Failure.equality
+           ~loc:(loc_t ~file:ctx.ctx_file ctx.ctx_trailing_loc)
+           ~msg:"trailing output not matched by [%expect]" ~expected:""
+           ~actual:cr ());
       true
 
 let run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
@@ -1322,7 +1087,7 @@ let add_expect_test ~file ~loc ~tags ~run ~sanitize ~nodes ~body_loc ~body_wrap
   note_partition file;
   let name = scoped_name ~file name in
   register ~file
-    (Test_tree.test ~pos:(pos_of ~file loc) ~tags name
+    (Test_tree.test ~__POS__:(pos_of ~file loc) ~tags name
        (run_expect_body ~file ~run ~sanitize ~nodes ~body_loc ~body_wrap
           ~trailing_loc body))
 
@@ -1373,40 +1138,18 @@ let run_inline_suite ~suite ~config ~coverage ~render ~output ~junit tests =
          for [exit] to combine with the correction protocol. *)
           Runner.startup_exit_code error
       | Ok outcome ->
-          (* The update mode is read off the registry the runner built for
-         this run, not re-resolved here: [Runner.startup] has already put
-         WINDTRAP_UPDATE through [Snapshot.resolve_mode], so the CI
-         refusal and the [force] override that governs snapshot baselines
-         governs expect payloads by the same decision, made once. A run
-         refused in CI never reaches this branch at all.
-
-         Acceptance is further gated on this process's own verdict:
-         [clean] means every failure this partition counted is covered by
-         a correction — no assertion failed beside a stale payload,
-         nothing crashed — which is the per-file half of the veto the
-         masked-assertion rule (Law 11) exists for. Under dune one
-         partition is one file, so the gate removes exactly the
-         cross-file hostage-taking and nothing else: output produced
-         beside a non-expect failure is never accepted, under
-         WINDTRAP_UPDATE too. *)
+          (* [clean] means every failure this partition counted is covered
+             by a correction — no assertion failed beside a stale payload,
+             nothing crashed. *)
           let clean = inline_exit_code outcome = 0 in
-          let update =
-            Snapshot.mode (Run.snapshots outcome.Runner.run) = Snapshot.Update
-          in
-          let { written; accepted; refused } =
-            flush_corrections_report ~accept:(clean && update)
-          in
+          let { written; refused } = flush_corrections_report () in
           (* The correction-coverage exit-0 downgrade presumes the correction
-         reached disk — dune's diff action can only surface corrections
-         that exist, and neither does a source tree the drift guard
-         refused to touch. A failed expect test whose correction was not
-         written must exit nonzero (the write failure was reported
-         above), or dune would record the partition as passed. *)
+             reached disk — dune's diff action can only surface corrections
+             that exist. A failed expect test whose correction was not
+             written must exit nonzero (the write failure was reported
+             above), or dune would record the partition as passed. *)
           let code = if refused = [] then if clean then 0 else 1 else 1 in
-          (match
-             correction_notice ~accepted ~refused
-               ~declined:(update && not clean) written
-           with
+          (match correction_notice written with
           | None -> ()
           | Some notice ->
               output_string Stdlib.stderr notice;
@@ -1455,7 +1198,6 @@ let reset () =
 module Private = struct
   type nonrec flush_report = flush_report = {
     written : string list;
-    accepted : string list;
     refused : string list;
   }
 

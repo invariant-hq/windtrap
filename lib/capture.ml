@@ -145,12 +145,12 @@ let with_file_in path f =
 
 let stream_error = "this test requires capture; rerun without --stream"
 
-let output ?pos t =
+let output ?__POS__ t =
   match t with
   | Disabled ->
       raise
         (Failure.Check_failure
-           (Failure.message ?loc:(Loc.resolve ?pos ()) stream_error))
+           (Failure.message ?loc:(Loc.resolve ?__POS__ ()) stream_error))
   | Enabled e -> (
       drain_formatters ();
       match e.current with

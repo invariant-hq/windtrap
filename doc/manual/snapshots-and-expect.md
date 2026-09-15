@@ -1,120 +1,216 @@
-# Snapshots and expect tests
+# Baselines and expect tests
 
-Both compare produced output against a stored expectation. They differ
-in where the expectation lives: a *snapshot* baseline is a committed
-file under `__snapshots__/`, best for larger output (help pages,
-reports, rendered JSON); an *expect* test holds the expectation inline
-in the source as `[%expect {|…|}]`, best for short output you want
-visible in code review. Both are read-only when checking and explicit
-about acceptance — a green run always means "matched a committed
-expectation".
+A baseline is a reviewed expectation that the source names: the literal
+at an `expect` call, or the file an `expect_file` call names. Checking
+is read-only and explicit about acceptance — a green run always means
+"matched the reviewed expectation" — and both storages are accepted the
+same way: under dune with `dune promote`, without dune with `-u`.
 
-## File snapshots
+| Storage | Write | Best for |
+| --- | --- | --- |
+| A literal at the call | `expect actual @@ __POS_OF__ {|…|}` | short output you want visible in code review |
+| A committed file | `expect_file actual "test/help.expected"` | larger output (help pages, reports, rendered JSON), and text other tests read |
+| Inline, in the library | `let%expect_test` + `[%expect {|…|}]` (`ppx_windtrap`) | tests beside the code, with access to unexported bindings |
+
+## Literals and files
 
 ```ocaml
-test "cli help" (fun () -> snapshot "help" (help ()))
+test "tokens" (fun () ->
+    print_tokens (tokenize "1 + 2");
+    expect (output ()) @@ __POS_OF__ {|
+      INT 1
+      PLUS
+      INT 2
+      |});
+test "help page" (fun () -> expect_file (help ()) "test/help.expected");
 ```
 
-First run — nothing is silently created:
+The `expect` family takes the produced text first and the literal last,
+so a `{|…|}` block reads as a block; `equal` and the assertion verbs
+stay expected-first. `expect` compares with ppx_expect's whitespace
+flexibility — lines trimmed, blank leading and trailing lines dropped,
+the block dedented — so the literal's indentation never causes a
+mismatch; `expect_exact` compares byte for byte. `expect_file` names its
+file relative to the project root and compares line-oriented text: CR
+and CRLF read as LF and a final newline is forced on both sides. If CR
+bytes or the missing final newline are the point, encode first (e.g.
+`String.escaped`). Redaction is ordinary code before the call:
+`expect (mask_timestamps (output ())) @@ __POS_OF__ {|…|}`.
+
+Nothing is silently created. A first run against a missing file, or a
+stale literal, fails with the proposed content or a diff and the
+acceptance command for the way the run was invoked:
 
 ```
-$ dune runtest
+$ dune exec test/test_mytool.exe
 mytool: 1 test
 F
 ──────────────────── failures (1) ────────────────────
   FAIL  cli › cli help
     test/test_mytool.ml:18
-      18 │   group "cli" [ test "cli help" (fun () -> snapshot "help" (help ())) ]
+      18 │     [ test "cli help" (fun () -> expect_file (help ()) "test/help.expected") ]
 
-    snapshot "help": no baseline at test/__snapshots__/test_mytool/help.snap
+    expect_file "test/help.expected": no baseline
     proposed (5 lines):
       ┆ Usage: mytool [OPTIONS] COMMAND
-      ┆
+      ┆ 
       ┆ Commands:
       ┆   build    Build the project
       ┆   test     Run the tests
     accept: dune exec test/test_mytool.exe -- -u, then review with git diff
 ──────────────────────────────────────────────────────
 
-1 failed in 0.00109s.
-
-$ WINDTRAP_UPDATE=1 dune runtest
-mytool: 1 passed in 0.00122s.
-wrote test/__snapshots__/test_mytool/help.snap (new)
-$ git add test/__snapshots__ && git diff --cached    # review, commit
+1 failed in 0.00344s.
 ```
 
-A later mismatch prints a unified diff and the same acceptance line.
-Acceptance is atomic and reviewed with `git diff`; under CI an update
-request refuses the run (`WINDTRAP_UPDATE=force` overrides, for
-generated-baseline pipelines that know what they are doing).
+## Accepting under dune: `dune promote`
 
-The rules:
-
-- **Identity is the name**, never a source position — refactoring
-  cannot orphan a baseline. Names match `[A-Za-z0-9._-]+` and must be
-  unique (case-insensitively) among the snapshots of one source file.
-  A duplicate — the same name checked again from a different call
-  site, or by a different test when no call site is known — fails at
-  the second check with both locations shown; repeating one call site
-  (a loop, a retry, a `cases` family) is a recheck against the same
-  baseline, not a duplicate.
-- **Storage** is `<src_dir>/__snapshots__/<src_basename>/<name>.snap`,
-  scoped to the file the enclosing test was declared in (or `?pos`'s
-  file) — a snapshot reached through a helper in another file does not
-  relocate its baseline.
-- **Snapshots are line-oriented text**: CR/CRLF normalize to LF and a
-  trailing newline is forced on both sides — the produced value *and*
-  the stored baseline — so a byte-exact golden test migrated to
-  `snapshot` silently loses that strictness, its imported baseline
-  canonicalized on read. If CR bytes or the missing
-  final newline are the point, encode first (e.g. `String.escaped`).
-  Redaction is ordinary code before the call:
-  `snapshot "log" (mask_timestamps out)`.
-- `snapshot_pp name pp v` snapshots a pretty-printed value.
-- **Stale baselines**: a baseline whose test was deleted or renamed
-  sits in the tree forever unless something notices. Only a *full,
-  clean* run can notice — the whole declared suite executed, with
-  nothing filtered, focused, bailed, skipped or failed — because only
-  such a run knows every name the suite claims. After one, baselines
-  no test checked are reported:
-
-  ```
-  stale baseline: test/__snapshots__/test_mytool/removed.snap
-  remove them: rm 'test/__snapshots__/test_mytool/removed.snap'
-  ```
-
-  The report is advisory and has no flag: it never deletes and never
-  fails the run. A baseline is a committed file, so removing one is an
-  edit you make and review in `git diff` like any other — the report
-  hands you the exact `rm` and stops there.
-
-  After any other run it says nothing, silently: a filtered run cannot
-  tell a stale baseline from one it did not select this time, so
-  `-f parser` reports no stale baselines at all.
-
-Baselines are runtime data, invisible to dune's dependency tracking —
-add the glob or editing a baseline will not re-trigger the test:
+A `(test)` stanza declares its corrections in one action, which is
+dune's own promotion idiom and what `(inline_tests)` generates behind
+the scenes:
 
 ```lisp
 (test
  (name test_mytool)
- (libraries windtrap)
- (deps
-  (glob_files_rec __snapshots__/**)))
+ (libraries windtrap mytool)
+ (deps help.expected)
+ (action
+  (progn
+   (run %{test} --corrected)
+   (diff? test_mytool.ml test_mytool.ml.corrected)
+   (diff? help.expected help.expected.corrected))))
 ```
+
+`--corrected` makes the run write every correction beside the file it
+corrects, as `<file>.corrected` — a rewritten literal in a copy of the
+test file, the produced text for a file baseline — and leave the exit
+code to the `diff?` that follows: a run whose only failures are
+recorded corrections exits 0, and dune's diff is the verdict. `dune
+runtest` then shows the correction as a diff, and `dune promote` (or
+`dune promote test/help.expected` to take one file) accepts it:
+
+```
+$ dune runtest
+mytool: 2 tests
+.F
+──────────────────── failures (1) ────────────────────
+  FAIL  cli help
+  …
+    accept: dune promote
+──────────────────────────────────────────────────────
+
+1 passed, 1 failed in 0.000655s.
+wrote test/help.expected.corrected
+File "test/help.expected", line 1, characters 0-0:
+diff --git a/_build/default/test/help.expected b/_build/default/test/help.expected.corrected
+--- a/_build/default/test/help.expected
++++ b/_build/default/test/help.expected.corrected
+@@ -2,7 +2,7 @@ Usage: mytool [OPTIONS] COMMAND
+ 
+ Commands:
+   build    Build the project
+-  test     Run all tests
++  test     Run the tests
+$ dune promote
+Promoting _build/default/test/help.expected.corrected to test/help.expected.
+```
+
+Two rules of dune's own follow from the stanza:
+
+- **The action sees dune's copy of the file, not the source tree.** A
+  build action runs under `_build/default/`, and that is where
+  `expect_file` reads its file and where the correction lands, beside
+  the copy, which is where `diff?` looks; the source tree is never
+  written by a build action. The `diff?` step makes its first file an
+  input of the action, so dune copies it there and re-runs the test
+  when it changes; `(deps help.expected)` says the same thing
+  explicitly, and turns a missing file into an immediate `No rule
+  found` error instead of a silently discarded correction. The `diff?`
+  steps name files relative to the stanza's directory, exactly as
+  `(deps …)` does.
+- **A new file must exist before dune can diff it.** Promotion fills a
+  file; it never creates one. Create it empty (`touch
+  test/help.expected`): the next `dune runtest` shows the whole
+  proposed content as the diff, and `dune promote` fills it. Or accept
+  it once with `dune exec test/test_mytool.exe -- -u`, which creates
+  it. The report under `--corrected` says so
+  (`accept: touch 'test/help.expected' && dune runtest, then dune promote`).
+
+Two rules of windtrap's own bound what a promotion can bless. A
+correction is written only for a test whose every failure is a baseline
+mismatch: an assertion failure, a raise or a timeout beside a stale
+expectation withholds that test's corrections until it is fixed, a test
+that skipped records none, and a test marked `xfail` records none in any
+mode — its mismatch is the failure the annotation expects, not output to
+promote. And
+dune registers a stanza's corrections only when its action exits 0, so
+any other failing test in the stanza withholds them all — the run still
+names what it computed (`wrote test/help.expected.corrected`), and the
+diff is one `dune promote` away once the failures are fixed. Read every
+promoted diff as a code change: promotion is where bugs get blessed as
+expected output.
+
+The offer is perishable: dune rebuilds its pending-promotion set on
+every invocation, so `dune promote` must directly follow the failing
+`dune runtest` — run any other dune command in between and the set is
+cleared, with nothing to promote until the next failing run records it
+again.
+
+## Accepting without dune: `-u`
+
+`-u` (`--update`) applies every correction in place — the literal
+rewritten in its source file, re-indented to its line; the file
+written — atomically, and names what it accepted:
+
+```
+$ ./test_mytool -u
+mytool: 2 passed in 0.00122s.
+accepted test/help.expected
+accepted test/test_mytool.ml (1 expectation)
+$ git diff    # review, commit
+```
+
+It is the acceptance outside dune, and under dune it is `dune exec
+test/test_mytool.exe -- -u`, an ordinary process rather than a build
+action, for a baseline no rule diffs: a family of files named by a
+computed path, or a stanza whose author wrote no `diff?`. The same
+gating applies — a test that ends in any other failure accepts nothing.
+Under CI, `-u` refuses the run before anything executes; there is no
+override, because in-place acceptance is a developer's edit. `-u` and
+`--corrected` cannot be combined. Neither has an environment mirror: a
+build action accepts a baseline through its own `--corrected` action
+and never through a variable in its environment.
+
+A literal is rewritten only while it still holds the value the binary
+was compiled with; a source edited since the build is refused, named
+with its line, and left alone — rebuild and rerun.
+
+## The rules
+
+- **Identity is where the source says it is**: the literal's position,
+  which the compiler recomputes on every build, or the file's path.
+  Nothing is derived from a test's name or declaration site, so no
+  refactoring can orphan a baseline, and an unreferenced `.expected`
+  file is found the way any unreferenced file is.
+- **One content per baseline per run.** A call shared by several tests
+  — a `cases` family, a helper — must produce one text: the first
+  correction is the accepted content, a later check with the same text
+  passes, and one with another text fails against it rather than
+  re-accepting.
+- **Checking is read-only.** Without `--corrected` or `-u` a run writes
+  nothing, in every mode of failure.
 
 ## Captured output: `output ()`
 
 The runner captures each test's standard output and error (C stubs and
 subprocesses included). `output ()` consumes what was captured since
 the test started or the previous call — assert on it directly, or feed
-it to `snapshot`:
+it to `expect`:
 
 ```ocaml
 test "greeting goes through capture" (fun () ->
     print_string "Hello, World!\n";
-    equal string "Hello, World!\n" (output ()))
+    expect (output ()) @@ __POS_OF__ {| Hello, World! |})
 ```
 
 Under `--stream` there is no capture; `output ()` fails the test with
@@ -169,20 +265,9 @@ F
 $ dune promote
 ```
 
-Read every promoted diff as a code change: promotion is where bugs get
-blessed as expected output.
-
-The offer is perishable: dune rebuilds its pending-promotion set on
-every invocation, so `dune promote` (or `dune promote lib/parser.ml`
-to take one file) must directly follow the failing `dune runtest` —
-run any other dune command in between and the set is cleared, with
-nothing to promote until the next failing run records it again.
-
 Mechanics worth knowing:
 
-- `[%expect]` matches with ppx_expect's whitespace flexibility: lines
-  are trimmed, blank edges dropped, and the block dedented before
-  comparison, so payload indentation never causes a mismatch.
+- `[%expect]` matches with the same whitespace flexibility as `expect`;
   `[%expect_exact {|…|}]` matches byte-for-byte.
 - A test may hold several `[%expect]` nodes; each consumes the output
   since the previous one. Every reached node records its result, so
@@ -195,35 +280,13 @@ Mechanics worth knowing:
   `equal` mismatch or a raise. To pin an expected exception, catch and
   print it: `(try boom () with e -> print_string (Printexc.to_string e));
   [%expect {| Failure("boom") |}]`.
-  `dune promote` is per-library, not per-file: dune registers
-  corrections only when every inline-test process of the library exits
-  cleanly, so one raising test anywhere in the library withholds
-  `dune promote` for *all* of the library's corrections — including
-  other files'. The run still tells you what was computed: each
-  `windtrap: wrote <file>.corrected` line names a correction, and the
-  caveat under it says it is not registered yet.
-- `WINDTRAP_UPDATE=1` is the way past that, and it is the same variable
-  and the same act as for snapshot baselines: accept the output the run
-  just produced. Corrections go straight into the source tree, one file
-  at a time and without dune, so a crash in `b.ml` no longer withholds
-  `a.ml`'s payload. An accepted mismatch is not reported as a failure —
-  the run goes green and names what it wrote, exactly as an accepted
-  baseline does:
-
-```
-$ WINDTRAP_UPDATE=1 dune runtest
-mylib: 4 passed in 0.0031s.
-windtrap: wrote parser.ml.corrected
-windtrap: accepted into the source tree: lib/parser.ml
-```
-
-  What is promotable does not widen: a raise is still never a
-  correction, so no update run can bless one, and a file whose run holds
-  any non-expect failure — an assertion beside a stale payload, a crash
-  in a sibling test — accepts nothing until those are fixed: what the
-  variable removes is the *cross-file* veto, never the per-file one.
-  Review with `git diff`. Under CI an update request refuses the run, as
-  it does for baselines.
+- `dune promote` is per-library: dune registers corrections only when
+  every inline-test process of the library exits cleanly, so one
+  raising test anywhere in the library withholds `dune promote` for
+  *all* of the library's corrections — including other files'. The run
+  still tells you what was computed: each `windtrap: wrote
+  <file>.corrected` line names a correction, and the caveat under it
+  says it is not registered yet. Fix the failures, rerun, promote.
 - Shadowing `Expect_test_config` tunes a whole file; the useful knob
   is `sanitize`, applied to every read of captured output:
 
@@ -282,6 +345,6 @@ loudly where windtrap does not implement the construct (see
 
 | Output | Use |
 | --- | --- |
-| Short, review-worthy, produced by printing | `[%expect]` |
-| Large or generated (help text, JSON, renders) | `snapshot` |
-| Needs masking or custom comparison | `output ()` + ordinary assertions |
+| Short, review-worthy, produced by printing | `expect` (or `[%expect]` beside the code) |
+| Large or generated (help text, JSON, renders), or read by other tests | `expect_file` |
+| Needs masking or custom comparison | `output ()` + ordinary assertions, or the masking before `expect` |

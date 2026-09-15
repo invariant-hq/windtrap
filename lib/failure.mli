@@ -19,10 +19,11 @@
     size (currently 64 KiB).
 
     Construct failures with {!equality}, {!containment}, {!predicate},
-    {!raised}, {!snapshot}, {!property}, and {!message}; the runner reclassifies
-    with {!with_phase} and attaches captured output with {!with_output_tail}.
-    Assertion verbs raise {!Check_failure}; {!Skip_test}, {!Timeout}, and
-    {!Exit_attempt} are the other control exceptions the runner understands. *)
+    {!raised}, {!val:baseline}, {!property}, and {!message}; the runner
+    reclassifies with {!with_phase} and attaches captured output with
+    {!with_output_tail}. Assertion verbs raise {!Check_failure}; {!Skip_test},
+    {!Timeout}, and {!Exit_attempt} are the other control exceptions the runner
+    understands. *)
 
 (** {1:types Types} *)
 
@@ -56,21 +57,27 @@ type tail = {
 (** The type for bounded captured-output tails: a failing test's captured output
     appears in its failure report, bounded, with the full-log path. *)
 
-(** The type for snapshot failure states, as recorded by snapshot checking. See
-    {!Snapshot.check} for how each state arises. *)
-type snapshot_state =
+(** The type for what a baseline check compared against. *)
+type baseline =
+  | Literal
+      (** The literal at the failure's location ([expect], [expect_exact]). *)
+  | File of string
+      (** The file at this path, relative to the project root ([expect_file]);
+          stored as the call named it. *)
+
+(** The type for baseline failure states, as recorded by baseline checking. See
+    {!Baseline.check} for how each state arises. *)
+type baseline_state =
   | Missing of { proposed : string }
       (** No baseline exists; [proposed] is the content the check would accept.
       *)
   | Mismatch of { expected : string; actual : string }
-      (** The baseline [expected] differs from the produced [actual]. Renderers
-          compute the diff from these payloads. *)
-  | Unresolvable
-      (** No source file could be resolved to scope the snapshot name. *)
-  | Duplicate of { first : Loc.t option; first_test : string }
-      (** The name was already registered by an earlier check this run: [first]
-          is that check's site when one is known, [first_test] the test that
-          made it. The failure's own [loc] is the second check's site. *)
+      (** The baseline [expected] differs from the produced [actual], both in
+          their comparison form. Renderers compute the diff from these payloads.
+      *)
+  | Unresolvable of { candidate : string }
+      (** The baseline's path cannot be proven to lie under the project root;
+          [candidate] is the unproven path. *)
 
 type message_diff = {
   constructor : string;
@@ -181,10 +188,10 @@ type kind =
           [expected] side records an exception nobody expected — the
           uncaught-exception case — and renderers word the two differently. This
           field, not the absent [expected], records which failure it was. *)
-  | Snapshot of { name : string; path : string; state : snapshot_state }
-      (** A snapshot check failed. [name] is the snapshot name, [path] the
-          resolved baseline path; both are stored unmodified — renderers derive
-          acceptance commands from them. *)
+  | Baseline of { baseline : baseline; state : baseline_state }
+      (** A baseline check failed: [baseline] is what was compared against and
+          [state] how the comparison ended. The acceptance command is the run's,
+          not the payload's; renderers spell it from the invocation. *)
   | Property of {
       rendered : string;
       case_index : int;
@@ -262,7 +269,9 @@ and attribution =
           failure, whose own location is its declaration by construction while
           the assertion's site rides on [inner], and for the uncaught-exception
           {!Raise} shape (no [expected], no [predicate]), which no verb raised
-          and whose backtrace names the line. *)
+          and whose backtrace names the line, and for a {!Baseline} failure of a
+          {!File}, whose call takes no position and whose subject line names the
+          file. *)
 
 and t = {
   kind : kind;
@@ -341,8 +350,8 @@ val recorded_backtrace : unit -> string option
 (** {1:constructors Constructors}
 
     Constructors default [phase] to {!Body} and bound every payload string (see
-    the module preamble); snapshot names and paths are stored unmodified because
-    renderers derive acceptance commands from them.
+    the module preamble); a baseline's path is stored unmodified because
+    renderers name the file from it.
 
     None of them captures a location: pass [?loc:(Loc.resolve ?pos ())] at
     failure sites — {!Loc.resolve} is the one location rule — and omit [loc]
@@ -413,9 +422,9 @@ val raised :
     [message_diff] only when it holds — the failure site owns that decision,
     having the exceptions themselves. *)
 
-val snapshot : ?loc:Loc.t -> name:string -> path:string -> snapshot_state -> t
-(** [snapshot ~name ~path state] is a {!Snapshot} failure for the snapshot
-    [name] whose baseline is [path]. *)
+val baseline : ?loc:Loc.t -> baseline -> baseline_state -> t
+(** [baseline b state] is a {!Baseline} failure of the baseline [b] in [state].
+*)
 
 val property :
   ?loc:Loc.t ->

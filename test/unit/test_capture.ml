@@ -229,7 +229,7 @@ let test_disabled () =
     Capture.with_capture cap ~groups:[ "g" ] ~test_name:"t" (fun () -> 7)
   in
   check_int "with_capture runs the body directly" ~expected:7 ~actual:value;
-  (match Capture.output ~pos:("test_capture.ml", 42, 3, 9) cap with
+  (match Capture.output ~__POS__:("test_capture.ml", 42, 3, 9) cap with
   | _ -> check "output under Disabled raises Check_failure" false
   | exception Failure.Check_failure f -> (
       (match f.Failure.kind with
@@ -239,11 +239,11 @@ let test_disabled () =
       | _ -> check "failure kind is Message" false);
       match f.Failure.loc with
       | Some l ->
-          check_string "failure location file comes from ?pos"
+          check_string "failure location file comes from ?__POS__"
             ~expected:"test_capture.ml" ~actual:l.Loc.file;
-          check_int "failure location line comes from ?pos" ~expected:42
+          check_int "failure location line comes from ?__POS__" ~expected:42
             ~actual:l.Loc.line
-      | None -> check "failure carries the ?pos location" false)
+      | None -> check "failure carries the ?__POS__ location" false)
   | exception _ -> check "output under Disabled raises Check_failure" false);
   (* The realistic path: output () called inside a streamed test body. *)
   let saw = ref false in

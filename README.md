@@ -2,9 +2,9 @@
 
 **One library for all your OCaml tests.**
 
-Unit tests, property-based tests, stateful tests, snapshot tests, expect
-tests, code coverage, and mutation testing — in a single package with one
-flat API. No need to glue together Alcotest + QCheck + ppx_expect +
+Unit tests, property-based tests, stateful tests, expect tests inline or
+in files, code coverage, and mutation testing — in a single package with
+one flat API. No need to glue together Alcotest + QCheck + ppx_expect +
 Bisect_ppx + custom snapshot code.
 
 ```ocaml
@@ -103,11 +103,12 @@ does to the model and what it does to the real thing; failures print the
 shrunk program one numbered step per line, the model each call was made
 in, and the step that broke.
 
-**[Snapshot testing](doc/manual/snapshots-and-expect.md)** — `snapshot
-"name" value` compares against a committed baseline under
-`__snapshots__/`, and checking is read-only: a mismatch or a missing
-baseline fails with a diff and the acceptance command, which you accept
-with `-u` and review with `git diff`.
+**[Baselines](doc/manual/snapshots-and-expect.md)** — `expect actual @@
+__POS_OF__ {|…|}` compares against the literal at the call and
+`expect_file actual "test/help.expected"` against a committed file, and
+checking is read-only: a mismatch or a missing file fails with a diff and
+its acceptance command — `dune promote` after the stanza's `--corrected`
+run, or `-u` in place — reviewed with `git diff`.
 
 **[Expect testing](doc/manual/snapshots-and-expect.md)** —
 `let%expect_test` and `[%expect]` via `ppx_windtrap`, with corrections
@@ -123,7 +124,9 @@ an expensive one across the run, `temp_dir` and `temp_file` give
 runner-cleaned scratch paths, and `setenv`/`chdir` bind the environment
 and the working directory for one test with the runner restoring both;
 `cases` declares one named, individually selectable test per input,
-`subtest` labels sub-cases inside a body, and `xfail` keeps known-bug
+`subtest` labels sub-cases inside a body, a group's `~timeout` and
+`~retries` are defaults for every test under it, and `focus` and
+`xfail` wrap any test or group — the latter keeping known-bug
 reproductions in-tree without a red run.
 
 **[Code coverage](doc/manual/coverage.md)** — expression-level coverage

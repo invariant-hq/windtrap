@@ -83,7 +83,7 @@ and ambient CI/terminal detection (`CI`, `GITHUB_ACTIONS`,
 `INSIDE_DUNE`, whether stdout is a terminal) — none of which the role
 variable perturbs. One care: scrub `WINDTRAP_*` from the child's
 environment if the child itself ever calls `run` — a leaked
-`WINDTRAP_UPDATE` or `WINDTRAP_STREAM` would change the child run's
+`WINDTRAP_FILTER` or `WINDTRAP_STREAM` would change the child run's
 behavior.
 
 ## 3. Two-phase keyed comparison: shape first, then values
@@ -96,16 +96,18 @@ own message, then the payload:
 ```ocaml
 type tensor = { shape : int array; data : float array }
 
-let equal_tensor ?pos expected actual =
-  equal ?pos ~msg:"shape" (array int) expected.shape actual.shape;
-  equal ?pos ~msg:"values" (array (float 1e-9)) expected.data actual.data
+let equal_tensor ?__POS__ expected actual =
+  equal ?__POS__ ~msg:"shape" (array int) expected.shape actual.shape;
+  equal ?__POS__ ~msg:"values" (array (float 1e-9)) expected.data actual.data
 ```
 
 The first `equal` fails fast with `shape: [|3; 4|]` vs `[|4; 3|]`; the
 value comparison only ever runs on same-shaped tensors, where the diff
 marks the few values that differ instead of a wall of misaligned ones.
-Thread `?pos` through helpers like this one so failures point at the
-caller.
+Thread `?__POS__` through helpers like this one — inside the helper the
+parameter shadows the builtin, so forward it rather than recapture —
+and call them with `equal_tensor ~__POS__ expected actual`, so failures
+point at the caller.
 
 ## 4. A complex-tolerance testable
 
@@ -140,9 +142,9 @@ a record and a few functions over the public surface:
 ```ocaml
 type 'a tape = { name : string; mutable entries : 'a list; mutable dealt : int }
 
-let next ?pos t =
+let next ?__POS__ t =
   match t.entries with
-  | [] -> failf ?pos "tape %s: exhausted after %d entries" t.name t.dealt
+  | [] -> failf ?__POS__ "tape %s: exhausted after %d entries" t.name t.dealt
   | e :: rest ->
       t.entries <- rest;
       t.dealt <- t.dealt + 1;

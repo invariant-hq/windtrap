@@ -26,7 +26,7 @@ type config = {
   failed_only : bool;
   bail : int option;
   stream : bool;
-  update : Env.update;
+  baseline : Baseline.mode;
   timeout : float option;
   prop_count : int option;
   max_shrink : int option;
@@ -45,7 +45,7 @@ let default_config () =
     failed_only = false;
     bail = None;
     stream = false;
-    update = Env.No_update;
+    baseline = Baseline.Check;
     timeout = None;
     prop_count = None;
     max_shrink = None;
@@ -71,10 +71,10 @@ let default_config () =
    child running 24 of 900 tests sees the same property cases the parent
    saw.
 
-   [update = No_update] makes snapshot checking read-only by construction
-   — Snapshot maps it to Mode Check and the write is reachable only under
-   Mode Update — and the log directory is the child's own so that its
-   capture files and its last-failed store cannot touch the parent's. *)
+   [baseline = Check] makes baseline checking read-only by construction
+   — a correction is recorded only under Corrected and Update — and the
+   log directory is the child's own so that its capture files and its
+   last-failed store cannot touch the parent's. *)
 let for_subset config ~log_dir ~bail =
   {
     config with
@@ -84,7 +84,7 @@ let for_subset config ~log_dir ~bail =
     failed_only = false;
     bail;
     stream = false;
-    update = Env.No_update;
+    baseline = Baseline.Check;
     log_dir;
     allow_focus = true;
   }
@@ -127,17 +127,17 @@ type result = {
 type t = {
   config : config;
   capture : Capture.t;
-  snapshots : Snapshot.t;
+  baselines : Baseline.t;
   fixtures : (int, fixture_entry) Hashtbl.t;
   mutable acquired : int list; (* fixture ids, most recently acquired first *)
   mutable rev_results : result list;
 }
 
-let create config ~capture ~snapshots =
+let create config ~capture ~baselines =
   {
     config;
     capture;
-    snapshots;
+    baselines;
     fixtures = Hashtbl.create 8;
     acquired = [];
     rev_results = [];
@@ -145,7 +145,7 @@ let create config ~capture ~snapshots =
 
 let config t = t.config
 let capture t = t.capture
-let snapshots t = t.snapshots
+let baselines t = t.baselines
 
 (* Per-test frames *)
 
@@ -163,6 +163,7 @@ type frame = {
   owner : t;
   fr_path : string list;
   fr_loc : Loc.t option; (* declaration site: the location fallback *)
+  fr_corrections : bool; (* may this attempt record baseline corrections? *)
   mutable fr_prop : Property.context option;
   mutable fr_rev_failures : Failure.t list;
   mutable fr_subtests : string list; (* enclosing subtests, innermost first *)
@@ -172,11 +173,12 @@ type frame = {
   mutable fr_cwd : (string * Loc.t option) option; (* dir at the first chdir *)
 }
 
-let frame t ~path ~loc =
+let frame ?(corrections = true) t ~path ~loc =
   {
     owner = t;
     fr_path = path;
     fr_loc = loc;
+    fr_corrections = corrections;
     fr_prop = None;
     fr_rev_failures = [];
     fr_subtests = [];
@@ -246,9 +248,9 @@ let active_run_error =
   "windtrap: run is already active — a test body cannot start another run"
 
 let outside_run_error =
-  "windtrap: no test is running. Assertions, [output ()], [snapshot], \
-   [collect], [setenv], [chdir] and fixture accessors work only inside a test \
-   body executed by [run] — not at module toplevel, and not after the run."
+  "windtrap: no test is running. Assertions, [output ()], [expect], [collect], \
+   [setenv], [chdir] and fixture accessors work only inside a test body \
+   executed by [run] — not at module toplevel, and not after the run."
 
 let current_frame () =
   match !slot with
@@ -311,29 +313,15 @@ let subtest name fn =
       add_failure frame (relabel frame failure);
       pop ()
 
-(* Snapshots *)
+(* Baselines *)
 
-(* Two ladders, and the point is that they are different. The SCOPE — which
-   baseline directory the name resolves in — is the caller's [~pos] file,
-   else the enclosing test's declaration file, and never a backtrace frame
-   at snapshot call time: a snapshot reached through a helper in another
-   file must not relocate its baseline. The SITE is duplicate-identity data
-   only, so it may take the call frame, and falls back to the declaration
-   so that a [cases] family's tail-position snapshot rechecks one site. The
-   failure's own location is the call frame alone: a check without one
+(* The registry is the run's; the failure's location is the caller's
+   ([loc], the literal's position or the call frame). A check without one
    reaches [add_failure] unfilled and is attributed there, marked. *)
-let check_snapshot ?pos ~name actual =
+let check_baseline ?loc subject actual =
   let frame = current_frame () in
-  let scope =
-    match pos with
-    | Some (file, _, _, _) -> Some file
-    | None -> Option.map (fun (l : Loc.t) -> l.Loc.file) frame.fr_loc
-  in
-  let loc = Loc.resolve ?pos () in
-  Snapshot.check frame.owner.snapshots ?loc
-    ?site:(site_or_declaration frame loc)
-    ~test:(Test_tree.path_to_string frame.fr_path)
-    ~scope ~name actual
+  Baseline.check frame.owner.baselines ?loc ~correct:frame.fr_corrections
+    subject actual
 
 (* Runner-owned scratch *)
 

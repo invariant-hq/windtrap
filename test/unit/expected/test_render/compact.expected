@@ -1,15 +1,5 @@
 mylib: 11 tests (seed s1:7be1d2c904aa31f5)
-  PASS  math › addition                            0.1ms
-  FAIL  users › sessions after login               0.2ms
-  FAIL  parser › rejects empty                     0.2ms
-  FAIL  cli › cli help — no baseline               0.3ms
-  FAIL  cli › snapshot drift                       0.2ms
-  FAIL  geo › area non-negative                    18ms
-  FAIL  db › insert                                0.2ms
-  PASS  flaky › eventually                         0.2ms (3 attempts)
-  PASS  slow › big sort                            2.50s
-  PASS  slow › hash                                3.00s
-  SKIP  platform › windows paths (unix only)
+.FFFFFF...S
 ──────────────────── failures (6) ────────────────────
   FAIL  users › sessions after login
     test/test_users.ml:31
@@ -29,16 +19,16 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
 
   FAIL  cli › cli help
     test/test_cli.ml:9
-    snapshot "help": no baseline at test/__snapshots__/test_cli/help.snap
+    expect_file "test/help.expected": no baseline
     proposed (3 lines):
       ┆ Usage: mytool [OPTIONS] COMMAND
       ┆ Commands:
       ┆   run
     accept: dune exec test/main.exe -- -u, then review with git diff
 
-  FAIL  cli › snapshot drift
+  FAIL  cli › version drift
     test/test_cli.ml:14
-    snapshot "version": mismatch with test/__snapshots__/test_cli/version.snap
+    expect: mismatch
     @@ -1,3 +1,3 @@
       line one
     - line two
@@ -69,11 +59,4 @@ slow tests (2):
 (exempt with the "slow" tag, or raise --slow-threshold SECONDS)
 
 4 passed, 1 skipped, 6 failed in 6.5s.
-
-slowest tests:
-  3.00s  slow › hash
-  2.50s  slow › big sort
-   18ms  geo › area non-negative
-  0.3ms  cli › cli help
-  0.2ms  users › sessions after login
 coverage: 87.2% (312/358 points) · project: windtrap coverage

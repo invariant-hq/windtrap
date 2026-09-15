@@ -602,7 +602,7 @@ let a_failing_step_points_at_its_command () =
   let executed ?loc () =
     let spec =
       [
-        Stateful.call ~pos:site "boom" ~next:Fun.id (fun _ () ->
+        Stateful.call ~__POS__:site "boom" ~next:Fun.id (fun _ () ->
             raise
               (Failure.Check_failure
                  (Failure.equality ?loc ~expected:"1" ~actual:"2" ())));
@@ -1459,8 +1459,8 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
   let pos = ("spec.ml", 42, 0, 7) in
   let case =
     flattened
-      (Windtrap.stateful ~pos ~tags:[ "custom" ] ~timeout:2.5 "spec" ~model:0
-         ~scope:unit_scope tick_facade)
+      (Windtrap.stateful ~__POS__:pos ~tags:[ "custom" ] ~timeout:2.5 "spec"
+         ~model:0 ~scope:unit_scope tick_facade)
   in
   let selects tag = Tag.accepts (Tag.require tag Tag.any) case.Test_tree.tags in
   check (selects "prop") "--tag prop did not select a stateful test";
@@ -1476,7 +1476,7 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
     "the declared ?timeout did not reach the test node";
   check
     (case.Test_tree.loc = Some (Loc.of_pos pos))
-    "the declared ?pos did not reach the test node"
+    "the declared ?__POS__ did not reach the test node"
 
 (* [stateful] is [Runner.prop] over [program] with [execute] as its law, and
    the only way to see that wiring is to run the node it declares. The body
@@ -1485,7 +1485,7 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
    behind rather than the outcome value. *)
 let run_declared_body tree =
   match (flattened tree).Test_tree.body with
-  | Test_tree.Bracket _ | Test_tree.Scoped _ ->
+  | Test_tree.Scoped _ ->
       failf "the declared node scopes a resource, not a plain test"
   | Test_tree.Body body -> (
       match body () with

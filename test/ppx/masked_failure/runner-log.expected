@@ -21,4 +21,4 @@ F
 
 1 failed (1 subtest failure) in <duration>s.
 windtrap: wrote inline_masked_failure.ml.corrected
-windtrap: dune registers a correction for promotion only when every inline-test process of the library exits cleanly, so a failure in any of its files withholds this one too. Fix the failures, rerun, then 'dune promote' — or rerun with WINDTRAP_UPDATE=1 to accept corrections into the source tree directly.
+windtrap: dune registers a correction for promotion only when every inline-test process of the library exits cleanly, so a failure in any of its files withholds this one too. Fix the failures, rerun, then 'dune promote'.

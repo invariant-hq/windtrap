@@ -64,7 +64,8 @@ inventory. The ones that matter daily:
 | `--max-shrink N` | `WINDTRAP_MAX_SHRINK` | accepted shrink steps per failing property (default 100) |
 | `--timeout SECONDS` | `WINDTRAP_TIMEOUT` | default per-test limit |
 | `--slow-threshold SECONDS` | `WINDTRAP_SLOW_THRESHOLD` | warn when an untagged test exceeds SECONDS (default 1; 0 disables) |
-| `-u`, `--update` | `WINDTRAP_UPDATE` | accept snapshot changes (refused under CI) |
+| `-u`, `--update` | — | accept baseline changes in place (refused under CI) |
+| `--corrected` | — | write each correction as `<file>.corrected`, for `dune promote` |
 | `--shard K/N` | `WINDTRAP_SHARD` | run bucket K of N (see below) |
 | `-s`, `--stream` | `WINDTRAP_STREAM` | stream output instead of capturing |
 | `-v`, `--verbose` | `WINDTRAP_VERBOSE` | one status line per test |
@@ -86,7 +87,7 @@ two are worth knowing here.
 (Captured output, below).
 
 `WINDTRAP_PROJECT_ROOT` overrides where the runner thinks the project
-starts — the directory it resolves `__snapshots__/` paths against, and
+starts — the directory baseline paths resolve under, and
 the root of the default capture-log tree at `_build/_tests`. Unset, it
 walks up from the working directory to the first `dune-project`,
 `dune-workspace` or `.git`, which is right in any dune tree. Set it when
@@ -130,7 +131,7 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
 | glyph | meaning |
 | --- | --- |
 | `.` (green) | pass |
-| `F` (red) | counted failure — assert, property, snapshot, timeout, unexpected pass; the block at the end differentiates |
+| `F` (red) | counted failure — assert, property, baseline, timeout, unexpected pass; the block at the end differentiates |
 | `S` (yellow) | skip |
 | `x` (faint) | expected failure (`xfail`) |
 
@@ -195,7 +196,7 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
   SKIP  users › lookup missing (needs a database)
   PASS  users › session count                      0.0ms
   FAIL  rev involutive                             0.6ms
-  FAIL  snapshot demo — no baseline                0.1ms
+  FAIL  help page — no baseline                    0.1ms
   XFAIL  unicode width (expected failure: issue #42)  0.1ms
 ──────────────────── failures (4) ────────────────────
   …
@@ -277,10 +278,10 @@ suite composition. An empty bucket exits 2 like any empty selection.
 ## CI
 
 Detection is ambient: `CI` set means CI. Under CI the runner refuses
-runs that would lie — focused tests (`ftest`/`fgroup`) and snapshot
-update requests refuse to start before anything executes
-(`WINDTRAP_UPDATE=force` overrides the snapshot half deliberately; the
-focus refusal has no override — remove the `ftest`).
+runs that would lie — focused tests (`focus`) and in-place baseline
+updates (`-u`) refuse to start before anything executes. Neither has an
+override: remove the `focus`, and accept baselines under CI through a
+`--corrected` run and `dune promote`.
 
 - **JUnit**: `--junit PATH` (`WINDTRAP_JUNIT`) also writes a JUnit XML
   report. A target ending in `.xml` is that exact file; anything else

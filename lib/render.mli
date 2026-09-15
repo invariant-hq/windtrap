@@ -37,12 +37,12 @@
 
     Renderers are projections: everything printed derives from {!Run.result}
     values and the typed {!Failure.t} payloads inside them. Acceptance and
-    replay command lines are composed here from snapshot names, paths, and root
-    seed tokens (the replay line prints the {e root} token only); diffs are
-    computed here from the rendered values via {!Diff}; styling is applied here
-    through {!Pp} under the explicit [ansi] decision made at {!create} — nothing
-    reads the environment or the terminal. A renderer never alters status,
-    counts, or scheduling.
+    replay command lines are composed here from baseline paths and root seed
+    tokens (the replay line prints the {e root} token only); diffs are computed
+    here from the rendered values via {!Diff}; styling is applied here through
+    {!Pp} under the explicit [ansi] decision made at {!create} — nothing reads
+    the environment or the terminal. A renderer never alters status, counts, or
+    scheduling.
 
     The runner drives one {!type:t} through the run: {!header} once, then
     {!begin_test}/{!result} per test, then {!finish}. {!headline} and
@@ -67,9 +67,10 @@ type invocation = [ `Exe of string | `Mirrors ]
     hints complete with CLI flags ([cmd --failed], [cmd -u],
     [cmd --seed … -f …]) — the library runner passes ["dune exec <path> --"]
     under dune and [argv.(0)], verbatim, standalone. [`Mirrors] means no CLI
-    exists and hints spell [WINDTRAP_*] environment prefixes to [dune runtest] —
-    the inline runner's context, and the default. The driver computes it once at
-    startup; every acceptance, replay, and prune line derives from it, so no
+    exists and hints spell [WINDTRAP_*] environment prefixes to [dune runtest]
+    and acceptance as [dune promote] — the context of every run dune drives: the
+    inline runner's, a [--corrected] run's, and the default. The driver computes
+    it once at startup; every acceptance and replay line derives from it, so no
     hint can name an invocation that would not re-run the suite. *)
 
 type settings = {
@@ -196,7 +197,7 @@ val result : t -> Run.result -> unit
 (** [result t r] prints [r]'s per-test progress, by mode:
 
     - [`Compact]: one glyph — green [.] pass, red [F] counted failure (assert,
-      property, snapshot, timeout, unexpected pass), yellow [S] skip, faint [x]
+      property, baseline, timeout, unexpected pass), yellow [S] skip, faint [x]
       expected failure. Glyphs buffer until the run proves noteworthy: the first
       counted-failure result, or the first completed test with
       [r.duration >= slow_threshold] that is not [r.slow_tagged] (never when the
@@ -303,7 +304,7 @@ val finish :
     - the slowest tests, on runs slow enough to care about — [`Verbose] only:
       the list is diagnosis, not signal;
     - the coverage line
-      ([coverage: 87.2% (312/358 points) · project: dune build @cover], the
+      ([coverage: 87.2% (312/358 points) · project: windtrap coverage], the
       percentage styled by the runtime's thresholds — green at 80% and above,
       yellow at 60%, red below) when [coverage] is given. The hint is
       unconditional: an in-process number is one executable's view of the code
@@ -323,15 +324,15 @@ val finish :
     {!Failure.tail} attached to its failures: the retained lines (at most
     [tail_lines]), what was omitted, and the tail's [log_path]. *)
 
-(** {1:snapshots The snapshot report} *)
+(** {1:baselines The baseline report} *)
 
-val report_snapshots : t -> orphans:string list -> Run.t -> unit
-(** [report_snapshots t ~orphans run] prints the run's baseline maintenance
-    lines on [t]'s sink: one [wrote <path> (new|updated)] line per accepted
-    baseline ({!Snapshot.writes} over [run]'s registry, paths spelled by
-    {!Path_ops.display} — the one producer for both runners), then
-    {!stale_lines} over [orphans] ([Runner.outcome.orphans]) and the removal
-    hint under them.
+val report_baselines : t -> Run.t -> unit
+(** [report_baselines t run] prints what the run wrote for its baselines on
+    [t]'s sink, one line per file ({!Baseline.writes} over [run]'s registry,
+    paths spelled by {!Path_ops.display}): [wrote <path>.corrected] under
+    [--corrected] and [accepted <path>] under [-u], a source file's line ending
+    in [(N expectations)] for the literals patched in it; then one
+    [could not write <path>: <reason>] line per refusal ({!Baseline.refusals}).
 
     The driver calls it after {!finish}, when the transcript is settled: lines
     go straight to the sink, outside the compact row and deferral machinery. *)
@@ -421,7 +422,7 @@ val coverage_report : t -> mode:[ `Report | `Full ] -> coverage -> unit
     The mutation report: the survivor blocks, the unreached blocks, the one
     summary line and the reproduce footer. One layout serving the mutation
     loop's per-executable report and, through the facade's [Private], the
-    [windtrap mutate] command's aggregate over merged verdict files — the
+    [windtrap mutants] command's aggregate over merged verdict files — the
     interactive report and the CI report cannot drift apart.
 
     A survivor is a failure block, not a new vocabulary: the same labelled rule,
@@ -583,11 +584,11 @@ val mutation_report : t -> mutation -> unit
       from the invocation and [m.arm_variable]
       ([reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with
         ppx_windtrap.mutate test/test_calc.exe]) — under [`Mirrors] it is
-      [dune runtest --force --instrument-with ppx_windtrap.mutate], because a
-      build without the backend has no mutant to arm and a warm tree would
-      replay the cached run. [m.filter] rides it as the replay line's filter
+      [WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>], the
+      placeholder standing for the reader's own instrumented run, since no
+      command line re-runs it. [m.filter] rides it as the replay line's filter
       does: [-f '<filter>'] after the command under [`Exe],
-      [WINDTRAP_FILTER='<filter>'] before [dune runtest] under [`Mirrors]. No
+      [WINDTRAP_FILTER='<filter>'] before the placeholder under [`Mirrors]. No
       colour, as in every hint.
 
     Prints in every mode. *)
@@ -601,16 +602,10 @@ val mutation_report : t -> mutation -> unit
 
 val headline : Failure.t -> string
 (** [headline f] is a one-line, unstyled summary of [f]
-    ([expected true, got false], [snapshot "help": no baseline], …), for
-    transports that need a single-line field (JUnit [message] attributes).
+    ([expected true, got false], [expect_file "help.expected": no baseline], …),
+    for transports that need a single-line field (JUnit [message] attributes).
     Newlines and escape codes cannot occur — payload-borne ANSI sequences are
     stripped; long payload renderings are truncated with an ellipsis. *)
-
-val stale_lines : string list -> string list
-(** [stale_lines orphans] is one [stale baseline: <path>] line per orphan, in
-    order, paths spelled by {!Path_ops.display}, followed by a
-    [remove them: rm <paths>] line — a baseline is a committed file, so the
-    report names the removal rather than performing it. *)
 
 val is_subtest_failure : Failure.t -> bool
 (** [is_subtest_failure f] is [true] iff [f] was recorded inside {!Run.subtest}:
@@ -641,12 +636,13 @@ val pp_failure :
     Under a location the runner filled from the test's declaration
     ({!Failure.Declaration}: the failing call sat in tail position and left no
     frame), one faint line names the remedy, once —
-    [(assertion in tail position: its line is unknown; ~pos:__POS__ names it)] —
+    [(assertion in tail position: its line is unknown; ~__POS__ names it)] —
     except for a property failure, whose location is its declaration by
-    construction, and for an uncaught exception, which no verb raised; see
-    {!Failure.attribution}. The line is part of the block, so the transports
-    carry it too: a GitHub annotation pinned to the declaration line is exactly
-    where the reader needs it.
+    construction, for an uncaught exception, which no verb raised, and for a
+    file baseline, whose call takes no position; see {!Failure.attribution}. The
+    line is part of the block, so the transports carry it too: a GitHub
+    annotation pinned to the declaration line is exactly where the reader needs
+    it.
 
     - equality: [expected]/[actual] with the changed spans highlighted (under
       [ansi:false] a [~~~] marker line under each marked side instead of color —
@@ -690,14 +686,15 @@ val pp_failure :
       [raised exception does not satisfy the predicate:], and an exception
       nobody expected — a test body's escape — renders [uncaught exception:],
       each followed by the rendered exception and the recorded backtrace;
-    - snapshot: the state — missing (with the proposed content), mismatch
-      (unified diff against the baseline), unresolvable, duplicate (pointing at
-      the first check: [first checked at <site>] when its site is known,
-      [first checked by "<test>"] otherwise) — followed by the acceptance
-      command line for missing and mismatched baselines, spelled from the
+    - baseline: the subject ([expect], or [expect_file "<path>"]) and the state
+      — missing (with the proposed content), mismatch (unified diff against the
+      baseline), unresolvable (with the unproven path) — followed, for a missing
+      or mismatched baseline, by the acceptance line spelled from the
       invocation: [accept: <exe> -u, then review with git diff] under [`Exe],
-      [accept: WINDTRAP_UPDATE=1 dune runtest, then review with git diff] under
-      [`Mirrors];
+      [accept: dune promote] under [`Mirrors], the context of every run dune
+      drives, a [--corrected] one included — except a missing file under
+      [`Mirrors], which promotion cannot create, so its line reads
+      [accept: touch '<path>' && dune runtest, then dune promote];
     - property: the counterexample with its case index and shrink count — a
       shrink search that did not converge appends one line stating it
       ([timed out after 5s while shrinking; counterexample may not be minimal]
@@ -725,8 +722,8 @@ val pp_failure :
 
     Every surface above that prints compared data — the two equality renderings
     on both paths, the negated-equality value, the containment excerpt, the
-    predicate claim and value, the rendered exceptions, the snapshot baseline
-    and proposed content, the counterexample — prints each C0 byte and DEL as a
+    predicate claim and value, the rendered exceptions, the baseline and
+    proposed content, the counterexample — prints each C0 byte and DEL as a
     lowercase [\xNN] escape ([\x1b], [\x00], [\x0d]), with LF and TAB the
     exceptions: line structure and indentation are the block's own layout. One
     rule, no mnemonics, so [\x] marks every escape a reader sees. Payload text
@@ -743,7 +740,7 @@ val pp_failure :
     own styling is applied after the escape, so it is the only live sequence in
     the block.
 
-    The escape is a projection, like color. Equality, containment, and snapshot
+    The escape is a projection, like color. Equality, containment, and baseline
     storage never see it — raw bytes in, raw bytes compared, raw bytes accepted
     into a baseline — and neither do the decisions this block makes about the
     data: whether two renderings are equal, whether their line lists differ,

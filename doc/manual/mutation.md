@@ -167,7 +167,7 @@ mutant killed.
 
 `mutant killed.` closes the loop. An armed run is an ordinary run
 otherwise — it exits 1 because a test failed — except that checking is
-read-only while a mutant is armed: a snapshot or `[%expect]` mismatch is
+read-only while a mutant is armed: an `expect` or `[%expect]` mismatch is
 a plain failure, no `.corrected` is written, and dune's promotion
 protocol is not consulted.
 
@@ -283,7 +283,7 @@ heals it: re-run every suite with its mutants, then merge again;
 delete `_build/_mutants` to drop leftovers of removed executables. And
 `WINDTRAP_MUTATE_ONLY` scopes the work without narrowing the suite, so
 a scoped run still writes its verdicts; selecting tests — `-f`, tags,
-`--shard`, `--failed`, an in-source `ftest` — does narrow it, and such a
+`--shard`, `--failed`, an in-source `focus` — does narrow it, and such a
 run reports in full, leaves any existing verdict file where it was, and
 says so:
 

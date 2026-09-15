@@ -33,7 +33,7 @@ let test_golden () =
       ~path:[ "users"; "sessions after login" ]
       Fixtures.eq_failure
   in
-  snapshot "annotation" actual
+  expect_file actual "test/unit/expected/test_render_github/annotation.expected"
 
 (* Encoding *)
 
@@ -82,8 +82,8 @@ let test_declaration_attribution () =
     ~sub:"file=test/test_users.ml,line=88," a;
   check_contains "declaration: the hint rides in the message"
     ~sub:
-      "%0A    (assertion in tail position: its line is unknown; ~pos:__POS__ \
-       names it)%0A"
+      "%0A    (assertion in tail position: its line is unknown; ~__POS__ names \
+       it)%0A"
     a;
   check "declaration: the hint appears once"
     (count_occurrences ~sub:"tail position" a = 1)

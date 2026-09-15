@@ -4,8 +4,8 @@
 
    The sequential drive loop, SIGALRM timeout, retry loop, and last-failed
    persistence derive from windtrap v1's lib/runner.ml, rebuilt over the
-   per-run record (Run), data-form brackets (Test_tree), and the typed
-   failure model, with the boundary capturing body and teardown outcomes
+   per-run record (Run), scoped bodies (Test_tree), and the typed failure
+   model, with the boundary capturing body and teardown outcomes
    independently.
   ---------------------------------------------------------------------------*)
 
@@ -65,8 +65,8 @@ let install_exit_guard () =
    to user code — the raise happens after the user's law returned. *)
 exception Prop_outcome of Property.outcome
 
-let prop ?pos ?tags ?timeout ?count ?max_discard ?examples name gen law =
-  let loc = Loc.resolve ?pos () in
+let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
+  let loc = Loc.resolve ?__POS__ () in
   let body () =
     let frame = Run.current_frame () in
     let config = Run.config (Run.run_of_frame frame) in
@@ -87,7 +87,7 @@ let prop ?pos ?tags ?timeout ?count ?max_discard ?examples name gen law =
     in
     raise (Prop_outcome outcome)
   in
-  Test_tree.test ?pos ?tags ?timeout name body
+  Test_tree.test ?__POS__ ?tags ?timeout name body
 
 let coverage_failure ?loc (stats : Property.stats) =
   let unsatisfied =
@@ -264,9 +264,9 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
         None
   in
   (* A scoping function owns acquisition, the body and release in one call,
-     so the runner cannot bracket the three the way it brackets [Bracket] —
-     it can only run the body inside the callback and attribute whatever
-     escapes.
+     so the runner can only run the body inside the callback and attribute
+     whatever escapes. A bracket is such a scope, derived in [Test_tree]
+     from its setup and teardown, and gets exactly this treatment.
 
      The body's failure is recorded where it happens and then re-raised
      through [scope]: a scope that cancels or cleans up on the exception
@@ -278,7 +278,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
      Calling back exactly once is the contract. Zero calls means the body
      never ran, which must not report as a pass; a second call is refused
      rather than served, because one execution is the unit everything else
-     is keyed by (snapshot registration, subtest labels, scratch paths). *)
+     is keyed by (baseline corrections, subtest labels, scratch paths). *)
   let scoped : type r.
       renew:(unit -> unit) -> ((r -> unit) -> unit) -> (r -> unit) -> unit =
    fun ~renew scope body ->
@@ -338,19 +338,6 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   let phases renew =
     match case.Test_tree.body with
     | Test_tree.Body fn -> ignore (guard Failure.Body fn)
-    | Test_tree.Bracket { setup; body; teardown } -> (
-        match guard Failure.Setup setup with
-        | None -> () (* teardown runs iff setup succeeded *)
-        | Some resource ->
-            (* Body and teardown outcomes are captured independently — one
-               failure entry per phase, neither masking the other; teardown
-               runs on every body outcome, skip and timeout included. Never
-               Fun.protect at this boundary. *)
-            ignore (guard Failure.Body (fun () -> body resource));
-            (* The body may have consumed the window — re-arm, or a blocking
-               teardown after a body timeout would run unbounded. *)
-            renew ();
-            ignore (guard Failure.Teardown (fun () -> teardown resource)))
     | Test_tree.Scoped { scope; body } -> scoped ~renew scope body
   in
   let boundary () =
@@ -386,15 +373,38 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
       let backtrace = Printexc.get_raw_backtrace () in
       Run.reclaim frame;
       Printexc.raise_with_backtrace exn backtrace);
+  let failures = Run.failures frame in
   let outcome =
-    match Run.failures frame with
+    match failures with
     | [] -> (
         match !skipped with
         | Some reason -> Failure.Skip reason
         | None -> Failure.Pass)
     | failures -> Failure.Fail failures
   in
-  (outcome, !prop_stats)
+  (* The one gating rule of corrections, both storages: an attempt that
+     ended in any failure that is not a baseline failure keeps none of the
+     corrections it recorded, nor does one that skipped, whose verdict is
+     withheld. (An [xfail] test's attempt records none in the first place:
+     its frame checks read-only, since its mismatch is the failure the
+     annotation expects.) The attempt is [corrected] when every failure
+     it has is a baseline failure with a kept correction — [Baseline.check]
+     records exactly one correction per failure it raises in Corrected
+     mode, none for a failure it cannot correct (an unresolvable path, a
+     second content for an accepted key) — which is what lets the exit
+     code leave such an attempt to the [diff?] that follows. *)
+  let baseline_only =
+    List.for_all
+      (fun (f : Failure.t) ->
+        match f.Failure.kind with Failure.Baseline _ -> true | _ -> false)
+      failures
+  in
+  let keep = baseline_only && !skipped = None in
+  let kept = Baseline.settle (Run.baselines run) ~keep in
+  let corrected =
+    failures <> [] && baseline_only && kept = List.length failures
+  in
+  (outcome, !prop_stats, corrected)
 
 (* A failing test's report carries its bounded captured output — the
    final attempt's, attached to the first failure entry. *)
@@ -426,7 +436,8 @@ type event =
 (* Runs one test to completion (retries included), records its result, and
    returns it with whether it counted as failed (see [counts_failed]) — the
    caller drives --bail, the exit code, and the last-failed store from the
-   flag, never from the recorded outcome alone. *)
+   flag, never from the recorded outcome alone — and whether its final
+   attempt's failures are all kept corrections (see [run_attempt]). *)
 let run_case ~on_event run (case : Test_tree.case) =
   on_event (Test_started { path = case.Test_tree.path });
   let config = Run.config run in
@@ -439,10 +450,12 @@ let run_case ~on_event run (case : Test_tree.case) =
   let total_attempts = case.Test_tree.retries + 1 in
   let rec attempt number spent =
     let frame =
-      Run.frame run ~path:case.Test_tree.path ~loc:case.Test_tree.loc
+      Run.frame run
+        ~corrections:(case.Test_tree.xfail = None)
+        ~path:case.Test_tree.path ~loc:case.Test_tree.loc
     in
     let start = Clock.counter () in
-    let outcome, prop_stats =
+    let outcome, prop_stats, corrected =
       run_attempt run frame case ~limit ~groups ~test_name
     in
     let duration = spent +. Clock.count_s start in
@@ -476,7 +489,7 @@ let run_case ~on_event run (case : Test_tree.case) =
       in
       Run.record run result;
       on_event (Test_finished result);
-      (result, failed)
+      (result, failed, corrected)
   in
   attempt 1 0.
 
@@ -583,7 +596,7 @@ let write_store path entries =
 
 type startup_error =
   | Duplicate_paths of string list
-  | Focused_in_ci of ([ `Ftest | `Fgroup ] * Loc.t option) list
+  | Focused_in_ci of Loc.t option list
   | Update_refused_in_ci
   | No_recorded_failures
 
@@ -596,26 +609,25 @@ let startup_message = function
       Pp.str "duplicate test paths:\n  %s\nEvery full test path must be unique."
         (String.concat "\n  " paths)
   | Focused_in_ci sites ->
-      let site (kind, loc) =
-        let name = match kind with `Ftest -> "ftest" | `Fgroup -> "fgroup" in
-        match loc with
-        | Some loc -> Pp.str "%s at %s" name (Loc.to_string loc)
-        | None -> name
+      let site = function
+        | Some loc -> Pp.str "focus at %s" (Loc.to_string loc)
+        | None -> "focus"
       in
-      Pp.str "focused tests committed (%s); remove ftest/fgroup to run under CI"
+      Pp.str "focused tests committed (%s); remove focus to run under CI"
         (String.concat ", " (List.map site sites))
   | Update_refused_in_ci ->
-      "snapshot update refused: CI is set. Set WINDTRAP_UPDATE=force to update \
-       baselines on a CI machine."
+      "baseline update refused: CI is set. -u rewrites baselines in place, \
+       which is a developer's edit; under CI run with --corrected and accept \
+       with dune promote."
   | No_recorded_failures -> "no recorded failures match the current suite"
 
 (* Startup
 
    Everything a run must clear before a single test executes. The order is
-   contractual — duplicate paths, the CI focus guard, the snapshot CI guard,
+   contractual — duplicate paths, the CI focus guard, the baseline CI guard,
    the [--failed] store — because a suite that trips two of them must always
    be told about the same one. Between them the checks also decide the two
-   values the rest of the run reads out of them: the snapshot mode and the
+   values the rest of the run reads out of them: the baseline mode and the
    path allowlist ([None] when neither the caller nor [--failed] narrowed by
    path, and never [Some []] under [--failed] — an allowlist matching nothing
    is the refusal above it). *)
@@ -635,9 +647,10 @@ let startup (config : Run.config) ~suite ~focus_sites ~allowlist tests paths =
     else Ok ()
   in
   let* mode =
-    match Snapshot.resolve_mode ~ci:in_ci config.Run.update with
-    | Snapshot.Refused_in_ci -> Error Update_refused_in_ci
-    | Snapshot.Mode mode -> Ok mode
+    (* In-place acceptance is a developer's edit; there is no override. *)
+    match config.Run.baseline with
+    | Baseline.Update when in_ci -> Error Update_refused_in_ci
+    | mode -> Ok mode
   in
   let* allowlist =
     (* The two narrowings intersect rather than override, which costs
@@ -675,8 +688,7 @@ type plan = {
   selected : Test_tree.case list;
   total : int;
   focus_active : bool;
-  focused : int; (* focused cases in the declared suite, before selection *)
-  mode : Snapshot.mode;
+  mode : Baseline.mode;
   started : Clock.counter;
 }
 
@@ -722,10 +734,7 @@ let plan ?allowlist ~config ~suite tests : (plan, startup_error) result =
   let selected =
     List.filter (case_selected config ~predicate ~allowed ~focus_active) cases
   in
-  let focused =
-    List.length (List.filter (fun case -> case.Test_tree.focused) cases)
-  in
-  Ok { config; suite; selected; total; focus_active; focused; mode; started }
+  Ok { config; suite; selected; total; focus_active; mode; started }
 
 (* Outcomes *)
 
@@ -734,7 +743,6 @@ type outcome = {
   selected : Test_tree.case list;
   total : int;
   focus_active : bool;
-  orphans : string list;
   duration : float;
   exit_code : int;
 }
@@ -766,24 +774,28 @@ let executed_test (result : Run.result) = result.Run.subject = Run.Test
 (* Runs the selected tests one at a time in declaration order, stopping once
    [--bail]'s budget is spent. Returns whether it bailed, how many cases
    executed (what full-run detection counts — never result rows, which the
-   verdict rows below would inflate), and the paths that counted as failed
+   verdict rows below would inflate), the paths that counted as failed
    (see [counts_failed]) in execution order: what [--bail], the exit code,
    and the store react to, never a recorded outcome alone — expected [xfail]
-   failures are recorded but never accumulate here. *)
+   failures are recorded but never accumulate here — and, among those, the
+   paths whose failures are all kept corrections. *)
 let drive ~on_event run selected =
   let config = Run.config run in
   let bailed = ref false in
   let executed = ref 0 in
   let rev_failed = ref [] in
+  let rev_corrected = ref [] in
   (try
      List.iter
        (fun case ->
          if not !bailed then begin
-           let _result, failed = run_case ~on_event run case in
+           let _result, failed, corrected = run_case ~on_event run case in
            incr executed;
-           if failed then
-             rev_failed :=
-               Test_tree.path_to_string case.Test_tree.path :: !rev_failed;
+           let path = Test_tree.path_to_string case.Test_tree.path in
+           if failed then begin
+             rev_failed := path :: !rev_failed;
+             if corrected then rev_corrected := path :: !rev_corrected
+           end;
            match config.Run.bail with
            | Some limit when List.length !rev_failed >= limit -> bailed := true
            | Some _ | None -> ()
@@ -801,7 +813,7 @@ let drive ~on_event run selected =
      in
      (try ignore (Run.release_fixtures run ~announce) with _ -> ());
      Printexc.raise_with_backtrace exn backtrace);
-  (!bailed, !executed, List.rev !rev_failed)
+  (!bailed, !executed, List.rev !rev_failed, List.rev !rev_corrected)
 
 (* Rewrites the last-failed store at [path] with this run's failures. Entries
    for tests a partial run never reached survive; only a [full] run — one that
@@ -818,38 +830,16 @@ let update_last_failed path ~full ~results ~failed_paths =
   in
   write_store path (failed_paths @ survivors)
 
-(* Stale-baseline reporting, gated on how much of the suite really ran:
-   only a run that executed all of it knows the full set of names the
-   suite claims. Every recorded [Fail] blocks the report, expected or not:
-   an [xfail] body did not complete, so its snapshots may be stale.
-   Reporting never deletes — a baseline is a committed file. *)
-let stale_baselines snapshots ~full ~results ~focused_count =
-  let count_outcomes accepts =
-    List.length (List.filter (fun r -> accepts r.Run.outcome) results)
-  in
-  let failed =
-    count_outcomes (function
-      | Failure.Fail _ -> true
-      | Failure.Pass | Failure.Skip _ -> false)
-  in
-  let skipped =
-    count_outcomes (function
-      | Failure.Skip _ -> true
-      | Failure.Pass | Failure.Fail _ -> false)
-  in
-  let clean = full && skipped = 0 && failed = 0 && focused_count = 0 in
-  if clean then Snapshot.orphans snapshots else []
-
 let execute_plan ?(on_event = fun _ -> ())
-    ({ config; suite; selected; total; focus_active; focused; mode; started } :
-      plan) : outcome =
+    ({ config; suite; selected; total; focus_active; mode; started } : plan) :
+    outcome =
   if Run.active () then invalid_arg Run.active_run_error;
-  let snapshots = Snapshot.create ~mode () in
+  let baselines = Baseline.create ~mode () in
   let capture =
     if config.Run.stream then Capture.disabled
     else Capture.create ~log_dir:config.Run.log_dir ~suite ()
   in
-  let run = Run.create config ~capture ~snapshots in
+  let run = Run.create config ~capture ~baselines in
   (* The executing span: everything from the first event to the completed
      outcome runs with the slot marked, so the exit guard covers fixture
      release, observers, and store maintenance — not only test attempts. On
@@ -857,7 +847,9 @@ let execute_plan ?(on_event = fun _ -> ())
      [execute], so the guard is inert during fatal termination. *)
   Run.with_active run @@ fun () ->
   on_event (Run_started { suite; total; selected = List.length selected });
-  let bailed, executed, failed_paths = drive ~on_event run selected in
+  let bailed, executed, failed_paths, corrected_paths =
+    drive ~on_event run selected
+  in
   (* Releases run after the last test, outside any per-test timeout,
      including under --bail. A failure here is part of the run's verdict,
      so it is recorded the moment it happens: one row per failure, after
@@ -869,21 +861,29 @@ let execute_plan ?(on_event = fun _ -> ())
         (verdict_result ~subject:Run.Fixture_release
            ~path:Run.fixture_release_path [ failure ]))
     release_failures;
-  (* Store and snapshot maintenance range over executed tests: a verdict
-     row is not a test — counting one as skipped, failed, or executed
-     would silently disable orphan reporting and corrupt the last-failed
-     store. *)
+  (* Store maintenance ranges over executed tests: a verdict row is not a
+     test — counting one as executed would corrupt the last-failed store. *)
   let test_results = List.filter executed_test (Run.results run) in
   (* A full run executed the entire declared suite: only such a run may drop
-     store entries for tests that no longer exist, or report orphans. *)
+     store entries for tests that no longer exist. *)
   let full = (not bailed) && executed = total in
   update_last_failed (store_path config ~suite) ~full ~results:test_results
     ~failed_paths;
-  let orphans =
-    stale_baselines snapshots ~full ~results:test_results ~focused_count:focused
+  (* Corrections are written once, after the last test and before the
+     report; a correction that reached nothing fails the run. *)
+  Baseline.write baselines;
+  (* A test whose failures are all kept corrections leaves the exit code
+     alone: under --corrected the [diff?] that follows is the verdict. In
+     every other mode no correction is kept beside a raised failure, so the
+     list is empty and every failure counts. *)
+  let uncorrected =
+    List.filter (fun path -> not (List.mem path corrected_paths)) failed_paths
   in
   let exit_code =
-    if failed_paths <> [] || release_failures <> [] then 1
+    if
+      uncorrected <> [] || release_failures <> []
+      || Baseline.refusals baselines <> []
+    then 1
     else if executed = 0 then 2
     else 0
   in
@@ -892,7 +892,6 @@ let execute_plan ?(on_event = fun _ -> ())
     selected;
     total;
     focus_active;
-    orphans;
     duration = Clock.count_s started;
     exit_code;
   }

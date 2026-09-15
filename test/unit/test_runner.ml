@@ -11,8 +11,8 @@
    guards), exit codes including the all-skipped ratification, expected
    failures (xfail), subtest and scratch-path cleanup through the boundary,
    fixture release under bail and on release failure (acquisition skips
-   included), events, the property wiring, the snapshot guard and the
-   stale-baseline report,
+   included), events, the property wiring, the baseline guard, the
+   gating of corrections,
    and the last-failed store round trip. Plain executable: [execute]
    refuses to nest inside an active run, so this suite cannot host its
    own assertions under the windtrap runner. *)
@@ -301,6 +301,28 @@ let () =
           | None -> check "the Raise payload carries a backtrace" false)
       | _ -> check "deep raise: one Raise failure" false);
   Printexc.record_backtrace restore
+
+(* A fatal exception skips the derived bracket's teardown and escapes the
+   run, where any other body exception runs it and is recorded. *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let torn_down = ref false in
+  let tests =
+    [
+      Test_tree.bracket
+        ~setup:(fun () -> ())
+        ~teardown:(fun () -> torn_down := true)
+        "fatal"
+        (fun () -> raise Sys.Break);
+    ]
+  in
+  check "a fatal exception escapes the run"
+    (match Runner.execute ~config ~suite:"suite" tests with
+    | exception Sys.Break -> true
+    | Ok _ | Error _ -> false);
+  check "the teardown did not run on the fatal path" (not !torn_down)
 
 (* Timeouts (Unix only) *)
 
@@ -828,7 +850,7 @@ let () =
   let suite =
     [
       Test_tree.test "unfocused" (fun () -> ());
-      Test_tree.ftest "starred" (fun () -> ());
+      Test_tree.focus (Test_tree.test "starred" (fun () -> ()));
     ]
   in
   expect_run "focus narrows outside CI" ~config suite @@ fun outcome ->
@@ -841,17 +863,17 @@ let () =
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
-  let suite = [ Test_tree.ftest "starred" (fun () -> ()) ] in
+  let suite = [ Test_tree.focus (Test_tree.test "starred" (fun () -> ())) ] in
   Unix.putenv "CI" "true";
   expect_startup_error "focused tests are refused under CI" ~config suite
     (function
-    | Runner.Focused_in_ci [ (`Ftest, _) ] -> true
+    | Runner.Focused_in_ci [ _ ] -> true
     | _ -> false);
   (match Runner.execute ~config ~suite:"suite" suite with
   | Error error ->
       check "the focus refusal exits 1" (Runner.startup_exit_code error = 1);
       check "the focus message names the remedy"
-        (contains "remove ftest/fgroup" (Runner.startup_message error))
+        (contains "remove focus" (Runner.startup_message error))
   | Ok _ -> check "focus refusal expected" false);
   (* [allow_focus] has no flag and no mirror: a forked mutation child is
      its only setter, through [Run.for_subset]. *)
@@ -864,7 +886,7 @@ let () =
   (* CI falsy spellings do not arm the guard (Env: set-and-not-falsy). *)
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
-  let suite = [ Test_tree.ftest "starred" (fun () -> ()) ] in
+  let suite = [ Test_tree.focus (Test_tree.test "starred" (fun () -> ())) ] in
   List.iter
     (fun value ->
       Unix.putenv "CI" value;
@@ -1169,7 +1191,7 @@ let () =
   let suite =
     [
       Test_tree.test "plain-one" (fun () -> ());
-      Test_tree.ftest "starred" (fun () -> ());
+      Test_tree.focus (Test_tree.test "starred" (fun () -> ()));
       Test_tree.test "plain-two" (fun () -> ());
     ]
   in
@@ -2030,113 +2052,221 @@ let () =
         (contains "already active" actual)
   | _ -> check "a nested run fails the calling test" false
 
-(* The snapshot CI guard *)
+(* The baseline CI guard *)
 
 let () =
   with_temp_root @@ fun root ->
   let config =
-    { (base_config ~log_dir:root ()) with Run.update = Env.Update }
+    { (base_config ~log_dir:root ()) with Run.baseline = Baseline.Update }
   in
   let suite = [ Test_tree.test "ok" (fun () -> ()) ] in
   Unix.putenv "CI" "true";
-  expect_startup_error "update mode is refused under CI" ~config suite (function
+  expect_startup_error "-u is refused under CI" ~config suite (function
     | Runner.Update_refused_in_ci -> true
     | _ -> false);
-  check "the refusal message names the override"
-    (contains "force" (Runner.startup_message Runner.Update_refused_in_ci));
-  let forced = { config with Run.update = Env.Force_update } in
-  expect_run "force update proceeds under CI" ~config:forced suite
+  let message = Runner.startup_message Runner.Update_refused_in_ci in
+  check "the refusal names the CI-safe acceptance"
+    (contains "--corrected" message && contains "dune promote" message);
+  let corrected = { config with Run.baseline = Baseline.Corrected } in
+  expect_run "--corrected proceeds under CI" ~config:corrected suite
   @@ fun outcome ->
-  check "forced run is green" (outcome.Runner.exit_code = 0);
+  check "corrected run is green" (outcome.Runner.exit_code = 0);
   clear_env ()
 
-(* Stale-baseline reporting
+(* Corrections
 
-   The registry the runner builds resolves scopes under
+   The registry the runner builds resolves paths under
    [Path_ops.project_root], so a throwaway root goes in
-   WINDTRAP_PROJECT_ROOT and the tests snapshot with an explicit [~pos]
-   under it. Orphan scans only see directories the run consulted, so every
-   scenario checks one live baseline and leaves a second, unclaimed one
-   beside it. *)
+   WINDTRAP_PROJECT_ROOT. The runner's own directory is dune's build tree
+   of another root, so nothing here is a build action: corrections land
+   beside the files themselves. *)
 
-let write_file path contents =
-  Path_ops.mkdir_p (Filename.dirname path);
-  let oc = open_out_bin path in
-  Fun.protect
-    ~finally:(fun () -> close_out_noerr oc)
-    (fun () -> output_string oc contents)
-
-(* [<root>/src/__snapshots__/a/<name>.snap], the frozen layout for a
-   snapshot scoped to "src/a.ml". *)
-let baseline root name =
-  Filename.concat root ("src/__snapshots__/a/" ^ name ^ ".snap")
-
-let scope_pos = ("src/a.ml", 1, 0, 0)
-
-(* One suite, two tests, one live baseline and one stale file. *)
-let stale_suite root =
-  write_file (baseline root "kept") "hello\n";
-  write_file (baseline root "gone") "who checks me\n";
-  [
-    Test_tree.test "t1" (fun () ->
-        Windtrap.snapshot ~pos:scope_pos "kept" "hello\n");
-    Test_tree.test "t2" (fun () -> ());
-  ]
+let read_file path = In_channel.with_open_bin path In_channel.input_all
+let baseline root = Filename.concat root "src/help.expected"
 
 let () =
   clear_env ();
   with_temp_root @@ fun root ->
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
   let base = base_config ~log_dir:(Filename.concat root "_logs") () in
-  let suite = stale_suite root in
-  (* Advisory, always: the run is green and the stale file survives —
-     removing a committed baseline is the user's edit. *)
-  expect_run "a stale baseline is reported" ~config:base suite @@ fun outcome ->
-  check "the stale baseline is named"
-    (outcome.Runner.orphans = [ baseline root "gone" ]);
-  check "but the run still passes" (outcome.Runner.exit_code = 0);
-  check "and no test counted as failed" (failed_paths outcome = []);
-  check "the stale file was not deleted"
-    (Sys.file_exists (baseline root "gone"));
-  check "and the live baseline is untouched"
-    (Sys.file_exists (baseline root "kept"));
-  (* A filtered run cannot tell "stale" from "not selected this time", so
-     it says nothing. *)
-  let filtered = { base with Run.filter = Some "t1" } in
-  expect_run "a filtered run reports nothing" ~config:filtered suite
+  let suite =
+    [
+      Test_tree.test "t1" (fun () ->
+          Windtrap.expect_file "hello\n" "src/help.expected");
+      Test_tree.test "t2" (fun () -> ());
+    ]
+  in
+  (* Check mode: the mismatch fails the run and writes nothing. *)
+  expect_run "check mode fails on a missing baseline" ~config:base suite
   @@ fun outcome ->
-  check "a filtered run reports no orphans" (outcome.Runner.orphans = []);
-  check "and stays green" (outcome.Runner.exit_code = 0);
-  (* Same for a run that did not finish clean: one failing test is enough. *)
-  let dirty = [ Test_tree.test "boom" (fun () -> Check.fail "boom") ] @ suite in
-  expect_run "an unclean run reports nothing" ~config:base dirty
+  check "the run fails"
+    (outcome.Runner.exit_code = 1 && failed_paths outcome = [ "t1" ]);
+  check "nothing is written"
+    ((not (Sys.file_exists (baseline root)))
+    && Baseline.writes (Run.baselines outcome.Runner.run) = []);
+  (* Corrected mode: the test still fails, the correction lands beside the
+     file, and the exit code is left to the diff that follows. *)
+  let corrected = { base with Run.baseline = Baseline.Corrected } in
+  expect_run "corrected mode leaves the exit code to the diff" ~config:corrected
+    suite
   @@ fun outcome ->
-  check "an unclean run reports no orphans" (outcome.Runner.orphans = []);
-  check "and fails for its own reason"
-    (outcome.Runner.exit_code = 1 && failed_paths outcome = [ "boom" ]);
+  check "the test row counts as failed" (failed_paths outcome = [ "t1" ]);
+  check "but the run exits 0" (outcome.Runner.exit_code = 0);
+  check "the .corrected is written beside the file"
+    (Sys.file_exists (baseline root ^ ".corrected")
+    && read_file (baseline root ^ ".corrected") = "hello\n");
+  check "and the file itself is not" (not (Sys.file_exists (baseline root)));
+  (match Baseline.writes (Run.baselines outcome.Runner.run) with
+  | [ { Baseline.path; literals = 0 } ] ->
+      check "one write reported" (path = baseline root ^ ".corrected")
+  | _ -> check "one write reported" false);
+  (* Update mode: accepted silently, in place, green. *)
+  let update = { base with Run.baseline = Baseline.Update } in
+  expect_run "update mode accepts in place" ~config:update suite
+  @@ fun outcome ->
+  check "green" (outcome.Runner.exit_code = 0 && failed_paths outcome = []);
+  check "the file holds the content"
+    (Sys.file_exists (baseline root) && read_file (baseline root) = "hello\n");
+  check "the write is reported"
+    (Baseline.writes (Run.baselines outcome.Runner.run)
+    = [ { Baseline.path = baseline root; literals = 0 } ]);
+  expect_run "the accepted baseline matches from then on" ~config:base suite
+  @@ fun outcome ->
+  check "green" (outcome.Runner.exit_code = 0 && failed_paths outcome = []);
   clear_env ()
 
-(* A verdict row is not a test: a release failure recorded into the run
-   must not count as an executed, failing test — that would disable
-   full-run detection and orphan reporting for exactly the runs that need
-   both. *)
+(* Gating: a correction never blesses output produced beside another
+   failure, an unresolvable path is not a correction, and a key checked
+   with two contents in one run is a real failure. *)
 let () =
   clear_env ();
   with_temp_root @@ fun root ->
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
-  let config = base_config ~log_dir:(Filename.concat root "_logs") () in
+  let corrected =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.baseline = Baseline.Corrected;
+    }
+  in
+  let dirty =
+    [
+      Test_tree.test "dirty" (fun () ->
+          Run.subtest "expectation" (fun () ->
+              Windtrap.expect_file "x\n" "src/a.expected");
+          Check.fail "boom");
+    ]
+  in
+  expect_run "a correction beside another failure is dropped" ~config:corrected
+    dirty
+  @@ fun outcome ->
+  check "the run fails" (outcome.Runner.exit_code = 1);
+  check "nothing is written"
+    ((not (Sys.file_exists (Filename.concat root "src/a.expected.corrected")))
+    && Baseline.writes (Run.baselines outcome.Runner.run) = []);
+  let escaping =
+    [
+      Test_tree.test "escapes" (fun () ->
+          Windtrap.expect_file "x\n" "../outside.expected");
+    ]
+  in
+  expect_run "an unresolvable baseline is not a correction" ~config:corrected
+    escaping
+  @@ fun outcome ->
+  check "the run fails" (outcome.Runner.exit_code = 1);
+  let divergent =
+    [
+      Test_tree.test "a" (fun () ->
+          Windtrap.expect_file "one\n" "src/d.expected");
+      Test_tree.test "b" (fun () ->
+          Windtrap.expect_file "two\n" "src/d.expected");
+    ]
+  in
+  expect_run "two contents for one baseline" ~config:corrected divergent
+  @@ fun outcome ->
+  check "the first is a correction, the second a failure"
+    (outcome.Runner.exit_code = 1 && failed_paths outcome = [ "a"; "b" ]);
+  check "the first content is what is written"
+    (read_file (Filename.concat root "src/d.expected.corrected") = "one\n");
+  clear_env ()
+
+(* An expected failure is a failure: an xfail test's stale baseline is the
+   mismatch the annotation expects, so its attempt checks read-only in
+   every mode — reported, excused, never corrected, never accepted — and
+   a test that skipped after a check records nothing either. *)
+let () =
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let base = base_config ~log_dir:(Filename.concat root "_logs") () in
+  let known =
+    Test_tree.xfail ~reason:"issue #42"
+      (Test_tree.test "known" (fun () ->
+           Windtrap.expect_file "buggy\n" "src/known.expected"))
+  in
+  (* Reachable only where the check does not raise: under Update. *)
+  let undecided =
+    Test_tree.test "undecided" (fun () ->
+        Windtrap.expect_file "partial\n" "src/undecided.expected";
+        Check.skip ~reason:"not here" ())
+  in
+  let on_disk name =
+    Sys.file_exists (Filename.concat root ("src/" ^ name ^ ".expected"))
+    || Sys.file_exists
+         (Filename.concat root ("src/" ^ name ^ ".expected.corrected"))
+  in
+  let excused outcome =
+    outcome.Runner.exit_code = 0
+    && failed_paths outcome = []
+    && Baseline.writes (Run.baselines outcome.Runner.run) = []
+    && not (on_disk "known")
+  in
+  let corrected = { base with Run.baseline = Baseline.Corrected } in
+  expect_run "corrected: the xfail mismatch is excused, not corrected"
+    ~config:corrected [ known ]
+  @@ fun outcome ->
+  check "green, nothing written" (excused outcome);
+  let update = { base with Run.baseline = Baseline.Update } in
+  expect_run "update: the xfail mismatch is excused, not accepted"
+    ~config:update [ known; undecided ]
+  @@ fun outcome ->
+  check "green, nothing written" (excused outcome);
+  check "the skipped test's correction is dropped"
+    ((not (on_disk "undecided"))
+    && List.exists
+         (fun (r : Run.result) ->
+           r.Run.path = [ "undecided" ]
+           && match r.Run.outcome with Failure.Skip _ -> true | _ -> false)
+         (Run.results outcome.Runner.run));
+  clear_env ()
+
+(* A verdict row is not a test: a release failure beside a corrected test
+   still fails the run, and the test's own correction is still written. *)
+let () =
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.baseline = Baseline.Corrected;
+    }
+  in
   let fx =
     Run.fixture ~teardown:(fun _ -> Check.fail "release-boom") (fun () -> ())
   in
   let suite =
-    stale_suite root @ [ Test_tree.test "t3" (fun () -> ignore (fx ())) ]
+    [
+      Test_tree.test "t1" (fun () ->
+          Windtrap.expect_file "hello\n" "src/help.expected");
+      Test_tree.test "t3" (fun () -> ignore (fx ()));
+    ]
   in
-  expect_run "release failure beside a stale baseline" ~config suite
+  expect_run "release failure beside a correction" ~config suite
   @@ fun outcome ->
-  check "the release row does not gate orphan reporting"
-    (outcome.Runner.orphans = [ baseline root "gone" ]);
   check "the release failure still fails the run"
     (outcome.Runner.exit_code = 1 && List.length (release_rows outcome) = 1);
+  check "the correction is still written"
+    (Sys.file_exists (baseline root ^ ".corrected"));
   clear_env ()
 
 (* The last-failed store *)
@@ -2398,16 +2528,17 @@ let () =
          raise time, so capture must stop at the runner's delimiter and the
          recording falls back to the declaration — never the line that
          called [execute]. *)
-      Test_tree.test ~pos "tail" (fun () -> Check.equal Testable.int 1 2);
-      (* The same check, its own line handed over: [?pos] always wins. *)
-      Test_tree.test ~pos "given" (fun () ->
-          Check.equal ~pos:given Testable.int 1 2);
+      Test_tree.test ~__POS__:pos "tail" (fun () ->
+          Check.equal Testable.int 1 2);
+      (* The same check, its own line handed over: [?__POS__] always wins. *)
+      Test_tree.test ~__POS__:pos "given" (fun () ->
+          Check.equal ~__POS__:given Testable.int 1 2);
       (* Not in tail position: the body's frame is live, so capture finds
          this file's line — no fallback, nothing to hint. *)
-      Test_tree.test ~pos "captured" (fun () ->
+      Test_tree.test ~__POS__:pos "captured" (fun () ->
           Check.equal Testable.int 1 2;
           ());
-      Test_tree.test ~pos "raises" (fun () -> raise Boom);
+      Test_tree.test ~__POS__:pos "raises" (fun () -> raise Boom);
     ]
   in
   expect_run "tail-loc suite runs" ~config tests @@ fun outcome ->
@@ -2420,7 +2551,7 @@ let () =
   | _ -> check "tail-loc: exactly one failure" false);
   (match failure_list (outcome_of outcome [ "given" ]) with
   | [ f ] ->
-      check "a given ?pos is the location, as recorded"
+      check "a given ?__POS__ is the location, as recorded"
         (f.Failure.loc = Some (Loc.of_pos given)
         && f.Failure.attribution = Failure.Recorded)
   | _ -> check "given-loc: exactly one failure" false);

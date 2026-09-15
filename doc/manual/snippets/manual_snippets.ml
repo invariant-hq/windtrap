@@ -224,13 +224,23 @@ let help () =
       "  test     Run the tests";
     ]
 
+let report ~rows = Printf.sprintf "processed %d rows\nstatus: ok" rows
+
 let snapshots =
   group "cli"
     [
-      test "cli help" (fun () -> snapshot "help" (help ()));
+      test "report" (fun () ->
+          expect (report ~rows:42)
+          @@ __POS_OF__
+               {|
+            processed 42 rows
+            status: ok
+            |});
+      test "cli help" (fun () ->
+          expect_file (help ()) "doc/manual/snippets/help.expected");
       test "greeting goes through capture" (fun () ->
           print_string "Hello, World!\n";
-          equal string "Hello, World!\n" (output ()));
+          expect (output ()) @@ __POS_OF__ {| Hello, World! |});
     ]
 
 (* ───── resources-and-structure.md ───── *)
@@ -323,7 +333,18 @@ let resources =
       xfail ~reason:"issue #42"
         (test "known bug stays in-tree" (fun () ->
              equal int 8080 (require_match tcp_port (resolve "http"))));
-      slow "big input" ~timeout:60. (fun () -> is_true true);
+      slow ~timeout:60. "big input" (fun () -> is_true true);
+    ]
+
+(* Group-level defaults: a group's ~timeout and ~retries reach every test
+   under it, and a test's own declaration wins. *)
+let integration =
+  group ~timeout:30. "integration"
+    [
+      with_db "migrates" (fun db -> equal int 0 (Db.count db));
+      slow "reindexes" (fun () -> is_true true);
+      test ~retries:2 "fetches the manifest" (fun () -> is_true true);
+      test ~timeout:60. "keeps its own limit" (fun () -> is_true true);
     ]
 
 (* ───── mutation.md ───── *)
@@ -368,5 +389,11 @@ let () =
   exit
   @@ run "manual"
        [
-         getting_started; assertions; properties; snapshots; resources; mutation;
+         getting_started;
+         assertions;
+         properties;
+         snapshots;
+         resources;
+         integration;
+         mutation;
        ]

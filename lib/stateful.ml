@@ -27,15 +27,15 @@ type ('model, 'sut) command =
    reported without a location. Capturing where the command is written
    points the report at the code that failed, which is the same fallback
    [Run.add_failure] makes for a test — one level finer. *)
-let command ?pos ?(pre = fun _ _ -> true) name gen ~next body =
-  Command { name; gen; pre; next; body; loc = Loc.resolve ?pos () }
+let command ?__POS__ ?(pre = fun _ _ -> true) name gen ~next body =
+  Command { name; gen; pre; next; body; loc = Loc.resolve ?__POS__ () }
 
 (* [call] is [command] at ['arg = unit] over [Gen.unit], whose printer is
    what lets a nullary step print as its name alone. *)
-let call ?pos ?pre name ~next body =
-  (* [?pos] forwards; without one, [command]'s own capture walks past both
-     of these frames — they are windtrap's — and lands on the caller. *)
-  command ?pos
+let call ?__POS__ ?pre name ~next body =
+  (* [?__POS__] forwards; without one, [command]'s own capture walks past
+     both of these frames — they are windtrap's — and lands on the caller. *)
+  command ?__POS__
     ?pre:(Option.map (fun pre model () -> pre model) pre)
     name Gen.unit
     ~next:(fun model () -> next model)
@@ -516,12 +516,12 @@ let execute ?loc ?invariant ~scope program =
 let prop_tag = "prop"
 let stateful_tag = "stateful"
 
-let stateful ?pos ?tags ?timeout ?count ?steps ?pp_model ?invariant name ~model
-    ~scope commands =
+let stateful ?__POS__ ?tags ?timeout ?count ?steps ?pp_model ?invariant name
+    ~model ~scope commands =
   (* The declaration site, for the one failure with no site of its own: a
      scope that never ran the program. *)
-  let loc = Loc.resolve ?pos () in
+  let loc = Loc.resolve ?__POS__ () in
   let tags = prop_tag :: stateful_tag :: Option.value ~default:[] tags in
-  Runner.prop ?pos ~tags ?timeout ?count name
+  Runner.prop ?__POS__ ~tags ?timeout ?count name
     (program ?steps ?pp_model ~model commands) (fun program ->
       execute ?loc ?invariant ~scope program)

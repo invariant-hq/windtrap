@@ -100,7 +100,7 @@ val term_dumb : unit -> bool
 
 val in_ci : unit -> bool
 (** [in_ci ()] is [true] iff [CI] is set to anything but a falsy spelling ([0],
-    [false], ...). Gates focused-test commits, snapshot update refusal, and
+    [false], ...). Gates focused-test commits, baseline update refusal, and
     GitHub annotations. *)
 
 val in_github_actions : unit -> bool
@@ -178,11 +178,3 @@ val mutate_only : unit -> string list
     of an out-of-scope file was never registered and cannot be armed — the scope
     states what the run's mutation surface {e is}, not a view over a larger one.
 *)
-
-(** {1:snapshots Snapshot update modes} *)
-
-(** The type for snapshot update modes, from [-u] or [WINDTRAP_UPDATE]. *)
-type update =
-  | No_update  (** Check against baselines (the default). *)
-  | Update  (** Accept mismatches, refused when {!in_ci}. *)
-  | Force_update  (** Accept mismatches even under CI. *)

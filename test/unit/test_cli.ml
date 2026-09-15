@@ -95,7 +95,7 @@ let () =
       check "list_only" (p.Cli.list_only = Some true);
       check "bail" (p.Cli.bail = Some 3);
       check "stream" (p.Cli.stream = Some true);
-      check "update" (p.Cli.update = Some Env.Update);
+      check "update" (p.Cli.update = Some true);
       check "seed" (p.Cli.seed = Some 0xffL);
       check "timeout" (p.Cli.timeout = Some 2.5);
       check "prop_count" (p.Cli.prop_count = Some 50);
@@ -311,13 +311,15 @@ let () =
 
 (* Help and usage *)
 
-(* --help is the CLI's whole user-facing surface, and the snapshot pins
+(* --help is the CLI's whole user-facing surface, and the baseline pins
    every byte of it: its columns, its ordering, its wording, and which
    flags and variables exist at all. A second list asserting that each
    flag is MENTIONED said less than the golden already says. *)
 let () =
   reg "help text, whole" @@ fun () ->
-  Windtrap.snapshot "help" (Cli.help ~prog:"/some/path/mytests.exe")
+  expect_file
+    (Cli.help ~prog:"/some/path/mytests.exe")
+    "test/unit/expected/test_cli/help.expected"
 
 let () =
   reg "usage line" @@ fun () ->
@@ -357,7 +359,7 @@ let () =
   check "default: flags off"
     ((not config.Run.failed_only)
     && (not config.Run.stream) && not config.Run.allow_focus);
-  check "default: update off" (config.Run.update = Env.No_update);
+  check "default: baselines are checked" (config.Run.baseline = Baseline.Check);
   check "default: no bail/timeout/prop-count"
     (config.Run.bail = None && config.Run.timeout = None
     && config.Run.prop_count = None);
@@ -393,26 +395,34 @@ let () =
     (config.Run.exclude_tags = [ "xc"; "x1"; "x2" ]);
   clear_env ()
 
-(* WINDTRAP_UPDATE is the one mirror parsed beside its row rather than
-   through its flag's own arg: [-u] has no way to spell [force]. *)
+(* The two acceptance flags have no mirror: a build action accepts nothing
+   through its environment. *)
 let () =
-  reg "update precedence and the force vocabulary" @@ fun () ->
+  reg "acceptance flags: no mirror, one mode each, never both" @@ fun () ->
   clear_env ();
-  let update value =
-    Unix.putenv "WINDTRAP_UPDATE" value;
-    (resolve Cli.empty).Run.update
-  in
-  check "unset is No_update" ((resolve Cli.empty).Run.update = Env.No_update);
-  check "force is Force_update" (update "force" = Env.Force_update);
-  check "the force word is case-insensitive" (update "FORCE" = Env.Force_update);
-  check "1 is Update" (update "1" = Env.Update);
-  check "the truthy spellings are Env's" (update "true" = Env.Update);
-  check "0 is No_update" (update "0" = Env.No_update);
-  check "an unknown word is No_update" (update "sometimes" = Env.No_update);
-  Unix.putenv "WINDTRAP_UPDATE" "force";
-  let config = resolve { Cli.empty with Cli.update = Some Env.Update } in
-  check "an explicit -u beats the env value" (config.Run.update = Env.Update);
-  clear_env ()
+  Unix.putenv "WINDTRAP_UPDATE" "1";
+  check "WINDTRAP_UPDATE is not a mirror"
+    ((resolve Cli.empty).Run.baseline = Baseline.Check);
+  clear_env ();
+  check "-u resolves to Update"
+    ((resolve { Cli.empty with Cli.update = Some true }).Run.baseline
+   = Baseline.Update);
+  check "--corrected resolves to Corrected"
+    ((resolve { Cli.empty with Cli.corrected = Some true }).Run.baseline
+   = Baseline.Corrected);
+  expect_ok "--corrected parses" [ "--corrected" ] (fun p ->
+      check "corrected" (p.Cli.corrected = Some true && p.Cli.update = None));
+  expect_error "-u and --corrected together are refused" [ "-u"; "--corrected" ]
+    (function
+    | Cli.Incompatible_flags ("-u", "--corrected") -> true
+    | _ -> false);
+  expect_error "the refusal reads either order" [ "--corrected"; "--update" ]
+    (function
+    | Cli.Incompatible_flags _ -> true
+    | _ -> false);
+  Windtrap.contains ~msg:"the message names both flags"
+    ~sub:"'-u' and '--corrected'"
+    (Cli.error_message (Cli.Incompatible_flags ("-u", "--corrected")))
 
 let () =
   reg "seed precedence and malformed env seeds" @@ fun () ->
