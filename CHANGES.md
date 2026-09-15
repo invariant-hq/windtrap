@@ -1064,6 +1064,27 @@ line-per-test transcript reachable under `dune runtest`, where the mirrors
 
 ### Fixed
 
+**A failure attributed to the test's declaration says so.** An assertion
+that is a body's last expression is a tail call: its frame is gone when it
+raises, the call-stack location cannot be recovered, and the report has
+always fallen back to the declaration line of the test — silently, so the
+line looked like the assertion's own and nothing said `~pos:__POS__` was the
+remedy. The failure block now carries one line under such a location:
+
+```
+  FAIL  boom
+    test/test_users.ml:88
+    (assertion in tail position: its line is unknown; ~pos:__POS__ names it)
+    expected  1
+    actual    2
+```
+
+It is printed only when the location was filled from the declaration —
+never with a given `?pos`, a captured frame, or no location at all — and not
+for a timeout, an uncaught exception or a property failure, whose location
+is the declaration by design. GitHub annotations and JUnit reports carry
+the same block.
+
 **A shrink search stopped by a raising candidate no longer reports as
 converged.** Forcing a shrink candidate can raise — a `Gen.map`'s function, a
 repair mask — and the memoized cell caches the exception, so the siblings

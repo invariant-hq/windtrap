@@ -62,11 +62,13 @@ type kind =
   | Message of string
 
 and rendering = Value | Pre_image | Placeholder
+and attribution = Recorded | Declaration
 
 and t = {
   kind : kind;
   phase : phase;
   loc : Loc.t option;
+  attribution : attribution;
   msg : string option;
   subtest : string list;
   output_tail : tail option;
@@ -188,6 +190,7 @@ let make ?loc ?msg kind =
     kind;
     phase = Body;
     loc;
+    attribution = Recorded;
     msg = cap_opt msg;
     subtest = [];
     output_tail = None;

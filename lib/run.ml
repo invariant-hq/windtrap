@@ -190,17 +190,27 @@ let run_of_frame frame = frame.owner
 let path frame = frame.fr_path
 let loc frame = frame.fr_loc
 
+(* The declaration site as a runner-made failure's own location: [loc] when
+   the call that the failure is about left a frame, the test's declaration
+   otherwise. Failures the runner constructs name their site through this
+   and reach [add_failure] as [Recorded]; only a failure that names none —
+   an assertion verb's, in tail position — is filled there and marked. *)
+let site_or_declaration frame loc =
+  match loc with Some _ -> loc | None -> frame.fr_loc
+
 let add_failure frame failure =
   (* The one fallback point of the attribution ladder: a failure recorded
      without a location — its failing call sat in tail position, so
      Loc.capture stopped at the runner's delimiter — is attributed to the
-     test's declaration. Only the top-level failure is filled; nested
-     failures (a property failure's [inner]) are left untouched, and a
-     failure needing no fill is stored as given. *)
+     test's declaration, and marked [Declaration] so the report can say so.
+     Only the top-level failure is filled; nested failures (a property
+     failure's [inner]) are left untouched, and a failure needing no fill is
+     stored as given. *)
   let failure =
     match (failure.Failure.loc, frame.fr_loc) with
     | Some _, _ | None, None -> failure
-    | None, (Some _ as loc) -> { failure with Failure.loc }
+    | None, (Some _ as loc) ->
+        { failure with Failure.loc; attribution = Failure.Declaration }
   in
   frame.fr_rev_failures <- failure :: frame.fr_rev_failures
 
@@ -288,10 +298,13 @@ let subtest name fn =
       Printexc.raise_with_backtrace exn backtrace
   | exception exn ->
       (* Any other exception is this sub-case's failure, not the test's:
-         record it labeled, with its backtrace, and let siblings run. *)
+         record it labeled, with its backtrace, and let siblings run. Its
+         location is the declaration, named here as the runner names it for
+         an uncaught exception at the test boundary — no verb raised it, so
+         there is no site to have missed. *)
       let backtrace = Printexc.get_raw_backtrace () in
       let failure =
-        Failure.raised ~actual:(Printexc.to_string exn)
+        Failure.raised ?loc:frame.fr_loc ~actual:(Printexc.to_string exn)
           ~backtrace:(Failure.backtrace_to_string backtrace)
           ()
       in
@@ -304,8 +317,11 @@ let subtest name fn =
    baseline directory the name resolves in — is the caller's [~pos] file,
    else the enclosing test's declaration file, and never a backtrace frame
    at snapshot call time: a snapshot reached through a helper in another
-   file must not relocate its baseline. The SITE is display and
-   duplicate-identity data only, so it may take the call frame. *)
+   file must not relocate its baseline. The SITE is duplicate-identity data
+   only, so it may take the call frame, and falls back to the declaration
+   so that a [cases] family's tail-position snapshot rechecks one site. The
+   failure's own location is the call frame alone: a check without one
+   reaches [add_failure] unfilled and is attributed there, marked. *)
 let check_snapshot ?pos ~name actual =
   let frame = current_frame () in
   let scope =
@@ -313,10 +329,9 @@ let check_snapshot ?pos ~name actual =
     | Some (file, _, _, _) -> Some file
     | None -> Option.map (fun (l : Loc.t) -> l.Loc.file) frame.fr_loc
   in
-  let loc =
-    match Loc.resolve ?pos () with Some _ as l -> l | None -> frame.fr_loc
-  in
+  let loc = Loc.resolve ?pos () in
   Snapshot.check frame.owner.snapshots ?loc
+    ?site:(site_or_declaration frame loc)
     ~test:(Test_tree.path_to_string frame.fr_path)
     ~scope ~name actual
 
@@ -439,10 +454,13 @@ let chdir dir =
    scratch directory, which is inert, a process left in the wrong place or
    still holding the test's binding is precisely the fact the next test's
    baffling failure needs stated up front. It is attributed to the call
-   that made the change, since the boundary is nobody's code. *)
+   that made the change, since the boundary is nobody's code — or to the
+   declaration when that call left no frame: [setenv] and [chdir] take no
+   [?pos], so the fallback's hint would name a remedy they lack. *)
 let restore_failure frame ?loc text =
   add_failure frame
-    (Failure.with_phase Failure.Teardown (Failure.message ?loc text))
+    (Failure.with_phase Failure.Teardown
+       (Failure.message ?loc:(site_or_declaration frame loc) text))
 
 let restore_cwd frame =
   match frame.fr_cwd with

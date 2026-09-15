@@ -330,7 +330,11 @@ let () =
      | [ f ] ->
          check "body timeout: one Body failure" (f.Failure.phase = Failure.Body);
          check "body timeout: message says timed out"
-           (contains "timed out" (message_of f))
+           (contains "timed out" (message_of f));
+         (* The declaration is a timeout's natural site, named by the
+            runner: never the tail-position fallback. *)
+         check "body timeout: the declaration site is recorded, not filled"
+           (f.Failure.loc <> None && f.Failure.attribution = Failure.Recorded)
      | _ -> check "body timeout: one failure" false);
     (let fs = failure_list (outcome_of outcome [ "teardown-times-out" ]) in
      match fs with
@@ -2387,6 +2391,7 @@ let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
   let pos = ("test/fake_decl.ml", 21, 2, 30) in
+  let given = ("test/fake_site.ml", 40, 4, 20) in
   let tests =
     [
       (* The check sits in tail position: its caller's frame is gone at
@@ -2394,14 +2399,47 @@ let () =
          recording falls back to the declaration — never the line that
          called [execute]. *)
       Test_tree.test ~pos "tail" (fun () -> Check.equal Testable.int 1 2);
+      (* The same check, its own line handed over: [?pos] always wins. *)
+      Test_tree.test ~pos "given" (fun () ->
+          Check.equal ~pos:given Testable.int 1 2);
+      (* Not in tail position: the body's frame is live, so capture finds
+         this file's line — no fallback, nothing to hint. *)
+      Test_tree.test ~pos "captured" (fun () ->
+          Check.equal Testable.int 1 2;
+          ());
+      Test_tree.test ~pos "raises" (fun () -> raise Boom);
     ]
   in
   expect_run "tail-loc suite runs" ~config tests @@ fun outcome ->
-  match failure_list (outcome_of outcome [ "tail" ]) with
+  (match failure_list (outcome_of outcome [ "tail" ]) with
   | [ f ] ->
       check "a tail-position check failure is attributed to the declaration"
-        (f.Failure.loc = Some (Loc.of_pos pos))
-  | _ -> check "tail-loc: exactly one failure" false
+        (f.Failure.loc = Some (Loc.of_pos pos));
+      check "and recorded as a declaration attribution"
+        (f.Failure.attribution = Failure.Declaration)
+  | _ -> check "tail-loc: exactly one failure" false);
+  (match failure_list (outcome_of outcome [ "given" ]) with
+  | [ f ] ->
+      check "a given ?pos is the location, as recorded"
+        (f.Failure.loc = Some (Loc.of_pos given)
+        && f.Failure.attribution = Failure.Recorded)
+  | _ -> check "given-loc: exactly one failure" false);
+  (match failure_list (outcome_of outcome [ "captured" ]) with
+  | [ f ] ->
+      check "a captured location is this file's, as recorded"
+        ((match f.Failure.loc with
+           | Some l -> Filename.basename l.Loc.file = "test_runner.ml"
+           | None -> false)
+        && f.Failure.attribution = Failure.Recorded)
+  | _ -> check "captured-loc: exactly one failure" false);
+  match failure_list (outcome_of outcome [ "raises" ]) with
+  | [ f ] ->
+      (* An uncaught exception names the declaration as its own site:
+         the runner chose it, no verb's frame was missed. *)
+      check "an uncaught exception's declaration site is recorded, not filled"
+        (f.Failure.loc = Some (Loc.of_pos pos)
+        && f.Failure.attribution = Failure.Recorded)
+  | _ -> check "raises-loc: exactly one failure" false
 
 (* Summary *)
 

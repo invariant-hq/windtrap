@@ -7,9 +7,10 @@
     exceptions.
 
     Every failure site constructs one {!t}: a typed {!kind} payload, a {!phase},
-    an optional {!Loc.t}, and an optional bounded captured-output {!tail}. A
-    test's result is an {!outcome} carrying a failure {e list} — a body failure
-    and a teardown failure are two entries, never merged.
+    an optional {!Loc.t} with its {!attribution}, and an optional bounded
+    captured-output {!tail}. A test's result is an {!outcome} carrying a failure
+    {e list} — a body failure and a teardown failure are two entries, never
+    merged.
 
     Failures are data; renderers are projections. Nothing here holds ANSI
     styling or command text — renderers derive those. What it does hold is
@@ -240,10 +241,35 @@ and rendering =
       (** [<no printer>], or [<example k>]: the generator has no printer and no
           pre-image renders either. *)
 
+(** The type for how a failure's [loc] was obtained. Recorded so that a report
+    can say when the location it prints is not the failing call's own line: the
+    runtime cannot recover a tail-called frame, so the fact is stated at the
+    point of use instead. *)
+and attribution =
+  | Recorded
+      (** [loc] is what the failure site recorded — an explicit [?pos], a
+          captured call-stack frame, or the site a runner-made failure names for
+          itself (a timeout, an uncaught exception, an [xfail] that passed, a
+          restoration that could not happen: each names the enclosing test's
+          declaration, or the call that made the change, as its natural
+          location) — or the site recorded none and nothing filled it. *)
+  | Declaration
+      (** The failure site recorded no location and the runner filled [loc] with
+          the enclosing test's declaration site ([Run.add_failure], the one
+          fallback point): the failing call sat in tail position, so its own
+          frame was gone when {!Loc.capture} ran. Renderers print a hint naming
+          [~pos:__POS__] under such a location — except for a {!Property}
+          failure, whose own location is its declaration by construction while
+          the assertion's site rides on [inner], and for the uncaught-exception
+          {!Raise} shape (no [expected], no [predicate]), which no verb raised
+          and whose backtrace names the line. *)
+
 and t = {
   kind : kind;
   phase : phase;
   loc : Loc.t option;  (** [None] renders without a location header. *)
+  attribution : attribution;
+      (** How [loc] was obtained; {!Recorded} from every constructor. *)
   msg : string option;  (** The user's [?msg] annotation, when given. *)
   subtest : string list;
       (** The sub-case label's components — the test's leaf name, then the

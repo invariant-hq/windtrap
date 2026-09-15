@@ -119,8 +119,9 @@ let accept t entry actual =
   end;
   entry.baseline <- Some actual
 
-let check t ?loc ~test ~scope ~name actual =
+let check t ?loc ?site ~test ~scope ~name actual =
   validate_name name;
+  let site = match site with Some _ -> site | None -> loc in
   match scope with
   | None -> fail ?loc ~name ~path:"" Failure.Unresolvable
   | Some file -> (
@@ -144,7 +145,7 @@ let check t ?loc ~test ~scope ~name actual =
                  is checking; Duplicate otherwise — [owner] catches every
                  cross-test duplicate without a surviving call frame. *)
               let duplicate =
-                match (entry.site, loc) with
+                match (entry.site, site) with
                 | Some first, Some second -> not (Loc.equal first second)
                 | _ -> not (String.equal entry.owner test)
               in
@@ -166,7 +167,7 @@ let check t ?loc ~test ~scope ~name actual =
                 end
           | None ->
               let path = dir ^ "/" ^ name ^ ".snap" in
-              let entry = { site = loc; owner = test; path; baseline = None } in
+              let entry = { site; owner = test; path; baseline = None } in
               Hashtbl.add table (String.lowercase_ascii name) entry;
               if updating then accept t entry actual
               else if not (Path_ops.file_exists path) then

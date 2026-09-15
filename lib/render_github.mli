@@ -36,6 +36,11 @@ val annotation :
     {!Render.pp_failure} block — counterexample, replay line, and acceptance
     command included — with its newlines [%0A]-encoded.
 
+    The location properties are [f]'s location as recorded, whatever its
+    {!Failure.attribution}: a failure attributed to the test's declaration
+    annotates that line, and the block's tail-position hint rides in the message
+    to say why, beside the line it explains.
+
     Subtest failure entries ({!Render.is_subtest_failure}) annotate at the
     parent test: the [title] names the test whose body ran them, the location is
     the entry's own — a line inside that body — and the [parent › name] label

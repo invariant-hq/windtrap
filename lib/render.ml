@@ -585,6 +585,24 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         | None -> []
       in
       put_ind (String.concat " " parts));
+  (* The location is the test's declaration, not the failing call's line:
+     say so once, under it, before the excerpt shows the reader the wrong
+     line. The runtime cannot recover a tail-called frame, so the remedy
+     is named here, at the point of use. Not for a property failure, whose
+     location is its declaration by construction (the assertion's site is
+     on [inner]), nor for an uncaught exception, which no verb raised —
+     nothing to pass [~pos] to, and its backtrace names the line. *)
+  (match (f.attribution, f.kind) with
+  | Failure.Recorded, _
+  | Failure.Declaration, Failure.Property _
+  | Failure.Declaration, Failure.Raise { expected = None; predicate = false; _ }
+    ->
+      ()
+  | Failure.Declaration, _ ->
+      put_ind
+        (st `Faint
+           "(assertion in tail position: its line is unknown; ~pos:__POS__ \
+            names it)"));
   (* Source excerpt, best-effort. *)
   (if excerpt then
      match f.loc with

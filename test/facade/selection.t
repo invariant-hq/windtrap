@@ -48,6 +48,7 @@ transcript byte for byte.
   ──────────────────── failures (1) ────────────────────
     FAIL  boom
       test/facade/suite_main.ml:LINE
+      (assertion in tail position: its line is unknown; ~pos:__POS__ names it)
       deliberate
       expected  1
       actual    2

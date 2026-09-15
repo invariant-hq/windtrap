@@ -75,6 +75,7 @@ val mode : t -> mode
 val check :
   t ->
   ?loc:Loc.t ->
+  ?site:Loc.t ->
   test:string ->
   scope:string option ->
   name:string ->
@@ -102,18 +103,22 @@ val check :
     [test] is the run-unique rendered path of the checking test (the runner
     rejects duplicate paths at startup), stable across retry attempts.
 
-    The first check of a name registers it: [test], the check's site [loc], its
-    baseline path, and — once known — the baseline content that every later
-    check of the name compares against. A later check of the same name is an
-    ordinary recheck (loops, retries, [cases] families) when both sites are
-    known and equal, or when a site is unknown and [test] is the registered
+    The first check of a name registers it: [test], the check's identity site,
+    its baseline path, and — once known — the baseline content that every later
+    check of the name compares against. The identity site is [site] when given
+    and [loc] otherwise: [loc] is the check's own location, stored on the raised
+    failure, while [site] lets a caller identify the check by a better site than
+    the failure may carry (the facade passes the checking test's declaration
+    site when the call left no frame, and leaves [loc] absent so the runner
+    attributes the failure itself). A later check of the same name is an
+    ordinary recheck (loops, retries, [cases] families) when both identity sites
+    are known and equal, or when one is unknown and [test] is the registered
     checker; it fails with {!Failure.Duplicate} — carrying the first check's
-    site and test, while the raised failure's own [loc] is the second check's —
-    when both sites are known and unequal, or when a site is unknown and [test]
+    identity site and test, while the raised failure's own [loc] is the second
+    check's — when both are known and unequal, or when one is unknown and [test]
     differs. Detection therefore never requires a call-stack frame to have
-    survived: [test] alone catches cross-test duplicates, and callers pass their
-    best site as [loc] (the facade falls back to the checking test's declaration
-    site). Identity is case-insensitive: ["Help"] collides with ["help"].
+    survived: [test] alone catches cross-test duplicates. Identity is
+    case-insensitive: ["Help"] collides with ["help"].
 
     In {!Check} mode:
     - No baseline file existed at the name's first check this run: fails with

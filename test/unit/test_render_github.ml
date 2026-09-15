@@ -65,6 +65,29 @@ let test_no_location () =
   check_contains "no location: title only" ~sub:"::error title=" a;
   check_absent "no location: no file property" ~sub:"file=" a
 
+let test_declaration_attribution () =
+  (* A failure attributed to the declaration annotates that line — the
+     location as recorded — and the block's hint rides in the message, so
+     the annotation explains itself where it lands. *)
+  let f =
+    {
+      Fixtures.eq_failure with
+      Failure.loc =
+        Some { Loc.file = "test/test_users.ml"; line = 88; column = 2 };
+      attribution = Failure.Declaration;
+    }
+  in
+  let a = Render_github.annotation ~path:[ "t" ] f in
+  check_contains "declaration: annotates the recorded line"
+    ~sub:"file=test/test_users.ml,line=88," a;
+  check_contains "declaration: the hint rides in the message"
+    ~sub:
+      "%0A    (assertion in tail position: its line is unknown; ~pos:__POS__ \
+       names it)%0A"
+    a;
+  check "declaration: the hint appears once"
+    (count_occurrences ~sub:"tail position" a = 1)
+
 let test_replay_info () =
   let a =
     Render_github.annotation
@@ -187,6 +210,7 @@ let tests =
     test "data encoding (%0A/%0D/%25)" test_data_encoding;
     test "property encoding (%3A/%2C)" test_property_encoding;
     test "annotation without a location" test_no_location;
+    test "declaration-attributed annotation" test_declaration_attribution;
     test "replay info" test_replay_info;
     test "invocation-spelled hints (D5 §1)" test_invocation_hints;
     test "ANSI stripped" test_ansi_stripped;

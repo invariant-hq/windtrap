@@ -638,6 +638,16 @@ val pp_failure :
     not {!Failure.Body}) and location header, the [?msg] annotation, and the
     kind detail —
 
+    Under a location the runner filled from the test's declaration
+    ({!Failure.Declaration}: the failing call sat in tail position and left no
+    frame), one faint line names the remedy, once —
+    [(assertion in tail position: its line is unknown; ~pos:__POS__ names it)] —
+    except for a property failure, whose location is its declaration by
+    construction, and for an uncaught exception, which no verb raised; see
+    {!Failure.attribution}. The line is part of the block, so the transports
+    carry it too: a GitHub annotation pinned to the declaration line is exactly
+    where the reader needs it.
+
     - equality: [expected]/[actual] with the changed spans highlighted (under
       [ansi:false] a [~~~] marker line under each marked side instead of color —
       a deletion marks only the expected side), or a unified line diff

@@ -75,7 +75,10 @@ type pos = string * int * int * int
     That attribution is the symptom to reach for [?pos] on: a report pointing at
     a test's declaration line rather than the assertion inside it means the
     assertion was the body's last expression, and [~pos:__POS__] at the call
-    puts the location back. *)
+    puts the location back. The report says so when it happens — one line under
+    such a location,
+    [(assertion in tail position: its line is unknown; ~pos:__POS__ names it)] —
+    so the symptom never has to be recognized from the line alone. *)
 
 type 'a printer = Format.formatter -> 'a -> unit
 (** The type for value printers: the one printer type used by testables,

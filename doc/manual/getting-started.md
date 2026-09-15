@@ -80,7 +80,13 @@ F
 
 No `~pos` annotation, no printer boilerplate: the location comes from
 the assertion's call stack, and the diff is computed from the printed
-values — every type gets it, not just strings. `equal` takes a
+values — every type gets it, not just strings. The one case the call
+stack cannot serve is an assertion in tail position — the last
+expression of a body such as `test "adds" (fun () -> equal int 4 (add 2 2))`
+— whose frame is gone by the time it raises: the report then names the
+test's declaration line and says so underneath
+(`(assertion in tail position: its line is unknown; ~pos:__POS__ names it)`);
+`~pos:__POS__` on that assertion puts its own line back. `equal` takes a
 *testable* (`int`, `string`, `list (pair string (list int))`, …): a
 printer plus an equality, composed like the type itself.
 

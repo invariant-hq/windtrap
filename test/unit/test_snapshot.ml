@@ -356,6 +356,45 @@ let () =
   | _ -> check "cross-test: unknown sites still yield Duplicate" false
 
 let () =
+  reg "duplicate names: identity site apart from the failure's location"
+  @@ fun () ->
+  with_root @@ fun root ->
+  (* The facade's tail shape: the call left no frame, so the failure
+     carries no location of its own (the runner attributes it), while the
+     identity site is the declaration — one site for a [cases] family, so
+     its members recheck rather than collide. *)
+  let t = S.create ~root ~mode:S.Check () in
+  let fl =
+    expect_check_failure "site: first check" (fun () ->
+        S.check t ~site:loc_1 ~test:"family a" ~scope:(Some scope_a) ~name:"dup"
+          "x")
+  in
+  (match fl with
+  | Some fl ->
+      check "site: the failure carries no location of its own"
+        (fl.Failure.loc = None)
+  | None -> ());
+  let fl =
+    expect_check_failure "site: second check" (fun () ->
+        S.check t ~site:loc_1 ~test:"family b" ~scope:(Some scope_a) ~name:"dup"
+          "x")
+  in
+  (match snapshot_payload "site: second check" fl with
+  | Some (_, _, Failure.Missing _) ->
+      check "site: one identity site across tests is a recheck" true
+  | _ -> check "site: one identity site across tests is a recheck" false);
+  let fl =
+    expect_check_failure "site: third check" (fun () ->
+        S.check t ~loc:loc_2 ~test:"family c" ~scope:(Some scope_a) ~name:"dup"
+          "x")
+  in
+  match snapshot_payload "site: third check" fl with
+  | Some (_, _, Failure.Duplicate { first; _ }) ->
+      check "site: a different site collides, naming the identity site"
+        (first = Some loc_1)
+  | _ -> check "site: a different site is a Duplicate" false
+
+let () =
   reg "duplicate names: distinct declaration-grade sites across tests"
   @@ fun () ->
   with_root @@ fun root ->

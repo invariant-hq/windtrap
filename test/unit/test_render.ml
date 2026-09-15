@@ -2102,6 +2102,70 @@ let test_name_sanitization () =
 
 (* Source excerpts resolve against the project root (render/F-1) *)
 
+(* The tail-position hint: printed once under a location the runner filled
+   from the declaration, and nowhere else. *)
+let test_tail_position_hint () =
+  let hint =
+    "(assertion in tail position: its line is unknown; ~pos:__POS__ names it)"
+  in
+  let declared = Fixtures.loc "test/test_users.ml" 88 in
+  let attributed f =
+    { f with Failure.loc = Some declared; attribution = Failure.Declaration }
+  in
+  let tail = attributed (Failure.equality ~expected:"1" ~actual:"2" ()) in
+  let b = failure_block tail in
+  check_contains "tail: the hint prints" ~sub:("\n    " ^ hint ^ "\n") b;
+  check "tail: the hint prints once" (occurrences_of ~sub:hint b = 1);
+  check "tail: the hint sits under the location"
+    (has ~sub:("    test/test_users.ml:88\n    " ^ hint ^ "\n") b);
+  check_contains "tail: ansi renders the hint faint"
+    ~sub:("\027[2m" ^ hint ^ "\027[0m")
+    (failure_block ~ansi:true tail);
+  (* Every verb-raised kind draws it: a snapshot or a [fail] in tail
+     position is as common as an [equal]. *)
+  check_contains "tail: a snapshot failure draws the hint" ~sub:hint
+    (failure_block (attributed Fixtures.snap_missing));
+  check_contains "tail: a message failure draws the hint" ~sub:hint
+    (failure_block (attributed (Failure.message "boom")));
+  check_contains "tail: a raise-verb failure draws the hint" ~sub:hint
+    (failure_block (attributed Fixtures.raise_failure));
+  (* As recorded — a given [?pos], a captured frame — there is nothing to
+     say. *)
+  check_absent "recorded: no hint" ~sub:"tail position"
+    (failure_block Fixtures.eq_failure);
+  check_absent "recorded: none for a declaration-site message either"
+    ~sub:"tail position"
+    (failure_block (Failure.message ~loc:declared "timed out after 0.2s"));
+  check_absent "no location: no hint" ~sub:"tail position"
+    (failure_block (Failure.equality ~expected:"1" ~actual:"2" ()));
+  (* A property failure's location is its declaration by construction; the
+     assertion's own site rides on [inner]. *)
+  check_absent "property: no hint on the outer failure" ~sub:"tail position"
+    (failure_block (attributed Fixtures.prop_failure));
+  (* An uncaught exception was raised by no verb: nothing to pass [~pos]
+     to, and its backtrace names the line. *)
+  let uncaught =
+    attributed
+      (Failure.raised ~actual:"Not_found"
+         ~backtrace:"Raised at Parser.parse in file \"lib/parser.ml\", line 40"
+         ())
+  in
+  check_absent "uncaught exception: no hint" ~sub:"tail position"
+    (failure_block uncaught);
+  check_contains "uncaught exception: the location still prints"
+    ~sub:"    test/test_users.ml:88\n" (failure_block uncaught);
+  (* Under the excerpt the hint comes first: it explains the line the
+     excerpt is about to show. *)
+  let file = Filename.concat (temp_dir ()) "tail_src.ml" in
+  let oc = open_out_bin file in
+  output_string oc "let one = 1\nlet two = 2\n";
+  close_out oc;
+  let f = attributed (Failure.message "boom") in
+  let f = { f with Failure.loc = Some (Fixtures.loc file 2) } in
+  check_contains "excerpt: the hint precedes the excerpt line"
+    ~sub:(hint ^ "\n      2 │ let two = 2\n")
+    (failure_block ~excerpt:true f)
+
 let test_excerpt_project_root () =
   (* The recorded location is project-root-relative, exactly as __POS__
      records it. Under [dune runtest] the process cwd is inside _build,
@@ -2921,6 +2985,7 @@ let tests =
     test "the property replay line is the only one" test_property_replay_line;
     test "verbose PASS prints the label table (D5 §7)" test_verbose_pass_labels;
     test "terminal name sanitization (render/F-2)" test_name_sanitization;
+    test "the tail-position hint" test_tail_position_hint;
     test "excerpts resolve against the project root (render/F-1)"
       test_excerpt_project_root;
     test "snapshot report: wrote lines and the quiet gate"

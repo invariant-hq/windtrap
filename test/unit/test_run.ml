@@ -108,10 +108,18 @@ let () =
   | [ tail; located; prop ] ->
       check "add_failure falls back to the frame's declaration location"
         (tail.Failure.loc = Some declared);
+      (* The fill is recorded as a fact on the failure, so a renderer can
+         say the location is not the failing call's own. *)
+      check "the fallback marks the failure as declaration-attributed"
+        (tail.Failure.attribution = Failure.Declaration);
       check "add_failure keeps an explicit location"
         (located.Failure.loc = Some elsewhere);
+      check "an explicit location stays attributed as recorded"
+        (located.Failure.attribution = Failure.Recorded);
       check "the fallback fills the property failure's own location"
         (prop.Failure.loc = Some declared);
+      check "the fill marks the property failure too (renderers decide)"
+        (prop.Failure.attribution = Failure.Declaration);
       check "a property failure's inner location is left untouched"
         (match prop.Failure.kind with
         | Failure.Property { inner = Some i; _ } -> i.Failure.loc = None
@@ -122,7 +130,9 @@ let () =
   match Run.failures bare with
   | [ f ] ->
       check "a frame without a declaration location records None"
-        (f.Failure.loc = None)
+        (f.Failure.loc = None);
+      check "nothing filled: the attribution stays as recorded"
+        (f.Failure.attribution = Failure.Recorded)
   | _ -> check "bare frame failure shape" false
 
 (* The ambient slot *)
@@ -473,7 +483,12 @@ let () =
             match failure.Failure.kind with
             | Failure.Raise { actual = Some actual; _ } ->
                 contains "Boom" actual
-            | _ -> false)
+            | _ -> false);
+          (* No verb raised it: the declaration is its site, named as such
+             — not a fallback the report would hint [~pos] about. *)
+          check "the subtest exception names the declaration as its own site"
+            (failure.Failure.loc = Run.loc frame
+            && failure.Failure.attribution = Failure.Recorded)
       | _ -> check "subtest exception recorded" false);
   check "siblings continue after a throwing subtest" !sibling_ran
 
