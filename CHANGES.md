@@ -669,6 +669,11 @@ file's `uncovered:` cell stops after eight regions and says
 `(+N more, -u shows them)`, so no row is wider than the terminal that has to
 lay it out.
 
+Every run of an instrumented executable writes its own dump into that
+executable's directory under `_build/_coverage`, so a command-line tool driven
+by a cram test is measured across every invocation; the first run of a
+rebuilt executable removes its predecessors' dumps, so a rebuild heals itself.
+
 Instrumentation never changes what a program means: out-edge points are given
 up wherever taking one would cost a tail call — ordinary tail position, `||` and `&&` arms of every shape, and the
 constructor arguments of a `[@tail_mod_cons]` function — so an instrumented

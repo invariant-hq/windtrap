@@ -187,11 +187,16 @@ let load path =
 
 (* Output Path and Identity *)
 
-let output_file ~exe = Instr.output_file format ~exe
+let output_dir ~exe = Instr.output_dir format ~exe
 
 (* At-Exit Dump *)
 
-let dump_path : string option ref = ref None
+(* Where the dump lands: the one file WINDTRAP_COVERAGE_FILE names,
+   replaced on every run, or a fresh file in this executable's own
+   directory, where every run keeps its own. *)
+type target = File of string | Dir of string
+
+let dump_target : target option ref = ref None
 let dump_exe : string option ref = ref None
 let dumped = ref false
 
@@ -213,22 +218,64 @@ let dump_identity () =
         (fun digest -> { exe; digest })
         (Instr.file_digest Sys.executable_name)
 
+(* A dump in this executable's directory is named after the digest of
+   the build that wrote it, so the directory says which build each file
+   describes without being read. *)
+let name_prefix digest = digest ^ "-"
+
+(* The directory belongs to this executable, and a dump in it not named
+   after this build's digest was written by a predecessor - a build this
+   one replaced. Left in place it would be excluded as stale by the
+   reporting command, with a warning, on every aggregate for the rest of
+   the build directory's life; removed here, a rebuild heals itself on
+   its first instrumented run. Files still being written ([.tmp]) are
+   not dumps and are left alone. *)
+let remove_predecessors dir ~digest =
+  match Sys.readdir dir with
+  | exception Sys_error _ -> ()
+  | entries ->
+      Array.iter
+        (fun name ->
+          if
+            Filename.check_suffix name ("." ^ format.Instr.ext)
+            && not (String.starts_with ~prefix:(name_prefix digest) name)
+          then
+            try Sys.remove (Filename.concat dir name) with Sys_error _ -> ())
+        entries
+
 let dump () =
   if not !dumped then begin
     dumped := true;
-    match !dump_path with
+    match !dump_target with
     | None -> ()
-    | Some path -> (
+    | Some target -> (
         let t = snapshot () in
         if not (is_empty t) then
-          try Instr.write_file path (to_string ?identity:(dump_identity ()) t)
-          with e -> warn "cannot write %s: %s" path (Printexc.to_string e))
+          let identity = dump_identity () in
+          let data = to_string ?identity t in
+          match target with
+          | File path -> (
+              try Instr.write_file path data
+              with e -> warn "cannot write %s: %s" path (Printexc.to_string e))
+          | Dir dir -> (
+              let prefix =
+                match identity with
+                | Some { digest; _ } ->
+                    remove_predecessors dir ~digest;
+                    name_prefix digest
+                | None -> ""
+              in
+              try
+                ignore
+                  (Instr.write_new_file dir ~prefix ~ext:format.Instr.ext data)
+              with e ->
+                warn "cannot write under %s: %s" dir (Printexc.to_string e)))
   end
 
-let resolve_dump_path () =
+let resolve_dump_target () =
   match Sys.getenv_opt "WINDTRAP_COVERAGE_FILE" with
-  | Some path when path <> "" -> Instr.absolute path
-  | _ -> output_file ~exe:Sys.executable_name
+  | Some path when path <> "" -> File (Instr.absolute path)
+  | _ -> Dir (output_dir ~exe:Sys.executable_name)
 
 let register ~file ~points ~counts =
   validate ~file points counts;
@@ -248,7 +295,7 @@ let register ~file ~points ~counts =
       (match !registrations with
       | [] ->
           (try
-             dump_path := Some (resolve_dump_path ());
+             dump_target := Some (resolve_dump_target ());
              dump_exe := Some (Instr.exe_identity ~exe:Sys.executable_name)
            with e ->
              warn "cannot determine output file: %s" (Printexc.to_string e));

@@ -22,9 +22,12 @@ coverage: 77.8% (7/9 points) · project: dune build @cover
 Two rules keep it honest. Coverage never changes what programs or
 tests mean: instrumentation only counts, and enabling it never alters
 test outcomes, counts, or exit codes. And coverage data is transient:
-`.coverage` files live under `_build/_coverage` only, deterministically
-named per executable and overwritten on re-run — nothing to commit,
-nothing to go stale silently.
+`.coverage` files live under `_build/_coverage` only, in one directory
+per executable, where every run adds a file of its own and the first run
+of a rebuilt executable removes its predecessors' — nothing to commit,
+nothing to go stale silently. Because every run keeps its file, a binary
+run several times — a command-line tool driven by a cram test — is
+measured across every invocation, not just the last.
 
 `WINDTRAP_COVERAGE=off` silences the line; there is nothing else to
 set. Which file, which lines — the detail that turns a percentage into
@@ -138,7 +141,8 @@ instruction: re-running never removes stale-named files.
 
 To make dumps ordinary build targets — pure dune dataflow, no
 `(universe)` — set `WINDTRAP_COVERAGE_FILE` (relative paths resolve
-against the action's cwd at first registration) and declare the target:
+against the action's cwd at first registration; the file is replaced on
+every run) and declare the target:
 
 ```lisp
 (rule

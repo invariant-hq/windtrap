@@ -565,25 +565,25 @@ let rejection_tests =
 let filename_tests =
   [
     test "output filenames are deterministic" (fun () ->
-        let direct = C.output_file ~exe:"/w/p/_build/default/test/a.exe" in
-        check_string "output_file is deterministic" ~expected:direct
-          ~actual:(C.output_file ~exe:"/w/p/_build/default/test/a.exe");
-        check "output_file lives under the root's _build/_coverage"
+        let direct = C.output_dir ~exe:"/w/p/_build/default/test/a.exe" in
+        check_string "output_dir is deterministic" ~expected:direct
+          ~actual:(C.output_dir ~exe:"/w/p/_build/default/test/a.exe");
+        check "output_dir lives under the root's _build/_coverage"
           (String.starts_with ~prefix:"/w/p/_build/_coverage/windtrap-" direct);
-        check "output_file has the .coverage suffix"
-          (Filename.check_suffix direct ".coverage");
+        check "output_dir is a directory name, not a file's"
+          (Filename.extension direct = "");
         check_string "sandboxed and direct runs share a file" ~expected:direct
           ~actual:
-            (C.output_file ~exe:"/w/p/_build/.sandbox/0abc12/default/test/a.exe");
+            (C.output_dir ~exe:"/w/p/_build/.sandbox/0abc12/default/test/a.exe");
         check "different executables get different files"
-          (direct <> C.output_file ~exe:"/w/p/_build/default/test/b.exe");
+          (direct <> C.output_dir ~exe:"/w/p/_build/default/test/b.exe");
         check "different build contexts get different files"
-          (direct <> C.output_file ~exe:"/w/p/_build/alt/test/a.exe");
+          (direct <> C.output_dir ~exe:"/w/p/_build/alt/test/a.exe");
         check "the project location does not affect the name"
           (Filename.basename direct
           = Filename.basename
-              (C.output_file ~exe:"/elsewhere/_build/default/test/a.exe"));
-        let outside = C.output_file ~exe:"/opt/tools/mytool.exe" in
+              (C.output_dir ~exe:"/elsewhere/_build/default/test/a.exe"));
+        let outside = C.output_dir ~exe:"/opt/tools/mytool.exe" in
         check "an executable outside _build dumps under the current directory"
           (String.starts_with
              ~prefix:
@@ -614,9 +614,9 @@ let filename_tests =
         check_string "exe_identity outside _build is the absolute path"
           ~expected:"/opt/tools/mytool.exe"
           ~actual:(I.exe_identity ~exe:"/opt/tools/mytool.exe");
-        check "the identity is what output_file hashes"
-          (C.output_file ~exe:"/w/p/_build/default/test/a.exe"
-          = C.output_file ~exe:"/w/p/_build/.sandbox/9f/default/test/a.exe"));
+        check "the identity is what output_dir hashes"
+          (C.output_dir ~exe:"/w/p/_build/default/test/a.exe"
+          = C.output_dir ~exe:"/w/p/_build/.sandbox/9f/default/test/a.exe"));
     (* One executable is one dump. Dune spells the same binary
        [runner_main.exe] in one rule and [./runner_main.exe] in another,
        and a suite that spawns a sibling names it [../../bin/main.exe];
@@ -637,7 +637,7 @@ let filename_tests =
         check "and every one of them shares the direct run's file"
           (List.for_all
              (fun spelling ->
-               C.output_file ~exe:spelling = C.output_file ~exe:direct)
+               C.output_dir ~exe:spelling = C.output_dir ~exe:direct)
              [
                "/w/p/_build/default/test/./a.exe";
                "/w/p/_build/default/test/sub/../a.exe";
@@ -876,6 +876,68 @@ let dump_tests =
         check_int "silent child exits 0" ~expected:0 ~actual:(run "silent");
         check "a process with no registrations writes no file"
           (not (Sys.file_exists child_file)));
+    (* The default destination: the executable's own directory, where
+       every run keeps its own file. The child is copied under a scratch
+       _build so that directory is scratch's, never this checkout's. *)
+    test "runs of one executable accumulate; a rebuild's first run supersedes"
+      (fun () ->
+        let root = scratch "runs" in
+        let exe = Filename.concat root "_build/default/child.exe" in
+        (match read_file (Filename.concat exe_dir "dump_child.exe") with
+        | Some bytes ->
+            I.write_file exe bytes;
+            Unix.chmod exe 0o755
+        | None -> failf "cannot read dump_child.exe");
+        Unix.putenv "WINDTRAP_COVERAGE_FILE" "";
+        let run mode = Sys.command (Filename.quote_command exe [ mode ]) in
+        let dir = C.output_dir ~exe in
+        check_string "the directory sits under the executable's root"
+          ~expected:(Filename.concat root "_build/_coverage")
+          ~actual:(Filename.dirname dir);
+        let dumps () =
+          match Sys.readdir dir with
+          | exception Sys_error _ -> []
+          | names ->
+              Array.to_list names
+              |> List.filter (fun n -> Filename.check_suffix n ".coverage")
+              |> List.sort compare
+        in
+        check_int "first run exits 0" ~expected:0 ~actual:(run "first");
+        check_int "second run exits 0" ~expected:0 ~actual:(run "second");
+        check_int "each run writes its own file" ~expected:2
+          ~actual:(List.length (dumps ()));
+        let digest = Digest.to_hex (Digest.file exe) in
+        check "the files are named after the writer's digest"
+          (List.for_all (String.starts_with ~prefix:(digest ^ "-")) (dumps ()));
+        let merged =
+          List.fold_left
+            (fun acc name ->
+              match C.load (Filename.concat dir name) with
+              | Ok (t, _) -> ok "merge of the runs" (C.merge acc t)
+              | Error e -> failf "%s: %a" name C.pp_error e)
+            C.empty (dumps ())
+        in
+        check_string "the runs add up in the merge"
+          ~expected:(child_expected [| 2; 2; 0 |])
+          ~actual:(C.to_string merged);
+        (* A predecessor's dump: named after, and recording, another
+           build's digest. The next run removes it and keeps its own. *)
+        let older = Digest.to_hex (Digest.string "an older build") in
+        let stale = Filename.concat dir (older ^ "-000001.coverage") in
+        I.write_file stale
+          (C.to_string
+             ~identity:{ C.exe = I.exe_identity ~exe; digest = older }
+             merged);
+        check_int "third run exits 0" ~expected:0 ~actual:(run "first");
+        check "a rebuilt executable's first run removes its predecessors' dumps"
+          (not (Sys.file_exists stale));
+        check_int "and keeps every run of its own" ~expected:3
+          ~actual:(List.length (dumps ()));
+        check "no temporary files remain"
+          (not
+             (Array.exists
+                (fun n -> Filename.check_suffix n ".tmp")
+                (Sys.readdir dir))));
   ]
 
 (* The suite *)

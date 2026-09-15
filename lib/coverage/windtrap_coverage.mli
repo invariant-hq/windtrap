@@ -147,13 +147,15 @@ val snapshot : unit -> t
 (** {1:ondisk Coverage files}
 
     At process exit, an instrumented executable writes {!snapshot}'s
-    serialization to {!output_file}[ ~exe:Sys.executable_name] — or to the path
-    in the [WINDTRAP_COVERAGE_FILE] environment variable when set (relative
-    paths resolve against the directory current at first {!register}). The file
-    is replaced atomically on every run, so re-runs never accumulate stale
-    counts. Nothing is written when nothing was registered. A dump failure
-    prints a [windtrap coverage:] warning on [stderr] and changes nothing else —
-    never the exit code.
+    serialization to a fresh file under {!output_dir}[ ~exe:Sys.executable_name]
+    — or to the path in the [WINDTRAP_COVERAGE_FILE] environment variable when
+    set (relative paths resolve against the directory current at first
+    {!register}), which is replaced atomically on every run. Under {!output_dir}
+    every run keeps its own file, so the runs of one executable add up in the
+    reporting command's merge, and the first dump of a rebuilt executable
+    removes the files its predecessors wrote. Nothing is written when nothing
+    was registered. A dump failure prints a [windtrap coverage:] warning on
+    [stderr] and changes nothing else — never the exit code.
 
     The format is versioned by the magic string [windtrap-coverage-v3] on the
     first line; {!of_string} and {!load} reject any other header loudly, and
@@ -171,13 +173,19 @@ type identity = Windtrap_instr.identity = { exe : string; digest : string }
     executable once at exit (a few milliseconds for a typical test binary), off
     the test path. *)
 
-val output_file : exe:string -> string
-(** [output_file ~exe] is the deterministic [.coverage] path for the executable
-    at path [exe]: [<root>/_build/_coverage/windtrap-<hash>.coverage], with
-    [<root>] and [<hash>] by {!Windtrap_instr.output_file}'s rule. The name
-    depends on the executable's path, so renaming or moving a test executable
-    orphans its previous [.coverage] file; the reporting command detects the
-    orphan through the recorded {!identity} and excludes it with a warning. *)
+val output_dir : exe:string -> string
+(** [output_dir ~exe] is the directory the executable at path [exe] dumps into:
+    [<root>/_build/_coverage/windtrap-<hash>], with [<root>] and [<hash>] by
+    {!Windtrap_instr.output_dir}'s rule. Every run writes a fresh
+    [<digest>-<token>.coverage] there, named after the writer's content digest,
+    so several runs of one executable — a command-line tool driven by a cram
+    test, say — all count in the merge. The directory belongs to the runtime:
+    the first dump of a rebuilt executable removes the files not named after its
+    own digest, its predecessors', so a rebuild never leaves a stale dump
+    behind. The name depends on the executable's path, so renaming or moving a
+    test executable orphans its previous directory; the reporting command
+    detects the orphans through the recorded {!identity} and excludes them with
+    a warning. *)
 
 val to_string : ?identity:identity -> t -> string
 (** [to_string t] is [t] serialized in the [.coverage] format. Deterministic:

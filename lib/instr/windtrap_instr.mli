@@ -75,7 +75,13 @@ val exe_identity : exe:string -> string
 val output_file : format -> exe:string -> string
 (** [output_file f ~exe] is [<root>/_build/<f.dir>/windtrap-<hash>.<f.ext>],
     where [<root>] is {!build_root} and [<hash>] the hex MD5 of {!exe_identity}.
-    When [exe] is not under a [_build], [<root>] is the current directory. *)
+    When [exe] is not under a [_build], [<root>] is the current directory. One
+    file per executable, for a format whose writer replaces it on every run. *)
+
+val output_dir : format -> exe:string -> string
+(** [output_dir f ~exe] is [<root>/_build/<f.dir>/windtrap-<hash>], the same
+    stem as {!output_file} without the extension: one directory per executable,
+    for a format whose every run keeps its own file (see {!write_new_file}). *)
 
 (** {1:errors Errors} *)
 
@@ -107,6 +113,17 @@ val write_file : string -> string -> unit
     never observes a partial file.
 
     Raises [Sys_error] if the file cannot be written. *)
+
+val write_new_file : string -> prefix:string -> ext:string -> string -> string
+(** [write_new_file dir ~prefix ~ext data] writes [data] atomically to a fresh
+    file [<prefix><token>.<ext>] in [dir], creating [dir] if needed, and is that
+    file's path. [token] is six hex digits reserved by exclusive creation, so
+    concurrent writers — several processes of one executable exiting at once —
+    never share a name; the write goes through a [.tmp] sibling and a rename, as
+    {!write_file}'s does.
+
+    Raises [Sys_error] if no name can be reserved or the file cannot be written.
+*)
 
 (** {1:header The header}
 

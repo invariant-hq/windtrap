@@ -88,14 +88,16 @@ let build_root ~path = Option.map fst (split_build path)
 let exe_identity ~exe =
   match split_build exe with Some (_, below) -> below | None -> canonical exe
 
-let output_file format ~exe =
+let output_stem format ~exe =
   let root, key =
     match split_build exe with
     | Some (root, below) -> (root, below)
     | None -> (Sys.getcwd (), canonical exe)
   in
-  Printf.sprintf "%s/_build/%s/windtrap-%s.%s" root format.dir (hex_hash key)
-    format.ext
+  Printf.sprintf "%s/_build/%s/windtrap-%s" root format.dir (hex_hash key)
+
+let output_file format ~exe = output_stem format ~exe ^ "." ^ format.ext
+let output_dir format ~exe = output_stem format ~exe
 
 (* Errors *)
 
@@ -137,32 +139,31 @@ let rec mkdir_p dir =
   end
 
 let temp_state = lazy (Random.State.make_self_init ())
+let random_token () = Random.State.int (Lazy.force temp_state) 0x1000000
 
-(* Exclusive creation, retried under a fresh suffix on collision: two
-   processes writing the same [path] concurrently can never interleave
+(* Exclusive creation of [name token], retried under a fresh token on
+   collision: two processes writing concurrently can never interleave
    into a shared temp file - the loser of the last atomic rename simply
    overwrites, which is fine. A leftover [.tmp] from a crashed run is
-   skipped, not reused. *)
-let create_temp path =
+   skipped, not reused. [tries] bounds the retries; the last failure
+   propagates. *)
+let create_exclusive name =
   let rec attempt tries =
-    let suffix =
-      Printf.sprintf ".%06x.tmp"
-        (Random.State.int (Lazy.force temp_state) 0x1000000)
-    in
-    let temp = path ^ suffix in
     match
-      open_out_gen
-        [ Open_wronly; Open_creat; Open_excl; Open_binary ]
-        0o644 temp
+      let path = name (random_token ()) in
+      ( path,
+        open_out_gen
+          [ Open_wronly; Open_creat; Open_excl; Open_binary ]
+          0o644 path )
     with
-    | oc -> (temp, oc)
+    | reserved -> reserved
     | exception Sys_error _ when tries > 1 -> attempt (tries - 1)
   in
   attempt 10
 
-let write_file path data =
-  mkdir_p (Filename.dirname path);
-  let temp, oc = create_temp path in
+(* [data] into the open [temp], then the atomic rename over [path]; the
+   temp file never outlives a failure. *)
+let commit_temp ~temp oc ~path data =
   (try
      Fun.protect
        ~finally:(fun () -> close_out_noerr oc)
@@ -174,6 +175,32 @@ let write_file path data =
   with e ->
     (try Sys.remove temp with Sys_error _ -> ());
     raise e
+
+let write_file path data =
+  mkdir_p (Filename.dirname path);
+  let temp, oc =
+    create_exclusive (fun token -> Printf.sprintf "%s.%06x.tmp" path token)
+  in
+  commit_temp ~temp oc ~path data
+
+(* A fresh [<prefix><token>.<ext>] in [dir]. The token is reserved by
+   the exclusive creation of [<prefix><token>.tmp]: a concurrent writer
+   holding the same token either still has its temp file (this creation
+   fails and retries) or has already renamed it into place (the
+   existence check fails and retries) - at every instant one of the two
+   exists, so two writers never share a final name. *)
+let write_new_file dir ~prefix ~ext data =
+  mkdir_p dir;
+  let temp, oc =
+    create_exclusive (fun token ->
+        let stem = Filename.concat dir (Printf.sprintf "%s%06x" prefix token) in
+        if Sys.file_exists (stem ^ "." ^ ext) then
+          raise (Sys_error (stem ^ ": name taken"))
+        else stem ^ ".tmp")
+  in
+  let path = Filename.chop_suffix temp ".tmp" ^ "." ^ ext in
+  commit_temp ~temp oc ~path data;
+  path
 
 (* The Header *)
 
