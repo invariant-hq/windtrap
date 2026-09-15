@@ -411,6 +411,10 @@ with `dune promote`. Non-obvious mechanics:
 - Dune sanitizes only the sandbox path (`$TESTCASE_ROOT`). Timestamps,
   durations, home paths, versions you sanitize yourself with `sed`, or
   assert on stable fragments with `grep -o`. Sort `ls` output.
+- Coverage reaches the binary too: with §3's coverage stanza on its
+  library, every command a cram test runs writes its own dump, and
+  `windtrap coverage` merges them all — a CLI exercised through cram
+  counts across every invocation, under the same `@cover` alias.
 
 ## 6. Prove every test can fail (mutation)
 
