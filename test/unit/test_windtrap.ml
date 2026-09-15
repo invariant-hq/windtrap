@@ -6,9 +6,12 @@
 (* End-to-end tests of the Windtrap facade: suites declared with the public
    surface (verbs, testables, prop, snapshot, output, fixture) executed
    in-process through Runner.execute under a synthetic config, asserting on
-   typed outcomes. Plain executable: the facade's [run] exits the process
-   (its CLI/exit path is covered by the examples/ executables), and
-   [execute] refuses to nest inside an active run. *)
+   typed outcomes. Plain executable: [run] and [execute] both refuse to
+   nest inside an active run, so a windtrap suite could drive neither.
+   The facade's [run] returns its exit code, so its command-line paths
+   are driven in this process too ([run_in_process] below); only what
+   needs a process of its own — an environment of its own, a real exit
+   — is re-exec'd as a child. *)
 
 open Windtrap
 open Windtrap.Private
@@ -17,21 +20,23 @@ open Harness
 let () = init "facade"
 
 (* The exit-guard child (D1): re-exec'd with a marker to run the facade's
-   [run] — which owns the process exit — on a suite whose second test calls
-   [Stdlib.exit 0]. The parent below asserts on the child's status and
-   transcript; never returns for a child invocation. *)
+   [run] on a suite whose second test calls [Stdlib.exit 0], and to exit
+   with the code [run] returns — the guard's whole subject is which of
+   the two exits ends the process. The parent below asserts on the
+   child's status and transcript; never returns for a child invocation. *)
 let () =
   match Array.to_list Sys.argv with
   | [ _; "--exit-guard-child"; log_dir ] ->
       clear_env ();
-      Windtrap.run
-        ~argv:[| "exit-guard-child"; "-o"; log_dir; "--color"; "never" |]
-        "exitguard"
-        [
-          test "before" (fun () -> is_true true);
-          test "bomb" (fun () -> Stdlib.exit 0);
-          test "after" (fun () -> equal int 1 2);
-        ]
+      exit
+      @@ Windtrap.run
+           ~argv:[| "exit-guard-child"; "-o"; log_dir; "--color"; "never" |]
+           "exitguard"
+           [
+             test "before" (fun () -> is_true true);
+             test "bomb" (fun () -> Stdlib.exit 0);
+             test "after" (fun () -> equal int 1 2);
+           ]
   | _ -> ()
 
 (* The invocation child (D5 §1): re-exec'd to run the facade's [run] on a
@@ -60,8 +65,9 @@ let () =
       in
       (* A property, so the transcript carries a replay line: that is the
          surviving hint the invocation spelling reaches. *)
-      Windtrap.run ~argv "invsuite"
-        [ prop "boom" Gen.int (fun _ -> equal int 1 2) ]
+      exit
+      @@ Windtrap.run ~argv "invsuite"
+           [ prop "boom" Gen.int (fun _ -> equal int 1 2) ]
   | _ -> ()
 
 (* The xpass-collision child (F4): re-exec'd to run the facade's [run] on
@@ -79,31 +85,13 @@ let () =
           ([ "collide-child"; "-o"; log_dir; "--color"; "never" ]
           @ if level = "verbose" then [ "--verbose" ] else [])
       in
-      Windtrap.run ~argv "collide"
-        [
-          xfail
-            (test "collide" (fun () ->
-                 fail "expected to fail, but the test passed"));
-        ]
-  | _ -> ()
-
-(* The focus child (testing/T3): re-exec'd to run the facade's [run] on a
-   passing two-test suite, focused or not, outside CI ([clear_env] unsets
-   CI). The parent asserts the mli-promised warning — windtrap.mli:
-   "outside CI a successful focused run prints a warning" — and its
-   absence without focus. *)
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--focus-child"; log_dir; mode ] ->
-      clear_env ();
-      let argv = [| "focus-child"; "-o"; log_dir; "--color"; "never" |] in
-      let pass name = test name (fun () -> is_true true) in
-      let suite =
-        match mode with
-        | "focused" -> [ ftest "picked" (fun () -> is_true true); pass "other" ]
-        | _ -> [ pass "picked"; pass "other" ]
-      in
-      Windtrap.run ~argv "focussuite" suite
+      exit
+      @@ Windtrap.run ~argv "collide"
+           [
+             xfail
+               (test "collide" (fun () ->
+                    fail "expected to fail, but the test passed"));
+           ]
   | _ -> ()
 
 (* The release-failure child (runner, "fixture releases"): re-exec'd to run
@@ -120,13 +108,20 @@ let () =
   match Array.to_list Sys.argv with
   | [ _; "--release-failure-child"; log_dir; junit ] ->
       clear_env ();
-      Windtrap.run
-        ~argv:
-          [|
-            "release-child"; "-o"; log_dir; "--color"; "never"; "--junit"; junit;
-          |]
-        "releasesuite"
-        [ test "touches the fixture" (fun () -> leaky_release ()) ]
+      exit
+      @@ Windtrap.run
+           ~argv:
+             [|
+               "release-child";
+               "-o";
+               log_dir;
+               "--color";
+               "never";
+               "--junit";
+               junit;
+             |]
+           "releasesuite"
+           [ test "touches the fixture" (fun () -> leaky_release ()) ]
   | _ -> ()
 
 (* The stale-baseline child (snapshots): re-exec'd to run the facade's
@@ -152,89 +147,27 @@ let () =
       Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
       write_baseline root "kept" "hello\n";
       write_baseline root "gone" "no test claims me\n";
-      Windtrap.run
-        ~argv:
-          [|
-            "stale-child";
-            "-o";
-            Filename.concat root "_logs";
-            "--color";
-            "never";
-            "--junit";
-            junit;
-          |]
-        "stalesuite"
-        [
-          test "checks its baseline" (fun () ->
-              snapshot ~pos:stale_scope "kept" "hello\n");
-        ]
-  | _ -> ()
-
-(* The list-only child (driver, [--list]): re-exec'd to run the facade's
-   [run] on a two-test suite with [-l]. A list run selects and stops —
-   the facade answers it from [Runner.list_selection], before the drive
-   spine — so the whole transcript must be the paths and nothing else: no
-   header, no glyph row, no summary line. *)
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--list-child"; log_dir ] ->
-      clear_env ();
-      Windtrap.run
-        ~argv:[| "list-child"; "-o"; log_dir; "--color"; "never"; "-l" |]
-        "listsuite"
-        [
-          group "outer" [ test "picked" (fun () -> is_true true) ];
-          test "other" (fun () -> is_true true);
-        ]
-  (* And over an empty selection: a listing that answered a mistyped
-     filter with silence is the dead end the empty-selection line's own
-     "(list the suite's tests with -l)" hint leads to. *)
-  | [ _; "--list-empty-child"; log_dir ] ->
-      clear_env ();
-      Windtrap.run
-        ~argv:
-          [|
-            "list-child";
-            "-o";
-            log_dir;
-            "--color";
-            "never";
-            "-l";
-            "-f";
-            "zzznope";
-          |]
-        "listsuite"
-        [
-          group "outer" [ test "picked" (fun () -> is_true true) ];
-          test "other" (fun () -> is_true true);
-        ]
-  | _ -> ()
-
-(* The empty-selection child (driver, [Driver.selection_description]):
-   re-exec'd to run the facade's [run] with a filter that matches nothing.
-   The description is the library runner's own header policy — the inline
-   runner passes [None] — so it reaches the renderer through the driver's
-   call and nowhere else. The pin is the whole transcript: the sentence
-   naming the filter and the denominator, and the [-l] hint under it. *)
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--empty-child"; log_dir ] ->
-      clear_env ();
-      Windtrap.run
-        ~argv:
-          [|
-            "empty-child"; "-o"; log_dir; "--color"; "never"; "-f"; "zzznope";
-          |]
-        "emptysuite"
-        [
-          test "picked" (fun () -> is_true true);
-          test "other" (fun () -> is_true true);
-        ]
+      exit
+      @@ Windtrap.run
+           ~argv:
+             [|
+               "stale-child";
+               "-o";
+               Filename.concat root "_logs";
+               "--color";
+               "never";
+               "--junit";
+               junit;
+             |]
+           "stalesuite"
+           [
+             test "checks its baseline" (fun () ->
+                 snapshot ~pos:stale_scope "kept" "hello\n");
+           ]
   | _ -> ()
 
 (* Re-exec this executable with [args], returning its exit status and its
-   standard output — plus its standard error when [merge_stderr] (the
-   focus warning prints there). *)
+   standard output — plus its standard error when [merge_stderr]. *)
 let spawn_child ?(merge_stderr = false) args =
   let out_read, out_write = Unix.pipe () in
   let child_stderr = if merge_stderr then out_write else Unix.stderr in
@@ -257,6 +190,55 @@ let spawn_child ?(merge_stderr = false) args =
   Unix.close out_read;
   let status = snd (Unix.waitpid [] pid) in
   (status, Buffer.contents buffer)
+
+(* Standard output and standard error redirected at the descriptor level
+   to two files under [root] for the extent of [fn]: what an in-process
+   [run] prints is read back rather than mixed into this harness's own
+   transcript. The library's capture juggles the same two descriptors
+   around every test and restores what it saved, which is these files. *)
+let with_redirected_output root fn =
+  let flush_all () =
+    Format.pp_print_flush Format.std_formatter ();
+    Format.pp_print_flush Format.err_formatter ();
+    flush stdout;
+    flush stderr
+  in
+  let redirect name fd =
+    let path = Filename.concat root name in
+    let file =
+      Unix.openfile path [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o600
+    in
+    let saved = Unix.dup ~cloexec:true fd in
+    Unix.dup2 file fd;
+    Unix.close file;
+    (path, saved)
+  in
+  flush_all ();
+  let out, saved_out = redirect "run.stdout" Unix.stdout in
+  let err, saved_err = redirect "run.stderr" Unix.stderr in
+  let restore () =
+    flush_all ();
+    Unix.dup2 saved_out Unix.stdout;
+    Unix.dup2 saved_err Unix.stderr;
+    Unix.close saved_out;
+    Unix.close saved_err
+  in
+  Windtrap.Private.Pp.styled_string ~ansi:false `Red "" |> ignore;
+  let result = Fun.protect ~finally:restore fn in
+  let contents path = In_channel.with_open_bin path In_channel.input_all in
+  (result, contents out, contents err)
+
+(* The facade's [run] in this process, under [argv] after the fixed
+   prefix every run here takes: the code it returned, its standard
+   output and its standard error. [root] is the capture-log root and the
+   home of the two redirected files. *)
+let run_in_process ?(argv = []) root suite tests =
+  with_redirected_output root (fun () ->
+      Windtrap.run
+        ~argv:
+          (Array.of_list
+             (suite :: "-o" :: root :: "--color" :: "never" :: argv))
+        suite tests)
 
 let with_temp_root f = with_temp_root ~prefix:"windtrap-facade-" f
 
@@ -448,8 +430,7 @@ let () =
     [
       test "wrong" (fun () -> equal int 5 7);
       test "unwrap" (fun () ->
-          ignore
-            (require_ok ~pp_error:Format.pp_print_string (Error "bad parse")));
+          ignore (require_ok ~pp:Format.pp_print_string (Error "bad parse")));
       test "wrong exn" (fun () -> raises Exit (fun () -> failwith "other"));
       test "skipped" (fun () -> skip ~reason:"not today" ());
     ]
@@ -464,7 +445,7 @@ let () =
   | _ -> check "equal failure carries an Equality payload" false);
   (match failure_list (outcome_of outcome [ "unwrap" ]) with
   | [ { Failure.kind = Failure.Equality { actual; _ }; _ } ] ->
-      check "require_ok renders the error side via pp_error"
+      check "require_ok renders the error side via pp"
         (contains "bad parse" actual)
   | _ -> check "require_ok failure carries an Equality payload" false);
   (match failure_list (outcome_of outcome [ "wrong exn" ]) with
@@ -842,7 +823,7 @@ let () =
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
-  let suite = [ test "nests" (fun () -> run "inner" []) ] in
+  let suite = [ test "nests" (fun () -> ignore (run "inner" [])) ] in
   expect_run "nested run" ~config suite @@ fun outcome ->
   match failure_list (outcome_of outcome [ "nests" ]) with
   | [ { Failure.kind = Failure.Raise { actual = Some rendered; _ }; _ } ] ->
@@ -1107,7 +1088,7 @@ let () =
   match
     Run.with_active run_record (fun () -> Windtrap.run ~argv:[| "x" |] "s" [])
   with
-  | () -> check "run inside an active run is refused" false
+  | _ -> check "run inside an active run is refused" false
   | exception Invalid_argument message ->
       check "run inside an active run raises the already-active error"
         (contains "already active" message)
@@ -1172,39 +1153,109 @@ let () =
     check "collide verbose: summary counts one expected failure"
       (contains "1 expected failure in " verbose))
 
-(* A list-only run prints the selection and nothing else, process level *)
+(* [run] returns the exit code (design review 3.2) *)
 
 let () =
-  if not Sys.win32 then (
-    with_temp_root @@ fun root ->
-    let status, transcript =
-      spawn_child ~merge_stderr:true [ "--list-child"; root ]
-    in
-    check "a list run exits 0" (status = Unix.WEXITED 0);
-    check_string "the transcript is the selection, in declaration order"
-      ~expected:"outer \u{203a} picked\nother\n" ~actual:transcript;
-    let status, transcript =
-      spawn_child ~merge_stderr:true [ "--list-empty-child"; root ]
-    in
-    check "an empty listing still exits 0" (status = Unix.WEXITED 0);
-    check_string "an empty listing says why it is empty"
-      ~expected:"no tests ran: filter \"zzznope\" matched none of 2 tests.\n"
-      ~actual:transcript)
+  (* Every path out of [run] is a returned code, never an exit: the four
+     informational and refusal pages, then the verdicts — and a second
+     suite runs in the same process after the first, which is what a
+     returned code is for. *)
+  with_temp_root @@ fun root ->
+  let pass = test "passes" (fun () -> is_true true) in
+  let boom = test "boom" (fun () -> equal int 1 2) in
+  let code, out, err = run_in_process ~argv:[ "--help" ] root "codes" [] in
+  check_int "--help returns 0" ~expected:0 ~actual:code;
+  check_contains "--help prints the page on stdout, flushed"
+    ~sub:"usage: codes [OPTIONS] [PATTERN]" out;
+  check_string "--help prints nothing on stderr" ~expected:"" ~actual:err;
+  let code, out, _ = run_in_process ~argv:[ "--version" ] root "codes" [] in
+  check_int "--version returns 0" ~expected:0 ~actual:code;
+  check_contains "--version prints its line, flushed" ~sub:"windtrap " out;
+  let code, out, err =
+    run_in_process ~argv:[ "--nosuchflag" ] root "codes" []
+  in
+  check_int "a parse error returns 2" ~expected:2 ~actual:code;
+  check_string "a parse error prints nothing on stdout" ~expected:"" ~actual:out;
+  check_contains "a parse error names the option on stderr"
+    ~sub:"unknown option '--nosuchflag'" err;
+  let code, out, err =
+    run_in_process ~argv:[ "--timeout"; "x" ] root "codes" []
+  in
+  check_int "a resolution error returns 2" ~expected:2 ~actual:code;
+  check_string "a resolution error prints nothing on stdout" ~expected:""
+    ~actual:out;
+  check_contains "a resolution error names the value on stderr"
+    ~sub:"invalid value 'x' for" err;
+  let code, out, err = run_in_process root "codes" [ pass ] in
+  check_int "a green suite returns 0" ~expected:0 ~actual:code;
+  check_contains "and its transcript is complete when run returns"
+    ~sub:"codes: 1 passed in " out;
+  check_string "a green suite prints nothing on stderr" ~expected:"" ~actual:err;
+  let code, out, _ = run_in_process root "codes" [ pass; boom ] in
+  check_int "a failing suite returns 1" ~expected:1 ~actual:code;
+  check_contains "with the failure block in its transcript" ~sub:"  FAIL  boom"
+    out;
+  let code, out, _ = run_in_process root "second" [ pass ] in
+  check_int "a second suite in the same process returns its own code"
+    ~expected:0 ~actual:code;
+  check_contains "and prints its own transcript" ~sub:"second: 1 passed in " out
 
-(* An empty selection says why it is empty, process level *)
+(* A list-only run prints the selection and nothing else *)
 
 let () =
-  if not Sys.win32 then (
-    with_temp_root @@ fun root ->
-    let status, transcript =
-      spawn_child ~merge_stderr:true [ "--empty-child"; root ]
-    in
-    check "an empty selection exits 2" (status = Unix.WEXITED 2);
-    check_string "the summary names the filter, the count, and the way out"
-      ~expected:
-        "emptysuite: no tests ran: filter \"zzznope\" matched none of 2 tests.\n\
-         (list the suite's tests with -l)\n"
-      ~actual:transcript)
+  (* A list run selects and stops — the facade answers it from
+     [Runner.list_selection], before the drive spine — so the whole
+     transcript must be the paths and nothing else: no header, no glyph
+     row, no summary line. *)
+  with_temp_root @@ fun root ->
+  let suite =
+    [
+      group "outer" [ test "picked" (fun () -> is_true true) ];
+      test "other" (fun () -> is_true true);
+    ]
+  in
+  let code, out, err = run_in_process ~argv:[ "-l" ] root "listsuite" suite in
+  check_int "a list run returns 0" ~expected:0 ~actual:code;
+  check_string "the transcript is the selection, in declaration order"
+    ~expected:"outer \u{203a} picked\nother\n" ~actual:out;
+  check_string "a list run prints nothing on stderr" ~expected:"" ~actual:err;
+  (* And over an empty selection: a listing that answered a mistyped
+     filter with silence is the dead end the empty-selection line's own
+     "(list the suite's tests with -l)" hint leads to. *)
+  let code, out, err =
+    run_in_process ~argv:[ "-l"; "-f"; "zzznope" ] root "listsuite" suite
+  in
+  check_int "an empty listing still returns 0" ~expected:0 ~actual:code;
+  check_string "an empty listing says why it is empty"
+    ~expected:"no tests ran: filter \"zzznope\" matched none of 2 tests.\n"
+    ~actual:out;
+  check_string "an empty listing prints nothing on stderr" ~expected:""
+    ~actual:err
+
+(* An empty selection says why it is empty *)
+
+let () =
+  (* The description is the library runner's own header policy — the
+     inline runner passes [None] — so it reaches the renderer through the
+     driver's call and nowhere else. The pin is the whole transcript: the
+     sentence naming the filter and the denominator, and the [-l] hint
+     under it. *)
+  with_temp_root @@ fun root ->
+  let code, out, err =
+    run_in_process ~argv:[ "-f"; "zzznope" ] root "emptysuite"
+      [
+        test "picked" (fun () -> is_true true);
+        test "other" (fun () -> is_true true);
+      ]
+  in
+  check_int "an empty selection returns 2" ~expected:2 ~actual:code;
+  check_string "the summary names the filter, the count, and the way out"
+    ~expected:
+      "emptysuite: no tests ran: filter \"zzznope\" matched none of 2 tests.\n\
+       (list the suite's tests with -l)\n"
+    ~actual:out;
+  check_string "an empty selection prints nothing on stderr" ~expected:""
+    ~actual:err
 
 (* Release failures reach every sink, process level *)
 
@@ -1270,27 +1321,32 @@ let () =
     let xml = In_channel.with_open_bin junit In_channel.input_all in
     check_contains "JUnit records no failure for it" ~sub:"failures=\"0\"" xml)
 
-(* The focus warning, process level (testing/T3) *)
+(* The focus warning (testing/T3) *)
 
 let () =
-  if not Sys.win32 then (
-    let spawn_focus_child mode =
-      with_temp_root @@ fun root ->
-      let status, transcript =
-        spawn_child ~merge_stderr:true [ "--focus-child"; root; mode ]
-      in
-      check
-        (mode ^ " child exits 0 (focus narrows, never fails)")
-        (status = Unix.WEXITED 0);
-      transcript
-    in
-    let focused = spawn_focus_child "focused" in
-    check_contains "outside CI a successful focused run warns"
-      ~sub:"warning: focus is active (ftest/fgroup) — 1 of 2 tests ran" focused;
-    check_contains "the warning tells the committer what to do"
-      ~sub:"remove the focus before committing" focused;
-    let plain = spawn_focus_child "plain" in
-    check "no focus, no warning" (not (contains "focus is active" plain)))
+  (* A passing two-test suite, focused or not, outside CI ([init] unset
+     CI). The mli-promised warning — windtrap.mli: "outside CI a
+     successful focused run prints a warning" — goes to stderr, and is
+     absent without focus. *)
+  with_temp_root @@ fun root ->
+  let pass name = test name (fun () -> is_true true) in
+  let run_focus mode suite =
+    let code, _, err = run_in_process root "focussuite" suite in
+    check_int
+      (mode ^ " run returns 0 (focus narrows, never fails)")
+      ~expected:0 ~actual:code;
+    err
+  in
+  let focused =
+    run_focus "focused"
+      [ ftest "picked" (fun () -> is_true true); pass "other" ]
+  in
+  check_contains "outside CI a successful focused run warns"
+    ~sub:"warning: focus is active (ftest/fgroup) — 1 of 2 tests ran" focused;
+  check_contains "the warning tells the committer what to do"
+    ~sub:"remove the focus before committing" focused;
+  let plain = run_focus "plain" [ pass "picked"; pass "other" ] in
+  check "no focus, no warning" (not (contains "focus is active" plain))
 
 (* Summary *)
 

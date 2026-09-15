@@ -763,4 +763,4 @@ let () =
 (* Suite *)
 
 let tests = List.rev !registered
-let () = Windtrap.run "cli" tests
+let () = exit @@ Windtrap.run "cli" tests

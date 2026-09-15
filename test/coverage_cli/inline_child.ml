@@ -49,4 +49,4 @@ let () =
        [ Windtrap.test "fails" (fun () -> Windtrap.is_true false) ]
      else [])
   in
-  Windtrap.run "coverage-child" tests
+  exit @@ Windtrap.run "coverage-child" tests

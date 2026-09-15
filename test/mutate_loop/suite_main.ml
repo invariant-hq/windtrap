@@ -220,11 +220,13 @@ let () =
   | "slow" -> run "calc" [ group "slow" slow ]
   | "probe_block" -> run "calc" [ group "probe" probe_block ]
   | "crash" ->
-      run "calc"
-        [ group "calc" strong; group "widen" weak; group "crash" crash ]
+      exit
+      @@ run "calc"
+           [ group "calc" strong; group "widen" weak; group "crash" crash ]
   | "fatal" ->
-      run "calc"
-        [ group "calc" strong; group "widen" weak; group "crash" fatal ]
+      exit
+      @@ run "calc"
+           [ group "calc" strong; group "widen" weak; group "crash" fatal ]
   | "capped" ->
       run "calc"
         [
@@ -235,7 +237,7 @@ let () =
   | "boundary" ->
       (* Outside any test, and before the first one starts. *)
       ignore (Subject.orphan 1 2);
-      run "calc" [ group "widen" boundary ]
+      exit @@ run "calc" [ group "widen" boundary ]
   | "tagged" ->
       (* Every test carries one tag, so --tag/WINDTRAP_TAG selects the
          whole suite: a tag predicate is not expressible as a set of

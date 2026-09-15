@@ -119,4 +119,4 @@ let tests =
           (Loc.equal loc (Loc.of_pos ("test/zzz.ml", 12, 4, 9))));
   ]
 
-let () = Windtrap.run "loc" tests
+let () = exit @@ Windtrap.run "loc" tests

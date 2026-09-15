@@ -232,4 +232,4 @@ let tests =
         set "TERM" saved);
   ]
 
-let () = Windtrap.run "env" tests
+let () = exit @@ Windtrap.run "env" tests

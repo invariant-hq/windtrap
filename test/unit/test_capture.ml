@@ -569,4 +569,4 @@ let tests =
   ]
 
 let () = dispatch_child ()
-let () = Windtrap.run "capture" tests
+let () = exit @@ Windtrap.run "capture" tests

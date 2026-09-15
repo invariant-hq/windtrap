@@ -328,4 +328,4 @@ let dispatch_child () =
   | _ -> ()
 
 let () = dispatch_child ()
-let () = Windtrap.run "atomic_file" tests
+let () = exit @@ Windtrap.run "atomic_file" tests

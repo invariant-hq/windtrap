@@ -1,9 +1,15 @@
 # Running tests
 
 `run suite tests` parses the command line, executes the selected tests
-sequentially in declaration order, renders the report, and exits the
-process. Multi-file suites export `val tests : test list` per module
-and concatenate the lists into one `run` call.
+sequentially in declaration order, renders the report, and returns the
+exit code; the suite's `main` hands it to the process:
+
+```ocaml
+let () = exit @@ run "mylib" tests
+```
+
+Multi-file suites export `val tests : test list` per module and
+concatenate the lists into one `run` call.
 
 Exit codes are the contract CI scripts rely on:
 
@@ -13,11 +19,23 @@ Exit codes are the contract CI scripts rely on:
 | 1 | at least one failure |
 | 2 | nothing ran — the filter-typo case; treat it as failure, not success |
 
-The runner owns the process exit. Code under test that calls `exit` —
-from a body, setup, teardown, or fixture release — does not terminate
+Every path out of `run` is a returned code — `--help` and `--version`
+(0), a command line it cannot parse or resolve (2), `-l` (0), a startup
+refusal (1, or 2 for `--failed` with nothing recorded), and the run's
+own verdict. `run` returns the code rather than applying it so that one
+binary can host two suites, or a harness can post-process a run
+in-process; a `main` that forgets the `exit` is a type error rather than
+a binary that is green on failure, and only a deliberate `ignore` drops
+the code. `run` refuses to start inside an active run — a test body
+cannot start another run.
+
+The run owns its exit code. Code under test that calls `exit` — from a
+body, setup, teardown, scope, or fixture release — does not terminate
 the run: the attempt is intercepted and recorded as that test's (or
-that release's) failure, and the run continues to its own exit code.
-To assert on exit behavior, run the exiting code in a subprocess.
+that release's) failure, and the run continues to its own code. A
+handler that catches every exception around the exiting call defeats
+the interception, exactly as it would swallow an assertion failure; to
+assert on exit behavior, run the exiting code in a subprocess.
 
 ## Two ways to drive the runner
 

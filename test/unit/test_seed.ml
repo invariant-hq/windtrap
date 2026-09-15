@@ -545,4 +545,4 @@ let tests =
     test "random produces distinct seeds" random_produces_distinct_seeds;
   ]
 
-let () = Windtrap.run "seed" tests
+let () = exit @@ Windtrap.run "seed" tests

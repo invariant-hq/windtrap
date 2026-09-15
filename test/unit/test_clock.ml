@@ -30,4 +30,4 @@ let tests =
         is_true ~msg:"count_s within a second here" (s < 1.));
   ]
 
-let () = Windtrap.run "clock" tests
+let () = exit @@ Windtrap.run "clock" tests

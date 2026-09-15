@@ -220,4 +220,4 @@ let tests =
     test "run-level annotations block" test_annotations;
   ]
 
-let () = Windtrap.run "render_github" tests
+let () = exit @@ Windtrap.run "render_github" tests

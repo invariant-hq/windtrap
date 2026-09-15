@@ -15,4 +15,5 @@ let rec drain n =
   if n = 0 then 0 else drain (Mutate_loop_spinner.Spinner.step n)
 
 let () =
-  run "spin" [ test "counts down to zero" (fun () -> equal int 0 (drain 5)) ]
+  exit
+  @@ run "spin" [ test "counts down to zero" (fun () -> equal int 0 (drain 5)) ]

@@ -166,4 +166,4 @@ let suite =
     poisoned_pre;
   ]
 
-let () = run "mytool" suite
+let () = exit @@ run "mytool" suite

@@ -562,4 +562,4 @@ let tests =
           ({ Point.x = 1; y = 2 }, "also ignored"));
   ]
 
-let () = Windtrap.run "testable" tests
+let () = exit @@ Windtrap.run "testable" tests

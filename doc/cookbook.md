@@ -21,9 +21,12 @@ not compiled here):
 let with_eio = scoped Eio_main.run
 
 let () =
-  run "net"
-    [ with_eio "connects" (fun env ->
-          equal string "pong" (Client.ping ~net:(Eio.Stdenv.net env))) ]
+  exit
+  @@ run "net"
+       [
+         with_eio "connects" (fun env ->
+             equal string "pong" (Client.ping ~net:(Eio.Stdenv.net env)));
+       ]
 ```
 
 The same applies one level down: `scoped (fun fn -> Eio_main.run @@ fun
@@ -51,8 +54,8 @@ The guarantees the combination rests on:
 
 To test process-level behavior (locks, crashes, cache sharing), re-exec
 the test binary itself as a worker, dispatching on an environment
-variable *before* `run` is called — so the worker never touches
-windtrap's CLI parsing or process exit:
+variable *before* `run` is called — so the worker never reaches
+windtrap's command-line parsing, and exits on its own terms:
 
 ```ocaml
 let () =
@@ -61,10 +64,13 @@ let () =
       Worker.main ();          (* prints its protocol on stdout *)
       exit 0
   | Some _ | None ->
-      run "locking"
-        [ test "two processes contend" (fun () ->
-              let out = spawn_self ~role:"worker" in
-              contains ~sub:"lock acquired" out) ]
+      exit
+      @@ run "locking"
+           [
+             test "two processes contend" (fun () ->
+                 let out = spawn_self ~role:"worker" in
+                 contains ~sub:"lock acquired" out);
+           ]
 ```
 
 where `spawn_self` runs `Sys.executable_name` with the role variable
@@ -162,15 +168,18 @@ script. In use, the tape is the seam's implementation:
 
 ```ocaml
 let () =
-  run "engine"
-    [
-      with_tape "provider"
-        [ Error `Timeout; Ok "done" ]
-        "a turn retries once past a transient provider error"
-        (fun provider ->
-          let engine = Engine.create ~provider:(fun _req -> next provider) in
-          equal string "done" (Engine.run_turn engine "hi"));
-    ]
+  exit
+  @@ run "engine"
+       [
+         with_tape "provider"
+           [ Error `Timeout; Ok "done" ]
+           "a turn retries once past a transient provider error"
+           (fun provider ->
+             let engine =
+               Engine.create ~provider:(fun _req -> next provider)
+             in
+             equal string "done" (Engine.run_turn engine "hi"));
+       ]
 ```
 
 If the retry logic is broken and the second entry is never dealt, the

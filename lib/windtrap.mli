@@ -14,15 +14,16 @@
     open Windtrap
 
     let () =
-      run "mylib"
-        [
-          test "addition" (fun () -> equal int 5 (Calc.add 2 3));
-          group "parser"
-            [
-              test "empty input" (fun () ->
-                  raises (Parse_error "empty") (fun () -> Calc.parse ""));
-            ];
-        ]
+      exit
+      @@ run "mylib"
+           [
+             test "addition" (fun () -> equal int 5 (Calc.add 2 3));
+             group "parser"
+               [
+                 test "empty input" (fun () ->
+                     raises (Parse_error "empty") (fun () -> Calc.parse ""));
+               ];
+           ]
     ]}
 
     Comparisons go through an ['a] {!type:testable} — a printer and an equality
@@ -1081,49 +1082,33 @@ val chdir : string -> unit
 
 (** {1:running Running} *)
 
-val run : ?argv:string array -> string -> test list -> unit
+val run : ?argv:string array -> string -> test list -> int
 (** [run suite tests] parses the command line, executes the selected tests of
-    [tests] sequentially in declaration order, renders the report, and
-    {b exits the process}: [0] when everything passed, [1] on any failure, [2]
-    when nothing ran (the filter-typo case). It never returns. Multi-file suites
-    export [val tests : test list] per module and concatenate the lists into one
-    [run] call.
+    [tests] in declaration order, renders the report to standard output and
+    returns the exit code: [0] when no selected test failed, [1] on any failure,
+    [2] when nothing ran (the filter-typo case) or the command line does not
+    parse; [--help] and [--version] print their page and return [0]. The caller
+    passes the code to [exit]:
 
-    [argv] defaults to [Sys.argv]. Selection, seeds, snapshot acceptance, and
-    output are controlled by flags ([-f], [-x], [--tag], [--seed], [-u],
-    [--junit PATH], ...) with [WINDTRAP_*] environment mirrors — under
-    [dune runtest] the mirrors {e are} the CLI; run the executable with [--help]
-    for the full inventory. [run]'s only other inputs are ambient CI and
-    terminal detection — [CI], [GITHUB_ACTIONS], [INSIDE_DUNE], and whether
-    standard output is a terminal — so a test binary re-executing itself as a
-    subprocess worker stays unaffected (see [doc/cookbook.md]). [--shard K/N]
-    ([WINDTRAP_SHARD] mirror) deterministically partitions the selected tests
-    into [N] buckets by a frozen hash of each test's path and runs bucket [K]:
-    [N] concurrent partitions cover every test exactly once, stable across
-    machines and suite composition. Reports go to standard output, styled when
-    it is a terminal (or forced with [--color]); under GitHub Actions failures
-    are also emitted as annotations. Terminal verbosity is one axis with two
-    levels: by default one glyph per test with failures replayed in full at the
-    end, [-v] ([WINDTRAP_VERBOSE]) for one status line per test. The default
-    level prints its header and glyph row only when the run is noteworthy — any
-    failure, or any test not tagged ["slow"] exceeding the slow threshold
-    ([--slow-threshold] seconds, [WINDTRAP_SLOW_THRESHOLD] mirror; default [1],
-    [0] disables); a green, healthy run is exactly one line
-    ([mylib: 48 passed in 1.2s.]), and tests over the threshold are listed
-    slowest-first in a [slow tests (n):] block before the summary. Levels change
-    what prints, never outcomes or exit codes.
+    {[
+      let () = exit @@ run "mylib" [ ... ]
+    ]}
 
-    Duplicate test paths, focused tests under [CI], and a snapshot update
-    request under [CI] refuse the run before anything executes. Calling [run]
-    from inside a test body raises [Invalid_argument], failing the calling test.
+    [argv] is the command line, [Sys.argv] by default; [--help] lists its flags
+    and their [WINDTRAP_*] environment mirrors, which are the command line under
+    [dune runtest]. Beyond those, [run] reads only [CI], [GITHUB_ACTIONS],
+    [INSIDE_DUNE] and whether standard output is a terminal. Raises
+    [Invalid_argument] inside an active run: a test body cannot start another
+    run.
 
-    Code under test that calls [exit] — from a body, a setup, a teardown, a
-    {!scoped} scope, or a fixture release — does not terminate the runner: the
-    exit attempt is intercepted and recorded as that test's (or that release's)
-    failure, and the run continues to its own exit code — the runner owns the
-    process exit. A handler that catches all exceptions around the exiting call
-    defeats the interception, exactly as it would swallow an assertion failure;
-    to assert on exit behavior, run the exiting code in a subprocess. *)
+    Duplicate test paths, focused tests under [CI] and a snapshot update under
+    [CI] refuse the run before anything executes. [--shard K/N] partitions the
+    selected tests into [N] buckets by a frozen hash of each test's path, so the
+    buckets cover every test exactly once, stable across machines and suite
+    composition. Code under test that calls [exit] does not end the run: the
+    call is intercepted and recorded as that test's failure. A green run prints
+    one line, a noteworthy one its header, glyph row and failure blocks, [-v]
+    one line per test; see [doc/manual/running-tests.md]. *)
 
 (** {1:private Private} *)
 

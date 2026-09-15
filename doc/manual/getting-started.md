@@ -18,15 +18,16 @@ A suite is one executable. `test/dune`:
 open Windtrap
 
 let () =
-  run "mylib"
-    [
-      test "addition" (fun () -> equal int 5 (Calc.add 2 3));
-      group "parser"
-        [
-          test "empty input" (fun () ->
-              raises (Parse_error "empty") (fun () -> Calc.parse ""));
-        ];
-    ]
+  exit
+  @@ run "mylib"
+       [
+         test "addition" (fun () -> equal int 5 (Calc.add 2 3));
+         group "parser"
+           [
+             test "empty input" (fun () ->
+                 raises (Parse_error "empty") (fun () -> Calc.parse ""));
+           ];
+       ]
 ```
 
 ```
@@ -35,10 +36,14 @@ mylib: 2 passed in 0.000689s.
 ```
 
 That is the whole model: `test` and `group` declare inert data, `run`
-executes it and exits the process — `0` when everything passed, `1` on
-any failure, `2` when nothing ran (the filter-typo case). A test body
-passes by returning and fails by raising; the assertion verbs raise
-structured failures that render as reports. A green, healthy run is
+executes it and returns the exit code — `0` when everything passed, `1`
+on any failure, `2` when nothing ran (the filter-typo case) — and `exit`
+hands that code to the shell. `run` returns the code rather than
+applying it so that one binary can host two suites or post-process a
+run, and a `main` that forgets the `exit` is a type error rather than a
+binary that is green on failure. A test body passes by returning and
+fails by raising; the assertion verbs raise structured failures that
+render as reports. A green, healthy run is
 exactly one line; anything worth your attention — a failure, or a test
 that got slow — brings out the header and the per-test glyph row
 (`.` for a pass); `-v` prints one status line per test instead (see

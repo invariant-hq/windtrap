@@ -14,25 +14,28 @@ let gen_rows =
 let line_count s = List.length (String.split_on_char '\n' s)
 
 let () =
-  run "stats"
-    [
-      group "render"
-        [
-          (* Deliberately weak, and kept that way: this law counts lines,
+  exit
+  @@ run "stats"
+       [
+         group "render"
+           [
+             (* Deliberately weak, and kept that way: this law counts lines,
              and no arithmetic inside a line moves a line count, so on its
              own it kills nothing — the README's living specimen of a
              test that reaches a mutant without pinning it, and the
              faults it misses are killed by the tests beside it.
              Strengthening it is the exercise; doing so here would orphan
              the README's transcript. *)
-          prop "prints one line per row plus the total" gen_rows (fun rows ->
-              equal int (List.length rows + 1) (line_count (Stats.render rows)));
-          test "pads and draws a single row" (fun () ->
-              equal text "x  ##\ntotal 2" (Stats.render [ ("x", 2) ]));
-          test "clamps negative counts to zero" (fun () ->
-              equal text "x  \ntotal 0" (Stats.render [ ("x", -2) ]));
-          test "renders a small table" (fun () ->
-              snapshot "histogram"
-                (Stats.render [ ("reds", 3); ("greens", 5); ("blues", 0) ]));
-        ];
-    ]
+             prop "prints one line per row plus the total" gen_rows (fun rows ->
+                 equal int
+                   (List.length rows + 1)
+                   (line_count (Stats.render rows)));
+             test "pads and draws a single row" (fun () ->
+                 equal text "x  ##\ntotal 2" (Stats.render [ ("x", 2) ]));
+             test "clamps negative counts to zero" (fun () ->
+                 equal text "x  \ntotal 0" (Stats.render [ ("x", -2) ]));
+             test "renders a small table" (fun () ->
+                 snapshot "histogram"
+                   (Stats.render [ ("reds", 3); ("greens", 5); ("blues", 0) ]));
+           ];
+       ]

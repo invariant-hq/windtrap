@@ -3006,4 +3006,4 @@ let tests =
     test "tree-wide summary dialect (harness parity)" test_summary_dialect;
   ]
 
-let () = Windtrap.run "render" tests
+let () = exit @@ Windtrap.run "render" tests

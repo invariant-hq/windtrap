@@ -15,7 +15,8 @@ acceptance workflow bless behavior nobody reviewed.
 
 Windtrap is one library for unit, property, stateful, snapshot, and
 expect tests, plus code coverage and mutation testing. `open Windtrap`;
-`test`/`group` declare inert data; `run` executes and exits: 0 all
+`test`/`group` declare inert data; `run` executes and returns the exit
+code, which `main` applies — `let () = exit @@ run "mylib" […]`: 0 all
 passed, 1 any failure, 2 nothing ran (the filter-typo case — treat it as
 failure, never as success).
 
@@ -190,7 +191,7 @@ test/
     __snapshots__/     ; committed baselines
   failures/            ; known-bug reproductions, one suite per issue (below)
     dune               ; (tests (names issue_42))
-    issue_42.ml        ; run "issue-42" [ xfail ~reason:"issue #42" (test …) ]
+    issue_42.ml        ; exit @@ run "issue-42" [ xfail ~reason:"issue #42" (test …) ]
   expect/              ; expect tests — no test code in lib/ (below)
     dune
     expect_render.ml

@@ -46,9 +46,11 @@ let duplicate =
   ]
 
 let () =
-  run "fixture"
-    (match Sys.getenv_opt "FACADE_FIXTURE" with
-    | Some "focus" -> focus
-    | Some "duplicate" -> duplicate
-    | Some ("" | "default") | None -> default
-    | Some other -> invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other))
+  exit
+  @@ run "fixture"
+       (match Sys.getenv_opt "FACADE_FIXTURE" with
+       | Some "focus" -> focus
+       | Some "duplicate" -> duplicate
+       | Some ("" | "default") | None -> default
+       | Some other ->
+           invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other))

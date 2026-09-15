@@ -108,4 +108,4 @@ let tests =
           (Pp.styled_string ~ansi:true `Faint ""));
   ]
 
-let () = Windtrap.run "pp" tests
+let () = exit @@ Windtrap.run "pp" tests

@@ -10,4 +10,5 @@
 
 open Windtrap
 
-let () = run "plain" [ test "arithmetic" (fun () -> equal int 4 (2 + 2)) ]
+let () =
+  exit @@ run "plain" [ test "arithmetic" (fun () -> equal int 4 (2 + 2)) ]

@@ -517,4 +517,4 @@ let tests =
           (M.catalogue ()));
   ]
 
-let () = run "mutate semantics" tests
+let () = exit @@ run "mutate semantics" tests

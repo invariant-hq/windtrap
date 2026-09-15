@@ -762,4 +762,4 @@ let () =
 (* Suite *)
 
 let tests = List.rev !registered
-let () = Windtrap.run "snapshot" tests
+let () = exit @@ Windtrap.run "snapshot" tests

@@ -962,4 +962,4 @@ let suite =
   ]
 
 let tests = List.map (fun (name, fn) -> Windtrap.test name fn) suite
-let () = Windtrap.run "property" tests
+let () = exit @@ Windtrap.run "property" tests

@@ -210,4 +210,4 @@ let tests =
           (Path_ops.display "w\\_build\\default\\test\\foo.ml"));
   ]
 
-let () = Windtrap.run "path_ops" tests
+let () = exit @@ Windtrap.run "path_ops" tests

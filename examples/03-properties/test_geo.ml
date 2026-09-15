@@ -30,17 +30,18 @@ let gen_rect =
   |> Gen.with_pp pp_shape
 
 let () =
-  run "geo"
-    [
-      prop "area non-negative" gen_shape (fun s ->
-          is_true (Float.compare (Geo.area s) 0. >= 0));
-      prop "rect area matches the formula"
-        ~examples:[ Rect (2., 0.) ]
-        gen_rect
-        (fun s ->
-          match s with
-          | Rect (w, h) -> equal (float 1e-9) (w *. h) (Geo.area s)
-          | Circle _ -> ());
-      test "one pp feeds both worlds" (fun () ->
-          equal shape (Circle 1.) (Circle 1.));
-    ]
+  exit
+  @@ run "geo"
+       [
+         prop "area non-negative" gen_shape (fun s ->
+             is_true (Float.compare (Geo.area s) 0. >= 0));
+         prop "rect area matches the formula"
+           ~examples:[ Rect (2., 0.) ]
+           gen_rect
+           (fun s ->
+             match s with
+             | Rect (w, h) -> equal (float 1e-9) (w *. h) (Geo.area s)
+             | Circle _ -> ());
+         test "one pp feeds both worlds" (fun () ->
+             equal shape (Circle 1.) (Circle 1.));
+       ]

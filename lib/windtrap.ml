@@ -270,7 +270,8 @@ let print_cli_error ~prog error =
    legitimately this runner's own stays visible here: the parsed-CLI
    resolution sources, the argv-computed invocation, the two header
    policies (the property-aware seed and the selection description),
-   GitHub gating, the focus warning, and the process exit. *)
+   GitHub gating, the focus warning, and the exit code — returned, never
+   applied: the process is the caller's. *)
 let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
   let github = Env.in_github_actions () in
   (* The one invocation every command hint derives from: computed
@@ -308,24 +309,46 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
      announced before any output, and the loop forks after the dry run)
      and may take the process over. *)
   match Mutate_loop.execute_and_report spine tests with
-  | Mutate_loop.Reported code -> exit code
-  | Mutate_loop.Ran result -> (
-      match result with
-      | Error error ->
-          (* The message is already on stderr; this runner owns the exit. *)
-          exit (Runner.startup_exit_code error)
-      | Ok outcome ->
-          if
-            outcome.Runner.focus_active
-            && outcome.Runner.exit_code = 0
-            && not (Env.in_ci ())
-          then
-            Format.eprintf
-              "warning: focus is active (ftest/fgroup) — %d of %d tests ran; \
-               remove the focus before committing@."
-              (List.length outcome.Runner.selected)
-              outcome.Runner.total;
-          exit outcome.Runner.exit_code)
+  | Mutate_loop.Reported code -> code
+  | Mutate_loop.Ran (Error error) ->
+      (* The message is already on stderr; only the code is left. *)
+      Runner.startup_exit_code error
+  | Mutate_loop.Ran (Ok outcome) ->
+      if
+        outcome.Runner.focus_active
+        && outcome.Runner.exit_code = 0
+        && not (Env.in_ci ())
+      then
+        Format.eprintf
+          "warning: focus is active (ftest/fgroup) — %d of %d tests ran; \
+           remove the focus before committing@."
+          (List.length outcome.Runner.selected)
+          outcome.Runner.total;
+      outcome.Runner.exit_code
+
+(* [-l]: a listing is not a transcript and must not be folded into a
+   ::group:: section, and a run that runs nothing is a concept no module
+   below needs to carry. The startup checks are still the ones a real
+   run makes, so a refused [--shard] or [--failed] is refused here too. *)
+let run_listing ~suite ~config tests =
+  match Runner.list_selection ~config ~suite tests with
+  | Error error ->
+      prerr_endline (Runner.startup_message error);
+      Runner.startup_exit_code error
+  | Ok [] ->
+      (* A listing that answered a mistyped filter with silence would be
+         the dead end the empty-selection line's own "(list the suite's
+         tests with -l)" hint leads to. The hint itself is not repeated:
+         the reader is listing. *)
+      Option.iter
+        (fun reason -> print_endline ("no tests ran: " ^ reason ^ "."))
+        (Render.empty_selection_reason
+           ~declared:(List.length (Test_tree.flatten tests))
+           ~selection:(Driver.selection_description config));
+      0
+  | Ok paths ->
+      List.iter print_endline paths;
+      0
 
 let run ?(argv = Sys.argv) suite tests =
   (* [Run.active], not a frame probe: the slot also holds the run itself
@@ -336,50 +359,30 @@ let run ?(argv = Sys.argv) suite tests =
     if Array.length argv > 0 && argv.(0) <> "" then argv.(0) else suite
   in
   match Cli.parse argv with
+  (* Every branch ends in a code, never in [exit]: the caller applies it,
+     which is what lets one binary host two suites or post-process a
+     run. The two informational pages flush themselves, so the output is
+     complete when [run] returns whether or not [exit] follows. *)
   | Error error ->
       print_cli_error ~prog error;
-      exit 2
+      2
+  | Ok parsed when parsed.Cli.help ->
+      print_string (Cli.help ~prog);
+      flush stdout;
+      0
+  | Ok parsed when parsed.Cli.version ->
+      Printf.printf "windtrap %s\n%!" version;
+      0
   | Ok parsed -> (
-      if parsed.Cli.help then begin
-        print_string (Cli.help ~prog);
-        exit 0
-      end;
-      if parsed.Cli.version then begin
-        Printf.printf "windtrap %s\n" version;
-        exit 0
-      end;
       match Cli.settings parsed with
       | Error error ->
           print_cli_error ~prog error;
-          exit 2
+          2
       | Ok { Cli.config; render; coverage; output_level; junit } ->
-          (* [-l] before the drive spine: a listing is not a transcript
-             and must not be folded into a ::group:: section, and a run
-             that runs nothing is a concept no module below needs to
-             carry. The startup checks are still the ones a real run
-             makes, so a refused [--shard] or [--failed] is refused
-             here too. It has no mirror, so [parsed] is its whole
-             resolution, as for [--help] and [--version]. *)
+          (* [-l] has no mirror, so [parsed] is its whole resolution, as
+             for [--help] and [--version]. *)
           if parsed.Cli.list_only = Some true then
-            begin match Runner.list_selection ~config ~suite tests with
-            | Error error ->
-                prerr_endline (Runner.startup_message error);
-                exit (Runner.startup_exit_code error)
-            | Ok [] ->
-                (* A listing that answered a mistyped filter with silence
-                   would be the dead end the empty-selection line's own
-                   "(list the suite's tests with -l)" hint leads to. The
-                   hint itself is not repeated: the reader is listing. *)
-                Option.iter
-                  (fun reason ->
-                    print_endline ("no tests ran: " ^ reason ^ "."))
-                  (Render.empty_selection_reason
-                     ~declared:(List.length (Test_tree.flatten tests))
-                     ~selection:(Driver.selection_description config));
-                exit 0
-            | Ok paths ->
-                List.iter print_endline paths;
-                exit 0
-            end;
-          run_suite ~argv ~suite ~config ~coverage ~render ~output:output_level
-            ~junit tests)
+            run_listing ~suite ~config tests
+          else
+            run_suite ~argv ~suite ~config ~coverage ~render
+              ~output:output_level ~junit tests)

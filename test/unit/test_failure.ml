@@ -510,4 +510,4 @@ let tests =
         check "an ordinary exception is not fatal" (not (F.is_fatal Not_found)));
   ]
 
-let () = Windtrap.run "failure" tests
+let () = exit @@ Windtrap.run "failure" tests

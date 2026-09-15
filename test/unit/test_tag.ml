@@ -55,4 +55,4 @@ let tests =
           (Tag.accepts p Tag.empty));
   ]
 
-let () = Windtrap.run "tag" tests
+let () = exit @@ Windtrap.run "tag" tests

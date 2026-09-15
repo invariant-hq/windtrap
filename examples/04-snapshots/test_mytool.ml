@@ -6,8 +6,9 @@
 open Windtrap
 
 let () =
-  run "cli"
-    [
-      test "cli help" (fun () -> snapshot "help" (Mytool.help ()));
-      test "report" (fun () -> snapshot "report" (Mytool.report ~rows:42));
-    ]
+  exit
+  @@ run "cli"
+       [
+         test "cli help" (fun () -> snapshot "help" (Mytool.help ()));
+         test "report" (fun () -> snapshot "report" (Mytool.report ~rows:42));
+       ]

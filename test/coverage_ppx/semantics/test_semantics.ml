@@ -242,4 +242,4 @@ let tests =
             failf "exactly one instrumented file, got %d" (List.length reports));
   ]
 
-let () = run "semantics" tests
+let () = exit @@ run "semantics" tests

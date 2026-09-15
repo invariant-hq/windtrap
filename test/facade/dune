@@ -1,10 +1,10 @@
 ; The facade's command line, end to end, as a shell session — the level
 ; SKILL.md §5 gives argument parsing, error messages and exit codes,
 ; and the level windtrap's own walkthrough teaches
-; (examples/x-blueprint/test/cram). [Windtrap.run] ends every branch in
-; [exit], so half its contract is an exit code, which is the one thing
-; cram pins natively: a bare command asserts 0, and a trailing [N]
-; asserts N.
+; (examples/x-blueprint/test/cram). Every branch of [Windtrap.run] returns
+; an exit code and the fixture applies it, so half the contract is an
+; exit code, which is the one thing cram pins natively: a bare command
+; asserts 0, and a trailing [N] asserts N.
 ;
 ; suite_main is the suite under the flags — five tests, no clock and no
 ; network, small enough for a session to pin whole streams. The deps

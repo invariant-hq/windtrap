@@ -143,4 +143,4 @@ let tests =
           (not (String.contains (Filename.basename awkward) '/')));
   ]
 
-let () = Windtrap.run "driver" tests
+let () = exit @@ Windtrap.run "driver" tests

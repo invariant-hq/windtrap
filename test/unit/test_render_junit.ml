@@ -328,4 +328,4 @@ let tests =
     test "the checker's own sanity" test_checker_sanity;
   ]
 
-let () = Windtrap.run "render_junit" tests
+let () = exit @@ Windtrap.run "render_junit" tests

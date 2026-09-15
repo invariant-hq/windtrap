@@ -12,19 +12,22 @@ open Windtrap
 open Calc
 
 let () =
-  run "mylib"
-    [
-      test "addition" (fun () -> equal int 5 (Calc.add 2 3));
-      group "parser"
-        [
-          test "empty input" (fun () ->
-              raises (Parse_error "empty") (fun () -> Calc.parse ""));
-        ];
-    ]
+  exit
+  @@ run "mylib"
+       [
+         test "addition" (fun () -> equal int 5 (Calc.add 2 3));
+         group "parser"
+           [
+             test "empty input" (fun () ->
+                 raises (Parse_error "empty") (fun () -> Calc.parse ""));
+           ];
+       ]
 ```
 
 This is [`examples/01-first-test`](examples/01-first-test), verbatim apart
-from the file's header comment. Running it prints:
+from the file's header comment. `run` returns the exit code — 0 when
+everything passed, 1 on any failure, 2 when nothing ran — and `exit`
+hands it to the shell. Running it prints:
 
 ```
 mylib: 2 passed in 0.00317s.

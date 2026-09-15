@@ -1207,4 +1207,4 @@ let tests =
           = Some "tcp"));
   ]
 
-let () = Windtrap.run "check" tests
+let () = exit @@ Windtrap.run "check" tests

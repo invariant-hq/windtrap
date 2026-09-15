@@ -360,5 +360,8 @@ let mutation =
     ]
 
 let () =
-  run "manual"
-    [ getting_started; assertions; properties; snapshots; resources; mutation ]
+  exit
+  @@ run "manual"
+       [
+         getting_started; assertions; properties; snapshots; resources; mutation;
+       ]
