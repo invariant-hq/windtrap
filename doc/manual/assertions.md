@@ -225,7 +225,7 @@ equal int 5432 port
 already options: `extract : 'a -> 'b option` names the constructor you
 demand (above, `tcp_port` maps `Tcp p` to `Some p`). On failure
 `require_ok`/`require_error`/`require_match` render the rejected value
-with `?pp_error`/`?pp_ok`/`?pp` when given, `<abstract>` otherwise.
+with `?pp` when given, `<abstract>` otherwise.
 
 ## Predicates and containment
 
@@ -319,20 +319,24 @@ expected  a list containing 42
 actual    [2; 3; 5]
 ```
 
-## Options
+## Options and results
 
-Asserting an option's *shape* needs no witness: `is_none` and
-`is_some` never compare the value, so they take the same optional
-printer the `require_*` verbs do — print the branch you did not want:
+Asserting an option's or a result's *shape* needs no witness: `is_none`,
+`is_some`, `is_ok` and `is_error` never compare the value, so they take
+the same optional printer the `require_*` verbs do — print the branch
+you did not want:
 
 ```ocaml
 is_none ~pp:User.pp (Store.find store "nobody");
-is_some (Store.find store "alice")
+is_some (Store.find store "alice");
+is_ok (parse_port "8080");
+is_error ~pp:Format.pp_print_int (parse_port "0")
 ```
 
 Without `~pp` the rejected value renders as `<abstract>`, which is
-often all you need. Reach for `require_some` when you want the value
-too; `is_some` exists so that asserting presence alone does not mean
+often all you need (`is_some` takes none: its rejected branch is
+`None`). Reach for the `require_*` verb when you want the value too;
+the shape verbs exist so that asserting presence alone does not mean
 discarding a result.
 
 ## Exceptions

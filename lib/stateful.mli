@@ -15,49 +15,19 @@
     and replay, [--prop-count], [--max-shrink], tags, timeouts, capture, [xfail]
     and the CI reporters all apply as they do to any property.
 
-    {b The pipeline.} A program is drawn at a fixed length ([?steps]) from one
-    weight-1 [Gen.frequency] branch per command, {e repaired} against the model
-    before the shrink tree is assembled ([Gen.Private.list_exact]'s [?keep]),
-    and shrunk by that tree's structural move set. Repair keeps a call iff its
-    [~pre] holds in the model the calls before it produced, and threads [~next]
-    through the calls it keeps. Two consequences are the design: the program
-    shown is the program that ran — a call whose precondition does not hold is
-    not in the program at all, not skipped at runtime — and shrinking only
-    deletes calls and reduces arguments. It never substitutes one command for
-    another and never invents one: every call of every candidate, everywhere in
-    the tree, is a call the drawn program made, with its argument only reduced
-    (see {!program} for the exact strength of that guarantee).
+    A program is drawn at a fixed length ([?steps]) and {e repaired} against the
+    model before its shrink tree is assembled: a call is kept iff its [~pre]
+    holds in the model the calls before it produced, and [~next] threads through
+    the kept calls. The program shown is the program that ran, and shrinking
+    only deletes calls and reduces arguments — it never substitutes or invents
+    one.
 
-    {b [~pre] and [~next] must be pure, and ['model] must be persistent.} The
-    model trajectory is folded three times per case — by repair when the program
-    is drawn, by {!execute} when it runs, and by the printer when a
-    counterexample renders — and the three must agree. A model implemented as a
-    mutable structure returned unchanged corrupts generation before the test
-    runs; if the state is genuinely a hashtable, model it as a [Map].
-
-    {b Repair is total.} It evaluates user code on states the program will never
-    execute, and an exception escaping it would escape the {e generator}, where
-    both of the engine's escape hatches destroy the report: sampling fails the
-    case with [<generator raised before producing a value>] and nothing shrinks,
-    and forcing a candidate abandons the entire remaining sibling sequence while
-    the report claims a converged, minimal counterexample. So a [~pre] or
-    [~next] that raises {e poisons} the program instead — repair stops at that
-    step, keeps it as the program's last call, and records the command, the
-    step, the phase and the original exception. Executing a poisoned program
-    runs the prefix and then fails, in the assertion class, naming all four; the
-    search therefore minimises the specification bug.
-
-    Only three things escape repair, and all three are about the {e run} rather
-    than about the model: {!Failure.Timeout}, {!Failure.Exit_attempt}, and the
-    three {!Failure.is_fatal} exceptions. Everything else poisons — including
-    {!Failure.Check_failure}, {!Failure.Skip_test} and {!Property.Discard},
-    which {!execute} does {e not} convert when a body raises them. The asymmetry
-    is deliberate: a body runs on the program that was drawn, where an assertion
-    is the point, a skip means the run is unsupported and [assume] declines a
-    case. Repair runs at generation time over states nothing may ever execute,
-    and there none of the three means what it says — each is the model being
-    written wrong, which is what poisoning reports. Assert in a body, where the
-    report is made for it. *)
+    [~pre] and [~next] must be pure, and ['model] persistent: the model
+    trajectory is folded when the program is drawn, when it runs, and when a
+    counterexample prints, and the three must agree. A [~pre] or [~next] that
+    raises is a specification bug: the case fails at the generator, unshrunk,
+    with the exception, its backtrace, and the step and operation it raised at.
+*)
 
 (** {1:commands Commands} *)
 
@@ -78,35 +48,18 @@ val command :
 (** [command name gen ~next body] is the call named [name] whose argument comes
     from [gen], which moves the model as [next] says, and which does [body].
     Every function takes the model first, then the argument, then (for [body])
-    the system: expected precedes actual, always. [body] sees the model
-    {e before} its own transition — the pre-state, which is what a postcondition
-    needs.
+    the system. [body] sees the model {e before} its own transition.
 
     - [pre m arg] is whether the call is legal in model [m]. Defaults to
-      [fun _ _ -> true], which is true by construction for most commands. A
-      precondition does not only exclude illegal calls, it {e selects} a rare
-      state: a command interesting only at capacity is generated only at
-      capacity, so a system that should raise on an illegal call is a command
-      whose [~pre] selects the illegal state and whose body asserts the raise.
-    - [next m arg] is the model after the call. It is required, because its
-      absence would be the claim {e this call does not change the model}, and
-      that claim is false silently and vacuously: with an identity transition
-      the model never grows, every other command's precondition fails, and the
-      test becomes a green sequence of one command asserting nothing. Read-only
-      commands say so with [~next:Fun.const].
+      [fun _ _ -> true].
+    - [next m arg] is the model after the call. Read-only commands say so with
+      [~next:Fun.const].
     - [body m arg sut] calls the system and asserts. A body that asserts nothing
       is checked only by [stateful]'s [?invariant].
 
-    [name] identifies the command in reports and nowhere else; newlines in it
-    are replaced by spaces so that a step stays one row.
-
-    [pos] is the declaration site, defaulting to a best-effort capture here
-    rather than at the failure. A body is idiomatically one assertion in tail
-    position, whose frame is gone by the time it raises, so a capture there
-    answers [None] and the step reports no location at all; the command's own
-    site is both available and the line a reader wants. It fills in only where
-    the assertion recorded none — a body that did keep its own site keeps it,
-    being nearer the failure. *)
+    [name] identifies the command in reports; newlines in it become spaces.
+    [pos] is the declaration site, captured here by default, and is what a
+    failing step reports when its assertion recorded no location of its own. *)
 
 val call :
   ?pos:Loc.pos ->
@@ -115,10 +68,9 @@ val call :
   next:('model -> 'model) ->
   ('model -> 'sut -> unit) ->
   ('model, 'sut) command
-(** [call] is {!command} for an operation with no generated argument — most of
-    them, in most APIs. It is {!command} at ['arg = unit] over [Gen.unit], and
-    its step prints as its name alone. Read-only commands spell [~next:Fun.id].
-*)
+(** [call] is {!command} for an operation with no generated argument: {!command}
+    at ['arg = unit] over [Gen.unit], whose step prints as its name alone.
+    Read-only commands spell [~next:Fun.id]. *)
 
 (** {1:programs Programs}
 
@@ -128,10 +80,8 @@ val call :
     time. *)
 
 type ('model, 'sut) program
-(** The type for one repaired program: the initial model, the calls it makes in
-    order, and — when a [~pre] or [~next] raised — the poison mark that
-    truncated it. Every call in a program is one whose precondition held in the
-    model its predecessors produced. *)
+(** The type for one repaired program: the initial model and the calls it makes
+    in order, each legal in the model its predecessors produced. *)
 
 val program :
   ?steps:int ->
@@ -144,56 +94,31 @@ val program :
 
     [steps] is how many calls are {e drawn} per program; repair removes the ones
     whose precondition does not hold, so a program makes at most [steps] calls.
-    It defaults to [20] — a work budget, not a fact about state machines: a
-    failing test re-runs a whole program per shrink candidate and a node offers
-    roughly [2 * steps] of them, so command executions on the failing path grow
-    with the square of [steps]. The length is fixed rather than drawn because a
-    drawn length would be a second shrink dimension competing for the same
-    budget, and chunk deletion subsumes it.
+    It defaults to [20], a work budget: a failing test re-runs a whole program
+    per shrink candidate, and candidates per node grow with [steps].
 
-    {b Monotonicity, and how far it reaches.} Repair runs on the drawn calls
-    {e before} the shrink tree is assembled, so only executable calls have
-    subtrees at all and the drawn program is a fixed point of repair. Its
-    immediate candidates are therefore strictly monotone: each is the drawn
-    program with calls deleted and arguments reduced, none repeats it, and none
-    is longer. Deeper, one clause of that goes: repair is a causal left fold
-    applied afresh at every node, so under a node whose own repair dropped a
-    call, deleting an earlier call can re-legalise the dropped one, and reducing
-    a dropped call's argument changes nothing at all. A deep candidate can
-    therefore repeat its parent's program or make a call its parent did not —
-    and the engine compares failure classes, never programs, so a repeat is
-    accepted as a shrink step and the reported [shrunk N steps] counts it. Every
-    call is still one the drawn program made with its argument only reduced, so
-    the search never leaves that program's vocabulary. Closing the gap needs the
-    program re-assembled at every node, which is a different design.
+    Shrinking deletes calls and reduces arguments, with repair re-run at every
+    node; a deep candidate may repeat its parent, but never makes a call the
+    drawn program did not.
 
-    The generator prints, always ([Gen.Private.prints] holds), so a printerless
-    stateful counterexample is unreachable and the [Gen.with_pp] remedy line
-    never fires here. A program renders as a summary line —
-    ["5 calls, last: pop"], or ["(no commands)"] — then one numbered line per
-    step: the command's name and its argument through
-    [Gen.Private.render_value], preceded by the model {e before} the step when
-    [pp_model] is given. The printer bounds itself and emits hard newlines only:
-    a ["()"] argument is omitted, arguments cut at 200 bytes (with a marker
-    stating the original size) and model cells at 60 code points flattened to
-    one line, a raising [pp_model] costs its own cell and no more, and a program
-    over 40 steps prints its first and last 20 with a ["… (N steps omitted)"]
-    line between. Columns are measured over the rows that print. An argument
-    whose generator has no printer renders as ["<no printer>"] — a bare value,
-    with no tree left to render a pre-image from; the step names and the shape
-    survive.
+    The generator always prints: a summary line — ["5 calls, last: pop"], or
+    ["(no commands)"] — then one numbered line per step, the command's name and
+    its argument through the argument generator's printer — the placeholder when
+    it has none, an argument being a bare value with no pre-image to render —
+    preceded by the model {e before} the step when [pp_model] is given. A ["()"]
+    argument is omitted; arguments are cut at 200 bytes and model cells at 60
+    code points, one line each; a raising [pp_model] costs its own cell; a
+    program over 40 steps prints its first and last 20 with a
+    ["… (N steps omitted)"] line between.
 
     Sampling raises [Invalid_argument] if [commands] is empty or if [steps] is
-    negative — inside the running test's exception boundary, where every other
-    malformed generator argument is reported.
-
-    Sampling and forcing candidates propagate whatever [~pre] and [~next] raise
-    from the set {!execute} does not convert; every other exception poisons the
-    program instead of escaping (see the module preamble). *)
-
-val command_names : ('model, 'sut) program -> string list
-(** [command_names program] is the name of each call [program] makes, in order.
-    It is the repair fold's result read directly, without the printer. *)
+    negative. A [~pre] or [~next] that raises escapes wrapped in an exception
+    naming the operation, the step and the function —
+    [step 3: close — ~pre raised Failure("nth")] — with the original backtrace:
+    at sampling when the drawn program's repair raises, which fails the case,
+    and at forcing when a candidate's does, which stops the shrink search
+    ({!Property.run}, Shrinking). {!Failure.Timeout}, {!Failure.Exit_attempt}
+    and the {!Failure.is_fatal} exceptions escape as themselves. *)
 
 val execute :
   ?loc:Loc.t ->
@@ -203,63 +128,29 @@ val execute :
   unit
 (** [execute ~scope program] runs [program] against the system [scope] hands its
     callback, and returns [()] iff every body, every invariant check and the
-    scope itself succeeded. [scope] runs once per [execute] — so once per
-    generated case {e and} once per shrink candidate, the search re-running the
-    program; {!Windtrap.stateful} states the scope contract for its callers.
+    scope itself succeeded. [scope] runs once per [execute], with
+    {!Test_tree.scoped}'s protocol: it must call its callback exactly once — a
+    scope that returns without doing so fails the case with a {!Failure.Message}
+    located at [loc], one that calls twice gets [Invalid_argument] at the second
+    call — and the program's exception is re-raised {e through} it, so a release
+    that raises over a failing program is dropped unless it is a
+    {!Failure.Timeout} or a {!Failure.is_fatal} exception. What the scope raises
+    before the callback, or after it returned from a passing program, propagates
+    unconverted.
 
-    [invariant m sut] checks the state rather than what a call returns. It runs
-    on the fresh system before step 1 — which is what makes the empty program a
-    real test — and after every step.
+    [invariant m sut] runs on the fresh system before step 1 — which is what
+    makes the empty program a real test — and after every step.
 
-    {b Failure class.} A body's exception is re-raised as a
-    {!Failure.Check_failure} carrying the payload the property engine would have
-    built for it, so a descent never crosses the engine's two acceptance classes
-    and stalls. Untouched, in bodies and invariants alike:
-    {!Failure.Check_failure}, {!Failure.Skip_test}, {!Failure.Timeout},
-    {!Failure.Exit_attempt}, {!Property.Discard}, and the three
-    {!Failure.is_fatal} exceptions — the first is already the target class, and
-    the rest are statements about the run, not about this program.
-
-    {b Attribution.} A {!Failure.Check_failure} leaving a step is re-raised with
-    its [msg] slot naming the step: ["step 3 of 5: pop"],
-    ["invariant after step 3 of 5: pop"], ["step 3 of 3: close — ~pre raised"]
-    for a poisoned program's last step, or ["invariant on the fresh system"]. A
-    user [?msg] is flattened to one line and joined onto it. [loc] is stamped on
-    the two failures with no assertion of their own to locate — a poisoned
-    program's, and a scope that never ran the program — and on no other; callers
-    pass the [stateful] declaration site.
-
-    {b The poisoned step.} A [~pre] poison means the call is not known to be
-    legal, so its body does not run. A [~next] poison means [~pre] held and only
-    the model {e after} the call is unknown, so the body does run, under the
-    step's own attribution and before the poison is reported — and a failure of
-    that body is the reported failure. No invariant check follows a poisoned
-    step: there is no model to check it against.
-
-    {b Ranking, at the scope boundary.} The program's exception is recorded and
-    re-raised {e through} [scope]; anything the scope raises {e over} it is
-    dropped. That is not tidiness: a cleanup error must not replace a
-    counterexample's assertion, and a {!Failure.Timeout} hidden behind one would
-    be accepted by the engine as a shrink step and reported as a converged,
-    minimal counterexample. Only {!Failure.Timeout} and the {!Failure.is_fatal}
-    set outrank the failure in hand — they end the run. [Fun.Finally_raised] is
-    the one exception [execute] cannot see past: it arrives {e in place of} the
-    program's.
-
-    Raising before the callback is acquisition failing and propagates
-    unconverted — no release is owed for a system never built, and a
-    {!Failure.Skip_test} there skips the test. Raising after the callback
-    returned is release failing, and propagates the same way when the program
-    succeeded.
-
-    {b Exactly once.} A scope that returns without running the program fails the
-    case with the {!Failure.Message}
-    ["the scope returned without running the program …"] located at [loc]. A
-    scope that runs it twice gets [Invalid_argument] at the second call, and
-    that outranks everything else the case has to say, a swallowed failure
-    included. The search then converges on the empty program — accurately, since
-    such a scope misbehaves whatever the program says — so the report reads
-    [(no commands)] with the misuse as its failure. *)
+    A body's or invariant's exception is re-raised as a {!Failure.Check_failure}
+    carrying the payload the property engine would have built for it, so a
+    descent never crosses the engine's two acceptance classes; the control
+    exceptions ({!Failure.Check_failure}, {!Failure.Skip_test},
+    {!Failure.Timeout}, {!Failure.Exit_attempt}, {!Property.Discard}) and the
+    {!Failure.is_fatal} set pass untouched. The failure's [msg] slot names the
+    step — ["step 3 of 5: pop"], ["invariant after step 3 of 5: pop"],
+    ["invariant on the fresh system"] — with a user [?msg] flattened and joined
+    onto it, and a failure with no location of its own takes the command's
+    declaration site. *)
 
 (** {1:declaring Declaring} *)
 
@@ -285,19 +176,10 @@ val stateful :
     [timeout], [count] and the run's [--prop-count] / [--max-shrink] knobs
     behave exactly as on a property; [steps], [pp_model] are {!program}'s and
     [scope], [invariant] are {!execute}'s. The declared tags are extended with
-    ["prop"] — so [--tag prop] selects stateful tests with every other property,
-    and the run header prints the root seed — and ["stateful"], so a suite can
-    select or exclude them on their own cost profile. [pos] fixes the
-    declaration site, which is where a poisoned program's failure and a scope
-    that never ran one are reported: [command] records no position of its own,
-    and a command's name is its identity in the report.
+    ["prop"] and ["stateful"]. [pos] fixes the declaration site, which a scope
+    that never ran the program reports.
 
-    There is no [?examples]: the program type is abstract, so a user cannot
-    spell one, and a shrunk counterexample is copied back as a plain test. There
-    is no [?retries] either: the shrink search re-runs the same program dozens
-    of times and reports the one it converged on, so a system whose behaviour
-    varies run to run is out of contract — retrying would hide that rather than
-    settle it.
-
-    The test fails at its first sample with [Invalid_argument] if [commands] is
-    empty or [steps] is negative. *)
+    There is no [?examples] — a shrunk counterexample is copied back as a plain
+    test — and no [?retries]: a program replays deterministically from the root
+    seed. The test fails at its first sample with [Invalid_argument] if
+    [commands] is empty or [steps] is negative. *)

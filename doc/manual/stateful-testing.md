@@ -239,7 +239,23 @@ let commands =
 `List.nth` cannot raise here: `~pre` guarantees `i` indexes the live
 set, and the model and the pool gain and lose a handle in the same
 call. Worth writing down, because a `~pre` or `~next` that *does*
-raise is a specification bug — see below.
+raise is a bug in the specification, not a counterexample, and
+windtrap reports it as one: the case fails at the generator with the
+exception and its backtrace, unshrunk, naming the operation, the step
+and which of the two raised. With the bug `List.nth m.live i >= 0` as
+`close`'s `~pre`:
+
+```
+    counterexample (case 0): <generator raised before producing a value>
+    which failed with:
+      uncaught exception:
+        step 1: close — ~pre raised Failure("nth")
+      Raised at Stdlib.failwith in file "stdlib.ml", line 29, characters 17-33
+      Called from Dune__exe__Test_pool.commands.(fun) in file "test/test_pool.ml", line 14, characters 25-42
+```
+
+The same goes for an assertion or an `assume` inside either — check in
+a body, where the report is made for it.
 
 ## The system under test
 
@@ -271,12 +287,9 @@ stateful "store replays" ~model:Model.empty
   commands
 ```
 
-The acquire-and-release pair `bracket` spells is the same shape with
-the release written out: a `~setup:f ~teardown:g` becomes a scope that
-binds `let sut = f ()` and runs `run sut` under
-`Fun.protect ~finally:(fun () -> g sut)` — one primitive instead of two
-parameters, and the callback-only resources above stop being
-inexpressible.
+A `~setup:f ~teardown:g` pair is the same shape with the release
+written out: `let sut = f () in Fun.protect ~finally:(fun () -> g sut)
+(fun () -> run sut)`.
 
 `temp_dir ()` is the wrong tool inside a scope: it is *test*-scoped,
 creating a directory per call that survives until the test ends, and a
@@ -316,72 +329,19 @@ let rec rm_rf path =
   else Sys.remove path
 ```
 
-The `Fun.protect` is yours too: windtrap never sees the resource, so
-releasing on the failing path is the scope's own contract — the same
-bargain `scoped` strikes at the test level. `Eio_main.run` and anything
-built on `Fun.protect` release on both paths; `let r = acquire () in
-run r; release r` leaks whenever the program fails.
-
-What windtrap does guarantee is that the failure reaches you: the
-program's exception is re-raised *through* the scope, so a scope that
-cancels or cleans up on that path does so, and a release failure never
-*replaces* it — on the failing path the counterexample outranks the
-cleanup error, and a scope that swallows the failure outright cannot
-turn a failing case green. Only a timeout or a fatal exception from the
-scope outranks a failure in hand: those end the run. The one thing that
-does replace it is `Fun.protect`'s own rule — a `~finally` that raises
-reports `Fun.Finally_raised` in place of the work exception — so keep
-cleanup that can fail out of `~finally`, or handle it there.
-
-A `~scope` that raises before calling back propagates as it is: nothing
-was built and no release is owed, and a scope that *skips* there skips
-the test — the pattern for a suite gated on a resource the machine does
-not have. Calling back exactly once is the contract: a scope that
-returns without running the program fails the case rather than passing
-it, and one that runs it twice raises `Invalid_argument` at the second
-call.
-
-## When the specification itself raises
-
-`~pre` and `~next` are evaluated by repair, on states the program will
-never execute. One that raises is a bug in the model, not a
-counterexample, and windtrap reports it as such: repair stops at that
-step, keeps it as the program's last call, and the failure names the
-command, the step, and which of the two raised.
-
-```ocaml
-(* The bug: [List.nth] raises when the slot is past the live set. *)
-command "close" slot
-  ~pre:(fun m i -> List.nth m.live i >= 0)
-  ~next:(fun m i -> { m with live = List.filteri (fun j _ -> j <> i) m.live })
-  (fun m i pool -> Pool.close pool (List.nth m.live i));
-```
-
-```
-    counterexample (case 0, shrunk 2 steps):
-      1 call, last: close
-      []  1  close 0
-    which failed at:
-      test/test_pool.ml:14
-      step 1 of 1: close — ~pre raised
-      uncaught exception:
-        Failure("nth")
-```
-
-— followed by the raise's backtrace. The location is the `stateful`
-declaration site, since `command` records none of its own. Because the
-failure is an ordinary assertion-class failure, the search *minimises
-the specification bug*: programs that never reach the raising state
-repair cleanly and pass, so it converges on the shortest one that does.
-A `~pre` poison withholds the step's body (the call is not known to be
-legal); a `~next` poison runs it (only the model *after* the call is
-unknown).
-
-The corollary is that `~pre` and `~next` must neither assert nor
-discard: a `check` failure or an `assume` in either escapes into the
-generator, where the case reports `<generator raised before producing a
-value>` and nothing shrinks. Check in a body, where the report is made
-for it.
+The `Fun.protect` is yours too: the contract is `scoped`'s, and
+windtrap never sees the resource, so releasing on the failing path is
+the scope's own job — `let r = acquire () in run r; release r` leaks
+whenever the program fails. What windtrap guarantees is that the
+failure reaches you: the program's exception is re-raised *through* the
+scope, a release failure never replaces it (only a timeout or a fatal
+exception outranks a failure in hand), a scope that returns without
+calling back fails the case, and one that calls back twice raises
+`Invalid_argument`. A scope that raises or skips *before* calling back
+propagates as it is — the pattern for a suite gated on a resource the
+machine does not have. Keep cleanup that can fail out of `~finally`:
+`Fun.protect`'s own rule reports `Fun.Finally_raised` in place of the
+work exception.
 
 ## What it costs
 

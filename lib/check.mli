@@ -24,7 +24,7 @@ type pos = Loc.pos
 (** The type of [__POS__] payloads: file, line, start column, end column. *)
 
 type 'a printer = Format.formatter -> 'a -> unit
-(** The type for value printers, as taken by [?pp], [?pp_error], [?pp_ok]. *)
+(** The type for value printers, as taken by [?pp]. *)
 
 type 'a testable = 'a Testable.t
 (** The type for assertion witnesses; see {!Testable}. *)
@@ -58,6 +58,15 @@ val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
 (** [is_some o] is [()] iff [o] is [Some _]. No [?pp]: the failing side is
     [None]. Payload-identical to {!require_some}'s. *)
 
+val is_ok : ?pos:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> unit
+(** [is_ok r] is [()] iff [r] is [Ok _]. Payload-identical to {!require_ok}'s.
+*)
+
+val is_error :
+  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> unit
+(** [is_error r] is [()] iff [r] is [Error _]. Payload-identical to
+    {!require_error}'s. *)
+
 (** {1:unwrapping Unwrapping}
 
     Assert the constructor and return the payload. The rejected side renders
@@ -68,12 +77,14 @@ val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
 (** [require_some o] is [v] iff [o] is [Some v]. *)
 
 val require_ok :
-  ?pos:pos -> ?msg:string -> ?pp_error:'e printer -> ('a, 'e) result -> 'a
-(** [require_ok r] is [v] iff [r] is [Ok v]. *)
+  ?pos:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> 'a
+(** [require_ok r] is [v] iff [r] is [Ok v]; [pp] renders the rejected [Error]
+    payload. *)
 
 val require_error :
-  ?pos:pos -> ?msg:string -> ?pp_ok:'a printer -> ('a, 'e) result -> 'e
-(** [require_error r] is [e] iff [r] is [Error e]. *)
+  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> 'e
+(** [require_error r] is [e] iff [r] is [Error e]; [pp] renders the rejected
+    [Ok] payload. *)
 
 val require_match :
   ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b

@@ -28,7 +28,7 @@ let expect_hex ~label expected actual =
   equal ~msg:label string expected (hex_of_int64 actual)
 
 let expect_seed ~label result =
-  require_ok ~msg:label ~pp_error:Format.pp_print_string result
+  require_ok ~msg:label ~pp:Format.pp_print_string result
 
 let expect_seed_error ~label = function
   | Error _ -> ()

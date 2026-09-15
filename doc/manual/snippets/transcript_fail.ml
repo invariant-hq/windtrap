@@ -123,8 +123,9 @@ let failing_stateful =
     ~invariant:(fun m q -> equal int (List.length m) (Bounded_queue.size q))
     commands
 
-(* stateful-testing.md: a ~pre that raises. The program is poisoned rather
-   than the generator, so the search minimises the specification bug. *)
+(* stateful-testing.md: a ~pre that raises. A specification bug, reported
+   at the generator with the operation, the step and the function that
+   raised, unshrunk. *)
 
 module Pool = struct
   type t = (int, Buffer.t) Hashtbl.t
@@ -138,7 +139,7 @@ type pool_model = { live : int list; next_id : int }
 
 let slot = Gen.int_range 0 3
 
-let poisoned_pre =
+let raising_pre =
   stateful "handles stay live" ~model:{ live = []; next_id = 0 }
     ~scope:(fun run -> run (Pool.create ()))
     ~pp_model:(fun ppf m -> Testable.pp (list int) ppf m.live)
@@ -163,7 +164,7 @@ let suite =
     failing_prop;
     missing_snapshot;
     failing_stateful;
-    poisoned_pre;
+    raising_pre;
   ]
 
 let () = exit @@ run "mytool" suite

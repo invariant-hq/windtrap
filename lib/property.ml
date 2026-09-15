@@ -148,12 +148,12 @@ let shrink ~max_shrink ~body tree first_class =
     | result -> same_kind first_class result
   in
   (* Three outcomes, and the third is why this is not an option. Forcing a
-     candidate can raise — a [map]'s function, a [Gen.Private.list_exact]
-     mask — and a memoized cell caches the exception, so the siblings behind
-     it are unreachable and the descent must stop. What it must not do is
-     stop the way convergence stops: that reported a truncated search as a
-     minimal counterexample, which is the one thing a shrink report cannot
-     get wrong. *)
+     candidate can raise — a [map]'s function, a stateful [~pre] — and a
+     memoized cell caches the exception, so the siblings behind it are
+     unreachable and the descent must stop. What it must not do is stop the
+     way convergence stops: that reported a truncated search as a minimal
+     counterexample, which is the one thing a shrink report cannot get
+     wrong. *)
   let rec first_accepted seq =
     match seq () with
     (* The explicit re-raise is load-bearing: the catch-all otherwise eats a
@@ -213,11 +213,9 @@ let inner_failure = function
 
 let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
     body =
-  (* The case count and where it came from are one argument, because neither
-     fact is usable without the other: a config-sourced count rides the
-     failure payload so the replay hint can restate the flag, a
-     declaration-site count replays by itself, and the engine default needs
-     no hint at all. *)
+  (* A config-sourced count rides the failure payload so the replay hint can
+     restate the flag; a declared count and the default replay by
+     themselves. *)
   let count, config_count =
     match count with
     | None -> (default_count, None)
@@ -225,11 +223,8 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
     | Some (`Config n) -> (n, Some n)
   in
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
-  (* [max_shrink] carries its provenance in its own option, and needs no
-     companion: with no declaration-site spelling for it, a supplied budget
-     is always the run configuration's, so it rides the payload as it stands
-     — a replay under the default budget would stop the descent elsewhere
-     and report a different counterexample. *)
+  (* Nothing but run configuration sets [max_shrink], so a supplied budget
+     rides the payload as it stands. *)
   let shrink_budget = Option.value max_shrink ~default:default_max_shrink in
   if shrink_budget < 0 then
     invalid_arg "Property.run: max_shrink must be non-negative";
@@ -249,6 +244,8 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
   let stats () = stats_of ~cases:!cases ~discards:!discards ctx in
   let fail ~rendered ~case_index ~shrink_steps ?timed_out
       ?(shrink_exhausted = false) ~examples ?rendering cls =
+    (* [rendering] defaults to the value: a placeholder carries its own
+       remedy in its text, so the payload need not classify it. *)
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
         ?count:config_count ?max_shrink ~rendered ~case_index ~shrink_steps
@@ -280,16 +277,10 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
         match run_one value with
         | `Passed | `Discarded -> run_examples (index + 1) rest
         | `Failed cls ->
-            let rendered, rendering =
-              match Gen.Private.render_value gen value with
-              | Some text -> (text, Failure.Value)
-              | None ->
-                  ( Printf.sprintf "<example %d>" (index + 1),
-                    Failure.Placeholder )
-            in
+            let rendered = Gen.Private.render_value gen value in
             Some
               (fail ~rendered ~case_index:index ~shrink_steps:0 ~examples:true
-                 ~rendering cls))
+                 cls))
   in
   match run_examples 0 examples with
   | Some outcome -> outcome
@@ -334,7 +325,6 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
                     match Gen.Private.render (Shrink_tree.root final_tree) with
                     | Value text -> (text, Failure.Value)
                     | Pre_image text -> (text, Failure.Pre_image)
-                    | No_printer -> ("<no printer>", Failure.Placeholder)
                   in
                   fail ~rendered ~case_index:attempts ~shrink_steps:steps
                     ?timed_out ~shrink_exhausted:exhausted ~examples:false

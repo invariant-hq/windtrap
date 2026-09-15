@@ -19,17 +19,23 @@
    printer of the generator that drew it. [Pre_image] renders what the
    value was computed from, when the generator has no printer of its own —
    a [map]'s argument, a [bind]'s draws — down to the nearest generator
-   that prints. [No_printer] is a leaf with nothing to print ([constant],
-   [of_list]) and every composition over it. The same three-way
-   classification, over the formatted text, is what the engine receives. *)
+   that prints. [None] is a leaf with nothing to print ([constant],
+   [of_list]) and every composition over it; it renders as the one
+   placeholder below. The same classification, over the formatted text, is
+   what the engine receives. *)
 
-type 'a rendering = Value of 'a | Pre_image of 'a | No_printer
+type 'a rendering = Value of 'a | Pre_image of 'a
 
 (* [Arrow] is a [bind]'s pre-image, [outer -> inner]; it is a constructor
    rather than a laid-out atom so an outer that is itself a bind's
    pre-image can be parenthesised. *)
 type doc = Atom of (Format.formatter -> unit) | Arrow of doc * doc
-type 'a node = { value : 'a; shown : doc rendering }
+type 'a node = { value : 'a; shown : doc rendering option }
+
+(* The one placeholder for a value with no printer, built here and nowhere
+   else: a counterexample, an [~examples] value and a stateful argument all
+   spell it, and it carries its own remedy. *)
+let no_printer = "<no printer: attach one with Gen.with_pp>"
 
 type 'a t = {
   pp : (Format.formatter -> 'a -> unit) option;
@@ -47,6 +53,7 @@ let render_with pp value =
 let pp_int = Format.pp_print_int
 let pp_int32 ppf n = Format.fprintf ppf "%ldl" n
 let pp_int64 ppf n = Format.fprintf ppf "%LdL" n
+let pp_nativeint ppf n = Format.fprintf ppf "%ndn" n
 
 (* A counterexample is meant to be copied back into [~examples], so the
    printed float has to be the float that failed: [%.12g] does not
@@ -79,6 +86,10 @@ let pp_result pp_ok pp_err ppf = function
   | Ok v -> Format.fprintf ppf "@[<hov 2>Ok@ (%a)@]" pp_ok v
   | Error e -> Format.fprintf ppf "@[<hov 2>Error@ (%a)@]" pp_err e
 
+let pp_either pp_left pp_right ppf = function
+  | Either.Left v -> Format.fprintf ppf "@[<hov 2>Left@ (%a)@]" pp_left v
+  | Either.Right v -> Format.fprintf ppf "@[<hov 2>Right@ (%a)@]" pp_right v
+
 let pp_pair pp_a pp_b ppf (a, b) =
   Format.fprintf ppf "@[<hov 1>(%a,@ %a)@]" pp_a a pp_b b
 
@@ -110,8 +121,11 @@ let pp_tuple docs ppf =
 (* Nodes *)
 
 let value node = node.value
-let printed pp value = { value; shown = Value (Atom (fun ppf -> pp ppf value)) }
-let unprintable value = { value; shown = No_printer }
+
+let printed pp value =
+  { value; shown = Some (Value (Atom (fun ppf -> pp ppf value))) }
+
+let unprintable value = { value; shown = None }
 
 (* The law, per node: a composite renders exactly when every part renders,
    and as the value exactly when every part is one. [layout] receives the
@@ -120,17 +134,17 @@ let composite layout parts =
   let rec gather pre_image docs = function
     | [] ->
         let doc = Atom (layout (List.rev docs)) in
-        if pre_image then Pre_image doc else Value doc
-    | No_printer :: _ -> No_printer
-    | Value doc :: rest -> gather pre_image (doc :: docs) rest
-    | Pre_image doc :: rest -> gather true (doc :: docs) rest
+        Some (if pre_image then Pre_image doc else Value doc)
+    | None :: _ -> None
+    | Some (Value doc) :: rest -> gather pre_image (doc :: docs) rest
+    | Some (Pre_image doc) :: rest -> gather true (doc :: docs) rest
   in
   gather false [] parts
 
-let wrap layout = function
-  | Value doc -> Value (Atom (layout doc))
-  | Pre_image doc -> Pre_image (Atom (layout doc))
-  | No_printer -> No_printer
+let wrap layout =
+  Option.map (function
+    | Value doc -> Value (Atom (layout doc))
+    | Pre_image doc -> Pre_image (Atom (layout doc)))
 
 let tuple_node values parts =
   { value = values; shown = composite pp_tuple parts }
@@ -147,18 +161,19 @@ let list_node nodes =
 (* A [map]'s result renders as its argument: the value the mapping function
    received, marked as such. Nothing changes for an argument that is itself
    a pre-image or has nothing to print. *)
-let pre_image = function Value doc -> Pre_image doc | shown -> shown
+let pre_image =
+  Option.map (function Value doc -> Pre_image doc | shown -> shown)
 
 (* A [bind]'s result is the inner value when the inner generator prints —
    that is the value, so the outer draw adds nothing — and [outer -> inner]
    when the inner renders as a pre-image, each side by its own rule. *)
 let bound outer inner =
   match inner with
-  | Value _ | No_printer -> inner
-  | Pre_image doc -> (
-      match outer with
-      | No_printer -> No_printer
-      | Value outer | Pre_image outer -> Pre_image (Arrow (outer, doc)))
+  | None | Some (Value _) -> inner
+  | Some (Pre_image doc) ->
+      Option.map
+        (fun (Value outer | Pre_image outer) -> Pre_image (Arrow (outer, doc)))
+        outer
 
 (* Shrink candidate sequences (adapted from windtrap v1's shrink module)
    Binary search toward a destination: emit [dest] first, then halve the
@@ -198,6 +213,16 @@ let int64_towards dest x () =
       let gap = Int64.sub (Int64.div x 2L) (Int64.div current 2L) in
       if Int64.equal gap 0L then Seq.Cons (current, Seq.empty)
       else Seq.Cons (current, steps (Int64.add current gap))
+  in
+  steps dest ()
+
+let nativeint_towards dest x () =
+  let rec steps current () =
+    if Nativeint.equal current x then Seq.Nil
+    else
+      let gap = Nativeint.sub (Nativeint.div x 2n) (Nativeint.div current 2n) in
+      if Nativeint.equal gap 0n then Seq.Cons (current, Seq.empty)
+      else Seq.Cons (current, steps (Nativeint.add current gap))
   in
   steps dest ()
 
@@ -336,6 +361,17 @@ let int64 =
         (tree_towards (printed pp_int64) (int64_towards 0L) word, state));
   }
 
+let nativeint =
+  {
+    pp = Some pp_nativeint;
+    run =
+      (fun state ->
+        let word, state = Seed.bits64 state in
+        ( tree_towards (printed pp_nativeint) (nativeint_towards 0n)
+            (Int64.to_nativeint word),
+          state ));
+  }
+
 let float =
   {
     pp = Some pp_float;
@@ -380,11 +416,11 @@ let float_range low high =
 
 (* Unit, booleans, characters, strings *)
 
-(* [pure ()] generates the same value and prints nothing, and a printerless
-   leaf forfeits the derived printer of every composition above it, the one
-   cost a leaf of a type with exactly one value never has to impose. One
-   value means one leaf, built like [bool]'s, and drawing it consumes no
-   randomness, so the state passes through. *)
+(* [constant ()] would print nothing, and a printerless leaf forfeits the
+   derived printer of every composition above it, the one cost a leaf of a
+   type with exactly one value never has to impose. One value means one
+   leaf, built like [bool]'s, and drawing it consumes no randomness, so the
+   state passes through. *)
 let unit =
   {
     pp = Some pp_unit;
@@ -536,7 +572,7 @@ let option gen =
     Shrink_tree.leaf
       {
         value = None;
-        shown = Value (Atom (fun ppf -> pp_option pp_doc ppf None));
+        shown = Some (Value (Atom (fun ppf -> pp_option pp_doc ppf None)));
       }
   in
   let some node =
@@ -592,6 +628,43 @@ let result ok err =
         else
           let tree, state = ok.run state in
           (Shrink_tree.map ok_node tree, state));
+  }
+
+let either left right =
+  let pp =
+    match (left.pp, right.pp) with
+    | Some pp_left, Some pp_right -> Some (pp_either pp_left pp_right)
+    | _ -> None
+  in
+  let left_node node =
+    {
+      value = Either.Left node.value;
+      shown =
+        wrap
+          (fun doc ppf -> pp_either pp_doc pp_doc ppf (Either.Left doc))
+          node.shown;
+    }
+  in
+  let right_node node =
+    {
+      value = Either.Right node.value;
+      shown =
+        wrap
+          (fun doc ppf -> pp_either pp_doc pp_doc ppf (Either.Right doc))
+          node.shown;
+    }
+  in
+  {
+    pp;
+    run =
+      (fun state ->
+        let side, state = Seed.below ~bound:2L state in
+        if Int64.equal side 0L then
+          let tree, state = left.run state in
+          (Shrink_tree.map left_node tree, state)
+        else
+          let tree, state = right.run state in
+          (Shrink_tree.map right_node tree, state));
   }
 
 let pair left right =
@@ -674,8 +747,6 @@ let constant value =
     pp = None;
     run = (fun state -> (Shrink_tree.leaf (unprintable value), state));
   }
-
-let pure = constant
 
 let of_list values =
   let values = Array.of_list values in
@@ -838,81 +909,37 @@ module Private = struct
 
   type 'a sample = 'a node
 
+  let sample gen state = fst (gen.run state)
   let value = value
 
-  type nonrec 'a rendering = 'a rendering =
-    | Value of 'a
-    | Pre_image of 'a
-    | No_printer
+  type nonrec 'a rendering = 'a rendering = Value of 'a | Pre_image of 'a
 
-  (* [keep] answers about values, but the pass that runs before assembly must
-     act on element *trees*, so the mask is walked against whichever list
-     produced it — trees before assembly, nodes at every node after. A mask
-     of the wrong length is a caller error, reported where every other
-     malformed argument is: at sample time for the drawn list, at forcing
-     time for a candidate. *)
-  let survivors keep value_of items =
-    let rec select flags items =
-      match (flags, items) with
-      | [], [] -> []
-      | true :: flags, item :: items -> item :: select flags items
-      | false :: flags, _ :: items -> select flags items
-      | _ ->
-          invalid_arg
-            "Gen.Private.list_exact: ~keep returned a mask of the wrong length"
-    in
-    select (keep (List.map value_of items)) items
+  (* Formatting happens here and nowhere earlier: a rendering is a lazy
+     document until the engine reports the counterexample. *)
+  let render node =
+    match node.shown with
+    | None -> Value no_printer
+    | Some (Value doc) -> Value (render_with pp_doc doc)
+    | Some (Pre_image doc) -> Pre_image (render_with pp_doc doc)
 
-  (* A fixed draw count with [list]'s default-size move set, plus a mask no
-     combinator outside this module can express: [sample] hands back a tree
-     but no successor state, so nothing else can sequence [count] draws or
-     drop element trees before assembly. [?keep] therefore runs in two
-     passes, doing different work in each. The pass before assembly decides
-     which element trees exist at all, so a dropped element contributes no
-     subtree and nothing below can restore it — nor the values it would have
-     shrunk to, which is the case masking on top of an assembled tree gets
-     wrong in both directions: a candidate that deletes an element the mask
-     was already dropping equals its parent, and one that reduces a dropped
-     element into a kept one is longer than its parent. The cascade decides
-     which survivors a given candidate keeps, so a deletion or a reduction
-     that invalidates a later element drops it in the same candidate.
-     [Shrink_tree.map] reaches the root as well as every descendant, so the
-     root is masked by both passes — which is why the interface requires
-     [keep] to be idempotent, and what makes the root a fixed point of it. *)
-  let list_exact ?keep count gen =
-    let pp = Option.map pp_list gen.pp in
+  let render_value gen v =
+    match gen.pp with Some pp -> render_with pp v | None -> no_printer
+
+  (* The representation, minus the renderings: a generator is a printer and
+     a draw of a value tree. [run] forgets each node's rendering and [make]
+     rebuilds one from the printer, so a caller assembling its own tree
+     ([Stateful]'s repaired program) prints through [?pp] alone. *)
+  let run gen state =
+    let tree, state = gen.run state in
+    (Shrink_tree.map value tree, state)
+
+  let make ?pp draw =
+    let node = match pp with Some pp -> printed pp | None -> unprintable in
     {
       pp;
       run =
         (fun state ->
-          if count < 0 then invalid_arg "Gen.Private.list_exact: negative count";
-          let trees, state = sample_elements gen count state in
-          match keep with
-          | None -> (Shrink_tree.map list_node (Shrink_tree.list trees), state)
-          | Some keep ->
-              let trees =
-                survivors keep (fun tree -> (Shrink_tree.root tree).value) trees
-              in
-              let tree =
-                Shrink_tree.map
-                  (fun nodes -> list_node (survivors keep value nodes))
-                  (Shrink_tree.list trees)
-              in
-              (tree, state));
+          let tree, state = draw state in
+          (Shrink_tree.map node tree, state));
     }
-
-  let sample gen state = fst (gen.run state)
-  let prints gen = Option.is_some gen.pp
-
-  (* Formatting happens here and nowhere earlier: a rendering is a lazy
-     document until the engine reports the counterexample. The placeholder
-     for [No_printer] is the engine's to spell, as its other placeholders
-     are. *)
-  let render node =
-    match node.shown with
-    | Value doc -> Value (render_with pp_doc doc)
-    | Pre_image doc -> Pre_image (render_with pp_doc doc)
-    | No_printer -> No_printer
-
-  let render_value gen v = Option.map (fun pp -> render_with pp v) gen.pp
 end

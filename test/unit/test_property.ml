@@ -191,6 +191,9 @@ let failing_example_fails_fast_with_printer () =
   | Some { Failure.kind = Failure.Equality _; _ } -> ()
   | _ -> failf "expected the inner assertion failure of the example"
 
+(* An example is a bare value with no tree to render a pre-image from, so a
+   printerless generator renders it as the one placeholder, which carries
+   its own remedy. *)
 let failing_example_without_printer_renders_placeholder () =
   let printerless = Gen.map (fun x -> x) Gen.int in
   let outcome =
@@ -201,8 +204,12 @@ let failing_example_without_printer_renders_placeholder () =
   let rendered, case_index, _, _, _, examples, _ = property_payload failure in
   check examples "the failure must be flagged as an example";
   check (case_index = 1) "case_index must be the example's position";
-  check (rendered = "<example 2>")
-    "a printerless example renders <example k> with 1-based k, got %S" rendered
+  check
+    (rendered = "<no printer: attach one with Gen.with_pp>")
+    "a printerless example renders the placeholder, got %S" rendered;
+  match failure.Failure.kind with
+  | Failure.Property { rendering = Failure.Value; _ } -> ()
+  | _ -> failf "the placeholder is the rendered text, not a payload flag"
 
 let discarding_example_is_counted_and_skipped () =
   let stats =
@@ -584,9 +591,9 @@ let rendering_of (failure : Failure.t) =
   | Failure.Property { rendering; _ } -> rendering
   | _ -> failf "expected a Property failure kind"
 
-(* The engine reports what the rendered text is, so the renderer can mark a
-   pre-image and name the remedy under a placeholder, from the structured
-   payload rather than the text. *)
+(* A counterexample with nothing to print renders as the one placeholder,
+   which carries its own remedy: the payload flags it as the value, and the
+   renderer adds nothing. *)
 let printerless_counterexample_renders_placeholder () =
   let printerless = Gen.map (fun x -> x * 2) (Gen.constant 7) in
   let failure, _ =
@@ -596,11 +603,11 @@ let printerless_counterexample_renders_placeholder () =
   in
   let rendered, _, _, _, _, _, _ = property_payload failure in
   check
-    (rendered = "<no printer>")
+    (rendered = "<no printer: attach one with Gen.with_pp>")
     "a printerless counterexample renders the placeholder, got %S" rendered;
   check
-    (rendering_of failure = Failure.Placeholder)
-    "a printerless counterexample must be flagged as a placeholder"
+    (rendering_of failure = Failure.Value)
+    "a printerless counterexample must be flagged as the value"
 
 (* The pre-image reported is the pre-image of the shrunk value: the search
    walks one tree, so the two cannot drift apart. *)

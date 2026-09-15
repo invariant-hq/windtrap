@@ -36,13 +36,9 @@
     {!run}, Shrinking). The shrink search re-runs the body on candidate inputs,
     so bodies must be deterministic and repeatable.
 
-    {b Ambient wiring.} This module keeps the labelling {!context} explicit:
-    {!run} passes it to the body, and {!collect}, {!classify}, and {!cover} take
-    it as their first argument. The public [('a -> unit)] body surface is wired
-    through the run record: the runner stores the running context in the run's
-    single ambient slot and forwards the public [collect]/[classify]/[cover] to
-    the functions here. No state in this module is global: every context belongs
-    to one {!run} invocation. *)
+    The labelling {!context} is explicit here: {!run} passes it to the body, and
+    {!collect}, {!classify}, and {!cover} take it as their first argument.
+    Nothing in this module is global. *)
 
 (** {1:discarding Discarding} *)
 
@@ -160,29 +156,23 @@ val run :
     seed. [loc] is the property's declaration site, stamped on the failure when
     one is produced.
 
-    [count] is the number of generated cases {e and} where that number came
-    from, one argument because neither fact is usable without the other:
-    [`Declared n] is a count written at the property's declaration site, which
-    replays by itself, and [`Config n] is one supplied by run configuration,
-    which the engine stamps on a failure's {!Failure.kind.Property} payload so
-    replay hints can restate the flag. Omitted, the engine's default applies and
-    stamps nothing — a replay needs no flag to reproduce it. [max_shrink] needs
-    no such pairing: nothing but run configuration sets it, so a supplied budget
-    is always config-sourced and is stamped on the payload as it stands, for the
-    same reason — a replay under a different budget stops the descent elsewhere.
-    Defaults: [count] is [100], [max_discard] is [2 * count] (clamped to
-    [max_int]), [max_shrink] is [100], [examples] is [[]].
+    [count] is the number of generated cases and where it came from: a
+    [`Config n] count is restated in the failure's replay line, a [`Declared n]
+    count replays by itself. [max_shrink] is always config-sourced and is
+    stamped on the payload as it stands. Defaults: [count] is [100],
+    [max_discard] is [2 * count] (clamped to [max_int]), [max_shrink] is [100],
+    [examples] is [[]].
 
     {b Examples first.} The [examples] values run before any generation,
     unshrunk (they are already the reviewed minimal form), and are numbered
     separately from generated cases. A failing example fails fast with
     [shrink_steps = 0], [examples = true], [case_index] its zero-based position
-    in [examples], and [rendered] the generator's printing of the value when
-    [gen] has a printer and [<example k>] (1-based [k], matching the
-    [example k of n] report numbering) otherwise. Examples consume no seeds and
-    are never recorded for replay; passing examples commit their labels and
-    count in {!stats.cases} — the coverage denominator includes them — and a
-    discarding example counts in {!stats.discards}.
+    in [examples], and [rendered] the value through the generator's printer —
+    [Gen.Private.render_value], so a printerless generator renders the
+    placeholder. Examples consume no seeds and are never recorded for replay;
+    passing examples commit their labels and count in {!stats.cases} — the
+    coverage denominator includes them — and a discarding example counts in
+    {!stats.discards}.
 
     {b Generated cases.} Case [index] — zero-based, counting every generation
     attempt, discarded attempts included, so that each attempt draws fresh

@@ -34,13 +34,17 @@ let state index = Seed.make (Seed.derive ~root ~path:"test_gen" ~index)
 let root_value tree = Gen.Private.value (Shrink_tree.root tree)
 let rendering tree = Gen.Private.render (Shrink_tree.root tree)
 
+(* The one placeholder a value with no printer renders as, spelled here so
+   a drift in [Gen]'s spelling is a failure and not a silently passing
+   [contains]. *)
+let placeholder = "<no printer: attach one with Gen.with_pp>"
+
 (* The report's spelling of each rendering, for assertions on a value: a
    pre-image is marked so an assertion on the value cannot pass on it. *)
 let render tree =
   match rendering tree with
   | Gen.Private.Value text -> text
   | Pre_image text -> "from " ^ text
-  | No_printer -> "<no printer>"
 
 let samples gen count =
   List.init count (fun index ->
@@ -211,6 +215,30 @@ let int64_shrinks_to_zero () =
   let minimum, _ = minimize (fun _ -> true) tree in
   check (Int64.equal minimum 0L) "int64 minimized to %Ld" minimum
 
+let nativeint_shrinks_to_zero_and_prints_as_a_literal () =
+  let tree = find_sample Gen.nativeint (fun v -> not (Nativeint.equal v 0n)) in
+  let minimum, _ = minimize (fun _ -> true) tree in
+  check (Nativeint.equal minimum 0n) "nativeint minimized to %nd" minimum;
+  let rendered = render tree in
+  check
+    (rendered = Printf.sprintf "%ndn" (root_value tree))
+    "nativeint rendered %S" rendered;
+  let values = samples Gen.nativeint 100 in
+  check
+    (List.exists (fun v -> Nativeint.compare v 0n < 0) values)
+    "no negative nativeint in 100 draws";
+  (* The full native word, not an [int32] widened: on a 64-bit platform a
+     hundred uniform draws cannot all fit in 32 bits. *)
+  if Nativeint.size = 64 then
+    check
+      (List.exists
+         (fun v ->
+           Nativeint.compare (Nativeint.abs v)
+             (Nativeint.of_int32 Int32.max_int)
+           > 0)
+         values)
+      "100 nativeint draws all fit in 32 bits"
+
 (* Float generators *)
 
 let float_is_finite () =
@@ -257,14 +285,11 @@ let float_range_invalid_raises_at_sample_time () =
 let unit_generates_and_prints_parentheses () =
   let tree = Gen.Private.sample Gen.unit (state 0) in
   check (no_children tree) "unit has shrink candidates";
-  check (Gen.Private.prints Gen.unit) "unit reports no printer";
   let rendered = render tree in
   check (rendered = "()") "unit rendered %S" rendered;
-  check
-    (Gen.Private.render_value Gen.unit () = Some "()")
-    "unit lost its printer";
-  (* Why it is not [pure ()]: a deriving composition over [pure ()] has no
-     printer to derive from. *)
+  check (Gen.Private.render_value Gen.unit () = "()") "unit lost its printer";
+  (* Why it is not [constant ()]: a deriving composition over [constant ()]
+     has no printer to derive from. *)
   let paired = Gen.(pair unit nat) in
   let tree = Gen.Private.sample paired (state 1) in
   let (), n = root_value tree in
@@ -274,7 +299,7 @@ let unit_generates_and_prints_parentheses () =
     "pair over unit rendered %S" rendered;
   let bare = Gen.(pair (constant ()) nat) in
   check
-    (not (Gen.Private.prints bare))
+    (Gen.Private.render_value bare ((), 0) = placeholder)
     "pair over [constant ()] claims a printer"
 
 let bool_shrinks_true_to_false () =
@@ -443,238 +468,6 @@ let list_negative_size_raises_at_sample_time () =
   | exception Invalid_argument _ -> ()
   | _ -> failf "negative size sampled successfully"
 
-let list_exact_draws_exactly_n () =
-  let gen = Gen.Private.list_exact 7 Gen.nat in
-  for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
-    let drawn = List.length (root_value tree) in
-    check (drawn = 7) "list_exact 7 drew %d elements" drawn;
-    (* Only the drawn length is fixed: shrinking removes elements, so no
-       candidate is longer. *)
-    explore ~limit:200 tree (fun l ->
-        check
-          (List.length l <= 7)
-          "list_exact candidate has length %d" (List.length l))
-  done;
-  let tree = Gen.Private.sample (Gen.Private.list_exact 0 Gen.nat) (state 0) in
-  check (root_value tree = []) "list_exact 0 drew a non-empty list";
-  check (no_children tree) "list_exact 0 has shrink candidates"
-
-(* The whole point of [list_exact] over [list ~size:(constant n)]: the
-   structural move set — the empty list, then contiguous chunk removals at
-   descending power-of-two sizes — instead of element-wise shrinking only.
-   The expectation is rebuilt here from the documented rule, so the test
-   pins the whole prefix rather than a sample of it. *)
-let list_exact_shrinks_with_the_structural_move_set () =
-  let distinct l = List.length (List.sort_uniq compare l) = 5 in
-  let gen = Gen.Private.list_exact 5 Gen.int in
-  let tree = find_sample gen distinct in
-  let root = root_value tree in
-  let without first size =
-    List.filteri (fun index _ -> index < first || index >= first + size) root
-  in
-  (* Chunk sizes descend from the largest power of two strictly below 5;
-     starts are non-overlapping and a chunk running past the end is not
-     offered. *)
-  let rec removals size first acc =
-    if size = 0 then List.rev acc
-    else if first + size <= 5 then
-      removals size (first + size) (without first size :: acc)
-    else removals (size / 2) 0 acc
-  in
-  let expected = [] :: removals 4 0 [] in
-  let candidates =
-    List.of_seq (Seq.map root_value (Shrink_tree.children tree))
-  in
-  let structural =
-    List.filteri (fun i _ -> i < List.length expected) candidates
-  in
-  check (structural = expected) "structural candidates of %s were %s, not %s"
-    (show_ints root)
-    (show_int_lists structural)
-    (show_int_lists expected);
-  let minimum, _ = minimize (fun _ -> true) tree in
-  check (minimum = []) "list_exact minimized to a %d-element list"
-    (List.length minimum);
-  let sized = Gen.(list ~size:(constant 5) int) in
-  let sized_tree = find_sample sized distinct in
-  check
-    (Seq.for_all
-       (fun child -> List.length (root_value child) = 5)
-       (Shrink_tree.children sized_tree))
-    "the ?size path offered a shorter candidate"
-
-(* [?keep] masks the drawn values before the tree is assembled, so a dropped
-   element contributes no subtree at all. Observable three ways: the root is
-   the unmasked draw filtered — same seed, same draws; no immediate candidate
-   equals its parent, which masking on top of an assembled tree produces by
-   deleting an element the mask already dropped; and, for a mask that is not
-   closed under shrinking, no candidate anywhere is longer than the root,
-   which masking on top produces by reducing a dropped element into a kept
-   one. *)
-let list_exact_keep_masks_the_drawn_values () =
-  let even n = n mod 2 = 0 in
-  let element = Gen.int_range 0 9 in
-  let masked = Gen.Private.list_exact ~keep:(List.map even) 6 element in
-  let drawn = Gen.Private.list_exact 6 element in
-  for index = 0 to 9 do
-    let root = root_value (Gen.Private.sample masked (state index)) in
-    let unmasked = root_value (Gen.Private.sample drawn (state index)) in
-    check
-      (root = List.filter even unmasked)
-      "masked root %s is not the even elements of %s" (show_ints root)
-      (show_ints unmasked)
-  done;
-  let tree = find_sample masked (fun l -> l <> [] && List.length l < 6) in
-  let root = root_value tree in
-  Seq.iter
-    (fun child ->
-      check
-        (root_value child <> root)
-        "a candidate of %s equals its parent" (show_ints root))
-    (Shrink_tree.children tree);
-  (* [n < 50] is not closed under shrinking: a dropped element's own
-     candidates run toward [0], where the mask keeps them, so masking on top
-     of an assembled tree would restore a dropped element as a reduced one —
-     a candidate longer than the root. *)
-  let gen =
-    Gen.Private.list_exact
-      ~keep:(List.map (fun n -> n < 50))
-      6 (Gen.int_range 0 99)
-  in
-  let shortened = ref 0 in
-  for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
-    let bound = List.length (root_value tree) in
-    if bound < 6 then incr shortened;
-    explore ~limit:200 tree (fun l ->
-        check
-          (List.length l <= bound)
-          "a candidate of length %d exceeds the masked root's %d"
-          (List.length l) bound)
-  done;
-  check (!shortened > 0) "the mask dropped nothing in 10 draws — vacuous"
-
-(* And [?keep] runs again on every candidate: reducing an element can
-   invalidate it, and the cascade drops it in the same candidate. *)
-let list_exact_keep_reapplies_to_every_candidate () =
-  let big n = n >= 5 in
-  let gen = Gen.Private.list_exact ~keep:(List.map big) 5 (Gen.int_range 0 9) in
-  for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
-    explore ~limit:300 tree (fun l ->
-        List.iter
-          (fun n -> check (big n) "a candidate kept the dropped element %d" n)
-          l)
-  done;
-  (* Not vacuous: every element's first candidate is [0], which the mask
-     drops — so reducing the head yields the tail, the same list the
-     single-element chunk removal already yields, and the tail appears
-     twice. Without the cascade the reduction would yield [0 :: tail]. *)
-  let tree = find_sample gen (fun l -> List.length l >= 2) in
-  let root = root_value tree in
-  let candidates =
-    List.of_seq (Seq.map root_value (Shrink_tree.children tree))
-  in
-  let tails =
-    List.length (List.filter (fun l -> l = List.tl root) candidates)
-  in
-  check (tails >= 2)
-    "the head's reduction was not re-masked: %d candidates of %s equal %s" tails
-    (show_ints root)
-    (show_ints (List.tl root))
-
-(* [keep] is caller code that the shrink search runs, so it obeys the same
-   rule as every other callback here: once per tree node, memoized, never
-   again when a search revisits the branch. The two calls the root pays are
-   the pass before assembly and the cascade's rewrite of the root. *)
-let list_exact_keep_runs_once_per_node () =
-  let calls = ref 0 in
-  let keep values =
-    incr calls;
-    List.map (fun n -> n < 50) values
-  in
-  let gen = Gen.Private.list_exact ~keep 4 (Gen.int_range 0 99) in
-  let tree = Gen.Private.sample gen (state 0) in
-  check (!calls = 2) "sampling called ~keep %d times, not twice" !calls;
-  let children = List.of_seq (Shrink_tree.children tree) in
-  let expected = 2 + List.length children in
-  check (!calls = expected)
-    "forcing %d candidates called ~keep %d times, not %d" (List.length children)
-    !calls expected;
-  let before = !calls in
-  List.iter (fun child -> ignore (root_value child)) children;
-  ignore (List.of_seq (Shrink_tree.children tree));
-  check (!calls = before) "re-forcing the same nodes called ~keep %d more times"
-    (!calls - before)
-
-(* The masks a state-dependent repair actually produces at the edges: one
-   that admits no call at all, and a zero-length draw. Both must be defined
-   and neither may leave a candidate behind. *)
-let list_exact_keep_degenerate_masks () =
-  let drop_all =
-    Gen.Private.list_exact ~keep:(List.map (fun _ -> false)) 5 Gen.nat
-  in
-  let tree = Gen.Private.sample drop_all (state 0) in
-  check
-    (root_value tree = [])
-    "a mask dropping everything left %s"
-    (show_ints (root_value tree));
-  check (no_children tree) "an emptied masked list has shrink candidates";
-  (* At [n = 0] the mask still runs, on the empty list, both times. *)
-  let lengths = ref [] in
-  let keep values =
-    lengths := List.length values :: !lengths;
-    List.map (fun _ -> true) values
-  in
-  let tree =
-    Gen.Private.sample (Gen.Private.list_exact ~keep 0 Gen.nat) (state 0)
-  in
-  check (root_value tree = []) "list_exact 0 drew a non-empty list";
-  check
-    (!lengths = [ 0; 0 ])
-    "~keep saw lists of lengths %s at n = 0" (show_ints !lengths)
-
-let list_exact_wrong_length_mask_raises () =
-  let gen = Gen.Private.list_exact ~keep:(fun _ -> []) 3 Gen.nat in
-  (match Gen.Private.sample gen (state 0) with
-  | exception Invalid_argument _ -> ()
-  | _ -> failf "a wrong-length mask sampled successfully");
-  (* Right at the root, wrong on a candidate: the error surfaces where the
-     candidate is forced, like any other malformed generator argument. *)
-  let late =
-    Gen.Private.list_exact
-      ~keep:(fun values ->
-        if List.length values = 3 then [ true; true; true ] else [])
-      3 Gen.nat
-  in
-  let tree = Gen.Private.sample late (state 0) in
-  match Seq.iter (fun _ -> ()) (Shrink_tree.children tree) with
-  | exception Invalid_argument _ -> ()
-  | () -> failf "a wrong-length mask on a candidate did not raise"
-
-let list_exact_negative_count_raises_at_sample_time () =
-  match Gen.Private.sample (Gen.Private.list_exact (-1) Gen.nat) (state 0) with
-  | exception Invalid_argument _ -> ()
-  | _ -> failf "list_exact (-1) sampled successfully"
-
-let list_exact_printer_derives_from_the_element_generator () =
-  let gen = Gen.Private.list_exact 3 Gen.nat in
-  check
-    (Gen.Private.render_value gen [ 1; 2 ] = Some "[1; 2]")
-    "list_exact lost the element printer";
-  let tree = Gen.Private.sample gen (state 0) in
-  let rendered = render tree in
-  check (starts_with "[" rendered) "list_exact rendered %S" rendered;
-  check
-    (Gen.Private.prints
-       (Gen.Private.list_exact ~keep:(List.map (fun _ -> true)) 3 Gen.nat))
-    "a masked list_exact lost the element printer";
-  let printerless = Gen.Private.list_exact 3 (Gen.constant 5) in
-  check
-    (Gen.Private.render_value printerless [ 5 ] = None)
-    "list_exact derived a printer from a printerless element generator"
-
 let array_shrinks_to_empty () =
   let gen = Gen.(array nat) in
   let tree = find_sample gen (fun a -> Array.length a >= 1) in
@@ -705,6 +498,36 @@ let result_generates_both_constructors () =
   explore ~limit:50 tree (fun v ->
       check (Result.is_ok v) "Ok candidate crossed to Error");
   check (starts_with "Ok (" (render tree)) "Ok rendered %S" (render tree)
+
+let either_generates_both_constructors () =
+  let gen = Gen.(either nat nat) in
+  let values = samples gen 500 in
+  check (List.exists Either.is_left values) "no Left in 500 eithers";
+  check (List.exists Either.is_right values) "no Right in 500 eithers";
+  (* Equal probability, unlike [result]'s 3:1 — pinned loosely enough to
+     hold for any seed. *)
+  let lefts = List.length (List.filter Either.is_left values) in
+  check
+    (lefts >= 175 && lefts <= 325)
+    "%d of 500 eithers were Left, not about half" lefts;
+  let tree = find_sample gen Either.is_right in
+  explore ~limit:50 tree (fun v ->
+      check (Either.is_right v) "Right candidate crossed to Left");
+  check (starts_with "Right (" (render tree)) "Right rendered %S" (render tree);
+  let tree = find_sample gen Either.is_left in
+  check (starts_with "Left (" (render tree)) "Left rendered %S" (render tree);
+  (* Printing derives as for [result]: a printerless side forfeits it, and
+     a pre-image side carries through. *)
+  check
+    (Gen.Private.render_value Gen.(either nat (constant 'k')) (Either.Left 1)
+    = placeholder)
+    "either over a printerless side derived a printer";
+  let mapped = Gen.(either (map succ nat) nat) in
+  let left = find_sample mapped Either.is_left in
+  let n = Either.find_left (root_value left) |> Option.get in
+  check
+    (rendering left = Pre_image (Printf.sprintf "Left (%d)" (n - 1)))
+    "Left of a mapped nat rendered %S" (render left)
 
 let pair_shrinks_left_first_to_zeroes () =
   let gen = Gen.(pair nat nat) in
@@ -738,19 +561,10 @@ let constant_is_a_leaf_and_asks_for_a_printer () =
   let tree = Gen.Private.sample gen (state 0) in
   check (root_value tree = 42) "constant produced %d" (root_value tree);
   check (no_children tree) "constant has shrink candidates";
-  (* The rendering says what it is; naming the remedy is the report's job,
-     driven by [prints] — so the advice appears once, whichever of the
-     printerless shapes the engine produced. *)
-  check (render tree = "<no printer>") "constant rendered %S" (render tree);
-  check (not (Gen.Private.prints gen)) "constant reports a printer";
-  check (Gen.Private.render_value gen 42 = None) "constant has a printer"
-
-let pure_is_constant () =
-  let gen = Gen.pure 42 in
-  let tree = Gen.Private.sample gen (state 0) in
-  check (root_value tree = 42) "pure produced %d" (root_value tree);
-  check (no_children tree) "pure has shrink candidates";
-  check (Gen.Private.render_value gen 42 = None) "pure has a printer"
+  (* The rendering names the remedy itself, so a counterexample and a bare
+     value spell the same placeholder. *)
+  check (render tree = placeholder) "constant rendered %S" (render tree);
+  check (Gen.Private.render_value gen 42 = placeholder) "constant has a printer"
 
 let of_list_picks_uniformly_and_shrinks_toward_head () =
   let gen = Gen.of_list [ 10; 20; 30 ] in
@@ -765,8 +579,8 @@ let of_list_picks_uniformly_and_shrinks_toward_head () =
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = 10) "of_list minimized to %d, not the head" minimum;
   let rendered = render tree in
-  check (rendered = "<no printer>") "of_list rendered %S" rendered;
-  check (Gen.Private.render_value gen 20 = None) "of_list has a printer"
+  check (rendered = placeholder) "of_list rendered %S" rendered;
+  check (Gen.Private.render_value gen 20 = placeholder) "of_list has a printer"
 
 (* One printerless leaf forfeits the derived printer of everything built
    over it, and [with_pp] is the one way back; the printer it attaches then
@@ -774,34 +588,35 @@ let of_list_picks_uniformly_and_shrinks_toward_head () =
 let leaf_printers_feed_the_derivation_law () =
   let pp = Format.pp_print_int in
   let gen = Gen.with_pp pp (Gen.of_list [ 10; 20; 30 ]) in
-  check (Gen.Private.prints gen) "with_pp over of_list reports no printer";
   let tree = find_sample gen (fun v -> v = 30) in
   let rendered = render tree in
   check (rendered = "30") "printed of_list rendered %S, not the value" rendered;
   check
-    (Gen.Private.render_value gen 20 = Some "20")
+    (Gen.Private.render_value gen 20 = "20")
     "printed of_list does not render a bare value";
   (* The leaf's printer feeds the deriving combinators above it... *)
   let listed = Gen.list gen in
-  check (Gen.Private.prints listed) "list over a printed leaf derived nothing";
   check
-    (Gen.Private.render_value listed [ 10; 20 ] = Some "[10; 20]")
+    (Gen.Private.render_value listed [ 10; 20 ] = "[10; 20]")
     "list over a printed leaf does not render";
   (* ...and [map], which derives no printer, renders its argument through
      it: the pre-image. *)
   let mapped = Gen.map (fun v -> (v, ())) gen in
-  check (not (Gen.Private.prints mapped)) "map claimed a printer";
+  check
+    (Gen.Private.render_value mapped (30, ()) = placeholder)
+    "map claimed a printer";
   let mapped_tree = find_sample mapped (fun (v, ()) -> v = 30) in
   check
     (rendering mapped_tree = Pre_image "30")
     "map over a printed leaf rendered %S" (render mapped_tree);
   let c = Gen.with_pp pp (Gen.constant 7) in
-  check (Gen.Private.prints c) "with_pp over constant reports no printer";
   let c_rendered = render (Gen.Private.sample c (state 0)) in
   check (c_rendered = "7") "printed constant rendered %S" c_rendered;
   (* Without one the leaf prints nothing at all. *)
   let bare = Gen.of_list [ 10; 20; 30 ] in
-  check (not (Gen.Private.prints bare)) "of_list without a printer prints"
+  check
+    (Gen.Private.render_value bare 10 = placeholder)
+    "of_list without a printer prints"
 
 let of_list_singleton_is_a_leaf_and_empty_raises () =
   let tree = Gen.Private.sample (Gen.of_list [ `Only ]) (state 0) in
@@ -827,7 +642,7 @@ let one_of_picks_all_branches_and_shrinks_to_earlier () =
     (root_value (first_child tree) = `A)
     "one_of branch 1 did not shrink to branch 0";
   let rendered = render tree in
-  check (rendered = "<no printer>") "one_of rendered %S" rendered
+  check (rendered = placeholder) "one_of rendered %S" rendered
 
 let frequency_respects_weights () =
   let gen = Gen.(frequency [ (1, constant `A); (3, constant `B) ]) in
@@ -839,15 +654,13 @@ let frequency_respects_weights () =
     "weight-3 branch not dominant (%d vs %d)" (count `B) (count `A);
   let tree = find_sample gen (fun v -> v = `B) in
   let rendered = render tree in
-  check (rendered = "<no printer>") "frequency rendered %S" rendered
+  check (rendered = placeholder) "frequency rendered %S" rendered
 
 (* The Gen doc law: a composite prints exactly when all its components
    print — including the choice combinators. *)
 let one_of_over_printed_branches_derives_printer () =
   let gen = Gen.(one_of [ int_range 0 9; int_range 100 199 ]) in
-  check
-    (Gen.Private.render_value gen 5 = Some "5")
-    "one_of did not derive a printer";
+  check (Gen.Private.render_value gen 5 = "5") "one_of did not derive a printer";
   let tree = find_sample gen (fun v -> v >= 100) in
   let rendered = render tree in
   check
@@ -876,7 +689,7 @@ let one_of_over_printed_branches_derives_printer () =
 let frequency_over_printed_branches_derives_printer () =
   let gen = Gen.(frequency [ (1, nat); (3, int_range 100 199) ]) in
   check
-    (Gen.Private.render_value gen 7 = Some "7")
+    (Gen.Private.render_value gen 7 = "7")
     "frequency did not derive a printer";
   let tree = Gen.Private.sample gen (state 0) in
   let rendered = render tree in
@@ -886,7 +699,7 @@ let frequency_over_printed_branches_derives_printer () =
   (* One printerless branch forfeits the derivation for the whole choice. *)
   let mixed = Gen.(frequency [ (1, nat); (1, constant 5) ]) in
   check
-    (Gen.Private.render_value mixed 5 = None)
+    (Gen.Private.render_value mixed 5 = placeholder)
     "a mixed frequency derived a printer"
 
 let frequency_invalid_raises_at_sample_time () =
@@ -915,7 +728,7 @@ let such_that_filters_generation_and_shrinking () =
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = 0) "even int minimized to %d" minimum;
   check
-    (Gen.Private.render_value even 4 = Some "4")
+    (Gen.Private.render_value even 4 = "4")
     "such_that dropped the underlying printer"
 
 let such_that_exhaustion_is_a_discard () =
@@ -966,8 +779,7 @@ let nested_maps_render_the_outermost_pre_image () =
   | Pre_image text ->
       check (starts_with "\"" text)
         "the chain rendered %S, not the drawn string" text
-  | Value _ | No_printer ->
-      failf "the chain rendered %S, not a pre-image" (render tree)
+  | Value _ -> failf "the chain rendered %S, not a pre-image" (render tree)
 
 (* [and+] is [pair]: two pre-images print as a pair, and a printing
    component keeps its value rendering inside the same pair. *)
@@ -1013,12 +825,12 @@ let no_printer_anywhere_renders_nothing () =
   let gen = Gen.(map (fun (c, n) -> (c, n)) (pair (constant 'k') nat)) in
   let tree = Gen.Private.sample gen (state 0) in
   check
-    (rendering tree = No_printer)
+    (rendering tree = Value placeholder)
     "a map over a constant rendered %S" (render tree);
   let bound = Gen.(bind nat (fun n -> map (fun c -> (c, n)) (constant 'k'))) in
   let tree = Gen.Private.sample bound (state 0) in
   check
-    (rendering tree = No_printer)
+    (rendering tree = Value placeholder)
     "a bind into a constant rendered %S" (render tree)
 
 let bind_keeps_inner_constraints_while_shrinking () =
@@ -1050,7 +862,7 @@ let bind_renders_by_its_inner () =
   let opaque = Gen.(bind nat (fun n -> constant n)) in
   let tree = Gen.Private.sample opaque (state 4) in
   check
-    (rendering tree = No_printer)
+    (rendering tree = Value placeholder)
     "bind into a constant rendered %S" (render tree);
   let chained =
     Gen.(
@@ -1123,7 +935,7 @@ let with_pp_attaches_a_printer () =
     (render tree = Printf.sprintf "N=%d" (root_value tree))
     "with_pp did not render directly";
   check
-    (Gen.Private.render_value inner 7 = Some "N=7")
+    (Gen.Private.render_value inner 7 = "N=7")
     "with_pp did not expose the printer";
   (* A [map] above it derives nothing, and renders its argument through
      the attached printer: a pre-image. *)
@@ -1145,7 +957,7 @@ let mixed_one_of_derives_no_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let gen = Gen.(one_of [ with_pp custom (constant 5); constant 9 ]) in
   check
-    (Gen.Private.render_value gen 5 = None)
+    (Gen.Private.render_value gen 5 = placeholder)
     "a mixed one_of derived a printer";
   let printed = find_sample gen (fun v -> v = 5) in
   check
@@ -1153,7 +965,7 @@ let mixed_one_of_derives_no_printer () =
     "printed branch rendered %S" (render printed);
   let printerless = find_sample gen (fun v -> v = 9) in
   check
-    (rendering printerless = No_printer)
+    (rendering printerless = Value placeholder)
     "printerless branch rendered %S" (render printerless)
 
 (* The RFC's shape example: [map] under each branch makes the choice
@@ -1224,20 +1036,18 @@ let raising_printer_is_contained () =
   check
     (starts_with "<printer raised" (render tree))
     "raising printer rendered %S" (render tree);
-  match Gen.Private.render_value gen 3 with
-  | Some rendered ->
-      check
-        (starts_with "<printer raised" rendered)
-        "render_value let the exception through: %S" rendered
-  | None -> failf "with_pp lost its printer"
+  let rendered = Gen.Private.render_value gen 3 in
+  check
+    (starts_with "<printer raised" rendered)
+    "render_value let the exception through: %S" rendered
 
 let render_value_reports_printer_presence () =
-  check (Gen.Private.render_value Gen.int 42 = Some "42") "int printer missing";
+  check (Gen.Private.render_value Gen.int 42 = "42") "int printer missing";
   check
-    (Gen.Private.render_value Gen.(list nat) [ 1; 2 ] = Some "[1; 2]")
+    (Gen.Private.render_value Gen.(list nat) [ 1; 2 ] = "[1; 2]")
     "list printer missing";
   check
-    (Gen.Private.render_value (Gen.map succ Gen.int) 3 = None)
+    (Gen.Private.render_value (Gen.map succ Gen.int) 3 = placeholder)
     "map kept a printer it cannot have"
 
 (* Adversarial additions *)
@@ -1373,7 +1183,7 @@ let with_pp_overrides_derived_choice_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let overridden = Gen.(with_pp custom (one_of [ int_range 0 9; nat ])) in
   check
-    (Gen.Private.render_value overridden 5 = Some "N=5")
+    (Gen.Private.render_value overridden 5 = "N=5")
     "with_pp did not override the derived choice printer";
   let tree = Gen.Private.sample overridden (state 0) in
   check
@@ -1430,6 +1240,8 @@ let suite =
     ("greedy shrink finds the boundary", greedy_shrink_finds_boundary);
     ("int32 shrinks to zero", int32_shrinks_to_zero);
     ("int64 shrinks to zero", int64_shrinks_to_zero);
+    ( "nativeint shrinks to zero and prints as a literal",
+      nativeint_shrinks_to_zero_and_prints_as_a_literal );
     ("float is finite", float_is_finite);
     ("float_range stays in bounds", float_range_stays_in_bounds);
     ( "float_range invalid raises at sample time",
@@ -1457,23 +1269,10 @@ let suite =
       list_with_size_keeps_length_in_bounds );
     ( "list negative size raises at sample time",
       list_negative_size_raises_at_sample_time );
-    ("list_exact draws exactly n", list_exact_draws_exactly_n);
-    ( "list_exact shrinks with the structural move set",
-      list_exact_shrinks_with_the_structural_move_set );
-    ( "list_exact ?keep masks the drawn values",
-      list_exact_keep_masks_the_drawn_values );
-    ( "list_exact ?keep re-applies to every candidate",
-      list_exact_keep_reapplies_to_every_candidate );
-    ("list_exact ?keep runs once per node", list_exact_keep_runs_once_per_node);
-    ("list_exact ?keep degenerate masks", list_exact_keep_degenerate_masks);
-    ("list_exact wrong-length mask raises", list_exact_wrong_length_mask_raises);
-    ( "list_exact negative count raises at sample time",
-      list_exact_negative_count_raises_at_sample_time );
-    ( "list_exact printer derives from the element generator",
-      list_exact_printer_derives_from_the_element_generator );
     ("array shrinks to empty", array_shrinks_to_empty);
     ("option offers None first", option_offers_none_first);
     ("result generates both constructors", result_generates_both_constructors);
+    ("either generates both constructors", either_generates_both_constructors);
     ("pair shrinks left first to zeroes", pair_shrinks_left_first_to_zeroes);
     ("triple and quad minimize to zeroes", triple_and_quad_minimize_to_zeroes);
     ( "bytes_of respects size and character generator",
@@ -1482,7 +1281,6 @@ let suite =
       constant_is_a_leaf_and_asks_for_a_printer );
     ( "leaf printers feed the derivation law",
       leaf_printers_feed_the_derivation_law );
-    ("pure is constant", pure_is_constant);
     ( "of_list picks uniformly and shrinks toward the head",
       of_list_picks_uniformly_and_shrinks_toward_head );
     ( "of_list singleton is a leaf and empty raises",
@@ -1584,14 +1382,6 @@ let law_tests =
     prop "such_that draws satisfy the predicate"
       (Gen.such_that (fun n -> n mod 3 = 0) (Gen.int_range (-300) 300))
       (fun n -> equal ~msg:"divisible by three" int 0 (n mod 3));
-    prop "list_exact draws the requested length"
-      (Gen.with_pp
-         (fun ppf (n, xs) ->
-           Format.fprintf ppf "(%d, [%s])" n
-             (String.concat "; " (List.map string_of_int xs)))
-         (Gen.bind (Gen.int_range 0 32) (fun n ->
-              Gen.map (fun xs -> (n, xs)) (Gen.Private.list_exact n Gen.int))))
-      (fun (n, xs) -> equal ~msg:"length" int n (List.length xs));
     prop "option is Some or None and never raises" (Gen.option Gen.int)
       (fun o ->
         is_true ~msg:"total" (match o with None -> true | Some _ -> true));
@@ -1601,14 +1391,14 @@ let law_tests =
     prop "every drawn value renders"
       (Gen.pair Gen.string (Gen.list Gen.int))
       (fun (s, xs) ->
-        match
+        let rendered =
           Gen.Private.render_value
             (Gen.pair Gen.string (Gen.list Gen.int))
             (s, xs)
-        with
-        | Some rendered ->
-            is_true ~msg:"rendering is non-empty" (String.length rendered > 0)
-        | None -> fail "a pair of printable generators has no printer");
+        in
+        is_true ~msg:"rendering is non-empty" (String.length rendered > 0);
+        is_false ~msg:"a pair of printable generators has no printer"
+          (rendered = placeholder));
   ]
 
 let tests = List.map (fun (name, fn) -> test name fn) suite @ law_tests

@@ -15,9 +15,9 @@
 
     {b Stability.} The token format ({!of_string}, {!to_string}), the {!derive}
     definition, and the {!state} stream ({!make}, {!bits64}, {!below}, {!split})
-    are frozen at windtrap 3.0. Changing any of them silently re-keys recorded
-    failures and reopens the design. The exact algorithms are specified in each
-    value's documentation. *)
+    are frozen: the [s1] token prefix names this version of all four, and
+    changing any of them silently re-keys recorded failures. The exact
+    algorithms are specified in each value's documentation. *)
 
 (** {1:seeds Seeds and tokens} *)
 

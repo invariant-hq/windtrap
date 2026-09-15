@@ -30,10 +30,8 @@ type ('model, 'sut) command =
 let command ?pos ?(pre = fun _ _ -> true) name gen ~next body =
   Command { name; gen; pre; next; body; loc = Loc.resolve ?pos () }
 
-(* [call] is [command] at ['arg = unit], and [Gen.unit] rather than
-   [Gen.pure ()] is load-bearing: [pure] without [?pp] carries no printer,
-   [frequency] derives one only when every branch has one, and one nullary
-   command would then make the whole program printerless. *)
+(* [call] is [command] at ['arg = unit] over [Gen.unit], whose printer is
+   what lets a nullary step print as its name alone. *)
 let call ?pos ?pre name ~next body =
   (* [?pos] forwards; without one, [command]'s own capture walks past both
      of these frames — they are windtrap's — and lands on the caller. *)
@@ -54,7 +52,7 @@ let call ?pos ?pre name ~next body =
 type ('model, 'sut) call = {
   name : string;
   loc : Loc.t option;
-  arg : string option Lazy.t;
+  arg : string Lazy.t;
   pre : 'model -> bool;
   next : 'model -> 'model;
   body : 'model -> 'sut -> unit;
@@ -62,24 +60,10 @@ type ('model, 'sut) call = {
 
 (* Programs *)
 
-(* Which of the two functions repair evaluates raised. *)
-type poisoned_phase = Pre | Next
-
-type poison = {
-  command : string;
-  step : int; (* 1-based, and always the program's last step *)
-  phase : poisoned_phase;
-  exn : exn;
-  backtrace : string option;
-}
-
 type ('model, 'sut) program = {
   initial : 'model;
   calls : ('model, 'sut) call list;
-  poison : poison option;
 }
-
-let command_names program = List.map (fun call -> call.name) program.calls
 
 (* Exception classes
 
@@ -88,105 +72,77 @@ let command_names program = List.map (fun call -> call.name) program.calls
    this program, and the three no failure boundary may absorb. Converting
    [Skip_test] would make a skip a reported counterexample, converting
    [Property.Discard] would break [assume] inside a body, and converting
-   [Timeout] would defeat the shrink search's deadline. Repair uses the
-   narrower partition below. *)
+   [Timeout] would defeat the shrink search's deadline. *)
 let propagates = function
   | Failure.Check_failure _ | Failure.Skip_test _ | Failure.Timeout _
   | Failure.Exit_attempt | Property.Discard ->
       true
   | exn -> Failure.is_fatal exn
 
-(* Repair's partition is narrower, and the difference is the point.
+(* A [~pre] or [~next] that raises is a specification bug, not a
+   counterexample. It escapes into the generator — the engine reports it
+   once, unshrunk, with its backtrace — wrapped so the report names the
+   operation, the step and the function. Only the exceptions about the run
+   rather than the model escape as themselves. *)
+exception
+  Specification_raised of {
+    name : string;
+    step : int;
+    phase : string;
+    exn : exn;
+  }
 
-   [propagates] above is about a *body*, which runs on the program that was
-   drawn: there, [Check_failure] is the assertion the test exists to make,
-   [Skip_test] skips a run that really is unsupported, and [Discard] is
-   [assume] declining a case. Repair runs somewhere else entirely — at
-   generation time, over states the program may never reach, and again over
-   every shrink candidate — and in that setting none of the three means what
-   it says. An assertion inside a [~pre] is a specification that asserts; an
-   [assume] there discards a case on the strength of a hypothetical state; a
-   skip abandons the whole test because one candidate's precondition
-   disliked a state nothing will execute. All three are the author getting
-   the model wrong, which is what poisoning reports — naming the command,
-   the step and the phase — where escaping into the generator reports
-   [<generator raised before producing a value>] and loses the payload.
+let () =
+  Printexc.register_printer (function
+    | Specification_raised { name; step; phase; exn } ->
+        Some
+          (Pp.str "step %d: %s \u{2014} %s raised %s" step name phase
+             (Printexc.to_string exn))
+    | _ -> None)
 
-   What is left still propagates, because it is still about the run and not
-   about the model: the alarm, the runner's exit interception, and the three
-   no failure boundary may absorb. *)
-let propagates_from_repair = function
+let about_the_run = function
   | Failure.Timeout _ | Failure.Exit_attempt -> true
   | exn -> Failure.is_fatal exn
+
+let specification ~name ~step ~phase f =
+  match f () with
+  | result -> result
+  | exception exn when not (about_the_run exn) ->
+      Printexc.raise_with_backtrace
+        (Specification_raised { name; step; phase; exn })
+        (Printexc.get_raw_backtrace ())
 
 (* Repair
 
    The model-threading fold that decides which drawn calls a program makes:
    a call is kept iff its [~pre] holds in the model the calls before it
-   produced, and [~next] threads through the kept ones only. It returns the
-   three things its two callers need — the mask [Gen.Private.list_exact] applies
-   before it assembles the shrink tree and again at every node, the calls
-   that survive, and the poison.
-
-   It is total on everything [propagates_from_repair] does not name. A [~pre] or
-   [~next] that raises stops the fold at its own step, which is kept as the
-   program's last call and marked; letting the exception escape instead
-   would put it inside the generator, where sampling reports
-   [<generator raised before producing a value>] and forcing a candidate
-   abandons the entire remaining sibling sequence and reports the truncated
-   descent as converged — a specification bug reading as an engine result. *)
+   produced, and [~next] threads through the kept ones only. It answers with
+   a mask over the calls it was given, which [program] applies before it
+   assembles the shrink tree and again at every node. *)
 let repair model calls =
-  let poisoned call phase exn step rest =
-    (* Read before anything else can raise. *)
-    let backtrace = Failure.recorded_backtrace () in
-    ( true :: List.map (fun _ -> false) rest,
-      [ call ],
-      Some { command = call.name; step; phase; exn; backtrace } )
-  in
   let rec go model step = function
-    | [] -> ([], [], None)
-    | call :: rest -> (
-        match call.pre model with
-        | exception exn when not (propagates_from_repair exn) ->
-            poisoned call Pre exn step rest
-        | false ->
-            let mask, kept, poison = go model step rest in
-            (false :: mask, kept, poison)
-        | true -> (
-            match call.next model with
-            | exception exn when not (propagates_from_repair exn) ->
-                poisoned call Next exn step rest
-            | model ->
-                let mask, kept, poison = go model (step + 1) rest in
-                (true :: mask, call :: kept, poison)))
+    | [] -> []
+    | call :: rest ->
+        let name = call.name in
+        if specification ~name ~step ~phase:"~pre" (fun () -> call.pre model)
+        then
+          let model =
+            specification ~name ~step ~phase:"~next" (fun () -> call.next model)
+          in
+          true :: go model (step + 1) rest
+        else false :: go model step rest
   in
   go model 1 calls
 
-(* [Gen.Private.list_exact]'s mask. It is idempotent, as that interface requires:
-   re-running the fold on the calls it kept re-derives the same trajectory,
-   under which every one of them is legal. *)
-let keep model calls =
-  let mask, _, _ = repair model calls in
-  mask
-
-(* The masked call list read as a program. The fold runs a second time —
-   [?keep] answers with a mask, which cannot carry the poison or the model
-   trajectory — and on the masked list it drops nothing, so the calls it
-   returns are the calls it was given, truncated at a poisoned step. *)
-let interpret model calls =
-  let _, kept, poison = repair model calls in
-  { initial = model; calls = kept; poison }
+let rec select mask items =
+  match (mask, items) with
+  | true :: mask, item :: items -> item :: select mask items
+  | false :: mask, _ :: items -> select mask items
+  | _ -> []
 
 (* The program printer *)
 
 let empty_program = "(no commands)"
-
-(* [Gen.Private.render_value] answers [None] rather than a placeholder when the
-   argument's own generator has no printer, so the column spells the engine's
-   placeholder for it. An argument is a bare value here — its sample tree is
-   gone by the time the program prints — so the pre-image rule cannot apply
-   to it: an argument drawn through a printerless [map] prints nothing. *)
-let missing_printer = "<no printer>"
 
 (* Self-bounding. An argument rides the failure payload, which is capped at
    64 KiB while the terminal block prints every line it is given, so it is
@@ -219,8 +175,8 @@ let cell pp_model model =
    execution recording, so the column is present on every row including the
    failing one and the initial model is visible. It re-applies only the
    transitions repair itself applied, to the same states and without
-   raising; the one it skips is the last call's, which is the transition a
-   poison stopped at and the one whose result no row would show. *)
+   raising; the one it skips is the last call's, whose result no row would
+   show. *)
 let model_cells pp_model program =
   let rec go model = function
     | [] -> []
@@ -230,14 +186,11 @@ let model_cells pp_model program =
   go program.initial program.calls
 
 let argument call =
-  match Lazy.force call.arg with
-  | None -> Some missing_printer
-  | Some text -> (
-      match one_line text with
-      (* The printer's only type-blind special case: a command with no
-         generated argument reads [3  pop], not [3  pop ()]. *)
-      | "()" -> None
-      | text -> Some (Text.truncate_bytes_utf8 argument_bytes text))
+  match one_line (Lazy.force call.arg) with
+  (* The printer's only type-blind special case: a command with no
+     generated argument reads [3  pop], not [3  pop ()]. *)
+  | "()" -> None
+  | text -> Some (Text.truncate_bytes_utf8 argument_bytes text)
 
 let step_text call =
   match argument call with
@@ -354,16 +307,36 @@ let choice commands =
   | commands ->
       Gen.frequency (List.map (fun command -> (1, branch command)) commands)
 
+(* [steps] calls drawn with [Gen.list]'s default-size move set — so the
+   length shrinks by chunk deletion — under a mask no combinator expresses:
+   repair runs on the drawn calls before the tree is assembled, so a dropped
+   call contributes no subtree at all, and again at every node, so a call
+   that a deletion elsewhere invalidates is dropped in the same candidate.
+   Masking on top of an assembled tree gets both wrong: a candidate deleting
+   a call the mask already dropped equals its parent, and one reducing a
+   dropped call's argument into a kept one is longer than its parent. *)
 let program ?(steps = default_steps) ?pp_model ~model commands =
-  let read calls =
-    (* [?steps:0] draws no element, so the empty-list report above never
-       fires; a test declaring no commands must not pass vacuously. *)
-    (match commands with [] -> invalid_arg no_commands | _ :: _ -> ());
-    interpret model calls
-  in
-  Gen.Private.list_exact ~keep:(keep model) steps (choice commands)
-  |> Gen.map read
-  |> Gen.with_pp (pp_program ?pp_model)
+  let element = choice commands in
+  let keep = repair model in
+  Gen.Private.make ~pp:(pp_program ?pp_model) (fun state ->
+      (* [?steps:0] draws no element, so the branch-level report never
+         fires; a test declaring no commands must not pass vacuously. *)
+      (match commands with [] -> invalid_arg no_commands | _ :: _ -> ());
+      if steps < 0 then invalid_arg "Windtrap.stateful: negative steps";
+      let rec draw remaining trees state =
+        if remaining = 0 then (List.rev trees, state)
+        else
+          let tree, state = Gen.Private.run element state in
+          draw (remaining - 1) (tree :: trees) state
+      in
+      let trees, state = draw steps [] state in
+      let trees = select (keep (List.map Shrink_tree.root trees)) trees in
+      let tree =
+        Shrink_tree.map
+          (fun calls -> { initial = model; calls = select (keep calls) calls })
+          (Shrink_tree.list trees)
+      in
+      (tree, state))
 
 (* Step attribution
 
@@ -421,16 +394,7 @@ let normalize fn =
 
 (* The executor *)
 
-let poison_failure ?loc ~total poison =
-  let phase = match poison.phase with Pre -> "~pre" | Next -> "~next" in
-  Failure.raised ?loc
-    ~msg:
-      (Pp.str "step %d of %d: %s \u{2014} %s raised" poison.step total
-         poison.command phase)
-    ~actual:(Printexc.to_string poison.exn)
-    ?backtrace:poison.backtrace ()
-
-let run_program ?loc ?invariant program sut =
+let run_program ?invariant program sut =
   let total = List.length program.calls in
   let check model =
     match invariant with None -> () | Some invariant -> invariant model sut
@@ -442,28 +406,17 @@ let run_program ?loc ?invariant program sut =
     (fun () -> normalize (fun () -> check program.initial));
   let rec go step model = function
     | [] -> ()
-    | call :: rest -> (
-        match program.poison with
-        | Some poison when poison.step = step ->
-            (* A [~pre] poison means the call is not known to be legal, so
-               its body must not run; a [~next] poison means [~pre] held and
-               only the model after the call is unknown, so it does. Either
-               way the step is the program's last and no model follows it. *)
-            if poison.phase = Next then
-              at_step ?loc:call.loc ~name:call.name ~step ~total (fun () ->
-                  normalize (fun () -> call.body model sut));
-            raise (Failure.Check_failure (poison_failure ?loc ~total poison))
-        | Some _ | None ->
-            (* [normalize] runs inside [at_step], so a system exception is
-               converted to the assertion class before the step prefix is
-               attached and both carry the same label. *)
-            at_step ?loc:call.loc ~name:call.name ~step ~total (fun () ->
-                normalize (fun () -> call.body model sut));
-            (* Repair already evaluated this transition without raising. *)
-            let model = call.next model in
-            at_step ~after:true ?loc:call.loc ~name:call.name ~step ~total
-              (fun () -> normalize (fun () -> check model));
-            go (step + 1) model rest)
+    | call :: rest ->
+        (* [normalize] runs inside [at_step], so a system exception is
+           converted to the assertion class before the step prefix is
+           attached and both carry the same label. *)
+        at_step ?loc:call.loc ~name:call.name ~step ~total (fun () ->
+            normalize (fun () -> call.body model sut));
+        (* Repair already evaluated this transition without raising. *)
+        let model = call.next model in
+        at_step ~after:true ?loc:call.loc ~name:call.name ~step ~total
+          (fun () -> normalize (fun () -> check model));
+        go (step + 1) model rest
   in
   go 1 program.initial program.calls
 
@@ -508,7 +461,7 @@ let execute ?loc ?invariant ~scope program =
       misused := Some exn;
       raise exn
     end;
-    match run_program ?loc ?invariant program sut with
+    match run_program ?invariant program sut with
     | () -> ()
     | exception exn ->
         (* Recorded before it is re-raised through [scope]'s frames, so a
@@ -565,10 +518,8 @@ let stateful_tag = "stateful"
 
 let stateful ?pos ?tags ?timeout ?count ?steps ?pp_model ?invariant name ~model
     ~scope commands =
-  (* The declaration site, for the two failures with no site of their own:
-     a poisoned program's and a scope that never ran one, since [command]
-     records no [?pos] and the command's name is its identity in the
-     report. *)
+  (* The declaration site, for the one failure with no site of its own: a
+     scope that never ran the program. *)
   let loc = Loc.resolve ?pos () in
   let tags = prop_tag :: stateful_tag :: Option.value ~default:[] tags in
   Runner.prop ?pos ~tags ?timeout ?count name

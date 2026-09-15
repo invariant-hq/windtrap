@@ -74,13 +74,12 @@ case budget; the declaration site wins over the flag.
 shrinking, *and* printing, inseparably:
 
 - numeric: `int`, `nat`, `small_int`, `int_range`, `int32`, `int64`,
-  `float`, `float_range`
+  `nativeint`, `float`, `float_range`
 - base: `unit`, `bool`, `char`, `char_range`, `string`,
   `string_of ?size char`, `bytes`, `bytes_of`
-- containers: `list ?size`, `array ?size`, `option`, `result`, `pair`,
-  `triple`, `quad`
-- choice: `constant`/`pure`, `of_list`, `one_of`, `frequency`,
-  `such_that`
+- containers: `list ?size`, `array ?size`, `option`, `result`, `either`,
+  `pair`, `triple`, `quad`
+- choice: `constant`, `of_list`, `one_of`, `frequency`, `such_that`
 - composition: `map`, `bind`, `let+`/`and+`/`let*`, `with_pp`
 
 Prefer `small_int` or `nat` for sizes, indices, and arithmetic —
@@ -122,13 +121,12 @@ every component by its rule, so a pair of pre-images prints as a
 pair. Shrinking walks the same tree, so the pre-image printed is the
 pre-image of the shrunk value.
 
-The rule stops at a leaf with nothing to print — `constant`/`pure` or
+The rule stops at a leaf with nothing to print — `constant` or
 `of_list` without a `with_pp` — and one such leaf forfeits the
 rendering of the whole composition:
 
 ```
-counterexample (case 2, shrunk 2 steps): <no printer>
-(this generator has no printer — attach one with Gen.with_pp to see the value)
+counterexample (case 2, shrunk 2 steps): <no printer: attach one with Gen.with_pp>
 ```
 
 The seed is still enough to replay the failure. Attach `with_pp` to

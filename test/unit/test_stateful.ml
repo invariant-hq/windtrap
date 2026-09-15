@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Stateful: the command type, the program generator and its
-   repair, poisoning, the executor, and the program printer. *)
+   repair, the executor, and the program printer. *)
 
 open Windtrap
 open Windtrap.Private
@@ -29,18 +29,52 @@ let root = 0x00c0ffee1234abcdL
 let state index = Seed.make (Seed.derive ~root ~path:"test_stateful" ~index)
 let root_value tree = Gen.Private.value (Shrink_tree.root tree)
 let program_at gen index = root_value (Gen.Private.sample gen (state index))
-let names = Stateful.command_names
 
 (* [~scope] over a system that needs no acquisition at all: what most of
    the tests below exercise is the program, not the resource. *)
 let unit_scope run = run ()
 
-let render gen program =
-  match Gen.Private.render_value gen program with
-  | Some text -> text
-  | None -> failf "the program generator carries no printer"
-
+(* The program type is abstract, and the counterexample a user reads is the
+   printer's, so the tests read a program back the same way: a summary line
+   and then one [<cell>  N  name [arg]] row per step. The row's number is
+   the last [N  ] before the step text — a model cell may be a number too. *)
+let render gen program = Gen.Private.render_value gen program
 let lines_of gen program = Text.split_lines (render gen program)
+
+let names gen program =
+  match lines_of gen program with
+  | [] | [ _ ] -> []
+  | _summary :: rows ->
+      List.mapi
+        (fun index row ->
+          let key = string_of_int (index + 1) ^ "  " in
+          let width = String.length key in
+          let rec from position =
+            if position < 0 then
+              failf "row %d of the program does not carry its number: %S"
+                (index + 1) row
+            else if String.sub row position width = key then position + width
+            else from (position - 1)
+          in
+          let start = from (String.length row - width) in
+          let step = String.sub row start (String.length row - start) in
+          match String.index_opt step ' ' with
+          | Some space -> String.sub step 0 space
+          | None -> step)
+        rows
+
+let names_at gen index = names gen (program_at gen index)
+
+(* How many calls a program makes, read off the executor: one invariant
+   check on the fresh system and one after every step. The printer omits the
+   middle of a long program, so this is the count [names] cannot give. *)
+let call_count program =
+  let checks = ref 0 in
+  Stateful.execute ~invariant:(fun _ _ -> incr checks) ~scope:unit_scope program;
+  !checks - 1
+
+(* The one placeholder a value with no printer renders as. *)
+let placeholder = "<no printer: attach one with Gen.with_pp>"
 
 let expect_check_failure what fn =
   match fn () with
@@ -220,21 +254,19 @@ let repair_keeps_exactly_the_fold_s_calls () =
   let drawn = Stateful.program ~steps:20 ~model:0 counter_draws in
   let dropped = ref 0 in
   for index = 0 to 29 do
-    let drawn = names (program_at drawn index) in
+    let drawn = names_at drawn index in
     check
       (List.length drawn = 20)
       "the unconditioned program made %d of 20 calls" (List.length drawn);
     let expected = counter_repair drawn in
-    let kept = names (program_at repaired index) in
+    let kept = names_at repaired index in
     check (kept = expected) "repair of %s kept %s, not %s" (show_names drawn)
       (show_names kept) (show_names expected);
     dropped := !dropped + (20 - List.length kept)
   done;
   check (!dropped > 0) "the precondition dropped nothing in 30 draws — vacuous";
   (* [?steps] is a work budget with a documented default. *)
-  let default =
-    names (program_at (Stateful.program ~model:0 counter_draws) 0)
-  in
+  let default = names_at (Stateful.program ~model:0 counter_draws) 0 in
   check
     (List.length default = 20)
     "the default ?steps drew %d calls, not 20" (List.length default)
@@ -246,7 +278,7 @@ let a_state_dependent_precondition_filters () =
   let gen = Stateful.program ~steps:20 ~model:0 counter_commands in
   let shortened = ref 0 in
   for index = 0 to 19 do
-    let kept = names (program_at gen index) in
+    let kept = names_at gen index in
     if List.length kept < 20 then incr shortened;
     ignore
       (List.fold_left
@@ -263,7 +295,7 @@ let a_state_dependent_precondition_filters () =
   let never = Stateful.program ~steps:8 ~model:0 never_commands in
   for index = 0 to 4 do
     check
-      (names (program_at never index) = [])
+      (names_at never index = [])
       "an unsatisfiable ~pre left calls in the program"
   done
 
@@ -309,12 +341,12 @@ let root_candidates_are_strictly_monotone () =
   let checked = ref 0 in
   for index = 0 to 19 do
     let tree = Gen.Private.sample gen (state index) in
-    let parent = names (root_value tree) in
+    let parent = names gen (root_value tree) in
     if parent <> [] && List.length parent < 12 then begin
       incr checked;
       Seq.iter
         (fun child ->
-          let child = names (root_value child) in
+          let child = names gen (root_value child) in
           check (child <> parent) "a candidate of %s equals its parent"
             (show_names parent);
           check
@@ -337,11 +369,11 @@ let root_candidates_of_an_argument_spec_are_no_longer () =
   let checked = ref 0 in
   for index = 0 to 19 do
     let tree = Gen.Private.sample gen (state index) in
-    let parent = List.length (names (root_value tree)) in
+    let parent = List.length (names gen (root_value tree)) in
     if parent < 10 then incr checked;
     Seq.iter
       (fun child ->
-        let child = List.length (names (root_value child)) in
+        let child = List.length (names gen (root_value child)) in
         check (child <= parent) "a candidate of a %d-call program made %d calls"
           parent child)
       (Shrink_tree.children tree)
@@ -367,12 +399,12 @@ let no_node_invents_or_substitutes_a_call () =
   let drawn = Stateful.program ~steps:14 ~model:0 (wide_commands ~pre:false) in
   let nodes = ref 0 in
   for index = 0 to 4 do
-    let drawn = names (program_at drawn index) in
+    let drawn = names_at drawn index in
     let budget = !nodes + 400 in
     let rec go tree =
       if !nodes >= budget then raise_notrace Exit;
       incr nodes;
-      let kept = names (root_value tree) in
+      let kept = names repaired (root_value tree) in
       check
         (is_subsequence kept drawn)
         "a node's calls %s are not a subsequence of the drawn %s"
@@ -396,7 +428,7 @@ let every_command_is_drawn_about_equally_often () =
         match List.assoc_opt name counts with
         | Some count -> incr count
         | None -> failf "the program made an undeclared call %S" name)
-      (names (program_at gen index))
+      (names_at gen index)
   done;
   check (!total = 400) "20 unconditioned draws of 20 made %d calls" !total;
   let uniform = float_of_int !total /. float_of_int (List.length wide_names) in
@@ -409,154 +441,6 @@ let every_command_is_drawn_about_equally_often () =
         drawn !total uniform)
     counts
 
-(* Poisoning *)
-
-exception Pre_boom
-exception Next_boom
-
-let poison_spec ~body_ran phase =
-  [
-    Stateful.call "benign" ~next:(fun model -> model + 1) (fun _ () -> ());
-    Stateful.call "boom"
-      ?pre:
-        (match phase with
-        | `Pre -> Some (fun _ -> raise Pre_boom)
-        | `Next -> None)
-      ~next:(fun model ->
-        match phase with `Next -> raise Next_boom | `Pre -> model)
-      (fun _ () -> body_ran := true);
-  ]
-
-let find_poisoned gen =
-  let rec loop index =
-    if index >= 200 then failf "no poisoned program within 200 samples"
-    else
-      let program = program_at gen index in
-      match List.rev (names program) with
-      | "boom" :: _ -> program
-      | _ -> loop (index + 1)
-  in
-  loop 0
-
-(* A [~pre] that raises truncates the program at its own step, keeps that
-   step as the program's last call, and does not run its body. *)
-let a_raising_pre_poisons_and_withholds_the_body () =
-  let body_ran = ref false in
-  let gen = Stateful.program ~steps:6 ~model:0 (poison_spec ~body_ran `Pre) in
-  let program = find_poisoned gen in
-  let kept = names program in
-  let total = List.length kept in
-  check
-    (List.nth kept (total - 1) = "boom")
-    "the poisoned step is not the program's last call: %s" (show_names kept);
-  check
-    (not
-       (List.exists
-          (fun name -> name = "boom")
-          (List.filteri (fun i _ -> i < total - 1) kept)))
-    "the program was not truncated at the poison: %s" (show_names kept);
-  let failure =
-    expect_check_failure "a ~pre poison" (fun () ->
-        Stateful.execute ~scope:unit_scope program)
-  in
-  check
-    (failure_msg failure
-    = Pp.str "step %d of %d: boom \u{2014} ~pre raised" total total)
-    "the poison message was %S" (failure_msg failure);
-  check
-    (contains "Pre_boom" (raised_actual failure))
-    "the poison did not name the exception: %S" (raised_actual failure);
-  check (not !body_ran) "a ~pre poison ran the step's body"
-
-(* A [~next] that raises means [~pre] held: only the model after the call is
-   unknown, so the body does run — under the step's own attribution — before
-   the poison is reported. No invariant check follows it. *)
-let a_raising_next_poisons_and_runs_the_body () =
-  let body_ran = ref false in
-  let gen = Stateful.program ~steps:6 ~model:0 (poison_spec ~body_ran `Next) in
-  let program = find_poisoned gen in
-  let kept = names program in
-  let total = List.length kept in
-  let invariants = ref 0 in
-  let failure =
-    expect_check_failure "a ~next poison" (fun () ->
-        Stateful.execute
-          ~invariant:(fun _ () -> incr invariants)
-          ~scope:unit_scope program)
-  in
-  check
-    (failure_msg failure
-    = Pp.str "step %d of %d: boom \u{2014} ~next raised" total total)
-    "the poison message was %S" (failure_msg failure);
-  check
-    (contains "Next_boom" (raised_actual failure))
-    "the poison did not name the exception: %S" (raised_actual failure);
-  check !body_ran "a ~next poison withheld the step's body";
-  (* One on the fresh system, one after each step before the poisoned one,
-     and none after the poisoned step itself. *)
-  check (!invariants = total)
-    "the invariant ran %d times for a %d-step poisoned program" !invariants
-    total
-
-(* The body of a [~next]-poisoned step runs under the step's own
-   attribution and {e before} the poison is reported, so a failure of that
-   body is the reported failure — the poison surfaces on some other case,
-   where the body agrees with the model. *)
-let a_failing_body_outranks_the_next_poison_it_precedes () =
-  let commands =
-    [
-      Stateful.call "benign" ~next:(fun model -> model + 1) (fun _ () -> ());
-      Stateful.call "boom"
-        ~next:(fun _ -> raise Next_boom)
-        (fun _ () -> Check.fail "the body");
-    ]
-  in
-  let program = find_poisoned (Stateful.program ~steps:6 ~model:0 commands) in
-  let total = List.length (names program) in
-  let failure =
-    expect_check_failure "a failing body before a ~next poison" (fun () ->
-        Stateful.execute ~scope:unit_scope program)
-  in
-  check
-    (failure.Failure.kind = Failure.Message "the body")
-    "the poison replaced the body's failure: %S"
-    (Printexc.to_string (Failure.Check_failure failure));
-  check
-    (failure_msg failure = Pp.str "step %d of %d: boom" total total)
-    "the body's failure was labelled %S" (failure_msg failure)
-
-(* The declaration site is stamped on the poisoned-program failure, which is
-   the one failure with no assertion site of its own — and on that one
-   only, or every counterexample would point at the [stateful] declaration
-   instead of at the check that broke. *)
-let a_poisoned_program_carries_the_declaration_site () =
-  let body_ran = ref false in
-  let gen = Stateful.program ~steps:6 ~model:0 (poison_spec ~body_ran `Pre) in
-  let program = find_poisoned gen in
-  let loc = { Loc.file = "spec.ml"; line = 42; column = 7 } in
-  let failure =
-    expect_check_failure "a located poison" (fun () ->
-        Stateful.execute ~loc ~scope:unit_scope program)
-  in
-  check (failure.Failure.loc = Some loc) "the poison lost the declaration site";
-  let failing =
-    program_at
-      (Stateful.program ~steps:1 ~model:0
-         [
-           Stateful.call "boom"
-             ~next:(fun model -> model + 1)
-             (fun _ () -> raise Not_found);
-         ])
-      0
-  in
-  let ordinary =
-    expect_check_failure "a body failure under a located execute" (fun () ->
-        Stateful.execute ~loc ~scope:unit_scope failing)
-  in
-  check
-    (ordinary.Failure.loc <> Some loc)
-    "the declaration site was stamped on a failure that is not the poison's"
-
 let control_spec exn phase =
   [
     Stateful.call "raiser"
@@ -566,13 +450,124 @@ let control_spec exn phase =
       (fun _ () -> ());
   ]
 
-(* The partition: what [execute] refuses to convert is what repair refuses
-   to poison, so these escape the generator unchanged from [~pre] and from
-   [~next] alike. *)
+(* A [~pre] or [~next] that raises is a specification bug, and it is
+   reported as one: the exception escapes the generator — so the engine
+   fails the case where it was drawn, unshrunk, with the backtrace — wrapped
+   to name the operation, the step and the function that raised. *)
+exception Pre_boom
+exception Next_boom
+
+let raising_spec phase =
+  [
+    Stateful.call "benign" ~next:(fun model -> model + 1) (fun _ () -> ());
+    Stateful.call "boom"
+      ?pre:
+        (match phase with
+        | `Pre -> Some (fun _ -> raise Pre_boom)
+        | `Next -> None)
+      ~next:(fun model ->
+        match phase with `Next -> raise Next_boom | `Pre -> model)
+      (fun _ () -> ());
+  ]
+
+let a_raising_pre_or_next_is_a_specification_bug () =
+  List.iter
+    (fun (phase, spelling, needle) ->
+      let gen = Stateful.program ~steps:6 ~model:0 (raising_spec phase) in
+      let rec first_raise index =
+        if index >= 50 then failf "no program drew boom within 50 samples"
+        else
+          match Gen.Private.sample gen (state index) with
+          | exception raised -> Printexc.to_string raised
+          | _ -> first_raise (index + 1)
+      in
+      let message = first_raise 0 in
+      List.iter
+        (fun part ->
+          check (contains part message) "%s's message %S lacks %S" spelling
+            message part)
+        [ "step "; "boom"; spelling ^ " raised"; needle ];
+      (* Through the engine: the failing case is the drawn one, unshrunk,
+         and the inner failure is the wrapped exception. *)
+      let outcome =
+        Property.run ~count:(`Declared 50) ~root ~path:("raising " ^ spelling)
+          gen (fun _ program -> Stateful.execute ~scope:unit_scope program)
+      in
+      let failure, _ = expect_fail outcome in
+      let rendered, _, shrink_steps, _, inner = property_payload failure in
+      check
+        (rendered = "<generator raised before producing a value>")
+        "%s rendered %S" spelling rendered;
+      check (shrink_steps = 0) "%s was shrunk %d steps" spelling shrink_steps;
+      match inner with
+      | Some inner -> (
+          let actual = raised_actual inner in
+          check
+            (contains needle actual && contains (spelling ^ " raised") actual)
+            "%s's inner failure read %S" spelling actual;
+          (* The wrapper carries the raise's own backtrace: the frame that
+             raised is this file's, not the engine's. *)
+          match inner.Failure.kind with
+          | Failure.Raise { backtrace = Some backtrace; _ } ->
+              check
+                (contains "test_stateful.ml" backtrace)
+                "%s's backtrace does not name the raising frame:\n%s" spelling
+                backtrace
+          | _ -> failf "%s's inner failure carries no backtrace" spelling)
+      | None -> failf "%s reported no inner failure" spelling)
+    [ (`Pre, "~pre", "Pre_boom"); (`Next, "~next", "Next_boom") ]
+
+(* A [~pre] that raises on a shrink candidate but not on the drawn program
+   raises while the candidate is forced, where the engine stops the search
+   rather than lose the failure in hand: the report is the drawn program's
+   own failure, marked as possibly not minimal, and the specification bug
+   surfaces on a case that draws it. *)
+exception Candidate_boom
+
+let a_specification_bug_met_while_shrinking_stops_the_search () =
+  let commands =
+    [
+      Stateful.call "inc" ~next:(fun model -> model + 1) (fun _ () -> ());
+      Stateful.call "check"
+        ~pre:(fun model -> if model = 0 then raise Candidate_boom else true)
+        ~next:Fun.id
+        (fun _ () -> Check.fail "the body");
+    ]
+  in
+  let gen = Stateful.program ~steps:6 ~model:0 commands in
+  (* A path whose first case draws [inc] before any [check]: that program
+     repairs cleanly and its body fails at the first [check], and every
+     candidate that deletes the leading [inc] raises in [~pre]. *)
+  let rec clean index =
+    if index >= 50 then failf "no clean program with a check within 50 paths"
+    else
+      let path = "candidate " ^ string_of_int index in
+      let seed = Seed.make (Seed.derive ~root ~path ~index:0) in
+      match names gen (root_value (Gen.Private.sample gen seed)) with
+      | "inc" :: rest when List.mem "check" rest -> path
+      | _ -> clean (index + 1)
+      | exception _ -> clean (index + 1)
+  in
+  let path = clean 0 in
+  let outcome =
+    Property.run ~count:(`Declared 1) ~root ~path gen (fun _ program ->
+        Stateful.execute ~scope:unit_scope program)
+  in
+  let failure, _ = expect_fail outcome in
+  match failure.Failure.kind with
+  | Failure.Property { rendered; shrink_exhausted; inner; _ } -> (
+      check shrink_exhausted "the search did not say it stopped";
+      check
+        (contains "check" rendered)
+        "the drawn program's failure was replaced: %S" rendered;
+      match inner with
+      | Some { Failure.kind = Failure.Message "the body"; _ } -> ()
+      | _ -> failf "the inner failure is not the body's")
+  | _ -> failf "expected a Property failure kind"
+
+(* The exceptions about the run rather than the model escape [~pre] and
+   [~next] as themselves. *)
 let control_exceptions_escape_pre_and_next_unconverted () =
-  (* Repair's partition is narrower than a body's: only what is about the
-     run escapes. [Skip_test], [Check_failure] and [Discard] are about the
-     model here, and poison — see the test below. *)
   let cases =
     [
       ("Timeout", Failure.Timeout 0.5);
@@ -633,12 +628,11 @@ let a_failing_step_points_at_its_command () =
         "the body's own site was overwritten by %s" (Loc.to_string loc)
   | None -> failf "the body-located step reported no location"
 
-(* The three exceptions a body treats as control, which repair does not:
-   at generation time an assertion, a skip and a discard are all the model
-   being written wrong, so each poisons and the report names the command,
-   the step and the phase instead of losing the payload inside the
-   generator. *)
-let assertions_skips_and_discards_from_pre_poison () =
+(* The three exceptions a body treats as control, which repair does not: at
+   generation time an assertion, a skip and a discard are all the model
+   being written wrong, so each is reported as a specification bug naming
+   the operation and the step, not as what the exception says. *)
+let assertions_skips_and_discards_from_pre_are_specification_bugs () =
   let cases =
     [
       ( "Check_failure",
@@ -651,30 +645,18 @@ let assertions_skips_and_discards_from_pre_poison () =
   List.iter
     (fun (label, exn, needle) ->
       let gen = Stateful.program ~steps:4 ~model:0 (control_spec exn `Pre) in
-      (* It reaches the program rather than the generator: sampling
-         succeeds, where before it raised. *)
-      let program =
-        match Gen.Private.sample gen (state 0) with
-        | exception raised ->
-            failf "%s from ~pre escaped the generator as %s" label
-              (Printexc.to_string raised)
-        | tree -> root_value tree
-      in
-      let kept = names program in
-      let total = List.length kept in
-      check (total > 0) "%s from ~pre produced an empty program" label;
-      let failure =
-        expect_check_failure label (fun () ->
-            Stateful.execute ~scope:unit_scope program)
-      in
-      check
-        (failure_msg failure
-        = Pp.str "step %d of %d: raiser \u{2014} ~pre raised" total total)
-        "%s from ~pre was labelled %S" label (failure_msg failure);
-      check
-        (contains needle (raised_actual failure))
-        "%s from ~pre did not name the exception: %S" label
-        (raised_actual failure))
+      match Gen.Private.sample gen (state 0) with
+      | exception raised ->
+          let message = Printexc.to_string raised in
+          check
+            (message <> Printexc.to_string exn)
+            "%s escaped ~pre as itself" label;
+          List.iter
+            (fun part ->
+              check (contains part message) "%s from ~pre read %S, lacking %S"
+                label message part)
+            [ "step 1"; "raiser"; "~pre raised"; needle ]
+      | _ -> failf "%s from ~pre was swallowed" label)
     cases
 
 (* The same partition inside a body, where the executor rather than repair
@@ -743,6 +725,11 @@ let control_exceptions_escape_a_body_unconverted () =
 let counter_program ?(steps = 4) index =
   program_at (Stateful.program ~steps ~model:0 counter_draws) index
 
+(* The printer is the same whatever the steps, so one generator reads every
+   counter program back. *)
+let counter_names program =
+  names (Stateful.program ~model:0 counter_draws) program
+
 let one_call_program exn =
   program_at
     (Stateful.program ~steps:1 ~model:0
@@ -757,11 +744,6 @@ let one_call_program exn =
    path [execute] leaves — and on none it does not: a scope that raises
    while acquiring never reached its own release. *)
 let a_scope_releases_on_every_path () =
-  let body_ran = ref false in
-  let poisoned =
-    find_poisoned
-      (Stateful.program ~steps:6 ~model:0 (poison_spec ~body_ran `Pre))
-  in
   let paths =
     [
       ("pass", counter_program 0);
@@ -770,7 +752,6 @@ let a_scope_releases_on_every_path () =
       ("skip", one_call_program (Failure.Skip_test (Some "why")));
       ("timeout", one_call_program (Failure.Timeout 0.5));
       ("uncaught", one_call_program Not_found);
-      ("poison", poisoned);
     ]
   in
   List.iter
@@ -857,8 +838,8 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
         callback exactly once")
     "a scope that never called back failed with %S"
     (Printexc.to_string (Failure.Check_failure failure));
-  (* It carries the declaration site, like the poison: it is the other
-     failure with no assertion of its own to be located by. *)
+  (* It carries the declaration site: it is the one failure with no
+     assertion of its own to be located by. *)
   let loc = { Loc.file = "spec.ml"; line = 42; column = 7 } in
   let located =
     expect_check_failure "a located missing body" (fun () ->
@@ -1070,7 +1051,7 @@ let the_scope_runs_once_per_case_and_per_shrink_candidate () =
    that tell the two apart. *)
 let the_invariant_runs_before_step_one_and_after_every_step () =
   let program = counter_program 0 in
-  let drawn = names program in
+  let drawn = counter_names program in
   let total = List.length drawn in
   check (total = 4) "the unconditioned program made %d of 4 calls" total;
   let seen = ref [] in
@@ -1124,7 +1105,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
    it runs from. *)
 let an_invariant_is_narrowed_and_propagates_like_a_body () =
   let program = counter_program 0 in
-  let drawn = names program in
+  let drawn = counter_names program in
   let total = List.length drawn in
   check (total = 4) "the unconditioned program made %d of 4 calls" total;
   (* Narrowed into the assertion class, under each site's own label. *)
@@ -1195,7 +1176,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
 let empty_program_prints_no_commands () =
   let gen = Stateful.program ~steps:5 ~model:0 never_commands in
   let program = program_at gen 0 in
-  check (names program = []) "the program was not empty";
+  check (names gen program = []) "the program was not empty";
   check
     (render gen program = "(no commands)")
     "the empty program rendered %S" (render gen program)
@@ -1205,7 +1186,7 @@ let empty_program_prints_no_commands () =
 let unit_arguments_are_suppressed_under_a_summary_line () =
   let gen = Stateful.program ~steps:3 ~model:0 counter_draws in
   let program = program_at gen 0 in
-  let drawn = names program in
+  let drawn = names gen program in
   let expected =
     Pp.str "3 calls, last: %s" (List.nth drawn 2)
     :: List.mapi (fun index name -> Pp.str "%d  %s" (index + 1) name) drawn
@@ -1217,7 +1198,7 @@ let unit_arguments_are_suppressed_under_a_summary_line () =
   let program = program_at one 0 in
   check
     (List.hd (lines_of one program)
-    = Pp.str "1 call, last: %s" (List.hd (names program)))
+    = Pp.str "1 call, last: %s" (List.hd (names one program)))
     "a one-call program's summary was %S"
     (List.hd (lines_of one program))
 
@@ -1230,7 +1211,7 @@ let the_model_column_shows_the_pre_state () =
       counter_draws
   in
   let program = program_at gen 0 in
-  let drawn = names program in
+  let drawn = names gen program in
   let total = List.length drawn in
   check (total = 12) "the unconditioned program made %d of 12 calls" total;
   let cells =
@@ -1264,16 +1245,16 @@ let the_model_column_shows_the_pre_state () =
     "the model column rendered as:\n%s\nnot:\n%s" (render gen program)
     (String.concat "\n" expected)
 
-(* A [pp_model] that raises costs its own cell and no more: [Gen.Private.render]
-   would collapse the whole program to one marker while [printerless] stays
-   false, so no remedy line fires and the reader loses the program. *)
+(* A [pp_model] that raises costs its own cell and no more: left to
+   [Gen.Private.render], it would collapse the whole program to one
+   [<printer raised ...>] marker and the reader would lose the program. *)
 let a_raising_pp_model_costs_one_cell () =
   let pp_model ppf model =
     if model = 2 then raise Not_found else Format.pp_print_int ppf model
   in
   let gen = Stateful.program ~steps:6 ~model:0 ~pp_model tick_commands in
   let program = program_at gen 0 in
-  check (List.length (names program) = 6) "the tick program lost calls";
+  check (List.length (names gen program) = 6) "the tick program lost calls";
   let marker = "<pp_model raised Not_found>" in
   let cells = [ "0"; "1"; marker; "3"; "4"; "5" ] in
   let width = String.length marker in
@@ -1293,44 +1274,6 @@ let a_raising_pp_model_costs_one_cell () =
     "a raising pp_model rendered:\n%s\nnot:\n%s" (render gen program)
     (String.concat "\n" expected)
 
-(* A poisoned program prints like any other. The model column re-applies
-   only the transitions repair itself applied, so the one it skips is the
-   last call's — which for a [~next] poison is the transition that raised,
-   and evaluating it would raise inside the printer. *)
-let a_poisoned_program_prints_its_model_column () =
-  let body_ran = ref false in
-  let gen =
-    Stateful.program ~steps:6 ~model:0 ~pp_model:Format.pp_print_int
-      (poison_spec ~body_ran `Next)
-  in
-  let program = find_poisoned gen in
-  let drawn = names program in
-  let total = List.length drawn in
-  check (total >= 2) "the poisoned program made %d call — nothing precedes it"
-    total;
-  check
-    (drawn = List.init (total - 1) (fun _ -> "benign") @ [ "boom" ])
-    "the poisoned program was %s" (show_names drawn);
-  let cell_width = String.length (string_of_int (total - 1)) in
-  let number_width = String.length (string_of_int total) in
-  let expected =
-    Pp.str "%d call%s, last: boom" total (if total = 1 then "" else "s")
-    :: List.mapi
-         (fun index name ->
-           let cell = string_of_int index in
-           let number = string_of_int (index + 1) in
-           cell
-           ^ String.make (cell_width - String.length cell) ' '
-           ^ "  "
-           ^ String.make (number_width - String.length number) ' '
-           ^ number ^ "  " ^ name)
-         drawn
-  in
-  check
-    (lines_of gen program = expected)
-    "a poisoned program rendered:\n%s\nnot:\n%s" (render gen program)
-    (String.concat "\n" expected)
-
 (* A model cell is a column, so it is bounded in code points. *)
 let a_long_model_cell_truncates () =
   let pp_model ppf _ = Format.pp_print_string ppf (String.make 100 'm') in
@@ -1343,9 +1286,9 @@ let a_long_model_cell_truncates () =
     )
     "a long model cell rendered %S" (render gen program)
 
-(* An argument whose own generator has no printer renders as the placeholder
-   [Gen.Private.render] would have used for it; the step names and the program shape
-   survive, and the program itself still prints. *)
+(* An argument whose own generator has no printer renders as the one
+   placeholder; the step names and the program shape survive, and the
+   program itself still prints. *)
 let a_printerless_argument_degrades_to_a_placeholder () =
   let commands =
     [
@@ -1355,15 +1298,13 @@ let a_printerless_argument_degrades_to_a_placeholder () =
     ]
   in
   let gen = Stateful.program ~steps:2 ~model:0 commands in
-  check (Gen.Private.prints gen)
-    "a printerless argument made the program printerless";
   let program = program_at gen 0 in
   check
     (lines_of gen program
     = [
         "2 calls, last: opaque";
-        "1  opaque <no printer>";
-        "2  opaque <no printer>";
+        "1  opaque " ^ placeholder;
+        "2  opaque " ^ placeholder;
       ])
     "a printerless argument rendered %S" (render gen program)
 
@@ -1407,7 +1348,20 @@ let newlines_in_names_and_cells_are_flattened () =
 let long_programs_truncate_with_a_step_omitted_line () =
   let gen = Stateful.program ~steps:50 ~model:0 counter_draws in
   let program = program_at gen 0 in
-  let drawn = names program in
+  (* The printer omits the middle, so the names come from the executor: the
+     model moves by one per call, and the invariant sees every model. *)
+  let drawn =
+    let seen = ref [] in
+    Stateful.execute
+      ~invariant:(fun model () -> seen := model :: !seen)
+      ~scope:unit_scope program;
+    let rec step = function
+      | before :: (after :: _ as rest) ->
+          (if after > before then "inc" else "dec") :: step rest
+      | _ -> []
+    in
+    step (List.rev !seen)
+  in
   check
     (List.length drawn = 50)
     "the unconditioned program made %d of 50 calls" (List.length drawn);
@@ -1432,7 +1386,7 @@ let the_model_column_is_measured_over_the_printed_rows () =
   in
   let gen = Stateful.program ~steps:50 ~model:0 ~pp_model tick_commands in
   let program = program_at gen 0 in
-  let total = List.length (names program) in
+  let total = call_count program in
   check (total = 50) "the tick program made %d of 50 calls" total;
   (* The cell that never prints is the widest one there is: rows 21 to 30
      are omitted, and the model before row 26 is 25. *)
@@ -1641,7 +1595,7 @@ let the_same_seed_reproduces_the_same_counterexample () =
     let outcome =
       Property.run ~count:(`Declared 40) ~root ~path:"replay" (queue_gen ())
         (fun _ program ->
-          trace := names program :: !trace;
+          trace := names (queue_gen ()) program :: !trace;
           Stateful.execute ~scope:(fun run -> run (Bad_queue.create ())) program)
     in
     let failure, _ = expect_fail outcome in
@@ -1730,10 +1684,11 @@ let the_program_generator_always_prints () =
     ]
   in
   check
-    (not (Gen.Private.prints (Gen.constant 5)))
+    (Gen.Private.render_value (Gen.constant 5) 5 = placeholder)
     "Gen.constant grew a printer — the test is vacuous";
+  let gen = Stateful.program ~steps:4 ~model:0 opaque in
   check
-    (Gen.Private.prints (Stateful.program ~steps:4 ~model:0 opaque))
+    (render gen (program_at gen 0) <> placeholder)
     "a program over a printerless command carries no printer";
   let outcome =
     Property.run ~count:(`Declared 5) ~root ~path:"printerless"
@@ -1816,20 +1771,16 @@ let suite =
       no_node_invents_or_substitutes_a_call );
     ( "every command is drawn about equally often",
       every_command_is_drawn_about_equally_often );
-    ( "a raising ~pre poisons and withholds the body",
-      a_raising_pre_poisons_and_withholds_the_body );
-    ( "a raising ~next poisons and runs the body",
-      a_raising_next_poisons_and_runs_the_body );
-    ( "a failing body outranks the ~next poison it precedes",
-      a_failing_body_outranks_the_next_poison_it_precedes );
-    ( "a poisoned program carries the declaration site",
-      a_poisoned_program_carries_the_declaration_site );
+    ( "a raising ~pre or ~next is a specification bug",
+      a_raising_pre_or_next_is_a_specification_bug );
+    ( "a specification bug met while shrinking stops the search",
+      a_specification_bug_met_while_shrinking_stops_the_search );
     ( "control exceptions escape ~pre and ~next unconverted",
       control_exceptions_escape_pre_and_next_unconverted );
     ( "a failing step points at its command",
       a_failing_step_points_at_its_command );
-    ( "assertions, skips and discards from ~pre poison",
-      assertions_skips_and_discards_from_pre_poison );
+    ( "assertions, skips and discards from ~pre are specification bugs",
+      assertions_skips_and_discards_from_pre_are_specification_bugs );
     ( "control exceptions escape a body unconverted",
       control_exceptions_escape_a_body_unconverted );
     ("a scope releases on every path", a_scope_releases_on_every_path);
@@ -1855,8 +1806,6 @@ let suite =
     ( "the model column shows the pre-state",
       the_model_column_shows_the_pre_state );
     ("a raising pp_model costs one cell", a_raising_pp_model_costs_one_cell);
-    ( "a poisoned program prints its model column",
-      a_poisoned_program_prints_its_model_column );
     ("a long model cell truncates", a_long_model_cell_truncates);
     ( "a printerless argument degrades to a placeholder",
       a_printerless_argument_degrades_to_a_placeholder );

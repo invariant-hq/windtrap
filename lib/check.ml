@@ -226,19 +226,24 @@ let require_some ?pos ?msg = function
   | Some v -> v
   | None -> fail_equality ?pos ?msg ~expected:"Some _" ~actual:"None" ()
 
-let require_ok ?pos ?msg ?pp_error = function
+let require_ok ?pos ?msg ?pp = function
   | Ok v -> v
   | Error e ->
       fail_equality ?pos ?msg ~expected:"Ok _"
-        ~actual:("Error " ^ render_or_abstract pp_error e)
+        ~actual:("Error " ^ render_or_abstract pp e)
         ()
 
-let require_error ?pos ?msg ?pp_ok = function
+let require_error ?pos ?msg ?pp = function
   | Error e -> e
   | Ok v ->
       fail_equality ?pos ?msg ~expected:"Error _"
-        ~actual:("Ok " ^ render_or_abstract pp_ok v)
+        ~actual:("Ok " ^ render_or_abstract pp v)
         ()
+
+(* The result-shape twins of [is_some]/[is_none]: the unwrapping verbs with
+   the payload discarded, so the two build identical failures. *)
+let is_ok ?pos ?msg ?pp r = ignore (require_ok ?pos ?msg ?pp r)
+let is_error ?pos ?msg ?pp r = ignore (require_error ?pos ?msg ?pp r)
 
 let require_match ?pos ?msg ?pp extract v =
   match extract v with

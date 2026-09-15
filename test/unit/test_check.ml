@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Check: every verb's pass and fail path, payload shapes, [?pos]
-   and [?msg] propagation, unwrap semantics, [?pp_error]/[?pp_ok] rendering,
+   and [?msg] propagation, unwrap semantics, [?pp] rendering,
    structural exception equality, and the control-exception re-raise guard.
 
    The probes call [Check.*] directly and classify what comes back through
@@ -709,16 +709,16 @@ let tests =
             check "require_some: payload is Some _ vs None"
               (expected = "Some _" && actual = "None"));
         check "require_ok: unwraps the payload" (Check.require_ok (Ok 7) = 7);
-        equality_payload "require_ok: fail payload without pp_error"
+        equality_payload "require_ok: fail payload without pp"
           (fun () -> ignore (Check.require_ok (Error 3)))
           (fun (expected, actual, _) ->
             check_string "require_ok: expected side" ~expected:"Ok _"
               ~actual:expected;
             check_string "require_ok: rejected side prints <abstract>"
               ~expected:"Error <abstract>" ~actual);
-        equality_payload "require_ok: pp_error renders the rejected side"
+        equality_payload "require_ok: pp renders the rejected side"
           (fun () ->
-            ignore (Check.require_ok ~pp_error:Format.pp_print_int (Error 3)))
+            ignore (Check.require_ok ~pp:Format.pp_print_int (Error 3)))
           (fun (_, actual, _) ->
             check_string "require_ok: rendered error" ~expected:"Error 3"
               ~actual);
@@ -727,22 +727,56 @@ let tests =
           incr calls;
           Format.pp_print_int ppf n
         in
-        check "require_ok: pp_error not called on Ok"
-          (Check.require_ok ~pp_error:pp (Ok 1) = 1 && !calls = 0);
+        check "require_ok: pp not called on Ok"
+          (Check.require_ok ~pp (Ok 1) = 1 && !calls = 0);
         check "require_error: unwraps the payload"
           (Check.require_error (Error "e") = "e");
-        equality_payload "require_error: fail payload without pp_ok"
+        equality_payload "require_error: fail payload without pp"
           (fun () -> ignore (Check.require_error (Ok 9)))
           (fun (expected, actual, _) ->
             check_string "require_error: expected side" ~expected:"Error _"
               ~actual:expected;
             check_string "require_error: rejected side prints <abstract>"
               ~expected:"Ok <abstract>" ~actual);
-        equality_payload "require_error: pp_ok renders the rejected side"
+        equality_payload "require_error: pp renders the rejected side"
           (fun () ->
-            ignore (Check.require_error ~pp_ok:Format.pp_print_int (Ok 9)))
+            ignore (Check.require_error ~pp:Format.pp_print_int (Ok 9)))
           (fun (_, actual, _) ->
             check_string "require_error: rendered ok" ~expected:"Ok 9" ~actual));
+    test "is_ok, is_error" (fun () ->
+        (* The assert-only twins: the unwrapping verbs' payloads, exactly. *)
+        Check.is_ok (Ok 7);
+        Check.is_error (Error "e");
+        equality_payload "is_ok: fail payload without pp"
+          (fun () -> Check.is_ok (Error 3))
+          (fun (expected, actual, _) ->
+            check_string "is_ok: expected side" ~expected:"Ok _"
+              ~actual:expected;
+            check_string "is_ok: rejected side prints <abstract>"
+              ~expected:"Error <abstract>" ~actual);
+        equality_payload "is_ok: pp renders the rejected side"
+          (fun () -> Check.is_ok ~pp:Format.pp_print_int (Error 3))
+          (fun (_, actual, _) ->
+            check_string "is_ok: rendered error" ~expected:"Error 3" ~actual);
+        equality_payload "is_error: fail payload without pp"
+          (fun () -> Check.is_error (Ok 9))
+          (fun (expected, actual, _) ->
+            check_string "is_error: expected side" ~expected:"Error _"
+              ~actual:expected;
+            check_string "is_error: rejected side prints <abstract>"
+              ~expected:"Ok <abstract>" ~actual);
+        equality_payload "is_error: pp renders the rejected side"
+          (fun () -> Check.is_error ~pp:Format.pp_print_int (Ok 9))
+          (fun (_, actual, _) ->
+            check_string "is_error: rendered ok" ~expected:"Ok 9" ~actual);
+        let calls = ref 0 in
+        let pp ppf n =
+          incr calls;
+          Format.pp_print_int ppf n
+        in
+        Check.is_ok ~pp (Ok 1);
+        Check.is_error ~pp (Error 1);
+        check "is_ok/is_error: pp not called on the wanted branch" (!calls = 0));
     test "require_match" (fun () ->
         check "require_match: unwraps the matched payload"
           (Check.require_match tcp (`Tcp 8080) = 8080);

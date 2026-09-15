@@ -83,8 +83,8 @@ type pos = string * int * int * int
 
 type 'a printer = Format.formatter -> 'a -> unit
 (** The type for value printers: the one printer type used by testables,
-    generators ({!Gen.with_pp}), {!snapshot_pp}, and the [?pp_error]/[?pp_ok]
-    arguments. *)
+    generators ({!Gen.with_pp}), {!snapshot_pp}, and the [?pp] arguments of the
+    shape assertions. *)
 
 module Testable = Testable
 (** Witness constructors: {!Testable.make}, {!Testable.structural}. See
@@ -440,6 +440,17 @@ val is_some : ?pos:pos -> ?msg:string -> 'a option -> unit
     want the assertion and not the value. No [?pp]: the failing side is [None].
 *)
 
+val is_ok : ?pos:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> unit
+(** [is_ok r] asserts that [r] is [Ok _] — {!require_ok} for callers that want
+    the assertion and not the value. On [Error e] the failure renders [e] with
+    [pp] when given and as [<abstract>] otherwise. *)
+
+val is_error :
+  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> unit
+(** [is_error r] asserts that [r] is [Error _] — {!require_error} for callers
+    that want the assertion and not the value. On [Ok v] the failure renders [v]
+    with [pp] when given and as [<abstract>] otherwise. *)
+
 val contains : ?pos:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] asserts that [s] contains [sub] as a byte substring (the
     empty needle is contained in every string). The failure prints the needle
@@ -482,16 +493,15 @@ val require_some : ?pos:pos -> ?msg:string -> 'a option -> 'a
     ]} *)
 
 val require_ok :
-  ?pos:pos -> ?msg:string -> ?pp_error:'e printer -> ('a, 'e) result -> 'a
+  ?pos:pos -> ?msg:string -> ?pp:'e printer -> ('a, 'e) result -> 'a
 (** [require_ok r] asserts that [r] is [Ok v] and returns [v]. On [Error e] the
-    failure renders [e] with [pp_error] when given and as [<abstract>]
-    otherwise. *)
+    failure renders [e] with [pp] when given and as [<abstract>] otherwise. *)
 
 val require_error :
-  ?pos:pos -> ?msg:string -> ?pp_ok:'a printer -> ('a, 'e) result -> 'e
+  ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a, 'e) result -> 'e
 (** [require_error r] asserts that [r] is [Error e] and returns [e]. On [Ok v]
-    the failure renders [v] with [pp_ok] when given and as [<abstract>]
-    otherwise. *)
+    the failure renders [v] with [pp] when given and as [<abstract>] otherwise.
+*)
 
 val require_match :
   ?pos:pos -> ?msg:string -> ?pp:'a printer -> ('a -> 'b option) -> 'a -> 'b
@@ -601,32 +611,20 @@ val int64 : int64 testable
 val nativeint : nativeint testable
 
 val float_exact : float testable
-(** [float_exact] compares floats exactly: [a] and [b] are equal iff both are
-    NaN — every NaN, regardless of payload — or they are bit-for-bit the same
-    float. So a test can assert that a function actually returns NaN, unlike
-    with IEEE 754 equality; [0.] and [-0.] are {e not} equal; an infinity is
-    equal only to an infinity of the same sign. Failures print the shortest
-    round-tripping decimal, so unequal floats never render identically. *)
+(** [float_exact] compares floats bit for bit, with every NaN equal to every NaN
+    — the witness to assert a NaN result with. {!Testable.float_exact} has the
+    IEEE 754 details shared by the three float witnesses. *)
 
 val float : float -> float testable
 (** [float eps] compares with absolute tolerance: [a] and [b] are equal when
-    [a = b] or [|a -. b| <= eps]. NaN follows IEEE 754 — equal to nothing,
-    itself included; assert a NaN result with {!float_exact}. An infinity is
-    equal only to an infinity of the same sign; [0.] and [-0.] are equal.
-
-    Raises [Invalid_argument] if [eps] is not strictly positive (NaN included):
-    any such [eps] is exact equality wearing a tolerance's syntax — exactness is
-    spelled {!float_exact}. *)
+    [a = b] or [|a -. b| <= eps]. Raises [Invalid_argument] if [eps] is not
+    strictly positive: exactness is spelled {!float_exact}. *)
 
 val float_rel : rel:float -> abs:float -> float testable
 (** [float_rel ~rel ~abs] compares with combined tolerance: within [abs] near
     zero, within [rel *. Float.max (abs_float a) (abs_float b)] for large
-    values. NaN and infinities behave as in {!float}. All three float witnesses
-    order exactly, with [Float.compare]: tolerance belongs to equality.
-
-    Raises [Invalid_argument] if either bound is negative or NaN, or if both are
-    zero. One zero bound switches that component off; both zero is exact
-    equality in disguise — spell it {!float_exact}. *)
+    values. Raises [Invalid_argument] if either bound is negative or NaN, or if
+    both are zero. *)
 
 val option : 'a testable -> 'a option testable
 val result : 'a testable -> 'e testable -> ('a, 'e) result testable
@@ -635,10 +633,8 @@ val list : 'a testable -> 'a list testable
 val array : 'a testable -> 'a array testable
 
 val slist : 'a testable -> ('a -> 'a -> int) -> 'a list testable
-(** [slist t cmp] compares lists as multisets: both sides are sorted with [cmp]
-    first, so order is ignored but multiplicity is not. Failures print both
-    sides in that sorted order — the order the equality compared — so the diff
-    shows the multiset difference, never the incidental arrival order. *)
+(** [slist t cmp] is [Testable.contramap (List.sort cmp) (list t)]: lists
+    compared, and printed, as multisets. *)
 
 val pair : 'a testable -> 'b testable -> ('a * 'b) testable
 
@@ -674,35 +670,26 @@ module Gen = Gen
 (** The generator vocabulary:
 
     - numeric — {!Gen.int}, {!Gen.nat}, {!Gen.small_int}, {!Gen.int_range},
-      {!Gen.int32}, {!Gen.int64}, {!Gen.float}, {!Gen.float_range};
+      {!Gen.int32}, {!Gen.int64}, {!Gen.nativeint}, {!Gen.float},
+      {!Gen.float_range};
     - base — {!Gen.unit}, {!Gen.bool}, {!Gen.char}, {!Gen.char_range},
       {!Gen.string}, {!Gen.string_of}, {!Gen.bytes}, {!Gen.bytes_of};
     - containers — {!Gen.list}, {!Gen.array}, {!Gen.option}, {!Gen.result},
-      {!Gen.pair}, {!Gen.triple}, {!Gen.quad};
-    - choice — {!Gen.constant} (alias {!Gen.pure}), {!Gen.of_list},
-      {!Gen.one_of}, {!Gen.frequency}, {!Gen.such_that};
+      {!Gen.either}, {!Gen.pair}, {!Gen.triple}, {!Gen.quad};
+    - choice — {!Gen.constant}, {!Gen.of_list}, {!Gen.one_of}, {!Gen.frequency},
+      {!Gen.such_that};
     - composition — {!Gen.map}, {!Gen.bind}, the binding operators, and
       {!Gen.with_pp}, which takes the same {!type:printer} the assertion side
       uses.
 
-    A counterexample prints with its generator's printer, and printers derive by
-    composition: a composite prints exactly when its components do. {!Gen.map}
-    and {!Gen.bind} — so [let+], [and+] and [let*] — derive none, and a
-    counterexample built through them renders as its {e pre-image}: the input
-    the mapping functions received, printed by the generators that drew it, and
-    marked as such in the report. A composition written with the binding
-    operators over printing generators therefore reads without any
-    {!Gen.with_pp}; attach one to print the value itself, or wherever a
-    {!Gen.constant} or {!Gen.of_list} leaf — which has nothing to print — would
-    otherwise leave the whole counterexample as [<no printer>].
-
-    {b Note.} Length- and alphabet-controlled strings are spelled
-    {!Gen.string_of}[ ?size char] and {!Gen.bytes_of} — the natural
-    [string ?size ?char] spelling cannot exist (optional arguments on a value
-    are unerasable, warning 16), so the knobs live on [string_of]/[bytes_of],
-    aligned with {!Gen.list}. See {!Gen} for each generator's distribution,
-    shrink order, and the printing rules; {!Gen.Private} holds the engine
-    interface, which no test writes. *)
+    A counterexample prints with its generator's printer; containers and choices
+    derive one from their components. {!Gen.map} and {!Gen.bind} — so [let+],
+    [and+] and [let*] — derive none, and a counterexample built through them
+    renders as its {e pre-image}: the input the mapping functions received,
+    printed by the generators that drew it, and marked as such in the report.
+    Attach {!Gen.with_pp} to print the value itself, or to a {!Gen.constant} or
+    {!Gen.of_list} leaf, which has nothing to print. See {!Gen} for each
+    generator's distribution, shrink order, and printing. *)
 
 val prop :
   ?pos:pos ->
@@ -725,9 +712,7 @@ val prop :
       reports the best counterexample found so far, marked as possibly not
       minimal.
     - [count] is the generated-case count; the declaration site wins over
-      [--prop-count], which wins over the default of [100]. A failure under a
-      [--prop-count]-supplied count restates it in the replay hint — replaying a
-      late case needs at least as many cases as the failing run.
+      [--prop-count], which wins over the default of [100].
     - [max_discard] is how many discarded cases ({!assume}, {!reject}) the
       property tolerates before it {e gives up}; it defaults to twice the
       effective [count]. Raise it for a law whose precondition is genuinely rare
@@ -773,22 +758,18 @@ val command :
     generated only when the model says it is full. The converse is the rule to
     remember — a stateful test never exercises a call its own model forbids.
 
-    [next] is required, because an argument is required exactly when its absence
-    would be a claim about the system rather than an absence of one: a defaulted
-    identity transition on an operation that does change the state leaves the
-    model frozen, every other operation's precondition unsatisfiable, and the
-    test vacuously green. Read-only operations say so with [~next:Fun.const].
+    [next] is required; read-only operations say so with [~next:Fun.const].
 
     [pos] is the command's declaration site, and it is what a failing step
     points at: a body is idiomatically one assertion in tail position, which
     leaves no frame to capture, so without it the step would report no location
     at all.
 
-    [pre] and [next] must be pure and total, and ['model] must be persistent:
-    the model trajectory is folded three times per case — when the program is
-    drawn, when it runs, and when a counterexample prints — and the three must
-    agree. One that raises is reported as a specification failure naming the
-    operation and step, not as a counterexample. *)
+    [pre] and [next] must be pure, and ['model] must be persistent: the model
+    trajectory is folded when the program is drawn, when it runs, and when a
+    counterexample prints, and the three must agree. One that raises is a
+    specification bug, reported unshrunk with its backtrace and the operation
+    and step it raised at. *)
 
 val call :
   ?pos:pos ->
@@ -819,54 +800,13 @@ val stateful :
     numbered step per line, the step that broke, and the ordinary
     expected/actual diff.
 
-    [scope] builds that system and reclaims it, the way {!scoped} does for a
-    test: it takes a callback, and everything before the call acquires, the call
-    runs the program, everything after it returns releases. It runs once per
-    generated case {e and once per shrink candidate} — the search re-runs the
-    program, so a shared system would make it meaningless.
-
-    Taking a callback rather than returning a system is what puts a resource
-    that exists only {e inside} a call — an Eio env or switch,
-    [In_channel.with_open_text], any [with_]-style API — under test at all:
-    there is no moment in those at which the resource could be returned.
-
-    {[
-    (* fragment: requires eio_main *)
-    stateful "store replays" ~model:Model.empty
-      ~scope:(fun run ->
-        Eio_main.run @@ fun env ->
-        Eio.Switch.run @@ fun sw -> run (Store.open_ ~sw ~env dir))
-      commands
-    ]}
-
-    The acquire-and-release pair {!bracket} spells is the same shape with the
-    release written out — a [~setup:f ~teardown:g] is this [~scope]:
-
-    {[
-    let scope run =
-      let sut = f () in
-      Fun.protect ~finally:(fun () -> g sut) (fun () -> run sut)
-    ]}
-
-    That [Fun.protect] is yours — windtrap never sees the resource, so releasing
-    on the failing path is the scope's own contract, exactly as under {!scoped}.
-    What windtrap guarantees is the failure: the program's exception is
-    re-raised {e through} [scope], so a scope that cancels or cleans up on that
-    path does so, and a release failure never replaces the counterexample you
-    were shown (only a timeout or a fatal exception outranks it — those end the
-    run). A scope that raises before calling back propagates as it is, and one
-    that skips there skips the test; a scope that returns without running the
-    program fails the case, and one that runs it twice raises [Invalid_argument]
-    at the second call.
-
-    [temp_dir] is test-scoped and the wrong tool here: a failing test builds
-    hundreds of systems, so the scope should mint its own path and remove it on
-    the way out. {!setenv} and {!chdir} are test-scoped the same way — the
-    runner restores them at the attempt boundary, not between cases or shrink
-    candidates — so a scope (or a command body) that moves the process or binds
-    a variable carries that state into every later case of the same run: use
-    absolute paths, and if the scope must touch process state, it puts it back
-    itself, per case.
+    [scope] builds that system and reclaims it, with {!scoped}'s protocol: it
+    takes a callback, calls it exactly once, and releases on the way out whether
+    the program passed or failed. It runs once per generated case
+    {e and once per shrink candidate}: the search re-runs the program, so a
+    shared system would make it meaningless, and a test-scoped {!temp_dir},
+    {!setenv} or {!chdir} inside it leaks across cases — the scope mints and
+    removes its own. The manual's stateful chapter has the worked examples.
 
     [invariant] runs on the fresh system before the first call and after every
     call. An operation whose body asserts nothing is checked only by it: bodies
@@ -879,8 +819,7 @@ val stateful :
     preconditions remove some, so a program has at most [steps] calls. Shrinking
     removes calls and simplifies their arguments; it never substitutes one
     operation for another. Cost scales with [steps] and [count] and, on a
-    failing test, with [--max-shrink] — a system that costs a syscall per call
-    wants all three lowered.
+    failing test, with [--max-shrink].
 
     Stateful tests carry the tags ["prop"] and ["stateful"], so [--tag prop] and
     [--tag stateful] both select them, and — like {!prop} — they have no

@@ -119,9 +119,7 @@ val to_string : 'a t -> 'a -> string
     Base-type witnesses print source-like renderings ([%S] for strings, [%C] for
     chars, [%g] for the tolerance float witnesses), so failure payloads read
     like OCaml values. Each carries its module's order ([Int.compare],
-    [String.compare], …); the float witnesses all order with [Float.compare], so
-    NaN sorts below every float and tolerance plays no part — it belongs to
-    equality. *)
+    [String.compare], …). *)
 
 val unit : unit t
 val bool : bool t
@@ -147,46 +145,40 @@ val int32 : int32 t
 val int64 : int64 t
 val nativeint : nativeint t
 
+(** The three float witnesses share one IEEE 754 story. Under {!float} and
+    {!float_rel}, NaN is equal to nothing, itself included; under
+    {!float_exact}, every NaN equals every NaN — the only witness that can
+    assert a NaN result. Under all three an infinity is equal only to an
+    infinity of the same sign: no tolerance bridges an infinite and a finite
+    value. [0.] and [-0.] are equal under the tolerance witnesses and distinct
+    under {!float_exact}. All three order with [Float.compare], so NaN sorts
+    below every float and tolerance plays no part in the order. *)
+
 val float_exact : float t
-(** [float_exact] compares floats exactly: [a] and [b] are equal iff both are
-    NaN, or they are bit-for-bit the same float. In particular:
-
-    - NaN equals NaN — every NaN, regardless of payload or sign — so a test can
-      assert that a function actually returns NaN, unlike with IEEE 754 equality
-      (and unlike {!float}).
-    - [0.] and [-0.] are {e not} equal (unlike [Stdlib.Float.equal]): producing
-      the wrong zero is an observable bug — [1. /. -0.] is negative infinity.
-    - An infinity is equal only to an infinity of the same sign.
-
-    Failures print the shortest decimal that round-trips to the exact value
-    ([0.1 +. 0.2] prints ["0.30000000000000004"], never ["0.3"]; [-0.] prints
-    ["-0"]), so unequal floats never render identically. *)
+(** [float_exact] compares floats bit for bit, with all NaNs identified (see
+    above). Failures print the shortest decimal that round-trips to the exact
+    value ([0.1 +. 0.2] prints ["0.30000000000000004"]; [-0.] prints ["-0"]), so
+    unequal floats never render identically. *)
 
 val float : float -> float t
 (** [float eps] compares with absolute tolerance: [a] and [b] are equal when
-    [a = b] or [|a -. b| <= eps]. NaN follows IEEE 754: it is equal to nothing,
-    not even itself — assert a NaN result with {!float_exact}. An infinity is
-    equal only to an infinity of the same sign; no finite [eps] bridges an
-    infinite and a finite value. [0.] and [-0.] are equal.
+    [a = b] or [|a -. b| <= eps].
 
-    Raises [Invalid_argument] if [eps] is not strictly positive (NaN included).
-    Every such [eps] degenerates the comparison to exact equality while the call
-    still reads as a tolerance; exactness is spelled {!float_exact}, which is
-    also the only witness that can assert NaN. *)
+    Raises [Invalid_argument] if [eps] is not strictly positive (NaN included):
+    such an [eps] is exact equality in a tolerance's syntax, and exactness is
+    spelled {!float_exact}. *)
 
 val float_rel : rel:float -> abs:float -> float t
 (** [float_rel ~rel ~abs] compares with combined tolerance: [a] and [b] are
     equal when [a = b], when their absolute difference is within [abs]
     (near-zero values), or when it is within
-    [rel *. Float.max (abs_float a) (abs_float b)] (large values). NaN follows
-    IEEE 754, as with {!float}: it is equal to nothing — assert a NaN result
-    with {!float_exact}. An infinity is equal only to an infinity of the same
-    sign: no finite tolerance applies when either side is infinite.
+    [rel *. Float.max (abs_float a) (abs_float b)] (large values, and symmetric
+    by construction).
 
     Raises [Invalid_argument] if either bound is negative or NaN, or if both are
     zero. One zero bound is meaningful — [~rel:0.] is a purely absolute
     tolerance, [~abs:0.] a purely relative one — but both zero is exact equality
-    wearing a tolerance's syntax, and exactness is spelled {!float_exact}. *)
+    in a tolerance's syntax, and exactness is spelled {!float_exact}. *)
 
 (** {1:containers Containers}
 
@@ -202,11 +194,8 @@ val list : 'a t -> 'a list t
 val array : 'a t -> 'a array t
 
 val slist : 'a t -> ('a -> 'a -> int) -> 'a list t
-(** [slist w cmp] compares lists as multisets: both are sorted with [cmp] before
-    elementwise comparison with [w], so order is ignored but multiplicity is
-    not. Printing shows the list sorted with [cmp] — the order the equality
-    compared — so a failure's diff shows the multiset difference, never the
-    incidental arrival order. *)
+(** [slist w cmp] is [contramap (List.sort cmp) (list w)]: lists compared, and
+    printed, as multisets. *)
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
 val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t

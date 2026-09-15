@@ -90,6 +90,11 @@ let assertions =
           equal string "invalid port: 0" message;
           let port = require_match tcp_port (resolve "db") in
           equal int 5432 port);
+      test "shape verbs take a printer, not a witness" (fun () ->
+          is_none (find_user "nobody");
+          is_some (find_user "alice");
+          is_ok (parse_port "8080");
+          is_error ~pp:Format.pp_print_int (parse_port "0"));
       test "ordering verbs keep the bound and the value" (fun () ->
           let retries () = 2 in
           less int ~than:3 (retries ());

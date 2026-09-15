@@ -17,54 +17,22 @@
     {!frequency}), transform with {!map}, {!bind}, or the binding operators, and
     attach a printer with {!with_pp}.
 
-    {b Printing.} A counterexample renders with the generator's printer, and
-    printers derive by composition — the law is:
-    {e a composite generator prints exactly when all of its components print}.
-    Primitives print out of the box — {!string_of} and {!bytes_of} always print,
-    quoted, whatever their character generator; {!list}, {!array}, {!option},
-    {!result}, {!pair}, {!triple}, {!quad}, {!one_of}, and {!frequency} derive
-    their printer from their components'; {!such_that} keeps its generator's;
-    {!with_pp} attaches one. {!constant}, {!pure} and {!of_list} have none:
-    their values are arbitrary. {!map} and {!bind} have none either — no printer
-    for the result type can be inferred from the argument's — and that is not a
-    corner case: [let+], [and+] and [let*] {e are} [map] and [bind].
-
-    {b The pre-image rule.} A counterexample whose generator has no printer
-    renders as its {e pre-image}: the same shape, with every printerless [map]
-    or [bind] result replaced by what it was computed from — the argument the
-    mapping function received, printed by its own generator — down to the
-    nearest generator that prints, at any depth. The idiomatic
-
-    {[
-    let* shape = gen_shape in
-    let+ a = gen_f32 shape and+ b = gen_f32 shape in
-    (a, b)
-    ]}
-
-    therefore renders without any {!with_pp}, as [shape -> (a, b)] where [shape]
-    prints with [gen_shape]'s printer and each side of the pair with [gen_f32]'s
-    rule — the tensor if [gen_f32] prints, the data it was built from if it is
-    itself a [map]. Per combinator: a [map] renders its argument; a [bind]
-    renders the inner value alone when the inner generator prints, and
-    [outer -> inner] otherwise, each side by its own rule; the deriving
-    combinators render every component by its rule, so a pair of pre-images
-    prints as a pair and a list of them as a list. The failure report marks a
-    pre-image as such: it is the input of the mapping functions, not the value
-    the body received. Shrinking walks the same tree, so the pre-image printed
-    is the pre-image of the shrunk value.
-
-    The rule stops at a leaf with nothing to print — {!constant}, {!pure} or
-    {!of_list} without {!with_pp} — and one such leaf forfeits the rendering of
-    the whole composition: that counterexample renders as [<no printer>], and
-    the failure report names the remedy ({!with_pp}) once, under it. Those
-    leaves are the ones worth wrapping in {!with_pp}. Attach it to a [map] or
-    [bind] result to print the value itself instead of its pre-image: an
-    explicit printer always wins.
+    {b Printing.} A counterexample renders with its generator's printer.
+    Primitives print; containers and choices derive their printer from their
+    components'; {!constant} and {!of_list} have none, their values being
+    arbitrary; {!map} and {!bind} — and so [let+], [and+] and [let*] — have none
+    either. A counterexample whose generator has no printer renders as its
+    {e pre-image}: the same shape, with every printerless [map] or [bind] result
+    replaced by what it was computed from, down to the nearest generator that
+    prints (the rule per combinator is at {!map} and {!bind}). The failure
+    report marks a pre-image as such. Where nothing prints at all — a
+    {!constant} or {!of_list} leaf without {!with_pp} — the counterexample
+    renders as a placeholder naming the remedy.
 
     {b Validation.} Generator constructors never raise: malformed arguments
     ([one_of []], [int_range 3 1]) are reported by raising [Invalid_argument]
     when the generator first samples, inside the running test's exception
-    boundary — a test list that constructs is a test list that runs.
+    boundary.
 
     Callbacks passed to {!map}, {!bind} and {!such_that} must be pure: the
     shrink search runs them — memoized, at most once per tree node — when it
@@ -109,6 +77,10 @@ val int64 : int64 t
 (** [int64] generates a uniformly distributed [int64] over the full 64-bit
     range. Candidates shrink toward [0L]. *)
 
+val nativeint : nativeint t
+(** [nativeint] generates a uniformly distributed [nativeint] over the full
+    native word range. Candidates shrink toward [0n]. *)
+
 val float : float t
 (** [float] generates a finite float by drawing uniform IEEE 754 bit patterns
     and rejecting non-finite ones, so magnitudes spread over the full exponent
@@ -125,10 +97,7 @@ val float_range : float -> float -> float t
 (** {1:base Unit, booleans, characters, strings} *)
 
 val unit : unit t
-(** [unit] generates [()], with no shrink candidates, and prints [()]. It is not
-    [pure ()]: {!pure} carries no printer, so a deriving composition over it — a
-    variant arm for a nullary operation, say — would forfeit its own rendering
-    too. *)
+(** [unit] generates [()], with no shrink candidates, and prints [()]. *)
 
 val bool : bool t
 (** [bool] generates [true] or [false] with equal probability. [true] shrinks to
@@ -153,12 +122,7 @@ val string : string t
     distribution and whose characters follow {!char} — NUL and non-ASCII bytes
     included. Shrinking removes chunks of characters — the empty string is the
     first candidate — then shrinks characters individually toward ['a']. Use
-    {!string_of} to control the length or character distribution.
-
-    {b Note.} The natural spelling
-    [string : ?size:int t -> ?char:char t -> string t] is unavailable: optional
-    arguments on a value are unerasable (warning 16), so the knobs live on
-    {!string_of} instead, aligned with {!list}. *)
+    {!string_of} to control the length or character distribution. *)
 
 val string_of : ?size:int t -> char t -> string t
 (** [string_of ?size char] generates a string whose length follows the size
@@ -210,6 +174,11 @@ val result : 'a t -> 'e t -> ('a, 'e) result t
     [Error] of an [err] value otherwise. Payloads shrink with their generator; a
     candidate never crosses constructors. *)
 
+val either : 'a t -> 'b t -> ('a, 'b) Either.t t
+(** [either left right] generates [Left] of a [left] value or [Right] of a
+    [right] value with equal probability. Payloads shrink with their generator;
+    a candidate never crosses constructors. *)
+
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** [pair a b] generates both components. Candidates shrink the left component
     first, then the right (see {!Shrink_tree.pair}). *)
@@ -223,22 +192,15 @@ val quad : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
 *)
 
 val constant : 'a -> 'a t
-(** [constant v] always generates [v], with no shrink candidates. Its values are
-    arbitrary, so no printer can be inferred: it prints nothing, and so does
-    every composition built over it until {!with_pp} attaches one —
-    [with_pp pp (constant v)] prints like a primitive, through the printers
-    {!list}, {!pair}, {!one_of}, ... derive as well as on its own. *)
-
-val pure : 'a -> 'a t
-(** [pure] is {!constant}, under the applicative's name. *)
+(** [constant v] always generates [v], with no shrink candidates. It has no
+    printer until {!with_pp} attaches one. *)
 
 val of_list : 'a list -> 'a t
 (** [of_list values] generates a value of [values], each with equal probability.
     Candidates shrink toward the head: the first candidate of any value is the
     head of [values], then values at intermediate positions — order [values]
-    with the simplest value first.
-
-    Like {!constant} it prints nothing until {!with_pp} says how.
+    with the simplest value first. It has no printer until {!with_pp} attaches
+    one.
 
     Sampling raises [Invalid_argument] if [values] is empty. *)
 
@@ -249,20 +211,17 @@ val one_of : 'a t list -> 'a t
     branch whose re-generation is rejected is skipped — and the chosen value
     shrinks with its own generator.
 
-    When every generator of [gens] prints, the choice prints (branches generate
-    the same type, so their printers are expected to agree; a counterexample
-    prints with the branch that drew it, an [~examples] value with the first
-    branch's). Otherwise a counterexample renders by the pre-image rule with the
-    drawing branch's rendering.
+    When every generator of [gens] prints, the choice prints: a counterexample
+    with the branch that drew it, an [~examples] value with the first branch's.
+    Otherwise a counterexample renders by the pre-image rule with the drawing
+    branch's rendering.
 
     Sampling raises [Invalid_argument] if [gens] is empty. *)
 
 val frequency : (int * 'a t) list -> 'a t
 (** [frequency weighted] picks a generator with probability proportional to its
     weight and generates with it. The choice itself does not shrink; the chosen
-    value shrinks with its generator. Printing derives as in {!one_of}: when
-    every branch prints, the choice prints; otherwise a counterexample renders
-    by the pre-image rule with the drawing branch's rendering.
+    value shrinks with its generator. Printing derives as in {!one_of}.
 
     Sampling raises [Invalid_argument] if [weighted] is empty, if any weight is
     negative, or if the weights sum to less than [1]. *)
@@ -275,18 +234,15 @@ val such_that : ('a -> bool) -> 'a t -> 'a t
     as a discard.
 
     [p] is for rare, cheap conditions; when the constraint is structural, build
-    a generator that satisfies it by construction instead. The budget is fixed
-    for the same reason: a predicate that needs a wider one is describing a
-    shape the generator should have produced. *)
+    a generator that satisfies it by construction instead. *)
 
 (** {1:composition Composition} *)
 
 val map : ('a -> 'b) -> 'a t -> 'b t
 (** [map f gen] generates [f v] for [v] generated by [gen], shrinking wherever
     [gen] shrinks. The result has no printer: a counterexample renders as its
-    pre-image, [v] as [gen] renders it (see Printing, above), until {!with_pp}
-    attaches one. [f] must be pure: the shrink search applies it, memoized, when
-    forcing candidates. *)
+    pre-image, [v] as [gen] renders it, until {!with_pp} attaches one. [f] must
+    be pure: the shrink search applies it, memoized, when forcing candidates. *)
 
 val bind : 'a t -> ('a -> 'b t) -> 'b t
 (** [bind gen f] generates [v] with [gen], then generates with [f v]. Candidates
@@ -294,8 +250,7 @@ val bind : 'a t -> ('a -> 'b t) -> 'b t
     shrink the inner value; a candidate whose re-generation is rejected by a
     {!such_that} is skipped. The result has no printer: a counterexample renders
     as the inner value when [f v] prints, and as the pre-image [v -> inner]
-    otherwise, each side as its generator renders it (see Printing, above). [f]
-    must be pure. *)
+    otherwise, each side as its generator renders it. [f] must be pure. *)
 
 val with_pp : (Format.formatter -> 'a -> unit) -> 'a t -> 'a t
 (** [with_pp pp gen] is [gen] printing with [pp] — the same printer type the
@@ -341,54 +296,32 @@ module Private : sig
   val value : 'a sample -> 'a
   (** [value sample] is the drawn value. *)
 
-  (** The type for a counterexample's text. [Value] is the value, through the
+  (** The type for a counterexample's text: [Value] is the value, through the
       printer of the generator that drew it; [Pre_image] is what a printerless
-      [map] or [bind] computed it from, by the pre-image rule (Printing, above);
-      [No_printer] is a rendering that stops at a leaf with nothing to print,
-      and the engine's to spell — its placeholder sits next to its others. *)
-  type 'a rendering = Value of 'a | Pre_image of 'a | No_printer
+      [map] or [bind] computed it from (Printing, above). *)
+  type 'a rendering = Value of 'a | Pre_image of 'a
 
   val render : 'a sample -> string rendering
   (** [render sample] is the counterexample text for [sample]. Nothing is
-      formatted before this call: a rendering is lazy until a failure is
-      reported. Never raises — a printer that does renders as
-      [<printer raised ...>]. *)
+      formatted before this call. A sample with nothing to print renders as
+      [Value] of the placeholder [<no printer: attach one with Gen.with_pp>].
+      Never raises — a printer that does renders as [<printer raised ...>]. *)
 
-  val prints : 'a t -> bool
-  (** [prints gen] is [true] iff [gen] carries a printer of its own, so
-      {!render_value} yields text. A generator without one may still render its
-      counterexamples, as pre-images; only a bare value — an [~examples] entry,
-      a {!Stateful} argument — has no tree to render from. *)
+  val render_value : 'a t -> 'a -> string
+  (** [render_value gen v] is [v] through [gen]'s printer, and the placeholder
+      of {!render} when [gen] has none — for a bare value with no tree to render
+      from: an [~examples] entry, a {!Stateful} argument. Never raises. *)
 
-  val render_value : 'a t -> 'a -> string option
-  (** [render_value gen v] is [v] through [gen]'s printer: [None] when [gen] has
-      none, as the engine needs for [~examples] values. Never raises — a printer
-      that does renders as [<printer raised ...>]. *)
+  val run : 'a t -> Seed.state -> 'a Shrink_tree.t * Seed.state
+  (** [run gen state] is the tree of values {!sample} draws from [state], with
+      the successor state. Raises as {!sample} does. *)
 
-  val list_exact : ?keep:('a list -> bool list) -> int -> 'a t -> 'a list t
-  (** [list_exact n gen] generates a list of exactly [n] [gen] values with
-      {!Gen.list}'s default-size move set, so the length shrinks: [n] fixes the
-      {e drawn} length only. [Gen.list ~size:(Gen.constant n)] fixes the same
-      length but offers element-wise shrinking alone.
-
-      [keep values] is a mask as long as [values], dropping every element
-      flagged [false]. It runs twice: on the drawn values {e before} the tree is
-      assembled, so a dropped element contributes no subtree at all, and then on
-      every node of the assembled tree, so an element that a deletion or
-      reduction elsewhere invalidates is dropped in the same candidate. That
-      pair is what holds a {e state-dependent} well-formedness condition —
-      {!Stateful}'s repair mask — at every node, where {!Gen.such_that} would
-      drop a rejected candidate with its whole subtree.
-
-      [keep] must be {b total}: it is handed the drawn list, the sublists the
-      search reaches, and the empty list, and an exception on a candidate is
-      memoized there and swallowed by the engine's candidate loop. It must be
-      {b idempotent}: the second pass rewrites the root as well, so a mask that
-      drops from a list it has already accepted drops from the root twice.
-
-      The printer derives from [gen]'s, exactly as {!Gen.list}'s does.
-
-      Sampling raises [Invalid_argument] if [n < 0], or if [keep] returns a mask
-      whose length is not that of the list it was given — at sample time for the
-      drawn list, at forcing time for a candidate. *)
+  val make :
+    ?pp:(Format.formatter -> 'a -> unit) ->
+    (Seed.state -> 'a Shrink_tree.t * Seed.state) ->
+    'a t
+  (** [make ?pp draw] is the generator drawing with [draw] — a value tree and
+      the successor state, as {!run} produces — and printing with [pp], or not
+      at all. It is how {!Stateful} assembles a tree {!Gen}'s combinators cannot
+      express. *)
 end
