@@ -11,11 +11,11 @@
     insertion shapes exist:
 
     - {e entry points} — [___windtrap_visit___ i; e] at the entry of a block:
-      function leaf bodies, [match]/[try]/[function] arms and their guards, [if]
-      branches, [while]/[for] bodies, [lazy] bodies (except trivial syntactic
-      values, whose compilation [lazy] would otherwise change), letop bodies,
-      class bodies (method bodies, initializers, optional-argument defaults),
-      and [&&]/[||] condition arms;
+      function leaf bodies and optional-argument defaults, [match]/[try]/
+      [function] arms and their guards, [if] branches, [while]/[for] bodies,
+      [lazy] bodies (except trivial syntactic values, whose compilation [lazy]
+      would otherwise change), letop bodies, class bodies (method bodies,
+      initializers, optional-argument defaults), and [&&]/[||] condition arms;
     - {e out-edge points} — [___windtrap_post_visit___ i e] around applications,
       method calls, [new], and [assert]: the point fires only when the
       expression {e returns}, so a call that raises reports uncovered. Out-edge

@@ -2,7 +2,7 @@
 module Windtrap_cov_________fixture_fun___ml =
   struct
     let ___windtrap_visit___ =
-      let counts = Array.make 10 0 in
+      let counts = Array.make 16 0 in
       Windtrap_coverage.register ~file:"./fixture_fun.ml"
         ~points:[|{
                     Windtrap_coverage.start_ofs = 202;
@@ -34,7 +34,30 @@ module Windtrap_cov_________fixture_fun___ml =
                                   };{
                                       Windtrap_coverage.start_ofs = 431;
                                       Windtrap_coverage.end_ofs = 467
-                                    }|] ~counts;
+                                    };{
+                                        Windtrap_coverage.start_ofs = 745;
+                                        Windtrap_coverage.end_ofs = 764
+                                      };{
+                                          Windtrap_coverage.start_ofs = 745;
+                                          Windtrap_coverage.end_ofs = 764
+                                        };{
+                                            Windtrap_coverage.start_ofs = 771;
+                                            Windtrap_coverage.end_ofs = 772
+                                          };{
+                                              Windtrap_coverage.start_ofs =
+                                                804;
+                                              Windtrap_coverage.end_ofs = 806
+                                            };{
+                                                Windtrap_coverage.start_ofs =
+                                                  794;
+                                                Windtrap_coverage.end_ofs =
+                                                  806
+                                              };{
+                                                  Windtrap_coverage.start_ofs
+                                                    = 813;
+                                                  Windtrap_coverage.end_ofs =
+                                                    814
+                                                }|] ~counts;
       (fun index -> Windtrap_coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =
       ___windtrap_visit___ point_index; result
@@ -57,3 +80,9 @@ let sequenced () =
   ___windtrap_visit___ 9;
   ___windtrap_post_visit___ 8 (print_string "a");
   print_string "b"
+let defaulted ?(x=
+  ___windtrap_visit___ 11; ___windtrap_post_visit___ 10 (String.length "abc"))
+  () = ___windtrap_visit___ 12; x
+let default_fn ?(l=
+  ___windtrap_visit___ 14; (fun () -> ___windtrap_visit___ 13; ())) () =
+  ___windtrap_visit___ 15; l

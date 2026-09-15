@@ -34,9 +34,10 @@ data rather than this one's.
 ## What is measured
 
 Coverage is measured at expression grade, Bisect_ppx's model: points
-are the places where execution chooses — function bodies, `match`/`try`
-arms and guards, `if` branches, `&&`/`||` condition arms, loop, `lazy`,
-and letop bodies, class bodies, toplevel bindings — plus application
+are the places where execution chooses — function bodies and
+optional-argument defaults, `match`/`try` arms and guards, `if` branches,
+`&&`/`||` condition arms, loop, `lazy`, and letop bodies, class bodies,
+toplevel bindings — plus application
 out-edges, which fire only when the call *returns*. Out-edges are what make the number
 truthful in exception-heavy OCaml: a call that raises leaves its point
 unvisited, so raising paths show up as uncovered instead of being

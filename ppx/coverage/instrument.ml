@@ -9,8 +9,9 @@
    evaluation order are preserved by construction.
 
    The instrumented population is v1's Bisect-derived one: block entries
-   (function leaf bodies, match/try/function arms and guards, if branches,
-   while/for bodies, lazy and letop bodies, class bodies) *and* application
+   (function leaf bodies and optional-argument defaults, match/try/function
+   arms and guards, if branches, while/for bodies, lazy and letop bodies,
+   class bodies) *and* application
    out-edges - a point that fires only when an application *returns*, so an
    expression that raises instead of returning reports uncovered - plus
    [&&]/[||] condition arms.
@@ -494,6 +495,7 @@ class instrumenter st =
             (* Expressions that have subexpressions that might not get
                visited: their blocks are entry points. *)
             | Pexp_function (params, constraint_, Pfunction_body body_expr) ->
+                let params = traverse_params params in
                 let body_expr = traverse ~is_in_tail_position:true body_expr in
                 (* Only the leaf body of a curried chain is a block:
                    entering an intermediate body allocates the next closure
@@ -524,6 +526,7 @@ class instrumenter st =
                 ( params,
                   constraint_,
                   Pfunction_cases (cases, cases_loc, cases_attrs) ) ->
+                let params = traverse_params params in
                 let cases =
                   instrument_cases
                     (traverse_cases ~is_in_tail_position:true cases)
@@ -703,6 +706,26 @@ class instrumenter st =
             (* Expressions that are not recursively traversed at all. *)
             | Pexp_extension _ | Pexp_unreachable -> e
           end
+        (* An optional argument's default is a block of its own: it runs
+           only when the caller omits the argument, so its entry is a
+           point, and the expression is traversed like any other (a call
+           inside it carries an out-edge). Class [fun]s get the same
+           treatment in [class_expr]. *)
+        and traverse_params params =
+          List.map
+            (fun param ->
+              match param.pparam_desc with
+              | Pparam_val (label, Some default, pat) ->
+                  let default =
+                    instrument_expr
+                      (traverse ~is_in_tail_position:false default)
+                  in
+                  {
+                    param with
+                    pparam_desc = Pparam_val (label, Some default, pat);
+                  }
+              | Pparam_val (_, None, _) | Pparam_newtype _ -> param)
+            params
         and traverse_cases ~is_in_tail_position cases =
           List.map
             (fun case ->
