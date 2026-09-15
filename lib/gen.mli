@@ -20,11 +20,20 @@
     {b Printing.} A counterexample renders with the generator's printer, and
     printers derive by composition — the law is:
     {e a composite generator prints exactly when all of its components print}.
+    Primitives print out of the box — {!string_of} and {!bytes_of} always print,
+    quoted, whatever their character generator; {!list}, {!array}, {!option},
+    {!result}, {!pair}, {!triple}, {!quad}, {!one_of}, and {!frequency} derive
+    their printer from their components'; {!such_that} keeps its generator's;
+    {!with_pp} attaches one. {!constant}, {!pure} and {!of_list} have none:
+    their values are arbitrary. {!map} and {!bind} have none either — no printer
+    for the result type can be inferred from the argument's — and that is not a
+    corner case: [let+], [and+] and [let*] {e are} [map] and [bind].
 
-    {b The law stops at {!map} and {!bind}.} They cannot derive a printer,
-    because none for the result type can be inferred from the argument's — and
-    that is not a corner case: [let+], [and+] and [let*] {e are} [map] and
-    [bind], so the idiomatic spelling
+    {b The pre-image rule.} A counterexample whose generator has no printer
+    renders as its {e pre-image}: the same shape, with every printerless [map]
+    or [bind] result replaced by what it was computed from — the argument the
+    mapping function received, printed by its own generator — down to the
+    nearest generator that prints, at any depth. The idiomatic
 
     {[
     let* shape = gen_shape in
@@ -32,22 +41,25 @@
     (a, b)
     ]}
 
-    is printerless however well its components print. Expect to attach
-    {!with_pp} at the top of any generator written this way; the alternative is
-    to keep the composition inside the deriving combinators ({!pair}, {!list},
-    {!one_of}, ...), which do carry printers through.
+    therefore renders without any {!with_pp}, as [shape -> (a, b)] where [shape]
+    prints with [gen_shape]'s printer and each side of the pair with [gen_f32]'s
+    rule — the tensor if [gen_f32] prints, the data it was built from if it is
+    itself a [map]. Per combinator: a [map] renders its argument; a [bind]
+    renders the inner value alone when the inner generator prints, and
+    [outer -> inner] otherwise, each side by its own rule; the deriving
+    combinators render every component by its rule, so a pair of pre-images
+    prints as a pair and a list of them as a list. The failure report marks a
+    pre-image as such: it is the input of the mapping functions, not the value
+    the body received. Shrinking walks the same tree, so the pre-image printed
+    is the pre-image of the shrunk value.
 
-    Primitives print out of the box — {!string_of} and {!bytes_of} always print,
-    quoted, whatever their character generator; {!list}, {!array}, {!option},
-    {!result}, {!pair}, {!triple}, {!quad}, {!one_of}, and {!frequency} derive
-    their printer from their components' printers; {!map} and {!bind} produce
-    printerless generators as above, and so do {!constant}, {!pure} and
-    {!of_list}, whose values are arbitrary. Those leaves are the ones worth
-    wrapping in {!with_pp}: they most often sit under a deriving combinator, and
-    one printerless leaf forfeits the derived printer of the whole composition.
-    {!such_that} keeps its generator's printer. A printerless counterexample
-    renders as [<no printer>], and the failure report names the remedy
-    ({!with_pp}) once, under the counterexample.
+    The rule stops at a leaf with nothing to print — {!constant}, {!pure} or
+    {!of_list} without {!with_pp} — and one such leaf forfeits the rendering of
+    the whole composition: that counterexample renders as [<no printer>], and
+    the failure report names the remedy ({!with_pp}) once, under it. Those
+    leaves are the ones worth wrapping in {!with_pp}. Attach it to a [map] or
+    [bind] result to print the value itself instead of its pre-image: an
+    explicit printer always wins.
 
     {b Validation.} Generator constructors never raise: malformed arguments
     ([one_of []], [int_range 3 1]) are reported by raising [Invalid_argument]
@@ -115,7 +127,7 @@ val float_range : float -> float -> float t
 val unit : unit t
 (** [unit] generates [()], with no shrink candidates, and prints [()]. It is not
     [pure ()]: {!pure} carries no printer, so a deriving composition over it — a
-    variant arm for a nullary operation, say — would forfeit its own printer
+    variant arm for a nullary operation, say — would forfeit its own rendering
     too. *)
 
 val bool : bool t
@@ -237,10 +249,11 @@ val one_of : 'a t list -> 'a t
     branch whose re-generation is rejected is skipped — and the chosen value
     shrinks with its own generator.
 
-    When every generator of [gens] prints, the choice prints and counterexamples
-    render as values (branches generate the same type, so their printers are
-    expected to agree; the first branch's is used). Otherwise counterexamples
-    render as [<no printer>].
+    When every generator of [gens] prints, the choice prints (branches generate
+    the same type, so their printers are expected to agree; a counterexample
+    prints with the branch that drew it, an [~examples] value with the first
+    branch's). Otherwise a counterexample renders by the pre-image rule with the
+    drawing branch's rendering.
 
     Sampling raises [Invalid_argument] if [gens] is empty. *)
 
@@ -248,8 +261,8 @@ val frequency : (int * 'a t) list -> 'a t
 (** [frequency weighted] picks a generator with probability proportional to its
     weight and generates with it. The choice itself does not shrink; the chosen
     value shrinks with its generator. Printing derives as in {!one_of}: when
-    every branch prints, counterexamples render as values; otherwise they render
-    as [<no printer>].
+    every branch prints, the choice prints; otherwise a counterexample renders
+    by the pre-image rule with the drawing branch's rendering.
 
     Sampling raises [Invalid_argument] if [weighted] is empty, if any weight is
     negative, or if the weights sum to less than [1]. *)
@@ -270,19 +283,25 @@ val such_that : ('a -> bool) -> 'a t -> 'a t
 
 val map : ('a -> 'b) -> 'a t -> 'b t
 (** [map f gen] generates [f v] for [v] generated by [gen], shrinking wherever
-    [gen] shrinks. The result has no printer; its counterexamples render as
-    [<no printer>] (see {!with_pp}). [f] must be pure: the shrink search applies
-    it, memoized, when forcing candidates. *)
+    [gen] shrinks. The result has no printer: a counterexample renders as its
+    pre-image, [v] as [gen] renders it (see Printing, above), until {!with_pp}
+    attaches one. [f] must be pure: the shrink search applies it, memoized, when
+    forcing candidates. *)
 
 val bind : 'a t -> ('a -> 'b t) -> 'b t
 (** [bind gen f] generates [v] with [gen], then generates with [f v]. Candidates
     first shrink [v] — re-generating with [f] on the same random capital — then
     shrink the inner value; a candidate whose re-generation is rejected by a
-    {!such_that} is skipped. The result has no printer. [f] must be pure. *)
+    {!such_that} is skipped. The result has no printer: a counterexample renders
+    as the inner value when [f v] prints, and as the pre-image [v -> inner]
+    otherwise, each side as its generator renders it (see Printing, above). [f]
+    must be pure. *)
 
 val with_pp : (Format.formatter -> 'a -> unit) -> 'a t -> 'a t
 (** [with_pp pp gen] is [gen] printing with [pp] — the same printer type the
-    assertion vocabulary uses, so one printer feeds both worlds. *)
+    assertion vocabulary uses, so one printer feeds both worlds. An explicit
+    printer wins over whatever [gen] would have rendered: a pre-image, a derived
+    printer, or nothing. *)
 
 val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
 (** [let+ x = gen in e] is [map (fun x -> e) gen]. *)
@@ -305,7 +324,12 @@ module Private : sig
       Forcing shrink candidates never raises it: a candidate whose re-generation
       is rejected is skipped and the search continues with its siblings. *)
 
-  val sample : 'a t -> Seed.state -> 'a Shrink_tree.t
+  type 'a sample
+  (** The type for a drawn value together with its counterexample rendering.
+      Every node of a sampled tree is one: the body runs on {!value}, the report
+      prints {!render}. *)
+
+  val sample : 'a t -> Seed.state -> 'a sample Shrink_tree.t
   (** [sample gen state] draws one value and its shrink tree from [state], a
       pure function of both. Only the root is drawn eagerly; candidates are
       forced — memoized, user callbacks included — by traversing the tree.
@@ -314,21 +338,32 @@ module Private : sig
       malformed generator arguments. Forcing candidates can raise
       [Invalid_argument] too, but never {!Rejected}. *)
 
-  val prints : 'a t -> bool
-  (** [prints gen] is [true] iff [gen] carries a printer, so {!render} yields
-      the value rather than [<no printer>]. The engine records it on a failure
-      to name the remedy ({!Gen.with_pp}) once, rather than on every printerless
-      rendering. *)
+  val value : 'a sample -> 'a
+  (** [value sample] is the drawn value. *)
 
-  val render : 'a t -> 'a -> string
-  (** [render gen v] is the counterexample text for [v]: the printer's output
-      when {!prints} holds, [<no printer>] otherwise. Never raises — a printer
-      that does renders as [<printer raised ...>]. *)
+  (** The type for a counterexample's text. [Value] is the value, through the
+      printer of the generator that drew it; [Pre_image] is what a printerless
+      [map] or [bind] computed it from, by the pre-image rule (Printing, above);
+      [No_printer] is a rendering that stops at a leaf with nothing to print,
+      and the engine's to spell — its placeholder sits next to its others. *)
+  type 'a rendering = Value of 'a | Pre_image of 'a | No_printer
+
+  val render : 'a sample -> string rendering
+  (** [render sample] is the counterexample text for [sample]. Nothing is
+      formatted before this call: a rendering is lazy until a failure is
+      reported. Never raises — a printer that does renders as
+      [<printer raised ...>]. *)
+
+  val prints : 'a t -> bool
+  (** [prints gen] is [true] iff [gen] carries a printer of its own, so
+      {!render_value} yields text. A generator without one may still render its
+      counterexamples, as pre-images; only a bare value — an [~examples] entry,
+      a {!Stateful} argument — has no tree to render from. *)
 
   val render_value : 'a t -> 'a -> string option
-  (** [render_value gen v] is {!render} with the placeholder left to the caller:
-      [None] when [gen] has no printer, as the engine needs for [~examples]
-      values. *)
+  (** [render_value gen v] is [v] through [gen]'s printer: [None] when [gen] has
+      none, as the engine needs for [~examples] values. Never raises — a printer
+      that does renders as [<printer raised ...>]. *)
 
   val list_exact : ?keep:('a list -> bool list) -> int -> 'a t -> 'a list t
   (** [list_exact n gen] generates a list of exactly [n] [gen] values with

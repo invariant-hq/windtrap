@@ -80,8 +80,9 @@ let expect_coverage_failed = function
 (* The value generated for case [index] of [path] under [root], as the engine
    derives it — used to predict and replay engine streams. *)
 let value_at gen ~root ~path ~index =
-  Shrink_tree.root
-    (Gen.Private.sample gen (Seed.make (Seed.derive ~root ~path ~index)))
+  Gen.Private.value
+    (Shrink_tree.root
+       (Gen.Private.sample gen (Seed.make (Seed.derive ~root ~path ~index))))
 
 (* Search for a root whose first failing generated case satisfies
    [first_ok] — keeps same-kind shrink tests deterministic without
@@ -578,8 +579,16 @@ let skip_candidate_is_rejected_during_shrink () =
       check (timed_out = None)
         "a rejected skipping candidate must not mark the failure timed out"
 
+let rendering_of (failure : Failure.t) =
+  match failure.Failure.kind with
+  | Failure.Property { rendering; _ } -> rendering
+  | _ -> failf "expected a Property failure kind"
+
+(* The engine reports what the rendered text is, so the renderer can mark a
+   pre-image and name the remedy under a placeholder, from the structured
+   payload rather than the text. *)
 let printerless_counterexample_renders_placeholder () =
-  let printerless = Gen.map (fun x -> x * 2) (Gen.int_range 0 50) in
+  let printerless = Gen.map (fun x -> x * 2) (Gen.constant 7) in
   let failure, _ =
     expect_fail
       (Property.run ~root ~path:"placeholder" printerless (fun _ x ->
@@ -589,11 +598,37 @@ let printerless_counterexample_renders_placeholder () =
   check
     (rendered = "<no printer>")
     "a printerless counterexample renders the placeholder, got %S" rendered;
-  match failure.Failure.kind with
-  | Failure.Property { printerless; _ } ->
-      check printerless
-        "a printerless counterexample must carry the printerless flag"
-  | _ -> failf "expected a Property failure kind"
+  check
+    (rendering_of failure = Failure.Placeholder)
+    "a printerless counterexample must be flagged as a placeholder"
+
+(* The pre-image reported is the pre-image of the shrunk value: the search
+   walks one tree, so the two cannot drift apart. *)
+let mapped_counterexample_renders_its_shrunk_pre_image () =
+  let mapped = Gen.map (fun x -> x * 2) (Gen.int_range 0 50) in
+  let failure, _ =
+    expect_fail
+      (Property.run ~root ~path:"pre-image" mapped (fun _ x ->
+           Check.is_true (x < 10)))
+  in
+  let rendered, _, _, _, _, _, _ = property_payload failure in
+  check (rendered = "5")
+    "the pre-image of the minimal counterexample 10 is 5, got %S" rendered;
+  check
+    (rendering_of failure = Failure.Pre_image)
+    "a mapped counterexample must be flagged as a pre-image";
+  (* An explicit printer on the image wins, and the flag says value. *)
+  let printed = Gen.with_pp Format.pp_print_int mapped in
+  let failure, _ =
+    expect_fail
+      (Property.run ~root ~path:"pre-image" printed (fun _ x ->
+           Check.is_true (x < 10)))
+  in
+  let rendered, _, _, _, _, _, _ = property_payload failure in
+  check (rendered = "10") "with_pp on the image rendered %S, not 10" rendered;
+  check
+    (rendering_of failure = Failure.Value)
+    "a with_pp counterexample must be flagged as a value"
 
 (* Timeout vs the shrink search (D2) *)
 
@@ -818,9 +853,10 @@ let a_raising_candidate_stops_the_search_visibly () =
       (Gen.int_range 10 50)
   in
   let root_value =
-    Shrink_tree.root
-      (Gen.Private.sample gen
-         (Seed.make (Seed.derive ~root ~path:"raising-candidate" ~index:0)))
+    Gen.Private.value
+      (Shrink_tree.root
+         (Gen.Private.sample gen
+            (Seed.make (Seed.derive ~root ~path:"raising-candidate" ~index:0))))
   in
   check (root_value > 10) "the fixture's root is the raising value itself";
   let failure, _ =
@@ -908,6 +944,8 @@ let suite =
       skip_during_generation_escapes_unchanged );
     ( "printerless counterexample renders the placeholder",
       printerless_counterexample_renders_placeholder );
+    ( "mapped counterexample renders its shrunk pre-image",
+      mapped_counterexample_renders_its_shrunk_pre_image );
     ("msg and loc are preserved", msg_and_loc_are_preserved);
     ("generator crash is a failure", generator_crash_is_a_failure);
     ("control exceptions propagate", control_exceptions_propagate);

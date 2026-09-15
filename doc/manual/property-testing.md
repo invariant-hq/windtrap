@@ -88,13 +88,52 @@ full-range `int` overflows most laws with noise. Build structured
 generators with the binding operators:
 
 ```ocaml
-let gen_rect =
+let gen_pair =
   Gen.(
-    let+ w = float_range 0. 10. and+ h = float_range 0. 10. in
-    Rect (w, h))
-  |> Gen.with_pp pp_shape
+    let* shape = gen_shape in
+    let+ a = gen_f32 shape and+ b = gen_f32 shape in
+    (a, b))
 ```
 
+Composite generators (`list`, `pair`, …) derive their printing from
+their components, so `Gen.(list string)` counterexamples print as the
+list you expect without any `with_pp`. `map` and `bind` — and so
+`let+`, `and+` and `let*`, which *are* `map` and `bind` — cannot: no
+printer for the result type can be inferred from the one they consume.
+Such a counterexample renders as its *pre-image*: the same shape, with
+every printerless `map` or `bind` result replaced by what it was
+computed from — the input the mapping function received, printed by
+its own generator — down to the nearest generator that prints. With
+`gen_shape` a `list` of `int_range`s and `gen_f32` a `map` building a
+tensor over a list of floats, a failure of `gen_pair` reads:
+
+```
+counterexample (case 0, shrunk 3 steps): from [1] -> ([0.], [0.])
+(the value has no printer — shown is its pre-image, what map and bind computed it from)
+```
+
+`[1]` is the shape drawn first, the pair is the float data each tensor
+was built from, and `from` marks the line as the input of the mapping
+functions rather than the value the body received. The rule per
+combinator: a `map` renders its argument; a `bind` renders the inner
+value alone when the inner generator prints, and `outer -> inner`
+otherwise; `pair`, `list` and the other deriving combinators render
+every component by its rule, so a pair of pre-images prints as a
+pair. Shrinking walks the same tree, so the pre-image printed is the
+pre-image of the shrunk value.
+
+The rule stops at a leaf with nothing to print — `constant`/`pure` or
+`of_list` without a `with_pp` — and one such leaf forfeits the
+rendering of the whole composition:
+
+```
+counterexample (case 2, shrunk 2 steps): <no printer>
+(this generator has no printer — attach one with Gen.with_pp to see the value)
+```
+
+The seed is still enough to replay the failure. Attach `with_pp` to
+the leaf to read it — or to the top of any generator whose value you
+would rather see than its pre-image: an explicit printer always wins.
 One `pp` feeds both worlds — `Testable.make ~pp` for assertions,
 `Gen.with_pp pp` for counterexamples — so write it once:
 
@@ -112,21 +151,6 @@ let gen_shape =
       ])
   |> Gen.with_pp pp_shape
 ```
-
-Composite generators (`list`, `pair`, …) derive their printing from
-their components, so `Gen.(list string)` counterexamples print as the
-list you expect without any `with_pp`. `map` and `bind` cannot: no
-printer for the result type can be inferred from the one they consume.
-Such a counterexample renders as a placeholder, and the report says
-what is missing:
-
-```
-counterexample (case 2, shrunk 2 steps): <no printer>
-(this generator has no printer — attach one with Gen.with_pp to see the value)
-```
-
-The seed is still enough to replay the failure. Attach `with_pp` to
-read it.
 
 ## Regressions worth keeping: `~examples`
 

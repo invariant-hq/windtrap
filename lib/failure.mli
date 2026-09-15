@@ -200,12 +200,11 @@ type kind =
       count : int option;
       max_shrink : int option;
       examples : bool;
-      printerless : bool;
-          (** [true] iff the generator carries no printer, so [rendered] is a
-              placeholder — [<no printer>], or [<example k>] — rather than the
-              value. Renderers name the remedy ([Gen.with_pp]) exactly once,
-              under the counterexample, instead of each placeholder shape
-              carrying its own advice. *)
+      rendering : rendering;
+          (** What [rendered] is: the value, its pre-image, or a placeholder.
+              Renderers mark a pre-image as such and name the remedy
+              ([Gen.with_pp]) under a placeholder, exactly once, instead of each
+              placeholder shape carrying its own advice. *)
       inner : t option;
     }
       (** A property failed. [rendered] is the printed (shrunk) counterexample,
@@ -228,6 +227,18 @@ type kind =
           reaches a different case, or stops the descent at a different node,
           and reports something else. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
+
+(** The type for what a {!Property} failure's [rendered] text is. *)
+and rendering =
+  | Value  (** The counterexample, through its generator's printer. *)
+  | Pre_image
+      (** The counterexample's pre-image: what a printerless [map] or [bind]
+          computed it from, printed by the generators that drew it (see [Gen]'s
+          printing law). It is the input of the mapping functions, not the value
+          the body received. *)
+  | Placeholder
+      (** [<no printer>], or [<example k>]: the generator has no printer and no
+          pre-image renders either. *)
 
 and t = {
   kind : kind;
@@ -392,13 +403,13 @@ val property :
   ?shrink_exhausted:bool ->
   root:Seed.seed ->
   examples:bool ->
-  ?printerless:bool ->
+  ?rendering:rendering ->
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
     {!Property} failure; see {!kind} for the payload semantics. [timed_out],
-    [count], and [max_shrink] default to [None], and [printerless] to [false] —
-    the caller states that [rendered] is a placeholder, since only it knows. *)
+    [count], and [max_shrink] default to [None], and [rendering] to {!Value} —
+    the caller states what [rendered] is, since only it knows. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)

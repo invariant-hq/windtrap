@@ -182,8 +182,10 @@ let interpret model calls =
 let empty_program = "(no commands)"
 
 (* [Gen.Private.render_value] answers [None] rather than a placeholder when the
-   argument's own generator has no printer, so the column spells the one
-   [Gen.Private.render] would have used for it. *)
+   argument's own generator has no printer, so the column spells the engine's
+   placeholder for it. An argument is a bare value here — its sample tree is
+   gone by the time the program prints — so the pre-image rule cannot apply
+   to it: an argument drawn through a printerless [map] prints nothing. *)
 let missing_printer = "<no printer>"
 
 (* Self-bounding. An argument rides the failure payload, which is capped at
@@ -203,7 +205,7 @@ let plural count = if count = 1 then "" else "s"
 
 (* [Gen.Private.render] collapses a raising printer to one [<printer raised ...>]
    for the whole value, which would cost the reader the entire program while
-   [printerless] stays false, so no remedy line fires. One bad cell must
+   the rendering stays a value, so no remedy line fires. One bad cell must
    cost one cell. *)
 let cell pp_model model =
   let text =

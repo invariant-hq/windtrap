@@ -179,8 +179,9 @@ val program :
     one line, a raising [pp_model] costs its own cell and no more, and a program
     over 40 steps prints its first and last 20 with a ["… (N steps omitted)"]
     line between. Columns are measured over the rows that print. An argument
-    whose generator has no printer renders as ["<no printer>"]; the step names
-    and the shape survive.
+    whose generator has no printer renders as ["<no printer>"] — a bare value,
+    with no tree left to render a pre-image from; the step names and the shape
+    survive.
 
     Sampling raises [Invalid_argument] if [commands] is empty or if [steps] is
     negative — inside the running test's exception boundary, where every other

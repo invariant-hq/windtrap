@@ -632,15 +632,26 @@ module Gen = Gen
       {!Gen.one_of}, {!Gen.frequency}, {!Gen.such_that};
     - composition — {!Gen.map}, {!Gen.bind}, the binding operators, and
       {!Gen.with_pp}, which takes the same {!type:printer} the assertion side
-      uses and is the one way to give a printerless generator a rendering.
+      uses.
+
+    A counterexample prints with its generator's printer, and printers derive by
+    composition: a composite prints exactly when its components do. {!Gen.map}
+    and {!Gen.bind} — so [let+], [and+] and [let*] — derive none, and a
+    counterexample built through them renders as its {e pre-image}: the input
+    the mapping functions received, printed by the generators that drew it, and
+    marked as such in the report. A composition written with the binding
+    operators over printing generators therefore reads without any
+    {!Gen.with_pp}; attach one to print the value itself, or wherever a
+    {!Gen.constant} or {!Gen.of_list} leaf — which has nothing to print — would
+    otherwise leave the whole counterexample as [<no printer>].
 
     {b Note.} Length- and alphabet-controlled strings are spelled
     {!Gen.string_of}[ ?size char] and {!Gen.bytes_of} — the natural
     [string ?size ?char] spelling cannot exist (optional arguments on a value
     are unerasable, warning 16), so the knobs live on [string_of]/[bytes_of],
     aligned with {!Gen.list}. See {!Gen} for each generator's distribution,
-    shrink order, and the printer-derivation law; {!Gen.Private} holds the
-    engine interface, which no test writes. *)
+    shrink order, and the printing rules; {!Gen.Private} holds the engine
+    interface, which no test writes. *)
 
 val prop :
   ?pos:pos ->

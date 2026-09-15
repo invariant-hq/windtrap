@@ -817,24 +817,39 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         count;
         max_shrink;
         examples;
-        printerless;
+        rendering;
         inner;
       } ->
       let desc = property_case_desc ~examples ~case_index ~shrink_steps in
       let rendered = show_controls rendered in
+      (* A pre-image is marked in the slot itself — [from] — so a reader who
+         stops at this line does not take it for the value the body received;
+         the note below says what it is instead. *)
+      let head =
+        match rendering with
+        | Failure.Pre_image -> spf "counterexample (%s): from" desc
+        | Failure.Value | Failure.Placeholder -> spf "counterexample (%s):" desc
+      in
       if String.contains rendered '\n' then begin
-        put_ind (spf "counterexample (%s):" desc);
+        put_ind head;
         put_block rendered
       end
-      else put_ind (spf "counterexample (%s): %s" desc rendered);
-      (* The line above is a placeholder, not the value. Say so once, here,
-         where the reader is looking at it — whichever placeholder shape the
-         engine produced. *)
-      if printerless then
-        put_ind
-          (st `Faint
-             "(this generator has no printer \u{2014} attach one with \
-              Gen.with_pp to see the value)");
+      else put_ind (head ^ " " ^ rendered);
+      (* Whatever the slot holds that is not the value, say so once, here,
+         where the reader is looking at it: what a pre-image is, or — for a
+         placeholder, whichever shape the engine produced — the remedy. *)
+      (match rendering with
+      | Failure.Value -> ()
+      | Failure.Pre_image ->
+          put_ind
+            (st `Faint
+               "(the value has no printer \u{2014} shown is its pre-image, \
+                what map and bind computed it from)")
+      | Failure.Placeholder ->
+          put_ind
+            (st `Faint
+               "(this generator has no printer \u{2014} attach one with \
+                Gen.with_pp to see the value)"));
       (* The shrink search hit the whole-test budget: the reported
          counterexample is the best found within it. [%g] matches the
          runner's [timed out after %gs] phrase so timeout greps catch

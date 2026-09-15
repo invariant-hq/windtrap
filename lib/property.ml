@@ -139,7 +139,7 @@ let same_kind original candidate =
 let shrink ~max_shrink ~body tree first_class =
   let scratch = make_context () in
   let accept candidate_tree =
-    let value = Shrink_tree.root candidate_tree in
+    let value = Gen.Private.value (Shrink_tree.root candidate_tree) in
     match run_case scratch body value with
     | Control ((Failure.Timeout _ as timeout), backtrace) ->
         (* The per-test alarm fired inside a candidate: a fact about the
@@ -248,11 +248,11 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
   let discards = ref 0 in
   let stats () = stats_of ~cases:!cases ~discards:!discards ctx in
   let fail ~rendered ~case_index ~shrink_steps ?timed_out
-      ?(shrink_exhausted = false) ~examples ?(printerless = false) cls =
+      ?(shrink_exhausted = false) ~examples ?rendering cls =
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
         ?count:config_count ?max_shrink ~rendered ~case_index ~shrink_steps
-        ~shrink_exhausted ~root ~examples ~printerless ()
+        ~shrink_exhausted ~root ~examples ?rendering ()
     in
     Fail { failure; stats = stats () }
   in
@@ -280,14 +280,16 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
         match run_one value with
         | `Passed | `Discarded -> run_examples (index + 1) rest
         | `Failed cls ->
-            let rendered, printerless =
+            let rendered, rendering =
               match Gen.Private.render_value gen value with
-              | Some text -> (text, false)
-              | None -> (Printf.sprintf "<example %d>" (index + 1), true)
+              | Some text -> (text, Failure.Value)
+              | None ->
+                  ( Printf.sprintf "<example %d>" (index + 1),
+                    Failure.Placeholder )
             in
             Some
               (fail ~rendered ~case_index:index ~shrink_steps:0 ~examples:true
-                 ~printerless cls))
+                 ~rendering cls))
   in
   match run_examples 0 examples with
   | Some outcome -> outcome
@@ -321,19 +323,21 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
                 ~case_index:attempts ~shrink_steps:0 ~examples:false
                 (Exception (exn, backtrace))
           | tree -> (
-              match run_one (Shrink_tree.root tree) with
+              match run_one (Gen.Private.value (Shrink_tree.root tree)) with
               | `Passed -> generate ~passed:(passed + 1) ~attempts:(attempts + 1)
               | `Discarded -> generate ~passed ~attempts:(attempts + 1)
               | `Failed cls ->
                   let final_tree, steps, final_cls, timed_out, exhausted =
                     shrink ~max_shrink:shrink_budget ~body tree cls
                   in
-                  let rendered =
-                    Gen.Private.render gen (Shrink_tree.root final_tree)
+                  let rendered, rendering =
+                    match Gen.Private.render (Shrink_tree.root final_tree) with
+                    | Value text -> (text, Failure.Value)
+                    | Pre_image text -> (text, Failure.Pre_image)
+                    | No_printer -> ("<no printer>", Failure.Placeholder)
                   in
                   fail ~rendered ~case_index:attempts ~shrink_steps:steps
                     ?timed_out ~shrink_exhausted:exhausted ~examples:false
-                    ~printerless:(not (Gen.Private.prints gen))
-                    final_cls)
+                    ~rendering final_cls)
       in
       generate ~passed:0 ~attempts:0

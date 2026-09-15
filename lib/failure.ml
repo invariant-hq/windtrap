@@ -56,10 +56,12 @@ type kind =
       count : int option;
       max_shrink : int option;
       examples : bool;
-      printerless : bool;
+      rendering : rendering;
       inner : t option;
     }
   | Message of string
+
+and rendering = Value | Pre_image | Placeholder
 
 and t = {
   kind : kind;
@@ -333,7 +335,7 @@ let snapshot ?loc ~name ~path state =
 
 let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
     ~shrink_steps ?(shrink_exhausted = false) ~root ~examples
-    ?(printerless = false) () =
+    ?(rendering = Value) () =
   make ?loc
     (Property
        {
@@ -346,7 +348,7 @@ let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
          count;
          max_shrink;
          examples;
-         printerless;
+         rendering;
          inner;
        })
 

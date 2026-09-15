@@ -267,6 +267,41 @@ ppx_windtrap.coverage))` stanza on the library under test; `dune runtest
 
 ### Added
 
+**A counterexample built with `map` or `bind` prints its pre-image.** Those
+combinators — and so `let+`, `and+` and `let*` — derive no printer, and until
+now their counterexamples rendered as `<no printer>` unless a `Gen.with_pp`
+sat on top of every composition, which consumers wrote by hand to re-attach
+what `Gen.pair` had already derived. A printerless counterexample now renders
+as its *pre-image*: the same shape, with each printerless `map` or `bind`
+result replaced by the input its mapping function received, printed by the
+generator that drew it — through `pair`, `list` and the other deriving
+combinators, at any depth, down to the nearest generator that prints. A
+`bind` prints its inner value alone when the inner generator prints, and
+`outer -> inner` otherwise. Shrinking walks the same tree, so the pre-image
+printed belongs to the shrunk value. Before, for
+`let* shape = gen_shape in let+ a = gen_f32 shape and+ b = gen_f32 shape in (a, b)`:
+
+```
+counterexample (case 0, shrunk 3 steps): <no printer>
+(this generator has no printer — attach one with Gen.with_pp to see the value)
+```
+
+After:
+
+```
+counterexample (case 0, shrunk 3 steps): from [1] -> ([0.], [0.])
+(the value has no printer — shown is its pre-image, what map and bind computed it from)
+```
+
+`from` marks the rendering as the input of the mapping functions, not the
+value the body received. `Gen.with_pp` keeps its meaning and wins over the
+pre-image, and the `<no printer>` placeholder with its remedy line now
+appears only when a `constant`, `pure` or `of_list` leaf without a printer
+leaves nothing to render. `Failure.kind.Property` carries `rendering`
+(`Value`, `Pre_image` or `Placeholder`) in place of the `printerless` flag,
+and `Gen.Private.sample` yields a tree of samples — value plus rendering —
+that `Gen.Private.value` and `Gen.Private.render` project.
+
 **Inline tests that nothing drives now fail loudly.** `let%expect_test` and
 `let%test` code preprocessed with `ppx_windtrap` inside a plain
 `(executable)` or `(test)` stanza registers its tests at module load — and

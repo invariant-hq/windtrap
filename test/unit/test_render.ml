@@ -791,7 +791,7 @@ let test_property_projections () =
      never draw the advice. *)
   let printerless =
     Failure.property ~rendered:"<no printer>" ~case_index:19 ~shrink_steps:9
-      ~root:Fixtures.root ~examples:false ~printerless:true ()
+      ~root:Fixtures.root ~examples:false ~rendering:Failure.Placeholder ()
   in
   let hint = "attach one with Gen.with_pp" in
   check_contains "printerless: names the remedy" ~sub:hint
@@ -801,6 +801,32 @@ let test_property_projections () =
     (failure_block printerless);
   check_absent "printerless: advice is not repeated" ~sub:"add Gen.with_pp>"
     (failure_block printerless);
+  (* A pre-image is marked in the slot — [from] — and explained under it,
+     and it draws no remedy: the reader has the input to read. *)
+  let pre_image =
+    Failure.property ~rendered:"[2; 3] -> ([1.; 2.], [0.; 0.])" ~case_index:19
+      ~shrink_steps:9 ~root:Fixtures.root ~examples:false
+      ~rendering:Failure.Pre_image ()
+  in
+  check_contains "pre-image: marked in the slot"
+    ~sub:
+      "counterexample (case 19, shrunk 9 steps): from [2; 3] -> ([1.; 2.], \
+       [0.; 0.])"
+    (failure_block pre_image);
+  check_contains "pre-image: explained once under the counterexample"
+    ~sub:
+      "(the value has no printer \u{2014} shown is its pre-image, what map and \
+       bind computed it from)"
+    (failure_block pre_image);
+  check_absent "pre-image: no remedy line" ~sub:hint (failure_block pre_image);
+  let multi_pre_image =
+    failure_block
+      (Failure.property ~rendered:"1 ->\n  [2; 3]" ~case_index:3 ~shrink_steps:0
+         ~root:Fixtures.root ~examples:false ~rendering:Failure.Pre_image ())
+  in
+  check_contains "multi-line pre-image: marked head, block form"
+    ~sub:"counterexample (case 3): from\n      1 ->\n        [2; 3]"
+    multi_pre_image;
   check_absent "printing generator: no remedy line" ~sub:hint
     (failure_block example);
   check_absent "printing generator: no remedy line either" ~sub:hint

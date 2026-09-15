@@ -27,7 +27,7 @@ let show_ints values = show_names (List.map string_of_int values)
    Everything below is deterministic across runs and machines. *)
 let root = 0x00c0ffee1234abcdL
 let state index = Seed.make (Seed.derive ~root ~path:"test_stateful" ~index)
-let root_value tree = Shrink_tree.root tree
+let root_value tree = Gen.Private.value (Shrink_tree.root tree)
 let program_at gen index = root_value (Gen.Private.sample gen (state index))
 let names = Stateful.command_names
 
@@ -71,9 +71,9 @@ let expect_pass = function
 
 let property_payload (failure : Failure.t) =
   match failure.Failure.kind with
-  | Failure.Property
-      { rendered; case_index; shrink_steps; printerless; inner; _ } ->
-      (rendered, case_index, shrink_steps, printerless, inner)
+  | Failure.Property { rendered; case_index; shrink_steps; rendering; inner; _ }
+    ->
+      (rendered, case_index, shrink_steps, rendering, inner)
   | _ -> failf "expected a Property failure kind"
 
 let failure_block failure =
@@ -614,7 +614,7 @@ let a_failing_step_points_at_its_command () =
       ]
     in
     let program =
-      Shrink_tree.root
+      root_value
         (Gen.Private.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0))
     in
     expect_check_failure "a located step" (fun () ->
@@ -658,7 +658,7 @@ let assertions_skips_and_discards_from_pre_poison () =
         | exception raised ->
             failf "%s from ~pre escaped the generator as %s" label
               (Printexc.to_string raised)
-        | tree -> Shrink_tree.root tree
+        | tree -> root_value tree
       in
       let kept = names program in
       let total = List.length kept in
@@ -1741,8 +1741,10 @@ let the_program_generator_always_prints () =
         Check.fail "always")
   in
   let failure, _ = expect_fail outcome in
-  let _, _, _, printerless, _ = property_payload failure in
-  check (not printerless) "a stateful counterexample reported as printerless";
+  let _, _, _, rendering, _ = property_payload failure in
+  check
+    (rendering = Failure.Value)
+    "a stateful counterexample reported as something other than the value";
   check
     (not (contains "Gen.with_pp" (failure_block failure)))
     "the printerless remedy line fired on a stateful counterexample"
