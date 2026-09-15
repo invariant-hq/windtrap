@@ -88,10 +88,11 @@ module Testable = Testable
 
 type 'a testable = 'a Testable.t
 (** The type for assertion witnesses: how {!equal} and kin compare values of
-    type ['a] and render them in failure reports. A witness is a printer and an
-    equality, both total; the equality is applied to [expected] first and
-    [actual] second, which matters as soon as it is not symmetric — see
-    {!Testable.make}. See {!section-testables}. *)
+    type ['a] and render them in failure reports, and how {!less} and kin rank
+    them. A witness is a printer and an equality, both total, and optionally an
+    order; the equality is applied to [expected] first and [actual] second,
+    which matters as soon as it is not symmetric — see {!Testable.make}. See
+    {!section-testables}. *)
 
 (** {1:declaring Declaring tests}
 
@@ -338,6 +339,45 @@ val not_equal : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a -> unit
 (** [not_equal t a b] asserts that [a] and [b] are {e not} equal under [t]. The
     failure prints the value once ([both sides equal: <v>]). *)
 
+val less : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [less t ~than v] asserts that [v] is strictly below [than] under [t]'s
+    order. The failure prints the bound and the value, both with [t]'s printer,
+    where an [is_true (v < bound)] could only report [true] against [false]:
+
+    {[
+    less int ~than:3 (retries c)
+    (* expected  less than 3
+       actual    5 *)
+    ]}
+
+    The order is the witness's: the base-type witnesses carry their module's,
+    {!Testable.structural} carries [Stdlib.compare], {!Testable.with_compare}
+    gives one to any other witness, and {!Testable.contramap} orders through its
+    projection. A witness without one — {!pass}, {!Testable.of_equal}, a plain
+    {!Testable.make}, and every container witness — makes the assertion raise
+    [Invalid_argument] naming the fix, whether or not it would have held.
+
+    Tolerance belongs to equality and plays no part here: under [float 0.5],
+    [1.0] and [1.2] are equal {e and} [1.0] is less than [1.2]. NaN sorts below
+    every float, as in [Float.compare]; assert a NaN result with
+    [equal float_exact]. *)
+
+val at_most : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [at_most t ~than v] asserts that [v] is below or the same as [than] under
+    [t]'s order; the failure reads [expected  at most <than>]. See {!less} for
+    the order. *)
+
+val greater : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [greater t ~than v] asserts that [v] is strictly above [than] under [t]'s
+    order; the failure reads [expected  greater than <than>]. See {!less} for
+    the order. *)
+
+val at_least : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [at_least t ~than v] asserts that [v] is above or the same as [than] under
+    [t]'s order; the failure reads [expected  at least <than>]. See {!less} for
+    the order. A range is two assertions, each naming the bound it breaks:
+    [greater t ~than:lo v; less t ~than:hi v]. *)
+
 val is_true : ?pos:pos -> ?msg:string -> bool -> unit
 (** [is_true b] asserts [b]. *)
 
@@ -352,21 +392,21 @@ val satisfies :
   ('a -> bool) ->
   'a ->
   unit
-(** [satisfies t pred v] asserts [pred v]. The failure renders [v] with [t]'s
+(** [satisfies t pred v] asserts [pred v] — for a claim that is not an order: a
+    parity, a shape, a domain predicate. The failure renders [v] with [t]'s
     printer — the data a bare {!is_true} would hide — against [claim], the
     sentence on the expected side (default ["value satisfying the predicate"]):
 
     {[
-    satisfies ~claim:"greater than 0" int (fun n -> n > 0) n
-    (* expected  greater than 0
-         actual    0 *)
+    satisfies ~claim:"a power of two" int (fun n -> n land (n - 1) = 0) n
+    (* expected  a power of two
+       actual    12 *)
     ]}
 
-    That is the shape a comparison assertion takes: [is_true (n > 0)] consumes
-    both numbers into a boolean and can only report [true] against [false],
-    where a claim keeps the bound and the value keeps the value. [claim]
-    describes [pred] and nothing checks that it does — keep the two next to each
-    other. [pred] must be total; the printer runs only on failure. *)
+    [claim] describes [pred] and nothing checks that it does — keep the two next
+    to each other. A comparison against a bound is {!less}, {!at_most},
+    {!greater} or {!at_least}, whose claim is derived from the bound and cannot
+    drift. [pred] must be total; the printer runs only on failure. *)
 
 val starts_with : ?pos:pos -> ?msg:string -> affix:string -> string -> unit
 (** [starts_with ~affix s] asserts that [s] begins with [affix]. The failure
@@ -522,13 +562,19 @@ val skip : ?reason:string -> unit -> 'a
     types and containers are re-exported here flat, so
     [equal (list (pair string int))] reads without qualification; the
     constructors stay in {!Testable} — {!Testable.make} for a printer and an
-    equality (a module with the conventional trio is
-    [Testable.make ~pp:M.pp ~equal:M.equal]), {!Testable.structural} for
-    polymorphic equality under its own name, {!Testable.contramap} to compare
-    and print through a projection, {!Testable.of_equal} for a type with no
-    rendering. Diffing needs no support from the witness: reports compute diffs
-    from the printed values, so every type gets highlighted diffs from its
-    printer alone. *)
+    equality, {!Testable.with_compare} for the order the ordering verbs need (a
+    module with the conventional trio is
+    [Testable.make ~pp:M.pp ~equal:M.equal |> Testable.with_compare M.compare]),
+    {!Testable.structural} for polymorphic equality and order under their own
+    name, {!Testable.contramap} to compare, order and print through a
+    projection, {!Testable.of_equal} for a type with no rendering. Diffing needs
+    no support from the witness: reports compute diffs from the printed values,
+    so every type gets highlighted diffs from its printer alone.
+
+    The base-type witnesses below carry their module's order; the container
+    witnesses carry none — an option or a list admits several, and a guessed one
+    would be accepted silently — so an ordering assertion over one needs a
+    witness given its order with {!Testable.with_compare}. *)
 
 val unit : unit testable
 val bool : bool testable
@@ -571,7 +617,8 @@ val float : float -> float testable
 val float_rel : rel:float -> abs:float -> float testable
 (** [float_rel ~rel ~abs] compares with combined tolerance: within [abs] near
     zero, within [rel *. Float.max (abs_float a) (abs_float b)] for large
-    values. NaN and infinities behave as in {!float}.
+    values. NaN and infinities behave as in {!float}. All three float witnesses
+    order exactly, with [Float.compare]: tolerance belongs to equality.
 
     Raises [Invalid_argument] if either bound is negative or NaN, or if both are
     zero. One zero bound switches that component off; both zero is exact
@@ -602,8 +649,8 @@ val quad :
   ('a * 'b * 'c * 'd) testable
 
 val pass : 'a testable
-(** [pass] considers all values equal and prints [<pass>] — for ignoring a
-    component of a composed witness, e.g. [pair string pass]. *)
+(** [pass] considers all values equal, prints [<pass>], and carries no order —
+    for ignoring a component of a composed witness, e.g. [pair string pass]. *)
 
 (** {1:properties Properties}
 

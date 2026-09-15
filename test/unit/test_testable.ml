@@ -58,6 +58,16 @@ end
 
 let point = T.make ~pp:Point.pp ~equal:Point.equal
 
+(* [a] ranks strictly below [b] under the witness's order, which it must
+   carry. *)
+let ordered_or_fail name w a b =
+  match T.compare w with
+  | Some cmp ->
+      is_true ~msg:(name ^ ": below") (cmp a b < 0);
+      is_true ~msg:(name ^ ": above") (cmp b a > 0);
+      is_true ~msg:(name ^ ": same") (cmp a a = 0)
+  | None -> fail (name ^ ": carries no order")
+
 let tests =
   [
     test "printing: base types" (fun () ->
@@ -463,6 +473,79 @@ let tests =
           (ref 0) (ref 0);
         check_prints "printing is independent of the equality" phys (ref 42)
           ~expected:"ref 42");
+    test "order: instances carry their module's, containers none" (fun () ->
+        let ordered name w a b =
+          match T.compare w with
+          | Some cmp ->
+              is_true ~msg:(name ^ ": below") (cmp a b < 0);
+              is_true ~msg:(name ^ ": above") (cmp b a > 0);
+              is_true ~msg:(name ^ ": same") (cmp a a = 0)
+          | None -> fail (name ^ ": carries no order")
+        in
+        let unordered name w =
+          is_none ~msg:(name ^ ": no order") (T.compare w)
+        in
+        ordered "int" T.int 1 2;
+        ordered "int32" T.int32 1l 2l;
+        ordered "int64" T.int64 1L 2L;
+        ordered "nativeint" T.nativeint 1n 2n;
+        ordered "char" T.char 'a' 'b';
+        ordered "string" T.string "a" "b";
+        ordered "text" T.text "a" "b";
+        ordered "bytes" T.bytes (Bytes.of_string "a") (Bytes.of_string "b");
+        ordered "bool" T.bool false true;
+        (* Tolerance belongs to equality: every float witness orders exactly,
+           and NaN sorts first, as [Float.compare] has it. *)
+        ordered "float" (T.float 0.5) 1.0 1.2;
+        ordered "float_rel" (T.float_rel ~rel:0.5 ~abs:0.5) 1.0 1.2;
+        ordered "float_exact" T.float_exact 1.0 1.2;
+        ordered "float: nan sorts below -inf" (T.float 0.5) Float.nan
+          neg_infinity;
+        is_true ~msg:"unit: one value, ranked the same"
+          (match T.compare T.unit with
+          | Some cmp -> cmp () () = 0
+          | None -> false);
+        unordered "option" (T.option T.int);
+        unordered "result" (T.result T.int T.int);
+        unordered "either" (T.either T.int T.int);
+        unordered "list" (T.list T.int);
+        unordered "array" (T.array T.int);
+        unordered "slist" (T.slist T.int Int.compare);
+        unordered "pair" (T.pair T.int T.int);
+        unordered "triple" (T.triple T.int T.int T.int);
+        unordered "quad" (T.quad T.int T.int T.int T.int);
+        unordered "pass" T.pass;
+        unordered "of_equal" (T.of_equal Int.equal);
+        unordered "make" (T.make ~pp:Pp.int ~equal:Int.equal));
+    test "order: with_compare, structural, contramap" (fun () ->
+        (* [with_compare] gives a plain witness its order and leaves the
+           printer and equality alone; a second call replaces the first. *)
+        let v = T.make ~pp:Version.pp ~equal:Version.equal in
+        ordered_or_fail "with_compare: the module's compare"
+          (T.with_compare Version.compare v)
+          (Version.make 1 2) (Version.make 1 3);
+        check_prints "with_compare: printer untouched"
+          (T.with_compare Version.compare v)
+          (Version.make 3 14) ~expected:"3.14";
+        check_equal "with_compare: equality untouched"
+          (T.with_compare Version.compare v)
+          (Version.make 1 2) (1, 2);
+        ordered_or_fail "with_compare: replaces an existing order"
+          (T.with_compare (fun a b -> Int.compare b a) T.int)
+          2 1;
+        (* [structural] carries polymorphic order next to polymorphic
+           equality: both structural, both named by the constructor. *)
+        ordered_or_fail "structural: Stdlib.compare"
+          (T.structural ~pp:(Pp.list Pp.int))
+          [ 1; 2 ] [ 1; 3 ];
+        (* [contramap] sends the order through the projection with the
+           equality and the printer — and has none to send when the
+           underlying witness has none. *)
+        ordered_or_fail "contramap: orders through the projection"
+          (T.contramap String.length T.int)
+          "ab" "abc";
+        is_none ~msg:"contramap: no order without one underneath"
+          (T.compare (T.contramap (fun p -> [ p ]) (T.list point))));
     test "make: composes as an ordinary witness" (fun () ->
         check_equal "composes into containers" (T.list point)
           [ { Point.x = 0; y = 0 }; { Point.x = 1; y = 1 } ]

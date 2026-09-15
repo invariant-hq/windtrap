@@ -143,6 +143,66 @@ The witnesses are flat (`int`, `list`, `pair`); the constructors stay
 behind `Testable.`, which is what keeps names like `contramap` and
 `make` out of every test file's scope.
 
+## Orders
+
+A comparison written as `is_true (retries < 3)` consumes both numbers
+into a boolean and can only fail with `expected true / actual false`.
+The four ordering verbs keep them. Each takes a witness, the bound as
+`~than`, and the value last:
+
+```ocaml
+less int ~than:3 (retries ());
+at_least (float 1e-6) ~than:0.4 result.accept_rate
+```
+
+```
+expected  less than 3
+actual    5
+
+expected  at least 0.4
+actual    0.38
+```
+
+`less` and `greater` are strict; `at_most` and `at_least` admit the
+bound. The claim on the expected side is derived from the verb and the
+bound, rendered by the witness, so there is nothing to keep in step
+with the check — the drift a hand-written `satisfies ~claim` invites.
+A range is two lines, each naming the bound it breaks:
+
+```ocaml
+greater (float 1e-9) ~than:30. v;
+less (float 1e-9) ~than:70. v
+```
+
+The order is the witness's. The base-type witnesses carry their
+module's (`Int.compare`, `String.compare`, …); the three float
+witnesses all order with `Float.compare`, so tolerance plays no part —
+it belongs to equality — and under `float 0.5` the values `1.0` and
+`1.2` are equal *and* `1.0` is less than `1.2`. NaN sorts below every
+float; assert a NaN result with `equal float_exact`.
+
+A custom witness gets its order from `Testable.with_compare`, which
+completes the conventional trio; `Testable.structural` carries
+`Stdlib.compare` next to `Stdlib.( = )`, and `Testable.contramap` orders
+through its projection, so `Testable.contramap String.length int`
+orders strings by length:
+
+```ocaml
+let version =
+  Testable.make ~pp:Version.pp ~equal:Version.equal
+  |> Testable.with_compare Version.compare
+
+at_least version ~than:(Version.make 1 2) (Version.of_string "1.4")
+```
+
+No container witness carries an order — an option or a list admits
+several, and a guessed one would be accepted silently — and neither do
+`pass`, `Testable.of_equal`, or a plain `Testable.make`. An ordering
+verb over such a witness raises `Invalid_argument` naming
+`Testable.with_compare`, whether or not the assertion would have held,
+so the mistake surfaces on the first run rather than the first
+failure.
+
 ## Assert and unwrap: `require_*`
 
 The `require_` verbs assert a shape and hand back its payload, so the
@@ -168,34 +228,31 @@ with `?pp_error`/`?pp_ok`/`?pp` when given, `<abstract>` otherwise.
 ## Predicates and containment
 
 `is_true`/`is_false` are the bare bones. When the claim is about a
-value, use `satisfies` — the failure renders the value a bare
-`is_true` would hide, and `~msg` names the predicate:
+value and is not an order — a parity, a shape, a domain predicate —
+use `satisfies`: the failure renders the value a bare `is_true` would
+hide, and `~msg` names the predicate:
 
 ```ocaml
-satisfies ~msg:"positive" int (fun n -> n > 0) 42
+satisfies ~msg:"even" int (fun n -> n mod 2 = 0) 42
 ```
 
-`~claim` goes further: it replaces the expected side's default
-sentence ("value satisfying the predicate") with your own, which is
-what turns `satisfies` into a comparison assertion. A comparison
-consumes both numbers and hands back a boolean, so `is_true (n > 0)`
-can only fail with `expected true / actual false` — the number is
-gone. A claim keeps the bound, and the value keeps the value:
+`~claim` replaces the expected side's default sentence ("value
+satisfying the predicate") with your own:
 
 ```ocaml
-satisfies ~claim:"greater than 0" int (fun n -> n > 0)
-  (Source.omitted_bytes c)
+satisfies ~claim:"a power of two" int (fun n -> n land (n - 1) = 0)
+  (Buffer.capacity b)
 ```
 
 ```
-expected  greater than 0
-actual    0
+expected  a power of two
+actual    12
 ```
 
 Nothing checks that the claim describes the predicate — keep the two
-next to each other, and build the claim with the witness when the
-bound is not an `int`
-(`Printf.sprintf "greater than %s" (Testable.to_string string bound)`).
+next to each other. For a comparison against a bound, reach for the
+[ordering verbs](#orders) instead: their claim is derived from the
+bound and cannot drift.
 
 String containment gets its own verbs because their failures print
 the needle with its verdict (`needle "secret" — found at byte 10`)
@@ -209,7 +266,7 @@ not_contains ~sub:"secret" log
 
 For an exact occurrence count, fold the count locally and assert
 about the number — [cookbook](../cookbook.md#6-counting-occurrences)
-recipe 6 has the eight-line `count` and the `satisfies ~claim` that goes
+recipe 6 has the eight-line `count` and the `greater ~than` that goes
 with it.
 
 When the order is the claim, `in_order ~subs` asserts a whole chain of

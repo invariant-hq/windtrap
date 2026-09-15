@@ -154,6 +154,53 @@ let mem ?pos ?msg t x xs =
 let satisfies ?pos ?msg ?(claim = "value satisfying the predicate") t pred v =
   if not (pred v) then fail_predicate ?pos ?msg ~claim (Testable.to_string t v)
 
+(* Orders
+
+   The four verbs are one comparison under the witness's order, read
+   through its sign, and one predicate payload whose claim is derived from
+   the verb and the bound — the shape [satisfies ~claim] leaves the caller
+   to build, and to keep in step with the predicate, by hand. A witness
+   without an order is a programmer error: the verb raises whether or not
+   the assertion would have passed, so the mistake surfaces on the first
+   run rather than on the first failure. The witness's equality is never
+   consulted; a tolerance witness orders exactly. *)
+
+let order verb t =
+  match Testable.compare t with
+  | Some compare -> compare
+  | None ->
+      invalid_arg
+        (Pp.str
+           "Check.%s: the witness has no order; give it one with \
+            Testable.with_compare"
+           verb)
+
+let ordered verb ~relation ~holds ?pos ?msg t ~than v =
+  if not (holds (order verb t v than)) then
+    fail_predicate ?pos ?msg
+      ~claim:(Pp.str "%s %s" relation (Testable.to_string t than))
+      (Testable.to_string t v)
+
+let less ?pos ?msg t ~than v =
+  ordered "less" ~relation:"less than"
+    ~holds:(fun c -> c < 0)
+    ?pos ?msg t ~than v
+
+let at_most ?pos ?msg t ~than v =
+  ordered "at_most" ~relation:"at most"
+    ~holds:(fun c -> c <= 0)
+    ?pos ?msg t ~than v
+
+let greater ?pos ?msg t ~than v =
+  ordered "greater" ~relation:"greater than"
+    ~holds:(fun c -> c > 0)
+    ?pos ?msg t ~than v
+
+let at_least ?pos ?msg t ~than v =
+  ordered "at_least" ~relation:"at least"
+    ~holds:(fun c -> c >= 0)
+    ?pos ?msg t ~than v
+
 (* Options
 
    The shape assertions, for when the value is not wanted: a witness would

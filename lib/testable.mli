@@ -3,35 +3,39 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The assertion-side witness: printing and equality, nothing else.
+(** The assertion-side witness: printing, equality, and an optional order.
 
     An ['a t] tells the equality assertions how to compare values of type ['a]
-    and how to render them into failure payloads. Both functions must be total:
-    they run on every assertion, and a raising printer or equality turns a
-    report into a crash.
+    and how to render them into failure payloads, and tells the ordering
+    assertions — when it carries an order — how to rank them. Every function
+    must be total: they run on every assertion, and a raising printer or
+    equality turns a report into a crash.
 
     Build witnesses with {!make} (equality is required — polymorphic equality is
-    the explicitly named {!structural}), compose them with the container
-    instances and {!contramap}, and ignore components with {!pass}. Diffing is
-    not here: renderers compute diffs from the printed values, so every type
-    gets highlighted diffs from its [pp] alone. Generation is not here either:
-    random generation lives in [Gen], the property-side witness. The two never
-    merge. *)
+    the explicitly named {!structural}) and give them an order with
+    {!with_compare}; compose them with the container instances and {!contramap},
+    and ignore components with {!pass}. Diffing is not here: renderers compute
+    diffs from the printed values, so every type gets highlighted diffs from its
+    [pp] alone. Generation is not here either: random generation lives in [Gen],
+    the property-side witness. The two never merge. *)
 
 (** {1:types Types} *)
 
 type 'a t
 (** The type for witnesses over values of type ['a]: a printer and an equality,
-    both total. The equality is applied [expected] first, [actual] second — see
-    {!make} before writing an asymmetric one. *)
+    both total, and optionally a total order. The equality is applied [expected]
+    first, [actual] second — see {!make} before writing an asymmetric one. The
+    order, when present, is what the ordering verbs consult; the equality verbs
+    never read it, and the ordering verbs never read the equality. *)
 
 (** {1:constructors Constructors} *)
 
 val make :
   pp:(Format.formatter -> 'a -> unit) -> equal:('a -> 'a -> bool) -> 'a t
-(** [make ~pp ~equal] is a witness comparing with [equal] and printing with
-    [pp]. Both must be total over the values the tests exercise. A module with
-    the conventional trio is [make ~pp:M.pp ~equal:M.equal].
+(** [make ~pp ~equal] is a witness comparing with [equal], printing with [pp],
+    and carrying no order — see {!with_compare}. Both functions must be total
+    over the values the tests exercise. A module with the conventional trio is
+    [make ~pp:M.pp ~equal:M.equal].
 
     {b [equal] receives [expected] first, [actual] second.} The equality verbs
     apply it in their own argument order ([Check.equal t expected actual] calls
@@ -47,24 +51,37 @@ val make :
     symmetric by construction. Wrapping a library's [allclose] — most of which
     are asymmetric in exactly this way — needs the same treatment. *)
 
+val with_compare : ('a -> 'a -> int) -> 'a t -> 'a t
+(** [with_compare compare w] is [w] ordered by [compare], replacing any order it
+    had. [compare] follows [Stdlib.compare]'s contract — negative when its first
+    argument ranks below the second, zero when they rank the same, positive when
+    above — and must be total. A module with the conventional trio is
+    [make ~pp:M.pp ~equal:M.equal |> with_compare M.compare].
+
+    The order is what the ordering verbs consult, and it is never reconciled
+    with [w]'s equality: a tolerance equality and an exact order coexist in the
+    float witnesses. A witness without one makes every ordering verb raise
+    [Invalid_argument] naming this function. *)
+
 val structural : pp:(Format.formatter -> 'a -> unit) -> 'a t
 (** [structural ~pp] is [make ~pp] with polymorphic structural equality
-    [Stdlib.( = )] — the choice is explicit in the name. Structural equality
-    raises on functional values and loops on cyclic ones; give such types a real
-    [equal] via {!make}. *)
+    [Stdlib.( = )] and polymorphic structural order [Stdlib.compare] — the
+    choice is explicit in the name. Both raise on functional values and loop on
+    cyclic ones; give such types a real [equal] via {!make}. *)
 
 val of_equal : ('a -> 'a -> bool) -> 'a t
-(** [of_equal equal] is a witness comparing with [equal] and printing every
-    value as ["<abstract>"].
+(** [of_equal equal] is a witness comparing with [equal], printing every value
+    as ["<abstract>"], and carrying no order.
 
     {b Warning.} The footgun is deliberate and visible: failures involving this
     witness show [<abstract>] on both sides and cannot show a diff. Reach for
     {!make} as soon as the type has any printable rendering. *)
 
 val contramap : ('a -> 'b) -> 'b t -> 'a t
-(** [contramap f w] compares and prints values of type ['a] through their image
-    under [f]: equality is [w]'s on [f a] and [f b], and failures render [f a],
-    not [a].
+(** [contramap f w] compares, orders and prints values of type ['a] through
+    their image under [f]: equality is [w]'s on [f a] and [f b], the order —
+    when [w] has one — is [w]'s on the images too, and failures render [f a],
+    not [a]. So [contramap String.length int] orders strings by length.
 
     {[
     type user = { id : int; name : string }
@@ -73,8 +90,9 @@ val contramap : ('a -> 'b) -> 'b t -> 'a t
     ]} *)
 
 val pass : 'a t
-(** [pass] considers all values equal and prints ["<pass>"]. Use it to ignore a
-    component of a composed witness, e.g. [pair string pass]. *)
+(** [pass] considers all values equal, prints ["<pass>"], and carries no order.
+    Use it to ignore a component of a composed witness, e.g. [pair string pass].
+*)
 
 (** {1:observers Observers} *)
 
@@ -86,6 +104,12 @@ val equal : 'a t -> 'a -> 'a -> bool
     verbs pass [expected] as [a] and [actual] as [b]; a witness whose equality
     is asymmetric therefore treats the two sides differently (see {!make}). *)
 
+val compare : 'a t -> ('a -> 'a -> int) option
+(** [compare w] is [w]'s order when it carries one — the base-type instances,
+    {!structural}, anything passed through {!with_compare}, and a {!contramap}
+    of any of those — and [None] otherwise. The ordering verbs read it here and
+    raise [Invalid_argument] on [None]. *)
+
 val to_string : 'a t -> 'a -> string
 (** [to_string w v] is [v] printed with [w]'s printer as a string — the
     rendering assertion verbs store in failure payloads. *)
@@ -94,7 +118,10 @@ val to_string : 'a t -> 'a -> string
 
     Base-type witnesses print source-like renderings ([%S] for strings, [%C] for
     chars, [%g] for the tolerance float witnesses), so failure payloads read
-    like OCaml values. *)
+    like OCaml values. Each carries its module's order ([Int.compare],
+    [String.compare], …); the float witnesses all order with [Float.compare], so
+    NaN sorts below every float and tolerance plays no part — it belongs to
+    equality. *)
 
 val unit : unit t
 val bool : bool t
@@ -161,7 +188,12 @@ val float_rel : rel:float -> abs:float -> float t
     tolerance, [~abs:0.] a purely relative one — but both zero is exact equality
     wearing a tolerance's syntax, and exactness is spelled {!float_exact}. *)
 
-(** {1:containers Containers} *)
+(** {1:containers Containers}
+
+    No container witness carries an order, whatever its components carry: an
+    option or a list admits several ([None] first or last, lexicographic or by
+    length) and a guessed one would be accepted silently. Spell the one you mean
+    with {!with_compare}. *)
 
 val option : 'a t -> 'a option t
 val result : 'a t -> 'e t -> ('a, 'e) result t

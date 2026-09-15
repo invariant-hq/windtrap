@@ -59,6 +59,20 @@ type addr = Tcp of int | Unix_socket of string
 let tcp_port = function Tcp port -> Some port | Unix_socket _ -> None
 let resolve = function "db" -> Tcp 5432 | sock -> Unix_socket sock
 
+module Version = struct
+  type t = int * int
+
+  let make major minor = (major, minor)
+  let pp ppf (major, minor) = Format.fprintf ppf "%d.%d" major minor
+  let equal = ( = )
+  let compare = Stdlib.compare
+  let of_string s = Scanf.sscanf s "%d.%d" (fun major minor -> (major, minor))
+end
+
+let version =
+  Testable.make ~pp:Version.pp ~equal:Version.equal
+  |> Testable.with_compare Version.compare
+
 let assertions =
   group "assertions"
     [
@@ -76,8 +90,20 @@ let assertions =
           equal string "invalid port: 0" message;
           let port = require_match tcp_port (resolve "db") in
           equal int 5432 port);
+      test "ordering verbs keep the bound and the value" (fun () ->
+          let retries () = 2 in
+          less int ~than:3 (retries ());
+          at_least (float 1e-6) ~than:0.4 0.41);
+      test "a range is two ordering assertions" (fun () ->
+          let v = 50. in
+          greater (float 1e-9) ~than:30. v;
+          less (float 1e-9) ~than:70. v);
+      test "with_compare completes the trio" (fun () ->
+          at_least version ~than:(Version.make 1 2) (Version.of_string "1.4"));
       test "satisfies names the predicate and prints the value" (fun () ->
-          satisfies ~msg:"positive" int (fun n -> n > 0) 42);
+          satisfies ~msg:"even" int (fun n -> n mod 2 = 0) 42);
+      test "satisfies ~claim replaces the sentence" (fun () ->
+          satisfies ~claim:"a power of two" int (fun n -> n land (n - 1) = 0) 16);
       test "contains excerpts the haystack" (fun () ->
           let log = "user=alice token=REDACTED\n" in
           contains ~sub:"user=alice" log;

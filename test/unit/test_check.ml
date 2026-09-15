@@ -588,6 +588,118 @@ let tests =
           (fun (_, value) ->
             check_string "satisfies: rendered by the caller's printer"
               ~expected:"-7 / 2" ~actual:value));
+    test "less, at_most, greater, at_least" (fun () ->
+        (* Bound first, value last: [less int ~than:3 v] is "v < 3". Each
+           pair's boundary case is the whole difference between the strict
+           verb and its inclusive twin. *)
+        passes "less: pass" (fun () -> Check.less Testable.int ~than:3 2);
+        passes "at_most: pass below" (fun () ->
+            Check.at_most Testable.int ~than:3 2);
+        passes "at_most: pass at the bound" (fun () ->
+            Check.at_most Testable.int ~than:3 3);
+        passes "greater: pass" (fun () -> Check.greater Testable.int ~than:3 4);
+        passes "at_least: pass above" (fun () ->
+            Check.at_least Testable.int ~than:3 4);
+        passes "at_least: pass at the bound" (fun () ->
+            Check.at_least Testable.int ~than:3 3);
+        (* The claim is derived from the verb and the bound, the value from
+           the same witness: [satisfies ~claim]'s shape with nothing for the
+           caller to keep in step. *)
+        let order_payload name f ~claim ~value =
+          predicate_payload name f (fun (actual_claim, actual_value) ->
+              check_string
+                (name ^ ": claim is the relation and the bound")
+                ~expected:claim ~actual:actual_claim;
+              check_string
+                (name ^ ": value is the value")
+                ~expected:value ~actual:actual_value)
+        in
+        order_payload "less: fail at the bound"
+          (fun () -> Check.less Testable.int ~than:3 3)
+          ~claim:"less than 3" ~value:"3";
+        order_payload "at_most: fail"
+          (fun () -> Check.at_most Testable.int ~than:3 4)
+          ~claim:"at most 3" ~value:"4";
+        order_payload "greater: fail at the bound"
+          (fun () -> Check.greater Testable.int ~than:3 3)
+          ~claim:"greater than 3" ~value:"3";
+        order_payload "at_least: fail"
+          (fun () -> Check.at_least Testable.int ~than:3 2)
+          ~claim:"at least 3" ~value:"2";
+        (* Both sides render through the witness, so a string bound is
+           quoted like a string value. *)
+        order_payload "greater: bound and value render through the witness"
+          (fun () -> Check.greater Testable.string ~than:"m" "a")
+          ~claim:{|greater than "m"|} ~value:{|"a"|};
+        (* Tolerance belongs to equality: under [float 0.5], 1.0 and 1.2 are
+           equal and 1.0 is still less than 1.2. NaN sorts below every float,
+           as [Float.compare] has it. *)
+        let close = Testable.float 0.5 in
+        passes "less: a tolerance witness orders exactly" (fun () ->
+            Check.less close ~than:1.2 1.0);
+        passes "equal: the same pair is equal under the tolerance" (fun () ->
+            Check.equal close 1.2 1.0);
+        order_payload "at_least: no tolerance on the bound"
+          (fun () -> Check.at_least close ~than:1.2 1.0)
+          ~claim:"at least 1.2" ~value:"1";
+        order_payload "float_rel: orders exactly too"
+          (fun () ->
+            Check.greater (Testable.float_rel ~rel:0.5 ~abs:0.5) ~than:1.2 1.0)
+          ~claim:"greater than 1.2" ~value:"1";
+        passes "at_most: nan sorts below every float" (fun () ->
+            Check.at_most Testable.float_exact ~than:neg_infinity Float.nan);
+        order_payload "at_least: nan is at least nothing"
+          (fun () ->
+            Check.at_least Testable.float_exact ~than:neg_infinity Float.nan)
+          ~claim:"at least -inf" ~value:"nan";
+        (* The witness's equality is never consulted: an always-raising
+           equality is fine on both paths. *)
+        let explosive =
+          Testable.make ~pp:Format.pp_print_int ~equal:(fun _ _ -> assert false)
+          |> Testable.with_compare Int.compare
+        in
+        passes "less: witness equality is not consulted" (fun () ->
+            Check.less explosive ~than:2 1);
+        order_payload "less: fails through the given order only"
+          (fun () -> Check.less explosive ~than:1 2)
+          ~claim:"less than 1" ~value:"2";
+        (* A witness without an order is a programmer error, and it surfaces
+           whether or not the assertion would have held — on the first run,
+           not the first failure. *)
+        let no_order verb f =
+          check
+            (verb ^ ": no order raises Invalid_argument naming the fix")
+            (match outcome f with
+            | Raised (Invalid_argument m) ->
+                String.starts_with ~prefix:("Check." ^ verb ^ ":") m
+                && Windtrap.Private.Text.contains_substring
+                     ~pattern:"Testable.with_compare" m
+            | _ -> false)
+        in
+        let unordered =
+          Testable.make ~pp:Format.pp_print_int ~equal:Int.equal
+        in
+        no_order "less" (fun () -> Check.less unordered ~than:3 2);
+        no_order "at_most" (fun () -> Check.at_most unordered ~than:3 4);
+        no_order "greater" (fun () -> Check.greater unordered ~than:3 4);
+        no_order "at_least" (fun () -> Check.at_least unordered ~than:3 2);
+        no_order "less" (fun () ->
+            Check.less (Testable.list Testable.int) ~than:[] []);
+        no_order "less" (fun () -> Check.less Testable.pass ~than:1 0);
+        (* The pass path never renders, and the fail path renders the bound
+           and the value once each. *)
+        let calls = ref 0 in
+        passes "less: pass path never renders" (fun () ->
+            Check.less
+              (counting_int calls |> Testable.with_compare Int.compare)
+              ~than:3 2);
+        check "less: printer stayed unused" (!calls = 0);
+        ignore
+          (outcome (fun () ->
+               Check.less
+                 (counting_int calls |> Testable.with_compare Int.compare)
+                 ~than:3 3));
+        check "less: fail path renders each side once" (!calls = 2));
     test "require_some, require_ok, require_error" (fun () ->
         check "require_some: unwraps the payload"
           (Check.require_some (Some 42) = 42);
@@ -1001,6 +1113,14 @@ let tests =
             Check.in_order ~pos:fake_pos ~subs:[ "b"; "a" ] "abc");
         with_pos "satisfies: ?pos" (fun () ->
             Check.satisfies ~pos:fake_pos Testable.int (fun _ -> false) 1);
+        with_pos "less: ?pos" (fun () ->
+            Check.less ~pos:fake_pos Testable.int ~than:1 1);
+        with_pos "at_most: ?pos" (fun () ->
+            Check.at_most ~pos:fake_pos Testable.int ~than:1 2);
+        with_pos "greater: ?pos" (fun () ->
+            Check.greater ~pos:fake_pos Testable.int ~than:1 1);
+        with_pos "at_least: ?pos" (fun () ->
+            Check.at_least ~pos:fake_pos Testable.int ~than:1 0);
         with_pos "require_match: ?pos" (fun () ->
             ignore (Check.require_match ~pos:fake_pos (fun _ -> None) 1));
         with_pos "fail: ?pos" (fun () -> Check.fail ~pos:fake_pos "x");
@@ -1065,6 +1185,22 @@ let tests =
           (msg_of "satisfies: ?msg" (fun () ->
                Check.satisfies ~msg:"positive" Testable.int (fun _ -> false) 1)
           = Some "positive");
+        check "less: ?msg stored"
+          (msg_of "less: ?msg" (fun () ->
+               Check.less ~msg:"retries" Testable.int ~than:1 1)
+          = Some "retries");
+        check "at_most: ?msg stored"
+          (msg_of "at_most: ?msg" (fun () ->
+               Check.at_most ~msg:"retries" Testable.int ~than:1 2)
+          = Some "retries");
+        check "greater: ?msg stored"
+          (msg_of "greater: ?msg" (fun () ->
+               Check.greater ~msg:"rate" Testable.int ~than:1 1)
+          = Some "rate");
+        check "at_least: ?msg stored"
+          (msg_of "at_least: ?msg" (fun () ->
+               Check.at_least ~msg:"rate" Testable.int ~than:1 0)
+          = Some "rate");
         check "require_match: ?msg stored"
           (msg_of "require_match: ?msg" (fun () ->
                ignore (Check.require_match ~msg:"tcp" (fun _ -> None) 1))

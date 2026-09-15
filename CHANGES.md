@@ -267,6 +267,42 @@ ppx_windtrap.coverage))` stanza on the library under test; `dune runtest
 
 ### Added
 
+**Ordering assertions: `less`, `at_most`, `greater`, `at_least`.** Every
+consumer wrote comparisons as `is_true (a < b)` — and, because that failure
+can only say `expected true / actual false`, smuggled the numbers into `~msg`
+with `sprintf`, or built `gt/ge/lt/le` helpers over `satisfies ~claim` for
+`int` alone. The four verbs take a witness, the bound as `~than`, and the
+value last, and the failure keeps both:
+
+```ocaml
+less int ~than:3 (retries ());
+at_least (float 1e-6) ~than:0.4 result.accept_rate
+```
+
+```
+expected  less than 3
+actual    5
+
+expected  at least 0.4
+actual    0.38
+```
+
+The claim is derived from the verb and the bound, rendered by the witness,
+so it cannot drift from the check the way a hand-written `satisfies ~claim`
+can. The order comes from the witness: the base-type witnesses carry their
+module's, the three float witnesses order exactly with `Float.compare`
+(tolerance belongs to equality, so under `float 0.5` the values `1.0` and
+`1.2` are equal *and* `1.0` is less than `1.2`), `Testable.structural`
+carries `Stdlib.compare`, and `Testable.contramap` orders through its
+projection. `Testable.with_compare` gives any other witness an order —
+`Testable.make ~pp:M.pp ~equal:M.equal |> Testable.with_compare M.compare`
+is the conventional trio — and `Testable.compare` reads it back. No
+container witness carries one (an option or a list admits several, and a
+guessed one would be accepted silently), nor do `pass`, `Testable.of_equal`
+and a plain `Testable.make`; an ordering verb over such a witness raises
+`Invalid_argument` naming `Testable.with_compare`, whether or not the
+assertion would have held. `satisfies` stays for claims that are not orders.
+
 **A counterexample built with `map` or `bind` prints its pre-image.** Those
 combinators — and so `let+`, `and+` and `let*` — derive no printer, and until
 now their counterexamples rendered as `<no printer>` unless a `Gen.with_pp`

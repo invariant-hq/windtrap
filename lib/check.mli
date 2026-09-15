@@ -105,6 +105,31 @@ val mem : ?pos:pos -> ?msg:string -> 'a testable -> 'a -> 'a list -> unit
     over bytes is {!contains}, whose payload is byte offsets and cannot be
     shared. *)
 
+(** {1:orders Orders}
+
+    The four verbs compare under [t]'s order ({!Testable.compare}) and build a
+    {!Failure.predicate} payload whose claim is the relation and the bound
+    rendered by [t] (["less than 3"]), and whose value is [v] rendered by [t].
+    The claim is derived, never written, so it cannot drift from the check.
+    [t]'s equality is never consulted: a tolerance witness orders exactly.
+
+    All four raise [Invalid_argument] — naming the verb and
+    [Testable.with_compare] — when [t] carries no order, whether or not the
+    assertion would have held. *)
+
+val less : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [less t ~than v] is [()] iff [v] ranks strictly below [than] under [t]'s
+    order. *)
+
+val at_most : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [at_most t ~than v] is [()] iff [v] ranks below or the same as [than]. *)
+
+val greater : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [greater t ~than v] is [()] iff [v] ranks strictly above [than]. *)
+
+val at_least : ?pos:pos -> ?msg:string -> 'a testable -> than:'a -> 'a -> unit
+(** [at_least t ~than v] is [()] iff [v] ranks above or the same as [than]. *)
+
 (** {1:containment String containment}
 
     Every verb here builds a {!Failure.containment} payload: the needle, the

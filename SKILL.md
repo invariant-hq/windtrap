@@ -60,7 +60,8 @@ below it.
 | A pure function where only specific points are specified | `test` + `equal` through a testable | Exact expected values, written by hand from the spec |
 | An executable's observable behavior — CLI parsing, exit codes, error messages, file effects | Cram test through the real binary | Tests the wiring no unit test reaches; doubles as CLI documentation |
 | Rendered or serialized output too large to hand-write — help pages, reports, formatted trees | `snapshot` / `[%expect]` | A reviewed baseline beats a hand-copied string; promotion keeps it current |
-| A claim about a value no equality captures | `satisfies ~msg` | Last resort — the failure at least prints the value and names the predicate |
+| A value against a bound | `less`/`at_most`/`greater`/`at_least` with `~than` | The failure prints the bound and the value; `is_true (n > 0)` prints `true` against `false` |
+| A claim about a value no equality or order captures | `satisfies ~msg` | Last resort — the failure at least prints the value and names the predicate |
 
 Three rules outrank the table:
 
@@ -111,8 +112,8 @@ Reject these shapes on sight — in review, and in your own output.
 
 - **Blind boolean** — `is_true (a = b)`, `is_true (n > 0)`: the
   failure prints `expected true` and hides the data. Use testables and
-  `satisfies ~claim:"greater than 0" int (fun n -> n > 0) n`, which
-  keeps the bound and the value. And weak predicates are weak oracles
+  the ordering verbs — `greater int ~than:0 n` keeps the bound and the
+  value. And weak predicates are weak oracles
   too: `is_true (apply Sub 10 4 > 0)` survives the `a - b → a + b`
   mutant; `equal int 6 (apply Sub 10 4)` kills it.
 - **Overfit** — asserts incidental detail: the whole help text to

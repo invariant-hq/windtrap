@@ -232,9 +232,8 @@ let count ~sub s =
 
 Then assert about the number with the ordinary verbs:
 `equal int 2 (count ~sub:"retry" log)` for an exact count, or
-`satisfies ~claim:"more than 2 retries" int (fun n -> n > 2)
-(count ~sub:"retry" log)` for a bound. Both failures print the number
-they got; `not_contains ~sub` is still the verb for "never occurs",
+`greater int ~than:2 (count ~sub:"retry" log)` for a bound. Both
+failures print the number they got; `not_contains ~sub` is still the verb for "never occurs",
 and its failure marks the occurrence in the haystack.
 
 ## 7. Convergence: driving a system until it settles
