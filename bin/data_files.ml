@@ -98,6 +98,21 @@ let self_written = function
 
 type freshness = Fresh | Orphan of string | Stale of string
 
+(* One digest per executable, however many dumps it wrote: every run of
+   a cram-driven binary leaves a file naming the same executable, and
+   hashing a test binary once per file made the aggregate's cost grow
+   with invocations rather than with executables. The command runs once
+   per process, so the memo is never stale. *)
+let digests : (string, string option) Hashtbl.t = Hashtbl.create 64
+
+let exe_digest exe_path =
+  match Hashtbl.find_opt digests exe_path with
+  | Some digest -> digest
+  | None ->
+      let digest = Instr.file_digest exe_path in
+      Hashtbl.replace digests exe_path digest;
+      digest
+
 let freshness ~path identity =
   match (identity : Instr.identity option) with
   | None -> Fresh
@@ -119,7 +134,7 @@ let freshness ~path identity =
       | Some exe_path -> (
           if not (Sys.file_exists exe_path) then Orphan exe
           else
-            match Instr.file_digest exe_path with
+            match exe_digest exe_path with
             | Some actual when actual <> digest -> Stale exe
             | Some _ | None -> Fresh))
 
