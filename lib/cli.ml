@@ -481,7 +481,10 @@ let table =
         doc = "Source prefixes the coverage number covers";
       };
     Env_setting
-      { var = "WINDTRAP_MUTATE"; doc = "Mutation testing: 1 to run it, 0 not to" };
+      {
+        var = "WINDTRAP_MUTATE";
+        doc = "Mutation testing: 1 to run it, 0 not to";
+      };
     Env_setting
       {
         var = Windtrap_mutate.arm_variable;

@@ -900,9 +900,7 @@ let executable_labels =
   check_contains "the sentence counts tests and executables"
     ~needle:"4 tests in 3 executables ran this line and none failed:" out;
   (* The column is as wide as the widest label plus the gap. *)
-  let labels =
-    [ "my_lib_expect"; "plain.mutants"; "test_calc.exe" ]
-  in
+  let labels = [ "my_lib_expect"; "plain.mutants"; "test_calc.exe" ] in
   let width =
     3 + List.fold_left (fun w l -> max w (String.length l)) 0 labels
   in
