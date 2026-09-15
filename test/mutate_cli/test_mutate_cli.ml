@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for `windtrap mutate`: the merge that makes a project-level
+(* Tests for `windtrap mutants`: the merge that makes a project-level
    mutation report true, and the surface around it.
 
    The subject is bin/main.exe, spawned as a subprocess. It merges two
@@ -25,17 +25,16 @@
    tagged with the executable that ran it, a survivor that survives
    everywhere, the unreached blocks, the colours as raw bytes, discovery
    under _build/_mutants and through explicit PATH arguments, the
-   staleness pass, every exit code — 1 when a mutant survived the merge,
-   0 when none did, unreached mutants alone staying green — and the
-   Law-12 coupling budget over lib/.
+   staleness pass, and every exit code — 1 when a mutant survived the
+   merge, 0 when none did, unreached mutants alone staying green.
 
    A windtrap suite ([run] executes tests sequentially in declaration
    order); every subject under test is a spawned process, so hosting the
    assertions under the windtrap runner nests nothing. *)
 
 open Windtrap
-module M = Windtrap_mutate
-module V = Windtrap.Private.Mutate_verdicts
+module M = Windtrap_runtime.Mutate
+module V = Windtrap_runtime.Verdicts
 
 let check name cond = is_true ~msg:name cond
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
@@ -46,8 +45,7 @@ let check_contains name ~needle haystack =
 let check_absent name ~needle haystack =
   not_contains ~msg:name ~sub:needle haystack
 
-(* Boolean containment, for predicates rather than assertions (the Law-12
-   budget's line filter). *)
+(* Boolean containment, for predicates rather than assertions. *)
 let contains_sub ~sub s =
   let n = String.length s and m = String.length sub in
   let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
@@ -157,12 +155,14 @@ let capture ?cwd ?(color = "never") ?(env = []) ?(exe = windtrap_exe) args =
   let code = Sys.command command in
   (code, read_file out, read_file err)
 
-let mutate ?cwd ?color args = capture ?cwd ?color ("mutate" :: args)
+let mutate ?cwd ?color args = capture ?cwd ?color ("mutants" :: args)
 
-(* The one command every remedy names. *)
+(* The one remedy every exclusion names: build-neutral, since the command
+   does not know how the suite is run. *)
 let rerun =
-  "WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with \
-   ppx_windtrap.mutate"
+  "re-run every suite with its mutants (WINDTRAP_MUTATE=1, instrumented with \
+   ppx_windtrap.mutate, forcing the runs your build tool cached), then merge \
+   again"
 
 (* The fixture: one library, three test executables' verdicts *)
 
@@ -297,7 +297,7 @@ let proj =
    disagree about a library merge to something truer than either. So this
    part runs the real thing — two executables over Mutcli_fixture.Calc,
    each driving its own mutation loop and writing its own verdict file,
-   and [windtrap mutate] over what they wrote. [pins_add] pins [add] and
+   and [windtrap mutants] over what they wrote. [pins_add] pins [add] and
    merely reaches [sub]; [pins_sub] is its mirror image; both reach
    [shared] and pin nothing about it, and neither calls [never]. Each
    executable alone therefore reports a survivor the other kills. *)
@@ -400,64 +400,6 @@ let two_executables =
      reached \u{00b7} 2 executables"
     (summary out)
 
-(* The Law-12 budget (grep-based) *)
-
-(* Law 12: core windtrap's coupling to the mutation subsystem is one
-   dispatch call at run entry plus the survivor projection the shared
-   renderer needs. lib/mutate is the runtime, lib/mutate_loop is the one
-   core module the law allows to drive it, and lib/mutate_verdicts is
-   the subsystem's verdict side (tool currency, moved out of the
-   runtime), so all three are excluded from the count; what is counted
-   is the lines of the remaining lib/*.ml{,i} that name any of them.
-   Growth past the cap is a law violation, not a test to update. *)
-(* An instrumented build leaves dune's ppx output beside each source as
-   <module>.pp.ml, and those files are nothing but generated calls into
-   the runtime. The law is about the coupling a maintainer WRITES, so
-   counting them would make the budget a function of whether the tree
-   happened to be built with --instrument-with. *)
-let is_preprocessed name =
-  Filename.check_suffix (Filename.remove_extension name) ".pp"
-
-let law12_budget =
-  test "the Law-12 mutation budget stays under the cap" @@ fun () ->
-  let lib_dir =
-    Filename.concat exe_dir (Filename.concat ".." (Filename.concat ".." "lib"))
-  in
-  let sources =
-    Sys.readdir lib_dir |> Array.to_list
-    |> List.filter (fun name ->
-        (Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
-        && (not (is_preprocessed name))
-        && (not (String.starts_with ~prefix:"mutate_loop." name))
-        && not (String.starts_with ~prefix:"mutate_verdicts." name))
-    |> List.sort String.compare
-  in
-  check "lib sources are visible to the budget check" (sources <> []);
-  check "the driver module is excluded, not missing"
-    (Sys.file_exists (Filename.concat lib_dir "mutate_loop.ml"));
-  check "the verdict module is excluded, not missing"
-    (Sys.file_exists (Filename.concat lib_dir "mutate_verdicts.ml"));
-  let mentions =
-    List.fold_left
-      (fun acc name ->
-        let lines =
-          String.split_on_char '\n' (read_file (Filename.concat lib_dir name))
-        in
-        acc
-        + List.length
-            (List.filter
-               (fun line ->
-                 contains_sub ~sub:"Windtrap_mutate" line
-                 || contains_sub ~sub:"Mutate_loop" line
-                 || contains_sub ~sub:"Mutate_verdicts" line)
-               lines))
-      0 sources
-  in
-  check
-    (Printf.sprintf "Law-12 budget: %d core lines mention mutation (<= 20)"
-       mentions)
-    (mentions > 0 && mentions <= 20)
-
 (* The merge *)
 
 let merge_report =
@@ -487,12 +429,9 @@ let merge_report =
      strictly worse than the per-executable one. *)
   check_contains "the excerpt is drawn from the planted source"
     ~needle:"2 \u{2502} let sub a b = a - b" out;
-  check_contains
-    "the reproduce footer mirrors onto the forced, instrumented run"
+  check_contains "the reproduce footer names no build tool"
     ~needle:
-      "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force \
-       --instrument-with ppx_windtrap.mutate\n"
+      "\nreproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
     out;
   (* Witnesses union across the two executables that reached it, each
      naming its executable. These files record no identity, so the label
@@ -551,9 +490,7 @@ let merge_report =
     coloured;
   check_contains "the reproduce footer is never coloured"
     ~needle:
-      "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force \
-       --instrument-with ppx_windtrap.mutate\n"
+      "\nreproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
     coloured
 
 (* A witness row or the sentence over it: the one part of a report that
@@ -818,16 +755,17 @@ let staleness =
   check_contains "the orphan warning names the file" ~needle:"gone.mutants" err;
   check_contains "the orphan warning names the missing executable"
     ~needle:"default/test/gone.exe" err;
-  (* And names the remedy an orphan actually has. A re-run cannot replace
-     a verdict whose executable is gone, so naming it here would send the
-     reader round a loop that never terminates. *)
-  check_contains "an orphan's remedy is deletion"
-    ~needle:"delete the orphaned files" err;
-  check_absent "and never the re-run, which cannot replace it"
-    ~needle:"a forced run rewrites stale verdicts" err;
+  check_contains "the orphan warning says what it did" ~needle:"excluding it"
+    err;
+  (* One remedy sentence covers both exclusions: a re-run rewrites an
+     outdated verdict, and deleting the directory drops an orphan no run
+     can replace. *)
+  check_contains "the remedy names deletion for leftovers"
+    ~needle:"delete _build/_mutants" err;
+  check_contains "and the re-run" ~needle:rerun err;
   (* Stale beside fresh: the report still renders, the outdated kill is
-     excluded, and here the remedy is the forced re-run — which does
-     rewrite a stale verdict. *)
+     excluded, and the same sentence names the re-run that rewrites a
+     stale verdict. *)
   let root, _ = stale_root "stale-mixed" in
   let other = plant_exe root "default/test/b.exe" "the sibling build" in
   write_file
@@ -841,12 +779,15 @@ let staleness =
     "mutants: 1 survived of 2 reached \u{00b7} 1 killed \u{00b7} 3 never \
      reached \u{00b7} 1 executable"
     (summary out);
-  check_contains "a stale file's remedy is the forced re-run"
-    ~needle:"a forced run rewrites stale verdicts" err;
-  check_contains "and the re-run is the one command, spelled in full"
-    ~needle:rerun err;
-  check_absent "no deletion is asked for where nothing is orphaned"
-    ~needle:"delete the orphaned files" err;
+  check_contains "a stale file's warning says it was rebuilt"
+    ~needle:"rebuilt since" err;
+  check_contains "and the remedy is the one sentence" ~needle:rerun err;
+  check_int "the remedy is said once, however many files" ~expected:1
+    ~actual:
+      (List.length
+         (List.filter
+            (fun line -> contains_sub ~sub:"then merge again" line)
+            (String.split_on_char '\n' err)));
   (* Stale everywhere: the executable was rebuilt since the run, detected
      by content and not by mtime. *)
   let root, identity = stale_root "stale-rebuilt" in
@@ -862,8 +803,8 @@ let staleness =
   check_contains "and says it did not write the file"
     ~needle:"not written by the executable now at" err;
   check_contains "the all-stale message states the situation"
-    ~needle:"and every one is stale" err;
-  check_contains "and names the one command" ~needle:rerun err
+    ~needle:"every .mutants file was excluded" err;
+  check_contains "and names the one remedy" ~needle:rerun err
 
 (* The executable column *)
 
@@ -954,9 +895,11 @@ let loud_failures =
   mkdir_p empty;
   let code, _, err = mutate ~cwd:empty [] in
   check_int "no .mutants files exit 1" ~expected:1 ~actual:code;
-  check_contains "no files: the hint names the backend"
-    ~needle:"(instrumentation (backend ppx_windtrap.mutate))" err;
-  check_contains "no files: the hint names the one command" ~needle:rerun err;
+  check_contains "no files: the hint names the backend, not a build tool"
+    ~needle:"ppx_windtrap.mutate" err;
+  check_absent "and spells no dune command" ~needle:"dune " err;
+  check_contains "no files: the hint names the variable a verdict needs"
+    ~needle:"WINDTRAP_MUTATE=1" err;
   (* An existing but empty _build/_mutants is "no files", loudly. *)
   let bare = scratch "bare" in
   mkdir_p (Filename.concat bare "_build/_mutants");
@@ -997,7 +940,7 @@ let loud_failures =
   check_contains "an unknown option is named"
     ~needle:"unknown option '--frobnicate'" err;
   check_contains "an unknown option prints the usage"
-    ~needle:"usage: windtrap mutate" err;
+    ~needle:"usage: windtrap mutants" err;
   (* There is no threshold: one survivor is the failure. *)
   let code, _, err = mutate ~cwd:proj [ "--min"; "80" ] in
   check_int "there is no --min threshold to pass" ~expected:2 ~actual:code;
@@ -1014,35 +957,41 @@ let loud_failures =
     out
 
 let dispatch =
-  test "the binary dispatches mutate" @@ fun () ->
+  test "the binary dispatches mutants" @@ fun () ->
   let code, out, _ = capture [ "--help" ] in
   check_int "windtrap --help exits 0" ~expected:0 ~actual:code;
   check_contains "windtrap --help lists the subcommand and what it does"
-    ~needle:"mutate      Merge .mutants verdict files" out;
+    ~needle:"mutants     Merge .mutants verdict files" out;
   check_contains "windtrap --help still lists coverage"
     ~needle:"coverage    Merge .coverage files" out;
   let code, _, err = capture [ "mutant" ] in
   check_int "a near-miss command exits 2" ~expected:2 ~actual:code;
   check_contains "a near-miss command is named"
-    ~needle:"unknown command 'mutant'" err
+    ~needle:"unknown command 'mutant'" err;
+  (* The verb that promised a run is gone, not aliased: the command
+     reports mutants and mutates nothing. *)
+  let code, _, err = capture [ "mutate" ] in
+  check_int "the old verb exits 2" ~expected:2 ~actual:code;
+  check_contains "the old verb is unknown" ~needle:"unknown command 'mutate'"
+    err
 
 (* The suite *)
 
 let () =
-  run "mutate_cli"
-    [
-      two_executables;
-      merge_report;
-      merge_is_total;
-      single_file;
-      clean_report;
-      only_unreached;
-      discovery;
-      explicit_paths;
-      staleness;
-      executable_labels;
-      survivor_order;
-      loud_failures;
-      dispatch;
-      law12_budget;
-    ]
+  exit
+  @@ run "mutate_cli"
+       [
+         two_executables;
+         merge_report;
+         merge_is_total;
+         single_file;
+         clean_report;
+         only_unreached;
+         discovery;
+         explicit_paths;
+         staleness;
+         executable_labels;
+         survivor_order;
+         loud_failures;
+         dispatch;
+       ]

@@ -1,21 +1,14 @@
-; windtrap_coverage is the coverage seam's data source: the runner
-; snapshots in-process coverage at run end for the inline summary, and
-; the driver builds the report's section data from it. windtrap_mutate
-; is the mutation seam's: the mutation loop and the CLI spell mutant
-; identifiers and the arming variable with the runtime's own functions
-; before they enter section data, so the report and the runtime cannot
-; disagree about what to type — Render draws sections and names neither
-; runtime. All three dependencies point downward only — neither runtime
-; links windtrap. windtrap_instr is the versioned dump-file plumbing
-; both instrumentation formats share: Mutate_verdicts serializes the
-; verdict file over it, because the verdict is written by the loop
-; and read by `windtrap mutate`, never by instrumented code, so its
-; format lives in the core rather than in the runtime.
+; The core links the one instrumentation runtime (lib/runtime): the
+; coverage seam snapshots its registry, the mutation loop drives its
+; catalogue and writes verdicts through its file format, and both spell
+; identifiers with the runtime's own functions so the report and the
+; runtime cannot disagree. The dependency points downward only — the
+; runtime never links windtrap.
 
 (library
  (name windtrap)
  (public_name windtrap)
- (libraries unix windtrap_coverage windtrap_mutate windtrap_instr)
+ (libraries unix windtrap_runtime)
  ; Windtrap measures its own coverage. The backend is spelled
  ; `ppx_windtrap.coverage`, not the `ppx_windtrap` the manual shows
  ; users: that name resolves to the inline-test rewriter, whose
@@ -32,14 +25,9 @@
  ; the failure mode is a hang rather than a survivor. The inline
  ; runtime, excluded for the same reason, lives above the core
  ; (ppx/runtime) in a library whose dune carries no mutation stanza at
- ; all.
- ;
- ; This stanza is only safe because of WINDTRAP_MUTATE_ONLY. The tree's
- ; own mutation suites are built on controlled catalogues — a zero-mutant
- ; control executable, a fixture of exactly five sites — and an
- ; instrumented core would otherwise hand them 984 more. They name their
- ; scope, so they keep a GENUINE catalogue rather than a simulated one.
- ; See doc/dev/testing.md.
+ ; all. The tree's own mutation suites scope their runs to their fixture
+ ; directories (see doc/dev/testing.md), so an instrumented core adds
+ ; nothing to the population they fork over.
  (instrumentation
   (backend ppx_windtrap.mutate))
  (foreign_stubs

@@ -178,12 +178,12 @@ val snapshot_coverage : unit -> Render.coverage_summary option
     is {!t.coverage}'s. *)
 
 val coverage_data :
-  ?source_roots:string list -> Windtrap_coverage.t -> Render.coverage
+  ?source_roots:string list -> Windtrap_runtime.Coverage.t -> Render.coverage
 (** [coverage_data collection] is [collection] as the renderer's section data
     ({!Render.coverage}): the aggregate counts and one {!Render.coverage_file}
     per file, sources resolved under [source_roots]
-    ({!Windtrap_coverage.file_reports}, whose current-directory default it
-    keeps). The one builder of that data — this seam links the runtime, so
+    ({!Windtrap_runtime.Coverage.file_reports}, whose current-directory default
+    it keeps). The one builder of that data — this seam links the runtime, so
     Render does not have to — used by the [windtrap coverage] command over
     merged files, which is the only place a per-file coverage table is drawn. *)
 

@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-module Instr = Windtrap_instr
+module Instr = Windtrap_runtime.Instr
 
 let spf = Printf.sprintf
 
@@ -84,18 +84,6 @@ let discover ~dir ~ext = function
 
 (* Freshness *)
 
-(* This binary may itself be instrumented — windtrap's own is, in
-   windtrap's own tree — and then merely running it registers points and
-   dumps them at exit into the directory it just read, where the next
-   build turns them stale and it warns about itself forever. A file
-   whose recorded writer is this very executable is not data about the
-   suite; it is this command's own exhaust, and is dropped before
-   anything judges its freshness. Inert for an installed windtrap, which
-   carries no instrumentation at all. *)
-let self_written = function
-  | None -> false
-  | Some { Instr.exe; _ } -> exe = Instr.exe_identity ~exe:Sys.executable_name
-
 type freshness = Fresh | Orphan of string | Stale of string
 
 (* One digest per executable, however many dumps it wrote: every run of
@@ -138,8 +126,12 @@ let freshness ~path identity =
             | Some actual when actual <> digest -> Stale exe
             | Some _ | None -> Fresh))
 
-let describe ~stale_hint ~path = function
+let describe ~path = function
   | Fresh -> assert false
-  | Orphan exe -> spf "%s: its executable (%s) no longer exists" path exe
+  | Orphan exe ->
+      spf "%s: its executable (%s) no longer exists; excluding it" path exe
   | Stale exe ->
-      spf "%s: not written by the executable now at %s - %s" path exe stale_hint
+      spf
+        "%s: not written by the executable now at %s (rebuilt since); \
+         excluding it"
+        path exe

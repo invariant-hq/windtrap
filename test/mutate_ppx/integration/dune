@@ -4,7 +4,7 @@
 ; [windtrap_mutate_forced] is preprocessed with the instrumenter
 ; directly, so every ordinary build type-checks the generated code -
 ; under every warning but 70 (missing .mli), all fatal. That is what
-; caught the preamble's real hazard: Windtrap_mutate spreads the site
+; caught the preamble's real hazard: Windtrap_runtime.Mutate spreads the site
 ; record's field names across three record types, so qualifying them
 ; (which is all coverage needs) still leaves warning 42.
 ;
@@ -68,7 +68,7 @@
  (name test_registration)
  (modules test_registration)
  (libraries
-  windtrap.mutate
+  windtrap.runtime
   windtrap_mutate_forced
   windtrap_mutate_stanza
   windtrap_mutate_disambiguate))

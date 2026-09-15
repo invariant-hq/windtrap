@@ -8,8 +8,8 @@
    atomic write from a process the parent test does not share a heap
    with - which is the shape the loop writes in. Usage: save <path>. *)
 
-module M = Windtrap_mutate
-module V = Windtrap.Private.Mutate_verdicts
+module M = Windtrap_runtime.Mutate
+module V = Windtrap_runtime.Verdicts
 
 let () =
   match Array.to_list Sys.argv with

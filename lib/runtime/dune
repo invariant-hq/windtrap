@@ -1,0 +1,9 @@
+; The one runtime every instrumented closure links, through the two
+; backends' ppx_runtime_libraries: the coverage and mutation registries
+; generated code calls, both data-file formats, and the file plumbing
+; they share. Stdlib only — never unix, never the core — and it reads no
+; environment variable but WINDTRAP_COVERAGE_FILE.
+
+(library
+ (name windtrap_runtime)
+ (public_name windtrap.runtime))

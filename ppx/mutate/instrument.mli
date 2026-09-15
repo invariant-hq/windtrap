@@ -8,9 +8,9 @@
     Rewrites four families of expression into a guard whose {e disarmed} arm is
     the original expression and whose {e armed} arm is a plausible defect, and
     prepends one generated module binding the guard closure
-    {!Windtrap_mutate.register} returns for the file. Every mutant of a project
-    compiles into one binary; at most one is ever armed, and only in a forked
-    child of a run that asked for it (Law 16).
+    [Windtrap_runtime.Mutate.register] returns for the file. Every mutant of a
+    project compiles into one binary; at most one is ever armed, and only in a
+    forked child of a run that asked for it (Law 16).
 
     {b The emission law.} Because all mutants share one binary, an ill-typed arm
     is not one bad mutant, it is a broken build for the whole project. So

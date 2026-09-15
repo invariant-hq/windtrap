@@ -10,9 +10,13 @@
     [Driver.execute_and_report] — plus one read-only flag on the expect
     correction path ([Ppx_runtime.enter_armed], Law 16d, registered in
     {!on_armed} and fired here, never a dependency in either direction).
-    Everything else lives here, in the stdlib-only runtime {!Windtrap_mutate}
-    and in {!Mutate_verdicts}: the dry run and its reach map, the determinism
-    probe, the fork loop, the verdict file, and the report.
+    Everything else lives here and in the stdlib-only runtime —
+    {!Windtrap_runtime.Mutate} for the catalogue, the guard and the reach map,
+    {!Windtrap_runtime.Verdicts} for the verdict file: the dry run and its reach
+    map, the determinism probe, the fork loop, the verdict file, and the report.
+    The runtime reads no environment: which mutants a run tests (the scope,
+    source-path prefixes) and which one a process arms are read by [Cli] and
+    [Env] and applied here.
 
     {b Why this module wraps the run rather than being called around it.} The
     two things a mutation run must do — announce an armed mutant {e before} any
@@ -30,10 +34,11 @@
     for nothing, this module does nothing at all.
 
     {b Exit codes} (Law 16e). [0] when the loop completed, {e whatever it found}
-    — a survivor is one suite's view, and only the aggregate ([windtrap mutate])
-    gates on survivors — and [1] when it refused to start or could not finish,
-    each with its own message on [stderr]. Never [2]: "nothing ran" is a
-    statement about a test selection, and a mutation run does not make one.
+    — a survivor is one suite's view, and only the aggregate
+    ([windtrap mutants]) gates on survivors — and [1] when it refused to start
+    or could not finish, each with its own message on [stderr]. Never [2]:
+    "nothing ran" is a statement about a test selection, and a mutation run does
+    not make one.
 
     {b Not in this slice.} Children run one at a time, and the per-child
     deadline is the only clock: nothing bounds a whole run, so a parent-side
@@ -79,11 +84,13 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     the candidates, never a silently defaulted run: an unrecognized
     [WINDTRAP_MUTATE]; asking for the loop and an armed mutant at once; a
     [WINDTRAP_MUTATE_ARM] that is malformed, ambiguous, or
-    {!Windtrap_mutate.Unmatched} within a file this executable catalogues; a red
-    or empty dry run; a probe disagreement; and a supervision error. The one
-    arming failure that is {e not} a refusal is {!Windtrap_mutate.Uncatalogued}
-    — one identifier is handed to every test executable of a project at once,
-    and all but one of them were built from other sources.
+    {!Windtrap_runtime.Mutate.Unmatched} within a file this executable
+    catalogues; a red or empty dry run; an uninstrumented executable, or a scope
+    that leaves it no mutant; a probe disagreement; and a supervision error. The
+    one arming failure that is {e not} a refusal is
+    {!Windtrap_runtime.Mutate.Uncatalogued} — one identifier is handed to every
+    test executable of a project at once, and all but one of them were built
+    from other sources.
 
     Arming inside the loop stays strict all the same: a child arms a mutant the
     parent took from {e this} binary's own catalogue, so a child that fails to
@@ -94,12 +101,12 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     Effects: the union of [Driver.execute_and_report]'s and, under the loop,
     [fork]/[waitpid]/[pipe]/[select], [setsid] in each child, [kill] of an
     expired child's process group, one scratch log directory per run (removed at
-    the end), and one verdict file under {!Mutate_verdicts.output_file}.
-    Children never reach [Stdlib]'s exit machinery: every exception, fatal
-    included, is caught, reduced to a verdict line, and followed by [Unix._exit]
-    — otherwise a child dying of [Out_of_memory] would run the coverage at-exit
-    dump against a path resolved before the fork and overwrite the parent's
-    [.coverage] (Law 16e). *)
+    the end), and one verdict file under
+    {!Windtrap_runtime.Verdicts.output_file}. Children never reach [Stdlib]'s
+    exit machinery: every exception, fatal included, is caught, reduced to a
+    verdict line, and followed by [Unix._exit] — otherwise a child dying of
+    [Out_of_memory] would run the coverage at-exit dump against a path resolved
+    before the fork and overwrite the parent's [.coverage] (Law 16e). *)
 
 (** {1:armed The armed hooks} *)
 

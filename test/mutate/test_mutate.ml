@@ -3,13 +3,13 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Windtrap_mutate: identifiers and their one spelling (with
+(* Tests for Windtrap_runtime.Mutate: identifiers and their one spelling (with
    every rejection class), the register/guard registry (reach counting,
    epoch and dirty-list bookkeeping across simulated tests, hit counts,
    reset, duplicate and conflicting registrations), and arming
    (not-found versus ambiguous, the runaway budget) - the last also end
    to end through a child executable. The verdict lattice and the
-   verdict file moved to the core with Mutate_verdicts; their suite is
+   verdict file are Windtrap_runtime.Verdicts'; their suite is
    test/mutate_verdicts.
 
    A windtrap suite ([run] executes tests sequentially in declaration
@@ -18,7 +18,7 @@
    so run the suite whole rather than filtered. *)
 
 open Windtrap
-module M = Windtrap_mutate
+module M = Windtrap_runtime.Mutate
 
 (* Printers and lookups the runtime does not export: they are for
    diagnostics and assertions, which is a test's business rather than a
@@ -462,7 +462,7 @@ let arming_tests =
             contains ~msg:"the message says whose mutant it is not"
               ~sub:"not this executable's mutant" rendered;
             contains ~msg:"and keeps the misconfiguration diagnosis"
-              ~sub:"--instrument-with ppx_windtrap.mutate" rendered
+              ~sub:"instrumented with ppx_windtrap.mutate" rendered
         | Error e -> failf "expected Uncatalogued, got %a" M.pp_arm_error e);
     test "a catalogued file with no matching site is Unmatched, never declined"
       (fun () ->
@@ -652,34 +652,34 @@ let arming_tests =
             raises_match ~msg:(string_of_int n) Exn.invalid_arg (fun () ->
                 M.arm ~budget:n (id ~file:"t/x.ml" ~line:1 ~col:0 ~rewrite:"or")))
           [ 0; -1 ]);
-    test "arm_from_env resolves WINDTRAP_MUTATE_ARM" (fun () ->
+    test "the arming variable is a name for the core; the runtime reads nothing"
+      (fun () ->
         let g =
           M.register ~file:"t/env.ml"
             ~sites:[| site ~line:6 ~col:2 ~rewrite:"fadd" () |]
         in
         equal ~msg:"the variable's name" string "WINDTRAP_MUTATE_ARM"
           M.arm_variable;
-        Unix.putenv M.arm_variable "";
-        (match M.arm_from_env () with
-        | Ok None -> ()
-        | Ok (Some m) -> failf "armed %a from an empty variable" pp_mutant m
-        | Error e -> failf "empty variable: %a" M.pp_arm_error e);
+        (* Setting it arms nothing: the core parses the value and hands
+           the identifier to [arm], and nothing here looks at the
+           environment. *)
         Unix.putenv M.arm_variable "t/env.ml:6:2:fadd";
-        (match M.arm_from_env () with
-        | Ok (Some m) ->
+        equal ~msg:"the variable alone arms nothing" (option mutant_t) None
+          (M.armed ());
+        fresh ();
+        is_false ~msg:"and the guard answers false" (g 0);
+        (match Result.bind (M.id_of_string "t/env.ml:6:2:fadd") M.arm with
+        | Ok m ->
             equal ~msg:"armed" string "t/env.ml:6:2:fadd"
               (M.id_to_string m.M.id)
-        | Ok None -> fail "nothing armed"
-        | Error e -> failf "arm_from_env: %a" M.pp_arm_error e);
+        | Error e -> failf "arm: %a" M.pp_arm_error e);
         fresh ();
         is_true ~msg:"the guard answers true" (g 0);
-        Unix.putenv M.arm_variable "t/env.ml:6:2:sub";
-        (match M.arm_from_env () with
+        (match Result.bind (M.id_of_string "t/env.ml:6:2:sub") M.arm with
         | Ok _ -> fail "an unmatched identifier must be refused"
         | Error (M.Unmatched _) -> ()
         | Error e -> failf "expected Unmatched, got %a" M.pp_arm_error e);
-        Unix.putenv M.arm_variable "not an identifier";
-        (match M.arm_from_env () with
+        (match Result.bind (M.id_of_string "not an identifier") M.arm with
         | Ok _ -> fail "a malformed identifier must be refused"
         | Error (M.Malformed _) -> ()
         | Error e -> failf "expected Malformed, got %a" M.pp_arm_error e);
@@ -692,13 +692,15 @@ let arming_tests =
 
 let child_exe = Filename.concat exe_dir "arm_child.exe"
 
+(* The identifier travels on the child's command line: the runtime reads
+   no environment, and the child arms what it is handed, as the core
+   does. *)
 let run_child ?arm args =
   let out = scratch "child-out.txt" and err = scratch "child-err.txt" in
-  Unix.putenv M.arm_variable (match arm with None -> "" | Some spec -> spec);
+  let args = args @ Option.to_list arm in
   let status =
     Sys.command (Filename.quote_command child_exe ~stdout:out ~stderr:err args)
   in
-  Unix.putenv M.arm_variable "";
   ( status,
     Option.value ~default:"" (read_file out),
     Option.value ~default:"" (read_file err) )
@@ -757,7 +759,7 @@ let child_tests =
       (fun () ->
         let status, _, err = run_child ~arm:"lib/other.ml:1:0:lt" [ "run" ] in
         equal ~msg:"exit code" int 1 status;
-        contains ~msg:"hint" ~sub:"--instrument-with ppx_windtrap.mutate" err);
+        contains ~msg:"hint" ~sub:"instrumented with ppx_windtrap.mutate" err);
     test "the runaway budget kills a mutant the clock would not see" (fun () ->
         let status, out, _ =
           run_child ~arm:"lib/child.ml:11:6:not" [ "budget"; "3"; "10" ]
@@ -795,10 +797,11 @@ let child_tests =
 (* The suite *)
 
 let () =
-  run "mutate"
-    [
-      group "identity" identity_tests;
-      group "registry" registry_tests;
-      group "arming" arming_tests;
-      group "child" child_tests;
-    ]
+  exit
+  @@ run "mutate"
+       [
+         group "identity" identity_tests;
+         group "registry" registry_tests;
+         group "arming" arming_tests;
+         group "child" child_tests;
+       ]

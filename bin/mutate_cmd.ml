@@ -13,13 +13,13 @@
 module Render = Windtrap.Private.Render
 module Env = Windtrap.Private.Env
 module Test_tree = Windtrap.Private.Test_tree
-module M = Windtrap_mutate
-module V = Windtrap.Private.Mutate_verdicts
+module M = Windtrap_runtime.Mutate
+module V = Windtrap_runtime.Verdicts
 
 let spf = Printf.sprintf
 
 let usage =
-  {|usage: windtrap mutate [PATH...]
+  {|usage: windtrap mutants [PATH...]
 
 Merges the .mutants verdict files written by mutation runs and reports the
 mutants that survived every test executable. Without PATH arguments the files
@@ -33,17 +33,19 @@ Exits 1 when any mutant survived every executable that reached it.
 OPTIONS:
   -h, --help  Print this help and exit|}
 
-(* The one command, spelled once: every remedy this command prints names
-   it. It is the @mutate alias — every suite run with its mutants, then
-   this merge — and each piece is load-bearing: the variable because the
-   suites read it, the flag because the suites must carry the mutants,
-   --force because a mutation run is not a cached artifact. A plain
-   `dune build @mutate` without them rebuilds the executables
-   uninstrumented, which stales every verdict, and the merge then refuses
-   loudly. *)
+(* The one remedy, spelled once, in words any build tool's user can act
+   on: this command does not know how the suite is run, and a spelled-out
+   command would be wrong everywhere but the tree it was written in. A
+   verdict exists only where a suite was asked to test its mutants
+   (WINDTRAP_MUTATE=1) in a build carrying them, and a run the build tool
+   replays from its cache writes nothing. *)
 let rerun =
-  "  WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with \
-   ppx_windtrap.mutate"
+  "re-run every suite with its mutants (WINDTRAP_MUTATE=1, instrumented with \
+   ppx_windtrap.mutate, forcing the runs your build tool cached), then merge \
+   again"
+
+let remedy =
+  rerun ^ "; delete _build/_mutants to drop leftovers of removed executables"
 
 (* Flags *)
 
@@ -72,16 +74,12 @@ let discover paths = Data_files.discover ~dir:"_mutants" ~ext:"mutants" paths
 
    Data_files.freshness's, judged from the identity each file records: a
    verdict file whose executable was deleted or renamed (an orphan), and
-   one not written by the executable now on disk — a re-run made without
-   --instrument-with, or a run dune replayed from cache.
+   one not written by the executable now on disk — a rebuild without the
+   backend, or a run the build tool replayed from its cache.
 
    A flagged verdict file is excluded, never merged: a stale verdict can
    claim a kill the code no longer earns, and a false kill hides a live
    defect. Excluding is the only answer that cannot lie. *)
-
-let stale_hint =
-  "a re-run made without --instrument-with ppx_windtrap.mutate, or a mutation \
-   run dune did not repeat"
 
 (* The executable a verdict file speaks for, as the witness column names
    it: the basename of the recorded identity (`test_slug.exe`). Dune's
@@ -123,87 +121,27 @@ let load_fresh files =
   in
   match loaded with
   | Error error ->
-      Format.eprintf "windtrap mutate: %a@." V.pp_error error;
+      Format.eprintf "windtrap mutants: %a@." V.pp_error error;
       Error 1
   | Ok entries ->
       let entries = List.rev entries in
       let kept, excluded =
         List.partition (fun (_, _, _, f) -> f = Data_files.Fresh) entries
       in
-      (* Per-file detail is what a reader wants when a verdict or two is
-         stale among many: it names the executable and the reason. When
-         every file is excluded it is the same sentence N times, and it
-         buries the one fact that matters — that no mutation run has
-         happened since this build. Cap it; the [kept = []] branch below
-         carries the summary and both remedies. *)
-      let detail_cap = 3 in
-      let excluded_count = List.length excluded in
-      List.iteri
-        (fun i (path, _, _, f) ->
-          if i < detail_cap then
-            Printf.eprintf "windtrap mutate: %s; excluding it\n%!"
-              (Data_files.describe ~stale_hint ~path f))
+      (* One line per excluded file — the path, the executable and the
+         reason — then the remedy once, however many there were. *)
+      List.iter
+        (fun (path, _, _, f) ->
+          Printf.eprintf "windtrap mutants: %s\n%!"
+            (Data_files.describe ~path f))
         excluded;
-      if excluded_count > detail_cap then
-        Printf.eprintf "windtrap mutate: ... and %d more like that\n%!"
-          (excluded_count - detail_cap);
-      (* Two exclusions, two remedies, and they are not interchangeable.
-         A forced run rewrites a stale verdict; nothing rewrites an
-         orphan, whose executable no longer exists — the file is a
-         leftover and only deleting it removes it, so naming the re-run
-         there would send the reader round a loop that cannot terminate.
-         Skipped when everything was excluded: the epilogue below carries
-         both. *)
-      let any predicate =
-        List.exists (fun (_, _, _, f) -> predicate f) excluded
-      in
-      if kept <> [] then begin
-        if
-          any (function
-            | Data_files.Stale _ -> true
-            | Data_files.Fresh | Data_files.Orphan _ -> false)
-        then
-          Printf.eprintf
-            "windtrap mutate: a forced run rewrites stale verdicts:\n%s\n%!"
-            rerun;
-        if
-          any (function
-            | Data_files.Orphan _ -> true
-            | Data_files.Fresh | Data_files.Stale _ -> false)
-        then
-          Printf.eprintf
-            "windtrap mutate: delete the orphaned files; re-running cannot \
-             replace a verdict whose executable is gone\n\
-             %!"
-      end;
-      if kept = [] then begin
-        let orphans =
-          List.length
-            (List.filter
-               (fun (_, _, _, f) ->
-                 match f with
-                 | Data_files.Orphan _ -> true
-                 | Data_files.Fresh | Data_files.Stale _ -> false)
-               excluded)
-        in
+      if kept = [] then
         Printf.eprintf
-          "windtrap mutate: found %d .mutants file%s and every one is %s\n\
-          \  A verdict is written only by a run asked to test its mutants, and \
-           it is\n\
-          \  invalidated by any later build of the executable that wrote it — an\n\
-          \  ordinary `dune runtest` is enough.\n\
-           Re-run the mutation tests:\n\
-           %s\n\
-           and delete leftovers of removed executables.\n\
-           %!"
-          excluded_count
-          (if excluded_count = 1 then "" else "s")
-          (if orphans = excluded_count then "orphaned"
-           else if orphans = 0 then "stale"
-           else Printf.sprintf "stale or orphaned (%d orphaned)" orphans)
-          rerun;
-        Error 1
-      end
+          "windtrap mutants: every .mutants file was excluded, so there is \
+           nothing to report\n\
+           %!";
+      if excluded <> [] then Printf.eprintf "windtrap mutants: %s\n%!" remedy;
+      if kept = [] then Error 1
       else
         Ok
           (List.map
@@ -352,22 +290,20 @@ let run args =
       print_endline usage;
       0
   | Error (`Usage message) ->
-      Printf.eprintf "windtrap mutate: %s\n%s\n" message usage;
+      Printf.eprintf "windtrap mutants: %s\n%s\n" message usage;
       2
   | Ok paths -> (
       match discover paths with
       | Error message ->
-          Printf.eprintf "windtrap mutate: %s\n" message;
+          Printf.eprintf "windtrap mutants: %s\n" message;
           1
       | Ok (files, roots) -> (
           if files = [] then begin
             Printf.eprintf
-              "windtrap mutate: no .mutants files found\n\
-               Instrument the library under test\n\
-              \  (instrumentation (backend ppx_windtrap.mutate))\n\
-               and run every suite with its mutants:\n\
-               %s\n"
-              rerun;
+              "windtrap mutants: no .mutants files found\n\
+               Instrument the library under test with ppx_windtrap.mutate and \
+               run every suite with its mutants (WINDTRAP_MUTATE=1) first; \
+               every mutation run writes its verdicts under _build/_mutants.\n";
             1
           end
           else

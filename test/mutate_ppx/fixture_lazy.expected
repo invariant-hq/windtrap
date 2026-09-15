@@ -1,7 +1,7 @@
 [@@@ocaml.text "/*"]
 module Windtrap_mut_________fixture_lazy___ml =
   struct
-    type site = Windtrap_mutate.site =
+    type site = Windtrap_runtime.Mutate.site =
       {
       line: int ;
       col: int ;
@@ -10,7 +10,7 @@ module Windtrap_mut_________fixture_lazy___ml =
       after: string ;
       dismissed: string option }
     let ___windtrap_armed___ =
-      Windtrap_mutate.register ~file:"./fixture_lazy.ml"
+      Windtrap_runtime.Mutate.register ~file:"./fixture_lazy.ml"
         ~sites:[|{
                    line = 10;
                    col = 22;

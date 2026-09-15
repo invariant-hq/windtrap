@@ -7,8 +7,8 @@
 
     Instruments the frozen v1/Bisect population — scope grows only by deliberate
     design amendment — and prepends one initialization module that registers the
-    file's point table with the [Windtrap_coverage] runtime at load time. Two
-    insertion shapes exist:
+    file's point table with the [Windtrap_runtime.Coverage] runtime at load
+    time. Two insertion shapes exist:
 
     - {e entry points} — [___windtrap_visit___ i; e] at the entry of a block:
       function leaf bodies and optional-argument defaults, [match]/[try]/

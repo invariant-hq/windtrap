@@ -3,27 +3,27 @@ module Windtrap_cov_________fixture_scope___ml =
   struct
     let ___windtrap_visit___ =
       let counts = Array.make 6 0 in
-      Windtrap_coverage.register ~file:"./fixture_scope.ml"
+      Windtrap_runtime.Coverage.register ~file:"./fixture_scope.ml"
         ~points:[|{
-                    Windtrap_coverage.start_ofs = 563;
-                    Windtrap_coverage.end_ofs = 568
+                    Windtrap_runtime.Coverage.start_ofs = 563;
+                    Windtrap_runtime.Coverage.end_ofs = 568
                   };{
-                      Windtrap_coverage.start_ofs = 584;
-                      Windtrap_coverage.end_ofs = 589
+                      Windtrap_runtime.Coverage.start_ofs = 584;
+                      Windtrap_runtime.Coverage.end_ofs = 589
                     };{
-                        Windtrap_coverage.start_ofs = 605;
-                        Windtrap_coverage.end_ofs = 613
+                        Windtrap_runtime.Coverage.start_ofs = 605;
+                        Windtrap_runtime.Coverage.end_ofs = 613
                       };{
-                          Windtrap_coverage.start_ofs = 636;
-                          Windtrap_coverage.end_ofs = 642
+                          Windtrap_runtime.Coverage.start_ofs = 636;
+                          Windtrap_runtime.Coverage.end_ofs = 642
                         };{
-                            Windtrap_coverage.start_ofs = 661;
-                            Windtrap_coverage.end_ofs = 668
+                            Windtrap_runtime.Coverage.start_ofs = 661;
+                            Windtrap_runtime.Coverage.end_ofs = 668
                           };{
-                              Windtrap_coverage.start_ofs = 684;
-                              Windtrap_coverage.end_ofs = 696
+                              Windtrap_runtime.Coverage.start_ofs = 684;
+                              Windtrap_runtime.Coverage.end_ofs = 696
                             }|] ~counts;
-      (fun index -> Windtrap_coverage.visit counts index)
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
   end
 open Windtrap_cov_________fixture_scope___ml
 [@@@ocaml.text "/*"]

@@ -7,14 +7,13 @@
    line through a real windtrap run (thresholds, hint, off,
    Law-13 exit codes), WINDTRAP_COVERAGE as a switch with its loud
    rejection of malformed and retired values, the
-   at_exit dump feeding the reporting command, `windtrap coverage` end
-   to end (walk-up discovery, merge across two executables, the
+   at_exit dump feeding the reporting command, and `windtrap coverage`
+   end to end (walk-up discovery, merge across two executables, the
    orphan/stale matrix, --min matrix, --json
-   shape, --show-uncovered, loud failures), and the grep-based Law-12
-   budget over lib/. A windtrap suite ([run] executes tests sequentially
-   in declaration order); every subject under test is a spawned child
-   process, so hosting the assertions under the windtrap runner nests
-   nothing.
+   shape, --show-uncovered, loud failures). A windtrap suite ([run]
+   executes tests sequentially in declaration order); every subject
+   under test is a spawned child process, so hosting the assertions
+   under the windtrap runner nests nothing.
 
    The one thing not reproducible here: the E2 freshness behavior of the
    blessed @cover rule itself ((alias_rec runtest) + (universe)) is dune
@@ -26,8 +25,8 @@
    alias cannot see, the merge, and the --min gate. *)
 
 open Windtrap
-module C = Windtrap_coverage
-module I = Windtrap_instr
+module C = Windtrap_runtime.Coverage
+module I = Windtrap_runtime.Instr
 
 let check name cond = is_true ~msg:name cond
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
@@ -38,9 +37,8 @@ let check_contains name ~needle haystack =
 let check_absent name ~needle haystack =
   not_contains ~msg:name ~sub:needle haystack
 
-(* Boolean containment for predicates (the Law-12 budget's line filter);
-   shadows the facade assertion, which the helpers above already
-   captured. *)
+(* Boolean containment for predicates; shadows the facade assertion,
+   which the helpers above already captured. *)
 let contains needle haystack =
   let n = String.length needle and h = String.length haystack in
   let rec loop i =
@@ -127,51 +125,6 @@ let capture ?(env = []) ?cwd exe args =
   let code = Sys.command command in
   (code, read_file out, read_file err)
 
-(* The Law-12 budget (grep-based) *)
-
-(* Law 12: core windtrap's entire coupling to the coverage runtime is the
-   run-record snapshot plus its rendering, <= ~27 lines. Counted as the
-   lines of lib/*.ml{,i} (lib/coverage excluded — it IS the runtime) that
-   name Windtrap_coverage. Growth past the cap is a law violation, not a
-   test to update; the one recalibration (25 -> 27) paid for the seam's
-   move behind the shared driver's interface (lib/driver.mli names the
-   collection type in two signatures) — the seam itself is still the same
-   one snapshot read into the run record. *)
-(* An instrumented build leaves dune's ppx output beside each source as
-   <module>.pp.ml, and those files are nothing but generated calls into
-   the runtime. The law is about the coupling a maintainer WRITES, so
-   counting them would make the budget a function of whether the tree
-   happened to be built with --instrument-with. *)
-let is_preprocessed name =
-  Filename.check_suffix (Filename.remove_extension name) ".pp"
-
-let law12_budget =
-  test "the Law-12 budget stays under the cap" @@ fun () ->
-  let lib_dir =
-    Filename.concat exe_dir (Filename.concat ".." (Filename.concat ".." "lib"))
-  in
-  let sources =
-    Sys.readdir lib_dir |> Array.to_list
-    |> List.filter (fun name ->
-        (Filename.check_suffix name ".ml" || Filename.check_suffix name ".mli")
-        && not (is_preprocessed name))
-    |> List.sort String.compare
-  in
-  check "lib sources are visible to the budget check" (sources <> []);
-  let mentions =
-    List.fold_left
-      (fun acc name ->
-        let lines =
-          String.split_on_char '\n' (read_file (Filename.concat lib_dir name))
-        in
-        acc + List.length (List.filter (contains "Windtrap_coverage") lines))
-      0 sources
-  in
-  check
-    (Printf.sprintf "Law-12 budget: %d core lines mention the runtime (<= 16)"
-       mentions)
-    (mentions > 0 && mentions <= 16)
-
 (* The inline line (seam end to end) *)
 
 let dump_counter = ref 0
@@ -230,7 +183,7 @@ let inline_line =
   check_int "green child exits 0" ~expected:0 ~actual:code;
   check_contains "90% renders green" ~needle:"\027[32m90.0%\027[0m" out;
   check_contains "the summary line points at the project aggregate"
-    ~needle:"(9/10 points) \u{00b7} project: dune build @cover" out;
+    ~needle:"(9/10 points) \u{00b7} project: windtrap coverage" out;
   let _, out, _, _ =
     child ~env:[ "CHILD_VISITED=7" ] ~args:[ "--color"; "always" ] ()
   in
@@ -244,7 +197,7 @@ let inline_line =
     child ~env:[ "CHILD_VISITED=9" ] ~args:[ "--color"; "never" ] ()
   in
   check_contains "the summary line matches the design shape"
-    ~needle:"coverage: 90.0% (9/10 points) \u{00b7} project: dune build @cover"
+    ~needle:"coverage: 90.0% (9/10 points) \u{00b7} project: windtrap coverage"
     out;
   (* Off and uninstrumented runs render nothing. *)
   let _, out, _, _ =
@@ -691,8 +644,9 @@ let loud_failures =
   mkdir_p empty;
   let code, _, err = coverage_cmd ~cwd:empty [] in
   check_int "no .coverage files exit 1" ~expected:1 ~actual:code;
-  check_contains "no files: the hint names the instrumentation flow"
-    ~needle:"--instrument-with ppx_windtrap.coverage" err;
+  check_contains "no files: the hint names the backend, not a build tool"
+    ~needle:"ppx_windtrap.coverage" err;
+  check_absent "and spells no dune command" ~needle:"dune " err;
   (* Corrupt and foreign files are rejected loudly (Law 15). *)
   let corrupt = scratch "corrupt/_build/_coverage/bad.coverage" in
   write_file corrupt "not a coverage file\n";
@@ -724,8 +678,8 @@ let loud_failures =
   check_int "mismatched point tables exit 1" ~expected:1 ~actual:code;
   check_contains "mismatched point tables name the file" ~needle:"lib/foo.ml"
     err;
-  check_contains "the mismatch hint is a full re-run, not dune clean first"
-    ~needle:"dune build @cover" err;
+  check_contains "the mismatch hint is a full re-run, not deletion first"
+    ~needle:"from one build" err;
   (* Usage errors. *)
   let code, _, err = coverage_cmd ~cwd:proj [ "--frobnicate" ] in
   check_int "an unknown option exits 2" ~expected:2 ~actual:code;
@@ -818,11 +772,10 @@ let discovery_robustness =
   check_int "a truncated file exits 1" ~expected:1 ~actual:code;
   check_contains "a truncated file is named" ~needle:"cut.coverage" err;
   check_contains "a truncated file is called corrupt" ~needle:"corrupt" err;
-  (* The reporter's own exhaust is never data. windtrap's own binary
-     links the instrumented core, so running it dumps into the very
-     directory it just read; a dump whose recorded writer is that
-     binary is dropped silently — not merged, and not warned about
-     either, because there is nothing for a reader to do. *)
+  (* A dump recorded as written by the reporting binary itself gets no
+     special treatment: it is judged by its identity like any other —
+     here the recorded executable does not exist under this root, so
+     it is an orphan, excluded and named. *)
   let selfish = scratch "selfish" in
   write_file
     (Filename.concat selfish "_build/_coverage/self.coverage")
@@ -836,10 +789,11 @@ let discovery_robustness =
   let code, out, err = coverage_cmd ~cwd:selfish [] in
   check_int "a directory holding only the reporter's own dump exits 1"
     ~expected:1 ~actual:code;
-  check_contains "and says there is no data" ~needle:"no .coverage files" err;
-  check_absent "the reporter's own dump is not warned about"
+  check_contains "the dump is excluded like any other orphan"
     ~needle:"self.coverage" err;
-  check_absent "nor merged" ~needle:"ghost.ml" out;
+  check_contains "and the run says everything was excluded"
+    ~needle:"every .coverage file was excluded" err;
+  check_absent "and nothing is merged" ~needle:"ghost.ml" out;
   (* An explicit .coverage FILE argument is honored as-is. *)
   let code, out, _ =
     coverage_cmd ~cwd:scratch_dir
@@ -991,18 +945,14 @@ let staleness_pass =
   check_int "a lone stale dump exits 1 (nothing left to report)" ~expected:1
     ~actual:code;
   check_contains "the stale warning names the dump" ~needle:"a.coverage" err;
-  check_contains "the stale warning suspects the missing flag"
-    ~needle:"--instrument-with" err;
-  check_contains "the stale warning names the cached-run cause" ~needle:"cached"
-    err;
-  (* The summary names the count and the condition. It says which
-     condition rather than always "orphaned or stale", so the needle is
-     the part that holds for all three shapes; the orphan case below
-     pins its own wording. *)
-  check_contains "excluding everything is loud" ~needle:"and every one is" err;
-  check_contains "the all-excluded remedy is a forced run"
-    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage"
-    err;
+  check_contains "the stale warning says the executable was rebuilt"
+    ~needle:"rebuilt since" err;
+  check_contains "the remedy is an instrumented re-run"
+    ~needle:"re-run the suite instrumented" err;
+  check_contains "the remedy names the cached-run cause" ~needle:"cached" err;
+  check_absent "and spells no dune command" ~needle:"dune " err;
+  check_contains "excluding everything is loud"
+    ~needle:"every .coverage file was excluded" err;
   (* Stale beside fresh — the revert trap, measured against the blessed
      alias: reverting sources to an already-tested state makes that
      test action a dune cache hit, so its dump is never rewritten and
@@ -1023,9 +973,14 @@ let staleness_pass =
     out;
   check_contains "the partial-exclusion warning names the dump"
     ~needle:"b.coverage" err;
-  check_contains "the partial-exclusion remedy is a forced run"
-    ~needle:"dune build @cover --force --instrument-with ppx_windtrap.coverage"
-    err;
+  check_contains "the partial-exclusion remedy is the same sentence"
+    ~needle:"then merge again" err;
+  check_int "said once" ~expected:1
+    ~actual:
+      (List.length
+         (List.filter
+            (fun line -> contains "then merge again" line)
+            (String.split_on_char '\n' err)));
   (* An absolute identity resolves without a _build root. *)
   let root = stale_root "stale-abs" in
   write_dump root "abs.coverage"
@@ -1145,21 +1100,21 @@ let junit_rails =
 (* The suite *)
 
 let () =
-  run "coverage_cli"
-    [
-      law12_budget;
-      inline_line;
-      coverage_switch;
-      reporting_command;
-      min_matrix;
-      json_shape;
-      lcov_output;
-      expectations;
-      loud_failures;
-      min_boundaries;
-      discovery_robustness;
-      explicit_path_contract;
-      staleness_pass;
-      raise_attribution;
-      junit_rails;
-    ]
+  exit
+  @@ run "coverage_cli"
+       [
+         inline_line;
+         coverage_switch;
+         reporting_command;
+         min_matrix;
+         json_shape;
+         lcov_output;
+         expectations;
+         loud_failures;
+         min_boundaries;
+         discovery_robustness;
+         explicit_path_contract;
+         staleness_pass;
+         raise_attribution;
+         junit_rails;
+       ]

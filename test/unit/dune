@@ -63,13 +63,7 @@
   test_render_github
   test_cli
   test_driver)
- (libraries
-  windtrap
-  windtrap_coverage
-  unix
-  harness
-  render_fixtures
-  xml_check)
+ (libraries windtrap windtrap_runtime unix harness render_fixtures xml_check)
  ; test_render's golden transcripts are snapshot baselines, not literals
  ; in the source. They are inputs to the run, so dune must know about
  ; them or a sandboxed action cannot read them.

@@ -3,9 +3,9 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Mutate_verdicts: the verdict lattice (killed anywhere wins,
-   and the algebraic laws that make merging any number of files in any
-   order give one answer), the v3 verdict format (exact bytes, round
+(* Tests for Windtrap_runtime.Verdicts: the verdict lattice (killed
+   anywhere wins, and the algebraic laws that make merging any number of
+   files in any order give one answer), the v3 verdict format (exact bytes, round
    trip, every corruption class), deterministic output filenames, and
    the atomic write - the last also end to end through a child
    executable standing in for a mutation run's writing side. The
@@ -16,8 +16,8 @@
    order). *)
 
 open Windtrap
-module M = Windtrap_mutate
-module V = Windtrap.Private.Mutate_verdicts
+module M = Windtrap_runtime.Mutate
+module V = Windtrap_runtime.Verdicts
 
 (* Printers and lookups the module does not export: they are for
    diagnostics and assertions, which is a test's business rather than a
@@ -675,12 +675,13 @@ let child_tests =
 (* The suite *)
 
 let () =
-  run "mutate_verdicts"
-    [
-      group "verdicts" verdict_tests;
-      group "format" format_tests;
-      group "parse" rejection_tests;
-      group "filenames" filename_tests;
-      group "files" file_tests;
-      group "child" child_tests;
-    ]
+  exit
+  @@ run "mutate_verdicts"
+       [
+         group "verdicts" verdict_tests;
+         group "format" format_tests;
+         group "parse" rejection_tests;
+         group "filenames" filename_tests;
+         group "files" file_tests;
+         group "child" child_tests;
+       ]

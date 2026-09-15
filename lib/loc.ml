@@ -22,14 +22,16 @@ let unit_of name =
   | None -> name
 
 (* Windtrap's own units, and only those: the alias unit, its wrapped
-   modules, and the coverage runtime. The test matches whole unit names
-   rather than a bare "Windtrap" prefix, so a user library called
-   [Windtrap_helpers] stays foreign. *)
+   modules, and the instrumentation runtime's (its alias unit and its
+   wrapped modules). The test matches whole unit names rather than a bare
+   "Windtrap" prefix, so a user library called [Windtrap_helpers] stays
+   foreign. *)
 let own_unit name =
   let unit_name = unit_of name in
   unit_name = "Windtrap"
   || String.starts_with ~prefix:"Windtrap__" unit_name
-  || unit_name = "Windtrap_coverage"
+  || unit_name = "Windtrap_runtime"
+  || String.starts_with ~prefix:"Windtrap_runtime__" unit_name
 
 let internal_unit name =
   let unit_name = unit_of name in

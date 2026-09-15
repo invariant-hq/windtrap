@@ -12,7 +12,7 @@ let usage =
 
 COMMANDS:
   coverage    Merge .coverage files and report; --min gates, --json exports
-  mutate      Merge .mutants verdict files and report the project's survivors
+  mutants     Merge .mutants verdict files and report the project's survivors
 
 OPTIONS:
   -h, --help  Print this help and exit
@@ -22,7 +22,7 @@ See `windtrap <command> --help` for a subcommand's options.|}
 let () =
   match Array.to_list Sys.argv with
   | _ :: "coverage" :: args -> exit (Coverage_cmd.run args)
-  | _ :: "mutate" :: args -> exit (Mutate_cmd.run args)
+  | _ :: "mutants" :: args -> exit (Mutate_cmd.run args)
   | _ :: ("-h" | "--help" | "-help") :: _ ->
       print_endline usage;
       exit 0

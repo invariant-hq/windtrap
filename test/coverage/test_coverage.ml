@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Windtrap_coverage: the register/visit/snapshot registry
+(* Tests for Windtrap_runtime.Coverage: the register/visit/snapshot registry
    (saturation, duplicate and zero-block registrations, the warn-and-drop
    conflicting-registration path), collection algebra (add/merge matrices:
    disjoint, overlapping, conflicting), the v3 serialization with its
@@ -25,8 +25,8 @@
    run. *)
 
 open Windtrap
-module C = Windtrap_coverage
-module I = Windtrap_instr
+module C = Windtrap_runtime.Coverage
+module I = Windtrap_runtime.Instr
 
 let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
@@ -235,8 +235,8 @@ let registry_tests =
         in
         check "a conflicting registration warns on stderr"
           (contains "conflicting" err);
-        check "the conflict warning suggests dune clean"
-          (contains "dune clean" err);
+        check "the conflict warning suggests a clean rebuild"
+          (contains "rebuild from clean" err);
         let serialized = C.to_string (C.snapshot ()) in
         check "a conflict keeps the first registration's table"
           (contains "6000 6010 0\n" serialized);
@@ -408,13 +408,14 @@ let collection_tests =
         | Error (C.Point_mismatch _) ->
             check "conflicting add is a Point_mismatch" true
         | Ok _ | Error _ -> check "conflicting add is a Point_mismatch" false);
-        check
-          "mismatch hint: re-run everything together, dune clean as fallback"
+        check "mismatch hint: re-run everything together, deletion as fallback"
           (let message =
              Format.asprintf "%a" C.pp_error
                (C.Point_mismatch { file = "lib/x.ml" })
            in
-           contains "dune build @cover" message && contains "dune clean" message);
+           contains "from one build" message
+           && contains "delete the files" message
+           && not (contains "dune " message));
         check "unknown-format hint instructs deletion, not a re-run alone"
           (let message =
              Format.asprintf "%a" C.pp_error
@@ -876,7 +877,7 @@ let dump_tests =
         (match read_file conflict_err with
         | Some err ->
             check "the conflicting child warns on stderr"
-              (contains "conflicting" err && contains "dune clean" err)
+              (contains "conflicting" err && contains "rebuild from clean" err)
         | None -> check "the conflicting child warns on stderr" false);
         Sys.remove child_file;
         check_int "silent child exits 0" ~expected:0 ~actual:(run "silent");
@@ -949,14 +950,15 @@ let dump_tests =
 (* The suite *)
 
 let () =
-  run "coverage"
-    [
-      group "registry" registry_tests;
-      group "collections" collection_tests;
-      group "parse" rejection_tests;
-      group "filenames" filename_tests;
-      group "lines" line_tests;
-      group "summaries" summary_tests;
-      group "reports" report_tests;
-      group "dump" dump_tests;
-    ]
+  exit
+  @@ run "coverage"
+       [
+         group "registry" registry_tests;
+         group "collections" collection_tests;
+         group "parse" rejection_tests;
+         group "filenames" filename_tests;
+         group "lines" line_tests;
+         group "summaries" summary_tests;
+         group "reports" report_tests;
+         group "dump" dump_tests;
+       ]

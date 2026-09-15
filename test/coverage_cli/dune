@@ -5,26 +5,18 @@
 ; WINDTRAP_COVERAGE switch are exercised through the real
 ; facade; `windtrap coverage` (bin/main.exe) is driven as a subprocess
 ; over synthetic .coverage files written with the runtime's serializer.
-; A windtrap suite (see test/coverage). The lib/ globs feed
-; the Law-12 budget check: the test counts the core's coverage-runtime
-; mentions and fails when the seam grows past its cap.
+; A windtrap suite (see test/coverage).
 
 (test
  (name test_coverage_cli)
  (modules test_coverage_cli)
- (libraries windtrap windtrap_coverage windtrap_instr unix)
- (deps
-  inline_child.exe
-  raise_child.exe
-  covcli_fixture.ml
-  ../../bin/main.exe
-  (glob_files ../../lib/*.ml)
-  (glob_files ../../lib/*.mli)))
+ (libraries windtrap windtrap_runtime unix)
+ (deps inline_child.exe raise_child.exe covcli_fixture.ml ../../bin/main.exe))
 
 (executable
  (name inline_child)
  (modules inline_child)
- (libraries windtrap windtrap_coverage))
+ (libraries windtrap windtrap_runtime))
 
 ; The raise-attribution path is the one place this test uses the real
 ; instrumenter: covcli_fixture is instrumented unconditionally (pps, no

@@ -6,18 +6,20 @@
 (* Stands in for an instrumented executable: it holds exactly the binding
    ppx_windtrap.mutate generates - one [register] call whose result is the
    file's guard closure - and three guarded expressions in the three
-   shapes the RFC specifies. The parent test drives it through
-   WINDTRAP_MUTATE_ARM and reads its stdout, which is how the whole
-   arm-from-the-environment path gets exercised in a real process rather
-   than in the test's own image.
+   shapes the RFC specifies. The parent test drives it with an identifier
+   on the command line and reads its stdout, which is how the whole
+   arming path gets exercised in a real process rather than in the test's
+   own image. The runtime reads no environment: what the core does with
+   an identifier it read - parse it with the runtime's grammar, then arm
+   - is what [arm] below does with one from argv.
 
-   Modes: [run] arms from the environment and prints what the guards
-   answer; [budget n times] arms with a runaway budget and evaluates a
-   guard in a loop; [reach] drains the reach map in a process whose epoch
-   counter is untouched, which is the only place module initialization is
-   distinguishable. *)
+   Modes: [run [ID]] arms the identifier, if given, and prints what the
+   guards answer; [budget n times [ID]] arms with a runaway budget and
+   evaluates a guard in a loop; [reach] drains the reach map in a process
+   whose epoch counter is untouched, which is the only place module
+   initialization is distinguishable. *)
 
-module M = Windtrap_mutate
+module M = Windtrap_runtime.Mutate
 
 let guard =
   M.register ~file:"lib/child.ml"
@@ -84,10 +86,18 @@ let refuse e =
   Format.eprintf "windtrap mutate: %a@." M.pp_arm_error e;
   exit 1
 
+(* The core's arming step, for an identifier it read: [None] is a run
+   nobody asked to arm. *)
+let arm ?budget = function
+  | None -> Ok None
+  | Some spec ->
+      Result.bind (M.id_of_string spec) (fun id ->
+          Result.map Option.some (M.arm ?budget id))
+
 let () =
   match Array.to_list Sys.argv with
-  | _ :: "run" :: _ -> (
-      match M.arm_from_env () with
+  | _ :: "run" :: rest -> (
+      match arm (List.nth_opt rest 0) with
       | Error e -> refuse e
       | Ok armed ->
           announce armed;
@@ -96,9 +106,9 @@ let () =
           Printf.printf "less 2 2 = %b\n" (less 2 2);
           Printf.printf "sum 3 4 = %d\n" (sum 3 4);
           Printf.printf "positives = %d\n" (positives [ 1; -2; 3 ]))
-  | _ :: "budget" :: budget :: times :: _ -> (
+  | _ :: "budget" :: budget :: times :: rest -> (
       let budget = int_of_string budget and times = int_of_string times in
-      match M.arm_from_env ~budget () with
+      match arm ~budget (List.nth_opt rest 0) with
       | Error e -> refuse e
       | Ok armed -> (
           announce armed;
@@ -124,5 +134,6 @@ let () =
       show "window" (M.drain ());
       show "drained" (M.drain ())
   | _ ->
-      prerr_endline "arm_child: expected run | budget <n> <times> | reach";
+      prerr_endline
+        "arm_child: expected run [ID] | budget <n> <times> [ID] | reach";
       exit 2

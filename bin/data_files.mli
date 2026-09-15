@@ -5,14 +5,14 @@
 
 (** Locating and vetting the instrumentation data files.
 
-    The [coverage] and [mutate] subcommands read the same kind of estate: a
+    The [coverage] and [mutants] subcommands read the same kind of estate: a
     directory of data files under a project's [_build], each written by an
     instrumented test executable. This module is their shared half — resolving
-    the project root as the runtimes resolve their output paths, walking
+    the project root as the runtime resolves its output paths, walking
     directories, expanding explicit [PATH] arguments, and judging each file's
     freshness from the writer identity it records. Both commands exclude a
-    flagged file and warn; the wording of the warning and of the remedy stays
-    with each command. *)
+    flagged file with one warning line ({!describe}) and then say, once, what
+    heals it; that remedy sentence stays with each command. *)
 
 val discover :
   dir:string ->
@@ -39,16 +39,9 @@ val discover :
     narrowing of the merge. A directory argument contributes the [.<ext>] files
     found under it at any depth, however many that is. *)
 
-val self_written : Windtrap_instr.identity option -> bool
-(** [self_written identity] is [true] when [identity] names the running
-    executable. A reporting binary that is itself instrumented dumps its own
-    data, at exit, into the directory it just read; such a file is this
-    command's exhaust, not the suite's data, and callers drop it before merging.
-    Always [false] for an uninstrumented [windtrap], which writes nothing. *)
-
 (** The type for a data file's freshness, judged from the
-    {!Windtrap_instr.identity} it records. [Orphan] and [Stale] carry the
-    recorded executable identity. *)
+    {!Windtrap_runtime.Instr.identity} it records. [Orphan] and [Stale] carry
+    the recorded executable identity. *)
 type freshness =
   | Fresh
       (** The recorded executable wrote this file — or the file records no
@@ -57,7 +50,8 @@ type freshness =
   | Stale of string
       (** The executable on disk is not the one that wrote the file. *)
 
-val freshness : path:string -> Windtrap_instr.identity option -> freshness
+val freshness :
+  path:string -> Windtrap_runtime.Instr.identity option -> freshness
 (** [freshness ~path identity] judges the data file at [path] against the
     [identity] it recorded. A relative identity is a path below [_build]; the
     file's own topmost-[_build] root locates that [_build] — the same root
@@ -67,8 +61,7 @@ val freshness : path:string -> Windtrap_instr.identity option -> freshness
     dune's shared cache restores rebuilt artifacts with their original
     timestamps. *)
 
-val describe : stale_hint:string -> path:string -> freshness -> string
-(** [describe ~stale_hint ~path f] is the warning line for a flagged file:
-    orphans name the missing executable, and [Stale] appends [stale_hint] — each
-    command's own wording of the re-run that heals it. Never call it on [Fresh].
-*)
+val describe : path:string -> freshness -> string
+(** [describe ~path f] is the one warning line for an excluded file: the path,
+    the recorded executable, why it is excluded, and that it was. Never call it
+    on [Fresh]. *)

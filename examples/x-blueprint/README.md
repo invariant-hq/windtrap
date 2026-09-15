@@ -42,6 +42,11 @@ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
   --force --instrument-with ppx_windtrap.mutate       # the project aggregate
 ```
 
+The two aggregate aliases are sugar over two commands each — the
+instrumented run of every suite, then `dune exec windtrap -- coverage
+--min 80` or `dune exec windtrap -- mutants` over what the suites
+wrote; the manual chapters teach the two-command form first.
+
 Writing a new test here ends with the mutation loop: filter the survey
 to it, and the report says which of the faults it reaches it lets
 through. The deliberately weak law in `test_stats.ml` (the fourth
@@ -117,9 +122,10 @@ Four things are deliberate:
 
 - **The aliases are named `example-cover` / `example-mutate`.** In
   your own project they are `cover` and `mutate` — the names windtrap's
-  manual, skill, and own root `dune` use. They are renamed here only
-  because this example lives inside windtrap's tree, where those
-  aliases are recursive and already mean the project's own aggregate.
+  manual, skill, and own root `dune` use for the folded form of the two
+  commands. They are renamed here only because this example lives
+  inside windtrap's tree, where those aliases are recursive and already
+  mean the project's own aggregate.
 - **Issue #1 is a real, intentional bug.** `Slug.slugify` treats UTF-8
   letters as separators (`"Café"` → `"caf"`, not `"café"`).
   `test/failures/issue_1.ml` keeps the reproduction running as an

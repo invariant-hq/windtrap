@@ -128,11 +128,13 @@ reproductions in-tree without a red run.
 
 **[Code coverage](doc/manual/coverage.md)** — expression-level coverage
 from the inert `(instrumentation (backend ppx_windtrap.coverage))`
-stanza: `dune runtest --instrument-with ppx_windtrap.coverage` prints an
-inline percentage after the results, `dune exec windtrap -- coverage`
-draws the per-file table (`-u` for the uncovered source, `--json` for
-the machine-readable form, `--lcov` for coverage services and genhtml),
-and `--min 80` gates CI.
+stanza, in two commands: `dune runtest --force --instrument-with
+ppx_windtrap.coverage` runs the suite instrumented (declare the backend
+once in `dune-workspace` and the flag goes), then `dune exec windtrap
+-- coverage` merges every executable's data and draws the per-file
+table (`-u` for the uncovered source, `--json` for the machine-readable
+form, `--lcov` for coverage services and genhtml), and `--min 80` gates
+CI.
 
 **[Mutation testing](doc/manual/mutation.md)** — the second inert
 stanza, `(instrumentation (backend ppx_windtrap.mutate))`, makes the
@@ -143,11 +145,12 @@ naming the line, the rewrite, and *the tests that ran that line and did
 not fail when it changed*. Scope it to the file you are working on with
 `WINDTRAP_MUTATE_ONLY=lib/foo.ml`, filter to the test you just wrote
 with `-f`, and dismiss an equivalent mutant in the source with
-`[@mutate off "reason"]`. The project answer is one command,
-`WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with
-ppx_windtrap.mutate`, which runs every suite mutated and merges them
-under killed-anywhere-wins — a mutant one suite kills and another
-merely reaches is killed — and exits 1 on any survivor.
+`[@mutate off "reason"]`. The project answer is two commands,
+`WINDTRAP_MUTATE=1 dune runtest --force --instrument-with
+ppx_windtrap.mutate` to run every suite mutated, then `dune exec
+windtrap -- mutants` to merge their verdicts under killed-anywhere-wins
+— a mutant one suite kills and another merely reaches is killed — and
+exit 1 on any survivor.
 
 **[Test runner](doc/manual/running-tests.md)** — filtering by name and
 tag, `--failed` reruns, `--shard K/N` for CI partitioning, fail-fast,

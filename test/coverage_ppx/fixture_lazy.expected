@@ -3,15 +3,15 @@ module Windtrap_cov_________fixture_lazy___ml =
   struct
     let ___windtrap_visit___ =
       let counts = Array.make 2 0 in
-      Windtrap_coverage.register ~file:"./fixture_lazy.ml"
+      Windtrap_runtime.Coverage.register ~file:"./fixture_lazy.ml"
         ~points:[|{
-                    Windtrap_coverage.start_ofs = 228;
-                    Windtrap_coverage.end_ofs = 235
+                    Windtrap_runtime.Coverage.start_ofs = 228;
+                    Windtrap_runtime.Coverage.end_ofs = 235
                   };{
-                      Windtrap_coverage.start_ofs = 327;
-                      Windtrap_coverage.end_ofs = 328
+                      Windtrap_runtime.Coverage.start_ofs = 327;
+                      Windtrap_runtime.Coverage.end_ofs = 328
                     }|] ~counts;
-      (fun index -> Windtrap_coverage.visit counts index)
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
   end
 open Windtrap_cov_________fixture_lazy___ml
 [@@@ocaml.text "/*"]

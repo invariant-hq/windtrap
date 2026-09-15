@@ -16,7 +16,7 @@
    uninstrumented build computes. This executable is itself
    uninstrumented, so its own definitions are the uninstrumented
    baselines. The final tests read the in-process runtime through
-   [Windtrap_coverage.snapshot] to prove the generated registration and
+   [Windtrap_runtime.Coverage.snapshot] to prove the generated registration and
    visit calls actually count.
 
    A windtrap suite ([run] executes tests sequentially in declaration
@@ -38,18 +38,20 @@ let check_int name ~expected ~actual = equal ~msg:name int expected actual
    fixture's twenty. Scope once, here, and the suite says the same thing
    instrumented or not. *)
 let fixture_snapshot () =
-  Windtrap_coverage.filter
+  Windtrap_runtime.Coverage.filter
     (fun file -> Filename.basename file = "covsem_fixtures.ml")
-    (Windtrap_coverage.snapshot ())
+    (Windtrap_runtime.Coverage.snapshot ())
 
-let visited () = (Windtrap_coverage.summary (fixture_snapshot ())).visited
+let visited () =
+  (Windtrap_runtime.Coverage.summary (fixture_snapshot ())).visited
 
 let tests =
   [
     test "registration happens at module load, before any call" (fun () ->
         let s = fixture_snapshot () in
-        check "fixtures registered at load" (not (Windtrap_coverage.is_empty s));
-        let summary = Windtrap_coverage.summary s in
+        check "fixtures registered at load"
+          (not (Windtrap_runtime.Coverage.is_empty s));
+        let summary = Windtrap_runtime.Coverage.summary s in
         check "no point visited before any call" (summary.visited = 0);
         check "the fixture points are all registered" (summary.total >= 20));
     (* Tail calls survive entry sequencing and out-edge wrapping *)
@@ -224,7 +226,7 @@ let tests =
     test "the visit calls counted; a raising path lowers the percentage"
       (fun () ->
         let s = fixture_snapshot () in
-        let summary = Windtrap_coverage.summary s in
+        let summary = Windtrap_runtime.Coverage.summary s in
         check "points were visited" (summary.visited > 0);
         check "visited never exceeds total" (summary.visited <= summary.total);
         (* [tap_raise]'s out-edge can never fire, so the file can never
@@ -233,8 +235,8 @@ let tests =
         check "the raise out-edge keeps the file below 100%"
           (summary.visited < summary.total);
         check "the percentage reflects the unvisited out-edge"
-          (Windtrap_coverage.percentage summary < 100.);
-        match Windtrap_coverage.file_reports s with
+          (Windtrap_runtime.Coverage.percentage summary < 100.);
+        match Windtrap_runtime.Coverage.file_reports s with
         | [ report ] ->
             check "the registered file is the fixture module"
               (Filename.basename report.file = "covsem_fixtures.ml")

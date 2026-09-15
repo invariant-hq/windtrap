@@ -138,8 +138,8 @@ type mutation = {
           an error. *)
   arm : string option;
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
-          {!Windtrap_mutate.arm_from_env} owns that grammar and reports its own
-          errors. [None] when the variable is unset or empty. *)
+          {!Windtrap_runtime.Mutate.id_of_string} owns that grammar and reports
+          its own errors. [None] when the variable is unset or empty. *)
 }
 (** The type for the mutation knobs, which are environment variables only: the
     inline runner's argument parser accepts dune's inline-test protocol and

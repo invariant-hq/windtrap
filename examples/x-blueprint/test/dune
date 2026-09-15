@@ -7,7 +7,9 @@
 ; aliases in a subdirectory would silently widen the project aggregate
 ; every time someone ran one at the root.
 ;
-; Each alias runs every suite under it and merges what the suites wrote:
+; Each alias folds two commands — the instrumented run of every suite
+; under it, then the `windtrap` merge of what the suites wrote — into
+; one:
 ;
 ;   dune build @example-cover --instrument-with ppx_windtrap.coverage
 ;   WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
@@ -43,4 +45,4 @@
   (alias_rec runtest)
   (universe))
  (action
-  (run %{bin:windtrap} mutate)))
+  (run %{bin:windtrap} mutants)))

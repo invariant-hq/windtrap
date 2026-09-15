@@ -33,22 +33,23 @@ let baseline () =
 
 let mutants_of file =
   List.filter
-    (fun (m : Windtrap_mutate.mutant) -> Filename.basename m.id.file = file)
-    (Windtrap_mutate.catalogue ())
+    (fun (m : Windtrap_runtime.Mutate.mutant) ->
+      Filename.basename m.id.file = file)
+    (Windtrap_runtime.Mutate.catalogue ())
 
 let with_mutant ~file ~rewrite ~before f =
   let matching =
     List.filter
-      (fun (m : Windtrap_mutate.mutant) ->
+      (fun (m : Windtrap_runtime.Mutate.mutant) ->
         m.id.rewrite = rewrite && m.before = before)
       (mutants_of file)
   in
   (match matching with
   | [ m ] -> (
-      match Windtrap_mutate.arm m.Windtrap_mutate.id with
+      match Windtrap_runtime.Mutate.arm m.Windtrap_runtime.Mutate.id with
       | Ok _ -> ()
-      | Error e -> Format.kasprintf failwith "%a" Windtrap_mutate.pp_arm_error e
-      )
+      | Error e ->
+          Format.kasprintf failwith "%a" Windtrap_runtime.Mutate.pp_arm_error e)
   | [] ->
       Format.kasprintf failwith "no %s mutant renders as %S in %s" rewrite
         before file
@@ -56,7 +57,7 @@ let with_mutant ~file ~rewrite ~before f =
       Format.kasprintf failwith "%d %s mutants render as %S in %s"
         (List.length matching) rewrite before file);
   f ();
-  Windtrap_mutate.disarm ()
+  Windtrap_runtime.Mutate.disarm ()
 
 let with_oracle_mutant = with_mutant ~file:"oracle.ml"
 
@@ -174,11 +175,11 @@ let typing_context () =
 let () =
   behaviour ();
   typing_context ();
-  let catalogue = Windtrap_mutate.catalogue () in
-  assert (Windtrap_mutate.armed () = None);
+  let catalogue = Windtrap_runtime.Mutate.catalogue () in
+  assert (Windtrap_runtime.Mutate.armed () = None);
   List.iter
-    (fun (m : Windtrap_mutate.mutant) ->
-      assert (List.mem m.id.rewrite Windtrap_mutate.rewrites);
+    (fun (m : Windtrap_runtime.Mutate.mutant) ->
+      assert (List.mem m.id.rewrite Windtrap_runtime.Mutate.rewrites);
       assert (m.id.line >= 1);
       assert (m.id.col >= 0);
       assert (m.before <> "");
@@ -191,7 +192,7 @@ let () =
   assert (Windtrap_mutate_stanza.Stanza.clamp 0 10 42 = 10);
   let forced =
     List.filter
-      (fun (m : Windtrap_mutate.mutant) ->
+      (fun (m : Windtrap_runtime.Mutate.mutant) ->
         Filename.basename m.id.file = "forced.ml")
       catalogue
   in
@@ -202,18 +203,19 @@ let () =
   let unarmed = baseline () in
   let changed =
     List.filter
-      (fun (m : Windtrap_mutate.mutant) ->
-        (match Windtrap_mutate.arm m.Windtrap_mutate.id with
+      (fun (m : Windtrap_runtime.Mutate.mutant) ->
+        (match Windtrap_runtime.Mutate.arm m.Windtrap_runtime.Mutate.id with
         | Ok _ -> ()
         | Error e ->
-            Format.kasprintf failwith "%a" Windtrap_mutate.pp_arm_error e);
+            Format.kasprintf failwith "%a" Windtrap_runtime.Mutate.pp_arm_error
+              e);
         let armed = baseline () in
-        Windtrap_mutate.disarm ();
+        Windtrap_runtime.Mutate.disarm ();
         assert (baseline () = unarmed);
         armed <> unarmed)
       forced
   in
   assert (changed <> []);
-  assert (Windtrap_mutate.armed () = None);
+  assert (Windtrap_runtime.Mutate.armed () = None);
   Printf.printf "mutants: %d (forced: %d, %d of them observable here)\n"
     (List.length catalogue) (List.length forced) (List.length changed)

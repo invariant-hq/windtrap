@@ -171,8 +171,8 @@ stateful tests carry automatic tags (`--exclude-tag prop` for an
 example-only pass), slow tests carry `slow` (`--exclude-tag slow` drops
 them), and `-f` filters by path. Extra executables also carry a real bill:
 each one links the library, splits the coverage denominator, and
-re-runs the mutation loop over every file it links — the `@mutate`
-merge makes the *answer* right, not the cost.
+re-runs the mutation loop over every file it links — the `windtrap
+mutants` merge makes the *answer* right, not the cost.
 
 Within the unit suite: one test file per source module, and **one test
 stanza per file** — each file is its own suite, ending in its own
@@ -183,7 +183,7 @@ only the project verdict aliases:
 
 ```
 test/
-  dune                 ; the @cover/@mutate verdict aliases (below)
+  dune                 ; the @cover/@mutate verdict aliases, if you want them (below)
   unit/                ; THE windtrap suite: laws, examples, stateful, snapshots
     dune               ; (tests (names test_parser test_eval) ...)
     test_parser.ml     ; everything that constrains Parser — its own run
@@ -225,26 +225,30 @@ owning module's file in `unit/` as a regression test, and deleting the
 issue file with its entry in `(names …)` — when the last issue dies,
 the stanza goes with it.
 
-Two things in those stanzas are load-bearing and easy to omit. A unit
+One thing in those stanzas is load-bearing and easy to omit: a unit
 suite with baselines declares them — `(deps (glob_files_rec
 __snapshots__/**))` — because baselines are runtime data, invisible to
 dune, and without the glob editing a baseline does not re-trigger the
-test. The `@cover` and `@mutate` rules declare `(deps (universe))`,
-because the `.coverage` and `.mutants` files test executables write at
-exit are not declarable dependencies, so without it the merge action
-caches against nothing and silently goes stale.
+test.
 
-The two verdict aliases in `test/dune` have the same shape — `(deps
-(alias_rec runtest) (universe))` and a `windtrap` merge as the action —
-and differ in what the run must carry. Coverage accumulates as a side
-effect of any instrumented run, so `dune build @cover --instrument-with
-ppx_windtrap.coverage` is the whole command. A mutation *verdict* exists
-only if a suite was asked to test its mutants, so `@mutate` is run with
-`WINDTRAP_MUTATE=1` in the environment, the backend flag, and `--force`
-(a mutation run is not a cached artifact); the merge exits 1 when a
-mutant survived every executable that reached it. Without those three a
-plain `dune build @mutate` rebuilds the suites uninstrumented, which
-stales every verdict, and the merge refuses loudly.
+The project verdicts are two commands each: a run of the whole suite
+with the backend on, then a `windtrap` merge of what the executables
+wrote. Coverage accumulates as a side effect of any instrumented run,
+so `dune runtest --force --instrument-with ppx_windtrap.coverage` then
+`dune exec windtrap -- coverage --min 80` is the whole thing. A
+mutation *verdict* exists only if a suite was asked to test its
+mutants, so the run carries `WINDTRAP_MUTATE=1` in the environment, the
+backend flag, and `--force` (a mutation run is not a cached artifact),
+and `dune exec windtrap -- mutants` merges; it exits 1 when a mutant
+survived every executable that reached it. Declare the backends once in
+`dune-workspace` — `(context (default (instrument_with
+ppx_windtrap.coverage ppx_windtrap.mutate)))` — and the flag disappears
+from every command. The two `@cover` and `@mutate` rules in `test/dune`
+fold each pair into one alias; they declare `(deps (alias_rec runtest)
+(universe))`, because the `.coverage` and `.mutants` files test
+executables write at exit are not declarable dependencies, so without
+`(universe)` the merge action caches against nothing and silently goes
+stale.
 
 Set `--min` to the measured baseline minus a couple of points of
 headroom, not a round number. It ratchets: raise it when the margin is
@@ -271,8 +275,8 @@ coverage gate, and the mutation gate:
 
 ```yaml
 - run: WINDTRAP_JUNIT=_build/junit dune runtest
-- run: dune build @cover --instrument-with ppx_windtrap.coverage
-- run: WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+- run: dune runtest --force --instrument-with ppx_windtrap.coverage && dune exec windtrap -- coverage --min 80
+- run: WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate && dune exec windtrap -- mutants
 ```
 
 Under GitHub Actions failures also surface as inline annotations with no
@@ -299,7 +303,7 @@ only the judgment the chapters leave implicit.
 | `bracket`, `scoped`, `fixture`, temp paths, `setenv`/`chdir`, `cases`, tags, focus, `xfail` | `doc/manual/resources-and-structure.md` |
 | the flags, their `WINDTRAP_*` mirrors, selection, sharding, CI output | `doc/manual/running-tests.md` |
 | the coverage stanza, `windtrap coverage`, `[@coverage off]` | `doc/manual/coverage.md` |
-| the mutation stanza, survivor blocks, `WINDTRAP_MUTATE_ONLY`, arming one mutant, `windtrap mutate` | `doc/manual/mutation.md` |
+| the mutation stanza, survivor blocks, `WINDTRAP_MUTATE_ONLY`, arming one mutant, `windtrap mutants` | `doc/manual/mutation.md` |
 | convergence loops, Eio, subprocess workers, scripted seams | `doc/cookbook.md` |
 
 Those paths are a windtrap checkout's. The package installs neither
@@ -380,9 +384,10 @@ the percentage: an uncovered error branch is a missing test; an
 uncovered debug helper is what `[@coverage off]` is for. Coverage is
 expression-grade, and a call that raises leaves its out-edge unvisited,
 so raising paths show up as uncovered rather than painted green for
-having been entered. The gate lives in the `@cover` alias only — test
-runs never fail on coverage. Coverage finds *missing* tests; mutation
-(§6) finds *weak* ones. Run both, routinely.
+having been entered. The gate is `windtrap coverage --min`, run after
+the instrumented suite — test runs never fail on coverage. Coverage
+finds *missing* tests; mutation (§6) finds *weak* ones. Run both,
+routinely.
 
 **The daily loop.** `-f`/`-e` filter by path substring, `--tag`/
 `--exclude-tag` by tag, `--failed` reruns the last run's failures,
@@ -416,7 +421,7 @@ with `dune promote`. Non-obvious mechanics:
 - Coverage reaches the binary too: with §3's coverage stanza on its
   library, every command a cram test runs writes its own dump, and
   `windtrap coverage` merges them all — a CLI exercised through cram
-  counts across every invocation, under the same `@cover` alias.
+  counts across every invocation, in the same merge.
 
 ## 6. Prove every test can fail (mutation)
 
@@ -474,16 +479,18 @@ summary reads `mutants: 1 survived of 5 reached by this suite · 4
 killed`. **When fixing a bug, write the failing test first** and see it
 fail; the survey is for every other test.
 
-**The project question is `@mutate`.** A library is normally covered by
+**The project question is the merge.** A library is normally covered by
 several test executables, and per-executable reports disagree by
 construction — one suite's kill is another's survivor — so the project
-answer is the merge, under killed-anywhere-wins:
+answer is `windtrap mutants`, under killed-anywhere-wins:
 
 ```
-WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
+dune exec windtrap -- mutants
 ```
 
-One command runs every suite with its mutants and merges. The report is
+The first runs every suite with its mutants, the second merges (the
+`@mutate` alias of §3 folds the two into one). The report is
 the same survivor blocks with the executable beside each witness, plus
 `UNREACHED` blocks for mutants no suite's tests evaluate — those mean
 *write a test*: no assertion, however sharp, can catch what no test
@@ -558,8 +565,9 @@ merely recall having read the rule:
       filtered `WINDTRAP_MUTATE=1` survey otherwise — with every
       survivor it reached resolved: assertion strengthened, or an
       equivalent mutant dismissed with a reason
-- [ ] Coverage read on touched code; `@cover`/`@mutate` aliases
-      present; `--min` ratcheted, never lowered; `@mutate` green
+- [ ] Coverage read on touched code; the coverage gate and the
+      `windtrap mutants` merge run in CI; `--min` ratcheted, never
+      lowered; the merge green
 - [ ] Layout: suites split only along mechanical boundaries; files by
       subject; no test code in `lib/`; known bugs in `test/failures/`
 - [ ] No §7 violation: nothing weakened, deleted, skipped, or

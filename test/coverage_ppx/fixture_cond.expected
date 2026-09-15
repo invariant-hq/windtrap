@@ -3,155 +3,169 @@ module Windtrap_cov_________fixture_cond___ml =
   struct
     let ___windtrap_visit___ =
       let counts = Array.make 39 0 in
-      Windtrap_coverage.register ~file:"./fixture_cond.ml"
+      Windtrap_runtime.Coverage.register ~file:"./fixture_cond.ml"
         ~points:[|{
-                    Windtrap_coverage.start_ofs = 398;
-                    Windtrap_coverage.end_ofs = 399
+                    Windtrap_runtime.Coverage.start_ofs = 398;
+                    Windtrap_runtime.Coverage.end_ofs = 399
                   };{
-                      Windtrap_coverage.start_ofs = 393;
-                      Windtrap_coverage.end_ofs = 399
+                      Windtrap_runtime.Coverage.start_ofs = 393;
+                      Windtrap_runtime.Coverage.end_ofs = 399
                     };{
-                        Windtrap_coverage.start_ofs = 417;
-                        Windtrap_coverage.end_ofs = 418
+                        Windtrap_runtime.Coverage.start_ofs = 417;
+                        Windtrap_runtime.Coverage.end_ofs = 418
                       };{
-                          Windtrap_coverage.start_ofs = 422;
-                          Windtrap_coverage.end_ofs = 423
+                          Windtrap_runtime.Coverage.start_ofs = 422;
+                          Windtrap_runtime.Coverage.end_ofs = 423
                         };{
-                            Windtrap_coverage.start_ofs = 442;
-                            Windtrap_coverage.end_ofs = 443
+                            Windtrap_runtime.Coverage.start_ofs = 442;
+                            Windtrap_runtime.Coverage.end_ofs = 443
                           };{
-                              Windtrap_coverage.start_ofs = 447;
-                              Windtrap_coverage.end_ofs = 448
+                              Windtrap_runtime.Coverage.start_ofs = 447;
+                              Windtrap_runtime.Coverage.end_ofs = 448
                             };{
-                                Windtrap_coverage.start_ofs = 452;
-                                Windtrap_coverage.end_ofs = 453
+                                Windtrap_runtime.Coverage.start_ofs = 452;
+                                Windtrap_runtime.Coverage.end_ofs = 453
                               };{
-                                  Windtrap_coverage.start_ofs = 509;
-                                  Windtrap_coverage.end_ofs = 512
+                                  Windtrap_runtime.Coverage.start_ofs = 509;
+                                  Windtrap_runtime.Coverage.end_ofs = 512
                                 };{
-                                    Windtrap_coverage.start_ofs = 509;
-                                    Windtrap_coverage.end_ofs = 512
+                                    Windtrap_runtime.Coverage.start_ofs = 509;
+                                    Windtrap_runtime.Coverage.end_ofs = 512
                                   };{
-                                      Windtrap_coverage.start_ofs = 482;
-                                      Windtrap_coverage.end_ofs = 493
+                                      Windtrap_runtime.Coverage.start_ofs =
+                                        482;
+                                      Windtrap_runtime.Coverage.end_ofs = 493
                                     };{
-                                        Windtrap_coverage.start_ofs = 1503;
-                                        Windtrap_coverage.end_ofs = 1508
+                                        Windtrap_runtime.Coverage.start_ofs =
+                                          1503;
+                                        Windtrap_runtime.Coverage.end_ofs =
+                                          1508
                                       };{
-                                          Windtrap_coverage.start_ofs = 1503;
-                                          Windtrap_coverage.end_ofs = 1549
+                                          Windtrap_runtime.Coverage.start_ofs
+                                            = 1503;
+                                          Windtrap_runtime.Coverage.end_ofs =
+                                            1549
                                         };{
-                                            Windtrap_coverage.start_ofs =
-                                              1572;
-                                            Windtrap_coverage.end_ofs = 1577
+                                            Windtrap_runtime.Coverage.start_ofs
+                                              = 1572;
+                                            Windtrap_runtime.Coverage.end_ofs
+                                              = 1577
                                           };{
-                                              Windtrap_coverage.start_ofs =
-                                                1594;
-                                              Windtrap_coverage.end_ofs =
-                                                1615
+                                              Windtrap_runtime.Coverage.start_ofs
+                                                = 1594;
+                                              Windtrap_runtime.Coverage.end_ofs
+                                                = 1615
                                             };{
-                                                Windtrap_coverage.start_ofs =
-                                                  1572;
-                                                Windtrap_coverage.end_ofs =
-                                                  1615
+                                                Windtrap_runtime.Coverage.start_ofs
+                                                  = 1572;
+                                                Windtrap_runtime.Coverage.end_ofs
+                                                  = 1615
                                               };{
-                                                  Windtrap_coverage.start_ofs
+                                                  Windtrap_runtime.Coverage.start_ofs
                                                     = 1634;
-                                                  Windtrap_coverage.end_ofs =
-                                                    1639
+                                                  Windtrap_runtime.Coverage.end_ofs
+                                                    = 1639
                                                 };{
-                                                    Windtrap_coverage.start_ofs
+                                                    Windtrap_runtime.Coverage.start_ofs
                                                       = 1676;
-                                                    Windtrap_coverage.end_ofs
+                                                    Windtrap_runtime.Coverage.end_ofs
                                                       = 1681
                                                   };{
-                                                      Windtrap_coverage.start_ofs
+                                                      Windtrap_runtime.Coverage.start_ofs
                                                         = 1657;
-                                                      Windtrap_coverage.end_ofs
+                                                      Windtrap_runtime.Coverage.end_ofs
                                                         = 1670
                                                     };{
-                                                        Windtrap_coverage.start_ofs
+                                                        Windtrap_runtime.Coverage.start_ofs
                                                           = 1634;
-                                                        Windtrap_coverage.end_ofs
+                                                        Windtrap_runtime.Coverage.end_ofs
                                                           = 1681
                                                       };{
-                                                          Windtrap_coverage.start_ofs
+                                                          Windtrap_runtime.Coverage.start_ofs
                                                             = 1990;
-                                                          Windtrap_coverage.end_ofs
+                                                          Windtrap_runtime.Coverage.end_ofs
                                                             = 1995
                                                         };{
-                                                            Windtrap_coverage.start_ofs
+                                                            Windtrap_runtime.Coverage.start_ofs
                                                               = 2023;
-                                                            Windtrap_coverage.end_ofs
+                                                            Windtrap_runtime.Coverage.end_ofs
                                                               = 2050
                                                           };{
-                                                              Windtrap_coverage.start_ofs
+                                                              Windtrap_runtime.Coverage.start_ofs
                                                                 = 2003;
-                                                              Windtrap_coverage.end_ofs
+                                                              Windtrap_runtime.Coverage.end_ofs
                                                                 = 2017
                                                             };{
-                                                                Windtrap_coverage.start_ofs
+                                                                Windtrap_runtime.Coverage.start_ofs
                                                                   = 1990;
-                                                                Windtrap_coverage.end_ofs
+                                                                Windtrap_runtime.Coverage.end_ofs
                                                                   = 2050
                                                               };{
-                                                                  Windtrap_coverage.start_ofs
+                                                                  Windtrap_runtime.Coverage.start_ofs
                                                                     = 2073;
-                                                                  Windtrap_coverage.end_ofs
+                                                                  Windtrap_runtime.Coverage.end_ofs
                                                                     = 2078
                                                                 };{
-                                                                    Windtrap_coverage.start_ofs
+                                                                    Windtrap_runtime.Coverage.start_ofs
                                                                     = 2073;
-                                                                    Windtrap_coverage.end_ofs
+                                                                    Windtrap_runtime.Coverage.end_ofs
                                                                     = 2115
                                                                   };{
-                                                                    Windtrap_coverage.start_ofs
+                                                                    Windtrap_runtime.Coverage.start_ofs
                                                                     = 2139;
-                                                                    Windtrap_coverage.end_ofs
+                                                                    Windtrap_runtime.Coverage.end_ofs
                                                                     = 2144
                                                                     };
                   {
-                    Windtrap_coverage.start_ofs = 2139;
-                    Windtrap_coverage.end_ofs = 2188
+                    Windtrap_runtime.Coverage.start_ofs = 2139;
+                    Windtrap_runtime.Coverage.end_ofs = 2188
                   };{
-                      Windtrap_coverage.start_ofs = 2217;
-                      Windtrap_coverage.end_ofs = 2222
+                      Windtrap_runtime.Coverage.start_ofs = 2217;
+                      Windtrap_runtime.Coverage.end_ofs = 2222
                     };{
-                        Windtrap_coverage.start_ofs = 2217;
-                        Windtrap_coverage.end_ofs = 2277
+                        Windtrap_runtime.Coverage.start_ofs = 2217;
+                        Windtrap_runtime.Coverage.end_ofs = 2277
                       };{
-                          Windtrap_coverage.start_ofs = 2309;
-                          Windtrap_coverage.end_ofs = 2314
+                          Windtrap_runtime.Coverage.start_ofs = 2309;
+                          Windtrap_runtime.Coverage.end_ofs = 2314
                         };{
-                            Windtrap_coverage.start_ofs = 2309;
-                            Windtrap_coverage.end_ofs = 2366
+                            Windtrap_runtime.Coverage.start_ofs = 2309;
+                            Windtrap_runtime.Coverage.end_ofs = 2366
                           };{
-                              Windtrap_coverage.start_ofs = 2387;
-                              Windtrap_coverage.end_ofs = 2390
+                              Windtrap_runtime.Coverage.start_ofs = 2387;
+                              Windtrap_runtime.Coverage.end_ofs = 2390
                             };{
-                                Windtrap_coverage.start_ofs = 2415;
-                                Windtrap_coverage.end_ofs = 2420
+                                Windtrap_runtime.Coverage.start_ofs = 2415;
+                                Windtrap_runtime.Coverage.end_ofs = 2420
                               };{
-                                  Windtrap_coverage.start_ofs = 2448;
-                                  Windtrap_coverage.end_ofs = 2458
+                                  Windtrap_runtime.Coverage.start_ofs = 2448;
+                                  Windtrap_runtime.Coverage.end_ofs = 2458
                                 };{
-                                    Windtrap_coverage.start_ofs = 2415;
-                                    Windtrap_coverage.end_ofs = 2458
+                                    Windtrap_runtime.Coverage.start_ofs =
+                                      2415;
+                                    Windtrap_runtime.Coverage.end_ofs = 2458
                                   };{
-                                      Windtrap_coverage.start_ofs = 2486;
-                                      Windtrap_coverage.end_ofs = 2491
+                                      Windtrap_runtime.Coverage.start_ofs =
+                                        2486;
+                                      Windtrap_runtime.Coverage.end_ofs =
+                                        2491
                                     };{
-                                        Windtrap_coverage.start_ofs = 2486;
-                                        Windtrap_coverage.end_ofs = 2525
+                                        Windtrap_runtime.Coverage.start_ofs =
+                                          2486;
+                                        Windtrap_runtime.Coverage.end_ofs =
+                                          2525
                                       };{
-                                          Windtrap_coverage.start_ofs = 2548;
-                                          Windtrap_coverage.end_ofs = 2553
+                                          Windtrap_runtime.Coverage.start_ofs
+                                            = 2548;
+                                          Windtrap_runtime.Coverage.end_ofs =
+                                            2553
                                         };{
-                                            Windtrap_coverage.start_ofs =
-                                              2548;
-                                            Windtrap_coverage.end_ofs = 2584
+                                            Windtrap_runtime.Coverage.start_ofs
+                                              = 2548;
+                                            Windtrap_runtime.Coverage.end_ofs
+                                              = 2584
                                           }|] ~counts;
-      (fun index -> Windtrap_coverage.visit counts index)
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =
       ___windtrap_visit___ point_index; result
   end

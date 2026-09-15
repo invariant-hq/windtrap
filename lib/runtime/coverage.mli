@@ -5,13 +5,13 @@
 
 (** Expression-coverage runtime: accumulation, [.coverage] files, report data.
 
-    Instrumented code (produced by [ppx_windtrap]'s instrumentation backend)
-    calls {!register} once per source file at module load time and {!visit} at
-    every point. The first registration installs an [at_exit] handler that
-    writes the process's data to a [.coverage] file under [_build/_coverage]
-    (see {{!ondisk}Coverage files}). The test runner reads the same in-process
-    data through {!snapshot} for its inline summary; the [windtrap coverage]
-    command {!load}s and {!merge}s the files of several executables and renders
+    Instrumented code (produced by [ppx_windtrap.coverage]) calls {!register}
+    once per source file at module load time and {!visit} at every point. The
+    first registration installs an [at_exit] handler that writes the process's
+    data to a [.coverage] file under [_build/_coverage] (see
+    {{!ondisk}Coverage files}). The test runner reads the same in-process data
+    through {!snapshot} for its inline summary; the [windtrap coverage] command
+    {!load}s and {!merge}s the files of several executables and renders
     {!file_reports}.
 
     This module computes report {e data} only — point counts, uncovered lines,
@@ -54,7 +54,7 @@ val register : file:string -> points:point array -> counts:int array -> unit
     registration whose table {e differs} from an earlier one for the same [file]
     means the executable links two incompatible instrumentations of one source
     file — its data would be meaningless, so the registration is dropped with a
-    warning on [stderr] ([dune clean] and a rebuild is the fix). It is not an
+    warning on [stderr] (a rebuild from clean is the fix). It is not an
     exception because [register] runs at module load inside the user's program,
     and coverage never changes what programs mean.
 
@@ -81,7 +81,7 @@ val visit : int array -> int -> unit
 (** The type for coverage-data errors. All are recoverable: the reporting
     command prints them via {!pp_error} and exits nonzero. *)
 type error =
-  | Data of Windtrap_instr.error
+  | Data of Instr.error
       (** A [.coverage] file that cannot be read, does not carry this version's
           magic string, or is malformed. Files written by other windtrap
           versions are rejected, not converted. *)
@@ -133,12 +133,9 @@ val filter : (string -> bool) -> t -> t
 
     The registry {!snapshot} reads is process-global: every instrumented library
     linked into an executable is in it, whether or not it is the code under
-    test. A caller that means to speak about {e particular} files — a run scoped
-    by [WINDTRAP_COVERAGE_ONLY], a test asserting on its own fixture's counts —
-    narrows with this rather than assuming the process contains nothing else.
-    That assumption holds only until a second instrumented library is linked,
-    which is why windtrap's own suites cannot make it: the core they test is
-    itself instrumented. *)
+    test. A caller that means to speak about {e particular} files — a test
+    asserting on its own fixture's counts, say — narrows with this rather than
+    assuming the process contains nothing else. *)
 
 val snapshot : unit -> t
 (** [snapshot ()] is a collection copying the current in-process counts;
@@ -167,19 +164,19 @@ val snapshot : unit -> t
     effort); the reporting command uses it to exclude dumps whose executable was
     deleted or rebuilt since the run. *)
 
-type identity = Windtrap_instr.identity = { exe : string; digest : string }
-(** The type for dump writer identities — [Windtrap_instr]'s, re-exported, so
-    the reporting command handles both runtimes' identities with one pass: [exe]
-    is the writing executable's {!Windtrap_instr.exe_identity} and [digest] the
-    lowercase hex MD5 of its contents at dump time. An executable at [exe] whose
-    digest differs is {e not} the one that wrote the dump. Digesting reads the
+type identity = Instr.identity = { exe : string; digest : string }
+(** The type for dump writer identities — [Instr]'s, re-exported, so the
+    reporting command handles both formats' identities with one pass: [exe] is
+    the writing executable's {!Instr.exe_identity} and [digest] the lowercase
+    hex MD5 of its contents at dump time. An executable at [exe] whose digest
+    differs is {e not} the one that wrote the dump. Digesting reads the
     executable once at exit (a few milliseconds for a typical test binary), off
     the test path. *)
 
 val output_dir : exe:string -> string
 (** [output_dir ~exe] is the directory the executable at path [exe] dumps into:
     [<root>/_build/_coverage/windtrap-<hash>], with [<root>] and [<hash>] by
-    {!Windtrap_instr.output_dir}'s rule. Every run writes a fresh
+    {!Instr.output_dir}'s rule. Every run writes a fresh
     [<digest>-<token>.coverage] there, named after the writer's content digest,
     so several runs of one executable — a command-line tool driven by a cram
     test, say — all count in the merge. The directory belongs to the runtime:

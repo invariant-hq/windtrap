@@ -1073,10 +1073,6 @@ module Private : sig
   (** Also the Law 16d armed hooks — the one cross-package registration cell;
       [ppx_windtrap]'s runtime registers its hook here at load. *)
 
-  module Mutate_verdicts = Mutate_verdicts
-  (** The verdict collection and file — the loop's write side; the
-      [windtrap mutate] command reaches the read side through here. *)
-
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property

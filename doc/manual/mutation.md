@@ -30,9 +30,17 @@ against the code it describes. Only verdicts touch disk, under
 
 The transcripts below are from [`examples/x-blueprint`](../../examples/x-blueprint),
 run inside windtrap's own tree — which is why its paths carry that
-prefix and every command carries `--instrument-with`. Copied out, the
-example's `dune-workspace` declares the backend once and the flag
-disappears from every command in this chapter.
+prefix and every command carries `--instrument-with`. The flag can go:
+declare the backend once in `dune-workspace` and it disappears from
+every command in this chapter (the example ships that file):
+
+```lisp
+(lang dune 3.0)
+
+(context
+ (default
+  (instrument_with ppx_windtrap.mutate)))
+```
 
 ## Running it on a file
 
@@ -189,27 +197,21 @@ survivor**, which sends the reader to write a test that already exists.
 In the example, the expect suite alone reports seven survivors of
 `slug.ml`; the unit suite kills every one of them.
 
-So the project's answer is one alias at the top of the test tree,
-which runs every suite mutated and merges what they wrote:
-
-```lisp
-(rule
- (alias mutate)
- (deps (alias_rec runtest) (universe))
- (action (run %{bin:windtrap} mutate)))
-```
+So the project's answer is two commands: every suite run with its
+mutants, then the merge:
 
 ```
-$ WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+$ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
+$ dune exec windtrap -- mutants
 ```
 
-(That command, verbatim, is for your project. This chapter's capture,
-made inside windtrap's tree, used the example's `@example-mutate` alias
-and added `WINDTRAP_MUTATE_ONLY=examples/x-blueprint` — windtrap's own
-library carries the backend here, and an unscoped run would survey the
+(Those commands, verbatim, are for your project. This chapter's
+capture, made inside windtrap's tree, added
+`WINDTRAP_MUTATE_ONLY=examples/x-blueprint` — windtrap's own library
+carries the backend here, and an unscoped run would survey the
 framework's mutants too.)
 
-Each suite prints its own report as it runs, then `windtrap mutate`
+Each suite prints its own report as it runs, then `windtrap mutants`
 unions the verdict files under **killed anywhere wins** and reports the
 mutants that survived *everywhere*, each witness beside the executable
 that ran it. Here, with the boundary row removed again:
@@ -233,7 +235,7 @@ that ran it. Here, with the boundary row removed again:
 ──────────────────────────────────────────────────────
 
 mutants: 4 survived of 18 reached · 14 killed · 4 executables
-reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with ppx_windtrap.mutate
+reproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>
 ```
 
 That run exits 1: every survivor in it is a test to strengthen or an
@@ -244,6 +246,10 @@ report and exits 0:
 ```
 mutants: 18 reached · 18 killed · 4 executables
 ```
+
+The footer's placeholder is where your suite command goes — the first
+of the two commands above, with the identifier in front of it: the
+merge never ran the suite and does not know how you spell running it.
 
 A mutant no suite in the project reaches is a second kind of finding
 with a second remedy — *write a test*, where a survivor says
@@ -266,13 +272,15 @@ alone, whose one input never reaches the dash insertion:
 mutants: 12 survived of 15 reached · 3 killed · 1 never reached · 1 executable
 ```
 
-Three facts about the command. `--force` is required and is not a wart:
+Three facts about the run. `--force` is required and is not a wart:
 a mutation run is not a cached artifact, and dune would otherwise treat
 a `runtest` action whose inputs have not changed as already done. A
-plain `dune build @mutate`, without the variable and the flag, rebuilds
-the executables uninstrumented, which stales every verdict — a verdict
-is invalidated by any later build of the executable that wrote it — and
-the merge refuses loudly, naming the command above. And
+rebuild without the variable and the flag produces uninstrumented
+executables, which stales every verdict — a verdict is invalidated by
+any later build of the executable that wrote it — and the merge then
+excludes each stale file with one warning line and says, once, what
+heals it: re-run every suite with its mutants, then merge again;
+delete `_build/_mutants` to drop leftovers of removed executables. And
 `WINDTRAP_MUTATE_ONLY` scopes the work without narrowing the suite, so
 a scoped run still writes its verdicts; selecting tests — `-f`, tags,
 `--shard`, `--failed`, an in-source `ftest` — does narrow it, and such a
@@ -283,10 +291,10 @@ says so:
 verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
 ```
 
-`windtrap mutate` on its own runs no tests and drives no build; it
-reads `_build/_mutants`, or the `.mutants` files and directories named
-as arguments, and a missing path is a loud error, never a silent
-narrowing of the merge.
+`windtrap mutants` runs no tests and drives no build — the verb says
+so; it reads `_build/_mutants`, or the `.mutants` files and
+directories named as arguments, and a missing path is a loud error,
+never a silent narrowing of the merge.
 
 ## What is mutated
 
@@ -325,7 +333,7 @@ Two suite runs — the dry run, and one unarmed fork that re-runs it to
 prove the suite deterministic — then one `fork` per reached mutant,
 running only *its own* reaching tests and stopping at the first failure.
 Dismissed and unreached mutants are not forked at all, and nothing is
-parallel in this release, so the bill scales with the catalogue: one
+parallel in this release, so the bill scales with the population: one
 file at a time is the habit, and `WINDTRAP_MUTATE_ONLY` is how you spell
 it.
 
@@ -344,8 +352,9 @@ in
 Three environment variables and no flag on any runner: the inline
 runner's argument parser accepts only dune's inline-test protocol, so a
 flag would exist for half the users. All three are read by the test
-executable and by nothing else, and an unrecognized value is an error
-naming the variable.
+executable — by the runner, never by the instrumented code, which reads
+no environment — and an unrecognized value is an error naming the
+variable.
 
 | variable | values | default |
 | --- | --- | --- |
@@ -354,15 +363,65 @@ naming the variable.
 | `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
 
 `WINDTRAP_MUTATE_ONLY=lib/calc.ml,lib/eval.ml` is how a real project is
-mutated: one file, or one directory, at a time. The runtime applies it
-**at registration**, so a file outside the prefixes never enters the
-catalogue — narrowing the *work*, which a filter over the report would
-not. It also bounds `WINDTRAP_MUTATE_ARM`, since a mutant of an
-out-of-scope file was never registered. A prefix that leaves nothing in
-the catalogue is an error naming the scope, not the build; asking for
-the survey and an armed mutant at once is a refusal, not a guess — the
-loop arms each mutant itself, so an armed parent would mutate its own
-dry run.
+mutated: one file, or one directory, at a time. The loop applies it to
+the mutants it forks over — narrowing the *work*, which a filter over
+the report would not — and the verdicts it writes are for those mutants
+alone, so a scoped run's file is a true, smaller answer for its
+executable. Every instrumented file still registers, so an identifier
+in `WINDTRAP_MUTATE_ARM` arms whatever the executable holds, in scope or
+not. A prefix that leaves nothing to test is an error naming the scope,
+not the build; asking for the survey and an armed mutant at once is a
+refusal, not a guess — the loop arms each mutant itself, so an armed
+parent would mutate its own dry run.
+
+## Without dune
+
+The backend is a findlib package with a `ppx` predicate, so any build
+can instrument with it. Instrument the library under test, not the
+test file; link the test against `windtrap`; run it with the variable;
+merge:
+
+```
+$ ocamlfind ocamlopt -package ppx_windtrap.mutate -c calc.ml
+$ ocamlfind ocamlopt -package windtrap -linkpkg calc.cmx test.ml -o test
+$ WINDTRAP_MUTATE=1 ./test
+$ windtrap mutants
+```
+
+An executable that is not under a `_build` directory writes its
+verdicts under `_build/_mutants` in the working directory it runs in,
+and `windtrap mutants` finds that directory by walking up from
+wherever it runs. The per-executable report's footer spells the run
+as it was made — `reproduce: WINDTRAP_MUTATE_ARM=<id> ./test` — and
+the project report's placeholder stands for `make test`, or whatever
+runs the suite.
+
+## One command, if you want it
+
+The two project commands fold into one alias at the top of the test
+tree:
+
+```lisp
+(rule
+ (alias mutate)
+ (deps (alias_rec runtest) (universe))
+ (action (run %{bin:windtrap} mutants)))
+```
+
+```
+$ WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
+```
+
+Each piece is load-bearing: the variable because the suites read it,
+the flag because the suites must carry the mutants, `--force` because a
+mutation run is not a cached artifact, and `(universe)` because the
+`.mutants` files are written at exit and are not declarable
+dependencies, so without it the merge action caches against nothing
+and silently goes stale. A plain `dune build @mutate` without the
+variable and the flag rebuilds the executables uninstrumented, which
+stales every verdict, and the merge refuses loudly. `(deps (env_var
+WINDTRAP_MUTATE))` on a test stanza is the per-stanza alternative to
+`--force`: dune then re-runs that suite whenever the variable changes.
 
 windtrap's mutation testing is deliberately the 90% product: one honest
 count after a run you already make, and the names of the tests that let

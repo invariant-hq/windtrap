@@ -134,7 +134,7 @@ let test_coverage_line_hint () =
           ~duration:0.1 ~coverage:golden_coverage ())
   in
   check_contains "the coverage line names the aggregate"
-    ~sub:"coverage: 87.2% (312/358 points) · project: dune build @cover\n" t
+    ~sub:"coverage: 87.2% (312/358 points) · project: windtrap coverage\n" t
 
 let test_ansi () =
   let t = transcript ~ansi:true ~mode:`Verbose () in
@@ -2235,7 +2235,7 @@ let coverage_fixture_collection ~file =
           points)
     ^ "\n"
   in
-  match Windtrap_coverage.of_string dump with
+  match Windtrap_runtime.Coverage.of_string dump with
   | Ok (collection, _) -> collection
   | Error _ -> failwith "the coverage fixture does not parse"
 
@@ -2488,7 +2488,7 @@ let expected_aggregate_report =
 ──────────────────────────────────────────────────────
 
 mutants: 1 survived of 12 reached · 11 killed · 2 never reached · 3 executables
-reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with ppx_windtrap.mutate
+reproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>
 |}
 
 let test_mutation_report () =
@@ -2655,11 +2655,9 @@ let test_mutation_footer () =
        reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
        ppx_windtrap.mutate test/test_calc.exe\n"
     (mutation_report ~invocation:exe_invocation suite_report);
-  check_contains "the footer mirrors onto dune runtest"
+  check_contains "the footer under mirrors names no build tool"
     ~sub:
-      "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force \
-       --instrument-with ppx_windtrap.mutate\n"
+      "\nreproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
     (mutation_report suite_report);
   (* A clean report has nothing to reproduce. *)
   let clean = { suite_report with Render.survivors = []; killed = 183 } in
@@ -2671,8 +2669,8 @@ let test_mutation_footer () =
        { aggregate_report with Render.survivors = []; killed = 12 });
   (* A filtered run's survivor survived that selection, so the footer
      restates the filter exactly as the replay line does: [-f], quoted,
-     after the command under [`Exe]; [WINDTRAP_FILTER] before [dune
-     runtest] under [`Mirrors]. *)
+     after the command under [`Exe]; [WINDTRAP_FILTER] before the
+     placeholder under [`Mirrors]. *)
   let filtered =
     { suite_report with Render.scope = Render.Selected 2; filter = Some "sub" }
   in
@@ -2685,8 +2683,8 @@ let test_mutation_footer () =
   check_contains "the mirror footer carries the filter"
     ~sub:
       "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> WINDTRAP_FILTER='sub' dune runtest \
-       --force --instrument-with ppx_windtrap.mutate\n"
+       reproduce: WINDTRAP_MUTATE_ARM=<id> WINDTRAP_FILTER='sub' <re-run the \
+       instrumented suite>\n"
     (mutation_report filtered);
   check_contains "the filter is shell-quoted, as the replay line's is"
     ~sub:" -f 'it'\\''s'\n"
@@ -2720,8 +2718,7 @@ let test_mutation_sections () =
        \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n\
        mutants: 12 reached \u{00b7} 12 killed \u{00b7} 2 never reached \
        \u{00b7} 3 executables\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> dune runtest --force \
-       --instrument-with ppx_windtrap.mutate\n"
+       reproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
     ~actual:(mutation_report unreached_only);
   check_absent "survivors alone: no never-reached section" ~sub:"never reached"
     (mutation_report ~invocation:exe_invocation suite_report);

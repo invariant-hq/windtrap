@@ -38,7 +38,6 @@ module Private = struct
   module Failure = Failure
   module Loc = Loc
   module Mutate_loop = Mutate_loop
-  module Mutate_verdicts = Mutate_verdicts
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property
@@ -256,7 +255,7 @@ let invocation_of ~inside_dune argv : Render.invocation =
          registered was necessarily built with the mutation backend, and
          the catalogue is the runtime's own record of that — complete by
          now, since module initialization is long over at run entry. *)
-      if Windtrap_mutate.catalogue () <> [] then
+      if Windtrap_runtime.Mutate.catalogue () <> [] then
         "--instrument-with ppx_windtrap.mutate "
       else ""
     in

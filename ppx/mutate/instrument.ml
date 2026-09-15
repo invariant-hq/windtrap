@@ -858,13 +858,13 @@ class instrumenter st capabilities module_name =
    fields, and the guard closure the file's guards call.
 
      module Windtrap_mut___<mangled file> = struct
-       type site = Windtrap_mutate.site = {
+       type site = Windtrap_runtime.Mutate.site = {
          line : int; col : int; rewrite : string;
          before : string; after : string; dismissed : string option;
        }
 
        let ___windtrap_armed___ =
-         Windtrap_mutate.register ~file:<file> ~sites:<table>
+         Windtrap_runtime.Mutate.register ~file:<file> ~sites:<table>
      end
 
    [register] allocates the reach and epoch arrays itself and captures
@@ -877,9 +877,9 @@ class instrumenter st capabilities module_name =
    odoc.
 
    Two decisions here differ from coverage's otherwise identical
-   preamble, and both have the same cause: [Windtrap_mutate] declares
+   preamble, and both have the same cause: the [Mutate] runtime declares
    [line], [col], [rewrite], [before], [after] and [dismissed] across
-   three record types, so [Windtrap_mutate.before] resolves to [mutant]'s
+   three record types, so a qualified [before] resolves to [mutant]'s
    field and using it for a [site] is warning 42 - disambiguated-name,
    fatal in a library compiled with [-w +a -warn-error +a]. Qualifying
    every field, which is all coverage needs, is therefore not enough. Re-exporting the type makes its labels
@@ -893,11 +893,19 @@ class instrumenter st capabilities module_name =
    [line], [col], [before] and [after] into the user's scope,
    where they could shadow the user's own or make the user's records
    ambiguous. *)
+
+(* The runtime module the generated code calls, spelled once: the
+   re-exported type and the registration call are built from it. *)
+let runtime = "Windtrap_runtime.Mutate"
+
+let runtime_name ~loc name =
+  { txt = Longident.parse (runtime ^ "." ^ name); loc }
+
 let runtime_initialization st ~file ~module_name =
   let loc = { (Location.in_file file) with loc_ghost = true } in
   let site_type =
     [%stri
-      type site = Windtrap_mutate.site = {
+      type site = [%t ptyp_constr ~loc (runtime_name ~loc "site") []] = {
         line : int;
         col : int;
         rewrite : string;
@@ -928,8 +936,8 @@ let runtime_initialization st ~file ~module_name =
   let armed_binding =
     [%stri
       let ___windtrap_armed___ =
-        Windtrap_mutate.register ~file:[%e estring ~loc file]
-          ~sites:[%e sites_table]]
+        [%e pexp_ident ~loc (runtime_name ~loc "register")]
+          ~file:[%e estring ~loc file] ~sites:[%e sites_table]]
   in
   let generated_module =
     Ast_helper.Str.module_ ~loc

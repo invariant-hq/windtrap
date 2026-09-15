@@ -29,10 +29,12 @@ Eleven directories under `test/`:
   the `windtrap coverage` reporting command, and the instrumenter,
   including its semantics-preservation suite (below).
 - `mutate`, `mutate_cli`, `mutate_loop`, `mutate_ppx` — the same four
-  jobs for mutation: the runtime, the `windtrap mutate` reporting
+  jobs for mutation: the runtime, the `windtrap mutants` reporting
   command, the fork loop driven end to end through a real spawned
   process, and the instrumenter's expansion goldens. The family
-  deliberately mirrors the coverage one.
+  deliberately mirrors the coverage one; `mutate_verdicts` covers the
+  verdict lattice and file format, which live in the runtime beside the
+  coverage format.
 - `docs` — compiled documentation (below).
 - `ppx` — PPX rewriting goldens (`.expected` files diffed against the
   driver's output, rejects included) and the inline-runner fixtures
@@ -115,7 +117,7 @@ registry is process-global, and windtrap's own suites can no longer
 assume they are the only thing in it.** Two seams exist for that, and a
 new test that reads coverage should use one:
 
-- `Windtrap_coverage.filter` narrows a collection to chosen files;
+- `Windtrap_runtime.Coverage.filter` narrows a collection to chosen files;
 - `WINDTRAP_COVERAGE_ONLY` scopes a whole *run*'s number to source
   prefixes, applied once at `Driver.snapshot_coverage`. The `.coverage`
   dump is deliberately not scoped — it is what `windtrap coverage`
@@ -154,7 +156,7 @@ WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.muta
 
 `@mutate` depends on `(alias_rec ../runtest)` and `(universe)`, so it
 runs every suite in the tree under the variable and then runs
-`windtrap mutate`, whose merge is killed-anywhere-wins across every
+`windtrap mutants`, whose merge is killed-anywhere-wins across every
 executable that armed the same site. Each piece of the command is
 load-bearing: the variable because the suites read it, the flag because
 the suites must carry the mutants — this tree's workspace declares no
@@ -230,41 +232,36 @@ name on Windows.
 
 ### WINDTRAP_MUTATE_ONLY, and why it is not coverage's filter
 
-The scope is applied by the **runtime, at registration** — an
-out-of-scope file never enters the registry and its guard is inert.
-That is deliberate and it is the difference between the two features.
-Coverage is passive: it records, so pollution is a reporting problem and
-`WINDTRAP_COVERAGE_ONLY` narrows what is *reported* without changing the
-run. Mutation is active: the loop forks once per mutant, so a scope that
-only narrowed the report would still cost the whole afternoon. Narrowing
-the registry narrows the work.
+The scope is applied by the **loop, to the population it forks over**.
+Every instrumented file still registers and still counts reaches — the
+runtime reads no environment — and what narrows is the work: the loop
+forks once per mutant, so a scope that only narrowed the report would
+still cost the whole afternoon, and a scoped run's verdict file holds
+the scoped mutants alone, a true, smaller answer for its executable.
+Coverage is passive by contrast: it records, so pollution is a
+reporting problem and a filter over the report is enough.
 
-It also makes one equivalence true, and the tree depends on it: **an
-executable with nothing in scope is indistinguishable from an
-uninstrumented one** — empty catalogue, and the seam
-declines by name. The equivalence stops at the refusal text: asking such
-a run to mutate names the scope and its value (`WINDTRAP_MUTATE_ONLY=…
-left no mutants in this executable's catalogue`), never the
+The tree's own mutation suites depend on that. Under
+`--instrument-with` their executables link a mutation-instrumented
+core, and every count they assert — five sites in
+`test/mutate_loop/suite_main.exe`, the reach map, the verdict file — is
+written against their own fixtures; naming the scope
+(`test/mutate_loop/`, or `test/mutate_cli/calc.ml` for the merge's
+two-executable scenario) keeps the population they fork over exactly
+those. A scope matching nothing is refused by name (`the mutation scope
+… left no mutants in this executable's catalogue`), never with the
 missing-backend diagnosis, which would send the reader to rebuild a
-build that is fine. Without the equivalence, instrumenting the core
-would destroy the mutation suites by construction rather than by
-accident:
+build that is fine. One scenario cannot be rescued by a scope: the
+zero-mutant control `test/mutate_loop/plain_main.exe` catalogues the
+core's mutants once the core is instrumented, so the test that asks it
+to mutate and expects the missing-backend refusal checks whether the
+core is instrumented and skips itself when it is.
 
-- `test/mutate_loop/plain_main.exe` is the deliberate zero-mutant
-  control. An instrumented core gives it 984.
-- `test/mutate_loop/suite_main.exe` is a controlled fixture of exactly
-  five mutants, and every count, ordering and verdict assertion is
-  written against those five.
-
-Both name their scope (`test/mutate_loop/`), so they keep a *genuine*
-catalogue rather than a simulated one. `test/mutate_cli`'s two-executable
-scenario names `test/mutate_cli/calc.ml` for the same reason.
-
-Two suites cannot use the scope, because they test the registry itself
-with synthetic file names that deliberately look real (`lib/calc.ml`).
-They tell their own registrations from the process's by **time** rather
-than by shape: whatever is in the catalogue at their module load — after
-the library's, before any test's — is not theirs.
+Two suites test the registry itself with synthetic file names that
+deliberately look real (`lib/calc.ml`), and tell their own
+registrations from the process's by **time** rather than by shape:
+whatever is in the catalogue at their module load — after the
+library's, before any test's — is not theirs.
 `test/mutate/test_mutate.ml` and `test/mutate_ppx/semantics` both do
 this, and it needs no maintenance when a test adds a name.
 
@@ -308,8 +305,9 @@ One smaller sharp edge, measured:
   so widen in two steps: first the executable that owns the mutated
   file's tests, unnarrowed, then
   `WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
-  ppx_windtrap.mutate` — the aggregate report's own reproduce shape —
-  which arms the mutant in every suite at once.
+  ppx_windtrap.mutate` — the aggregate report's footer with this tree's
+  suite command in the placeholder — which arms the mutant in every
+  suite at once.
 
   `mutant survived: …` means it really survives —
   `mutant not evaluated: …` means the run proved nothing and the arming

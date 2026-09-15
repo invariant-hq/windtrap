@@ -835,8 +835,8 @@ class instrumenter st =
      module Windtrap_cov___<mangled file> = struct
        let ___windtrap_visit___ =
          let counts = Array.make <n> 0 in
-         Windtrap_coverage.register ~file:<file> ~points:<table> ~counts;
-         fun index -> Windtrap_coverage.visit counts index
+         Windtrap_runtime.Coverage.register ~file:<file> ~points:<table> ~counts;
+         fun index -> Windtrap_runtime.Coverage.visit counts index
        let ___windtrap_post_visit___ point_index result =
          ___windtrap_visit___ point_index;
          result
@@ -853,6 +853,17 @@ class instrumenter st =
    same mangled-name and stop-comment frame in
    ppx/mutate/instrument.ml's [runtime_initialization] (unopened, its
    prefix Windtrap_mut___); keep the shape in sync. *)
+
+(* The runtime module the generated code calls, spelled once: every
+   emitted identifier and record label is built from it. *)
+let runtime = "Windtrap_runtime.Coverage"
+
+let runtime_name ~loc name =
+  { txt = Longident.parse (runtime ^ "." ^ name); loc }
+
+let runtime_ident ~loc name =
+  Ast_builder.Default.pexp_ident ~loc (runtime_name ~loc name)
+
 let runtime_initialization st ~file =
   let loc = { (Location.in_file file) with loc_ghost = true } in
   let module_name =
@@ -873,23 +884,24 @@ let runtime_initialization st ~file =
            (* Every field qualified: a bare field would resolve by
               type-directed disambiguation — warning 42, fatal in files
               compiled with -w +a -warn-error +a. *)
-           [%expr
-             {
-               Windtrap_coverage.start_ofs =
-                 [%e Ast_builder.Default.eint ~loc start_ofs];
-               Windtrap_coverage.end_ofs =
-                 [%e Ast_builder.Default.eint ~loc end_ofs];
-             }])
+           Ast_builder.Default.pexp_record ~loc
+             [
+               ( runtime_name ~loc "start_ofs",
+                 Ast_builder.Default.eint ~loc start_ofs );
+               ( runtime_name ~loc "end_ofs",
+                 Ast_builder.Default.eint ~loc end_ofs );
+             ]
+             None)
          st.rev_points)
   in
   let visit_binding =
     [%stri
       let ___windtrap_visit___ =
         let counts = Array.make [%e Ast_builder.Default.eint ~loc st.count] 0 in
-        Windtrap_coverage.register
+        [%e runtime_ident ~loc "register"]
           ~file:[%e Ast_builder.Default.estring ~loc file]
           ~points:[%e points_table] ~counts;
-        fun index -> Windtrap_coverage.visit counts index]
+        fun index -> [%e runtime_ident ~loc "visit"] counts index]
   in
   let post_visit_binding =
     [%stri

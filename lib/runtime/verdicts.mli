@@ -6,23 +6,14 @@
 (** Mutation verdicts: what a run made of each mutant, and the file that carries
     it between executables.
 
-    This module is tool currency, not runtime contract. [Windtrap_mutate] is
-    what generated code is compiled against — site registration at module load,
-    the armed-slot read in every guard — and instrumented code never holds a
-    verdict: a verdict is earned by a run that asked. The mutation loop
-    ({!Mutate_loop}) writes these collections, one file per test executable, and
-    the [windtrap mutate] command loads and merges them; both sit on the tool's
-    side of the instrumentation boundary, so the collection and its file format
-    live here in the core, depending on the runtime only for the
-    {!Windtrap_mutate.id} and {!Windtrap_mutate.mutant} they serialize.
-
-    Coverage is arranged the other way around, and the asymmetry is deliberate:
-    coverage's writer {e is} its runtime — the [at_exit] dump fires in any
-    instrumented process, so [Windtrap_coverage] owns its file format — while a
-    mutation verdict file is written only by the loop and read only by the
-    reporting command, and a format in the runtime would put serialization in
-    the closure of every instrumented library for the benefit of code that never
-    calls it.
+    {!Mutate} is what generated code is compiled against — site registration at
+    module load, the armed-slot read in every guard — and instrumented code
+    never holds a verdict: a verdict is earned by a run that asked. The mutation
+    loop in the windtrap core writes these collections, one file per test
+    executable, and the [windtrap mutants] command loads and merges them. The
+    format lives here, beside {!Coverage}'s, so the runtime states both
+    data-file formats and one lifecycle rule for each (see
+    {{!files}Verdict files}); nothing here runs at module load or at exit.
 
     The file exists to be {b merged}: a library is normally covered by several
     test executables, and {!merge_verdict} — killed anywhere wins — is the
@@ -90,9 +81,12 @@ val merge_verdict : verdict -> verdict -> verdict
 (** {1:files Verdict files}
 
     Each instrumented test executable's mutation run writes one verdict file
-    under [_build/_mutants]; [windtrap mutate] loads them all, {!merge}s them,
+    under [_build/_mutants]; [windtrap mutants] loads them all, {!merge}s them,
     and renders the survivors that survive {e everywhere}. The catalogue never
-    touches disk — only verdicts do.
+    touches disk — only verdicts do. The lifecycle rule: one file per
+    executable, at {!output_file}, replaced whole by every run that tests the
+    executable's full suite and left untouched by a run that narrows it — unlike
+    a coverage dump, which every run adds to.
 
     The format is versioned by the magic string [windtrap-mutants-v3] on the
     first line; {!of_string} and {!load} reject any other header loudly, and
@@ -112,7 +106,7 @@ val merge_verdict : verdict -> verdict -> verdict
     prints them via {!pp_error} and exits nonzero. There is no mismatch error
     here, unlike coverage's point tables: {!merge_verdict} is total, so two
     files can disagree about a mutant without either being corrupt. *)
-type error = Windtrap_instr.error =
+type error = Instr.error =
   | Unknown_format of { path : string; header : string }
       (** [path] does not start with this version's magic string; [header] is
           its escaped first line. Files written by other windtrap versions are
@@ -127,7 +121,7 @@ val pp_error : Format.formatter -> error -> unit
     likely fix. *)
 
 type record = {
-  id : Windtrap_mutate.id;  (** The mutant's identifier. *)
+  id : Mutate.id;  (** The mutant's identifier. *)
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   verdict : verdict;  (** What the run made of the mutant. *)
@@ -136,14 +130,14 @@ type record = {
     needs to draw, and its verdict. A mutant dismissed by [[@mutate off]] has no
     record: it is never forked and never receives a verdict. *)
 
-val record_of_mutant : Windtrap_mutate.mutant -> verdict -> record
+val record_of_mutant : Mutate.mutant -> verdict -> record
 (** [record_of_mutant m v] is [m]'s record with verdict [v] — the identifier and
     renderings of [m], which is what the loop holds when a child reports.
     [m.dismissed] is dropped, having no meaning for a mutant that was tested. *)
 
 type t
-(** The type for verdict collections: a finite map from {!Windtrap_mutate.id} to
-    its {!type:record}. Immutable. *)
+(** The type for verdict collections: a finite map from {!Mutate.id} to its
+    {!type:record}. Immutable. *)
 
 val empty : t
 (** [empty] is the collection with no records. *)
@@ -162,7 +156,7 @@ val add : t -> record -> t
     are sorted and deduplicated for the same reason. *)
 
 val records : t -> record list
-(** [records t] is [t]'s records ordered by {!Windtrap_mutate.compare_id}. *)
+(** [records t] is [t]'s records ordered by {!Mutate.compare_id}. *)
 
 val merge : t -> t -> t
 (** [merge a b] is the union of [a] and [b], combining shared identifiers as
@@ -170,14 +164,14 @@ val merge : t -> t -> t
     unit — so merging any number of verdict files in any order gives one answer.
 *)
 
-type identity = Windtrap_instr.identity = { exe : string; digest : string }
-(** The type for verdict-file writer identities — [Windtrap_instr]'s,
-    re-exported, so the reporting command handles both instrumentation formats'
-    identities with one pass: [exe] is the writing executable's {!exe_identity}
-    and [digest] the lowercase hex MD5 of its contents at write time. An
-    executable at [exe] whose digest differs is {e not} the one that wrote the
-    file — the content comparison survives rebuilds that dune's cache restores
-    with their original timestamps, which mtimes do not. *)
+type identity = Instr.identity = { exe : string; digest : string }
+(** The type for verdict-file writer identities — [Instr]'s, re-exported, so the
+    reporting command handles both instrumentation formats' identities with one
+    pass: [exe] is the writing executable's {!exe_identity} and [digest] the
+    lowercase hex MD5 of its contents at write time. An executable at [exe]
+    whose digest differs is {e not} the one that wrote the file — the content
+    comparison survives rebuilds that dune's cache restores with their original
+    timestamps, which mtimes do not. *)
 
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the [exe] field a verdict file records for the
@@ -220,10 +214,10 @@ val output_file : exe:string -> string
 
 val to_string : ?identity:identity -> t -> string
 (** [to_string t] is [t] serialized in the verdict-file format. Deterministic:
-    records are ordered by {!Windtrap_mutate.compare_id} and witnesses are
-    sorted, so equal collections serialize identically regardless of
-    construction order. [identity] is recorded after the magic line when given;
-    a merged collection, which has no single writer, serializes without one.
+    records are ordered by {!Mutate.compare_id} and witnesses are sorted, so
+    equal collections serialize identically regardless of construction order.
+    [identity] is recorded after the magic line when given; a merged collection,
+    which has no single writer, serializes without one.
 
     Raises [Invalid_argument] if [identity.exe] is [""] or [identity.digest] is
     not 32 lowercase hex characters. *)
@@ -233,11 +227,11 @@ val of_string : ?path:string -> string -> (t * identity option, error) result
     the recorded writer identity, [None] when [s] carries none. [path], used in
     errors, defaults to ["<string>"]. Errors: [Unknown_format] for a foreign
     header, [Corrupt] for truncated or invalid data — a negative or oversized
-    count, a line that is not 1-based, a rewrite outside
-    {!Windtrap_mutate.rewrites}, an unknown verdict tag, a survivor naming no
-    test, a duplicate identifier, a malformed identity line, or trailing
-    garbage. Nothing is repaired and nothing is guessed: a file this module
-    cannot read exactly is not read at all.
+    count, a line that is not 1-based, a rewrite outside {!Mutate.rewrites}, an
+    unknown verdict tag, a survivor naming no test, a duplicate identifier, a
+    malformed identity line, or trailing garbage. Nothing is repaired and
+    nothing is guessed: a file this module cannot read exactly is not read at
+    all.
 
     Round trip: [of_string (to_string ?identity t)] is [Ok (t, identity)]. *)
 

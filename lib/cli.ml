@@ -487,7 +487,7 @@ let table =
       };
     Env_setting
       {
-        var = Windtrap_mutate.arm_variable;
+        var = Windtrap_runtime.Mutate.arm_variable;
         doc = "Arm one mutant, by identifier";
       };
     Env_setting
@@ -790,7 +790,7 @@ let mutation () =
         | Some false -> Ok `Unset
         | None -> invalid ~source:"WINDTRAP_MUTATE" ~value ~expected:"1 or 0")
   in
-  Ok { mode; arm = Env.get_string Windtrap_mutate.arm_variable }
+  Ok { mode; arm = Env.get_string Windtrap_runtime.Mutate.arm_variable }
 
 (* One invocation, one resolution pass. Both drivers want all four
    answers and neither wants four error paths to reach them, so the

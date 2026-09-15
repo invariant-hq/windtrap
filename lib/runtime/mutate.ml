@@ -104,7 +104,8 @@ let validate ~file sites =
         Printf.ksprintf
           (fun m ->
             invalid_arg
-              (Printf.sprintf "Windtrap_mutate: %s: site %d: %s" file i m))
+              (Printf.sprintf "Windtrap_runtime.Mutate: %s: site %d: %s" file i
+                 m))
           fmt
       in
       if s.line < 1 then bad "line %d is not 1-based" s.line;
@@ -139,94 +140,55 @@ let site_mutant entry i =
    [int -> bool] because the generated code binds it unconditionally. *)
 let inert (_ : int) = false
 
-(* WINDTRAP_MUTATE_ONLY: which files this process has mutants in at all.
-
-   Applied at REGISTRATION, not at reporting, and the difference is the
-   whole point. A mutation run forks once per mutant, so a scope that
-   only narrowed the report would still spend the afternoon; narrowing
-   the registry narrows the work, leaves the guard inert for everything
-   out of scope (so not even reaches are counted for code nobody is
-   mutating), and makes an executable with nothing in scope
-   indistinguishable from an uninstrumented one — which is what lets a
-   fixture keep a controlled catalogue inside a tree whose own core is
-   instrumented.
-
-   Read once, at the first registration, because registrations run at
-   module load and a value that changed halfway through would give one
-   executable two different mutation surfaces. Stdlib only: this library
-   must not pull the windtrap core in, so it cannot use Env. *)
-let scope_variable = "WINDTRAP_MUTATE_ONLY"
-
-let scope =
-  lazy
-    (match Sys.getenv_opt scope_variable with
-    | None | Some "" -> []
-    | Some value ->
-        String.split_on_char ',' value
-        |> List.map String.trim
-        |> List.filter (fun s -> s <> ""))
-
-let in_scope file =
-  match Lazy.force scope with
-  | [] -> true
-  | prefixes ->
-      List.exists (fun prefix -> String.starts_with ~prefix file) prefixes
-
 let register ~file ~sites =
   validate ~file sites;
-  if not (in_scope file) then inert
-  else
-    match List.find_opt (fun e -> String.equal e.file file) !registry with
-    | Some prior when not (sites_equal prior.sites sites) ->
-        (* Two incompatible instrumentations of one source file are linked
+  match List.find_opt (fun e -> String.equal e.file file) !registry with
+  | Some prior when not (sites_equal prior.sites sites) ->
+      (* Two incompatible instrumentations of one source file are linked
          into this executable - stale build artifacts, most likely.
          Registration runs at module load inside the user's program, so it
          must not raise; warn loudly and hand back an inert guard, keeping
          the invariant that same-file entries carry equal tables (which is
          what lets [arm] set them all). *)
-        warn
-          "%s: conflicting instrumentation tables in one executable (stale \
-           build artifacts? try dune clean); ignoring one module's sites"
+      warn
+        "%s: conflicting instrumentation tables in one executable (stale build \
+         artifacts? rebuild from clean); ignoring one module's sites"
+        file;
+      inert
+  | _ ->
+      let n = Array.length sites in
+      let entry =
+        {
           file;
-        inert
-    | _ ->
-        let n = Array.length sites in
-        let entry =
-          {
-            file;
-            sites;
-            reach = Array.make n 0;
-            epoch = Array.make n 0;
-            base = Array.make n 0;
-            armed_index = ref (-1);
-          }
+          sites;
+          reach = Array.make n 0;
+          epoch = Array.make n 0;
+          base = Array.make n 0;
+          armed_index = ref (-1);
+        }
+      in
+      registry := entry :: !registry;
+      let reach = entry.reach
+      and epoch = entry.epoch
+      and base = entry.base
+      and armed_index = entry.armed_index in
+      fun i ->
+        let hits =
+          let c = reach.(i) in
+          if c = max_int then c else c + 1
         in
-        registry := entry :: !registry;
-        let reach = entry.reach
-        and epoch = entry.epoch
-        and base = entry.base
-        and armed_index = entry.armed_index in
-        fun i ->
-          let hits =
-            let c = reach.(i) in
-            if c = max_int then c else c + 1
-          in
-          reach.(i) <- hits;
-          if epoch.(i) <> !current_epoch then begin
-            epoch.(i) <- !current_epoch;
-            base.(i) <- hits - 1;
-            dirty := (entry, i) :: !dirty
-          end;
-          if i <> !armed_index then false
-          else if hits > !runaway_budget then
-            raise
-              (Runaway
-                 {
-                   id = (site_mutant entry i).id;
-                   hits;
-                   budget = !runaway_budget;
-                 })
-          else true
+        reach.(i) <- hits;
+        if epoch.(i) <> !current_epoch then begin
+          epoch.(i) <- !current_epoch;
+          base.(i) <- hits - 1;
+          dirty := (entry, i) :: !dirty
+        end;
+        if i <> !armed_index then false
+        else if hits > !runaway_budget then
+          raise
+            (Runaway
+               { id = (site_mutant entry i).id; hits; budget = !runaway_budget })
+        else true
 
 let mutants_of entry =
   let acc = ref [] in
@@ -267,7 +229,7 @@ let pp_arm_error ppf = function
   | Uncatalogued { id } ->
       Format.fprintf ppf
         "%a: not this executable's mutant; it catalogues no site in %s (if you \
-         expected one, is the library under test built with --instrument-with \
+         expected one, is the library under test instrumented with \
          ppx_windtrap.mutate?)"
         pp_id id id.file
   | Unmatched { id; candidates } ->
@@ -357,7 +319,7 @@ let armed_hits () =
 let arm ?budget id =
   (match budget with
   | Some n when n <= 0 ->
-      invalid_arg "Windtrap_mutate.arm: budget must be positive"
+      invalid_arg "Windtrap_runtime.Mutate.arm: budget must be positive"
   | Some _ | None -> ());
   (* Disarm first, and unconditionally: a refused arming must never leave
      the previous mutant live, which would attribute the next run's
@@ -419,13 +381,6 @@ let arm ?budget id =
       Error (Ambiguous { id; candidates })
   | _, candidates -> Error (Ambiguous { id; candidates })
 
-let arm_from_env ?budget () =
-  match Sys.getenv_opt arm_variable with
-  | None | Some "" -> Ok None
-  | Some spec ->
-      Result.bind (id_of_string spec) (fun id ->
-          Result.map Option.some (arm ?budget id))
-
 (* The Reach Map *)
 
 type reached = { mutant : mutant; hits : int }
@@ -468,6 +423,7 @@ let () =
     | Runaway { id; hits; budget } ->
         Some
           (Printf.sprintf
-             "Windtrap_mutate.Runaway: %s evaluated %d times (budget %d)"
+             "Windtrap_runtime.Mutate.Runaway: %s evaluated %d times (budget \
+              %d)"
              (id_to_string id) hits budget)
     | _ -> None)

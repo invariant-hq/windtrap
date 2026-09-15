@@ -21,7 +21,7 @@
 (test
  (name test_semantics)
  (modules test_semantics)
- (libraries covsem_fixtures windtrap windtrap_coverage)
+ (libraries covsem_fixtures windtrap windtrap_runtime)
  (action
   (setenv
    WINDTRAP_COVERAGE_FILE
@@ -32,7 +32,7 @@
     (run %{test})))))
 
 ; The runtime-only link contract: this executable lists covsem_fixtures
-; alone - no windtrap, no windtrap_coverage - and must still build and
+; alone - no windtrap, no windtrap.runtime - and must still build and
 ; run, because ppx_runtime_libraries on the rewriter injects the runtime
 ; and nothing else pulls the core in.
 

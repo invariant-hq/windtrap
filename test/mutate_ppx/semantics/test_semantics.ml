@@ -64,7 +64,7 @@ module I = Mutsem_fixtures.Mutsem_order
 module B = Mutsem_baseline.Mutsem_order
 module F = Mutsem_fixtures.Covsem_fixtures
 module U = Mutsem_baseline.Covsem_fixtures
-module M = Windtrap_mutate
+module M = Windtrap_runtime.Mutate
 
 (* Types are part of "observationally identical". These coercions are
    checked when this file compiles: an instrumented module must still

@@ -183,14 +183,14 @@ let coverage_scope () =
   match Env.coverage_only () with
   | [] -> Fun.id
   | prefixes ->
-      Windtrap_coverage.filter (fun file ->
+      Windtrap_runtime.Coverage.filter (fun file ->
           List.exists (fun prefix -> String.starts_with ~prefix file) prefixes)
 
 let snapshot_coverage () =
-  let collection = coverage_scope () (Windtrap_coverage.snapshot ()) in
-  if Windtrap_coverage.is_empty collection then None
+  let collection = coverage_scope () (Windtrap_runtime.Coverage.snapshot ()) in
+  if Windtrap_runtime.Coverage.is_empty collection then None
   else
-    let s = Windtrap_coverage.summary collection in
+    let s = Windtrap_runtime.Coverage.summary collection in
     Some { Render.visited = s.visited; total = s.total }
 
 (* The one builder of the report's section data ({!Render.coverage}):
@@ -201,23 +201,24 @@ let snapshot_coverage () =
    — with the [windtrap coverage] command over merged files, so the
    inline report and the CI report cannot drift. *)
 let coverage_data ?source_roots collection : Render.coverage =
-  let file_line (r : Windtrap_coverage.file_report) : Render.coverage_file =
+  let file_line (r : Windtrap_runtime.Coverage.file_report) :
+      Render.coverage_file =
     {
       Render.file = r.file;
-      visited = r.summary.Windtrap_coverage.visited;
-      total = r.summary.Windtrap_coverage.total;
+      visited = r.summary.Windtrap_runtime.Coverage.visited;
+      total = r.summary.Windtrap_runtime.Coverage.total;
       uncovered = r.uncovered_lines;
       source = r.source;
       stale = r.stale;
     }
   in
-  let s = Windtrap_coverage.summary collection in
+  let s = Windtrap_runtime.Coverage.summary collection in
   {
-    Render.visited = s.Windtrap_coverage.visited;
-    total = s.Windtrap_coverage.total;
+    Render.visited = s.Windtrap_runtime.Coverage.visited;
+    total = s.Windtrap_runtime.Coverage.total;
     files =
       List.map file_line
-        (Windtrap_coverage.file_reports ?source_roots collection);
+        (Windtrap_runtime.Coverage.file_reports ?source_roots collection);
   }
 
 (* Execution without reporting *)

@@ -50,11 +50,11 @@
 (test
  (name test_semantics)
  (modules test_semantics)
- (libraries windtrap windtrap.mutate mutsem_fixtures mutsem_baseline))
+ (libraries windtrap windtrap.runtime mutsem_fixtures mutsem_baseline))
 
 ; The runtime-only link contract (Law 12, interchange contract): this
 ; executable lists mutsem_fixtures alone - no windtrap, no
-; windtrap.mutate - and must still build and run, because
+; windtrap.runtime - and must still build and run, because
 ; ppx_runtime_libraries on the rewriter injects the mutation runtime the
 ; generated preamble calls, and nothing pulls the windtrap core in.
 

@@ -86,8 +86,8 @@
 ; every verdict, and the merge then refuses loudly.
 ;
 ; While working on one file, mutate that file alone — the loop forks
-; once per mutant, and WINDTRAP_MUTATE_ONLY narrows the work rather than
-; the report:
+; once per mutant, and WINDTRAP_MUTATE_ONLY narrows the population it
+; forks over rather than the report:
 ;
 ;   WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
 ;     dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe --
@@ -98,4 +98,4 @@
   (alias_rec ../runtest)
   (universe))
  (action
-  (run %{bin:windtrap} mutate)))
+  (run %{bin:windtrap} mutants)))

@@ -10,8 +10,9 @@
    so the dump lands in scratch, never in the real _build. *)
 
 let () =
-  Windtrap.run "raise-child"
-    [
-      Windtrap.test "trip raises" (fun () ->
-          Windtrap.raises Exit (fun () -> Covcli_fixture.trip ()));
-    ]
+  exit
+  @@ Windtrap.run "raise-child"
+       [
+         Windtrap.test "trip raises" (fun () ->
+             Windtrap.raises Exit (fun () -> Covcli_fixture.trip ()));
+       ]

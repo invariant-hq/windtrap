@@ -5,7 +5,7 @@
 
 (* The runtime-only link contract (RFC Law 12, interchange contract):
    mutation-instrumented user code links against nothing but the
-   [windtrap.mutate] runtime, injected by dune through the rewriter's
+   [windtrap.runtime] library, injected by dune through the rewriter's
    ppx_runtime_libraries - never the windtrap core. This executable's
    dune stanza lists [mutsem_fixtures] alone, and this file never names a
    mutation or windtrap module: that it links and runs at all is the
@@ -13,7 +13,7 @@
    plain, printing the tree-wide summary dialect by hand (stdlib only, so
    the duration is [Sys.time]'s CPU clock).
 
-   What it proves: the generated preamble calls [Windtrap_mutate.register]
+   What it proves: the generated preamble calls [Windtrap_runtime.Mutate.register]
    at module load, so an executable that links only the instrumented
    library must still resolve that call - and does, without the consumer
    naming the runtime. What it does not prove: that the core is ABSENT
@@ -22,7 +22,7 @@
    ppx/mutate/dune's ppx_runtime_libraries field, and this executable is
    the check that the field is doing its job at all. Absence was checked
    out of band instead, and held: the only windtrap symbols in the linked
-   binary are [camlWindtrap_mutate...] ones. Not automated here, because
+   binary are [camlWindtrap_runtime__Mutate...] ones. Not automated here, because
    a dune rule shelling out to nm would be a build dependency on a
    toolchain this project does not otherwise need.
 

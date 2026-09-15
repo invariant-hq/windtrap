@@ -3,62 +3,70 @@ module Windtrap_cov_________fixture_fun___ml =
   struct
     let ___windtrap_visit___ =
       let counts = Array.make 16 0 in
-      Windtrap_coverage.register ~file:"./fixture_fun.ml"
+      Windtrap_runtime.Coverage.register ~file:"./fixture_fun.ml"
         ~points:[|{
-                    Windtrap_coverage.start_ofs = 202;
-                    Windtrap_coverage.end_ofs = 207
+                    Windtrap_runtime.Coverage.start_ofs = 202;
+                    Windtrap_runtime.Coverage.end_ofs = 207
                   };{
-                      Windtrap_coverage.start_ofs = 240;
-                      Windtrap_coverage.end_ofs = 245
+                      Windtrap_runtime.Coverage.start_ofs = 240;
+                      Windtrap_runtime.Coverage.end_ofs = 245
                     };{
-                        Windtrap_coverage.start_ofs = 270;
-                        Windtrap_coverage.end_ofs = 275
+                        Windtrap_runtime.Coverage.start_ofs = 270;
+                        Windtrap_runtime.Coverage.end_ofs = 275
                       };{
-                          Windtrap_coverage.start_ofs = 304;
-                          Windtrap_coverage.end_ofs = 309
+                          Windtrap_runtime.Coverage.start_ofs = 304;
+                          Windtrap_runtime.Coverage.end_ofs = 309
                         };{
-                            Windtrap_coverage.start_ofs = 337;
-                            Windtrap_coverage.end_ofs = 348
+                            Windtrap_runtime.Coverage.start_ofs = 337;
+                            Windtrap_runtime.Coverage.end_ofs = 348
                           };{
-                              Windtrap_coverage.start_ofs = 351;
-                              Windtrap_coverage.end_ofs = 365
+                              Windtrap_runtime.Coverage.start_ofs = 351;
+                              Windtrap_runtime.Coverage.end_ofs = 365
                             };{
-                                Windtrap_coverage.start_ofs = 389;
-                                Windtrap_coverage.end_ofs = 395
+                                Windtrap_runtime.Coverage.start_ofs = 389;
+                                Windtrap_runtime.Coverage.end_ofs = 395
                               };{
-                                  Windtrap_coverage.start_ofs = 398;
-                                  Windtrap_coverage.end_ofs = 408
+                                  Windtrap_runtime.Coverage.start_ofs = 398;
+                                  Windtrap_runtime.Coverage.end_ofs = 408
                                 };{
-                                    Windtrap_coverage.start_ofs = 431;
-                                    Windtrap_coverage.end_ofs = 447
+                                    Windtrap_runtime.Coverage.start_ofs = 431;
+                                    Windtrap_runtime.Coverage.end_ofs = 447
                                   };{
-                                      Windtrap_coverage.start_ofs = 431;
-                                      Windtrap_coverage.end_ofs = 467
+                                      Windtrap_runtime.Coverage.start_ofs =
+                                        431;
+                                      Windtrap_runtime.Coverage.end_ofs = 467
                                     };{
-                                        Windtrap_coverage.start_ofs = 745;
-                                        Windtrap_coverage.end_ofs = 764
+                                        Windtrap_runtime.Coverage.start_ofs =
+                                          745;
+                                        Windtrap_runtime.Coverage.end_ofs =
+                                          764
                                       };{
-                                          Windtrap_coverage.start_ofs = 745;
-                                          Windtrap_coverage.end_ofs = 764
+                                          Windtrap_runtime.Coverage.start_ofs
+                                            = 745;
+                                          Windtrap_runtime.Coverage.end_ofs =
+                                            764
                                         };{
-                                            Windtrap_coverage.start_ofs = 771;
-                                            Windtrap_coverage.end_ofs = 772
+                                            Windtrap_runtime.Coverage.start_ofs
+                                              = 771;
+                                            Windtrap_runtime.Coverage.end_ofs
+                                              = 772
                                           };{
-                                              Windtrap_coverage.start_ofs =
-                                                804;
-                                              Windtrap_coverage.end_ofs = 806
+                                              Windtrap_runtime.Coverage.start_ofs
+                                                = 804;
+                                              Windtrap_runtime.Coverage.end_ofs
+                                                = 806
                                             };{
-                                                Windtrap_coverage.start_ofs =
-                                                  794;
-                                                Windtrap_coverage.end_ofs =
-                                                  806
+                                                Windtrap_runtime.Coverage.start_ofs
+                                                  = 794;
+                                                Windtrap_runtime.Coverage.end_ofs
+                                                  = 806
                                               };{
-                                                  Windtrap_coverage.start_ofs
+                                                  Windtrap_runtime.Coverage.start_ofs
                                                     = 813;
-                                                  Windtrap_coverage.end_ofs =
-                                                    814
+                                                  Windtrap_runtime.Coverage.end_ofs
+                                                    = 814
                                                 }|] ~counts;
-      (fun index -> Windtrap_coverage.visit counts index)
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =
       ___windtrap_visit___ point_index; result
   end

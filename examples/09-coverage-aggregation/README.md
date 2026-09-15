@@ -15,8 +15,15 @@ the `(instrumentation (backend ppx_windtrap.coverage))` stanza — and modules n
 executable links at all — never registers, so it is silently absent from
 the denominator, not reported as 0%.
 
-One rule, once, produces it (`--min` makes the alias a CI gate; test runs
-themselves never fail on coverage):
+Two commands produce it — the instrumented run, then the merge —
+and `--min` makes the merge a CI gate (test runs themselves never fail
+on coverage):
+
+    dune runtest --force --instrument-with ppx_windtrap.coverage
+    dune exec windtrap -- coverage --min 80
+
+The `dune` file's one rule folds them into an alias for those who want
+one command:
 
     dune build @examples/09-coverage-aggregation/example-cover \
       --instrument-with ppx_windtrap.coverage

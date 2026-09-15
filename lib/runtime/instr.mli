@@ -5,16 +5,14 @@
 
 (** Shared plumbing of the instrumentation data files.
 
-    [Windtrap_coverage] and the core's [Mutate_verdicts] never link each other,
-    yet both name their output file by the same build-path rule, record the same
-    writer identity, write through the same atomic rename, and parse their files
-    back with the same scanner. This is that shared ground. Those two are its
-    only intended callers, and everything that varies between the two formats is
-    a {!type:format} constant, never a hook.
+    {!Coverage} and {!Verdicts} name their output file by the same build-path
+    rule, record the same writer identity, write through the same atomic rename,
+    and parse their files back with the same scanner. This is that shared
+    ground. Those two are its only intended callers, and everything that varies
+    between the two formats is a {!type:format} constant, never a hook.
 
-    Stdlib only: the coverage runtime puts this module into the closure of every
-    instrumented library, so it must never pull the windtrap core (or anything
-    else) along. *)
+    Stdlib only: this module is in the closure of every instrumented library, so
+    it must never pull the windtrap core (or anything else) along. *)
 
 (** {1:formats Formats} *)
 
@@ -86,8 +84,8 @@ val output_dir : format -> exe:string -> string
 (** {1:errors Errors} *)
 
 (** The type for data-file errors — the three ways a file fails that both
-    formats share. [Mutate_verdicts] re-exports it as its [error];
-    [Windtrap_coverage] wraps it beside a merge-time case of its own. *)
+    formats share. {!Verdicts} re-exports it as its [error]; {!Coverage} wraps
+    it beside a merge-time case of its own. *)
 type error =
   | Unknown_format of { path : string; header : string }
       (** [path] does not start with the format's magic string; [header] is its

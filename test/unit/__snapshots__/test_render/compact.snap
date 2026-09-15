@@ -59,4 +59,4 @@ slow tests (2):
 (exempt with the "slow" tag, or raise --slow-threshold SECONDS)
 
 4 passed, 1 skipped, 6 failed in 6.5s.
-coverage: 87.2% (312/358 points) · project: dune build @cover
+coverage: 87.2% (312/358 points) · project: windtrap coverage

@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* The runtime-only link contract (RFC Law 12, interchange contract):
-   instrumented user code links against nothing but the [windtrap.coverage]
+   instrumented user code links against nothing but the [windtrap.runtime]
    runtime, injected by dune through the rewriter's ppx_runtime_libraries -
    never the windtrap core. This executable's dune stanza lists
    [covsem_fixtures] alone (itself a zero-dependency library), and this file

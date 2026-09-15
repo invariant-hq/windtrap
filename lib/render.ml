@@ -1907,25 +1907,23 @@ type mutation = {
    runtime cannot disagree about what to type. The filter is restated the
    way [replay_line] restates it — [-f] under [`Exe], [WINDTRAP_FILTER]
    under [`Mirrors] — because a survivor of a filtered run survived that
-   selection, and the line must reproduce that run. Under [`Mirrors] the
-   instrumentation flag is part of the spelling: arming needs a build
-   that carries the mutants, and a bare [dune runtest] builds one that
-   does not, so the plain mirror would name a command that cannot do
-   what its line says. *)
+   selection, and the line must reproduce that run. Under [`Mirrors] no
+   command is spelled at all: this renderer does not know how the suite
+   is run, and the build-tool spelling that used to stand there was
+   wrong in every project but the one it was written in. *)
 let reproduce_line t ~variable ~filter =
   match (t.invocation, filter) with
   | `Exe cmd, Some flt ->
       spf "reproduce: %s=<id> %s -f %s" variable cmd (shell_quote flt)
   | `Exe cmd, None -> spf "reproduce: %s=<id> %s" variable cmd
   | `Mirrors, filter ->
-      (* [--force] is not decoration. Dune does not key an action's digest
-         on an ambient variable it was not told about, so a warm tree
-         replays the cached run and the arming silently does nothing —
-         a hint that appears to work and does not is worse than none. *)
-      spf
-        "reproduce: %s=<id>%s dune runtest --force --instrument-with \
-         ppx_windtrap.mutate"
-        variable
+      (* No CLI to spell, and no build tool to name: the aggregate is
+         merged from executables this process never ran, and the inline
+         runner is driven by a build it cannot see. The placeholder
+         stands where the reader's own suite command goes — a run that
+         carries the mutants and is not replayed from a cache, since an
+         arming a cached run swallows appears to work and does not. *)
+      spf "reproduce: %s=<id>%s <re-run the instrumented suite>" variable
         (match filter with
         | Some flt -> " WINDTRAP_FILTER=" ^ shell_quote flt
         | None -> "")
@@ -2262,7 +2260,7 @@ let finish t ?coverage ~results ~duration () =
   | Some { visited; total } ->
       put t
         (line_str t
-           (coverage_line ~hint:"project: dune build @cover" ~visited ~total ()))
+           (coverage_line ~hint:"project: windtrap coverage" ~visited ~total ()))
   | None -> ());
   Pp.flush t.out ()
 

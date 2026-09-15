@@ -16,8 +16,8 @@
    never change what a test asserts. *)
 
 open Windtrap
-module M = Windtrap_mutate
-module V = Windtrap.Private.Mutate_verdicts
+module M = Windtrap_runtime.Mutate
+module V = Windtrap_runtime.Verdicts
 
 let exe_dir = Filename.dirname Sys.executable_name
 let suite_exe = Filename.concat exe_dir "suite_main.exe"
@@ -70,13 +70,11 @@ let environment bindings =
   in
   (* The scope that keeps this suite's fixtures controlled. Under
      --instrument-with the children link a mutation-instrumented windtrap
-     core, and every count here — five sites, a zero-mutant control, the
-     reach map, the verdict file — is written against this directory's
-     own fixtures: subject.ml, runaway/spinner.ml, inline/inline_armed.ml.
-     Naming them does not simulate the old catalogue.
-     WINDTRAP_MUTATE_ONLY narrows what the runtime REGISTERS, so the
-     children genuinely have those mutants and plain_main genuinely has
-     none.
+     core, and every count here — five sites, the reach map, the verdict
+     file — is written against this directory's own fixtures: subject.ml,
+     runaway/spinner.ml, inline/inline_armed.ml. The loop applies
+     WINDTRAP_MUTATE_ONLY to the population it forks over, so the
+     children test exactly those mutants whatever else they link.
 
      Omitted when the caller sets it, because [getenv] answers with the
      first match and a default listed first would silently win over the
@@ -223,29 +221,27 @@ let unasked_tests =
         equal ~msg:"stderr" text "" err);
   ]
 
-(* WINDTRAP_MUTATE_ONLY narrows the registry, not the report, and the two
-   consequences below are what the rest of this tree relies on: a scope
-   that matches nothing leaves an executable indistinguishable from an
-   uninstrumented one, and a scope that matches keeps the fixture's own
-   catalogue whole. Every other scenario in this file passes the
-   directory scope through [environment], so without these the feature
-   would only ever be exercised incidentally. *)
+(* WINDTRAP_MUTATE_ONLY narrows the population the loop forks over, not
+   the registry and not the report, and the two consequences below are
+   what the rest of this tree relies on: a scope that matches nothing is
+   refused by name, and a scope that matches keeps the fixture's own
+   mutants whole. Every other scenario in this file passes the directory
+   scope through [environment], so without these the feature would only
+   ever be exercised incidentally. *)
 let scope_tests =
   [
-    test "a scope that matches nothing makes a build look uninstrumented"
-      (fun () ->
-        (* The seam declines by name rather than reporting nothing, which
-           is the uninstrumented contract. *)
+    test "a scope that matches nothing is refused, naming the scope" (fun () ->
+        (* The loop declines by name rather than reporting nothing. *)
         let code, _, err =
           spawn
             [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=::no-such-source::" ]
         in
         equal ~msg:"asking it to mutate exits 1" int 1 code;
         (* The build is instrumented and fine; the scope is what emptied
-           the catalogue, so the refusal must name it — blaming
+           the population, so the refusal must name it — blaming
            instrumentation would send the reader to rebuild. *)
         says ~msg:"declines by naming the scope, value included" err
-          "WINDTRAP_MUTATE_ONLY=::no-such-source:: left no mutants";
+          "scope ::no-such-source:: left no mutants";
         says ~msg:"and both causes an empty scoped catalogue has" err
           "matches no instrumented file, or the matched files have no mutation \
            sites";
@@ -1064,11 +1060,11 @@ let deadline_tests =
 
 (* One identifier, every executable — the report's own remedy
 
-   The report tells the reader to arm a survivor with
-   [WINDTRAP_MUTATE_ARM=<id> dune runtest --instrument-with
-   ppx_windtrap.mutate], because a command that links no test executable
-   has no single binary to name. That runs EVERY instrumented executable
-   with the variable set, and windtrap's own lib/ is covered by seven. So
+   The aggregate report tells the reader to arm a survivor by re-running
+   the instrumented suite with [WINDTRAP_MUTATE_ARM=<id>], because a
+   command that links no test executable has no single binary to name.
+   That runs EVERY instrumented executable with the variable set, and
+   windtrap's own lib/ is covered by seven. So
    the scenario here is the real one: one identifier handed to two
    executables built from disjoint sources — suite_main from subject.ml,
    runaway_main from spinner.ml — once to the binary that holds the
@@ -1115,9 +1111,14 @@ let cross_executable_tests =
           ("mutant " ^ id ^ " armed: a - b \u{2192} a + b"));
   ]
 
-(* The control: no instrumented module in the executable at all. *)
+(* The control: no instrumented module in the executable at all — in an
+   ordinary build. Under --instrument-with it links an instrumented core
+   and is a control for nothing; the one scenario that needs it to
+   catalogue nothing says so and steps aside. This executable links the
+   same core, so it can tell. *)
 
 let plain_exe = Filename.concat exe_dir "plain_main.exe"
+let core_instrumented = M.catalogue () <> []
 
 let uninstrumented_tests =
   [
@@ -1129,19 +1130,24 @@ let uninstrumented_tests =
         says ~msg:"the ordinary summary" out "plain: 1 passed";
         denies ~msg:"and nothing else" out "mutants:");
     test "asking a build with no mutants to mutate declines by name" (fun () ->
-        (* An empty binding is unset to the runtime and to Env alike, so
-           this is the no-scope refusal — the harness's default scope
-           would otherwise turn it into the scoped one, whose message
-           blames the scope rather than the missing backend. *)
+        if core_instrumented then
+          skip
+            ~reason:
+              "the core is instrumented, so plain_main catalogues its mutants"
+            ();
+        (* An empty binding is unset to Env, so this is the no-scope run:
+           an empty catalogue is refused as uninstrumented whatever the
+           scope, and the harness's default scope would otherwise be a
+           bystander here. *)
         let code, out, err =
           spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=" ]
         in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the suite still ran" out "plain: 1 passed";
         says ~msg:"the diagnosis" err "links no instrumented module";
-        says ~msg:"the fix" err "--instrument-with ppx_windtrap.mutate";
-        denies ~msg:"no scope was set, so none is blamed" err
-          "WINDTRAP_MUTATE_ONLY");
+        says ~msg:"the fix names the backend, not a build tool" err
+          "instrument the library under test with ppx_windtrap.mutate";
+        denies ~msg:"no scope was set, so none is blamed" err "scope");
     test "an armed identifier declines by name and leaves the run alone"
       (fun () ->
         (* An uninstrumented executable is the commonest sibling of all:
@@ -1159,7 +1165,7 @@ let uninstrumented_tests =
         says ~msg:"the identifier" err "lib/absent.ml:1:0:add";
         says ~msg:"the diagnosis" err "not this executable's mutant";
         says ~msg:"and the misconfiguration it could still be" err
-          "--instrument-with ppx_windtrap.mutate");
+          "instrumented with ppx_windtrap.mutate");
     test "a misspelled knob is loud even where there is nothing to mutate"
       (fun () ->
         let code, _, err = spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=perhaps" ] in
@@ -1168,21 +1174,22 @@ let uninstrumented_tests =
   ]
 
 let () =
-  run "mutate loop"
-    [
-      group "catalogue" catalogue_tests;
-      group "unasked" unasked_tests;
-      group "scope" scope_tests;
-      group "loop" loop_tests;
-      group "reach map" reach_tests;
-      group "no trace outside the pipe" no_trace_tests;
-      group "verdict file" verdict_file_tests;
-      group "crash" crash_tests;
-      group "refusals" refusal_tests;
-      group "armed" armed_tests;
-      group "one identifier, several executables" cross_executable_tests;
-      group "read-only checking" read_only_tests;
-      group "runaway budget" runaway_tests;
-      group "per-child deadline" deadline_tests;
-      group "uninstrumented" uninstrumented_tests;
-    ]
+  exit
+  @@ run "mutate loop"
+       [
+         group "catalogue" catalogue_tests;
+         group "unasked" unasked_tests;
+         group "scope" scope_tests;
+         group "loop" loop_tests;
+         group "reach map" reach_tests;
+         group "no trace outside the pipe" no_trace_tests;
+         group "verdict file" verdict_file_tests;
+         group "crash" crash_tests;
+         group "refusals" refusal_tests;
+         group "armed" armed_tests;
+         group "one identifier, several executables" cross_executable_tests;
+         group "read-only checking" read_only_tests;
+         group "runaway budget" runaway_tests;
+         group "per-child deadline" deadline_tests;
+         group "uninstrumented" uninstrumented_tests;
+       ]

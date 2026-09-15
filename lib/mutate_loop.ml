@@ -15,25 +15,30 @@
 [@@@mutate exclude_file]
 
 (* The parent of a mutation run: dry run, probe, fork loop, verdict
-   file, report. The runtime below (Windtrap_mutate) owns the catalogue,
-   the arming slot and the reach counters, and Mutate_verdicts owns the
-   verdict collection and its file; this module owns the protocol over
-   them and every decision the report shows — the ordering, the cap, the
-   counts. Render orders nothing and counts nothing, and neither does
-   the runtime. *)
+   file, report. The runtime below (Windtrap_runtime.Mutate) owns the catalogue,
+   the arming slot and the reach counters, and Windtrap_runtime.Verdicts
+   owns the verdict collection and its file; this module owns the
+   protocol over them and every decision the report shows — the
+   ordering, the cap, the counts. Render orders nothing and counts
+   nothing, and neither does the runtime. *)
 
-module M = Windtrap_mutate
-module V = Mutate_verdicts
+module M = Windtrap_runtime.Mutate
+module V = Windtrap_runtime.Verdicts
 
 let spf = Printf.sprintf
 
-(* The catalogue is complete only after module initialization, which is
-   why it is read lazily rather than at this module's own load time.
-
-   The catalogue is already scoped by WINDTRAP_MUTATE_ONLY: the runtime
-   applies it at registration, so an out-of-scope file is not in the
-   registry at all and its guard is inert. Nothing to filter here. *)
-let catalogue = lazy (M.catalogue ())
+(* The scope: the source-path prefixes the core read from its
+   environment, applied here to the population the loop forks over.
+   Every instrumented file still registers and still counts reaches —
+   the runtime reads no environment — and what narrows is the work: a
+   mutant outside the prefixes is never forked and never recorded. *)
+let in_scope ~scope (m : M.mutant) =
+  match scope with
+  | [] -> true
+  | prefixes ->
+      List.exists
+        (fun prefix -> String.starts_with ~prefix m.M.id.M.file)
+        prefixes
 
 type run =
   | Ran of (Runner.outcome, Runner.startup_error) result
@@ -744,9 +749,9 @@ let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~reached tests =
    survived only the selection — and the file format carries no
    partial-run marking, so a written file would stand in the project
    merge as this executable's whole answer until the next full run.
-   WINDTRAP_MUTATE_ONLY is deliberately not here: the scope narrows which
-   mutants exist, not which tests judge them, so an ONLY-scoped run's
-   records are project-true for this executable, merely narrower. *)
+   The mutation scope is deliberately not here: it narrows which mutants
+   are tested, not which tests judge them, so a scoped run's records are
+   project-true for this executable, merely fewer. *)
 let narrows_suite ~(config : Run.config) ~focus =
   config.Run.filter <> None || config.Run.exclude <> None
   || config.Run.tags <> []
@@ -766,32 +771,43 @@ let print_report renderer ~scope ~filter ~verdicts tests =
        ~loc_of:(fun test -> Option.join (Hashtbl.find_opt locations test))
        ~scope ~filter verdicts)
 
-(* The runtime applies the scope at registration, so a value matching
-   nothing leaves the same empty catalogue a missing backend does — a
-   refusal blaming instrumentation would send the reader to rebuild a
-   build that is fine. The runtime read the variable itself, at module
-   load; [Env] reads the same process's environment, so its answer is the
-   value registration saw. *)
-let refuse_empty_catalogue () =
-  match Env.mutate_only () with
+(* The population, before the dry run: the catalogue is complete once
+   module initialization is over, and the scope is the core's. The three
+   ways it comes up empty are three different refusals, and the first
+   two must not be confused — a scope matching nothing leaves a build
+   that is instrumented and fine, and blaming the instrumentation would
+   send the reader to rebuild it. *)
+let population ~scope =
+  match M.catalogue () with
   | [] ->
-      refuse
+      Error
         "this executable links no instrumented module, so there is nothing to \
-         mutate. Build it with --instrument-with ppx_windtrap.mutate, or add \
-         an (instrumentation (backend ppx_windtrap.mutate)) stanza to the \
-         library under test"
-  | prefixes ->
-      refuse
-        "%s=%s left no mutants in this executable's catalogue — the prefix \
-         matches no instrumented file, or the matched files have no mutation \
-         sites"
-        M.scope_variable
-        (String.concat "," prefixes)
+         mutate: instrument the library under test with ppx_windtrap.mutate \
+         and re-run"
+  | catalogue -> (
+      match List.filter (in_scope ~scope) catalogue with
+      | [] ->
+          Error
+            (spf
+               "the mutation scope %s left no mutants in this executable's \
+                catalogue — the prefix matches no instrumented file, or the \
+                matched files have no mutation sites"
+               (String.concat "," scope))
+      | scoped -> (
+          match
+            List.filter (fun (m : M.mutant) -> m.M.dismissed = None) scoped
+          with
+          | [] ->
+              Error
+                "every mutant this run could test is dismissed by [@mutate \
+                 off] — there is nothing to test"
+          | population -> Ok population))
 
 (* The loop, end to end *)
 
 let loop renderer ~armed (spine : Driver.t) tests =
   let config = spine.Driver.config in
+  let population = population ~scope:(Env.mutate_only ()) in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
   match
@@ -810,70 +826,66 @@ let loop renderer ~armed (spine : Driver.t) tests =
         refuse
           "the dry run is red. Mutation scores a passing suite; a score over a \
            failing one is not a score"
-      else if Lazy.force catalogue = [] then refuse_empty_catalogue ()
       else
-        let population =
-          List.filter
-            (fun (m : M.mutant) -> m.M.dismissed = None)
-            (Lazy.force catalogue)
-        in
-        if population = [] then
-          refuse
-            "every mutant in this executable is dismissed by [@mutate off] — \
-             there is nothing to test"
-        else
-          let reached, unreached =
-            List.partition
-              (fun mutant -> reaching_tests reach mutant <> [])
-              population
-          in
-          let dry_run_wall = Float.max 0.01 (Unix.gettimeofday () -. started) in
-          let narrowed =
-            narrows_suite ~config ~focus:outcome.Runner.focus_active
-          in
-          let outcome =
-            probed ~armed ~dry_run_wall ~spine ~reach ~paths:executed tests
-              (fun ~scratch ->
-                run_children ~armed ~scratch ~dry_run_wall ~spine ~reach
-                  ~reached tests)
-          in
-          match outcome with
-          | Error message -> refuse "%s" message
-          | Ok reported ->
-              let verdicts =
-                List.fold_left
-                  (fun acc (m : M.mutant) ->
-                    V.add acc (V.record_of_mutant m V.Unreached))
-                  reported unreached
-              in
-              (* A narrowed run's verdicts are never persisted — and the
+        match population with
+        | Error message -> refuse "%s" message
+        | Ok population -> (
+            let reached, unreached =
+              List.partition
+                (fun mutant -> reaching_tests reach mutant <> [])
+                population
+            in
+            let dry_run_wall =
+              Float.max 0.01 (Unix.gettimeofday () -. started)
+            in
+            let narrowed =
+              narrows_suite ~config ~focus:outcome.Runner.focus_active
+            in
+            let outcome =
+              probed ~armed ~dry_run_wall ~spine ~reach ~paths:executed tests
+                (fun ~scratch ->
+                  run_children ~armed ~scratch ~dry_run_wall ~spine ~reach
+                    ~reached tests)
+            in
+            match outcome with
+            | Error message -> refuse "%s" message
+            | Ok reported ->
+                let verdicts =
+                  List.fold_left
+                    (fun acc (m : M.mutant) ->
+                      V.add acc (V.record_of_mutant m V.Unreached))
+                    reported unreached
+                in
+                (* A narrowed run's verdicts are never persisted — and the
                  previous file is left alone, never deleted: the run says
                  so instead, after the report it still prints in full. *)
-              if not narrowed then write_verdicts verdicts;
-              (* A narrowed run's reach is its selection's, and the
+                if not narrowed then write_verdicts verdicts;
+                (* A narrowed run's reach is its selection's, and the
                  summary says so by the count the dry run executed. *)
-              let scope =
-                if narrowed then Render.Selected (List.length executed)
-                else Render.Suite
-              in
-              print_report renderer ~scope ~filter:config.Run.filter ~verdicts
-                tests;
-              if narrowed then Render.mutation_not_saved renderer;
-              flush_descriptors ();
-              Reported 0)
+                let scope =
+                  if narrowed then Render.Selected (List.length executed)
+                  else Render.Suite
+                in
+                print_report renderer ~scope ~filter:config.Run.filter ~verdicts
+                  tests;
+                if narrowed then Render.mutation_not_saved renderer;
+                flush_descriptors ();
+                Reported 0))
 
-(* The ordinary run with one mutant armed *)
+(* The ordinary run with one mutant armed. [spec] is the identifier as
+   the core read it, unparsed: the runtime's grammar decides what it
+   names, and the runtime reads no environment of its own. *)
 
-let arm_mode renderer ~armed (spine : Driver.t) tests =
-  match M.arm_from_env () with
+let arm_mode renderer ~armed ~spec (spine : Driver.t) tests =
+  match Result.bind (M.id_of_string spec) M.arm with
   | Error (M.Uncatalogued _ as error) ->
       (* Not a refusal. One identifier is handed to every test
-         executable at once — the report's own remedy is
-         [WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
-         ppx_windtrap.mutate], because a command that links no test
-         executable has no single binary to name — and in a project with
-         several (test) stanzas most of them were built from other
-         sources. An executable that catalogues no site of the named file
+         executable at once — the aggregate report's remedy arms one
+         identifier across a re-run of the whole suite, because a
+         command that links no test executable has no single binary to
+         name — and in a project with several test executables most of
+         them were built from other sources. An executable that
+         catalogues no site of the named file
          is simply not the one the identifier is about: exiting 1 here
          would fail the build for every sibling of the binary that armed
          the mutant correctly, which is the report's headline advice
@@ -891,10 +903,7 @@ let arm_mode renderer ~armed (spine : Driver.t) tests =
   | Error error ->
       Format.eprintf "%a@." M.pp_arm_error error;
       Reported 1
-  (* The caller only reaches here with the variable set, so this arm is
-     the empty-string case the runtime already treats as unset. *)
-  | Ok None -> Ran (Driver.execute_and_report spine tests)
-  | Ok (Some mutant) ->
+  | Ok mutant ->
       (* An armed run never writes: no .corrected (Law 16d) and no
          accepted baseline. An armed mutant changes program output on
          purpose, and a run that promoted that output would rewrite the
@@ -963,7 +972,7 @@ let execute_and_report (spine : Driver.t) tests =
       in
       match (mode, arm) with
       | `Unset, None -> Ran (Driver.execute_and_report spine tests)
-      | `Unset, Some _ -> arm_mode (renderer ()) ~armed spine tests
+      | `Unset, Some spec -> arm_mode (renderer ()) ~armed ~spec spine tests
       | `Loop, Some _ ->
           refuse
             "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \

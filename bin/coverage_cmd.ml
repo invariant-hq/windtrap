@@ -3,11 +3,11 @@
    SPDX-License-Identifier: ISC
 
    File discovery and the staleness pass live in Data_files, shared with
-   `windtrap mutate`; the table and excerpt rendering live in the
+   `windtrap mutants`; the table and excerpt rendering live in the
    library renderer (Render, via Windtrap.Private) over section data
    built by the coverage seam's one builder (Driver.coverage_data), so
-   the in-process WINDTRAP_COVERAGE modes and this command share one
-   layout and one projection.
+   the in-process report and this command share one layout and one
+   projection.
   ---------------------------------------------------------------------------*)
 
 module Render = Windtrap.Private.Render
@@ -111,7 +111,7 @@ let parse_args args =
     }
     args
 
-(* Discovery: Data_files's, shared with `windtrap mutate` — the project
+(* Discovery: Data_files's, shared with `windtrap mutants` — the project
    root resolved as the runtime resolves its dump path, explicit PATH
    arguments as a loud contract (a silent narrowing of the merge would
    end in the no-data message and its wrong remedy). [files] come back
@@ -122,34 +122,32 @@ let discover paths = Data_files.discover ~dir:"_coverage" ~ext:"coverage" paths
 
 (* The staleness pass
 
-   The @cover alias forces every stanza up to date before the aggregate
-   runs, but "up to date" is not "re-run": the holes are dumps whose
-   executable was deleted or renamed (orphans, which would silently
-   inflate the merge) and dumps not written by the executable now on
-   disk — a re-run without --instrument-with (rebuilds the executable,
-   writes no fresh dump), or a test action dune replayed from cache
-   after sources reverted to an already-tested state (the dump on disk
-   stays a different build's, and plain re-runs stay cache hits, so only
-   a forced run heals it — hence the remedy below). Detection is
-   Data_files.freshness's, from the identity recorded in each dump; the
-   exclusion and the wording of the remedies are this command's. A flagged
-   dump is always excluded and always named: there is no override,
-   because a number computed from a dump known to describe another build
-   can only mislead. *)
+   "Up to date" is not "re-run": the holes are dumps whose executable
+   was deleted or renamed (orphans, which would silently inflate the
+   merge) and dumps not written by the executable now on disk — a
+   rebuild without the backend (writes no fresh dump), or a test run the
+   build tool replayed from its cache after sources reverted to an
+   already-tested state (the dump on disk stays a different build's, and
+   only a forced run heals it). Detection is Data_files.freshness's,
+   from the identity recorded in each dump; the exclusion and the remedy
+   are this command's. A flagged dump is always excluded and always
+   named: there is no override, because a number computed from a dump
+   known to describe another build can only mislead. The remedy is one
+   sentence in words any build tool's user can act on: this command
+   does not know how the suite is run, and a spelled-out command would
+   be wrong everywhere but the tree it was written in. *)
 
-(* The empty-estate message: no dump the merge could use, whether the
-   directory held nothing at all or nothing but this command's own
-   exhaust. The remedy is the same either way — instrument, and run. *)
+(* The empty-estate message: no dump the merge could use. *)
 let no_data =
   "no .coverage files found\n\
-   Instrument the library under test\n\
-  \  (instrumentation (backend ppx_windtrap.coverage))\n\
-   and run its tests first:\n\
-  \  dune runtest --instrument-with ppx_windtrap.coverage\n"
+   Instrument the library under test with ppx_windtrap.coverage and run its \
+   tests first; every instrumented test executable writes its dump under \
+   _build/_coverage at exit.\n"
 
-let stale_hint =
-  "a re-run made without --instrument-with ppx_windtrap.coverage, or a cached \
-   test dune did not re-run"
+let remedy =
+  "re-run the suite instrumented (forcing the runs your build tool cached), \
+   then merge again; delete _build/_coverage to drop leftovers of removed \
+   executables"
 
 (* Loads [files], excludes the ones the freshness pass flagged, and
    merges the survivors. Warnings and failure details go to stderr;
@@ -161,102 +159,46 @@ let load_merged files =
         Result.bind acc (fun entries ->
             Result.map
               (fun (t, exe) ->
-                if Data_files.self_written exe then entries
-                else (path, t, Data_files.freshness ~path exe) :: entries)
-              (Windtrap_coverage.load path)))
+                (path, t, Data_files.freshness ~path exe) :: entries)
+              (Windtrap_runtime.Coverage.load path)))
       (Ok []) files
   in
   match loaded with
   | Error error ->
-      Format.eprintf "windtrap coverage: %a@." Windtrap_coverage.pp_error error;
+      Format.eprintf "windtrap coverage: %a@."
+        Windtrap_runtime.Coverage.pp_error error;
       Error 1
   | Ok entries -> (
       let entries = List.rev entries in
       let kept, flagged =
         List.partition (fun (_, _, v) -> v = Data_files.Fresh) entries
       in
-      (* Per-file detail is what a reader wants when a dump or two is
-         stale among many: it names the executable and the reason, and
-         the reader goes and looks. Forty of them is the same sentence
-         forty times, and it buries the one fact that matters — that no
-         instrumented run has happened since this build. So the detail
-         is capped; the [kept = []] branch below adds the summary and
-         the remedy, which is the case a reader reaches by simply
-         forgetting the instrumentation flag. *)
-      let detail_cap = 3 in
-      let flagged_count = List.length flagged in
-      List.iteri
-        (fun i (path, _, v) ->
-          if i < detail_cap then
-            Printf.eprintf "windtrap coverage: %s; excluding it\n%!"
-              (Data_files.describe ~stale_hint ~path v))
+      (* One line per excluded dump — the path, the executable and the
+         reason, which is what a reader goes and looks at — then the
+         remedy once, however many there were. *)
+      List.iter
+        (fun (path, _, v) ->
+          Printf.eprintf "windtrap coverage: %s\n%!"
+            (Data_files.describe ~path v))
         flagged;
-      if flagged_count > detail_cap then
-        Printf.eprintf "windtrap coverage: ... and %d more like that\n%!"
-          (flagged_count - detail_cap);
-      let any_stale =
-        List.exists
-          (fun (_, _, v) ->
-            match v with Data_files.Stale _ -> true | _ -> false)
-          flagged
-      in
-      (* A plain re-run cannot heal a stale dump whose test action is a
-         dune cache hit; the forced run always rewrites it. Skipped when
-         everything is excluded: the epilogue below carries the same
-         command. *)
-      if any_stale && kept <> [] then
+      if kept = [] then
         Printf.eprintf
-          "windtrap coverage: a forced run rewrites stale dumps: dune build \
-           @cover --force --instrument-with ppx_windtrap.coverage\n\
+          "windtrap coverage: every .coverage file was excluded, so there is \
+           nothing to report\n\
            %!";
-      if kept = [] && flagged = [] then begin
-        (* Every file found was this command's own exhaust. From the
-           reader's side that is an empty estate, not a stale one. *)
-        prerr_string ("windtrap coverage: " ^ no_data);
-        Error 1
-      end
-      else if kept = [] then begin
-        let orphans =
-          List.length
-            (List.filter
-               (fun (_, _, v) ->
-                 match v with Data_files.Orphan _ -> true | _ -> false)
-               flagged)
-        in
-        let total = List.length flagged in
-        (* One sentence, not one per file. The commonest way to arrive
-           here is not a subtle staleness problem at all — it is running
-           the aggregate without the instrumentation flag, so the dumps
-           on disk describe binaries the current build replaced. Lead
-           with the remedy for that. *)
-        Printf.eprintf
-          "windtrap coverage: found %d .coverage file%s and every one is %s\n\
-          \  They were written by executables that no longer exist or have \
-           been rebuilt since.\n\
-          \  The usual cause is a build without the instrumentation flag.\n\
-           Re-run the instrumented tests, naming the backend your \
-           (instrumentation) stanza uses:\n\
-          \  dune build @cover --force --instrument-with ppx_windtrap.coverage\n\
-           (dune clean removes leftovers of deleted executables.)\n\
-           %!"
-          total
-          (if total = 1 then "" else "s")
-          (if orphans = total then "orphaned"
-           else if orphans = 0 then "stale"
-           else Printf.sprintf "stale or orphaned (%d orphaned)" orphans);
-        Error 1
-      end
+      if flagged <> [] then Printf.eprintf "windtrap coverage: %s\n%!" remedy;
+      if kept = [] then Error 1
       else
         match
           List.fold_left
             (fun acc (_, t, _) ->
-              Result.bind acc (fun acc -> Windtrap_coverage.merge acc t))
-            (Ok Windtrap_coverage.empty) kept
+              Result.bind acc (fun acc -> Windtrap_runtime.Coverage.merge acc t))
+            (Ok Windtrap_runtime.Coverage.empty) kept
         with
         | Ok collection -> Ok collection
         | Error error ->
-            Format.eprintf "windtrap coverage: %a@." Windtrap_coverage.pp_error
-              error;
+            Format.eprintf "windtrap coverage: %a@."
+              Windtrap_runtime.Coverage.pp_error error;
             Error 1)
 
 (* JSON *)
@@ -284,15 +226,17 @@ let json_ints lines =
    uncovered lines. Frozen keys; a file whose source is missing or stale
    reports an empty uncovered list. *)
 let print_json ~source_roots collection =
-  let summary = Windtrap_coverage.summary collection in
-  let reports = Windtrap_coverage.file_reports ~source_roots collection in
+  let summary = Windtrap_runtime.Coverage.summary collection in
+  let reports =
+    Windtrap_runtime.Coverage.file_reports ~source_roots collection
+  in
   Printf.printf
     "{ \"summary\": { \"visited\": %d, \"total\": %d, \"percentage\": %.2f },\n\
     \  \"files\": ["
     summary.visited summary.total
-    (Windtrap_coverage.percentage summary);
+    (Windtrap_runtime.Coverage.percentage summary);
   List.iteri
-    (fun i (r : Windtrap_coverage.file_report) ->
+    (fun i (r : Windtrap_runtime.Coverage.file_report) ->
       Printf.printf
         "%s\n\
         \    { \"path\": \"%s\", \"visited\": %d, \"total\": %d,\n\
@@ -300,7 +244,7 @@ let print_json ~source_roots collection =
         \      \"uncovered_lines\": %s }"
         (if i = 0 then "" else ",")
         (json_escape r.file) r.summary.visited r.summary.total
-        (Windtrap_coverage.percentage r.summary)
+        (Windtrap_runtime.Coverage.percentage r.summary)
         (json_ints r.uncovered_lines))
     reports;
   Printf.printf " ] }\n%!"
@@ -316,9 +260,11 @@ let print_json ~source_roots collection =
    stderr: painting it would attribute hits to code the data does not
    describe. *)
 let print_lcov ~source_roots collection =
-  let reports = Windtrap_coverage.file_reports ~source_roots collection in
+  let reports =
+    Windtrap_runtime.Coverage.file_reports ~source_roots collection
+  in
   List.iter
-    (fun (r : Windtrap_coverage.file_report) ->
+    (fun (r : Windtrap_runtime.Coverage.file_report) ->
       match r.source with
       | None ->
           Printf.eprintf
@@ -418,7 +364,7 @@ let check_expectations ~expect ~do_not_expect collection =
   else
     match
       missing_expectations ~expect ~do_not_expect
-        (Windtrap_coverage.files collection)
+        (Windtrap_runtime.Coverage.files collection)
     with
     | Error message ->
         Printf.eprintf "windtrap coverage: %s\n%!" message;
@@ -457,7 +403,7 @@ let report_table ~source_roots ~show_uncovered collection =
 let check_min ~machine summary = function
   | None -> 0
   | Some min ->
-      let pct = Windtrap_coverage.percentage summary in
+      let pct = Windtrap_runtime.Coverage.percentage summary in
       let print = if machine then Printf.eprintf else Printf.printf in
       if pct >= min then begin
         print "minimum %g%%: ok\n%!" min;
@@ -465,7 +411,8 @@ let check_min ~machine summary = function
       end
       else begin
         print "minimum %g%%: FAILED \u{2014} %.1f%% (%d/%d points)\n%!" min pct
-          summary.Windtrap_coverage.visited summary.Windtrap_coverage.total;
+          summary.Windtrap_runtime.Coverage.visited
+          summary.Windtrap_runtime.Coverage.total;
         1
       end
 
@@ -506,7 +453,7 @@ let run args =
                 let gate =
                   check_min
                     ~machine:(options.json || options.lcov)
-                    (Windtrap_coverage.summary collection)
+                    (Windtrap_runtime.Coverage.summary collection)
                     options.min
                 in
                 max expectations gate))

@@ -35,12 +35,12 @@ let () =
     let points =
       Array.init total (fun i ->
           {
-            Windtrap_coverage.start_ofs = i * line_len;
+            Windtrap_runtime.Coverage.start_ofs = i * line_len;
             end_ofs = (i * line_len) + line_len - 1;
           })
     in
     let counts = Array.init total (fun i -> if i < visited then 1 else 0) in
-    Windtrap_coverage.register ~file ~points ~counts
+    Windtrap_runtime.Coverage.register ~file ~points ~counts
   end;
   let tests =
     Windtrap.test "passes" (fun () -> Windtrap.is_true true)

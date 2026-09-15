@@ -22,7 +22,7 @@
 ; The rewriter is also usable directly with
 ; (preprocess (pps ppx_windtrap.coverage)), which the semantics tests
 ; rely on. ppx_runtime_libraries makes every instrumented library link
-; the windtrap.coverage runtime the generated code calls - and nothing
+; the stdlib-only windtrap.runtime the generated code calls - and nothing
 ; else: instrumented user code must never pull the windtrap core into its
 ; closure.
 
@@ -31,7 +31,7 @@
  (public_name ppx_windtrap.coverage)
  (kind ppx_rewriter)
  (libraries ppxlib)
- (ppx_runtime_libraries windtrap.coverage)
+ (ppx_runtime_libraries windtrap.runtime)
  (instrumentation.backend
   (ppx ppx_windtrap.coverage))
  (preprocess

@@ -112,7 +112,7 @@ let test_coverage_seam () =
      one test honest in both worlds instead of two tests each true in
      one. *)
   check "the seam answers with a summary exactly when it measured something"
-    (Windtrap_coverage.is_empty (Windtrap_coverage.snapshot ())
+    (Windtrap_runtime.Coverage.is_empty (Windtrap_runtime.Coverage.snapshot ())
     = (Driver.snapshot_coverage () = None))
 
 let tests =

@@ -22,8 +22,8 @@
 ; DIFFERENT rewriter.
 ;
 ; ppx_runtime_libraries makes every instrumented library link the
-; windtrap.mutate runtime the generated code calls - and nothing else:
-; instrumented user code must never pull the windtrap core into its
+; stdlib-only windtrap.runtime the generated code calls - and nothing
+; else: instrumented user code must never pull the windtrap core into its
 ; closure.
 ;
 ; The library is also usable directly with (preprocess (pps
@@ -35,7 +35,7 @@
  (public_name ppx_windtrap.mutate)
  (kind ppx_rewriter)
  (libraries ppxlib)
- (ppx_runtime_libraries windtrap.mutate)
+ (ppx_runtime_libraries windtrap.runtime)
  (instrumentation.backend
   (ppx ppx_windtrap.mutate))
  (preprocess

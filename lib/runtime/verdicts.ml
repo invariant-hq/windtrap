@@ -3,17 +3,9 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Mutated like any library code, unlike its neighbours in the mutation
-   machinery (the loop and the spine, which carry [@@@mutate
-   exclude_file]): the loop runs this module only in the unarmed parent
-   — a forked child never writes or merges verdicts — so a mutant here
-   is judged by the tests that exercise the algebra, never armed inside
-   the process that judges it. *)
+module M = Mutate
 
-module Instr = Windtrap_instr
-module M = Windtrap_mutate
-
-(* The constants Windtrap_instr's shared plumbing is parameterized by:
+(* The constants Instr's shared plumbing is parameterized by:
    this format's magic line, its on-disk home, and the words its error
    messages use. *)
 let format =
@@ -25,7 +17,7 @@ let format =
     remedy =
       "delete the stale files under _build/_mutants, then re-run the mutation \
        tests";
-    who = "Mutate_verdicts";
+    who = "Windtrap_runtime.Verdicts";
   }
 
 (* The rewrite vocabulary is the runtime's, and the parser checks against
@@ -53,7 +45,8 @@ let sorted_witnesses ws = List.sort_uniq compare_witness ws
 let survived ws =
   match sorted_witnesses ws with
   | [] ->
-      invalid_arg "Mutate_verdicts.survived: a survivor names at least one test"
+      invalid_arg
+        "Windtrap_runtime.Verdicts.survived: a survivor names at least one test"
   | witness :: others -> Survived { witness; others }
 
 let merge_verdict a b =

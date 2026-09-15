@@ -3,15 +3,13 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-module Instr = Windtrap_instr
-
 (* Points *)
 
 type point = { start_ofs : int; end_ofs : int }
 
 let magic = "windtrap-coverage-v3"
 
-(* The constants Windtrap_instr's shared plumbing is parameterized by:
+(* The constants Instr's shared plumbing is parameterized by:
    this format's magic line, its on-disk home, and the words its error
    messages use. *)
 let format =
@@ -21,9 +19,9 @@ let format =
     dir = "_coverage";
     ext = "coverage";
     remedy =
-      "delete the stale files under _build/_coverage (or run dune clean), then \
-       re-run the instrumented tests";
-    who = "Windtrap_coverage";
+      "delete the stale files under _build/_coverage, then re-run the \
+       instrumented tests";
+    who = "Windtrap_runtime.Coverage";
   }
 
 let points_equal a b =
@@ -35,20 +33,20 @@ let points_equal a b =
 let validate ~file points counts =
   if Array.length points <> Array.length counts then
     invalid_arg
-      (Printf.sprintf "Windtrap_coverage: %s: %d points but %d counts" file
-         (Array.length points) (Array.length counts));
+      (Printf.sprintf "Windtrap_runtime.Coverage: %s: %d points but %d counts"
+         file (Array.length points) (Array.length counts));
   Array.iter
     (fun p ->
       if p.start_ofs < 0 || p.end_ofs < p.start_ofs then
         invalid_arg
-          (Printf.sprintf "Windtrap_coverage: %s: invalid extent %d-%d" file
-             p.start_ofs p.end_ofs))
+          (Printf.sprintf "Windtrap_runtime.Coverage: %s: invalid extent %d-%d"
+             file p.start_ofs p.end_ofs))
     points;
   Array.iter
     (fun c ->
       if c < 0 then
         invalid_arg
-          (Printf.sprintf "Windtrap_coverage: %s: negative count" file))
+          (Printf.sprintf "Windtrap_runtime.Coverage: %s: negative count" file))
     counts
 
 (* Collections *)
@@ -57,19 +55,19 @@ type error = Data of Instr.error | Point_mismatch of { file : string }
 
 (* Data carries the shared plumbing's failures verbatim; Point_mismatch
    is coverage's own - merging produces it and parsing reports it -
-   which is why the public type cannot simply be Windtrap_instr.error.
+   which is why the public type cannot simply be Instr.error.
    The hint asymmetry is deliberate: re-running never removes a
    foreign-*named* file, so Unknown_format instructs deletion;
-   Point_mismatch self-heals under a full instrumented re-run, so dune
-   clean is only the fallback for orphaned files. *)
+   Point_mismatch self-heals under a full instrumented re-run, so
+   deletion is only the fallback for leftovers. *)
 let pp_error ppf = function
   | Data e -> Instr.pp_error format ppf e
   | Point_mismatch { file } ->
       Format.fprintf ppf
         "%s: coverage point tables disagree across coverage files (executables \
-         built from different sources?); re-run all the instrumented tests \
-         together (dune build @cover --instrument-with ppx_windtrap.coverage); \
-         dune clean only if orphaned files remain"
+         built from different sources?); re-run every instrumented test \
+         executable from one build, then merge again; delete the files under \
+         _build/_coverage only if leftovers remain"
         file
 
 module File_map = Map.Make (String)
@@ -290,7 +288,7 @@ let register ~file ~points ~counts =
          registrations carry equal tables. *)
       warn
         "%s: conflicting instrumentation tables in one executable (stale build \
-         artifacts? try dune clean); ignoring one module's data"
+         artifacts? rebuild from clean); ignoring one module's data"
         file
   | _ ->
       (match !registrations with

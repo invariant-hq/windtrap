@@ -16,25 +16,26 @@ let () =
   | "silent" -> ()
   | mode ->
       let counts = Array.make 3 0 in
-      Windtrap_coverage.register ~file:"lib/child.ml"
+      Windtrap_runtime.Coverage.register ~file:"lib/child.ml"
         ~points:
           [|
-            { Windtrap_coverage.start_ofs = 0; end_ofs = 5 };
+            { Windtrap_runtime.Coverage.start_ofs = 0; end_ofs = 5 };
             { start_ofs = 6; end_ofs = 9 };
             { start_ofs = 10; end_ofs = 20 };
           |]
         ~counts;
-      Windtrap_coverage.visit counts 0;
+      Windtrap_runtime.Coverage.visit counts 0;
       if mode = "second" then begin
-        Windtrap_coverage.visit counts 1;
-        Windtrap_coverage.visit counts 1
+        Windtrap_runtime.Coverage.visit counts 1;
+        Windtrap_runtime.Coverage.visit counts 1
       end;
       if mode = "conflict" then begin
         let other = Array.make 1 0 in
-        Windtrap_coverage.register ~file:"lib/child.ml"
-          ~points:[| { Windtrap_coverage.start_ofs = 0; end_ofs = 99 } |]
+        Windtrap_runtime.Coverage.register ~file:"lib/child.ml"
+          ~points:
+            [| { Windtrap_runtime.Coverage.start_ofs = 0; end_ofs = 99 } |]
           ~counts:other;
         (* The dropped module still runs its visits; they must count for
            nothing and harm nothing. *)
-        Windtrap_coverage.visit other 0
+        Windtrap_runtime.Coverage.visit other 0
       end

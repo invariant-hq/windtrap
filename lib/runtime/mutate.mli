@@ -15,20 +15,23 @@
     catalogue ({!catalogue}), builds the reach map from {!next_epoch} and
     {!drain} while the dry run executes, then forks one child per mutant, which
     {!arm}s a single site and runs the tests that reached it. What the run made
-    of each mutant is not recorded here: verdicts and their file format are tool
-    currency — written by the loop, read by [windtrap mutate], never touched by
-    instrumented code — and live in the windtrap core's [Mutate_verdicts].
+    of each mutant is not recorded here: verdicts and their file format live
+    beside this module in {!Verdicts}, written by the loop and read by
+    [windtrap mutants]; instrumented code never holds one.
 
     A mutant changes meaning only in a forked child, only when armed, and only
-    in a build that asked for it. Nothing here touches the disk, nothing
-    installs an [at_exit] handler, and with no mutant armed the guard's answer
-    is [false] at every site. *)
+    in a build that asked for it. Nothing here touches the disk, nothing reads
+    the environment, nothing installs an [at_exit] handler, and with no mutant
+    armed the guard's answer is [false] at every site. Which mutants a run tests
+    and which one a process arms are the core's decisions, handed to {!arm} and
+    read off {!catalogue}. *)
 
 (** {1:identity Mutant identity}
 
     A mutant is named by the source position of the expression it rewrites and
-    by the rewrite applied there. That name is what travels: through
-    {!arm_variable}, through verdict files, and into the report. *)
+    by the rewrite applied there. That name is what travels: through the core's
+    arming knob (see {!arm_variable}), through verdict files, and into the
+    report. *)
 
 type id = { file : string; line : int; col : int; rewrite : string }
 (** The type for mutant identifiers. [file] is the source path as recorded at
@@ -49,26 +52,27 @@ val rewrites : string list
     comparisons ["lt"], ["le"], ["gt"], ["ge"], ["eq"], ["neq"], the arithmetic
     ["add"], ["sub"], ["fadd"], ["fsub"], the connectives ["and"], ["or"], and
     the statement deletion ["drop"]. A name outside this list is rejected
-    wherever it appears — in a site table, in {!arm_variable}, in a verdict file
-    — because a rewrite nobody can render is a report nobody can act on. *)
+    wherever it appears — in a site table, in an identifier handed to {!arm}, in
+    a verdict file — because a rewrite nobody can render is a report nobody can
+    act on. *)
 
 val id_to_string : id -> string
 (** [id_to_string id] is [id] in the canonical spelling ["lib/calc.ml:9:12:add"]
     — [file], [line], [col], [rewrite], separated by colons. This is the
-    spelling {!arm_variable} documents and verdict files record. *)
+    spelling the core's arming knob accepts and verdict files record. *)
 
 val compare_id : id -> id -> int
 (** [compare_id a b] orders identifiers lexicographically by [file], then
     [line], then [col], then [rewrite]. This is the order {!catalogue} uses, and
-    the order [Mutate_verdicts] serializes verdict collections in. *)
+    the order {!Verdicts} serializes verdict collections in. *)
 
 (** {1:catalogue Sites and registration}
 
     The functions of this section are the contract [ppx_windtrap.mutate]
     generates against; user code and the windtrap core never call them. The
     generated code per instrumented file is {b exactly one binding} —
-    [let ___windtrap_armed___ = Windtrap_mutate.register ~file ~sites:[| … |]] —
-    and every site in that file expands to a guard on [___windtrap_armed___ i],
+    [let ___windtrap_armed___ = Mutate.register ~file ~sites:[| … |]] — and
+    every site in that file expands to a guard on [___windtrap_armed___ i],
     where [i] is the site's index in [sites]. The instrumenter names no array
     and allocates nothing: the fewer literals it emits, the fewer ways it can be
     wrong. *)
@@ -164,16 +168,14 @@ val catalogue : unit -> mutant list
     The one case that is not a mistake is {!Uncatalogued}, and it is separated
     from {!Unmatched} here because only the registry can tell the two apart. One
     identifier is normally handed to {e every} test executable of a project at
-    once —
-    [WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
-     ppx_windtrap.mutate] is the spelling the report prints, because a command
-    that links no test executable has no single binary to name — and in a
-    project with several [(test)] stanzas most of those executables were built
-    from other sources entirely. Such an executable holds no such mutant,
-    produces no verdict, and hides nothing by running on. Whether that is worth
-    refusing over is the caller's decision — the mutation loop makes it, and
-    lets such a run proceed — but only this module can say which of the two
-    cases the identifier is in. *)
+    once — the aggregate report's reproduce line arms one identifier across a
+    whole re-run of the suite, because a command that links no test executable
+    has no single binary to name — and in a project with several test
+    executables most of them were built from other sources entirely. Such an
+    executable holds no such mutant, produces no verdict, and hides nothing by
+    running on. Whether that is worth refusing over is the caller's decision —
+    the mutation loop makes it, and lets such a run proceed — but only this
+    module can say which of the two cases the identifier is in. *)
 
 (** The type for arming errors. All are recoverable: the loop prints them via
     {!pp_arm_error}, and refuses to start on all but {!Uncatalogued}. *)
@@ -204,26 +206,12 @@ val pp_arm_error : Format.formatter -> arm_error -> unit
     candidates and, where there is one, the likely fix. *)
 
 val arm_variable : string
-(** [arm_variable] is ["WINDTRAP_MUTATE_ARM"], the environment variable
-    {!arm_from_env} reads. Deliberately not ["WINDTRAP_MUTANT"]: two variables
-    differing by two characters and meaning unrelated things is a defect. *)
-
-val scope_variable : string
-(** [scope_variable] is ["WINDTRAP_MUTATE_ONLY"]: a comma-separated list of
-    source path prefixes limiting which files this process has mutants in.
-
-    Applied at {!register}, not at reporting. A mutation run forks once per
-    mutant, so a scope that only narrowed the report would still cost the whole
-    run; narrowing the registry narrows the work, leaves the guard inert for
-    every out-of-scope file (their reaches are not even counted), and makes an
-    executable with nothing in scope indistinguishable from an uninstrumented
-    one — {!catalogue} is empty and the seam declines by name. Because
-    registration happens at module load, the variable is read once, at the first
-    one; setting it later in the process changes nothing.
-
-    Consequently it also bounds {!arm}: a mutant of a file out of scope was
-    never registered, so it cannot be armed. Scoping a run is a statement about
-    what that run's mutation surface {e is}, not a view over a larger one. *)
+(** [arm_variable] is ["WINDTRAP_MUTATE_ARM"]: the name of the environment
+    variable the windtrap core reads a mutant identifier from, and the name the
+    report's reproduce line spells. A name, not a reader — this module reads no
+    environment; the core parses the value with {!id_of_string} and hands it to
+    {!arm}. Deliberately not ["WINDTRAP_MUTANT"]: two variables differing by two
+    characters and meaning unrelated things is a defect. *)
 
 val id_of_string : string -> (id, arm_error) result
 (** [id_of_string s] parses a mutant identifier in its canonical spelling. It is
@@ -259,15 +247,6 @@ val arm : ?budget:int -> id -> (mutant, arm_error) result
 
     Raises [Invalid_argument] if [budget] is not positive; nothing is disarmed
     in that case. *)
-
-val arm_from_env : ?budget:int -> unit -> (mutant option, arm_error) result
-(** [arm_from_env ()] is [Ok None] when {!arm_variable} is unset or empty, and
-    otherwise {!arm}s the identifier it holds, as [Ok (Some m)]. Parse and
-    resolution failures are reported, never ignored — including {!Uncatalogued},
-    which is reported as the error it is a case of and left to the caller to
-    read as "not mine" rather than turned into [Ok None] here: a process that
-    ran with nothing armed and a process that was never asked to arm anything
-    print different things. [budget] is as in {!arm}. *)
 
 val disarm : unit -> unit
 (** [disarm ()] clears the armed mutant and the runaway budget. The guard is

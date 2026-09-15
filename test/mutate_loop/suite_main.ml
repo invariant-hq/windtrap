@@ -212,13 +212,14 @@ let () =
   match Option.value ~default:"green" (Sys.getenv_opt "MUTATE_FIXTURE") with
   | "catalogue" ->
       List.iter
-        (fun (m : Windtrap_mutate.mutant) ->
-          print_endline (Windtrap_mutate.id_to_string m.Windtrap_mutate.id))
-        (Windtrap_mutate.catalogue ())
-  | "weak" -> run "calc" [ group "widen" weak ]
-  | "block" -> run "calc" [ group "block" block ]
-  | "slow" -> run "calc" [ group "slow" slow ]
-  | "probe_block" -> run "calc" [ group "probe" probe_block ]
+        (fun (m : Windtrap_runtime.Mutate.mutant) ->
+          print_endline
+            (Windtrap_runtime.Mutate.id_to_string m.Windtrap_runtime.Mutate.id))
+        (Windtrap_runtime.Mutate.catalogue ())
+  | "weak" -> exit @@ run "calc" [ group "widen" weak ]
+  | "block" -> exit @@ run "calc" [ group "block" block ]
+  | "slow" -> exit @@ run "calc" [ group "slow" slow ]
+  | "probe_block" -> exit @@ run "calc" [ group "probe" probe_block ]
   | "crash" ->
       exit
       @@ run "calc"
@@ -228,12 +229,16 @@ let () =
       @@ run "calc"
            [ group "calc" strong; group "widen" weak; group "crash" fatal ]
   | "capped" ->
-      run "calc"
-        [
-          group "calc" strong; group "widen" weak; group "orphan" two_survivors;
-        ]
-  | "red" -> run "calc" [ group "calc" (strong @ red); group "widen" weak ]
-  | "flaky" -> run "calc" [ group "calc" strong; group "flaky" flaky ]
+      exit
+      @@ run "calc"
+           [
+             group "calc" strong;
+             group "widen" weak;
+             group "orphan" two_survivors;
+           ]
+  | "red" ->
+      exit @@ run "calc" [ group "calc" (strong @ red); group "widen" weak ]
+  | "flaky" -> exit @@ run "calc" [ group "calc" strong; group "flaky" flaky ]
   | "boundary" ->
       (* Outside any test, and before the first one starts. *)
       ignore (Subject.orphan 1 2);
@@ -243,11 +248,17 @@ let () =
          whole suite: a tag predicate is not expressible as a set of
          paths, and a child that dropped the parent's would run fewer
          tests than the dry run measured. *)
-      run "calc"
-        [
-          group ~tags:[ "gated" ] "calc" strong;
-          group ~tags:[ "gated" ] "widen" weak;
-        ]
+      exit
+      @@ run "calc"
+           [
+             group ~tags:[ "gated" ] "calc" strong;
+             group ~tags:[ "gated" ] "widen" weak;
+           ]
   | _ ->
-      run "calc"
-        [ group "calc" strong; group "widen" weak; group "dismissed" dismissed ]
+      exit
+      @@ run "calc"
+           [
+             group "calc" strong;
+             group "widen" weak;
+             group "dismissed" dismissed;
+           ]

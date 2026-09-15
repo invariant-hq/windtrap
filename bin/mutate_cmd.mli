@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The [windtrap mutate] subcommand: project-level mutation reporting.
+(** The [windtrap mutants] subcommand: project-level mutation reporting.
 
     Finds the [.mutants] verdict files that instrumented test executables wrote
     under [_build/_mutants] (resolving the project root as the runtime does —
@@ -25,13 +25,13 @@
     why the verdict file exists.
 
     It runs no tests and drives no build, which is what makes it legitimate
-    under Law 12 where a subcommand that {e drives} the run was rejected; the
-    [@mutate] alias runs every suite with its mutants and then runs this. It is
-    the project's gate: a mutant that survived every executable that reached it
-    fails the merge. *)
+    under Law 12 where a subcommand that {e drives} the run was rejected — the
+    verb says so: it reports mutants, it does not mutate. It is the project's
+    gate: a mutant that survived every executable that reached it fails the
+    merge. *)
 
 val run : string list -> int
-(** [run args] executes the subcommand on [args] (the arguments after [mutate])
+(** [run args] executes the subcommand on [args] (the arguments after [mutants])
     and is the process exit code:
 
     - [0] — report rendered and no mutant survived the merge. Unreached mutants
@@ -65,13 +65,12 @@ val run : string list -> int
     An orphaned or outdated verdict file is excluded and warned about, never
     merged: a verdict from a previous build can claim a kill the code no longer
     earns, and a false kill hides a live defect where a false survivor merely
-    wastes a reader's time. The warning names the remedy the exclusion actually
-    has, and the two are not interchangeable: a forced re-run rewrites an
-    {e outdated} verdict, while an {e orphan} — one whose recorded executable no
-    longer exists — is a leftover that no run can replace and only deletion
-    removes. The check needs the file's own [_build] to resolve the executable
-    it names: a verdict file copied out of one — a CI artifact, say — records an
-    identity nothing can locate, and is merged rather than guessed about.
+    wastes a reader's time. One warning line names each excluded file, and one
+    sentence after them says what heals both cases — re-running the mutation
+    tests rewrites an outdated verdict, deleting the directory drops an orphan.
+    The check needs the file's own [_build] to resolve the executable it names:
+    a verdict file copied out of one — a CI artifact, say — records an identity
+    nothing can locate, and is merged rather than guessed about.
 
     The report prints on standard output; errors and staleness warnings print on
     standard error. Each witness names the executable that ran it — the basename
