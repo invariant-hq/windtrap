@@ -1,6 +1,6 @@
-; T2 named change (a): the inline (ppx) runner's coverage is live — the
-; summary line follows the library runner's rules through the shared
-; Driver seam, and WINDTRAP_COVERAGE switches it there too. covlib is
+; The inline (ppx) runner's coverage is live — the summary line follows
+; the library runner's rules, since the inline runner is that runner,
+; and WINDTRAP_COVERAGE switches it there too. covlib is
 ; instrumented unconditionally (pps, no --instrument-with needed) and its
 ; [false] branch is never exercised, so the line has something to report;
 ; runner_main mirrors the inline_tests backend's generated runner (the

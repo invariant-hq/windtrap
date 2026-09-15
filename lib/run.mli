@@ -250,9 +250,13 @@ val check_baseline : ?loc:Loc.t -> Baseline.subject -> string -> unit
     call frame for a file, and none when the call sat in tail position — the
     runner then attributes the failure to the test's declaration.
 
-    Raises {!Failure.Check_failure} on every baseline failure
-    ({!Baseline.check}) and the assertions-outside-run error
-    ([Invalid_argument], see {!current_frame}) when no test is running. *)
+    A checkpoint, not an assertion: a {!Failure.Missing} or {!Failure.Mismatch}
+    failure is recorded on the frame, labeled as {!subtest} labels one, and the
+    call returns, so the body continues and the attempt fails at its end with
+    every mismatch reported. Only {!Failure.Unresolvable} raises
+    {!Failure.Check_failure}: nothing after an unprovable path is meaningful.
+    Raises the assertions-outside-run error ([Invalid_argument], see
+    {!current_frame}) when no test is running. *)
 
 (** {1:scratch Runner-owned scratch}
 

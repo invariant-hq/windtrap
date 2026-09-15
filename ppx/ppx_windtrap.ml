@@ -3,28 +3,21 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The ppx_windtrap rewriter: a location recorder and nothing more.
-   It rewrites [let%test] / [module%test] / [let%expect_test]
-   into registration calls, each [[%expect]] / [[%expect_exact]] node
-   into [Ppx_runtime.expect ~id] with a declared node table, and
-   [[%expect.output]] into [Ppx_runtime.expect_output ()]. Every
-   semantic decision — matching, normalization, reachability,
-   corrections, exit codes — lives in Ppx_runtime, ordinary OCaml.
-
-   Adapted from windtrap 0.1's ppx/ppx_windtrap.ml (extension surface,
-   cookie handling) and rebased on the v3 Ppx_runtime contract: per-node
-   ids with exact payload extents replace v1's per-call locations, and
-   the generated code references the ambient [Expect_test_config]
-   top-level module, matching ppx_expect (mechanism (b) below). Node and
-   location shapes follow upstream ppx_expect's src/ppx_expect.ml at the
-   pinned conformance commit (test/conformance/NOTICE).
+(* The ppx_windtrap rewriter: a desugaring into the core and nothing
+   more. [let%test] and [let%expect_test] register a [Windtrap.test] at
+   module load through the runtime's registry, [module%test] opens a
+   group around a module, each [[%expect]] / [[%expect_exact]] node is a
+   [Windtrap.expect] / [Windtrap.expect_exact] call over the sanitized
+   captured output with the node's position as its baseline, and
+   [[%expect.output]] is that sanitized read. Every semantic decision —
+   matching, corrections, exit codes — is the core's.
 
    Two ppx_expect compatibility mechanisms live here: (a) expect-family
    attributes and extensions this PPX does not implement are rejected at
    expansion time with a "not supported by ppx_windtrap" error — never
    left unexpanded; (b) generated code references the ambient
    [Expect_test_config], so user code can shadow it exactly as with
-   ppx_expect. *)
+   ppx_expect, and a monadic config fails to compile at that reference. *)
 
 open Ppxlib
 open Ast_builder.Default
@@ -34,9 +27,7 @@ open Ast_builder.Default
    The one cookie a build sets: dune passes [inline_tests="disabled"] for
    a library whose (inline_tests) stanza is off and for a profile that
    disables them, and the registrations are dropped rather than compiled
-   into a runner nothing drives. ppx_inline_test's own [inline-test=drop]
-   spelling is Jenga's, not dune's, and reached this rewriter from
-   nowhere but the golden that tested it. *)
+   into a runner nothing drives. *)
 
 type maybe_drop = Keep | Drop
 
@@ -59,54 +50,18 @@ let () =
 
 let maybe_drop items = match !maybe_drop_mode with Keep -> items | Drop -> []
 
-(* The runtime path in generated code *)
+(* Positions *)
 
-(* One place spells the path; generated references, constructors, and
-   record fields all derive from it. *)
-let runtime_lid name =
-  Ldot (Ldot (Lident "Ppx_windtrap_runtime", "Ppx_runtime"), name)
-
-let runtime_fn ~loc name = pexp_ident ~loc { txt = runtime_lid name; loc }
-
-(* A record of a runtime-declared type: every field is qualified. A bare
-   field would resolve by type-directed disambiguation (Ppx_runtime is
-   never opened in user code, and [loc] names a field of several of its
-   record types), which is warning 42 — fatal in a user library compiled
-   with -w +a -warn-error +a. *)
-let runtime_record ~loc fields =
-  match fields with
-  | [] -> assert false
-  | _ :: _ ->
-      pexp_record ~loc
-        (List.map (fun (f, e) -> ({ txt = runtime_lid f; loc }, e)) fields)
-        None
-
-let runtime_construct ~loc name arg =
-  pexp_construct ~loc { txt = runtime_lid name; loc } arg
-
-(* Locations as Ppx_runtime.loc expressions *)
-
-(* Ppx_runtime.loc is byte offsets: start_pos/end_pos are pos_cnum,
-   start_bol is pos_bol, line is 1-based pos_lnum (see
-   runtime/ppx_runtime.mli; the shape is ppx_expect's Compact_loc plus
-   the report line). *)
-let compact_loc_expr ~loc (l : Location.t) =
-  runtime_record ~loc
+(* [__POS_OF__]'s tuple for [l]: file, line, and both columns measured
+   from the start line — the shape [Windtrap.pos] declares. *)
+let pos_expr ~loc (l : Location.t) =
+  let s = l.loc_start and e = l.loc_end in
+  pexp_tuple ~loc
     [
-      ("line", eint ~loc l.loc_start.pos_lnum);
-      ("start_bol", eint ~loc l.loc_start.pos_bol);
-      ("start_pos", eint ~loc l.loc_start.pos_cnum);
-      ("end_pos", eint ~loc l.loc_end.pos_cnum);
-    ]
-
-(* A zero-width point, for trailing-output insertions. *)
-let point_loc_expr ~loc (p : Lexing.position) =
-  runtime_record ~loc
-    [
-      ("line", eint ~loc p.pos_lnum);
-      ("start_bol", eint ~loc p.pos_bol);
-      ("start_pos", eint ~loc p.pos_cnum);
-      ("end_pos", eint ~loc p.pos_cnum);
+      estring ~loc s.pos_fname;
+      eint ~loc s.pos_lnum;
+      eint ~loc (s.pos_cnum - s.pos_bol);
+      eint ~loc (e.pos_cnum - s.pos_bol);
     ]
 
 (* The expect-family compatibility envelope *)
@@ -212,6 +167,22 @@ let test_name_string ~loc = function
 
 let tags_expr ~loc tags = elist ~loc (List.map (estring ~loc) tags)
 
+(* Registration calls *)
+
+(* [add_test ~file ~pos ~tags name (fun () -> body)] at the extension
+   point [ext_loc]: the runtime registers [Windtrap.test ~__POS__:pos ~tags
+   name] under the file's group. *)
+let registration ~ctxt ~tags name body =
+  let ext_loc = Expansion_context.Extension.extension_point_loc ctxt in
+  let file = Expansion_context.Extension.input_name ctxt in
+  let loc = { ext_loc with loc_ghost = true } in
+  let pos = pos_expr ~loc ext_loc in
+  [%stri
+    let () =
+      Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:[%e estring ~loc file]
+        ~pos:[%e pos] ~tags:[%e tags_expr ~loc tags] [%e estring ~loc name]
+        (fun () -> [%e body])]
+
 (* let%expect_test *)
 
 type expect_test_binding = {
@@ -239,16 +210,9 @@ let parse_expect_test_binding ~loc items =
       { name = parse_test_name ~loc pvb_pat; tags; body }
   | _ -> Location.raise_errorf ~loc "Expected let%%expect_test <name> = <expr>"
 
-(* The payload of one [[%expect]] / [[%expect_exact]] node: the string
-   literal's parsed contents, its delimiter, and the extent of the whole
-   literal including delimiters — the exact range a correction
-   overwrites. *)
-type parsed_payload = {
-  contents : string;
-  delimiter : string option;  (** [None] = ["…"], [Some tag] = [{tag|…|tag}]. *)
-  literal_loc : Location.t;
-}
-
+(* The payload of one node: its string literal as written, or nothing for
+   a bare [[%expect]], whose literal is the empty string until the first
+   correction inserts one. *)
 let parse_expect_payload ~loc (payload : payload) =
   match payload with
   | PStr [] -> None
@@ -257,189 +221,83 @@ let parse_expect_payload ~loc (payload : payload) =
         {
           pstr_desc =
             Pstr_eval
-              ( {
-                  pexp_desc = Pexp_constant (Pconst_string (s, _, tag));
-                  pexp_loc;
-                  _;
-                },
+              ( ({ pexp_desc = Pexp_constant (Pconst_string _); _ } as literal),
                 _ );
           _;
         };
       ] ->
-      Some { contents = s; delimiter = tag; literal_loc = pexp_loc }
+      Some literal
   | _ -> Location.raise_errorf ~loc "Expected a string literal payload"
 
-let payload_expr ~loc = function
-  | None -> [%expr None]
-  | Some { contents; delimiter; literal_loc } ->
-      let delimiter_expr =
-        match delimiter with
-        | None -> runtime_construct ~loc "Quote" None
-        | Some tag -> runtime_construct ~loc "Tag" (Some (estring ~loc tag))
-      in
-      let record =
-        runtime_record ~loc
-          [
-            ("contents", estring ~loc contents);
-            ("delimiter", delimiter_expr);
-            ("literal_loc", compact_loc_expr ~loc literal_loc);
-          ]
-      in
-      [%expr Some [%e record]]
+(* [Expect_test_config.sanitize (Windtrap.output ())]: every read of the
+   captured output goes through the ambient config's sanitizer. *)
+let sanitized_output ~loc =
+  [%expr Expect_test_config.sanitize (Windtrap.output ())]
 
-let node_expr ~loc ~id ~kind ~node_loc payload =
-  runtime_record ~loc
-    [
-      ("id", eint ~loc id);
-      ("kind", runtime_construct ~loc kind None);
-      ("loc", compact_loc_expr ~loc node_loc);
-      ("payload", payload_expr ~loc payload);
-    ]
-
-(* Replaces every expect node lexically inside [body] with its runtime
-   call and collects the node table. Ids are assigned in traversal
-   order, which is source order (sub-expressions are visited
-   left-to-right). Unimplemented family extensions are rejected here so
-   the error points at the node, not at a leftover. *)
+(* Replaces every expect node lexically inside [body] with its core call.
+   The node's own position is the baseline's: what the core patches on a
+   correction, and what a failure report names. Unimplemented family
+   extensions are rejected here so the error points at the node, not at
+   a leftover. *)
 let rewrite_expect_body body =
   let mapper =
     object
-      inherit [int * expression list] Ast_traverse.fold_map as super
+      inherit Ast_traverse.map as super
 
-      method! expression e ((next_id, nodes_rev) as acc) =
+      method! expression e =
         match e.pexp_desc with
         | Pexp_extension ({ txt = ("expect" | "expect_exact") as name; _ }, p)
           ->
             let node_loc = e.pexp_loc in
             let loc = { node_loc with loc_ghost = true } in
-            let payload = parse_expect_payload ~loc:node_loc p in
-            let kind =
-              if String.equal name "expect" then "Expect" else "Expect_exact"
+            let literal =
+              match parse_expect_payload ~loc:node_loc p with
+              | Some literal -> literal
+              | None -> estring ~loc ""
             in
-            let node = node_expr ~loc ~id:next_id ~kind ~node_loc payload in
+            let pos = pos_expr ~loc node_loc in
+            let actual = sanitized_output ~loc in
             let call =
-              pexp_apply ~loc (runtime_fn ~loc "expect")
-                [ (Labelled "id", eint ~loc next_id) ]
+              if String.equal name "expect" then
+                [%expr Windtrap.expect [%e actual] ([%e pos], [%e literal])]
+              else
+                [%expr
+                  Windtrap.expect_exact [%e actual] ([%e pos], [%e literal])]
             in
-            ( { call with pexp_attributes = e.pexp_attributes },
-              (next_id + 1, node :: nodes_rev) )
+            { call with pexp_attributes = e.pexp_attributes }
         | Pexp_extension ({ txt = "expect.output"; _ }, PStr []) ->
             let loc = { e.pexp_loc with loc_ghost = true } in
-            let call =
-              pexp_apply ~loc
-                (runtime_fn ~loc "expect_output")
-                [ (Nolabel, eunit ~loc) ]
-            in
-            ({ call with pexp_attributes = e.pexp_attributes }, acc)
+            { (sanitized_output ~loc) with pexp_attributes = e.pexp_attributes }
         | Pexp_extension ({ txt = "expect.output"; loc; _ }, _) ->
             Location.raise_errorf ~loc "[%%expect.output] takes no payload"
         | Pexp_extension ({ txt = name; loc; _ }, _)
           when is_expect_family name && not (is_implemented_expect name) ->
             Location.raise_errorf ~loc "[%%%s] is not supported by ppx_windtrap"
               name
-        | _ -> super#expression e acc
+        | _ -> super#expression e
     end
   in
-  let body, (_, nodes_rev) = mapper#expression body (0, []) in
-  (body, List.rev nodes_rev)
-
-(* Does a [;] appended to this expression bind to something inside it?
-
-   A trailing correction writes [<body>; [%expect ...]]. After a [match],
-   [try] or [function] the [;] joins the LAST ARM, so the node lands inside
-   that arm: it runs on one branch only, the promoted source means something
-   other than the correction intended, and the next run inserts another dead
-   node beside it — the correction never converges.
-
-   The hazard belongs to the expression the body ENDS with, not the one it
-   starts with. [let x = ... in match ...] and [stmt; match ...] are the
-   common shapes and both end in a match, so the walk descends every
-   construct that carries a tail and asks the same question there. Anything
-   that cannot swallow the [;] — an application, an ident, a constructor —
-   ends the walk. *)
-let rec swallows_semicolon e =
-  match e.pexp_desc with
-  | Pexp_match _ | Pexp_try _ -> true
-  (* [function p -> e | ...] has arms; [fun x -> e] does not, and its tail
-     is [e]. Both are Pexp_function since OCaml 5.2. *)
-  | Pexp_function (_, _, Pfunction_cases _) -> true
-  | Pexp_function (_, _, Pfunction_body body) -> swallows_semicolon body
-  | Pexp_let (_, _, body)
-  | Pexp_letmodule (_, _, body)
-  | Pexp_letexception (_, body)
-  | Pexp_open (_, body)
-  | Pexp_sequence (_, body)
-  | Pexp_constraint (body, _)
-  | Pexp_coerce (body, _, _) ->
-      swallows_semicolon body
-  | Pexp_letop { body; _ } -> swallows_semicolon body
-  | Pexp_ifthenelse (_, then_, else_) -> (
-      (* Without an [else] the [then] branch is the tail. *)
-      match else_ with
-      | Some e -> swallows_semicolon e
-      | None -> swallows_semicolon then_)
-  | _ -> false
+  mapper#expression body
 
 let expect_test_extension =
   Extension.V3.declare_inline "expect_test" Extension.Context.structure_item
     Ast_pattern.(pstr __)
     (fun ~ctxt items ->
       let ext_loc = Expansion_context.Extension.extension_point_loc ctxt in
-      let file = Expansion_context.Extension.input_name ctxt in
       let binding = parse_expect_test_binding ~loc:ext_loc items in
       let name = test_name_string ~loc:ext_loc binding.name in
-      let body, nodes = rewrite_expect_body binding.body in
-      (* body_loc ends at the body expression; trailing corrections
-         insert at the end of the extension point (ppx_expect's
-         shapes). *)
-      let body_loc =
-        {
-          loc_start = ext_loc.loc_start;
-          loc_end = binding.body.pexp_loc.loc_end;
-          loc_ghost = true;
-        }
-      in
-      (* A trailing correction sequences [;] onto the body. After a bare
-         [match] or [try] that [;] binds to the LAST ARM, so the inserted
-         [%expect] lands inside the arm instead of after the body: the
-         promoted file means something else and the correction never
-         converges. Such a body is parenthesized as part of the same patch,
-         which needs its own start offset — [body_loc] starts at the
-         extension point, not at the body.
-
-         A body that already wrote its own parentheses gets a second,
-         redundant pair. Nothing in the AST tells [(match ...)] from
-         [match ...] — the parser gives both the same [Pexp_match] with
-         the delimiters' location — so the only way to know is to read the
-         source, and the answer is worth neither the read nor the two
-         guards it takes to ask it safely: a doubled pair is valid OCaml
-         that ocamlformat removes, and it cannot compound, because once
-         the trailing node exists there is no further trailing output to
-         insert. *)
+      let body = rewrite_expect_body binding.body in
       let loc = { ext_loc with loc_ghost = true } in
-      let body_wrap =
-        if swallows_semicolon binding.body then
-          [%expr Some [%e eint ~loc binding.body.pexp_loc.loc_start.pos_cnum]]
-        else [%expr None]
+      (* The body runs under the ambient config's [run], constrained to
+         the synchronous type so that a monadic (Async-style) config fails
+         to compile at this reference rather than run its bodies with
+         their effects dropped (mechanism (b)). *)
+      let body =
+        [%expr
+          (Expect_test_config.run : (unit -> unit) -> unit) (fun () ->
+              [%e body])]
       in
-      let call =
-        pexp_apply ~loc
-          (runtime_fn ~loc "add_expect_test")
-          [
-            (Labelled "file", estring ~loc file);
-            (Labelled "loc", compact_loc_expr ~loc ext_loc);
-            (Labelled "tags", tags_expr ~loc binding.tags);
-            (Labelled "run", [%expr Expect_test_config.run]);
-            (Labelled "sanitize", [%expr Expect_test_config.sanitize]);
-            (Labelled "nodes", elist ~loc nodes);
-            (Labelled "body_loc", compact_loc_expr ~loc body_loc);
-            (Labelled "body_wrap", body_wrap);
-            (Labelled "trailing_loc", point_loc_expr ~loc ext_loc.loc_end);
-            (Nolabel, estring ~loc name);
-            (Nolabel, [%expr fun () -> [%e body]]);
-          ]
-      in
-      maybe_drop [ [%stri let () = [%e call]] ])
+      maybe_drop [ registration ~ctxt ~tags:binding.tags name body ])
 
 (* let%test and module%test *)
 
@@ -508,36 +366,21 @@ let test_extension =
       match parse_test_item ~loc:ext_loc items with
       | Test_case (name, tags, body) ->
           let name = test_name_string ~loc:ext_loc name in
-          let call =
-            pexp_apply ~loc
-              (runtime_fn ~loc "add_test")
-              [
-                (Labelled "file", estring ~loc file);
-                (Labelled "loc", compact_loc_expr ~loc ext_loc);
-                (Labelled "tags", tags_expr ~loc tags);
-                (Nolabel, estring ~loc name);
-                (Nolabel, [%expr fun () -> [%e body]]);
-              ]
-          in
-          maybe_drop [ [%stri let () = [%e call]] ]
+          maybe_drop [ registration ~ctxt ~tags name body ]
       | Test_module { mod_name; mod_tags; mod_expr; mod_attributes } ->
           (* Wrap the module with enter_group/leave_group: the module's
              initializers register its tests between the two calls, so
              they nest under the group — including nested
              module%test. *)
           let enter =
-            pexp_apply ~loc
-              (runtime_fn ~loc "enter_group")
-              [
-                (Labelled "file", estring ~loc file);
-                (Labelled "tags", tags_expr ~loc mod_tags);
-                (Nolabel, estring ~loc mod_name);
-              ]
+            [%stri
+              let () =
+                Ppx_windtrap_runtime.Ppx_runtime.enter_group
+                  ~file:[%e estring ~loc file]
+                  ~tags:[%e tags_expr ~loc mod_tags] [%e estring ~loc mod_name]]
           in
           let leave =
-            pexp_apply ~loc
-              (runtime_fn ~loc "leave_group")
-              [ (Nolabel, eunit ~loc) ]
+            [%stri let () = Ppx_windtrap_runtime.Ppx_runtime.leave_group ()]
           in
           let binding =
             {
@@ -548,12 +391,7 @@ let test_extension =
               pmb_attributes = mod_attributes;
             }
           in
-          maybe_drop
-            [
-              [%stri let () = [%e enter]];
-              pstr_module ~loc binding;
-              [%stri let () = [%e leave]];
-            ])
+          maybe_drop [ enter; pstr_module ~loc binding; leave ])
 
 (* Registration *)
 

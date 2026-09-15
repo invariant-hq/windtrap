@@ -25,8 +25,9 @@ let environment extra =
   Drive_harness.environment
     (("WINDTRAP_SLOW_THRESHOLD", "0") :: ("WINDTRAP_COVERAGE", "off") :: extra)
 
-(* .corrected files in the rule's directory, which is where the runtime
-   writes them: the module-load cwd, next to the copied source. *)
+(* .corrected files in the rule's directory, which is where the run
+   writes them: beside dune's copy of the source, under the build root
+   the runner started in. *)
 let corrected_files () =
   Sys.readdir "." |> Array.to_list
   |> List.filter (fun name -> Filename.check_suffix name ".ml.corrected")

@@ -2,23 +2,24 @@ masked_failure: 1 test
 F
 ──────────────────── failures (1) ────────────────────
   FAIL  Inline_masked_failure › an assertion failure beside a stale payload
-    test/ppx/masked_failure/inline_masked_failure.ml:11
-      11 │   Windtrap.subtest "the assertion" (fun () -> Windtrap.equal Windtrap.int 1 2);
+    test/ppx/masked_failure/inline_masked_failure.ml:12
+      12 │   Windtrap.subtest "the assertion" (fun () -> Windtrap.equal Windtrap.int 1 2);
 
     an assertion failure beside a stale payload › the assertion
     expected  1
     actual    2
 
-    test/ppx/masked_failure/inline_masked_failure.ml:13
-      13 │   [%expect {| stale payload |}]
+    test/ppx/masked_failure/inline_masked_failure.ml:14
+      14 │   [%expect {| stale payload |}]
 
-    expected  stale payload
-    actual    fresh output
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - stale payload
+    + fresh output
+    accept: dune promote
     ── captured output (1 line) ──
     fresh output
     full log: <log>
 ──────────────────────────────────────────────────────
 
 1 failed (1 subtest failure) in <duration>s.
-windtrap: wrote inline_masked_failure.ml.corrected
-windtrap: dune registers a correction for promotion only when every inline-test process of the library exits cleanly, so a failure in any of its files withholds this one too. Fix the failures, rerun, then 'dune promote'.

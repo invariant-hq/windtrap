@@ -4,7 +4,10 @@ Corpus: pinned janestreet/ppx_expect
 `54e2846ae50ffd72c00e528f62fb4a33948d0be2` (see `TRIAGE.md`).
 First measured on 2026-07-27 against the then-current `lib/` + `ppx/`
 tree (21/36); re-measured the same day after the conformance-fix pass
-described under [What changed](#what-changed).
+described under [What changed](#what-changed) (33/36); re-measured on
+2026-09-15 after the PPX became a desugaring into the library's own
+`expect` (31/36, see the rulings under
+[Where windtrap does not follow upstream](#where-windtrap-does-not-follow-upstream)).
 
 ## The bar
 
@@ -21,23 +24,25 @@ Those goldens are the output of a two-stage pipeline (see
 windtrap build. Windtrap patches the stale payload's extent and leaves
 the rest of the file alone, which is what ppx_expect's *runtime* does;
 the corrected-file goldens below are therefore windtrap's own recorded
-output. Eight of the fifteen vendored corrected goldens are
-byte-identical to the upstream bytes anyway (the corpus's other three
+output. Seven of the fifteen vendored corrected goldens are
+byte-identical to the upstream bytes (the corpus's other four
 `.ml.corrected.expected` files are windtrap-authored
 `=== no correction produced ===` placeholders, not upstream bytes); the
-seven that are not —
+eight that are not —
 `negative-tests/{escaped_strings,exact,flexible,missing,normal_strings,
-spacing}` and `explicit-strict-false/negative-test/nine` — differ only
-where the style pass used to reach: a node head left where the author
-wrote it, a matching node left untouched beside a corrected one, and a
-long quoted payload not continuation-wrapped at 90 columns.
+spacing}`, `explicit-strict-false/negative-test/nine` and
+`negative-tests/trailing` — differ where the style pass used to reach
+(a node head left where the author wrote it, a matching node left
+untouched beside a corrected one, a long quoted payload not
+continuation-wrapped at 90 columns) and where the 2026-09-15 rulings
+apply.
 
 | set | bar | measured | met? |
 | --- | --- | --- | --- |
-| HONORED runs with matching semantics | ≥ 90 % | **33 / 36 = 91.7 %** | **YES** |
+| HONORED runs with matching semantics | ≥ 90 % | **31 / 36 = 86.1 %** | **NO** — the two short of the bar are trailing output, ruled unchecked below |
 | REJECTED loud with explicit diagnostic | 100 % | **20 / 20 = 100 %** | **YES** |
 
-**Conforming (33)** — permanently pinned on `@runtest`
+**Conforming (31)** — permanently pinned on `@runtest`
 (`dune runtest test/conformance`):
 
 - pass set (16): `escaped_strings`, `string_extension_syntax`,
@@ -46,22 +51,30 @@ long quoted payload not continuation-wrapped at 90 columns.
   `flexible_whitespace`, `function`, `reordered`, `space_nine`, `xnine`
   (example); `control_chars`, `functor` (example/divergent — fixed
   D9/D1); `nine` (explicit-strict-false); `test` (no-output-patterns).
-- corrections set (17): `negative-tests/{chdir,escaped_strings,exact,
-  flexible,missing,normal_strings,semicolon,spacing,
-  string_extension_syntax,string_padding,trailing,unidiomatic_syntax}`,
-  `negative-tests/divergent/similar_distinct_outputs` (fixed D1),
+- corrections set (15): `negative-tests/{chdir,escaped_strings,exact,
+  flexible,normal_strings,semicolon,spacing,string_extension_syntax,
+  string_padding,unidiomatic_syntax}`,
+  `negative-tests/divergent/similar_distinct_outputs`,
   `explicit-strict-false/negative-test/nine`, `for-mdx/foo` — every
   fixture mismatches where upstream's mismatches and records the
-  correction upstream's runtime records, plus the promotion-protocol
-  exit code 0 for the whole corrections run, and
-  `export_test`/`import_test` passing with no correction. The goldens
-  are windtrap's own output (see [The bar](#the-bar)).
+  correction upstream's runtime records, all of a body's stale nodes in
+  one run, plus the promotion-protocol exit code 0 for the whole
+  corrections run — and `export_test`/`import_test` passing with no
+  correction. The goldens are windtrap's own output (see
+  [The bar](#the-bar)); `normal_strings`, `spacing` and `nine` are
+  byte-identical to the goldens the old runtime recorded, and
+  `escaped_strings` differs only in the bare-node shape ruled below.
 - rejected set (20): every file exits 1 at expansion with
   `… is not supported by ppx_windtrap` at the exact construct
   (goldened stderr per file), and `hello_async.ml` fails to *compile*
-  at `~run:Expect_test_config.run` with
-  `unit Expect_test_config.IO.t = unit Async.Deferred.t is not
-  compatible with type unit` — mechanism (b) exactly as contracted.
+  at the generated `(Expect_test_config.run : (unit -> unit) -> unit)`
+  reference with `unit Expect_test_config.IO.t = unit Async.Deferred.t
+  is not compatible with type unit` — mechanism (b) exactly as
+  contracted.
+
+**Diverging (2)** — pinned on `@runtest` with no correction where
+upstream inserts a trailing node: `negative-tests/trailing.ml` and the
+first test of `negative-tests/missing.ml` (its second test conforms).
 
 **Ruled out (3)** — not vendored, by the rulings under
 [Where windtrap does not follow upstream](#where-windtrap-does-not-follow-upstream).
@@ -82,7 +95,12 @@ raw newlines), while the `.corrected.expected` goldens show collapsed/
 split heads and re-escaped one-line quote strings. Windtrap once folded
 both stages into one renderer; it now writes the first stage only (see
 [Where windtrap does not follow upstream](#where-windtrap-does-not-follow-upstream)).
-The findings that pass drove out, all of them still fixed:
+The findings that pass drove out, as recorded then (the runtime they
+were fixed in was replaced on 2026-09-15 by the desugaring described
+under [Where windtrap does not follow upstream](#where-windtrap-does-not-follow-upstream);
+the matching, formatting and escaping rules below now live in the
+library's `Source_patch`, the merged reach histories of D1 and the
+split-head bare node of D4/D7 do not):
 
 1. **D5 (retag drops `%expect`) — FIXED.** Shorthand nodes
    (`{%expect|…|}`) are detected by ppx_expect's rule (payload extent
@@ -124,6 +142,41 @@ The findings that pass drove out, all of them still fixed:
 
 ## Where windtrap does not follow upstream
 
+### Since 2026-09-15: the PPX is a desugaring, and only calls are checked
+
+`ppx_windtrap` now rewrites `[%expect {|…|}]` into a call of the
+library's own `expect` over the sanitized captured output, with the
+node's position as the baseline, and `let%expect_test` into a `test`
+run by the one runner under `--corrected`; the runtime keeps a
+registry and dune's protocol and nothing else. Two consequences are
+rulings, not defects, and the goldens below record them:
+
+- **Trailing output is not checked.** ppx_expect fails a test whose
+  body prints after its last node and inserts a node for it
+  (`negative-tests/trailing.ml`, the first test of
+  `negative-tests/missing.ml`). A desugaring has nothing after the body
+  to check with; the tests pass and no correction is produced. End a
+  test with the node that pins what it printed.
+- **An unreached node is not a failure.** A node is a call, checked
+  when the code around it runs; no vendored fixture exercises this
+  (`negative-tests/expect_output.ml` is N-A).
+
+A mismatch is a checkpoint, not an assertion: the failure is recorded
+and the call returns, so a body with several stale nodes reports and
+corrects all of them in one run, as ppx_expect does
+(`negative-tests/{escaped_strings,normal_strings,spacing}` and
+`explicit-strict-false/negative-test/nine` hold every correction).
+
+Two more are formatting, byte-different from the goldens the old
+runtime recorded: a payloadless `[%expect]` materializes its payload on
+the node's line (`[%expect {|` … `|}]`) instead of the split head
+(`[%expect\n    {|`); and the merged reach histories across functor
+instances are gone with the `(* CR expect_test: Test ran multiple times
+… *)` block — a node reached with two outputs that normalize alike still
+resolves to one correction through the registry's one-content-per-run
+rule (`similar_distinct_outputs` is unchanged), and two that differ make
+the second reach a plain mismatch against the first's correction.
+
 ### Reformat-on-match (`nine.ml`, `three.ml`): a matching payload is left alone
 
 Their payloads *match* under default flexibility; upstream's goldens
@@ -157,10 +210,8 @@ correct correction for the *vendored* source: standard split-head shape,
 
 Unexercised by the corpus, not silent: duplicated instances are renamed
 `name (2)` in windtrap's runner output where ppx_expect repeats the
-name; per-node reachability stays per-instance (mechanism (d)) where
-upstream's `Can_reach` tolerates an instance that skips a node another
-instance reached; simultaneous exception splices from several instances
-keep the last instance's splice.
+name; an uncaught exception is the test's failure and withholds the
+test's corrections, never a splice.
 
 ## Harness map (for whoever picks this up)
 

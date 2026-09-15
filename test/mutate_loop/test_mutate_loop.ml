@@ -799,7 +799,7 @@ let read_only_tests =
         is_false ~msg:"and nothing was written"
           (Sys.file_exists (Filename.concat cwd "inline_armed.ml.corrected"));
         denies ~msg:"no promotion notice" err "wrote";
-        denies ~msg:"and none was even attempted" err "correction for");
+        denies ~msg:"and none was even attempted" err "could not write");
     test
       "an armed inline mismatch is a plain failure, not a promotion-covered \
        pass" (fun () ->
@@ -809,18 +809,19 @@ let read_only_tests =
            the partition as passed and offer a promotion. *)
         equal ~msg:"a mismatch is a plain failure" int 1 code;
         says ~msg:"announced first" out "armed: a + b \u{2192} a - b";
-        says ~msg:"the mismatch is reported as a mismatch" out "expected  7";
-        says ~msg:"against the mutated output" out "actual    -1";
+        says ~msg:"the mismatch is reported as a mismatch" out
+          "expect: mismatch";
+        says ~msg:"with the literal on one side" out "- 7";
+        says ~msg:"against the mutated output" out "+ -1";
         denies ~msg:"and not as a merged-history CR" out "ran multiple times";
         says ~msg:"the kill closes the loop" out "mutant killed.");
     test
       "a loop under the inline runner kills through its children and rewrites \
        nothing" (fun () ->
-        (* The whole seam through the OTHER runner: the loop takes the
-           process over inside [Ppx_runtime.run_inline_suite], so the
-           correction protocol never runs at all, and Law 16(d) has to
-           hold in a forked child rather than in an interactive armed
-           run. *)
+        (* The whole seam through the inline runner's [Windtrap.run]: the
+           loop takes the process over at run entry, so no correction is
+           ever written, and Law 16(d) has to hold in a forked child
+           rather than in an interactive armed run. *)
         let cwd = staged_source_dir () in
         let code, out, err =
           spawn ~exe:inline_exe

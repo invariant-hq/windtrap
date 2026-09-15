@@ -111,11 +111,11 @@ its acceptance command — `dune promote` after the stanza's `--corrected`
 run, or `-u` in place — reviewed with `git diff`.
 
 **[Expect testing](doc/manual/snapshots-and-expect.md)** —
-`let%expect_test` and `[%expect]` via `ppx_windtrap`, with corrections
-accepted through `dune promote`. Compatibility with ppx_expect is
-measured against Jane Street's own test corpus: supported constructs run
-and promote unchanged, unsupported ones fail loudly at the exact
-location.
+`let%expect_test` and `[%expect]` via `ppx_windtrap`, a desugaring into
+`test` and `expect`: the same runner, the same corrections, accepted
+through `dune promote`. Compatibility with ppx_expect is measured
+against Jane Street's own test corpus: supported constructs run and
+promote unchanged, unsupported ones fail loudly at the exact location.
 
 **[Resources and structure](doc/manual/resources-and-structure.md)** —
 `bracket` scopes a per-test resource with teardown on every outcome and

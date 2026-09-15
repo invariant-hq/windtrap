@@ -316,10 +316,33 @@ let subtest name fn =
 (* The registry is the run's; the failure's location is the caller's
    ([loc], the literal's position or the call frame). A check without one
    reaches [add_failure] unfilled and is attributed there, marked. *)
+(* A checkpoint, not an assertion: a mismatch is recorded on the frame
+   and the call returns, so the body continues to its later expectations,
+   the attempt fails at its end with every mismatch reported, and a
+   correcting run records every correction in one pass — one
+   [dune promote] accepts them all. The labeling is [subtest]'s, so a
+   checkpoint inside a subtest carries its name. The one baseline failure
+   that still raises is a path that cannot be proven under the project
+   root: nothing after it is meaningful. *)
 let check_baseline ?loc subject actual =
   let frame = current_frame () in
-  Baseline.check frame.owner.baselines ?loc ~correct:frame.fr_corrections
-    subject actual
+  match
+    Baseline.check frame.owner.baselines ?loc ~correct:frame.fr_corrections
+      subject actual
+  with
+  | () -> ()
+  | exception
+      (Failure.Check_failure
+         {
+           Failure.kind = Failure.Baseline { state = Failure.Unresolvable _; _ };
+           _;
+         } as unresolvable) ->
+      raise unresolvable
+  | exception Failure.Check_failure failure ->
+      let failure =
+        if frame.fr_subtests = [] then failure else relabel frame failure
+      in
+      add_failure frame failure
 
 (* Runner-owned scratch *)
 

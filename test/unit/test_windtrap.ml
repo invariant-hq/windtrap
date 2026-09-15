@@ -766,6 +766,51 @@ let () =
         | None -> false)
   | _ -> check "a stale literal fails with a Literal payload" false
 
+(* A checkpoint, not an assertion: a mismatch is recorded and the call
+   returns, so a body with two stale literals reports both, and a
+   correcting run records both corrections in one pass — the source is
+   a real file under the root, so the pass also writes them. *)
+let () =
+  with_temp_root @@ fun root ->
+  with_project_root root @@ fun () ->
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "logs") ()) with
+      Run.baseline = Baseline.Corrected;
+    }
+  in
+  let source =
+    "let () =\n\
+    \  expect \"x\" (__POS_OF__ {| old1 |});\n\
+    \  expect \"y\" (__POS_OF__ {| old2 |})\n"
+  in
+  let path = Filename.concat root "t.ml" in
+  Out_channel.with_open_bin path (fun oc -> output_string oc source);
+  let reached_second = ref false in
+  let suite =
+    [
+      test "two stale" (fun () ->
+          expect "x" (("t.ml", 2, 13, 36), " old1 ");
+          reached_second := true;
+          expect "y" (("t.ml", 3, 13, 36), " old2 "));
+    ]
+  in
+  expect_run "two stale literals" ~config suite @@ fun outcome ->
+  check "the body continued past the first mismatch" !reached_second;
+  check_int "both mismatches are the test's failures" ~expected:2
+    ~actual:(List.length (failure_list (outcome_of outcome [ "two stale" ])));
+  check_int "both are recorded corrections: the exit code is left alone"
+    ~expected:0 ~actual:outcome.Runner.exit_code;
+  match Baseline.writes (Run.baselines outcome.Runner.run) with
+  | [ { Baseline.path = written; literals = 2 } ] ->
+      check "one corrected file holds both literals"
+        (written = path ^ ".corrected"
+        && read_file written
+           = "let () =\n\
+             \  expect \"x\" (__POS_OF__ {| x |});\n\
+             \  expect \"y\" (__POS_OF__ {| y |})\n")
+  | _ -> check "one run corrects both literals" false
+
 (* A baseline check inside a bracket body reaches the run's registry like
    any ambient operation. *)
 let () =
@@ -1289,6 +1334,36 @@ let () =
     ~sub:"remove the focus before committing" focused;
   let plain = run_focus "plain" [ pass "picked"; pass "other" ] in
   check "no focus, no warning" (not (contains "focus is active" plain))
+
+(* Under --corrected — a build action's run — a selection that runs none
+   of the suite's tests exits 0 rather than 2, still saying why; without
+   the flag it exits 2 as before, a usage error exits 2 either way, and a
+   suite that declares no tests keeps its 2. *)
+let () =
+  with_temp_root @@ fun root ->
+  let suite = [ test "passes" (fun () -> is_true true) ] in
+  let code, out, _ =
+    run_in_process ~argv:[ "-f"; "zzznope" ] root "emptied" suite
+  in
+  check_int "an emptied selection exits 2 by default" ~expected:2 ~actual:code;
+  check_contains "and says why" ~sub:"filter \"zzznope\" matched none of 1 test"
+    out;
+  let code, out, _ =
+    run_in_process ~argv:[ "-f"; "zzznope"; "--corrected" ] root "emptied" suite
+  in
+  check_int "under --corrected an emptied selection exits 0" ~expected:0
+    ~actual:code;
+  check_contains "and still says why"
+    ~sub:"filter \"zzznope\" matched none of 1 test" out;
+  let code, _, err =
+    run_in_process ~argv:[ "--corrected"; "--nosuchflag" ] root "emptied" suite
+  in
+  check_int "a usage error under --corrected still exits 2" ~expected:2
+    ~actual:code;
+  check_contains "and names the option" ~sub:"unknown option '--nosuchflag'" err;
+  let code, _, _ = run_in_process ~argv:[ "--corrected" ] root "emptied" [] in
+  check_int "a suite that declares no tests exits 2 under --corrected too"
+    ~expected:2 ~actual:code
 
 (* Summary *)
 

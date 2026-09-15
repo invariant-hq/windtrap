@@ -31,7 +31,7 @@ let%expect_test "tokenize" =
     PLUS
     INT 2
     EOF
-  |}]
+    |}]
 
 let%expect_test "tokenize skips repeated spaces" =
   print_tokens (tokenize "1   +  2");
@@ -40,4 +40,4 @@ let%expect_test "tokenize skips repeated spaces" =
     PLUS
     INT 2
     EOF
-  |}]
+    |}]

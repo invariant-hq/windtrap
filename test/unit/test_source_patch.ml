@@ -41,10 +41,10 @@ let apply source patches =
   | Ok text -> text
   | Error error -> failf "refused: %s" (P.error_message error)
 
-let flexible ~pos ~literal content =
-  P.patch ~pos ~literal ~style:P.Flexible content
+let flexible ~site ~literal content =
+  P.patch ~site ~literal ~style:P.Flexible content
 
-let exact ~pos ~literal content = P.patch ~pos ~literal ~style:P.Exact content
+let exact ~site ~literal content = P.patch ~site ~literal ~style:P.Exact content
 
 (* Normalization *)
 
@@ -96,43 +96,43 @@ let () =
 let () =
   reg "quoted literal" @@ fun () ->
   let source = "let () = expect (f ()) @@ __POS_OF__ \"old\"\n" in
-  let pos = pos_of source "__POS_OF__" in
+  let site = pos_of source "__POS_OF__" in
   check_string "the literal is replaced, escaped and on one line"
     ~expected:"let () = expect (f ()) @@ __POS_OF__ \"new\"\n"
-    ~actual:(apply source [ flexible ~pos ~literal:"old" "new" ]);
+    ~actual:(apply source [ flexible ~site ~literal:"old" "new" ]);
   check_string "exact contents are escaped verbatim"
     ~expected:"let () = expect (f ()) @@ __POS_OF__ \"a\\nb\"\n"
-    ~actual:(apply source [ exact ~pos ~literal:"old" "a\nb" ]);
+    ~actual:(apply source [ exact ~site ~literal:"old" "a\nb" ]);
   (* Escapes decode when the literal is compared with the compiled value. *)
   let escaped =
     "let () = expect x @@ __POS_OF__ \"a\\tb\\\"c\\\\d\\065\\x41\"\n"
   in
-  let pos = pos_of escaped "__POS_OF__" in
+  let site = pos_of escaped "__POS_OF__" in
   check_string "escapes decode to the compiled value"
     ~expected:"let () = expect x @@ __POS_OF__ \"z\"\n"
-    ~actual:(apply escaped [ flexible ~pos ~literal:"a\tb\"c\\dAA" "z" ])
+    ~actual:(apply escaped [ flexible ~site ~literal:"a\tb\"c\\dAA" "z" ])
 
 (* Tagged literals *)
 
 let () =
   reg "tagged literal" @@ fun () ->
   let source = "let () = expect (f ()) @@ __POS_OF__ {|old|}\n" in
-  let pos = pos_of source "__POS_OF__" in
+  let site = pos_of source "__POS_OF__" in
   check_string "a one-line flexible correction is padded"
     ~expected:"let () = expect (f ()) @@ __POS_OF__ {| new |}\n"
-    ~actual:(apply source [ flexible ~pos ~literal:"old" "new" ]);
+    ~actual:(apply source [ flexible ~site ~literal:"old" "new" ]);
   let named = "let () = expect (f ()) @@ __POS_OF__ {t|old|t}\n" in
-  let pos = pos_of named "__POS_OF__" in
+  let site = pos_of named "__POS_OF__" in
   check_string "a named tag is kept"
     ~expected:"let () = expect (f ()) @@ __POS_OF__ {t| new |t}\n"
-    ~actual:(apply named [ flexible ~pos ~literal:"old" "new" ])
+    ~actual:(apply named [ flexible ~site ~literal:"old" "new" ])
 
 let () =
   reg "multi-line correction re-indents to the call's line" @@ fun () ->
   let source =
     "let () =\n  expect (f ()) @@ __POS_OF__ {|\n    old\n  |};\n  ()\n"
   in
-  let pos = pos_of source "__POS_OF__" in
+  let site = pos_of source "__POS_OF__" in
   check_string "lines land at the line's indentation + 2"
     ~expected:
       "let () =\n\
@@ -142,39 +142,39 @@ let () =
       \    |};\n\
       \  ()\n"
     ~actual:
-      (apply source [ flexible ~pos ~literal:"\n    old\n  " "one\n  two" ])
+      (apply source [ flexible ~site ~literal:"\n    old\n  " "one\n  two" ])
 
 let () =
   reg "tag conflict grows the tag" @@ fun () ->
   let source = "let () = expect (f ()) @@ __POS_OF__ {|old|}\n" in
-  let pos = pos_of source "__POS_OF__" in
+  let site = pos_of source "__POS_OF__" in
   check_string "the contents hold |} so the tag becomes xxx"
     ~expected:"let () = expect (f ()) @@ __POS_OF__ {xxx| a |} b |xxx}\n"
-    ~actual:(apply source [ flexible ~pos ~literal:"old" "a |} b" ])
+    ~actual:(apply source [ flexible ~site ~literal:"old" "a |} b" ])
 
 (* Refusals *)
 
 let () =
   reg "drift refusal" @@ fun () ->
   let source = "let () = expect (f ()) @@ __POS_OF__ {|edited|}\n" in
-  let pos = pos_of source "__POS_OF__" in
-  (match P.apply source [ flexible ~pos ~literal:"old" "new" ] with
+  let site = pos_of source "__POS_OF__" in
+  (match P.apply source [ flexible ~site ~literal:"old" "new" ] with
   | Error (P.Drifted p) ->
-      check "the refusal names the site" (p = pos);
+      check "the refusal names the site" (p = site);
       check "the message names the file and line"
         (Text.contains_substring ~pattern:"test/t.ml:1"
            (P.error_message (P.Drifted p)))
   | Ok _ | Error (P.No_literal _) -> check "drift is refused" false);
-  let pos = pos_of source "expect" in
-  match P.apply source [ flexible ~pos ~literal:"old" "new" ] with
-  | Error (P.No_literal p) -> check "no literal at the position" (p = pos)
+  let site = pos_of source "expect" in
+  match P.apply source [ flexible ~site ~literal:"old" "new" ] with
+  | Error (P.No_literal p) -> check "no literal at the position" (p = site)
   | Ok _ | Error (P.Drifted _) ->
       check "a non-literal position is refused" false
 
 let () =
   reg "a position past the end of the file is refused" @@ fun () ->
   match
-    P.apply "let x = 1\n" [ flexible ~pos:("t.ml", 9, 0, 0) ~literal:"" "" ]
+    P.apply "let x = 1\n" [ flexible ~site:("t.ml", 9, 0, 0) ~literal:"" "" ]
   with
   | Error (P.No_literal _) -> check "no such line" true
   | Ok _ | Error (P.Drifted _) -> check "no such line" false
@@ -191,7 +191,9 @@ let () =
     \  |};\r\n\
     \  ()\r\n"
   in
-  let pos = pos_of source "__POS_OF__" in
+  let site = pos_of source "__POS_OF__" in
+  (* The lexer reads a CRLF newline inside a literal as LF, so the value
+     the binary was compiled with has none. *)
   check_string "the tagged literal is found and its CRLF contents decode"
     ~expected:
       "let () =\r\n\
@@ -201,14 +203,14 @@ let () =
       \    |};\r\n\
       \  ()\r\n"
     ~actual:
-      (apply source [ flexible ~pos ~literal:"\r\n    old\r\n  " "one\ntwo" ]);
+      (apply source [ flexible ~site ~literal:"\n    old\n  " "one\ntwo" ]);
   (* A quoted literal continued over a CRLF line break: the lexer drops
      the backslash, the newline and the next line's leading blanks. *)
   let continued = "let () = expect x @@ __POS_OF__ \"a\\\r\n   b\"\r\n" in
-  let pos = pos_of continued "__POS_OF__" in
+  let site = pos_of continued "__POS_OF__" in
   check_string "a CRLF continuation decodes to the compiled value"
     ~expected:"let () = expect x @@ __POS_OF__ \"z\"\r\n"
-    ~actual:(apply continued [ flexible ~pos ~literal:"ab" "z" ])
+    ~actual:(apply continued [ flexible ~site ~literal:"ab" "z" ])
 
 (* Several patches *)
 
@@ -226,8 +228,8 @@ let () =
     ~actual:
       (apply source
          [
-           flexible ~pos:second ~literal:"y" "z";
-           flexible ~pos:first ~literal:"x" "longer text";
+           flexible ~site:second ~literal:"y" "z";
+           flexible ~site:first ~literal:"x" "longer text";
          ]);
   check_string "the rest of the file is byte-identical"
     ~expected:
@@ -239,23 +241,23 @@ let () =
 let () =
   reg "a literal inside parentheses" @@ fun () ->
   let source = "let () = expect (f ()) (__POS_OF__ \"old\")\n" in
-  let pos = pos_of source "(__POS_OF__" in
+  let site = pos_of source "(__POS_OF__" in
   check_string "the parenthesis and the token are lexed past"
     ~expected:"let () = expect (f ()) (__POS_OF__ \"new\")\n"
-    ~actual:(apply source [ flexible ~pos ~literal:"old" "new" ]);
+    ~actual:(apply source [ flexible ~site ~literal:"old" "new" ]);
   let broken =
     "let () =\n  expect (f ())\n    (__POS_OF__\n       {|old|})\n"
   in
-  let pos = pos_of broken "(__POS_OF__" in
+  let site = pos_of broken "(__POS_OF__" in
   check_string "the literal may sit on the next line"
     ~expected:"let () =\n  expect (f ())\n    (__POS_OF__\n       {| new |})\n"
-    ~actual:(apply broken [ flexible ~pos ~literal:"old" "new" ]);
+    ~actual:(apply broken [ flexible ~site ~literal:"old" "new" ]);
   (* The rewriter's shape: the position names the literal itself. *)
   let node = "  [%expect {|old|}]\n" in
-  let pos = pos_of node "{|old|}" in
+  let site = pos_of node "{|old|}" in
   check_string "a position on the literal itself is the literal"
     ~expected:"  [%expect {| new |}]\n"
-    ~actual:(apply node [ flexible ~pos ~literal:"old" "new" ])
+    ~actual:(apply node [ flexible ~site ~literal:"old" "new" ])
 
 let tests = List.rev !registered
 let () = exit @@ Windtrap.run "source_patch" tests

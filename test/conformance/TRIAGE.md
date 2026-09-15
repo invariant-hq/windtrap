@@ -28,7 +28,9 @@ upstream test suite, classified.
   — the same tests pass and the same payloads match — and 100 % of the
   rejected set is loud. Corrected-file goldens are windtrap's own
   output, not upstream's; `RESULTS.md` says why and carries the measured
-  numbers.
+  numbers, re-measured on 2026-09-15 when the PPX became a desugaring
+  into the library's `expect` (two rulings there: trailing output and
+  unreached nodes are not checked).
 
 Harness layout: `corpus/<dir>` mirrors `test/<dir>` upstream;
 `corpus/*/divergent/` holds fixtures that were quarantined at first
@@ -65,12 +67,12 @@ single-line source tweak listed under [Source tweaks](#source-tweaks).
 | upstream `test/` path | vendored at `corpus/` | notes |
 | --- | --- | --- |
 | `negative-tests/chdir.ml` | `negative-tests/` | conforms |
-| `negative-tests/escaped_strings.ml` | `negative-tests/` | conforms since the D3 fix |
+| `negative-tests/escaped_strings.ml` | `negative-tests/` | conforms; bare nodes materialize on the node's line since 2026-09-15 (formatting, `RESULTS.md`) |
 | `negative-tests/exact.ml` (T) | `negative-tests/` | conforms since the D4 fix |
 | `negative-tests/export_test.ml` | `negative-tests/` | passes; no correction (covered by runner exit code) |
 | `negative-tests/flexible.ml` (T) | `negative-tests/` | conforms since the D4 fix |
 | `negative-tests/import_test.ml` | `negative-tests/` | passes; cross-file functor instantiation |
-| `negative-tests/missing.ml` (T) | `negative-tests/` | conforms since the D4/D7 fix |
+| `negative-tests/missing.ml` (T) | `negative-tests/` | second test conforms (bare node materialized, on the node's line); first test **diverges**: trailing output not checked (ruling in `RESULTS.md`) |
 | `negative-tests/nine.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
 | `negative-tests/normal_strings.ml` | `negative-tests/` | conforms since the D3 fix (incl. margin wrapping) |
 | `negative-tests/semicolon.ml` | `negative-tests/` | conforms |
@@ -79,7 +81,7 @@ single-line source tweak listed under [Source tweaks](#source-tweaks).
 | `negative-tests/string_extension_syntax.ml` | `negative-tests/` | conforms since the D5 fix (retag keeps `%expect`) |
 | `negative-tests/string_padding.ml` | `negative-tests/` | conforms |
 | `negative-tests/three.ml` | not vendored | **diverges** (reformat-on-match: windtrap leaves a matching payload alone) |
-| `negative-tests/trailing.ml` (T) | `negative-tests/` | conforms |
+| `negative-tests/trailing.ml` (T) | `negative-tests/` | **diverges** since 2026-09-15: trailing output not checked, no correction (ruling in `RESULTS.md`) |
 | `negative-tests/unidiomatic_syntax.ml` | `negative-tests/` | conforms |
 | `negative-tests/unusual_payload_location.ml` | not vendored | **diverges** (upstream golden inconsistent with its pinned source — unreachable) |
 | `negative-tests/for-mdx/foo.ml` (T) | `negative-tests/for-mdx/` | conforms |

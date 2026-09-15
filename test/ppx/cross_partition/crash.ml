@@ -1,7 +1,7 @@
 (* An uncaught exception, in its own partition. Never a correction: the
-   runtime resolves the nodes reached before the raise and lets the runner
-   classify the exception (Ppx_runtime.run_expect_body's exception branch).
-   The payload below matches, so this partition records nothing at all —
+   runner classifies the exception as the test's failure, and a test with
+   a failure that is not a baseline mismatch records no correction. The
+   payload below matches, so this partition records nothing at all —
    which is what makes it the control for "an update run cannot make a
    crash promotable". *)
 

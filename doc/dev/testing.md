@@ -16,12 +16,14 @@ Eleven directories under `test/`:
   dune parallelize across the twenty-five where the runner is
   deliberately sequential inside one. Four meta suites
   (`test_run`, `test_runner`, `test_ppx_runtime`, `test_windtrap`)
-  drive `Runner.execute` and the ambient slot in-process with
-  synthetic configs — the sanctioned way to test runner behavior with
-  windtrap itself — and `execute` refuses to nest inside an active
-  run, so each is a plain executable over the shared hand-rolled
-  `harness.ml` (a local check counter, exit nonzero on any failure):
-  the machinery being tested cannot be trusted to report its own bugs.
+  are plain executables over the shared hand-rolled `harness.ml` (a
+  local check counter, exit nonzero on any failure): three drive
+  `Runner.execute` and the ambient slot in-process with synthetic
+  configs — the sanctioned way to test runner behavior with windtrap
+  itself, since `execute` refuses to nest inside an active run — and
+  `test_ppx_runtime` checks the inline runtime's registry in-process
+  and re-execs itself to observe what its `exit` does to a process.
+  The machinery being tested cannot be trusted to report its own bugs.
   The cost is real and worth knowing: those checks get no diffs, no
   filtering, no JUnit, and no per-test timing.
 - `conformance` — the ppx_expect conformance corpus (below).
@@ -37,8 +39,13 @@ Eleven directories under `test/`:
   coverage format.
 - `docs` — compiled documentation (below).
 - `ppx` — PPX rewriting goldens (`.expected` files diffed against the
-  driver's output, rejects included) and the inline-runner fixtures
-  (`inline/`, `inline_coverage/`, `slow_knobs/`, `tail_loc/`).
+  driver's output, rejects included) and the inline-runner fixtures:
+  `inline/` and `strict_flags/` are real `(inline_tests)` libraries
+  under dune's backend, the rest (`cross_partition/`, `undriven/`,
+  `masked_failure/`, `bad_cwd/`, `tail_loc/`, `slow_knobs/`,
+  `inline_coverage/`, `release_failure/`) spawn a generated-runner
+  main under a scrubbed environment through `drive/` and pin its
+  transcript and exit code.
 
 One kind of compiled documentation runs in the tree:
 `doc/manual/snippets/` — compiled mirrors of every manual chapter
@@ -358,6 +365,9 @@ records the measured numbers against the bar: **≥ 90% of HONORED runs
 with matching semantics, 100% of REJECTED loud** — and says why
 corrected-file byte-identity is not the bar (upstream's goldens carry a
 second pipeline stage, `bin/apply-style`, that no windtrap user runs).
+Since the PPX became a desugaring into the library's `expect`
+(2026-09-15) two rulings there set the honored number just below the
+bar: trailing output and unreached nodes are not checked.
 
 Triage workflow when a conformance diff appears:
 

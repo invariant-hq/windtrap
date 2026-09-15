@@ -868,8 +868,11 @@ val cover : string -> bool -> unit
     A baseline is a reviewed expectation the source names: the literal at an
     {!expect} or {!expect_exact} call, or the file an {!expect_file} call names,
     relative to the project root. Checking is read-only: a mismatch or a missing
-    file fails with a diff (or the proposed content) and the acceptance command
-    for the way the run was invoked. Under dune a [(test)] stanza runs the
+    file records a failure with a diff (or the proposed content) and the
+    acceptance command for the way the run was invoked, and the call returns — a
+    checkpoint, not an assertion: where a failed assertion ends the body, a
+    mismatch lets it continue, so one run reports every stale expectation and
+    one acceptance takes them all. Under dune a [(test)] stanza runs the
     executable with [--corrected], which writes each correction as
     [<file>.corrected] beside dune's copy of the file, and diffs the two, so
     [dune promote] accepts:
@@ -898,11 +901,11 @@ val cover : string -> bool -> unit
 val expect : string -> pos * string -> unit
 (** [expect actual @@ __POS_OF__ {|…|}] compares [actual] with the literal
     whitespace-flexibly: lines trimmed, blank leading and trailing lines
-    dropped, the block dedented. A mismatch fails with the diff and is corrected
-    by rewriting the literal, re-indented to its line. The literal's position is
-    what the compiler recorded for the call, so a moved call cannot orphan its
-    baseline; a call shared by several tests (a [cases] family) must produce one
-    text, or fail. *)
+    dropped, the block dedented. A mismatch records the test's failure with the
+    diff and returns; it is corrected by rewriting the literal, re-indented to
+    its line. The literal's position is what the compiler recorded for the call,
+    so a moved call cannot orphan its baseline; a call shared by several tests
+    (a [cases] family) must produce one text, or fail. *)
 
 val expect_exact : string -> pos * string -> unit
 (** [expect_exact actual @@ __POS_OF__ {|…|}] is {!expect} comparing byte for
@@ -911,14 +914,16 @@ val expect_exact : string -> pos * string -> unit
 val expect_file : string -> string -> unit
 (** [expect_file actual path] compares [actual] with the file at [path],
     relative to the project root, as line-oriented text: CR and CRLF read as LF
-    and a final newline is forced on both sides. A missing file is a mismatch
-    whose correction is the file. Under dune, a [(diff? path path.corrected)]
-    step in the stanza makes the file an input of the action — the run reads
-    dune's copy of it — and promotes the correction onto it; promotion fills a
-    file but never creates one, so a new file starts empty ([touch]) or is
-    accepted once with [-u]. Content where CR bytes or the missing final newline
-    are significant must be encoded first (e.g. [String.escaped]); redaction is
-    ordinary code applied before the call. *)
+    and a final newline is forced on both sides. A mismatch records the test's
+    failure and returns; a missing file is a mismatch whose correction is the
+    file. A path that cannot be proven to lie under the project root raises
+    instead, since nothing after it is meaningful. Under dune, a
+    [(diff? path path.corrected)] step in the stanza makes the file an input of
+    the action — the run reads dune's copy of it — and promotes the correction
+    onto it; promotion fills a file but never creates one, so a new file starts
+    empty ([touch]) or is accepted once with [-u]. Content where CR bytes or the
+    missing final newline are significant must be encoded first (e.g.
+    [String.escaped]); redaction is ordinary code applied before the call. *)
 
 (** {1:capture Captured output} *)
 
@@ -1046,20 +1051,22 @@ val run : ?argv:string array -> string -> test list -> int
 
     Duplicate test paths, focused tests under [CI] and [-u] under [CI] refuse
     the run before anything executes. Under [--corrected] a test whose failures
-    are all recorded corrections leaves the exit code alone: the [diff?] that
-    follows is the verdict. [--shard K/N] partitions the selected tests into [N]
-    buckets by a frozen hash of each test's path, so the buckets cover every
-    test exactly once, stable across machines and suite composition. Code under
-    test that calls [exit] does not end the run: the call is intercepted and
-    recorded as that test's failure. A green run prints one line, a noteworthy
-    one its header, glyph row and failure blocks, [-v] one line per test; see
+    are all recorded corrections leaves the exit code alone, and a selection
+    that runs none of the suite's tests exits [0] rather than [2]: the run is a
+    build action's, whose [WINDTRAP_*] selection spans every stanza and
+    partition of the tree, and the [diff?] that follows is the verdict.
+    [--shard K/N] partitions the selected tests into [N] buckets by a frozen
+    hash of each test's path, so the buckets cover every test exactly once,
+    stable across machines and suite composition. Code under test that calls
+    [exit] does not end the run: the call is intercepted and recorded as that
+    test's failure. A green run prints one line, a noteworthy one its header,
+    glyph row and failure blocks, [-v] one line per test; see
     [doc/manual/running-tests.md]. *)
 
 (** {1:private Private} *)
 
 (** Internal machinery — windtrap's own composition surface, re-exported for the
-    library's per-module test suites (the [test/] directories) and for the
-    co-versioned client library ([ppx_windtrap]'s runtime). Not part of the
+    library's per-module test suites (the [test/] directories). Not part of the
     public API: these interfaces move without notice and carry no stability
     guarantee. Everything user-facing is the documented surface above; nothing
     here escapes into scope on [open Windtrap]. *)
@@ -1075,11 +1082,7 @@ module Private : sig
   module Env = Env
   module Failure = Failure
   module Loc = Loc
-
   module Mutate_loop = Mutate_loop
-  (** Also the Law 16d armed hooks — the one cross-package registration cell;
-      [ppx_windtrap]'s runtime registers its hook here at load. *)
-
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property

@@ -31,7 +31,7 @@ They never merge again (that was v1's mistake).
 | library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, baselines, capture, the run/driver spine, the mutation loop, renderers, CLI and the client facade; links `unix` and `windtrap.runtime` only — in-package, so Law 10's no-third-party-weight posture is untouched |
 | `windtrap.runtime` | `lib/runtime/` | the one runtime every instrumented closure links, through both backends' `ppx_runtime_libraries`: `Windtrap_runtime.Coverage` (registration, the `.coverage` dump, report data), `Windtrap_runtime.Mutate` (the catalogue, the arming guard, the reach map), `Windtrap_runtime.Verdicts` (the verdict lattice and the `.mutants` format the loop writes and `windtrap mutants` merges) and `Windtrap_runtime.Instr` (the versioned, exe-identified file plumbing both formats share). Stdlib only — it must never pull anything into the closure of every instrumented library — and it reads no environment variable but `WINDTRAP_COVERAGE_FILE`: which mutants a run tests and which one it arms are the core's to read and hand down |
 | binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--expect`, `--json`, `--lcov`) and `mutants` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared data-file lookup and staleness in `data_files`. Both merge and render, never run a test or drive a build, and every remedy they print says what to do in words rather than spelling a build tool's command |
-| package `ppx_windtrap` | `ppx/` | the expect/inline PPX, the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`) over shared scaffolding (`ppx/scaffold/`), and the expect runtime itself — `Ppx_runtime` (`ppx/runtime/`) and the ambient `Expect_test_config` (`ppx/config/`) — the only unit that sees ppxlib |
+| package `ppx_windtrap` | `ppx/` | the expect/inline PPX — a desugaring into `test`, `group`, `expect`, `expect_exact` and `output`, with the `inline_tests.backend` whose generated main calls `run --corrected` — the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`), the inline runtime `Ppx_runtime` (`ppx/runtime/`: the module-load registry, dune's runner protocol, the undriven guard; a client of the public API) and the ambient `Expect_test_config` (`ppx/config/`: `run` and `sanitize`) — the only unit that sees ppxlib |
 
 ## Module graph (`lib/`)
 
@@ -65,32 +65,29 @@ its own, never downward.
 | | `Cli` | one declarative item table — flags and flagless settings — resolved once into `Run.config` and `Render.settings`, plus `--help`. Each flag's mirror is declared beside it and read through the flag's own parser, so a variable cannot accept what its flag rejects |
 | | `Render`, `Render_junit`, `Render_github` | the pure projections of the run record. `Render` also owns the subsystem-neutral report-section vocabulary: instrumentation reports arrive as section data, and `Render` names no instrumentation runtime |
 | | `Driver` | the spine: `Driver.t` is one invocation's reporting inputs, `execute_and_report` the one order every driver shares, `execute` the reporting-free run a mutation child needs |
-| | `Mutate_loop` | the mutation seam and the Law-16d armed hooks: the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop — one child per reached mutant, in catalogue order, each running only the tests that reach it — the verdict file (written through the runtime's format) and the per-executable report. It *wraps* `Driver.execute_and_report` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
+| | `Mutate_loop` | the mutation seam: the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop — one child per reached mutant, in catalogue order, each running only the tests that reach it — the verdict file (written through the runtime's format) and the per-executable report. It *wraps* `Driver.execute_and_report` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
 | | `Windtrap` | the facade |
 
-The expect runtime is a client, not a resident: `Ppx_runtime`
-(inline-test protocol, expect matching, `.corrected` assembly) consumes
-the core through `Windtrap.Private` — the alias block at its top is the
-census of that diet, and widening it is a design act — and it and the
-ambient `Expect_test_config` live in `ppx_windtrap`, against the
-facades.
+The inline runtime is a client of the public API, not a resident:
+`Ppx_runtime` keeps the module-load registry the generated code fills
+(`Windtrap.test` and `Windtrap.group` values, per source file), parses
+dune's `inline-test-runner <lib> -partition <file>` protocol, and hands
+the partition to `Windtrap.run` under `--corrected`. Nothing in it names
+`Windtrap.Private`; it and the ambient `Expect_test_config` live in
+`ppx_windtrap`, against the facade.
 
-Two thin drivers sit on top of `Mutate_loop.execute_and_report` — which
-in every uninstrumented build, every `--list` run, and every
-instrumented build the environment asked nothing of *is*
-`Driver.execute_and_report`, same transcript, same bytes — and nothing
-else sits between them and
-it: the facade's `run` (in core) and `Ppx_runtime.exit` (in
-`ppx_windtrap`, through the facades). Each resolves one invocation
-(`Cli.settings`), calls `execute_and_report`, and adds only what is
-genuinely its own: the argv-derived invocation, the property-aware
-header seed, the selection description, GitHub gating, the `--list`
-listing, JUnit, the focus warning and the process exit on one side; the
-fixed `` `Mirrors `` invocation, a header with neither seed nor
-selection, `.corrected` flushing and dune's promotion exit code on the
-other. **A transcript line either comes from a `Driver` producer or it
-is a driver's own line, named as such.** That is what keeps the two
-runners byte-identical.
+One driver sits on top of `Mutate_loop.execute_and_report` — which in
+every uninstrumented build, every `--list` run, and every instrumented
+build the environment asked nothing of *is* `Driver.execute_and_report`,
+same transcript, same bytes — and nothing else sits between them: the
+facade's `run`. It resolves one invocation (`Cli.settings`), calls
+`execute_and_report`, and adds only what is genuinely its own: the
+argv-derived invocation, the property-aware header seed, the selection
+description, GitHub gating, the `--list` listing, JUnit and the focus
+warning. A `--corrected` run — a stanza's action or the inline runner —
+spells its hints as the mirrors and its acceptance as `dune promote`,
+whatever argv says. **A transcript line either comes from a `Driver`
+producer or it is the driver's own line, named as such.**
 
 The cycle-avoidance rule is load-bearing: subsystem modules operate on
 explicit state values (`Capture.output st`, `Baseline.check st …`);
@@ -102,8 +99,8 @@ is what would make a parallel runner an extension rather than a
 rewrite.
 
 `Windtrap.Private` re-exports every internal module for the `test/`
-suites and `ppx_windtrap`. It is explicitly unstable; nothing in it
-escapes `open Windtrap`.
+suites. It is explicitly unstable; nothing in it escapes
+`open Windtrap`.
 
 ## Instrumentation containment
 
@@ -126,14 +123,11 @@ most one core module that drives it.
   `Cli` and `Env` in the core and applied by the loop — the scope to
   the population it forks over, the identifier through the runtime's
   own parser and `arm`. Its coupling is one dispatch call at run
-  entry (the two thin drivers call `Mutate_loop.execute_and_report` in
+  entry (the facade's `run` calls `Mutate_loop.execute_and_report` in
   place of `Driver.execute_and_report`), one *composed* observer on
   `Runner.execute`'s existing `?on_event` hook — never a replacement
-  for the transcript's — and the Law-16d armed hooks on
-  `Mutate_loop`, which `Ppx_runtime` registers at load and the loop
-  fires: the one cross-package cell, since the expect runtime sits
-  above the loop and in another package. Firing them clears the inline runtime's
-  cross-run tables and revokes the corrections licence.
+  for the transcript's — and the read-only baseline mode the loop sets
+  on every armed process's config (Law 16d).
 
 No instrumentation type appears in `windtrap.mli`, and neither
 subsystem owns a copy of the other's layout — nor does `Render` name
@@ -154,7 +148,10 @@ Ported from the accepted v3 design RFC ("Laws", including the
 Laws 11, 12, 13 and 15 plus the new Law 16; Law 2 rewritten and Law 1's
 acceptance list amended on 2026-09-15, when `snapshot` and the
 `WINDTRAP_UPDATE` channel were replaced by position- and path-keyed
-baselines corrected through `--corrected` and `-u`; Law 16(e) rewritten
+baselines corrected through `--corrected` and `-u`, and Law 11's inline
+clause and Law 16(d)'s table-clearing clause dropped the same day, when
+the expect PPX became a desugaring into the library and its runtime a
+client of the public API; Law 16(e) rewritten
 and Law 17 withdrawn on 2026-08-21,
 when admission was removed and the project aggregate became the one
 place a survivor fails a build); the RFC documents themselves were
@@ -202,17 +199,20 @@ design**.
    contamination; `--stream`-class feature interactions.
 10. **`windtrap` depends on `unix` only; only `ppx_windtrap` sees
     ppxlib, it is opt-in, and it owns no test semantics:** the
-    expect/inline PPX records locations, the coverage backend inserts
+    expect/inline PPX desugars into the library's own `test`, `expect`
+    and `output`, the coverage backend inserts
     visit calls that cannot change program behavior (Law 13), and the
     mutation backend inserts guards that are inert unless armed
     (Law 16). *Prevents:* dependency weight at the bottom of every tree;
     parsetree churn in the core; PPX-resident semantics.
-11. **The standalone runner exits 0 / 1 / 2** (passed / failed /
-    nothing ran). The inline-tests runner follows dune's promotion
-    protocol instead — exit 0 iff every failure is a
-    corrections-recorded expect mismatch — and that protocol is the
-    contract there. **A mutation run's exit code is its own and is
-    stated by Law 16(e); it never reports a test outcome.**
+11. **The runner exits 0 / 1 / 2** (passed / failed / nothing ran).
+    Under `--corrected` a test whose failures are all recorded
+    corrections leaves the code alone and a selection the mirrors
+    empty exits 0, because the `diff?` that follows is the verdict —
+    dune's promotion protocol, for a stanza's action and the inline
+    runner alike, where a `WINDTRAP_*` selection spans every stanza
+    and partition of the tree. **A mutation run's exit code is its
+    own and is stated by Law 16(e); it never reports a test outcome.**
     *Prevents:* filter typos reading as green CI; masked assertion
     failures.
 12. **Instrumentation is contained, and the containment is typed.**
@@ -228,14 +228,11 @@ design**.
     predecessors pruned by the runtime at the first dump of a rebuilt
     executable; one verdict file per executable, replaced by a full run
     and left alone by a narrowed one — written by the loop, read by the
-    subcommand, never by generated code. Out-of-core client code
-    (the expect runtime) is a client of the core through
-    `Windtrap.Private`, its diet documented at its alias block. Core
-    windtrap's
-    coupling to each subsystem is one read per run — coverage's summary
-    snapshot at run end, mutation's dispatch call at run entry — plus,
-    for mutation alone, the Law-16d armed hooks registered on
-    `Mutate_loop`. Per-test
+    subcommand, never by generated code. The inline runtime
+    (`ppx_windtrap.runtime`) is a client of the public API and names
+    nothing in `Windtrap.Private`. Core windtrap's coupling to each
+    subsystem is one read per run — coverage's summary snapshot at run
+    end, mutation's dispatch call at run entry. Per-test
     observation uses only the existing `Runner.execute ?on_event` hook,
     which receives immutable payloads and cannot alter status, counts,
     or scheduling, and reads only its own subsystem's runtime. **No
@@ -315,13 +312,10 @@ design**.
     boolean, and never an exit code: an armed run
     states its own verdict in (b)'s closing line, and the loop's live in
     its report and its verdict file.
-    (d) *Armed checking is read-only.* While a mutant is armed, an
-    `expect` or `[%expect]` mismatch is a plain failure: no
-    `.corrected` is written and dune's promotion protocol is not
-    consulted. The child additionally clears the inline runtime's
-    cross-run tables — node pool, corrections, styled registry, covered
-    set — before its first test, so a mismatch is reported as a
-    mismatch and not as a merged-history CR against the parent's run.
+    (d) *Armed checking is read-only.* While a mutant is armed the
+    run's baseline mode is `Check`: an `expect` or `[%expect]` mismatch
+    is a plain failure, no `.corrected` is written and dune's promotion
+    protocol is not consulted.
     (e) *No trace outside the pipe, and the exit code follows who can
     claim the truth.* A mutation child's whole body is wrapped so no
     path reaches Stdlib's exit machinery: every exception, fatal

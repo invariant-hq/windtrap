@@ -1,30 +1,12 @@
 ; The expression-grade coverage instrumenter, exposed as the dune
 ; instrumentation backend selected by
-; --instrument-with ppx_windtrap.coverage.
-;
-; ONE library, naming ITSELF in (instrumentation.backend), exactly as
-; ppx/mutate/dune does and argues at length: dune resolves
-; --instrument-with <name> by reading the (instrumentation.backend) field
-; of the library called <name>, and does not object to that field naming
-; the library that carries it.
-;
-; The field deliberately does NOT hang off the ppx_windtrap library.
-; That library's OTHER job is the inline-test rewriter, so it carries
-; (ppx_runtime_libraries ppx_windtrap.runtime ppx_windtrap.config) — and
-; dune adds a rewriter's ppx_runtime_libraries to everything it
-; preprocesses, instrumentation included. A backend there would link the
-; windtrap CORE into every instrumented library, which for lib/ — the
-; core itself — is a dependency cycle
-; (windtrap -> ppx_windtrap.runtime -> ppx_windtrap -> windtrap). That
-; spelling shipped in 0.2.0 and is gone: one name, and it is the one
-; that cannot drag the core in.
-;
-; The rewriter is also usable directly with
+; --instrument-with ppx_windtrap.coverage: one library naming itself in
+; (instrumentation.backend), as ppx/mutate/dune does. Its
+; ppx_runtime_libraries name only the stdlib-only windtrap.runtime the
+; generated code calls, so instrumented user code never pulls the
+; windtrap core into its closure. Also usable directly with
 ; (preprocess (pps ppx_windtrap.coverage)), which the semantics tests
-; rely on. ppx_runtime_libraries makes every instrumented library link
-; the stdlib-only windtrap.runtime the generated code calls - and nothing
-; else: instrumented user code must never pull the windtrap core into its
-; closure.
+; rely on.
 
 (library
  (name windtrap_coverage_ppx)

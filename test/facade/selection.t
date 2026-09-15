@@ -36,6 +36,18 @@ suite named, and the way out spelled:
   (list the suite's tests with -l)
   [2]
 
+Under --corrected — what a build action passes — the same emptied
+selection is not an error: a WINDTRAP_* selection spans every stanza
+and inline partition of the tree, so a stanza it leaves empty exits 0
+with the same line, and dune's diff? is the verdict. A command line
+that does not parse still exits 2 under the flag.
+
+  $ run ./suite_main.exe -f zzznope --corrected
+  fixture: no tests ran: filter "zzznope" matched none of 5 tests.
+  (list the suite's tests with -l)
+  $ run ./suite_main.exe --corrected --nosuchflag > /dev/null 2>&1
+  [2]
+
 A selection that fails exits 1. Durations move and the declaration line
 moves with the fixture, so both are filtered; everything else is the
 transcript byte for byte.

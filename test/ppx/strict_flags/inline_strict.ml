@@ -1,7 +1,6 @@
 (* Compiled with -w +a -warn-error +a (see ./dune): every extension this
    PPX implements appears at least once, so the build fails if any
-   generated code resolves a record field or constructor by
-   type-directed disambiguation instead of a qualified path. *)
+   generated code provokes a warning under the harshest user regime. *)
 
 let%test "strict unit test" = assert (1 + 1 = 2)
 

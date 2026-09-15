@@ -341,7 +341,19 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
            before committing@."
           (List.length outcome.Runner.selected)
           outcome.Runner.total;
-      outcome.Runner.exit_code
+      (* A [--corrected] run is a build action's, and a build action's
+         selection is a [WINDTRAP_*] variable spanning every stanza and
+         partition of the tree: a stanza it empties is not a mistyped
+         filter, so nothing-ran is not an error there — the "no tests ran"
+         line still says so, and the [diff?] that follows is the verdict.
+         A suite that declares no tests keeps its 2, since no selection
+         emptied it; a usage error never reaches this branch. *)
+      let code = outcome.Runner.exit_code in
+      if
+        code = 2 && outcome.Runner.total > 0
+        && config.Run.baseline = Baseline.Corrected
+      then 0
+      else code
 
 (* [-l]: a listing is not a transcript and must not be folded into a
    ::group:: section, and a run that runs nothing is a concept no module

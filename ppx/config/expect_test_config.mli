@@ -20,24 +20,11 @@
       let%expect_test "logs" = …
     ]}
 
-    The generated code passes [Expect_test_config.run] at type
-    [(unit -> unit) -> unit] and [Expect_test_config.sanitize] at type
-    [string -> string] to [Ppx_runtime.add_expect_test]. Expect-test bodies are
-    therefore restricted to [IO.t = unit]: a monadic (Async-style) config's
-    [run] does not fit that type and fails to {e compile} at the reference —
-    never a silent behavioral change.
-
-    [IO], [return], and [upon_unreleasable_issue] exist so that ppx_expect-era
-    configs built by [include]-and-override keep compiling; windtrap itself
-    consumes only [run] and [sanitize]. *)
-
-(** The identity IO monad: expect-test bodies are synchronous. *)
-module IO : sig
-  type 'a t = 'a
-
-  val return : 'a -> 'a t
-  (** [return x] is [x]. *)
-end
+    The generated code wraps every expect-test body in [Expect_test_config.run]
+    at type [(unit -> unit) -> unit] and reads captured output through
+    [Expect_test_config.sanitize]. Expect-test bodies are therefore synchronous:
+    a monadic (Async-style) config's [run] does not fit that type and fails to
+    {e compile} at the reference — never a silent behavioral change. *)
 
 val run : (unit -> unit) -> unit
 (** [run f] is [f ()]: runs an expect-test body. Override to wrap every
@@ -48,7 +35,3 @@ val sanitize : string -> string
 (** [sanitize s] is [s]. Override to rewrite captured output before every
     comparison and correction — timestamps, temp paths, and other
     nondeterminism. *)
-
-val upon_unreleasable_issue : [ `CR | `Warning_for_collector_testing ]
-(** [upon_unreleasable_issue] is [`CR]. Vestigial, for ppx_expect config
-    compatibility; windtrap ignores it. *)

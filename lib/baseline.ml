@@ -130,7 +130,7 @@ let record t key entry subject where actual accepted =
         let style =
           if exact then Source_patch.Exact else Source_patch.Flexible
         in
-        Patch (where, Source_patch.patch ~pos ~literal:value ~style actual)
+        Patch (where, Source_patch.patch ~site:pos ~literal:value ~style actual)
     | File _ -> Content (where, accepted)
   in
   entry.accepted <- Some accepted;

@@ -44,16 +44,6 @@ type run =
   | Ran of (Runner.outcome, Runner.startup_error) result
   | Reported of int
 
-(* The armed hooks (Law 16d): the one cross-package cell. Registration is
-   a module-load act of another package's unit — the inline runtime lives
-   in ppx_windtrap, above this module, so it registers what it is owed
-   rather than being called — and the firing side reads the cell at fire
-   time, so hooks registered before or after this module's own load are
-   honored alike, whatever order the link put the initializers in. *)
-
-let armed_hooks : (unit -> unit) list ref = ref []
-let on_armed hook = armed_hooks := hook :: !armed_hooks
-
 let note fmt =
   Printf.ksprintf
     (fun message ->
@@ -72,11 +62,7 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
 
 (* The spine ({!Driver.t}), threaded whole: the loop replaces [config] per
    child and passes everything else through untouched, so the places that
-   run the suite cannot drift in what they pass. [armed] travels beside
-   it, not in it — it is this module's seam with the inline runtime
-   (Law 16d), not part of what a driver consumes: [execute_and_report]
-   builds it from the registered hooks and threads it below exactly as an
-   argument would travel. *)
+   run the suite cannot drift in what they pass. *)
 
 (* The spine a loop hands its dry run. A mutation run's output never
    reports a test outcome (Law 16e) and its exit code is its own, so the
@@ -337,18 +323,13 @@ let fork_child ~deadline body =
       in
       { line; status; killed = !killed }
 
-(* Every child starts from the same clean post-dry-run image except for
-   what the inline runtime must not inherit — its merged reach histories,
-   and its licence to record a correction (Law 16d). Both are [armed]'s
-   job; see [execute_and_report]'s argument. *)
+(* Every child starts from the same clean post-dry-run image; read-only
+   checking (Law 16d) is the child's config, set where it forks. *)
 (* The child's selection, in the runner's own spelling: [reach] keys tests
    by path components, [Runner]'s allowlist by the rendered path the
    filters and the last-failed store both use. *)
 let allowlist_of paths = List.map Test_tree.path_to_string paths
-
-let child_prologue ~armed =
-  silence_output ();
-  armed ()
+let child_prologue () = silence_output ()
 
 (* The verdict line
 
@@ -555,8 +536,8 @@ let render_data ~resolve_source ~loc_of ~scope ~filter t =
    results over a non-deterministic suite are not a weaker number, they
    are not a number. *)
 
-let probe_line ~armed ~paths ~spine tests () =
-  child_prologue ~armed;
+let probe_line ~paths ~spine tests () =
+  child_prologue ();
   match Driver.execute ~allowlist:(allowlist_of paths) spine tests with
   | Error error -> "error " ^ one_line (Runner.startup_message error)
   | Ok outcome ->
@@ -589,8 +570,8 @@ let probe_line ~armed ~paths ~spine tests () =
                  (Option.value ~default:(-1) (index_of r.Run.path paths)))
              failures)
 
-let check_determinism ~armed ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach
-    ~paths tests =
+let check_determinism ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach ~paths
+    tests =
   let log_dir = Filename.concat scratch "probe" in
   let child =
     {
@@ -603,7 +584,7 @@ let check_determinism ~armed ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach
   let { line; status; killed } =
     fork_child
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
-      (probe_line ~armed ~paths ~spine:child tests)
+      (probe_line ~paths ~spine:child tests)
   in
   Run.remove_tree log_dir;
   let named indices =
@@ -657,22 +638,21 @@ let check_determinism ~armed ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach
 (* The bracket the loop opens before its first fork: one scratch root
    for the run, removed however the run leaves, and the determinism probe
    in front. *)
-let probed ~armed ~dry_run_wall ~spine ~reach ~paths tests forks =
+let probed ~dry_run_wall ~spine ~reach ~paths tests forks =
   let scratch = scratch_root () in
   Fun.protect
     ~finally:(fun () -> Run.remove_tree scratch)
     (fun () ->
       match
-        check_determinism ~armed ~scratch ~dry_run_wall ~spine ~reach ~paths
-          tests
+        check_determinism ~scratch ~dry_run_wall ~spine ~reach ~paths tests
       with
       | Error _ as error -> error
       | Ok () -> Ok (forks ~scratch))
 
 (* One mutant *)
 
-let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests () =
-  child_prologue ~armed;
+let mutant_line ~paths ~budget ~spine ~(mutant : M.mutant) tests () =
+  child_prologue ();
   match M.arm ~budget mutant.M.id with
   | Error error ->
       "error " ^ one_line (Format.asprintf "%a" M.pp_arm_error error)
@@ -690,8 +670,8 @@ let mutant_line ~armed ~paths ~budget ~spine ~(mutant : M.mutant) tests () =
 let budget_of hits =
   if hits > (max_int - 1000) / 8 then max_int else (hits * 8) + 1000
 
-let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
-    ~paths ~budget ~mutant tests =
+let run_mutant ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach ~paths
+    ~budget ~mutant tests =
   let log_dir = Filename.concat scratch (spf "m%d" index) in
   let child =
     {
@@ -702,7 +682,7 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
   let { line; status; killed } =
     fork_child
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
-      (mutant_line ~armed ~paths ~budget ~spine:child ~mutant tests)
+      (mutant_line ~paths ~budget ~spine:child ~mutant tests)
   in
   Run.remove_tree log_dir;
   match killed with
@@ -725,15 +705,15 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
 
 (* The fork loop: one child per reached mutant, in catalogue order. *)
 
-let run_children ~armed ~scratch ~dry_run_wall ~spine ~reach ~reached tests =
+let run_children ~scratch ~dry_run_wall ~spine ~reach ~reached tests =
   let rec go index verdicts = function
     | [] -> verdicts
     | mutant :: rest ->
         let paths = reaching_tests reach mutant in
         let budget = budget_of (site_hits reach mutant) in
         let verdict =
-          run_mutant ~armed ~scratch ~dry_run_wall ~index ~spine ~reach ~paths
-            ~budget ~mutant tests
+          run_mutant ~scratch ~dry_run_wall ~index ~spine ~reach ~paths ~budget
+            ~mutant tests
         in
         go (index + 1) (V.add verdicts (V.record_of_mutant mutant verdict)) rest
   in
@@ -805,7 +785,7 @@ let population ~scope =
 
 (* The loop, end to end *)
 
-let loop renderer ~armed (spine : Driver.t) tests =
+let loop renderer (spine : Driver.t) tests =
   let config = spine.Driver.config in
   let population = population ~scope:(Env.mutate_only ()) in
   let reach = fresh_reach () in
@@ -842,10 +822,10 @@ let loop renderer ~armed (spine : Driver.t) tests =
               narrows_suite ~config ~focus:outcome.Runner.focus_active
             in
             let outcome =
-              probed ~armed ~dry_run_wall ~spine ~reach ~paths:executed tests
+              probed ~dry_run_wall ~spine ~reach ~paths:executed tests
                 (fun ~scratch ->
-                  run_children ~armed ~scratch ~dry_run_wall ~spine ~reach
-                    ~reached tests)
+                  run_children ~scratch ~dry_run_wall ~spine ~reach ~reached
+                    tests)
             in
             match outcome with
             | Error message -> refuse "%s" message
@@ -876,7 +856,7 @@ let loop renderer ~armed (spine : Driver.t) tests =
    the core read it, unparsed: the runtime's grammar decides what it
    names, and the runtime reads no environment of its own. *)
 
-let arm_mode renderer ~armed ~spec (spine : Driver.t) tests =
+let arm_mode renderer ~spec (spine : Driver.t) tests =
   match Result.bind (M.id_of_string spec) M.arm with
   | Error (M.Uncatalogued _ as error) ->
       (* Not a refusal. One identifier is handed to every test
@@ -909,7 +889,6 @@ let arm_mode renderer ~armed ~spec (spine : Driver.t) tests =
          purpose, and a run that promoted that output would rewrite the
          source tree from a lie. Baselines need no flag beyond Check: a
          correction is recorded only under Corrected and Update. *)
-      armed ();
       let spine =
         {
           spine with
@@ -947,14 +926,6 @@ let arm_mode renderer ~armed ~spec (spine : Driver.t) tests =
 (* Entry *)
 
 let execute_and_report (spine : Driver.t) tests =
-  (* What a process about to run with a mutant armed owes the inline
-     runtime (Law 16d): every registered hook, in registration order — in
-     each forked child before its first test, and once in the parent
-     under WINDTRAP_MUTATE_ARM; never by a run that arms nothing. Read at
-     fire time, not captured here: registration is a module-load act and
-     the loop must honor every hook the link produced, however the
-     initializers were ordered. *)
-  let armed () = List.iter (fun hook -> hook ()) (List.rev !armed_hooks) in
   (* Every run goes through the knobs, instrumented or not: a variable
      the user set and misspelled must be loud in every build, and an
      identifier that names a site of a file this build does catalogue and
@@ -971,7 +942,7 @@ let execute_and_report (spine : Driver.t) tests =
       in
       match (mode, arm) with
       | `Unset, None -> Ran (Driver.execute_and_report spine tests)
-      | `Unset, Some spec -> arm_mode (renderer ()) ~armed ~spec spine tests
+      | `Unset, Some spec -> arm_mode (renderer ()) ~spec spine tests
       | `Loop, Some _ ->
           refuse
             "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
@@ -984,5 +955,5 @@ let execute_and_report (spine : Driver.t) tests =
               "mutation testing needs Unix.fork, which Windows does not have; \
                the tests themselves still ran"
           else
-            try loop (renderer ()) ~armed spine tests
+            try loop (renderer ()) spine tests
             with Supervision message -> refuse "%s" message))

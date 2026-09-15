@@ -5,13 +5,15 @@ F
     test/ppx/cross_partition/stale.ml:7
       7 │   [%expect {| stale payload |}]
 
-    expected  stale payload
-    actual    fresh output
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - stale payload
+    + fresh output
+    accept: dune promote
     ── captured output (1 line) ──
     fresh output
     full log: <log>
 ──────────────────────────────────────────────────────
 
 1 failed in <duration>s.
-windtrap: wrote stale.ml.corrected
-windtrap: dune registers a correction for promotion only when every inline-test process of the library exits cleanly, so a failure in any of its files withholds this one too. Fix the failures, rerun, then 'dune promote'.
+wrote test/ppx/cross_partition/stale.ml.corrected (1 expectation)

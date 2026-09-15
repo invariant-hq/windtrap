@@ -136,6 +136,51 @@ let () =
         (f.Failure.attribution = Failure.Recorded)
   | _ -> check "bare frame failure shape" false
 
+(* Baseline checkpoints: a mismatch is recorded on the frame and the call
+   returns, so a body with two stale expectations reports both; only an
+   unprovable path raises. *)
+let () =
+  let run = make_run () in
+  let literal line =
+    Baseline.Literal
+      { pos = ("t.ml", line, 2, 20); value = "old"; exact = true }
+  in
+  let reached = ref 0 in
+  let failures =
+    in_test run (fun frame ->
+        Run.check_baseline (literal 1) "new";
+        incr reached;
+        Run.check_baseline (literal 2) "new";
+        incr reached;
+        Run.failures frame)
+  in
+  check_int "both checkpoints ran" ~expected:2 ~actual:!reached;
+  check "both mismatches are recorded on the frame"
+    (match failures with
+    | [
+     { Failure.kind = Failure.Baseline { state = Failure.Mismatch _; _ }; _ };
+     { Failure.kind = Failure.Baseline { state = Failure.Mismatch _; _ }; _ };
+    ] ->
+        true
+    | _ -> false);
+  check "a recorded checkpoint carries no subtest label"
+    (List.for_all (fun (f : Failure.t) -> f.Failure.subtest = []) failures);
+  let unresolvable =
+    Baseline.Literal
+      { pos = ("../outside.ml", 1, 0, 0); value = "old"; exact = true }
+  in
+  check "an unprovable path still raises"
+    (match in_test run (fun _ -> Run.check_baseline unresolvable "new") with
+    | () -> false
+    | exception
+        Failure.Check_failure
+          {
+            Failure.kind =
+              Failure.Baseline { state = Failure.Unresolvable _; _ };
+            _;
+          } ->
+        true)
+
 (* The ambient slot *)
 
 let () =

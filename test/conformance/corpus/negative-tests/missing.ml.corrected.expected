@@ -4,12 +4,7 @@ open! Corpus_shim
 
 let%expect_test _ =
   print_string "hello\n";
-  print_string "goodbye\n";
-  [%expect
-    {|
-    hello
-    goodbye
-    |}]
+  print_string "goodbye\n"
 ;;
 
 (* Example with an [%expect] node that has no payload *)
@@ -17,8 +12,7 @@ let%expect_test _ =
 let%expect_test _ =
   print_string "hello\n";
   print_string "goodbye\n";
-  [%expect
-    {|
+  [%expect {|
     hello
     goodbye
     |}];

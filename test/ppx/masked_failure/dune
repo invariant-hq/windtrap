@@ -1,14 +1,13 @@
-; Masked-assertion regression (Law 11): an expect body that fails an
-; assertion AND leaves a stale payload must exit nonzero. Windtrap.subtest
-; records the failure and carries on, so the body returns and the node
-; resolves to an ordinary correction; reading the protocol's "covered" bit
-; from the node state alone made the partition exit 0, dune staged the
-; correction as promotable, and dune promote would bless output the
-; assertion already rejected. runner_main.exe mirrors the inline_tests
-; backend's generated runner; ../drive/drive.exe spawns it with the
-; protocol argv under a scrubbed environment and records the transcript
-; and the exit code. The goldens pin the reported assertion failure and
-; exit 1.
+; Masked-assertion regression (guarantee 9): an expect body that fails an
+; assertion AND leaves a stale payload must exit nonzero and record no
+; correction. Windtrap.subtest records the failure and carries on, so the
+; body reaches the stale node; a run that treated the mismatch as a
+; promotable correction would exit 0, dune would stage it, and dune
+; promote would bless output the assertion already rejected.
+; runner_main.exe mirrors the inline_tests backend's generated runner;
+; ../drive/drive.exe spawns it with the protocol argv under a scrubbed
+; environment and records the transcript and the exit code. The goldens
+; pin the reported assertion failure, the withheld correction and exit 1.
 
 (executable
  (name runner_main)

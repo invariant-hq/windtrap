@@ -19,6 +19,12 @@ Exit codes are the contract CI scripts rely on:
 | 1 | at least one failure |
 | 2 | nothing ran — the filter-typo case; treat it as failure, not success |
 
+Under `--corrected` — a build action's run — a recorded correction is
+not a failure and an emptied selection is not an error: a `WINDTRAP_*`
+selection spans every stanza and inline partition of the tree, so one
+it leaves empty exits 0 with its `no tests ran` line, and dune's `diff?`
+is the verdict.
+
 Every path out of `run` is a returned code — `--help` and `--version`
 (0), a command line it cannot parse or resolve (2), `-l` (0), a startup
 refusal (1, or 2 for `--failed` with nothing recorded), and the run's
@@ -325,6 +331,9 @@ override: remove the `focus`, and accept baselines under CI through a
   is all you need to replay a red property locally.
 
 Inline (`ppx_windtrap`) suites are driven by dune's inline-test
-protocol instead: dune builds a runner per library, runs the affected
-partition, and applies `dune promote` corrections; the standalone exit
-codes above do not apply there — the promotion protocol does.
+protocol: dune builds a runner per library and runs each source file as
+a partition, and the runner calls `run` with `--corrected`. The exit
+codes above apply there too — a partition whose failures are all
+recorded corrections exits 0, dune's diff is the verdict, and
+`dune promote` accepts — and the `WINDTRAP_*` mirrors are the rest of
+its command line.

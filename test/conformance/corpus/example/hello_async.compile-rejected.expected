@@ -1,6 +1,6 @@
-File "hello_async_pp.ml", line 10, characters 25-47:
-10 |          } ~tags:[] ~run:Expect_test_config.run
-                              ^^^^^^^^^^^^^^^^^^^^^^
+File "hello_async_pp.ml", line 7, characters 8-30:
+7 |        (Expect_test_config.run : (unit -> unit) -> unit)
+            ^^^^^^^^^^^^^^^^^^^^^^
 Error: The value Expect_test_config.run has type
          (unit -> unit Expect_test_config.IO.t) -> unit
        but an expression was expected of type (unit -> unit) -> unit

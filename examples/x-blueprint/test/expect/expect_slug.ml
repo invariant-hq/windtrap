@@ -6,4 +6,4 @@ let%expect_test "slugify, at a glance" =
     hello-world
     ocaml-5-x
     a-b
-  |}]
+    |}]

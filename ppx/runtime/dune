@@ -2,8 +2,8 @@
 ; inline_tests backend's runner address it as
 ; Ppx_windtrap_runtime.Ppx_runtime — the wrapped library name is the
 ; spelling, so windtrap's internal module layout stays out of generated
-; code. It consumes the core through Windtrap.Private; the alias block
-; at the top of ppx_runtime.ml is the census of that diet.
+; code. A client of the public API only: it registers Windtrap.test
+; values and runs them through Windtrap.run.
 
 (library
  (name ppx_windtrap_runtime)
@@ -13,11 +13,11 @@
  ; parent's diagnostic repeated by a child's exit (the core exit guard's
  ; own defense). No new dependency weight: windtrap already links unix.
  (libraries windtrap unix)
- ; The core measures its own coverage, and Ppx_runtime moved out of it;
+ ; The core measures its own coverage, and this module sits beside it;
  ; keeping the backend keeps the measured set intact. No mutation
  ; stanza, deliberately: the runtime is part of the machinery that
- ; judges mutants, and a mutant armed inside the judging process hangs
- ; — ppx_runtime.ml's [@@@mutate exclude_file] states the same intent
- ; in-file. Inert without --instrument-with.
+ ; judges mutants, and a mutant armed inside the judging process
+ ; corrupts the verdict — ppx_runtime.ml's [@@@mutate exclude_file]
+ ; states the same intent in-file. Inert without --instrument-with.
  (instrumentation
   (backend ppx_windtrap.coverage)))

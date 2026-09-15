@@ -39,7 +39,9 @@ bytes or the missing final newline are the point, encode first (e.g.
 
 Nothing is silently created. A first run against a missing file, or a
 stale literal, fails with the proposed content or a diff and the
-acceptance command for the way the run was invoked:
+acceptance command for the way the run was invoked. A mismatch is
+recorded and the call returns, so the body continues: one run reports
+every stale expectation, and one acceptance takes them all.
 
 ```
 $ dune exec test/test_mytool.exe
@@ -238,12 +240,22 @@ let%expect_test "tokenize" =
     INT 1
     PLUS
     INT 2
-  |}]
+    |}]
 ```
 
-When output changes, the failure shows the runner's diff and dune
-offers a correction — accept with `dune promote` (or from your editor;
-`dune runtest -w` for the loop):
+The PPX is a desugaring into the library and nothing more.
+`let%expect_test "tokenize" = body` registers, as the module loads,
+`test "tokenize" (fun () -> Expect_test_config.run (fun () -> body))`
+under a group named after the file; each `[%expect {|…|}]` in the body
+becomes `expect (Expect_test_config.sanitize (output ())) (pos, {|…|})`
+with the node's own position as `pos`, `[%expect_exact]` becomes
+`expect_exact`, and `[%expect.output]` is that sanitized `output ()`.
+The runner dune generates calls `run` with `--corrected`. So an inline
+expectation is an `expect` literal like any other: compared with the
+same whitespace flexibility, corrected by the same mechanism, accepted
+the same way. When output changes, `dune runtest` shows the diff and
+`dune promote` accepts it (or from your editor; `dune runtest -w` for
+the loop):
 
 ```
 $ dune runtest
@@ -254,13 +266,17 @@ F
     lib/parser.ml:29
       29 │   [%expect {|
 
-    --- expected
-    +++ actual
+    expect: mismatch
     @@ -1,3 +1,4 @@
       INT 1
       PLUS
       INT 2
     + EOF
+    accept: dune promote
+──────────────────────────────────────────────────────
+
+1 failed in 0.001s.
+wrote lib/parser.ml.corrected (1 expectation)
 ...
 $ dune promote
 ```
@@ -268,27 +284,33 @@ $ dune promote
 Mechanics worth knowing:
 
 - `[%expect]` matches with the same whitespace flexibility as `expect`;
-  `[%expect_exact {|…|}]` matches byte-for-byte.
+  `[%expect_exact {|…|}]` matches byte-for-byte. A bare `[%expect]` is
+  an empty literal that the first correction fills in.
 - A test may hold several `[%expect]` nodes; each consumes the output
-  since the previous one. Every reached node records its result, so
-  one run corrects every stale payload; a node that is never reached
-  is a loud failure, not a silent pass.
+  since the previous one. A node is an ordinary call, checked when the
+  code around it runs: a node in a branch not taken is not checked, and
+  output printed after the last node is not checked either — end the
+  test with the node that pins what it printed. A mismatch is recorded
+  and the body continues, so one run reports every stale node and one
+  `dune promote` accepts them all.
 - `[%expect.output]` returns the captured output as a string for
   post-processing before your own assertion.
 - Assertion failures and uncaught exceptions inside an expect test are
-  ordinary failures, not corrections — `dune promote` can never bless an
-  `equal` mismatch or a raise. To pin an expected exception, catch and
-  print it: `(try boom () with e -> print_string (Printexc.to_string e));
+  ordinary failures, not corrections, and a test with one records no
+  correction — `dune promote` can never bless an `equal` mismatch or a
+  raise. They also end the body where a mismatch does not: nothing after
+  a failed `equal` runs, so its later nodes are neither checked nor
+  corrected. To pin an expected exception, catch and print it:
+  `(try boom () with e -> print_string (Printexc.to_string e));
   [%expect {| Failure("boom") |}]`.
 - `dune promote` is per-library: dune registers corrections only when
   every inline-test process of the library exits cleanly, so one
   raising test anywhere in the library withholds `dune promote` for
   *all* of the library's corrections — including other files'. The run
-  still tells you what was computed: each `windtrap: wrote
-  <file>.corrected` line names a correction, and the caveat under it
-  says it is not registered yet. Fix the failures, rerun, promote.
-- Shadowing `Expect_test_config` tunes a whole file; the useful knob
-  is `sanitize`, applied to every read of captured output:
+  still names what it computed (`wrote lib/parser.ml.corrected`). Fix
+  the failures, rerun, promote.
+- Shadowing `Expect_test_config` tunes a whole file: `sanitize` is
+  applied to every read of captured output, and `run` wraps every body.
 
 ```ocaml
 module Expect_test_config = struct
@@ -307,7 +329,16 @@ let%expect_test "durations are masked" =
 The same PPX also gives plain inline tests: `let%test "name" = …`
 takes a unit-returning body of ordinary assertions (unlike
 ppx_inline_test, where the body is a bool), `module%test Name = struct
-… end` groups, and `[@tags "slow"]` tags.
+… end` groups, and `[@tags "slow"]` tags. Outside dune, an inline suite
+is the PPX via ocamlfind plus a two-line main:
+
+```ocaml
+let () = Ppx_windtrap_runtime.Ppx_runtime.init Sys.argv
+let () = Ppx_windtrap_runtime.Ppx_runtime.exit ()
+```
+
+run as `./main.exe inline-test-runner mylib`; `-list-partitions` and
+`-partition <file>` are the rest of dune's protocol.
 
 ## Adopting a ppx_expect suite
 
@@ -322,9 +353,11 @@ loudly where windtrap does not implement the construct (see
 - Honored: `let%expect_test`, `[%expect]`, `[%expect_exact]`,
   `[%expect.output]`, `{%expect|…|}` string-extension syntax, quoted
   payloads, functor-duplicated tests, output from C stubs — with
-  corrections formatted exactly as ppx_expect formats them, and a
-  correction patching the stale payload alone, so no promote reformats
-  a file.
+  corrections formatted as ppx_expect formats them, and a correction
+  patching the stale payload alone, so no promote reformats a file.
+  Two things ppx_expect checks are not checked, by design: output
+  after a test's last node, and a node the body never reached; a node
+  is a call, and only calls are checked.
 - Rejected loudly at expansion, with a diagnostic naming the
   construct: `[@@expect.uncaught_exn]`, `[%expect.unreachable]`,
   `[%expect.if_reached]`, `[%expectation]`. A monadic
