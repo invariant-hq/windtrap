@@ -11,9 +11,9 @@
    every fixture.
 
    [catalogue] prints the mutant identifiers instead of running: the
-   driver needs them to spell WINDTRAP_MUTATE_ARM, and reading them from
-   the binary is the only spelling that cannot go stale when a line moves
-   in subject.ml. *)
+   driver needs them to spell --arm, and reading them from the binary is
+   the only spelling that cannot go stale when a line moves in
+   subject.ml. *)
 
 open Windtrap
 module Subject = Mutate_loop_subject.Subject

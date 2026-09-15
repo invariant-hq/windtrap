@@ -96,14 +96,16 @@ inventory. The ones that matter daily:
 | `--color MODE` | `WINDTRAP_COLOR` | color output |
 | `--junit PATH` | `WINDTRAP_JUNIT` | also write a JUnit XML report |
 | `-o`, `--output DIR` | `WINDTRAP_OUTPUT` | root directory for capture logs |
+| `--mutate[=PREFIX,…]` | `WINDTRAP_MUTATE` | run the mutation survey, every mutant or those under a prefix (`1` in the mirror is the bare flag; see [Mutation testing](mutation.md)) |
+| `--arm ID` | `WINDTRAP_MUTATE_ARM` | run once with mutant `ID` armed |
 
 Precedence is CLI > environment > default.
 A test's path is its group names then its own, joined with `" › "`;
 `-f`/`-e` match that string as a substring.
 
-A few variables have no flag at all — the project root, the coverage
-dump's path, and the coverage and mutation switches. `--help` lists
-them under `ENVIRONMENT`; one is worth knowing here.
+Two variables have no flag at all — the project root and the coverage
+dump's path. `--help` lists them under `ENVIRONMENT`; one is worth
+knowing here.
 
 `WINDTRAP_PROJECT_ROOT` overrides where the runner thinks the project
 starts: the directory baseline paths resolve under. Unset, the root is

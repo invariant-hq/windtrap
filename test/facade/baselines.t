@@ -5,7 +5,6 @@ record the correction the way a dune action would.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_COVERAGE=off \
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
   $ scrub() {

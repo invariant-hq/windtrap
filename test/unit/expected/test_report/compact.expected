@@ -61,4 +61,3 @@ flaky tests (1):
   passed on attempt 3  flaky › eventually
 
 4 passed, 1 skipped, 6 failed in 6.5s.
-coverage: 87.2% (312/358 points) · project: windtrap coverage

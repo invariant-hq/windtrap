@@ -78,4 +78,3 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
 [2m   18ms  geo › area non-negative[0m
 [2m  0.3ms  cli › cli help[0m
 [2m  0.2ms  users › sessions after login[0m
-coverage: [32m87.2%[0m (312/358 points) · project: windtrap coverage

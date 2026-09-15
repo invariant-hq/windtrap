@@ -14,19 +14,19 @@ library you want mutated, inert without the flag:
 ```
 
 The `(instrumentation …)` field repeats, so a library can carry both
-backends. Then: run your tests with `WINDTRAP_MUTATE=1`; for every
-mutant in the code those tests reach, windtrap re-runs them with the
-mutant armed; a mutant none of them notice is reported, naming the tests
-that ran it.
+backends. Then: run your tests with `--mutate`; for every mutant in the
+code those tests reach, windtrap re-runs them with the mutant armed; a
+mutant none of them notice is reported, naming the tests that ran it.
 
 Two rules keep it honest. **A mutant changes meaning only in a forked
 child, only when armed, and only in a build that asked for it** — with
-the backend on and `WINDTRAP_MUTATE` unset the program is the original
-program, and a process running with a mutant armed announces it before
-any other output. And **nothing is catalogued on disk**: the mutants are
-a data literal compiled into the binary, so a catalogue cannot go stale
-against the code it describes. Only verdicts touch disk, under
-`_build/_mutants`, one file per executable, overwritten on re-run.
+the backend on and neither `--mutate` nor `--arm` the program is the
+original program, and a process running with a mutant armed announces
+it before any other output. And **nothing is catalogued on disk**: the
+mutants are a data literal compiled into the binary, so a catalogue
+cannot go stale against the code it describes. Only verdicts touch
+disk, under the build directory's `_mutants`, one file per executable,
+overwritten on re-run.
 
 The transcripts below are from [`examples/x-blueprint`](../../examples/x-blueprint),
 run inside windtrap's own tree — which is why its paths carry that
@@ -47,8 +47,7 @@ every command in this chapter (the example ships that file):
 Name the file you are working on and the suite that tests it:
 
 ```
-$ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib/slug.ml \
-    dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe
+$ dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe -- --mutate=examples/x-blueprint/lib/slug.ml
 slug: 8 passed in 0.0171s (seed s1:4fb09fe9d4bf9267).
 
 ─────────────────── survivors (4) ────────────────────
@@ -67,12 +66,17 @@ slug: 8 passed in 0.0171s (seed s1:4fb09fe9d4bf9267).
 ──────────────────────────────────────────────────────
 
 mutants: 4 survived of 16 reached by this suite · 12 killed
-reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe --
+reproduce: dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe -- --arm <id>
 ```
 
 The suite runs once as a dry run — proving it green, and recording per
 mutant exactly which tests evaluated it — then the process forks itself
-once per reached mutant and runs only those tests.
+once per reached mutant and runs only those tests. `--mutate` alone
+surveys every mutant the executable catalogues; `--mutate=PREFIX,…`
+keeps to the files whose recorded path starts with a prefix, which is
+how a real project is mutated — one file, or one directory, at a time.
+The loop forks once per mutant, so the prefixes narrow the *work*,
+which a filter over the report would not.
 
 A survivor is an ordinary failure block, because a survivor *is* a
 failure: a defect report about named tests. The header is the rewrite —
@@ -140,8 +144,7 @@ survivor's identifier and that one mutant is armed in this one process,
 which otherwise runs normally:
 
 ```
-$ WINDTRAP_MUTATE_ARM=examples/x-blueprint/lib/slug.ml:2:41:lt \
-    dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe
+$ dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_slug.exe -- --arm examples/x-blueprint/lib/slug.ml:2:41:lt
 mutant examples/x-blueprint/lib/slug.ml:2:41:lt armed: c <= 'Z' → c < 'Z'
 slug: 8 passed in 0.0161s (seed s1:bccabc5682ff4d3e).
 mutant survived: the armed site was evaluated 54544 time(s) and no test failed.
@@ -184,7 +187,9 @@ candidates listed: a silently ignored arming would report a green run
 as a survivor. One naming a file this executable catalogues *nothing*
 in is noted on standard error and the run proceeds — the project
 report's footer arms one identifier across every suite at once, where
-most binaries were built from other sources.
+most binaries were built from other sources. Asking for `--mutate` and
+`--arm` at once is a usage error, not a guess: the loop arms each
+mutant itself, so an armed parent would mutate its own dry run.
 
 ## The whole project
 
@@ -205,9 +210,12 @@ $ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
 $ dune exec windtrap -- mutants
 ```
 
+`WINDTRAP_MUTATE` is `--mutate`'s environment mirror, the spelling that
+reaches every stanza under `dune runtest`, where no command line does:
+`1` is the bare flag, `0` its absence, and anything else its prefixes.
 (Those commands, verbatim, are for your project. This chapter's
-capture, made inside windtrap's tree, added
-`WINDTRAP_MUTATE_ONLY=examples/x-blueprint` — windtrap's own library
+capture, made inside windtrap's tree, set
+`WINDTRAP_MUTATE=examples/x-blueprint` instead — windtrap's own library
 carries the backend here, and an unscoped run would survey the
 framework's mutants too.)
 
@@ -248,8 +256,9 @@ mutants: 18 reached · 18 killed · 4 executables
 ```
 
 The footer's placeholder is where your suite command goes — the first
-of the two commands above, with the identifier in front of it: the
-merge never ran the suite and does not know how you spell running it.
+of the two commands above, with `--arm`'s mirror in place of
+`WINDTRAP_MUTATE=1`: the merge never ran the suite and does not know
+how you spell running it.
 
 A mutant no suite in the project reaches is a second kind of finding
 with a second remedy — *write a test*, where a survivor says
@@ -280,21 +289,22 @@ executables, which stales every verdict — a verdict is invalidated by
 any later build of the executable that wrote it — and the merge then
 excludes each stale file with one warning line and says, once, what
 heals it: re-run every suite with its mutants, then merge again;
-delete `_build/_mutants` to drop leftovers of removed executables. And
-`WINDTRAP_MUTATE_ONLY` scopes the work without narrowing the suite, so
-a scoped run still writes its verdicts; selecting tests — `-f`, tags,
-`--shard`, `--failed`, an in-source `focus` — does narrow it, and such a
-run reports in full, leaves any existing verdict file where it was, and
-says so:
+delete the `_mutants` directory to drop leftovers of removed
+executables. And `--mutate`'s prefixes scope the work without narrowing
+the suite, so a scoped run still writes its verdicts; selecting tests —
+`-f`, tags, `--shard`, `--failed`, an in-source `focus` — does narrow
+it, and such a run reports in full, leaves any existing verdict file
+where it was, and says so:
 
 ```
 verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
 ```
 
 `windtrap mutants` runs no tests and drives no build — the verb says
-so; it reads `_build/_mutants`, or the `.mutants` files and
-directories named as arguments, and a missing path is a loud error,
-never a silent narrowing of the merge.
+so; it reads the build directory's `_mutants` (under `dune exec`, the
+directory dune names, a private `--build-dir` included), or the
+`.mutants` files and directories named as arguments, and a missing
+path is a loud error, never a silent narrowing of the merge.
 
 ## What is mutated
 
@@ -334,8 +344,8 @@ prove the suite deterministic — then one `fork` per reached mutant,
 running only *its own* reaching tests and stopping at the first failure.
 Dismissed and unreached mutants are not forked at all, and nothing is
 parallel in this release, so the bill scales with the population: one
-file at a time is the habit, and `WINDTRAP_MUTATE_ONLY` is how you spell
-it.
+file at a time is the habit, and `--mutate=lib/calc.ml` is how you
+spell it.
 
 Every forked child runs under a deadline derived from the dry run's own
 timings — never a knob — and a child that overruns is killed with its
@@ -349,52 +359,80 @@ in
 
 ## Knobs
 
-Three environment variables and no flag on any runner: the inline
-runner's argument parser accepts only dune's inline-test protocol, so a
-flag would exist for half the users. All three are read by the test
-executable — by the runner, never by the instrumented code, which reads
-no environment — and an unrecognized value is an error naming the
-variable.
+Two flags on the test executable, each with the environment mirror
+every run-changing flag has ([Running tests](running-tests.md)), for
+the runs no command line reaches — `dune runtest`, and an inline
+suite's generated runner. Both are read by the runner, never by the
+instrumented code, which reads no flag and no environment.
 
-| variable | values | default |
+| flag | mirror | effect |
 | --- | --- | --- |
-| `WINDTRAP_MUTATE` | `1` to run the survey, `0` for an ordinary run | unset (ordinary run) |
-| `WINDTRAP_MUTATE_ONLY` | source path prefixes, comma-separated | unset (every file) |
-| `WINDTRAP_MUTATE_ARM` | a mutant identifier | unset |
+| `--mutate[=PREFIX,…]` | `WINDTRAP_MUTATE` | run the survey: every mutant the executable catalogues, or only those whose recorded source path starts with one of the comma-separated prefixes |
+| `--arm ID` | `WINDTRAP_MUTATE_ARM` | run once with mutant `ID` armed |
 
-`WINDTRAP_MUTATE_ONLY=lib/calc.ml,lib/eval.ml` is how a real project is
-mutated: one file, or one directory, at a time. The loop applies it to
-the mutants it forks over — narrowing the *work*, which a filter over
-the report would not — and the verdicts it writes are for those mutants
-alone, so a scoped run's file is a true, smaller answer for its
-executable. Every instrumented file still registers, so an identifier
-in `WINDTRAP_MUTATE_ARM` arms whatever the executable holds, in scope or
-not. A prefix that leaves nothing to test is an error naming the scope,
-not the build; asking for the survey and an armed mutant at once is a
-refusal, not a guess — the loop arms each mutant itself, so an armed
-parent would mutate its own dry run.
+`WINDTRAP_MUTATE` reads both ways: `1` (and the other truthy
+spellings) is the bare flag, `0` its absence, and anything else the
+prefixes, so `WINDTRAP_MUTATE=1 dune runtest --force` surveys a tree
+and `WINDTRAP_MUTATE=lib/calc.ml` scopes it. The scope narrows the
+mutants the loop forks over, and the verdicts it writes are for those
+mutants alone, so a scoped run's file is a true, smaller answer for its
+executable. Every instrumented file still registers, so `--arm` arms
+whatever the executable holds, in scope or not. A prefix that leaves
+nothing to test is an error naming the flag, not the build; asking for
+both flags at once is a usage error.
 
 ## Without dune
 
-The backend is a findlib package with a `ppx` predicate, so any build
-can instrument with it. Instrument the library under test, not the
-test file; link the test against `windtrap`; run it with the variable;
-merge:
+Any build can instrument: the backend is a Ppxlib rewriter, so a
+driver linked against it once — `let () = Ppxlib.Driver.standalone ()`
+with `ppxlib` and `ppx_windtrap.mutate` — is a `-ppx` for the
+compiler, and the installed `windtrap` is two archives beside the
+compiler's own library (`$lib` below, where `META` is). Instrument the
+library under test, not the test file; link the test against
+`windtrap`; run it with the flag; merge with the installed binary.
+`test/facade/nodune.t` in windtrap's tree is this session, held by a
+test:
 
 ```
-$ ocamlfind ocamlopt -package ppx_windtrap.mutate -c calc.ml
-$ ocamlfind ocamlopt -package windtrap -linkpkg calc.cmx test.ml -o test
-$ WINDTRAP_MUTATE=1 ./test
+$ ocamlopt -ppx "./mutate_ppx.exe --as-ppx" -I "$lib/windtrap/runtime" -c calc.ml
+$ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
+    unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
+$ ./test_calc.exe --mutate=calc.ml
+calc: 4 passed in 0.0003s.
+
+─────────────────── survivors (2) ────────────────────
+
+  SURVIVED  calc.ml:2:16:ge   n > 0  →  n >= 0
+      2 │ let sign n = if n > 0 then 1 else 0
+
+    2 tests ran this line and none failed:
+      sign of a negative      test_calc.ml:9
+      sign of a positive      test_calc.ml:8
+
+  …
+
+──────────────────────────────────────────────────────
+
+mutants: 2 survived of 3 reached by this suite · 1 killed
+reproduce: ./test_calc.exe --arm <id>
+$ ./test_calc.exe --arm calc.ml:2:16:ge
+mutant calc.ml:2:16:ge armed: n > 0 → n >= 0
+calc: 4 passed in 0.0002s.
+mutant survived: the armed site was evaluated 2 time(s) and no test failed.
 $ windtrap mutants
+…
+mutants: 2 survived of 3 reached · 1 killed · 1 executable
+reproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>
 ```
 
-An executable that is not under a `_build` directory writes its
-verdicts under `_build/_mutants` in the working directory it runs in,
-and `windtrap mutants` finds that directory by walking up from
-wherever it runs. The per-executable report's footer spells the run
-as it was made — `reproduce: WINDTRAP_MUTATE_ARM=<id> ./test` — and
-the project report's placeholder stands for `make test`, or whatever
-runs the suite.
+An executable under no build directory writes its verdicts under the
+working directory's own `_windtrap/mutants` — a tree built without
+dune never grows a `_build` — and `windtrap mutants` finds that
+directory by walking up from wherever it runs, exactly as it finds a
+build directory's `_mutants`. The per-executable report's footer
+spells the run as it was made, and the project report's placeholder
+stands for `make test`, or whatever runs the suite, with `--arm`'s
+mirror in front of it.
 
 ## One command, if you want it
 

@@ -22,8 +22,7 @@
 let masks = [ Drive_harness.Full_log; Drive_harness.Backtrace ]
 
 let environment extra =
-  Drive_harness.environment
-    (("WINDTRAP_SLOW_THRESHOLD", "0") :: ("WINDTRAP_COVERAGE", "off") :: extra)
+  Drive_harness.environment (("WINDTRAP_SLOW_THRESHOLD", "0") :: extra)
 
 (* .corrected files in the rule's directory, which is where the run
    writes them: beside dune's copy of the source, under the build root

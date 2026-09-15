@@ -95,7 +95,7 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
 exception Runaway of { id : id; hits : int; budget : int }
 
 let warn fmt =
-  Printf.ksprintf (fun m -> Printf.eprintf "windtrap mutate: %s\n%!" m) fmt
+  Printf.ksprintf (fun m -> Printf.eprintf "windtrap: %s\n%!" m) fmt
 
 let validate ~file sites =
   Array.iteri
@@ -242,7 +242,6 @@ let pp_arm_error ppf = function
          [@mutate off] or exclude the file:%a"
         pp_id id (List.length candidates) pp_candidates candidates
 
-let arm_variable = "WINDTRAP_MUTATE_ARM"
 let is_digit = function '0' .. '9' -> true | _ -> false
 
 (* Strict decimal: [int_of_string_opt] would also accept ["0x10"],

@@ -2,7 +2,6 @@ What the report shows beyond a failure, and where a run keeps its logs.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_COVERAGE=off \
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
   $ scrub() {
@@ -49,7 +48,7 @@ temporary directory, keyed by suite, and never grow a _build.
   $ cp ./suite_main.exe "$dir/suite.exe"
   $ mkdir "$dir/tmp"
   $ env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >   WINDTRAP_COVERAGE=off TMPDIR="$dir/tmp" FACADE_FIXTURE=noisy \
+  >   TMPDIR="$dir/tmp" FACADE_FIXTURE=noisy \
   >   "$dir/suite.exe" > out 2>&1
   [1]
   $ scrub < out | sed "s#$dir#<tmp>#g"

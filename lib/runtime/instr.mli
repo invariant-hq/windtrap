@@ -21,7 +21,10 @@ type format = {
       (** The version-tagged header line, e.g. ["windtrap-coverage-v3"]. *)
   kind : string;
       (** The file's name in error messages: ["coverage"] or ["verdict"]. *)
-  dir : string;  (** The directory under [_build], e.g. ["_coverage"]. *)
+  dir : string;
+      (** The data directory's name, e.g. ["coverage"]: [_coverage] under a
+          build directory, [_windtrap/coverage] outside one ({!data_dir},
+          {!standalone_data_dir}). *)
   ext : string;  (** The file extension, without the dot. *)
   remedy : string;
       (** The fix an {!Unknown_format} message names, as a full clause. *)
@@ -47,39 +50,64 @@ val file_digest : string -> string option
 
 (** {1:paths Build paths}
 
-    One root rule, shared by output naming, identity recording and the reporting
-    commands' discovery: a path's project root is the parent of its {e topmost}
-    [_build] component, and paths below [_build] are compared with any
+    One build-directory rule, shared by output naming, identity recording and
+    the reporting commands' discovery, and the same lexical rule the windtrap
+    core applies to its own paths: a path's {e build directory} is the path cut
+    after its first component whose name starts with [_build] — dune's default
+    and a private [--build-dir] alike — and paths below it are compared with any
     [.sandbox/<digest>] prefix stripped, so sandboxed and direct runs agree.
     Every path is normalized lexically first ([.] and empty components dropped,
     [..] resolved against the component before it), so the spellings one
     executable is reached by — [test/a.exe], [./test/a.exe], [test/sub/../a.exe]
-    — are one identity and one data file. *)
+    — are one identity and one data file.
+
+    A format's files live in one of two places. An executable under a build
+    directory writes beside that directory's contexts, in {!data_dir}; an
+    executable outside any — a tree built without dune, which must never grow a
+    [_build] — writes under the directory it was started in, in
+    {!standalone_data_dir}. *)
 
 val absolute : string -> string
 (** [absolute path] resolves [path] against the current directory when it is
     relative. *)
 
+val build_dir : path:string -> string option
+(** [build_dir ~path] is the build directory [path] ({!absolute}'d first) lies
+    in — e.g. ["/w/_build"] for ["/w/_build/default/test/t.exe"] and
+    ["/w/_build_ci"] for ["/w/_build_ci/.sandbox/3f/default"] — and [None] when
+    no component of [path] starts with [_build]. *)
+
 val build_root : path:string -> string option
-(** [build_root ~path] is the parent of the topmost [_build] component of [path]
-    ({!absolute}'d first), and [None] when it has none. *)
+(** [build_root ~path] is the parent of {!build_dir}[ ~path], and [None] when
+    there is none. *)
 
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the identity recorded for the executable at [exe]:
-    its path below the topmost [_build] (sandbox prefix removed), or its
-    absolute path when it is not under one. Normalized, so two spellings of one
-    executable give one identity. *)
+    its path below its {!build_dir} (sandbox prefix removed), or its absolute
+    path when it is under none. Normalized, so two spellings of one executable
+    give one identity. *)
+
+val data_dir : format -> build_dir:string -> string
+(** [data_dir f ~build_dir] is [<build_dir>/_<f.dir>]: where every executable
+    under [build_dir] writes [f]'s files, and where the reporting commands find
+    them. *)
+
+val standalone_data_dir : format -> root:string -> string
+(** [standalone_data_dir f ~root] is [<root>/_windtrap/<f.dir>]: where an
+    executable under no build directory writes [f]'s files, [root] being the
+    directory it was started in. *)
 
 val output_file : format -> exe:string -> string
-(** [output_file f ~exe] is [<root>/_build/<f.dir>/windtrap-<hash>.<f.ext>],
-    where [<root>] is {!build_root} and [<hash>] the hex MD5 of {!exe_identity}.
-    When [exe] is not under a [_build], [<root>] is the current directory. One
-    file per executable, for a format whose writer replaces it on every run. *)
+(** [output_file f ~exe] is [<dir>/windtrap-<hash>.<f.ext>], where [<dir>] is
+    {!data_dir} of [exe]'s {!build_dir} — or {!standalone_data_dir} of the
+    current directory when [exe] is under none — and [<hash>] the hex MD5 of
+    {!exe_identity}. One file per executable, for a format whose writer replaces
+    it on every run. *)
 
 val output_dir : format -> exe:string -> string
-(** [output_dir f ~exe] is [<root>/_build/<f.dir>/windtrap-<hash>], the same
-    stem as {!output_file} without the extension: one directory per executable,
-    for a format whose every run keeps its own file (see {!write_new_file}). *)
+(** [output_dir f ~exe] is [<dir>/windtrap-<hash>], the same stem as
+    {!output_file} without the extension: one directory per executable, for a
+    format whose every run keeps its own file (see {!write_new_file}). *)
 
 (** {1:errors Errors} *)
 

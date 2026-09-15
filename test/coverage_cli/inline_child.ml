@@ -6,9 +6,9 @@
 (* Stands in for an instrumented test executable: registers a synthetic
    point table exactly as a PPX-generated per-module initializer would
    (the frozen interchange contract — [register ~file ~points ~counts]),
-   then runs a real windtrap suite, so the Law-12 seam, the inline
-   coverage line, and the report/full modes are exercised through the
-   real facade and exit path. Driven by environment variables:
+   then runs a real windtrap suite, so the at_exit dump and the exit
+   path are exercised through the real facade. Driven by environment
+   variables:
 
    CHILD_FILE      source file to register (default "lib/fake.ml")
    CHILD_TOTAL     block count; 0 skips registration (default 10)
@@ -18,8 +18,9 @@
    CHILD_FAIL      "1" adds a failing test
 
    The remaining argv is windtrap's (--color, -v, ...).
-   Callers must set WINDTRAP_COVERAGE_FILE: the registration installs the
-   at_exit dump, which must never land in the real _build/_coverage. *)
+   Callers under the build tree must set WINDTRAP_COVERAGE_FILE: the
+   registration installs the at_exit dump, which must never land in the
+   real build directory's _coverage. *)
 
 let env name default =
   match Sys.getenv_opt name with

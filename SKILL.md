@@ -241,9 +241,11 @@ wrote. Coverage accumulates as a side effect of any instrumented run,
 so `dune runtest --force --instrument-with ppx_windtrap.coverage` then
 `dune exec windtrap -- coverage --min 80` is the whole thing. A
 mutation *verdict* exists only if a suite was asked to test its
-mutants, so the run carries `WINDTRAP_MUTATE=1` in the environment, the
-backend flag, and `--force` (a mutation run is not a cached artifact),
-and `dune exec windtrap -- mutants` merges; it exits 1 when a mutant
+mutants, so the run carries `WINDTRAP_MUTATE=1` — `--mutate`'s
+environment mirror, the spelling that reaches every stanza under `dune
+runtest` — the backend flag, and `--force` (a mutation run is not a
+cached artifact), and `dune exec windtrap -- mutants` merges; it exits
+1 when a mutant
 survived every executable that reached it. Declare the backends once in
 `dune-workspace` — `(context (default (instrument_with
 ppx_windtrap.coverage ppx_windtrap.mutate)))` — and the flag disappears
@@ -307,7 +309,7 @@ only the judgment the chapters leave implicit.
 | `bracket`, `scoped`, `fixture`, temp paths, `setenv`/`chdir`, `cases`, tags, focus, `xfail` | `doc/manual/resources-and-structure.md` |
 | the flags, their `WINDTRAP_*` mirrors, selection, sharding, CI output | `doc/manual/running-tests.md` |
 | the coverage stanza, `windtrap coverage`, `[@coverage off]` | `doc/manual/coverage.md` |
-| the mutation stanza, survivor blocks, `WINDTRAP_MUTATE_ONLY`, arming one mutant, `windtrap mutants` | `doc/manual/mutation.md` |
+| the mutation stanza, survivor blocks, `--mutate`'s prefixes, `--arm`, `windtrap mutants` | `doc/manual/mutation.md` |
 | convergence loops, Eio, subprocess workers, scripted seams | `doc/cookbook.md` |
 
 Those paths are a windtrap checkout's. The package installs neither
@@ -433,9 +435,9 @@ with `dune promote`. Non-obvious mechanics:
 
 A test nobody has seen fail is unverified, and windtrap mechanizes the
 verification by breaking the code on purpose: run the tests with
-`WINDTRAP_MUTATE=1`, and for every mutant in the code those tests
-reach, windtrap re-runs them with the mutant armed. A mutant none of
-them notice is reported, naming the tests that ran it.
+`--mutate`, and for every mutant in the code those tests reach,
+windtrap re-runs them with the mutant armed. A mutant none of them
+notice is reported, naming the tests that ran it.
 
 The survey exists only where the precondition holds: the library under
 test carries §3's instrumentation stanza —
@@ -455,9 +457,8 @@ the file it exercises; the run mutates only what the selected tests
 reach, so it takes about as long as those tests:
 
 ```
-WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/foo.ml \
-  dune exec --instrument-with ppx_windtrap.mutate \
-  test/unit/test_foo.exe -- -f "<test name>"
+dune exec --instrument-with ppx_windtrap.mutate \
+  test/unit/test_foo.exe -- --mutate=lib/foo.ml -f "<test name>"
 ```
 
 Read the survivors it reached. Each `SURVIVED` block names the line,
@@ -467,9 +468,9 @@ things, and resolving it is the point; never the green:
 
 - **A weak assertion** — `is_true`, `is_some`, a shape check where an
   exact `equal` belongs, an expected value the mutant also satisfies.
-  Strengthen the assertion until the mutant dies. `WINDTRAP_MUTATE_ARM=<id>`
-  on the `reproduce:` footer runs the test with that one mutant armed,
-  to watch it live through the assertion before you change it.
+  Strengthen the assertion until the mutant dies. The `reproduce:`
+  footer's `--arm <id>` runs the test with that one mutant armed, to
+  watch it live through the assertion before you change it.
 - **An equivalent mutant** — the rewrite cannot change the program's
   observable behavior. Dismiss it in the source, with a reason —
   `((want > 16) [@mutate off "both arms yield 16 at the boundary"])` —
@@ -480,7 +481,7 @@ things, and resolving it is the point; never the green:
 A filtered run is a reading list: it exits 0 whatever it finds and
 writes no verdict file, so it never perturbs the project answer. Drop
 the `-f` to survey the whole module when reviewing one — still
-file-scoped by `WINDTRAP_MUTATE_ONLY`, so still seconds-fast — and the
+file-scoped by `--mutate`'s prefix, so still seconds-fast — and the
 summary reads `mutants: 1 survived of 5 reached by this suite · 4
 killed`. **When fixing a bug, write the failing test first** and see it
 fail; the survey is for every other test.
@@ -495,16 +496,17 @@ WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
 dune exec windtrap -- mutants
 ```
 
-The first runs every suite with its mutants, the second merges (the
-`@mutate` alias of §3 folds the two into one). The report is
+The first runs every suite with its mutants — `WINDTRAP_MUTATE` is
+`--mutate`'s mirror, the spelling that reaches every stanza — and the
+second merges (the `@mutate` alias of §3 folds the two into one). The
+report is
 the same survivor blocks with the executable beside each witness, plus
 `UNREACHED` blocks for mutants no suite's tests evaluate — those mean
 *write a test*: no assertion, however sharp, can catch what no test
 runs. It exits 1 on any survivor, which is the one mutation exit code a
 build gates on; unreached mutants alone are never red. Trust the merged
 report, not a per-suite one. The survey needs `Unix.fork` and declines
-by name on Windows, where `WINDTRAP_MUTATE_ARM=<id>` on one mutant is
-the fallback.
+by name on Windows, where `--arm <id>` on one mutant is the fallback.
 
 ## 7. The suite is a contract
 
@@ -568,7 +570,7 @@ merely recall having read the rule:
       promoted / `-u` diff read as a code change
 - [ ] Cram stanzas declare `(deps %{bin:…})`; exit codes asserted
 - [ ] Every new test seen failing — failing-first for bugfixes, the
-      filtered `WINDTRAP_MUTATE=1` survey otherwise — with every
+      filtered `--mutate` survey otherwise — with every
       survivor it reached resolved: assertion strengthened, or an
       equivalent mutant dismissed with a reason
 - [ ] Coverage read on touched code; the coverage gate and the

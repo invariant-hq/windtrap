@@ -11,8 +11,9 @@
 ; Coverage accumulates as a side effect of running: an instrumented
 ; suite writes its .coverage dump at exit whatever it was asked to do. A
 ; mutation VERDICT only exists if a suite was asked to test its mutants
-; — WINDTRAP_MUTATE=1 takes the process over and runs the fork loop — so
-; the mutation command carries the variable, and --force, because a
+; — --mutate takes the process over and runs the fork loop, and its
+; WINDTRAP_MUTATE mirror is what reaches every stanza under dune runtest
+; — so the mutation command carries the variable, and --force, because a
 ; mutation run is not a cached artifact.
 ;
 ; Why an alias and not a script: `.coverage` and `.mutants` files are
@@ -86,11 +87,10 @@
 ; every verdict, and the merge then refuses loudly.
 ;
 ; While working on one file, mutate that file alone — the loop forks
-; once per mutant, and WINDTRAP_MUTATE_ONLY narrows the population it
+; once per mutant, and --mutate's prefixes narrow the population it
 ; forks over rather than the report:
 ;
-;   WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
-;     dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe --
+;   dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe -- --mutate=lib/diff.ml
 
 (rule
  (alias mutate)

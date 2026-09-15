@@ -25,9 +25,8 @@
     applies the flag when true and is refused when it spells neither, and an
     optional-value flag's variable reads both ways — a boolean is the bare flag
     or its absence, anything else is the value, trimmed. {!Env} is consulted for
-    the reading, not for the inventory: what it still owns outright are the
-    variables read below this layer ([WINDTRAP_PROJECT_ROOT] and the coverage
-    and mutation scopes).
+    the reading, not for the inventory: what it still owns outright is the one
+    variable read below this layer, [WINDTRAP_PROJECT_ROOT].
 
     Seven flags have no mirror. [-l], [--failed] and [-x] want a command line: a
     variable cannot help a cached action, and a listing is not a test run. [-u]
@@ -92,6 +91,15 @@ type parsed = {
       (** [--color MODE]: [always], [never], or [auto]. *)
   log_dir : string option;
       (** [-o DIR], [--output DIR]: root directory for capture logs. *)
+  mutate : string list option;
+      (** [--mutate[=PREFIX,...]]: run the mutation loop — over every mutant
+          this executable catalogues ([Some []], the bare flag) or only those
+          whose recorded source path starts with one of the comma-separated
+          prefixes. *)
+  arm : string option;
+      (** [--arm ID]: run once with mutant [ID] armed. The identifier is kept
+          unparsed — {!Windtrap_runtime.Mutate.id_of_string} owns that grammar
+          and reports its own errors. *)
   help : bool;  (** [-h], [--help]: the caller prints {!help} and exits [0]. *)
   version : bool;
       (** [-V], [--version]: the caller prints its version and exits [0]. *)
@@ -119,7 +127,7 @@ type error =
           set to [filter]. *)
   | Incompatible_flags of string * string
       (** Both flags were given and they contradict each other: [-u] and
-          [--corrected]. *)
+          [--corrected], or [--mutate] and [--arm]. *)
 
 val error_message : error -> string
 (** [error_message error] is a one-line description of [error] for users, naming
@@ -143,48 +151,28 @@ val parse : string array -> (parsed, error) result
 
 (** {1:resolution Resolution} *)
 
-type mutation = {
-  mode : [ `Unset | `Loop ];
-      (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
-          truthy spellings), [`Unset] for an unset, empty or falsy variable —
-          the boolean vocabulary every other switch accepts
-          ({!Env.bool_of_string}). Any other value is an error. *)
-  arm : string option;
-      (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
-          {!Windtrap_runtime.Mutate.id_of_string} owns that grammar and reports
-          its own errors. [None] when the variable is unset or empty. *)
-}
-(** The type for the mutation switches. Environment variables with no flag yet:
-    [--mutate[=PREFIX,...]] and [--arm ID] are the flags they become, with these
-    variables as their mirrors, so the inline runner keeps reaching them. *)
-
-val mutation : unit -> (mutation, error) result
-(** [mutation ()] reads the two mutation variables. Resolved apart from
-    {!settings} because they are the mutation loop's, not the run's, but with
-    the same loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] when
-    its value is not one the variable accepts, never a silently defaulted mode.
-
-    Effects: reads the environment. *)
-
 val settings : parsed -> (Run.config, error) result
 (** [settings cli] is the configuration one invocation resolves to: [cli] with
     each field's [WINDTRAP_*] mirror filled into what the command line left
     open, then every field of {!Run.config} — [tags] and [exclude_tags] additive
     across both layers, every other field the first layer that decided it, else
-    {!Run.default_config}'s. [coverage] is [WINDTRAP_COVERAGE] (on unless the
-    variable says otherwise), [github] is {!Env.in_github_actions}[ ()], and
-    [invocation] is left [`Mirrors] for the facade to compute from [argv].
+    {!Run.default_config}'s. [mutation] is {!Run.Loop} of {!parsed.mutate}'s
+    prefixes or {!Run.Armed} of {!parsed.arm}'s identifier — both at once,
+    whichever layer each arrived by, is [Error (Incompatible_flags _)]: the loop
+    arms each mutant itself, so an armed parent would mutate its own dry run.
+    [github] is {!Env.in_github_actions}[ ()], and [invocation] is left
+    [`Mirrors] for the facade to compute from [argv].
 
     A mirror is read through its own flag's parser, so a value the flag would
     reject is [Error (Invalid_value _)] naming the variable, never silently
     ignored — a misread [WINDTRAP_SHARD] would rerun the whole suite in every
     bucket, and a misread count or limit would run with the default. A mirror
     whose flag the command line already decided is not even parsed, so a valid
-    [--timeout] shadows a malformed [WINDTRAP_TIMEOUT]. [WINDTRAP_COVERAGE] is
-    read the same way, and errors the same way; its message names
-    [windtrap coverage], where the retired [report] and [full] modes went.
-    {!parsed.help} and {!parsed.version} are ignored — acting on them is the
-    caller's job.
+    [--timeout] shadows a malformed [WINDTRAP_TIMEOUT]. [WINDTRAP_MUTATE] reads
+    as the optional-value rule says: [1] (and the other truthy spellings) is the
+    bare [--mutate], [0] its absence, and anything else its prefixes, so
+    [WINDTRAP_MUTATE=lib/calc.ml] scopes the loop to that file. {!parsed.help}
+    and {!parsed.version} are ignored — acting on them is the caller's job.
 
     Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
     when no layer provides one. *)
@@ -216,10 +204,10 @@ val help : prog:string -> string
 (**/**)
 
 (* The argument grammar, the two table-driven passes and the help heading
-   a row renders to, exposed for the grammar's own tests: the row kind no
-   flag uses yet ([Optional_value]) is pinned over a synthetic row, so the
-   flag that adopts it adds a row and nothing else. Not an interface —
-   every other caller goes through [parse], [settings] and [help]. *)
+   a row renders to, exposed for the grammar's own tests, which pin each
+   row kind over a synthetic row so that a flag adopting one adds a row
+   and nothing else. Not an interface — every other caller goes through
+   [parse], [settings] and [help]. *)
 
 type arg =
   | Flag of (parsed -> parsed)

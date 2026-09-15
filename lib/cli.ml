@@ -29,6 +29,8 @@ type parsed = {
   junit : string option;
   color : Env.color_mode option;
   log_dir : string option;
+  mutate : string list option;
+  arm : string option;
   help : bool;
   version : bool;
 }
@@ -54,6 +56,8 @@ let empty =
     junit = None;
     color = None;
     log_dir = None;
+    mutate = None;
+    arm = None;
     help = false;
     version = false;
   }
@@ -73,8 +77,7 @@ type error =
    takes one argument — the next one, or inline as [--flag=value]. An
    [Optional_value] flag takes an inline value or none: [--flag] alone is
    the bare form and never consumes the next argument, so a value attaches
-   only with [=]. No row uses the third kind yet; [--mutate[=PREFIX,...]]
-   will, and adds a row and nothing else. *)
+   only with [=] ([--mutate[=PREFIX,...]]). *)
 type arg =
   | Flag of (parsed -> parsed)
   | Value of {
@@ -405,6 +408,49 @@ let table =
         doc = "Root directory for capture logs";
         mirror = mirrored "WINDTRAP_OUTPUT" (fun p -> p.log_dir = None);
       };
+    (* The mutation switches. Bare, [--mutate] surveys every mutant this
+       executable catalogues; with a value, only those whose recorded
+       source path starts with one of the prefixes — the loop forks once
+       per mutant, so the scope narrows the work. Its mirror reads both
+       ways: WINDTRAP_MUTATE=1 is the bare flag, 0 its absence, and
+       anything else the prefixes. [--arm] runs the suite once with one
+       mutant armed, which is what a survivor block's reproduce line asks
+       for; its identifier is handed to the runtime unparsed. Both at once
+       is refused at resolution, whichever layer each arrived by. *)
+    Flag_entry
+      {
+        short = None;
+        long = "--mutate";
+        arg =
+          Optional_value
+            {
+              metavar = "PREFIX,...";
+              set =
+                (fun ~source:_ acc value ->
+                  let prefixes =
+                    match value with
+                    | None -> []
+                    | Some value -> Env.split_comma value
+                  in
+                  Ok { acc with mutate = Some prefixes });
+            };
+        doc = "Test this executable's mutants, all or those under PREFIX";
+        mirror = mirrored "WINDTRAP_MUTATE" (fun p -> p.mutate = None);
+      };
+    Flag_entry
+      {
+        short = None;
+        long = "--arm";
+        arg =
+          Value
+            {
+              metavar = "ID";
+              set =
+                (fun ~source:_ acc value -> Ok { acc with arm = Some value });
+            };
+        doc = "Run once with mutant ID armed";
+        mirror = mirrored "WINDTRAP_MUTATE_ARM" (fun p -> p.arm = None);
+      };
     Flag_entry
       {
         short = Some "-V";
@@ -423,14 +469,8 @@ let table =
       };
     (* The settings no flag can set, after the flags so [--help] lists
        them where the flag rows end. Each is read where its owner
-       consumes it: WINDTRAP_PROJECT_ROOT by [Path_ops],
-       WINDTRAP_COVERAGE_FILE by the coverage runtime at exit,
-       WINDTRAP_COVERAGE by [coverage_enabled], WINDTRAP_COVERAGE_ONLY by
-       [Report]'s coverage seam, and the mutation switches by [mutation]
-       and [Mutate_loop] — until they become [--mutate] and [--arm], with
-       these variables as their mirrors. The arm row spells the runtime's
-       own constant, so this roster, the reader and the report's [arm]
-       line cannot name three different variables. *)
+       consumes it: WINDTRAP_PROJECT_ROOT by [Path_ops], and
+       WINDTRAP_COVERAGE_FILE by the coverage runtime at exit. *)
     Env_setting
       {
         var = "WINDTRAP_PROJECT_ROOT";
@@ -440,28 +480,6 @@ let table =
       {
         var = "WINDTRAP_COVERAGE_FILE";
         doc = "Where an instrumented run writes its coverage dump";
-      };
-    Env_setting
-      { var = "WINDTRAP_COVERAGE"; doc = "Inline coverage line: on or off" };
-    Env_setting
-      {
-        var = "WINDTRAP_COVERAGE_ONLY";
-        doc = "Source prefixes the coverage number covers";
-      };
-    Env_setting
-      {
-        var = "WINDTRAP_MUTATE";
-        doc = "Mutation testing: 1 to run it, 0 not to";
-      };
-    Env_setting
-      {
-        var = Windtrap_runtime.Mutate.arm_variable;
-        doc = "Arm one mutant, by identifier";
-      };
-    Env_setting
-      {
-        var = "WINDTRAP_MUTATE_ONLY";
-        doc = "Source prefixes whose mutants a run considers";
       };
     (* Not windtrap's, and last for that reason: the de-facto standard
        every command-line tool honours. Rostered so --color's reader can
@@ -688,7 +706,7 @@ let layers cli = layer_entries entries cli
    Nothing is range-checked here: every value arrived through its flag's
    own parser, the command line's or the mirror's, and each named its own
    source when it refused. *)
-let resolved below ~coverage =
+let resolved below ~mutation =
   let defaults = Run.default_config () in
   {
     Run.seed = Option.value below.seed ~default:defaults.Run.seed;
@@ -729,59 +747,21 @@ let resolved below ~coverage =
       Option.value below.slow_threshold ~default:defaults.Run.slow_threshold;
     verbose = below.verbose = Some true;
     junit = below.junit;
-    coverage;
+    mutation;
     github = Env.in_github_actions ();
     (* Computed from argv by the facade, which alone holds it. *)
     invocation = `Mirrors;
   }
 
-(* WINDTRAP_COVERAGE: whether a run prints its inline coverage line.
-   Environment only, and a boolean — the truthy and falsy spellings are
-   [Env]'s shared ones, so it accepts what every other boolean variable
-   accepts — with the same loudness as every mirror: an unrecognized
-   value is an error naming the variable, never a silently defaulted
-   mode. The retired mode words land there too, and the message says
-   where their output went — the per-file table and the excerpts are the
-   reporting command's, over the merge of every executable's dumps
-   rather than this one's view. *)
-let coverage_enabled () =
-  match Env.get_string "WINDTRAP_COVERAGE" with
-  | None -> Ok true
-  | Some value -> (
-      match Env.bool_of_string value with
-      | Some enabled -> Ok enabled
-      | None ->
-          invalid ~source:"WINDTRAP_COVERAGE" ~value
-            ~expected:
-              "on or off; the per-file report is `windtrap coverage', its \
-               uncovered excerpts `windtrap coverage -u'")
-
-(* The mutation switches
-
-   Environment only for now: [--mutate[=PREFIX,...]] and [--arm ID] are the
-   flags they become, with these variables as their mirrors. They resolve
-   apart from [settings] because they are the loop's, not the run's, but
-   with the same loudness: an unrecognized value is an error naming the
-   variable, never a silently defaulted mode. WINDTRAP_MUTATE is a
-   boolean in [Env]'s shared vocabulary; a falsy one asks for nothing,
-   which is what an unset variable asks for. The variable a mutant
-   identifier travels in is the runtime's own constant, so the roster
-   above, this reader and the report's reproduce line cannot name two
-   different variables. *)
-
-type mutation = { mode : [ `Unset | `Loop ]; arm : string option }
-
-let mutation () =
-  let* mode =
-    match Env.get_string "WINDTRAP_MUTATE" with
-    | None -> Ok `Unset
-    | Some value -> (
-        match Env.bool_of_string value with
-        | Some true -> Ok `Loop
-        | Some false -> Ok `Unset
-        | None -> invalid ~source:"WINDTRAP_MUTATE" ~value ~expected:"1 or 0")
-  in
-  Ok { mode; arm = Env.get_string Windtrap_runtime.Mutate.arm_variable }
+(* The mutation switches, after both layers: the loop arms each mutant
+   itself, so an armed parent would mutate its own dry run — asking for
+   both is refused, whether each came from its flag or its mirror. *)
+let mutation_of below =
+  match (below.mutate, below.arm) with
+  | None, None -> Ok Run.No_mutation
+  | Some prefixes, None -> Ok (Run.Loop prefixes)
+  | None, Some id -> Ok (Run.Armed id)
+  | Some _, Some _ -> Error (Incompatible_flags ("--mutate", "--arm"))
 
 (* WINDTRAP_COLOR for a command with no [--color] flag: the same parser
    as the flag and its mirror, so the variable means one thing everywhere
@@ -795,8 +775,8 @@ let color_mode () =
    once and the one record is a projection of it. *)
 let settings cli =
   let* below = layers cli in
-  let* coverage = coverage_enabled () in
-  Ok (resolved below ~coverage)
+  let* mutation = mutation_of below in
+  Ok (resolved below ~mutation)
 
 (* Help *)
 

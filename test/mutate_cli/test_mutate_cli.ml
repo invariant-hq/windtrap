@@ -160,7 +160,7 @@ let mutate ?cwd ?color args = capture ?cwd ?color ("mutants" :: args)
 (* The one remedy every exclusion names: build-neutral, since the command
    does not know how the suite is run. *)
 let rerun =
-  "re-run every suite with its mutants (WINDTRAP_MUTATE=1, instrumented with \
+  "re-run every suite with its mutants (--mutate, instrumented with \
    ppx_windtrap.mutate, forcing the runs your build tool cached), then merge \
    again"
 
@@ -346,10 +346,8 @@ let two_executables =
        disagree about ONE library merge to the truth — is about calc.ml's
        mutants, not about the core's thousand. *)
     capture ~cwd:root
-      ~env:
-        [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_cli/calc.ml" ]
       ~exe:(Filename.concat root (Filename.concat "_build/default/test" name))
-      []
+      [ "--mutate=test/mutate_cli/calc.ml" ]
   in
   (* Each executable is right about what it ran and wrong about the
      project. *)
@@ -761,7 +759,7 @@ let staleness =
      outdated verdict, and deleting the directory drops an orphan no run
      can replace. *)
   check_contains "the remedy names deletion for leftovers"
-    ~needle:"delete _build/_mutants" err;
+    ~needle:"delete the files named above" err;
   check_contains "and the re-run" ~needle:rerun err;
   (* Stale beside fresh: the report still renders, the outdated kill is
      excluded, and the same sentence names the re-run that rewrites a
@@ -898,8 +896,8 @@ let loud_failures =
   check_contains "no files: the hint names the backend, not a build tool"
     ~needle:"ppx_windtrap.mutate" err;
   check_absent "and spells no dune command" ~needle:"dune " err;
-  check_contains "no files: the hint names the variable a verdict needs"
-    ~needle:"WINDTRAP_MUTATE=1" err;
+  check_contains "no files: the hint names the flag a verdict needs"
+    ~needle:"--mutate" err;
   (* An existing but empty _build/_mutants is "no files", loudly. *)
   let bare = scratch "bare" in
   mkdir_p (Filename.concat bare "_build/_mutants");

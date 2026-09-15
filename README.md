@@ -141,16 +141,17 @@ CI.
 
 **[Mutation testing](doc/manual/mutation.md)** — the second inert
 stanza, `(instrumentation (backend ppx_windtrap.mutate))`, makes the
-test executable its own mutation runner: `WINDTRAP_MUTATE=1` turns the
-run you already make into a mutation run, which re-runs the tests once
-per mutant they reach and prints every survivor as a failure block
-naming the line, the rewrite, and *the tests that ran that line and did
-not fail when it changed*. Scope it to the file you are working on with
-`WINDTRAP_MUTATE_ONLY=lib/foo.ml`, filter to the test you just wrote
-with `-f`, and dismiss an equivalent mutant in the source with
-`[@mutate off "reason"]`. The project answer is two commands,
-`WINDTRAP_MUTATE=1 dune runtest --force --instrument-with
-ppx_windtrap.mutate` to run every suite mutated, then `dune exec
+test executable its own mutation runner: `--mutate` turns the run you
+already make into a mutation run, which re-runs the tests once per
+mutant they reach and prints every survivor as a failure block naming
+the line, the rewrite, and *the tests that ran that line and did not
+fail when it changed*. Scope it to the file you are working on with
+`--mutate=lib/foo.ml`, filter to the test you just wrote with `-f`,
+reproduce a survivor with `--arm <id>`, and dismiss an equivalent
+mutant in the source with `[@mutate off "reason"]`. The project answer
+is two commands, `WINDTRAP_MUTATE=1 dune runtest --force
+--instrument-with ppx_windtrap.mutate` (the flag's mirror, which
+reaches every stanza) to run every suite mutated, then `dune exec
 windtrap -- mutants` to merge their verdicts under killed-anywhere-wins
 — a mutant one suite kills and another merely reaches is killed — and
 exit 1 on any survivor.

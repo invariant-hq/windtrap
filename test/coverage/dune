@@ -3,10 +3,7 @@
 ; test/coverage_ppx/semantics/test_linkonly); the suite itself dogfoods
 ; windtrap. dump_child is a separate instrumented-like executable
 ; exercising the at_exit dump end to end, redirected to a scratch file
-; via WINDTRAP_COVERAGE_FILE. WINDTRAP_COVERAGE=off keeps the runner's
-; inline coverage line out of runtest: the suite's synthetic in-process
-; registrations would render a meaningless percentage on every green
-; run.
+; via WINDTRAP_COVERAGE_FILE.
 ;
 ; WINDTRAP_COVERAGE_FILE points this executable's OWN at_exit dump at a
 ; name inside the action's directory, so it never lands in the project's
@@ -27,9 +24,6 @@
  (deps dump_child.exe)
  (action
   (setenv
-   WINDTRAP_COVERAGE
-   off
-   (setenv
-    WINDTRAP_COVERAGE_FILE
-    test_coverage.coverage
-    (run %{test})))))
+   WINDTRAP_COVERAGE_FILE
+   test_coverage.coverage
+   (run %{test}))))

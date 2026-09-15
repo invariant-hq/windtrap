@@ -43,6 +43,21 @@ type invocation = [ `Exe of string | `Mirrors ]
     acceptance as [dune promote] — the context of every run dune drives: the
     inline runner's, a [--corrected] run's, and the default. *)
 
+(** The type for what a mutation-instrumented build is asked to do with the run.
+    Resolved by the CLI layer from [--mutate] and [--arm], which it refuses
+    together; acted on by [Mutate_loop], which refuses {!Loop} and {!Armed} by
+    name in an executable that catalogues no mutant. *)
+type mutation =
+  | No_mutation  (** The ordinary run, mutants inert. *)
+  | Loop of string list
+      (** [--mutate[=PREFIX,…]]/[WINDTRAP_MUTATE]: run the mutation loop over
+          the mutants whose recorded source path starts with one of the prefixes
+          — every mutant when the list is empty, the bare flag. *)
+  | Armed of string
+      (** [--arm ID]/[WINDTRAP_MUTATE_ARM]: one ordinary run with mutant [ID]
+          armed, the identifier unparsed —
+          {!Windtrap_runtime.Mutate.id_of_string} owns that grammar. *)
+
 type config = {
   seed : Seed.seed;  (** The run's root seed. *)
   filter : string option;
@@ -91,9 +106,10 @@ type config = {
   junit : string option;
       (** [--junit]/[WINDTRAP_JUNIT]: where a JUnit report is also written, a
           file or a directory; [None] for no report. *)
-  coverage : bool;
-      (** [WINDTRAP_COVERAGE]: whether the report ends with the inline coverage
-          line. *)
+  mutation : mutation;
+      (** [--mutate]/[WINDTRAP_MUTATE] and [--arm]/[WINDTRAP_MUTATE_ARM]: what
+          the mutation loop makes of the run. Read by [Mutate_loop] alone;
+          {!for_subset} clears it. *)
   github : bool;
       (** Whether the report is written for GitHub Actions — the [::group::]
           envelope and the [::error::] annotations ({!Env.in_github_actions}).
@@ -106,15 +122,16 @@ type config = {
 (** The type for run configuration: everything one invocation resolves, as one
     record the CLI layer populates with the precedence CLI > environment >
     default ({!Cli.settings}). The executor reads the selection and execution
-    fields; [color], [slow_threshold], [verbose], [junit], [coverage], [github]
-    and [invocation] are read by [Report] alone and cannot change outcomes or
-    exit codes. Nothing re-reads flags or the environment mid-run. *)
+    fields; [color], [slow_threshold], [verbose], [junit], [github] and
+    [invocation] are read by [Report] alone and cannot change outcomes or exit
+    codes; [mutation] is the loop's. Nothing re-reads flags or the environment
+    mid-run. *)
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration with every field at its built-in
     default: no selection, every flag off, [Baseline.Check], [color = Env.Auto],
-    [slow_threshold = 1.], [coverage = true], [invocation = `Mirrors]. Effects:
-    [seed] is drawn fresh from {!Seed.random} and [log_dir] is
+    [slow_threshold = 1.], [mutation = No_mutation], [invocation = `Mirrors].
+    Effects: [seed] is drawn fresh from {!Seed.random} and [log_dir] is
     {!Path_ops.default_log_dir}[ ()]. *)
 
 val for_subset : config -> log_dir:string -> bail:bool -> config
@@ -127,7 +144,8 @@ val for_subset : config -> log_dir:string -> bail:bool -> config
     allowlist cannot express a tag and per-case seeds derive from
     [(root, path, index)]. Checking is made read-only ([baseline = Check]),
     capture is dropped ([stream]), an in-source focus is allowed, no JUnit
-    report is written, and [log_dir] and [bail] are the caller's.
+    report is written, the child is {!No_mutation} (its parent is the loop, and
+    it arms what it is handed), and [log_dir] and [bail] are the caller's.
 
     A new selection knob that this function does not clear gives such a child a
     selection its parent's tree already applied, which is how a deterministic

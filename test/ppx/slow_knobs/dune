@@ -26,8 +26,6 @@
    verbose
    --env
    WINDTRAP_SLOW_THRESHOLD=0.000000001
-   --env
-   WINDTRAP_COVERAGE=off
    --run
    run-compact
    %{dep:runner_main.exe}

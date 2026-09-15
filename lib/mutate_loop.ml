@@ -27,11 +27,11 @@ module V = Windtrap_runtime.Verdicts
 
 let spf = Printf.sprintf
 
-(* The scope: the source-path prefixes the core read from its
-   environment, applied here to the population the loop forks over.
-   Every instrumented file still registers and still counts reaches —
-   the runtime reads no environment — and what narrows is the work: a
-   mutant outside the prefixes is never forked and never recorded. *)
+(* The scope: [--mutate]'s source-path prefixes, applied here to the
+   population the loop forks over. Every instrumented file still registers
+   and still counts reaches — the runtime reads no environment and no
+   flag — and what narrows is the work: a mutant outside the prefixes is
+   never forked and never recorded. *)
 let in_scope ~scope (m : M.mutant) =
   match scope with
   | [] -> true
@@ -46,7 +46,7 @@ let note fmt =
   Printf.ksprintf
     (fun message ->
       Format.pp_print_flush Format.std_formatter ();
-      Format.eprintf "windtrap mutate: %s@." message)
+      Format.eprintf "windtrap: %s@." message)
     fmt
 
 let refuse fmt =
@@ -510,10 +510,7 @@ let render_data ~resolve_source ~loc_of ~scope ~filter t =
       survivors
   in
   {
-    (* The arming variable, spelled with the runtime's own function: the
-       report and the runtime cannot disagree about what to type. *)
-    Report_sections.arm_variable = M.arm_variable;
-    survivors;
+    Report_sections.survivors;
     unreached = [];
     killed =
       List.length
@@ -735,26 +732,31 @@ let print_report renderer ~scope ~filter ~verdicts tests =
        ~scope ~filter verdicts)
 
 (* The population, before the dry run: the catalogue is complete once
-   module initialization is over, and the scope is the core's. The three
-   ways it comes up empty are three different refusals, and the first
-   two must not be confused — a scope matching nothing leaves a build
-   that is instrumented and fine, and blaming the instrumentation would
-   send the reader to rebuild it. *)
+   module initialization is over, and the scope is [--mutate]'s. The
+   three ways it comes up empty are three different refusals. A prefix
+   that leaves nothing is one sentence whatever the catalogue holds —
+   the prefix is what the reader typed, and a file it matches nothing
+   of is uninstrumented, misspelled or without sites in a plain build
+   and an instrumented one alike — so it never blames a build that is
+   instrumented and fine, and reads the same under either; the
+   missing-backend diagnosis is the bare flag's, where there is no
+   prefix to name. *)
 let population ~scope =
-  match M.catalogue () with
-  | [] ->
+  match (M.catalogue (), scope) with
+  | [], [] ->
       Error
         "this executable links no instrumented module, so there is nothing to \
          mutate: instrument the library under test with ppx_windtrap.mutate \
          and re-run"
-  | catalogue -> (
+  | catalogue, _ -> (
       match List.filter (in_scope ~scope) catalogue with
       | [] ->
           Error
             (spf
-               "the mutation scope %s left no mutants in this executable's \
-                catalogue — the prefix matches no instrumented file, or the \
-                matched files have no mutation sites"
+               "--mutate=%s leaves no mutant in this executable's catalogue: \
+                no instrumented file matches the prefix (is the library under \
+                test instrumented with ppx_windtrap.mutate?), or the matched \
+                files have no mutation sites"
                (String.concat "," scope))
       | scoped -> (
           match
@@ -768,8 +770,8 @@ let population ~scope =
 
 (* The loop, end to end *)
 
-let loop renderer ~suite (config : Run.config) tests =
-  let population = population ~scope:(Env.mutate_only ()) in
+let loop renderer ~scope ~suite (config : Run.config) tests =
+  let population = population ~scope in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
   match Report.run ~on_event:(observe reach) ~suite (dry_run config) tests with
@@ -834,8 +836,8 @@ let loop renderer ~suite (config : Run.config) tests =
                 Reported 0))
 
 (* The ordinary run with one mutant armed. [spec] is the identifier as
-   the core read it, unparsed: the runtime's grammar decides what it
-   names, and the runtime reads no environment of its own. *)
+   [--arm] read it, unparsed: the runtime's grammar decides what it
+   names. *)
 
 let arm_mode renderer ~spec ~suite (config : Run.config) tests =
   match Result.bind (M.id_of_string spec) M.arm with
@@ -856,13 +858,13 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
          catalogued file, comes back [Unmatched] below, and still
          refuses.
 
-         What follows is the run this process would have made with the
-         variable unset, so an uninstrumented sibling is left with its
-         ordinary transcript and one line of stderr. *)
+         What follows is the run this process would have made without
+         the flag, so an uninstrumented sibling is left with its ordinary
+         transcript and one line of stderr. *)
       note "%s" (Format.asprintf "%a" M.pp_arm_error error);
       Ran (Report.run ~suite config tests)
   | Error error ->
-      Format.eprintf "%a@." M.pp_arm_error error;
+      note "%s" (Format.asprintf "%a" M.pp_arm_error error);
       Reported 1
   | Ok mutant ->
       (* An armed run never writes: no .corrected (Law 16d) and no
@@ -901,31 +903,20 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
 (* Entry *)
 
 let execute_and_report ~suite (config : Run.config) tests =
-  (* Every run goes through the knobs, instrumented or not: a variable
-     the user set and misspelled must be loud in every build, and an
-     identifier that names a site of a file this build does catalogue and
-     matches none of them comes back [Unmatched] with the file's
-     candidates, which is the whole diagnosis. *)
-  match Cli.mutation () with
-  | Error error ->
-      note "%s" (Cli.error_message error);
-      Reported 1
-  | Ok { Cli.mode; arm } -> (
-      let renderer () = Report.terminal config in
-      match (mode, arm) with
-      | `Unset, None -> Ran (Report.run ~suite config tests)
-      | `Unset, Some spec -> arm_mode (renderer ()) ~spec ~suite config tests
-      | `Loop, Some _ ->
-          refuse
-            "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
-             each mutant itself, so an armed parent would mutate its own dry \
-             run. Unset one"
-            M.arm_variable
-      | `Loop, None -> (
-          if Sys.win32 then
-            refuse
-              "mutation testing needs Unix.fork, which Windows does not have; \
-               the tests themselves still ran"
-          else
-            try loop (renderer ()) ~suite config tests
-            with Supervision message -> refuse "%s" message))
+  (* The flags are acted on in every build, instrumented or not: a loop
+     asked of an executable that catalogues nothing refuses by name
+     ([population]), and an identifier that names a site of a file this
+     build does catalogue and matches none of them comes back [Unmatched]
+     with the file's candidates, which is the whole diagnosis. *)
+  let renderer () = Report.terminal config in
+  match config.Run.mutation with
+  | Run.No_mutation -> Ran (Report.run ~suite config tests)
+  | Run.Armed spec -> arm_mode (renderer ()) ~spec ~suite config tests
+  | Run.Loop scope -> (
+      if Sys.win32 then
+        refuse
+          "mutation testing needs Unix.fork, which Windows does not have; the \
+           tests themselves still ran"
+      else
+        try loop (renderer ()) ~scope ~suite config tests
+        with Supervision message -> refuse "%s" message)

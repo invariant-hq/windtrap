@@ -7,7 +7,7 @@ let () =
   @@ run "half_b"
        [
          (* The one cross-half call: it links all of Half_a into this
-         executable, so this stanza's inline percentage drops — its
+         executable, so this stanza's own dump reads low — its
          denominator now includes Half_a's points while its tests visit
          only [greet]'s. The project number (windtrap coverage) is
          unaffected: test_a covers the rest. *)

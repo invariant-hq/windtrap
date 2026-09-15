@@ -12,11 +12,9 @@ let format =
   {
     Instr.magic = "windtrap-mutants-v3";
     kind = "verdict";
-    dir = "_mutants";
+    dir = "mutants";
     ext = "mutants";
-    remedy =
-      "delete the stale files under _build/_mutants, then re-run the mutation \
-       tests";
+    remedy = "delete the stale verdict files, then re-run the mutation tests";
     who = "Windtrap_runtime.Verdicts";
   }
 

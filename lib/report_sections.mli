@@ -233,17 +233,15 @@ type coverage = {
 (** The type for a whole coverage report. Every field is measured, not derived
     here. *)
 
-val coverage_line :
-  ?hint:string -> visited:int -> total:int -> unit -> span list
+val coverage_line : visited:int -> total:int -> unit -> span list
 (** [coverage_line ~visited ~total ()] is the summary line
     ([coverage: 87.2% (312/358 points)]), the percentage styled by the frozen
-    thresholds — green at 80% and above, yellow at 60%, red below — with
-    [ · <hint>] appended when [hint] is given. *)
+    thresholds — green at 80% and above, yellow at 60%, red below. *)
 
 val coverage_report : mode:[ `Report | `Full ] -> coverage -> section list
 (** [coverage_report ~mode c] is the coverage block for [c]:
 
-    - the summary line ({!coverage_line}, no hint);
+    - the summary line ({!coverage_line});
     - one line per file — percentage (styled as the summary line's),
       visited/total, file name, and the uncovered line ranges
       ([uncovered: 88-94, 121]), bounded at eight regions and then
@@ -318,10 +316,6 @@ type scope =
       (** The aggregate over this many executables' verdict files. *)
 
 type mutation = {
-  arm_variable : string;
-      (** The runtime's arming variable ([WINDTRAP_MUTATE_ARM]), spelled by the
-          producer with the runtime's own function; the reproduce footer
-          completes it with the [<id>] placeholder and the invocation. *)
   survivors : survivor list;
       (** Every mutant that survived, one block each, ordered by witness count
           descending, then by identifier. Never capped. *)
@@ -361,9 +355,9 @@ val mutation_report : invocation:Run.invocation -> mutation -> section list
       yellow;
     - the reproduce footer, when either section printed: the command that arms
       one mutant with the literal [<id>] where the reader pastes one, spelled
-      from [invocation] and [m.arm_variable]
-      ([reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with
-        ppx_windtrap.mutate test/test_calc.exe]) — under [`Mirrors] it is
-      [WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>], since no
-      command line re-runs the suite there. [m.filter] rides it as the replay
+      from [invocation] — [--arm] under [`Exe]
+      ([reproduce: dune exec --instrument-with ppx_windtrap.mutate
+        test/test_calc.exe -- --arm <id>]), and under [`Mirrors] the flag's
+      mirror, [WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>], since
+      no command line re-runs the suite there. [m.filter] rides it as the replay
       line's filter does. *)

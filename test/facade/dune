@@ -19,3 +19,30 @@
 (cram
  (applies_to :whole_subtree)
  (deps suite_main.exe))
+
+; Without dune. The instrumentation story holds by a test: nodune.t
+; builds an instrumented library and a plain test executable with the
+; toolchain's compiler alone — no dune and no ocamlfind in the session —
+; against the installed windtrap, runs it from a scratch directory that
+; is under no build directory, and reports with the installed binary.
+; (package windtrap) is what installs the library and the binary and
+; puts them where a findlib-less build finds them (OCAMLPATH, PATH); the
+; two driver executables are the one-time step a findlib user makes
+; once, a Ppxlib standalone linked against each backend.
+
+(cram
+ (applies_to nodune)
+ (deps
+  (package windtrap)
+  coverage_ppx.exe
+  mutate_ppx.exe))
+
+(executable
+ (name coverage_ppx)
+ (modules coverage_ppx)
+ (libraries ppxlib ppx_windtrap.coverage))
+
+(executable
+ (name mutate_ppx)
+ (modules mutate_ppx)
+ (libraries ppxlib ppx_windtrap.mutate))

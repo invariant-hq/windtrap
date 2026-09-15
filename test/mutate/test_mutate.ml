@@ -652,18 +652,15 @@ let arming_tests =
             raises_match ~msg:(string_of_int n) Exn.invalid_arg (fun () ->
                 M.arm ~budget:n (id ~file:"t/x.ml" ~line:1 ~col:0 ~rewrite:"or")))
           [ 0; -1 ]);
-    test "the arming variable is a name for the core; the runtime reads nothing"
-      (fun () ->
+    test "the runtime reads no environment: only arm arms" (fun () ->
         let g =
           M.register ~file:"t/env.ml"
             ~sites:[| site ~line:6 ~col:2 ~rewrite:"fadd" () |]
         in
-        equal ~msg:"the variable's name" string "WINDTRAP_MUTATE_ARM"
-          M.arm_variable;
-        (* Setting it arms nothing: the core parses the value and hands
-           the identifier to [arm], and nothing here looks at the
-           environment. *)
-        Unix.putenv M.arm_variable "t/env.ml:6:2:fadd";
+        (* The core's mirror set in the environment arms nothing here:
+           the core parses the value and hands the identifier to [arm],
+           and nothing in this library looks at the environment. *)
+        Unix.putenv "WINDTRAP_MUTATE_ARM" "t/env.ml:6:2:fadd";
         equal ~msg:"the variable alone arms nothing" (option mutant_t) None
           (M.armed ());
         fresh ();
@@ -683,7 +680,7 @@ let arming_tests =
         | Ok _ -> fail "a malformed identifier must be refused"
         | Error (M.Malformed _) -> ()
         | Error e -> failf "expected Malformed, got %a" M.pp_arm_error e);
-        Unix.putenv M.arm_variable "";
+        Unix.putenv "WINDTRAP_MUTATE_ARM" "";
         M.disarm ();
         ignore (drain ()));
   ]

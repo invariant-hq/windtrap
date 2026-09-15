@@ -8,11 +8,11 @@
     Instrumented code (produced by [ppx_windtrap.coverage]) calls {!register}
     once per source file at module load time and {!visit} at every point. The
     first registration installs an [at_exit] handler that writes the process's
-    data to a [.coverage] file under [_build/_coverage] (see
-    {{!ondisk}Coverage files}). The test runner reads the same in-process data
-    through {!snapshot} for its inline summary; the [windtrap coverage] command
-    {!load}s and {!merge}s the files of several executables and renders
-    {!file_reports}.
+    data to a [.coverage] file under the build directory's [_coverage] (see
+    {{!ondisk}Coverage files}). The [windtrap coverage] command — the one
+    coverage reporter — {!load}s and {!merge}s the files of several executables
+    and renders {!file_reports}; {!snapshot} reads the same in-process data for
+    tests and tools.
 
     This module computes report {e data} only — point counts, uncovered lines,
     percentages. Styling, layout, and printing belong to the renderers, ranges
@@ -140,7 +140,8 @@ val filter : (string -> bool) -> t -> t
 val snapshot : unit -> t
 (** [snapshot ()] is a collection copying the current in-process counts;
     {!empty} when nothing registered. Later {!visit}s do not affect the returned
-    value. The runner calls this at run end for the inline summary.
+    value. The at_exit dump serializes it; a test or a tool that wants the
+    process's own counts reads it.
 
     This is the whole process; {!filter} narrows it. *)
 
@@ -173,9 +174,15 @@ type identity = Instr.identity = { exe : string; digest : string }
     executable once at exit (a few milliseconds for a typical test binary), off
     the test path. *)
 
+val format : Instr.format
+(** [format] is the [.coverage] format's constants: its magic string, the name
+    of the directory its files live in ([coverage]) and their extension. For the
+    reporting command's discovery ({!Instr.data_dir}). *)
+
 val output_dir : exe:string -> string
 (** [output_dir ~exe] is the directory the executable at path [exe] dumps into:
-    [<root>/_build/_coverage/windtrap-<hash>], with [<root>] and [<hash>] by
+    [<build_dir>/_coverage/windtrap-<hash>] when [exe] is under a build
+    directory and [<cwd>/_windtrap/coverage/windtrap-<hash>] otherwise, by
     {!Instr.output_dir}'s rule. Every run writes a fresh
     [<digest>-<token>.coverage] there, named after the writer's content digest,
     so several runs of one executable — a command-line tool driven by a cram

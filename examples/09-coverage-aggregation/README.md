@@ -1,7 +1,7 @@
 # Coverage across several test stanzas
 
-Two test stanzas share one instrumented library. Each executable's inline
-line is a *view*: it counts the points of the code linked into that binary.
+Two test stanzas share one instrumented library. Each executable's dump
+is a *view*: it counts the points of the code linked into that binary.
 The linker drops modules a binary never references — `test_a` carries no
 trace of `Half_b` — and `test_b` links all of `Half_a` because it calls one
 function from it, so the two views have different denominators and their

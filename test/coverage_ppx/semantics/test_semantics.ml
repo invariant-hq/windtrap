@@ -22,9 +22,7 @@
    A windtrap suite ([run] executes tests sequentially in declaration
    order); the visited-count deltas observe the shared in-process
    registry, so the tests are order-dependent — run the suite whole, not
-   filtered. The dune action sets WINDTRAP_COVERAGE=off: the inline
-   coverage line would otherwise report the fixture's (deliberately
-   incomplete) instrumentation on every green run. *)
+   filtered. *)
 
 open Windtrap
 module F = Covsem_fixtures

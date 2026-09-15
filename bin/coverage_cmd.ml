@@ -5,8 +5,8 @@
    File discovery and the staleness pass live in Data_files, shared with
    `windtrap mutants`; the table and excerpt rendering live in the
    library's report sections (Report_sections, via Windtrap.Private) over
-   section data this command builds from what the runtime measured, so
-   the transcript's coverage line and this table share one layout.
+   section data this command builds from what the runtime measured. This
+   is the one coverage reporter: a run prints no number of its own.
   ---------------------------------------------------------------------------*)
 
 module Sections = Windtrap.Private.Report_sections
@@ -20,9 +20,10 @@ let usage =
 
 Merges the .coverage files written by instrumented test executables and
 reports expression coverage per source file. Without PATH arguments the files
-are found under _build/_coverage, walking up from the current directory
-to the enclosing project root; PATH arguments (.coverage files, or
-directories searched recursively) replace that default.
+are found under the build directory's _coverage (or _windtrap/coverage in a
+tree built without one), walking up from the current directory to the
+enclosing project root; PATH arguments (.coverage files, or directories
+searched recursively) replace that default.
 
 OPTIONS:
   --min PCT             Exit 1 when total coverage is below PCT
@@ -117,7 +118,7 @@ let parse_args args =
    sorted for deterministic merge order and error attribution; [roots]
    are the source roots for line mapping. *)
 
-let discover paths = Data_files.discover ~dir:"_coverage" ~ext:"coverage" paths
+let discover paths = Data_files.discover Windtrap_runtime.Coverage.format paths
 
 (* The staleness pass
 
@@ -140,12 +141,12 @@ let discover paths = Data_files.discover ~dir:"_coverage" ~ext:"coverage" paths
 let no_data =
   "no .coverage files found\n\
    Instrument the library under test with ppx_windtrap.coverage and run its \
-   tests first; every instrumented test executable writes its dump under \
-   _build/_coverage at exit.\n"
+   tests first; every instrumented test executable writes its dump at exit, \
+   under the build directory's _coverage or under _windtrap/coverage.\n"
 
 let remedy =
   "re-run the suite instrumented (forcing the runs your build tool cached), \
-   then merge again; delete _build/_coverage to drop leftovers of removed \
+   then merge again; delete the files named above to drop leftovers of removed \
    executables"
 
 (* Loads [files], excludes the ones the freshness pass flagged, and

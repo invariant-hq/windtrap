@@ -43,7 +43,7 @@ Eleven directories under `test/`:
   `inline/` and `strict_flags/` are real `(inline_tests)` libraries
   under dune's backend, the rest (`cross_partition/`, `undriven/`,
   `masked_failure/`, `bad_cwd/`, `tail_loc/`, `slow_knobs/`,
-  `inline_coverage/`, `release_failure/`) spawn a generated-runner
+  `release_failure/`) spawn a generated-runner
   main under a scrubbed environment through `drive/` and pin its
   transcript and exit code.
 
@@ -121,20 +121,14 @@ refuses; for a user it was a closure they did not ask for. See
 
 Self-hosting has one consequence worth internalizing: **the coverage
 registry is process-global, and windtrap's own suites can no longer
-assume they are the only thing in it.** Two seams exist for that, and a
-new test that reads coverage should use one:
-
-- `Windtrap_runtime.Coverage.filter` narrows a collection to chosen files;
-- `WINDTRAP_COVERAGE_ONLY` scopes a whole *run*'s number to source
-  prefixes, applied once at `Report.snapshot_coverage`. The `.coverage`
-  dump is deliberately not scoped — it is what `windtrap coverage`
-  merges.
-
-A suite that pins a transcript byte for byte must set
-`WINDTRAP_COVERAGE=off`. Unset is *not* neutral once the core is
-instrumented: the default appends an inline coverage line to every run.
-The meta harness does this in `clear_env`, and the ppx transcript
-drivers in their scrubbed child environments.
+assume they are the only thing in it.** A test that reads the
+in-process registry narrows what it reads with
+`Windtrap_runtime.Coverage.filter`; the `.coverage` dump is
+deliberately never scoped — it is what `windtrap coverage` merges. A
+run prints no coverage number of its own, so an instrumented core adds
+nothing to a pinned transcript; only the at_exit dump is extra, and
+the suites that must not write one under the real build directory
+point it elsewhere with `WINDTRAP_COVERAGE_FILE`.
 
 ## Mutation of windtrap by windtrap
 
@@ -143,8 +137,7 @@ without the flag. Mutate one file at a time, from the executable that
 owns that file's tests:
 
 ```
-WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/diff.ml \
-  dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe --
+dune exec --instrument-with ppx_windtrap.mutate test/unit/test_diff.exe -- --mutate=lib/diff.ml
 ```
 
 Measured on this tree (2026-08-21): `mutants: 17 survived of 158
@@ -162,7 +155,8 @@ WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.muta
 ```
 
 `@mutate` depends on `(alias_rec ../runtest)` and `(universe)`, so it
-runs every suite in the tree under the variable and then runs
+runs every suite in the tree under the variable — `--mutate`'s mirror,
+the spelling that reaches every stanza — and then runs
 `windtrap mutants`, whose merge is killed-anywhere-wins across every
 executable that armed the same site. Each piece of the command is
 load-bearing: the variable because the suites read it, the flag because
@@ -237,11 +231,12 @@ run of a thousand mutants takes as long as its thousand children do and
 it is you who stops it. Mutation needs `Unix.fork`, so it declines by
 name on Windows.
 
-### WINDTRAP_MUTATE_ONLY, and why it is not coverage's filter
+### `--mutate`'s prefixes, and why they are not coverage's filter
 
 The scope is applied by the **loop, to the population it forks over**.
 Every instrumented file still registers and still counts reaches — the
-runtime reads no environment — and what narrows is the work: the loop
+runtime reads no flag and no environment — and what narrows is the
+work: the loop
 forks once per mutant, so a scope that only narrowed the report would
 still cost the whole afternoon, and a scoped run's verdict file holds
 the scoped mutants alone, a true, smaller answer for its executable.
@@ -255,8 +250,8 @@ core, and every count they assert — five sites in
 written against their own fixtures; naming the scope
 (`test/mutate_loop/`, or `test/mutate_cli/calc.ml` for the merge's
 two-executable scenario) keeps the population they fork over exactly
-those. A scope matching nothing is refused by name (`the mutation scope
-… left no mutants in this executable's catalogue`), never with the
+those. A scope matching nothing is refused by name (`--mutate=… leaves
+no mutant in this executable's catalogue`), never with the
 missing-backend diagnosis, which would send the reader to rebuild a
 build that is fine. One scenario cannot be rescued by a scope: the
 zero-mutant control `test/mutate_loop/plain_main.exe` catalogues the
@@ -299,22 +294,22 @@ One smaller sharp edge, measured:
   now keeps that to itself — a selection (`-f`, `-e`, tags, `--shard`,
   `--failed`, an in-source focus) reports in full but writes
   no verdict file and prints `verdicts not saved: …`, so `@mutate` never
-  merges a partial answer. `WINDTRAP_MUTATE_ONLY` is not such a
-  selection and still writes. Confirm a narrowed survivor before
-  believing it, by arming it against the whole suite:
+  merges a partial answer. A `--mutate` prefix is not such a selection
+  and still writes. Confirm a narrowed survivor before believing it, by
+  arming it against the whole suite:
 
   ```
-  WINDTRAP_MUTATE_ARM=lib/path_ops.ml:183:5:lt dune exec \
-    --instrument-with ppx_windtrap.mutate test/unit/test_path_ops.exe --
+  dune exec --instrument-with ppx_windtrap.mutate test/unit/test_path_ops.exe \
+    -- --arm lib/path_ops.ml:183:5:lt
   ```
 
   Since the split there is no one executable that is "the whole suite",
   so widen in two steps: first the executable that owns the mutated
   file's tests, unnarrowed, then
   `WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
-  ppx_windtrap.mutate` — the aggregate report's footer with this tree's
-  suite command in the placeholder — which arms the mutant in every
-  suite at once.
+  ppx_windtrap.mutate` — the aggregate report's footer, `--arm`'s
+  mirror in front of this tree's suite command — which arms the mutant
+  in every suite at once.
 
   `mutant survived: …` means it really survives —
   `mutant not evaluated: …` means the run proved nothing and the arming

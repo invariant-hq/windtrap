@@ -9,35 +9,61 @@ let spf = Printf.sprintf
 
 (* Discovery *)
 
-let data_dir ~dir root = Filename.concat (Filename.concat root "_build") dir
+let is_dir path = Sys.file_exists path && Sys.is_directory path
 
 (* Ancestor-scan fallback: the nearest ancestor (the current directory
-   included) with a _build/<dir> directory — `dune exec windtrap` runs
-   from wherever the user is in the checkout. Candidates inside a sandbox
-   are never roots: planted garbage under _build/.sandbox must not
-   capture the scan. *)
+   included) holding an estate — `dune exec windtrap` runs from wherever
+   the user is in the checkout, and a tree built without dune keeps its
+   files under _windtrap. Both layouts are the runtime's own rule, and
+   both are searched, so a project can hold either. Candidates inside a
+   sandbox are never roots: planted garbage under _build/.sandbox must
+   not capture the scan. *)
 let under_sandbox dir =
   String.map (function '\\' -> '/' | c -> c) dir
   |> String.split_on_char '/' |> List.mem ".sandbox"
 
-let rec scan_ancestors ~dir current =
-  let candidate = data_dir ~dir current in
-  if
-    (not (under_sandbox current))
-    && Sys.file_exists candidate && Sys.is_directory candidate
-  then Some current
+let candidates format root =
+  [
+    Instr.data_dir format ~build_dir:(Filename.concat root "_build");
+    Instr.standalone_data_dir format ~root;
+  ]
+
+let rec scan_ancestors format current =
+  let present =
+    if under_sandbox current then []
+    else List.filter is_dir (candidates format current)
+  in
+  if present <> [] then Some (present, current)
   else
     let parent = Filename.dirname current in
-    if parent = current then None else scan_ancestors ~dir parent
+    if parent = current then None else scan_ancestors format parent
 
-(* The root rule, shared with the runtimes' output path: when the current
-   directory is inside a _build — a dune rule action, sandboxed or not —
-   the root is the parent of the topmost _build component,
-   unconditionally; only outside _build does the ancestor scan run. *)
-let project_root ~dir cwd =
-  match Instr.build_root ~path:cwd with
-  | Some root -> Some root
-  | None -> scan_ancestors ~dir cwd
+(* The build-directory rule, shared with the runtimes' output path and
+   the core's own root rule: the build directory dune names in
+   INSIDE_DUNE — the context it is building in, [<root>/_build/default]
+   or a private --build-dir's, exported to rule actions and to `dune
+   exec` alike — else the one the current directory is inside, a binary
+   run by hand from under a build directory. A value that is not such a
+   path — a harness's INSIDE_DUNE=1 — names no build directory. Unlike
+   the core's rule, this binary's own path is never consulted: an
+   installed windtrap lives under dune's install tree, itself a
+   _build, and says nothing about the project it is reporting on. *)
+let build_dir cwd =
+  let named =
+    match Sys.getenv_opt "INSIDE_DUNE" with
+    | Some context when context <> "" -> [ context ]
+    | Some _ | None -> []
+  in
+  List.find_map (fun path -> Instr.build_dir ~path) (named @ [ cwd ])
+
+(* Inside a build directory the estate is that directory's,
+   unconditionally, and the root is its parent; only outside any does
+   the ancestor scan run. *)
+let estate format cwd =
+  match build_dir cwd with
+  | Some build_dir ->
+      Some ([ Instr.data_dir format ~build_dir ], Filename.dirname build_dir)
+  | None -> scan_ancestors format cwd
 
 let is_data_file ~ext path = Filename.check_suffix path ("." ^ ext)
 
@@ -64,16 +90,18 @@ let expand_path ~ext path =
   else if is_data_file ~ext path then Ok [ path ]
   else Error (spf "%s: not a .%s file" path ext)
 
-let discover ~dir ~ext = function
+let discover (format : Instr.format) = function
   | [] ->
+      let ext = format.ext in
       Ok
-        (match project_root ~dir (Sys.getcwd ()) with
+        (match estate format (Sys.getcwd ()) with
         | None -> ([], [ "." ])
-        | Some root ->
+        | Some (dirs, root) ->
             ( List.sort_uniq String.compare
-                (files_under ~ext (data_dir ~dir root)),
+                (List.concat_map (files_under ~ext) dirs),
               [ root ] ))
   | paths ->
+      let ext = format.ext in
       List.fold_left
         (fun acc path ->
           Result.bind acc (fun files ->
@@ -108,14 +136,12 @@ let freshness ~path identity =
       let resolved =
         if not (Filename.is_relative exe) then Some exe
         else
-          (* A relative identity is a path below _build; the file's own
-             topmost-_build root locates that _build — the same root
-             whether the file was discovered or named on the command
-             line. *)
-          match Instr.build_root ~path with
-          | None -> None
-          | Some root ->
-              Some (Filename.concat (Filename.concat root "_build") exe)
+          (* A relative identity is a path below a build directory; the
+             file's own locates it — the same directory whether the file
+             was discovered or named on the command line. *)
+          Option.map
+            (fun build_dir -> Filename.concat build_dir exe)
+            (Instr.build_dir ~path)
       in
       match resolved with
       | None -> Fresh

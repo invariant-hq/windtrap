@@ -7,15 +7,15 @@
 
     This module owns {e how} the environment is read — the one raw lookup below,
     the value vocabularies mirrors share (booleans, comma-separated lists,
-    colour modes), platform and CI detection, and the few settings that have no
+    colour modes), platform and CI detection, and the one setting that has no
     command-line flag — and, in {!set}, the one way it is written. It is not the
     inventory of variables: every [WINDTRAP_*] mirror of a runner flag is
     declared beside that flag in {!Cli}'s table, read from there through
     {!get_string} and parsed by the flag's own parser, which is what stops a
     mirror from accepting or refusing differently from the flag it mirrors. One
     further lookup lives elsewhere by design: the coverage runtime reads its own
-    [WINDTRAP_COVERAGE_FILE] (windtrap links the coverage library, not the
-    reverse, so it cannot depend on this module).
+    [WINDTRAP_COVERAGE_FILE] (windtrap links the runtime, not the reverse, so it
+    cannot depend on this module).
 
     Readers are plain functions that re-read the environment on every call;
     nothing is cached. A variable set to the empty string counts as unset.
@@ -141,39 +141,8 @@ val resolve_color :
     any one sink, and every command must honour it. Any non-empty value counts,
     whatever it says; an empty one reads as unset, as everywhere here. *)
 
-(** {1:standalone Settings with no flag}
-
-    The variables read below the CLI layer or beside it. *)
+(** {1:standalone The setting with no flag} *)
 
 val project_root : unit -> string option
 (** [project_root ()] is [WINDTRAP_PROJECT_ROOT], overriding project-root
     discovery. *)
-
-val coverage_only : unit -> string list
-(** [coverage_only ()] is [WINDTRAP_COVERAGE_ONLY] split on commas: the source
-    path prefixes the run's coverage number is allowed to speak about, or [[]]
-    (unset) for all of them.
-
-    The in-process coverage registry holds every instrumented library linked
-    into the executable, so a run that depends on an instrumented library
-    reports {e its} points too and the percentage stops being a statement about
-    the code under test. Naming a prefix scopes the inline line and the report
-    modes back to it. The [.coverage] dump is deliberately {e not} scoped: the
-    file is the raw material [windtrap coverage] merges across executables, and
-    narrowing it would lose data no later step can recover. *)
-
-val mutate_only : unit -> string list
-(** [mutate_only ()] is [WINDTRAP_MUTATE_ONLY] split on commas: the source path
-    prefixes whose mutants a run considers, or [[]] (unset) for all of them.
-
-    This is not coverage's reporting filter with a different name. The loop
-    forks once per mutant it considers, so narrowing the scope narrows the
-    {e work}: an executable whose mutants all fall outside the prefixes has
-    nothing to test and behaves exactly as an uninstrumented one. Mutation runs
-    are expensive and a whole-project catalogue is rarely what a reader wants to
-    spend an afternoon on; naming a file or a directory is how they spend it on
-    the code they are actually working on. The scope applies to the population
-    the loop forks over, not to registration: every instrumented file linked
-    into the executable still registers its mutants, and arming one by
-    identifier ({!Windtrap_runtime.Mutate.arm_variable}) arms whatever the
-    executable holds, in or out of scope. *)

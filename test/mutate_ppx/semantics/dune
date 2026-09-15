@@ -25,10 +25,9 @@
 ;
 ; Nothing here sets an environment variable. The mutation runtime writes
 ; no file unless asked, installs no at_exit handler, and arms nothing
-; unless WINDTRAP_MUTATE_ARM is read explicitly - which no executable in
-; this directory does. That is itself part of what Law 16(a) claims, so
-; the absence of a setenv is deliberate: an inert runtime should need no
-; muzzling.
+; unless a run passes --arm - which no executable in this directory
+; does. That is itself part of what Law 16(a) claims, so the absence of
+; a setenv is deliberate: an inert runtime should need no muzzling.
 
 (copy_files
  (files ../../coverage_ppx/semantics/covsem_fixtures.ml))

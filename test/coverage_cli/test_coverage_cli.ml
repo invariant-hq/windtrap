@@ -3,17 +3,17 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for coverage's Law-12 seam and reporting surface: the inline
-   line through a real windtrap run (thresholds, hint, off,
-   Law-13 exit codes), WINDTRAP_COVERAGE as a switch with its loud
-   rejection of malformed and retired values, the
-   at_exit dump feeding the reporting command, and `windtrap coverage`
-   end to end (walk-up discovery, merge across two executables, the
-   orphan/stale matrix, --min matrix, --json
-   shape, --show-uncovered, loud failures). A windtrap suite ([run]
-   executes tests sequentially in declaration order); every subject
-   under test is a spawned child process, so hosting the assertions
-   under the windtrap runner nests nothing.
+(* Tests for coverage's reporting surface: a real windtrap run over an
+   instrumented-like executable, which prints no number of its own (the
+   dump is the report, and Law-13's exit codes hold), the at_exit dump
+   feeding the reporting command — under a build directory and, for a
+   tree built without one, under _windtrap — and `windtrap coverage` end
+   to end (walk-up discovery, merge across two executables, the
+   orphan/stale matrix, --min matrix, --json shape, --show-uncovered,
+   loud failures). A windtrap suite ([run] executes tests sequentially
+   in declaration order); every subject under test is a spawned child
+   process, so hosting the assertions under the windtrap runner nests
+   nothing.
 
    The one thing not reproducible here: the E2 freshness behavior of the
    blessed @cover rule itself ((alias_rec runtest) + (universe)) is dune
@@ -125,45 +125,21 @@ let capture ?(env = []) ?cwd exe args =
   let code = Sys.command command in
   (code, read_file out, read_file err)
 
-(* The inline line (seam end to end) *)
+(* The run prints no number; the dump is the report *)
 
 let dump_counter = ref 0
 
 (* Each child dumps into its own fresh directory, so a run never reads
-   or overwrites another's data. *)
-(* The value the caller bound to [name], if any: the child's own
-   CHILD_FILE overrides, read back so the scope below follows it. *)
-let bound_value env name =
-  let prefix = name ^ "=" in
-  List.find_map
-    (fun binding ->
-      if String.starts_with ~prefix binding then
-        Some
-          (String.sub binding (String.length prefix)
-             (String.length binding - String.length prefix))
-      else None)
-    env
-
-(* Every assertion about a child's inline line is an assertion about the
-   child's own synthetic registration. The child links the windtrap core,
+   or overwrites another's data. The child links the windtrap core,
    which under --instrument-with is itself instrumented and carries
-   thousands of points, so the run is scoped to the one file the child
-   registers. The DUMP is deliberately left whole — it is what `windtrap
-   coverage` merges — and the assertions that read it scope themselves
-   with [C.filter]. *)
+   thousands of points; the dump is deliberately left whole — it is what
+   `windtrap coverage` merges — and the assertions that read it scope
+   themselves with [C.filter]. *)
 let child ?(env = []) ?(args = []) () =
   incr dump_counter;
   let dump = scratch (Printf.sprintf "dump-%d/self.coverage" !dump_counter) in
-  let only =
-    Option.value (bound_value env "CHILD_FILE") ~default:"lib/fake.ml"
-  in
   let code, out, err =
-    capture
-      ~env:
-        (("WINDTRAP_COVERAGE_FILE=" ^ dump)
-        :: ("WINDTRAP_COVERAGE_ONLY=" ^ only)
-        :: env)
-      child_exe args
+    capture ~env:(("WINDTRAP_COVERAGE_FILE=" ^ dump) :: env) child_exe args
   in
   (code, out, err, dump)
 
@@ -173,62 +149,6 @@ let dump_of ?(only = "lib/fake.ml") path =
   match C.load path with
   | Error _ -> None
   | Ok (t, id) -> Some (C.filter (fun file -> file = only) t, id)
-
-let inline_line =
-  test "the inline line: thresholds, hint, off, exit codes" @@ fun () ->
-  (* Thresholds: green >= 80, yellow >= 60, red below (v1's, frozen). *)
-  let code, out, _, _ =
-    child ~env:[ "CHILD_VISITED=9" ] ~args:[ "--color"; "always" ] ()
-  in
-  check_int "green child exits 0" ~expected:0 ~actual:code;
-  check_contains "90% renders green" ~needle:"\027[32m90.0%\027[0m" out;
-  check_contains "the summary line points at the project aggregate"
-    ~needle:"(9/10 points) \u{00b7} project: windtrap coverage" out;
-  let _, out, _, _ =
-    child ~env:[ "CHILD_VISITED=7" ] ~args:[ "--color"; "always" ] ()
-  in
-  check_contains "70% renders yellow" ~needle:"\027[33m70.0%\027[0m" out;
-  let _, out, _, _ =
-    child ~env:[ "CHILD_VISITED=3" ] ~args:[ "--color"; "always" ] ()
-  in
-  check_contains "30% renders red" ~needle:"\027[31m30.0%\027[0m" out;
-  (* The exact line, unstyled (design 1a). *)
-  let _, out, _, _ =
-    child ~env:[ "CHILD_VISITED=9" ] ~args:[ "--color"; "never" ] ()
-  in
-  check_contains "the summary line matches the design shape"
-    ~needle:"coverage: 90.0% (9/10 points) \u{00b7} project: windtrap coverage"
-    out;
-  (* Off and uninstrumented runs render nothing. *)
-  let _, out, _, _ =
-    child
-      ~env:[ "CHILD_VISITED=9"; "WINDTRAP_COVERAGE=off" ]
-      ~args:[ "--color"; "never" ] ()
-  in
-  check_absent "WINDTRAP_COVERAGE=off renders nothing" ~needle:"coverage:" out;
-  let code, out, _, dump =
-    child ~env:[ "CHILD_TOTAL=0" ] ~args:[ "--color"; "never" ] ()
-  in
-  check_int "uninstrumented child exits 0" ~expected:0 ~actual:code;
-  check_absent "an uninstrumented run has no coverage line" ~needle:"coverage:"
-    out;
-  (* "Writes no dump of its own": the file may exist anyway, because
-     under `--instrument-with` the windtrap core this child links
-     registers and dumps. What must be true either way is that the child
-     contributed nothing to it. *)
-  check "an uninstrumented run contributes nothing to the dump"
-    (match dump_of dump with None -> true | Some (t, _) -> C.is_empty t);
-  (* Law 13: coverage never changes outcomes or exit codes. *)
-  let code, out, _, _ =
-    child
-      ~env:[ "CHILD_VISITED=9"; "CHILD_FAIL=1" ]
-      ~args:[ "--color"; "never" ] ()
-  in
-  check_int "a failing instrumented run still exits 1" ~expected:1 ~actual:code;
-  check_contains "the line still renders after failures"
-    ~needle:"coverage: 90.0% (9/10 points)" out
-
-(* WINDTRAP_COVERAGE, the switch *)
 
 (* Six lines of nine characters: block [i] is line [i + 1]'s text. Four
    of six blocks visited leaves lines 5-6 uncovered — the shape the
@@ -247,22 +167,21 @@ let child_src_env =
     "CHILD_LINE_LEN=10";
   ]
 
-let coverage_switch =
-  test "WINDTRAP_COVERAGE is a switch, and the dump is the report" @@ fun () ->
+let dump_is_the_report =
+  test "the run prints no number, and the dump is the report" @@ fun () ->
   let code, out, _, dump =
     child ~env:child_src_env ~args:[ "--color"; "never" ] ()
   in
   check_int "an instrumented child exits 0" ~expected:0 ~actual:code;
-  check_contains "the line reports what the run measured"
-    ~needle:"coverage: 66.7% (4/6 points)" out;
-  check_absent "the run draws no per-file table" ~needle:"uncovered:" out;
-  (* The at_exit dump of the same run is what carries the detail: it
-     agrees with the inline number, and names the executable that wrote
-     it, so `windtrap coverage` can merge and vet it. *)
+  check_absent "the run prints no coverage line" ~needle:"coverage:" out;
+  check_absent "and draws no per-file table" ~needle:"uncovered:" out;
+  (* The at_exit dump of the same run is what carries the measurement,
+     and names the executable that wrote it, so `windtrap coverage` can
+     merge and vet it. *)
   (match dump_of ~only:child_src_path dump with
   | Some (t, exe) ->
       let s = C.summary t in
-      check "the dump agrees with the inline summary"
+      check "the dump holds what the run measured"
         (s.C.visited = 4 && s.C.total = 6);
       check "the dump records the child executable's identity"
         (exe
@@ -271,27 +190,28 @@ let coverage_switch =
               C.exe = I.exe_identity ~exe:child_exe;
               digest = Digest.to_hex (Digest.file child_exe);
             })
-  | None -> check "the dump agrees with the inline summary" false);
-  (* Off, in Env's shared falsy spellings. *)
-  let code, out, _, _ =
-    child
-      ~env:("WINDTRAP_COVERAGE=no" :: child_src_env)
-      ~args:[ "--color"; "never" ] ()
+  | None -> check "the dump holds what the run measured" false);
+  (* Law 13: coverage never changes outcomes or exit codes. *)
+  let code, _, _, dump =
+    child ~env:("CHILD_FAIL=1" :: child_src_env) ~args:[ "--color"; "never" ] ()
   in
-  check_int "a silenced run still exits 0" ~expected:0 ~actual:code;
-  check_absent "a falsy WINDTRAP_COVERAGE renders nothing" ~needle:"coverage:"
-    out;
-  (* The retired mode words are loud, and name where their output went. *)
-  let code, _, err, _ = child ~env:[ "WINDTRAP_COVERAGE=full" ] () in
-  check_int "a retired mode word exits 2" ~expected:2 ~actual:code;
-  check_contains "the error names the variable" ~needle:"WINDTRAP_COVERAGE" err;
-  check_contains "and points at the reporting command"
-    ~needle:"windtrap coverage" err;
-  let code, _, err, _ = child ~env:[ "WINDTRAP_COVERAGE=sideways" ] () in
-  check_int "a malformed WINDTRAP_COVERAGE exits 2" ~expected:2 ~actual:code;
-  check_contains "a malformed value names its source"
-    ~needle:"WINDTRAP_COVERAGE" err;
-  (* The flag is gone: an unknown option, never a silently ignored one. *)
+  check_int "a failing instrumented run still exits 1" ~expected:1 ~actual:code;
+  check "and still dumps"
+    (match dump_of ~only:child_src_path dump with
+    | Some (t, _) -> (C.summary t).C.total = 6
+    | None -> false);
+  (* An uninstrumented child registers nothing: the file may exist
+     anyway, because under `--instrument-with` the windtrap core this
+     child links registers and dumps. What must be true either way is
+     that the child contributed nothing to it. *)
+  let code, _, _, dump =
+    child ~env:[ "CHILD_TOTAL=0" ] ~args:[ "--color"; "never" ] ()
+  in
+  check_int "an uninstrumented child exits 0" ~expected:0 ~actual:code;
+  check "an uninstrumented run contributes nothing to the dump"
+    (match dump_of dump with None -> true | Some (t, _) -> C.is_empty t);
+  (* The retired knobs are gone: an unknown option and an unlisted
+     variable, never silently ignored ones. *)
   let code, _, err, _ = child ~args:[ "--coverage"; "report" ] () in
   check_int "--coverage is no longer an option" ~expected:2 ~actual:code;
   check_contains "--coverage is reported as unknown"
@@ -299,8 +219,8 @@ let coverage_switch =
   let code, out, _, _ = child ~args:[ "--help" ] () in
   check_int "--help exits 0" ~expected:0 ~actual:code;
   check_absent "--help lists no coverage flag" ~needle:"--coverage" out;
-  check_contains "--help lists the variable instead"
-    ~needle:"WINDTRAP_COVERAGE " out
+  check_contains "--help lists the dump override"
+    ~needle:"WINDTRAP_COVERAGE_FILE" out
 
 (* A fake merged project for `windtrap coverage` *)
 
@@ -349,8 +269,19 @@ let proj =
     (C.to_string b);
   root
 
-let coverage_cmd ?cwd args =
-  capture ~env:[ "WINDTRAP_COLOR=never" ] ?cwd windtrap_exe ("coverage" :: args)
+(* INSIDE_DUNE is scrubbed unless the scenario sets it: `dune runtest`
+   exports its own context to this suite, and the command would
+   otherwise report the real build directory's estate in place of the
+   scratch project's. *)
+let coverage_cmd ?cwd ?inside_dune args =
+  let inside_dune =
+    match inside_dune with
+    | Some context -> [ "INSIDE_DUNE=" ^ context ]
+    | None -> [ "-u"; "INSIDE_DUNE" ]
+  in
+  capture
+    ~env:(inside_dune @ [ "WINDTRAP_COLOR=never" ])
+    ?cwd windtrap_exe ("coverage" :: args)
 
 (* The reporting command: merge, table, walk-up *)
 
@@ -390,6 +321,82 @@ let reporting_command =
     out;
   check_contains "--show-uncovered shows the uncovered source"
     ~needle:"let c = 3" out
+
+(* A tree built without dune: the executable is under no build
+   directory, so it dumps under the working directory's _windtrap, the
+   directory a Make tree may grow where it must never grow a _build,
+   and the reporting command finds it there. The child is copied out of
+   the build tree to get an executable path with no _build component. *)
+let standalone_layout =
+  test "outside any build directory: _windtrap/coverage, found by the merge"
+  @@ fun () ->
+  let proj = scratch "standalone" in
+  let exe = Filename.concat proj "bin/child.exe" in
+  write_file exe (read_file child_exe);
+  Unix.chmod exe 0o755;
+  write_file (Filename.concat proj child_src_path) child_source;
+  let code, out, _ =
+    capture ~cwd:proj ~env:child_src_env exe [ "--color"; "never" ]
+  in
+  check_int "the copied child exits 0" ~expected:0 ~actual:code;
+  check_absent "and prints no coverage line" ~needle:"coverage:" out;
+  let estate = Filename.concat proj "_windtrap/coverage" in
+  check "the dump directory is <cwd>/_windtrap/coverage"
+    (Sys.file_exists estate && Sys.is_directory estate);
+  check "and no _build was grown"
+    (not (Sys.file_exists (Filename.concat proj "_build")));
+  let code, out, err = coverage_cmd ~cwd:proj [] in
+  check_int "the reporting command finds it without arguments" ~expected:0
+    ~actual:code;
+  check "with no exclusion: the identity is the copy's absolute path" (err = "");
+  check_contains "and reports what the run measured"
+    ~needle:(Printf.sprintf "4/6  %s" child_src_path)
+    out;
+  (* Walk-up applies to this layout too. *)
+  let sub = Filename.concat proj "lib/deep" in
+  mkdir_p sub;
+  let code, out, _ = coverage_cmd ~cwd:sub [] in
+  check_int "walk-up finds _windtrap from a subdirectory" ~expected:0
+    ~actual:code;
+  check_contains "and merges the same data" ~needle:"4/6" out
+
+(* `dune exec windtrap -- coverage` under a private --build-dir: dune
+   exports the context it built in as INSIDE_DUNE, and the estate is
+   that build directory's — never the _build an ancestor scan would
+   find first. The same rule the core applies to its own root. *)
+let inside_dune_estate =
+  test "INSIDE_DUNE names the build directory whose estate is reported"
+  @@ fun () ->
+  let proj = scratch "private-build-dir" in
+  write_file
+    (Filename.concat proj "lib/foo.ml")
+    "let a = 1\nlet b = 2\nlet c = 3\n";
+  let shared =
+    collection "exe-shared" [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]
+  and private_dir =
+    collection "exe-private" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]
+  in
+  write_file
+    (Filename.concat proj "_build/_coverage/windtrap-s.coverage")
+    (C.to_string shared);
+  write_file
+    (Filename.concat proj "_build_ci/_coverage/windtrap-p.coverage")
+    (C.to_string private_dir);
+  let context = Filename.concat proj "_build_ci/default" in
+  let code, out, err = coverage_cmd ~cwd:proj ~inside_dune:context [] in
+  check_int "the command exits 0" ~expected:0 ~actual:code;
+  check "and excludes nothing" (err = "");
+  check_contains "the private build directory's estate, not the shared one's"
+    ~needle:"coverage: 33.3% (1/3 points)" out;
+  (* Without it, the ancestor scan finds the shared _build first. *)
+  let _, out, _ = coverage_cmd ~cwd:proj [] in
+  check_contains "unset, the scan reports the shared _build"
+    ~needle:"coverage: 100.0% (3/3 points)" out;
+  (* A boolean spelling — a harness's INSIDE_DUNE=1 — names no build
+     directory, and the scan runs as if it were unset. *)
+  let _, out, _ = coverage_cmd ~cwd:proj ~inside_dune:"1" [] in
+  check_contains "a value that names no build directory is ignored"
+    ~needle:"coverage: 100.0% (3/3 points)" out
 
 (* --min matrix *)
 
@@ -1006,8 +1013,8 @@ let staleness_pass =
 (* The one genuinely instrumented path in this test: raise_child drives
    the covcli_fixture library - instrumented by the real PPX - through a
    real windtrap run. Its raising call's out-edge can never fire, so the
-   inline line, the dump, and the CLI report must all show 2/3 points
-   with the call line uncovered: a raising path lowers the percentage. *)
+   dump and the CLI report must both show 2/3 points with the call line
+   uncovered: a raising path lowers the percentage. *)
 let raise_child_exe = Filename.concat exe_dir "raise_child.exe"
 
 let raise_attribution =
@@ -1017,15 +1024,11 @@ let raise_attribution =
   let fixture = "test/coverage_cli/covcli_fixture.ml" in
   let code, out, _ =
     capture
-      ~env:
-        [
-          "WINDTRAP_COVERAGE_FILE=" ^ dump; "WINDTRAP_COVERAGE_ONLY=" ^ fixture;
-        ]
+      ~env:[ "WINDTRAP_COVERAGE_FILE=" ^ dump ]
       raise_child_exe [ "--color"; "never" ]
   in
   check_int "the raise child exits 0" ~expected:0 ~actual:code;
-  check_contains "the inline line counts the unreached out-edge: 2/3, not 100%"
-    ~needle:"coverage: 66.7% (2/3 points)" out;
+  check_absent "the run prints no number of its own" ~needle:"coverage:" out;
   match dump_of ~only:fixture dump with
   | None -> check "the raise child's dump loads" false
   | Some (t, _) -> (
@@ -1073,8 +1076,8 @@ let raise_attribution =
 
 let junit_rails =
   test "Law 12/13 rails: JUnit and uninstrumented modes" @@ fun () ->
-  (* JUnit ignores coverage: the XML carries no coverage data even when
-     the instrumented run prints the inline line beside it. *)
+  (* JUnit ignores coverage: the XML carries no coverage data from an
+     instrumented run. *)
   let junit = scratch "junit.xml" in
   let code, out, _, _ =
     child ~env:[ "CHILD_VISITED=9" ]
@@ -1082,8 +1085,8 @@ let junit_rails =
       ()
   in
   check_int "an instrumented --junit run exits 0" ~expected:0 ~actual:code;
-  check_contains "the inline line still prints beside --junit"
-    ~needle:"coverage: 90.0% (9/10 points)" out;
+  check_absent "the run prints no coverage line beside --junit"
+    ~needle:"coverage:" out;
   let xml = read_file junit in
   check "the JUnit report was written" (xml <> "");
   check_contains "the JUnit report is JUnit" ~needle:"<testsuites" xml;
@@ -1103,8 +1106,9 @@ let () =
   exit
   @@ run "coverage_cli"
        [
-         inline_line;
-         coverage_switch;
+         dump_is_the_report;
+         standalone_layout;
+         inside_dune_estate;
          reporting_command;
          min_matrix;
          json_shape;

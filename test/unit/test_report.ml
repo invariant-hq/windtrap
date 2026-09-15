@@ -14,8 +14,7 @@
    pp_failure), degenerate equalities, diff and proposed-content display
    bounds, duration forms, replay-line quoting and root-token consistency,
    captured-tail bounding, the source excerpt, the GitHub envelope, the
-   event observer, the coverage seam, and the coverage and mutation
-   sections. Drives [Report] directly over synthetic [Run] results;
+   event observer, and the coverage and mutation sections. Drives [Report] directly over synthetic [Run] results;
    detection goes through string equality and containment, so a broken
    renderer cannot hide its own failure. *)
 
@@ -72,8 +71,7 @@ let sections ?(ansi = false) l =
   Sections.print ~out:ppf ~ansi l;
   Buffer.contents buf
 
-let transcript ?ansi ?mode ?live ?invocation ?coverage
-    ?(seed = Some Fixtures.root) () =
+let transcript ?ansi ?mode ?live ?invocation ?(seed = Some Fixtures.root) () =
   with_renderer ?ansi ?mode ?live ?invocation (fun r ->
       Report.header r ~suite:"mylib"
         ~tests:(List.length Fixtures.results)
@@ -83,8 +81,7 @@ let transcript ?ansi ?mode ?live ?invocation ?coverage
           Report.begin_test r ~path:res.path;
           Report.result r res)
         Fixtures.results;
-      Report.finish r ?coverage ~results:Fixtures.results
-        ~duration:Fixtures.duration ())
+      Report.finish r ~results:Fixtures.results ~duration:Fixtures.duration ())
 
 let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
   let buf = Buffer.create 256 in
@@ -100,7 +97,7 @@ let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
    verbose), failures re-printed in full inside the labeled rule, bounded
    captured tail with drop count and full-log path, typed-payload-derived
    accept/replay commands, slow warnings, summary, rerun hint, slowest-5
-   (verbose only), coverage line. The fixture run has failures, slow tests
+   (verbose only). The fixture run has failures, slow tests
    and a flaky test, so the compact transcript opens with the header and
    goes straight to the blocks.
 
@@ -117,20 +114,14 @@ let golden name actual =
 
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
-let golden_coverage = { Report.visited = 312; total = 358 }
 
 let test_golden_compact () =
-  let actual =
-    transcript ~invocation:golden_invocation ~coverage:golden_coverage ()
-  in
+  let actual = transcript ~invocation:golden_invocation () in
   golden "compact" actual;
   check_absent "plain transcript has no escape codes" ~sub:"\027" actual
 
 let test_golden_verbose () =
-  let actual =
-    transcript ~mode:`Verbose ~invocation:golden_invocation
-      ~coverage:golden_coverage ()
-  in
+  let actual = transcript ~mode:`Verbose ~invocation:golden_invocation () in
   golden "verbose" actual;
   check_absent "plain transcript has no escape codes" ~sub:"\027" actual
 
@@ -141,23 +132,10 @@ let test_golden_verbose () =
    is the only way to review them. *)
 let test_golden_ansi () =
   let actual =
-    transcript ~ansi:true ~mode:`Verbose ~invocation:golden_invocation
-      ~coverage:golden_coverage ()
+    transcript ~ansi:true ~mode:`Verbose ~invocation:golden_invocation ()
   in
   golden "verbose-ansi" actual;
   check_contains "the ansi golden really is coloured" ~sub:"\027[" actual
-
-let test_coverage_line_hint () =
-  (* The hint is unconditional: an in-process number is one executable's
-     view of the code it links, and the merge is the project total. *)
-  let t =
-    with_renderer (fun r ->
-        Report.finish r
-          ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
-          ~duration:0.1 ~coverage:golden_coverage ())
-  in
-  check_contains "the coverage line names the aggregate"
-    ~sub:"coverage: 87.2% (312/358 points) · project: windtrap coverage\n" t
 
 let test_ansi () =
   let t = transcript ~ansi:true ~mode:`Verbose () in
@@ -2332,11 +2310,9 @@ let sub_mutant = mutant "lib/calc.ml:31:14:sub" 31 "acc + x" "acc - x"
 
 let suite_report =
   {
-    (* Pre-spelled, as the loop spells them with the runtime's own
-       functions: the identifier in its canonical form, the arming
-       variable by name. *)
-    Sections.arm_variable = "WINDTRAP_MUTATE_ARM";
-    survivors =
+    (* Pre-spelled, as the loop spells it with the runtime's own
+       function: the identifier in its canonical form. *)
+    Sections.survivors =
       [
         {
           Sections.mutant = add_mutant;
@@ -2364,8 +2340,7 @@ let suite_report =
 
 let aggregate_report =
   {
-    Sections.arm_variable = "WINDTRAP_MUTATE_ARM";
-    survivors =
+    Sections.survivors =
       [
         {
           Sections.mutant = add_mutant;
@@ -2390,7 +2365,7 @@ let mutation_report ?ansi ?mode ?invocation m =
   with_renderer ?ansi ?mode ?invocation (fun r -> Report.mutation_report r m)
 
 let exe_invocation =
-  `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe"
+  `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe --"
 
 let expected_suite_report =
   {|
@@ -2413,7 +2388,7 @@ let expected_suite_report =
 ──────────────────────────────────────────────────────
 
 mutants: 2 survived of 183 reached by this suite · 181 killed
-reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe
+reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm <id>
 |}
 
 let expected_aggregate_report =
@@ -2452,7 +2427,7 @@ let test_mutation_report () =
   let out = mutation_report ~invocation:exe_invocation suite_report in
   (* The block is the finding and the footer is the remedy: no per-block
      command, no attribute to paste. *)
-  check_absent "no arm line in a block" ~sub:"arm " out;
+  check_absent "no arm line in a block" ~sub:"    arm " out;
   check_absent "no dismiss line in a block" ~sub:"dismiss" out;
   check_absent "no [@mutate off] to paste" ~sub:"[@mutate off" out
 
@@ -2508,8 +2483,8 @@ let test_mutation_colors () =
   check_contains "the reproduce footer carries no color"
     ~sub:
       "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
-       ppx_windtrap.mutate test/test_calc.exe\n"
+       reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+       test/test_calc.exe -- --arm <id>\n"
     out;
   let out = mutation_report ~ansi:true aggregate_report in
   check_contains "UNREACHED wears yellow, the identifier the bold"
@@ -2596,15 +2571,14 @@ let test_mutation_summary_forms () =
 
 let test_mutation_footer () =
   (* The footer is the one command, under the summary, with the
-     placeholder where the identifier goes; it follows the invocation,
-     and under [`Mirrors] carries the instrumentation flag and --force,
-     because a build without the backend has no mutant to arm and a warm
-     tree would replay the cached run. *)
+     placeholder where the identifier goes: [--arm] after the invocation
+     under [`Exe], the flag's mirror before the reader's own suite
+     command under [`Mirrors], where no command line reaches the suite. *)
   check_contains "the footer follows the exe invocation"
     ~sub:
       "mutants: 2 survived of 183 reached by this suite \u{00b7} 181 killed\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
-       ppx_windtrap.mutate test/test_calc.exe\n"
+       reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+       test/test_calc.exe -- --arm <id>\n"
     (mutation_report ~invocation:exe_invocation suite_report);
   check_contains "the footer under mirrors names no build tool"
     ~sub:
@@ -2632,8 +2606,8 @@ let test_mutation_footer () =
   check_contains "the exe footer carries the filter"
     ~sub:
       "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
-       ppx_windtrap.mutate test/test_calc.exe -f 'sub'\n"
+       reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+       test/test_calc.exe -- --arm <id> -f 'sub'\n"
     (mutation_report ~invocation:exe_invocation filtered);
   check_contains "the mirror footer carries the filter"
     ~sub:
@@ -2939,16 +2913,6 @@ let test_observe_seed_policy () =
        releasing db\n"
     ~actual:streamed
 
-(* The coverage seam *)
-
-let test_coverage_seam () =
-  (* The seam's whole contract, stated so that it holds whether or not
-     this executable is instrumented — under `--instrument-with` the core
-     it tests is, and then the registry is emphatically not empty. *)
-  check "the seam answers with a summary exactly when it measured something"
-    (Windtrap_runtime.Coverage.is_empty (Windtrap_runtime.Coverage.snapshot ())
-    = (Report.snapshot_coverage () = None))
-
 (* Tree-wide summary dialect
 
    The meta harness (test/unit/harness.ml) prints its one-liner by hand;
@@ -3136,7 +3100,6 @@ let tests =
     test "golden compact transcript (default)" test_golden_compact;
     test "golden verbose transcript (-v)" test_golden_verbose;
     test "golden verbose transcript, coloured" test_golden_ansi;
-    test "coverage line names the project aggregate" test_coverage_line_hint;
     test "ansi styling and diff highlighting" test_ansi;
     test "live progress line (verbose)" test_live;
     test "live compact tail" test_live_compact_tail;
@@ -3237,7 +3200,6 @@ let tests =
       test_github_envelope_composed;
     test "observer: the header-seed policy and the stream"
       test_observe_seed_policy;
-    test "coverage seam: what it records, and when" test_coverage_seam;
     test "tree-wide summary dialect (harness parity)" test_summary_dialect;
   ]
 

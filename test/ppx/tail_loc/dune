@@ -22,8 +22,6 @@
    %{dep:../drive/drive.exe}
    --env
    WINDTRAP_SLOW_THRESHOLD=0
-   --env
-   WINDTRAP_COVERAGE=off
    --run
    runner
    %{dep:runner_main.exe}

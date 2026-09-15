@@ -6,12 +6,12 @@
 (** The [windtrap mutants] subcommand: project-level mutation reporting.
 
     Finds the [.mutants] verdict files that instrumented test executables wrote
-    under [_build/_mutants] (resolving the project root as the runtime does —
-    the parent of the topmost [_build] component of the current directory, else
-    the nearest ancestor with a [_build/_mutants]), or under explicit [PATH]
-    arguments; excludes verdicts whose recorded executable was deleted or
-    rebuilt since the run; merges the rest — loudly rejecting foreign formats —
-    under {b killed anywhere wins}, and renders through the library renderer the
+    — under the build directory's [_mutants], or under [_windtrap/mutants] in a
+    tree built without one, located as the runtime locates its output
+    ({!Data_files.discover}) — or under explicit [PATH] arguments; excludes
+    verdicts whose recorded executable was deleted or rebuilt since the run;
+    merges the rest — loudly rejecting foreign formats — under
+    {b killed anywhere wins}, and renders through the library renderer the
     survivors that survived {e everywhere}, the mutants no executable reached,
     and the project's summary line. A merge runs nothing and seeds nothing, so
     that line carries neither a duration nor a seed, and it never scopes itself

@@ -116,7 +116,6 @@ let windtrap_vars =
     "WINDTRAP_PROP_COUNT";
     "WINDTRAP_JUNIT";
     "WINDTRAP_OUTPUT";
-    "WINDTRAP_COVERAGE";
     "WINDTRAP_COVERAGE_FILE";
     "WINDTRAP_STREAM";
     "WINDTRAP_COLOR";
@@ -124,32 +123,23 @@ let windtrap_vars =
     "WINDTRAP_SLOW_THRESHOLD";
     "WINDTRAP_VERBOSE";
     "WINDTRAP_PROJECT_ROOT";
-    "WINDTRAP_COVERAGE_ONLY";
-    (* The mutation knobs are read by every windtrap run, instrumented or
-       not, and one of them is meant to be set for a WHOLE project at
-       once: [WINDTRAP_MUTATE_ARM=<id> dune runtest] is the remedy every
-       survivor block prints. A suite that spawns a child and pins its
-       transcript byte for byte inherits that variable unless it is
-       named here. *)
+    (* The mutation mirrors are read by every windtrap run, instrumented
+       or not, and one of them is meant to be set for a WHOLE project at
+       once: [WINDTRAP_MUTATE_ARM=<id>] before the suite command is the
+       remedy the aggregate report prints. A suite that spawns a child
+       and pins its transcript byte for byte inherits that variable
+       unless it is named here. *)
     "WINDTRAP_MUTATE";
     "WINDTRAP_MUTATE_ARM";
-    "WINDTRAP_MUTATE_ONLY";
     (* Not a windtrap variable, but it turns styling off in Auto mode,
        so a developer's shell setting would reshape a pinned transcript. *)
     "NO_COLOR";
   ]
 
-(* Unset is neutral for every variable above but one. lib/ carries an
-   (instrumentation) stanza, so under `--instrument-with` these suites
-   link an instrumented core, and WINDTRAP_COVERAGE's default — `summary`
-   — appends an inline coverage line about that core to every run they
-   drive. Every suite here pins transcripts byte for byte and none of
-   them measures coverage, so its neutral value is [off], not absent.
-   Cleared here rather than by the dune action because the suites'
-   re-exec'd children call this directly, before [init]. *)
-let clear_env () =
-  List.iter (fun var -> Unix.putenv var "") windtrap_vars;
-  Unix.putenv "WINDTRAP_COVERAGE" "off"
+(* Unset is neutral for every variable above. Cleared here rather than
+   by the dune action because the suites' re-exec'd children call this
+   directly, before [init]. *)
+let clear_env () = List.iter (fun var -> Unix.putenv var "") windtrap_vars
 
 let init name =
   suite := name;

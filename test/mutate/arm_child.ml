@@ -83,7 +83,7 @@ let announce : M.mutant option -> unit = function
         m.M.after
 
 let refuse e =
-  Format.eprintf "windtrap mutate: %a@." M.pp_arm_error e;
+  Format.eprintf "windtrap: %a@." M.pp_arm_error e;
   exit 1
 
 (* The core's arming step, for an identifier it read: [None] is a run

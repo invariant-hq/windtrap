@@ -24,9 +24,10 @@ let usage =
 
 Merges the .mutants verdict files written by mutation runs and reports the
 mutants that survived every test executable. Without PATH arguments the files
-are found under _build/_mutants, walking up from the current directory to the
-enclosing project root; PATH arguments (.mutants files, or directories
-searched recursively) replace that default.
+are found under the build directory's _mutants (or _windtrap/mutants in a tree
+built without one), walking up from the current directory to the enclosing
+project root; PATH arguments (.mutants files, or directories searched
+recursively) replace that default.
 
 Runs no tests and drives no build.
 Exits 1 when any mutant survived every executable that reached it.
@@ -38,15 +39,16 @@ OPTIONS:
    on: this command does not know how the suite is run, and a spelled-out
    command would be wrong everywhere but the tree it was written in. A
    verdict exists only where a suite was asked to test its mutants
-   (WINDTRAP_MUTATE=1) in a build carrying them, and a run the build tool
-   replays from its cache writes nothing. *)
+   (--mutate) in a build carrying them, and a run the build tool replays
+   from its cache writes nothing. *)
 let rerun =
-  "re-run every suite with its mutants (WINDTRAP_MUTATE=1, instrumented with \
+  "re-run every suite with its mutants (--mutate, instrumented with \
    ppx_windtrap.mutate, forcing the runs your build tool cached), then merge \
    again"
 
 let remedy =
-  rerun ^ "; delete _build/_mutants to drop leftovers of removed executables"
+  rerun
+  ^ "; delete the files named above to drop leftovers of removed executables"
 
 (* Flags *)
 
@@ -69,7 +71,7 @@ let parse_args args =
    back sorted for deterministic merge order and error attribution;
    [roots] are the source roots the survivor excerpts resolve against. *)
 
-let discover paths = Data_files.discover ~dir:"_mutants" ~ext:"mutants" paths
+let discover paths = Data_files.discover V.format paths
 
 (* The staleness pass
 
@@ -262,10 +264,7 @@ let render_data ~resolve_source files =
       records
   in
   {
-    (* The arming variable, spelled with the runtime's own function: the
-       report and the runtime cannot disagree about what to type. *)
-    Sections.arm_variable = M.arm_variable;
-    survivors;
+    Sections.survivors;
     unreached;
     killed =
       List.length
@@ -310,8 +309,9 @@ let run args =
             Printf.eprintf
               "windtrap mutants: no .mutants files found\n\
                Instrument the library under test with ppx_windtrap.mutate and \
-               run every suite with its mutants (WINDTRAP_MUTATE=1) first; \
-               every mutation run writes its verdicts under _build/_mutants.\n";
+               run every suite with its mutants (--mutate) first; every \
+               mutation run writes its verdicts under the build directory's \
+               _mutants or under _windtrap/mutants.\n";
             1
           end
           else

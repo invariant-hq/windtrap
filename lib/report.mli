@@ -146,17 +146,7 @@ val empty_selection_reason :
     [None], a non-empty suite nothing narrowed having nothing to explain.
     Exported for [--list], which selects and stops. *)
 
-type coverage_summary = { visited : int; total : int }
-(** The type for the run-end coverage summary the transcript's last line draws
-    ({!snapshot_coverage}). *)
-
-val finish :
-  t ->
-  ?coverage:coverage_summary ->
-  results:Run.result list ->
-  duration:float ->
-  unit ->
-  unit
+val finish : t -> results:Run.result list -> duration:float -> unit -> unit
 (** [finish t ~results ~duration ()] ends the transcript. The run is
     {e noteworthy} iff [results] hold a counted failure, a completed test over
     the slow threshold that is not [slow_tagged], or a flaky test — a passing
@@ -185,10 +175,7 @@ val finish :
       ([44 passed, 2 expected failures in 1.2s.]), and counted failures with
       subtest-labeled entries state the sub-case count
       ([2 failed (3 subtest failures)]);
-    - the slowest tests, on runs slow enough to care about — [verbose] only;
-    - the coverage line
-      ([coverage: 87.2% (312/358 points) · project: windtrap coverage]) when
-      [coverage] is given, in every mode.
+    - the slowest tests, on runs slow enough to care about — [verbose] only.
 
     Excused results leave the failure section and the failed count alone; skips
     never count as slow (their durations are not run time). The durations
@@ -240,13 +227,6 @@ val annotations : ?invocation:Run.invocation -> Run.result list -> string
     in run order; [""] when no test failed. Excused expected failures produce no
     annotation: an [::error] on a PR demands action, and an excused failure
     demands none. *)
-
-(** {1:coverage The coverage seam} *)
-
-val snapshot_coverage : unit -> coverage_summary option
-(** [snapshot_coverage ()] is what instrumented code registered in this process,
-    scoped by [WINDTRAP_COVERAGE_ONLY], or [None] when nothing registered. Core
-    windtrap's entire coverage coupling is this read at run end. *)
 
 (** {1:mutation Mutation lines}
 
@@ -321,11 +301,10 @@ val run :
     header's seed is the root seed iff a test carries {!Tag.prop}, its selection
     {!selection_description}), inside the [::group::] envelope when
     [config.github], then — for a run that happened — {!finish} over
-    {!Run.results} with {!snapshot_coverage} when [config.coverage],
-    {!report_baselines}, the envelope's close, the {!annotations} block after it
-    so it is never folded away, and {!Report_junit.write} to [config.junit],
-    last, from the rows the terminal has already shown. Both standard formatters
-    are flushed before it returns.
+    {!Run.results}, {!report_baselines}, the envelope's close, the
+    {!annotations} block after it so it is never folded away, and
+    {!Report_junit.write} to [config.junit], last, from the rows the terminal
+    has already shown. Both standard formatters are flushed before it returns.
 
     [Ok outcome] is the executor's outcome, reported. [Error error] is a refused
     startup: the envelope is closed and {!Run.startup_message} is on standard

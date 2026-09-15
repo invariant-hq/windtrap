@@ -1,11 +1,12 @@
-; The Law-12 seam and the reporting command, end to end and without the
-; instrumenter: inline_child fabricates in-process registrations exactly
-; as PPX-generated initializers would (the frozen interchange contract)
-; and runs a real windtrap suite — the seam, the inline line, and the
-; WINDTRAP_COVERAGE switch are exercised through the real
-; facade; `windtrap coverage` (bin/main.exe) is driven as a subprocess
-; over synthetic .coverage files written with the runtime's serializer.
-; A windtrap suite (see test/coverage).
+; The reporting command, end to end and without the instrumenter:
+; inline_child fabricates in-process registrations exactly as
+; PPX-generated initializers would (the frozen interchange contract) and
+; runs a real windtrap suite — which prints no number of its own and
+; dumps at exit — through the real facade; `windtrap coverage`
+; (bin/main.exe) is driven as a subprocess over synthetic .coverage
+; files written with the runtime's serializer, and over the dump of a
+; copy of the child run outside any build directory. A windtrap suite
+; (see test/coverage).
 
 (test
  (name test_coverage_cli)

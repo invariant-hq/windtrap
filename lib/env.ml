@@ -115,31 +115,11 @@ let resolve_color mode ~tty ~inside_dune ~term_dumb =
   | Auto ->
       (tty || inside_dune) && (not term_dumb) && get_string "NO_COLOR" = None
 
-(* Settings with no command-line flag
+(* The setting with no command-line flag
 
    The flag mirrors are not here: each is declared beside its flag in
    [Cli]'s table and read through [get_string] and the flag's own parser,
    which is what keeps a mirror from parsing differently from the flag it
-   mirrors. What remains are the variables read below the CLI layer or
-   beside it. *)
+   mirrors. What remains is the one variable read below the CLI layer. *)
 
 let project_root () = get_string "WINDTRAP_PROJECT_ROOT"
-
-(* Which files the run's own coverage number speaks about. The registry is
-   process-global — every instrumented library linked into the executable
-   is in it, including ones the reader did not write — so a percentage over
-   all of it can be a number about somebody else's code. *)
-let coverage_only () =
-  match get_string "WINDTRAP_COVERAGE_ONLY" with
-  | None -> []
-  | Some s -> split_comma s
-
-(* Which mutants a run considers at all. Unlike coverage's, this is not a
-   reporting filter: the loop forks once per mutant it considers, so
-   narrowing the scope narrows the WORK. It applies to the population the
-   loop forks over, not to registration: every instrumented file still
-   registers, and an armed identifier arms whatever the executable holds. *)
-let mutate_only () =
-  match get_string "WINDTRAP_MUTATE_ONLY" with
-  | None -> []
-  | Some s -> split_comma s

@@ -635,9 +635,7 @@ let slowest t results =
       rendered
   end
 
-type coverage_summary = { visited : int; total : int }
-
-let finish t ?coverage ~results ~duration () =
+let finish t ~results ~duration () =
   clear_live t;
   let failed_results, excused_results =
     List.partition counted_failure
@@ -710,18 +708,6 @@ let finish t ?coverage ~results ~duration () =
     (* Diagnosis, not signal: the slowest list is verbose-only. *)
     if t.verbose then slowest t results
   end;
-  (* An in-process number is always one executable's view of the code it
-     links; the project number is the merge, so the line points at the
-     aggregate rather than posing as the total. *)
-  (match coverage with
-  | Some { visited; total } ->
-      sections t
-        [
-          Sections.Line
-            (Sections.coverage_line ~hint:"project: windtrap coverage" ~visited
-               ~total ());
-        ]
-  | None -> ());
   Pp.flush t.out ()
 
 (* The baseline report *)
@@ -821,28 +807,6 @@ let annotations ?invocation results =
     results;
   Buffer.contents buf
 
-(* The coverage seam *)
-
-(* WINDTRAP_COVERAGE_ONLY: the source prefixes this run's number is about.
-   Applied here, at the one seam, and not to the .coverage dump, which
-   the runtime writes whole because it is what `windtrap coverage`
-   merges. Prefix matching, not globbing: the registry's file names are
-   the paths the instrumenter recorded, and a prefix is the one predicate
-   a reader can apply by eye. *)
-let coverage_scope () =
-  match Env.coverage_only () with
-  | [] -> Fun.id
-  | prefixes ->
-      Windtrap_runtime.Coverage.filter (fun file ->
-          List.exists (fun prefix -> String.starts_with ~prefix file) prefixes)
-
-let snapshot_coverage () =
-  let collection = coverage_scope () (Windtrap_runtime.Coverage.snapshot ()) in
-  if Windtrap_runtime.Coverage.is_empty collection then None
-  else
-    let s = Windtrap_runtime.Coverage.summary collection in
-    Some { visited = s.visited; total = s.total }
-
 (* Mutation lines *)
 
 (* The lines an armed run is owed. The announcement prints
@@ -924,10 +888,7 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
          (fixture-release failures). Every sink projects it, so a verdict
          that sets the exit code is always visible in the report. *)
       let results = Run.results outcome.Run.run in
-      let coverage =
-        if config.Run.coverage then snapshot_coverage () else None
-      in
-      finish renderer ?coverage ~results ~duration:outcome.Run.duration ();
+      finish renderer ~results ~duration:outcome.Run.duration ();
       report_baselines renderer outcome.Run.run;
       if github then begin
         print_string group_end;

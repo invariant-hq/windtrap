@@ -280,8 +280,8 @@ let print_cli_error ~prog error =
    applied: the process is the caller's. *)
 let run_suite ~suite ~config tests =
   (* The mutation seam: one call at run entry, in place of [Report.run].
-     Without a mutation backend and without the variables it is exactly
-     [Report.run] — same transcript, same bytes, same cost; with them it
+     Without [--mutate] or [--arm] it is exactly [Report.run] — same
+     transcript, same bytes, same cost; with one of them it
      wraps the run on both sides (an armed mutant is announced before any
      output, and the loop forks after the dry run) and may take the
      process over. *)

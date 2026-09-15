@@ -29,15 +29,12 @@ OPTIONS:
       --junit PATH              Also write a JUnit XML report to PATH
       --color MODE              Color output: always, never or auto
   -o, --output DIR              Root directory for capture logs
+      --mutate[=PREFIX,...]     Test this executable's mutants, all or those under PREFIX
+      --arm ID                  Run once with mutant ID armed
   -V, --version                 Print the version and exit
   -h, --help                    Print this help and exit
 
 ENVIRONMENT (no flag):
   WINDTRAP_PROJECT_ROOT   Project root that baseline paths resolve under
   WINDTRAP_COVERAGE_FILE  Where an instrumented run writes its coverage dump
-  WINDTRAP_COVERAGE       Inline coverage line: on or off
-  WINDTRAP_COVERAGE_ONLY  Source prefixes the coverage number covers
-  WINDTRAP_MUTATE         Mutation testing: 1 to run it, 0 not to
-  WINDTRAP_MUTATE_ARM     Arm one mutant, by identifier
-  WINDTRAP_MUTATE_ONLY    Source prefixes whose mutants a run considers
   NO_COLOR                Any value: never style output (--color auto)

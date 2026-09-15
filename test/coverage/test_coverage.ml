@@ -19,10 +19,7 @@
    A windtrap suite ([run] executes tests sequentially in declaration
    order). The registry tests accumulate state in the shared global
    registry, which is never reset: each uses distinctive file names and
-   extents so that they cannot read each other's data. The dune action
-   sets WINDTRAP_COVERAGE=off: the synthetic registrations would
-   otherwise render a meaningless inline coverage line on every green
-   run. *)
+   extents so that they cannot read each other's data. *)
 
 open Windtrap
 module C = Windtrap_runtime.Coverage
@@ -414,7 +411,7 @@ let collection_tests =
                (C.Point_mismatch { file = "lib/x.ml" })
            in
            contains "from one build" message
-           && contains "delete the files" message
+           && contains "delete the coverage files" message
            && not (contains "dune " message));
         check "unknown-format hint instructs deletion, not a re-run alone"
           (let message =
@@ -422,7 +419,7 @@ let collection_tests =
                (C.Data
                   (I.Unknown_format { path = "old.coverage"; header = "V1" }))
            in
-           contains "delete" message && contains "_build/_coverage" message));
+           contains "delete the stale coverage files" message));
     test "empty is a merge identity" (fun () ->
         let t = ab () in
         check_string "empty is a left identity for merge"
@@ -584,13 +581,32 @@ let filename_tests =
           (Filename.basename direct
           = Filename.basename
               (C.output_dir ~exe:"/elsewhere/_build/default/test/a.exe"));
+        check "a private build directory keeps its own dumps"
+          (String.starts_with ~prefix:"/w/p/_build_ci/_coverage/windtrap-"
+             (C.output_dir ~exe:"/w/p/_build_ci/default/test/a.exe"));
+        (* A tree built without dune must never grow a _build: the dumps
+           go under the working directory's own _windtrap. *)
         let outside = C.output_dir ~exe:"/opt/tools/mytool.exe" in
-        check "an executable outside _build dumps under the current directory"
+        check "an executable under no build directory dumps under _windtrap"
           (String.starts_with
              ~prefix:
-               (Filename.concat (Sys.getcwd ()) "_build/_coverage/windtrap-")
+               (Filename.concat (Sys.getcwd ()) "_windtrap/coverage/windtrap-")
              outside));
-    test "build_root and exe_identity follow the topmost _build" (fun () ->
+    test "build_dir, build_root and exe_identity follow the first _build*"
+      (fun () ->
+        check "build_dir is the path cut after the first _build* component"
+          (I.build_dir ~path:"/w/p/_build/default/test" = Some "/w/p/_build");
+        check "a component merely starting with _build is a build directory"
+          (I.build_dir ~path:"/w/p/_build_ci/default/t.exe"
+          = Some "/w/p/_build_ci");
+        check "build_dir outside any is None"
+          (I.build_dir ~path:"/w/p/src/lib" = None);
+        check "the data directory sits beside the contexts"
+          (I.data_dir C.format ~build_dir:"/w/p/_build"
+          = "/w/p/_build/_coverage");
+        check "and outside a build directory under _windtrap"
+          (I.standalone_data_dir C.format ~root:"/w/p"
+          = "/w/p/_windtrap/coverage");
         check "build_root is the parent of the topmost _build component"
           (I.build_root ~path:"/w/p/_build/default/test" = Some "/w/p");
         check "build_root sees through the sandbox to the same root"

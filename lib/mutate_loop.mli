@@ -11,9 +11,9 @@
     {!Windtrap_runtime.Mutate} for the catalogue, the guard and the reach map,
     {!Windtrap_runtime.Verdicts} for the verdict file: the dry run and its reach
     map, the determinism probe, the fork loop, the verdict file, and the report.
-    The runtime reads no environment: which mutants a run tests (the scope,
-    source-path prefixes) and which one a process arms are read by [Cli] and
-    [Env] and applied here.
+    The runtime reads no environment and no flag: which mutants a run tests
+    ([--mutate]'s source-path prefixes) and which one a process arms ([--arm])
+    arrive on {!Run.config.mutation}, resolved by [Cli], and are applied here.
 
     {b Why this module wraps the run rather than being called around it.} The
     two things a mutation run must do — announce an armed mutant {e before} any
@@ -24,11 +24,11 @@
     one call, in one place, and there is nothing for a runner to get out of
     order.
 
-    [Cli.mutation] decides which mode this process is in;
+    {!Run.config.mutation} says which mode this process is in;
     [doc/manual/mutation.md] is the chapter that teaches them, and Law 16 in
-    [doc/dev/architecture.md] is the durable record of what each owes. In an
-    uninstrumented build, in a [--list] run, and whenever the environment asks
-    for nothing, this module does nothing at all.
+    [doc/dev/architecture.md] is the durable record of what each owes. In a
+    [--list] run and under {!Run.No_mutation} — every run that asked for neither
+    flag, instrumented or not — this module does nothing at all.
 
     {b Exit codes} (Law 16e). [0] when the loop completed, {e whatever it found}
     — a survivor is one suite's view, and only the aggregate
@@ -64,27 +64,27 @@ type run =
 val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
 (** [execute_and_report ~suite config tests] is the mutation-aware run entry:
     {!Report.run} over the same configuration with the same meaning, wrapped in
-    whichever mode this process is in. When the environment asks for nothing it
-    is exactly [Ran (Report.run ~suite config tests)] — same transcript, same
-    bytes, same cost. Forked children run {!Run.execute} silently over
-    {!Run.for_subset} of [config] and the reaching tests as their allowlist.
+    the mode [config.mutation] names. Under {!Run.No_mutation} it is exactly
+    [Ran (Report.run ~suite config tests)] — same transcript, same bytes, same
+    cost. Forked children run {!Run.execute} silently over {!Run.for_subset} of
+    [config] and the reaching tests as their allowlist.
 
     A process with a mutant armed checks baselines read-only (Law 16d): its
     run's [Run.config.baseline] is [Baseline.Check], in each forked child and in
-    the parent under [WINDTRAP_MUTATE_ARM], so no correction is recorded and
-    nothing reaches [dune promote] from a mutated run.
+    the parent under [--arm], so no correction is recorded and nothing reaches
+    [dune promote] from a mutated run.
 
-    {b Refusals}, each [Reported 1] with its own message naming the variable or
-    the candidates, never a silently defaulted run: an unrecognized
-    [WINDTRAP_MUTATE]; asking for the loop and an armed mutant at once; a
-    [WINDTRAP_MUTATE_ARM] that is malformed, ambiguous, or
+    {b Refusals}, each [Reported 1] with its own message on [stderr] naming the
+    flag or the candidates, never a silently defaulted run: an [--arm]
+    identifier that is malformed, ambiguous, or
     {!Windtrap_runtime.Mutate.Unmatched} within a file this executable
-    catalogues; a red or empty dry run; an uninstrumented executable, or a scope
-    that leaves it no mutant; a probe disagreement; and a supervision error. The
-    one arming failure that is {e not} a refusal is
-    {!Windtrap_runtime.Mutate.Uncatalogued} — one identifier is handed to every
-    test executable of a project at once, and all but one of them were built
-    from other sources.
+    catalogues; a red or empty dry run; a [--mutate] of an executable that links
+    no instrumented module, or whose prefixes leave it no mutant; a probe
+    disagreement; and a supervision error. (Asking for both flags is [Cli]'s
+    refusal, before any run.) The one arming failure that is {e not} a refusal
+    is {!Windtrap_runtime.Mutate.Uncatalogued} — one identifier is handed to
+    every test executable of a project at once, and all but one of them were
+    built from other sources.
 
     Arming inside the loop stays strict all the same: a child arms a mutant the
     parent took from {e this} binary's own catalogue, so a child that fails to

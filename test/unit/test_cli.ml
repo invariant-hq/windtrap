@@ -86,6 +86,9 @@ let () =
       "never";
       "-o";
       "logs";
+      "--mutate=lib/a.ml,lib/b.ml";
+      "--arm";
+      "lib/a.ml:1:0:add";
     ] (fun p ->
       check "filter" (p.Cli.filter = Some "pat");
       check "exclude" (p.Cli.exclude = Some "ex");
@@ -103,6 +106,8 @@ let () =
       check "junit" (p.Cli.junit = Some "out.xml");
       check "color" (p.Cli.color = Some Env.Never);
       check "log_dir" (p.Cli.log_dir = Some "logs");
+      check "mutate" (p.Cli.mutate = Some [ "lib/a.ml"; "lib/b.ml" ]);
+      check "arm" (p.Cli.arm = Some "lib/a.ml:1:0:add");
       check "help off" (not p.Cli.help);
       check "version off" (not p.Cli.version))
 
@@ -195,6 +200,8 @@ let () =
   (* Transposition is one edit, not two: plain Levenshtein ties --juint
      between --junit and --update, and the tie goes to table order. *)
   suggests "--juint" "--junit";
+  (* The verb a reader reaches for, one letter from the flag. *)
+  suggests "--mutant" "--mutate";
   let silent typo =
     let m = message [ typo ] in
     check
@@ -332,9 +339,10 @@ let () =
     ]
 
 (* The argument grammar: the optional-value kind, over a synthetic row.
-   No flag uses it yet — [--mutate[=PREFIX,...]] will — and this pins what
-   that flag gets, so adopting it adds a row and nothing else. The row
-   stores into [junit], which nothing else in a one-row table touches. *)
+   [--mutate[=PREFIX,...]] is the flag that uses it, and this pins what
+   the kind gives any row, apart from what that flag makes of its value.
+   The row stores into [junit], which nothing else in a one-row table
+   touches. *)
 
 let probe_row : Cli.entry =
   {
@@ -465,6 +473,7 @@ let () =
   check "default: the slow threshold is one second"
     (config.Run.slow_threshold = 1.0);
   check "default: compact" (not config.Run.verbose);
+  check "default: not a mutation run" (config.Run.mutation = Run.No_mutation);
   check "default: log dir non-empty" (String.length config.Run.log_dir > 0)
 
 (* Resolution: precedence *)
@@ -780,33 +789,66 @@ let () =
   clear_env ();
   check "color_mode defaults to auto" (Cli.color_mode () = Ok Env.Auto)
 
-(* Resolution: the inline coverage line *)
+(* Resolution: the mutation switches *)
 
 let () =
-  reg "coverage line resolution" @@ fun () ->
+  reg "mutation switches: the flags, their mirrors, and both at once"
+  @@ fun () ->
   clear_env ();
-  let enabled () =
-    match Cli.settings Cli.empty with
-    | Ok s -> s.Run.coverage
-    | Error error ->
-        check ("settings succeeds: " ^ Cli.error_message error) false;
-        true
+  let mutation cli = (settings cli).Run.mutation in
+  let parsed args =
+    match parse args with Ok p -> p | Error e -> fail (Cli.error_message e)
   in
-  check "an unset WINDTRAP_COVERAGE prints the line" (enabled ());
-  Unix.putenv "WINDTRAP_COVERAGE" "OFF";
-  check "a falsy WINDTRAP_COVERAGE silences it, case-insensitively"
-    (not (enabled ()));
-  Unix.putenv "WINDTRAP_COVERAGE" " 1 ";
-  check "the truthy spellings are Env's, trimmed" (enabled ());
-  Unix.putenv "WINDTRAP_COVERAGE" "report";
-  (match Cli.settings Cli.empty with
-  | Error
-      (Cli.Invalid_value
-         { source = "WINDTRAP_COVERAGE"; value = "report"; expected }) ->
-      check "a retired mode word errors with its source" true;
-      check "and the message names the reporting command"
-        (contains "windtrap coverage" expected)
-  | Ok _ | Error _ -> check "a retired mode word errors with its source" false);
+  check "the bare flag surveys every mutant"
+    (mutation (parsed [ "--mutate" ]) = Run.Loop []);
+  check "a value is the comma-separated prefixes"
+    (mutation (parsed [ "--mutate=lib/a.ml, lib/b.ml" ])
+    = Run.Loop [ "lib/a.ml"; "lib/b.ml" ]);
+  check "the bare flag never consumes the next argument"
+    ((parsed [ "--mutate"; "lib/a.ml" ]).Cli.filter = Some "lib/a.ml");
+  check "--arm takes the identifier, unparsed"
+    (mutation (parsed [ "--arm"; "lib/a.ml:9:12:add" ])
+    = Run.Armed "lib/a.ml:9:12:add");
+  check "--arm=ID spells the same"
+    (mutation (parsed [ "--arm=x" ]) = Run.Armed "x");
+  (* WINDTRAP_MUTATE reads both ways: a boolean is the bare flag or its
+     absence, anything else the prefixes — so a CI recipe's `1` and a
+     developer's file name both keep working. *)
+  Unix.putenv "WINDTRAP_MUTATE" "1";
+  check "WINDTRAP_MUTATE=1 is the bare flag" (mutation Cli.empty = Run.Loop []);
+  Unix.putenv "WINDTRAP_MUTATE" "off";
+  check "a falsy WINDTRAP_MUTATE is no mutation run"
+    (mutation Cli.empty = Run.No_mutation);
+  Unix.putenv "WINDTRAP_MUTATE" " lib/calc.ml ";
+  check "any other WINDTRAP_MUTATE is the prefixes, trimmed"
+    (mutation Cli.empty = Run.Loop [ "lib/calc.ml" ]);
+  Unix.putenv "WINDTRAP_MUTATE" "lib/a.ml,lib/b.ml";
+  check "and splits on commas as the flag does"
+    (mutation Cli.empty = Run.Loop [ "lib/a.ml"; "lib/b.ml" ]);
+  check "the flag shadows the mirror"
+    (mutation (parsed [ "--mutate=lib/x.ml" ]) = Run.Loop [ "lib/x.ml" ]);
+  clear_env ();
+  Unix.putenv "WINDTRAP_MUTATE_ARM" "lib/a.ml:9:12:add";
+  check "WINDTRAP_MUTATE_ARM mirrors --arm"
+    (mutation Cli.empty = Run.Armed "lib/a.ml:9:12:add");
+  (* Both at once, whichever layer each arrived by: the loop arms each
+     mutant itself, so an armed parent would mutate its own dry run. *)
+  let refused cli =
+    match Cli.settings cli with
+    | Error (Cli.Incompatible_flags ("--mutate", "--arm")) -> true
+    | Ok _ | Error _ -> false
+  in
+  check "--arm with WINDTRAP_MUTATE_ARM's sibling --mutate is refused"
+    (refused (parsed [ "--mutate" ]));
+  clear_env ();
+  check "--mutate and --arm on one command line are refused"
+    (refused (parsed [ "--mutate"; "--arm"; "x" ]));
+  Unix.putenv "WINDTRAP_MUTATE" "1";
+  check "WINDTRAP_MUTATE=1 with --arm is refused"
+    (refused (parsed [ "--arm"; "x" ]));
+  check "the message names both flags"
+    (contains "'--mutate' and '--arm' cannot be combined"
+       (Cli.error_message (Cli.Incompatible_flags ("--mutate", "--arm"))));
   clear_env ()
 
 (* Resolution: the output level *)
@@ -850,23 +892,18 @@ let () =
   check "the mirror reaches it too" (s.Run.seed = 0x0123456789abcdefL);
   check "the presentation fields default"
     (s.Run.color = Env.Auto && s.Run.slow_threshold = 1.0);
-  check "the coverage field defaults to on" s.Run.coverage;
+  check "the mutation field defaults to none" (s.Run.mutation = Run.No_mutation);
   check "the level field defaults to compact" (not s.Run.verbose);
-  Unix.putenv "WINDTRAP_COVERAGE" "off";
+  Unix.putenv "WINDTRAP_MUTATE" "1";
   Unix.putenv "WINDTRAP_VERBOSE" "1";
   let s = settings Cli.empty in
-  check "WINDTRAP_COVERAGE reaches the coverage field" (not s.Run.coverage);
+  check "WINDTRAP_MUTATE reaches the mutation field"
+    (s.Run.mutation = Run.Loop []);
   check "WINDTRAP_VERBOSE reaches the level field" s.Run.verbose;
   clear_env ()
 
 let () =
   reg "settings reports the configuration error" @@ fun () ->
-  clear_env ();
-  Unix.putenv "WINDTRAP_COVERAGE" "sideways";
-  (match Cli.settings Cli.empty with
-  | Error (Cli.Invalid_value { source = "WINDTRAP_COVERAGE"; _ }) ->
-      check "a malformed WINDTRAP_COVERAGE is an error" true
-  | Ok _ | Error _ -> check "a malformed WINDTRAP_COVERAGE is an error" false);
   clear_env ();
   Unix.putenv "WINDTRAP_SEED" "garbage";
   (match Cli.settings Cli.empty with

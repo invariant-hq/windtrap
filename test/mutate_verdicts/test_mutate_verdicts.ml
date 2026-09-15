@@ -545,7 +545,8 @@ let rejection_tests =
         | Error e -> failf "expected Unreadable, got %a" V.pp_error e
         | Ok _ -> fail "a missing file must not parse");
     test "pp_error names the fix for a foreign file" (fun () ->
-        contains ~msg:"suggests deleting the stale files" ~sub:"_build/_mutants"
+        contains ~msg:"suggests deleting the stale files"
+          ~sub:"delete the stale verdict files"
           (Format.asprintf "%a" V.pp_error
              (V.Unknown_format { path = "f"; header = "junk" })));
   ]
@@ -560,7 +561,10 @@ let filename_tests =
         equal ~msg:"the topmost one wins" (option string) (Some "/home/p")
           (V.build_root ~path:"/home/p/_build/default/_build/t.exe");
         equal ~msg:"no _build component" (option string) None
-          (V.build_root ~path:"/usr/local/bin/t"));
+          (V.build_root ~path:"/usr/local/bin/t");
+        equal ~msg:"a private build directory, by the core's own rule"
+          (option string) (Some "/home/p")
+          (V.build_root ~path:"/home/p/_build_ci/default/test/t.exe"));
     test "exe_identity is sandbox-invariant" (fun () ->
         equal ~msg:"under _build" string "default/test/t.exe"
           (V.exe_identity ~exe:"/home/p/_build/default/test/t.exe");
@@ -578,6 +582,14 @@ let filename_tests =
         equal ~msg:"the same file either way" string direct sandboxed;
         is_true ~msg:"under the project's _build/_mutants"
           (String.starts_with ~prefix:"/home/p/_build/_mutants/windtrap-" direct);
+        is_true ~msg:"under a private build directory's own _mutants"
+          (String.starts_with ~prefix:"/home/p/_build_ci/_mutants/windtrap-"
+             (V.output_file ~exe:"/home/p/_build_ci/default/test/t.exe"));
+        is_true ~msg:"under _windtrap/mutants for an executable outside any"
+          (String.starts_with
+             ~prefix:
+               (Filename.concat (Sys.getcwd ()) "_windtrap/mutants/windtrap-")
+             (V.output_file ~exe:"/usr/local/bin/t"));
         is_true ~msg:"named .mutants" (Filename.check_suffix direct ".mutants");
         not_equal ~msg:"a different executable gets a different file" string
           direct

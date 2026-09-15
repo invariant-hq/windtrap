@@ -28,8 +28,8 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, baselines, capture, the executor, the mutation loop, the report, CLI and the client facade; links `unix` and `windtrap.runtime` only — in-package, so Law 10's no-third-party-weight posture is untouched |
-| `windtrap.runtime` | `lib/runtime/` | the one runtime every instrumented closure links, through both backends' `ppx_runtime_libraries`: `Windtrap_runtime.Coverage` (registration, the `.coverage` dump, report data), `Windtrap_runtime.Mutate` (the catalogue, the arming guard, the reach map), `Windtrap_runtime.Verdicts` (the verdict lattice and the `.mutants` format the loop writes and `windtrap mutants` merges) and `Windtrap_runtime.Instr` (the versioned, exe-identified file plumbing both formats share). Stdlib only — it must never pull anything into the closure of every instrumented library — and it reads no environment variable but `WINDTRAP_COVERAGE_FILE`: which mutants a run tests and which one it arms are the core's to read and hand down |
+| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, baselines, capture, the executor, the mutation loop, the report, CLI and the client facade; links `unix` and `windtrap.runtime` only — in-package, so Law 10's no-third-party-weight posture is untouched — and the runtime only for the mutation loop: no run reads the coverage registry |
+| `windtrap.runtime` | `lib/runtime/` | the one runtime every instrumented closure links, through both backends' `ppx_runtime_libraries`: `Windtrap_runtime.Coverage` (registration, the `.coverage` dump, report data), `Windtrap_runtime.Mutate` (the catalogue, the arming guard, the reach map), `Windtrap_runtime.Verdicts` (the verdict lattice and the `.mutants` format the loop writes and `windtrap mutants` merges) and `Windtrap_runtime.Instr` (the versioned, exe-identified file plumbing both formats share). Stdlib only — it must never pull anything into the closure of every instrumented library — and it reads no environment variable but `WINDTRAP_COVERAGE_FILE`: which mutants a run tests and which one it arms are the core's to resolve (`--mutate`, `--arm`) and hand down. Its files live beside the build directory's contexts (`_build/_coverage`, `_build/_mutants`, a private `--build-dir` likewise) or, for an executable under no build directory, under the working directory's `_windtrap` |
 | binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--expect`, `--json`, `--lcov`) and `mutants` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared data-file lookup and staleness in `data_files`. Both merge and render, never run a test or drive a build, and every remedy they print says what to do in words rather than spelling a build tool's command |
 | package `ppx_windtrap` | `ppx/` | the expect/inline PPX — a desugaring into `test`, `group`, `expect`, `expect_exact` and `output`, with the `inline_tests.backend` whose generated main calls `run --corrected` — the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`), the inline runtime `Ppx_runtime` (`ppx/runtime/`: the module-load registry, dune's runner protocol, the undriven guard; a client of the public API) and the ambient `Expect_test_config` (`ppx/config/`: `run` and `sanitize`) — the only unit that sees ppxlib |
 
@@ -111,17 +111,18 @@ that merges and renders but never runs tests or drives a build, and at
 most one core module that drives it.
 
 - **Coverage** — `ppx/coverage/`, `lib/runtime/coverage.ml(i)`,
-  `bin/coverage_cmd.ml`, no core module. Its entire coupling is the
-  named coverage seam of `lib/report.ml`: one summary read at run end
-  and handed to the transcript's last line. The reporting command builds
-  the section data the per-file table draws from itself.
+  `bin/coverage_cmd.ml`, no core module and no coupling: a run prints
+  no number of its own, and `windtrap coverage` is the one reporter,
+  which builds the section data the per-file table draws from itself.
 - **Mutation** — `ppx/mutate/`, `lib/runtime/mutate.ml(i)` and
   `lib/runtime/verdicts.ml(i)`, `bin/mutate_cmd.ml`,
-  and `lib/mutate_loop.ml(i)`. The runtime reads no environment: the
-  scope (source-path prefixes) and the armed identifier are read by
-  `Cli` and `Env` in the core and applied by the loop — the scope to
-  the population it forks over, the identifier through the runtime's
-  own parser and `arm`. Its coupling is one dispatch call at run
+  and `lib/mutate_loop.ml(i)`. The runtime reads no flag and no
+  environment: the scope (`--mutate`'s source-path prefixes) and the
+  armed identifier (`--arm`) are two rows of `Cli`'s table, with the
+  mirrors every run-changing flag has, resolved into `Run.config` and
+  applied by the loop — the scope to the population it forks over, the
+  identifier through the runtime's own parser and `arm`. Its coupling
+  is one dispatch call at run
   entry (the facade's `run` calls `Mutate_loop.execute_and_report` in
   place of `Report.run`), one *composed* observer on `Run.execute`'s
   existing `?on_event` hook — never a replacement for the transcript's
@@ -285,7 +286,7 @@ design**.
     and only in a build that asked for it.**
     (a) *Inert by default.* Mutation arrives through its own opt-in
     dune instrumentation backend. A build without it is byte-identical
-    to one without windtrap; with it and without `WINDTRAP_MUTATE`, the
+    to one without windtrap; with it and without `--mutate`, the
     instrumented code is observationally identical to uninstrumented
     code — same evaluation order, tail-call status, laziness, outcomes,
     counts, and exit code. Enforced by `test/mutate_ppx/semantics/`,
@@ -296,7 +297,7 @@ design**.
     rather than against an editable expectation, and which must stay
     green.
     (b) *One mutant, announced and concluded.* At most one mutant is
-    armed per process, named by `WINDTRAP_MUTATE_ARM` and by nothing
+    armed per process, named by `--arm` (or its mirror) and by nothing
     else, and a process with a mutant armed prints
     `mutant <id> armed: <before> → <after>` before any other output —
     so a run whose output does not say so has none — and closes, after

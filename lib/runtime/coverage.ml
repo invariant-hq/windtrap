@@ -16,11 +16,10 @@ let format =
   {
     Instr.magic;
     kind = "coverage";
-    dir = "_coverage";
+    dir = "coverage";
     ext = "coverage";
     remedy =
-      "delete the stale files under _build/_coverage, then re-run the \
-       instrumented tests";
+      "delete the stale coverage files, then re-run the instrumented tests";
     who = "Windtrap_runtime.Coverage";
   }
 
@@ -66,8 +65,8 @@ let pp_error ppf = function
       Format.fprintf ppf
         "%s: coverage point tables disagree across coverage files (executables \
          built from different sources?); re-run every instrumented test \
-         executable from one build, then merge again; delete the files under \
-         _build/_coverage only if leftovers remain"
+         executable from one build, then merge again; delete the coverage \
+         files only if leftovers remain"
         file
 
 module File_map = Map.Make (String)

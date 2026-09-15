@@ -5,15 +5,15 @@
 
 (** The [windtrap coverage] subcommand: coverage reporting.
 
-    Finds the [.coverage] files instrumented test executables wrote under
-    [_build/_coverage] (resolving the project root as the runtime does — the
-    parent of the topmost [_build] component of the current directory, else the
-    nearest ancestor with a [_build/_coverage]), or under explicit [PATH]
-    arguments; excludes, with a warning naming each one, dumps whose recorded
-    executable was deleted or rebuilt since the run; merges the rest — loudly
-    rejecting foreign formats and mismatched point tables — and renders the
-    merged per-file report through the library renderer. [--min] gates CI;
-    [--json] is the machine-readable artifact.
+    Finds the [.coverage] files instrumented test executables wrote — under the
+    build directory's [_coverage], or under [_windtrap/coverage] in a tree built
+    without one, located as the runtime locates its output
+    ({!Data_files.discover}) — or under explicit [PATH] arguments; excludes,
+    with a warning naming each one, dumps whose recorded executable was deleted
+    or rebuilt since the run; merges the rest — loudly rejecting foreign formats
+    and mismatched point tables — and renders the merged per-file report through
+    the library renderer. [--min] gates CI; [--json] is the machine-readable
+    artifact.
 
     The exclusion has no override, deliberately: a total computed from a dump
     known to describe another build is a number that can only mislead. *)

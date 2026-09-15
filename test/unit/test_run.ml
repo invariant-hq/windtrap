@@ -55,7 +55,47 @@ let () =
     ((not config.Run.bail) && config.Run.timeout = None
     && config.Run.prop_count = None
     && config.Run.shard = None);
-  check "default config: log dir is set" (config.Run.log_dir <> "")
+  check "default config: log dir is set" (config.Run.log_dir <> "");
+  check "default config: not a mutation run"
+    (config.Run.mutation = Run.No_mutation)
+
+(* [for_subset] is the loop's child configuration: every path-selecting
+   knob cleared, the tag knobs and the seed kept, and the child no
+   mutation run of its own — its parent is the loop, and it arms what it
+   is handed. A knob this forgets gives the child a selection its
+   parent's tree already applied. *)
+let () =
+  let parent =
+    {
+      (Run.default_config ()) with
+      Run.seed = 0x5eedL;
+      filter = Some "f";
+      exclude = Some "e";
+      shard = Some (1, 2);
+      failed_only = true;
+      tags = [ "t" ];
+      exclude_tags = [ "x" ];
+      stream = true;
+      baseline = Baseline.Update;
+      junit = Some "out.xml";
+      mutation = Run.Loop [ "lib/" ];
+    }
+  in
+  let child = Run.for_subset parent ~log_dir:"/tmp/child" ~bail:true in
+  check "for_subset: path selection cleared"
+    (child.Run.filter = None && child.Run.exclude = None
+   && child.Run.shard = None && not child.Run.failed_only);
+  check "for_subset: tags and seed kept"
+    (child.Run.tags = [ "t" ]
+    && child.Run.exclude_tags = [ "x" ]
+    && child.Run.seed = 0x5eedL);
+  check "for_subset: read-only, silent, unreported"
+    (child.Run.baseline = Baseline.Check
+    && (not child.Run.stream) && child.Run.junit = None);
+  check "for_subset: focus allowed, the caller's log dir and bail"
+    (child.Run.allow_focus && child.Run.log_dir = "/tmp/child" && child.Run.bail);
+  check "for_subset: the child is no mutation run"
+    (child.Run.mutation = Run.No_mutation)
 
 let () =
   let config = { (Run.default_config ()) with Run.seed = 0xabcL } in

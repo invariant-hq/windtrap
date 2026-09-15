@@ -1121,11 +1121,11 @@ let print ~out ~ansi sections =
   Pp.flush out ()
 (* Coverage (run data, rendered late)
 
-   The one place the coverage layout lives: the transcript's inline line
-   and the [windtrap coverage] command's per-file report over merged
-   files. The data arrives as the record below, built by the command,
-   which holds the runtime — this module orders nothing and counts
-   nothing, and it does not name the runtime. *)
+   The one place the coverage layout lives: the [windtrap coverage]
+   command's summary line and per-file report over merged files. The
+   data arrives as the record below, built by the command, which holds
+   the runtime — this module orders nothing and counts nothing, and it
+   does not name the runtime. *)
 
 type coverage_file = {
   file : string;
@@ -1147,17 +1147,15 @@ let coverage_style ~visited ~total : Pp.style =
   let pct = coverage_percentage ~visited ~total in
   if pct >= 80. then `Green else if pct >= 60. then `Yellow else `Red
 
-(* The one producer of the coverage line, shared by the transcript's
-   inline form (which points at the project aggregate) and
-   [coverage_report]'s bare form, which already is the aggregate. *)
-let coverage_line ?hint ~visited ~total () =
-  let hint = match hint with None -> "" | Some h -> " \u{00b7} " ^ h in
+(* The summary line of the coverage report, over the merge of every
+   executable's dumps: the project number, not one process's view. *)
+let coverage_line ~visited ~total () =
   [
     plain "coverage: ";
     styled
       (coverage_style ~visited ~total)
       (spf "%.1f%%" (coverage_percentage ~visited ~total));
-    plain (spf " (%d/%d points)%s" visited total hint);
+    plain (spf " (%d/%d points)" visited total);
   ]
 
 (* One source-excerpt block: file heading, then each uncovered region
@@ -1259,7 +1257,6 @@ type survivor = { mutant : mutant; witnesses : witness list }
 type scope = Suite | Selected of int | Executables of int
 
 type mutation = {
-  arm_variable : string;
   survivors : survivor list;
   unreached : mutant list;
   killed : int;
@@ -1269,20 +1266,20 @@ type mutation = {
 
 (* The command that arms a mutant under the run's selection, in the
    invocation's spelling, with the literal [<id>] where the reader pastes
-   one — the variable's name arrives on the record, spelled by the
-   producer with the runtime's own function, so the report and the
-   runtime cannot disagree about what to type. The filter is restated the
-   way [replay_line] restates it — [-f] under [`Exe], [WINDTRAP_FILTER]
-   under [`Mirrors] — because a survivor of a filtered run survived that
-   selection, and the line must reproduce that run. Under [`Mirrors] no
-   command is spelled at all: this renderer does not know how the suite
-   is run, and the build-tool spelling that used to stand there was
-   wrong in every project but the one it was written in. *)
-let reproduce_line ~invocation ~variable ~filter =
+   one: [--arm] under [`Exe], its WINDTRAP_MUTATE_ARM mirror under
+   [`Mirrors] — the flag's own mirror, as [replay_line] spells the seed's.
+   The filter is restated the way [replay_line] restates it — [-f] under
+   [`Exe], [WINDTRAP_FILTER] under [`Mirrors] — because a survivor of a
+   filtered run survived that selection, and the line must reproduce
+   that run. Under [`Mirrors] no command is spelled at all: this renderer
+   does not know how the suite is run, and the build-tool spelling that
+   used to stand there was wrong in every project but the one it was
+   written in. *)
+let reproduce_line ~invocation ~filter =
   match (invocation, filter) with
   | `Exe cmd, Some flt ->
-      spf "reproduce: %s=<id> %s -f %s" variable cmd (shell_quote flt)
-  | `Exe cmd, None -> spf "reproduce: %s=<id> %s" variable cmd
+      spf "reproduce: %s --arm <id> -f %s" cmd (shell_quote flt)
+  | `Exe cmd, None -> spf "reproduce: %s --arm <id>" cmd
   | `Mirrors, filter ->
       (* No CLI to spell, and no build tool to name: the aggregate is
          merged from executables this process never ran, and the inline
@@ -1290,7 +1287,8 @@ let reproduce_line ~invocation ~variable ~filter =
          stands where the reader's own suite command goes — a run that
          carries the mutants and is not replayed from a cache, since an
          arming a cached run swallows appears to work and does not. *)
-      spf "reproduce: %s=<id>%s <re-run the instrumented suite>" variable
+      spf
+        "reproduce: WINDTRAP_MUTATE_ARM=<id>%s <re-run the instrumented suite>"
         (match filter with
         | Some flt -> " WINDTRAP_FILTER=" ^ shell_quote flt
         | None -> "")
@@ -1503,9 +1501,5 @@ let mutation_report ~invocation (m : mutation) =
   @ (if reported then [ Line []; Rule None; Line [] ] else [])
   @ [ Line (mutation_summary_spans m) ]
   @
-  if reported then
-    [
-      Hint
-        (reproduce_line ~invocation ~variable:m.arm_variable ~filter:m.filter);
-    ]
+  if reported then [ Hint (reproduce_line ~invocation ~filter:m.filter) ]
   else []

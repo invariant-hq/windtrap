@@ -17,12 +17,14 @@
 (* Configuration *)
 
 type invocation = [ `Exe of string | `Mirrors ]
+type mutation = No_mutation | Loop of string list | Armed of string
 
 (* One record for everything an invocation resolves. The executor reads
    the selection and execution fields; the presentation fields — color,
-   the slow threshold, verbosity, the JUnit target, the coverage line, the
-   GitHub envelope and the hint context — are read by Report alone. A
-   field the executor ignores is not a coupling. *)
+   the slow threshold, verbosity, the JUnit target, the GitHub envelope
+   and the hint context — are read by Report alone, and the mutation
+   field by the loop alone. A field the executor ignores is not a
+   coupling. *)
 type config = {
   seed : Seed.seed;
   filter : string option;
@@ -42,9 +44,7 @@ type config = {
   slow_threshold : float;
   verbose : bool;
   junit : string option;
-  coverage : bool;
-      (* WINDTRAP_COVERAGE, the inline coverage line: goes with it (spec 3.4,
-         step 5), together with the seam in Report. *)
+  mutation : mutation;
   github : bool;
   invocation : invocation;
 }
@@ -69,7 +69,7 @@ let default_config () =
     slow_threshold = 1.0;
     verbose = false;
     junit = None;
-    coverage = true;
+    mutation = No_mutation;
     github = false;
     invocation = `Mirrors;
   }
@@ -96,7 +96,8 @@ let default_config () =
    — a correction is recorded only under Corrected and Update — and the
    log directory is the child's own so that its capture files and its
    last-failed store cannot touch the parent's. A child reports nothing,
-   so it writes no JUnit either. *)
+   so it writes no JUnit either; and it is not itself a mutation run —
+   the loop is its parent, and it arms what the parent hands it. *)
 let for_subset config ~log_dir ~bail =
   {
     config with
@@ -110,6 +111,7 @@ let for_subset config ~log_dir ~bail =
     log_dir;
     allow_focus = true;
     junit = None;
+    mutation = No_mutation;
   }
 
 (* Run records *)

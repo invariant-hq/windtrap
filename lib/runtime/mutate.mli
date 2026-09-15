@@ -30,8 +30,8 @@
 
     A mutant is named by the source position of the expression it rewrites and
     by the rewrite applied there. That name is what travels: through the core's
-    arming knob (see {!arm_variable}), through verdict files, and into the
-    report. *)
+    [--arm] flag and its [WINDTRAP_MUTATE_ARM] mirror, through verdict files,
+    and into the report. *)
 
 type id = { file : string; line : int; col : int; rewrite : string }
 (** The type for mutant identifiers. [file] is the source path as recorded at
@@ -59,7 +59,7 @@ val rewrites : string list
 val id_to_string : id -> string
 (** [id_to_string id] is [id] in the canonical spelling ["lib/calc.ml:9:12:add"]
     — [file], [line], [col], [rewrite], separated by colons. This is the
-    spelling the core's arming knob accepts and verdict files record. *)
+    spelling [--arm] accepts and verdict files record. *)
 
 val compare_id : id -> id -> int
 (** [compare_id a b] orders identifiers lexicographically by [file], then
@@ -204,14 +204,6 @@ type arm_error =
 val pp_arm_error : Format.formatter -> arm_error -> unit
 (** [pp_arm_error ppf e] formats a human-readable message for [e], naming the
     candidates and, where there is one, the likely fix. *)
-
-val arm_variable : string
-(** [arm_variable] is ["WINDTRAP_MUTATE_ARM"]: the name of the environment
-    variable the windtrap core reads a mutant identifier from, and the name the
-    report's reproduce line spells. A name, not a reader — this module reads no
-    environment; the core parses the value with {!id_of_string} and hands it to
-    {!arm}. Deliberately not ["WINDTRAP_MUTANT"]: two variables differing by two
-    characters and meaning unrelated things is a defect. *)
 
 val id_of_string : string -> (id, arm_error) result
 (** [id_of_string s] parses a mutant identifier in its canonical spelling. It is

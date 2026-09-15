@@ -79,4 +79,3 @@ slowest tests:
    18ms  geo › area non-negative
   0.3ms  cli › cli help
   0.2ms  users › sessions after login
-coverage: 87.2% (312/358 points) · project: windtrap coverage

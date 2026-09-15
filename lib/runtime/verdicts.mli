@@ -81,12 +81,13 @@ val merge_verdict : verdict -> verdict -> verdict
 (** {1:files Verdict files}
 
     Each instrumented test executable's mutation run writes one verdict file
-    under [_build/_mutants]; [windtrap mutants] loads them all, {!merge}s them,
-    and renders the survivors that survive {e everywhere}. The catalogue never
-    touches disk — only verdicts do. The lifecycle rule: one file per
-    executable, at {!output_file}, replaced whole by every run that tests the
-    executable's full suite and left untouched by a run that narrows it — unlike
-    a coverage dump, which every run adds to.
+    under the build directory's [_mutants] (or [_windtrap/mutants] outside any);
+    [windtrap mutants] loads them all, {!merge}s them, and renders the survivors
+    that survive {e everywhere}. The catalogue never touches disk — only
+    verdicts do. The lifecycle rule: one file per executable, at {!output_file},
+    replaced whole by every run that tests the executable's full suite and left
+    untouched by a run that narrows it — unlike a coverage dump, which every run
+    adds to.
 
     The format is versioned by the magic string [windtrap-mutants-v3] on the
     first line; {!of_string} and {!load} reject any other header loudly, and
@@ -173,13 +174,18 @@ type identity = Instr.identity = { exe : string; digest : string }
     comparison survives rebuilds that dune's cache restores with their original
     timestamps, which mtimes do not. *)
 
+val format : Instr.format
+(** [format] is the [.mutants] format's constants: its magic string, the name of
+    the directory its files live in ([mutants]) and their extension. For the
+    reporting command's discovery ({!Instr.data_dir}). *)
+
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the [exe] field a verdict file records for the
-    executable at path [exe]: its path below the topmost [_build] directory
-    (with any [.sandbox/<digest>] prefix removed, so sandboxed and direct runs
-    record the same identity), or its absolute path when [exe] is not under a
-    [_build] directory. The reporting command resolves a relative identity
-    against the file's own {!build_root} to detect deleted or rebuilt
+    executable at path [exe]: its path below its build directory
+    ({!Instr.build_dir}, with any [.sandbox/<digest>] prefix removed, so
+    sandboxed and direct runs record the same identity), or its absolute path
+    when [exe] is under none. The reporting command resolves a relative identity
+    against the file's own build directory to detect deleted or rebuilt
     executables. *)
 
 val writer_identity : exe:string -> identity option
@@ -190,22 +196,21 @@ val writer_identity : exe:string -> identity option
     off the test path. *)
 
 val build_root : path:string -> string option
-(** [build_root ~path] is the parent directory of the topmost [_build] component
-    of [path] (resolved against the current directory when relative), and [None]
-    when [path] has no [_build] component. This is the project-root rule shared
-    by {!output_file}, {!exe_identity}, and the reporting command's file
-    discovery — one rule, so a file written from inside dune's sandbox and a
-    report run from anywhere in the checkout resolve the same root. *)
+(** [build_root ~path] is {!Instr.build_root}[ ~path]: the parent of the build
+    directory [path] (resolved against the current directory when relative) lies
+    in, and [None] when no component of [path] starts with [_build]. One rule
+    for {!output_file}, {!exe_identity} and the reporting command's file
+    discovery, so a file written from inside dune's sandbox and a report run
+    from anywhere in the checkout resolve the same root. *)
 
 val output_file : exe:string -> string
 (** [output_file ~exe] is the deterministic verdict-file path for the executable
     at path [exe] (resolved against the current directory when relative):
-    [<root>/_build/_mutants/windtrap-<hash>.mutants], where [<root>] is the
-    parent of the topmost [_build] component of [exe] and [<hash>] is the hex
-    digest of [exe]'s path below [_build] (with any [.sandbox/<digest>] prefix
-    removed, so sandboxed and direct runs write the same file). When [exe] is
-    not under a [_build] directory, [<root>] is the current directory and the
-    full path of [exe] is hashed.
+    [<build_dir>/_mutants/windtrap-<hash>.mutants] when [exe] is under a build
+    directory, [<hash>] being the hex digest of [exe]'s path below it (with any
+    [.sandbox/<digest>] prefix removed, so sandboxed and direct runs write the
+    same file), and [<cwd>/_windtrap/mutants/windtrap-<hash>.mutants] otherwise,
+    with the full path of [exe] hashed.
 
     The name depends on the executable's path: renaming or moving a test
     executable orphans its previous verdict file. The reporting command detects

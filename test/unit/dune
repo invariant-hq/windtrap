@@ -101,12 +101,6 @@
  (modules harness)
  (libraries windtrap unix))
 
-; WINDTRAP_COVERAGE=off: these four assert on transcripts byte for byte,
-; and lib/ is instrumented — under `--instrument-with` every run they
-; drive would append an inline coverage line about the core, which is
-; not what any of them is measuring. The at_exit dump still writes, so
-; their coverage still reaches `dune build @cover`.
-
 (tests
  (names test_run test_runner test_ppx_runtime test_windtrap)
  (modules test_run test_runner test_ppx_runtime test_windtrap)
@@ -114,9 +108,4 @@
  ; inline runtime lives there (Ppx_windtrap_runtime.Ppx_runtime), not in
  ; the core, and .config exposes the ambient Expect_test_config under
  ; exactly the top-level name generated code references.
- (libraries windtrap ppx_windtrap.runtime ppx_windtrap.config unix harness)
- (action
-  (setenv
-   WINDTRAP_COVERAGE
-   off
-   (run %{test}))))
+ (libraries windtrap ppx_windtrap.runtime ppx_windtrap.config unix harness))

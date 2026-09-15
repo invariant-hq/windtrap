@@ -1,9 +1,8 @@
 ; The core links the one instrumentation runtime (lib/runtime): the
-; coverage seam snapshots its registry, the mutation loop drives its
-; catalogue and writes verdicts through its file format, and both spell
-; identifiers with the runtime's own functions so the report and the
-; runtime cannot disagree. The dependency points downward only — the
-; runtime never links windtrap.
+; mutation loop drives its catalogue and writes verdicts through its file
+; format, spelling identifiers with the runtime's own functions so the
+; report and the runtime cannot disagree. The dependency points downward
+; only — the runtime never links windtrap.
 
 (library
  (name windtrap)

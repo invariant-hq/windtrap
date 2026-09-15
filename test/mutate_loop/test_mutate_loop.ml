@@ -68,28 +68,10 @@ let environment bindings =
     | Some value -> [ name ^ "=" ^ value ]
     | None -> []
   in
-  (* The scope that keeps this suite's fixtures controlled. Under
-     --instrument-with the children link a mutation-instrumented windtrap
-     core, and every count here — five sites, the reach map, the verdict
-     file — is written against this directory's own fixtures: subject.ml,
-     runaway/spinner.ml, inline/inline_armed.ml. The loop applies
-     WINDTRAP_MUTATE_ONLY to the population it forks over, so the
-     children test exactly those mutants whatever else they link.
-
-     Omitted when the caller sets it, because [getenv] answers with the
-     first match and a default listed first would silently win over the
-     scenario's own. *)
-  let sets name =
-    List.exists (String.starts_with ~prefix:(name ^ "=")) bindings
-  in
-  let default_scope =
-    if sets "WINDTRAP_MUTATE_ONLY" then []
-    else [ "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
-  in
   Array.of_list
     (List.concat_map inherited [ "PATH"; "HOME"; "TMPDIR"; "LANG"; "LC_ALL" ]
     @ [ "WINDTRAP_COLOR=never"; "WINDTRAP_SLOW_THRESHOLD=0" ]
-    @ default_scope @ bindings)
+    @ bindings)
 
 let counter = ref 0
 
@@ -127,6 +109,23 @@ let spawn ?(exe = suite_exe) ?(args = []) ?cwd bindings =
   (code, read_file out_path, read_file err_path)
 
 let says ~msg text sub = contains ~msg ~sub text
+
+(* The scope that keeps this suite's fixtures controlled. Under
+   --instrument-with the children link a mutation-instrumented windtrap
+   core, and every count here — five sites, the reach map, the verdict
+   file — is written against this directory's own fixtures: subject.ml,
+   runaway/spinner.ml, inline/inline_armed.ml. The loop applies
+   [--mutate]'s prefixes to the population it forks over, so the
+   children test exactly those mutants whatever else they link. Every
+   loop scenario passes this flag; the inline runner, whose argv is
+   dune's protocol, gets the same scope through the mirror. *)
+let mutate = "--mutate=test/mutate_loop/"
+let mutate_mirror = "WINDTRAP_MUTATE=test/mutate_loop/"
+
+(* Under --instrument-with the core this suite links catalogues its own
+   mutants; the scenarios that need a catalogue holding the fixture's
+   alone, or none at all, skip there. *)
+let core_instrumented = M.catalogue () <> []
 
 let has_sub text sub =
   let n = String.length text and m = String.length sub in
@@ -169,26 +168,25 @@ let stale_id () =
       String.concat ":" [ file; "999"; col; rewrite ]
   | _ -> failf "unexpected identifier %S" id
 
-(* The [reproduce] footer's variable binding, completed exactly as a
-   reader would: the identifier from the survivor's head row pasted over
-   the footer's [<id>] placeholder. Pasting it back is the only test of
-   the footer that can fail when the identifier the report prints is not
-   one the runtime resolves. *)
-let reproduce_binding_of report =
+(* The [reproduce] footer's flag, completed exactly as a reader would:
+   the identifier from the survivor's head row pasted over the footer's
+   [<id>] placeholder. Pasting it back is the only test of the footer
+   that can fail when the identifier the report prints is not one the
+   runtime resolves. *)
+let reproduce_arm_of report =
   let lines = String.split_on_char '\n' report in
-  let placeholder = M.arm_variable ^ "=<id>" in
   let footer line =
-    String.starts_with ~prefix:"reproduce: " line && has_sub line placeholder
+    String.starts_with ~prefix:"reproduce: " line && has_sub line "--arm <id>"
   in
   if not (List.exists footer lines) then
-    failf "no reproduce footer binding %s in the report:\n%s" placeholder report;
+    failf "no reproduce footer spelling --arm <id> in the report:\n%s" report;
   let id_of line =
     match String.split_on_char ' ' (String.trim line) with
     | "SURVIVED" :: rest -> List.find_opt (fun w -> w <> "") rest
     | _ -> None
   in
   match List.find_map id_of lines with
-  | Some id -> M.arm_variable ^ "=" ^ id
+  | Some id -> [ "--arm"; id ]
   | None -> failf "no SURVIVED row in the report:\n%s" report
 
 (* The verdict file this executable writes, deleted before every scenario
@@ -221,39 +219,41 @@ let unasked_tests =
         equal ~msg:"stderr" text "" err);
   ]
 
-(* WINDTRAP_MUTATE_ONLY narrows the population the loop forks over, not
+(* [--mutate]'s prefixes narrow the population the loop forks over, not
    the registry and not the report, and the two consequences below are
    what the rest of this tree relies on: a scope that matches nothing is
    refused by name, and a scope that matches keeps the fixture's own
    mutants whole. Every other scenario in this file passes the directory
-   scope through [environment], so without these the feature would only
-   ever be exercised incidentally. *)
+   scope through [mutate], so without these the feature would only ever
+   be exercised incidentally. *)
 let scope_tests =
   [
     test "a scope that matches nothing is refused, naming the scope" (fun () ->
         (* The loop declines by name rather than reporting nothing. *)
-        let code, _, err =
-          spawn
-            [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=::no-such-source::" ]
-        in
+        let code, _, err = spawn ~args:[ "--mutate=::no-such-source::" ] [] in
         equal ~msg:"asking it to mutate exits 1" int 1 code;
         (* The build is instrumented and fine; the scope is what emptied
            the population, so the refusal must name it — blaming
            instrumentation would send the reader to rebuild. *)
-        says ~msg:"declines by naming the scope, value included" err
-          "scope ::no-such-source:: left no mutants";
+        says ~msg:"declines by naming the flag, value included" err
+          "windtrap: --mutate=::no-such-source:: leaves no mutant";
         says ~msg:"and both causes an empty scoped catalogue has" err
-          "matches no instrumented file, or the matched files have no mutation \
-           sites";
+          "no instrumented file matches the prefix (is the library under test \
+           instrumented with ppx_windtrap.mutate?), or the matched files have \
+           no mutation sites";
         denies ~msg:"never the missing-backend diagnosis" err
           "links no instrumented module");
     test "a scope that matches keeps the whole fixture catalogue" (fun () ->
-        let code, out, _ =
-          spawn
-            [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
-        in
+        let code, out, _ = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code" int 0 code;
         says ~msg:"the fixture's reach, undiminished" out
+          "mutants: 1 survived of 2 reached by this suite \u{00b7} 1 killed");
+    test "the mirror reads a non-boolean value as the prefixes" (fun () ->
+        (* WINDTRAP_MUTATE=<prefix> is what reaches a suite no command
+           line reaches: the same scope, through the flag's own parser. *)
+        let code, out, _ = spawn [ mutate_mirror ] in
+        equal ~msg:"exit code" int 0 code;
+        says ~msg:"the same population" out
           "mutants: 1 survived of 2 reached by this suite \u{00b7} 1 killed");
   ]
 
@@ -263,7 +263,7 @@ let loop_tests =
       "the loop kills one mutant, names the survivor's witnesses and says \
        nothing of the unreached" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, err = spawn [ "WINDTRAP_MUTATE=1" ] in
+        let code, out, err = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code (a survivor never fails the build)" int 0 code;
         equal ~msg:"stderr" text "" err;
         says ~msg:"the dry run printed its ordinary summary" out
@@ -280,8 +280,8 @@ let loop_tests =
         denies ~msg:"no arm line" out "    arm ";
         denies ~msg:"no dismissal hint" out "[@mutate off";
         says ~msg:"the reproduce footer, under the summary" out
-          "mutants: 1 survived of 2 reached by this suite \u{00b7} 1 killed\n\
-           reproduce: WINDTRAP_MUTATE_ARM=<id> ";
+          ("mutants: 1 survived of 2 reached by this suite \u{00b7} 1 killed\n\
+            reproduce: " ^ suite_exe ^ " --arm <id>\n");
         (* One executable's unreached mutant is usually another's reached
            one: the per-executable report neither lists nor counts them. *)
         denies ~msg:"no unreached section" out "never reached";
@@ -290,7 +290,7 @@ let loop_tests =
         (* The killed mutant is not a survivor and not unreached. *)
         denies ~msg:"only one block" out "survivors (2)");
     test "a dismissed mutant is in no block and no count" (fun () ->
-        let _, out, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
+        let _, out, _ = spawn ~args:[ mutate ] [] in
         (* The [green] suite runs the [@mutate off] site and pins nothing
            about it, so without the dismissal it would be a second
            survivor and a third reached mutant. *)
@@ -299,20 +299,20 @@ let loop_tests =
         denies ~msg:"no block for the dismissed line" out
           (List.nth (Lazy.force catalogue) 4));
     test "the survivor block quotes the mutated source line" (fun () ->
-        let _, out, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
+        let _, out, _ = spawn ~args:[ mutate ] [] in
         says ~msg:"excerpt row" out "let widen a b = a + b");
-    test "the reproduce footer spells a variable that arms the survivor"
+    test "the reproduce footer spells the flag that arms the survivor"
       (fun () ->
-        let _, out, _ = spawn [ "WINDTRAP_MUTATE=1"; "INSIDE_DUNE=1" ] in
+        let _, out, _ = spawn ~args:[ mutate ] [ "INSIDE_DUNE=1" ] in
         says ~msg:"the backend flag, before the target" out
-          "reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with \
-           ppx_windtrap.mutate ";
+          "reproduce: dune exec --instrument-with ppx_windtrap.mutate ";
+        says ~msg:"and --arm after the separator" out " -- --arm <id>\n";
         (* The footer is completed and pasted back rather than
            pattern-matched: the identifier the report prints has to be one
            the runtime's own selector grammar resolves, and the only proof
            of that is a run that announces the same rewrite. *)
-        let binding = reproduce_binding_of out in
-        let code, armed, _ = spawn [ binding ] in
+        let arm = reproduce_arm_of out in
+        let code, armed, _ = spawn ~args:arm [] in
         equal ~msg:"the armed run's exit code (this mutant survives)" int 0 code;
         says ~msg:"the pasted line armed the survivor" armed
           "armed: a + b \u{2192} a - b");
@@ -321,21 +321,19 @@ let loop_tests =
            it — spelled as the replay line spells a filter, and pasted back
            with the same selection to prove it still arms. *)
         let _, out, _ =
-          spawn ~args:[ "-f"; "widen" ] [ "WINDTRAP_MUTATE=1"; "INSIDE_DUNE=1" ]
+          spawn ~args:[ mutate; "-f"; "widen" ] [ "INSIDE_DUNE=1" ]
         in
         says ~msg:"the selection scopes the summary" out
           "reached by the 2 selected tests";
         says ~msg:"and rides the footer" out
-          "test/mutate_loop/suite_main.exe -- -f 'widen'\n";
-        let binding = reproduce_binding_of out in
-        let code, armed, _ = spawn ~args:[ "-f"; "widen" ] [ binding ] in
+          "test/mutate_loop/suite_main.exe -- --arm <id> -f 'widen'\n";
+        let arm = reproduce_arm_of out in
+        let code, armed, _ = spawn ~args:(arm @ [ "-f"; "widen" ]) [] in
         equal ~msg:"the armed run's exit code" int 0 code;
         says ~msg:"the pasted line armed the survivor" armed
           "armed: a + b \u{2192} a - b");
     test "every survivor gets a block, in most-watched order" (fun () ->
-        let _, out, _ =
-          spawn [ "MUTATE_FIXTURE=capped"; "WINDTRAP_MUTATE=1" ]
-        in
+        let _, out, _ = spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=capped" ] in
         says ~msg:"both blocks" out "survivors (2)";
         says ~msg:"most-watched first" out
           "SURVIVED  test/mutate_loop/subject.ml:18";
@@ -355,7 +353,7 @@ let reach_tests =
        right side of a test boundary" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=boundary"; "WINDTRAP_MUTATE=1" ]
+          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=boundary" ]
         in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -396,10 +394,8 @@ let reach_tests =
            parent's tag predicate runs nothing, and the determinism probe
            reports a deterministic suite as non-deterministic. *)
         let code, out, err =
-          spawn
-            [
-              "MUTATE_FIXTURE=tagged"; "WINDTRAP_TAG=gated"; "WINDTRAP_MUTATE=1";
-            ]
+          spawn ~args:[ mutate ]
+            [ "MUTATE_FIXTURE=tagged"; "WINDTRAP_TAG=gated" ]
         in
         equal ~msg:"exit code" int 0 code;
         denies ~msg:"the probe agreed" err "not deterministic";
@@ -438,12 +434,8 @@ let no_trace_tests =
           Filename.concat scratch_dir ("atexit" ^ string_of_int !counter)
         in
         let code, out, err =
-          spawn
-            [
-              "MUTATE_FIXTURE=fatal";
-              "WINDTRAP_MUTATE=1";
-              "MUTATE_ATEXIT_LOG=" ^ log;
-            ]
+          spawn ~args:[ mutate ]
+            [ "MUTATE_FIXTURE=fatal"; "MUTATE_ATEXIT_LOG=" ^ log ]
         in
         equal ~msg:"the parent completed" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -462,7 +454,7 @@ let verdict_file_tests =
   [
     test "the loop writes a verdict file the runtime can read back" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, _, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
+        let code, _, _ = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code" int 0 code;
         is_true ~msg:"the file exists" (Sys.file_exists verdict_path);
         match V.load verdict_path with
@@ -501,7 +493,7 @@ let verdict_file_tests =
               "widen > widen is nonzero");
     test "a narrowed run reports in full but persists nothing" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
+        let code, out, _ = spawn ~args:[ mutate ] [] in
         equal ~msg:"the full run's exit code" int 0 code;
         denies ~msg:"a full run saves without comment" out "verdicts not saved";
         let saved = read_file verdict_path in
@@ -509,13 +501,10 @@ let verdict_file_tests =
         (* The selection reaches only [sub], whose mutant dies, so the
            loop completes — and its verdicts call [widen] unreached, which
            is exactly the selection-relative record that must not
-           overwrite the full run's survivor. The harness's default
-           WINDTRAP_MUTATE_ONLY scope is in force here too, so this is
-           also the combined case: a filter skips the write even where
-           the scope alone would still save. *)
-        let code, out, err =
-          spawn ~args:[ "-f"; "calc" ] [ "WINDTRAP_MUTATE=1" ]
-        in
+           overwrite the full run's survivor. [mutate]'s scope is in
+           force here too, so this is also the combined case: a filter
+           skips the write even where the scope alone would still save. *)
+        let code, out, err = spawn ~args:[ mutate; "-f"; "calc" ] [] in
         equal ~msg:"the narrowed run still completes" int 0 code;
         equal ~msg:"stderr" text "" err;
         says ~msg:"and still reports, against its selection" out
@@ -527,13 +516,10 @@ let verdict_file_tests =
            whole.";
         equal ~msg:"the canonical file is byte-identical" text saved
           (read_file verdict_path));
-    test "an ONLY-scoped run still writes: its records are project-true"
+    test "a prefix-scoped run still writes: its records are project-true"
       (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, _ =
-          spawn
-            [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=test/mutate_loop/" ]
-        in
+        let code, out, _ = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code" int 0 code;
         denies ~msg:"the scope narrows the mutants, not the tests" out
           "verdicts not saved";
@@ -546,7 +532,7 @@ let crash_tests =
       (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=crash"; "WINDTRAP_MUTATE=1" ]
+          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=crash" ]
         in
         equal ~msg:"the parent survives its child" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -579,9 +565,7 @@ let crash_tests =
 let refusal_tests =
   [
     test "a red dry run refuses to score anything" (fun () ->
-        let code, _, err =
-          spawn [ "MUTATE_FIXTURE=red"; "WINDTRAP_MUTATE=1" ]
-        in
+        let code, _, err = spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=red" ] in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the reason" err "the dry run is red";
         denies ~msg:"no report" err "mutants: ");
@@ -592,7 +576,7 @@ let refusal_tests =
            disagreement is the one the loop would otherwise blame on the
            mutants. *)
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=flaky"; "WINDTRAP_MUTATE=1" ]
+          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=flaky" ]
         in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the finding" err "the suite is not deterministic";
@@ -604,22 +588,32 @@ let refusal_tests =
           "flaky \u{203a} passes where it was measured";
         denies ~msg:"no number was produced" out "mutants: ");
     test "a selection that matched nothing is refused, never scored" (fun () ->
-        let code, out, err =
-          spawn ~args:[ "-f"; "no-such-test" ] [ "WINDTRAP_MUTATE=1" ]
-        in
+        let code, out, err = spawn ~args:[ mutate; "-f"; "no-such-test" ] [] in
         (* Never 2: "nothing ran" is a statement about a test selection
            and a mutation run does not make one (Law 16e). *)
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the reason" err "nothing to mutate";
         denies ~msg:"and no number was produced" out "mutants: ");
-    test "an unrecognized WINDTRAP_MUTATE names the variable" (fun () ->
-        let code, _, err = spawn [ "WINDTRAP_MUTATE=maybe" ] in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"the message" err "invalid value 'maybe' for WINDTRAP_MUTATE";
-        says ~msg:"what it expected" err ": expected 1 or 0");
+    test "a truthy WINDTRAP_MUTATE is the bare flag" (fun () ->
+        (* [1] is what a CI recipe sets for a whole tree at once: every
+           mutant this executable catalogues. Under --instrument-with
+           that includes the core's thousands, which is an afternoon,
+           not a test; under a plain core the catalogue is the fixture's
+           alone, and the bare flag must reach exactly what the scope
+           does. *)
+        if core_instrumented then
+          skip
+            ~reason:
+              "the core is instrumented, so the bare flag would survey its \
+               mutants too"
+            ();
+        let code, out, _ = spawn [ "WINDTRAP_MUTATE=1" ] in
+        equal ~msg:"exit code" int 0 code;
+        says ~msg:"the whole fixture catalogue, as the scope reaches it" out
+          "mutants: 1 survived of 2 reached by this suite \u{00b7} 1 killed");
     test "a falsy WINDTRAP_MUTATE is an ordinary run" (fun () ->
-        (* The variable is a boolean like every other switch: [off] asks
-           for nothing, exactly as unset does, so a CI recipe can turn the
+        (* The mirror reads the boolean vocabulary first: [off] asks for
+           nothing, exactly as unset does, so a CI recipe can turn the
            loop off without unsetting anything. *)
         let code, out, err = spawn [ "WINDTRAP_MUTATE=off" ] in
         equal ~msg:"exit code" int 0 code;
@@ -627,13 +621,22 @@ let refusal_tests =
         denies ~msg:"no mutation line" out "mutants:";
         equal ~msg:"stderr" string "" err);
     test "asking for the loop and an armed mutant at once is refused" (fun () ->
-        let code, _, err =
-          spawn
-            [ "WINDTRAP_MUTATE=1"; M.arm_variable ^ "=" ^ mutant_named "add" ]
+        (* A usage error, before any run: the loop arms each mutant
+           itself, so an armed parent would mutate its own dry run. *)
+        let code, out, err =
+          spawn ~args:[ mutate; "--arm"; mutant_named "add" ] []
         in
-        equal ~msg:"exit code" int 1 code;
-        says ~msg:"both variables named" err "WINDTRAP_MUTATE and ";
-        says ~msg:"the arming variable" err M.arm_variable);
+        equal ~msg:"exit code" int 2 code;
+        says ~msg:"both flags named" err
+          "options '--mutate' and '--arm' cannot be combined";
+        denies ~msg:"and nothing ran" out "calc: ");
+    test "the same refusal when one of them is the mirror" (fun () ->
+        let code, _, err =
+          spawn ~args:[ "--arm"; mutant_named "add" ] [ "WINDTRAP_MUTATE=1" ]
+        in
+        equal ~msg:"exit code" int 2 code;
+        says ~msg:"both flags named" err
+          "options '--mutate' and '--arm' cannot be combined");
     test
       "an armed identifier stale within a file this build catalogues is refused"
       (fun () ->
@@ -641,7 +644,7 @@ let refusal_tests =
            from subject.ml, so an identifier naming a position no site of
            it occupies is wrong or stale, and running green on it is how a
            silently ignored arming becomes a false survivor. *)
-        let code, out, err = spawn [ M.arm_variable ^ "=" ^ stale_id () ] in
+        let code, out, err = spawn ~args:[ "--arm"; stale_id () ] [] in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the identifier" err (stale_id ());
         says ~msg:"the diagnosis" err "no such mutation site";
@@ -654,9 +657,7 @@ let armed_tests =
     test
       "an armed run announces the mutant before any other output and reports \
        the kill" (fun () ->
-        let code, out, _ =
-          spawn [ M.arm_variable ^ "=" ^ mutant_named "add" ]
-        in
+        let code, out, _ = spawn ~args:[ "--arm"; mutant_named "add" ] [] in
         equal ~msg:"the mutant made a test fail" int 1 code;
         let first = List.hd (String.split_on_char '\n' out) in
         equal ~msg:"the announcement is the first line" string
@@ -675,8 +676,7 @@ let armed_tests =
            mutant — so neither of the other closing lines may print
            either. *)
         let code, out, _ =
-          spawn ~args:[ "-f"; "no-such-test" ]
-            [ M.arm_variable ^ "=" ^ mutant_named "add" ]
+          spawn ~args:[ "--arm"; mutant_named "add"; "-f"; "no-such-test" ] []
         in
         equal ~msg:"the runner's own 'nothing ran' code" int 2 code;
         says ~msg:"the mutant was still announced" out " armed: ";
@@ -692,10 +692,8 @@ let armed_tests =
            run that never evaluated the site, fails here. *)
         let code, out, _ =
           spawn
-            [
-              "MUTATE_FIXTURE=weak";
-              M.arm_variable ^ "=" ^ List.nth (Lazy.force catalogue) 1;
-            ]
+            ~args:[ "--arm"; List.nth (Lazy.force catalogue) 1 ]
+            [ "MUTATE_FIXTURE=weak" ]
         in
         equal ~msg:"exit code" int 0 code;
         says ~msg:"the announcement" out "armed: a + b \u{2192} a - b";
@@ -711,8 +709,9 @@ let armed_tests =
            all — without them this transcript and the survivor's are the
            same bytes. *)
         let code, out, _ =
-          spawn ~args:[ "-f"; "calc" ]
-            [ M.arm_variable ^ "=" ^ List.nth (Lazy.force catalogue) 1 ]
+          spawn
+            ~args:[ "--arm"; List.nth (Lazy.force catalogue) 1; "-f"; "calc" ]
+            []
         in
         equal ~msg:"the selected tests passed" int 0 code;
         says ~msg:"the mutant was announced" out "armed: a + b \u{2192} a - b";
@@ -729,10 +728,8 @@ let armed_tests =
            the arming. *)
         let code, out, _ =
           spawn
-            [
-              "MUTATE_FIXTURE=boundary";
-              M.arm_variable ^ "=" ^ List.nth (Lazy.force catalogue) 2;
-            ]
+            ~args:[ "--arm"; List.nth (Lazy.force catalogue) 2 ]
+            [ "MUTATE_FIXTURE=boundary" ]
         in
         equal ~msg:"the suite passed" int 0 code;
         says ~msg:"the mutant was announced" out "armed: a + b \u{2192} a - b";
@@ -781,7 +778,7 @@ let armed_inline () =
     spawn ~exe:inline_exe
       ~args:[ "inline-test-runner"; "inline_armed" ]
       ~cwd
-      [ M.arm_variable ^ "=" ^ List.nth (Lazy.force catalogue) 1 ]
+      [ "WINDTRAP_MUTATE_ARM=" ^ List.nth (Lazy.force catalogue) 1 ]
   in
   (cwd, code, out, err)
 
@@ -826,7 +823,7 @@ let read_only_tests =
         let code, out, err =
           spawn ~exe:inline_exe
             ~args:[ "inline-test-runner"; "inline_armed" ]
-            ~cwd [ "WINDTRAP_MUTATE=1" ]
+            ~cwd [ mutate_mirror ]
         in
         equal ~msg:"the loop completed" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -872,7 +869,7 @@ let runaway_tests =
         let path = V.output_file ~exe:runaway_exe in
         (try Sys.remove path with Sys_error _ -> ());
         let started = Unix.gettimeofday () in
-        let code, out, err = spawn ~exe:runaway_exe [ "WINDTRAP_MUTATE=1" ] in
+        let code, out, err = spawn ~exe:runaway_exe ~args:[ mutate ] [] in
         let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -919,7 +916,7 @@ let deadline_tests =
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let started = Unix.gettimeofday () in
         let code, out, err =
-          spawn [ "MUTATE_FIXTURE=block"; "WINDTRAP_MUTATE=1" ]
+          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=block" ]
         in
         let elapsed = Unix.gettimeofday () -. started in
         equal
@@ -944,9 +941,7 @@ let deadline_tests =
            assertion's. *)
         (try Sys.remove verdict_path with Sys_error _ -> ());
         let started = Unix.gettimeofday () in
-        let code, out, err =
-          spawn [ "MUTATE_FIXTURE=slow"; "WINDTRAP_MUTATE=1" ]
-        in
+        let code, out, err = spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=slow" ] in
         let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
@@ -994,12 +989,8 @@ let deadline_tests =
           Filename.concat scratch_dir ("grandchild" ^ string_of_int !counter)
         in
         let code, out, _ =
-          spawn
-            [
-              "MUTATE_FIXTURE=block";
-              "WINDTRAP_MUTATE=1";
-              "MUTATE_GRANDCHILD_PIDFILE=" ^ pidfile;
-            ]
+          spawn ~args:[ mutate ]
+            [ "MUTATE_FIXTURE=block"; "MUTATE_GRANDCHILD_PIDFILE=" ^ pidfile ]
         in
         equal ~msg:"the run completed" int 0 code;
         says ~msg:"and scored the blocked mutant" out
@@ -1041,12 +1032,8 @@ let deadline_tests =
         in
         let started = Unix.gettimeofday () in
         let code, _, err =
-          spawn
-            [
-              "MUTATE_FIXTURE=probe_block";
-              "WINDTRAP_MUTATE=1";
-              "MUTATE_PROBE_MARKER=" ^ marker;
-            ]
+          spawn ~args:[ mutate ]
+            [ "MUTATE_FIXTURE=probe_block"; "MUTATE_PROBE_MARKER=" ^ marker ]
         in
         let elapsed = Unix.gettimeofday () -. started in
         equal ~msg:"a refusal, not a score" int 1 code;
@@ -1062,9 +1049,10 @@ let deadline_tests =
 (* One identifier, every executable — the report's own remedy
 
    The aggregate report tells the reader to arm a survivor by re-running
-   the instrumented suite with [WINDTRAP_MUTATE_ARM=<id>], because a
-   command that links no test executable has no single binary to name.
-   That runs EVERY instrumented executable with the variable set, and
+   the instrumented suite with [WINDTRAP_MUTATE_ARM=<id>] — the flag's
+   mirror, because a command that links no test executable has no single
+   binary to name. That runs EVERY instrumented executable with the
+   variable set, and
    windtrap's own lib/ is covered by seven. So
    the scenario here is the real one: one identifier handed to two
    executables built from disjoint sources — suite_main from subject.ml,
@@ -1079,7 +1067,7 @@ let cross_executable_tests =
       (fun () ->
         let id = mutant_named "add" in
         let code, out, err =
-          spawn ~exe:runaway_exe [ M.arm_variable ^ "=" ^ id ]
+          spawn ~exe:runaway_exe [ "WINDTRAP_MUTATE_ARM=" ^ id ]
         in
         equal ~msg:"exit code (this binary is not the one it is about)" int 0
           code;
@@ -1106,7 +1094,7 @@ let cross_executable_tests =
            siblings stand down. Asserted beside the decline so that a
            change making every executable decline cannot pass. *)
         let id = mutant_named "add" in
-        let code, out, _ = spawn [ M.arm_variable ^ "=" ^ id ] in
+        let code, out, _ = spawn [ "WINDTRAP_MUTATE_ARM=" ^ id ] in
         equal ~msg:"the mutant made a test fail" int 1 code;
         says ~msg:"it armed the named mutant" out
           ("mutant " ^ id ^ " armed: a - b \u{2192} a + b"));
@@ -1119,8 +1107,6 @@ let cross_executable_tests =
    same core, so it can tell. *)
 
 let plain_exe = Filename.concat exe_dir "plain_main.exe"
-let core_instrumented = M.catalogue () <> []
-
 let uninstrumented_tests =
   [
     test "a build with no mutants runs exactly as it would without the seam"
@@ -1136,13 +1122,9 @@ let uninstrumented_tests =
             ~reason:
               "the core is instrumented, so plain_main catalogues its mutants"
             ();
-        (* An empty binding is unset to Env, so this is the no-scope run:
-           an empty catalogue is refused as uninstrumented whatever the
-           scope, and the harness's default scope would otherwise be a
-           bystander here. *)
-        let code, out, err =
-          spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=1"; "WINDTRAP_MUTATE_ONLY=" ]
-        in
+        (* The bare flag, so this is the no-scope run: an empty catalogue
+           is refused as uninstrumented whatever the scope. *)
+        let code, out, err = spawn ~exe:plain_exe ~args:[ "--mutate" ] [] in
         equal ~msg:"exit code" int 1 code;
         says ~msg:"the suite still ran" out "plain: 1 passed";
         says ~msg:"the diagnosis" err "links no instrumented module";
@@ -1157,7 +1139,7 @@ let uninstrumented_tests =
            catalogue nothing. Exiting 1 here would fail the build for the
            one executable that armed the mutant correctly. *)
         let code, out, err =
-          spawn ~exe:plain_exe [ M.arm_variable ^ "=lib/absent.ml:1:0:add" ]
+          spawn ~exe:plain_exe [ "WINDTRAP_MUTATE_ARM=lib/absent.ml:1:0:add" ]
         in
         equal ~msg:"exit code" int 0 code;
         says ~msg:"the suite ran exactly as it would unarmed" out
@@ -1167,11 +1149,20 @@ let uninstrumented_tests =
         says ~msg:"the diagnosis" err "not this executable's mutant";
         says ~msg:"and the misconfiguration it could still be" err
           "instrumented with ppx_windtrap.mutate");
-    test "a misspelled knob is loud even where there is nothing to mutate"
-      (fun () ->
+    test "a scope is loud even where there is nothing to mutate" (fun () ->
+        (* Whether this binary catalogues nothing or only the core's
+           mutants, a prefix matching no file refuses by name — the same
+           sentence under a plain and an instrumented core, so the
+           missing-backend diagnosis is never what a prefix gets. *)
         let code, _, err = spawn ~exe:plain_exe [ "WINDTRAP_MUTATE=perhaps" ] in
         equal ~msg:"exit code" int 1 code;
-        says ~msg:"the variable" err "WINDTRAP_MUTATE");
+        says ~msg:"the refusal names the scope" err
+          "windtrap: --mutate=perhaps leaves no mutant in this executable's \
+           catalogue";
+        says ~msg:"and asks the instrumentation question" err
+          "is the library under test instrumented with ppx_windtrap.mutate?";
+        denies ~msg:"never the bare flag's diagnosis" err
+          "links no instrumented module");
   ]
 
 let () =

@@ -62,39 +62,55 @@ let canonical path =
       in
       String.concat "/" (first :: List.rev (List.fold_left step [] rest))
 
-(* The one root rule: [Some (root, below)] when [path] has a [_build]
-   component - [root] the parent of the topmost one, [below] the path
-   under it with any [.sandbox/<digest>] prefix stripped, so sandboxed and
-   direct runs agree. *)
+(* The one build-directory rule, the core's ([Path_ops.build_dir_of_path])
+   restated here because this library links no core: a component whose
+   name starts with [_build] - dune's default and any private
+   [--build-dir] alike. [Some (build_dir, below)] when [path] has one -
+   [build_dir] the path cut after the first such component, [below] the
+   path under it with any [.sandbox/<digest>] prefix stripped, so
+   sandboxed and direct runs agree. *)
+let is_build_component c = String.starts_with ~prefix:"_build" c
+
 let split_build path =
   let components = String.split_on_char '/' (canonical path) in
   let rec split_at_build before = function
     | [] -> None
-    | "_build" :: below -> Some (List.rev before, below)
+    | c :: below when is_build_component c ->
+        Some (List.rev (c :: before), below)
     | c :: rest -> split_at_build (c :: before) rest
   in
   match split_at_build [] components with
   | None -> None
-  | Some (root, below) ->
+  | Some (build_dir, below) ->
       let below =
         match below with
         | ".sandbox" :: _digest :: rest -> rest
         | below -> below
       in
-      Some (String.concat "/" root, String.concat "/" below)
+      Some (String.concat "/" build_dir, String.concat "/" below)
 
-let build_root ~path = Option.map fst (split_build path)
+let build_dir ~path = Option.map fst (split_build path)
+let build_root ~path = Option.map Filename.dirname (build_dir ~path)
 
 let exe_identity ~exe =
   match split_build exe with Some (_, below) -> below | None -> canonical exe
 
+(* Where a format's files live: beside the build directory's contexts,
+   marked as not a context by the underscore, or - for a tree with no
+   build directory, which must never grow one - under the project's own
+   [_windtrap]. *)
+let data_dir format ~build_dir = Printf.sprintf "%s/_%s" build_dir format.dir
+
+let standalone_data_dir format ~root =
+  Printf.sprintf "%s/_windtrap/%s" root format.dir
+
 let output_stem format ~exe =
-  let root, key =
+  let dir, key =
     match split_build exe with
-    | Some (root, below) -> (root, below)
-    | None -> (Sys.getcwd (), canonical exe)
+    | Some (build_dir, below) -> (data_dir format ~build_dir, below)
+    | None -> (standalone_data_dir format ~root:(Sys.getcwd ()), canonical exe)
   in
-  Printf.sprintf "%s/_build/%s/windtrap-%s" root format.dir (hex_hash key)
+  Printf.sprintf "%s/windtrap-%s" dir (hex_hash key)
 
 let output_file format ~exe = output_stem format ~exe ^ "." ^ format.ext
 let output_dir format ~exe = output_stem format ~exe

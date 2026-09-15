@@ -4,7 +4,6 @@ of a flag, so each has its own declaration in the fixture.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_COVERAGE=off \
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
 

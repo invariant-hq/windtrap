@@ -35,10 +35,10 @@ dune runtest examples/x-blueprint                 # every suite
 dune runtest examples/x-blueprint/test/failures   # just the bug backlog
 dune build @examples/x-blueprint/test/example-cover \
   --instrument-with ppx_windtrap.coverage         # coverage, gated
-WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib/slug.ml \
-  dune exec --instrument-with ppx_windtrap.mutate \
-  examples/x-blueprint/test/unit/test_slug.exe        # the mutation loop
-WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
+dune exec --instrument-with ppx_windtrap.mutate \
+  examples/x-blueprint/test/unit/test_slug.exe \
+  -- --mutate=examples/x-blueprint/lib/slug.ml        # the mutation loop
+WINDTRAP_MUTATE=examples/x-blueprint/lib \
   dune build @examples/x-blueprint/test/example-mutate \
   --force --instrument-with ppx_windtrap.mutate       # the project aggregate
 ```
@@ -66,9 +66,9 @@ through. The deliberately weak law in `test_stats.ml` (the fourth
 deliberate thing below) shows what that looks like:
 
 ```
-$ WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=examples/x-blueprint/lib \
-    dune exec --instrument-with ppx_windtrap.mutate \
-    examples/x-blueprint/test/unit/test_stats.exe -- -f "one line per row"
+$ dune exec --instrument-with ppx_windtrap.mutate \
+    examples/x-blueprint/test/unit/test_stats.exe \
+    -- --mutate=examples/x-blueprint/lib -f "one line per row"
 stats: 1 passed in 0.0444s (seed s1:9af2e80ab07716a2).
 
 ─────────────────── survivors (2) ────────────────────
@@ -84,17 +84,16 @@ stats: 1 passed in 0.0444s (seed s1:9af2e80ab07716a2).
 ──────────────────────────────────────────────────────
 
 mutants: 2 survived of 2 reached by the 1 selected test
-reproduce: WINDTRAP_MUTATE_ARM=<id> dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_stats.exe -- -f 'one line per row'
+reproduce: dune exec --instrument-with ppx_windtrap.mutate examples/x-blueprint/test/unit/test_stats.exe -- --arm <id> -f 'one line per row'
 verdicts not saved: this run's selection narrows the suite, and a partial run's verdicts would stand in the project merge as the whole.
 ```
 
 A filtered run exits 0 whatever it finds and writes no verdicts, so you
 can probe one test all afternoon without disturbing what
-`example-mutate` merges. The `WINDTRAP_MUTATE_ONLY` prefix is for this
-tree only: here windtrap's own library carries the backend too, so an
-unscoped run reaches the framework's sites as well; copied out,
-windtrap is an ordinary uninstrumented dependency and the prefix can
-go.
+`example-mutate` merges. The `--mutate` prefix is for this tree only:
+here windtrap's own library carries the backend too, so an unscoped run
+reaches the framework's sites as well; copied out, windtrap is an
+ordinary uninstrumented dependency and the prefix can go.
 
 ## Copied out: the workspace posture
 
@@ -119,15 +118,12 @@ declares once what each command was repeating:
 ```
 dune runtest                                          # every suite
 dune build @example-cover                             # coverage, gated
-WINDTRAP_MUTATE=1 WINDTRAP_MUTATE_ONLY=lib/slug.ml \
-  dune exec test/unit/test_slug.exe                   # the mutation loop
+dune exec test/unit/test_slug.exe -- --mutate=lib/slug.ml  # the mutation loop
 WINDTRAP_MUTATE=1 dune build @example-mutate --force  # the project aggregate
 ```
 
 Measured on a copy pinned to this tree: the whole suite runs in under
-three seconds with both backends on, and every suite's transcript ends
-with the coverage percentage — a standing reminder of the verdicts a
-green run has not yet earned. The built programs mean exactly what
+three seconds with both backends on. The built programs mean exactly what
 they meant uninstrumented: marks only count, and a mutant changes
 meaning only in a forked child that armed it.
 

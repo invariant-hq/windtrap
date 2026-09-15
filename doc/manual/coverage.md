@@ -11,21 +11,25 @@ once and forgotten:
   (backend ppx_windtrap.coverage)))
 ```
 
+Coverage is a run and a merge: instrumented test executables write
+their data at exit, and `windtrap coverage` — the one coverage
+reporter — merges what they wrote and reports over the whole suite. A
+test run prints no number of its own.
+
 Two rules keep it honest. Coverage never changes what programs or
 tests mean: instrumentation only counts, and enabling it never alters
 test outcomes, counts, or exit codes. And coverage data is transient:
-`.coverage` files live under `_build/_coverage` only, in one directory
-per executable, where every run adds a file of its own and the first run
-of a rebuilt executable removes its predecessors' — nothing to commit,
-nothing to go stale silently. Because every run keeps its file, a binary
-run several times — a command-line tool driven by a cram test — is
-measured across every invocation, not just the last.
+`.coverage` files live beside the build directory's contexts, under
+`_build/_coverage`, in one directory per executable, where every run
+adds a file of its own and the first run of a rebuilt executable
+removes its predecessors' — nothing to commit, nothing to go stale
+silently. Because every run keeps its file, a binary run several
+times — a command-line tool driven by a cram test — is measured across
+every invocation, not just the last.
 
 ## Two commands
 
-Coverage is a run and a merge. Instrumented test executables write
-their data at exit; `windtrap coverage` merges what they wrote and
-reports over the whole suite:
+The instrumented run, then the merge:
 
 ```
 $ dune runtest --force --instrument-with ppx_windtrap.coverage
@@ -57,19 +61,6 @@ The commands then read `dune runtest --force` and `dune exec windtrap
 the exact arms you forgot to test, a gate for CI, and an LCOV tracefile
 for everything else.
 
-Each instrumented executable also prints its own percentage at the end
-of its run — its view of the code *it* links, one line with a pointer
-at the merge:
-
-```
-$ dune runtest --instrument-with ppx_windtrap.coverage
-calc: 4 passed in 0.00176s.
-coverage: 77.8% (7/9 points) · project: windtrap coverage
-```
-
-`WINDTRAP_COVERAGE=off` silences the line. It is one executable's
-number; the project number is the merge.
-
 ## What is measured
 
 Coverage is measured at expression grade, Bisect_ppx's model: points
@@ -91,11 +82,13 @@ branch is a missing test; an uncovered debug helper is what
 
 ## `windtrap coverage`
 
-The command finds the `.coverage` files under `_build/_coverage`,
+The command finds the `.coverage` files under the build directory's
+`_coverage` (or, in a tree built without one, `_windtrap/coverage`),
 walking up from the current directory to the project root, merges them
 — loudly rejecting files from foreign or mismatched builds — and
-renders the per-file table above. It runs no tests and drives no
-build.
+renders the per-file table above. Under `dune exec` the build directory
+is the one dune names, so a private `--build-dir` reports its own
+dumps. It runs no tests and drives no build.
 
 `--min` exits 1 with a message when total coverage falls below the
 threshold — the CI gate lives here, never in the test run itself.
@@ -162,30 +155,41 @@ per file, dumps whose executable was deleted or rebuilt since the dump
 — typically a rebuild without the backend, or a cached test action the
 build tool did not re-run — and then says, once, what heals it:
 re-run the suite instrumented, forcing runs your build tool cached,
-then merge again; delete `_build/_coverage` to drop leftovers of
-removed executables. There is no override: a total computed from a
+then merge again; delete the `_coverage` directory to drop leftovers
+of removed executables. There is no override: a total computed from a
 dump that describes another build can only mislead. Foreign format
 versions fail with a delete instruction: re-running never removes
 stale-named files.
 
 ## Without dune
 
-The backend is a findlib package with a `ppx` predicate, so any build
-can instrument with it. Instrument the library under test, not the
-test file; link the test against `windtrap`; run it; merge:
+Any build can instrument: the backend is a Ppxlib rewriter, so a
+driver linked against it once — `let () = Ppxlib.Driver.standalone ()`
+with `ppxlib` and `ppx_windtrap.coverage` — is a `-ppx` for the
+compiler, and the installed `windtrap` is two archives beside the
+compiler's own library (`$lib` below, where `META` is). Instrument the
+library under test, not the test file; link the test against
+`windtrap`; run it; merge with the installed binary. `test/facade/nodune.t`
+in windtrap's tree is this session, held by a test:
 
 ```
-$ ocamlfind ocamlopt -package ppx_windtrap.coverage -c calc.ml
-$ ocamlfind ocamlopt -package windtrap -linkpkg calc.cmx test.ml -o test
-$ ./test
-$ windtrap coverage --min 80
+$ ocamlopt -ppx "./coverage_ppx.exe --as-ppx" -I "$lib/windtrap/runtime" -c calc.ml
+$ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
+    unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
+$ ./test_calc.exe
+calc: 4 passed in 0.0002s.
+$ windtrap coverage --min 50
+coverage: 85.7% (6/7 points)
+   85.7%  6/7  calc.ml   uncovered: 3
+minimum 50%: ok
 ```
 
-An instrumented executable that is not under a `_build` directory
-dumps under `_build/_coverage` in the working directory it exits in,
-and `windtrap coverage` finds that directory by walking up from
-wherever it runs. `WINDTRAP_COVERAGE_FILE=path` sends one run's dump
-to an explicit file instead (relative paths resolve against the
+An executable under no build directory dumps under the working
+directory's own `_windtrap/coverage` — a tree built without dune never
+grows a `_build` — and `windtrap coverage` finds that directory by
+walking up from wherever it runs, exactly as it finds a build
+directory's `_coverage`. `WINDTRAP_COVERAGE_FILE=path` sends one run's
+dump to an explicit file instead (relative paths resolve against the
 working directory at the first registration; the file is replaced on
 every run), which is also how a build rule declares the dump as its
 target.
