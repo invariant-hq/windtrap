@@ -150,11 +150,16 @@ let typing_context () =
   let line = { D.Line.start = 2; end_ = 7 } in
   let sides left right = { D.Sides.left; right; top = 0.; bottom = 0. } in
   let item = { D.padding = sides 1. 2.; border = sides 3. 4. } in
+  let collide = { D.Rect.x = 10; y = 20; width = 30; height = 40 } in
   check "disambiguate disarmed"
     (D.clip rect 0 0 100 100 = 130
     && D.span line = 5
     && D.inverted line = 0
-    && D.horizontal item = 10.);
+    && D.horizontal item = 10.
+    && D.clip_collide collide 5 0 100 100 = 130);
+  with_mutant ~rewrite:"add" ~before:"rect.Rect.x - x0" (fun () ->
+      check "clip_collide inner - -> +"
+        (D.clip_collide collide 5 0 100 100 = 140));
   with_mutant ~rewrite:"add" ~before:"line.Line.end_ - line.start" (fun () ->
       check "span - -> +" (D.span line = 9));
   with_mutant ~rewrite:"le" ~before:"line.Line.end_ < line.start" (fun () ->

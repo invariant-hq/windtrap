@@ -69,3 +69,24 @@ let thickness overlay = overlay.border
 let horizontal child =
   child.padding.left +. child.padding.right +. child.border.left
   +. child.border.right
+
+(* The matrix_charts.ml chain again, with a second record in scope that
+   shares EVERY field name, declared last so that scope alone resolves
+   [rect.x] to [frame]'s float field. Each unqualified access below then
+   compiles only if the checker already knows [rect] is a [Rect.t] -
+   which only the first, qualified operand can have taught it. An
+   encoding that types the right operand first fails here not with
+   "Unbound record field" but with a type clash, float against int: a
+   colliding label is resolved wrongly rather than not at all, so this
+   is the shape the [Layout] chain above cannot stand in for. *)
+module Rect = struct
+  type t = { x : int; y : int; width : int; height : int }
+end
+
+type frame = { x : float; y : float; width : float; height : float }
+
+let clip_collide rect x0 y0 box_w box_h =
+  max 0 (rect.Rect.x - x0)
+  + max 0 (x0 + box_w - (rect.x + rect.width))
+  + max 0 (rect.y - y0)
+  + max 0 (y0 + box_h - (rect.y + rect.height))
