@@ -125,6 +125,9 @@ val merge : t -> t -> (t, error) result
     shared file's point tables differ — merging is loud, never silently wrong.
 *)
 
+val files : t -> string list
+(** [files t] is the file names of [t], ordered by name. *)
+
 val filter : (string -> bool) -> t -> t
 (** [filter keep t] is [t] with only the files whose name satisfies [keep].
 

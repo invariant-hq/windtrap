@@ -758,6 +758,8 @@ let report_tests =
         | [ ra; rb ] ->
             check_string "reports are ordered by file name" ~expected:"lib/a.ml"
               ~actual:ra.C.file;
+            check "files are the names, in the same order"
+              (C.files (ab ()) = [ "lib/a.ml"; "lib/b.ml" ]);
             check "a missing source is reported as absent" (rb.C.source = None);
             check "a missing source is not stale" (not rb.C.stale);
             check "extents are available without the source"

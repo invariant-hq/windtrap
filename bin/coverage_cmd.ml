@@ -416,12 +416,10 @@ let missing_expectations ~expect ~do_not_expect present =
 let check_expectations ~expect ~do_not_expect collection =
   if expect = [] then 0
   else
-    let present =
-      List.map
-        (fun (r : Windtrap_coverage.file_report) -> r.file)
-        (Windtrap_coverage.file_reports collection)
-    in
-    match missing_expectations ~expect ~do_not_expect present with
+    match
+      missing_expectations ~expect ~do_not_expect
+        (Windtrap_coverage.files collection)
+    with
     | Error message ->
         Printf.eprintf "windtrap coverage: %s\n%!" message;
         1

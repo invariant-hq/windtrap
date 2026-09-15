@@ -104,6 +104,7 @@ let merge a b =
     b (Ok a)
 
 let filter keep t = File_map.filter (fun file _ -> keep file) t
+let files t = List.map fst (File_map.bindings t)
 
 (* In-Process Registry *)
 
