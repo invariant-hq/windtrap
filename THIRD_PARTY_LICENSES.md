@@ -6,11 +6,11 @@ Each listed file also carries the attribution in its header.
 
 ## Craig Ferguson's Alcotest work (ISC License)
 
-Files: `lib/testable.ml`, `lib/testable.mli`, `lib/diff.ml`, `lib/diff.mli`
+Files: `lib/diff.ml`, `lib/diff.mli`
 
-Testable instance printers, float tolerance semantics, and the diff
-refinement edit script derive from Craig Ferguson's unmerged Alcotest PR
-[#247](https://github.com/mirage/alcotest/pull/247).
+The Wagner-Fischer edit-script construction and backtrack used for
+character-level diff refinement derive from Craig Ferguson's unmerged
+Alcotest PR [#247](https://github.com/mirage/alcotest/pull/247).
 
 ```
 Copyright (c) 2020-2021 Craig Ferguson
@@ -60,7 +60,7 @@ SOFTWARE.
 
 ## mtime (ISC License)
 
-Files: `lib/clock/clock.ml`, `lib/clock/clock.mli`, `lib/clock/clock_stubs.c`
+Files: `lib/clock.ml`, `lib/clock.mli`, `lib/clock_stubs.c`
 
 The monotonic clock is derived from
 [mtime](https://erratique.ch/software/mtime).
@@ -89,7 +89,7 @@ list of local substitutions)
 
 The expect-test conformance corpus is vendored from
 [ppx_expect](https://github.com/janestreet/ppx_expect)'s test suite.
-`lib/ppx_runtime.ml` contains no copied ppx_expect code, but its payload
+`ppx/runtime/ppx_runtime.ml` contains no copied ppx_expect code, but its payload
 matching, correction formatting, and corrected-file writing deliberately
 reproduce ppx_expect's behavior at the same pinned commit.
 

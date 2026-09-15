@@ -1,13 +1,11 @@
 (*---------------------------------------------------------------------------
-   Copyright (c) 2020-2021 Craig Ferguson
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
 
-   Instance printers and float tolerance semantics adapted from windtrap v1's
-   Testable, itself derived from Craig Ferguson's work on Alcotest
-   (https://github.com/mirage/alcotest/pull/247). v3 removes generators and
-   diff hooks from the witness: diffs come from printed values, generation
-   lives in Gen, and the two witnesses never merge.
+   The witness follows Alcotest's testable vocabulary (instance names,
+   [slist], [pass], absolute float tolerance) but shares no code with it. v3
+   removes generators and diff hooks from the witness: diffs come from printed
+   values, generation lives in Gen, and the two witnesses never merge.
   ---------------------------------------------------------------------------*)
 
 type 'a t = { pp : Format.formatter -> 'a -> unit; equal : 'a -> 'a -> bool }

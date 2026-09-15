@@ -183,7 +183,7 @@ too.
 
 ## License
 
-ISC. Some files are under MIT or BSD-2-Clause due to derived code. See
+ISC. Some files carry additional ISC or MIT notices for derived code. See
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for details.
 
 ## Acknowledgments
