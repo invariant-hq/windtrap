@@ -9,6 +9,7 @@ module Windtrap_mut_________fixture_chain___ml =
       before: string ;
       after: string ;
       dismissed: string option }
+    type 'a operands = ('a * 'a)
     let ___windtrap_armed___ =
       Windtrap_runtime.Mutate.register ~file:"./fixture_chain.ml"
         ~sites:[|{
@@ -166,7 +167,8 @@ let mixed a b c =
   else __windtrap_mut_9_l - __windtrap_mut_9_r
 let chained a b c =
   if
-    let (__windtrap_mut_11_l, __windtrap_mut_11_r) = ((a < b), c) in
+    let (__windtrap_mut_11_l, __windtrap_mut_11_r) =
+      (((a < b), c) : _ Windtrap_mut_________fixture_chain___ml.operands) in
     (if Windtrap_mut_________fixture_chain___ml.___windtrap_armed___ 11
      then Stdlib.not (__windtrap_mut_11_r < __windtrap_mut_11_l)
      else __windtrap_mut_11_l < __windtrap_mut_11_r)

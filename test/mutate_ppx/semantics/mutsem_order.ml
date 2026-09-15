@@ -122,6 +122,29 @@ let cmp_in_args a b c d =
     (if note "a" a < note "b" b then "t" else "f")
     (if note "c" c < note "d" d then "t" else "f")
 
+(* A right operand the LEFT one types. [Green] is not in scope at all:
+   only the expected type the comparison hands its right operand - the
+   type the left one has just fixed, [Color.t] - resolves it, as
+   [Color.Green]. The twin gets that expected type from [( < )]'s own
+   signature; the guard must get it from the annotation on its tuple,
+   and a guard that does not makes this an unbound constructor - a
+   build failure of this library rather than a red witness. What the
+   witness pins is that the annotation costs no evaluation and changes
+   no answer. (test/mutate_ppx/integration/expected_type.ml carries the
+   shape where a later type claims the name instead; it cannot live
+   here, because test_semantics.ml coerces this module to its twin's
+   signature, which strengthens every top-level datatype to the twin's
+   own - so the type is local to the function, and each of its
+   constructors is built, for warning 37.) *)
+let cmp_sibling n =
+  let module Color = struct
+    type t = Red | Green | Blue
+  end in
+  let c : Color.t =
+    match n with 0 -> Color.Red | 1 -> Color.Green | _ -> Color.Blue
+  in
+  if note "l" c < Green then "t" else "f"
+
 (* {1 [ari]: operand order, anywhere}
 
    [ari] fires on [+], [-], [+.] and [-.] wherever they appear, so these
@@ -385,6 +408,9 @@ let witnesses : (string * (unit -> string)) list =
     ("cmp under || , left true", fun () -> show (cmp_under_or 2 1 true));
     ("cmp operand exceptions", fun () -> show (cmp_exception_order ()));
     ("cmp under an application", fun () -> show (cmp_in_args 1 2 4 3));
+    ("cmp constructor typed by the left operand", fun () -> show (cmp_sibling 0));
+    ( "cmp constructor typed by the left operand, at the boundary",
+      fun () -> show (cmp_sibling 1) );
     ("ari +", fun () -> show (ari_add 1 2));
     ("ari -", fun () -> show (ari_sub 1 2));
     ("ari +.", fun () -> show (ari_fadd 1.5 2.25));

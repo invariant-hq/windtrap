@@ -195,6 +195,9 @@ type site = {
 type state = {
   mutable rev_sites : site list; (* most recently allocated first *)
   mutable count : int;
+  mutable pinned : bool;
+      (* A swapping [cmp] guard was emitted, so the preamble must declare
+         the [operands] abbreviation it names; see [binary_guard]. *)
   seen : (int * int * string, unit) Hashtbl.t;
   chained : (int * int, unit) Hashtbl.t;
       (* Byte extents of nodes suppressed by the chain rule below, keyed
@@ -206,6 +209,7 @@ let create_state () =
   {
     rev_sites = [];
     count = 0;
+    pinned = false;
     seen = Hashtbl.create 64;
     chained = Hashtbl.create 16;
   }
@@ -412,6 +416,18 @@ let armed ~loc ~module_name index =
 let stdlib ~loc name =
   pexp_ident ~loc { txt = Ldot (Lident "Stdlib", name); loc }
 
+(* The abbreviation the swapping [cmp] guard pins its operands with,
+   [type 'a operands = 'a * 'a] (see [binary_guard]). It is declared in
+   the generated module by [runtime_initialization], and only in a file
+   where some guard names it: under an .mli that hides the module, an
+   unreferenced declaration is warning 34, fatal by default. *)
+let operands = "operands"
+
+let operands_type ~loc ~module_name =
+  ptyp_constr ~loc
+    { txt = Ldot (Lident module_name, operands); loc }
+    [ ptyp_any ~loc ]
+
 (* [neg], and [cmp]'s self-negating form for [=] and [<>]: one shape, and
    the same one, because both negate a boolean the source already wrote.
    The value is bound once so that it is evaluated exactly as often as
@@ -428,10 +444,12 @@ let negating_guard ~loc ~module_name ~index value =
     if [%e armed ~loc ~module_name index] then Stdlib.not [%e evar ~loc p]
     else [%e evar ~loc p]]
 
-(* [cmp]'s swapping form and [ari], which are one skeleton. The operands are lifted through ONE tuple
-   binding, [let (l, r) = (left, right)], and both arms apply the
-   operator the source wrote - the armed one to the swapped operands,
-   under [Stdlib.not].
+(* [cmp]'s swapping form and [ari], which are one skeleton. The operands
+   are lifted through ONE tuple binding, [let (l, r) = (left, right)],
+   and both arms apply an operator to the two binders: the disarmed arm
+   the one the source wrote, the armed arm what the rewrite says -
+   [cmp] the same operator on the swapped operands under [Stdlib.not],
+   [ari] its replacement.
 
    The tuple, not a chain of [let]s, is load-bearing on both sides of
    the type-checker, because the two sides read it in opposite orders
@@ -455,10 +473,44 @@ let negating_guard ~loc ~module_name ~index value =
      each operand exactly once, in the order the compiler gives the
      uninstrumented application, still allocates nothing, and Law 16(a)
      holds bit for bit; test/mutate_ppx/semantics/ checks all of it
-     against an uninstrumented twin. *)
-let binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
+     against an uninstrumented twin.
+
+   Order is not all an application gives its arguments: it gives each an
+   EXPECTED TYPE too, and a bare tuple gives its components none. Under
+   [( < ) : 'a -> 'a -> bool] the right operand is checked against the
+   type the left one has just fixed, and that is what resolves the
+   [Green] of [c < Green], or a record literal, to [c]'s type when a
+   type declared later in scope reuses the name; checked against a fresh
+   component type, the name resolves by scope instead and the build
+   breaks. So [pin] annotates the tuple, [((left, right) : _ M.operands)]
+   with [type 'a operands = 'a * 'a], which hands the right component
+   the left one's type exactly as the comparison's signature does. An
+   abbreviation, because no annotation spells that sharing otherwise: a
+   named variable ([: 'a]) is scoped to the whole toplevel phrase, at
+   the phrase's level, so it would tie every site of the phrase together
+   and stop a local [let lt x y = x < y] from generalizing. The
+   annotation expands to the same tuple and costs nothing at run time,
+   and it is exact for [cmp]: the swapped arm [r < l] already requires
+   the two operands to share a type, so the pin rejects nothing the
+   guard did not reject. [ari] does not pin: its operator's signature is
+   what types both operands, an [open]-provided [+] may take two
+   different types, and integer and float expected types disambiguate
+   nothing anyway. test/mutate_ppx/integration/expected_type.ml is the
+   corpus.
+
+   The other shape that gets both properties right, an immediately
+   applied function [(fun l r -> …) left right], is not used: native
+   code reduces it to the same chain, but bytecode under [-g] keeps the
+   call - a closure allocation and a frame per comparison - and "still
+   allocates nothing" is part of the law. *)
+let binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc ~pin
     ~armed_arm left right =
   let l = binder index "l" and r = binder index "r" in
+  let operands =
+    let tuple = pexp_tuple ~loc [ left; right ] in
+    if pin then pexp_constraint ~loc tuple (operands_type ~loc ~module_name)
+    else tuple
+  in
   let disarmed =
     {
       (pexp_apply ~loc:original_loc operator
@@ -468,7 +520,7 @@ let binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
     }
   in
   [%expr
-    let [%p pvar ~loc l], [%p pvar ~loc r] = ([%e left], [%e right]) in
+    let [%p pvar ~loc l], [%p pvar ~loc r] = [%e operands] in
     if [%e armed ~loc ~module_name index] then
       [%e armed_arm ~l:(evar ~loc l) ~r:(evar ~loc r)]
     else [%e disarmed]]
@@ -477,7 +529,7 @@ let binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
    wrote to the swapped operands, under [Stdlib.not]. *)
 let cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs ~original_loc
     left right =
-  binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
+  binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc ~pin:true
     ~armed_arm:(fun ~l ~r ->
       [%expr
         Stdlib.not [%e pexp_apply ~loc operator [ (Nolabel, r); (Nolabel, l) ]]])
@@ -531,6 +583,7 @@ let con_guard ~loc ~module_name ~index ~is_and left right =
 let ari_guard ~loc ~module_name ~index ~operator ~replacement ~attrs
     ~original_loc left right =
   binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc
+    ~pin:false
     ~armed_arm:(fun ~l ~r ->
       pexp_apply ~loc
         (pexp_ident ~loc { txt = Lident replacement; loc })
@@ -729,6 +782,7 @@ class instrumenter st capabilities module_name =
           and right = self#mutate `Ordinary right in
           match index with
           | Some index ->
+              st.pinned <- true;
               cmp_guard_swapped ~loc ~module_name ~index ~operator ~attrs
                 ~original_loc left right
           | None -> rebuild operator left right)
@@ -855,13 +909,17 @@ class instrumenter st capabilities module_name =
 
 (* The generated preamble is one type declaration and one binding: the
    site record's type, re-exported so the table below can name its
-   fields, and the guard closure the file's guards call.
+   fields, and the guard closure the file's guards call - plus, in a
+   file where a swapping [cmp] guard was emitted, the [operands]
+   abbreviation that guard pins its tuple with ([binary_guard]).
 
      module Windtrap_mut___<mangled file> = struct
        type site = Windtrap_runtime.Mutate.site = {
          line : int; col : int; rewrite : string;
          before : string; after : string; dismissed : string option;
        }
+
+       type 'a operands = 'a * 'a   (* only when a guard names it *)
 
        let ___windtrap_armed___ =
          Windtrap_runtime.Mutate.register ~file:<file> ~sites:<table>
@@ -939,11 +997,25 @@ let runtime_initialization st ~file ~module_name =
         [%e pexp_ident ~loc (runtime_name ~loc "register")]
           ~file:[%e estring ~loc file] ~sites:[%e sites_table]]
   in
+  let operands_declaration =
+    let a = ptyp_var ~loc "a" in
+    pstr_type ~loc Recursive
+      [
+        type_declaration ~loc ~name:{ txt = operands; loc }
+          ~params:[ (a, (NoVariance, NoInjectivity)) ]
+          ~cstrs:[] ~kind:Ptype_abstract ~private_:Public
+          ~manifest:(Some (ptyp_tuple ~loc [ a; a ]));
+      ]
+  in
+  let items =
+    if st.pinned then [ site_type; operands_declaration; armed_binding ]
+    else [ site_type; armed_binding ]
+  in
   let generated_module =
     Ast_helper.Str.module_ ~loc
       (Ast_helper.Mb.mk ~loc
          { txt = Some module_name; loc }
-         (Ast_helper.Mod.structure ~loc [ site_type; armed_binding ]))
+         (Ast_helper.Mod.structure ~loc items))
   in
   let stop_comment = [%stri [@@@ocaml.text "/*"]] in
   [ stop_comment; generated_module; stop_comment ]

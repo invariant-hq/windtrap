@@ -172,9 +172,34 @@ let typing_context () =
        (child.border).left) +. (child.border).right" (fun () ->
       check "horizontal chain +. -> -." (D.horizontal item = 2.))
 
+(* The expected-type corpus ([Expected_type], same library): the same
+   discipline. That it compiled is the regression test; one armed mutant
+   of each pinned shape - a constructor and a record literal as the
+   right operand - shows the annotated tuple still means its rewrite. *)
+let expected_type () =
+  let module E = Windtrap_mutate_disambiguate.Expected_type in
+  let with_mutant = with_mutant ~file:"expected_type.ml" in
+  check "expected_type disarmed"
+    (E.before_green E.Color.Red = 1
+    && E.before_green E.Color.Green = 0
+    && E.past_green E.Color.Blue = 1
+    && E.past_green E.Color.Green = 0
+    && E.within E.Color.Green
+    && (not (E.within E.Color.Blue))
+    && E.below { E.Point.x = 0; y = 5 } = 1
+    && E.below { E.Point.x = 0; y = 10 } = 0
+    && E.is_green E.Color.Green = 1);
+  with_mutant ~rewrite:"le" ~before:"c < Green" (fun () ->
+      check "before_green < -> <= at the boundary"
+        (E.before_green E.Color.Green = 1));
+  with_mutant ~rewrite:"le" ~before:"p < { x = 0; y = 10 }" (fun () ->
+      check "below < -> <= at the boundary"
+        (E.below { E.Point.x = 0; y = 10 } = 1))
+
 let () =
   behaviour ();
   typing_context ();
+  expected_type ();
   let catalogue = Windtrap_runtime.Mutate.catalogue () in
   assert (Windtrap_runtime.Mutate.armed () = None);
   List.iter

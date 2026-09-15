@@ -9,6 +9,7 @@ module Windtrap_mut_________fixture_assert___ml =
       before: string ;
       after: string ;
       dismissed: string option }
+    type 'a operands = ('a * 'a)
     let ___windtrap_armed___ =
       Windtrap_runtime.Mutate.register ~file:"./fixture_assert.ml"
         ~sites:[|{
@@ -53,7 +54,8 @@ let arithmetic a b = assert ((a + b) > 0)
 let as_condition () = if assert false then 1 else 0
 let as_operand a b =
   let __windtrap_mut_1_p =
-    let (__windtrap_mut_2_l, __windtrap_mut_2_r) = (a, b) in
+    let (__windtrap_mut_2_l, __windtrap_mut_2_r) =
+      ((a, b) : _ Windtrap_mut_________fixture_assert___ml.operands) in
     if Windtrap_mut_________fixture_assert___ml.___windtrap_armed___ 2
     then Stdlib.not (__windtrap_mut_2_r < __windtrap_mut_2_l)
     else __windtrap_mut_2_l < __windtrap_mut_2_r in

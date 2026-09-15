@@ -35,19 +35,22 @@
  (instrumentation
   (backend ppx_windtrap.mutate)))
 
-; [windtrap_mutate_disambiguate] is the typing-context regression: its
-; module compiles only while the guards type-check their lifted operands
-; in source order, because every later record field in it resolves from
-; the type a first, qualified access taught the checker. It is a library
-; of its own, not a module of [forced], because it must keep dune's
-; DEFAULT warning set: type-directed disambiguation is warning 40's
-; subject, and the [-w +a] battery would reject the uninstrumented
-; source itself. Preprocessed directly, like [forced], so the regression
-; is a compile failure on every ordinary build.
+; [windtrap_mutate_disambiguate] is the typing-context regression, in
+; two modules. [disambiguate] compiles only while the guards type-check
+; their lifted operands in source order, because every later record
+; field in it resolves from the type a first, qualified access taught
+; the checker; [expected_type] compiles only while the swapping [cmp]
+; guard hands its right operand the left one's type, because every
+; constructor and record literal in it is claimed by a type declared
+; later. It is a library of its own, not a module of [forced], because
+; it must keep dune's DEFAULT warning set: type-directed disambiguation
+; is warning 40's subject, and the [-w +a] battery would reject the
+; uninstrumented source itself. Preprocessed directly, like [forced], so
+; the regression is a compile failure on every ordinary build.
 
 (library
  (name windtrap_mutate_disambiguate)
- (modules disambiguate)
+ (modules disambiguate expected_type)
  (preprocess
   (pps ppx_windtrap.mutate)))
 

@@ -9,6 +9,7 @@ module Windtrap_mut_________fixture_cmp___ml =
       before: string ;
       after: string ;
       dismissed: string option }
+    type 'a operands = ('a * 'a)
     let ___windtrap_armed___ =
       Windtrap_runtime.Mutate.register ~file:"./fixture_cmp.ml"
         ~sites:[|{
@@ -79,7 +80,8 @@ module Windtrap_mut_________fixture_cmp___ml =
 [@@@ocaml.text "/*"]
 let below a b =
   if
-    let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
+    let (__windtrap_mut_0_l, __windtrap_mut_0_r) =
+      ((a, b) : _ Windtrap_mut_________fixture_cmp___ml.operands) in
     (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 0
      then Stdlib.not (__windtrap_mut_0_r < __windtrap_mut_0_l)
      else __windtrap_mut_0_l < __windtrap_mut_0_r)
@@ -87,7 +89,8 @@ let below a b =
   else 0
 let at_most a b =
   if
-    let (__windtrap_mut_1_l, __windtrap_mut_1_r) = (a, b) in
+    let (__windtrap_mut_1_l, __windtrap_mut_1_r) =
+      ((a, b) : _ Windtrap_mut_________fixture_cmp___ml.operands) in
     (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 1
      then Stdlib.not (__windtrap_mut_1_r <= __windtrap_mut_1_l)
      else __windtrap_mut_1_l <= __windtrap_mut_1_r)
@@ -95,14 +98,16 @@ let at_most a b =
   else 0
 let above a b =
   while
-    let (__windtrap_mut_2_l, __windtrap_mut_2_r) = (a, b) in
+    let (__windtrap_mut_2_l, __windtrap_mut_2_r) =
+      ((a, b) : _ Windtrap_mut_________fixture_cmp___ml.operands) in
     if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 2
     then Stdlib.not (__windtrap_mut_2_r > __windtrap_mut_2_l)
     else __windtrap_mut_2_l > __windtrap_mut_2_r do () done
 let at_least a b =
   match a with
   | _ when
-      let (__windtrap_mut_3_l, __windtrap_mut_3_r) = (a, b) in
+      let (__windtrap_mut_3_l, __windtrap_mut_3_r) =
+        ((a, b) : _ Windtrap_mut_________fixture_cmp___ml.operands) in
       if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 3
       then Stdlib.not (__windtrap_mut_3_r >= __windtrap_mut_3_l)
       else __windtrap_mut_3_l >= __windtrap_mut_3_r -> 1
@@ -125,7 +130,8 @@ let differs a b =
   else 0
 let window lo hi x =
   let __windtrap_mut_6_p =
-    let (__windtrap_mut_7_l, __windtrap_mut_7_r) = (x, lo) in
+    let (__windtrap_mut_7_l, __windtrap_mut_7_r) =
+      ((x, lo) : _ Windtrap_mut_________fixture_cmp___ml.operands) in
     if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 7
     then Stdlib.not (__windtrap_mut_7_r >= __windtrap_mut_7_l)
     else __windtrap_mut_7_l >= __windtrap_mut_7_r in
@@ -133,7 +139,8 @@ let window lo hi x =
     Stdlib.(<>) (__windtrap_mut_6_p : Stdlib.Bool.t)
       (Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 6)
   then
-    let (__windtrap_mut_8_l, __windtrap_mut_8_r) = (x, hi) in
+    let (__windtrap_mut_8_l, __windtrap_mut_8_r) =
+      ((x, hi) : _ Windtrap_mut_________fixture_cmp___ml.operands) in
     (if Windtrap_mut_________fixture_cmp___ml.___windtrap_armed___ 8
      then Stdlib.not (__windtrap_mut_8_r <= __windtrap_mut_8_l)
      else __windtrap_mut_8_l <= __windtrap_mut_8_r)

@@ -9,6 +9,7 @@ module Windtrap_mut_________fixture_shadow___ml =
       before: string ;
       after: string ;
       dismissed: string option }
+    type 'a operands = ('a * 'a)
     let ___windtrap_armed___ =
       Windtrap_runtime.Mutate.register ~file:"./fixture_shadow.ml"
         ~sites:[|{
@@ -38,7 +39,8 @@ module Vec =
 let move a b = Vec.(+) a b
 let ordered a b =
   if
-    let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
+    let (__windtrap_mut_0_l, __windtrap_mut_0_r) =
+      ((a, b) : _ Windtrap_mut_________fixture_shadow___ml.operands) in
     (if Windtrap_mut_________fixture_shadow___ml.___windtrap_armed___ 0
      then Stdlib.not (__windtrap_mut_0_r < __windtrap_mut_0_l)
      else __windtrap_mut_0_l < __windtrap_mut_0_r)
