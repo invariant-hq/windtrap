@@ -71,6 +71,15 @@ minimum 80%: ok
 
 `--min` exits 1 with a message when total coverage falls below the
 threshold — the CI gate lives here, never in the test run itself.
+`--expect PATH` is the other gate: every `.ml`, `.mll` and `.mly`
+under `PATH` (a directory, walked recursively; or a single file) must
+have coverage data, or the command names each one that has none and
+exits 1. That closes the hole the denominator cannot show — a library
+without the stanza, a module no test executable links, a test nobody
+ran since the rebuild. `--do-not-expect PATH` exempts a file or a
+directory. Paths are relative to the current directory, the project
+root under `dune exec`; dune's `foo.pp.ml` twins and a lexer's `.mll`
+count as the module they produce.
 Explicit `PATH` arguments (`.coverage` files, or directories searched
 recursively) replace the default search; naming a file that does not
 exist or lacks the `.coverage` suffix is a loud error naming the path,
@@ -139,7 +148,8 @@ Project coverage is defined over instrumented, linked code: the union of
 every executable's point tables, counts added per point. Libraries
 without the instrumentation stanza, code under `[@coverage off]`, and
 modules no test executable links are absent from the denominator — not
-reported as 0%.
+reported as 0%. `--expect lib/` on the alias is what turns that absence
+into a failure.
 
 Each dump records the executable that wrote it (its `_build`-relative
 path and content digest). The report excludes, with a warning, dumps

@@ -580,6 +580,63 @@ let json_shape =
   check "--json --min keeps stdout pure JSON" (json_well_formed out);
   check_contains "--json --min moves the verdict to stderr" ~needle:"FAILED" err
 
+(* --expect: exhaustiveness *)
+
+let expectations =
+  test "--expect names the sources the merge must cover" @@ fun () ->
+  (* The fake project's dumps, under a tree with one source the merge
+     never saw (baz.ml), a preprocessed twin of one it did (foo.pp.ml),
+     a lexer source whose generated module it did (bar.mll), and a
+     dot-directory to skip. *)
+  let root = scratch "expect" in
+  List.iter
+    (fun name ->
+      write_file
+        (Filename.concat root (Filename.concat "_build/_coverage" name))
+        (read_file
+           (Filename.concat proj (Filename.concat "_build/_coverage" name))))
+    [ "windtrap-a.coverage"; "windtrap-b.coverage" ];
+  List.iter
+    (fun (path, contents) -> write_file (Filename.concat root path) contents)
+    [
+      ("lib/foo.ml", "let a = 1\nlet b = 2\nlet c = 3\n");
+      ("lib/foo.pp.ml", "let a = 1\nlet b = 2\nlet c = 3\n");
+      ("lib/bar.mll", "rule token = parse eof { () }\n");
+      ("lib/baz.ml", "let d = 4\n");
+      ("lib/.hidden/ghost.ml", "let e = 5\n");
+    ];
+  let code, out, err = coverage_cmd ~cwd:root [ "--expect"; "lib" ] in
+  check_int "a directory with an unseen source exits 1" ~expected:1 ~actual:code;
+  check_contains "the report still renders" ~needle:"coverage: 60.0%" out;
+  check_contains "the unseen source is named" ~needle:"lib/baz.ml" err;
+  check_contains "and the reasons it can be absent" ~needle:"not instrumented"
+    err;
+  check_absent "a preprocessed twin is its source" ~needle:"foo.pp.ml" err;
+  check_absent "a lexer source is its generated module" ~needle:"bar.mll" err;
+  check_absent "dot-directories are skipped" ~needle:"ghost.ml" err;
+  let code, _, err =
+    coverage_cmd ~cwd:root
+      [ "--expect"; "lib"; "--do-not-expect"; "lib/baz.ml" ]
+  in
+  check_int "--do-not-expect exempts the unseen source" ~expected:0 ~actual:code;
+  check "and nothing is warned about" (err = "");
+  let code, _, _ = coverage_cmd ~cwd:root [ "--expect"; "lib/foo.ml" ] in
+  check_int "a single covered file passes" ~expected:0 ~actual:code;
+  let code, _, err = coverage_cmd ~cwd:root [ "--expect"; "lib/nope" ] in
+  check_int "a nonexistent --expect path exits 1" ~expected:1 ~actual:code;
+  check_contains "a nonexistent --expect path is named" ~needle:"lib/nope" err;
+  let code, _, err = coverage_cmd ~cwd:root [ "--expect" ] in
+  check_int "--expect without an argument exits 2" ~expected:2 ~actual:code;
+  check_contains "--expect without an argument says so" ~needle:"--expect" err;
+  (* Under a machine format stdout stays the artifact; both gates run. *)
+  let code, out, err =
+    coverage_cmd ~cwd:root [ "--json"; "--expect"; "lib"; "--min"; "80" ]
+  in
+  check_int "--json --expect --min exits 1" ~expected:1 ~actual:code;
+  check "--json --expect keeps stdout pure JSON" (json_well_formed out);
+  check_contains "the missing source is on stderr" ~needle:"lib/baz.ml" err;
+  check_contains "and so is the --min verdict" ~needle:"FAILED" err
+
 (* --lcov: the tracefile *)
 
 let lcov_output =
@@ -1097,6 +1154,7 @@ let () =
       min_matrix;
       json_shape;
       lcov_output;
+      expectations;
       loud_failures;
       min_boundaries;
       discovery_robustness;

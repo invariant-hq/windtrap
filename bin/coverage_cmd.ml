@@ -30,6 +30,9 @@ OPTIONS:
   --json                Machine-readable report on standard output
   --lcov                LCOV tracefile on standard output (genhtml, Codecov,
                         Coveralls, GitLab, editor gutters)
+  --expect PATH         Exit 1 unless every .ml/.mll/.mly under PATH (or PATH
+                        itself) has coverage data; repeatable
+  --do-not-expect PATH  Exempt PATH, a file or a directory, from --expect
   -u, --show-uncovered  Also render uncovered source excerpts
   -h, --help            Print this help and exit|}
 
@@ -39,6 +42,8 @@ type options = {
   min : float option;
   json : bool;
   lcov : bool;
+  expect : string list;
+  do_not_expect : string list;
   show_uncovered : bool;
   paths : string list;
 }
@@ -59,7 +64,14 @@ let parse_args args =
     | [] ->
         if acc.json && acc.lcov then
           Error (`Usage "--json and --lcov each own standard output; pick one")
-        else Ok { acc with paths = List.rev acc.paths }
+        else
+          Ok
+            {
+              acc with
+              paths = List.rev acc.paths;
+              expect = List.rev acc.expect;
+              do_not_expect = List.rev acc.do_not_expect;
+            }
     | ("-h" | "--help" | "-help") :: _ -> Error `Help
     | "--min" :: value :: rest -> (
         match min_of_string value with
@@ -74,6 +86,13 @@ let parse_args args =
         | None -> min_error value)
     | "--json" :: rest -> go { acc with json = true } rest
     | "--lcov" :: rest -> go { acc with lcov = true } rest
+    | "--expect" :: path :: rest ->
+        go { acc with expect = path :: acc.expect } rest
+    | [ "--expect" ] -> Error (`Usage "option '--expect' requires an argument")
+    | "--do-not-expect" :: path :: rest ->
+        go { acc with do_not_expect = path :: acc.do_not_expect } rest
+    | [ "--do-not-expect" ] ->
+        Error (`Usage "option '--do-not-expect' requires an argument")
     | ("-u" | "--show-uncovered") :: rest ->
         go { acc with show_uncovered = true } rest
     | arg :: _ when String.length arg > 0 && arg.[0] = '-' ->
@@ -85,6 +104,8 @@ let parse_args args =
       min = None;
       json = false;
       lcov = false;
+      expect = [];
+      do_not_expect = [];
       show_uncovered = false;
       paths = [];
     }
@@ -315,6 +336,107 @@ let print_lcov ~source_roots collection =
     reports;
   flush stdout
 
+(* Exhaustiveness *)
+
+(* Project coverage is defined over instrumented, linked code, so a
+   source file can be absent from the merge for reasons the report
+   cannot show: a library without the stanza, a module no test
+   executable links, a test executable nobody ran since the rebuild.
+   --expect names the sources that must be present; a missing one is
+   a loud failure rather than a silently smaller denominator. *)
+
+(* The recorded names and the walked paths on one footing: lexical
+   components without "" and ".", and the basename's extension chain
+   stripped at its first dot, so lib/calc.ml, ./lib/calc.ml, dune's
+   lib/calc.pp.ml, and the lib/calc.mll a lexer is generated from are
+   one stem. *)
+let stem path =
+  let components =
+    String.split_on_char '/' (String.map (function '\\' -> '/' | c -> c) path)
+    |> List.filter (fun c -> c <> "" && c <> ".")
+  in
+  match List.rev components with
+  | [] -> ""
+  | base :: rev_dirs ->
+      let base =
+        match String.index_opt base '.' with
+        | Some i -> String.sub base 0 i
+        | None -> base
+      in
+      String.concat "/" (List.rev (base :: rev_dirs))
+
+let is_source name =
+  List.exists (Filename.check_suffix name) [ ".ml"; ".mll"; ".mly" ]
+
+(* Build and switch directories, and dot-directories, are never sources. *)
+let skipped_dir name =
+  name = "_build" || name = "_opam" || (name <> "" && name.[0] = '.')
+
+let rec sources_under dir =
+  match Sys.readdir dir with
+  | exception Sys_error _ -> []
+  | entries ->
+      Array.to_list entries |> List.sort String.compare
+      |> List.concat_map (fun entry ->
+          let path = Filename.concat dir entry in
+          match Sys.is_directory path with
+          | true -> if skipped_dir entry then [] else sources_under path
+          | false -> if is_source entry then [ path ] else []
+          | exception Sys_error _ -> [])
+
+(* A named path is a contract, like a PATH argument: it must exist. *)
+let expand_expectation path =
+  if not (Sys.file_exists path) then
+    Error (spf "%s: no such file or directory" path)
+  else if Sys.is_directory path then Ok (sources_under path)
+  else Ok [ path ]
+
+let expand_expectations paths =
+  List.fold_left
+    (fun acc path ->
+      Result.bind acc (fun found ->
+          Result.map (fun more -> found @ more) (expand_expectation path)))
+    (Ok []) paths
+
+(* The sources named by [expect], less those named by [do_not_expect],
+   that [present] (the merge's recorded file names) does not cover. *)
+let missing_expectations ~expect ~do_not_expect present =
+  match (expand_expectations expect, expand_expectations do_not_expect) with
+  | Error message, _ | _, Error message -> Error message
+  | Ok expected, Ok excluded ->
+      let excluded = List.map stem excluded
+      and present = List.map stem present in
+      Ok
+        (expected
+        |> List.filter (fun path ->
+            let s = stem path in
+            not (List.mem s excluded || List.mem s present))
+        |> List.sort_uniq String.compare)
+
+let check_expectations ~expect ~do_not_expect collection =
+  if expect = [] then 0
+  else
+    let present =
+      List.map
+        (fun (r : Windtrap_coverage.file_report) -> r.file)
+        (Windtrap_coverage.file_reports collection)
+    in
+    match missing_expectations ~expect ~do_not_expect present with
+    | Error message ->
+        Printf.eprintf "windtrap coverage: %s\n%!" message;
+        1
+    | Ok [] -> 0
+    | Ok missing ->
+        List.iter
+          (fun path ->
+            Printf.eprintf
+              "windtrap coverage: %s: expected source has no coverage data \
+               (not instrumented, or linked into no test executable that ran)\n\
+               %!"
+              path)
+          missing;
+        1
+
 (* The command *)
 
 let report_table ~source_roots ~show_uncovered collection =
@@ -376,8 +498,17 @@ let run args =
                 else
                   report_table ~source_roots
                     ~show_uncovered:options.show_uncovered collection;
-                (* A machine format owns stdout; the verdict moves aside. *)
-                check_min
-                  ~machine:(options.json || options.lcov)
-                  (Windtrap_coverage.summary collection)
-                  options.min))
+                (* Both gates run, so one run names everything wrong;
+                   either failing is exit 1. A machine format owns
+                   stdout; the verdict moves aside. *)
+                let expectations =
+                  check_expectations ~expect:options.expect
+                    ~do_not_expect:options.do_not_expect collection
+                in
+                let gate =
+                  check_min
+                    ~machine:(options.json || options.lcov)
+                    (Windtrap_coverage.summary collection)
+                    options.min
+                in
+                max expectations gate))

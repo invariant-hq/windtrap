@@ -255,8 +255,10 @@ ppx_windtrap.coverage))` stanza on the library under test; `dune runtest
   0.1.0 runs. The per-file report is now the default `windtrap coverage`
   output, with `--min PCT` to gate CI, `--json` for a machine-readable
   artifact whose per-file objects keep `uncovered_lines` and drop
-  `uncovered_offsets`, and `--lcov` for an LCOV tracefile — Codecov,
-  Coveralls, GitLab, editor gutters, and `genhtml` for HTML.
+  `uncovered_offsets`, `--lcov` for an LCOV tracefile — Codecov,
+  Coveralls, GitLab, editor gutters, and `genhtml` for HTML — and
+  `--expect PATH` to fail when a source under `PATH` has no data at all
+  (not instrumented, or linked into no test executable that ran).
 - **`open Windtrap` narrows.** It brings the flat values plus exactly four
   modules: `Testable`, `Gen`, `Exn`, and `Private` (unstable internals). The
   0.1.0 `Tag`, `Pp`, and `Ppx_runtime` modules are no longer public — the
