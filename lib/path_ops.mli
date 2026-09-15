@@ -3,8 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Filesystem path operations: project-root discovery, dune sandbox path
-    reconstruction with containment proof, and safe path components.
+(** Filesystem path operations: the project root and the log root, dune sandbox
+    path reconstruction with containment proof, and safe path components.
 
     Reconstruction serves the baseline layer: compile-time source paths (from
     [__POS__] or debug info) are mapped back to the source tree of the project,
@@ -14,21 +14,42 @@
 
     Paths returned by this module use ['/'] as separator. *)
 
-(** {1:root Project root} *)
+(** {1:root Project root and log root} *)
 
-val project_root : unit -> string
-(** [project_root ()] is the project root directory: the [WINDTRAP_PROJECT_ROOT]
-    variable when set (made absolute against the current directory if relative),
-    otherwise the nearest ancestor of the current directory containing
-    [dune-project], [dune-workspace], or [.git]. The marker walk starts above
-    any [_build] component of the current directory (build trees contain copied
-    marker files and sandbox decoys), so under [dune runtest] it finds the real
-    workspace root. Falls back to the current directory when no marker exists.
+val build_dir_of_path : string -> string option
+(** [build_dir_of_path path] is the build directory [path] lies in — [path] cut
+    after its first component whose name starts with [_build], e.g.
+    ["/w/_build"] for ["/w/_build/default/test/t.exe"] and ["/w/_build_ci"] for
+    ["/w/_build_ci/.sandbox/3f/default"] — or [None] when no component does.
+    Lexical: nothing is checked on disk, and backslashes are read as separators.
 *)
 
+val build_dir : unit -> string option
+(** [build_dir ()] is the build directory this process belongs to:
+    {!build_dir_of_path} of [INSIDE_DUNE] when that variable holds a path with a
+    build component — dune exports the build context, [<root>/_build/default] (a
+    private [--build-dir] likewise, and a sandboxed action keeps the value and
+    only moves its working directory under [_build/.sandbox]) — else of
+    [Sys.executable_name], a binary run by hand from under a build directory;
+    else [None]. Relative paths are made absolute against the current directory.
+*)
+
+val project_root : unit -> string
+(** [project_root ()] is the project root directory: [WINDTRAP_PROJECT_ROOT]
+    when set (made absolute against the current directory if relative), else the
+    parent of {!build_dir} when there is one — which covers [dune runtest],
+    [dune exec] from any directory, and a build binary run by hand — else the
+    current directory. No marker file is consulted: a binary outside any build
+    directory run from a subdirectory of its project is what the variable is
+    for. *)
+
 val default_log_dir : unit -> string
-(** [default_log_dir ()] is [<project_root>/_build/_tests], the base directory
-    for capture logs and the last-failed store. *)
+(** [default_log_dir ()] is the root directory for capture logs and the
+    last-failed store when [-o] does not name one: [<build_dir>/_tests] when
+    {!build_dir} is found — so a private build directory keeps its own logs —
+    else [<temporary directory>/windtrap] ({!Filename.get_temp_dir_name}), so a
+    tree built without dune never grows a [_build]. Both are keyed by suite
+    below that root. *)
 
 (** {1:reconstruction Sandbox reconstruction} *)
 

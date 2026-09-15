@@ -18,7 +18,7 @@
 
     Output discipline likewise: there is no printer here that writes to a
     standard channel. A sink is always a parameter — {!pf}'s formatter,
-    [Render.create]'s [~out] — so a run's transcript has one destination that
+    [Report.create]'s [~out] — so a run's transcript has one destination that
     its caller chose. *)
 
 (** {1:types Types} *)

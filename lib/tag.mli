@@ -37,6 +37,11 @@ val mem : string -> t -> bool
 val slow : string
 (** [slow] is ["slow"]: pre-applied by the [slow] declaration constructor. *)
 
+val prop : string
+(** [prop] is ["prop"]: pre-applied by the property constructors ([prop],
+    [stateful]). A suite declares property tests iff a test carries it, which is
+    when the run header prints the root seed. *)
+
 (** {1:predicates Selection predicates}
 
     A predicate holds a set of required tags and a set of dropped tags. A tag

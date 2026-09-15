@@ -2,26 +2,18 @@
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
 
-   The transcript layout (status lines, end-of-run failure blocks, slowest
-   list) adapts windtrap v1's progress.ml, rebuilt over typed Failure
-   payloads and Diff data — renderers project, never alter, run data.
+   The failure blocks adapt windtrap v1's progress.ml, rebuilt over typed
+   Failure payloads and Diff data — the report projects run data, never
+   alters it. The section vocabulary is v3's: one gutter renderer serving
+   coverage's per-file report and mutation's survivor blocks.
   ---------------------------------------------------------------------------*)
 
 let spf = Printf.sprintf
 
-(* Layout constants — illustrative, not contract. *)
-let duration_column = 51
-let rule_width = 54
-let compact_row_width = 60 (* glyphs per compact row, v1's wrap *)
-
-(* The transcript is a report, not a canvas: one width, so a pipe and a
-   wide terminal are byte-identical, and one captured-output tail — the
-   last [tail_lines] lines of the [Failure.tail_bytes] the capture kept,
-   with the full log's path beside them. Neither is configurable. *)
+(* Layout constants — illustrative, not contract. The report is not a
+   canvas: one width, so a pipe and a wide terminal are byte-identical. *)
 let columns = 80
-let tail_lines = 10
-let slowest_count = 5
-let slowest_threshold = 5.0 (* seconds *)
+let rule_width = 54
 let max_diff_lines = 200
 let max_proposed_lines = 20
 let indent = "    "
@@ -35,7 +27,6 @@ let witness_gap = 6
 let exe_gap = 3
 
 (* Small helpers *)
-
 let rec take n = function
   | [] -> []
   | _ when n <= 0 -> []
@@ -57,25 +48,13 @@ let shell_quote s =
 
 (* Command hints
 
-   Every command hint completes the run's rerun spelling with CLI flags:
-   the driver computes the invocation once at startup and threads it here —
-   no print site hard-codes an invocation, so no hint can name a command
-   that would not re-run the suite. Under [`Mirrors] (the
-   inline runner, and the default) hints spell [WINDTRAP_*] environment
-   prefixes to [dune runtest], the only interface that exists there. No
-   color in any hint. *)
-
-type invocation = [ `Exe of string | `Mirrors ]
-
-(* The resolved renderer settings: the two presentation knobs the CLI
-   layer resolves and the runner never reads. The driver applies them —
-   [color] against the sink's terminal status, the threshold as [create]'s
-   argument — so the split between run configuration and presentation is
-   a type boundary, not a discipline. *)
-type settings = { color : Env.color_mode; slow_threshold : float }
-
-let default_settings = { color = Env.Auto; slow_threshold = 1.0 }
-
+   Every command hint completes the run's rerun spelling from the one
+   invocation the facade computed at startup (Run.config.invocation) — no
+   print site hard-codes an invocation, so no hint can name a command that
+   would not re-run the suite. Under [`Mirrors] (every run dune drives,
+   and the default) hints spell [WINDTRAP_*] environment prefixes to
+   [dune runtest], the only interface that exists there. No color in any
+   hint. *)
 (* The acceptance line under a baseline failure. An executable invoked by
    hand accepts in place with [-u]; a run dune drives — the inline runner,
    or a stanza's [--corrected] action, both [`Mirrors] — wrote its
@@ -106,24 +85,6 @@ let replay_line ?count invocation ~seed ~filter =
       spf "replay: WINDTRAP_SEED=%s%s WINDTRAP_FILTER=%s dune runtest" token env
         (shell_quote flt)
   | `Mirrors, None -> spf "replay: WINDTRAP_SEED=%s%s dune runtest" token env
-
-let pp_duration secs =
-  if secs >= 60. then
-    (* Round to whole seconds first, or 119.6s prints as "1m60s". *)
-    let total = int_of_float (Float.round secs) in
-    spf "%dm%ds" (total / 60) (total mod 60)
-  else if secs >= 1. then spf "%.2fs" secs
-  else
-    let ms = secs *. 1000. in
-    if ms >= 10. then spf "%.0fms" ms else spf "%.1fms" ms
-
-(* Wall-clock seconds for the summary line: three significant digits, but
-   never scientific notation — [%.3g] alone prints [1e+03] from 999.5s up
-   and [1e-05] below 0.1ms. *)
-let pp_run_duration secs =
-  if secs >= 999.5 then spf "%.0f" secs
-  else if secs < 0.0001 then "0"
-  else spf "%.3g" secs
 
 (* Failure locations record project-root-relative source paths (__POS__,
    debug info), so a relative path resolves against the project root first —
@@ -539,7 +500,7 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
 let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
     (f : Failure.t) =
   let st style s = Pp.styled_string ~ansi style s in
-  (* Under [ansi:false] the block must contain no escape codes (render.mli):
+  (* Under [ansi:false] the block must contain no escape codes (report_sections.mli):
      payload strings from a user pp may carry them, so every line is
      stripped at the sink. Our own styling is off on this path. *)
   let put line =
@@ -840,28 +801,22 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
       let head =
         match rendering with
         | Failure.Pre_image -> spf "counterexample (%s): from" desc
-        | Failure.Value | Failure.Placeholder -> spf "counterexample (%s):" desc
+        | Failure.Value -> spf "counterexample (%s):" desc
       in
       if String.contains rendered '\n' then begin
         put_ind head;
         put_block rendered
       end
       else put_ind (head ^ " " ^ rendered);
-      (* Whatever the slot holds that is not the value, say so once, here,
-         where the reader is looking at it: what a pre-image is, or — for a
-         placeholder, whichever shape the engine produced — the remedy. *)
+      (* A pre-image is not the value: say so once, here, where the reader
+         is looking at it. *)
       (match rendering with
       | Failure.Value -> ()
       | Failure.Pre_image ->
           put_ind
             (st `Faint
                "(the value has no printer \u{2014} shown is its pre-image, \
-                what map and bind computed it from)")
-      | Failure.Placeholder ->
-          put_ind
-            (st `Faint
-               "(this generator has no printer \u{2014} attach one with \
-                Gen.with_pp to see the value)"));
+                what map and bind computed it from)"));
       (* The shrink search hit the whole-test budget: the reported
          counterexample is the best found within it. [%g] matches the
          runner's [timed out after %gs] phrase so timeout greps catch
@@ -908,603 +863,34 @@ let pp_failure ~ansi ?(excerpt = false) ?filter ?(invocation = `Mirrors) ppf f =
 (* Sub-case entries carry their identity as data (Run.subtest fills the
    [subtest] components); the msg text is never consulted. *)
 let is_subtest_failure (f : Failure.t) = f.Failure.subtest <> []
+(* The section vocabulary
 
-(* Renderer state *)
+   The one vocabulary instrumentation reports are made of: styled lines,
+   hint lines, aligned rows, source excerpts, and the failure section's
+   rules. Coverage's per-file table and mutation's survivor blocks are
+   two projections into it, drawn knowing nothing about the runtimes that
+   measured the data — the subsystem that owns the numbers builds section
+   data, and every name the runtime owns (a mutant identifier, the arming
+   variable) arrives pre-spelled with the runtime's own functions. Law 12:
+   a second copy of any of these drawers is exactly the drift the
+   coverage command's structure exists to prevent. *)
 
-type t = {
-  out : Format.formatter;
-  ansi : bool;
-  mode : [ `Compact | `Verbose ];
-  live : bool;
-  slow_threshold : float; (* seconds; 0. disables the slow machinery *)
-  invocation : invocation;
-      (* the hint context: every acceptance, replay and rerun line derives
-         from the one value the driver computed at startup. *)
-  row : Buffer.t; (* styled glyphs of the current compact row *)
-  mutable row_count : int; (* glyphs on the current compact row *)
-  pending : Buffer.t;
-      (* the buffered compact transcript — glyphs, wrap counters, notes —
-         not yet committed to the sink. Printed by the first noteworthy
-         event; discarded when a green, healthy run ends as one line. *)
-  mutable deferred : bool;
-      (* compact mode starts here: header and glyphs buffer until a
-         noteworthy event (a counted failure, or an untagged test over the
-         slow threshold) flushes them; false once flushed, and always false
-         under [`Verbose]. *)
-  mutable total_tests : int;
-  mutable seen : int;
-  mutable live_pending : bool;
-  mutable declared : int option;
-      (* tests the suite declares, before selection — the denominator the
-         empty-selection message needs; [total_tests] is what survived.
-         [None] until [header] runs: an embedder that renders results
-         without one gets the bare wording rather than a guess. *)
-  mutable selection : string option;
-      (* the active selection, described by the driver (which owns the
-         config), used only to say why nothing ran. *)
-  mutable suite : string option;
-      (* recorded by [header] so that a compact run still deferred at the
-         end can name itself in its one-line summary — nothing may print
-         without a name. *)
-  mutable seed : Seed.seed option;
-      (* recorded by [header] for the deferred header line and the compact
-         one-liner's seed suffix. *)
-}
+(* The sink: where sections print and whether they style. With
+   [ansi:false] every line is stripped at the sink, so escape codes
+   arriving inside payload strings never reach a plain transcript. *)
+type sink = { out : Format.formatter; ansi : bool }
 
-let create ~out ~ansi ?(mode = `Compact) ?(live = false) ?(slow_threshold = 1.0)
-    ?(invocation = `Mirrors) () =
-  if not (Float.is_finite slow_threshold && slow_threshold >= 0.) then
-    invalid_arg "Render.create: slow_threshold not finite and non-negative";
-  {
-    out;
-    ansi;
-    mode;
-    live = live && ansi;
-    slow_threshold;
-    invocation;
-    row = Buffer.create 256;
-    row_count = 0;
-    pending = Buffer.create 256;
-    deferred = mode = `Compact;
-    total_tests = 0;
-    seen = 0;
-    live_pending = false;
-    declared = None;
-    selection = None;
-    suite = None;
-    seed = None;
-  }
+let put k line =
+  Pp.pf k.out "%s@\n" (if k.ansi then line else Text.strip_ansi line)
 
-(* As [pp_gen]'s sink: with [ansi:false] escape codes arriving in test
-   names or captured output are stripped, keeping the transcript clean. *)
-let put t line =
-  Pp.pf t.out "%s@\n" (if t.ansi then line else Text.strip_ansi line)
+let st k style s = Pp.styled_string ~ansi:k.ansi style s
 
-let st t style s = Pp.styled_string ~ansi:t.ansi style s
-
-(* Erase the live tail. The whole line is cleared and the committed
-   glyphs of the current compact row re-printed (the row buffer is empty
-   in verbose mode, and nothing is committed while the compact transcript
-   is deferred), so the bytes left on screen equal the pipe bytes. *)
-let clear_live t =
-  if t.live_pending then begin
-    Pp.pf t.out "\r\027[2K%s" (if t.deferred then "" else Buffer.contents t.row);
-    t.live_pending <- false
-  end
-
-(* The transcript *)
-
-(* The header line, printed by [header] under [`Verbose] and by the first
-   noteworthy event's flush under [`Compact] — from the recorded fields
-   either way, so the two paths cannot drift. *)
-let header_line t =
-  match t.suite with
-  | None -> ()
-  | Some suite ->
-      let seed_part =
-        match t.seed with
-        | None -> ""
-        | Some s -> spf " (seed %s)" (Seed.to_string s)
-      in
-      put t
-        (spf "%s: %d test%s%s" (sanitize_name suite) t.total_tests
-           (if t.total_tests = 1 then "" else "s")
-           seed_part)
-
-let header t ~suite ~tests ?declared ?selection ~seed () =
-  t.total_tests <- tests;
-  t.declared <- Some (Option.value declared ~default:tests);
-  t.selection <- selection;
-  t.suite <- Some suite;
-  t.seed <- seed;
-  match t.mode with
-  | `Compact -> () (* deferred: printed by the first noteworthy event *)
-  | `Verbose ->
-      header_line t;
-      Pp.flush t.out ()
-
-(* The noteworthy flush (compact mode): commit the deferred header and the
-   buffered glyph rows, then stream. A no-op once flushed and in the other
-   modes, which never defer. *)
-let flush_deferred t =
-  if t.deferred then begin
-    t.deferred <- false;
-    header_line t;
-    if Buffer.length t.pending > 0 then
-      Pp.pf t.out "%s" (Buffer.contents t.pending);
-    Buffer.clear t.pending;
-    Pp.flush t.out ()
-  end
-
-let begin_test t ~path =
-  if t.live then begin
-    clear_live t;
-    let name = sanitize_name (Test_tree.path_to_string path) in
-    let counter = spf "[%d/%d]" (t.seen + 1) (max t.total_tests (t.seen + 1)) in
-    match t.mode with
-    | `Verbose ->
-        let text = spf "Running %s %s\u{2026}" counter name in
-        let text = Text.truncate_utf8 (columns - 4) text in
-        Pp.pf t.out "\r\027[2K%s" (st t `Faint ("  " ^ text));
-        Pp.flush t.out ();
-        t.live_pending <- true
-    | `Compact ->
-        (* The erasable tail after the last glyph ([..F  [7/9] name…]):
-           erased by [clear_live] before the next glyph or the end of the
-           run, so the committed row is exactly the pipe bytes. While the
-           transcript is deferred no glyph is committed, so the tail draws
-           from column zero and its erasure leaves a green run's screen
-           blank — the tail never forces the header out early. *)
-        let base = if t.deferred then 0 else t.row_count in
-        let width = columns - base - 1 in
-        if width >= 8 then begin
-          let text =
-            Text.truncate_utf8 width (spf "  %s %s\u{2026}" counter name)
-          in
-          Pp.pf t.out "%s" (st t `Faint text);
-          Pp.flush t.out ();
-          t.live_pending <- true
-        end
-  end
-
-let has_missing_baseline failures =
-  List.exists
-    (fun (f : Failure.t) ->
-      match f.kind with
-      | Failure.Baseline { state = Failure.Missing _; _ } -> true
-      | _ -> false)
-    failures
-
-(* "  TAG  <name><suffix>" padded so [timing] starts at a fixed column. *)
-let test_line t ~tag ~style ~name ~suffix ~timing =
-  let line = "  " ^ st t style tag ^ "  " ^ name ^ st t `Faint suffix in
-  if timing = "" then line
-  else
-    let width = 4 + String.length tag + Text.length_utf8 (name ^ suffix) in
-    let pad = max 2 (duration_column - width) in
-    line ^ String.make pad ' ' ^ st t `Faint timing
-
-(* One glyph, appended to the current row and — once the transcript
-   flushed — committed immediately (the streaming law: a crash leaves the
-   partial row visible). While deferred the same bytes accumulate in
-   [pending] instead, so a later flush is byte-identical to having
-   streamed. Rows wrap every [compact_row_width] glyphs with a faint
-   [ [k/n]] counter when the total is known, a bare newline otherwise
-   (v1 exact). *)
-let emit_glyph t glyph =
-  Buffer.add_string t.row glyph;
-  t.row_count <- t.row_count + 1;
-  if t.deferred then Buffer.add_string t.pending glyph
-  else Pp.pf t.out "%s" glyph;
-  if t.row_count >= compact_row_width then begin
-    let counter =
-      if t.total_tests > 0 then
-        st t `Faint (spf " [%d/%d]" t.seen t.total_tests)
-      else ""
-    in
-    if t.deferred then Buffer.add_string t.pending (counter ^ "\n")
-    else Pp.pf t.out "%s@\n" counter;
-    Buffer.clear t.row;
-    t.row_count <- 0
-  end;
-  if not t.deferred then Pp.flush t.out ()
-
-(* Close a partial compact row before printing full-width material. *)
-let close_row t =
-  if t.row_count > 0 then begin
-    if t.deferred then Buffer.add_string t.pending "\n" else Pp.pf t.out "@\n";
-    Buffer.clear t.row;
-    t.row_count <- 0
-  end
-
-(* Run-scoped notices arrive between results (fixture releases fire after
-   the last test, before [finish]), when a compact glyph row can still be
-   open: close it, or the note splices into the row. While the compact
-   transcript is deferred the notice buffers with the row — it prints in
-   position if a noteworthy event flushes, and a green run keeps its
-   one-line transcript — with an erasable live copy so a hanging fixture
-   release still names itself on a terminal. *)
-let note t line =
-  let line = sanitize_name line in
-  clear_live t;
-  close_row t;
-  if t.deferred then begin
-    Buffer.add_string t.pending
-      ((if t.ansi then line else Text.strip_ansi line) ^ "\n");
-    if t.live then begin
-      Pp.pf t.out "%s" (st t `Faint (Text.truncate_utf8 (columns - 1) line));
-      Pp.flush t.out ();
-      t.live_pending <- true
-    end
-  end
-  else begin
-    put t line;
-    Pp.flush t.out ()
-  end
-
-(* The label-distribution table (one producer, two placements): the failure
-   blocks always show it; a passing property's prints under [`Verbose] —
-   the calibration view for collect/classify. *)
-let pp_prop_stats t (s : Property.stats) =
-  if s.collected <> [] then begin
-    put t
-      (indent
-      ^ st t `Faint
-          (spf "labels (%d passing case%s):" s.cases
-             (if s.cases = 1 then "" else "s")));
-    List.iter
-      (fun (label, count) ->
-        let line =
-          if s.cases > 0 then
-            spf "  %5.1f%%  %s"
-              (100. *. float_of_int count /. float_of_int s.cases)
-              label
-          else spf "  %d  %s" count label
-        in
-        put t (indent ^ st t `Faint line))
-      s.collected
-  end;
-  (* The failure headline already names every label that was never covered,
-     so this list earns its place only by showing the ones that were —
-     which is the question a reader asks next. *)
-  if
-    List.length s.coverage > 1
-    && List.exists (fun c -> not c.Property.satisfied) s.coverage
-  then begin
-    put t (indent ^ "covered labels:");
-    List.iter
-      (fun (c : Property.cover_status) ->
-        put t
-          (indent
-          ^ spf "  %s  %d%s" c.label c.hits
-              (if c.satisfied then "" else " \u{2014} never covered")))
-      s.coverage
-  end
-
-(* Record-driven classification: a failing result that did
-   not count is an excused expected failure — the runner's unexpected-pass
-   synthesis arrives counted, so no failure message is ever inspected. *)
-let counted_failure (r : Run.result) =
-  match r.outcome with
-  | Failure.Fail _ -> r.counted
-  | Failure.Pass | Failure.Skip _ -> false
-
-let verbose_result t (r : Run.result) =
-  let name = sanitize_name (Test_tree.path_to_string r.path) in
-  let timing =
-    pp_duration r.duration
-    ^ if r.attempts > 1 then spf " (%d attempts)" r.attempts else ""
-  in
-  match r.outcome with
-  | Failure.Pass -> (
-      put t (test_line t ~tag:"PASS" ~style:`Green ~name ~suffix:"" ~timing);
-      (* A passing property with collected labels prints its distribution —
-         the same [pp_prop_stats] projection as the failure blocks, so the
-         bytes cannot drift. XFAIL and SKIP lines print no table. *)
-      match r.prop_stats with
-      | Some s when s.Property.collected <> [] -> pp_prop_stats t s
-      | _ -> ())
-  | Failure.Fail _ when not r.counted ->
-      (* An expected failure: informational and dim. *)
-      let suffix =
-        match r.xfail with
-        | Some { Test_tree.reason = Some reason } ->
-            spf " (expected failure: %s)" reason
-        | Some { Test_tree.reason = None } | None -> " (expected failure)"
-      in
-      put t (test_line t ~tag:"XFAIL" ~style:`Faint ~name ~suffix ~timing)
-  | Failure.Fail failures ->
-      let suffix =
-        if has_missing_baseline failures then " \u{2014} no baseline" else ""
-      in
-      put t (test_line t ~tag:"FAIL" ~style:`Red ~name ~suffix ~timing)
-  | Failure.Skip reason ->
-      let suffix = match reason with Some r -> spf " (%s)" r | None -> "" in
-      put t (test_line t ~tag:"SKIP" ~style:`Yellow ~name ~suffix ~timing:"")
-
-let compact_glyph t (r : Run.result) =
-  match r.outcome with
-  | Failure.Pass -> st t `Green "."
-  | Failure.Fail _ when not r.counted -> st t `Faint "x" (* expected failure *)
-  | Failure.Fail _ -> st t `Red "F"
-  | Failure.Skip _ -> st t `Yellow "S"
-
-(* Over the slow threshold and not exempt: skips never count (their
-   durations are not run time), tests tagged ["slow"] are exempt
-   everywhere, and a zero threshold disables the machinery entirely. *)
-let over_threshold t (r : Run.result) =
-  t.slow_threshold > 0. && (not r.slow_tagged)
-  && (match r.outcome with Failure.Skip _ -> false | _ -> true)
-  && r.duration >= t.slow_threshold
-
-let result t (r : Run.result) =
-  t.seen <- t.seen + 1;
-  clear_live t;
-  match t.mode with
-  | `Compact ->
-      (* The noteworthy rule: the first counted failure (an excused
-         expected failure is not one), or the first completed untagged
-         test over the slow threshold, commits the deferred header and
-         rows; the triggering glyph and everything after stream live. *)
-      if t.deferred && (counted_failure r || over_threshold t r) then
-        flush_deferred t;
-      emit_glyph t (compact_glyph t r)
-  | `Verbose ->
-      verbose_result t r;
-      Pp.flush t.out ()
-
-(* End of run *)
-
-let labeled_rule t label =
+let labeled_rule label =
   let w = min columns rule_width in
   let inner = Text.length_utf8 label + 2 in
   let left = max 2 ((w - inner) / 2) in
   let right = max 2 (w - inner - left) in
   dashes left ^ " " ^ label ^ " " ^ dashes right
-
-let pp_tail t (tail : Failure.tail) =
-  if not (tail.text = "" && tail.omitted_bytes = 0) then begin
-    let lines = Text.split_lines tail.text in
-    let total = List.length lines in
-    let shown_count = min tail_lines total in
-    let shown = List.filteri (fun i _ -> i >= total - shown_count) lines in
-    let head =
-      if tail.omitted_bytes > 0 then
-        spf
-          "\u{2500}\u{2500} captured output (last %d line%s, %d earlier bytes \
-           omitted) \u{2500}\u{2500}"
-          shown_count
-          (if shown_count = 1 then "" else "s")
-          tail.omitted_bytes
-      else if shown_count < total then
-        spf
-          "\u{2500}\u{2500} captured output (last %d of %d lines) \
-           \u{2500}\u{2500}"
-          shown_count total
-      else
-        spf "\u{2500}\u{2500} captured output (%d line%s) \u{2500}\u{2500}"
-          total
-          (if total = 1 then "" else "s")
-    in
-    put t (indent ^ st t `Faint head);
-    List.iter (fun l -> put t (indent ^ l)) shown;
-    match tail.log_path with
-    | Some p -> put t (indent ^ "full log: " ^ Path_ops.display_artifact p)
-    | None -> ()
-  end
-
-let pp_block t (r : Run.result) =
-  match r.outcome with
-  | Failure.Pass | Failure.Skip _ -> ()
-  | Failure.Fail failures -> (
-      let name = Test_tree.path_to_string r.path in
-      (* One spelling of the count, the verbose status line's: a block
-         only prints for a test that failed on its last attempt, so
-         "attempt N of N" was always N of N — the declared total is not
-         recorded, and a number that can only equal itself says nothing
-         the plain count does not. *)
-      let attempts =
-        if r.attempts > 1 then spf " (%d attempts)" r.attempts else ""
-      in
-      put t
-        ("  " ^ st t `Red "FAIL" ^ "  "
-        ^ st t `Bold (sanitize_name name)
-        ^ st t `Faint attempts);
-      (* One test can fail more than once — sibling subtests, or a body and
-         its teardown, which report independently. Separate them, for the
-         same reason blocks are separated: without it the only break inside
-         a block falls between a failure's location and its detail, which
-         reads as a boundary where there is none and hides the one that is
-         actually there. *)
-      List.iteri
-        (fun i f ->
-          if i > 0 then put t "";
-          pp_gen ~ansi:t.ansi ~excerpt:true ~filter:(Some name) ~commands:true
-            ~invocation:t.invocation ~ind:indent t.out f)
-        failures;
-      (match r.prop_stats with Some s -> pp_prop_stats t s | None -> ());
-      match List.find_map (fun (f : Failure.t) -> f.output_tail) failures with
-      | Some tail -> pp_tail t tail
-      | None -> ())
-
-(* Why a selection is empty, in one sentence — Exit 2 either way, but
-   the two causes call for different words: a suite with nothing in it is
-   not a mistyped filter, and neither is a shard that legitimately drew an
-   empty bucket. Naming the selection and the denominator is what turns a
-   dead end into a next step. [None] when nothing narrowed a non-empty
-   suite, which is a case with nothing to explain. *)
-let empty_selection_reason ~declared ~selection =
-  match (declared, selection) with
-  | 0, _ -> Some "the suite declares none"
-  | declared, Some selection ->
-      Some
-        (spf "%s matched none of %d test%s" selection declared
-           (if declared = 1 then "" else "s"))
-  | _, None -> None
-
-(* The summary counts REPORTED RESULTS, which is not the header's count of
-   selected tests: a failing fixture release is recorded as a verdict row
-   after the header printed (Run.Fixture_release), so a one-test suite
-   whose release raises reads "1 test" above and "1 passed, 1 failed" below.
-   The two are answering different questions — what will run, what came
-   back — and the extra row names itself in the block directly above, under
-   a [release] phase tag. Dropping such a row from [failed] to make the
-   arithmetic close would be the real defect: the run failed, and the
-   summary would then disagree with the exit code. *)
-let summary_line t ~passed ~failed ~skipped ~excused ~subtests ~duration =
-  (* A compact run still deferred at the end (green and healthy, the
-     one-line transcript) printed no header: the summary carries the suite
-     name — nothing may print without a name. That line also appends the
-     root seed the header would have shown, so property runs stay
-     replayable from one line. *)
-  let prefix =
-    match t.suite with
-    | Some suite when t.deferred -> sanitize_name suite ^ ": "
-    | _ -> ""
-  in
-  if passed + failed + skipped + excused = 0 then begin
-    let reason =
-      match t.declared with
-      | Some declared -> empty_selection_reason ~declared ~selection:t.selection
-      | None -> None
-    in
-    match reason with
-    | None -> put t (prefix ^ "no tests ran.")
-    | Some reason ->
-        put t (spf "%sno tests ran: %s." prefix reason);
-        if t.declared <> Some 0 then
-          put t (st t `Faint "(list the suite's tests with -l)")
-  end
-  else begin
-    let passed_part =
-      if passed > 0 || (failed = 0 && skipped = 0 && excused = 0) then
-        [
-          (if failed = 0 then st t `Green (spf "%d passed" passed)
-           else spf "%d passed" passed);
-        ]
-      else []
-    in
-    (* The counts wear the glyph row's colours: the row and the summary
-       describe the same run, so one convention across both — green pass,
-       red fail, yellow skip, faint excused — beats two. *)
-    let skipped_part =
-      if skipped > 0 then [ st t `Yellow (spf "%d skipped" skipped) ] else []
-    in
-    let excused_part =
-      if excused > 0 then
-        [
-          st t `Faint
-            (spf "%d expected failure%s" excused
-               (if excused = 1 then "" else "s"));
-        ]
-      else []
-    in
-    let failed_part =
-      if failed > 0 then
-        let subtest_part =
-          if subtests > 0 then
-            spf " (%d subtest failure%s)" subtests
-              (if subtests = 1 then "" else "s")
-          else ""
-        in
-        [ st t `Red (spf "%d failed%s" failed subtest_part) ]
-      else []
-    in
-    let seed_part =
-      match t.seed with
-      | Some s when t.deferred -> spf " (seed %s)" (Seed.to_string s)
-      | _ -> ""
-    in
-    put t
-      (prefix
-      ^ String.concat ", "
-          (passed_part @ skipped_part @ excused_part @ failed_part)
-      ^ spf " in %ss%s." (pp_run_duration duration) seed_part)
-  end
-
-(* The slow warnings (spec: after the row and the failure blocks, before
-   the summary): a labelled block in the shape of the failures block and
-   the slowest list, rather than bare lines at column zero — a heading
-   carrying the count, then one indented entry per test with the duration
-   in a right-aligned leading column, so the paths line up and the
-   durations can be read down. Slowest first: with several over the
-   threshold, the top one is the one worth acting on, and execution order
-   says nothing a reader wants here.
-
-   The hint names the interface the run actually has, like every other
-   hint — the inline runner has no CLI to offer a flag from. *)
-let slow_warnings t slow_results =
-  let rendered =
-    List.map
-      (fun (r : Run.result) ->
-        (pp_duration r.duration, sanitize_name (Test_tree.path_to_string r.path)))
-      (List.sort
-         (fun (a : Run.result) (b : Run.result) ->
-           Float.compare b.duration a.duration)
-         slow_results)
-  in
-  (* [pp_duration] is ASCII, so byte length is display width. *)
-  let width =
-    List.fold_left (fun w (d, _) -> max w (String.length d)) 0 rendered
-  in
-  let warn s = put t (st t `Faint (st t `Yellow s)) in
-  warn (spf "slow tests (%d):" (List.length rendered));
-  List.iter (fun (d, path) -> warn (spf "  %*s  %s" width d path)) rendered;
-  put t
-    (st t `Faint
-       (match t.invocation with
-       | `Exe _ ->
-           "(exempt with the \"slow\" tag, or raise --slow-threshold SECONDS)"
-       | `Mirrors ->
-           "(exempt with the \"slow\" tag, or raise WINDTRAP_SLOW_THRESHOLD)"))
-
-let slowest t results =
-  let timed =
-    List.filter
-      (fun (r : Run.result) ->
-        match r.outcome with Failure.Skip _ -> false | _ -> true)
-      results
-  in
-  let total =
-    List.fold_left (fun acc (r : Run.result) -> acc +. r.duration) 0. timed
-  in
-  if total >= slowest_threshold && List.length timed >= slowest_count then begin
-    let rendered =
-      List.map
-        (fun (r : Run.result) ->
-          ( pp_duration r.duration,
-            sanitize_name (Test_tree.path_to_string r.path) ))
-        (take slowest_count
-           (List.sort
-              (fun (a : Run.result) (b : Run.result) ->
-                Float.compare b.duration a.duration)
-              timed))
-    in
-    (* Same duration column as the slow-tests block, which prints a few
-       lines above this one in a verbose run: two lists of (duration, path)
-       that align differently read as a mistake. *)
-    let width =
-      List.fold_left (fun w (d, _) -> max w (String.length d)) 0 rendered
-    in
-    put t "";
-    put t (st t `Faint "slowest tests:");
-    List.iter
-      (fun (d, path) -> put t (st t `Faint (spf "  %*s  %s" width d path)))
-      rendered
-  end
-
-(* Report sections (subsystem-neutral)
-
-   The one vocabulary instrumentation reports are made of: styled lines,
-   hint lines, aligned rows, source excerpts, and the failure section's
-   rules. Coverage's per-file table and mutation's survivor blocks are
-   two projections into it, and Render draws it knowing nothing about
-   the runtimes that measured the data — the subsystem that owns the
-   numbers builds section data, and every name the runtime owns (a
-   mutant identifier, the arming variable) arrives pre-spelled with the
-   runtime's own functions. Law 12: a second copy of any of these
-   drawers is exactly the drift [bin/dune]'s own comment says the
-   coverage command's structure exists to prevent. *)
 
 let rstrip s =
   let n = ref (String.length s) in
@@ -1518,10 +904,10 @@ type span = { style : Pp.style option; text : string }
 let plain text = { style = None; text }
 let styled style text = { style = Some style; text }
 
-let span_str t { style; text } =
-  match style with None -> text | Some style -> st t style text
+let span_str k { style; text } =
+  match style with None -> text | Some style -> st k style text
 
-let line_str t spans = String.concat "" (List.map (span_str t) spans)
+let line_str k spans = String.concat "" (List.map (span_str k) spans)
 
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 
@@ -1622,13 +1008,13 @@ type excerpt = {
   marked_lines : int list;
 }
 
-let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
+let excerpt k ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
   (match e.heading with
   | None -> ()
   | Some h ->
-      put t "";
-      put t (spf "%s \u{2014} %s" e.file (line_str t h));
-      put t "");
+      put k "";
+      put k (spf "%s \u{2014} %s" e.file (line_str k h));
+      put k "");
   let regions = excerpts ~context ~source:e.source e.marked_lines in
   let width =
     match number_width with
@@ -1644,7 +1030,7 @@ let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
      has — the coverage transcript is byte-frozen, escapes included. *)
   let gutter marked =
     if not marker then margin
-    else if marked then st t `Red (margin ^ "\u{258c}")
+    else if marked then st k `Red (margin ^ "\u{258c}")
     else margin ^ " "
   in
   let separator =
@@ -1653,10 +1039,10 @@ let excerpt t ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
   in
   List.iteri
     (fun i region ->
-      if i > 0 then put t separator;
+      if i > 0 then put k separator;
       List.iter
         (fun l ->
-          put t
+          put k
             (rstrip
                (spf "%s%*d \u{2502} %s" (gutter l.marked) width l.number l.text)))
         region)
@@ -1687,7 +1073,7 @@ let span_width (s : span) = Text.length_utf8 s.text
    the rendered row is stripped of trailing spaces — after styling, so a
    row whose last cell styles an empty string sheds the padding before
    it, exactly as the hand-laid rows always did. *)
-let put_rows t ~margin ~columns rows =
+let put_rows k ~margin ~columns rows =
   let widths =
     List.map
       (fun (i, (c : column)) ->
@@ -1710,36 +1096,36 @@ let put_rows t ~margin ~columns rows =
           | Some c, Some width ->
               Buffer.add_string buf c.gap;
               let pad = String.make (max 0 (width - span_width cell)) ' ' in
-              let text = span_str t cell in
+              let text = span_str k cell in
               Buffer.add_string buf
                 (match c.align with
                 | `Right -> pad ^ text
                 | `Left -> text ^ pad)
           | _, _ -> ())
         cells;
-      put t (rstrip (Buffer.contents buf)))
+      put k (rstrip (Buffer.contents buf)))
     rows
 
-let render_section t = function
-  | Line spans -> put t (line_str t spans)
-  | Hint line -> put t line
-  | Rows { margin; columns; rows } -> put_rows t ~margin ~columns rows
+let render_section k = function
+  | Line spans -> put k (line_str k spans)
+  | Hint line -> put k line
+  | Rows { margin; columns; rows } -> put_rows k ~margin ~columns rows
   | Excerpt { context; marker; margin; number_width; excerpt = e } ->
-      excerpt t ~context ~marker ~margin ?number_width e
-  | Rule (Some label) -> put t (st t `Faint (labeled_rule t label))
-  | Rule None -> put t (st t `Faint (dashes (min columns rule_width)))
+      excerpt k ~context ~marker ~margin ?number_width e
+  | Rule (Some label) -> put k (st k `Faint (labeled_rule label))
+  | Rule None -> put k (st k `Faint (dashes (min columns rule_width)))
 
-let sections t l = List.iter (render_section t) l
-
+let print ~out ~ansi sections =
+  let k = { out; ansi } in
+  List.iter (render_section k) sections;
+  Pp.flush out ()
 (* Coverage (run data, rendered late)
 
-   The one place the coverage layout lives: [finish]'s inline line, the
-   [WINDTRAP_COVERAGE]/[--coverage] report and full modes, and — through
-   [Private] — the [windtrap coverage] command, which renders the same
-   [coverage_report] over merged files so the two reports cannot drift.
-   The data arrives as the record below, built at the coverage seam
-   ([Driver.coverage_data]) — this module orders nothing and counts
-   nothing, and it no longer names the runtime. *)
+   The one place the coverage layout lives: the transcript's inline line
+   and the [windtrap coverage] command's per-file report over merged
+   files. The data arrives as the record below, built by the command,
+   which holds the runtime — this module orders nothing and counts
+   nothing, and it does not name the runtime. *)
 
 type coverage_file = {
   file : string;
@@ -1761,9 +1147,9 @@ let coverage_style ~visited ~total : Pp.style =
   let pct = coverage_percentage ~visited ~total in
   if pct >= 80. then `Green else if pct >= 60. then `Yellow else `Red
 
-(* The one producer of the coverage line, shared by [finish]'s inline
-   form (which points at the project aggregate) and [coverage_report]'s
-   bare form, which already is the aggregate. *)
+(* The one producer of the coverage line, shared by the transcript's
+   inline form (which points at the project aggregate) and
+   [coverage_report]'s bare form, which already is the aggregate. *)
 let coverage_line ?hint ~visited ~total () =
   let hint = match hint with None -> "" | Some h -> " \u{00b7} " ^ h in
   [
@@ -1807,7 +1193,7 @@ let coverage_excerpt (f : coverage_file) =
       ]
   | _ -> []
 
-let coverage_sections ~mode (c : coverage) =
+let coverage_report ~mode (c : coverage) =
   let table_row (f : coverage_file) =
     let note =
       if f.stale then
@@ -1845,12 +1231,6 @@ let coverage_sections ~mode (c : coverage) =
          rows = List.map table_row c.files;
        }
   :: (if mode = `Full then List.concat_map coverage_excerpt c.files else [])
-
-let coverage_report t ~mode c =
-  clear_live t;
-  close_row t;
-  sections t (coverage_sections ~mode c)
-
 (* Mutation (run data, rendered late)
 
    A survivor is a failure block: the same 54-column labelled rule, the
@@ -1898,8 +1278,8 @@ type mutation = {
    command is spelled at all: this renderer does not know how the suite
    is run, and the build-tool spelling that used to stand there was
    wrong in every project but the one it was written in. *)
-let reproduce_line t ~variable ~filter =
-  match (t.invocation, filter) with
+let reproduce_line ~invocation ~variable ~filter =
+  match (invocation, filter) with
   | `Exe cmd, Some flt ->
       spf "reproduce: %s=<id> %s -f %s" variable cmd (shell_quote flt)
   | `Exe cmd, None -> spf "reproduce: %s=<id> %s" variable cmd
@@ -2053,48 +1433,11 @@ let mutation_summary_spans (m : mutation) =
   in
   plain "mutants: " :: separated terms
 
-(* The lines an armed run is owed. The announcement prints
-   unconditionally, because Law 16(b) makes it the guarantee that a run
-   whose output does not say so has no mutant armed. *)
-
-let mutation_armed t ~id ~before ~after =
-  clear_live t;
-  close_row t;
-  put t (spf "mutant %s armed: %s \u{2192} %s" (st t `Bold id) before after)
-
-let mutation_killed t =
-  clear_live t;
-  close_row t;
-  put t (st t `Green "mutant killed.")
-
-let mutation_survived t ~hits =
-  clear_live t;
-  close_row t;
-  put t
-    (st t `Red
-       (spf
-          "mutant survived: the armed site was evaluated %d time(s) and no \
-           test failed."
-          hits))
-
-let mutation_not_evaluated t =
-  clear_live t;
-  close_row t;
-  put t (st t `Yellow "mutant not evaluated: no selected test ran the site.")
-
-let mutation_not_saved t =
-  clear_live t;
-  close_row t;
-  put t
-    (st t `Yellow
-       "verdicts not saved: this run's selection narrows the suite, and a \
-        partial run's verdicts would stand in the project merge as the whole.")
-
 (* Column widths are one per report, not one per block: the identifiers
    of a section, the witness names and the executables of the whole
    report, and the excerpt gutters throughout are meant to be read
    down. *)
-let mutation_sections t (m : mutation) =
+let mutation_report ~invocation (m : mutation) =
   let widest f l = List.fold_left (fun w x -> max w (f x)) 0 l in
   let id_width_of = widest (fun (x : mutant) -> Text.length_utf8 x.id) in
   let survivor_mutants =
@@ -2161,121 +1504,8 @@ let mutation_sections t (m : mutation) =
   @ [ Line (mutation_summary_spans m) ]
   @
   if reported then
-    [ Hint (reproduce_line t ~variable:m.arm_variable ~filter:m.filter) ]
+    [
+      Hint
+        (reproduce_line ~invocation ~variable:m.arm_variable ~filter:m.filter);
+    ]
   else []
-
-let mutation_report t (m : mutation) =
-  clear_live t;
-  close_row t;
-  sections t (mutation_sections t m)
-
-type coverage_summary = { visited : int; total : int }
-
-let finish t ?coverage ~results ~duration () =
-  clear_live t;
-  let failed_results, excused_results =
-    List.partition counted_failure
-      (List.filter
-         (fun (r : Run.result) ->
-           match r.outcome with Failure.Fail _ -> true | _ -> false)
-         results)
-  in
-  let count p = List.length (List.filter p results) in
-  let passed =
-    count (fun (r : Run.result) ->
-        match r.outcome with Failure.Pass -> true | _ -> false)
-  in
-  let skipped =
-    count (fun (r : Run.result) ->
-        match r.outcome with Failure.Skip _ -> true | _ -> false)
-  in
-  let failed = List.length failed_results in
-  let subtests =
-    List.fold_left
-      (fun acc (r : Run.result) ->
-        match r.outcome with
-        | Failure.Fail fs ->
-            acc + List.length (List.filter is_subtest_failure fs)
-        | _ -> acc)
-      0 failed_results
-  in
-  let slow_results = List.filter (over_threshold t) results in
-  if t.deferred && failed = 0 && slow_results = [] then
-    (* Green and healthy: the deferred header and rows are discarded and
-       the whole transcript is the one named summary line. *)
-    summary_line t ~passed ~failed ~skipped
-      ~excused:(List.length excused_results)
-      ~subtests ~duration
-  else begin
-    flush_deferred t;
-    close_row t;
-    if failed > 0 then begin
-      put t (st t `Faint (labeled_rule t (spf "failures (%d)" failed)));
-      (* One blank line between blocks, none inside the run: a block is the
-         unit a reader scans for, and the only other break in this region —
-         between a block's location and its detail — must not read as loud
-         as the boundary between two failures. *)
-      List.iteri
-        (fun i r ->
-          if i > 0 then put t "";
-          pp_block t r)
-        failed_results;
-      put t (st t `Faint (dashes (min columns rule_width)));
-      put t ""
-    end;
-    if slow_results <> [] then begin
-      slow_warnings t slow_results;
-      put t ""
-    end;
-    summary_line t ~passed ~failed ~skipped
-      ~excused:(List.length excused_results)
-      ~subtests ~duration;
-    (* No rerun hint. [--failed] is an optimization, not a step a reader has
-       to take, and a suite is meant to be fast enough that rerunning all of
-       it costs nothing — so advertising the flag under every failing run is
-       an ad, not a report. The acceptance commands stay: those name a verb
-       nobody can guess (Law 3), which is a different thing entirely. *)
-    (* Diagnosis, not signal: the slowest list is verbose-only. *)
-    if t.mode = `Verbose then slowest t results
-  end;
-  (* An in-process number is always one executable's view of the code it
-     links; the project number is the merge, so the line points at the
-     aggregate rather than posing as the total. Unconditional: which
-     other executables exist is not something a run can know, and a hint
-     that is true either way needs no filesystem look to decide. *)
-  (match coverage with
-  | Some { visited; total } ->
-      put t
-        (line_str t
-           (coverage_line ~hint:"project: windtrap coverage" ~visited ~total ()))
-  | None -> ());
-  Pp.flush t.out ()
-
-(* The baseline report *)
-
-(* Printed after [finish], so the transcript is settled: plain lines on
-   the sink, never through [put] or the deferral machinery — a green
-   compact run's one-line transcript is already committed, and rerouting
-   these lines through the row/deferral paths would change their bytes. *)
-let report_baselines t run =
-  let baselines = Run.baselines run in
-  let verb =
-    match Baseline.mode baselines with
-    | Baseline.Update -> "accepted"
-    | Baseline.Corrected | Baseline.Check -> "wrote"
-  in
-  List.iter
-    (fun { Baseline.path; literals } ->
-      let count =
-        match literals with
-        | 0 -> ""
-        | 1 -> " (1 expectation)"
-        | n -> spf " (%d expectations)" n
-      in
-      Format.fprintf t.out "%s %s%s@." verb (Path_ops.display path) count)
-    (Baseline.writes baselines);
-  List.iter
-    (fun (path, reason) ->
-      Format.fprintf t.out "could not write %s: %s@." (Path_ops.display path)
-        reason)
-    (Baseline.refusals baselines)

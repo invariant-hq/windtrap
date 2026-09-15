@@ -9,11 +9,10 @@
     beside its optional [WINDTRAP_*] mirror or a setting only the environment
     can spell: {!parse} reads an argument vector into a {!type:parsed} record of
     raw flag values, {!settings} merges parsed flags and environment mirrors
-    into a {!Run.config} and the rendering decisions kept out of it — with the
-    precedence {e CLI > env > default} (under [dune runtest] the environment
-    mirrors {e are} the CLI) — and {!help} renders the flag and variable
-    inventory from the same rows. {!settings} is the one call a driver makes,
-    one pass over one environment layer.
+    into one {!Run.config} — with the precedence {e CLI > env > default} (under
+    [dune runtest] the environment mirrors {e are} the CLI) — and {!help}
+    renders the flag and variable inventory from the same rows. {!settings} is
+    the one call the facade makes, one pass over one environment layer.
 
     A flag's mirror is declared in that table beside the flag, and its value is
     applied through the flag's own parser, so the two cannot drift: a variable
@@ -82,8 +81,7 @@ type parsed = {
       (** [--timeout SECONDS]: default per-test limit; must be positive. *)
   slow_threshold : float option;
       (** [--slow-threshold SECONDS]: seconds an untagged test may take before
-          the compact renderer flags the run and warns; must be non-negative,
-          [0] disables. *)
+          the report warns; must be non-negative, [0] disables. *)
   prop_count : int option;
       (** [--prop-count N]: generated cases per property; must be positive. *)
   verbose : bool option;
@@ -162,39 +160,20 @@ type mutation = {
 
 val mutation : unit -> (mutation, error) result
 (** [mutation ()] reads the two mutation variables. Resolved apart from
-    {!settings} because neither is run configuration and nothing in the runner
-    may read them, but with the same loudness: [Error (Invalid_value _)] naming
-    [WINDTRAP_MUTATE] when its value is not one the variable accepts, never a
-    silently defaulted mode.
+    {!settings} because they are the mutation loop's, not the run's, but with
+    the same loudness: [Error (Invalid_value _)] naming [WINDTRAP_MUTATE] when
+    its value is not one the variable accepts, never a silently defaulted mode.
 
     Effects: reads the environment. *)
 
-type settings = {
-  config : Run.config;  (** The run configuration. *)
-  render : Render.settings;
-      (** The renderer settings: the presentation knobs — [--color] and
-          [--slow-threshold] — resolved with the same precedence as [config] and
-          handed to the driver's renderer construction. *)
-  coverage : bool;
-      (** Whether the inline coverage line prints ([WINDTRAP_COVERAGE], on
-          unless the variable says otherwise). *)
-  output_level : [ `Compact | `Verbose ];
-      (** The terminal verbosity level: the compact transcript, or one status
-          line per test. *)
-  junit : string option;
-      (** [--junit PATH]: also write a JUnit report there ({!Driver.t}). *)
-}
-(** The type for everything one invocation resolves to. Not one configuration:
-    only [config] is what the runner reads — the rendering decisions and the
-    JUnit sink stay {e out} of it, because none of them can change outcomes or
-    exit codes and nothing in the runner may read them. *)
-
-val settings : parsed -> (settings, error) result
-(** [settings cli] is everything one invocation resolves to: [cli] with each
-    field's [WINDTRAP_*] mirror filled into what the command line left open,
-    then split into the run configuration and the rendering decisions. [tags]
-    and [exclude_tags] are additive across both layers; every other field is the
-    first layer that decided it, else the default.
+val settings : parsed -> (Run.config, error) result
+(** [settings cli] is the configuration one invocation resolves to: [cli] with
+    each field's [WINDTRAP_*] mirror filled into what the command line left
+    open, then every field of {!Run.config} — [tags] and [exclude_tags] additive
+    across both layers, every other field the first layer that decided it, else
+    {!Run.default_config}'s. [coverage] is [WINDTRAP_COVERAGE] (on unless the
+    variable says otherwise), [github] is {!Env.in_github_actions}[ ()], and
+    [invocation] is left [`Mirrors] for the facade to compute from [argv].
 
     A mirror is read through its own flag's parser, so a value the flag would
     reject is [Error (Invalid_value _)] naming the variable, never silently

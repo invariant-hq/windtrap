@@ -442,19 +442,9 @@ let settings parsed =
   | Error error ->
       check "settings succeeds" false;
       Printf.printf "  settings error: %s\n%!" (Cli.error_message error);
-      {
-        Cli.config = Run.default_config ();
-        render = Render.default_settings;
-        coverage = true;
-        output_level = `Compact;
-        junit = None;
-      }
+      Run.default_config ()
 
-let resolve parsed = (settings parsed).Cli.config
-
-(* The renderer half of the resolution: the presentation knobs land in
-   [settings]'s render field, not in [Run.config]. *)
-let render_settings parsed = (settings parsed).Cli.render
+let resolve = settings
 
 let () =
   reg "resolution defaults" @@ fun () ->
@@ -470,11 +460,11 @@ let () =
   check "default: baselines are checked" (config.Run.baseline = Baseline.Check);
   check "default: no timeout/prop-count"
     (config.Run.timeout = None && config.Run.prop_count = None);
-  check "default: no JUnit report" ((settings Cli.empty).Cli.junit = None);
-  let render = render_settings Cli.empty in
-  check "default: color auto" (render.Render.color = Env.Auto);
-  check "default: the render settings are the renderer's defaults"
-    (render = Render.default_settings);
+  check "default: no JUnit report" (config.Run.junit = None);
+  check "default: color auto" (config.Run.color = Env.Auto);
+  check "default: the slow threshold is one second"
+    (config.Run.slow_threshold = 1.0);
+  check "default: compact" (not config.Run.verbose);
   check "default: log dir non-empty" (String.length config.Run.log_dir > 0)
 
 (* Resolution: precedence *)
@@ -513,10 +503,10 @@ let () =
   Unix.putenv "WINDTRAP_PROP_COUNT" " 12 ";
   Unix.putenv "WINDTRAP_JUNIT" " out.xml ";
   let s = settings Cli.empty in
-  check "a pattern is trimmed" (s.Cli.config.Run.filter = Some "parser");
-  check "a shard is trimmed" (s.Cli.config.Run.shard = Some (2, 4));
-  check "a count is trimmed" (s.Cli.config.Run.prop_count = Some 12);
-  check "a path is trimmed" (s.Cli.junit = Some "out.xml");
+  check "a pattern is trimmed" (s.Run.filter = Some "parser");
+  check "a shard is trimmed" (s.Run.shard = Some (2, 4));
+  check "a count is trimmed" (s.Run.prop_count = Some 12);
+  check "a path is trimmed" (s.Run.junit = Some "out.xml");
   clear_env ()
 
 let () =
@@ -525,9 +515,9 @@ let () =
   Unix.putenv "WINDTRAP_STREAM" "yes";
   Unix.putenv "WINDTRAP_VERBOSE" " OFF ";
   let s = settings Cli.empty in
-  check "a truthy spelling applies the flag" s.Cli.config.Run.stream;
+  check "a truthy spelling applies the flag" s.Run.stream;
   check "a falsy spelling is absence, trimmed and case-insensitively"
-    (s.Cli.output_level = `Compact);
+    (not s.Run.verbose);
   Unix.putenv "WINDTRAP_STREAM" "maybe";
   (match Cli.settings Cli.empty with
   | Error
@@ -626,7 +616,7 @@ let () =
   Unix.putenv "WINDTRAP_OUTPUT" "custom-logs";
   let config = resolve Cli.empty in
   check "WINDTRAP_JUNIT"
-    ((settings Cli.empty).Cli.junit = Some "reports/junit.xml");
+    ((settings Cli.empty).Run.junit = Some "reports/junit.xml");
   (* Absolutized like [-o], for the same reason: a test that chdirs must
      not move the rest of the run's logs. *)
   check "WINDTRAP_OUTPUT"
@@ -644,7 +634,7 @@ let () =
   in
   check "flag beats WINDTRAP_PROP_COUNT" ((resolve cli).Run.prop_count = Some 1);
   check "flag beats WINDTRAP_JUNIT"
-    ((settings cli).Cli.junit = Some "from-cli.xml");
+    ((settings cli).Run.junit = Some "from-cli.xml");
   (* A malformed mirror is a usage error naming the *variable*, not a
      silent default. *)
   clear_env ();
@@ -658,8 +648,7 @@ let () =
   Unix.putenv "WINDTRAP_PROP_COUNT" "not-a-number";
   (match Cli.settings { Cli.empty with Cli.prop_count = Some 2 } with
   | Ok s ->
-      check "a valid flag shadows a malformed mirror"
-        (s.Cli.config.Run.prop_count = Some 2)
+      check "a valid flag shadows a malformed mirror" (s.Run.prop_count = Some 2)
   | Error e ->
       check
         ("malformed mirror leaked past the flag: " ^ Cli.error_message e)
@@ -760,13 +749,13 @@ let () =
   @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_COLOR" "never";
-  let render = render_settings Cli.empty in
-  check "WINDTRAP_COLOR fills the default" (render.Render.color = Env.Never);
-  let render = render_settings { Cli.empty with Cli.color = Some Env.Always } in
-  check "--color beats WINDTRAP_COLOR" (render.Render.color = Env.Always);
+  let render = settings Cli.empty in
+  check "WINDTRAP_COLOR fills the default" (render.Run.color = Env.Never);
+  let render = settings { Cli.empty with Cli.color = Some Env.Always } in
+  check "--color beats WINDTRAP_COLOR" (render.Run.color = Env.Always);
   Unix.putenv "WINDTRAP_COLOR" " Never ";
   check "the mirror is trimmed and case-insensitive, as --color is"
-    ((render_settings Cli.empty).Render.color = Env.Never);
+    ((settings Cli.empty).Run.color = Env.Never);
   check "color_mode reads the same variable the same way"
     (Cli.color_mode () = Ok Env.Never);
   Unix.putenv "WINDTRAP_COLOR" "sometimes";
@@ -786,7 +775,7 @@ let () =
   | Ok _ | Error _ ->
       check "color_mode refuses it too, naming the variable" false);
   check "a --color on the command line shadows the bad value, unread"
-    ((render_settings { Cli.empty with Cli.color = Some Env.Auto }).Render.color
+    ((settings { Cli.empty with Cli.color = Some Env.Auto }).Run.color
    = Env.Auto);
   clear_env ();
   check "color_mode defaults to auto" (Cli.color_mode () = Ok Env.Auto)
@@ -798,7 +787,7 @@ let () =
   clear_env ();
   let enabled () =
     match Cli.settings Cli.empty with
-    | Ok s -> s.Cli.coverage
+    | Ok s -> s.Run.coverage
     | Error error ->
         check ("settings succeeds: " ^ Cli.error_message error) false;
         true
@@ -827,7 +816,7 @@ let () =
   clear_env ();
   let level parsed =
     match Cli.settings parsed with
-    | Ok s -> s.Cli.output_level
+    | Ok s -> if s.Run.verbose then `Verbose else `Compact
     | Error error ->
         check ("settings succeeds: " ^ Cli.error_message error) false;
         `Compact
@@ -850,25 +839,24 @@ let () =
     (level Cli.empty = `Verbose);
   clear_env ()
 
-(* Resolution: the one call both drivers make *)
+(* Resolution: the one call the facade makes *)
 
 let () =
   reg "settings resolves both layers in one call" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_SEED" "s1:0123456789abcdef";
   let s = settings { Cli.empty with Cli.filter = Some "geo" } in
-  check "the flag reaches the config field"
-    (s.Cli.config.Run.filter = Some "geo");
-  check "the mirror reaches it too" (s.Cli.config.Run.seed = 0x0123456789abcdefL);
-  check "the render field defaults" (s.Cli.render = Render.default_settings);
-  check "the coverage field defaults to on" s.Cli.coverage;
-  check "the level field defaults to compact" (s.Cli.output_level = `Compact);
+  check "the flag reaches the config field" (s.Run.filter = Some "geo");
+  check "the mirror reaches it too" (s.Run.seed = 0x0123456789abcdefL);
+  check "the presentation fields default"
+    (s.Run.color = Env.Auto && s.Run.slow_threshold = 1.0);
+  check "the coverage field defaults to on" s.Run.coverage;
+  check "the level field defaults to compact" (not s.Run.verbose);
   Unix.putenv "WINDTRAP_COVERAGE" "off";
   Unix.putenv "WINDTRAP_VERBOSE" "1";
   let s = settings Cli.empty in
-  check "WINDTRAP_COVERAGE reaches the coverage field" (not s.Cli.coverage);
-  check "WINDTRAP_VERBOSE reaches the level field"
-    (s.Cli.output_level = `Verbose);
+  check "WINDTRAP_COVERAGE reaches the coverage field" (not s.Run.coverage);
+  check "WINDTRAP_VERBOSE reaches the level field" s.Run.verbose;
   clear_env ()
 
 let () =
@@ -893,17 +881,14 @@ let () =
 let () =
   reg "--slow-threshold resolution" @@ fun () ->
   clear_env ();
-  let render = render_settings Cli.empty in
-  check "the built-in default is one second" (render.Render.slow_threshold = 1.0);
+  let render = settings Cli.empty in
+  check "the built-in default is one second" (render.Run.slow_threshold = 1.0);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "3";
-  let render = render_settings Cli.empty in
+  let render = settings Cli.empty in
   check "WINDTRAP_SLOW_THRESHOLD fills an absent flag"
-    (render.Render.slow_threshold = 3.0);
-  let render =
-    render_settings { Cli.empty with Cli.slow_threshold = Some 0.5 }
-  in
-  check "--slow-threshold beats the env mirror"
-    (render.Render.slow_threshold = 0.5);
+    (render.Run.slow_threshold = 3.0);
+  let render = settings { Cli.empty with Cli.slow_threshold = Some 0.5 } in
+  check "--slow-threshold beats the env mirror" (render.Run.slow_threshold = 0.5);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "-2";
   (match Cli.settings Cli.empty with
   | Error
@@ -912,11 +897,9 @@ let () =
       check "a negative winning env threshold errors with its source" true
   | Ok _ | Error _ ->
       check "a negative winning env threshold errors with its source" false);
-  let render =
-    render_settings { Cli.empty with Cli.slow_threshold = Some 1.5 }
-  in
+  let render = settings { Cli.empty with Cli.slow_threshold = Some 1.5 } in
   check "a CLI threshold shadows the bad env value"
-    (render.Render.slow_threshold = 1.5);
+    (render.Run.slow_threshold = 1.5);
   Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "soon";
   (match Cli.settings Cli.empty with
   | Error

@@ -202,7 +202,7 @@ let tests =
              ~term_dumb:false);
         (* Composing the two — a mode read from the environment applied to
            a named sink — is the caller's job, not this module's:
-           [Driver.renderer] does it for the runner and [coverage_cmd] for
+           [Report.terminal] does it for the runner and [coverage_cmd] for
            the coverage command, and both are pinned end to end by child
            runs that pass --color and compare bytes. *)
         ());

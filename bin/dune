@@ -1,8 +1,9 @@
 ; The windtrap reporting binary. Two subcommands, `coverage` and
 ; `mutants`: find and merge the .coverage files under _build/_coverage or
 ; the .mutants verdict files under _build/_mutants, and render. Both
-; layouts live in the library renderer (reached through Windtrap.Private),
-; so the in-process reports and these commands cannot drift. Neither
+; layouts live in the library's report sections (reached through
+; Windtrap.Private), so the in-process reports and these commands cannot
+; drift. Neither
 ; command runs a test or drives a build.
 
 (executable

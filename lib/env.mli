@@ -132,7 +132,7 @@ val resolve_color :
 
     This is the whole of the colour decision: there is no reader that resolves
     it for a sink of its own choosing. A caller passes the mode that won its own
-    precedence — [Render.settings.color] for the runner, [Cli.color_mode] for a
+    precedence — [Run.config.color] for the runner, [Cli.color_mode] for a
     command with no [--color] flag — together with the sink's terminal status,
     so the decision is made where the sink is known.
 

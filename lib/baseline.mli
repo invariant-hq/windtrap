@@ -109,7 +109,7 @@ val settle : t -> keep:bool -> int
     previous call: with [keep] they are kept for {!write}, otherwise they are
     dropped and their keys are unaccepted again. It is the number of corrections
     kept. The runner calls it after every attempt; which attempts keep their
-    corrections is its rule ({!Runner}, {e Corrections}). *)
+    corrections is its rule ({!Run}, {e Corrections}). *)
 
 (** {1:writing Writing} *)
 

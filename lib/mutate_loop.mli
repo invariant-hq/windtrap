@@ -7,13 +7,13 @@
 
     Core windtrap's whole coupling to mutation is one dispatch call — the
     facade's [run] calls {!execute_and_report} at run entry in place of
-    [Driver.execute_and_report]. Everything else lives here and in the
-    stdlib-only runtime — {!Windtrap_runtime.Mutate} for the catalogue, the
-    guard and the reach map, {!Windtrap_runtime.Verdicts} for the verdict file:
-    the dry run and its reach map, the determinism probe, the fork loop, the
-    verdict file, and the report. The runtime reads no environment: which
-    mutants a run tests (the scope, source-path prefixes) and which one a
-    process arms are read by [Cli] and [Env] and applied here.
+    {!Report.run}. Everything else lives here and in the stdlib-only runtime —
+    {!Windtrap_runtime.Mutate} for the catalogue, the guard and the reach map,
+    {!Windtrap_runtime.Verdicts} for the verdict file: the dry run and its reach
+    map, the determinism probe, the fork loop, the verdict file, and the report.
+    The runtime reads no environment: which mutants a run tests (the scope,
+    source-path prefixes) and which one a process arms are read by [Cli] and
+    [Env] and applied here.
 
     {b Why this module wraps the run rather than being called around it.} The
     two things a mutation run must do — announce an armed mutant {e before} any
@@ -50,23 +50,24 @@
 
 (** The type for what {!execute_and_report} did with the run. *)
 type run =
-  | Ran of (Runner.outcome, Runner.startup_error) result
+  | Ran of (Run.outcome, Run.startup_error) result
       (** The suite ran once, ordinarily — no loop, or a loop that never
-          started. The caller finishes its own post-run work on it (JUnit, the
-          focus warning, the correction protocol, the exit) exactly as it would
-          have on [Driver.execute_and_report]'s result. *)
+          started. The caller finishes its own post-run work on it (the focus
+          warning, the correction protocol, the exit) exactly as it would have
+          on {!Report.run}'s result. *)
   | Reported of int
       (** The mutation run took the process over and has printed everything it
           has to say. Nothing about the underlying run is the caller's business
           — a loop's dry run is not the process's verdict — and the process
           exits with this code. *)
 
-val execute_and_report : Driver.t -> Test_tree.t list -> run
-(** [execute_and_report spine tests] is the mutation-aware run entry:
-    [Driver.execute_and_report] over the same spine record with the same
-    meaning, wrapped in whichever mode this process is in. When the environment
-    asks for nothing it is exactly [Ran (Driver.execute_and_report spine tests)]
-    — same transcript, same bytes, same cost.
+val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
+(** [execute_and_report ~suite config tests] is the mutation-aware run entry:
+    {!Report.run} over the same configuration with the same meaning, wrapped in
+    whichever mode this process is in. When the environment asks for nothing it
+    is exactly [Ran (Report.run ~suite config tests)] — same transcript, same
+    bytes, same cost. Forked children run {!Run.execute} silently over
+    {!Run.for_subset} of [config] and the reaching tests as their allowlist.
 
     A process with a mutant armed checks baselines read-only (Law 16d): its
     run's [Run.config.baseline] is [Baseline.Check], in each forked child and in
@@ -91,7 +92,7 @@ val execute_and_report : Driver.t -> Test_tree.t list -> run
     a score rather than running a green suite with nothing armed and calling the
     result a survivor.
 
-    Effects: the union of [Driver.execute_and_report]'s and, under the loop,
+    Effects: the union of {!Report.run}'s and, under the loop,
     [fork]/[waitpid]/[pipe]/[select], [setsid] in each child, [kill] of an
     expired child's process group, one scratch log directory per run (removed at
     the end), and one verdict file under

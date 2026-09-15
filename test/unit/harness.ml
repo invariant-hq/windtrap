@@ -5,7 +5,7 @@
 
 (* Minimal hand-rolled harness for the meta suites (test_run, test_runner,
    test_ppx_runtime, test_windtrap). Those suites drive the ambient slot
-   and Runner.execute in-process with synthetic configs — the sanctioned
+   and Run.execute in-process with synthetic configs — the sanctioned
    way to test runner behavior with windtrap itself — and [execute]
    refuses to nest inside an active run, so they cannot host their own
    assertions under the windtrap runner. Everything else lives in the
@@ -14,7 +14,7 @@
 (* Every line printed carries the suite name (set by [init]): the meta
    suites interleave with the windtrap suites under `dune runtest`, and
    an unattributed line is undebuggable there. Styling and the duration
-   format come from windtrap's own machinery (Pp, Env, Render through
+   format come from windtrap's own machinery (Pp, Env, Report through
    the facade's Private) — one output dialect tree-wide, never a second
    implementation of it. *)
 let suite = ref ""
@@ -25,7 +25,7 @@ let count = ref 0
 (* The ANSI decision, captured by [init] before it clears the
    environment — the same resolution the windtrap suites make
    (WINDTRAP_COLOR, terminal status, INSIDE_DUNE). Composed here, from
-   [Env.resolve_color] and the three inputs, exactly as [Driver.renderer]
+   [Env.resolve_color] and the three inputs, exactly as [Report.terminal]
    composes it: nothing in windtrap resolves colour for a sink it did not
    name, and a harness that took a shortcut would be the one place where
    the decision could drift from the renderer's. *)
@@ -47,7 +47,7 @@ let resolve_ansi () =
     ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
 
 (* The check lines' FAIL tag, ansi-explicit (like [summary_line]) so
-   test_render's dialect test can pin its bytes against the renderer's
+   test_report's dialect test can pin its bytes against the renderer's
    own FAIL header. *)
 let fail_tag ~ansi = Windtrap.Private.Pp.styled_string ~ansi `Red "FAIL"
 
@@ -185,8 +185,8 @@ let with_temp_root ?(prefix = "windtrap-meta-") f =
    a windtrap suite counts tests, and the word keeps the two countable
    ("run: 115 checks" is not 115 tests). Styling and the duration bytes
    are the renderer's own: green wraps the passed segment of a green
-   run, red wraps the failed segment, exactly as Render.finish styles
-   them. Pinned against the renderer by test_render's dialect test. *)
+   run, red wraps the failed segment, exactly as Report.finish styles
+   them. Pinned against the renderer by test_report's dialect test. *)
 
 let summary_line ~ansi ~suite ~failures ~count ~duration =
   let st style s = Windtrap.Private.Pp.styled_string ~ansi style s in

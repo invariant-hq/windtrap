@@ -1,5 +1,4 @@
 bad_cwd: 1 test
-F
 ──────────────────── failures (1) ────────────────────
   FAIL  Inline_bad_cwd › stale payload
     test/ppx/bad_cwd/inline_bad_cwd.ml:8

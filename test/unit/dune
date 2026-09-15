@@ -5,7 +5,7 @@
 ; from its own module's closure and runs them in parallel, where
 ; windtrap's runner is deliberately sequential within one process.
 ;
-; The four meta suites below drive Runner.execute in-process with
+; The four meta suites below drive Run.execute in-process with
 ; synthetic configs (the sanctioned way to test runner behavior with
 ; windtrap itself); execute refuses to nest inside an active run, so
 ; they stay plain executables over the hand-rolled harness.
@@ -33,11 +33,9 @@
   test_source_patch
   test_stateful
   test_test_tree
-  test_render
-  test_render_junit
-  test_render_github
-  test_cli
-  test_driver)
+  test_report
+  test_report_junit
+  test_cli)
  (modules
   test_pp
   test_text
@@ -60,16 +58,14 @@
   test_source_patch
   test_stateful
   test_test_tree
-  test_render
-  test_render_junit
-  test_render_github
-  test_cli
-  test_driver)
+  test_report
+  test_report_junit
+  test_cli)
  (libraries windtrap windtrap_runtime unix harness render_fixtures xml_check)
- ; The renderers' golden transcripts are file baselines under expected/,
+ ; The report's golden transcripts are file baselines under expected/,
  ; not literals in the source. They are inputs to the run, so dune must
  ; know about them or a sandboxed action cannot read them; accept a
- ; change with `dune exec test/unit/test_render.exe -- -u`.
+ ; change with `dune exec test/unit/test_report.exe -- -u`.
  (deps
   (glob_files_rec expected/**)))
 
@@ -78,8 +74,8 @@
 ; already has. Each is a single module named after its library, so call
 ; sites spell it exactly as they would a local module.
 
-; Synthetic run data for the four renderer suites (test_render,
-; test_render_junit, test_render_github, test_driver).
+; Synthetic run data for the two report suites (test_report,
+; test_report_junit).
 
 (library
  (name render_fixtures)
@@ -93,11 +89,11 @@
  (name xml_check)
  (modules xml_check))
 
-; The meta suites drive the ambient slot and Runner.execute in-process
+; The meta suites drive the ambient slot and Run.execute in-process
 ; with synthetic configs; execute refuses to nest inside an active run,
 ; so each is a plain executable over the shared hand-rolled harness.
 ; The harness links windtrap for its output dialect only (Pp styling,
-; Env's color resolution, Render's duration format via Private) — its
+; Env's color resolution, Report's duration format via Private) — its
 ; summary line must carry the same bytes as a windtrap suite's.
 
 (library

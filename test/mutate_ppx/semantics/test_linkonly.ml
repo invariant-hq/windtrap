@@ -33,7 +33,7 @@
    is the order the uninstrumented twin uses in test_semantics.ml. *)
 
 (* The one sanctioned re-implementation of the dialect's styling: the link
-   contract above forbids reaching windtrap's Pp/Env/Render, and the stdlib
+   contract above forbids reaching windtrap's Pp/Env/Report, and the stdlib
    cannot see a terminal, so this mirrors Env's contract as far as it can —
    WINDTRAP_COLOR always/never wins, otherwise INSIDE_DUNE decides (empty
    and falsy spellings count as unset). Keep byte-compatible with
@@ -54,7 +54,7 @@ let styled code s = if ansi then "\027[" ^ code ^ "m" ^ s ^ "\027[0m" else s
 let green = styled "32"
 let red = styled "31"
 
-(* The renderer's duration shape (Render.pp_run_duration): three
+(* The renderer's duration shape (Report.pp_run_duration): three
    significant digits, never scientific notation. *)
 let pp_run_duration secs =
   if secs >= 999.5 then Printf.sprintf "%.0f" secs

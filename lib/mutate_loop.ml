@@ -19,7 +19,7 @@
    the arming slot and the reach counters, and Windtrap_runtime.Verdicts
    owns the verdict collection and its file; this module owns the
    protocol over them and every decision the report shows — the
-   ordering, the cap, the counts. Render orders nothing and counts
+   ordering, the cap, the counts. The report orders nothing and counts
    nothing, and neither does the runtime. *)
 
 module M = Windtrap_runtime.Mutate
@@ -40,9 +40,7 @@ let in_scope ~scope (m : M.mutant) =
         (fun prefix -> String.starts_with ~prefix m.M.id.M.file)
         prefixes
 
-type run =
-  | Ran of (Runner.outcome, Runner.startup_error) result
-  | Reported of int
+type run = Ran of (Run.outcome, Run.startup_error) result | Reported of int
 
 let note fmt =
   Printf.ksprintf
@@ -60,17 +58,13 @@ let refuse fmt =
 
 let saturating_add x y = if x > max_int - y then max_int else x + y
 
-(* The spine ({!Driver.t}), threaded whole: the loop replaces [config] per
-   child and passes everything else through untouched, so the places that
-   run the suite cannot drift in what they pass. *)
-
-(* The spine a loop hands its dry run. A mutation run's output never
-   reports a test outcome (Law 16e) and its exit code is its own, so the
-   dry run — whose whole job is to fill the reach map and prove the suite
-   green — writes no JUnit. A run with one mutant armed hands the caller
-   an ordinary [Ran] outcome and writes its own, exactly as an
+(* The configuration a loop hands its dry run. A mutation run's output
+   never reports a test outcome (Law 16e) and its exit code is its own, so
+   the dry run — whose whole job is to fill the reach map and prove the
+   suite green — writes no JUnit. A run with one mutant armed hands the
+   caller an ordinary [Ran] outcome and writes its own, exactly as an
    uninstrumented run would. *)
-let dry_run (spine : Driver.t) = { spine with Driver.junit = None }
+let dry_run (config : Run.config) = { config with Run.junit = None }
 
 (* The reach map
 
@@ -125,13 +119,13 @@ let record_reached reach ~path (entry : M.reached) =
   site.tests <- path :: site.tests;
   site.hits <- saturating_add site.hits entry.M.hits
 
-let observe reach (event : Runner.event) =
+let observe reach (event : Run.event) =
   match event with
-  | Runner.Run_started _ | Runner.Fixture_release _ -> ()
-  | Runner.Test_started _ ->
+  | Run.Run_started _ | Run.Fixture_release _ -> ()
+  | Run.Test_started _ ->
       ignore (M.drain ());
       M.next_epoch ()
-  | Runner.Test_finished result ->
+  | Run.Test_finished result ->
       let path = result.Run.path in
       List.iter (record_reached reach ~path) (M.drain ());
       reach.executed <- path :: reach.executed;
@@ -325,9 +319,9 @@ let fork_child ~deadline body =
 
 (* Every child starts from the same clean post-dry-run image; read-only
    checking (Law 16d) is the child's config, set where it forks. *)
-(* The child's selection, in the runner's own spelling: [reach] keys tests
-   by path components, [Runner]'s allowlist by the rendered path the
-   filters and the last-failed store both use. *)
+(* The child's selection, in the executor's own spelling: [reach] keys
+   tests by path components, [Run.execute]'s allowlist by the rendered
+   path the filters and the last-failed store both use. *)
 let allowlist_of paths = List.map Test_tree.path_to_string paths
 let child_prologue () = silence_output ()
 
@@ -367,11 +361,11 @@ let counted_failure (r : Run.result) =
 let kills (r : Run.result) = counted_failure r
 let executed_test (r : Run.result) = r.Run.subject = Run.Test
 
-let killed_by (outcome : Runner.outcome) =
-  List.exists kills (Run.results outcome.Runner.run)
+let killed_by (outcome : Run.outcome) =
+  List.exists kills (Run.results outcome.Run.run)
 
-let encode_outcome ~paths (outcome : Runner.outcome) =
-  let results = Run.results outcome.Runner.run in
+let encode_outcome ~paths (outcome : Run.outcome) =
+  let results = Run.results outcome.Run.run in
   if List.exists kills results then "killed"
   else if
     (* A child that recorded no test row did not survive the mutant, it
@@ -475,14 +469,14 @@ let witness_locations tests =
    another's reached one, and only the merge knows. *)
 let render_data ~resolve_source ~loc_of ~scope ~filter t =
   let records = V.records t in
-  let survivor_of (r : V.record) witnesses : Render.survivor =
+  let survivor_of (r : V.record) witnesses : Report_sections.survivor =
     {
-      Render.mutant =
+      Report_sections.mutant =
         {
           (* The identifier is spelled here, with the runtime's own
-             function: Render carries it into the head row without
+             function: the report carries it into the head row without
              re-spelling it. *)
-          Render.id = M.id_to_string r.V.id;
+          Report_sections.id = M.id_to_string r.V.id;
           file = r.V.id.M.file;
           line = r.V.id.M.line;
           before = r.V.before;
@@ -493,7 +487,7 @@ let render_data ~resolve_source ~loc_of ~scope ~filter t =
         List.map
           (fun path ->
             let test = Test_tree.path_to_string path in
-            { Render.test; loc = loc_of test; exe = None })
+            { Report_sections.test; loc = loc_of test; exe = None })
           witnesses;
     }
   in
@@ -511,14 +505,14 @@ let render_data ~resolve_source ~loc_of ~scope ~filter t =
      [List.stable_sort] keeps identifier order within a count. *)
   let survivors =
     List.stable_sort
-      (fun (a : Render.survivor) (b : Render.survivor) ->
+      (fun (a : Report_sections.survivor) (b : Report_sections.survivor) ->
         compare (List.length b.witnesses) (List.length a.witnesses))
       survivors
   in
   {
     (* The arming variable, spelled with the runtime's own function: the
        report and the runtime cannot disagree about what to type. *)
-    Render.arm_variable = M.arm_variable;
+    Report_sections.arm_variable = M.arm_variable;
     survivors;
     unreached = [];
     killed =
@@ -536,17 +530,15 @@ let render_data ~resolve_source ~loc_of ~scope ~filter t =
    results over a non-deterministic suite are not a weaker number, they
    are not a number. *)
 
-let probe_line ~paths ~spine tests () =
+let probe_line ~paths ~suite ~config tests () =
   child_prologue ();
-  match Driver.execute ~allowlist:(allowlist_of paths) spine tests with
-  | Error error -> "error " ^ one_line (Runner.startup_message error)
+  match Run.execute ~allowlist:(allowlist_of paths) config ~suite tests with
+  | Error error -> "error " ^ one_line (Run.startup_message error)
   | Ok outcome ->
       (* Test rows only: the probe's counts answer "did the same tests run
          the same way", and a verdict row (a failed release) is not a
          test. *)
-      let results =
-        List.filter executed_test (Run.results outcome.Runner.run)
-      in
+      let results = List.filter executed_test (Run.results outcome.Run.run) in
       let skipped =
         List.length
           (List.filter
@@ -570,21 +562,16 @@ let probe_line ~paths ~spine tests () =
                  (Option.value ~default:(-1) (index_of r.Run.path paths)))
              failures)
 
-let check_determinism ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach ~paths
-    tests =
+let check_determinism ~scratch ~dry_run_wall ~suite ~(config : Run.config)
+    ~reach ~paths tests =
   let log_dir = Filename.concat scratch "probe" in
-  let child =
-    {
-      spine with
-      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:false;
-    }
-  in
+  let child = Run.for_subset config ~log_dir ~bail:false in
   (* The probe re-runs exactly the dry run's executed tests, so its
      deadline is the same formula over the same schedule. *)
   let { line; status; killed } =
     fork_child
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
-      (probe_line ~paths ~spine:child tests)
+      (probe_line ~paths ~suite ~config:child tests)
   in
   Run.remove_tree log_dir;
   let named indices =
@@ -638,20 +625,21 @@ let check_determinism ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach ~paths
 (* The bracket the loop opens before its first fork: one scratch root
    for the run, removed however the run leaves, and the determinism probe
    in front. *)
-let probed ~dry_run_wall ~spine ~reach ~paths tests forks =
+let probed ~dry_run_wall ~suite ~config ~reach ~paths tests forks =
   let scratch = scratch_root () in
   Fun.protect
     ~finally:(fun () -> Run.remove_tree scratch)
     (fun () ->
       match
-        check_determinism ~scratch ~dry_run_wall ~spine ~reach ~paths tests
+        check_determinism ~scratch ~dry_run_wall ~suite ~config ~reach ~paths
+          tests
       with
       | Error _ as error -> error
       | Ok () -> Ok (forks ~scratch))
 
 (* One mutant *)
 
-let mutant_line ~paths ~budget ~spine ~(mutant : M.mutant) tests () =
+let mutant_line ~paths ~budget ~suite ~config ~(mutant : M.mutant) tests () =
   child_prologue ();
   match M.arm ~budget mutant.M.id with
   | Error error ->
@@ -660,8 +648,8 @@ let mutant_line ~paths ~budget ~spine ~(mutant : M.mutant) tests () =
       (* After arming, so the runaway budget measures the child's own hits
          and not the dry run's accumulated ones. *)
       M.reset_reach ();
-      match Driver.execute ~allowlist:(allowlist_of paths) spine tests with
-      | Error error -> "error " ^ one_line (Runner.startup_message error)
+      match Run.execute ~allowlist:(allowlist_of paths) config ~suite tests with
+      | Error error -> "error " ^ one_line (Run.startup_message error)
       | Ok outcome -> encode_outcome ~paths outcome)
 
 (* The runaway budget: the dry run's hit count with room to spare. A
@@ -670,19 +658,14 @@ let mutant_line ~paths ~budget ~spine ~(mutant : M.mutant) tests () =
 let budget_of hits =
   if hits > (max_int - 1000) / 8 then max_int else (hits * 8) + 1000
 
-let run_mutant ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach ~paths
-    ~budget ~mutant tests =
+let run_mutant ~scratch ~dry_run_wall ~index ~suite ~(config : Run.config)
+    ~reach ~paths ~budget ~mutant tests =
   let log_dir = Filename.concat scratch (spf "m%d" index) in
-  let child =
-    {
-      spine with
-      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:true;
-    }
-  in
+  let child = Run.for_subset config ~log_dir ~bail:true in
   let { line; status; killed } =
     fork_child
       ~deadline:(child_deadline ~dry_run_wall ~reach paths)
-      (mutant_line ~paths ~budget ~spine:child ~mutant tests)
+      (mutant_line ~paths ~budget ~suite ~config:child ~mutant tests)
   in
   Run.remove_tree log_dir;
   match killed with
@@ -705,15 +688,15 @@ let run_mutant ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach ~paths
 
 (* The fork loop: one child per reached mutant, in catalogue order. *)
 
-let run_children ~scratch ~dry_run_wall ~spine ~reach ~reached tests =
+let run_children ~scratch ~dry_run_wall ~suite ~config ~reach ~reached tests =
   let rec go index verdicts = function
     | [] -> verdicts
     | mutant :: rest ->
         let paths = reaching_tests reach mutant in
         let budget = budget_of (site_hits reach mutant) in
         let verdict =
-          run_mutant ~scratch ~dry_run_wall ~index ~spine ~reach ~paths ~budget
-            ~mutant tests
+          run_mutant ~scratch ~dry_run_wall ~index ~suite ~config ~reach ~paths
+            ~budget ~mutant tests
         in
         go (index + 1) (V.add verdicts (V.record_of_mutant mutant verdict)) rest
   in
@@ -746,7 +729,7 @@ let write_verdicts verdicts =
 
 let print_report renderer ~scope ~filter ~verdicts tests =
   let locations = witness_locations tests in
-  Render.mutation_report renderer
+  Report.mutation_report renderer
     (render_data ~resolve_source:read_source
        ~loc_of:(fun test -> Option.join (Hashtbl.find_opt locations test))
        ~scope ~filter verdicts)
@@ -785,14 +768,11 @@ let population ~scope =
 
 (* The loop, end to end *)
 
-let loop renderer (spine : Driver.t) tests =
-  let config = spine.Driver.config in
+let loop renderer ~suite (config : Run.config) tests =
   let population = population ~scope:(Env.mutate_only ()) in
   let reach = fresh_reach () in
   let started = Unix.gettimeofday () in
-  match
-    Driver.execute_and_report ~on_event:(observe reach) (dry_run spine) tests
-  with
+  match Report.run ~on_event:(observe reach) ~suite (dry_run config) tests with
   (* The startup message is already on stderr; a refused run never
      produced a number. *)
   | Error _ -> Reported 1
@@ -800,9 +780,9 @@ let loop renderer (spine : Driver.t) tests =
       (* The last test's teardown window. *)
       ignore (M.drain ());
       let executed = List.rev reach.executed in
-      if outcome.Runner.exit_code = 2 then
+      if outcome.Run.exit_code = 2 then
         refuse "no test ran, so there is nothing to mutate"
-      else if outcome.Runner.exit_code <> 0 then
+      else if outcome.Run.exit_code <> 0 then
         refuse
           "the dry run is red. Mutation scores a passing suite; a score over a \
            failing one is not a score"
@@ -819,13 +799,13 @@ let loop renderer (spine : Driver.t) tests =
               Float.max 0.01 (Unix.gettimeofday () -. started)
             in
             let narrowed =
-              narrows_suite ~config ~focus:outcome.Runner.focus_active
+              narrows_suite ~config ~focus:outcome.Run.focus_active
             in
             let outcome =
-              probed ~dry_run_wall ~spine ~reach ~paths:executed tests
+              probed ~dry_run_wall ~suite ~config ~reach ~paths:executed tests
                 (fun ~scratch ->
-                  run_children ~scratch ~dry_run_wall ~spine ~reach ~reached
-                    tests)
+                  run_children ~scratch ~dry_run_wall ~suite ~config ~reach
+                    ~reached tests)
             in
             match outcome with
             | Error message -> refuse "%s" message
@@ -843,12 +823,13 @@ let loop renderer (spine : Driver.t) tests =
                 (* A narrowed run's reach is its selection's, and the
                  summary says so by the count the dry run executed. *)
                 let scope =
-                  if narrowed then Render.Selected (List.length executed)
-                  else Render.Suite
+                  if narrowed then
+                    Report_sections.Selected (List.length executed)
+                  else Report_sections.Suite
                 in
                 print_report renderer ~scope ~filter:config.Run.filter ~verdicts
                   tests;
-                if narrowed then Render.mutation_not_saved renderer;
+                if narrowed then Report.mutation_not_saved renderer;
                 flush_descriptors ();
                 Reported 0))
 
@@ -856,7 +837,7 @@ let loop renderer (spine : Driver.t) tests =
    the core read it, unparsed: the runtime's grammar decides what it
    names, and the runtime reads no environment of its own. *)
 
-let arm_mode renderer ~spec (spine : Driver.t) tests =
+let arm_mode renderer ~spec ~suite (config : Run.config) tests =
   match Result.bind (M.id_of_string spec) M.arm with
   | Error (M.Uncatalogued _ as error) ->
       (* Not a refusal. One identifier is handed to every test
@@ -879,7 +860,7 @@ let arm_mode renderer ~spec (spine : Driver.t) tests =
          variable unset, so an uninstrumented sibling is left with its
          ordinary transcript and one line of stderr. *)
       note "%s" (Format.asprintf "%a" M.pp_arm_error error);
-      Ran (Driver.execute_and_report spine tests)
+      Ran (Report.run ~suite config tests)
   | Error error ->
       Format.eprintf "%a@." M.pp_arm_error error;
       Reported 1
@@ -889,14 +870,8 @@ let arm_mode renderer ~spec (spine : Driver.t) tests =
          purpose, and a run that promoted that output would rewrite the
          source tree from a lie. Baselines need no flag beyond Check: a
          correction is recorded only under Corrected and Update. *)
-      let spine =
-        {
-          spine with
-          Driver.config =
-            { spine.Driver.config with Run.baseline = Baseline.Check };
-        }
-      in
-      Render.mutation_armed renderer
+      let config = { config with Run.baseline = Baseline.Check } in
+      Report.mutation_armed renderer
         ~id:(M.id_to_string mutant.M.id)
         ~before:mutant.M.before ~after:mutant.M.after;
       flush_descriptors ();
@@ -904,7 +879,7 @@ let arm_mode renderer ~spec (spine : Driver.t) tests =
          evaluations and not module initialization's — that window ran
          before the arming and evaluated nothing mutated. *)
       M.reset_reach ();
-      let result = Driver.execute_and_report spine tests in
+      let result = Report.run ~suite config tests in
       (* [killed_by], not [exit_code <> 0]: a filter that matched nothing
          exits 2, and announcing [mutant killed.] there would report a
          selection mistake as a detected behaviour change (Law 16c). A
@@ -914,18 +889,18 @@ let arm_mode renderer ~spec (spine : Driver.t) tests =
          line says which — except on exit 2, where the run made no claim
          about the mutant at all. *)
       (match result with
-      | Ok outcome when killed_by outcome -> Render.mutation_killed renderer
-      | Ok outcome when outcome.Runner.exit_code <> 2 -> (
+      | Ok outcome when killed_by outcome -> Report.mutation_killed renderer
+      | Ok outcome when outcome.Run.exit_code <> 2 -> (
           match M.armed_hits () with
-          | 0 -> Render.mutation_not_evaluated renderer
-          | hits -> Render.mutation_survived renderer ~hits)
+          | 0 -> Report.mutation_not_evaluated renderer
+          | hits -> Report.mutation_survived renderer ~hits)
       | Ok _ | Error _ -> ());
       flush_descriptors ();
       Ran result
 
 (* Entry *)
 
-let execute_and_report (spine : Driver.t) tests =
+let execute_and_report ~suite (config : Run.config) tests =
   (* Every run goes through the knobs, instrumented or not: a variable
      the user set and misspelled must be loud in every build, and an
      identifier that names a site of a file this build does catalogue and
@@ -936,13 +911,10 @@ let execute_and_report (spine : Driver.t) tests =
       note "%s" (Cli.error_message error);
       Reported 1
   | Ok { Cli.mode; arm } -> (
-      let renderer () =
-        Driver.renderer ~render:spine.Driver.render ~mode:spine.Driver.output
-          ~invocation:spine.Driver.invocation ()
-      in
+      let renderer () = Report.terminal config in
       match (mode, arm) with
-      | `Unset, None -> Ran (Driver.execute_and_report spine tests)
-      | `Unset, Some spec -> arm_mode (renderer ()) ~spec spine tests
+      | `Unset, None -> Ran (Report.run ~suite config tests)
+      | `Unset, Some spec -> arm_mode (renderer ()) ~spec ~suite config tests
       | `Loop, Some _ ->
           refuse
             "WINDTRAP_MUTATE and %s ask for different runs — the loop arms \
@@ -955,5 +927,5 @@ let execute_and_report (spine : Driver.t) tests =
               "mutation testing needs Unix.fork, which Windows does not have; \
                the tests themselves still ran"
           else
-            try loop (renderer ()) spine tests
+            try loop (renderer ()) ~suite config tests
             with Supervision message -> refuse "%s" message))

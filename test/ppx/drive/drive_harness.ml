@@ -181,10 +181,13 @@ let replace ~pattern ~by s =
    earlier one; [WINDTRAP_COLOR=never] is the one default, since no
    golden carries escape sequences. *)
 let environment extra =
+  (* A name [extra] binds is dropped from the inherited environment too:
+     a duplicate entry would let the inherited value win the lookup. *)
   let dropped name =
     String.starts_with ~prefix:"WINDTRAP_" name
     || List.mem name
          [ "CI"; "GITHUB_ACTIONS"; "NO_COLOR"; "CLICOLOR"; "CLICOLOR_FORCE" ]
+    || List.mem_assoc name extra
   in
   let keep binding =
     match String.index_opt binding '=' with

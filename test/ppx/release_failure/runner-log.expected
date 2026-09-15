@@ -1,6 +1,4 @@
 release_failure: 1 test
-.
-releasing fixture (test/ppx/release_failure/inline_release_failure.ml:12)
 ──────────────────── failures (1) ────────────────────
   FAIL  fixture release
     [release] test/ppx/release_failure/inline_release_failure.ml:12

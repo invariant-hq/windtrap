@@ -91,13 +91,16 @@ val exit : unit -> 'a
     Not in runner mode — {!init} saw no [inline-test-runner] — it exits [0]: the
     generated runner does nothing when invoked by hand. With [-list-partitions]
     it prints {!partitions}, one per line, and exits [0]. Otherwise it exits
-    with [Windtrap.run ~argv:[| argv0; "--corrected" |] lib (collect ())]: one
-    runner, whose [WINDTRAP_*] mirrors are the rest of the command line and
-    whose exit code under [--corrected] is dune's promotion protocol — a test
-    whose failures are all recorded corrections leaves it alone, and a partition
-    the mirrors' selection empties exits [0], so the [diff?] that follows is the
-    verdict; every other failure exits [1]. Corrections land beside dune's copy
-    of the source, where the backend's [diff?] looks. *)
+    with [Windtrap.run ~argv:[| argv0; "--corrected" |] suite (collect ())],
+    where [suite] is [<lib>/<partition>] under [-partition] and [<lib>] without
+    — dune runs a library's partitions concurrently, so each names its own JUnit
+    file, capture log directory and last-failed store — one runner, whose
+    [WINDTRAP_*] mirrors are the rest of the command line and whose exit code
+    under [--corrected] is dune's promotion protocol — a test whose failures are
+    all recorded corrections leaves it alone, and a partition the mirrors'
+    selection empties exits [0], so the [diff?] that follows is the verdict;
+    every other failure exits [1]. Corrections land beside dune's copy of the
+    source, where the backend's [diff?] looks. *)
 
 (** {1:undriven The undriven-registration guard}
 

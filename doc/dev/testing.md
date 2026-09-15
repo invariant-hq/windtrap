@@ -18,7 +18,7 @@ Eleven directories under `test/`:
   (`test_run`, `test_runner`, `test_ppx_runtime`, `test_windtrap`)
   are plain executables over the shared hand-rolled `harness.ml` (a
   local check counter, exit nonzero on any failure): three drive
-  `Runner.execute` and the ambient slot in-process with synthetic
+  `Run.execute` and the ambient slot in-process with synthetic
   configs — the sanctioned way to test runner behavior with windtrap
   itself, since `execute` refuses to nest inside an active run — and
   `test_ppx_runtime` checks the inline runtime's registry in-process
@@ -74,7 +74,7 @@ size of the module.
 | Generated code | golden `.expected` + `dune promote` | It is a compiler; byte-exact expansion is the contract |
 | Semantics preservation under a rewrite | a real instrumented library, compared with the uninstrumented answer | Tail calls, laziness and effect order are invisible in an AST diff |
 | Process-level behaviour | a subprocess driver | A forking loop cannot be observed from inside its own image |
-| The runner itself | in-process `Runner.execute` with synthetic configs | Only the scheduler genuinely cannot judge itself |
+| The runner itself | in-process `Run.execute` with synthetic configs | Only the scheduler genuinely cannot judge itself |
 | An external compatibility claim | a vendored upstream corpus | Regenerating goldens from our own output makes the bar circular |
 
 Two habits to avoid. `let check name cond = is_true ~msg:name cond` is
@@ -126,7 +126,7 @@ new test that reads coverage should use one:
 
 - `Windtrap_runtime.Coverage.filter` narrows a collection to chosen files;
 - `WINDTRAP_COVERAGE_ONLY` scopes a whole *run*'s number to source
-  prefixes, applied once at `Driver.snapshot_coverage`. The `.coverage`
+  prefixes, applied once at `Report.snapshot_coverage`. The `.coverage`
   dump is deliberately not scoped — it is what `windtrap coverage`
   merges.
 
@@ -177,14 +177,14 @@ reached is listed as `UNREACHED` and never red on its own. The loop's
 own scenarios live in `test/mutate_loop`, the merge's in
 `test/mutate_cli`.
 
-Five core modules opt out with `[@@@mutate exclude_file]`: `runner`,
-`run`, `driver`, `mutate_loop` and `windtrap`; the expect runtime, a
-library of its own since the repartition, excludes itself the same way
-and its stanza carries no mutation backend at all. They are the
-machinery a mutation run uses to judge mutants, so a mutant there is
-armed inside the process meant to detect it, and the failure mode is a
-hang rather than a survivor — the first whole-core run aborted on
-`lib/runner.ml:385:19:fsub`. Coverage still measures those files.
+Four core modules opt out with `[@@@mutate exclude_file]`: `run`,
+`report`, `mutate_loop` and `windtrap`; the expect runtime, a library
+of its own since the repartition, excludes itself the same way and its
+stanza carries no mutation backend at all. They are the machinery a
+mutation run uses to judge mutants, so a mutant there is armed inside
+the process meant to detect it, and the failure mode is a hang rather
+than a survivor — the first whole-core run aborted on the executor's
+retry loop. Coverage still measures those files.
 
 ### What a run costs, and where the deadline comes from
 
@@ -341,12 +341,11 @@ verdict, and the merge refuses loudly rather than reading them.
 
 ## Golden transcripts are file baselines
 
-The renderer's goldens live under `test/unit/expected/`, not as
-string literals in the test source: a transcript is an artifact, and the
-point of keeping one is to read the diff when it changes. Accept with
-`dune exec test/unit/test_render.exe -- -u` and review with `git diff`.
-The
-coloured transcript (`verbose-ansi.snap`) pins escape sequences
+The report's goldens live under `test/unit/expected/`, not as string
+literals in the test source: a transcript is an artifact, and the point
+of keeping one is to read the diff when it changes. Accept with
+`dune exec test/unit/test_report.exe -- -u` and review with `git diff`.
+The coloured transcript (`verbose-ansi.expected`) pins escape sequences
 literally — never strip ANSI to compare it, or the comparison is not
 about the thing that broke.
 

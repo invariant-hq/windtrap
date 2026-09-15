@@ -9,49 +9,65 @@
    the project root. *)
 
 let file_exists path = try Sys.file_exists path with _ -> false
+let normalize_sep s = String.map (fun c -> if c = '\\' then '/' else c) s
 
-(* Project root *)
+(* Project root and log root
+
+   Two rules and no marker files: the override, else the build directory
+   the process belongs to. Under dune INSIDE_DUNE is the build context —
+   [<root>/_build/default], a private [--build-dir] likewise; a sandboxed
+   action keeps that value and only moves its cwd under [_build/.sandbox]
+   — and by hand the executable's own path names it. The root is the
+   directory above the first component whose name starts with [_build];
+   nothing is read from disk. Outside any build directory the root is
+   the working directory: a non-dune binary run from a subdirectory of
+   its project is the case the override variable exists for. *)
 
 let is_build_dir dir =
   String.starts_with ~prefix:"_build" (Filename.basename dir)
 
-(* The marker walk must start above any _build tree, not merely skip the
-   _build component when the ascent reaches it: dune materializes source
-   files (dune-project included) under _build and sandboxes add decoy
-   .git markers, so a marker found anywhere inside the build tree is a
-   decoy. Returns the parent of the topmost _build component of [dir],
-   or [dir] unchanged when there is none. *)
-let above_build_tree dir =
-  let rec loop d above =
-    let parent = Filename.dirname d in
-    let above = if is_build_dir d then Some parent else above in
-    if parent = d then above else loop parent above
+let build_dir_of_path path =
+  let rec go acc = function
+    | [] -> None
+    | c :: _ when is_build_dir c ->
+        Some (String.concat "/" (List.rev (c :: acc)))
+    | c :: rest -> go (c :: acc) rest
   in
-  Option.value ~default:dir (loop dir None)
+  go [] (String.split_on_char '/' (normalize_sep path))
 
-let find_project_root_from dir =
-  let rec walk dir =
-    let has marker = file_exists (Filename.concat dir marker) in
-    if has "dune-project" || has "dune-workspace" || has ".git" then Some dir
-    else
-      let parent = Filename.dirname dir in
-      if parent = dir then None else walk parent
-  in
-  walk (above_build_tree dir)
+let absolute path =
+  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
+  else path
+
+(* INSIDE_DUNE first: dune exports the context it is building in, which
+   is the one answer under a sandboxed action, where the executable may
+   have been copied in from elsewhere, and under a private build
+   directory. A value that is not such a path — a harness setting the
+   variable to [1] — names no build directory and the executable's own
+   path decides. *)
+let build_dir () =
+  List.find_map
+    (fun path -> build_dir_of_path (absolute path))
+    ((match Env.get_string "INSIDE_DUNE" with Some d -> [ d ] | None -> [])
+    @ [ Sys.executable_name ])
 
 let project_root () =
   match Env.project_root () with
-  | Some r ->
-      if Filename.is_relative r then Filename.concat (Sys.getcwd ()) r else r
-  | None ->
-      let cwd = Sys.getcwd () in
-      Option.value ~default:cwd (find_project_root_from cwd)
+  | Some root -> absolute root
+  | None -> (
+      match build_dir () with
+      | Some dir -> Filename.dirname dir
+      | None -> Sys.getcwd ())
 
-let default_log_dir () = Filename.concat (project_root ()) "_build/_tests"
+(* The log root follows the build directory, not the project root: a
+   private [--build-dir] then keeps its own capture logs and last-failed
+   store, and a tree built without dune never grows a [_build]. *)
+let default_log_dir () =
+  match build_dir () with
+  | Some dir -> Filename.concat dir "_tests"
+  | None -> Filename.concat (Filename.get_temp_dir_name ()) "windtrap"
 
 (* Sandbox reconstruction *)
-
-let normalize_sep s = String.map (fun c -> if c = '\\' then '/' else c) s
 
 let trim_trailing_slashes s =
   let rec last_non_slash i =

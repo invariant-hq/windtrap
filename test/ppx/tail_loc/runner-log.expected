@@ -1,5 +1,4 @@
 tail_loc: 1 test
-F
 ──────────────────── failures (1) ────────────────────
   FAIL  Inline_tail_loc › tail assertion
     test/ppx/tail_loc/inline_tail_loc.ml:3

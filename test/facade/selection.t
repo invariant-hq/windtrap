@@ -56,7 +56,6 @@ transcript byte for byte.
   [1]
   $ sed -E 's/ in [0-9.e+-]+s\./ in DURATION./; s/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' out
   fixture: 1 test
-  F
   ──────────────────── failures (1) ────────────────────
     FAIL  boom
       test/facade/suite_main.ml:LINE

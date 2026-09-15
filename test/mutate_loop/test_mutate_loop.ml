@@ -425,7 +425,7 @@ let reach_tests =
 
    The [fatal] fixture is the case that makes it bite: [Stack_overflow] is
    fatal, so no failure boundary in the runner may swallow it, it escapes
-   [Runner.execute], and the child's own wrapper is the only thing between
+   [Run.execute], and the child's own wrapper is the only thing between
    it and OCaml's uncaught-exception handler — which runs [at_exit] before
    it prints. Remove that wrapper's catch-all and this file gains a
    line. *)

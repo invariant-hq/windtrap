@@ -247,7 +247,16 @@ let exit () =
     List.iter print_endline (partitions ());
     Stdlib.exit 0
   end;
-  let suite = Option.value ~default:"inline tests" !library in
+  (* The suite is named per partition: dune runs a library's partitions
+     concurrently, each as its own process, so a suite named for the
+     library alone would have every partition write the same JUnit file,
+     capture log directory and last-failed store, last writer wins. *)
+  let suite =
+    match (!library, !partition) with
+    | Some lib, Some partition -> lib ^ "/" ^ partition
+    | Some lib, None -> lib
+    | None, _ -> "inline tests"
+  in
   (* One runner: the inline suite is an ordinary [run] under
      [--corrected], which is dune's promotion protocol — a recorded
      correction leaves the exit code alone so the [diff?] that follows

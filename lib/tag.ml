@@ -19,6 +19,7 @@ let mem = String_set.mem
 (* Well-known tags *)
 
 let slow = "slow"
+let prop = "prop"
 
 (* Selection predicates *)
 

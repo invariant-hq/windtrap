@@ -65,7 +65,8 @@ let attr s =
 
 let failure_text ~filter ~invocation f =
   Pp.str "%a"
-    (fun ppf f -> Render.pp_failure ~ansi:false ~filter ~invocation ppf f)
+    (fun ppf f ->
+      Report_sections.pp_failure ~ansi:false ~filter ~invocation ppf f)
     f
 
 (* One [Fail] outcome, projected: an excused expected failure, or a counted
@@ -79,7 +80,7 @@ type fail_case =
 
 let classify_fail (r : Run.result) fs =
   if r.counted then
-    let subtests, own = List.partition Render.is_subtest_failure fs in
+    let subtests, own = List.partition Report_sections.is_subtest_failure fs in
     Counted { own; subtests }
   else Excused (Option.value ~default:{ Test_tree.reason = None } r.xfail)
 
@@ -128,7 +129,7 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
       let add_failure f =
         Buffer.add_string buf
           (spf "      <failure message=\"%s\">%s</failure>\n"
-             (attr (Render.headline f))
+             (attr (Report_sections.headline f))
              (text (failure_text ~filter:path_string ~invocation f)))
       in
       let add_tail fs =
@@ -150,6 +151,15 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
         | None -> ()
       in
       match r.outcome with
+      | Failure.Pass when r.attempts > 1 ->
+          (* A flaky pass: JUnit has no state for it, and a property on a
+             testcase is not universally accepted, so the fact rides the
+             one element every consumer allows there. *)
+          Buffer.add_string buf (open_case ^ ">\n");
+          Buffer.add_string buf
+            (spf "      <system-out>%s</system-out>\n"
+               (text (spf "passed on attempt %d" r.attempts)));
+          Buffer.add_string buf "    </testcase>\n"
       | Failure.Pass -> Buffer.add_string buf (open_case ^ "/>\n")
       | Failure.Skip reason ->
           Buffer.add_string buf (open_case ^ ">\n");
@@ -188,7 +198,7 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
                      the entry carried one — the same spelling the terminal
                      block prints. *)
                   let name =
-                    match Render.labeled_msg f with
+                    match Report_sections.labeled_msg f with
                     | Some label -> label
                     | None ->
                         path_string (* unreachable: subtests always label *)
@@ -205,3 +215,31 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
   Buffer.add_string buf "  </testsuite>\n";
   Buffer.add_string buf "</testsuites>\n";
   Buffer.contents buf
+
+(* Writing
+
+   One process per suite is the normal case under `dune runtest` — a
+   process per (test) stanza, and one per inline-test partition — so a
+   single fixed path would have every suite overwrite the last, silently.
+   A value naming an [.xml] file stays exactly that, for the one-process
+   invocations `--junit` was written for; anything else is a directory,
+   and each suite writes its own report into it for CI to glob. *)
+let path ~suite target =
+  if Filename.check_suffix target ".xml" then target
+  else Filename.concat target (Path_ops.sanitize_component suite ^ ".xml")
+
+let write ~invocation ~suite ~duration ~results target =
+  let file = path ~suite target in
+  let document = render ~invocation ~suite ~results ~duration () in
+  match
+    (* The directory form has to exist before the first suite writes into
+       it, and nothing else creates it. *)
+    if file != target then Path_ops.mkdir_p (Filename.dirname file);
+    Atomic_file.write ~path:file document
+  with
+  | () -> ()
+  | exception Sys_error message ->
+      Format.eprintf "warning: could not write JUnit report: %s@." message
+  | exception Unix.Unix_error (error, _, _) ->
+      Format.eprintf "warning: could not write JUnit report to %s: %s@."
+        (Path_ops.display file) (Unix.error_message error)

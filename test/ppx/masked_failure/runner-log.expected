@@ -1,5 +1,4 @@
 masked_failure: 1 test
-F
 ──────────────────── failures (1) ────────────────────
   FAIL  Inline_masked_failure › an assertion failure beside a stale payload
     test/ppx/masked_failure/inline_masked_failure.ml:12

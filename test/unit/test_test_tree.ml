@@ -422,7 +422,7 @@ let () =
 (* bracket: a scope derived from setup and teardown *)
 
 (* The derived scope, applied to its body by hand — what the runner does
-   through [Runner]'s scoped path. *)
+   through [Run]'s scoped path. *)
 let scope_of name tree =
   match T.flatten [ tree ] with
   | [ { T.body = T.Scoped { scope; body }; _ } ] -> fun () -> scope body

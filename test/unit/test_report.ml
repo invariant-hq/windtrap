@@ -3,24 +3,26 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Render: golden transcripts over a synthetic run covering every
-   failure kind (equality with diff, raise, baseline missing/mismatch,
-   property with inner failure, body + teardown pair, captured tail with a
-   drop count) at each of the three levels — compact (the default glyph
-   row), verbose (line per test), quiet (failures and summary only) — the
-   glyph vocabulary and the 60-glyph wrap counter, ANSI styling and diff
+(* Tests for Report and Report_sections: golden transcripts over a
+   synthetic run covering every failure kind (equality with diff, raise,
+   baseline missing/mismatch, property with inner failure, body + teardown
+   pair, captured tail with a drop count) at both levels — compact (nothing
+   per test, the header iff a block follows) and verbose (a line per test)
+   — the noteworthy rule, the slow and flaky blocks, ANSI styling and diff
    highlighting, ANSI hygiene under ansi:false (payload-borne escapes
    stripped), the live displays, the failure projections (headline,
-   pp_failure), degenerate equalities (identical renderings,
-   trailing-newline-only differences), diff and proposed-content display
+   pp_failure), degenerate equalities, diff and proposed-content display
    bounds, duration forms, replay-line quoting and root-token consistency,
-   captured-tail bounding, and the source excerpt. Drives [Render] directly
-   over synthetic [Run] results; detection goes through string equality and
-   containment, so a broken renderer cannot hide its own failure. *)
+   captured-tail bounding, the source excerpt, the GitHub envelope, the
+   event observer, the coverage seam, and the coverage and mutation
+   sections. Drives [Report] directly over synthetic [Run] results;
+   detection goes through string equality and containment, so a broken
+   renderer cannot hide its own failure. *)
 
 open Windtrap
 open Windtrap.Private
 module Fixtures = Render_fixtures
+module Sections = Report_sections
 
 let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
@@ -40,62 +42,82 @@ let check_absent name ~sub s = not_contains ~msg:name ~sub s
 
 (* Drivers *)
 
+(* The renderer reads its presentation knobs off the one configuration
+   record; the tests name only the knobs they vary. *)
+let config ?(mode = `Compact) ?(slow_threshold = 1.0) ?(invocation = `Mirrors)
+    () =
+  {
+    (Run.default_config ()) with
+    Run.verbose = mode = `Verbose;
+    slow_threshold;
+    invocation;
+  }
+
 let with_renderer ?(ansi = false) ?mode ?live ?slow_threshold ?invocation fn =
   let buf = Buffer.create 1024 in
   let ppf = Format.formatter_of_buffer buf in
   let r =
-    Render.create ~out:ppf ~ansi ?mode ?live ?slow_threshold ?invocation ()
+    Report.create ~out:ppf ~ansi ?live
+      (config ?mode ?slow_threshold ?invocation ())
   in
   fn r;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
+(* The section vocabulary's own sink, for the coverage and mutation
+   reports the binary draws without a renderer. *)
+let sections ?(ansi = false) l =
+  let buf = Buffer.create 1024 in
+  let ppf = Format.formatter_of_buffer buf in
+  Sections.print ~out:ppf ~ansi l;
+  Buffer.contents buf
+
 let transcript ?ansi ?mode ?live ?invocation ?coverage
     ?(seed = Some Fixtures.root) () =
   with_renderer ?ansi ?mode ?live ?invocation (fun r ->
-      Render.header r ~suite:"mylib"
+      Report.header r ~suite:"mylib"
         ~tests:(List.length Fixtures.results)
         ~seed ();
       List.iter
         (fun (res : Run.result) ->
-          Render.begin_test r ~path:res.path;
-          Render.result r res)
+          Report.begin_test r ~path:res.path;
+          Report.result r res)
         Fixtures.results;
-      Render.finish r ?coverage ~results:Fixtures.results
+      Report.finish r ?coverage ~results:Fixtures.results
         ~duration:Fixtures.duration ())
 
 let failure_block ?(ansi = false) ?excerpt ?filter ?invocation f =
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
-  Render.pp_failure ~ansi ?excerpt ?filter ?invocation ppf f;
+  Report.pp_failure ~ansi ?excerpt ?filter ?invocation ppf f;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
 (* The golden transcripts
 
    Reviewed against the RFC "The runner" transcript and the 0.2.0 output
-   spec: per-test progress (one glyph in compact, one line with timing in
+   spec: per-test progress (nothing in compact, one line with timing in
    verbose), failures re-printed in full inside the labeled rule, bounded
    captured tail with drop count and full-log path, typed-payload-derived
    accept/replay commands, slow warnings, summary, rerun hint, slowest-5
-   (verbose only), coverage line. The fixture run is noteworthy from its
-   second result, so the compact transcript still opens with the header
-   and the glyph row — byte-identical to streaming from the start.
+   (verbose only), coverage line. The fixture run has failures, slow tests
+   and a flaky test, so the compact transcript opens with the header and
+   goes straight to the blocks.
 
    These are file baselines, not string literals in this file. A
-   transcript IS an artifact — box-drawing rules, column alignment, a
-   glyph row, ANSI runs — and the reason to keep one is to read the diff
+   transcript IS an artifact — box-drawing rules, column alignment,
+   ANSI runs — and the reason to keep one is to read the diff
    when it changes. As a literal it could only be reviewed by retyping it;
    as a file under expected/ the review is `git diff` and the acceptance
-   is `dune exec test/unit/test_render.exe -- -u`. Read every accepted
+   is `dune exec test/unit/test_report.exe -- -u`. Read every accepted
    diff: this is the whole of what a windtrap run prints. *)
 
 let golden name actual =
-  expect_file actual ("test/unit/expected/test_render/" ^ name ^ ".expected")
+  expect_file actual ("test/unit/expected/test_report/" ^ name ^ ".expected")
 
 let golden_exe = "dune exec test/main.exe --"
 let golden_invocation = `Exe golden_exe
-let golden_coverage = { Render.visited = 312; total = 358 }
+let golden_coverage = { Report.visited = 312; total = 358 }
 
 let test_golden_compact () =
   let actual =
@@ -130,7 +152,7 @@ let test_coverage_line_hint () =
      view of the code it links, and the merge is the project total. *)
   let t =
     with_renderer (fun r ->
-        Render.finish r
+        Report.finish r
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
           ~duration:0.1 ~coverage:golden_coverage ())
   in
@@ -149,11 +171,8 @@ let test_ansi () =
   check_contains "ansi: slow hint is faint"
     ~sub:"\027[2m(exempt with the \"slow\" tag" t;
   let c = transcript ~ansi:true () in
-  check_contains "ansi: pass glyph is green" ~sub:"\027[32m.\027[0m" c;
-  check_contains "ansi: fail glyph is red" ~sub:"\027[31mF\027[0m" c;
-  check_contains "ansi: skip glyph is yellow" ~sub:"\027[33mS\027[0m" c;
-  (* The summary counts wear the same colours as the glyphs above them —
-     one convention for the whole transcript, not two for the same run. *)
+  (* The summary counts wear the block palette — one convention for the
+     whole transcript, not two for the same run. *)
   check_contains "ansi: summary skip count is yellow"
     ~sub:"\027[33m1 skipped\027[0m" c;
   check_contains "ansi: summary fail count is red"
@@ -162,7 +181,7 @@ let test_ansi () =
      gets its own run. *)
   let x =
     with_renderer ~ansi:true (fun r ->
-        Render.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
+        Report.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
   in
   check_contains "ansi: summary excused count is faint"
     ~sub:"\027[2m1 expected failure\027[0m" x;
@@ -195,78 +214,79 @@ let test_ansi () =
 let test_live () =
   let t =
     with_renderer ~ansi:true ~mode:`Verbose ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
-        Render.begin_test r ~path:[ "math"; "addition" ];
-        Render.result r (List.hd Fixtures.results))
+        Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
+        Report.begin_test r ~path:[ "math"; "addition" ];
+        Report.result r (List.hd Fixtures.results))
   in
   check_contains "live: progress line drawn"
     ~sub:"Running [1/2] math › addition" t;
   check_contains "live: cursor clear emitted" ~sub:"\r\027[2K" t;
   let plain =
     with_renderer ~ansi:false ~mode:`Verbose ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
-        Render.begin_test r ~path:[ "math"; "addition" ])
+        Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
+        Report.begin_test r ~path:[ "math"; "addition" ])
   in
   check_absent "live: off without ansi" ~sub:"Running" plain
 
 let test_live_compact_tail () =
-  (* The compact erasable tail works from the start of the run, before any
-     noteworthy flush: it draws from column zero, never forces the header
+  (* The compact erasable tail is the only thing a compact run prints
+     while it runs: it draws from column zero, never brings the header
      out, and its erasure re-prints nothing — a green run's screen stays
-     blank. *)
+     blank, and what a pipe sees is exactly the committed transcript. *)
   let t =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
-        Render.begin_test r ~path:[ "math"; "addition" ];
-        Render.result r (List.hd Fixtures.results);
-        Render.begin_test r ~path:[ "users"; "sessions after login" ])
+        Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
+        Report.begin_test r ~path:[ "math"; "addition" ];
+        Report.result r (List.hd Fixtures.results);
+        Report.begin_test r ~path:[ "users"; "sessions after login" ])
   in
   check_contains "compact tail: counter and name drawn"
     ~sub:"[1/2] math › addition" t;
-  check_absent "compact tail: the tail never forces the header early"
+  check_absent "compact tail: the tail never brings the header out"
     ~sub:"mylib: 2 tests" t;
-  check_contains "compact tail: deferred erase re-prints nothing"
-    ~sub:"\027[0m\r\027[2K\027[2m  [2/2]" t;
+  check_contains "compact tail: the erase re-prints nothing"
+    ~sub:"\027[0m\r\027[2K\r\027[2K\027[2m  [2/2]" t;
   check_contains "compact tail: next tail follows from column zero"
     ~sub:"[2/2] users › sessions after login" t;
-  (* Once a noteworthy event flushed, the tail follows the committed row
-     and its erasure re-prints the row, as always. *)
-  let flushed =
+  (* A failure commits nothing either: the tail after it still draws
+     from column zero, and the transcript waits for [finish]. *)
+  let after_failure =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
-        Render.result r
+        Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
+        Report.result r
           (Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "b" ]));
-        Render.begin_test r ~path:[ "math"; "addition" ];
-        Render.result r (List.hd Fixtures.results))
+        Report.begin_test r ~path:[ "math"; "addition" ];
+        Report.result r (List.hd Fixtures.results))
   in
-  check_contains "compact tail: flushed erase re-prints the committed row"
-    ~sub:"\r\027[2K\027[31mF\027[0m" flushed;
+  check_string "compact tail: a failure commits nothing before finish"
+    ~expected:"\r\027[2K\027[2m  [2/2] math › addition…\027[0m\r\027[2K"
+    ~actual:after_failure;
   let plain =
     with_renderer ~ansi:false ~live:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:2 ~seed:None ();
-        Render.begin_test r ~path:[ "math"; "addition" ])
+        Report.header r ~suite:"mylib" ~tests:2 ~seed:None ();
+        Report.begin_test r ~path:[ "math"; "addition" ])
   in
   check_absent "compact tail: off without ansi" ~sub:"[1/2]" plain
 
 let test_header_forms () =
   let one =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ())
   in
   check_string "header: singular, no seed" ~expected:"s: 1 test\n" ~actual:one;
   let zero =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"s" ~tests:0 ~seed:None ())
+        Report.header r ~suite:"s" ~tests:0 ~seed:None ())
   in
   check_string "header: zero tests" ~expected:"s: 0 tests\n" ~actual:zero;
-  (* Compact defers the header until the run proves noteworthy; the same
-     line then prints from the recorded fields (the golden transcripts pin
-     the flushed form). *)
-  let deferred =
-    with_renderer (fun r -> Render.header r ~suite:"s" ~tests:1 ~seed:None ())
+  (* Compact prints the header at [finish], and only when a block
+     follows; the same line then prints from the recorded fields (the
+     golden transcripts pin it). *)
+  let compact =
+    with_renderer (fun r -> Report.header r ~suite:"s" ~tests:1 ~seed:None ())
   in
-  check_string "header: compact defers until noteworthy" ~expected:""
-    ~actual:deferred
+  check_string "header: compact prints nothing at the start" ~expected:""
+    ~actual:compact
 
 let test_seed_token_consistency () =
   (* Law 7: the replay line prints exactly the token the header printed. *)
@@ -282,13 +302,13 @@ let test_seed_token_consistency () =
 let test_duration_forms () =
   let line duration =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r (Fixtures.result [ "t" ] Failure.Pass ~duration))
+        Report.result r (Fixtures.result [ "t" ] Failure.Pass ~duration))
   in
   check_contains "minute durations carry seconds overflow" ~sub:"2m0s"
     (line 119.6);
   let summary duration =
     with_renderer (fun r ->
-        Render.finish r
+        Report.finish r
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
           ~duration ())
   in
@@ -300,29 +320,30 @@ let test_duration_forms () =
 let test_create_validation () =
   let raises fn =
     match fn () with
-    | (_ : Render.t) -> false
+    | (_ : Report.t) -> false
     | exception Invalid_argument _ -> true
   in
   let ppf = Format.formatter_of_buffer (Buffer.create 8) in
   check "create: negative slow_threshold rejected"
     (raises (fun () ->
-         Render.create ~out:ppf ~ansi:false ~slow_threshold:(-1.0) ()));
+         Report.create ~out:ppf ~ansi:false (config ~slow_threshold:(-1.0) ())));
   check "create: non-finite slow_threshold rejected"
     (raises (fun () ->
-         Render.create ~out:ppf ~ansi:false ~slow_threshold:Float.nan ()))
+         Report.create ~out:ppf ~ansi:false
+           (config ~slow_threshold:Float.nan ())))
 
 let test_no_tests () =
   (* No header, so no selection and no declared count: nothing to say
      beyond the fact. *)
   let t =
-    with_renderer (fun r -> Render.finish r ~results:[] ~duration:0.01 ())
+    with_renderer (fun r -> Report.finish r ~results:[] ~duration:0.01 ())
   in
   check_string "finish: empty run" ~expected:"no tests ran.\n" ~actual:t;
   (* A suite that declares nothing is not a mistyped filter. *)
   let declares_none =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
-        Render.finish r ~results:[] ~duration:0.01 ())
+        Report.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
+        Report.finish r ~results:[] ~duration:0.01 ())
   in
   check_string "empty suite names itself as the cause"
     ~expected:"mylib: no tests ran: the suite declares none.\n"
@@ -331,9 +352,9 @@ let test_no_tests () =
      and points at the way to see what there was. *)
   let filtered =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:0 ~declared:48
+        Report.header r ~suite:"mylib" ~tests:0 ~declared:48
           ~selection:{|filter "parsr"|} ~seed:None ();
-        Render.finish r ~results:[] ~duration:0.01 ())
+        Report.finish r ~results:[] ~duration:0.01 ())
   in
   check_string "empty selection names the selection and the total"
     ~expected:
@@ -342,119 +363,45 @@ let test_no_tests () =
     ~actual:filtered;
   let singular =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:0 ~declared:1
+        Report.header r ~suite:"mylib" ~tests:0 ~declared:1
           ~selection:"tag \"slow\"" ~seed:None ();
-        Render.finish r ~results:[] ~duration:0.01 ())
+        Report.finish r ~results:[] ~duration:0.01 ())
   in
   check_contains "one declared test is not \"1 tests\""
     ~sub:"matched none of 1 test." singular
 
-(* The compact glyph row *)
+(* Compact prints nothing per test *)
 
-let test_glyph_vocabulary () =
-  (* A counted failure first flushes the deferred transcript, so the
-     probed glyph streams; the leading [F] is dropped below. *)
-  let glyph result () =
-    let flushed =
-      with_renderer (fun r ->
-          Render.result r
-            (Fixtures.result [ "!" ] (Failure.Fail [ Failure.message "x" ]));
-          Render.result r result)
-    in
-    String.sub flushed 1 (String.length flushed - 1)
+let test_compact_is_silent_per_test () =
+  let silent results =
+    with_renderer (fun r ->
+        Report.header r ~suite:"s" ~tests:(List.length results) ~seed:None ();
+        List.iter (Report.result r) results)
   in
-  check_string "a buffered green glyph prints nothing until noteworthy"
+  check_string "compact: a pass prints nothing" ~expected:""
+    ~actual:(silent [ Fixtures.result [ "t" ] Failure.Pass ]);
+  check_string "compact: a counted failure prints nothing before finish"
     ~expected:""
     ~actual:
-      (with_renderer (fun r ->
-           Render.result r (Fixtures.result [ "t" ] Failure.Pass)));
-  check_string "glyph: pass is a dot" ~expected:"."
-    ~actual:(glyph (Fixtures.result [ "t" ] Failure.Pass) ());
-  check_string "glyph: counted failure is F" ~expected:"F"
-    ~actual:
-      (glyph
-         (Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]))
-         ());
-  check_string "glyph: skip is S" ~expected:"S"
-    ~actual:(glyph (Fixtures.result [ "t" ] (Failure.Skip None)) ());
-  check_string "glyph: expected failure is x" ~expected:"x"
-    ~actual:(glyph Fixtures.excused_result ());
-  check_string "glyph: an xfail annotation on a pass changes nothing"
-    ~expected:"."
-    ~actual:
-      (glyph
-         (Fixtures.result [ "t" ] Failure.Pass ~xfail:Fixtures.xfail_reason)
-         ());
-  (* Unexpected pass: an ordinary counted failure, an ordinary F — the
-     record arrives counted even though it carries the annotation. *)
-  check_string "glyph: unexpected pass is a loud F" ~expected:"F"
-    ~actual:(glyph Fixtures.xpass_result ())
-
-let test_glyph_wrap () =
-  (* [n] passes buffer (wraps and counters included), then one counted
-     failure flushes: the committed bytes must equal what streaming from
-     the start would have printed. *)
-  let results n =
-    List.init n (fun i -> Fixtures.result [ string_of_int i ] Failure.Pass)
-    @ [ Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "b" ]) ]
-  in
-  let run ~header n =
-    let rs = results n in
-    with_renderer (fun r ->
-        if header then Render.header r ~suite:"s" ~tests:(n + 1) ~seed:None ();
-        List.iter (Render.result r) rs;
-        Render.finish r ~results:rs ~duration:0.01 ())
-  in
-  let t = run ~header:true 70 in
-  check "wrap: the flush opens with the deferred header"
-    (String.starts_with ~prefix:"s: 71 tests\n" t);
-  check_contains "wrap: buffered full row carries the faint [k/n] counter"
-    ~sub:(String.make 60 '.' ^ " [60/71]\n")
-    t;
-  check_contains "wrap: partial row closed by a newline before the failures"
-    ~sub:("\n" ^ String.make 10 '.' ^ "F\n────")
-    t;
-  check_contains "wrap: the summary counts the run" ~sub:"70 passed, 1 failed" t;
-  let bare = run ~header:false 60 in
-  check_contains "wrap: bare newline when the total is unknown"
-    ~sub:(String.make 60 '.' ^ "\nF")
-    bare;
-  check_absent "wrap: no counter without a total" ~sub:"[60/" bare;
-  let exact = run ~header:true 59 in
-  check_contains "wrap: an exact row wraps once, no empty row"
-    ~sub:" [60/60]\n────" exact
-
-let test_glyph_row_before_failures () =
-  let results =
-    [
-      Fixtures.result [ "ok" ] Failure.Pass;
-      Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
-    ]
-  in
-  let t =
-    with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
-        List.iter (Render.result r) results;
-        Render.finish r ~results ~duration:0.01 ())
-  in
-  check "compact: the failure flushes header then the accumulated row"
-    (String.starts_with ~prefix:"s: 2 tests\n.F\n" t);
-  check_contains "compact: partial row closed before the failure rule"
-    ~sub:".F\n────" t
+      (silent
+         [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]);
+  check_string "compact: a skip prints nothing" ~expected:""
+    ~actual:(silent [ Fixtures.result [ "t" ] (Failure.Skip None) ]);
+  check_string "compact: an excused failure prints nothing" ~expected:""
+    ~actual:(silent [ Fixtures.excused_result ])
 
 let test_note () =
-  (* Run-scoped notices (fixture releases) land between results, while a
-     compact row can still be open: the row closes first. On a still
-     deferred transcript the notice buffers with the row — a green run
-     keeps its one-line transcript, a noteworthy one shows the notice in
-     position. *)
+  (* Run-scoped notices (fixture releases) land between results. Compact
+     prints nothing per test, so the notice is an erasable live line and
+     never part of the transcript — a green run keeps its one line and a
+     noteworthy one its blocks; verbose prints it in position. *)
   let green =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
-        Render.result r (Fixtures.result [ "a" ] Failure.Pass);
-        Render.result r (Fixtures.result [ "b" ] Failure.Pass);
-        Render.note r "releasing db";
-        Render.finish r
+        Report.header r ~suite:"s" ~tests:2 ~seed:None ();
+        Report.result r (Fixtures.result [ "a" ] Failure.Pass);
+        Report.result r (Fixtures.result [ "b" ] Failure.Pass);
+        Report.note r "releasing db";
+        Report.finish r
           ~results:
             [
               Fixtures.result [ "a" ] Failure.Pass;
@@ -472,40 +419,32 @@ let test_note () =
       ]
     in
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
-        Render.result r (List.nth results 0);
-        Render.note r "releasing db";
-        Render.result r (List.nth results 1);
-        Render.finish r ~results ~duration:0.01 ())
+        Report.header r ~suite:"s" ~tests:2 ~seed:None ();
+        Report.result r (List.nth results 0);
+        Report.note r "releasing db";
+        Report.result r (List.nth results 1);
+        Report.finish r ~results ~duration:0.01 ())
   in
-  check_contains "note: a later flush shows the buffered notice in position"
-    ~sub:"s: 2 tests\n.\nreleasing db\nF\n" noteworthy;
-  let flushed =
-    with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
-        Render.result r
-          (Fixtures.result [ "a" ] (Failure.Fail [ Failure.message "x" ]));
-        Render.result r (Fixtures.result [ "b" ] Failure.Pass);
-        Render.note r "releasing db")
-  in
-  check_contains "note: a flushed compact row closes before the notice"
-    ~sub:"F.\nreleasing db\n" flushed;
+  check_absent "note: a compact transcript never carries the notice"
+    ~sub:"releasing" noteworthy;
+  check "note: the compact transcript opens with the header"
+    (String.starts_with ~prefix:"s: 2 tests\n────" noteworthy);
   let verbose =
-    with_renderer ~mode:`Verbose (fun r -> Render.note r "releasing db")
+    with_renderer ~mode:`Verbose (fun r -> Report.note r "releasing db")
   in
   check_string "note: verbose prints the plain line" ~expected:"releasing db\n"
     ~actual:verbose;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"s" ~tests:2 ~seed:None ();
-        Render.result r (Fixtures.result [ "a" ] Failure.Pass);
-        Render.begin_test r ~path:[ "b" ];
-        Render.note r "releasing db";
-        Render.finish r
+        Report.header r ~suite:"s" ~tests:2 ~seed:None ();
+        Report.result r (Fixtures.result [ "a" ] Failure.Pass);
+        Report.begin_test r ~path:[ "b" ];
+        Report.note r "releasing db";
+        Report.finish r
           ~results:[ Fixtures.result [ "a" ] Failure.Pass ]
           ~duration:0.01 ())
   in
-  check_contains "note: deferred live tail erased, notice drawn erasable"
+  check_contains "note: the live tail is erased, the notice drawn erasable"
     ~sub:"\r\027[2K\027[2mreleasing db\027[0m" live;
   check_contains "note: the erasable notice is erased before the one-liner"
     ~sub:"releasing db\027[0m\r\027[2Ks: \027[32m1 passed" live
@@ -516,17 +455,17 @@ let test_compact_green_one_liner () =
   let passes = [ Fixtures.result [ "a" ] Failure.Pass ] in
   let named =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:1 ~seed:None ();
-        List.iter (Render.result r) passes;
-        Render.finish r ~results:passes ~duration:1.2 ())
+        Report.header r ~suite:"mylib" ~tests:1 ~seed:None ();
+        List.iter (Report.result r) passes;
+        Report.finish r ~results:passes ~duration:1.2 ())
   in
   check_string "green compact run: exactly one named line"
     ~expected:"mylib: 1 passed in 1.2s.\n" ~actual:named;
   let seeded =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:1 ~seed:(Some Fixtures.root) ();
-        List.iter (Render.result r) passes;
-        Render.finish r ~results:passes ~duration:1.2 ())
+        Report.header r ~suite:"mylib" ~tests:1 ~seed:(Some Fixtures.root) ();
+        List.iter (Report.result r) passes;
+        Report.finish r ~results:passes ~duration:1.2 ())
   in
   check_string "green compact run: the seed the header carried is appended"
     ~expected:"mylib: 1 passed in 1.2s (seed s1:7be1d2c904aa31f5).\n"
@@ -540,11 +479,11 @@ let test_compact_green_one_liner () =
       ]
     in
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:3 ~seed:None ();
-        Render.result r (List.nth results 0);
-        Render.result r (List.nth results 1);
-        Render.result r (List.nth results 2);
-        Render.finish r ~results ~duration:0.2 ())
+        Report.header r ~suite:"mylib" ~tests:3 ~seed:None ();
+        Report.result r (List.nth results 0);
+        Report.result r (List.nth results 1);
+        Report.result r (List.nth results 2);
+        Report.finish r ~results ~duration:0.2 ())
   in
   check_string
     "green compact run: skip and expected-failure segments stay on the line"
@@ -552,50 +491,26 @@ let test_compact_green_one_liner () =
     ~actual:segments;
   let empty =
     with_renderer (fun r ->
-        Render.header r ~suite:"mylib" ~tests:0 ~seed:None ();
-        Render.finish r ~results:[] ~duration:0.01 ())
+        Report.header r ~suite:"mylib" ~tests:0 ~seed:None ();
+        Report.finish r ~results:[] ~duration:0.01 ())
   in
   (* [~declared] defaults to [~tests], which is 0 here: the suite really
      does declare nothing. *)
   check_string "empty compact selection: one named line, no header"
     ~expected:"mylib: no tests ran: the suite declares none.\n" ~actual:empty
 
-let test_compact_flush_streams_after () =
-  (* The buffered rows commit on the first noteworthy event; subsequent
-     glyphs stream immediately, per glyph. *)
-  let buf = Buffer.create 256 in
-  let ppf = Format.formatter_of_buffer buf in
-  let r = Render.create ~out:ppf ~ansi:false () in
-  let so_far () =
-    Format.pp_print_flush ppf ();
-    Buffer.contents buf
-  in
-  Render.header r ~suite:"s" ~tests:4 ~seed:None ();
-  Render.result r (Fixtures.result [ "a" ] Failure.Pass);
-  Render.result r (Fixtures.result [ "b" ] Failure.Pass);
-  check_string "before the flush nothing is committed" ~expected:""
-    ~actual:(so_far ());
-  Render.result r
-    (Fixtures.result [ "c" ] (Failure.Fail [ Failure.message "x" ]));
-  check_string "the first counted failure commits header, rows, and itself"
-    ~expected:"s: 4 tests\n..F" ~actual:(so_far ());
-  Render.result r (Fixtures.result [ "d" ] Failure.Pass);
-  check_string "later glyphs stream live" ~expected:"s: 4 tests\n..F."
-    ~actual:(so_far ())
-
 let test_compact_slow_trigger () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:1.2 in
   let t =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r slow_pass;
-        Render.finish r ~results:[ slow_pass ] ~duration:1.2 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r slow_pass;
+        Report.finish r ~results:[ slow_pass ] ~duration:1.2 ())
   in
   check_string
-    "an untagged over-threshold pass is noteworthy: header, row, warning"
+    "an untagged over-threshold pass is noteworthy: header, then the warning"
     ~expected:
       "s: 1 test\n\
-       .\n\
        slow tests (1):\n\
       \  1.20s  t\n\
        (exempt with the \"slow\" tag, or raise WINDTRAP_SLOW_THRESHOLD)\n\n\
@@ -603,25 +518,28 @@ let test_compact_slow_trigger () =
     ~actual:t;
   let at_threshold =
     let r1 = Fixtures.result [ "t" ] Failure.Pass ~duration:1.0 in
-    with_renderer (fun r -> Render.result r r1)
+    with_renderer (fun r ->
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r r1;
+        Report.finish r ~results:[ r1 ] ~duration:1.0 ())
   in
-  check_string "the threshold is inclusive (duration >= threshold)"
-    ~expected:"." ~actual:at_threshold;
+  check "the threshold is inclusive (duration >= threshold)"
+    (String.starts_with ~prefix:"s: 1 test\nslow tests (1):" at_threshold);
   let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r tagged_pass;
-        Render.finish r ~results:[ tagged_pass ] ~duration:1.2 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r tagged_pass;
+        Report.finish r ~results:[ tagged_pass ] ~duration:1.2 ())
   in
   check_string "a slow-tagged test is exempt everywhere: one line, no warning"
     ~expected:"s: 1 passed in 1.2s.\n" ~actual:tagged;
   let skip = Fixtures.result [ "t" ] (Failure.Skip None) ~duration:2.0 in
   let skipped =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r skip;
-        Render.finish r ~results:[ skip ] ~duration:2.0 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r skip;
+        Report.finish r ~results:[ skip ] ~duration:2.0 ())
   in
   check_string "a skip never triggers the threshold"
     ~expected:"s: 1 skipped in 2s.\n" ~actual:skipped;
@@ -629,9 +547,9 @@ let test_compact_slow_trigger () =
      duration still counts against the threshold when untagged. *)
   let excused_fast =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r Fixtures.excused_result;
-        Render.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r Fixtures.excused_result;
+        Report.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
   in
   check_string "an excused failure alone is not noteworthy"
     ~expected:"s: 1 expected failure in 0.1s.\n" ~actual:excused_fast
@@ -645,9 +563,9 @@ let test_slow_duration_semantics () =
   in
   let t =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r retried;
-        Render.finish r ~results:[ retried ] ~duration:1.2 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r retried;
+        Report.finish r ~results:[ retried ] ~duration:1.2 ())
   in
   check "a retried test is noteworthy on its summed duration"
     (String.starts_with ~prefix:"s: 1 test\n" t);
@@ -661,9 +579,9 @@ let test_slow_duration_semantics () =
   in
   let t =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r slow_fail;
-        Render.finish r ~results:[ slow_fail ] ~duration:2.0 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r slow_fail;
+        Report.finish r ~results:[ slow_fail ] ~duration:2.0 ())
   in
   check_contains "a slow failing test keeps its failure block"
     ~sub:"failures (1)" t;
@@ -686,20 +604,21 @@ let test_slow_threshold_zero () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:5.0 in
   let t =
     with_renderer ~slow_threshold:0.0 (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r slow_pass;
-        Render.finish r ~results:[ slow_pass ] ~duration:5.0 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r slow_pass;
+        Report.finish r ~results:[ slow_pass ] ~duration:5.0 ())
   in
   check_string "threshold 0 disables the trigger and the warnings"
     ~expected:"s: 1 passed in 5s.\n" ~actual:t;
-  let still_flushes =
+  let still_noteworthy =
     let fail = Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "x" ]) in
     with_renderer ~slow_threshold:0.0 (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r fail)
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r fail;
+        Report.finish r ~results:[ fail ] ~duration:0.1 ())
   in
-  check_string "threshold 0 still flushes on a counted failure"
-    ~expected:"s: 1 test\nF" ~actual:still_flushes
+  check "threshold 0 still makes a counted failure noteworthy"
+    (String.starts_with ~prefix:"s: 1 test\n────" still_noteworthy)
 
 let test_verbose_slow_warnings () =
   (* Verbose gains the warning lines (before the summary) and keeps the
@@ -707,9 +626,9 @@ let test_verbose_slow_warnings () =
   let slow_pass = Fixtures.result [ "t" ] Failure.Pass ~duration:1.5 in
   let t =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r slow_pass;
-        Render.finish r ~results:[ slow_pass ] ~duration:1.5 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r slow_pass;
+        Report.finish r ~results:[ slow_pass ] ~duration:1.5 ())
   in
   check_contains "verbose: header and status line stream as always"
     ~sub:"s: 1 test\n  PASS  t" t;
@@ -720,16 +639,98 @@ let test_verbose_slow_warnings () =
   let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r tagged_pass;
-        Render.finish r ~results:[ tagged_pass ] ~duration:1.5 ())
+        Report.result r tagged_pass;
+        Report.finish r ~results:[ tagged_pass ] ~duration:1.5 ())
   in
   check_absent "verbose: slow-tagged tests warn nowhere" ~sub:"slow tests ("
     tagged
 
+(* The flaky block *)
+
+let test_flaky_block () =
+  (* A pass on retry is never silent: the run is noteworthy, the block
+     names the test with the attempt it passed on, between the slow block
+     and the summary, and the summary counts it as passed. *)
+  let flaky =
+    Fixtures.result
+      [ "network"; "fetches the manifest" ]
+      Failure.Pass ~attempts:2
+  in
+  let steady = Fixtures.result [ "steady" ] Failure.Pass in
+  let t =
+    with_renderer (fun r ->
+        Report.header r ~suite:"s" ~tests:2 ~seed:None ();
+        Report.result r steady;
+        Report.result r flaky;
+        Report.finish r ~results:[ steady; flaky ] ~duration:0.3 ())
+  in
+  check_string "a flaky pass is noteworthy: header, block, summary"
+    ~expected:
+      "s: 2 tests\n\
+       flaky tests (1):\n\
+      \  passed on attempt 2  network › fetches the manifest\n\n\
+       2 passed in 0.3s.\n"
+    ~actual:t;
+  (* Between the slow block and the summary, after the failure section. *)
+  let slow = Fixtures.result [ "slow one" ] Failure.Pass ~duration:1.5 in
+  let bad = Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "b" ]) in
+  let ordered =
+    with_renderer (fun r ->
+        Report.finish r ~results:[ bad; slow; flaky ] ~duration:2.0 ())
+  in
+  check_contains "the flaky block follows the slow block"
+    ~sub:
+      "(exempt with the \"slow\" tag, or raise WINDTRAP_SLOW_THRESHOLD)\n\n\
+       flaky tests (1):\n\
+      \  passed on attempt 2  network › fetches the manifest\n\n\
+       2 passed, 1 failed in 2s.\n"
+    ordered;
+  check "the failure section precedes it"
+    (occurrences_of ~sub:"failures (1)" ordered = 1
+    && Text.first_occurrence ~pattern:"failures (1)" ordered
+       < Text.first_occurrence ~pattern:"flaky tests" ordered);
+  (* A test that failed on every attempt is a failure, not a flake; a
+     first-attempt pass is not one either. *)
+  let hopeless =
+    Fixtures.result [ "hopeless" ]
+      (Failure.Fail [ Failure.message "still" ])
+      ~attempts:3
+  in
+  let not_flaky =
+    with_renderer (fun r ->
+        Report.finish r ~results:[ hopeless; steady ] ~duration:0.1 ())
+  in
+  check_absent "a retried failure is not flaky" ~sub:"flaky tests" not_flaky;
+  check_contains "a retried failure keeps its attempt count in the block"
+    ~sub:"  FAIL  hopeless (3 attempts)" not_flaky;
+  (* Verbose keeps the block, and its status line already carried the
+     count. *)
+  let verbose =
+    with_renderer ~mode:`Verbose (fun r ->
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r flaky;
+        Report.finish r ~results:[ flaky ] ~duration:0.3 ())
+  in
+  check_contains "verbose: the status line carries the count"
+    ~sub:"  PASS  network › fetches the manifest" verbose;
+  check_contains "verbose: the status line names the attempts"
+    ~sub:"(2 attempts)" verbose;
+  check_contains "verbose: the block prints too"
+    ~sub:
+      "flaky tests (1):\n\
+      \  passed on attempt 2  network › fetches the manifest\n"
+    verbose;
+  let colored =
+    with_renderer ~ansi:true (fun r ->
+        Report.finish r ~results:[ flaky ] ~duration:0.3 ())
+  in
+  check_contains "ansi: the flaky block wears the slow block's faint yellow"
+    ~sub:"\027[2m\027[33mflaky tests (1):\027[0m\027[0m" colored
+
 (* Failure projections *)
 
 let test_headline () =
-  let h f = Render.headline f in
+  let h f = Report.headline f in
   check "headline: equality"
     (h (Failure.equality ~expected:"true" ~actual:"false" ())
     = "expected true, got false");
@@ -787,24 +788,8 @@ let test_property_projections () =
   check_absent "example: no replay line (examples always replay)" ~sub:"replay:"
     b;
   check_absent "example: no seed token" ~sub:"WINDTRAP_SEED" b;
-  (* A printerless counterexample is a placeholder, and the block says so
-     once — under the counterexample, whichever placeholder shape the engine
-     produced ([<no printer>], [<example k>]). A printing generator must
-     never draw the advice. *)
-  let printerless =
-    Failure.property ~rendered:"<no printer>" ~case_index:19 ~shrink_steps:9
-      ~root:Fixtures.root ~examples:false ~rendering:Failure.Placeholder ()
-  in
-  let hint = "attach one with Gen.with_pp" in
-  check_contains "printerless: names the remedy" ~sub:hint
-    (failure_block printerless);
-  check_contains "printerless: keeps the placeholder rendering"
-    ~sub:"counterexample (case 19, shrunk 9 steps): <no printer>"
-    (failure_block printerless);
-  check_absent "printerless: advice is not repeated" ~sub:"add Gen.with_pp>"
-    (failure_block printerless);
-  (* A pre-image is marked in the slot — [from] — and explained under it,
-     and it draws no remedy: the reader has the input to read. *)
+  (* A pre-image is marked in the slot — [from] — and explained under it;
+     a printing generator draws no note at all. *)
   let pre_image =
     Failure.property ~rendered:"[2; 3] -> ([1.; 2.], [0.; 0.])" ~case_index:19
       ~shrink_steps:9 ~root:Fixtures.root ~examples:false
@@ -820,7 +805,6 @@ let test_property_projections () =
       "(the value has no printer \u{2014} shown is its pre-image, what map and \
        bind computed it from)"
     (failure_block pre_image);
-  check_absent "pre-image: no remedy line" ~sub:hint (failure_block pre_image);
   let multi_pre_image =
     failure_block
       (Failure.property ~rendered:"1 ->\n  [2; 3]" ~case_index:3 ~shrink_steps:0
@@ -829,10 +813,6 @@ let test_property_projections () =
   check_contains "multi-line pre-image: marked head, block form"
     ~sub:"counterexample (case 3): from\n      1 ->\n        [2; 3]"
     multi_pre_image;
-  check_absent "printing generator: no remedy line" ~sub:hint
-    (failure_block example);
-  check_absent "printing generator: no remedy line either" ~sub:hint
-    (failure_block Fixtures.prop_failure);
   let no_filter = failure_block Fixtures.prop_failure in
   check_contains "replay without filter: seed only"
     ~sub:"replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 dune runtest" no_filter;
@@ -975,7 +955,7 @@ let test_ansi_hygiene () =
   check_contains "ansi:true: payload escapes pass through" ~sub:esc colored;
   let hostile_line =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r
+        Report.result r
           (Fixtures.result
              [ "suite"; esc ^ " name" ]
              (Failure.Fail [ Failure.message "boom" ])))
@@ -988,7 +968,7 @@ let test_ansi_hygiene () =
         (Failure.Fail [ Failure.with_output_tail tail (Failure.message "boom") ])
     in
     with_renderer (fun r ->
-        Render.finish r ~results:[ result ] ~duration:0.01 ())
+        Report.finish r ~results:[ result ] ~duration:0.01 ())
   in
   check_absent "ansi:false: captured tail stripped" ~sub:"\027" hostile_tail;
   check_contains "ansi:false: stripped tail text survives" ~sub:" captured"
@@ -1224,7 +1204,7 @@ let tail_block tail =
     Fixtures.result [ "t" ]
       (Failure.Fail [ Failure.with_output_tail tail (Failure.message "boom") ])
   in
-  with_renderer (fun r -> Render.finish r ~results:[ result ] ~duration:0.01 ())
+  with_renderer (fun r -> Report.finish r ~results:[ result ] ~duration:0.01 ())
 
 (* The tail is a fixed ten lines over the bytes the capture kept: not a
    knob, so a twelve-line tail shows its last ten. *)
@@ -1298,14 +1278,14 @@ let test_raise_message_diff_guards () =
 let test_xfail_line () =
   let line =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r Fixtures.excused_result)
+        Report.result r Fixtures.excused_result)
   in
   check_contains "xfail line: XFAIL tag and reason"
     ~sub:"  XFAIL  known › broken carry (expected failure: issue #42)" line;
   check_absent "xfail line: not a FAIL" ~sub:"  FAIL  " line;
   let no_reason =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r
+        Report.result r
           {
             Fixtures.excused_result with
             Run.xfail = Some { Test_tree.reason = None };
@@ -1315,7 +1295,7 @@ let test_xfail_line () =
     no_reason;
   let pass_ignores =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r
+        Report.result r
           (Fixtures.result [ "t" ] Failure.Pass ~xfail:Fixtures.xfail_reason))
   in
   check_contains "an xfail annotation on a pass changes nothing" ~sub:"PASS"
@@ -1332,27 +1312,17 @@ let test_excused_collision () =
       (Failure.Fail [ Failure.message "expected to fail, but the test passed" ])
       ~xfail:{ Test_tree.reason = None }
   in
-  let stream =
-    with_renderer (fun r ->
-        (* Flush with an unrelated counted failure so the probed glyph
-           commits (the glyph-vocabulary driver's trick). *)
-        Render.result r
-          (Fixtures.result [ "!" ] (Failure.Fail [ Failure.message "x" ]));
-        Render.result r collide)
-  in
-  check_string "collision record still streams the excused glyph" ~expected:"Fx"
-    ~actual:stream;
   let verbose =
-    with_renderer ~mode:`Verbose (fun r -> Render.result r collide)
+    with_renderer ~mode:`Verbose (fun r -> Report.result r collide)
   in
   check_contains "collision record renders XFAIL, not FAIL" ~sub:"  XFAIL  "
     verbose;
   check_absent "collision record: no loud FAIL line" ~sub:"  FAIL  " verbose;
   let summary =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r collide;
-        Render.finish r ~results:[ collide ] ~duration:0.1 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r collide;
+        Report.finish r ~results:[ collide ] ~duration:0.1 ())
   in
   check_string "collision record: stream, summary, and count agree"
     ~expected:"s: 1 expected failure in 0.1s.\n" ~actual:summary
@@ -1367,7 +1337,7 @@ let test_finish_excused () =
   in
   let t =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
-        Render.finish r ~results ~duration:0.2 ())
+        Report.finish r ~results ~duration:0.2 ())
   in
   check_contains "finish: excused leaves the failed count" ~sub:"failures (1)" t;
   check_absent "finish: excused block absent" ~sub:"broken carry" t;
@@ -1375,7 +1345,7 @@ let test_finish_excused () =
     ~sub:"1 passed, 1 expected failure, 1 failed in 0.2s." t;
   let only_excused =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
-        Render.finish r
+        Report.finish r
           ~results:
             [ Fixtures.result [ "ok" ] Failure.Pass; Fixtures.excused_result ]
           ~duration:0.2 ())
@@ -1392,13 +1362,13 @@ let test_xpass_is_loud () =
      failure whose message names the reason: no excused marking, loud FAIL. *)
   let line =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r Fixtures.xpass_result)
+        Report.result r Fixtures.xpass_result)
   in
   check_contains "unexpected pass: loud FAIL line" ~sub:"  FAIL  known › fixed"
     line;
   let t =
     with_renderer (fun r ->
-        Render.finish r ~results:[ Fixtures.xpass_result ] ~duration:0.1 ())
+        Report.finish r ~results:[ Fixtures.xpass_result ] ~duration:0.1 ())
   in
   check_contains "unexpected pass: reason in the failure block"
     ~sub:"expected to fail (issue #42), but the test passed" t
@@ -1407,9 +1377,9 @@ let test_xpass_is_loud () =
 
 let test_subtest_projection () =
   check "subtest entries recognized by their components"
-    (Render.is_subtest_failure (Fixtures.subtest_failure "shape [0]"));
+    (Report.is_subtest_failure (Fixtures.subtest_failure "shape [0]"));
   check "plain failures are not subtest entries"
-    (not (Render.is_subtest_failure (Failure.message "boom")));
+    (not (Report.is_subtest_failure (Failure.message "boom")));
   (* The collision regression: classification is record-driven, so a user
      [?msg] spelling out the [leaf › name] prefix stays an ordinary
      annotation instead of being dressed as a sub-case. *)
@@ -1420,10 +1390,10 @@ let test_subtest_projection () =
     }
   in
   check "a user msg spelling the label prefix is not a subtest entry"
-    (not (Render.is_subtest_failure collision));
+    (not (Report.is_subtest_failure collision));
   let t =
     with_renderer (fun r ->
-        Render.finish r
+        Report.finish r
           ~results:
             [
               Fixtures.result [ "backend"; "contract" ]
@@ -1439,7 +1409,7 @@ let test_subtest_projection () =
 let test_subtest_rendering () =
   let t =
     with_renderer (fun r ->
-        Render.finish r ~results:[ Fixtures.subtest_result ] ~duration:0.1 ())
+        Report.finish r ~results:[ Fixtures.subtest_result ] ~duration:0.1 ())
   in
   check_contains "subtest blocks carry the parent › name label"
     ~sub:"contract › shape [0]" t;
@@ -1447,7 +1417,7 @@ let test_subtest_rendering () =
     ~sub:"1 failed (2 subtest failures) in 0.1s." t;
   let one =
     with_renderer (fun r ->
-        Render.finish r
+        Report.finish r
           ~results:
             [
               Fixtures.result [ "backend"; "contract" ]
@@ -1480,7 +1450,7 @@ let test_prop_stats () =
   in
   let b =
     with_renderer (fun r ->
-        Render.finish r ~results:[ result ] ~duration:0.01 ())
+        Report.finish r ~results:[ result ] ~duration:0.01 ())
   in
   check_contains "prop stats: label distribution"
     ~sub:"labels (100 passing cases):" b;
@@ -1498,7 +1468,7 @@ let test_prop_stats () =
   in
   let b1 =
     with_renderer (fun r ->
-        Render.finish r
+        Report.finish r
           ~results:
             [
               Fixtures.result [ "p" ]
@@ -1645,13 +1615,13 @@ let test_containment_not_found_cap () =
 
 let test_containment_headlines () =
   check "headline: not_contains names the offset"
-    (Render.headline not_contains_failure = {|needle "secret" found at byte 10|});
+    (Report.headline not_contains_failure = {|needle "secret" found at byte 10|});
   let contains_failure =
     Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
       ~haystack:(String.make 20_006 'a') ()
   in
   check "headline: contains names the haystack size"
-    (Render.headline contains_failure
+    (Report.headline contains_failure
     = {|needle "NOPE" not found (20006-byte haystack)|})
 
 (* The demanded-occurrence block: [in_order]'s chain break. The fixtures
@@ -1713,13 +1683,13 @@ let test_in_order_block () =
 
 let test_demand_headlines () =
   check "headline: in_order names the element, its offset and the cursor"
-    (Render.headline out_of_order_failure
+    (Report.headline out_of_order_failure
     = {|element 2 "disconnect" out of order: at byte 13, before byte 36|});
   let missing =
     {|element 2 "teardown" not found at or after byte 36 (36-byte haystack)|}
   in
   check "headline: a missing element names the cursor and the haystack size"
-    (Render.headline missing_element_failure = missing)
+    (Report.headline missing_element_failure = missing)
 
 let test_satisfies_no_refinement () =
   (* The claim sentence is a description, not a rendering: never diff or
@@ -1860,12 +1830,12 @@ let test_timed_out_marker () =
        minimal\n"
     b;
   check "timed-out: headline carries the mark"
-    (Render.headline f
+    (Report.headline f
    = "property failed (case 4, shrunk 2 steps, timed out): 9");
   let plain = failure_block Fixtures.prop_failure in
   check_absent "no marker without a timeout" ~sub:"timed out" plain;
   check_absent "no headline mark without a timeout" ~sub:"timed out"
-    (Render.headline Fixtures.prop_failure)
+    (Report.headline Fixtures.prop_failure)
 
 (* Spent shrink budgets (D2's other stopping condition)
 
@@ -1887,20 +1857,20 @@ let test_budget_spent_marker () =
       \    shrinking stopped after 50 steps; counterexample may not be minimal\n"
     b;
   check "budget spent: headline carries the mark"
-    (Render.headline f
+    (Report.headline f
    = "property failed (case 4, shrunk 50 steps, budget spent): 9");
   let plain = failure_block Fixtures.prop_failure in
   check_absent "no detail line without a spent budget" ~sub:"shrink budget"
     plain;
   check_absent "no headline mark without a spent budget" ~sub:"budget spent"
-    (Render.headline Fixtures.prop_failure);
+    (Report.headline Fixtures.prop_failure);
   (* An example never shrinks, so neither mark applies to one. *)
   let example =
     Failure.property ~shrink_exhausted:true ~rendered:"9" ~case_index:0
       ~shrink_steps:0 ~root:Fixtures.root ~examples:true ()
   in
   check_absent "an example carries no headline mark" ~sub:"budget spent"
-    (Render.headline example)
+    (Report.headline example)
 
 (* Inner failures without a location (D4) *)
 
@@ -1966,12 +1936,12 @@ let test_no_rerun_hint () =
   in
   let exe =
     with_renderer ~invocation:(`Exe "dune exec qa/x/t.exe --") (fun r ->
-        Render.finish r ~results:failing ~duration:0.1 ())
+        Report.finish r ~results:failing ~duration:0.1 ())
   in
   check_absent "a failing run does not advertise --failed" ~sub:"--failed" exe;
   check_contains "the summary is the last line" ~sub:"1 failed in 0.1s.\n" exe;
   let mirrors =
-    with_renderer (fun r -> Render.finish r ~results:failing ~duration:0.1 ())
+    with_renderer (fun r -> Report.finish r ~results:failing ~duration:0.1 ())
   in
   check_absent "nor under Mirrors" ~sub:"--failed" mirrors
 
@@ -1986,13 +1956,13 @@ let test_property_replay_line () =
   in
   let t =
     with_renderer (fun r ->
-        Render.finish r ~results:[ prop_result ] ~duration:0.1 ())
+        Report.finish r ~results:[ prop_result ] ~duration:0.1 ())
   in
   check "a property failure prints exactly one replay line"
     (occurrences_of ~sub:"replay:" t = 1);
   let plain =
     with_renderer (fun r ->
-        Render.finish r
+        Report.finish r
           ~results:
             [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]
           ~duration:0.1 ())
@@ -2015,17 +1985,17 @@ let test_verbose_pass_labels () =
       Failure.Pass
   in
   let verbose =
-    with_renderer ~mode:`Verbose (fun r -> Render.result r passing)
+    with_renderer ~mode:`Verbose (fun r -> Report.result r passing)
   in
   check_contains "verbose: a passing property prints its label table"
     ~sub:"    labels (100 passing cases):\n       46.0%  even\n" verbose;
   check "verbose: the table follows the PASS line"
     (String.starts_with ~prefix:"  PASS  labels visible" verbose);
-  let compact = with_renderer (fun r -> Render.result r passing) in
+  let compact = with_renderer (fun r -> Report.result r passing) in
   check_absent "compact: no label table" ~sub:"labels (" compact;
   let unlabeled =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r
+        Report.result r
           (Fixtures.result
              ~prop_stats:
                {
@@ -2040,7 +2010,7 @@ let test_verbose_pass_labels () =
     unlabeled;
   let excused =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.result r
+        Report.result r
           { Fixtures.excused_result with Run.prop_stats = Some stats })
   in
   check_absent "verbose: XFAIL lines print no table" ~sub:"labels (" excused
@@ -2053,30 +2023,30 @@ let test_name_sanitization () =
     Fixtures.result hostile (Failure.Fail [ Failure.message "b" ])
   in
   let verbose =
-    with_renderer ~mode:`Verbose (fun r -> Render.result r failing)
+    with_renderer ~mode:`Verbose (fun r -> Report.result r failing)
   in
   check_contains "verbose line escapes the newline" ~sub:{|FAIL  first\nhalf|}
     verbose;
   check "verbose line stays one line" (occurrences_of ~sub:"\n" verbose = 1);
   let block =
     with_renderer (fun r ->
-        Render.finish r ~results:[ failing ] ~duration:0.1 ())
+        Report.finish r ~results:[ failing ] ~duration:0.1 ())
   in
   check_contains "FAIL header escapes the newline" ~sub:{|  FAIL  first\nhalf|}
     block;
   let live =
     with_renderer ~ansi:true ~live:true (fun r ->
-        Render.header r ~suite:"vnames" ~tests:2 ~seed:None ();
-        Render.begin_test r ~path:hostile)
+        Report.header r ~suite:"vnames" ~tests:2 ~seed:None ();
+        Report.begin_test r ~path:hostile)
   in
   check_contains "live tail escapes the newline" ~sub:{|first\nhalf|} live;
   check_absent "live tail carries no raw newline" ~sub:"first\nhalf" live;
-  (* Suite names: header, and the deferred one-liner's prefix. *)
+  (* Suite names: header, and the one-liner's prefix. *)
   let named =
     with_renderer (fun r ->
-        Render.header r ~suite:"my\tsuite" ~tests:1 ~seed:None ();
-        Render.result r (Fixtures.result [ "t" ] Failure.Pass);
-        Render.finish r
+        Report.header r ~suite:"my\tsuite" ~tests:1 ~seed:None ();
+        Report.result r (Fixtures.result [ "t" ] Failure.Pass);
+        Report.finish r
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
           ~duration:0.1 ())
   in
@@ -2084,23 +2054,23 @@ let test_name_sanitization () =
     named;
   let header =
     with_renderer ~mode:`Verbose (fun r ->
-        Render.header r ~suite:"a\x07b" ~tests:1 ~seed:None ())
+        Report.header r ~suite:"a\x07b" ~tests:1 ~seed:None ())
   in
   check_contains "header escapes control bytes" ~sub:{|a\x07b: 1 test|} header;
   (* Slow warnings and the slowest list share the treatment. *)
   let slow = Fixtures.result [ "sl\now" ] Failure.Pass ~duration:1.5 in
   let warned =
     with_renderer (fun r ->
-        Render.header r ~suite:"s" ~tests:1 ~seed:None ();
-        Render.result r slow;
-        Render.finish r ~results:[ slow ] ~duration:1.5 ())
+        Report.header r ~suite:"s" ~tests:1 ~seed:None ();
+        Report.result r slow;
+        Report.finish r ~results:[ slow ] ~duration:1.5 ())
   in
   check_contains "slow warning escapes the newline" ~sub:{|  1.50s  sl\now|}
     warned;
   (* ESC is left to the ansi policy (stripped under ansi:false) — pinned in
      [test_ansi_hygiene]. *)
   let note =
-    with_renderer ~mode:`Verbose (fun r -> Render.note r "releasing d\nb")
+    with_renderer ~mode:`Verbose (fun r -> Report.note r "releasing d\nb")
   in
   check_string "notes escape their fixture name" ~expected:"releasing d\\nb\n"
     ~actual:note
@@ -2182,7 +2152,7 @@ let test_excerpt_project_root () =
      works too, and the block renders identically. *)
   let f =
     Failure.equality
-      ~loc:{ Loc.file = "test/unit/test_render.ml"; line = 1; column = 0 }
+      ~loc:{ Loc.file = "test/unit/test_report.ml"; line = 1; column = 0 }
       ~expected:"1" ~actual:"2" ()
   in
   check_contains "relative recorded paths resolve under dune runtest"
@@ -2196,56 +2166,42 @@ let test_excerpt_project_root () =
    right-aligned in at least four, the [│] rule, [·····] between regions,
    the regions themselves (touching windows merged, the first clipped
    against the top of the file), and the [1, 5-6, 11] range dialect the
-   table prints. Driven through the real [coverage_report] over a real
-   collection rather than through the projection's own vals, because the
-   difference a review over stripped output cannot see is *where* an
+   table prints. Driven through the real [coverage_report] over section
+   data built by hand — the sections name no runtime, so this is the
+   whole of their input; the builder that derives it from the runtime's
+   file reports is the reporting command's, driven over the real binary
+   in test/coverage_cli, and the runtime's line attribution is pinned in
+   test/coverage — rather than through the projection's own vals, because
+   the difference a review over stripped output cannot see is *where* an
    escape opens: a marker spelled [margin ^ red "▌"] prints the same
    glyphs as [red (margin ^ "▌")]. So this pins the plain bytes whole,
    then pins that colour adds escapes and nothing else, and that the
    marker's escape opens at column zero. *)
 
-let coverage_fixture_lines =
-  List.init 12 (fun i -> Printf.sprintf "let v%d = %d" (i + 1) (i + 1))
+let coverage_fixture_source =
+  String.concat "\n"
+    (List.init 12 (fun i -> Printf.sprintf "let v%d = %d" (i + 1) (i + 1)))
+  ^ "\n"
 
-let coverage_fixture_source = String.concat "\n" coverage_fixture_lines ^ "\n"
-
-(* The half-open byte extent of one 1-based line of the fixture. *)
-let coverage_fixture_extent n =
-  let rec go i offset = function
-    | [] -> invalid_arg "coverage_fixture_extent"
-    | line :: rest ->
-        if i = n then (offset, offset + String.length line)
-        else go (i + 1) (offset + String.length line + 1) rest
-  in
-  go 1 0 coverage_fixture_lines
-
-(* One instrumented file in the coverage runtime's own on-disk format,
-   parsed by the runtime rather than fabricated behind it. Four of the
-   eight points are never visited, and they fall into three runs of
-   lines — so the block carries two [·····] separators and a region
-   clipped against the top of the file. *)
-let coverage_fixture_collection ~file =
-  let points =
-    [ (1, 0); (3, 1); (5, 0); (6, 0); (8, 1); (10, 1); (11, 0); (12, 1) ]
-  in
-  let dump =
-    String.concat "\n"
-      ([
-         "windtrap-coverage-v3";
-         "1";
-         Printf.sprintf "%d %s" (String.length file) file;
-         string_of_int (List.length points);
-       ]
-      @ List.map
-          (fun (line, count) ->
-            let first, last = coverage_fixture_extent line in
-            Printf.sprintf "%d %d %d" first last count)
-          points)
-    ^ "\n"
-  in
-  match Windtrap_runtime.Coverage.of_string dump with
-  | Ok (collection, _) -> collection
-  | Error _ -> failwith "the coverage fixture does not parse"
+(* One file, four of its eight points never visited, the four falling
+   into three runs of lines — so the block carries two [·····] separators
+   and a region clipped against the top of the file. *)
+let coverage_fixture_data : Sections.coverage =
+  {
+    Sections.visited = 4;
+    total = 8;
+    files =
+      [
+        {
+          Sections.file = "lib/fake.ml";
+          visited = 4;
+          total = 8;
+          uncovered = [ 1; 5; 6; 11 ];
+          source = Some coverage_fixture_source;
+          stale = false;
+        };
+      ];
+  }
 
 let expected_coverage_report =
   "coverage: 50.0% (4/8 points)\n\
@@ -2264,19 +2220,9 @@ let expected_coverage_report =
   \     12 \u{2502} let v12 = 12\n"
 
 let test_coverage_report_bytes () =
-  let root = temp_dir () in
-  let file = "lib/fake.ml" in
-  Path_ops.mkdir_p (Filename.concat root "lib");
-  let oc = open_out (Filename.concat root file) in
-  output_string oc coverage_fixture_source;
-  close_out oc;
-  let collection = coverage_fixture_collection ~file in
-  (* Through the seam's one builder, as the driver and the [windtrap
-     coverage] command render it: the collection is the runtime's, the
-     section data the seam's, the layout the renderer's. *)
-  let data = Driver.coverage_data ~source_roots:[ root ] collection in
+  let data = coverage_fixture_data in
   let render ?ansi () =
-    with_renderer ?ansi (fun r -> Render.coverage_report r ~mode:`Full data)
+    sections ?ansi (Sections.coverage_report ~mode:`Full data)
   in
   let plain = render () and colored = render ~ansi:true () in
   check_string "coverage report: the frozen bytes, full mode"
@@ -2293,8 +2239,7 @@ let test_coverage_report_bytes () =
     ~expected:
       "coverage: 50.0% (4/8 points)\n\
       \   50.0%  4/8  lib/fake.ml   uncovered: 1, 5-6, 11\n"
-    ~actual:
-      (with_renderer (fun r -> Render.coverage_report r ~mode:`Report data))
+    ~actual:(sections (Sections.coverage_report ~mode:`Report data))
 
 (* A barely-tested file has hundreds of uncovered regions, and their
    ranges would render as one cell of thousands of characters. The cell
@@ -2303,12 +2248,12 @@ let test_coverage_report_bytes () =
 let test_coverage_uncovered_cap () =
   let data =
     {
-      Render.visited = 0;
+      Sections.visited = 0;
       total = 60;
       files =
         [
           {
-            Render.file = "lib/wide.ml";
+            Sections.file = "lib/wide.ml";
             visited = 0;
             total = 60;
             uncovered = List.init 30 (fun i -> (i * 2) + 1);
@@ -2318,9 +2263,7 @@ let test_coverage_uncovered_cap () =
         ];
     }
   in
-  let out =
-    with_renderer (fun r -> Render.coverage_report r ~mode:`Report data)
-  in
+  let out = sections (Sections.coverage_report ~mode:`Report data) in
   check_contains "the uncovered cell stops after eight regions"
     ~sub:"uncovered: 1, 3, 5, 7, 9, 11, 13, 15 (+22 more, -u shows them)" out;
   check_absent "and drops the ninth" ~sub:"17" out
@@ -2333,9 +2276,9 @@ let test_coverage_uncovered_cap () =
 
 let test_coverage_thresholds () =
   let line ~visited ~total =
-    with_renderer ~ansi:true (fun r ->
-        Render.coverage_report r ~mode:`Report
-          { Render.visited; total; files = [] })
+    sections ~ansi:true
+      (Sections.coverage_report ~mode:`Report
+         { Sections.visited; total; files = [] })
   in
   check_contains "80 percent is green" ~sub:"\027[32m80.0%\027[0m"
     (line ~visited:8 ~total:10);
@@ -2370,11 +2313,11 @@ let calc_source =
   ^ "\n"
 
 let witness ?exe test file line =
-  { Render.test; loc = Some { Loc.file; line; column = 0 }; exe }
+  { Sections.test; loc = Some { Loc.file; line; column = 0 }; exe }
 
 let mutant id line before after =
   {
-    Render.id;
+    Sections.id;
     file = "lib/calc.ml";
     line;
     before;
@@ -2392,11 +2335,11 @@ let suite_report =
     (* Pre-spelled, as the loop spells them with the runtime's own
        functions: the identifier in its canonical form, the arming
        variable by name. *)
-    Render.arm_variable = "WINDTRAP_MUTATE_ARM";
+    Sections.arm_variable = "WINDTRAP_MUTATE_ARM";
     survivors =
       [
         {
-          Render.mutant = add_mutant;
+          Sections.mutant = add_mutant;
           witnesses =
             [
               witness "calc \u{203a} sub of two positives" "test/test_calc.ml"
@@ -2406,7 +2349,7 @@ let suite_report =
             ];
         };
         {
-          Render.mutant = neq_mutant;
+          Sections.mutant = neq_mutant;
           witnesses =
             [
               witness "calc \u{203a} div by zero raises" "test/test_calc.ml" 24;
@@ -2415,17 +2358,17 @@ let suite_report =
       ];
     unreached = [];
     killed = 181;
-    scope = Render.Suite;
+    scope = Sections.Suite;
     filter = None;
   }
 
 let aggregate_report =
   {
-    Render.arm_variable = "WINDTRAP_MUTATE_ARM";
+    Sections.arm_variable = "WINDTRAP_MUTATE_ARM";
     survivors =
       [
         {
-          Render.mutant = add_mutant;
+          Sections.mutant = add_mutant;
           witnesses =
             [
               witness ~exe:"test_calc.exe" "calc \u{203a} sub of two positives"
@@ -2439,12 +2382,12 @@ let aggregate_report =
       ];
     unreached = [ le_mutant; sub_mutant ];
     killed = 11;
-    scope = Render.Executables 3;
+    scope = Sections.Executables 3;
     filter = None;
   }
 
 let mutation_report ?ansi ?mode ?invocation m =
-  with_renderer ?ansi ?mode ?invocation (fun r -> Render.mutation_report r m)
+  with_renderer ?ansi ?mode ?invocation (fun r -> Report.mutation_report r m)
 
 let exe_invocation =
   `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe"
@@ -2518,7 +2461,7 @@ let test_mutation_sentence () =
     mutation_report
       {
         suite_report with
-        Render.survivors = [ { Render.mutant = add_mutant; witnesses } ];
+        Sections.survivors = [ { Sections.mutant = add_mutant; witnesses } ];
       }
   in
   let one = witness "calc \u{203a} sub to zero" "test/test_calc.ml" 19 in
@@ -2530,7 +2473,7 @@ let test_mutation_sentence () =
   (* The executable column appears exactly when a witness names one, and
      it is one column for the report: a row without an executable still
      leaves the column. *)
-  let named = { one with Render.exe = Some "test_calc.exe" } in
+  let named = { one with Sections.exe = Some "test_calc.exe" } in
   check_absent "no executable column without an executable" ~sub:"test_calc.exe"
     (block [ one; other ]);
   check_contains "the column appears when one witness names an executable"
@@ -2541,10 +2484,10 @@ let test_mutation_sentence () =
     (block [ named; other ]);
   check_contains "one executable is just tests"
     ~sub:"\n    2 tests ran this line and none failed:\n"
-    (block [ named; { other with Render.exe = Some "test_calc.exe" } ]);
+    (block [ named; { other with Sections.exe = Some "test_calc.exe" } ]);
   check_contains "several executables are counted"
     ~sub:"\n    2 tests in 2 executables ran this line and none failed:\n"
-    (block [ named; { other with Render.exe = Some "test_eval.exe" } ])
+    (block [ named; { other with Sections.exe = Some "test_eval.exe" } ])
 
 let test_mutation_colors () =
   let out =
@@ -2587,32 +2530,32 @@ let test_mutation_colors () =
 let test_mutation_summary_forms () =
   let summary ?(survivors = []) ?(unreached = []) ~killed scope =
     mutation_report ~invocation:exe_invocation
-      { suite_report with Render.survivors; unreached; killed; scope }
+      { suite_report with Sections.survivors; unreached; killed; scope }
   in
   let survivor =
-    { Render.mutant = add_mutant; witnesses = [ witness "t" "test/t.ml" 1 ] }
+    { Sections.mutant = add_mutant; witnesses = [ witness "t" "test/t.ml" 1 ] }
   in
   (* A report with nothing to say is one line, and the clean form is the
      absence of a survived term, not a zero. *)
   check_string "suite, clean"
     ~expected:"mutants: 5 reached by this suite \u{00b7} 5 killed\n"
-    ~actual:(summary ~killed:5 Render.Suite);
+    ~actual:(summary ~killed:5 Sections.Suite);
   check_string "selected, clean"
     ~expected:"mutants: 2 reached by the 2 selected tests \u{00b7} 2 killed\n"
-    ~actual:(summary ~killed:2 (Render.Selected 2));
+    ~actual:(summary ~killed:2 (Sections.Selected 2));
   check_string "one selected test"
     ~expected:"mutants: 1 reached by the 1 selected test \u{00b7} 1 killed\n"
-    ~actual:(summary ~killed:1 (Render.Selected 1));
+    ~actual:(summary ~killed:1 (Sections.Selected 1));
   check_string "executables, clean"
     ~expected:"mutants: 14 reached \u{00b7} 14 killed \u{00b7} 3 executables\n"
-    ~actual:(summary ~killed:14 (Render.Executables 3));
+    ~actual:(summary ~killed:14 (Sections.Executables 3));
   check_string "one executable"
     ~expected:"mutants: 3 reached \u{00b7} 3 killed \u{00b7} 1 executable\n"
-    ~actual:(summary ~killed:3 (Render.Executables 1));
+    ~actual:(summary ~killed:3 (Sections.Executables 1));
   (* Zero terms are omitted: nothing killed and nothing reached. *)
   check_string "nothing reached, nothing killed"
     ~expected:"mutants: 0 reached by this suite\n"
-    ~actual:(summary ~killed:0 Render.Suite);
+    ~actual:(summary ~killed:0 Sections.Suite);
   let line out =
     match
       List.filter
@@ -2628,17 +2571,17 @@ let test_mutation_summary_forms () =
     ~actual:
       (line
          (summary ~unreached:[ le_mutant; sub_mutant ] ~killed:0
-            (Render.Executables 1)));
+            (Sections.Executables 1)));
   (* With survivors the reached count is the sum of both lists. *)
   check_string "suite, survivors"
     ~expected:"mutants: 1 survived of 5 reached by this suite \u{00b7} 4 killed"
-    ~actual:(line (summary ~survivors:[ survivor ] ~killed:4 Render.Suite));
+    ~actual:(line (summary ~survivors:[ survivor ] ~killed:4 Sections.Suite));
   check_string "selected, survivors"
     ~expected:
       "mutants: 1 survived of 2 reached by the 3 selected tests \u{00b7} 1 \
        killed"
     ~actual:
-      (line (summary ~survivors:[ survivor ] ~killed:1 (Render.Selected 3)));
+      (line (summary ~survivors:[ survivor ] ~killed:1 (Sections.Selected 3)));
   check_string "executables, survivors and never reached"
     ~expected:
       "mutants: 1 survived of 12 reached \u{00b7} 11 killed \u{00b7} 2 never \
@@ -2646,10 +2589,10 @@ let test_mutation_summary_forms () =
     ~actual:
       (line
          (summary ~survivors:[ survivor ] ~unreached:[ le_mutant; sub_mutant ]
-            ~killed:11 (Render.Executables 3)));
+            ~killed:11 (Sections.Executables 3)));
   check_string "every kill a survivor: no killed term"
     ~expected:"mutants: 1 survived of 1 reached by this suite"
-    ~actual:(line (summary ~survivors:[ survivor ] ~killed:0 Render.Suite))
+    ~actual:(line (summary ~survivors:[ survivor ] ~killed:0 Sections.Suite))
 
 let test_mutation_footer () =
   (* The footer is the one command, under the summary, with the
@@ -2668,19 +2611,23 @@ let test_mutation_footer () =
       "\nreproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
     (mutation_report suite_report);
   (* A clean report has nothing to reproduce. *)
-  let clean = { suite_report with Render.survivors = []; killed = 183 } in
+  let clean = { suite_report with Sections.survivors = []; killed = 183 } in
   check_absent "no footer on a clean report" ~sub:"reproduce:"
     (mutation_report ~invocation:exe_invocation clean);
   (* Never-reached mutants alone are still something to arm. *)
   check_contains "never reached alone keeps the footer" ~sub:"\nreproduce: "
     (mutation_report
-       { aggregate_report with Render.survivors = []; killed = 12 });
+       { aggregate_report with Sections.survivors = []; killed = 12 });
   (* A filtered run's survivor survived that selection, so the footer
      restates the filter exactly as the replay line does: [-f], quoted,
      after the command under [`Exe]; [WINDTRAP_FILTER] before the
      placeholder under [`Mirrors]. *)
   let filtered =
-    { suite_report with Render.scope = Render.Selected 2; filter = Some "sub" }
+    {
+      suite_report with
+      Sections.scope = Sections.Selected 2;
+      filter = Some "sub";
+    }
   in
   check_contains "the exe footer carries the filter"
     ~sub:
@@ -2697,7 +2644,7 @@ let test_mutation_footer () =
   check_contains "the filter is shell-quoted, as the replay line's is"
     ~sub:" -f 'it'\\''s'\n"
     (mutation_report ~invocation:exe_invocation
-       { filtered with Render.filter = Some "it's" })
+       { filtered with Sections.filter = Some "it's" })
 
 let test_mutation_sections () =
   (* Every survivor gets a block: a survivor is a failure block, and
@@ -2706,12 +2653,12 @@ let test_mutation_sections () =
     (mutation_report
        {
          suite_report with
-         Render.survivors = [ List.hd suite_report.Render.survivors ];
+         Sections.survivors = [ List.hd suite_report.Sections.survivors ];
        });
   (* Each finding stands alone: never reached without survivors, and
      survivors without never reached. *)
   let unreached_only =
-    { aggregate_report with Render.survivors = []; killed = 12 }
+    { aggregate_report with Sections.survivors = []; killed = 12 }
   in
   check_string "never reached alone: its rule, its blocks, the summary"
     ~expected:
@@ -2734,18 +2681,19 @@ let test_mutation_sections () =
   let sourceless =
     {
       aggregate_report with
-      Render.survivors =
+      Sections.survivors =
         List.map
-          (fun (s : Render.survivor) ->
+          (fun (s : Sections.survivor) ->
             {
               s with
-              Render.mutant = { s.Render.mutant with Render.source = None };
+              Sections.mutant =
+                { s.Sections.mutant with Sections.source = None };
             })
-          aggregate_report.Render.survivors;
+          aggregate_report.Sections.survivors;
       unreached =
         List.map
-          (fun (m : Render.mutant) -> { m with Render.source = None })
-          aggregate_report.Render.unreached;
+          (fun (m : Sections.mutant) -> { m with Sections.source = None })
+          aggregate_report.Sections.unreached;
     }
   in
   check_absent "an unreadable source drops the excerpt row" ~sub:"\u{2502}"
@@ -2756,6 +2704,250 @@ let test_mutation_sections () =
   check_contains "an unreadable source keeps the unreached head row"
     ~sub:"  UNREACHED  lib/calc.ml:22:5:le"
     (mutation_report sourceless)
+
+(* The GitHub Actions envelope: golden ::error annotation, %0A/%0D/%25
+   data encoding, %3A/%2C property encoding, ANSI stripping, group folding
+   commands, and the run-level annotations block. *)
+
+let test_github_golden () =
+  let actual =
+    Report.annotation
+      ~path:[ "users"; "sessions after login" ]
+      Fixtures.eq_failure
+  in
+  expect_file actual "test/unit/expected/test_report/annotation.expected"
+
+let test_github_data_encoding () =
+  let f = Failure.message "50% done\r\nnext: a,b" in
+  let a = Report.annotation ~path:[ "t" ] f in
+  check_contains "percent encoded first" ~sub:"50%25 done%0D%0A    next" a;
+  check_contains "colons and commas untouched in message data" ~sub:"next: a,b"
+    a;
+  check "annotation is one command line"
+    (String.length a > 0
+    && a.[String.length a - 1] = '\n'
+    && occurrences_of ~sub:"\n" a = 1)
+
+let test_github_property_encoding () =
+  let f =
+    Failure.message
+      ~loc:{ Loc.file = "dir,x:y/test.ml"; line = 7; column = 0 }
+      "boom"
+  in
+  let a = Report.annotation ~path:[ "suite: a,b"; "case" ] f in
+  check_contains "file property encodes delimiters"
+    ~sub:"file=dir%2Cx%3Ay/test.ml,line=7," a;
+  check_contains "title encodes delimiters"
+    ~sub:"title=Test failure%3A suite%3A a%2Cb › case::" a
+
+let test_github_no_location () =
+  let a = Report.annotation ~path:[ "t" ] (Failure.message "boom") in
+  check_contains "no location: title only" ~sub:"::error title=" a;
+  check_absent "no location: no file property" ~sub:"file=" a
+
+let test_github_declaration_attribution () =
+  (* A failure attributed to the declaration annotates that line — the
+     location as recorded — and the block's hint rides in the message, so
+     the annotation explains itself where it lands. *)
+  let f =
+    {
+      Fixtures.eq_failure with
+      Failure.loc =
+        Some { Loc.file = "test/test_users.ml"; line = 88; column = 2 };
+      attribution = Failure.Declaration;
+    }
+  in
+  let a = Report.annotation ~path:[ "t" ] f in
+  check_contains "declaration: annotates the recorded line"
+    ~sub:"file=test/test_users.ml,line=88," a;
+  check_contains "declaration: the hint rides in the message"
+    ~sub:
+      "%0A    (assertion in tail position: its line is unknown; ~__POS__ names \
+       it)%0A"
+    a;
+  check "declaration: the hint appears once"
+    (occurrences_of ~sub:"tail position" a = 1)
+
+let test_github_replay_info () =
+  let a =
+    Report.annotation ~path:[ "geo"; "area non-negative" ] Fixtures.prop_failure
+  in
+  check_contains "property annotation carries the replay line"
+    ~sub:
+      "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_FILTER='geo › area \
+       non-negative' dune runtest"
+    a;
+  check_contains "counterexample in the message"
+    ~sub:"counterexample (case 12, shrunk 4 steps): Rect (2, 0)" a
+
+let test_github_invocation_hints () =
+  (* Annotation messages carry the same hint bytes as the terminal block —
+     both derive from the one startup-computed invocation. *)
+  let invocation = `Exe "dune exec qa/x/t.exe --" in
+  let a =
+    Report.annotation ~invocation
+      ~path:[ "geo"; "area non-negative" ]
+      Fixtures.prop_failure
+  in
+  check_contains "replay hint spelled from the invocation, %0A-encoded"
+    ~sub:
+      "%0A    replay: dune exec qa/x/t.exe -- --seed s1:7be1d2c904aa31f5 -f \
+       'geo › area non-negative'"
+    a;
+  check_absent "no Mirrors spelling under Exe" ~sub:"WINDTRAP_SEED" a;
+  let block =
+    Report.annotations ~invocation
+      [
+        Fixtures.result [ "cli"; "cli help" ]
+          (Failure.Fail [ Fixtures.snap_missing ]);
+      ]
+  in
+  check_contains "annotations thread the invocation to accept hints"
+    ~sub:"%0A    accept: dune exec qa/x/t.exe -- -u, then review with git diff"
+    block
+
+let test_github_ansi_stripped () =
+  let f =
+    Failure.equality ~expected:"\027[32mgreen\027[0m" ~actual:"plain" ()
+  in
+  let a = Report.annotation ~path:[ "t" ] f in
+  check_absent "ANSI stripped from annotations" ~sub:"\027" a;
+  (* The annotation shares [pp_failure] at [ansi:false], so a comparison
+     value reaches it escaped rather than stripped: the bytes survive the
+     workflow-command encoding as ordinary text. *)
+  check_contains "the compared value keeps its own bytes"
+    ~sub:{|\x1b[32mgreen\x1b[0m|} a
+
+let test_github_groups () =
+  check_string "group start" ~expected:"::group::mylib\n"
+    ~actual:(Report.group_start "mylib");
+  check_string "group end" ~expected:"::endgroup::\n" ~actual:Report.group_end;
+  check_string "group name newline encoded" ~expected:"::group::a%0Ab\n"
+    ~actual:(Report.group_start "a\nb")
+
+let test_github_excused_filtered () =
+  (* Classification is record-driven: an excused expected failure — a
+     failing record that did not count — annotates nothing, while the
+     unexpected-pass record (counted, annotation and all) stays loud. *)
+  let results =
+    [
+      Fixtures.excused_result;
+      Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
+    ]
+  in
+  let block = Report.annotations results in
+  check "excused failures produce no annotation"
+    (occurrences_of ~sub:"::error " block = 1);
+  check_absent "excused test absent from the block" ~sub:"broken carry" block;
+  check_contains "counted failures still annotate"
+    ~sub:"title=Test failure%3A bad::" block;
+  check_string "all failures excused, no output" ~expected:""
+    ~actual:(Report.annotations [ Fixtures.excused_result ]);
+  check_contains "an unexpected pass still annotates"
+    ~sub:"title=Test failure%3A known › fixed already::"
+    (Report.annotations [ Fixtures.xpass_result ])
+
+let test_github_subtest_annotations () =
+  let block = Report.annotations [ Fixtures.subtest_result ] in
+  check "one annotation per failure entry, subtests included"
+    (occurrences_of ~sub:"::error " block = 3);
+  check_contains "subtest annotations are titled by the parent test"
+    ~sub:"title=Test failure%3A backend › contract::" block;
+  check_contains "subtest annotations point into the parent's body"
+    ~sub:"file=test/test_backend.ml,line=40," block;
+  check_contains "the subtest label leads the message"
+    ~sub:"::    test/test_backend.ml:40%0A    contract › shape [0]%0A" block
+
+let test_github_annotations () =
+  let block = Report.annotations Fixtures.results in
+  check "one command per failure entry (teardown pair gives two)"
+    (occurrences_of ~sub:"::error " block = 7);
+  check "every command on its own line" (occurrences_of ~sub:"\n" block = 7);
+  check_contains "paths name the failing tests"
+    ~sub:"title=Test failure%3A db › insert::" block;
+  check_string "no failures, no output" ~expected:""
+    ~actual:
+      (Report.annotations
+         [
+           Fixtures.result [ "ok" ] Failure.Pass;
+           Fixtures.result [ "s" ] (Failure.Skip None);
+         ]);
+  check_string "empty run, no output" ~expected:""
+    ~actual:(Report.annotations [])
+
+(* The composed envelope, as [Report.run] assembles it: the fold opens,
+   the transcript streams inside it, the fold closes, and the annotation
+   block follows the close, so it is never folded away. [Report.run]
+   itself calls [Run.execute], which refuses to nest inside the run this
+   suite is part of; its composition is pinned at process level by
+   test_windtrap.ml, and the envelope's order here. *)
+
+let test_github_envelope_composed () =
+  print_string (Report.group_start "mylib");
+  let renderer =
+    Report.create ~out:Format.std_formatter ~ansi:false
+      (config ~mode:`Verbose ())
+  in
+  Report.observe renderer ~seed:None ~selection:None
+    (Run.Run_started { suite = "mylib"; total = 1; selected = 1 });
+  Format.pp_print_flush Format.std_formatter ();
+  print_string Report.group_end;
+  print_string
+    (Report.annotations ~invocation:`Mirrors
+       [ Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]) ]);
+  let enveloped = output () in
+  let offset pattern =
+    match Text.first_occurrence ~pattern enveloped with
+    | Some i -> i
+    | None -> failf "missing %S in the composed envelope:\n%s" pattern enveloped
+  in
+  check "the fold opens first" (offset "::group::mylib\n" = 0);
+  check "the transcript streams inside the fold"
+    (offset "mylib: 1 test" > 0
+    && offset "mylib: 1 test" < offset "\n::endgroup::\n");
+  check "the annotation block follows the closed fold"
+    (offset "\n::endgroup::\n" < offset "::error ")
+
+(* The observer: the header's seed policy rides in from the caller. *)
+
+let test_observe_seed_policy () =
+  let header ~seed =
+    with_renderer ~mode:`Verbose (fun r ->
+        Report.observe r ~seed ~selection:None
+          (Run.Run_started { suite = "s"; total = 2; selected = 2 }))
+  in
+  check_string "a seeded header carries the root token"
+    ~expected:"s: 2 tests (seed s1:7be1d2c904aa31f5)\n"
+    ~actual:(header ~seed:(Some Fixtures.root));
+  check_string "a seedless header carries none" ~expected:"s: 2 tests\n"
+    ~actual:(header ~seed:None);
+  let streamed =
+    with_renderer ~mode:`Verbose (fun r ->
+        Report.observe r ~seed:None ~selection:None
+          (Run.Run_started { suite = "s"; total = 1; selected = 1 });
+        Report.observe r ~seed:None ~selection:None
+          (Run.Test_started { path = [ "t" ] });
+        Report.observe r ~seed:None ~selection:None
+          (Run.Test_finished (Fixtures.result [ "t" ] Failure.Pass));
+        Report.observe r ~seed:None ~selection:None
+          (Run.Fixture_release { name = "db" }))
+  in
+  check_string "every event has its line under verbose"
+    ~expected:
+      "s: 1 test\n\
+      \  PASS  t                                          0.2ms\n\
+       releasing db\n"
+    ~actual:streamed
+
+(* The coverage seam *)
+
+let test_coverage_seam () =
+  (* The seam's whole contract, stated so that it holds whether or not
+     this executable is instrumented — under `--instrument-with` the core
+     it tests is, and then the registry is emphatically not empty. *)
+  check "the seam answers with a summary exactly when it measured something"
+    (Windtrap_runtime.Coverage.is_empty (Windtrap_runtime.Coverage.snapshot ())
+    = (Report.snapshot_coverage () = None))
 
 (* Tree-wide summary dialect
 
@@ -2788,13 +2980,13 @@ let test_summary_dialect () =
   in
   let transcript ~results ~duration =
     with_renderer ~ansi:true (fun r ->
-        Render.header r ~suite:"mylib" ~tests:(List.length results) ~seed:None
+        Report.header r ~suite:"mylib" ~tests:(List.length results) ~seed:None
           ();
-        List.iter (fun res -> Render.result r res) results;
-        Render.finish r ~results ~duration ())
+        List.iter (fun res -> Report.result r res) results;
+        Report.finish r ~results ~duration ())
   in
   let pass = Fixtures.result [ "t" ] Failure.Pass in
-  (* Green: a deferred compact run is exactly the one named line. *)
+  (* Green: a compact run with nothing to show is exactly the one named line. *)
   let green = chomp (transcript ~results:[ pass; pass ] ~duration:0.5) in
   check_string "renderer green one-liner styles the passed segment"
     ~expected:"mylib: \027[32m2 passed\027[0m in 0.5s." ~actual:green;
@@ -2862,7 +3054,7 @@ let test_summary_dialect () =
 
 (* The baseline report
 
-   The lines the driver prints after [finish] naming what the run wrote —
+   The lines printed after [finish] naming what the run wrote —
    a projection of run data, so every transcript byte leaves through the
    renderer (Law 4). The line classes and the quiet gate are pinned here. *)
 
@@ -2875,7 +3067,7 @@ let make_run ?baselines () =
   Run.create (Run.default_config ()) ~capture:Capture.disabled ~baselines
 
 let baseline_report ?mode ?invocation run =
-  with_renderer ?mode ?invocation (fun r -> Render.report_baselines r run)
+  with_renderer ?mode ?invocation (fun r -> Report.report_baselines r run)
 
 let write_source root =
   let path = Filename.concat root "t.ml" in
@@ -2953,19 +3145,15 @@ let tests =
     test "duration forms" test_duration_forms;
     test "create validation" test_create_validation;
     test "empty run" test_no_tests;
-    test "glyph vocabulary" test_glyph_vocabulary;
-    test "glyph row wraps at 60 with the [k/n] counter" test_glyph_wrap;
-    test "glyph row closes before the failure section"
-      test_glyph_row_before_failures;
-    test "run-scoped notes close the row" test_note;
+    test "compact prints nothing per test" test_compact_is_silent_per_test;
+    test "run-scoped notes" test_note;
     test "green compact run is one named line" test_compact_green_one_liner;
-    test "the noteworthy flush streams from then on"
-      test_compact_flush_streams_after;
     test "slow untagged tests are noteworthy" test_compact_slow_trigger;
     test "slow durations sum attempts; failing slow tests warn once"
       test_slow_duration_semantics;
     test "slow threshold zero disables the machinery" test_slow_threshold_zero;
     test "verbose gains the slow warnings" test_verbose_slow_warnings;
+    test "the flaky block" test_flaky_block;
     test "headline projection" test_headline;
     test "property projections" test_property_projections;
     test "kind details" test_kind_details;
@@ -3032,7 +3220,25 @@ let tests =
     test "mutation: summary line forms" test_mutation_summary_forms;
     test "mutation: the reproduce footer" test_mutation_footer;
     test "mutation: sections stand alone" test_mutation_sections;
+    test "github: golden annotation" test_github_golden;
+    test "github: data encoding (%0A/%0D/%25)" test_github_data_encoding;
+    test "github: property encoding (%3A/%2C)" test_github_property_encoding;
+    test "github: annotation without a location" test_github_no_location;
+    test "github: declaration-attributed annotation"
+      test_github_declaration_attribution;
+    test "github: replay info" test_github_replay_info;
+    test "github: invocation-spelled hints" test_github_invocation_hints;
+    test "github: ANSI stripped" test_github_ansi_stripped;
+    test "github: group folding commands" test_github_groups;
+    test "github: excused failures filtered" test_github_excused_filtered;
+    test "github: subtest annotations" test_github_subtest_annotations;
+    test "github: run-level annotations block" test_github_annotations;
+    test "github: the envelope composed around a transcript"
+      test_github_envelope_composed;
+    test "observer: the header-seed policy and the stream"
+      test_observe_seed_policy;
+    test "coverage seam: what it records, and when" test_coverage_seam;
     test "tree-wide summary dialect (harness parity)" test_summary_dialect;
   ]
 
-let () = exit @@ Windtrap.run "render" tests
+let () = exit @@ Windtrap.run "report" tests

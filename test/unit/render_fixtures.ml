@@ -22,7 +22,7 @@ let root =
 
 let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats
     ?(slow_tagged = false) ?xfail ?counted path outcome =
-  (* [counted] defaults to the runner's rule (Runner.counts_failed): a
+  (* [counted] defaults to the executor's rule (Run.counts_failed): a
      [Fail] counts unless the test is xfail-annotated — then it is an
      excused expected failure; passes and skips never count. The
      unexpected-pass fixture overrides the default. *)

@@ -4,14 +4,12 @@
 
    File discovery and the staleness pass live in Data_files, shared with
    `windtrap mutants`; the table and excerpt rendering live in the
-   library renderer (Render, via Windtrap.Private) over section data
-   built by the coverage seam's one builder (Driver.coverage_data), so
-   the in-process report and this command share one layout and one
-   projection.
+   library's report sections (Report_sections, via Windtrap.Private) over
+   section data this command builds from what the runtime measured, so
+   the transcript's coverage line and this table share one layout.
   ---------------------------------------------------------------------------*)
 
-module Render = Windtrap.Private.Render
-module Driver = Windtrap.Private.Driver
+module Sections = Windtrap.Private.Report_sections
 module Env = Windtrap.Private.Env
 module Cli = Windtrap.Private.Cli
 
@@ -384,18 +382,41 @@ let check_expectations ~expect ~do_not_expect collection =
 
 (* The command *)
 
+(* The report's section data from what the runtime measured: the
+   aggregate counts and one line per file, sources resolved under
+   [source_roots] (the runtime's own [file_reports]). This is the one
+   place the coverage runtime meets the report vocabulary; the sections
+   name no runtime and count nothing. *)
+let coverage_data ~source_roots collection : Sections.coverage =
+  let file_line (r : Windtrap_runtime.Coverage.file_report) :
+      Sections.coverage_file =
+    {
+      Sections.file = r.file;
+      visited = r.summary.Windtrap_runtime.Coverage.visited;
+      total = r.summary.Windtrap_runtime.Coverage.total;
+      uncovered = r.uncovered_lines;
+      source = r.source;
+      stale = r.stale;
+    }
+  in
+  let s = Windtrap_runtime.Coverage.summary collection in
+  {
+    Sections.visited = s.Windtrap_runtime.Coverage.visited;
+    total = s.Windtrap_runtime.Coverage.total;
+    files =
+      List.map file_line
+        (Windtrap_runtime.Coverage.file_reports ~source_roots collection);
+  }
+
 let report_table ~color ~source_roots ~show_uncovered collection =
   let ansi =
     Env.resolve_color color ~tty:(Env.is_tty_stdout ())
       ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
   in
-  let renderer = Render.create ~out:Format.std_formatter ~ansi () in
-  (* The section data comes from the coverage seam's one builder, so this
-     table and the in-process report modes cannot drift. *)
-  Render.coverage_report renderer
-    ~mode:(if show_uncovered then `Full else `Report)
-    (Driver.coverage_data ~source_roots collection);
-  Format.pp_print_flush Format.std_formatter ()
+  Sections.print ~out:Format.std_formatter ~ansi
+    (Sections.coverage_report
+       ~mode:(if show_uncovered then `Full else `Report)
+       (coverage_data ~source_roots collection))
 
 (* The gate compares raw percentages. The verdict states the threshold
    as given and, on failure, the measurement exactly as the report line

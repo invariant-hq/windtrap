@@ -426,7 +426,7 @@ let table =
        consumes it: WINDTRAP_PROJECT_ROOT by [Path_ops],
        WINDTRAP_COVERAGE_FILE by the coverage runtime at exit,
        WINDTRAP_COVERAGE by [coverage_enabled], WINDTRAP_COVERAGE_ONLY by
-       [Driver]'s coverage seam, and the mutation switches by [mutation]
+       [Report]'s coverage seam, and the mutation switches by [mutation]
        and [Mutate_loop] — until they become [--mutate] and [--arm], with
        these variables as their mirrors. The arm row spells the runtime's
        own constant, so this roster, the reader and the report's [arm]
@@ -684,63 +684,61 @@ let layer_entries entries cli =
 
 let layers cli = layer_entries entries cli
 
-(* One fold from the fully-layered record to the two resolved records —
-   the runner's configuration and the renderer's settings, split along
-   the line the architecture draws: after it, no field is consulted by
-   both sides. Nothing is range-checked here: every value arrived through
-   its flag's own parser, the command line's or the mirror's, and each
-   named its own source when it refused. *)
-let resolved below =
-  let render_defaults = Render.default_settings in
-  ( {
-      Run.seed = Option.value below.seed ~default:(Seed.random ());
-      filter = below.filter;
-      exclude = below.exclude;
-      tags = below.tags;
-      exclude_tags = below.exclude_tags;
-      shard = below.shard;
-      failed_only = Option.value below.failed_only ~default:false;
-      bail = Option.value below.bail ~default:false;
-      stream = Option.value below.stream ~default:false;
-      baseline =
-        (match (below.update, below.corrected) with
-        | Some true, _ -> Baseline.Update
-        | _, Some true -> Baseline.Corrected
-        | _ -> Baseline.Check);
-      timeout = below.timeout;
-      prop_count = below.prop_count;
-      log_dir =
-        (* Resolved against the cwd once, here, before any test body runs.
+(* One fold from the fully-layered record to the one resolved record.
+   Nothing is range-checked here: every value arrived through its flag's
+   own parser, the command line's or the mirror's, and each named its own
+   source when it refused. *)
+let resolved below ~coverage =
+  let defaults = Run.default_config () in
+  {
+    Run.seed = Option.value below.seed ~default:defaults.Run.seed;
+    filter = below.filter;
+    exclude = below.exclude;
+    tags = below.tags;
+    exclude_tags = below.exclude_tags;
+    shard = below.shard;
+    failed_only = Option.value below.failed_only ~default:false;
+    bail = Option.value below.bail ~default:false;
+    stream = Option.value below.stream ~default:false;
+    baseline =
+      (match (below.update, below.corrected) with
+      | Some true, _ -> Baseline.Update
+      | _, Some true -> Baseline.Corrected
+      | _ -> Baseline.Check);
+    timeout = below.timeout;
+    prop_count = below.prop_count;
+    log_dir =
+      (* Resolved against the cwd once, here, before any test body runs.
            A relative [-o DIR] otherwise follows the process around: a test
            that chdirs sends the rest of the run's capture logs somewhere
            else, or nowhere, and the failure reports point at paths that do
            not exist. The default is already absolute. *)
-        (let dir =
-           Option.value below.log_dir ~default:(Path_ops.default_log_dir ())
-         in
-         if not (Filename.is_relative dir) then dir
-         else
-           match Sys.getcwd () with
-           | cwd -> Filename.concat cwd dir
-           | exception Sys_error _ -> dir);
-      (* No flag and no mirror: only a forked mutation child sets it,
+      (let dir =
+         Option.value below.log_dir ~default:(Path_ops.default_log_dir ())
+       in
+       if not (Filename.is_relative dir) then dir
+       else
+         match Sys.getcwd () with
+         | cwd -> Filename.concat cwd dir
+         | exception Sys_error _ -> dir);
+    (* No flag and no mirror: only a forked mutation child sets it,
          through [Run.for_subset]. *)
-      allow_focus = false;
-    },
-    {
-      Render.color =
-        Option.value below.color ~default:render_defaults.Render.color;
-      slow_threshold =
-        Option.value below.slow_threshold
-          ~default:render_defaults.Render.slow_threshold;
-    } )
+    allow_focus = false;
+    color = Option.value below.color ~default:defaults.Run.color;
+    slow_threshold =
+      Option.value below.slow_threshold ~default:defaults.Run.slow_threshold;
+    verbose = below.verbose = Some true;
+    junit = below.junit;
+    coverage;
+    github = Env.in_github_actions ();
+    (* Computed from argv by the facade, which alone holds it. *)
+    invocation = `Mirrors;
+  }
 
 (* WINDTRAP_COVERAGE: whether a run prints its inline coverage line.
    Environment only, and a boolean — the truthy and falsy spellings are
    [Env]'s shared ones, so it accepts what every other boolean variable
-   accepts. It resolves apart from [resolved] because it is not run
-   configuration but a rendering decision the drivers apply after the
-   run record is complete, and with the same loudness: an unrecognized
+   accepts — with the same loudness as every mirror: an unrecognized
    value is an error naming the variable, never a silently defaulted
    mode. The retired mode words land there too, and the message says
    where their output went — the per-file table and the excerpts are the
@@ -762,8 +760,7 @@ let coverage_enabled () =
 
    Environment only for now: [--mutate[=PREFIX,...]] and [--arm ID] are the
    flags they become, with these variables as their mirrors. They resolve
-   apart from [resolved] for the reason [coverage_enabled] does — neither
-   is run configuration and nothing in the runner may read them — but
+   apart from [settings] because they are the loop's, not the run's, but
    with the same loudness: an unrecognized value is an error naming the
    variable, never a silently defaulted mode. WINDTRAP_MUTATE is a
    boolean in [Env]'s shared vocabulary; a falsy one asks for nothing,
@@ -794,26 +791,12 @@ let color_mode () =
   | None -> Ok Env.Auto
   | Some value -> color_of_string ~source:"WINDTRAP_COLOR" (String.trim value)
 
-(* One invocation, one resolution pass. Both drivers want all four
-   answers and neither wants four error paths to reach them, so the
-   environment layer is folded once and every answer is a projection of
-   it. The four stay separate values in the result: coverage, verbosity
-   and the renderer settings are rendering decisions, and folding any of
-   them into [Run.config] would let a display choice reach the runner. *)
-type settings = {
-  config : Run.config;
-  render : Render.settings;
-  coverage : bool;
-  output_level : [ `Compact | `Verbose ];
-  junit : string option;
-}
-
+(* One invocation, one resolution pass: the environment layer is folded
+   once and the one record is a projection of it. *)
 let settings cli =
   let* below = layers cli in
-  let config, render = resolved below in
   let* coverage = coverage_enabled () in
-  let output_level = if below.verbose = Some true then `Verbose else `Compact in
-  Ok { config; render; coverage; output_level; junit = below.junit }
+  Ok (resolved below ~coverage)
 
 (* Help *)
 

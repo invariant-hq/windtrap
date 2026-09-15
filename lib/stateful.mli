@@ -10,7 +10,7 @@
     transition on a {e model} of the state, and a body that calls the system and
     asserts with the ordinary verbs. {!stateful} declares a property over
     {e programs} — sequences of calls drawn from a command list. It is
-    {!Runner.prop} over a derived generator with a derived body: the property
+    {!Run.prop} over a derived generator with a derived body: the property
     engine, the {!Failure} payload, and every renderer are unchanged, so seeds
     and replay, [--prop-count], the shrink budget, tags, timeouts, capture,
     [xfail] and the CI reporters all apply as they do to any property.
@@ -172,9 +172,9 @@ val stateful :
     builds must leave every body's assertions and every [?invariant] check
     satisfied.
 
-    It is {!Runner.prop} over {!program} with {!execute} as its law, so
-    [timeout], [count] and the run's [--prop-count] behave exactly as on a
-    property; [steps], [pp_model] are {!program}'s and [scope], [invariant] are
+    It is {!Run.prop} over {!program} with {!execute} as its law, so [timeout],
+    [count] and the run's [--prop-count] behave exactly as on a property;
+    [steps], [pp_model] are {!program}'s and [scope], [invariant] are
     {!execute}'s. The declared tags are extended with ["prop"] and ["stateful"].
     [__POS__] fixes the declaration site, which a scope that never ran the
     program reports.

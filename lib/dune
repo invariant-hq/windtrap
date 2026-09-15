@@ -12,9 +12,9 @@
  ; Windtrap measures its own coverage; inert without --instrument-with.
  (instrumentation
   (backend ppx_windtrap.coverage))
- ; And windtrap mutates itself. Five modules opt out with
- ; [@@@mutate exclude_file] — the scheduler, the ambient run state, the
- ; reporting spine, the mutation loop and the facade — because a mutant
+ ; And windtrap mutates itself. Four modules opt out with
+ ; [@@@mutate exclude_file] — the executor with its ambient run state,
+ ; the report, the mutation loop and the facade — because a mutant
  ; there is armed inside the process that is supposed to judge it, and
  ; the failure mode is a hang rather than a survivor. The inline
  ; runtime, excluded for the same reason, lives above the core

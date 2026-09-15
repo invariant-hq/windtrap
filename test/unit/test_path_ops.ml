@@ -6,6 +6,7 @@
 open Windtrap
 module Path_ops = Windtrap.Private.Path_ops
 
+let fst3 (a, _, _) = a
 let is_hex = function '0' .. '9' | 'a' .. 'f' -> true | _ -> false
 
 let tests =
@@ -109,71 +110,86 @@ let tests =
         is_false ~msg:"file_exists on a missing path"
           (Path_ops.file_exists (Filename.concat dir "missing")));
     test "project_root: explicit override wins" (fun () ->
-        Fun.protect
-          ~finally:(fun () -> Unix.putenv "WINDTRAP_PROJECT_ROOT" "")
-          (fun () ->
-            Unix.putenv "WINDTRAP_PROJECT_ROOT" "/tmp/override";
-            equal ~msg:"override wins" string "/tmp/override"
-              (Path_ops.project_root ());
-            equal ~msg:"default_log_dir under the root" string
-              "/tmp/override/_build/_tests"
-              (Path_ops.default_log_dir ());
-            Unix.putenv "WINDTRAP_PROJECT_ROOT" "rel";
-            is_true ~msg:"relative override absolutized"
-              ((not (Filename.is_relative (Path_ops.project_root ())))
-              && Filename.basename (Path_ops.project_root ()) = "rel")));
-    test "project_root: marker walk skips _build" (fun () ->
-        let cwd = Sys.getcwd () in
-        Fun.protect
-          ~finally:(fun () -> Sys.chdir cwd)
-          (fun () ->
-            let scratch = temp_dir () in
-            let proj = Filename.concat scratch "proj" in
-            let sub = Filename.concat proj "sub/dir" in
-            let sandbox = Filename.concat proj "_build/default/test" in
-            Path_ops.mkdir_p sub;
-            Path_ops.mkdir_p sandbox;
-            let write path =
-              let oc = open_out path in
-              output_string oc "(lang dune 3.0)\n";
-              close_out oc
-            in
-            write (Filename.concat proj "dune-project");
-            let root_from dir =
-              Sys.chdir dir;
-              let r = Path_ops.project_root () in
-              Sys.chdir cwd;
-              r
-            in
-            (* Resolve symlinks in the expectation (macOS /tmp is a symlink):
-               the walk returns the physical cwd's ancestor. *)
-            let phys dir =
-              Sys.chdir dir;
-              let r = Sys.getcwd () in
-              Sys.chdir cwd;
-              r
-            in
-            let proj_phys = phys proj in
-            equal ~msg:"walk finds dune-project from a subdirectory" string
-              proj_phys (root_from sub);
-            equal ~msg:"walk skips _build sandboxes" string proj_phys
-              (root_from sandbox);
-            equal ~msg:"walk from the root itself" string proj_phys
-              (root_from proj);
-            (* Decoy markers inside the build tree must not win: dune
-               materializes source files (including dune-project) under
-               _build, and sandboxes add decoy .git markers. The walk must
-               resume above _build. *)
-            write (Filename.concat proj "_build/default/dune-project");
-            equal ~msg:"decoy marker under _build/default is ignored" string
-              proj_phys (root_from sandbox);
-            let deep_sandbox =
-              Filename.concat proj "_build/.sandbox/0abc/default"
-            in
-            Path_ops.mkdir_p deep_sandbox;
-            write (Filename.concat deep_sandbox "dune-project");
-            equal ~msg:"decoy marker in a nested sandbox is ignored" string
-              proj_phys (root_from deep_sandbox)));
+        setenv "WINDTRAP_PROJECT_ROOT" (Some "/tmp/override");
+        equal ~msg:"override wins" string "/tmp/override"
+          (Path_ops.project_root ());
+        setenv "WINDTRAP_PROJECT_ROOT" (Some "rel");
+        is_true ~msg:"relative override absolutized"
+          ((not (Filename.is_relative (Path_ops.project_root ())))
+          && Filename.basename (Path_ops.project_root ()) = "rel"));
+    test "build_dir_of_path: the first _build component" (fun () ->
+        let dir = option string in
+        let of_path = Path_ops.build_dir_of_path in
+        equal ~msg:"the build context" dir (Some "/w/_build")
+          (of_path "/w/_build/default");
+        equal ~msg:"a sandboxed action's directory" dir (Some "/w/_build")
+          (of_path "/w/_build/.sandbox/3f/default");
+        equal ~msg:"a private build directory" dir (Some "/w/_build_x")
+          (of_path "/w/_build_x/default/test/t.exe");
+        equal ~msg:"only the first build component counts" dir
+          (Some "/w/_build")
+          (of_path "/w/_build/default/a/_build_y/b");
+        equal ~msg:"no build component" dir None (of_path "/w/src/t.exe");
+        equal ~msg:"backslashes normalize" dir (Some "/w/_build")
+          (of_path "\\w\\_build\\default\\t.exe");
+        equal ~msg:"a relative path keeps its prefix" dir (Some "a/_build")
+          (of_path "a/_build/default"));
+    test
+      "project_root and default_log_dir: the build directory, from INSIDE_DUNE"
+      (fun () ->
+        (* INSIDE_DUNE is dune's build context — never a sandbox path, and
+           a private --build-dir when one was given — and the root is the
+           directory above its build component, the log root inside it. *)
+        setenv "WINDTRAP_PROJECT_ROOT" None;
+        let under context =
+          setenv "INSIDE_DUNE" (Some context);
+          ( Path_ops.build_dir (),
+            Path_ops.project_root (),
+            Path_ops.default_log_dir () )
+        in
+        let triple = triple (option string) string string in
+        equal ~msg:"the default context" triple
+          (Some "/w/_build", "/w", "/w/_build/_tests")
+          (under "/w/_build/default");
+        equal ~msg:"a sandboxed action's context is the same" triple
+          (Some "/w/_build", "/w", "/w/_build/_tests")
+          (under "/w/_build/.sandbox/3f/default");
+        equal ~msg:"a private build directory keeps its own logs" triple
+          (Some "/w/_build_priv", "/w", "/w/_build_priv/_tests")
+          (under "/w/_build_priv/default");
+        (* A boolean spelling — a harness's INSIDE_DUNE=1 — names no build
+           directory, and the executable's own path decides. *)
+        let own = Path_ops.build_dir_of_path Sys.executable_name in
+        equal ~msg:"a non-path value falls through to the executable"
+          (option string) own
+          (fst3 (under "1")));
+    test
+      "project_root and default_log_dir: the executable's own build directory, \
+       or the working directory" (fun () ->
+        setenv "WINDTRAP_PROJECT_ROOT" None;
+        setenv "INSIDE_DUNE" None;
+        match Path_ops.build_dir_of_path Sys.executable_name with
+        | Some dir ->
+            (* This binary lives under a build directory: a test executable
+               run by hand from there finds its root above it. *)
+            equal ~msg:"the executable's build directory" (option string)
+              (Some dir) (Path_ops.build_dir ());
+            equal ~msg:"the root is the directory above it" string
+              (Filename.dirname dir) (Path_ops.project_root ());
+            equal ~msg:"the logs live inside it" string
+              (Filename.concat dir "_tests")
+              (Path_ops.default_log_dir ())
+        | None ->
+            (* An installed copy: nothing names a build directory, so the
+               root is the working directory and the logs go to the
+               temporary directory, never to a fresh _build. *)
+            equal ~msg:"no build directory" (option string) None
+              (Path_ops.build_dir ());
+            equal ~msg:"the root is the working directory" string
+              (Sys.getcwd ()) (Path_ops.project_root ());
+            equal ~msg:"the logs go to the temporary directory" string
+              (Filename.concat (Filename.get_temp_dir_name ()) "windtrap")
+              (Path_ops.default_log_dir ()));
     test "display spells report paths project-root relative" (fun () ->
         (* The one producer of [wrote]/hint path spellings for both the
            library and inline runners (D5 §8; ppx/F-6). *)

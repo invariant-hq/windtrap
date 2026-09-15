@@ -3,11 +3,11 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Render_junit: golden document over a small synthetic run,
+(* Tests for Report_junit: golden document over a small synthetic run,
    well-formedness of the full fixture run (checked with the minimal
-   Xml_check parser), the ANSI-in-JUnit impossibility, XML 1.0 range
-   sanitization of hostile payloads, escaping, counts, and the checker's own
-   sanity. *)
+   Xml_check parser), the flaky-pass note, the ANSI-in-JUnit
+   impossibility, XML 1.0 range sanitization of hostile payloads,
+   escaping, counts, the report's path, and the checker's own sanity. *)
 
 open Windtrap
 open Windtrap.Private
@@ -39,15 +39,15 @@ let small_results =
 
 let test_golden () =
   let actual =
-    Render_junit.render ~suite:"mylib" ~results:small_results ~duration:1.234 ()
+    Report_junit.render ~suite:"mylib" ~results:small_results ~duration:1.234 ()
   in
-  expect_file actual "test/unit/expected/test_render_junit/document.expected";
+  expect_file actual "test/unit/expected/test_report_junit/document.expected";
   check_well_formed "golden document is well-formed" actual
 
 (* The full fixture run *)
 
 let full () =
-  Render_junit.render ~suite:"mylib" ~results:Fixtures.results
+  Report_junit.render ~suite:"mylib" ~results:Fixtures.results
     ~duration:Fixtures.duration ()
 
 let test_full_run () =
@@ -75,7 +75,7 @@ let test_invocation_hints () =
      both derive from the one startup-computed invocation. *)
   let invocation = `Exe "dune exec qa/x/t.exe --" in
   let doc =
-    Render_junit.render ~invocation ~suite:"mylib"
+    Report_junit.render ~invocation ~suite:"mylib"
       ~results:
         [
           Fixtures.result [ "cli"; "cli help" ]
@@ -90,7 +90,7 @@ let test_invocation_hints () =
   let terminal_line ~filter f =
     let block =
       Windtrap.Private.Pp.str "%a"
-        (fun ppf f -> Render.pp_failure ~ansi:false ~filter ~invocation ppf f)
+        (fun ppf f -> Report.pp_failure ~ansi:false ~filter ~invocation ppf f)
         f
     in
     List.find
@@ -125,7 +125,7 @@ let test_excused_as_skipped () =
       Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
     ]
   in
-  let doc = Render_junit.render ~suite:"s" ~results ~duration:0.5 () in
+  let doc = Report_junit.render ~suite:"s" ~results ~duration:0.5 () in
   check_well_formed "excused document is well-formed" doc;
   check_contains "excused failure maps to skipped-with-message"
     ~sub:{|<skipped message="expected failure: issue #42"/>|} doc;
@@ -134,7 +134,7 @@ let test_excused_as_skipped () =
   check_contains "counts: excused is a skip, not a failure"
     ~sub:{|tests="3" failures="1" errors="0" skipped="1"|} doc;
   let no_reason =
-    Render_junit.render ~suite:"s"
+    Report_junit.render ~suite:"s"
       ~results:
         [
           {
@@ -149,7 +149,7 @@ let test_excused_as_skipped () =
   (* The record's bit decides: an unexpected pass carries the annotation
      but counted, so it emits a failure element, not a skip. *)
   let xpass =
-    Render_junit.render ~suite:"s" ~results:[ Fixtures.xpass_result ]
+    Report_junit.render ~suite:"s" ~results:[ Fixtures.xpass_result ]
       ~duration:0.1 ()
   in
   check_contains "an unexpected pass still counts as a failure"
@@ -160,11 +160,11 @@ let test_excused_as_skipped () =
 
 let test_subtests_as_testcases () =
   let doc =
-    Render_junit.render ~suite:"mylib"
+    Report_junit.render ~suite:"mylib"
       ~results:[ Fixtures.subtest_result ]
       ~duration:0.7 ()
   in
-  expect_file doc "test/unit/expected/test_render_junit/subtests.expected";
+  expect_file doc "test/unit/expected/test_report_junit/subtests.expected";
   check_well_formed "subtest document is well-formed" doc
 
 let test_subtests_only () =
@@ -172,7 +172,7 @@ let test_subtests_only () =
      carries no failure element; the failures count comes from the subtest
      testcases alone. *)
   let doc =
-    Render_junit.render ~suite:"s"
+    Report_junit.render ~suite:"s"
       ~results:
         [
           Fixtures.result [ "backend"; "contract" ]
@@ -191,7 +191,7 @@ let test_subtests_only () =
 let test_subtest_user_msg_name () =
   (* A subtest entry whose assertion also carried a user [?msg]: the
      testcase name is the displayed label — the sub-case components joined,
-     the user text appended after ": " (Render.labeled_msg). *)
+     the user text appended after ": " (Report.labeled_msg). *)
   let entry =
     {
       (Failure.equality ~msg:"user context" ~expected:"1" ~actual:"2" ()) with
@@ -199,7 +199,7 @@ let test_subtest_user_msg_name () =
     }
   in
   let doc =
-    Render_junit.render ~suite:"s"
+    Report_junit.render ~suite:"s"
       ~results:
         [ Fixtures.result [ "backend"; "contract" ] (Failure.Fail [ entry ]) ]
       ~duration:0.1 ()
@@ -228,7 +228,7 @@ let test_ansi_impossible () =
       Fixtures.result [ "s"; "skip" ] (Failure.Skip (Some (ansi ^ " reason")));
     ]
   in
-  let doc = Render_junit.render ~suite:ansi ~results ~duration:0.1 () in
+  let doc = Report_junit.render ~suite:ansi ~results ~duration:0.1 () in
   check_absent "no ESC byte anywhere in the document" ~sub:"\027" doc;
   check_contains "stripped payload text survives" ~sub:"red tail text" doc;
   (* Two ways to keep ESC out of XML, and the body uses the one that keeps
@@ -245,7 +245,7 @@ let test_ansi_impossible () =
 let test_xml_range () =
   let hostile = "a\x01b\x0cc\xffd" in
   let doc =
-    Render_junit.render ~suite:"s"
+    Report_junit.render ~suite:"s"
       ~results:
         [
           fail_result [ hostile ]
@@ -263,7 +263,7 @@ let test_xml_range () =
 let test_escaping () =
   let nasty = {|a<b>&"c'|} in
   let doc =
-    Render_junit.render ~suite:nasty
+    Report_junit.render ~suite:nasty
       ~results:[ fail_result [ nasty ] (Failure.message ("text " ^ nasty)) ]
       ~duration:0.1 ()
   in
@@ -275,7 +275,7 @@ let test_escaping () =
 let test_hostile_tail () =
   let tail = Failure.tail ~log_path:"log" "ok\x01 \027[31mred\027[0m \xff\n" in
   let doc =
-    Render_junit.render ~suite:"s"
+    Report_junit.render ~suite:"s"
       ~results:
         [
           fail_result [ "t" ]
@@ -288,8 +288,54 @@ let test_hostile_tail () =
   check_absent "tail malformed UTF-8 removed" ~sub:"\xff" doc;
   check_well_formed "hostile tail document is well-formed" doc
 
+(* A pass that needed a retry: JUnit has no state for it, so the fact
+   rides the one element every consumer allows on a testcase. *)
+let test_flaky_note () =
+  let doc =
+    Report_junit.render ~suite:"s"
+      ~results:
+        [
+          Fixtures.result [ "flaky"; "eventually" ] Failure.Pass ~attempts:3;
+          Fixtures.result [ "steady" ] Failure.Pass;
+        ]
+      ~duration:0.1 ()
+  in
+  check_well_formed "flaky document is well-formed" doc;
+  check_contains "a flaky pass carries the attempt count in system-out"
+    ~sub:
+      {|<testcase name="flaky › eventually" classname="s.flaky" time="0.000">
+      <system-out>passed on attempt 3</system-out>
+    </testcase>|}
+    doc;
+  check_contains "a first-attempt pass stays a bare testcase"
+    ~sub:{|<testcase name="steady" classname="s" time="0.000"/>|} doc;
+  check_contains "a flaky pass is not a failure"
+    ~sub:{|tests="2" failures="0" errors="0" skipped="0"|} doc
+
+(* One process per suite is the normal case under `dune runtest`, so a
+   single fixed path would have each suite overwrite the last. The [.xml]
+   suffix is what tells the two intents apart. *)
+let test_path () =
+  check_string "an .xml target is used verbatim" ~expected:"reports/r.xml"
+    ~actual:(Report_junit.path ~suite:"mylib" "reports/r.xml");
+  check_string "a directory target gets one file per suite"
+    ~expected:(Filename.concat "reports" "mylib.xml")
+    ~actual:(Report_junit.path ~suite:"mylib" "reports");
+  check_string "two suites, one directory, two files"
+    ~expected:(Filename.concat "reports" "parser.xml")
+    ~actual:(Report_junit.path ~suite:"parser" "reports");
+  (* A suite name is not a filename until it is made one: an inline
+     partition's [lib/parser.ml] lands in the directory, not under it. *)
+  let partition = Report_junit.path ~suite:"lib/parser.ml" "reports" in
+  check "a suite name never escapes its directory"
+    (Filename.dirname partition = "reports");
+  check "and never keeps a path separator"
+    (not (String.contains (Filename.basename partition) '/'));
+  check "two partitions of one library get two files"
+    (partition <> Report_junit.path ~suite:"lib/lexer.ml" "reports")
+
 let test_empty_run () =
-  let doc = Render_junit.render ~suite:"empty" ~results:[] ~duration:0.0 () in
+  let doc = Report_junit.render ~suite:"empty" ~results:[] ~duration:0.0 () in
   check_well_formed "empty run document is well-formed" doc;
   check_contains "empty run counts are zero"
     ~sub:{|tests="0" failures="0" errors="0" skipped="0"|} doc
@@ -325,8 +371,10 @@ let tests =
     test "XML 1.0 range sanitization" test_xml_range;
     test "escaping" test_escaping;
     test "hostile captured tail" test_hostile_tail;
+    test "flaky pass note" test_flaky_note;
+    test "the report's path" test_path;
     test "empty run" test_empty_run;
     test "the checker's own sanity" test_checker_sanity;
   ]
 
-let () = exit @@ Windtrap.run "render_junit" tests
+let () = exit @@ Windtrap.run "report_junit" tests

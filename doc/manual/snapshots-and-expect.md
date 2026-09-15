@@ -189,6 +189,14 @@ with its line, and left alone — rebuild and rerun.
 
 ## The rules
 
+- **Paths resolve under the project root**: the directory above the
+  build directory the process belongs to (under dune, `INSIDE_DUNE`
+  names it; by hand, the binary's own path does), else the working
+  directory, `WINDTRAP_PROJECT_ROOT` overriding both. In a monorepo with
+  nested `dune-project` files that is the workspace root — the directory
+  holding `_build` — under `dune runtest` and under `dune exec` from a
+  nested directory alike, so an `expect_file` path is spelled from the
+  workspace root wherever the suite is run from.
 - **Identity is where the source says it is**: the literal's position,
   which the compiler recomputes on every build, or the file's path.
   Nothing is derived from a test's name or declaration site, so no

@@ -5,7 +5,7 @@
 
 (* End-to-end tests of the Windtrap facade: suites declared with the public
    surface (verbs, testables, prop, expect, output, fixture) executed
-   in-process through Runner.execute under a synthetic config, asserting on
+   in-process through Run.execute under a synthetic config, asserting on
    typed outcomes. Plain executable: [run] and [execute] both refuse to
    nest inside an active run, so a windtrap suite could drive neither.
    The facade's [run] returns its exit code, so its command-line paths
@@ -204,21 +204,21 @@ let base_config ~log_dir () =
   { (Run.default_config ()) with Run.seed = 0x5eedL; log_dir }
 
 let expect_run name ?on_event ~config ?(suite = "suite") tests f =
-  match Runner.execute ?on_event ~config ~suite tests with
+  match Run.execute ?on_event config ~suite tests with
   | Ok outcome -> f outcome
   | Error error ->
       check name false;
-      Printf.printf "  startup error: %s\n%!" (Runner.startup_message error)
+      Printf.printf "  startup error: %s\n%!" (Run.startup_message error)
 
 let result_of outcome path =
-  List.find_opt (fun r -> r.Run.path = path) (Run.results outcome.Runner.run)
+  List.find_opt (fun r -> r.Run.path = path) (Run.results outcome.Run.run)
 
 (* The end-of-run fixture-release rows the runner records beside the test
    rows (one result model), identified by their subject. *)
 let release_rows outcome =
   List.filter
     (fun (r : Run.result) -> r.Run.subject = Run.Fixture_release)
-    (Run.results outcome.Runner.run)
+    (Run.results outcome.Run.run)
 
 (* The paths that counted as failed, in execution order — what the exit
    code and the last-failed store react to. *)
@@ -228,7 +228,7 @@ let failed_paths outcome =
       if r.Run.subject = Run.Test && r.Run.counted then
         Some (Test_tree.path_to_string r.Run.path)
       else None)
-    (Run.results outcome.Runner.run)
+    (Run.results outcome.Run.run)
 
 let outcome_of outcome path =
   match result_of outcome path with
@@ -375,11 +375,11 @@ let () =
     ]
   in
   expect_run "verbs all pass" ~config suite @@ fun outcome ->
-  check_int "verbs: exit code" ~expected:0 ~actual:outcome.Runner.exit_code;
+  check_int "verbs: exit code" ~expected:0 ~actual:outcome.Run.exit_code;
   check "verbs: every outcome is Pass"
     (List.for_all
        (fun r -> r.Run.outcome = Failure.Pass)
-       (Run.results outcome.Runner.run))
+       (Run.results outcome.Run.run))
 
 let () =
   with_temp_root @@ fun root ->
@@ -394,8 +394,7 @@ let () =
     ]
   in
   expect_run "failing verbs" ~config suite @@ fun outcome ->
-  check_int "failing verbs: exit code" ~expected:1
-    ~actual:outcome.Runner.exit_code;
+  check_int "failing verbs: exit code" ~expected:1 ~actual:outcome.Run.exit_code;
   (match failure_list (outcome_of outcome [ "wrong" ]) with
   | [ { Failure.kind = Failure.Equality { expected; actual; not_ }; _ } ] ->
       check "equal failure renders expected then actual"
@@ -420,8 +419,7 @@ let () =
   let config = base_config ~log_dir:root () in
   let suite = [ test "s" (fun () -> skip ()) ] in
   expect_run "all-skipped run" ~config suite @@ fun outcome ->
-  check_int "all-skipped run exits 0" ~expected:0
-    ~actual:outcome.Runner.exit_code
+  check_int "all-skipped run exits 0" ~expected:0 ~actual:outcome.Run.exit_code
 
 (* Scopes, brackets and fixtures *)
 
@@ -506,7 +504,7 @@ let () =
   let config = base_config ~log_dir:root () in
   let releases = ref [] in
   let on_event = function
-    | Runner.Fixture_release { name } -> releases := name :: !releases
+    | Run.Fixture_release { name } -> releases := name :: !releases
     | _ -> ()
   in
   let suite =
@@ -518,7 +516,7 @@ let () =
   expect_run "fixture sharing" ~on_event ~config suite @@ fun outcome ->
   check_int "fixture: acquired once" ~expected:1 ~actual:!shared_calls;
   check_int "fixture: released once" ~expected:1 ~actual:!shared_teardowns;
-  check_int "fixture: exit code" ~expected:0 ~actual:outcome.Runner.exit_code;
+  check_int "fixture: exit code" ~expected:0 ~actual:outcome.Run.exit_code;
   check "fixture: release announced by name"
     (match !releases with [ name ] -> contains "fixture" name | _ -> false);
   (* A later run in the same process re-acquires: the cache is per run. *)
@@ -528,7 +526,7 @@ let () =
   check_int "fixture: re-acquired on the next run" ~expected:2
     ~actual:!shared_calls;
   check_int "fixture: second run exit code" ~expected:0
-    ~actual:outcome2.Runner.exit_code
+    ~actual:outcome2.Run.exit_code
 
 let failing_release =
   fixture ~teardown:(fun _ -> fail "release-boom") (fun () -> ())
@@ -543,8 +541,7 @@ let () =
     | [ { Run.outcome = Failure.Fail [ f ]; _ } ] ->
         f.Failure.phase = Failure.Release
     | _ -> false);
-  check_int "release failure exits 1" ~expected:1
-    ~actual:outcome.Runner.exit_code
+  check_int "release failure exits 1" ~expected:1 ~actual:outcome.Run.exit_code
 
 (* Properties through the facade *)
 
@@ -608,8 +605,7 @@ let () =
     ]
   in
   expect_run "nested prop" ~config suite @@ fun outcome ->
-  check_int "nested prop: exit code" ~expected:0
-    ~actual:outcome.Runner.exit_code;
+  check_int "nested prop: exit code" ~expected:0 ~actual:outcome.Run.exit_code;
   check "nested prop records stats at its full path"
     (match result_of outcome [ "outer"; "law" ] with
     | Some { Run.prop_stats = Some stats; _ } -> stats.Property.cases = 5
@@ -619,7 +615,7 @@ let () =
        (fun case ->
          case.Test_tree.path = [ "outer"; "law" ]
          && Tag.mem "prop" case.Test_tree.tags)
-       outcome.Runner.selected)
+       outcome.Run.selected)
 
 (* collect/classify/cover outside a property error out. *)
 let () =
@@ -649,7 +645,7 @@ let () =
     ]
   in
   expect_run "output ()" ~config suite @@ fun outcome ->
-  check_int "output (): exit code" ~expected:0 ~actual:outcome.Runner.exit_code
+  check_int "output (): exit code" ~expected:0 ~actual:outcome.Run.exit_code
 
 let () =
   with_temp_root @@ fun root ->
@@ -697,8 +693,8 @@ let () =
   let update_config = { config with Run.baseline = Baseline.Update } in
   ( expect_run "file baseline acceptance" ~config:update_config [ file_test ]
   @@ fun outcome ->
-    check_int "update run exits 0" ~expected:0 ~actual:outcome.Runner.exit_code;
-    match Baseline.writes (Run.baselines outcome.Runner.run) with
+    check_int "update run exits 0" ~expected:0 ~actual:outcome.Run.exit_code;
+    match Baseline.writes (Run.baselines outcome.Run.run) with
     | [ { Baseline.path = written; literals = 0 } ] ->
         check "acceptance wrote the file"
           (written = path && read_file path = "hello\n")
@@ -706,7 +702,7 @@ let () =
   (* 3. Check mode now passes; a changed actual mismatches. *)
   ( expect_run "file baseline green" ~config [ file_test ] @@ fun outcome ->
     check_int "the baseline matches its committed file" ~expected:0
-      ~actual:outcome.Runner.exit_code );
+      ~actual:outcome.Run.exit_code );
   expect_run "file baseline mismatch" ~config
     [
       test "greets" (fun () -> expect_file "goodbye\n" "src/greeting.expected");
@@ -800,8 +796,8 @@ let () =
   check_int "both mismatches are the test's failures" ~expected:2
     ~actual:(List.length (failure_list (outcome_of outcome [ "two stale" ])));
   check_int "both are recorded corrections: the exit code is left alone"
-    ~expected:0 ~actual:outcome.Runner.exit_code;
-  match Baseline.writes (Run.baselines outcome.Runner.run) with
+    ~expected:0 ~actual:outcome.Run.exit_code;
+  match Baseline.writes (Run.baselines outcome.Run.run) with
   | [ { Baseline.path = written; literals = 2 } ] ->
       check "one corrected file holds both literals"
         (written = path ^ ".corrected"
@@ -833,8 +829,8 @@ let () =
   in
   expect_run "baseline in bracket" ~config suite @@ fun outcome ->
   check_int "baseline in bracket: exit code" ~expected:0
-    ~actual:outcome.Runner.exit_code;
-  match Baseline.writes (Run.baselines outcome.Runner.run) with
+    ~actual:outcome.Run.exit_code;
+  match Baseline.writes (Run.baselines outcome.Run.run) with
   | [ { Baseline.path; literals = 0 } ] ->
       check "the bracket's baseline is accepted under the root"
         (path = Filename.concat root "src/bracketed.expected")
@@ -927,7 +923,7 @@ let () =
   (match failure_list (outcome_of outcome [ "subtests" ]) with
   | [ a; b ] ->
       check "a failing subtest lets its sibling run, labeled parent › name"
-        (match (Render.labeled_msg a, Render.labeled_msg b) with
+        (match (Report.labeled_msg a, Report.labeled_msg b) with
         | Some ma, Some mb ->
             contains "subtests › first" ma && contains "subtests › second" mb
         | _ -> false)
@@ -945,7 +941,7 @@ let () =
     (not (List.mem "expected failure" (failed_paths outcome)));
   check "an unexpected pass counts as failed"
     (List.mem "unexpected pass" (failed_paths outcome));
-  check_int "b-package exit code" ~expected:1 ~actual:outcome.Runner.exit_code
+  check_int "b-package exit code" ~expected:1 ~actual:outcome.Run.exit_code
 
 (* B-package edges
 
@@ -1011,7 +1007,7 @@ let () =
     (List.mem "mixed › 1" (failed_paths outcome)
     && List.mem "mixed › 3" (failed_paths outcome));
   check_int "xfail over cases exit code" ~expected:1
-    ~actual:outcome.Runner.exit_code
+    ~actual:outcome.Run.exit_code
 
 (* xfail composes with [slow]: the tag survives the annotation, so
    [--exclude-tag slow] deselects the test before the inversion could
@@ -1031,7 +1027,7 @@ let () =
   check "--exclude-tag slow drops an xfail-marked slow test"
     (outcome_of outcome [ "sluggish" ] = None);
   check_int "xfail over an excluded slow tag: exit code" ~expected:0
-    ~actual:outcome.Runner.exit_code
+    ~actual:outcome.Run.exit_code
 
 (* Scratch paths work in every phase of a test attempt — a bracket
    teardown included — and are removed with the attempt. *)
@@ -1053,7 +1049,7 @@ let () =
   in
   expect_run "temp_dir in bracket teardown" ~config suite @@ fun outcome ->
   check_int "temp_dir works in a bracket teardown" ~expected:0
-    ~actual:outcome.Runner.exit_code;
+    ~actual:outcome.Run.exit_code;
   check "teardown scratch is removed with the attempt"
     (!teardown_scratch <> "" && not (Sys.file_exists !teardown_scratch))
 
@@ -1074,7 +1070,7 @@ let () =
         f.Failure.phase = Failure.Release
     | _ -> false);
   check_int "temp_dir in fixture release exits 1" ~expected:1
-    ~actual:outcome.Runner.exit_code
+    ~actual:outcome.Run.exit_code
 
 (* The exit guard, process level (D1) *)
 
@@ -1157,7 +1153,7 @@ let () =
       transcript
     in
     (* Compact: the excused failure is not noteworthy, so the transcript is
-       the one named summary line — no flushed header, no loud F glyph. *)
+       the one named summary line — no header. *)
     let compact = spawn_collide_child "compact" in
     check "collide compact: summary counts one expected failure"
       (contains "collide: 1 expected failure in " compact);
@@ -1226,9 +1222,9 @@ let () =
 
 let () =
   (* A list run selects and stops — the facade answers it from
-     [Runner.list_selection], before the drive spine — so the whole
-     transcript must be the paths and nothing else: no header, no glyph
-     row, no summary line. *)
+     [Run.list_selection], before the drive spine — so the whole
+     transcript must be the paths and nothing else: no header, no
+     summary line. *)
   with_temp_root @@ fun root ->
   let suite =
     [

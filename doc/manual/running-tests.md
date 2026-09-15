@@ -106,39 +106,48 @@ dump's path, and the coverage and mutation switches. `--help` lists
 them under `ENVIRONMENT`; one is worth knowing here.
 
 `WINDTRAP_PROJECT_ROOT` overrides where the runner thinks the project
-starts — the directory baseline paths resolve under, and
-the root of the default capture-log tree at `_build/_tests`. Unset, it
-walks up from the working directory to the first `dune-project`,
-`dune-workspace` or `.git`, which is right in any dune tree. Set it when
-that walk has nothing to find or finds the wrong thing: a scratch tree
-built by a test harness, a checkout without a VCS directory, or a child
-process you are aiming at a sandbox of your own making. A relative value
-resolves against the working directory.
+starts: the directory baseline paths resolve under. Unset, the root is
+the directory above the build directory the process belongs to — under
+dune, `INSIDE_DUNE` names the build context (`<root>/_build/default`, a
+private `--build-dir` included when its name starts with `_build`,
+whatever the working directory), and a
+test binary run by hand finds its own `_build` in its path — and
+otherwise the working directory. No marker file is consulted. Set it
+when neither applies: a scratch tree built by a test harness, a binary
+installed outside any build directory and run from a subdirectory of
+its project, or a child process you are aiming at a sandbox of your own
+making. A relative value resolves against the working directory.
+
+Capture logs and the last-failed store live under `<build dir>/_tests`
+when a build directory was found — so a private `--build-dir` keeps its
+own — and under `<tmp>/windtrap` otherwise, keyed by suite either way;
+`-o DIR` moves both.
 
 ## Output
 
 Terminal verbosity is one axis with two levels — default ⊂ `-v` — not
-a format: both print the same failure blocks and the same summary line;
-`-v` only adds stream lines and trimmings.
+a format: both print the same blocks and the same summary line; `-v`
+adds the header up front, one status line per test, and the
+slowest-tests list.
 
-By default the transcript earns its size. A green, healthy run is
-exactly one line, named after the suite (with the root seed appended
-when the suite declares properties):
+By default a run prints nothing per test, and the transcript earns its
+size at the end. A green, healthy run is exactly one line, named after
+the suite (with the root seed appended when the suite declares
+properties):
 
 ```
 $ dune runtest
 mylib: 4 passed in 0.00081s.
 ```
 
-The header and the per-test glyph row appear only when the run is
-*noteworthy* — any failure, or any test not tagged `slow` exceeding
-the slow threshold (one second by default). A noteworthy run replays
-the failures in full at the end:
+The header appears iff there is a block to print — a failure, a test
+not tagged `slow` over the slow threshold (one second by default), or a
+test that passed on a retry — and the blocks follow it, the failures in
+full:
 
 ```
 $ dune runtest
 mylib: 9 tests (seed s1:fbf098819e3014cc)
-..FFS.FFx
 ──────────────────── failures (4) ────────────────────
   FAIL  parser › tokenize
     …(location, diff, captured output — the full blocks)…
@@ -147,33 +156,20 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
 3 passed, 1 skipped, 1 expected failure, 4 failed in 0.00179s.
 ```
 
-| glyph | meaning |
-| --- | --- |
-| `.` (green) | pass |
-| `F` (red) | counted failure — assert, property, baseline, timeout, unexpected pass; the block at the end differentiates |
-| `S` (yellow) | skip |
-| `x` (faint) | expected failure (`xfail`) |
-
-Rows wrap every 60 glyphs with a faint `[k/n]` counter. Glyphs buffer
-until the first noteworthy event — the first failure, or the first
-untagged test over the threshold — then the header and the row so far
-print and everything after streams glyph by glyph, byte-identical to
-having streamed from the start. On a terminal a faint
-`[k/n] current-test…` tail shows from the start of the run while a
-test runs — that is where a hung test shows its name — erased before
-the next glyph, so what stays on screen is exactly what a pipe sees
-and a green run's one-liner stays alone.
+On a terminal a faint `[k/n] current-test…` tail shows while a test
+runs — that is where a hung test shows its name — erased before
+anything else prints, so what stays on screen is exactly what a pipe
+sees and a green run's one-liner stays alone.
 
 ### Slow tests
 
-A test that outgrows the threshold does not fail anything — it makes
-the run noteworthy and earns a warning between the failure blocks and
-the summary:
+A test that outgrows the threshold does not fail anything — it brings
+the header out and earns a warning between the failure blocks and the
+summary:
 
 ```
 $ dune runtest
 mylib: 5 tests
-.....
 slow tests (1):
   1.31s  reindex
 (exempt with the "slow" tag, or raise --slow-threshold SECONDS)
@@ -185,9 +181,9 @@ Tests that are *supposed* to take time opt out with the `slow` tag
 (the `slow` declaration constructor, `~tags:[ "slow" ]`, or a tagged
 group) — they are exempt everywhere, and `--exclude-tag slow` skips
 them entirely. `--slow-threshold SECONDS` (`WINDTRAP_SLOW_THRESHOLD`)
-moves the bar; `0` disables the warnings and the noteworthy trigger,
-so the row then appears on failures only. The slowest-tests list —
-diagnosis rather than signal — prints under `-v` only.
+moves the bar; `0` disables the warnings, so the header then comes out
+on failures and flaky tests only. The slowest-tests list — diagnosis
+rather than signal — prints under `-v` only.
 
 Where the bar sits is a per-suite decision. Tests that do real IO —
 spawning subprocesses, driving a PTY, exercising a server end to
@@ -200,10 +196,27 @@ a fast loop may also drop them — the tag silences the warning *and*
 lets `--exclude-tag slow` remove the test, so it trades noise for
 absence.
 
-`-v` (`WINDTRAP_VERBOSE`) prints one status line per test instead of
-the glyph, and a passing property that collected labels prints its
-label distribution under its `PASS` line — the calibration view for
-`collect`/`classify` ([Property testing](property-testing.md)):
+### Flaky tests
+
+A test declared with `~retries` that fails and then passes counts as
+passed, and never silently: the header comes out and a block between
+the slow block and the summary names the test and the attempt it
+passed on. `--junit` notes it in the testcase's `system-out`.
+
+```
+$ dune runtest
+mylib: 5 tests
+flaky tests (1):
+  passed on attempt 2  network › fetches the manifest
+
+5 passed in 0.42s.
+```
+
+`-v` (`WINDTRAP_VERBOSE`) prints the header up front and one status
+line per test as it completes, and a passing property that collected
+labels prints its label distribution under its `PASS` line — the
+calibration view for `collect`/`classify`
+([Property testing](property-testing.md)):
 
 ```
 $ dune exec test/test_mylib.exe -- -v
@@ -221,16 +234,15 @@ mylib: 9 tests (seed s1:fbf098819e3014cc)
   …
 ```
 
-Verbose also keeps the slowest-tests list and prints the same slow
-warnings; it never defers — every line streams as it happens.
+Verbose also keeps the slowest-tests list and prints the same slow and
+flaky blocks; every line streams as it happens, so a crashed verbose
+run leaves its status lines behind.
 
 The level decides *what* prints; the sink only decides color and the
-live tail. Piped output — redirects, CI logs — has the same shape,
-with glyphs flushed one by one so a crashed run leaves its partial row
-visible: uncolored for a plain pipe, still colored under dune (dune
-relays to your terminal), never colored when `TERM=dumb` or `NO_COLOR`
-is set. Under GitHub
-Actions the same compact transcript sits inside a collapsed
+live tail. Piped output — redirects, CI logs — has the same shape:
+uncolored for a plain pipe, still colored under dune (dune relays to
+your terminal), never colored when `TERM=dumb` or `NO_COLOR` is set.
+Under GitHub Actions the same transcript sits inside a collapsed
 `::group::` block, with failures also emitted as annotations (see
 [CI](#ci) below).
 
@@ -246,9 +258,9 @@ $ dune exec test/test_mylib.exe -- -l -f parser
 parser › empty input
 ```
 
-The last-failed store lives under the capture-log directory
-(`_build/_tests` by default) and is maintained automatically; its
-format is unstable. `--failed` with no recorded failures for the
+The last-failed store lives under the log root (`<build dir>/_tests`
+under dune, see above) and is maintained automatically; its format is
+unstable. `--failed` with no recorded failures for the
 current suite — a fresh checkout, a wiped log directory — refuses the
 run (`no recorded failures match the current suite`, exit 2) rather
 than silently running everything.

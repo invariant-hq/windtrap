@@ -243,9 +243,6 @@ and rendering =
           computed it from, printed by the generators that drew it (see [Gen]'s
           printing law). It is the input of the mapping functions, not the value
           the body received. *)
-  | Placeholder
-      (** [<no printer>], or [<example k>]: the generator has no printer and no
-          pre-image renders either. *)
 
 (** The type for how a failure's [loc] was obtained. Recorded so that a report
     can say when the location it prints is not the failing call's own line: the
@@ -449,8 +446,8 @@ val message : ?loc:Loc.t -> string -> t
 
 (** {1:updating Updating}
 
-    Runner-side: failures are constructed where they happen, then classified and
-    completed at the per-test boundary. *)
+    Executor-side: failures are constructed where they happen, then classified
+    and completed at the per-test boundary. *)
 
 val with_phase : phase -> t -> t
 (** [with_phase phase f] is [f] with its phase replaced — e.g. a failure caught

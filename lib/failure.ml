@@ -60,7 +60,7 @@ type kind =
     }
   | Message of string
 
-and rendering = Value | Pre_image | Placeholder
+and rendering = Value | Pre_image
 and attribution = Recorded | Declaration
 
 and t = {

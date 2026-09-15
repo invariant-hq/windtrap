@@ -5,12 +5,12 @@
    File discovery and the staleness pass live in Data_files, shared with
    `windtrap coverage`: one rule for resolving the project root, one rule
    for detecting a file whose executable is gone or was rebuilt. The
-   report layout lives in the library renderer (Render.mutation_report,
-   via Windtrap.Private), so the loop's in-process report and this merged
-   one cannot drift.
+   report layout lives in the library's report sections
+   (Report_sections.mutation_report, via Windtrap.Private), so the loop's
+   in-process report and this merged one cannot drift.
   ---------------------------------------------------------------------------*)
 
-module Render = Windtrap.Private.Render
+module Sections = Windtrap.Private.Report_sections
 module Env = Windtrap.Private.Env
 module Cli = Windtrap.Private.Cli
 module Test_tree = Windtrap.Private.Test_tree
@@ -207,11 +207,11 @@ let render_data ~resolve_source files =
           | V.Killed | V.Unreached -> ())
         (V.records t))
     files;
-  let mutant_of (r : V.record) : Render.mutant =
+  let mutant_of (r : V.record) : Sections.mutant =
     {
       (* The identifier is spelled here, with the runtime's own function:
-         Render carries it into the head row without re-spelling it. *)
-      Render.id = M.id_to_string r.V.id;
+         the report carries it into the head row without re-spelling it. *)
+      Sections.id = M.id_to_string r.V.id;
       file = r.V.id.M.file;
       line = r.V.id.M.line;
       before = r.V.before;
@@ -219,9 +219,9 @@ let render_data ~resolve_source files =
       source = resolve_source r.V.id.M.file;
     }
   in
-  let survivor_of (r : V.record) : Render.survivor =
+  let survivor_of (r : V.record) : Sections.survivor =
     {
-      Render.mutant = mutant_of r;
+      Sections.mutant = mutant_of r;
       witnesses =
         List.map
           (fun (exe, test) ->
@@ -229,7 +229,7 @@ let render_data ~resolve_source files =
                in the test tree of the executable that ran it, and this
                command links none of them. The name is what a reader
                greps for, and it is in the report. *)
-            { Render.test; loc = None; exe = Some exe })
+            { Sections.test; loc = None; exe = Some exe })
           (List.sort_uniq compare (Hashtbl.find_all tagged r.V.id));
     }
   in
@@ -246,7 +246,7 @@ let render_data ~resolve_source files =
      loop's does. *)
   let survivors =
     List.stable_sort
-      (fun (a : Render.survivor) (b : Render.survivor) ->
+      (fun (a : Sections.survivor) (b : Sections.survivor) ->
         compare (List.length b.witnesses) (List.length a.witnesses))
       survivors
   in
@@ -264,13 +264,13 @@ let render_data ~resolve_source files =
   {
     (* The arming variable, spelled with the runtime's own function: the
        report and the runtime cannot disagree about what to type. *)
-    Render.arm_variable = M.arm_variable;
+    Sections.arm_variable = M.arm_variable;
     survivors;
     unreached;
     killed =
       List.length
         (List.filter (fun (r : V.record) -> r.V.verdict = V.Killed) records);
-    scope = Render.Executables (List.length files);
+    scope = Sections.Executables (List.length files);
     filter = None;
   }
 
@@ -279,9 +279,10 @@ let print_report ~color report =
     Env.resolve_color color ~tty:(Env.is_tty_stdout ())
       ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
   in
-  let renderer = Render.create ~out:Format.std_formatter ~ansi () in
-  Render.mutation_report renderer report;
-  Format.pp_print_flush Format.std_formatter ()
+  (* No command line re-runs the merged suites, so the footer's spelling
+     is the mirrors'. *)
+  Sections.print ~out:Format.std_formatter ~ansi
+    (Sections.mutation_report ~invocation:`Mirrors report)
 
 (* The command *)
 
@@ -325,4 +326,4 @@ let run args =
                    executable that reached it let through. An unreached
                    mutant is a coverage-style finding, listed and not
                    scored. *)
-                if report.Render.survivors = [] then 0 else 1))
+                if report.Sections.survivors = [] then 0 else 1))

@@ -1,6 +1,6 @@
 --junit in both its forms, and both ways writing it can fail. The
-document itself is Render_junit's and is pinned in test_render_junit.ml;
-what these sessions own is where the driver puts it, and that a report
+document itself is Report_junit's and is pinned in test_report_junit.ml;
+what these sessions own is where the run puts it, and that a report
 it cannot write is a warning rather than a verdict.
 
   $ run() {
@@ -26,7 +26,7 @@ it for CI to glob — the directory is created if it is not there:
   $ grep -c 'name="fixture"' reports/fixture.xml
   1
 
-A report the driver cannot write is a side product that went missing,
+A report the run cannot write is a side product that went missing,
 not a failed run: the warning goes to stderr and the exit code is still
 the tests'. Here the .xml's parent is a regular file, so the atomic
 write fails:

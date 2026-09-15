@@ -1,5 +1,4 @@
-cross_partition: 1 test
-F
+cross_partition/stale.ml: 1 test
 ──────────────────── failures (1) ────────────────────
   FAIL  Stale › a stale payload
     test/ppx/cross_partition/stale.ml:7

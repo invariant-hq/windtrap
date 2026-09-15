@@ -1,16 +1,17 @@
 ; Wrong-verdict regression (spice dogfood): an inline partition whose
-; sources cannot be found from the runner's cwd must stay a loud failure.
-; runner_main.exe mirrors the inline_tests backend's generated runner
-; (the conformance corpus pattern); ../drive/drive.exe spawns it with the
-; protocol argv from a scratch directory outside any project — no
-; dune-project above it, so the project root falls back to the cwd and
-; the source resolves to a file that does not exist — masks wall-clock
-; durations and the scratch path, and records the transcript and exit
-; code. The committed goldens pin the failing expect report, the refusal
-; naming the correction that could not be written and its reason, the
-; absence of any .corrected in that cwd, and exit 1 — a partition that
-; exited 0 here would be recorded by dune as PASSED with its expectation
-; never checked against anything.
+; sources cannot be found must stay a loud failure. runner_main.exe
+; mirrors the inline_tests backend's generated runner (the conformance
+; corpus pattern); ../drive/drive.exe spawns a copy of it with the
+; protocol argv from a scratch directory outside any project — neither
+; the copy's path nor the cwd holds a build directory and INSIDE_DUNE is
+; scrubbed, so the project root falls back to the cwd and the source
+; resolves to a file that does not exist — masks wall-clock durations and
+; the scratch path, and records the transcript and exit code. The
+; committed goldens pin the failing expect report, the refusal naming the
+; correction that could not be written and its reason, the absence of
+; any .corrected in that cwd, and exit 1 — a partition that exited 0 here
+; would be recorded by dune as PASSED with its expectation never checked
+; against anything.
 
 (executable
  (name runner_main)
@@ -26,6 +27,7 @@
   (run
    %{dep:../drive/drive.exe}
    --scratch-cwd
+   --scratch-exe
    --probe
    inline_bad_cwd.ml.corrected
    --mask

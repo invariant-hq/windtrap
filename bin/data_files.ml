@@ -20,7 +20,7 @@ let under_sandbox dir =
   String.map (function '\\' -> '/' | c -> c) dir
   |> String.split_on_char '/' |> List.mem ".sandbox"
 
-let rec find_project_root ~dir current =
+let rec scan_ancestors ~dir current =
   let candidate = data_dir ~dir current in
   if
     (not (under_sandbox current))
@@ -28,7 +28,7 @@ let rec find_project_root ~dir current =
   then Some current
   else
     let parent = Filename.dirname current in
-    if parent = current then None else find_project_root ~dir parent
+    if parent = current then None else scan_ancestors ~dir parent
 
 (* The root rule, shared with the runtimes' output path: when the current
    directory is inside a _build — a dune rule action, sandboxed or not —
@@ -37,7 +37,7 @@ let rec find_project_root ~dir current =
 let project_root ~dir cwd =
   match Instr.build_root ~path:cwd with
   | Some root -> Some root
-  | None -> find_project_root ~dir cwd
+  | None -> scan_ancestors ~dir cwd
 
 let is_data_file ~ext path = Filename.check_suffix path ("." ^ ext)
 

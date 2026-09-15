@@ -135,7 +135,7 @@ let tests =
           (T.contramap String.length T.int)
           "abc" ~expected:"3");
     (* [text] exists for one reason: its rendering keeps the newlines, and a
-       rendering that spans lines is exactly what sends Render down the
+       rendering that spans lines is exactly what sends the report down the
        unified-diff path instead of marking spans in an escaped one-liner.
        Pin that property here, at the witness, so the two ends of the
        contract cannot drift apart. *)

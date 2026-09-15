@@ -19,8 +19,12 @@
      --mask M        full-log | slow | verbose | backtrace: what varies
                      between machines and runs in this directory's output
      --scratch-cwd   run from a fresh empty directory, removed afterwards
-                     and masked as <scratch> — the cwd a runner cannot
-                     resolve its sources from
+                     and masked as <scratch>
+     --scratch-exe   with --scratch-cwd, run a copy of each EXE placed in
+                     that directory, with INSIDE_DUNE unset: a binary
+                     outside any build directory, run from outside any
+                     project and not by dune, is the one that cannot
+                     resolve its sources
      --probe FILE    append whether FILE exists in the child's cwd, the
                      one thing a transcript cannot say
      --mkdir DIR     create DIR before the runs — a per-run scratch a
@@ -39,7 +43,7 @@ type run = {
 let usage () =
   prerr_endline
     "usage: drive.exe [--env K=V] [--mask M] [--mkdir DIR] [--scratch-cwd] \
-     [--probe FILE] --run NAME EXE [ARG]...";
+     [--scratch-exe] [--probe FILE] --run NAME EXE [ARG]...";
   exit 2
 
 let binding s =
@@ -56,6 +60,7 @@ let mask_of_string = function
 
 let parse argv =
   let masks = ref [] and shared = ref [] and scratch = ref false in
+  let scratch_exe = ref false in
   let probe = ref None and dirs = ref [] and runs = ref [] in
   let rec go = function
     | [] -> ()
@@ -67,6 +72,9 @@ let parse argv =
         go rest
     | "--scratch-cwd" :: rest ->
         scratch := true;
+        go rest
+    | "--scratch-exe" :: rest ->
+        scratch_exe := true;
         go rest
     | "--probe" :: file :: rest ->
         probe := Some file;
@@ -98,10 +106,19 @@ let parse argv =
         })
       !runs
   in
-  (List.rev !masks, !scratch, !probe, List.rev !dirs, runs)
+  if !scratch_exe && not !scratch then usage ();
+  (List.rev !masks, !scratch, !scratch_exe, !probe, List.rev !dirs, runs)
+
+(* A byte copy with the executable bit: the copy's own path carries no
+   build directory, so with INSIDE_DUNE unset the runner's root rule
+   falls through to its cwd. *)
+let copy_executable ~src ~dst =
+  let contents = In_channel.with_open_bin src In_channel.input_all in
+  Out_channel.with_open_gen [ Open_wronly; Open_creat; Open_trunc; Open_binary ]
+    0o755 dst (fun oc -> Out_channel.output_string oc contents)
 
 let () =
-  let masks, scratch, probe, dirs, runs = parse Sys.argv in
+  let masks, scratch, scratch_exe, probe, dirs, runs = parse Sys.argv in
   List.iter
     (fun dir ->
       try Unix.mkdir dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ())
@@ -138,10 +155,21 @@ let () =
   in
   List.iter
     (fun { name; exe; args; env } ->
+      (* Empty reads as unset for every windtrap variable: the copy must
+         not inherit the build context this driver itself runs in. *)
+      let env = if scratch_exe then ("INSIDE_DUNE", "") :: env else env in
       let env = Drive_harness.environment env in
+      let exe =
+        if not scratch_exe then absolute exe
+        else begin
+          let copy = Filename.concat (Sys.getcwd ()) (Filename.basename exe) in
+          copy_executable ~src:(absolute exe) ~dst:copy;
+          copy
+        end
+      in
       ignore
-        (Drive_harness.record ~probe ~decorate ~name:(absolute name)
-           ~exe:(absolute exe) ~args ~env ~masks ()))
+        (Drive_harness.record ~probe ~decorate ~name:(absolute name) ~exe ~args
+           ~env ~masks ()))
     runs;
   match dir with
   | None -> ()

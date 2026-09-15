@@ -11,7 +11,7 @@
    never names a coverage or windtrap module: that it links and runs at all
    is the test. The checks below are a smoke check that the instrumented
    code still computes, including its registration at module load. Nothing
-   here may reach windtrap's Pp/Env/Render, so the output is plain stdlib
+   here may reach windtrap's Pp/Env/Report, so the output is plain stdlib
    printing and not the suite dialect. *)
 
 let failed = ref []

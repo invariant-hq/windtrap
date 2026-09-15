@@ -19,7 +19,6 @@ run by hand, the in-place acceptance: -u.
   [1]
   $ scrub < out
   fixture: 1 test
-  F
   ──────────────────── failures (1) ────────────────────
     FAIL  greeting
       test/facade/suite_main.ml:LINE
@@ -53,7 +52,6 @@ exits 0 so that the action's diff? is the verdict.
   $ run ./suite_main.exe -f greeting --corrected > out 2>&1
   $ scrub < out
   fixture: 1 test
-  F
   ──────────────────── failures (1) ────────────────────
     FAIL  greeting
       test/facade/suite_main.ml:LINE

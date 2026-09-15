@@ -125,7 +125,7 @@ val scoped :
     a function that acquires, calls back, and releases on return
     ([Eio_main.run], [In_channel.with_open_text path]). The runner calls [scope]
     once with a callback that runs [fn] on the resource, and releases nothing
-    itself; {!Runner} owns the attribution of what comes back out. [scope]
+    itself; {!Run} owns the attribution of what comes back out. [scope]
     precedes the optional arguments so that [scoped Eio_main.run] keeps them:
     applying a positional argument erases only the optionals declared before it.
 *)
@@ -162,7 +162,7 @@ val focus : t -> t
 
 val xfail : ?reason:string -> t -> t
 (** [xfail t] marks [t] — and, through a group, every test under it — as
-    {e expected to fail}: {!Runner} inverts what counts as failed for it, and
+    {e expected to fail}: {!Run} inverts what counts as failed for it, and
     [reason] names the known defect for reports. Nested annotations resolve
     innermost-wins: the one nearest the test is the one recorded on its
     flattened {!type:case}. *)

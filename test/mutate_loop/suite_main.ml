@@ -92,7 +92,7 @@ let crash =
 
 (* Leaves through a FATAL exception, which no failure boundary in the
    runner may swallow ({!Failure.is_fatal}): armed, it escapes
-   [Runner.execute] and reaches the mutation child's own wrapper, which is
+   [Run.execute] and reaches the mutation child's own wrapper, which is
    the only thing between it and OCaml's uncaught-exception handler — and
    that handler runs [at_exit]. Unarmed the answer is 2 and nothing
    raises, so the dry run is green. *)

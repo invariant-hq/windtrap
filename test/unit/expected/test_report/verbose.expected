@@ -1,5 +1,15 @@
 mylib: 11 tests (seed s1:7be1d2c904aa31f5)
-.FFFFFF...S
+  PASS  math › addition                            0.1ms
+  FAIL  users › sessions after login               0.2ms
+  FAIL  parser › rejects empty                     0.2ms
+  FAIL  cli › cli help — no baseline               0.3ms
+  FAIL  cli › version drift                        0.2ms
+  FAIL  geo › area non-negative                    18ms
+  FAIL  db › insert                                0.2ms
+  PASS  flaky › eventually                         0.2ms (3 attempts)
+  PASS  slow › big sort                            2.50s
+  PASS  slow › hash                                3.00s
+  SKIP  platform › windows paths (unix only)
 ──────────────────── failures (6) ────────────────────
   FAIL  users › sessions after login
     test/test_users.ml:31
@@ -58,5 +68,15 @@ slow tests (2):
   2.50s  slow › big sort
 (exempt with the "slow" tag, or raise --slow-threshold SECONDS)
 
+flaky tests (1):
+  passed on attempt 3  flaky › eventually
+
 4 passed, 1 skipped, 6 failed in 6.5s.
+
+slowest tests:
+  3.00s  slow › hash
+  2.50s  slow › big sort
+   18ms  geo › area non-negative
+  0.3ms  cli › cli help
+  0.2ms  users › sessions after login
 coverage: 87.2% (312/358 points) · project: windtrap coverage

@@ -227,12 +227,20 @@ let () =
       let code, out = spawn_child [ "--child"; "run"; log_dir ] in
       check_int "a partition with a failing test exits 1" ~expected:1
         ~actual:code;
-      check_contains "the transcript is the library's under the suite name"
-        ~sub:"lib: 2 tests" out;
+      (* The suite is named per partition: dune runs a library's
+         partitions concurrently, and a suite named for the library alone
+         would have every partition share one JUnit file, one capture log
+         directory and one last-failed store. *)
+      check_contains "the transcript names the library and the partition"
+        ~sub:"lib/a.ml: 2 tests" out;
       check_contains "the failure names the test under its module"
         ~sub:"FAIL  A › fails" out;
       check "the other partition did not run"
-        (not (contains "other partition" out)))
+        (not (contains "other partition" out));
+      check "the capture logs are keyed by the partition's suite name"
+        (Sys.file_exists
+           (Filename.concat log_dir
+              (Windtrap.Private.Path_ops.sanitize_component "lib/a.ml"))))
 
 let () =
   with_temp_root (fun root ->

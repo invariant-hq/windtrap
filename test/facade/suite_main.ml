@@ -8,10 +8,12 @@
    for the driver to pin its transcripts byte for byte: five tests, no
    clock, no network, one file baseline.
 
-   Three declarations, selected by FACADE_FIXTURE, because two of the
+   Five declarations, selected by FACADE_FIXTURE, because two of the
    things [run] refuses are properties of a suite rather than of a flag —
    a duplicate path and a committed focus — and neither can coexist with
-   the tests every other scenario selects from. *)
+   the tests every other scenario selects from; a flaky test and a noisy
+   failing test likewise stand alone, so the transcripts every other
+   session pins stay exactly what they are. *)
 
 open Windtrap
 
@@ -43,12 +45,33 @@ let duplicate =
     group "dup" [ test "twice" (fun () -> is_true true) ];
   ]
 
+(* Fails once, then passes: the retry is in-process, so a counter is
+   the whole mechanism. *)
+let flaky =
+  let attempts = ref 0 in
+  [
+    test ~retries:1 "flaky" (fun () ->
+        incr attempts;
+        if !attempts = 1 then fail "first attempt");
+  ]
+
+(* Prints, then fails: the one test whose report carries a captured tail
+   and the full log's path. *)
+let noisy =
+  [
+    test "noisy" (fun () ->
+        print_string "hello from noisy\n";
+        equal ~msg:"deliberate" int 1 2);
+  ]
+
 let () =
   exit
   @@ run "fixture"
        (match Sys.getenv_opt "FACADE_FIXTURE" with
        | Some "focus" -> focused
        | Some "duplicate" -> duplicate
+       | Some "flaky" -> flaky
+       | Some "noisy" -> noisy
        | Some ("" | "default") | None -> default
        | Some other ->
            invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other))

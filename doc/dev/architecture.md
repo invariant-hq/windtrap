@@ -6,14 +6,14 @@ the map of what sits behind it and the laws that keep it coherent.
 ## The narrow waist
 
 **Every test outcome flows into one `Run.t` record as typed
-`Failure.t` data; every byte of output leaves that record through a
-renderer.** Producers — assertions (`Check`), the property engine
+`Failure.t` data; every byte of output leaves that record through the
+report.** Producers — assertions (`Check`), the property engine
 (`Property`), baseline checking (`Baseline`), capture, the executor
-(`Runner`) — construct failure data and write it into the run record.
-Renderers (`Render`, `Render_junit`, `Render_github`) are pure
-projections of that record: styling, diffing, and truncation exist
-only there, and no renderer can alter status, counts, or scheduling.
-No other module prints anything during a run. This single sentence
+(`Run`) — construct failure data and write it into the run record. The
+report (`Report`, `Report_sections`, `Report_junit`) is a pure
+projection of that record: styling, diffing, and truncation exist only
+there, and no projection can alter status, counts, or scheduling. No
+other module prints anything during a run. This single sentence
 resolves every "where does this go?" question.
 
 Two second-order waists, both public:
@@ -28,7 +28,7 @@ They never merge again (that was v1's mistake).
 
 | unit | where | contents |
 | --- | --- | --- |
-| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, baselines, capture, the run/driver spine, the mutation loop, renderers, CLI and the client facade; links `unix` and `windtrap.runtime` only — in-package, so Law 10's no-third-party-weight posture is untouched |
+| library `windtrap` | `lib/` | the kernel: declaration tree, checking, generation, property engine, model-based testing, baselines, capture, the executor, the mutation loop, the report, CLI and the client facade; links `unix` and `windtrap.runtime` only — in-package, so Law 10's no-third-party-weight posture is untouched |
 | `windtrap.runtime` | `lib/runtime/` | the one runtime every instrumented closure links, through both backends' `ppx_runtime_libraries`: `Windtrap_runtime.Coverage` (registration, the `.coverage` dump, report data), `Windtrap_runtime.Mutate` (the catalogue, the arming guard, the reach map), `Windtrap_runtime.Verdicts` (the verdict lattice and the `.mutants` format the loop writes and `windtrap mutants` merges) and `Windtrap_runtime.Instr` (the versioned, exe-identified file plumbing both formats share). Stdlib only — it must never pull anything into the closure of every instrumented library — and it reads no environment variable but `WINDTRAP_COVERAGE_FILE`: which mutants a run tests and which one it arms are the core's to read and hand down |
 | binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--expect`, `--json`, `--lcov`) and `mutants` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared data-file lookup and staleness in `data_files`. Both merge and render, never run a test or drive a build, and every remedy they print says what to do in words rather than spelling a build tool's command |
 | package `ppx_windtrap` | `ppx/` | the expect/inline PPX — a desugaring into `test`, `group`, `expect`, `expect_exact` and `output`, with the `inline_tests.backend` whose generated main calls `run --corrected` — the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`), the inline runtime `Ppx_runtime` (`ppx/runtime/`: the module-load registry, dune's runner protocol, the undriven guard; a client of the public API) and the ambient `Expect_test_config` (`ppx/config/`: `run` and `sanitize`) — the only unit that sees ppxlib |
@@ -45,7 +45,7 @@ its own, never downward.
 | | `Env` | how the environment is read: typed readers, value vocabularies, CI/TTY detection, the settings with no flag (the `WINDTRAP_*` mirrors themselves are declared in `Cli`'s table) |
 | | `Tag` | the tag vocabulary and selection predicates |
 | | `Loc` | `pos` + backtrace-derived source attribution |
-| | `Path_ops` | project root, sandbox reconstruction, log dirs |
+| | `Path_ops` | the project root and the log root (the build directory the process belongs to, from `INSIDE_DUNE` or the executable's path), sandbox reconstruction |
 | | `Atomic_file` | temp+rename writes |
 | | `Clock` | monotonic C-stub counter; the runner's timing source |
 | | `Seed` | SplitMix64, `s1:` tokens, `mix(root, path, index)` derivation |
@@ -60,12 +60,10 @@ its own, never downward.
 | Subsystems | `Capture` | fd-level dup2 capture into per-test log files, C stdio flushing |
 | | `Baseline`, `Source_patch` | baselines keyed by literal position or file path, read-only checking, corrections gated per test and written once as `.corrected` files or in place, literal rewriting |
 | | `Test_tree` | the declaration tree: tests, groups, focus, xfail, flatten |
-| Drive and render | `Run` | THE run record and the one ambient slot; a result row carries its `subject` — test, fixture release, or the stale-baselines verdict — so every sink projects the one recorded list |
-| | `Runner` | sequential executor: startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, Law 11 exit codes. Emits typed events with immutable payloads; prints nothing |
-| | `Cli` | one declarative item table — flags and flagless settings — resolved once into `Run.config` and `Render.settings`, plus `--help`. Each flag's mirror is declared beside it and read through the flag's own parser, so a variable cannot accept what its flag rejects |
-| | `Render`, `Render_junit`, `Render_github` | the pure projections of the run record. `Render` also owns the subsystem-neutral report-section vocabulary: instrumentation reports arrive as section data, and `Render` names no instrumentation runtime |
-| | `Driver` | the spine: `Driver.t` is one invocation's reporting inputs, `execute_and_report` the one order every driver shares, `execute` the reporting-free run a mutation child needs |
-| | `Mutate_loop` | the mutation seam: the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop — one child per reached mutant, in catalogue order, each running only the tests that reach it — the verdict file (written through the runtime's format) and the per-executable report. It *wraps* `Driver.execute_and_report` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
+| Run and report | `Run` | one configuration record for everything an invocation resolves; THE run record and the one ambient slot; the sequential executor — startup checks, selection, the per-test boundary, SIGALRM timeouts, retries, fixture release, the last-failed store, the exit guard, Law 11 exit codes — emitting typed events with immutable payloads and printing nothing. A result row carries its `subject` — test or fixture release — so every sink projects the one recorded list |
+| | `Cli` | one declarative item table — flags and flagless settings — resolved once into the one `Run.config`, plus `--help`. Each flag's mirror is declared beside it and read through the flag's own parser, so a variable cannot accept what its flag rejects |
+| | `Report`, `Report_sections`, `Report_junit` | the pure projections of the run record: the transcript, the GitHub envelope and `Report.run` — execute, reported — in `Report`; the failure blocks and the subsystem-neutral section vocabulary the coverage and mutation reports project into in `Report_sections`, which names no instrumentation runtime; the JUnit document and its file in `Report_junit` |
+| | `Mutate_loop` | the mutation seam: the dry run and its reach map, the scope applied to the population it forks over, the determinism probe, the fork loop — one child per reached mutant, in catalogue order, each running only the tests that reach it — the verdict file (written through the runtime's format) and the per-executable report. It *wraps* `Report.run` rather than sitting beside it, because a mutation run must announce an armed mutant before any other output and fork after the dry run — which brackets the run on both sides |
 | | `Windtrap` | the facade |
 
 The inline runtime is a client of the public API, not a resident:
@@ -76,18 +74,19 @@ the partition to `Windtrap.run` under `--corrected`. Nothing in it names
 `Windtrap.Private`; it and the ambient `Expect_test_config` live in
 `ppx_windtrap`, against the facade.
 
-One driver sits on top of `Mutate_loop.execute_and_report` — which in
-every uninstrumented build, every `--list` run, and every instrumented
-build the environment asked nothing of *is* `Driver.execute_and_report`,
-same transcript, same bytes — and nothing else sits between them: the
-facade's `run`. It resolves one invocation (`Cli.settings`), calls
-`execute_and_report`, and adds only what is genuinely its own: the
-argv-derived invocation, the property-aware header seed, the selection
-description, GitHub gating, the `--list` listing, JUnit and the focus
-warning. A `--corrected` run — a stanza's action or the inline runner —
-spells its hints as the mirrors and its acceptance as `dune promote`,
-whatever argv says. **A transcript line either comes from a `Driver`
-producer or it is the driver's own line, named as such.**
+One runner. The facade's `run` resolves one invocation into the one
+`Run.config` (`Cli.settings`, plus the argv-derived invocation), calls
+`Mutate_loop.execute_and_report` — which in every uninstrumented build,
+every `--list` run, and every instrumented build the environment asked
+nothing of *is* `Report.run`, same transcript, same bytes — and adds
+only what is genuinely its own: the `--list` listing, the focus warning
+and the exit code. `Report.run` is `Run.execute` observed by the
+transcript, inside the GitHub envelope when the configuration says so,
+followed by the blocks, the baseline report, the annotations and the
+JUnit file. A `--corrected` run — a stanza's action or the inline
+runner — spells its hints as the mirrors and its acceptance as
+`dune promote`, whatever argv says. The inline runner is the same `run`
+under `--corrected`, one suite per partition.
 
 The cycle-avoidance rule is load-bearing: subsystem modules operate on
 explicit state values (`Capture.output st`, `Baseline.check st …`);
@@ -113,9 +112,9 @@ most one core module that drives it.
 
 - **Coverage** — `ppx/coverage/`, `lib/runtime/coverage.ml(i)`,
   `bin/coverage_cmd.ml`, no core module. Its entire coupling is the
-  named coverage seam of `lib/driver.ml`: one summary read at run end
-  and handed to the transcript's last line, and the section data the
-  reporting command draws from the same builder.
+  named coverage seam of `lib/report.ml`: one summary read at run end
+  and handed to the transcript's last line. The reporting command builds
+  the section data the per-file table draws from itself.
 - **Mutation** — `ppx/mutate/`, `lib/runtime/mutate.ml(i)` and
   `lib/runtime/verdicts.ml(i)`, `bin/mutate_cmd.ml`,
   and `lib/mutate_loop.ml(i)`. The runtime reads no environment: the
@@ -124,22 +123,22 @@ most one core module that drives it.
   the population it forks over, the identifier through the runtime's
   own parser and `arm`. Its coupling is one dispatch call at run
   entry (the facade's `run` calls `Mutate_loop.execute_and_report` in
-  place of `Driver.execute_and_report`), one *composed* observer on
-  `Runner.execute`'s existing `?on_event` hook — never a replacement
-  for the transcript's — and the read-only baseline mode the loop sets
-  on every armed process's config (Law 16d).
+  place of `Report.run`), one *composed* observer on `Run.execute`'s
+  existing `?on_event` hook — never a replacement for the transcript's
+  — and the read-only baseline mode the loop sets on every armed
+  process's config (Law 16d).
 
 No instrumentation type appears in `windtrap.mli`, and neither
-subsystem owns a copy of the other's layout — nor does `Render` name
-either runtime: reports arrive as the subsystem-neutral section
+subsystem owns a copy of the other's layout — nor does `Report_sections`
+name either runtime: reports arrive as the subsystem-neutral section
 vocabulary (labelled rules, rows, source excerpts), which coverage's
 per-file report and mutation's survivor and unreached blocks both
 project into, spelling mutant identifiers and arm variables with the
 runtime's own functions at the builder site. The mutation loop and the
-`mutants` subcommand each build a `Render.mutation` record of their own —
-one scoped to a suite, one to the merge — and draw it through the same
-projection, so the interactive report and the aggregate cannot drift
-apart.
+`mutants` subcommand each build a `Report_sections.mutation` record of
+their own — one scoped to a suite, one to the merge — and draw it
+through the same projection, so the interactive report and the
+aggregate cannot drift apart.
 
 ## The Laws
 
@@ -233,11 +232,11 @@ design**.
     nothing in `Windtrap.Private`. Core windtrap's coupling to each
     subsystem is one read per run — coverage's summary snapshot at run
     end, mutation's dispatch call at run entry. Per-test
-    observation uses only the existing `Runner.execute ?on_event` hook,
+    observation uses only the existing `Run.execute ?on_event` hook,
     which receives immutable payloads and cannot alter status, counts,
     or scheduling, and reads only its own subsystem's runtime. **No
-    instrumentation type appears in `windtrap.mli`, and `Render` names
-    no instrumentation runtime:** report data arrives as the
+    instrumentation type appears in `windtrap.mli`, and the report
+    sections name no instrumentation runtime:** report data arrives as the
     subsystem-neutral section vocabulary, so shared layout has one home
     and two subsystems cannot own two copies of one renderer.
     *Prevents:* instrumentation metastasizing through the framework;

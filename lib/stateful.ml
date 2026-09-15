@@ -258,7 +258,7 @@ let program_text ?pp_model program =
       in
       (* The summary comes first, and says [last], not [failing at]: the
          printer is a pure function of the program and does not know which
-         step failed. [Render.headline] flattens newlines and truncates to
+         step failed. [Report.headline] flattens newlines and truncates to
          60 code points, and that headline is the JUnit message attribute
          and the [-v] one-liner. *)
       let summary =
@@ -509,11 +509,10 @@ let execute ?loc ?invariant ~scope program =
 
 (* The entry point *)
 
-(* Stateful tests carry both tags: ["prop"] because they are properties —
+(* Stateful tests carry both tags: [Tag.prop] because they are properties —
    [--tag prop] selects them and the run header prints the root seed exactly
    when the suite declares one — and ["stateful"] so a suite can select or
    exclude them on their own cost profile. *)
-let prop_tag = "prop"
 let stateful_tag = "stateful"
 
 let stateful ?__POS__ ?tags ?timeout ?count ?steps ?pp_model ?invariant name
@@ -521,7 +520,7 @@ let stateful ?__POS__ ?tags ?timeout ?count ?steps ?pp_model ?invariant name
   (* The declaration site, for the one failure with no site of its own: a
      scope that never ran the program. *)
   let loc = Loc.resolve ?__POS__ () in
-  let tags = prop_tag :: stateful_tag :: Option.value ~default:[] tags in
-  Runner.prop ?__POS__ ~tags ?timeout ?count name
+  let tags = Tag.prop :: stateful_tag :: Option.value ~default:[] tags in
+  Run.prop ?__POS__ ~tags ?timeout ?count name
     (program ?steps ?pp_model ~model commands) (fun program ->
       execute ?loc ?invariant ~scope program)

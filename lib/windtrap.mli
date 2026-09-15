@@ -1059,8 +1059,9 @@ val run : ?argv:string array -> string -> test list -> int
     hash of each test's path, so the buckets cover every test exactly once,
     stable across machines and suite composition. Code under test that calls
     [exit] does not end the run: the call is intercepted and recorded as that
-    test's failure. A green run prints one line, a noteworthy one its header,
-    glyph row and failure blocks, [-v] one line per test; see
+    test's failure. A green run prints one line; a run with something to show
+    prints its header, then the failure blocks, the slow and flaky blocks and
+    the summary; [-v] streams one line per test; see
     [doc/manual/running-tests.md]. *)
 
 (** {1:private Private} *)
@@ -1078,7 +1079,6 @@ module Private : sig
   module Cli = Cli
   module Clock = Clock
   module Diff = Diff
-  module Driver = Driver
   module Env = Env
   module Failure = Failure
   module Loc = Loc
@@ -1086,11 +1086,10 @@ module Private : sig
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property
-  module Render = Render
-  module Render_github = Render_github
-  module Render_junit = Render_junit
+  module Report = Report
+  module Report_junit = Report_junit
+  module Report_sections = Report_sections
   module Run = Run
-  module Runner = Runner
   module Seed = Seed
   module Shrink_tree = Shrink_tree
   module Source_patch = Source_patch

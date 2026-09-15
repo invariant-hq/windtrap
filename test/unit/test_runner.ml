@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Runner: the per-test boundary matrix (body x teardown x
+(* Tests for the executor in Run: the per-test boundary matrix (body x teardown x
    timeout), the scoped boundary (cleanup owned by the scope, phase
    attribution by how far the callback got, the call-back-exactly-once
    contract), classification, retries, capture-tail attachment, the global
@@ -31,19 +31,19 @@ let base_config ~log_dir () =
   { (Run.default_config ()) with Run.seed = 0x5eedL; log_dir }
 
 let expect_run name ?on_event ~config ?(suite = "suite") tests f =
-  match Runner.execute ?on_event ~config ~suite tests with
+  match Run.execute ?on_event config ~suite tests with
   | Ok outcome -> f outcome
   | Error error ->
       check name false;
-      Printf.printf "  startup error: %s\n%!" (Runner.startup_message error)
+      Printf.printf "  startup error: %s\n%!" (Run.startup_message error)
 
 let expect_startup_error name ~config ?(suite = "suite") tests pred =
-  match Runner.execute ~config ~suite tests with
+  match Run.execute config ~suite tests with
   | Ok _ -> check (name ^ " (run was not refused)") false
   | Error error -> check name (pred error)
 
 let result_of outcome path =
-  List.find_opt (fun r -> r.Run.path = path) (Run.results outcome.Runner.run)
+  List.find_opt (fun r -> r.Run.path = path) (Run.results outcome.Run.run)
 
 let outcome_of outcome path =
   match result_of outcome path with
@@ -56,7 +56,7 @@ let outcome_of outcome path =
 let release_rows outcome =
   List.filter
     (fun (r : Run.result) -> r.Run.subject = Run.Fixture_release)
-    (Run.results outcome.Runner.run)
+    (Run.results outcome.Run.run)
 
 (* The one failure of a one-failure release row. *)
 let release_failure_of (r : Run.result) =
@@ -155,7 +155,7 @@ let () =
        check "uncaught exception is a Raise failure naming it"
          (contains "Boom" actual)
    | _ -> check "uncaught exception is a Raise failure" false);
-  check "a failing suite exits 1" (outcome.Runner.exit_code = 1)
+  check "a failing suite exits 1" (outcome.Run.exit_code = 1)
 
 (* Scoped boundary: the scope owns cleanup, the runner owns attribution *)
 
@@ -319,7 +319,7 @@ let () =
     ]
   in
   check "a fatal exception escapes the run"
-    (match Runner.execute ~config ~suite:"suite" tests with
+    (match Run.execute config ~suite:"suite" tests with
     | exception Sys.Break -> true
     | Ok _ | Error _ -> false);
   check "the teardown did not run on the fatal path" (not !torn_down)
@@ -434,7 +434,7 @@ let () =
       (outcome_of outcome [ "tight" ] = Some Failure.Pass);
     check "the slow release completed, untimed and unfailed"
       (!release_done && release_rows outcome = []);
-    check "the run stayed green" (outcome.Runner.exit_code = 0))
+    check "the run stayed green" (outcome.Run.exit_code = 0))
 
 let () =
   (* The exit guard belongs to the process that armed it. A forked child
@@ -460,7 +460,7 @@ let () =
     expect_run "a forked child exits on its own terms" ~config tests
     @@ fun outcome ->
     check "the child's exit code reached the parent" (!child_status = 3);
-    check "the test passed" (outcome.Runner.exit_code = 0))
+    check "the test passed" (outcome.Run.exit_code = 0))
 
 let () =
   (* The timer is one-shot and [Failure.Timeout] is not fatal, so the body's
@@ -564,7 +564,7 @@ let () =
         (* Failing above a threshold keeps the descent walking the halving
            chain (the dest-first candidate passes and is rejected), so the
            search is still alive when the alarm fires. *)
-        Runner.prop "slow-shrink" (Gen.int_range 0 1000) (fun n ->
+        Run.prop "slow-shrink" (Gen.int_range 0 1000) (fun n ->
             Unix.sleepf 0.04;
             Check.is_true (n < 1));
       ]
@@ -579,7 +579,7 @@ let () =
     | _ -> check "mid-shrink timeout: one Property failure" false);
     check "the whole-test budget bounds the wall time" (wall < 0.8);
     check "a timed-out-mid-shrink prop is an ordinary failed test"
-      (outcome.Runner.exit_code = 1))
+      (outcome.Run.exit_code = 1))
 
 let () =
   if not Sys.win32 then
@@ -587,9 +587,7 @@ let () =
     let config =
       { (base_config ~log_dir:root ()) with Run.timeout = Some 0.2 }
     in
-    let tests =
-      [ Runner.prop "slow-pass" Gen.int (fun _ -> Unix.sleepf 0.05) ]
-    in
+    let tests = [ Run.prop "slow-pass" Gen.int (fun _ -> Unix.sleepf 0.05) ] in
     expect_run "pre-failure timeout suite runs" ~config tests @@ fun outcome ->
     match failure_list (outcome_of outcome [ "slow-pass" ]) with
     | [ f ] ->
@@ -608,7 +606,7 @@ let () =
     let attempts = ref 0 in
     let tests =
       [
-        Runner.prop ~timeout:0.2 "budgeted-prop" Gen.int (fun _ ->
+        Run.prop ~timeout:0.2 "budgeted-prop" Gen.int (fun _ ->
             Unix.sleepf 0.05);
         Test_tree.cases ~timeout:0.2 "table"
           ~name:(function `Slow -> "slow" | `Fast -> "fast")
@@ -777,12 +775,10 @@ let failed_paths outcome =
       if r.Run.subject = Run.Test && r.Run.counted then
         Some (Test_tree.path_to_string r.Run.path)
       else None)
-    (Run.results outcome.Runner.run)
+    (Run.results outcome.Run.run)
 
 let ran_names outcome =
-  List.map
-    (fun r -> String.concat "/" r.Run.path)
-    (Run.results outcome.Runner.run)
+  List.map (fun r -> String.concat "/" r.Run.path) (Run.results outcome.Run.run)
 
 let () =
   with_temp_root @@ fun root ->
@@ -803,9 +799,8 @@ let () =
   check "only matching tests ran"
     (ran_names outcome = [ "math/add"; "math/sub" ]);
   check_int "selected mirrors the run" ~expected:2
-    ~actual:(List.length outcome.Runner.selected);
-  check_int "total counts the whole suite" ~expected:3
-    ~actual:outcome.Runner.total;
+    ~actual:(List.length outcome.Run.selected);
+  check_int "total counts the whole suite" ~expected:3 ~actual:outcome.Run.total;
   expect_run "exclude drops matches" ~config:(config None (Some "math")) suite
   @@ fun outcome ->
   check "only non-excluded tests ran" (ran_names outcome = [ "text/trim" ]);
@@ -855,8 +850,8 @@ let () =
   in
   expect_run "focus narrows outside CI" ~config suite @@ fun outcome ->
   check "only the focused test ran" (ran_names outcome = [ "starred" ]);
-  check "focus_active is reported" outcome.Runner.focus_active;
-  check "a focused run of passing tests exits 0" (outcome.Runner.exit_code = 0)
+  check "focus_active is reported" outcome.Run.focus_active;
+  check "a focused run of passing tests exits 0" (outcome.Run.exit_code = 0)
 
 (* The CI focus guard *)
 
@@ -867,13 +862,13 @@ let () =
   Unix.putenv "CI" "true";
   expect_startup_error "focused tests are refused under CI" ~config suite
     (function
-    | Runner.Focused_in_ci [ _ ] -> true
+    | Run.Focused_in_ci [ _ ] -> true
     | _ -> false);
-  (match Runner.execute ~config ~suite:"suite" suite with
+  (match Run.execute config ~suite:"suite" suite with
   | Error error ->
-      check "the focus refusal exits 1" (Runner.startup_exit_code error = 1);
+      check "the focus refusal exits 1" (Run.startup_exit_code error = 1);
       check "the focus message names the remedy"
-        (contains "remove focus" (Runner.startup_message error))
+        (contains "remove focus" (Run.startup_message error))
   | Ok _ -> check "focus refusal expected" false);
   (* [allow_focus] has no flag and no mirror: a forked mutation child is
      its only setter, through [Run.for_subset]. *)
@@ -905,29 +900,28 @@ let () =
   let config = base_config ~log_dir:root () in
   expect_run "all-pass exits 0" ~config [ Test_tree.test "ok" (fun () -> ()) ]
   @@ fun outcome ->
-  check "exit 0" (outcome.Runner.exit_code = 0);
+  check "exit 0" (outcome.Run.exit_code = 0);
   expect_run "any failure exits 1" ~config
     [
       Test_tree.test "ok" (fun () -> ());
       Test_tree.test "bad" (fun () -> Check.fail "boom");
     ]
   @@ fun outcome ->
-  check "exit 1" (outcome.Runner.exit_code = 1);
+  check "exit 1" (outcome.Run.exit_code = 1);
   expect_run "a filter matching nothing exits 2"
     ~config:{ config with Run.filter = Some "zzz-nothing" }
     [ Test_tree.test "ok" (fun () -> ()) ]
   @@ fun outcome ->
   check "exit 2, nothing recorded"
-    (outcome.Runner.exit_code = 2 && Run.results outcome.Runner.run = []);
+    (outcome.Run.exit_code = 2 && Run.results outcome.Run.run = []);
   expect_run "an empty suite exits 2" ~config [] @@ fun outcome ->
-  check "empty suite" (outcome.Runner.exit_code = 2);
+  check "empty suite" (outcome.Run.exit_code = 2);
   expect_run "a nonempty selection of skips exits 0" ~config
     [
       Test_tree.test "skip-a" (fun () -> Check.skip ());
       Test_tree.test "skip-b" (fun () -> Check.skip ~reason:"no net" ());
     ]
-  @@ fun outcome ->
-  check "all-skipped ratification" (outcome.Runner.exit_code = 0)
+  @@ fun outcome -> check "all-skipped ratification" (outcome.Run.exit_code = 0)
 
 (* Expected failures (amendment B12) *)
 
@@ -947,14 +941,13 @@ let () =
       check "the expected failure keeps its real payload"
         (message_of f = "still broken")
   | _ -> check "expected failure recorded with its failures" false);
-  check "an expected failure does not fail the run"
-    (outcome.Runner.exit_code = 0);
+  check "an expected failure does not fail the run" (outcome.Run.exit_code = 0);
   check "an expected failure is not a failed path" (failed_paths outcome = []);
   check "the flattened case carries the annotation for renderers"
     (match
        List.find_opt
          (fun (c : Test_tree.case) -> c.Test_tree.path = [ "known-bug" ])
-         outcome.Runner.selected
+         outcome.Run.selected
      with
     | Some c -> c.Test_tree.xfail = Some { Test_tree.reason = Some "issue #42" }
     | None -> false)
@@ -976,7 +969,7 @@ let () =
         && contains "issue #42" (message_of f))
   | _ -> check "unexpected pass records one message failure" false);
   check "an unexpected pass fails the run"
-    (outcome.Runner.exit_code = 1 && failed_paths outcome = [ "fixed" ])
+    (outcome.Run.exit_code = 1 && failed_paths outcome = [ "fixed" ])
 
 let () =
   with_temp_root @@ fun root ->
@@ -985,8 +978,7 @@ let () =
     [
       Test_tree.xfail (Test_tree.test "undecided" (fun () -> Check.skip ()));
       Test_tree.xfail
-        (Runner.prop "known-bad-law" Gen.int (fun n ->
-             Check.is_true (n = n + 1)));
+        (Run.prop "known-bad-law" Gen.int (fun n -> Check.is_true (n = n + 1)));
     ]
   in
   expect_run "xfail-edge suite runs" ~config tests @@ fun outcome ->
@@ -997,7 +989,7 @@ let () =
     | [ { Failure.kind = Failure.Property _; _ } ] -> true
     | _ -> false);
   check "an expected property failure keeps the run green"
-    (outcome.Runner.exit_code = 0 && failed_paths outcome = [])
+    (outcome.Run.exit_code = 0 && failed_paths outcome = [])
 
 let () =
   (* The expectation inverts the whole outcome, phases included: an xfail
@@ -1029,7 +1021,7 @@ let () =
     | [ f ] -> contains "expected to fail" (message_of f)
     | _ -> false);
   check "only the unexpected pass counts as failed"
-    (failed_paths outcome = [ "xf-clean" ] && outcome.Runner.exit_code = 1)
+    (failed_paths outcome = [ "xf-clean" ] && outcome.Run.exit_code = 1)
 
 let () =
   (* Retries invert with the expectation: an expected failure is final on
@@ -1099,7 +1091,7 @@ let () =
   let rerun = { config with Run.failed_only = true } in
   let tests = [ Test_tree.xfail (Test_tree.test "xp" (fun () -> ())) ] in
   expect_run "xpass-store: first run" ~config tests @@ fun outcome ->
-  check "the unexpected pass failed the run" (outcome.Runner.exit_code = 1);
+  check "the unexpected pass failed the run" (outcome.Run.exit_code = 1);
   expect_run "--failed reruns an unexpected pass" ~config:rerun tests
   @@ fun outcome -> check "xp reran" (ran_names outcome = [ "xp" ])
 
@@ -1171,7 +1163,7 @@ let () =
         let seen = ref ([], -1) in
         expect_run (Printf.sprintf "filtered shard %d/3 runs" k)
           ~config:(config k) (shard_suite ()) (fun outcome ->
-            seen := (ran_names outcome, outcome.Runner.exit_code));
+            seen := (ran_names outcome, outcome.Run.exit_code));
         !seen)
       [ 1; 2; 3 ]
   in
@@ -1204,7 +1196,7 @@ let () =
           ~config:
             { (base_config ~log_dir:root ()) with Run.shard = Some (k, 3) }
           suite
-          (fun outcome -> seen := (ran_names outcome, outcome.Runner.exit_code));
+          (fun outcome -> seen := (ran_names outcome, outcome.Run.exit_code));
         !seen)
       [ 1; 2; 3 ]
   in
@@ -1222,7 +1214,7 @@ let () =
     { (base_config ~log_dir:root ()) with Run.shard = Some (2, 1) }
   in
   match
-    Runner.execute ~config ~suite:"suite" [ Test_tree.test "t" (fun () -> ()) ]
+    Run.execute config ~suite:"suite" [ Test_tree.test "t" (fun () -> ()) ]
   with
   | exception Invalid_argument _ ->
       check "a malformed hand-built shard fails loudly" true
@@ -1264,8 +1256,7 @@ let () =
   check "scratch paths are removed on pass, failure, and skip alike"
     (List.for_all (fun p -> not (Sys.file_exists p)) !scratch);
   check "scratch cleanup does not alter outcomes"
-    (outcome.Runner.exit_code = 1
-    && failed_paths outcome = [ "failing-scratch" ])
+    (outcome.Run.exit_code = 1 && failed_paths outcome = [ "failing-scratch" ])
 
 let () =
   (* Scratch removal on the boundary's worst paths (amendment B9, Law 8):
@@ -1355,7 +1346,7 @@ let () =
     ]
   in
   expect_run "setenv suite runs" ~config tests @@ fun outcome ->
-  check "the suite passed" (outcome.Runner.exit_code = 0);
+  check "the suite passed" (outcome.Run.exit_code = 0);
   check "setenv binds for the rest of the test"
     (List.sort compare !seen
     = List.sort compare
@@ -1394,7 +1385,7 @@ let () =
   in
   expect_run "setenv rejection suite runs" ~config tests @@ fun outcome ->
   check "a handled rejection is the whole story — the test passes"
-    (outcome.Runner.exit_code = 0)
+    (outcome.Run.exit_code = 0)
 
 let () =
   (* Restoration is not the pass path's privilege: it happens on failure,
@@ -1418,10 +1409,8 @@ let () =
       ]
     in
     let on_event = function
-      | Runner.Test_finished _ -> after := Sys.getenv_opt bound_var :: !after
-      | Runner.Run_started _ | Runner.Test_started _ | Runner.Fixture_release _
-        ->
-          ()
+      | Run.Test_finished _ -> after := Sys.getenv_opt bound_var :: !after
+      | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _ -> ()
     in
     expect_run "setenv outcomes suite runs" ~on_event ~config tests
     @@ fun outcome ->
@@ -1458,9 +1447,9 @@ let () =
     ]
   in
   let on_event = function
-    | Runner.Test_started _ | Runner.Test_finished _ ->
+    | Run.Test_started _ | Run.Test_finished _ ->
         between := cwd_opt () :: !between
-    | Runner.Run_started _ | Runner.Fixture_release _ -> ()
+    | Run.Run_started _ | Run.Fixture_release _ -> ()
   in
   expect_run "chdir suite runs" ~on_event ~config tests @@ fun outcome ->
   go_home home;
@@ -1541,11 +1530,11 @@ let () =
   (match failure_list (outcome_of outcome [ "layouts" ]) with
   | [ a; b ] ->
       check "each failing subtest is one labeled entry, in order"
-        (Render.labeled_msg a = Some "layouts › row-major"
-        && Render.labeled_msg b = Some "layouts › strided")
+        (Report.labeled_msg a = Some "layouts › row-major"
+        && Report.labeled_msg b = Some "layouts › strided")
   | _ -> check "two subtest failures recorded" false);
   check "subtest failures fail the test"
-    (outcome.Runner.exit_code = 1 && failed_paths outcome = [ "layouts" ])
+    (outcome.Run.exit_code = 1 && failed_paths outcome = [ "layouts" ])
 
 let () =
   (* Subtest failures reset per attempt: a retry that stops failing
@@ -1594,7 +1583,7 @@ let () =
   match failure_list (outcome_of outcome [ "bracketed" ]) with
   | [ sub; td ] ->
       check "the subtest entry is labeled and precedes the teardown's"
-        (Render.labeled_msg sub = Some "bracketed › uses-resource"
+        (Report.labeled_msg sub = Some "bracketed › uses-resource"
         && td.Failure.phase = Failure.Teardown)
   | _ -> check "bracket-subtest: two entries" false
 
@@ -1606,7 +1595,7 @@ let () =
   let config = base_config ~log_dir:root () in
   let tests =
     [
-      Runner.prop ~count:5 "prop-sub" Gen.int (fun _ ->
+      Run.prop ~count:5 "prop-sub" Gen.int (fun _ ->
           Run.subtest "law-half" (fun () -> Check.fail "nope"));
     ]
   in
@@ -1626,7 +1615,7 @@ let () =
           check "the entries are labeled subtest failures, not Property"
             (List.for_all
                (fun f ->
-                 Render.labeled_msg f = Some "prop-sub › law-half"
+                 Report.labeled_msg f = Some "prop-sub › law-half"
                  &&
                  match f.Failure.kind with
                  | Failure.Property _ -> false
@@ -1649,7 +1638,7 @@ let () =
   in
   let announced = ref false in
   let on_event = function
-    | Runner.Fixture_release _ -> announced := true
+    | Run.Fixture_release _ -> announced := true
     | _ -> ()
   in
   let tests =
@@ -1668,7 +1657,7 @@ let () =
   check_int "acquisition was attempted once" ~expected:1 ~actual:!acquisitions;
   check "a skipped fixture is never announced for release" (not !announced);
   check "an unavailable optional resource does not turn the run red"
-    (outcome.Runner.exit_code = 0 && release_rows outcome = [])
+    (outcome.Run.exit_code = 0 && release_rows outcome = [])
 
 (* Duplicate paths *)
 
@@ -1683,13 +1672,13 @@ let () =
   in
   expect_startup_error "duplicate paths are a startup error" ~config suite
     (function
-    | Runner.Duplicate_paths [ path ] -> contains "same" path
+    | Run.Duplicate_paths [ path ] -> contains "same" path
     | _ -> false);
-  match Runner.execute ~config ~suite:"suite" suite with
+  match Run.execute config ~suite:"suite" suite with
   | Error error ->
-      check "duplicates exit 1" (Runner.startup_exit_code error = 1);
+      check "duplicates exit 1" (Run.startup_exit_code error = 1);
       check "the message lists the path"
-        (contains "same" (Runner.startup_message error))
+        (contains "same" (Run.startup_message error))
   | Ok _ -> check "duplicate refusal expected" false
 
 let () =
@@ -1702,7 +1691,7 @@ let () =
   in
   expect_startup_error "cases name collisions are duplicate paths" ~config suite
     (function
-    | Runner.Duplicate_paths [ path ] -> contains "1" path
+    | Run.Duplicate_paths [ path ] -> contains "1" path
     | _ -> false)
 
 (* Fixtures: release order, bail, release failures *)
@@ -1731,8 +1720,8 @@ let () =
     (List.rev !order = [ "b"; "a" ]);
   check "no release failures" (release_rows outcome = []);
   let events = List.rev !events in
-  let is_finish = function Runner.Test_finished _ -> true | _ -> false in
-  let is_release = function Runner.Fixture_release _ -> true | _ -> false in
+  let is_finish = function Run.Test_finished _ -> true | _ -> false in
+  let is_release = function Run.Fixture_release _ -> true | _ -> false in
   let last_finish =
     List.fold_left
       (fun (i, last) e -> (i + 1, if is_finish e then i else last))
@@ -1768,7 +1757,7 @@ let () =
   expect_run "bail suite runs" ~config tests @@ fun outcome ->
   check "bail stops at the first failure" (ran_names outcome = [ "first-fails" ]);
   check "fixtures release under bail" !released;
-  check "bailed failing run exits 1" (outcome.Runner.exit_code = 1)
+  check "bailed failing run exits 1" (outcome.Run.exit_code = 1)
 
 let () =
   (* A raising [on_event] observer aborts the run, but acquired fixtures
@@ -1778,7 +1767,7 @@ let () =
   let released = ref false in
   let fx = Run.fixture ~teardown:(fun _ -> released := true) (fun () -> ()) in
   let on_event = function
-    | Runner.Test_started { path = [ "second" ] } -> raise Boom
+    | Run.Test_started { path = [ "second" ] } -> raise Boom
     | _ -> ()
   in
   let tests =
@@ -1787,7 +1776,7 @@ let () =
       Test_tree.test "second" (fun () -> ());
     ]
   in
-  (match Runner.execute ~on_event ~config ~suite:"suite" tests with
+  (match Run.execute ~on_event config ~suite:"suite" tests with
   | exception Boom -> check "the observer's exception aborts the run" true
   | Ok _ | Error _ -> check "the observer's exception aborts the run" false);
   check "fixtures release when an observer kills the run" !released
@@ -1811,12 +1800,12 @@ let () =
       check "the release row reports under its own label"
         (r.Run.path = Run.fixture_release_path);
       check "the release row is recorded after the test rows"
-        (match List.rev (Run.results outcome.Runner.run) with
+        (match List.rev (Run.results outcome.Run.run) with
         | last :: _ -> last == r
         | [] -> false)
   | _ -> check "one release row" false);
   check "a release failure exits 1, tests all green"
-    (outcome.Runner.exit_code = 1
+    (outcome.Run.exit_code = 1
     && outcome_of outcome [ "acquires" ] = Some Failure.Pass)
 
 (* Events and list-only *)
@@ -1832,17 +1821,17 @@ let () =
   expect_run "event suite runs" ~on_event ~config tests @@ fun _ ->
   (match List.rev !events with
   | [
-   Runner.Run_started { suite = "suite"; total = 2; selected = 2; _ };
-   Runner.Test_started { path = [ "one" ] };
-   Runner.Test_finished r1;
-   Runner.Test_started { path = [ "two" ] };
-   Runner.Test_finished r2;
+   Run.Run_started { suite = "suite"; total = 2; selected = 2; _ };
+   Run.Test_started { path = [ "one" ] };
+   Run.Test_finished r1;
+   Run.Test_started { path = [ "two" ] };
+   Run.Test_finished r2;
   ] ->
       check "events stream in execution order"
         (r1.Run.path = [ "one" ] && r2.Run.path = [ "two" ])
   | _ -> check "events stream in execution order" false);
   events := [];
-  match Runner.list_selection ~config ~suite:"suite" tests with
+  match Run.list_selection config ~suite:"suite" tests with
   | Error _ -> check "--list is the selection, and runs nothing" false
   | Ok paths ->
       check "--list is the selection, and runs nothing"
@@ -1856,11 +1845,11 @@ let () =
   let ctx_seen = ref false in
   let tests =
     [
-      Runner.prop "always-holds" Gen.int (fun _ ->
+      Run.prop "always-holds" Gen.int (fun _ ->
           ctx_seen :=
             !ctx_seen || Run.prop_context (Run.current_frame ()) <> None);
-      Runner.prop ~count:3 "tiny" Gen.int (fun _ -> ());
-      Runner.prop "never-holds" Gen.int (fun n -> Check.is_true (n = n + 1));
+      Run.prop ~count:3 "tiny" Gen.int (fun _ -> ());
+      Run.prop "never-holds" Gen.int (fun n -> Check.is_true (n = n + 1));
     ]
   in
   expect_run "property suite runs" ~config tests @@ fun outcome ->
@@ -1896,10 +1885,10 @@ let () =
   in
   let tests =
     [
-      Runner.prop "counted" Gen.int (fun _ -> ());
-      Runner.prop ~count:2 "declared" Gen.int (fun _ -> ());
-      Runner.prop "counted-fails" Gen.int (fun _ -> Check.fail "no");
-      Runner.prop ~count:2 "declared-fails" Gen.int (fun _ -> Check.fail "no");
+      Run.prop "counted" Gen.int (fun _ -> ());
+      Run.prop ~count:2 "declared" Gen.int (fun _ -> ());
+      Run.prop "counted-fails" Gen.int (fun _ -> Check.fail "no");
+      Run.prop ~count:2 "declared-fails" Gen.int (fun _ -> Check.fail "no");
     ]
   in
   expect_run "prop-count suite runs" ~config tests @@ fun outcome ->
@@ -1934,7 +1923,7 @@ let () =
   let calls = ref 0 in
   let tests =
     [
-      Runner.prop "late" Gen.int (fun _ ->
+      Run.prop "late" Gen.int (fun _ ->
           incr calls;
           if !calls >= 500 then Check.fail "late failure");
     ]
@@ -1965,7 +1954,7 @@ let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
   let tests =
-    [ Runner.prop "shrinks" Gen.int (fun n -> Check.is_true (n = n + 1)) ]
+    [ Run.prop "shrinks" Gen.int (fun n -> Check.is_true (n = n + 1)) ]
   in
   let rendered outcome =
     match failure_list (outcome_of outcome [ "shrinks" ]) with
@@ -1983,14 +1972,14 @@ let () =
   let config = base_config ~log_dir:root () in
   let tests =
     [
-      Runner.prop ~examples:[ 0 ] "bad-example" Gen.int (fun n ->
+      Run.prop ~examples:[ 0 ] "bad-example" Gen.int (fun n ->
           Check.is_true (n <> 0));
-      Runner.prop ~count:5 ~examples:[ 1; 2 ] "counted-examples" Gen.int
-        (fun _ -> ());
-      Runner.prop ~count:5 "gives-up"
+      Run.prop ~count:5 ~examples:[ 1; 2 ] "counted-examples" Gen.int (fun _ ->
+          ());
+      Run.prop ~count:5 "gives-up"
         Gen.(such_that (fun _ -> false) int)
         (fun _ -> ());
-      Runner.prop ~count:5 "under-covered" Gen.int (fun _ ->
+      Run.prop ~count:5 "under-covered" Gen.int (fun _ ->
           let ctx =
             match Run.prop_context (Run.current_frame ()) with
             | Some ctx -> ctx
@@ -2031,7 +2020,7 @@ let () =
   let tests =
     [
       Test_tree.test "starts-a-run" (fun () ->
-          ignore (Runner.execute ~config ~suite:"inner" []));
+          ignore (Run.execute config ~suite:"inner" []));
     ]
   in
   expect_run "nested-run suite runs" ~config tests @@ fun outcome ->
@@ -2051,15 +2040,15 @@ let () =
   let suite = [ Test_tree.test "ok" (fun () -> ()) ] in
   Unix.putenv "CI" "true";
   expect_startup_error "-u is refused under CI" ~config suite (function
-    | Runner.Update_refused_in_ci -> true
+    | Run.Update_refused_in_ci -> true
     | _ -> false);
-  let message = Runner.startup_message Runner.Update_refused_in_ci in
+  let message = Run.startup_message Run.Update_refused_in_ci in
   check "the refusal names the CI-safe acceptance"
     (contains "--corrected" message && contains "dune promote" message);
   let corrected = { config with Run.baseline = Baseline.Corrected } in
   expect_run "--corrected proceeds under CI" ~config:corrected suite
   @@ fun outcome ->
-  check "corrected run is green" (outcome.Runner.exit_code = 0);
+  check "corrected run is green" (outcome.Run.exit_code = 0);
   clear_env ()
 
 (* Corrections
@@ -2089,10 +2078,10 @@ let () =
   expect_run "check mode fails on a missing baseline" ~config:base suite
   @@ fun outcome ->
   check "the run fails"
-    (outcome.Runner.exit_code = 1 && failed_paths outcome = [ "t1" ]);
+    (outcome.Run.exit_code = 1 && failed_paths outcome = [ "t1" ]);
   check "nothing is written"
     ((not (Sys.file_exists (baseline root)))
-    && Baseline.writes (Run.baselines outcome.Runner.run) = []);
+    && Baseline.writes (Run.baselines outcome.Run.run) = []);
   (* Corrected mode: the test still fails, the correction lands beside the
      file, and the exit code is left to the diff that follows. *)
   let corrected = { base with Run.baseline = Baseline.Corrected } in
@@ -2100,12 +2089,12 @@ let () =
     suite
   @@ fun outcome ->
   check "the test row counts as failed" (failed_paths outcome = [ "t1" ]);
-  check "but the run exits 0" (outcome.Runner.exit_code = 0);
+  check "but the run exits 0" (outcome.Run.exit_code = 0);
   check "the .corrected is written beside the file"
     (Sys.file_exists (baseline root ^ ".corrected")
     && read_file (baseline root ^ ".corrected") = "hello\n");
   check "and the file itself is not" (not (Sys.file_exists (baseline root)));
-  (match Baseline.writes (Run.baselines outcome.Runner.run) with
+  (match Baseline.writes (Run.baselines outcome.Run.run) with
   | [ { Baseline.path; literals = 0 } ] ->
       check "one write reported" (path = baseline root ^ ".corrected")
   | _ -> check "one write reported" false);
@@ -2113,15 +2102,15 @@ let () =
   let update = { base with Run.baseline = Baseline.Update } in
   expect_run "update mode accepts in place" ~config:update suite
   @@ fun outcome ->
-  check "green" (outcome.Runner.exit_code = 0 && failed_paths outcome = []);
+  check "green" (outcome.Run.exit_code = 0 && failed_paths outcome = []);
   check "the file holds the content"
     (Sys.file_exists (baseline root) && read_file (baseline root) = "hello\n");
   check "the write is reported"
-    (Baseline.writes (Run.baselines outcome.Runner.run)
+    (Baseline.writes (Run.baselines outcome.Run.run)
     = [ { Baseline.path = baseline root; literals = 0 } ]);
   expect_run "the accepted baseline matches from then on" ~config:base suite
   @@ fun outcome ->
-  check "green" (outcome.Runner.exit_code = 0 && failed_paths outcome = []);
+  check "green" (outcome.Run.exit_code = 0 && failed_paths outcome = []);
   clear_env ()
 
 (* Gating: a correction never blesses output produced beside another
@@ -2148,10 +2137,10 @@ let () =
   expect_run "a correction beside another failure is dropped" ~config:corrected
     dirty
   @@ fun outcome ->
-  check "the run fails" (outcome.Runner.exit_code = 1);
+  check "the run fails" (outcome.Run.exit_code = 1);
   check "nothing is written"
     ((not (Sys.file_exists (Filename.concat root "src/a.expected.corrected")))
-    && Baseline.writes (Run.baselines outcome.Runner.run) = []);
+    && Baseline.writes (Run.baselines outcome.Run.run) = []);
   let escaping =
     [
       Test_tree.test "escapes" (fun () ->
@@ -2161,7 +2150,7 @@ let () =
   expect_run "an unresolvable baseline is not a correction" ~config:corrected
     escaping
   @@ fun outcome ->
-  check "the run fails" (outcome.Runner.exit_code = 1);
+  check "the run fails" (outcome.Run.exit_code = 1);
   let divergent =
     [
       Test_tree.test "a" (fun () ->
@@ -2173,7 +2162,7 @@ let () =
   expect_run "two contents for one baseline" ~config:corrected divergent
   @@ fun outcome ->
   check "the first is a correction, the second a failure"
-    (outcome.Runner.exit_code = 1 && failed_paths outcome = [ "a"; "b" ]);
+    (outcome.Run.exit_code = 1 && failed_paths outcome = [ "a"; "b" ]);
   check "the first content is what is written"
     (read_file (Filename.concat root "src/d.expected.corrected") = "one\n");
   clear_env ()
@@ -2204,9 +2193,9 @@ let () =
          (Filename.concat root ("src/" ^ name ^ ".expected.corrected"))
   in
   let excused outcome =
-    outcome.Runner.exit_code = 0
+    outcome.Run.exit_code = 0
     && failed_paths outcome = []
-    && Baseline.writes (Run.baselines outcome.Runner.run) = []
+    && Baseline.writes (Run.baselines outcome.Run.run) = []
     && not (on_disk "known")
   in
   let corrected = { base with Run.baseline = Baseline.Corrected } in
@@ -2225,7 +2214,7 @@ let () =
          (fun (r : Run.result) ->
            r.Run.path = [ "undecided" ]
            && match r.Run.outcome with Failure.Skip _ -> true | _ -> false)
-         (Run.results outcome.Runner.run));
+         (Run.results outcome.Run.run));
   clear_env ()
 
 (* A verdict row is not a test: a release failure beside a corrected test
@@ -2253,7 +2242,7 @@ let () =
   expect_run "release failure beside a correction" ~config suite
   @@ fun outcome ->
   check "the release failure still fails the run"
-    (outcome.Runner.exit_code = 1 && List.length (release_rows outcome) = 1);
+    (outcome.Run.exit_code = 1 && List.length (release_rows outcome) = 1);
   check "the correction is still written"
     (Sys.file_exists (baseline root ^ ".corrected"));
   clear_env ()
@@ -2272,21 +2261,21 @@ let () =
     ]
   in
   expect_run "store round trip: first run" ~config tests @@ fun outcome ->
-  check "first run fails" (outcome.Runner.exit_code = 1);
+  check "first run fails" (outcome.Run.exit_code = 1);
   expect_run "--failed reruns the recorded failure" ~config:rerun tests
   @@ fun outcome ->
   check "--failed selects only the failure"
-    (ran_names outcome = [ "shaky" ] && outcome.Runner.exit_code = 1);
+    (ran_names outcome = [ "shaky" ] && outcome.Run.exit_code = 1);
   fixed := true;
   expect_run "--failed clears on pass" ~config:rerun tests @@ fun outcome ->
   check "the fixed test passes"
-    (ran_names outcome = [ "shaky" ] && outcome.Runner.exit_code = 0);
+    (ran_names outcome = [ "shaky" ] && outcome.Run.exit_code = 0);
   expect_startup_error "--failed with an empty store is refused" ~config:rerun
     tests (function
-    | Runner.No_recorded_failures -> true
+    | Run.No_recorded_failures -> true
     | _ -> false);
   check "the empty-store refusal exits 2"
-    (Runner.startup_exit_code Runner.No_recorded_failures = 2)
+    (Run.startup_exit_code Run.No_recorded_failures = 2)
 
 let () =
   with_temp_root @@ fun root ->
@@ -2294,7 +2283,7 @@ let () =
   expect_startup_error "--failed with no store at all is refused"
     ~config:{ config with Run.failed_only = true }
     [ Test_tree.test "any" (fun () -> ()) ]
-    (function Runner.No_recorded_failures -> true | _ -> false)
+    (function Run.No_recorded_failures -> true | _ -> false)
 
 let () =
   with_temp_root @@ fun root ->
@@ -2313,7 +2302,7 @@ let () =
     tests
   @@ fun outcome ->
   check "only t1 reran and passed"
-    (ran_names outcome = [ "t1" ] && outcome.Runner.exit_code = 0);
+    (ran_names outcome = [ "t1" ] && outcome.Run.exit_code = 0);
   expect_run "survivors: --failed keeps the unreached failure"
     ~config:{ config with Run.failed_only = true }
     tests
@@ -2324,7 +2313,7 @@ let () =
     tests
   @@ fun outcome ->
   check "a nonempty allowlist the filter rejects runs nothing, exit 2"
-    (ran_names outcome = [] && outcome.Runner.exit_code = 2)
+    (ran_names outcome = [] && outcome.Run.exit_code = 2)
 
 let () =
   with_temp_root @@ fun root ->
@@ -2335,11 +2324,11 @@ let () =
   expect_run "dead entries: a full run of a new suite drops them" ~config
     [ Test_tree.test "new-test" (fun () -> ()) ]
   @@ fun outcome ->
-  check "the replacement run is green" (outcome.Runner.exit_code = 0);
+  check "the replacement run is green" (outcome.Run.exit_code = 0);
   expect_startup_error "dead entries no longer match"
     ~config:{ config with Run.failed_only = true }
     [ Test_tree.test "new-test" (fun () -> ()) ]
-    (function Runner.No_recorded_failures -> true | _ -> false)
+    (function Run.No_recorded_failures -> true | _ -> false)
 
 (* The exit guard (D1) *)
 
@@ -2363,7 +2352,7 @@ let () =
   in
   expect_run "exit-guard suite runs" ~config tests @@ fun outcome ->
   check_int "exit in body is intercepted and every test still runs" ~expected:3
-    ~actual:(List.length (Run.results outcome.Runner.run));
+    ~actual:(List.length (Run.results outcome.Run.run));
   check "the test after the bomb executed" !after_ran;
   (match failure_list (outcome_of outcome [ "bomb" ]) with
   | [ f ] ->
@@ -2375,7 +2364,7 @@ let () =
   check "the bomb and the genuine failure both counted"
     (failed_paths outcome = [ "bomb"; "after" ]);
   check "the run exits through its own path with code 1"
-    (outcome.Runner.exit_code = 1);
+    (outcome.Run.exit_code = 1);
   check "the slot is inactive after execute returns" (not (Run.active ()))
 
 let () =
@@ -2388,7 +2377,7 @@ let () =
     (match failure_list (outcome_of outcome [ "bomb7" ]) with
     | [ f ] -> message_of f = exit_message
     | _ -> false);
-  check "exit 7: run exit code is 1" (outcome.Runner.exit_code = 1)
+  check "exit 7: run exit code is 1" (outcome.Run.exit_code = 1)
 
 let () =
   with_temp_root @@ fun root ->
@@ -2432,7 +2421,7 @@ let () =
   let config = base_config ~log_dir:root () in
   let tests =
     [
-      Runner.prop "law-bomb" (Gen.int_range 0 1000) (fun n ->
+      Run.prop "law-bomb" (Gen.int_range 0 1000) (fun n ->
           if n > 10 then Stdlib.exit 0);
     ]
   in
@@ -2463,7 +2452,7 @@ let () =
             intercepted by windtrap)"
            (message_of f))
   | _ -> check "exit-release: exactly one release failure" false);
-  check "exit-release: run exit code is 1" (outcome.Runner.exit_code = 1)
+  check "exit-release: run exit code is 1" (outcome.Run.exit_code = 1)
 
 let () =
   with_temp_root @@ fun root ->
@@ -2480,7 +2469,7 @@ let () =
     | _ -> false);
   check "the excused bomb is absent from failed_paths"
     (failed_paths outcome = []);
-  check "the excused bomb leaves the run green" (outcome.Runner.exit_code = 0)
+  check "the excused bomb leaves the run green" (outcome.Run.exit_code = 0)
 
 let () =
   with_temp_root @@ fun root ->

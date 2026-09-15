@@ -44,9 +44,9 @@ run, and a `main` that forgets the `exit` is a type error rather than a
 binary that is green on failure. A test body passes by returning and
 fails by raising; the assertion verbs raise structured failures that
 render as reports. A green, healthy run is
-exactly one line; anything worth your attention — a failure, or a test
-that got slow — brings out the header and the per-test glyph row
-(`.` for a pass); `-v` prints one status line per test instead (see
+exactly one line; anything worth your attention — a failure, a test
+that got slow, a test that passed on a retry — brings out the header
+and a block saying what; `-v` streams one status line per test (see
 [Running tests](running-tests.md)).
 
 ## A failing test
@@ -69,7 +69,6 @@ group "users"
 ```
 $ dune runtest
 mylib: 1 test
-F
 ──────────────────── failures (1) ────────────────────
   FAIL  users › sessions after login
     test/test_mylib.ml:19

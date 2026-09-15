@@ -34,7 +34,7 @@ mylib: 2 passed in 0.00317s.
 ```
 
 A green, healthy run is exactly one line; failures bring out the
-header, the per-test glyph row, and the full failure blocks.
+header and the full failure blocks.
 
 ## Install
 

@@ -67,6 +67,9 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
 [2m[33m  2.50s  slow › big sort[0m[0m
 [2m(exempt with the "slow" tag, or raise --slow-threshold SECONDS)[0m
 
+[2m[33mflaky tests (1):[0m[0m
+[2m[33m  passed on attempt 3  flaky › eventually[0m[0m
+
 4 passed, [33m1 skipped[0m, [31m6 failed[0m in 6.5s.
 
 [2mslowest tests:[0m

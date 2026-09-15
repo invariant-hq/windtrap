@@ -113,7 +113,7 @@ let property_payload (failure : Failure.t) =
 let failure_block failure =
   let buf = Buffer.create 512 in
   let ppf = Format.formatter_of_buffer buf in
-  Render.pp_failure ~ansi:false ppf failure;
+  Report.pp_failure ~ansi:false ppf failure;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
@@ -1478,9 +1478,9 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
     (case.Test_tree.loc = Some (Loc.of_pos pos))
     "the declared ?__POS__ did not reach the test node"
 
-(* [stateful] is [Runner.prop] over [program] with [execute] as its law, and
+(* [stateful] is [Run.prop] over [program] with [execute] as its law, and
    the only way to see that wiring is to run the node it declares. The body
-   ends by raising the engine's outcome in a constructor [Runner]'s
+   ends by raising the engine's outcome in a constructor [Run]'s
    interface does not export, so the evidence is the lifecycle the run left
    behind rather than the outcome value. *)
 let run_declared_body tree =

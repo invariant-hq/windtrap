@@ -16,8 +16,8 @@
 
 (* The facade: flat re-exports of the public surface, the ambient wiring
    (operations that reach the current run through Run's one documented
-   slot), and the [run] driver gluing Cli, Runner, and the renderers.
-   Wiring only — semantics live in the modules below. *)
+   slot), and the [run] entry gluing Cli, Run and Report. Wiring only —
+   semantics live in the modules below. *)
 
 (* Public modules *)
 
@@ -34,7 +34,6 @@ module Private = struct
   module Cli = Cli
   module Clock = Clock
   module Diff = Diff
-  module Driver = Driver
   module Env = Env
   module Failure = Failure
   module Loc = Loc
@@ -42,11 +41,10 @@ module Private = struct
   module Path_ops = Path_ops
   module Pp = Pp
   module Property = Property
-  module Render = Render
-  module Render_github = Render_github
-  module Render_junit = Render_junit
+  module Report = Report
+  module Report_junit = Report_junit
+  module Report_sections = Report_sections
   module Run = Run
-  module Runner = Runner
   module Seed = Seed
   module Shrink_tree = Shrink_tree
   module Source_patch = Source_patch
@@ -117,7 +115,7 @@ let skip = Check.skip
 let () =
   Printexc.register_printer (function
     | Failure.Check_failure failure ->
-        Some ("windtrap assertion failure: " ^ Render.headline failure)
+        Some ("windtrap assertion failure: " ^ Report.headline failure)
     | Failure.Skip_test reason ->
         Some
           ("windtrap skip"
@@ -152,19 +150,17 @@ let pass = Testable.pass
 
 (* Properties *)
 
-(* Facade [prop] tests carry this tag: it makes properties selectable
-   ([--tag prop]) and lets [run] print the root seed in the header exactly
-   when the suite declares property tests. *)
-let prop_tag = "prop"
-
+(* Facade [prop] tests carry [Tag.prop]: it makes properties selectable
+   ([--tag prop]) and lets the report print the root seed in the header
+   exactly when the suite declares property tests. *)
 let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
-  let tags = prop_tag :: Option.value ~default:[] tags in
-  Runner.prop ?__POS__ ~tags ?timeout ?count ?max_discard ?examples name gen law
+  let tags = Tag.prop :: Option.value ~default:[] tags in
+  Run.prop ?__POS__ ~tags ?timeout ?count ?max_discard ?examples name gen law
 
 let assume = Property.assume
 let reject = Property.reject
 
-(* [Stateful.stateful] applies [prop_tag] itself, alongside its own
+(* [Stateful.stateful] applies [Tag.prop] itself, alongside its own
    ["stateful"] tag — so this is a re-export and not a wrapper like [prop]
    above. Adding the tag here again would duplicate it. *)
 
@@ -234,13 +230,15 @@ let version =
   if String.length watermark > 0 && watermark.[0] = '%' then "dev"
   else watermark
 
-(* The hint context, computed once at startup and threaded to every
-   renderer and transport: under dune, a [dune exec] spelling of this
-   executable — truthful for every dune invocation of every stanza kind,
-   where [dune runtest] and [dune exec] are indistinguishable (both set
-   INSIDE_DUNE); standalone, argv0 verbatim, exactly as the user typed it.
-   An embedder passing [~argv:[||]] gets [`Mirrors] — the fixed dune
-   wording.
+(* The hint context, computed once at startup and carried in the
+   configuration to every hint: under dune, a [dune exec] spelling of
+   this executable — truthful for every dune invocation of every stanza
+   kind, where [dune runtest] and [dune exec] are indistinguishable (both
+   set INSIDE_DUNE); standalone, argv0 verbatim, exactly as the user typed
+   it. An embedder passing [~argv:[||]] gets [`Mirrors] — the fixed dune
+   wording. A [--corrected] run is dune's — a stanza's action, or the
+   inline runner — so its hints spell the mirrors and its acceptance is
+   [dune promote], whatever argv says.
 
    The dune spelling carries [--instrument-with ppx_windtrap.mutate] when
    this executable has mutants registered, and the flag precedes the
@@ -252,10 +250,10 @@ let version =
    context — [--failed], [-u], the replay line — gains it too, which is
    right for the same reason: re-running the suite without the flag
    rebuilds a different binary. *)
-let invocation_of ~inside_dune argv : Render.invocation =
+let invocation_of ~corrected argv : Run.invocation =
   let argv0 = if Array.length argv > 0 then argv.(0) else "" in
-  if argv0 = "" then `Mirrors
-  else if inside_dune then begin
+  if argv0 = "" || corrected then `Mirrors
+  else if Env.inside_dune () then begin
     let absolute =
       if Filename.is_relative argv0 then Filename.concat (Sys.getcwd ()) argv0
       else argv0
@@ -276,71 +274,32 @@ let invocation_of ~inside_dune argv : Render.invocation =
 let print_cli_error ~prog error =
   Format.eprintf "%s@.%s@." (Cli.error_message error) (Cli.usage ~prog)
 
-(* The thin library driver: [Driver.execute_and_report] writes the whole
-   transcript, shared byte-for-byte with the inline (ppx) runner. What is
-   legitimately this runner's own stays visible here: the parsed-CLI
-   resolution sources, the argv-computed invocation, the two header
-   policies (the property-aware seed and the selection description),
-   GitHub gating, the focus warning, and the exit code — returned, never
+(* The run: [Report.run] writes the whole transcript. What is
+   legitimately the facade's own stays visible here: the argv-computed
+   invocation, the focus warning, and the exit code — returned, never
    applied: the process is the caller's. *)
-let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
-  let github = Env.in_github_actions () in
-  (* The one invocation every command hint derives from: computed
-     here, at startup, and threaded to the renderer and both transports.
-     A [--corrected] run is dune's — a stanza's action, or the inline
-     runner — so its hints spell the mirrors and its acceptance is
-     [dune promote], whatever argv says. *)
-  let invocation =
-    if config.Run.baseline = Baseline.Corrected then `Mirrors
-    else invocation_of ~inside_dune:(Env.inside_dune ()) argv
-  in
-  (* Header-seed policy: the root seed iff the suite declares property
-     tests — selection never changes it, so the token stays stable across
-     filtered runs. The inline runner always passes [None]. *)
-  let seed =
-    let has_props =
-      List.exists
-        (fun case -> Tag.mem prop_tag case.Test_tree.tags)
-        (Test_tree.flatten tests)
-    in
-    if has_props then Some config.Run.seed else None
-  in
-  let spine =
-    {
-      Driver.invocation;
-      seed;
-      selection = Driver.selection_description config;
-      github;
-      output;
-      coverage;
-      junit;
-      render;
-      config;
-      suite;
-    }
-  in
-  (* The mutation seam: one call at run entry, in place of the driver's.
+let run_suite ~suite ~config tests =
+  (* The mutation seam: one call at run entry, in place of [Report.run].
      Without a mutation backend and without the variables it is exactly
-     [Driver.execute_and_report] — same transcript, same bytes, same
-     cost; with them it wraps the run on both sides (an armed mutant is
-     announced before any output, and the loop forks after the dry run)
-     and may take the process over. *)
-  match Mutate_loop.execute_and_report spine tests with
+     [Report.run] — same transcript, same bytes, same cost; with them it
+     wraps the run on both sides (an armed mutant is announced before any
+     output, and the loop forks after the dry run) and may take the
+     process over. *)
+  match Mutate_loop.execute_and_report ~suite config tests with
   | Mutate_loop.Reported code -> code
   | Mutate_loop.Ran (Error error) ->
       (* The message is already on stderr; only the code is left. *)
-      Runner.startup_exit_code error
+      Run.startup_exit_code error
   | Mutate_loop.Ran (Ok outcome) ->
       if
-        outcome.Runner.focus_active
-        && outcome.Runner.exit_code = 0
+        outcome.Run.focus_active && outcome.Run.exit_code = 0
         && not (Env.in_ci ())
       then
         Format.eprintf
           "warning: focus is active — %d of %d tests ran; remove the focus \
            before committing@."
-          (List.length outcome.Runner.selected)
-          outcome.Runner.total;
+          (List.length outcome.Run.selected)
+          outcome.Run.total;
       (* A [--corrected] run is a build action's, and a build action's
          selection is a [WINDTRAP_*] variable spanning every stanza and
          partition of the tree: a stanza it empties is not a mistyped
@@ -348,9 +307,9 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
          line still says so, and the [diff?] that follows is the verdict.
          A suite that declares no tests keeps its 2, since no selection
          emptied it; a usage error never reaches this branch. *)
-      let code = outcome.Runner.exit_code in
+      let code = outcome.Run.exit_code in
       if
-        code = 2 && outcome.Runner.total > 0
+        code = 2 && outcome.Run.total > 0
         && config.Run.baseline = Baseline.Corrected
       then 0
       else code
@@ -360,10 +319,10 @@ let run_suite ~argv ~suite ~config ~coverage ~render ~output ~junit tests =
    below needs to carry. The startup checks are still the ones a real
    run makes, so a refused [--shard] or [--failed] is refused here too. *)
 let run_listing ~suite ~config tests =
-  match Runner.list_selection ~config ~suite tests with
+  match Run.list_selection config ~suite tests with
   | Error error ->
-      prerr_endline (Runner.startup_message error);
-      Runner.startup_exit_code error
+      prerr_endline (Run.startup_message error);
+      Run.startup_exit_code error
   | Ok [] ->
       (* A listing that answered a mistyped filter with silence would be
          the dead end the empty-selection line's own "(list the suite's
@@ -371,9 +330,9 @@ let run_listing ~suite ~config tests =
          the reader is listing. *)
       Option.iter
         (fun reason -> print_endline ("no tests ran: " ^ reason ^ "."))
-        (Render.empty_selection_reason
+        (Report.empty_selection_reason
            ~declared:(List.length (Test_tree.flatten tests))
-           ~selection:(Driver.selection_description config));
+           ~selection:(Report.selection_description config));
       0
   | Ok paths ->
       List.iter print_endline paths;
@@ -407,11 +366,19 @@ let run ?(argv = Sys.argv) suite tests =
       | Error error ->
           print_cli_error ~prog error;
           2
-      | Ok { Cli.config; render; coverage; output_level; junit } ->
+      | Ok config ->
           (* [-l] has no mirror, so [parsed] is its whole resolution, as
              for [--help] and [--version]. *)
           if parsed.Cli.list_only = Some true then
             run_listing ~suite ~config tests
           else
-            run_suite ~argv ~suite ~config ~coverage ~render
-              ~output:output_level ~junit tests)
+            let config =
+              {
+                config with
+                Run.invocation =
+                  invocation_of
+                    ~corrected:(config.Run.baseline = Baseline.Corrected)
+                    argv;
+              }
+            in
+            run_suite ~suite ~config tests)
