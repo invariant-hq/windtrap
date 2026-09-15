@@ -11,7 +11,9 @@ only `?reason`. Expected precedes actual, always.
 declaration line instead of the assertion. That happens when the
 failing call sits in tail position — the capture walks the stack and
 the frame it wanted is not there any more — and the fix is to hand the
-location in, `equal ~pos:__POS__ int 3 (f x)`.
+location in, `equal ~pos:__POS__ int 3 (f x)`. The report says when it
+has happened, one line under the location: `(assertion in tail
+position: its line is unknown; ~pos:__POS__ names it)`.
 
 ## Equality: testables
 
