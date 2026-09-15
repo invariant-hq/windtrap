@@ -744,6 +744,9 @@ let report_tests =
               (r.C.uncovered_extents = [ pt 9 17 ]);
             check "uncovered lines are the inner block's, not the outer's"
               (r.C.uncovered_lines = [ 2 ]);
+            check
+              "line hits are the fewest visits of any point touching the line"
+              (r.C.line_hits = [ (1, 1); (2, 0); (3, 1) ]);
             check "report summary counts blocks"
               (r.C.summary = { C.visited = 1; total = 2 })
         | reports ->
@@ -759,7 +762,8 @@ let report_tests =
             check "a missing source is not stale" (not rb.C.stale);
             check "extents are available without the source"
               (rb.C.uncovered_extents = [ pt 30 40 ]);
-            check "no source means no line numbers" (rb.C.uncovered_lines = [])
+            check "no source means no line numbers" (rb.C.uncovered_lines = []);
+            check "nor line hits" (rb.C.line_hits = [])
         | reports ->
             check_int "two files yield two reports" ~expected:2
               ~actual:(List.length reports));

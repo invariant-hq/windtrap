@@ -128,7 +128,8 @@ from the inert `(instrumentation (backend ppx_windtrap.coverage))`
 stanza: `dune runtest --instrument-with ppx_windtrap.coverage` prints an
 inline percentage after the results, `dune exec windtrap -- coverage`
 draws the per-file table (`-u` for the uncovered source, `--json` for
-the machine-readable form), and `--min 80` gates CI.
+the machine-readable form, `--lcov` for coverage services and genhtml),
+and `--min 80` gates CI.
 
 **[Mutation testing](doc/manual/mutation.md)** — the second inert
 stanza, `(instrumentation (backend ppx_windtrap.mutate))`, makes the

@@ -32,7 +32,7 @@ They never merge again (that was v1's mistake).
 | `windtrap.instr` | `lib/instr/` | the versioned, exe-identified dump-file protocol both instrumentation formats share; stdlib only |
 | `windtrap.coverage` | `lib/coverage/` | coverage runtime: registration, `.coverage` files, report data; stdlib only — it must never pull anything into the closure of every instrumented library |
 | `windtrap.mutate` | `lib/mutate/` | mutation runtime: the catalogue, the arming guard, the reach map; stdlib only and dependency-free, for the same reason — the `.mutants` verdict file is tool currency and lives in the core (`Mutate_verdicts`) |
-| binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`) and `mutate` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared verdict-file lookup and staleness in `data_files` |
+| binary `windtrap` | `bin/` | the two reporting subcommands: `coverage` (`--min`, `--json`, `--lcov`) and `mutate` (merge verdicts killed-anywhere-wins, render the aggregate with its own projection — survivors whose witnesses name their executable, UNREACHED blocks for mutants no executable reached — and exit 1 on any survivor); shared verdict-file lookup and staleness in `data_files` |
 | package `ppx_windtrap` | `ppx/` | the expect/inline PPX, the two instrumentation backends (`ppx/coverage/`, `ppx/mutate/`) over shared scaffolding (`ppx/scaffold/`), and the expect runtime itself — `Ppx_runtime` (`ppx/runtime/`) and the ambient `Expect_test_config` (`ppx/config/`) — the only unit that sees ppxlib |
 
 ## Module graph (`lib/`)

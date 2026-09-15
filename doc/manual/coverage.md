@@ -77,7 +77,21 @@ exist or lacks the `.coverage` suffix is a loud error naming the path,
 never a silent fall-through to the no-data report.
 `--json` prints a machine-readable document (per-file percentages and
 uncovered lines) on standard output for dashboards and diff-coverage
-tooling.
+tooling. `--lcov` prints an LCOV tracefile instead — the format Codecov,
+Coveralls, GitLab and editor coverage gutters consume, and what
+`genhtml` turns into an HTML report:
+
+```
+$ dune exec windtrap -- coverage --lcov > lcov.info
+$ genhtml lcov.info -o _coverage
+```
+
+A line's hit count is the fewest visits of any point touching it, so a
+line holding an untested arm or a call that never returned reads as 0.
+Paths are project-relative, so run it from the project root; a file
+whose source is missing or has changed is omitted and named on stderr.
+Under either format `--min` still gates, and its verdict moves to
+stderr so standard output stays the artifact.
 
 `-u` (`--show-uncovered`) adds the uncovered points as source
 excerpts — the fastest way from a percentage to the missing test:
@@ -170,6 +184,7 @@ rule per stanza, and the build fails when run uninstrumented (no dump is
 produced). The default side-channel recipe above is the right choice
 unless you need the dump as a declared artifact.
 
-For HTML reports or Coveralls upload, use Bisect_ppx — windtrap's
-coverage is deliberately the 90% product: one number after every run,
-and the exact arms you forgot to test.
+That is the whole product, deliberately: one number after every run,
+the exact arms you forgot to test, and an LCOV tracefile for everything
+else — HTML through `genhtml`, upload through your coverage service's
+own client.

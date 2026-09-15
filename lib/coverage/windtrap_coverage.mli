@@ -238,7 +238,15 @@ type file_report = {
           or not the source was found. *)
   uncovered_lines : int list;
       (** The 1-based source lines touched by [uncovered_extents], sorted,
-          without duplicates. [[]] when [source] is [None]. *)
+          without duplicates — the lines of [line_hits] with [0] hits. [[]] when
+          [source] is [None]. *)
+  line_hits : (int * int) list;
+      (** [(line, hits)] for every 1-based source line some point touches,
+          sorted by line: [hits] is the fewest visits of any point touching the
+          line, so a line holding an untested arm or a call that never returned
+          has [0] hits and is in [uncovered_lines] — the same rule as
+          {!lines_of_extents}, per line. Lines no point touches are absent. [[]]
+          when [source] is [None]. *)
   source : string option;
       (** The source text, when found under the report's roots and consistent
           with the point table; excerpt rendering needs it. *)

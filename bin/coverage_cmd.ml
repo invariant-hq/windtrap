@@ -28,6 +28,8 @@ directories searched recursively) replace that default.
 OPTIONS:
   --min PCT             Exit 1 when total coverage is below PCT
   --json                Machine-readable report on standard output
+  --lcov                LCOV tracefile on standard output (genhtml, Codecov,
+                        Coveralls, GitLab, editor gutters)
   -u, --show-uncovered  Also render uncovered source excerpts
   -h, --help            Print this help and exit|}
 
@@ -36,6 +38,7 @@ OPTIONS:
 type options = {
   min : float option;
   json : bool;
+  lcov : bool;
   show_uncovered : bool;
   paths : string list;
 }
@@ -53,7 +56,10 @@ let parse_args args =
             value))
   in
   let rec go acc = function
-    | [] -> Ok { acc with paths = List.rev acc.paths }
+    | [] ->
+        if acc.json && acc.lcov then
+          Error (`Usage "--json and --lcov each own standard output; pick one")
+        else Ok { acc with paths = List.rev acc.paths }
     | ("-h" | "--help" | "-help") :: _ -> Error `Help
     | "--min" :: value :: rest -> (
         match min_of_string value with
@@ -67,13 +73,22 @@ let parse_args args =
         | Some pct -> go { acc with min = Some pct } rest
         | None -> min_error value)
     | "--json" :: rest -> go { acc with json = true } rest
+    | "--lcov" :: rest -> go { acc with lcov = true } rest
     | ("-u" | "--show-uncovered") :: rest ->
         go { acc with show_uncovered = true } rest
     | arg :: _ when String.length arg > 0 && arg.[0] = '-' ->
         Error (`Usage (spf "unknown option '%s'" arg))
     | path :: rest -> go { acc with paths = path :: acc.paths } rest
   in
-  go { min = None; json = false; show_uncovered = false; paths = [] } args
+  go
+    {
+      min = None;
+      json = false;
+      lcov = false;
+      show_uncovered = false;
+      paths = [];
+    }
+    args
 
 (* Discovery: Data_files's, shared with `windtrap mutate` — the project
    root resolved as the runtime resolves its dump path, explicit PATH
@@ -269,6 +284,37 @@ let print_json ~source_roots collection =
     reports;
   Printf.printf " ] }\n%!"
 
+(* LCOV *)
+
+(* The tracefile every coverage service and gutter reads, and what
+   genhtml renders: one record per file, [DA:<line>,<hits>] for every
+   line a point touches (hits by the runtime's per-line rule, so an
+   uncovered line is a 0), then the instrumented and hit line counts.
+   Paths are as recorded, project-relative. A file whose source is
+   missing or stale has no lines to speak of and is omitted, named on
+   stderr: painting it would attribute hits to code the data does not
+   describe. *)
+let print_lcov ~source_roots collection =
+  let reports = Windtrap_coverage.file_reports ~source_roots collection in
+  List.iter
+    (fun (r : Windtrap_coverage.file_report) ->
+      match r.source with
+      | None ->
+          Printf.eprintf
+            "windtrap coverage: %s: %s; omitted from the lcov output\n%!" r.file
+            (if r.stale then "the source changed since the run"
+             else "source not found")
+      | Some _ ->
+          Printf.printf "TN:\nSF:%s\n" r.file;
+          List.iter
+            (fun (line, hits) -> Printf.printf "DA:%d,%d\n" line hits)
+            r.line_hits;
+          let hit = List.filter (fun (_, hits) -> hits > 0) r.line_hits in
+          Printf.printf "LF:%d\nLH:%d\nend_of_record\n"
+            (List.length r.line_hits) (List.length hit))
+    reports;
+  flush stdout
+
 (* The command *)
 
 let report_table ~source_roots ~show_uncovered collection =
@@ -288,11 +334,11 @@ let report_table ~source_roots ~show_uncovered collection =
    as given and, on failure, the measurement exactly as the report line
    states it — a fraction of integers beside its rounding — so no printed
    sentence carries a comparison its own digits can contradict. *)
-let check_min ~json summary = function
+let check_min ~machine summary = function
   | None -> 0
   | Some min ->
       let pct = Windtrap_coverage.percentage summary in
-      let print = if json then Printf.eprintf else Printf.printf in
+      let print = if machine then Printf.eprintf else Printf.printf in
       if pct >= min then begin
         print "minimum %g%%: ok\n%!" min;
         0
@@ -326,9 +372,12 @@ let run args =
             | Error code -> code
             | Ok collection ->
                 if options.json then print_json ~source_roots collection
+                else if options.lcov then print_lcov ~source_roots collection
                 else
                   report_table ~source_roots
                     ~show_uncovered:options.show_uncovered collection;
-                check_min ~json:options.json
+                (* A machine format owns stdout; the verdict moves aside. *)
+                check_min
+                  ~machine:(options.json || options.lcov)
                   (Windtrap_coverage.summary collection)
                   options.min))

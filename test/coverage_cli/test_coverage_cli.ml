@@ -580,6 +580,51 @@ let json_shape =
   check "--json --min keeps stdout pure JSON" (json_well_formed out);
   check_contains "--json --min moves the verdict to stderr" ~needle:"FAILED" err
 
+(* --lcov: the tracefile *)
+
+let lcov_output =
+  test "--lcov emits a tracefile" @@ fun () ->
+  let code, out, err = coverage_cmd ~cwd:proj [ "--lcov" ] in
+  check_int "--lcov exits 0" ~expected:0 ~actual:code;
+  check "--lcov keeps stderr empty" (err = "");
+  (* Files by name, every touched line with its hits (the merged
+     counts: foo [1;1;0], bar [1;0]), then the line totals. *)
+  equal ~msg:"--lcov is the frozen tracefile" string
+    "TN:\n\
+     SF:lib/bar.ml\n\
+     DA:1,1\n\
+     DA:2,0\n\
+     LF:2\n\
+     LH:1\n\
+     end_of_record\n\
+     TN:\n\
+     SF:lib/foo.ml\n\
+     DA:1,1\n\
+     DA:2,1\n\
+     DA:3,0\n\
+     LF:3\n\
+     LH:2\n\
+     end_of_record\n"
+    out;
+  (* --lcov --min: stdout stays a pure tracefile. *)
+  let code, out, err = coverage_cmd ~cwd:proj [ "--lcov"; "--min"; "80" ] in
+  check_int "--lcov --min still gates" ~expected:1 ~actual:code;
+  check_absent "--lcov --min keeps stdout pure" ~needle:"minimum" out;
+  check_contains "--lcov --min moves the verdict to stderr" ~needle:"FAILED" err;
+  (* Two owners of stdout is a usage error. *)
+  let code, _, err = coverage_cmd ~cwd:proj [ "--lcov"; "--json" ] in
+  check_int "--lcov --json exits 2" ~expected:2 ~actual:code;
+  check_contains "--lcov --json names the clash" ~needle:"--lcov" err;
+  (* A file whose source is missing is omitted and named, never painted. *)
+  let orphan = scratch "lcov-orphan" in
+  write_file
+    (Filename.concat orphan "_build/_coverage/x.coverage")
+    (C.to_string (collection "x" [ ("lib/gone.ml", bar_points, [| 1; 0 |]) ]));
+  let code, out, err = coverage_cmd ~cwd:orphan [ "--lcov" ] in
+  check_int "a missing source still exits 0" ~expected:0 ~actual:code;
+  check_absent "a missing source has no record" ~needle:"SF:" out;
+  check_contains "a missing source is named on stderr" ~needle:"lib/gone.ml" err
+
 (* Loud failures *)
 
 let loud_failures =
@@ -1051,6 +1096,7 @@ let () =
       reporting_command;
       min_matrix;
       json_shape;
+      lcov_output;
       loud_failures;
       min_boundaries;
       discovery_robustness;

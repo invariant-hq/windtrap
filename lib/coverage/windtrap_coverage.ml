@@ -350,17 +350,45 @@ let line_of starts ofs =
   in
   search 0 (Array.length starts - 1)
 
+(* The 1-based lines an extent touches: an empty extent touches the
+   line of its start. *)
+let line_range starts p =
+  let first = line_of starts p.start_ofs in
+  let last = line_of starts (max p.start_ofs (p.end_ofs - 1)) in
+  (first, last)
+
 let lines_of_extents ~source extents =
   let starts = line_starts source in
   if Array.length starts = 0 then []
   else
     List.concat_map
       (fun p ->
-        let first = line_of starts p.start_ofs in
-        let last = line_of starts (max p.start_ofs (p.end_ofs - 1)) in
+        let first, last = line_range starts p in
         List.init (last - first + 1) (fun i -> first + i))
       extents
     |> List.sort_uniq Int.compare
+
+(* Every line a point touches, with the fewest visits of any point
+   touching it: the uncovered-line rule ([lines_of_extents] over the
+   unvisited extents) restated per line, so a line's hits are 0 exactly
+   when it is uncovered. *)
+let line_hits ~source entry =
+  let starts = line_starts source in
+  if Array.length starts = 0 then []
+  else begin
+    let hits = Hashtbl.create 64 in
+    Array.iteri
+      (fun i p ->
+        let first, last = line_range starts p in
+        for line = first to last do
+          match Hashtbl.find_opt hits line with
+          | Some h when h <= entry.counts.(i) -> ()
+          | _ -> Hashtbl.replace hits line entry.counts.(i)
+        done)
+      entry.points;
+    Hashtbl.fold (fun line h acc -> (line, h) :: acc) hits []
+    |> List.sort (fun (a, _) (b, _) -> Int.compare a b)
+  end
 
 (* Per-File Reports *)
 
@@ -369,6 +397,7 @@ type file_report = {
   summary : summary;
   uncovered_extents : point list;
   uncovered_lines : int list;
+  line_hits : (int * int) list;
   source : string option;
   stale : bool;
 }
@@ -417,16 +446,20 @@ let file_reports ?(source_roots = [ Filename.current_dir_name ]) t =
         | Some source when stale_source entry source -> (None, true)
         | Some source -> (Some source, false)
       in
+      let line_hits =
+        match source with None -> [] | Some source -> line_hits ~source entry
+      in
       let uncovered_lines =
-        match source with
-        | None -> []
-        | Some source -> lines_of_extents ~source uncovered_extents
+        List.filter_map
+          (fun (line, hits) -> if hits = 0 then Some line else None)
+          line_hits
       in
       {
         file;
         summary = file_summary entry;
         uncovered_extents;
         uncovered_lines;
+        line_hits;
         source;
         stale;
       }
