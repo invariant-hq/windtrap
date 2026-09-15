@@ -5,10 +5,11 @@
 
 (* Tests for Cli: the flag table (every flag, both spellings, value
    validation), positional-filter handling, typed parse errors, the
-   generated help/usage text, and resolution precedence (programmatic > CLI
-   > env > default, additive tags, the WINDTRAP_SEED and WINDTRAP_SHARD
-   error paths, env-only settings). Parsing and resolution are pure over
-   argv and env, so each test clears the windtrap variables it touches. *)
+   generated help/usage text, the argument grammar's optional-value kind,
+   and resolution precedence (CLI > env > default, additive tags, the two
+   mirror reading rules, the WINDTRAP_SEED and WINDTRAP_SHARD error
+   paths). Parsing and resolution are pure over argv and env, so each test
+   clears the windtrap variables it touches. *)
 
 open Windtrap
 open Windtrap.Private
@@ -69,8 +70,7 @@ let () =
       "c";
       "--failed";
       "-l";
-      "--bail";
-      "3";
+      "-x";
       "-s";
       "-u";
       "--seed";
@@ -93,7 +93,7 @@ let () =
       check "exclude_tags" (p.Cli.exclude_tags = [ "c" ]);
       check "failed_only" (p.Cli.failed_only = Some true);
       check "list_only" (p.Cli.list_only = Some true);
-      check "bail" (p.Cli.bail = Some 3);
+      check "bail" (p.Cli.bail = Some true);
       check "stream" (p.Cli.stream = Some true);
       check "update" (p.Cli.update = Some true);
       check "seed" (p.Cli.seed = Some 0xffL);
@@ -109,15 +109,19 @@ let () =
 let () =
   reg "long spellings and inline values" @@ fun () ->
   expect_ok "long spellings and --flag=value"
-    [ "--filter=abc"; "--exclude=xyz"; "--bail=7"; "--color=ALWAYS" ] (fun p ->
+    [ "--filter=abc"; "--exclude=xyz"; "--prop-count=7"; "--color=ALWAYS" ]
+    (fun p ->
       check "--filter=" (p.Cli.filter = Some "abc");
       check "--exclude=" (p.Cli.exclude = Some "xyz");
-      check "--bail=" (p.Cli.bail = Some 7);
+      check "--prop-count=" (p.Cli.prop_count = Some 7);
       check "--color= is case-insensitive" (p.Cli.color = Some Env.Always));
-  expect_ok "-x is --bail 1" [ "-x" ] (fun p ->
-      check "-x" (p.Cli.bail = Some 1));
-  expect_ok "--fail-fast is --bail 1" [ "--fail-fast" ] (fun p ->
-      check "--fail-fast" (p.Cli.bail = Some 1));
+  expect_ok "-x is a boolean" [ "-x" ] (fun p ->
+      check "-x" (p.Cli.bail = Some true));
+  expect_ok "--fail-fast is -x" [ "--fail-fast" ] (fun p ->
+      check "--fail-fast" (p.Cli.bail = Some true));
+  expect_error "-x takes no value" [ "--fail-fast=2" ] (function
+    | Cli.Invalid_value { source = "--fail-fast"; value = "2"; _ } -> true
+    | _ -> false);
   expect_ok "later occurrence of a single-valued flag wins"
     [ "-f"; "first"; "-f"; "second" ] (fun p ->
       check "last wins" (p.Cli.filter = Some "second"));
@@ -205,6 +209,25 @@ let () =
   check "the bare error is still there"
     (contains "unknown option '-Z'" (message [ "-Z" ]))
 
+(* The knobs that went — a failure count for -x, a shrink budget — are
+   unknown flags like any other, with no near miss to suggest: nothing in
+   the inventory is one slip from either. *)
+let () =
+  reg "the cut knobs are unknown flags" @@ fun () ->
+  expect_error "--bail is unknown" [ "--bail"; "3" ] (function
+    | Cli.Unknown_flag "--bail" -> true
+    | _ -> false);
+  expect_error "--max-shrink is unknown" [ "--max-shrink"; "5" ] (function
+    | Cli.Unknown_flag "--max-shrink" -> true
+    | _ -> false);
+  List.iter
+    (fun typo ->
+      check
+        (typo ^ " suggests nothing")
+        (not
+           (contains "did you mean" (Cli.error_message (Cli.Unknown_flag typo)))))
+    [ "--bail"; "--max-shrink" ]
+
 let () =
   reg "typed parse errors" @@ fun () ->
   expect_error "unknown long flag" [ "--bogus" ] (function
@@ -219,18 +242,16 @@ let () =
   expect_error "flag refuses an inline value" [ "--list=x" ] (function
     | Cli.Invalid_value { source = "--list"; _ } -> true
     | _ -> false);
-  expect_error "--bail rejects zero" [ "--bail"; "0" ] (function
-    | Cli.Invalid_value { source = "--bail"; value = "0"; _ } -> true
+  expect_error "--prop-count rejects zero" [ "--prop-count"; "0" ] (function
+    | Cli.Invalid_value { source = "--prop-count"; value = "0"; _ } -> true
     | _ -> false);
-  expect_error "--bail rejects garbage" [ "--bail"; "many" ] (function
-    | Cli.Invalid_value { source = "--bail"; _ } -> true
+  expect_error "--prop-count rejects garbage" [ "--prop-count"; "many" ]
+    (function
+    | Cli.Invalid_value { source = "--prop-count"; _ } -> true
     | _ -> false);
   expect_error "--timeout rejects a negative number" [ "--timeout"; "-1" ]
     (function
     | Cli.Invalid_value { source = "--timeout"; _ } -> true
-    | _ -> false);
-  expect_error "--prop-count rejects zero" [ "--prop-count"; "0" ] (function
-    | Cli.Invalid_value { source = "--prop-count"; _ } -> true
     | _ -> false);
   expect_error "--slow-threshold rejects a negative number"
     [ "--slow-threshold"; "-1" ] (function
@@ -254,7 +275,8 @@ let () =
     [
       Cli.Unknown_flag "--bogus";
       Cli.Missing_value "--filter";
-      Cli.Invalid_value { source = "--bail"; value = "x"; expected = "an int" };
+      Cli.Invalid_value
+        { source = "--prop-count"; value = "x"; expected = "an int" };
       Cli.Extra_positional { filter = "a"; extra = "b" };
     ]
   in
@@ -309,6 +331,91 @@ let () =
       " 1/4";
     ]
 
+(* The argument grammar: the optional-value kind, over a synthetic row.
+   No flag uses it yet — [--mutate[=PREFIX,...]] will — and this pins what
+   that flag gets, so adopting it adds a row and nothing else. The row
+   stores into [junit], which nothing else in a one-row table touches. *)
+
+let probe_row : Cli.entry =
+  {
+    Cli.short = Some "-p";
+    long = "--probe";
+    arg =
+      Cli.Optional_value
+        {
+          metavar = "V";
+          set =
+            (fun ~source acc value ->
+              match value with
+              | None -> Ok { acc with Cli.junit = Some "<bare>" }
+              | Some "bad" ->
+                  Error
+                    (Cli.Invalid_value
+                       { source; value = "bad"; expected = "anything but bad" })
+              | Some v -> Ok { acc with Cli.junit = Some v });
+        };
+    doc = "Probe the grammar";
+    mirror =
+      Some
+        {
+          Cli.var = "WINDTRAP_PROBE";
+          layering = Cli.Single (fun p -> p.Cli.junit = None);
+        };
+  }
+
+let () =
+  reg "grammar: an optional-value flag on the command line" @@ fun () ->
+  let parse args =
+    Cli.parse_entries [ probe_row ] (Array.of_list ("windtrap-test" :: args))
+  in
+  let junit name args =
+    match parse args with
+    | Ok p -> p.Cli.junit
+    | Error e -> fail (name ^ ": " ^ Cli.error_message e)
+  in
+  check "the help heading spells the value as optional"
+    (Cli.flag_heading probe_row = "-p, --probe[=V]");
+  check "the bare long flag" (junit "bare" [ "--probe" ] = Some "<bare>");
+  check "the bare short flag" (junit "short" [ "-p" ] = Some "<bare>");
+  check "an inline value"
+    (junit "inline" [ "--probe=lib/a.ml,lib/b.ml" ] = Some "lib/a.ml,lib/b.ml");
+  (match parse [ "--probe"; "next" ] with
+  | Ok p ->
+      check "a bare flag never consumes the next argument"
+        (p.Cli.junit = Some "<bare>" && p.Cli.filter = Some "next")
+  | Error e -> fail (Cli.error_message e));
+  match parse [ "--probe=bad" ] with
+  | Error (Cli.Invalid_value { source = "--probe"; value = "bad"; _ }) ->
+      check "the row's parser refuses, naming the flag" true
+  | Ok _ | Error _ -> check "the row's parser refuses, naming the flag" false
+
+let () =
+  reg "grammar: an optional-value flag's mirror" @@ fun () ->
+  let layered cli =
+    match Cli.layer_entries [ probe_row ] cli with
+    | Ok p -> Ok p.Cli.junit
+    | Error e -> Error e
+  in
+  Unix.putenv "WINDTRAP_PROBE" "1";
+  check "a truthy value is the bare flag"
+    (layered Cli.empty = Ok (Some "<bare>"));
+  Unix.putenv "WINDTRAP_PROBE" "off";
+  check "a falsy value is absence" (layered Cli.empty = Ok None);
+  Unix.putenv "WINDTRAP_PROBE" " lib/a.ml ";
+  check "anything else is the value, trimmed"
+    (layered Cli.empty = Ok (Some "lib/a.ml"));
+  Unix.putenv "WINDTRAP_PROBE" "bad";
+  (match layered Cli.empty with
+  | Error (Cli.Invalid_value { source = "WINDTRAP_PROBE"; value = "bad"; _ }) ->
+      check "the mirror refuses through the same parser, naming the variable"
+        true
+  | Ok _ | Error _ ->
+      check "the mirror refuses through the same parser, naming the variable"
+        false);
+  check "the command line shadows the mirror, unread"
+    (layered { Cli.empty with Cli.junit = Some "cli" } = Ok (Some "cli"));
+  Unix.putenv "WINDTRAP_PROBE" ""
+
 (* Help and usage *)
 
 (* --help is the CLI's whole user-facing surface, and the baseline pins
@@ -358,15 +465,16 @@ let () =
   check "default: no tags" (config.Run.tags = [] && config.Run.exclude_tags = []);
   check "default: flags off"
     ((not config.Run.failed_only)
-    && (not config.Run.stream) && not config.Run.allow_focus);
+    && (not config.Run.bail) && (not config.Run.stream)
+    && not config.Run.allow_focus);
   check "default: baselines are checked" (config.Run.baseline = Baseline.Check);
-  check "default: no bail/timeout/prop-count"
-    (config.Run.bail = None && config.Run.timeout = None
-    && config.Run.prop_count = None);
+  check "default: no timeout/prop-count"
+    (config.Run.timeout = None && config.Run.prop_count = None);
   check "default: no JUnit report" ((settings Cli.empty).Cli.junit = None);
   let render = render_settings Cli.empty in
   check "default: color auto" (render.Render.color = Env.Auto);
-  check "default: env-only settings unset" (render.Render.tail_errors = None);
+  check "default: the render settings are the renderer's defaults"
+    (render = Render.default_settings);
   check "default: log dir non-empty" (String.length config.Run.log_dir > 0)
 
 (* Resolution: precedence *)
@@ -395,8 +503,47 @@ let () =
     (config.Run.exclude_tags = [ "xc"; "x1"; "x2" ]);
   clear_env ()
 
+(* Resolution: the two reading rules *)
+
+let () =
+  reg "reading rules: a plain value is one token, trimmed" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_FILTER" "  parser ";
+  Unix.putenv "WINDTRAP_SHARD" " 2/4 ";
+  Unix.putenv "WINDTRAP_PROP_COUNT" " 12 ";
+  Unix.putenv "WINDTRAP_JUNIT" " out.xml ";
+  let s = settings Cli.empty in
+  check "a pattern is trimmed" (s.Cli.config.Run.filter = Some "parser");
+  check "a shard is trimmed" (s.Cli.config.Run.shard = Some (2, 4));
+  check "a count is trimmed" (s.Cli.config.Run.prop_count = Some 12);
+  check "a path is trimmed" (s.Cli.junit = Some "out.xml");
+  clear_env ()
+
+let () =
+  reg "reading rules: a valueless flag's mirror is a boolean" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_STREAM" "yes";
+  Unix.putenv "WINDTRAP_VERBOSE" " OFF ";
+  let s = settings Cli.empty in
+  check "a truthy spelling applies the flag" s.Cli.config.Run.stream;
+  check "a falsy spelling is absence, trimmed and case-insensitively"
+    (s.Cli.output_level = `Compact);
+  Unix.putenv "WINDTRAP_STREAM" "maybe";
+  (match Cli.settings Cli.empty with
+  | Error
+      (Cli.Invalid_value
+         { source = "WINDTRAP_STREAM"; value = "maybe"; expected }) ->
+      check "anything else is refused, naming the variable and the vocabulary"
+        (contains "1/0" expected)
+  | Ok _ | Error _ ->
+      check "anything else is refused, naming the variable and the vocabulary"
+        false);
+  check "a flag on the command line shadows the bad value, unread"
+    (resolve { Cli.empty with Cli.stream = Some true }).Run.stream;
+  clear_env ()
+
 (* The two acceptance flags have no mirror: a build action accepts nothing
-   through its environment. *)
+   through its environment. Neither do the three feedback-loop flags. *)
 let () =
   reg "acceptance flags: no mirror, one mode each, never both" @@ fun () ->
   clear_env ();
@@ -425,6 +572,22 @@ let () =
     (Cli.error_message (Cli.Incompatible_flags ("-u", "--corrected")))
 
 let () =
+  reg "feedback-loop flags: no mirror" @@ fun () ->
+  clear_env ();
+  Unix.putenv "WINDTRAP_BAIL" "1";
+  Unix.putenv "WINDTRAP_FAILED" "1";
+  Unix.putenv "WINDTRAP_LIST" "1";
+  let config = resolve Cli.empty in
+  check "WINDTRAP_BAIL is not a mirror" (not config.Run.bail);
+  check "WINDTRAP_FAILED is not a mirror" (not config.Run.failed_only);
+  check "-x resolves to bail"
+    (resolve { Cli.empty with Cli.bail = Some true }).Run.bail;
+  Unix.putenv "WINDTRAP_BAIL" "";
+  Unix.putenv "WINDTRAP_FAILED" "";
+  Unix.putenv "WINDTRAP_LIST" "";
+  clear_env ()
+
+let () =
   reg "seed precedence and malformed env seeds" @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_SEED" "s1:00000000000000aa";
@@ -445,41 +608,23 @@ let () =
   Unix.putenv "WINDTRAP_STREAM" "1";
   Unix.putenv "WINDTRAP_TIMEOUT" "1.5";
   Unix.putenv "WINDTRAP_PROP_COUNT" "7";
-  Unix.putenv "WINDTRAP_MAX_SHRINK" "40";
-  Unix.putenv "WINDTRAP_TAIL_ERRORS" "3";
   Unix.putenv "WINDTRAP_EXCLUDE" "skipme";
   let config = resolve Cli.empty in
   check "WINDTRAP_STREAM" config.Run.stream;
   check "WINDTRAP_TIMEOUT" (config.Run.timeout = Some 1.5);
   check "WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
-  check "WINDTRAP_MAX_SHRINK" (config.Run.max_shrink = Some 40);
-  let render = render_settings Cli.empty in
-  check "WINDTRAP_TAIL_ERRORS" (render.Render.tail_errors = Some 3);
   check "WINDTRAP_EXCLUDE" (config.Run.exclude = Some "skipme");
-  clear_env ()
-
-(* The flagless row keeps its own tolerant vocabulary — no flag exists
-   for a lenient reading to drift from, so a hostile or unparseable value
-   counts as unset rather than refusing the run. *)
-let () =
-  reg "flagless settings vocabulary" @@ fun () ->
-  clear_env ();
-  Unix.putenv "WINDTRAP_TAIL_ERRORS" "wide";
-  check "an unparseable tail count is unset"
-    ((render_settings Cli.empty).Render.tail_errors = None);
   clear_env ()
 
 (* The mirrors that only existed as flags. Under `dune runtest` the mirrors
    *are* the CLI, so a flag without one is a documented feature no dune user
    can reach — `--junit`, which the CI guide recommends, most of all. *)
 let () =
-  reg "env-only settings: the CI and feedback-loop mirrors" @@ fun () ->
+  reg "env-only settings: the CI mirrors" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_BAIL" "3";
   Unix.putenv "WINDTRAP_JUNIT" "reports/junit.xml";
   Unix.putenv "WINDTRAP_OUTPUT" "custom-logs";
   let config = resolve Cli.empty in
-  check "WINDTRAP_BAIL" (config.Run.bail = Some 3);
   check "WINDTRAP_JUNIT"
     ((settings Cli.empty).Cli.junit = Some "reports/junit.xml");
   (* Absolutized like [-o], for the same reason: a test that chdirs must
@@ -490,29 +635,31 @@ let () =
   clear_env ()
 
 let () =
-  reg "the new mirrors lose to their flags" @@ fun () ->
+  reg "the mirrors lose to their flags" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_BAIL" "3";
+  Unix.putenv "WINDTRAP_PROP_COUNT" "3";
   Unix.putenv "WINDTRAP_JUNIT" "from-env.xml";
-  let cli = { Cli.empty with Cli.bail = Some 1; junit = Some "from-cli.xml" } in
-  check "flag beats WINDTRAP_BAIL" ((resolve cli).Run.bail = Some 1);
+  let cli =
+    { Cli.empty with Cli.prop_count = Some 1; junit = Some "from-cli.xml" }
+  in
+  check "flag beats WINDTRAP_PROP_COUNT" ((resolve cli).Run.prop_count = Some 1);
   check "flag beats WINDTRAP_JUNIT"
     ((settings cli).Cli.junit = Some "from-cli.xml");
-  (* A malformed mirror is a usage error naming the *variable* — the
-     WINDTRAP_PROP_COUNT rule, not a silent default. *)
+  (* A malformed mirror is a usage error naming the *variable*, not a
+     silent default. *)
   clear_env ();
-  Unix.putenv "WINDTRAP_BAIL" "0";
+  Unix.putenv "WINDTRAP_PROP_COUNT" "0";
   (match Cli.settings Cli.empty with
-  | Ok _ -> check "WINDTRAP_BAIL=0 is rejected" false
+  | Ok _ -> check "WINDTRAP_PROP_COUNT=0 is rejected" false
   | Error e ->
       check "the error names the variable, not the flag"
-        (contains "WINDTRAP_BAIL" (Cli.error_message e)));
+        (contains "WINDTRAP_PROP_COUNT" (Cli.error_message e)));
   (* A losing layer stays unread: a valid flag shadows a malformed mirror. *)
-  Unix.putenv "WINDTRAP_BAIL" "not-a-number";
-  (match Cli.settings { Cli.empty with Cli.bail = Some 2 } with
+  Unix.putenv "WINDTRAP_PROP_COUNT" "not-a-number";
+  (match Cli.settings { Cli.empty with Cli.prop_count = Some 2 } with
   | Ok s ->
       check "a valid flag shadows a malformed mirror"
-        (s.Cli.config.Run.bail = Some 2)
+        (s.Cli.config.Run.prop_count = Some 2)
   | Error e ->
       check
         ("malformed mirror leaked past the flag: " ^ Cli.error_message e)
@@ -527,12 +674,12 @@ let () =
       {
         Cli.empty with
         Cli.stream = Some true;
-        bail = Some 2;
+        bail = Some true;
         log_dir = Some "custom-logs";
       }
   in
   check "parsed booleans and values land in the config"
-    (config.Run.stream && config.Run.bail = Some 2
+    (config.Run.stream && config.Run.bail
     (* Absolutized at resolve time so a test that chdirs cannot move the
        run's logs; the relative spelling is still what it ends with. *)
     && Filename.is_relative config.Run.log_dir = false
@@ -604,15 +751,45 @@ let () =
       check "an overflowing token is quoted, not printed as 'inf'" false);
   clear_env ()
 
+(* WINDTRAP_COLOR is a mirror like every other: --color's parser reads
+   it, so a word the flag refuses is refused here too, never read as
+   auto. The flagless commands read the variable through the same
+   parser. *)
 let () =
-  reg "color precedence" @@ fun () ->
+  reg "color precedence, and the mirror refuses what the flag refuses"
+  @@ fun () ->
   clear_env ();
   Unix.putenv "WINDTRAP_COLOR" "never";
   let render = render_settings Cli.empty in
   check "WINDTRAP_COLOR fills the default" (render.Render.color = Env.Never);
   let render = render_settings { Cli.empty with Cli.color = Some Env.Always } in
   check "--color beats WINDTRAP_COLOR" (render.Render.color = Env.Always);
-  clear_env ()
+  Unix.putenv "WINDTRAP_COLOR" " Never ";
+  check "the mirror is trimmed and case-insensitive, as --color is"
+    ((render_settings Cli.empty).Render.color = Env.Never);
+  check "color_mode reads the same variable the same way"
+    (Cli.color_mode () = Ok Env.Never);
+  Unix.putenv "WINDTRAP_COLOR" "sometimes";
+  (match Cli.settings Cli.empty with
+  | Error
+      (Cli.Invalid_value
+         { source = "WINDTRAP_COLOR"; value = "sometimes"; expected }) ->
+      check "a bad WINDTRAP_COLOR is refused with --color's wording"
+        (expected = "always, never or auto")
+  | Ok _ | Error _ ->
+      check "a bad WINDTRAP_COLOR is refused with --color's wording" false);
+  (match Cli.color_mode () with
+  | Error
+      (Cli.Invalid_value { source = "WINDTRAP_COLOR"; value = "sometimes"; _ })
+    ->
+      check "color_mode refuses it too, naming the variable" true
+  | Ok _ | Error _ ->
+      check "color_mode refuses it too, naming the variable" false);
+  check "a --color on the command line shadows the bad value, unread"
+    ((render_settings { Cli.empty with Cli.color = Some Env.Auto }).Render.color
+   = Env.Auto);
+  clear_env ();
+  check "color_mode defaults to auto" (Cli.color_mode () = Ok Env.Auto)
 
 (* Resolution: the inline coverage line *)
 
@@ -661,7 +838,12 @@ let () =
     (level Cli.empty = `Verbose);
   clear_env ();
   Unix.putenv "WINDTRAP_VERBOSE" "maybe";
-  check "an unparseable boolean counts as unset" (level Cli.empty = `Compact);
+  (match Cli.settings Cli.empty with
+  | Error
+      (Cli.Invalid_value { source = "WINDTRAP_VERBOSE"; value = "maybe"; _ }) ->
+      check "an unparseable boolean is refused, naming the variable" true
+  | Ok _ | Error _ ->
+      check "an unparseable boolean is refused, naming the variable" false);
   clear_env ();
   Unix.putenv "WINDTRAP_VERBOSE" " 1 ";
   check "boolean spellings are trimmed, as WINDTRAP_STREAM's"

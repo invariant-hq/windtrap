@@ -1024,8 +1024,8 @@ let a_failing_program_keeps_its_identity_through_the_scope () =
 let the_scope_runs_once_per_case_and_per_shrink_candidate () =
   let scopes = ref 0 and releases = ref 0 and executions = ref 0 in
   let outcome =
-    Property.run ~count:(`Declared 40) ~max_shrink:20 ~root ~path:"lifecycle"
-      (queue_gen ()) (fun _ program ->
+    Property.run ~count:(`Declared 40) ~root ~path:"lifecycle" (queue_gen ())
+      (fun _ program ->
         incr executions;
         Stateful.execute
           ~scope:(fun run ->

@@ -169,14 +169,17 @@ obvious: every option that changes what a run does or reports has a
 no command line and the mirrors *are* the CLI:
 
 ```
-WINDTRAP_FILTER=parser dune runtest
+dune exec test/test_mylib.exe -- -f parser      # ad hoc, with flags
+WINDTRAP_FILTER=parser dune runtest --force     # the same, through dune
 WINDTRAP_JUNIT=_build/junit dune runtest        # in CI
 ```
 
-`-l`, `--failed`, `-x`, `-h` and `-V` have no mirror: they want a
-command line. A handful of variables have no flag either — the
-mutation and coverage switches among them — and `--help` lists those
-too.
+A variable changes nothing on a warm tree unless the run passes
+`--force` or the stanza declares `(deps (env_var WINDTRAP_FILTER))`.
+`-l`, `--failed`, `-x`, `-u`, `--corrected`, `-h` and `-V` have no
+mirror: they want a command line. A handful of variables have no flag
+either — the project root, the coverage and mutation switches — and
+`--help` lists those too.
 
 ## Documentation
 

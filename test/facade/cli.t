@@ -45,29 +45,61 @@ nothing on stdout:
 
 A flag one slip from a real one is named:
 
-  $ run ./suite_main.exe --bial 1 > out 2> err
+  $ run ./suite_main.exe --filtre math > out 2> err
   [2]
   $ cat err
-  unknown option '--bial'; did you mean '--bail'?
+  unknown option '--filtre'; did you mean '--filter'?
+  usage: suite_main.exe [OPTIONS] [PATTERN]
+
+The knobs that went are unknown flags like any other. -x stops at the
+first failure and takes no count; the shrink budget is fixed. Neither
+is close enough to a live flag to earn a suggestion:
+
+  $ run ./suite_main.exe --bail 3 > out 2> err
+  [2]
+  $ cat err
+  unknown option '--bail'
+  usage: suite_main.exe [OPTIONS] [PATTERN]
+  $ run ./suite_main.exe --max-shrink 5 > out 2> err
+  [2]
+  $ cat err
+  unknown option '--max-shrink'
+  usage: suite_main.exe [OPTIONS] [PATTERN]
+  $ run ./suite_main.exe --fail-fast=2 > out 2> err
+  [2]
+  $ cat err
+  invalid value '2' for --fail-fast: expected no argument
   usage: suite_main.exe [OPTIONS] [PATTERN]
 
 A value the flag cannot take names the flag and what it expected:
 
-  $ run ./suite_main.exe --bail x > out 2> err
+  $ run ./suite_main.exe --prop-count x > out 2> err
   [2]
   $ cat out
   $ cat err
-  invalid value 'x' for --bail: expected a positive integer
+  invalid value 'x' for --prop-count: expected a positive integer
   usage: suite_main.exe [OPTIONS] [PATTERN]
 
 Under `dune runtest` there is no command line and the mirrors are the
 CLI, so a value arriving through the environment is refused with the
 same sentence and the same code — naming the variable, not the flag.
 This is the facade's second error exit: the first is the parse above,
-this one is the resolution after it.
+this one is the resolution after it. A valueless flag's mirror reads
+the boolean vocabulary and refuses anything outside it, and the color
+mirror refuses what --color refuses; neither falls back to a default.
 
-  $ run WINDTRAP_BAIL=nope ./suite_main.exe > out 2> err
+  $ run WINDTRAP_PROP_COUNT=nope ./suite_main.exe > out 2> err
   [2]
   $ cat err
-  invalid value 'nope' for WINDTRAP_BAIL: expected a positive integer
+  invalid value 'nope' for WINDTRAP_PROP_COUNT: expected a positive integer
+  usage: suite_main.exe [OPTIONS] [PATTERN]
+  $ run WINDTRAP_STREAM=maybe ./suite_main.exe > out 2> err
+  [2]
+  $ cat err
+  invalid value 'maybe' for WINDTRAP_STREAM: expected a boolean: 1/0, true/false, yes/no or on/off
+  usage: suite_main.exe [OPTIONS] [PATTERN]
+  $ run WINDTRAP_COLOR=sometimes ./suite_main.exe > out 2> err
+  [2]
+  $ cat err
+  invalid value 'sometimes' for WINDTRAP_COLOR: expected always, never or auto
   usage: suite_main.exe [OPTIONS] [PATTERN]

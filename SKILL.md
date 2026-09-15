@@ -395,10 +395,12 @@ routinely.
 
 **The daily loop.** `-f`/`-e` filter by path substring, `--tag`/
 `--exclude-tag` by tag, `--failed` reruns the last run's failures,
-`-x`/`--bail N` stop early, `-l` previews a selection, `--shard K/N`
+`-x` stops at the first failure, `-l` previews a selection, `--shard K/N`
 partitions across CI jobs, `-s` disables capture for printf-debugging a
 hang. Under `dune runtest` there is no command line, so the `WINDTRAP_*`
-mirrors *are* the CLI (`WINDTRAP_FILTER=roundtrip dune runtest`).
+mirrors *are* the CLI (`WINDTRAP_FILTER=roundtrip dune runtest --force`;
+a variable changes nothing on a warm tree unless the run passes
+`--force` or the stanza declares `(deps (env_var WINDTRAP_FILTER))`).
 
 When a run fails, triage before editing: read the failure block to its
 end — it already carries the diff, the counterexample or program, the

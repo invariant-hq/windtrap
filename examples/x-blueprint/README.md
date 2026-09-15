@@ -48,6 +48,18 @@ instrumented run of every suite, then `dune exec windtrap -- coverage
 --min 80` or `dune exec windtrap -- mutants` over what the suites
 wrote; the manual chapters teach the two-command form first.
 
+Flags go through `dune exec`; under `dune runtest` the `WINDTRAP_*`
+mirrors stand in for them. A variable changes nothing on a warm tree
+unless the run passes `--force` or the stanza declares the dependency:
+`test/unit/dune` declares `WINDTRAP_SEED` and `WINDTRAP_PROP_COUNT` on
+the two property suites, so a replay needs neither.
+
+```
+dune exec examples/x-blueprint/test/unit/test_slug.exe -- -f idempotent
+WINDTRAP_SEED=s1:9af2e80ab07716a2 dune runtest examples/x-blueprint/test/unit
+WINDTRAP_VERBOSE=1 dune runtest --force examples/x-blueprint    # no dep declared
+```
+
 Writing a new test here ends with the mutation loop: filter the survey
 to it, and the report says which of the faults it reaches it lets
 through. The deliberately weak law in `test_stats.ml` (the fourth

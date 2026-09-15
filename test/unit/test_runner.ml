@@ -1059,10 +1059,10 @@ let () =
     (failed_paths outcome = [ "keeps-passing" ])
 
 let () =
-  (* --bail counts effective failures: expected ones do not consume the
-     budget. *)
+  (* -x stops at the first counted failure: an expected one does not stop
+     the run. *)
   with_temp_root @@ fun root ->
-  let config = { (base_config ~log_dir:root ()) with Run.bail = Some 1 } in
+  let config = { (base_config ~log_dir:root ()) with Run.bail = true } in
   let tests =
     [
       Test_tree.xfail (Test_tree.test "excused" (fun () -> Check.fail "known"));
@@ -1072,7 +1072,7 @@ let () =
     ]
   in
   expect_run "xfail-bail suite runs" ~config tests @@ fun outcome ->
-  check "an expected failure does not consume the bail budget"
+  check "an expected failure does not stop the run"
     (ran_names outcome = [ "excused"; "ok"; "boom" ])
 
 let () =
@@ -1270,9 +1270,9 @@ let () =
 let () =
   (* Scratch removal on the boundary's worst paths (amendment B9, Law 8):
      scratch created in the body and in a raising teardown of the very test
-     that trips --bail is still removed. *)
+     that trips -x is still removed. *)
   with_temp_root @@ fun root ->
-  let config = { (base_config ~log_dir:root ()) with Run.bail = Some 1 } in
+  let config = { (base_config ~log_dir:root ()) with Run.bail = true } in
   let scratch = ref [] in
   let note path = scratch := path :: !scratch in
   let tests =
@@ -1292,7 +1292,7 @@ let () =
     (ran_names outcome = [ "teardown-scratch" ]);
   check_int "scratch was created in body and teardown alike" ~expected:2
     ~actual:(List.length !scratch);
-  check "scratch is removed when the teardown raises, under --bail too"
+  check "scratch is removed when the teardown raises, under -x too"
     (List.for_all (fun p -> not (Sys.file_exists p)) !scratch)
 
 let () =
@@ -1753,7 +1753,7 @@ let () =
 
 let () =
   with_temp_root @@ fun root ->
-  let config = { (base_config ~log_dir:root ()) with Run.bail = Some 1 } in
+  let config = { (base_config ~log_dir:root ()) with Run.bail = true } in
   let released = ref false in
   let fx = Run.fixture ~teardown:(fun _ -> released := true) (fun () -> ()) in
   let tests =
@@ -1766,20 +1766,9 @@ let () =
     ]
   in
   expect_run "bail suite runs" ~config tests @@ fun outcome ->
-  check "bail stops after the limit" (ran_names outcome = [ "first-fails" ]);
+  check "bail stops at the first failure" (ran_names outcome = [ "first-fails" ]);
   check "fixtures release under bail" !released;
   check "bailed failing run exits 1" (outcome.Runner.exit_code = 1)
-
-let () =
-  with_temp_root @@ fun root ->
-  let config = { (base_config ~log_dir:root ()) with Run.bail = Some 2 } in
-  let boom name = Test_tree.test name (fun () -> Check.fail "boom") in
-  let tests =
-    [ boom "f1"; Test_tree.test "ok" (fun () -> ()); boom "f2"; boom "f3" ]
-  in
-  expect_run "--bail 2 suite runs" ~config tests @@ fun outcome ->
-  check "--bail 2 stops after the second failure, passes in between kept"
-    (ran_names outcome = [ "f1"; "ok"; "f2" ])
 
 let () =
   (* A raising [on_event] observer aborts the run, but acquired fixtures

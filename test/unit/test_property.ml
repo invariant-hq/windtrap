@@ -40,11 +40,6 @@ let shrink_exhausted (failure : Failure.t) =
   | Failure.Property { shrink_exhausted; _ } -> shrink_exhausted
   | _ -> failf "expected a Property failure kind"
 
-let payload_max_shrink (failure : Failure.t) =
-  match failure.Failure.kind with
-  | Failure.Property { max_shrink; _ } -> max_shrink
-  | _ -> failf "expected a Property failure kind"
-
 let payload_count (failure : Failure.t) =
   match failure.Failure.kind with
   | Failure.Property { count; _ } -> count
@@ -460,29 +455,24 @@ let shrinks_to_minimal_counterexample () =
       check (not not_) "equal is not negated"
   | _ -> failf "expected the inner Equality failure at the shrunk case"
 
-let shrink_cap_zero_disables_shrinking () =
-  let body _ x = Check.equal Testable.int 0 x in
-  let path = "shrink cap zero" in
-  let failure, _ =
-    expect_fail (Property.run ~root ~path ~max_shrink:0 Gen.int body)
+(* The budget is fixed and sized against the primitives' descent: a quad
+   of int64, every component shrunk toward its origin under a threshold
+   law, is the yardstick the number was chosen against — it converges,
+   far inside the budget, and is reported as converged. *)
+let shrink_budget_covers_a_quad_of_int64 () =
+  let gen = Gen.quad Gen.int64 Gen.int64 Gen.int64 Gen.int64 in
+  let far x = Int64.compare (Int64.abs x) 3L >= 0 in
+  let law _ (a, b, c, d) =
+    if far a && far b && far c && far d then raise Exit
   in
-  let rendered, case_index, shrink_steps, _, _, _, _ =
-    property_payload failure
-  in
-  check (shrink_steps = 0) "max_shrink:0 must record zero steps";
-  let original = value_at Gen.int ~root ~path ~index:case_index in
-  check
-    (rendered = string_of_int original)
-    "with the cap at zero the counterexample must be the unshrunk draw"
-
-let shrink_cap_bounds_steps () =
-  let body _ x = Check.equal Testable.int 0 x in
-  let failure, _ =
-    expect_fail
-      (Property.run ~root ~path:"shrink cap" ~max_shrink:3 Gen.int body)
-  in
+  let failure, _ = expect_fail (Property.run ~root ~path:"quad" gen law) in
   let _, _, shrink_steps, _, _, _, _ = property_payload failure in
-  check (shrink_steps <= 3) "steps must respect the cap, got %d" shrink_steps
+  check (shrink_steps > 0) "the search must have taken steps";
+  check (shrink_steps <= 256)
+    "a quad of int64 converges within one step per bit, took %d" shrink_steps;
+  check
+    (not (shrink_exhausted failure))
+    "a converged search is not reported as stopped"
 
 let assertion_shrink_skips_exception_candidates () =
   let path = "same-kind assertion" in
@@ -796,9 +786,7 @@ let negative_configuration_is_invalid () =
       Property.run ~root ~path:"bad" ~count:(`Declared (-1)) Gen.int (fun _ _ ->
           ()));
   invalid (fun () ->
-      Property.run ~root ~path:"bad" ~max_discard:(-1) Gen.int (fun _ _ -> ()));
-  invalid (fun () ->
-      Property.run ~root ~path:"bad" ~max_shrink:(-1) Gen.int (fun _ _ -> ()))
+      Property.run ~root ~path:"bad" ~max_discard:(-1) Gen.int (fun _ _ -> ()))
 
 let assume_and_reject_raise_discard () =
   (match Property.assume true with () -> ());
@@ -813,37 +801,36 @@ let assume_and_reject_raise_discard () =
 
 (* A search stopped by its step budget and one that converged both read
    "shrunk N steps"; only the flag tells them apart, and without it a user
-   cannot know whether the reported counterexample is minimal. *)
+   cannot know whether the reported counterexample is minimal. The budget
+   is fixed, so spending it takes a generator whose tree is one long
+   chain — [n] down to [0], one accepted step per node under a law that
+   fails on every value, so the descent ends only at the leaf. *)
 let spent_shrink_budget_is_marked () =
-  let big = Gen.list ~size:(Gen.int_range 300 400) Gen.int in
-  let law _ value = if List.length value < 60 then () else raise Exit in
-  let failure, _ =
-    expect_fail
-      (Property.run ~max_shrink:5 ~root ~path:"budget" big (fun ctx v ->
-           law ctx v))
+  let chain n =
+    let rec tree k =
+      Shrink_tree.make ~root:k ~children:(fun () ->
+          if k = 0 then Seq.Nil else Seq.Cons (tree (k - 1), Seq.empty))
+    in
+    Gen.Private.make ~pp:Format.pp_print_int (fun state -> (tree n, state))
   in
+  let law _ (_ : int) = raise Exit in
+  let budget = Property.shrink_budget in
+  check (budget = 10_000) "the budget is the documented number, got %d" budget;
+  let failure, _ =
+    expect_fail (Property.run ~root ~path:"budget" (chain (budget + 1)) law)
+  in
+  let rendered, _, shrink_steps, _, _, _, _ = property_payload failure in
   check (shrink_exhausted failure) "a truncated search is marked";
-  (* The budget in force rides the payload for the reason the case count
-     does: replaying under a different one stops the descent at a different
-     node, so the printed command has to restate it. *)
-  check
-    (payload_max_shrink failure = Some 5)
-    "the budget in force rides the payload";
+  check (shrink_steps = budget) "it stopped at the budget, took %d" shrink_steps;
+  check (rendered = "1") "and reports the best node reached, got %s" rendered;
   let failure, _ =
-    expect_fail
-      (Property.run ~max_shrink:100_000 ~root ~path:"budget" big (fun ctx v ->
-           law ctx v))
+    expect_fail (Property.run ~root ~path:"budget" (chain budget) law)
   in
+  let rendered, _, shrink_steps, _, _, _, _ = property_payload failure in
   check (not (shrink_exhausted failure)) "a converged search is not marked";
-  check
-    (payload_max_shrink failure = Some 100_000)
-    "a budget that was never reached rides the payload all the same";
-  let failure, _ =
-    expect_fail (Property.run ~root ~path:"budget" big (fun ctx v -> law ctx v))
-  in
-  check
-    (payload_max_shrink failure = None)
-    "the engine default rides nothing: a replay needs no flag to reproduce it"
+  check (shrink_steps = budget) "even one that spent every step, took %d"
+    shrink_steps;
+  check (rendered = "0") "and reports the minimal node, got %s" rendered
 
 (* Forcing a candidate can raise — here a [map] whose function divides by
    the drawn value. The memoized cell caches the exception, so the siblings
@@ -931,8 +918,8 @@ let suite =
     ( "cover registers even when condition is false",
       cover_registers_even_when_condition_is_false );
     ("shrinks to minimal counterexample", shrinks_to_minimal_counterexample);
-    ("shrink cap zero disables shrinking", shrink_cap_zero_disables_shrinking);
-    ("shrink cap bounds steps", shrink_cap_bounds_steps);
+    ( "the shrink budget covers a quad of int64",
+      shrink_budget_covers_a_quad_of_int64 );
     ( "assertion shrink skips exception candidates",
       assertion_shrink_skips_exception_candidates );
     ( "exception shrink skips assertion candidates",

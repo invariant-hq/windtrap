@@ -79,11 +79,10 @@ val renderer :
     [Format.std_formatter], wired from the environment and the resolved
     {!Render.settings} exactly as both runners require: color from
     {!Env.resolve_color} over [render.color], the terminal status, and
-    [INSIDE_DUNE]/[TERM]; width and tail bounds from
-    [render.columns]/[render.tail_errors]; the slow threshold from
-    [render.slow_threshold]. The live tail is on only for a TTY outside GitHub
-    Actions — under the GitHub sink the transcript sits inside the [::group::]
-    envelope and cursor controls must never land in the CI log.
+    [INSIDE_DUNE]/[TERM]; the slow threshold from [render.slow_threshold]. The
+    live tail is on only for a TTY outside GitHub Actions — under the GitHub
+    sink the transcript sits inside the [::group::] envelope and cursor controls
+    must never land in the CI log.
 
     Effects: reads the environment (terminal status, [INSIDE_DUNE], [TERM],
     [GITHUB_ACTIONS], and the color mirrors via {!Env.resolve_color}). *)

@@ -39,14 +39,32 @@ assert on exit behavior, run the exiting code in a subprocess.
 
 ## Two ways to drive the runner
 
-Direct execution takes flags; under `dune runtest` there is no argv,
-so the flags that make sense there have `WINDTRAP_*` environment
-mirrors and *the mirrors are the CLI* (`-l`, `--failed`, `-x`, `-h` and
-`-V` have none: they want a command line):
+Direct execution takes flags. Under `dune runtest` there is no argv, so
+every flag that changes what a run does or reports has a `WINDTRAP_*`
+environment mirror, and there *the mirrors are the CLI*; `-l`,
+`--failed`, `-x`, `-u`, `--corrected`, `-h` and `-V` have none, because
+they want a command line:
 
 ```
-$ dune exec test/test_mylib.exe -- -f "parser" -x
-$ WINDTRAP_FILTER=parser dune runtest
+$ dune exec test/test_mylib.exe -- -f parser
+$ WINDTRAP_FILTER=parser dune runtest --force
+```
+
+An environment variable changes nothing on a warm tree: dune caches a
+test action by its declared inputs, and a variable is not one of them
+unless the stanza declares `(deps (env_var WINDTRAP_FILTER))` or the
+run passes `--force`. Pass `--force` for an ad hoc run; declare the
+dependency on a stanza that is meant to react, as a nightly profile
+that raises the case count does:
+
+```lisp
+(test
+ (name test_mylib)
+ (libraries windtrap)
+ (deps (env_var WINDTRAP_PROP_COUNT)))
+
+(env
+ (nightly (env-vars (WINDTRAP_PROP_COUNT 10000))))
 ```
 
 `--help` on the executable prints the full flag and variable
@@ -61,7 +79,6 @@ inventory. The ones that matter daily:
 | `-l`, `--list` | — | list the selection without running |
 | `--seed s1:…` | `WINDTRAP_SEED` | pin the root seed (replay) |
 | `--prop-count N` | `WINDTRAP_PROP_COUNT` | generated cases per property |
-| `--max-shrink N` | `WINDTRAP_MAX_SHRINK` | accepted shrink steps per failing property (default 100) |
 | `--timeout SECONDS` | `WINDTRAP_TIMEOUT` | default per-test limit |
 | `--slow-threshold SECONDS` | `WINDTRAP_SLOW_THRESHOLD` | warn when an untagged test exceeds SECONDS (default 1; 0 disables) |
 | `-u`, `--update` | — | accept baseline changes in place (refused under CI) |
@@ -69,7 +86,7 @@ inventory. The ones that matter daily:
 | `--shard K/N` | `WINDTRAP_SHARD` | run bucket K of N (see below) |
 | `-s`, `--stream` | `WINDTRAP_STREAM` | stream output instead of capturing |
 | `-v`, `--verbose` | `WINDTRAP_VERBOSE` | one status line per test |
-| `-x`, `--fail-fast` / `--bail N` | `WINDTRAP_BAIL` | stop after the first / after N failures |
+| `-x`, `--fail-fast` | — | stop after the first failure |
 | `--color MODE` | `WINDTRAP_COLOR` | color output |
 | `--junit PATH` | `WINDTRAP_JUNIT` | also write a JUnit XML report |
 | `-o`, `--output DIR` | `WINDTRAP_OUTPUT` | root directory for capture logs |
@@ -78,13 +95,9 @@ Precedence is CLI > environment > default.
 A test's path is its group names then its own, joined with `" › "`;
 `-f`/`-e` match that string as a substring.
 
-A few variables have no flag at all, because a flag would exist for
-half the users — the inline (`inline_tests`) runner accepts only dune's
-protocol on its command line. `--help` lists them under `ENVIRONMENT`;
-two are worth knowing here.
-
-`WINDTRAP_TAIL_ERRORS` bounds the captured-output tail a failure prints
-(Captured output, below).
+A few variables have no flag at all — the project root, the coverage
+dump's path, and the coverage and mutation switches. `--help` lists
+them under `ENVIRONMENT`; one is worth knowing here.
 
 `WINDTRAP_PROJECT_ROOT` overrides where the runner thinks the project
 starts — the directory baseline paths resolve under, and
@@ -237,9 +250,10 @@ than silently running everything.
 `-o`/`--output` moves the store with the logs: it is
 `<output>/<suite>/.last-failed`. Two runs with different `-o` do not
 share a failure set, and the second refuses `--failed` rather than
-rerunning what the first recorded. That is also why `--failed` has no
-mirror — under `dune runtest` the log directory is the sandbox's, so
-no run would ever find the previous one's store.
+rerunning what the first recorded. `--failed` has no mirror because a
+mirror could not help: under `dune runtest` the run that failed is
+exactly the one dune will not repeat until an input changes, so the
+loop is real only on a directly executed binary.
 
 ## Captured output
 
@@ -259,8 +273,8 @@ log:
 
 The path is the test's identity under the suite, so it is the same on
 every run — type it into an editor once and reruns keep it pointing at
-the current output. `WINDTRAP_TAIL_ERRORS` bounds the tail; `-o DIR`
-moves the log root.
+the current output. The tail is the last ten lines of the last 8 KiB
+the capture kept, not a knob; `-o DIR` moves the log root.
 `--stream` disables capture entirely — output interleaves on the real
 descriptors, for printf-debugging a hang. `output ()` is the one
 operation whose meaning requires captured bytes: under `--stream` it

@@ -24,12 +24,11 @@ type config = {
   exclude_tags : string list;
   shard : (int * int) option;
   failed_only : bool;
-  bail : int option;
+  bail : bool;
   stream : bool;
   baseline : Baseline.mode;
   timeout : float option;
   prop_count : int option;
-  max_shrink : int option;
   log_dir : string;
   allow_focus : bool;
 }
@@ -43,12 +42,11 @@ let default_config () =
     exclude_tags = [];
     shard = None;
     failed_only = false;
-    bail = None;
+    bail = false;
     stream = false;
     baseline = Baseline.Check;
     timeout = None;
     prop_count = None;
-    max_shrink = None;
     log_dir = Path_ops.default_log_dir ();
     allow_focus = false;
   }
@@ -444,7 +442,7 @@ let chdir dir =
    baffling failure needs stated up front. It is attributed to the call
    that made the change, since the boundary is nobody's code — or to the
    declaration when that call left no frame: [setenv] and [chdir] take no
-   [?pos], so the fallback's hint would name a remedy they lack. *)
+   [?__POS__], so the fallback's hint would name a remedy they lack. *)
 let restore_failure frame ?loc text =
   add_failure frame
     (Failure.with_phase Failure.Teardown

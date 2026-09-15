@@ -5,49 +5,47 @@
 
 (** Environment variable access and platform detection.
 
-    This module owns {e how} the environment is read — the generic typed readers
-    below, the value vocabularies they share (booleans, comma-separated lists,
+    This module owns {e how} the environment is read — the one raw lookup below,
+    the value vocabularies mirrors share (booleans, comma-separated lists,
     colour modes), platform and CI detection, and the few settings that have no
     command-line flag — and, in {!set}, the one way it is written. It is not the
     inventory of variables: every [WINDTRAP_*] mirror of a runner flag is
-    declared beside that flag in {!Cli}'s table and read through {!get_string},
-    {!get_bool} and {!split_comma} from there, which is what stops a mirror from
-    parsing or validating differently from the flag it mirrors. One further
-    lookup lives elsewhere by design: the coverage runtime reads its own
+    declared beside that flag in {!Cli}'s table, read from there through
+    {!get_string} and parsed by the flag's own parser, which is what stops a
+    mirror from accepting or refusing differently from the flag it mirrors. One
+    further lookup lives elsewhere by design: the coverage runtime reads its own
     [WINDTRAP_COVERAGE_FILE] (windtrap links the coverage library, not the
     reverse, so it cannot depend on this module).
 
     Readers are plain functions that re-read the environment on every call;
     nothing is cached. A variable set to the empty string counts as unset.
 
-    Boolean variables accept [1], [true], [yes], [y], [on] and their negations,
-    case-insensitively; unparseable values count as unset. The presence-style
-    variables [CI], [GITHUB_ACTIONS] and [INSIDE_DUNE] are looser: they are
+    The presence-style variables [CI], [GITHUB_ACTIONS] and [INSIDE_DUNE] are
     conventionally set to arbitrary values by other tools, so any value other
-    than an explicit falsy spelling counts as set.
+    than an explicit falsy spelling ({!bool_of_string}) counts as set. *)
 
-    Precedence (CLI > env > default) is resolved by the CLI layer, which is why
-    most readers return an [option] rather than a default. *)
+(** {1:readers Reading}
 
-(** {1:readers Readers}
-
-    The typed lookups every variable goes through, named rather than mirrored: a
-    caller passes the variable's name, so one reader serves any number of
-    variables. *)
+    One raw lookup and the vocabularies a value is parsed with. A caller passes
+    the variable's name, so one reader serves any number of variables, and
+    parses the value where it knows what the variable means — reporting a bad
+    one by naming the variable, rather than reading a silent default out of a
+    typo. *)
 
 val get_string : string -> string option
 (** [get_string var] is the value of [var], or [None] when it is unset or empty.
-    Unparsed: a caller that owns a format ([WINDTRAP_SEED]'s token,
-    [WINDTRAP_SHARD]'s [k/n]) validates it and reports failure naming [var],
-    rather than reading a silent default out of a typo. *)
+    Unparsed and untrimmed. *)
 
-val get_bool : string -> bool option
-(** [get_bool var] is [var] read as a boolean, [None] when it is unset, empty,
-    or spelled in no accepted way. The value is trimmed before parsing. *)
+val bool_of_string : string -> bool option
+(** [bool_of_string s] is the boolean [s] spells, case-insensitively and after
+    trimming: [Some true] for [1], [true], [yes], [y] and [on]; [Some false] for
+    [0], [false], [no], [n] and [off]; [None] for anything else. The vocabulary
+    of every boolean variable — a valueless flag's mirror, the switches with no
+    flag — which refuse a [None] rather than reading it as unset. *)
 
-val get_int : string -> int option
-(** [get_int var] is [var] read as a decimal integer, [None] when it is unset or
-    does not parse. The value is trimmed before parsing. *)
+val bool_expected : string
+(** [bool_expected] describes the spellings {!bool_of_string} accepts — the
+    [y]/[n] abbreviations aside — as an error message's [expected] clause. *)
 
 val split_comma : string -> string list
 (** [split_comma value] splits [value] on commas, trims each item and drops the
@@ -110,15 +108,18 @@ val in_github_actions : unit -> bool
 
 (** {1:color Color} *)
 
-(** The type for color preferences, from [WINDTRAP_COLOR] or [--color]. *)
+(** The type for color preferences, from [--color] or [WINDTRAP_COLOR]. *)
 type color_mode =
   | Always  (** Emit ANSI styling unconditionally. *)
   | Never  (** Never emit ANSI styling. *)
   | Auto  (** Style when on a terminal or under dune, unless [TERM] is dumb. *)
 
-val color_mode : unit -> color_mode
-(** [color_mode ()] parses [WINDTRAP_COLOR] ([always], [never], [auto],
-    case-insensitively). Unset or unrecognized values are {!Auto}. *)
+val color_mode_of_string : string -> color_mode option
+(** [color_mode_of_string s] is the mode [s] spells — [always], [never] or
+    [auto], case-insensitively — and [None] for anything else. The one
+    vocabulary of [--color] and [WINDTRAP_COLOR]: the flag's parser reads both
+    ([Cli.color_mode] for a command with no [--color] flag), so the variable
+    accepts and refuses exactly what the flag does. *)
 
 val resolve_color :
   color_mode -> tty:bool -> inside_dune:bool -> term_dumb:bool -> bool
@@ -131,7 +132,7 @@ val resolve_color :
 
     This is the whole of the colour decision: there is no reader that resolves
     it for a sink of its own choosing. A caller passes the mode that won its own
-    precedence — [Render.settings.color] for the runner, {!color_mode} for a
+    precedence — [Render.settings.color] for the runner, [Cli.color_mode] for a
     command with no [--color] flag — together with the sink's terminal status,
     so the decision is made where the sink is known.
 
@@ -142,9 +143,7 @@ val resolve_color :
 
 (** {1:standalone Settings with no flag}
 
-    The variables read below the CLI layer or beside it. The flagless setting
-    the resolution itself consumes ([WINDTRAP_TAIL_ERRORS]) is not here either:
-    it is a row of {!Cli}'s table, read there through {!get_int}. *)
+    The variables read below the CLI layer or beside it. *)
 
 val project_root : unit -> string option
 (** [project_root ()] is [WINDTRAP_PROJECT_ROOT], overriding project-root
@@ -165,16 +164,16 @@ val coverage_only : unit -> string list
 
 val mutate_only : unit -> string list
 (** [mutate_only ()] is [WINDTRAP_MUTATE_ONLY] split on commas: the source path
-    prefixes whose mutants a run will consider, or [[]] (unset) for all of them.
+    prefixes whose mutants a run considers, or [[]] (unset) for all of them.
 
     This is not coverage's reporting filter with a different name. The loop
-    forks once per mutant, so narrowing the catalogue narrows the {e work}: an
-    executable whose mutants all fall outside the prefixes has nothing to test
-    and behaves exactly as an uninstrumented one. Mutation runs are expensive
-    and a whole-project catalogue is rarely what a reader wants to spend an
-    afternoon on; naming a file or a directory is how they spend it on the code
-    they are actually working on. The scope binds at registration, so it also
-    bounds explicit arming ({!Windtrap_runtime.Mutate.arm_variable}): a mutant
-    of an out-of-scope file was never registered and cannot be armed — the scope
-    states what the run's mutation surface {e is}, not a view over a larger one.
-*)
+    forks once per mutant it considers, so narrowing the scope narrows the
+    {e work}: an executable whose mutants all fall outside the prefixes has
+    nothing to test and behaves exactly as an uninstrumented one. Mutation runs
+    are expensive and a whole-project catalogue is rarely what a reader wants to
+    spend an afternoon on; naming a file or a directory is how they spend it on
+    the code they are actually working on. The scope applies to the population
+    the loop forks over, not to registration: every instrumented file linked
+    into the executable still registers its mutants, and arming one by
+    identifier ({!Windtrap_runtime.Mutate.arm_variable}) arms whatever the
+    executable holds, in or out of scope. *)

@@ -595,7 +595,7 @@ let check_determinism ~armed ~scratch ~dry_run_wall ~(spine : Driver.t) ~reach
   let child =
     {
       spine with
-      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:None;
+      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:false;
     }
   in
   (* The probe re-runs exactly the dry run's executed tests, so its
@@ -696,7 +696,7 @@ let run_mutant ~armed ~scratch ~dry_run_wall ~index ~(spine : Driver.t) ~reach
   let child =
     {
       spine with
-      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:(Some 1);
+      Driver.config = Run.for_subset spine.Driver.config ~log_dir ~bail:true;
     }
   in
   let { line; status; killed } =

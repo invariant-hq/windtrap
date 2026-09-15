@@ -304,7 +304,7 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
     error — every test that touches the accessor skips with the same reason. A
     fixture no selected test touches is never acquired; acquired fixtures are
     released by the runner after the last test, in reverse acquisition order, on
-    every path where the runner regains control (including [--bail]). A release
+    every path where the runner regains control (including [-x]). A release
     failure is reported and fails the run.
 
     Release runs {e outside} every per-test timeout: the tests are over, so
@@ -815,7 +815,7 @@ val stateful :
     preconditions remove some, so a program has at most [steps] calls. Shrinking
     removes calls and simplifies their arguments; it never substitutes one
     operation for another. Cost scales with [steps] and [count] and, on a
-    failing test, with [--max-shrink].
+    failing test, with the shrink search.
 
     Stateful tests carry the tags ["prop"] and ["stateful"], so [--tag prop] and
     [--tag stateful] both select them, and — like {!prop} — they have no
@@ -1037,11 +1037,12 @@ val run : ?argv:string array -> string -> test list -> int
     ]}
 
     [argv] is the command line, [Sys.argv] by default; [--help] lists its flags
-    and their [WINDTRAP_*] environment mirrors, which are the command line under
-    [dune runtest]. Beyond those, [run] reads only [CI], [GITHUB_ACTIONS],
-    [INSIDE_DUNE] and whether standard output is a terminal. Raises
-    [Invalid_argument] inside an active run: a test body cannot start another
-    run.
+    and the [WINDTRAP_*] environment mirrors that stand in for them under
+    [dune runtest]: every flag that changes what a run does or reports has one,
+    and [-l], [--failed], [-x], [-u], [--corrected], [-h] and [-V] have none.
+    Beyond those, [run] reads only [CI], [GITHUB_ACTIONS], [INSIDE_DUNE] and
+    whether standard output is a terminal. Raises [Invalid_argument] inside an
+    active run: a test body cannot start another run.
 
     Duplicate test paths, focused tests under [CI] and [-u] under [CI] refuse
     the run before anything executes. Under [--corrected] a test whose failures

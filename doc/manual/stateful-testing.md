@@ -138,7 +138,7 @@ nowhere else, and `-f` filters test paths, not commands.
 `shrunk 6 steps` is the search's work, and the last step is the failing
 one once it converges — deleting a call after the failure never stops
 the failure, and the search tries exactly that. When the block also
-carries `shrinking stopped after 100 steps` or `timed out after Ns while
+carries `shrinking stopped after 10000 steps` or `timed out after Ns while
 shrinking`, the search stopped early and trailing calls may survive.
 
 ## Preconditions: filter and selector
@@ -347,7 +347,7 @@ work exception.
 
 A stateful test is the most expensive kind windtrap runs, and it is
 worst exactly when CI is red. Against the shipped defaults —
-`~count:100`, `~steps:20`, `--max-shrink 100`, no timeout — a *passing*
+`~count:100`, `~steps:20`, no timeout — a *passing*
 run builds 100 systems and makes at most `count × steps` = 2,000 calls:
 at most, because repair removes the calls the model forbids, and the
 queue above measures 1,133.
@@ -359,7 +359,7 @@ node offers `1 + Σ_k ⌊steps/k⌋` deletion candidates — the empty program,
 plus one per non-overlapping chunk at each chunk size, `k` over the
 powers of two from below `steps` down to 1, so 39 at `~steps:20` — then
 one per argument reduction, and each accepted step starts a fresh
-descent, up to `--max-shrink` of them. The queue above converges in 50
+descent, up to the engine's fixed budget of 10,000. The queue above converges in 50
 to 100 systems and a few hundred calls; a failure hiding behind a long
 prefix costs one or two orders of magnitude more. For an in-memory
 system that is milliseconds; for one process, socket or descriptor per
@@ -369,8 +369,7 @@ command it is minutes.
 | --- | --- | --- |
 | `~steps` (default 20) | calls drawn per case; **quadratic** on a failing run | first, always — it is a work budget, not a fact about the state machine |
 | `~count` (default 100) | linear, and only on a passing run | the passing run is the slow one |
-| `--max-shrink N` (default 100) | linear on a failing run | shrinking is what hurts. **Run-wide**: there is no declaration-site spelling, so a suite cannot bound one expensive stateful test without bounding every property |
-| `~timeout` | the only per-test bound on the failing path | a search that must not run away. Expiring during shrinking ends it and reports the best counterexample so far, marked as not necessarily minimal |
+| `~timeout` | the only per-test bound on the failing path | a search that must not run away — the shrink budget is fixed, not a lever. Expiring during shrinking ends it and reports the best counterexample so far, marked as not necessarily minimal |
 
 `--tag stateful` selects these tests, `--exclude-tag stateful` drops
 them: an expensive suite can keep them out of the inner loop and run
@@ -380,7 +379,7 @@ them on their own.
 
 - Stateful tests carry both `"prop"` and `"stateful"`, so everything
   the [property chapter](property-testing.md) describes applies —
-  seeds and replay, `--prop-count`, `--max-shrink` and its budget
+  seeds and replay, `--prop-count`, the shrink budget and its
   notice, timeouts, capture, `xfail`, and the CI reporters. The replay
   line reruns exactly the failing program.
 - `assume`, `collect`, `classify` and `cover` work inside command

@@ -54,7 +54,6 @@ type kind =
       timed_out : float option;
       root : Seed.seed;
       count : int option;
-      max_shrink : int option;
       examples : bool;
       rendering : rendering;
       inner : t option;
@@ -336,9 +335,8 @@ let baseline ?loc baseline state =
      stored unmodified. *)
   make ?loc (Baseline { baseline; state = bound_baseline_state state })
 
-let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
-    ~shrink_steps ?(shrink_exhausted = false) ~root ~examples
-    ?(rendering = Value) () =
+let property ?loc ?inner ?timed_out ?count ~rendered ~case_index ~shrink_steps
+    ?(shrink_exhausted = false) ~root ~examples ?(rendering = Value) () =
   make ?loc
     (Property
        {
@@ -349,7 +347,6 @@ let property ?loc ?inner ?timed_out ?count ?max_shrink ~rendered ~case_index
          timed_out;
          root;
          count;
-         max_shrink;
          examples;
          rendering;
          inner;

@@ -13,8 +13,13 @@ let spf = Printf.sprintf
 let duration_column = 51
 let rule_width = 54
 let compact_row_width = 60 (* glyphs per compact row, v1's wrap *)
-let default_columns = 80
-let default_tail_lines = 10
+
+(* The transcript is a report, not a canvas: one width, so a pipe and a
+   wide terminal are byte-identical, and one captured-output tail — the
+   last [tail_lines] lines of the [Failure.tail_bytes] the capture kept,
+   with the full log's path beside them. Neither is configurable. *)
+let columns = 80
+let tail_lines = 10
 let slowest_count = 5
 let slowest_threshold = 5.0 (* seconds *)
 let max_diff_lines = 200
@@ -62,19 +67,14 @@ let shell_quote s =
 
 type invocation = [ `Exe of string | `Mirrors ]
 
-(* The resolved renderer settings: the four presentation knobs the CLI
+(* The resolved renderer settings: the two presentation knobs the CLI
    layer resolves and the runner never reads. The driver applies them —
-   [color] against the sink's terminal status, the rest as [create]'s
-   arguments — so the split between run configuration and presentation
-   is a type boundary, not a discipline. *)
-type settings = {
-  color : Env.color_mode;
-  tail_errors : int option;
-  slow_threshold : float;
-}
+   [color] against the sink's terminal status, the threshold as [create]'s
+   argument — so the split between run configuration and presentation is
+   a type boundary, not a discipline. *)
+type settings = { color : Env.color_mode; slow_threshold : float }
 
-let default_settings =
-  { color = Env.Auto; tail_errors = None; slow_threshold = 1.0 }
+let default_settings = { color = Env.Auto; slow_threshold = 1.0 }
 
 (* The acceptance line under a baseline failure. An executable invoked by
    hand accepts in place with [-u]; a run dune drives — the inline runner,
@@ -84,24 +84,19 @@ let accept_line = function
   | `Exe cmd -> spf "accept: %s -u, then review with git diff" cmd
   | `Mirrors -> "accept: dune promote"
 
-(* [count] and [max_shrink] are a property failure's config-sourced knobs
-   (Failure.kind.Property): the hint restates both — [--prop-count]/
-   [WINDTRAP_PROP_COUNT] because replaying a late case needs at least as
-   many cases as the failing run generated, [--max-shrink]/
-   [WINDTRAP_MAX_SHRINK] because a shrink search under a different budget
-   stops elsewhere and reports a different counterexample. A
-   declaration-site count needs no flag and never reaches here; neither
-   does an engine-default budget. *)
-let replay_line ?count ?max_shrink invocation ~seed ~filter =
+(* [count] is a property failure's one config-sourced knob
+   (Failure.kind.Property): the hint restates it — [--prop-count]/
+   [WINDTRAP_PROP_COUNT] — because replaying a late case needs at least as
+   many cases as the failing run generated. A declaration-site count needs
+   no flag and never reaches here, and the shrink budget is fixed, so the
+   seed alone descends to the same node. *)
+let replay_line ?count invocation ~seed ~filter =
   let token = Seed.to_string seed in
-  let opt spelling = function
-    | Some n -> spf " %s %d" spelling n
-    | None -> ""
+  let flags =
+    match count with Some n -> spf " --prop-count %d" n | None -> ""
   in
-  let mirror name = function Some n -> spf " %s=%d" name n | None -> "" in
-  let flags = opt "--prop-count" count ^ opt "--max-shrink" max_shrink in
   let env =
-    mirror "WINDTRAP_PROP_COUNT" count ^ mirror "WINDTRAP_MAX_SHRINK" max_shrink
+    match count with Some n -> spf " WINDTRAP_PROP_COUNT=%d" n | None -> ""
   in
   match (invocation, filter) with
   | `Exe cmd, Some flt ->
@@ -833,7 +828,6 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         timed_out;
         root;
         count;
-        max_shrink;
         examples;
         rendering;
         inner;
@@ -903,7 +897,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             ~ind:(ind ^ "  ") ppf i
       | None -> ());
       if commands && not examples then
-        put_ind (replay_line ?count ?max_shrink invocation ~seed:root ~filter)
+        put_ind (replay_line ?count invocation ~seed:root ~filter)
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m ->
       List.iter (fun line -> put_ind line) (Text.split_lines m)
@@ -922,8 +916,6 @@ type t = {
   ansi : bool;
   mode : [ `Compact | `Verbose ];
   live : bool;
-  columns : int;
-  tail_lines : int;
   slow_threshold : float; (* seconds; 0. disables the slow machinery *)
   invocation : invocation;
       (* the hint context: every acceptance, replay and rerun line derives
@@ -959,11 +951,8 @@ type t = {
          one-liner's seed suffix. *)
 }
 
-let create ~out ~ansi ?(mode = `Compact) ?(live = false)
-    ?(columns = default_columns) ?(tail_lines = default_tail_lines)
-    ?(slow_threshold = 1.0) ?(invocation = `Mirrors) () =
-  if columns < 20 then invalid_arg "Render.create: columns < 20";
-  if tail_lines < 0 then invalid_arg "Render.create: tail_lines < 0";
+let create ~out ~ansi ?(mode = `Compact) ?(live = false) ?(slow_threshold = 1.0)
+    ?(invocation = `Mirrors) () =
   if not (Float.is_finite slow_threshold && slow_threshold >= 0.) then
     invalid_arg "Render.create: slow_threshold not finite and non-negative";
   {
@@ -971,8 +960,6 @@ let create ~out ~ansi ?(mode = `Compact) ?(live = false)
     ansi;
     mode;
     live = live && ansi;
-    columns;
-    tail_lines;
     slow_threshold;
     invocation;
     row = Buffer.create 256;
@@ -1057,7 +1044,7 @@ let begin_test t ~path =
     match t.mode with
     | `Verbose ->
         let text = spf "Running %s %s\u{2026}" counter name in
-        let text = Text.truncate_utf8 (t.columns - 4) text in
+        let text = Text.truncate_utf8 (columns - 4) text in
         Pp.pf t.out "\r\027[2K%s" (st t `Faint ("  " ^ text));
         Pp.flush t.out ();
         t.live_pending <- true
@@ -1069,7 +1056,7 @@ let begin_test t ~path =
            from column zero and its erasure leaves a green run's screen
            blank — the tail never forces the header out early. *)
         let base = if t.deferred then 0 else t.row_count in
-        let width = t.columns - base - 1 in
+        let width = columns - base - 1 in
         if width >= 8 then begin
           let text =
             Text.truncate_utf8 width (spf "  %s %s\u{2026}" counter name)
@@ -1145,7 +1132,7 @@ let note t line =
     Buffer.add_string t.pending
       ((if t.ansi then line else Text.strip_ansi line) ^ "\n");
     if t.live then begin
-      Pp.pf t.out "%s" (st t `Faint (Text.truncate_utf8 (t.columns - 1) line));
+      Pp.pf t.out "%s" (st t `Faint (Text.truncate_utf8 (columns - 1) line));
       Pp.flush t.out ();
       t.live_pending <- true
     end
@@ -1269,7 +1256,7 @@ let result t (r : Run.result) =
 (* End of run *)
 
 let labeled_rule t label =
-  let w = min t.columns rule_width in
+  let w = min columns rule_width in
   let inner = Text.length_utf8 label + 2 in
   let left = max 2 ((w - inner) / 2) in
   let right = max 2 (w - inner - left) in
@@ -1279,7 +1266,7 @@ let pp_tail t (tail : Failure.tail) =
   if not (tail.text = "" && tail.omitted_bytes = 0) then begin
     let lines = Text.split_lines tail.text in
     let total = List.length lines in
-    let shown_count = min t.tail_lines total in
+    let shown_count = min tail_lines total in
     let shown = List.filteri (fun i _ -> i >= total - shown_count) lines in
     let head =
       if tail.omitted_bytes > 0 then
@@ -1740,7 +1727,7 @@ let render_section t = function
   | Excerpt { context; marker; margin; number_width; excerpt = e } ->
       excerpt t ~context ~marker ~margin ?number_width e
   | Rule (Some label) -> put t (st t `Faint (labeled_rule t label))
-  | Rule None -> put t (st t `Faint (dashes (min t.columns rule_width)))
+  | Rule None -> put t (st t `Faint (dashes (min columns rule_width)))
 
 let sections t l = List.iter (render_section t) l
 
@@ -2233,7 +2220,7 @@ let finish t ?coverage ~results ~duration () =
           if i > 0 then put t "";
           pp_block t r)
         failed_results;
-      put t (st t `Faint (dashes (min t.columns rule_width)));
+      put t (st t `Faint (dashes (min columns rule_width)));
       put t ""
     end;
     if slow_results <> [] then begin

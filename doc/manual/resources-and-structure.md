@@ -96,7 +96,7 @@ across the run. Nothing runs at creation; the first call inside a test
 acquires (inside *that* test's failure boundary), later calls return
 the cached value, and the runner releases acquired fixtures after the
 last test in reverse acquisition order — on every path where it
-regains control, `--bail` included:
+regains control, `-x` included:
 
 ```ocaml
 let server = fixture ~teardown:Server.stop Server.start

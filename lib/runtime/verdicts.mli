@@ -22,12 +22,12 @@
 (** {1:verdicts Verdicts}
 
     Three verdicts, never a boolean and never an exit code. There is
-    deliberately no fourth {e errored} verdict: under the child's
-    [bail = Some 1] a killed child always runs fewer tests than were selected,
-    so any verdict keyed on "ran fewer tests than expected" would fire on every
-    kill. A failure of the parent's own supervision — a [fork] or [waitpid] that
-    fails — aborts the run and names the errno instead, because a score over an
-    unknown number of unsupervised children is not a score. *)
+    deliberately no fourth {e errored} verdict: under the child's [bail = true]
+    a killed child always runs fewer tests than were selected, so any verdict
+    keyed on "ran fewer tests than expected" would fire on every kill. A failure
+    of the parent's own supervision — a [fork] or [waitpid] that fails — aborts
+    the run and names the errno instead, because a score over an unknown number
+    of unsupervised children is not a score. *)
 
 type witness = string list
 (** The type for test paths: the names from the run root inwards, e.g.

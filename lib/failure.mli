@@ -206,7 +206,6 @@ type kind =
       timed_out : float option;
       root : Seed.seed;
       count : int option;
-      max_shrink : int option;
       examples : bool;
       rendering : rendering;
           (** What [rendered] is: the value, its pre-image, or a placeholder.
@@ -227,13 +226,13 @@ type kind =
           timeout before any case failed times out the whole test — so it is
           never set alongside [examples].
 
-          [root], [count] and [max_shrink] are the replay line's three
-          ingredients: the run's root seed, and the two run-configuration knobs
-          when configuration supplied them ([None] when the declaration site or
-          the engine default did). A renderer restates exactly the ones that are
-          present: a replay under a different case count or shrink budget
-          reaches a different case, or stops the descent at a different node,
-          and reports something else. *)
+          [root] and [count] are the replay line's two ingredients: the run's
+          root seed, and the case count when run configuration supplied it
+          ([None] when the declaration site or the engine default did). A
+          renderer restates the count only when present: a replay under a
+          different case count reaches a different case and reports something
+          else. The shrink budget is fixed ([Property.shrink_budget]), so the
+          seed alone descends to the same node. *)
   | Message of string  (** A direct failure ([fail], [failf], and kin). *)
 
 (** The type for what a {!Property} failure's [rendered] text is. *)
@@ -254,7 +253,7 @@ and rendering =
     point of use instead. *)
 and attribution =
   | Recorded
-      (** [loc] is what the failure site recorded — an explicit [?pos], a
+      (** [loc] is what the failure site recorded — an explicit [?__POS__], a
           captured call-stack frame, or the site a runner-made failure names for
           itself (a timeout, an uncaught exception, an [xfail] that passed, a
           restoration that could not happen: each names the enclosing test's
@@ -265,9 +264,9 @@ and attribution =
           the enclosing test's declaration site ([Run.add_failure], the one
           fallback point): the failing call sat in tail position, so its own
           frame was gone when {!Loc.capture} ran. Renderers print a hint naming
-          [~pos:__POS__] under such a location — except for a {!Property}
-          failure, whose own location is its declaration by construction while
-          the assertion's site rides on [inner], and for the uncaught-exception
+          [~__POS__] under such a location — except for a {!Property} failure,
+          whose own location is its declaration by construction while the
+          assertion's site rides on [inner], and for the uncaught-exception
           {!Raise} shape (no [expected], no [predicate]), which no verb raised
           and whose backtrace names the line, and for a {!Baseline} failure of a
           {!File}, whose call takes no position and whose subject line names the
@@ -353,7 +352,7 @@ val recorded_backtrace : unit -> string option
     the module preamble); a baseline's path is stored unmodified because
     renderers name the file from it.
 
-    None of them captures a location: pass [?loc:(Loc.resolve ?pos ())] at
+    None of them captures a location: pass [?loc:(Loc.resolve ?__POS__ ())] at
     failure sites — {!Loc.resolve} is the one location rule — and omit [loc]
     where a location would be a guess. *)
 
@@ -431,7 +430,6 @@ val property :
   ?inner:t ->
   ?timed_out:float ->
   ?count:int ->
-  ?max_shrink:int ->
   rendered:string ->
   case_index:int ->
   shrink_steps:int ->
@@ -442,9 +440,9 @@ val property :
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
-    {!Property} failure; see {!kind} for the payload semantics. [timed_out],
-    [count], and [max_shrink] default to [None], and [rendering] to {!Value} —
-    the caller states what [rendered] is, since only it knows. *)
+    {!Property} failure; see {!kind} for the payload semantics. [timed_out] and
+    [count] default to [None], and [rendering] to {!Value} — the caller states
+    what [rendered] is, since only it knows. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)

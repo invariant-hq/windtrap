@@ -78,9 +78,6 @@ type settings = {
       (** [--color]/[WINDTRAP_COLOR]: the color preference. The driver resolves
           it against the sink's terminal status ({!Env.resolve_color}) into
           {!create}'s [ansi] — this module never sniffs. *)
-  tail_errors : int option;
-      (** [WINDTRAP_TAIL_ERRORS]: captured-output lines shown per failure
-          ({!create}'s [tail_lines]); [None] leaves the default. *)
   slow_threshold : float;
       (** [--slow-threshold]/[WINDTRAP_SLOW_THRESHOLD]: seconds a test not
           tagged ["slow"] may take before the run counts as noteworthy ([0.]
@@ -95,15 +92,13 @@ type settings = {
 
 val default_settings : settings
 (** [default_settings] is the settings with every knob at its built-in default:
-    [color = Env.Auto], no width or tail override, [slow_threshold = 1.]. *)
+    [color = Env.Auto], [slow_threshold = 1.]. *)
 
 val create :
   out:Format.formatter ->
   ansi:bool ->
   ?mode:[ `Compact | `Verbose ] ->
   ?live:bool ->
-  ?columns:int ->
-  ?tail_lines:int ->
   ?slow_threshold:float ->
   ?invocation:invocation ->
   unit ->
@@ -127,12 +122,6 @@ val create :
     - [live], whether {!begin_test} maintains a self-erasing progress display
       with terminal cursor controls. Pass the sink's TTY status; under
       [ansi:false] it is off regardless. Defaults to [false].
-    - [columns], the terminal width used to bound rules and the live display.
-      Always [80] for a run — the transcript is a report, not a canvas, and one
-      width keeps a pipe and a wide terminal byte-identical. The compact row
-      wraps at 60 glyphs regardless. Renderer tests pass other widths.
-    - [tail_lines], the maximum captured-output lines shown per failure block
-      ([WINDTRAP_TAIL_ERRORS]). Defaults to [10].
     - [slow_threshold], the seconds a test not tagged ["slow"] may take before
       the run counts as noteworthy and the test earns a slow warning at
       {!finish} ([--slow-threshold]/[WINDTRAP_SLOW_THRESHOLD]). Defaults to
@@ -149,8 +138,14 @@ val create :
     {!pp_failure}: they keep their newlines and tabs, which are their own
     layout, and they escape ESC whatever [ansi] says.
 
-    Raises [Invalid_argument] if [columns < 20], [tail_lines < 0], or
-    [slow_threshold] is negative or not finite. *)
+    The width and the captured-output tail are fixed. Rules and the live display
+    are bounded to [80] columns — the transcript is a report, not a canvas, and
+    one width keeps a pipe and a wide terminal byte-identical (the compact row
+    wraps at 60 glyphs regardless) — and a failure block shows the last [10]
+    lines of the {!Failure.tail} the capture retained, with the full log's path
+    beside them.
+
+    Raises [Invalid_argument] if [slow_threshold] is negative or not finite. *)
 
 (** {1:transcript The transcript} *)
 
@@ -321,8 +316,8 @@ val finish :
     are exempt regardless.
 
     Failure blocks render each test's captured tail from the first
-    {!Failure.tail} attached to its failures: the retained lines (at most
-    [tail_lines]), what was omitted, and the tail's [log_path]. *)
+    {!Failure.tail} attached to its failures: the retained lines (at most the
+    fixed [10]), what was omitted, and the tail's [log_path]. *)
 
 (** {1:baselines The baseline report} *)
 

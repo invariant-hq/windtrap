@@ -48,8 +48,7 @@ type config = {
           bucket [K] of [N] ({!Runner}, {e Selection}). Invariant [1 <= K <= N],
           validated by the CLI layer. *)
   failed_only : bool;  (** [--failed]: rerun only the last run's failures. *)
-  bail : int option;
-      (** [--bail N] ([-x] is [Some 1]): stop after [N] failures. *)
+  bail : bool;  (** [-x]/[--fail-fast]: stop after the first counted failure. *)
   stream : bool;
       (** [--stream]: run against the real descriptors instead of capturing
           (capture state is {!Capture.disabled}). *)
@@ -60,11 +59,6 @@ type config = {
           {!Baseline.Update} under [CI]. *)
   timeout : float option;  (** [--timeout]: default per-test limit, seconds. *)
   prop_count : int option;  (** [--prop-count]: generated cases per property. *)
-  max_shrink : int option;
-      (** [--max-shrink]: accepted shrink steps per failing property. The
-          engine's default is 100; a search that spends the budget reports so,
-          because a truncated search and a converged one otherwise read alike.
-      *)
   log_dir : string;  (** [-o]/[--output]: root directory for capture logs. *)
   allow_focus : bool;
       (** Lift the CI guard on focused tests. No flag and no mirror sets it:
@@ -74,17 +68,17 @@ type config = {
 (** The type for resolved run configuration: one plain record the CLI layer
     populates by merging CLI flags and environment mirrors in that precedence
     order ({!Cli.settings}). Every field here is one the runner reads; the
-    presentation knobs an invocation also resolves (color, width, the output
-    tail, the slow threshold) live in [Render.settings] instead, where the
-    runner cannot reach them. Consumers read it from {!config}; nothing re-reads
-    flags or the environment mid-run. *)
+    presentation knobs an invocation also resolves (color, the slow threshold)
+    live in [Render.settings] instead, where the runner cannot reach them.
+    Consumers read it from {!config}; nothing re-reads flags or the environment
+    mid-run. *)
 
 val default_config : unit -> config
 (** [default_config ()] is the configuration with every field at its built-in
     default: no filters, no tags, all flags off. Effects: [seed] is drawn fresh
     from {!Seed.random} and [log_dir] is {!Path_ops.default_log_dir}[ ()]. *)
 
-val for_subset : config -> log_dir:string -> bail:int option -> config
+val for_subset : config -> log_dir:string -> bail:bool -> config
 (** [for_subset config ~log_dir ~bail] is [config] adjusted for a run over a
     {e subtree} of its own selection — the mutation loop's forked children.
     Path-selecting knobs ([filter], [exclude], [shard], [failed_only]) are
@@ -397,7 +391,7 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
     releases.
 
     The runner calls this after the last test on every path where it regains
-    control — including under [--bail] — and outside any per-test timeout. *)
+    control — including under [-x] — and outside any per-test timeout. *)
 
 (** {1:results Results} *)
 
@@ -430,7 +424,7 @@ type result = {
   outcome : Failure.outcome;  (** The classified outcome, failures inside. *)
   counted : bool;
       (** [true] iff the result counted as failed — the bit the runner drives
-          retries, [--bail], the exit code, and the last-failed store from
+          retries, [-x], the exit code, and the last-failed store from
           ({!Runner}, {e Expected failures}): an ordinary failure, or an [xfail]
           test's unexpected pass. [false] for passes, skips, and excused
           expected failures. Renderers classify a failing result from this bit

@@ -193,7 +193,7 @@ design**.
    property failures.
 8. **Every user callback runs inside a test's exception boundary**,
    and a resource acquired is released on every path where the runner
-   regains control — test failure, `--bail`, filtered runs, end of run
+   regains control — test failure, `-x`, filtered runs, end of run
    (process death by signal is the only excepted path); body and
    release failures are both reported. *Prevents:* runner crashes from
    hooks; leaked teardowns; masked errors.

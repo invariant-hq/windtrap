@@ -33,7 +33,17 @@ let ansi = ref false
 
 let resolve_ansi () =
   let module Env = Windtrap.Private.Env in
-  Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
+  let module Cli = Windtrap.Private.Cli in
+  (* WINDTRAP_COLOR is read as the runner reads it — through [--color]'s
+     parser — so a bad value is refused here as it is everywhere. *)
+  let mode =
+    match Cli.color_mode () with
+    | Ok mode -> mode
+    | Error error ->
+        prerr_endline ("harness: " ^ Cli.error_message error);
+        exit 2
+  in
+  Env.resolve_color mode ~tty:(Env.is_tty_stdout ())
     ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
 
 (* The check lines' FAIL tag, ansi-explicit (like [summary_line]) so
@@ -104,13 +114,11 @@ let windtrap_vars =
     "WINDTRAP_SEED";
     "WINDTRAP_TIMEOUT";
     "WINDTRAP_PROP_COUNT";
-    "WINDTRAP_MAX_SHRINK";
-    "WINDTRAP_BAIL";
     "WINDTRAP_JUNIT";
     "WINDTRAP_OUTPUT";
     "WINDTRAP_COVERAGE";
+    "WINDTRAP_COVERAGE_FILE";
     "WINDTRAP_STREAM";
-    "WINDTRAP_TAIL_ERRORS";
     "WINDTRAP_COLOR";
     "WINDTRAP_SHARD";
     "WINDTRAP_SLOW_THRESHOLD";

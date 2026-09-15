@@ -13,6 +13,7 @@
 module Render = Windtrap.Private.Render
 module Driver = Windtrap.Private.Driver
 module Env = Windtrap.Private.Env
+module Cli = Windtrap.Private.Cli
 
 let spf = Printf.sprintf
 
@@ -383,9 +384,9 @@ let check_expectations ~expect ~do_not_expect collection =
 
 (* The command *)
 
-let report_table ~source_roots ~show_uncovered collection =
+let report_table ~color ~source_roots ~show_uncovered collection =
   let ansi =
-    Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
+    Env.resolve_color color ~tty:(Env.is_tty_stdout ())
       ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
   in
   let renderer = Render.create ~out:Format.std_formatter ~ansi () in
@@ -425,11 +426,17 @@ let run args =
       Printf.eprintf "windtrap coverage: %s\n%s\n" message usage;
       2
   | Ok options -> (
-      match discover options.paths with
-      | Error message ->
+      (* No --color flag here, so WINDTRAP_COLOR is the whole colour
+         decision: read through the runner's --color parser and refused on
+         the same terms, never read as "auto" out of a typo. *)
+      match (Cli.color_mode (), discover options.paths) with
+      | Error error, _ ->
+          Printf.eprintf "windtrap coverage: %s\n" (Cli.error_message error);
+          2
+      | Ok _, Error message ->
           Printf.eprintf "windtrap coverage: %s\n" message;
           1
-      | Ok (files, source_roots) -> (
+      | Ok color, Ok (files, source_roots) -> (
           if files = [] then begin
             prerr_string ("windtrap coverage: " ^ no_data);
             1
@@ -441,7 +448,7 @@ let run args =
                 if options.json then print_json ~source_roots collection
                 else if options.lcov then print_lcov ~source_roots collection
                 else
-                  report_table ~source_roots
+                  report_table ~color ~source_roots
                     ~show_uncovered:options.show_uncovered collection;
                 (* Both gates run, so one run names everything wrong;
                    either failing is exit 1. A machine format owns

@@ -2,9 +2,9 @@
    Copyright (c) 2026 Invariant Systems. All rights reserved.
    SPDX-License-Identifier: ISC
 
-   The flag inventory and the programmatic > CLI > env > default precedence
-   derive from windtrap v1's lib/cli.ml, rebuilt as one declarative flag
-   table that generates parsing, --help, and the env-mirror listing.
+   The flag inventory and the CLI > env > default precedence derive from
+   windtrap v1's lib/cli.ml, rebuilt as one declarative flag table that
+   generates parsing, --help, and the environment layer.
   ---------------------------------------------------------------------------*)
 
 (* Parsed flags *)
@@ -17,7 +17,7 @@ type parsed = {
   shard : (int * int) option;
   failed_only : bool option;
   list_only : bool option;
-  bail : int option;
+  bail : bool option;
   stream : bool option;
   update : bool option;
   corrected : bool option;
@@ -25,7 +25,6 @@ type parsed = {
   timeout : float option;
   slow_threshold : float option;
   prop_count : int option;
-  max_shrink : int option;
   verbose : bool option;
   junit : string option;
   color : Env.color_mode option;
@@ -51,7 +50,6 @@ let empty =
     timeout = None;
     slow_threshold = None;
     prop_count = None;
-    max_shrink = None;
     verbose = None;
     junit = None;
     color = None;
@@ -69,38 +67,34 @@ type error =
   | Extra_positional of { filter : string; extra : string }
   | Incompatible_flags of string * string
 
-(* The flag table *)
+(* The argument grammar *)
 
+(* What a flag takes on the command line. [Flag] takes nothing. [Value]
+   takes one argument — the next one, or inline as [--flag=value]. An
+   [Optional_value] flag takes an inline value or none: [--flag] alone is
+   the bare form and never consumes the next argument, so a value attaches
+   only with [=]. No row uses the third kind yet; [--mutate[=PREFIX,...]]
+   will, and adds a row and nothing else. *)
 type arg =
   | Flag of (parsed -> parsed)
   | Value of {
       metavar : string;
       set : source:string -> parsed -> string -> (parsed, error) result;
     }
+  | Optional_value of {
+      metavar : string;
+      set : source:string -> parsed -> string option -> (parsed, error) result;
+    }
 
-(* How a mirror's raw value is spelled. Every reader but [Own] turns it
-   into tokens the flag's own [arg] consumes, which is what keeps a mirror
-   from validating differently from the flag it mirrors: same parser, same
-   range check, same [expected] text, only the error source differs.
-
-   [Raw] is the whole value as one token, exactly as written — the four
-   variables whose value can legitimately start or end with a space (a
-   test path contains " \u{203a} "). [Trimmed] is the same, trimmed: the
-   spelling every other single-token variable wants, so that " 2/4 "
-   works as a shard where " 3 " already worked as a bail. [Comma] is one
-   token per comma-separated item, trimmed, empties dropped. [Truthy] is
-   a boolean spelling: a truthy value applies a value-less flag. [Own] is
-   a vocabulary wider than its flag's, parsed beside the row. *)
-type reader = Raw | Trimmed | Comma | Truthy | Own of (parsed -> parsed)
-
-(* A flag's WINDTRAP_* environment mirror, declared beside the flag it
-   mirrors. [absent p] is [true] while no layer above the environment has
-   decided this flag's field; it carries the precedence law for the mirror.
-   A mirror whose flag already lost is never even parsed, so a valid
-   [--timeout] shadows a malformed WINDTRAP_TIMEOUT instead of tripping over
-   it. Additive fields ([--tag], [--exclude-tag]) are never closed: every
-   layer contributes. *)
-type mirror = { var : string; reader : reader; absent : parsed -> bool }
+(* How a flag's WINDTRAP_* mirror layers under the command line. [Single
+   absent]: the flag holds one value, so the first layer that decides it
+   wins — the mirror is read only while [absent p], and a mirror whose flag
+   the command line already decided is never even parsed, which is what
+   lets a valid [--timeout] shadow a malformed WINDTRAP_TIMEOUT.
+   [Repeatable]: every layer contributes ([--tag], [--exclude-tag]), and
+   the variable holds a comma-separated list, one token per item. *)
+type layering = Single of (parsed -> bool) | Repeatable
+type mirror = { var : string; layering : layering }
 
 type entry = {
   short : string option;
@@ -122,8 +116,8 @@ type item =
 let invalid ~source ~value ~expected =
   Error (Invalid_value { source; value; expected })
 
-let mirrored var reader absent = Some { var; reader; absent }
-let additive _ = true
+let mirrored var absent = Some { var; layering = Single absent }
+let repeatable var = Some { var; layering = Repeatable }
 let set_string set = Value { metavar = "PATTERN"; set }
 
 let set_positive_int store =
@@ -135,19 +129,6 @@ let set_positive_int store =
           match int_of_string_opt value with
           | Some n when n > 0 -> Ok (store acc n)
           | _ -> invalid ~source ~value ~expected:"a positive integer");
-    }
-
-(* A discard budget of [0] is meaningful — "tolerate no discards at all" —
-   so this knob is non-negative where the others are positive. *)
-let set_non_negative_int store =
-  Value
-    {
-      metavar = "N";
-      set =
-        (fun ~source acc value ->
-          match int_of_string_opt value with
-          | Some n when n >= 0 -> Ok (store acc n)
-          | _ -> invalid ~source ~value ~expected:"a non-negative integer");
     }
 
 let seed_expected = "an s1: token with 16 lowercase hexadecimal digits"
@@ -171,6 +152,16 @@ let shard_of_string value =
         | Some k, Some n when 1 <= k && k <= n -> Some (k, n)
         | _ -> None)
 
+let color_expected = "always, never or auto"
+
+(* The one [--color] parser: the flag, its mirror and the flagless
+   commands' read of WINDTRAP_COLOR all go through it, so an unknown word
+   is refused everywhere alike — never read as [auto]. *)
+let color_of_string ~source value =
+  match Env.color_mode_of_string value with
+  | Some mode -> Ok mode
+  | None -> invalid ~source ~value ~expected:color_expected
+
 let table =
   [
     Flag_entry
@@ -181,7 +172,7 @@ let table =
           set_string (fun ~source:_ acc value ->
               Ok { acc with filter = Some value });
         doc = "Run only tests whose path contains PATTERN";
-        mirror = mirrored "WINDTRAP_FILTER" Raw (fun p -> p.filter = None);
+        mirror = mirrored "WINDTRAP_FILTER" (fun p -> p.filter = None);
       };
     Flag_entry
       {
@@ -191,7 +182,7 @@ let table =
           set_string (fun ~source:_ acc value ->
               Ok { acc with exclude = Some value });
         doc = "Skip tests whose path contains PATTERN";
-        mirror = mirrored "WINDTRAP_EXCLUDE" Raw (fun p -> p.exclude = None);
+        mirror = mirrored "WINDTRAP_EXCLUDE" (fun p -> p.exclude = None);
       };
     Flag_entry
       {
@@ -206,7 +197,7 @@ let table =
                   Ok { acc with tags = acc.tags @ [ value ] });
             };
         doc = "Run only tests tagged LABEL (repeatable)";
-        mirror = mirrored "WINDTRAP_TAG" Comma additive;
+        mirror = repeatable "WINDTRAP_TAG";
       };
     Flag_entry
       {
@@ -221,7 +212,7 @@ let table =
                   Ok { acc with exclude_tags = acc.exclude_tags @ [ value ] });
             };
         doc = "Skip tests tagged LABEL (repeatable)";
-        mirror = mirrored "WINDTRAP_EXCLUDE_TAG" Comma additive;
+        mirror = repeatable "WINDTRAP_EXCLUDE_TAG";
       };
     Flag_entry
       {
@@ -238,19 +229,19 @@ let table =
                   | None -> invalid ~source ~value ~expected:shard_expected);
             };
         doc = "Run only the Kth of N deterministic path-hash buckets";
-        mirror = mirrored "WINDTRAP_SHARD" Trimmed (fun p -> p.shard = None);
+        mirror = mirrored "WINDTRAP_SHARD" (fun p -> p.shard = None);
       };
+    (* The three feedback-loop flags have no mirror: they want a command
+       line. Under [dune runtest] a variable cannot help a cached action —
+       the run that failed is exactly the one dune will not repeat until
+       something it depends on changes — and a listing is not a test run.
+       On a directly executed binary the loop is real. *)
     Flag_entry
       {
         short = None;
         long = "--failed";
         arg = Flag (fun acc -> { acc with failed_only = Some true });
         doc = "Rerun only the last run's failures";
-        (* No mirror. The store lives under [--output], which dune's
-           sandbox moves per run, so under [dune runtest] the variable
-           would refuse every suite that did not fail last time — which
-           is every suite, on a fresh build tree. A flag on a directly
-           executed binary is where the loop is real. *)
         mirror = None;
       };
     Flag_entry
@@ -265,17 +256,9 @@ let table =
       {
         short = Some "-x";
         long = "--fail-fast";
-        arg = Flag (fun acc -> { acc with bail = Some 1 });
-        doc = "Stop after the first failure (same as --bail 1)";
+        arg = Flag (fun acc -> { acc with bail = Some true });
+        doc = "Stop after the first failure";
         mirror = None;
-      };
-    Flag_entry
-      {
-        short = None;
-        long = "--bail";
-        arg = set_positive_int (fun acc n -> { acc with bail = Some n });
-        doc = "Stop after N failures";
-        mirror = mirrored "WINDTRAP_BAIL" Trimmed (fun p -> p.bail = None);
       };
     Flag_entry
       {
@@ -293,7 +276,7 @@ let table =
                   | _ -> invalid ~source ~value ~expected:"a positive number");
             };
         doc = "Default per-test timeout in seconds";
-        mirror = mirrored "WINDTRAP_TIMEOUT" Trimmed (fun p -> p.timeout = None);
+        mirror = mirrored "WINDTRAP_TIMEOUT" (fun p -> p.timeout = None);
       };
     Flag_entry
       {
@@ -313,8 +296,7 @@ let table =
             };
         doc = "Warn when an untagged test runs longer than SECONDS (0 disables)";
         mirror =
-          mirrored "WINDTRAP_SLOW_THRESHOLD" Trimmed (fun p ->
-              p.slow_threshold = None);
+          mirrored "WINDTRAP_SLOW_THRESHOLD" (fun p -> p.slow_threshold = None);
       };
     Flag_entry
       {
@@ -331,7 +313,7 @@ let table =
                   | Error _ -> invalid ~source ~value ~expected:seed_expected);
             };
         doc = "Root seed for property tests (s1:<16 hex>)";
-        mirror = mirrored "WINDTRAP_SEED" Trimmed (fun p -> p.seed = None);
+        mirror = mirrored "WINDTRAP_SEED" (fun p -> p.seed = None);
       };
     Flag_entry
       {
@@ -339,17 +321,7 @@ let table =
         long = "--prop-count";
         arg = set_positive_int (fun acc n -> { acc with prop_count = Some n });
         doc = "Generated cases per property";
-        mirror =
-          mirrored "WINDTRAP_PROP_COUNT" Trimmed (fun p -> p.prop_count = None);
-      };
-    Flag_entry
-      {
-        short = None;
-        long = "--max-shrink";
-        arg = set_positive_int (fun acc n -> { acc with max_shrink = Some n });
-        doc = "Accepted shrink steps per failing property";
-        mirror =
-          mirrored "WINDTRAP_MAX_SHRINK" Trimmed (fun p -> p.max_shrink = None);
+        mirror = mirrored "WINDTRAP_PROP_COUNT" (fun p -> p.prop_count = None);
       };
     (* Acceptance has no mirror, deliberately: a build action must never
        accept a baseline because of a variable in its environment. Under
@@ -377,7 +349,7 @@ let table =
         long = "--stream";
         arg = Flag (fun acc -> { acc with stream = Some true });
         doc = "Stream test output instead of capturing it";
-        mirror = mirrored "WINDTRAP_STREAM" Truthy (fun p -> p.stream = None);
+        mirror = mirrored "WINDTRAP_STREAM" (fun p -> p.stream = None);
       };
     Flag_entry
       {
@@ -385,7 +357,7 @@ let table =
         long = "--verbose";
         arg = Flag (fun acc -> { acc with verbose = Some true });
         doc = "One status line per test";
-        mirror = mirrored "WINDTRAP_VERBOSE" Truthy (fun p -> p.verbose = None);
+        mirror = mirrored "WINDTRAP_VERBOSE" (fun p -> p.verbose = None);
       };
     Flag_entry
       {
@@ -399,7 +371,7 @@ let table =
                 (fun ~source:_ acc value -> Ok { acc with junit = Some value });
             };
         doc = "Also write a JUnit XML report to PATH";
-        mirror = mirrored "WINDTRAP_JUNIT" Raw (fun p -> p.junit = None);
+        mirror = mirrored "WINDTRAP_JUNIT" (fun p -> p.junit = None);
       };
     Flag_entry
       {
@@ -411,18 +383,12 @@ let table =
               metavar = "MODE";
               set =
                 (fun ~source acc value ->
-                  match String.lowercase_ascii value with
-                  | "always" -> Ok { acc with color = Some Env.Always }
-                  | "never" -> Ok { acc with color = Some Env.Never }
-                  | "auto" -> Ok { acc with color = Some Env.Auto }
-                  | _ ->
-                      invalid ~source ~value ~expected:"always, never or auto");
+                  match color_of_string ~source value with
+                  | Ok mode -> Ok { acc with color = Some mode }
+                  | Error _ as error -> error);
             };
         doc = "Color output: always, never or auto";
-        mirror =
-          mirrored "WINDTRAP_COLOR"
-            (Own (fun acc -> { acc with color = Some (Env.color_mode ()) }))
-            (fun p -> p.color = None);
+        mirror = mirrored "WINDTRAP_COLOR" (fun p -> p.color = None);
       };
     Flag_entry
       {
@@ -437,7 +403,7 @@ let table =
                   Ok { acc with log_dir = Some value });
             };
         doc = "Root directory for capture logs";
-        mirror = mirrored "WINDTRAP_OUTPUT" Raw (fun p -> p.log_dir = None);
+        mirror = mirrored "WINDTRAP_OUTPUT" (fun p -> p.log_dir = None);
       };
     Flag_entry
       {
@@ -456,23 +422,24 @@ let table =
         mirror = None;
       };
     (* The settings no flag can set, after the flags so [--help] lists
-       them where the mirror rows end. Each is read where its owner
-       consumes it: the first two by the resolution below,
-       WINDTRAP_PROJECT_ROOT by [Path_ops], WINDTRAP_COVERAGE by
-       [coverage_enabled], WINDTRAP_COVERAGE_ONLY by [Driver]'s coverage
-       seam, and the mutation knobs by [mutation] and [Mutate_loop]. The
-       arm row spells the runtime's own constant, so this roster, the
-       reader and the report's [arm] line cannot name three different
-       variables. *)
-    Env_setting
-      {
-        var = "WINDTRAP_TAIL_ERRORS";
-        doc = "Captured-output lines shown per failure";
-      };
+       them where the flag rows end. Each is read where its owner
+       consumes it: WINDTRAP_PROJECT_ROOT by [Path_ops],
+       WINDTRAP_COVERAGE_FILE by the coverage runtime at exit,
+       WINDTRAP_COVERAGE by [coverage_enabled], WINDTRAP_COVERAGE_ONLY by
+       [Driver]'s coverage seam, and the mutation switches by [mutation]
+       and [Mutate_loop] — until they become [--mutate] and [--arm], with
+       these variables as their mirrors. The arm row spells the runtime's
+       own constant, so this roster, the reader and the report's [arm]
+       line cannot name three different variables. *)
     Env_setting
       {
         var = "WINDTRAP_PROJECT_ROOT";
         doc = "Project root that baseline paths resolve under";
+      };
+    Env_setting
+      {
+        var = "WINDTRAP_COVERAGE_FILE";
+        doc = "Where an instrumented run writes its coverage dump";
       };
     Env_setting
       { var = "WINDTRAP_COVERAGE"; doc = "Inline coverage line: on or off" };
@@ -503,13 +470,10 @@ let table =
       { var = "NO_COLOR"; doc = "Any value: never style output (--color auto)" };
   ]
 
-(* The flagless setting the resolution itself consumes, read through
-   [Env]'s generic reader beside its row above. Its tolerance is the
-   setting's vocabulary — an unparseable count is unset — where a mirror
-   refuses loudly: no flag exists here for a lenient reading to drift
-   from. *)
-
-let tail_errors () = Env.get_int "WINDTRAP_TAIL_ERRORS"
+let entries =
+  List.filter_map
+    (function Flag_entry e -> Some e | Env_setting _ -> None)
+    table
 
 (* Did-you-mean
 
@@ -554,16 +518,14 @@ let nearest_flag flag =
     (* A third of the name, floor two: beyond that it is a different word,
        not a slip. *)
     let budget = max 2 (String.length flag / 3) in
-    let closer best = function
-      | Env_setting _ -> best
-      | Flag_entry entry -> (
-          let d = edit_distance flag entry.long in
-          match best with
-          | Some (_, best_d) when best_d <= d -> best
-          | _ when d <= budget -> Some (entry.long, d)
-          | _ -> best)
+    let closer best entry =
+      let d = edit_distance flag entry.long in
+      match best with
+      | Some (_, best_d) when best_d <= d -> best
+      | _ when d <= budget -> Some (entry.long, d)
+      | _ -> best
     in
-    Option.map fst (List.fold_left closer None table)
+    Option.map fst (List.fold_left closer None entries)
 
 let error_message = function
   | Unknown_flag flag -> (
@@ -581,15 +543,10 @@ let error_message = function
 
 (* Parsing *)
 
-let find_long name =
-  List.find_map
-    (function Flag_entry e when e.long = name -> Some e | _ -> None)
-    table
+let find_long entries name = List.find_opt (fun e -> e.long = name) entries
 
-let find_short name =
-  List.find_map
-    (function Flag_entry e when e.short = Some name -> Some e | _ -> None)
-    table
+let find_short entries name =
+  List.find_opt (fun e -> e.short = Some name) entries
 
 (* Split "--flag=value" into the flag and its inline value. *)
 let split_inline arg =
@@ -606,7 +563,7 @@ let add_positional acc value =
   | None -> Ok { acc with filter = Some value }
   | Some filter -> Error (Extra_positional { filter; extra = value })
 
-let rec parse_args acc = function
+let rec parse_args entries acc = function
   | [] -> Ok acc
   | "--" :: rest ->
       List.fold_left
@@ -616,14 +573,14 @@ let rec parse_args acc = function
         (Ok acc) rest
   | arg :: rest when String.length arg > 2 && String.sub arg 0 2 = "--" ->
       let name, inline = split_inline arg in
-      apply (find_long name) ~source:name ~inline acc rest
+      apply entries (find_long entries name) ~source:name ~inline acc rest
   | arg :: rest when String.length arg > 1 && arg.[0] = '-' ->
-      apply (find_short arg) ~source:arg ~inline:None acc rest
+      apply entries (find_short entries arg) ~source:arg ~inline:None acc rest
   | arg :: rest ->
       let* acc = add_positional acc arg in
-      parse_args acc rest
+      parse_args entries acc rest
 
-and apply entry ~source ~inline acc rest =
+and apply entries entry ~source ~inline acc rest =
   match entry with
   | None -> Error (Unknown_flag source)
   | Some { arg = Flag set; _ } -> (
@@ -632,73 +589,100 @@ and apply entry ~source ~inline acc rest =
       | None ->
           let acc = set acc in
           (* --help and --version win immediately; later flags are unread. *)
-          if acc.help || acc.version then Ok acc else parse_args acc rest)
+          if acc.help || acc.version then Ok acc
+          else parse_args entries acc rest)
   | Some { arg = Value { set; _ }; _ } -> (
       match inline with
       | Some value ->
           let* acc = set ~source acc value in
-          parse_args acc rest
+          parse_args entries acc rest
       | None -> (
           match rest with
           | [] -> Error (Missing_value source)
           | value :: rest ->
               let* acc = set ~source acc value in
-              parse_args acc rest))
+              parse_args entries acc rest))
+  | Some { arg = Optional_value { set; _ }; _ } ->
+      (* The value attaches only inline: [--flag next] leaves [next] alone,
+         so a bare flag before a positional keeps meaning what it says. *)
+      let* acc = set ~source acc inline in
+      parse_args entries acc rest
 
-let parse argv =
+let parse_entries entries argv =
   match Array.to_list argv with
   | [] -> Ok empty
   | _prog :: args -> (
-      let* parsed = parse_args empty args in
+      let* parsed = parse_args entries empty args in
       (* Two acceptances at once say two different things about where
          the produced text goes. *)
       match (parsed.update, parsed.corrected) with
       | Some true, Some true -> Error (Incompatible_flags ("-u", "--corrected"))
       | _ -> Ok parsed)
 
+let parse argv = parse_entries entries argv
+
 (* Resolution *)
 
-(* The environment layer, folded out of the same table that drives parsing
-   and [--help]: every WINDTRAP_* mirror is read here and nowhere else, and
-   every value reaches [parsed] through its flag's own [arg]. That is what
-   makes a mirror incapable of drifting from its flag — WINDTRAP_SHARD=9/2
-   fails exactly as [--shard 9/2] does, because it runs the same [set], with
-   the variable named as the source instead of the flag.
+(* The environment layer: every WINDTRAP_* mirror is read here and nowhere
+   else, and every value reaches [parsed] through its flag's own parser
+   with the variable as the source. That is what makes a mirror incapable
+   of drifting from its flag — WINDTRAP_SHARD=9/2 fails exactly as
+   [--shard 9/2] does, because it runs the same [set].
 
-   [layers cli] is [cli] with each mirror filled into the fields the command
-   line left open — the CLI and environment layers merged, in that
-   precedence. A malformed value in a mirror that wins is [Error] naming the
-   variable, and the fold stops there — never a silently defaulted run. *)
-let layers cli =
-  let contribute acc entry mirror raw =
-    let apply acc token =
-      let* acc = acc in
-      match entry.arg with
-      | Flag set -> Ok (set acc)
-      | Value { set; _ } -> set ~source:mirror.var acc token
-    in
-    match mirror.reader with
-    | Own read -> Ok (read acc)
-    | Raw -> apply (Ok acc) raw
-    | Trimmed -> apply (Ok acc) (String.trim raw)
-    | Comma -> List.fold_left apply (Ok acc) (Env.split_comma raw)
-    | Truthy ->
-        if Env.get_bool mirror.var = Some true then apply (Ok acc) raw
-        else Ok acc
-  in
+   Two reading rules turn the variable into what the parser takes, plus
+   the grammar addition. A value flag's mirror is one token, trimmed, so
+   " 2/4 " works as a shard; a repeatable flag's is a comma-separated
+   list, one token per item. A valueless flag's mirror is a boolean:
+   [true] applies the flag, [false] is what an unset variable is, and
+   anything else is refused — a typo must not read as "off". An
+   optional-value flag's mirror reads both ways: a boolean is the bare
+   flag or its absence, anything else is the value. *)
+let contribute acc entry mirror raw =
+  let source = mirror.var in
+  match (entry.arg, mirror.layering) with
+  | Flag set, _ -> (
+      match Env.bool_of_string raw with
+      | Some true -> Ok (set acc)
+      | Some false -> Ok acc
+      | None -> invalid ~source ~value:raw ~expected:Env.bool_expected)
+  | Value { set; _ }, Single _ -> set ~source acc (String.trim raw)
+  | Value { set; _ }, Repeatable ->
+      List.fold_left
+        (fun acc token ->
+          let* acc = acc in
+          set ~source acc token)
+        (Ok acc) (Env.split_comma raw)
+  | Optional_value { set; _ }, _ -> (
+      match Env.bool_of_string raw with
+      | Some true -> set ~source acc None
+      | Some false -> Ok acc
+      | None -> set ~source acc (Some (String.trim raw)))
+
+(* [layer_entries entries cli] is [cli] with each mirror filled into the
+   fields the command line left open — the CLI and environment layers
+   merged, in that precedence. A malformed value in a mirror that wins is
+   [Error] naming the variable, and the fold stops there — never a
+   silently defaulted run. *)
+let layer_entries entries cli =
   List.fold_left
-    (fun acc item ->
+    (fun acc entry ->
       let* acc = acc in
-      match item with
-      | Env_setting _ -> Ok acc
-      | Flag_entry entry -> (
-          match entry.mirror with
-          | Some mirror when mirror.absent acc -> (
-              match Env.get_string mirror.var with
-              | Some raw -> contribute acc entry mirror raw
-              | None -> Ok acc)
-          | Some _ | None -> Ok acc))
-    (Ok cli) table
+      let open_mirror =
+        match entry.mirror with
+        | None -> None
+        | Some ({ layering = Single absent; _ } as mirror) ->
+            if absent acc then Some mirror else None
+        | Some ({ layering = Repeatable; _ } as mirror) -> Some mirror
+      in
+      match open_mirror with
+      | None -> Ok acc
+      | Some mirror -> (
+          match Env.get_string mirror.var with
+          | Some raw -> contribute acc entry mirror raw
+          | None -> Ok acc))
+    (Ok cli) entries
+
+let layers cli = layer_entries entries cli
 
 (* One fold from the fully-layered record to the two resolved records —
    the runner's configuration and the renderer's settings, split along
@@ -716,7 +700,7 @@ let resolved below =
       exclude_tags = below.exclude_tags;
       shard = below.shard;
       failed_only = Option.value below.failed_only ~default:false;
-      bail = below.bail;
+      bail = Option.value below.bail ~default:false;
       stream = Option.value below.stream ~default:false;
       baseline =
         (match (below.update, below.corrected) with
@@ -725,7 +709,6 @@ let resolved below =
         | _ -> Baseline.Check);
       timeout = below.timeout;
       prop_count = below.prop_count;
-      max_shrink = below.max_shrink;
       log_dir =
         (* Resolved against the cwd once, here, before any test body runs.
            A relative [-o DIR] otherwise follows the process around: a test
@@ -747,7 +730,6 @@ let resolved below =
     {
       Render.color =
         Option.value below.color ~default:render_defaults.Render.color;
-      tail_errors = tail_errors ();
       slow_threshold =
         Option.value below.slow_threshold
           ~default:render_defaults.Render.slow_threshold;
@@ -756,7 +738,7 @@ let resolved below =
 (* WINDTRAP_COVERAGE: whether a run prints its inline coverage line.
    Environment only, and a boolean — the truthy and falsy spellings are
    [Env]'s shared ones, so it accepts what every other boolean variable
-   accepts. It resolves apart from [resolve] because it is not run
+   accepts. It resolves apart from [resolved] because it is not run
    configuration but a rendering decision the drivers apply after the
    run record is complete, and with the same loudness: an unrecognized
    value is an error naming the variable, never a silently defaulted
@@ -768,7 +750,7 @@ let coverage_enabled () =
   match Env.get_string "WINDTRAP_COVERAGE" with
   | None -> Ok true
   | Some value -> (
-      match Env.get_bool "WINDTRAP_COVERAGE" with
+      match Env.bool_of_string value with
       | Some enabled -> Ok enabled
       | None ->
           invalid ~source:"WINDTRAP_COVERAGE" ~value
@@ -776,20 +758,19 @@ let coverage_enabled () =
               "on or off; the per-file report is `windtrap coverage', its \
                uncovered excerpts `windtrap coverage -u'")
 
-(* The mutation knobs
+(* The mutation switches
 
-   Environment only, and deliberately so: the inline runner's argument
-   parser accepts dune's inline-test protocol and nothing else, so a flag
-   would exist for half the users. They resolve apart from [resolve] for
-   the reason [coverage_enabled] does — none is run configuration and
-   nothing in the runner may read them — but with the same loudness: an
-   unrecognized value is an error naming the variable, never a silently
-   defaulted mode. WINDTRAP_MUTATE is a boolean, read by [Env]'s shared
-   reader so it accepts exactly the spellings every other boolean
-   variable does; a falsy one asks for nothing, which is what an unset
-   variable asks for. The variable a mutant identifier travels in is the
-   runtime's own constant, so the roster above, this reader and the
-   report's reproduce line cannot name two different variables. *)
+   Environment only for now: [--mutate[=PREFIX,...]] and [--arm ID] are the
+   flags they become, with these variables as their mirrors. They resolve
+   apart from [resolved] for the reason [coverage_enabled] does — neither
+   is run configuration and nothing in the runner may read them — but
+   with the same loudness: an unrecognized value is an error naming the
+   variable, never a silently defaulted mode. WINDTRAP_MUTATE is a
+   boolean in [Env]'s shared vocabulary; a falsy one asks for nothing,
+   which is what an unset variable asks for. The variable a mutant
+   identifier travels in is the runtime's own constant, so the roster
+   above, this reader and the report's reproduce line cannot name two
+   different variables. *)
 
 type mutation = { mode : [ `Unset | `Loop ]; arm : string option }
 
@@ -798,12 +779,20 @@ let mutation () =
     match Env.get_string "WINDTRAP_MUTATE" with
     | None -> Ok `Unset
     | Some value -> (
-        match Env.get_bool "WINDTRAP_MUTATE" with
+        match Env.bool_of_string value with
         | Some true -> Ok `Loop
         | Some false -> Ok `Unset
         | None -> invalid ~source:"WINDTRAP_MUTATE" ~value ~expected:"1 or 0")
   in
   Ok { mode; arm = Env.get_string Windtrap_runtime.Mutate.arm_variable }
+
+(* WINDTRAP_COLOR for a command with no [--color] flag: the same parser
+   as the flag and its mirror, so the variable means one thing everywhere
+   and a bad value is refused everywhere. *)
+let color_mode () =
+  match Env.get_string "WINDTRAP_COLOR" with
+  | None -> Ok Env.Auto
+  | Some value -> color_of_string ~source:"WINDTRAP_COLOR" (String.trim value)
 
 (* One invocation, one resolution pass. Both drivers want all four
    answers and neither wants four error paths to reach them, so the
@@ -840,6 +829,7 @@ let flag_heading entry =
   match entry.arg with
   | Flag _ -> names
   | Value { metavar; _ } -> names ^ " " ^ metavar
+  | Optional_value { metavar; _ } -> names ^ "[=" ^ metavar ^ "]"
 
 let two_columns rows =
   let width =
@@ -853,15 +843,10 @@ let two_columns rows =
     rows
 
 let help ~prog =
-  let flag_rows =
-    List.filter_map
-      (function
-        | Flag_entry e -> Some (flag_heading e, e.doc) | Env_setting _ -> None)
-      table
-  in
+  let flag_rows = List.map (fun e -> (flag_heading e, e.doc)) entries in
   (* Only the variables no flag can spell get a row. The mirrors are one
-     mechanical rule — twenty-four rows reading "Mirror of --x" said it
-     twenty-four times, and said nothing the sentence above does not. *)
+     mechanical rule — a row each reading "Mirror of --x" said it twenty
+     times, and said nothing the sentence above does not. *)
   let setting_rows =
     List.filter_map
       (function
@@ -875,11 +860,11 @@ let help ~prog =
        usage ~prog;
        "";
        "A bare PATTERN runs only tests whose full path contains it (same as";
-       "-f PATTERN). Under `dune runtest` there is no command line, so";
-       "almost every option has a WINDTRAP_* mirror — WINDTRAP_FILTER for";
-       "--filter, and so on — and there the mirrors are the CLI. -l,";
-       "--failed, -x, -u, --corrected, -h and -V have none: they belong";
-       "on a command line (a build action accepts nothing by environment).";
+       "-f PATTERN). Every option that changes what a run does or reports";
+       "has a WINDTRAP_* environment mirror (WINDTRAP_FILTER for --filter,";
+       "and so on) — the command line under `dune runtest` — except -l,";
+       "--failed, -x, -u, --corrected, -h and -V; the variables listed";
+       "under ENVIRONMENT have no flag at all.";
        "";
        "OPTIONS:";
      ]

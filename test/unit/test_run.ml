@@ -52,7 +52,7 @@ let () =
   check "default config: baselines are checked, not written"
     (config.Run.baseline = Baseline.Check);
   check "default config: no limits"
-    (config.Run.bail = None && config.Run.timeout = None
+    ((not config.Run.bail) && config.Run.timeout = None
     && config.Run.prop_count = None
     && config.Run.shard = None);
   check "default config: log dir is set" (config.Run.log_dir <> "")
@@ -486,7 +486,7 @@ let () =
                 contains "Boom" actual
             | _ -> false);
           (* No verb raised it: the declaration is its site, named as such
-             — not a fallback the report would hint [~pos] about. *)
+             — not a fallback the report would hint [~__POS__] about. *)
           check "the subtest exception names the declaration as its own site"
             (failure.Failure.loc = Run.loc frame
             && failure.Failure.attribution = Failure.Recorded)

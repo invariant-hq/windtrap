@@ -140,11 +140,19 @@ type outcome =
 
 (** {1:running Running} *)
 
+val shrink_budget : int
+(** [shrink_budget] is the accepted steps a shrink search may take, [10_000].
+    Fixed rather than configured, so a replay under the same root descends the
+    same path to the same node and prints the same counterexample. Sized so no
+    ordinary value spends it — an integer shrinks by halving jumps, at most one
+    accepted step per bit, so a quad of [int64] converges within 256 — and a
+    search that does spend it is reported as stopped ([shrink_exhausted]), not
+    minimal. The per-test timeout bounds a search that must not run away. *)
+
 val run :
   ?loc:Loc.t ->
   ?count:[ `Declared of int | `Config of int ] ->
   ?max_discard:int ->
-  ?max_shrink:int ->
   ?examples:'a list ->
   root:Seed.seed ->
   path:string ->
@@ -158,10 +166,8 @@ val run :
 
     [count] is the number of generated cases and where it came from: a
     [`Config n] count is restated in the failure's replay line, a [`Declared n]
-    count replays by itself. [max_shrink] is always config-sourced and is
-    stamped on the payload as it stands. Defaults: [count] is [100],
-    [max_discard] is [2 * count] (clamped to [max_int]), [max_shrink] is [100],
-    [examples] is [[]].
+    count replays by itself. Defaults: [count] is [100], [max_discard] is
+    [2 * count] (clamped to [max_int]), [examples] is [[]].
 
     {b Examples first.} The [examples] values run before any generation,
     unshrunk (they are already the reviewed minimal form), and are numbered
@@ -196,7 +202,7 @@ val run :
     candidates failing by any non-assertion exception (v1 semantics: the failure
     need not be equal, only of the same kind). Passing, discarded, and skipping
     candidates are rejected. Descent stops at a node with no accepted candidate,
-    after [max_shrink] accepted steps, or when forcing a candidate raises. A
+    after {!shrink_budget} accepted steps, or when forcing a candidate raises. A
     [Failure.Timeout] raised anywhere in the search — a candidate's body, a
     candidate's forcing, or the search's own bookkeeping — also stops it, at the
     last accepted node: the counterexample in hand is reported rather than
@@ -208,8 +214,8 @@ val run :
     stopping point along that path, so a replay reports an equally or further
     shrunk value from the same descent, never a different case.
 
-    Raises [Invalid_argument] if [count], [max_discard], or [max_shrink] is
-    negative — inside the running test's boundary, since [run] executes there.
-    Re-raises [Failure.Skip_test] from the body unchanged, and [Failure.Timeout]
-    from everywhere except the shrink search, where it ends the search and marks
-    the reported failure instead (see Shrinking). *)
+    Raises [Invalid_argument] if [count] or [max_discard] is negative — inside
+    the running test's boundary, since [run] executes there. Re-raises
+    [Failure.Skip_test] from the body unchanged, and [Failure.Timeout] from
+    everywhere except the shrink search, where it ends the search and marks the
+    reported failure instead (see Shrinking). *)

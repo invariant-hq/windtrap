@@ -12,8 +12,8 @@
     {e programs} — sequences of calls drawn from a command list. It is
     {!Runner.prop} over a derived generator with a derived body: the property
     engine, the {!Failure} payload, and every renderer are unchanged, so seeds
-    and replay, [--prop-count], [--max-shrink], tags, timeouts, capture, [xfail]
-    and the CI reporters all apply as they do to any property.
+    and replay, [--prop-count], the shrink budget, tags, timeouts, capture,
+    [xfail] and the CI reporters all apply as they do to any property.
 
     A program is drawn at a fixed length ([?steps]) and {e repaired} against the
     model before its shrink tree is assembled: a call is kept iff its [~pre]
@@ -173,11 +173,11 @@ val stateful :
     satisfied.
 
     It is {!Runner.prop} over {!program} with {!execute} as its law, so
-    [timeout], [count] and the run's [--prop-count] / [--max-shrink] knobs
-    behave exactly as on a property; [steps], [pp_model] are {!program}'s and
-    [scope], [invariant] are {!execute}'s. The declared tags are extended with
-    ["prop"] and ["stateful"]. [__POS__] fixes the declaration site, which a
-    scope that never ran the program reports.
+    [timeout], [count] and the run's [--prop-count] behave exactly as on a
+    property; [steps], [pp_model] are {!program}'s and [scope], [invariant] are
+    {!execute}'s. The declared tags are extended with ["prop"] and ["stateful"].
+    [__POS__] fixes the declaration site, which a scope that never ran the
+    program reports.
 
     There is no [?examples] — a shrunk counterexample is copied back as a plain
     test — and no [?retries]: a program replays deterministically from the root

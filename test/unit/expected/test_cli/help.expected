@@ -3,11 +3,11 @@ mytests.exe - windtrap test runner
 usage: mytests.exe [OPTIONS] [PATTERN]
 
 A bare PATTERN runs only tests whose full path contains it (same as
--f PATTERN). Under `dune runtest` there is no command line, so
-almost every option has a WINDTRAP_* mirror — WINDTRAP_FILTER for
---filter, and so on — and there the mirrors are the CLI. -l,
---failed, -x, -u, --corrected, -h and -V have none: they belong
-on a command line (a build action accepts nothing by environment).
+-f PATTERN). Every option that changes what a run does or reports
+has a WINDTRAP_* environment mirror (WINDTRAP_FILTER for --filter,
+and so on) — the command line under `dune runtest` — except -l,
+--failed, -x, -u, --corrected, -h and -V; the variables listed
+under ENVIRONMENT have no flag at all.
 
 OPTIONS:
   -f, --filter PATTERN          Run only tests whose path contains PATTERN
@@ -17,13 +17,11 @@ OPTIONS:
       --shard K/N               Run only the Kth of N deterministic path-hash buckets
       --failed                  Rerun only the last run's failures
   -l, --list                    List selected tests without running them
-  -x, --fail-fast               Stop after the first failure (same as --bail 1)
-      --bail N                  Stop after N failures
+  -x, --fail-fast               Stop after the first failure
       --timeout SECONDS         Default per-test timeout in seconds
       --slow-threshold SECONDS  Warn when an untagged test runs longer than SECONDS (0 disables)
       --seed TOKEN              Root seed for property tests (s1:<16 hex>)
       --prop-count N            Generated cases per property
-      --max-shrink N            Accepted shrink steps per failing property
   -u, --update                  Accept baseline changes in place (refused under CI)
       --corrected               Write corrections as <file>.corrected, for dune promote
   -s, --stream                  Stream test output instead of capturing it
@@ -35,8 +33,8 @@ OPTIONS:
   -h, --help                    Print this help and exit
 
 ENVIRONMENT (no flag):
-  WINDTRAP_TAIL_ERRORS    Captured-output lines shown per failure
   WINDTRAP_PROJECT_ROOT   Project root that baseline paths resolve under
+  WINDTRAP_COVERAGE_FILE  Where an instrumented run writes its coverage dump
   WINDTRAP_COVERAGE       Inline coverage line: on or off
   WINDTRAP_COVERAGE_ONLY  Source prefixes the coverage number covers
   WINDTRAP_MUTATE         Mutation testing: 1 to run it, 0 not to

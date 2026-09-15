@@ -136,7 +136,7 @@ let same_kind original candidate =
       Some accepted
   | _, (Passed | Discarded | Failed _ | Control _) -> None
 
-let shrink ~max_shrink ~body tree first_class =
+let shrink ~budget ~body tree first_class =
   let scratch = make_context () in
   let accept candidate_tree =
     let value = Gen.Private.value (Shrink_tree.root candidate_tree) in
@@ -187,7 +187,7 @@ let shrink ~max_shrink ~body tree first_class =
        | `Converged -> ()
        | `Stopped -> exhausted := true
        | `Accepted (candidate, accepted) ->
-           if steps >= max_shrink then exhausted := true
+           if steps >= budget then exhausted := true
            else begin
              best := (candidate, steps + 1, accepted);
              descend (steps + 1) candidate
@@ -204,15 +204,27 @@ let shrink ~max_shrink ~body tree first_class =
    caller that ever needed the number was a ceiling that no longer exists,
    and [run]'s .mli states it. *)
 let default_count = 100
-let default_max_shrink = 100
+
+(* The accepted-step budget of a shrink search: fixed, so a replay under
+   the same root descends the same path to the same node and prints the
+   same counterexample — a knob here made the printed value depend on its
+   setting. Sized against the primitives' descent: an integer's candidates
+   halve the gap to its origin, so each accepted step at least halves the
+   distance to the smallest failing value, and a 64-bit integer takes at
+   most 64 steps under any threshold law; a quad of them at most 256, and
+   a list one step per deleted chunk or shrunk element. 10_000 is forty
+   such quads, or a list of a hundred and fifty full-range integers each
+   shrunk bit by bit. A search that spends it is reported as stopped
+   ([shrink_exhausted]) rather than minimal; the per-test timeout, not
+   this number, bounds a search that must not run away. *)
+let shrink_budget = 10_000
 
 let inner_failure = function
   | Assertion failure -> failure
   | Exception (exn, backtrace) ->
       Failure.raised ~actual:(Printexc.to_string exn) ?backtrace ()
 
-let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
-    body =
+let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
   (* A config-sourced count rides the failure payload so the replay hint can
      restate the flag; a declared count and the default replay by
      themselves. *)
@@ -223,11 +235,6 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
     | Some (`Config n) -> (n, Some n)
   in
   if count < 0 then invalid_arg "Property.run: count must be non-negative";
-  (* Nothing but run configuration sets [max_shrink], so a supplied budget
-     rides the payload as it stands. *)
-  let shrink_budget = Option.value max_shrink ~default:default_max_shrink in
-  if shrink_budget < 0 then
-    invalid_arg "Property.run: max_shrink must be non-negative";
   let max_discard =
     match max_discard with
     (* The default budget clamps: [2 * count] overflows for counts beyond
@@ -248,7 +255,7 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
        remedy in its text, so the payload need not classify it. *)
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
-        ?count:config_count ?max_shrink ~rendered ~case_index ~shrink_steps
+        ?count:config_count ~rendered ~case_index ~shrink_steps
         ~shrink_exhausted ~root ~examples ?rendering ()
     in
     Fail { failure; stats = stats () }
@@ -319,7 +326,7 @@ let run ?loc ?count ?max_discard ?max_shrink ?(examples = []) ~root ~path gen
               | `Discarded -> generate ~passed ~attempts:(attempts + 1)
               | `Failed cls ->
                   let final_tree, steps, final_cls, timed_out, exhausted =
-                    shrink ~max_shrink:shrink_budget ~body tree cls
+                    shrink ~budget:shrink_budget ~body tree cls
                   in
                   let rendered, rendering =
                     match Gen.Private.render (Shrink_tree.root final_tree) with

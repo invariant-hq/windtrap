@@ -12,6 +12,7 @@
 
 module Render = Windtrap.Private.Render
 module Env = Windtrap.Private.Env
+module Cli = Windtrap.Private.Cli
 module Test_tree = Windtrap.Private.Test_tree
 module M = Windtrap_runtime.Mutate
 module V = Windtrap_runtime.Verdicts
@@ -273,9 +274,9 @@ let render_data ~resolve_source files =
     filter = None;
   }
 
-let print_report report =
+let print_report ~color report =
   let ansi =
-    Env.resolve_color (Env.color_mode ()) ~tty:(Env.is_tty_stdout ())
+    Env.resolve_color color ~tty:(Env.is_tty_stdout ())
       ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
   in
   let renderer = Render.create ~out:Format.std_formatter ~ansi () in
@@ -293,11 +294,17 @@ let run args =
       Printf.eprintf "windtrap mutants: %s\n%s\n" message usage;
       2
   | Ok paths -> (
-      match discover paths with
-      | Error message ->
+      (* No --color flag here, so WINDTRAP_COLOR is the whole colour
+         decision: read through the runner's --color parser and refused on
+         the same terms, never read as "auto" out of a typo. *)
+      match (Cli.color_mode (), discover paths) with
+      | Error error, _ ->
+          Printf.eprintf "windtrap mutants: %s\n" (Cli.error_message error);
+          2
+      | Ok _, Error message ->
           Printf.eprintf "windtrap mutants: %s\n" message;
           1
-      | Ok (files, roots) -> (
+      | Ok color, Ok (files, roots) -> (
           if files = [] then begin
             Printf.eprintf
               "windtrap mutants: no .mutants files found\n\
@@ -313,7 +320,7 @@ let run args =
                 let report =
                   render_data ~resolve_source:(read_source ~roots) files
                 in
-                print_report report;
+                print_report ~color report;
                 (* A survivor is the project's failure: a fault every
                    executable that reached it let through. An unreached
                    mutant is a coverage-style finding, listed and not

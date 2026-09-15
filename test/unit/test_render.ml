@@ -40,13 +40,11 @@ let check_absent name ~sub s = not_contains ~msg:name ~sub s
 
 (* Drivers *)
 
-let with_renderer ?(ansi = false) ?mode ?live ?columns ?tail_lines
-    ?slow_threshold ?invocation fn =
+let with_renderer ?(ansi = false) ?mode ?live ?slow_threshold ?invocation fn =
   let buf = Buffer.create 1024 in
   let ppf = Format.formatter_of_buffer buf in
   let r =
-    Render.create ~out:ppf ~ansi ?mode ?live ?columns ?tail_lines
-      ?slow_threshold ?invocation ()
+    Render.create ~out:ppf ~ansi ?mode ?live ?slow_threshold ?invocation ()
   in
   fn r;
   Format.pp_print_flush ppf ();
@@ -306,10 +304,6 @@ let test_create_validation () =
     | exception Invalid_argument _ -> true
   in
   let ppf = Format.formatter_of_buffer (Buffer.create 8) in
-  check "create: columns < 20 rejected"
-    (raises (fun () -> Render.create ~out:ppf ~ansi:false ~columns:10 ()));
-  check "create: negative tail_lines rejected"
-    (raises (fun () -> Render.create ~out:ppf ~ansi:false ~tail_lines:(-1) ()));
   check "create: negative slow_threshold rejected"
     (raises (fun () ->
          Render.create ~out:ppf ~ansi:false ~slow_threshold:(-1.0) ()));
@@ -862,29 +856,22 @@ let test_property_projections () =
     ~sub:
       "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 -f 'late'"
     (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" counted);
-  (* The shrink budget rides the payload on the same terms and restates
-     itself for the same reason: a replay under a different budget stops the
-     descent at a different node, so the counterexample it prints is not the
-     one being replayed. An engine-default budget needs no flag. *)
-  let budgeted =
-    Failure.property ~count:1000 ~max_shrink:50 ~rendered:"0" ~case_index:499
-      ~shrink_steps:50 ~shrink_exhausted:true ~root:Fixtures.root
+  (* The seed and the count are the whole replay line: the shrink budget
+     is fixed, so no clause restates it, even for a search that spent it. *)
+  let spent =
+    Failure.property ~count:1000 ~rendered:"0" ~case_index:499
+      ~shrink_steps:10_000 ~shrink_exhausted:true ~root:Fixtures.root
       ~examples:false ()
   in
-  check_contains "config-sourced budget: Mirrors replay restates the mirror"
+  check_contains "a spent budget: the Mirrors replay line ends at the count"
     ~sub:
-      "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_PROP_COUNT=1000 \
-       WINDTRAP_MAX_SHRINK=50 dune runtest"
-    (failure_block budgeted);
-  check_contains "config-sourced budget: Exe replay restates --max-shrink"
+      "replay: WINDTRAP_SEED=s1:7be1d2c904aa31f5 WINDTRAP_PROP_COUNT=1000 dune \
+       runtest\n"
+    (failure_block spent);
+  check_contains "a spent budget: the Exe replay line ends at the filter"
     ~sub:
-      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 \
-       --max-shrink 50 -f 'late'"
-    (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" budgeted);
-  check_absent "engine-default budget: no flag" ~sub:"--max-shrink"
-    (failure_block ~invocation:(`Exe "./t.exe") Fixtures.prop_failure);
-  check_absent "engine-default budget: no mirror" ~sub:"WINDTRAP_MAX_SHRINK"
-    no_filter;
+      "replay: ./t.exe --seed s1:7be1d2c904aa31f5 --prop-count 1000 -f 'late'\n"
+    (failure_block ~invocation:(`Exe "./t.exe") ~filter:"late" spent);
   let multi =
     failure_block
       (Failure.property ~rendered:"Rect\n  (2, 0)" ~case_index:3 ~shrink_steps:0
@@ -1232,21 +1219,27 @@ let test_excerpt () =
 
 (* Captured tail *)
 
-let tail_block ?tail_lines tail =
+let tail_block tail =
   let result =
     Fixtures.result [ "t" ]
       (Failure.Fail [ Failure.with_output_tail tail (Failure.message "boom") ])
   in
-  with_renderer ?tail_lines (fun r ->
-      Render.finish r ~results:[ result ] ~duration:0.01 ())
+  with_renderer (fun r -> Render.finish r ~results:[ result ] ~duration:0.01 ())
 
+(* The tail is a fixed ten lines over the bytes the capture kept: not a
+   knob, so a twelve-line tail shows its last ten. *)
 let test_tail () =
-  let five = Failure.tail "l1\nl2\nl3\nl4\nl5\n" in
-  let b = tail_block ~tail_lines:2 five in
+  let twelve =
+    Failure.tail
+      (String.concat ""
+         (List.init 12 (fun i -> Printf.sprintf "l%d\n" (i + 1))))
+  in
+  let b = tail_block twelve in
   check_contains "tail: line-bounded heading"
-    ~sub:"── captured output (last 2 of 5 lines) ──" b;
-  check_contains "tail: last lines shown" ~sub:"    l4\n    l5\n" b;
-  check_absent "tail: earlier lines dropped" ~sub:"l3" b;
+    ~sub:"── captured output (last 10 of 12 lines) ──" b;
+  check_contains "tail: last lines shown" ~sub:"    l3\n    l4\n" b;
+  check_contains "tail: through the last line" ~sub:"    l12\n" b;
+  check_absent "tail: earlier lines dropped" ~sub:"l2\n" b;
   let full = Failure.tail ~log_path:"log.output" "only\n" in
   let b = tail_block full in
   check_contains "tail: complete output heading"

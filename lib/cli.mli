@@ -9,8 +9,8 @@
     beside its optional [WINDTRAP_*] mirror or a setting only the environment
     can spell: {!parse} reads an argument vector into a {!type:parsed} record of
     raw flag values, {!settings} merges parsed flags and environment mirrors
-    into a {!Run.config} and the three rendering decisions kept out of it — with
-    the precedence {e CLI > env > default} (under [dune runtest] the environment
+    into a {!Run.config} and the rendering decisions kept out of it — with the
+    precedence {e CLI > env > default} (under [dune runtest] the environment
     mirrors {e are} the CLI) — and {!help} renders the flag and variable
     inventory from the same rows. {!settings} is the one call a driver makes,
     one pass over one environment layer.
@@ -19,14 +19,22 @@
     applied through the flag's own parser, so the two cannot drift: a variable
     accepts exactly what its flag accepts, refuses exactly what its flag
     refuses, with the same [expected] wording, and differs only in naming the
-    variable rather than the flag as the source of a bad value. The one variable
-    whose vocabulary is wider than its flag's — [WINDTRAP_COLOR]'s lenient fall
-    back to {!Env.Auto} — is parsed beside its own row all the same. {!Env} is
-    consulted for the reading, not for the inventory: what it still owns
-    outright are the variables read below this layer ([WINDTRAP_PROJECT_ROOT]
-    and the coverage/mutation scopes). The two acceptance flags, [-u] and
-    [--corrected], have no mirror: a build action accepts a baseline through
-    [--corrected] in its own action and never through its environment.
+    variable rather than the flag as the source of a bad value. Two reading
+    rules turn a variable into what the parser takes: a plain value is one
+    token, trimmed; a repeatable flag's is a comma-separated list, one token per
+    item. A valueless flag's variable is a boolean ({!Env.bool_of_string}) that
+    applies the flag when true and is refused when it spells neither, and an
+    optional-value flag's variable reads both ways — a boolean is the bare flag
+    or its absence, anything else is the value, trimmed. {!Env} is consulted for
+    the reading, not for the inventory: what it still owns outright are the
+    variables read below this layer ([WINDTRAP_PROJECT_ROOT] and the coverage
+    and mutation scopes).
+
+    Seven flags have no mirror. [-l], [--failed] and [-x] want a command line: a
+    variable cannot help a cached action, and a listing is not a test run. [-u]
+    and [--corrected] are acceptance, which under dune is [--corrected] in the
+    stanza's own action and [dune promote], never a variable in a build action's
+    environment. [-h] and [-V] are the two informational exits.
 
     Nothing in this module prints or exits: parse and resolution failures are
     returned as a typed {!type:error} — the caller renders {!error_message} and
@@ -55,9 +63,8 @@ type parsed = {
       (** [--failed]: rerun only the last run's recorded failures. *)
   list_only : bool option;
       (** [-l], [--list]: list selected tests without running them. *)
-  bail : int option;
-      (** [--bail N]: stop after [N] failures. [-x]/[--fail-fast] parse as
-          [Some 1]. *)
+  bail : bool option;
+      (** [-x], [--fail-fast]: stop after the first counted failure. *)
   stream : bool option;
       (** [-s], [--stream]: run against the real descriptors instead of
           capturing. *)
@@ -79,9 +86,6 @@ type parsed = {
           [0] disables. *)
   prop_count : int option;
       (** [--prop-count N]: generated cases per property; must be positive. *)
-  max_shrink : int option;
-      (** [--max-shrink N]: accepted shrink steps per failing property; must be
-          positive. *)
   verbose : bool option;
       (** [-v], [--verbose]: one status line per test. [None] is the compact
           default. *)
@@ -132,11 +136,12 @@ val parse : string array -> (parsed, error) result
 
     Repeated single-valued flags keep the last occurrence; [--tag] and
     [--exclude-tag] accumulate in order. Long flags also accept the
-    [--flag=value] spelling. The first bare argument becomes {!parsed.filter} (a
-    second one is {!Extra_positional}); arguments after a [--] separator are all
-    treated as positionals. Parsing stops at [-h]/[--help] and [-V]/[--version]:
-    flags after them are not validated. [-u] together with [--corrected] is
-    {!Incompatible_flags}. *)
+    [--flag=value] spelling; a flag whose value is optional takes it {e only}
+    that way — bare, it never consumes the next argument. The first bare
+    argument becomes {!parsed.filter} (a second one is {!Extra_positional});
+    arguments after a [--] separator are all treated as positionals. Parsing
+    stops at [-h]/[--help] and [-V]/[--version]: flags after them are not
+    validated. [-u] together with [--corrected] is {!Incompatible_flags}. *)
 
 (** {1:resolution Resolution} *)
 
@@ -144,16 +149,16 @@ type mutation = {
   mode : [ `Unset | `Loop ];
       (** [WINDTRAP_MUTATE]: [`Loop] for a mutation run ([1] and the other
           truthy spellings), [`Unset] for an unset, empty or falsy variable —
-          the boolean vocabulary every other switch accepts. Any other value is
-          an error. *)
+          the boolean vocabulary every other switch accepts
+          ({!Env.bool_of_string}). Any other value is an error. *)
   arm : string option;
       (** [WINDTRAP_MUTATE_ARM]: the mutant identifier to arm, unparsed —
           {!Windtrap_runtime.Mutate.id_of_string} owns that grammar and reports
           its own errors. [None] when the variable is unset or empty. *)
 }
-(** The type for the mutation knobs, which are environment variables only: the
-    inline runner's argument parser accepts dune's inline-test protocol and
-    nothing else, so a flag would exist for half the users. *)
+(** The type for the mutation switches. Environment variables with no flag yet:
+    [--mutate[=PREFIX,...]] and [--arm ID] are the flags they become, with these
+    variables as their mirrors, so the inline runner keeps reaching them. *)
 
 val mutation : unit -> (mutation, error) result
 (** [mutation ()] reads the two mutation variables. Resolved apart from
@@ -167,10 +172,9 @@ val mutation : unit -> (mutation, error) result
 type settings = {
   config : Run.config;  (** The run configuration. *)
   render : Render.settings;
-      (** The renderer settings: the presentation knobs — [--color], the
-          [WINDTRAP_TAIL_ERRORS] override, [--slow-threshold] — resolved with
-          the same precedence as [config] and handed to the driver's renderer
-          construction. *)
+      (** The renderer settings: the presentation knobs — [--color] and
+          [--slow-threshold] — resolved with the same precedence as [config] and
+          handed to the driver's renderer construction. *)
   coverage : bool;
       (** Whether the inline coverage line prints ([WINDTRAP_COVERAGE], on
           unless the variable says otherwise). *)
@@ -188,9 +192,9 @@ type settings = {
 val settings : parsed -> (settings, error) result
 (** [settings cli] is everything one invocation resolves to: [cli] with each
     field's [WINDTRAP_*] mirror filled into what the command line left open,
-    then split into the run configuration and the three rendering decisions.
-    [tags] and [exclude_tags] are additive across both layers; every other field
-    is the first layer that decided it, else the default.
+    then split into the run configuration and the rendering decisions. [tags]
+    and [exclude_tags] are additive across both layers; every other field is the
+    first layer that decided it, else the default.
 
     A mirror is read through its own flag's parser, so a value the flag would
     reject is [Error (Invalid_value _)] naming the variable, never silently
@@ -206,6 +210,16 @@ val settings : parsed -> (settings, error) result
     Effects: reads the environment, and draws a fresh root seed ({!Seed.random})
     when no layer provides one. *)
 
+val color_mode : unit -> (Env.color_mode, error) result
+(** [color_mode ()] is [WINDTRAP_COLOR] read through [--color]'s parser, for a
+    command with no [--color] flag of its own ([windtrap coverage],
+    [windtrap mutants]): {!Env.Auto} when the variable is unset, the mode it
+    spells, or [Error (Invalid_value _)] naming the variable for a value the
+    flag would refuse. The runner reads the variable as every other mirror, in
+    {!settings}.
+
+    Effects: reads the environment. *)
+
 (** {1:help Help} *)
 
 val usage : prog:string -> string
@@ -219,3 +233,39 @@ val help : prog:string -> string
     that drives {!parse}. The mirrors get one sentence rather than a row each:
     the rule is mechanical, and twenty-odd lines reading [Mirror of --x] said
     nothing the sentence does not. *)
+
+(**/**)
+
+(* The argument grammar, the two table-driven passes and the help heading
+   a row renders to, exposed for the grammar's own tests: the row kind no
+   flag uses yet ([Optional_value]) is pinned over a synthetic row, so the
+   flag that adopts it adds a row and nothing else. Not an interface —
+   every other caller goes through [parse], [settings] and [help]. *)
+
+type arg =
+  | Flag of (parsed -> parsed)
+  | Value of {
+      metavar : string;
+      set : source:string -> parsed -> string -> (parsed, error) result;
+    }
+  | Optional_value of {
+      metavar : string;
+      set : source:string -> parsed -> string option -> (parsed, error) result;
+    }
+
+type layering = Single of (parsed -> bool) | Repeatable
+type mirror = { var : string; layering : layering }
+
+type entry = {
+  short : string option;
+  long : string;
+  arg : arg;
+  doc : string;
+  mirror : mirror option;
+}
+
+val parse_entries : entry list -> string array -> (parsed, error) result
+val layer_entries : entry list -> parsed -> (parsed, error) result
+val flag_heading : entry -> string
+
+(**/**)

@@ -94,11 +94,11 @@
 
     {b Expected failures.} A test marked {!Test_tree.xfail} still runs, and
     [Windtrap.xfail] states what its outcomes mean. What inverts here is what
-    {e counts}: an expected failure keeps its real failures but consumes no
-    [--bail] budget, enters no last-failed store entry and leaves the exit code
-    alone, while an unexpected pass does all three and is recorded as [Fail]
-    with one message failure. Skips are unaffected. Each recorded result carries
-    the decision ({!Run.result.counted}) and the annotation
+    {e counts}: an expected failure keeps its real failures but does not stop
+    the run under [-x], enters no last-failed store entry and leaves the exit
+    code alone, while an unexpected pass does all three and is recorded as
+    [Fail] with one message failure. Skips are unaffected. Each recorded result
+    carries the decision ({!Run.result.counted}) and the annotation
     ({!Run.result.xfail}), so renderers classify from the record alone.
 
     {b Selection.} A test runs iff its path contains [config.filter] (when set),
@@ -108,8 +108,8 @@
     (when set), and — when any focused node exists — it is focused. Deselected
     tests do not execute and are not recorded. Fixture releases run after the
     last executed test on every path where the runner regains control, including
-    under [--bail] and after a fatal exception, announced through
-    {!Fixture_release} before each teardown and outside any per-test timeout.
+    under [-x] and after a fatal exception, announced through {!Fixture_release}
+    before each teardown and outside any per-test timeout.
 
     {b Sharding.} [--shard K/N] partitions the suite into [N] buckets by a
     deterministic hash of each test's full path ({!Seed.derive} under a frozen
@@ -230,7 +230,7 @@ type outcome = {
           that sets the exit code is always visible in the report. *)
   selected : Test_tree.case list;
       (** The selected tests in execution order — the [-l] listing data. Under
-          [--bail] some may not have executed. *)
+          [-x] some may not have executed. *)
   total : int;  (** Leaf tests in the declared suite, before selection. *)
   focus_active : bool;
       (** [true] iff a focused node narrowed the selection — renderers warn on

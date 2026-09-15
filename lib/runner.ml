@@ -81,8 +81,8 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
     in
     let path = Test_tree.path_to_string (Run.path frame) in
     let outcome =
-      Property.run ?loc ?count ?max_shrink:config.Run.max_shrink ?max_discard
-        ?examples ~root:config.Run.seed ~path gen (fun context value ->
+      Property.run ?loc ?count ?max_discard ?examples ~root:config.Run.seed
+        ~path gen (fun context value ->
           Run.with_prop_context frame context (fun () -> law value))
     in
     raise (Prop_outcome outcome)
@@ -185,7 +185,7 @@ let timeout_failure ?loc limit =
 
 (* Expected failures *)
 
-(* Whether a raw attempt outcome counts as failed for retries, --bail, the
+(* Whether a raw attempt outcome counts as failed for retries, -x, the
    exit code, and the last-failed store, under the test's expectation: an
    expected failure does not count; an unexpected pass does; skips never
    count. Defined over the outcome as classified — the synthesized xfail-pass
@@ -435,7 +435,7 @@ type event =
 
 (* Runs one test to completion (retries included), records its result, and
    returns it with whether it counted as failed (see [counts_failed]) — the
-   caller drives --bail, the exit code, and the last-failed store from the
+   caller drives -x, the exit code, and the last-failed store from the
    flag, never from the recorded outcome alone — and whether its final
    attempt's failures are all kept corrections (see [run_attempt]). *)
 let run_case ~on_event run (case : Test_tree.case) =
@@ -771,11 +771,11 @@ let verdict_result ~subject ~path failures =
 
 let executed_test (result : Run.result) = result.Run.subject = Run.Test
 
-(* Runs the selected tests one at a time in declaration order, stopping once
-   [--bail]'s budget is spent. Returns whether it bailed, how many cases
+(* Runs the selected tests one at a time in declaration order, stopping at
+   the first counted failure under [-x]. Returns whether it bailed, how many cases
    executed (what full-run detection counts — never result rows, which the
    verdict rows below would inflate), the paths that counted as failed
-   (see [counts_failed]) in execution order: what [--bail], the exit code,
+   (see [counts_failed]) in execution order: what [-x], the exit code,
    and the store react to, never a recorded outcome alone — expected [xfail]
    failures are recorded but never accumulate here — and, among those, the
    paths whose failures are all kept corrections. *)
@@ -796,9 +796,7 @@ let drive ~on_event run selected =
              rev_failed := path :: !rev_failed;
              if corrected then rev_corrected := path :: !rev_corrected
            end;
-           match config.Run.bail with
-           | Some limit when List.length !rev_failed >= limit -> bailed := true
-           | Some _ | None -> ()
+           if config.Run.bail && !rev_failed <> [] then bailed := true
          end)
        selected
    with exn ->
@@ -851,7 +849,7 @@ let execute_plan ?(on_event = fun _ -> ())
     drive ~on_event run selected
   in
   (* Releases run after the last test, outside any per-test timeout,
-     including under --bail. A failure here is part of the run's verdict,
+     including under -x. A failure here is part of the run's verdict,
      so it is recorded the moment it happens: one row per failure, after
      every test row. *)
   let release_failures = release ~on_event run in

@@ -13,11 +13,11 @@ module Env = Windtrap.Private.Env
 let set = Unix.putenv
 let clear name = Unix.putenv name ""
 
-(* The readers are generic over the variable name — a mirror is named in
+(* The reader is generic over the variable name — a mirror is named in
    [Cli]'s flag table, not here — so each test names a real variable and
-   exercises the reader its mirror uses. *)
+   exercises the lookup its mirror uses; the vocabularies are pure
+   functions over the value. *)
 let string_of = Env.get_string
-let bool_of = Env.get_bool
 
 let tests =
   [
@@ -57,37 +57,22 @@ let tests =
         clear "WINDTRAP_EXCLUDE");
     cases ~name:Fun.id "truthy bool spellings"
       [ "1"; "true"; "TRUE"; "yes"; "Y"; "on" ] (fun v ->
-        set "WINDTRAP_STREAM" v;
-        equal (option bool) (Some true) (bool_of "WINDTRAP_STREAM");
-        clear "WINDTRAP_STREAM");
+        equal (option bool) (Some true) (Env.bool_of_string v));
     cases ~name:Fun.id "falsy bool spellings"
       [ "0"; "false"; "no"; "N"; "off"; "OFF" ] (fun v ->
-        set "WINDTRAP_STREAM" v;
-        equal (option bool) (Some false) (bool_of "WINDTRAP_STREAM");
-        clear "WINDTRAP_STREAM");
-    test "bool parsing edges" (fun () ->
-        set "WINDTRAP_STREAM" "bogus";
-        equal ~msg:"unparseable bool reads as unset" (option bool) None
-          (bool_of "WINDTRAP_STREAM");
-        set "WINDTRAP_STREAM" " true ";
-        equal ~msg:"bool value is trimmed" (option bool) (Some true)
-          (bool_of "WINDTRAP_STREAM");
-        clear "WINDTRAP_STREAM";
-        equal ~msg:"stream unset" (option bool) None (bool_of "WINDTRAP_STREAM"));
-    test "numeric readers" (fun () ->
-        (* The flagless numeric setting (WINDTRAP_TAIL_ERRORS) is a row
-           of Cli's table and its vocabulary is pinned there; this pins
-           the generic reader it goes through. *)
-        set "WINDTRAP_TAIL_ERRORS" "100";
-        equal ~msg:"get_int parses" (option int) (Some 100)
-          (Env.get_int "WINDTRAP_TAIL_ERRORS");
-        set "WINDTRAP_TAIL_ERRORS" " 25 ";
-        equal ~msg:"the value is trimmed" (option int) (Some 25)
-          (Env.get_int "WINDTRAP_TAIL_ERRORS");
-        set "WINDTRAP_TAIL_ERRORS" "wide";
-        equal ~msg:"an unparseable value reads as unset" (option int) None
-          (Env.get_int "WINDTRAP_TAIL_ERRORS");
-        clear "WINDTRAP_TAIL_ERRORS");
+        equal (option bool) (Some false) (Env.bool_of_string v));
+    test "bool vocabulary edges" (fun () ->
+        (* A value outside the vocabulary is [None], which every reader
+           refuses loudly rather than reading as unset: the CLI layer
+           names the variable ([Cli]'s tests pin that). *)
+        equal ~msg:"an unparseable bool is neither" (option bool) None
+          (Env.bool_of_string "bogus");
+        equal ~msg:"the value is trimmed" (option bool) (Some true)
+          (Env.bool_of_string " true ");
+        equal ~msg:"an empty value is neither" (option bool) None
+          (Env.bool_of_string "");
+        contains ~msg:"the expected clause names the spellings" ~sub:"1/0"
+          Env.bool_expected);
     test "value mirrors are passed through unparsed, like the seed" (fun () ->
         (* The CLI layer owns validation (prop/F-4): a malformed winning
            token must reach it verbatim so it can error naming the
@@ -159,18 +144,18 @@ let tests =
         set "INSIDE_DUNE" "false";
         is_false ~msg:"INSIDE_DUNE=false does not count" (Env.inside_dune ());
         set "INSIDE_DUNE" saved);
-    test "color mode parsing and the resolution rule" (fun () ->
-        clear "WINDTRAP_COLOR";
-        is_true ~msg:"color defaults to Auto" (Env.color_mode () = Env.Auto);
-        set "WINDTRAP_COLOR" "always";
-        is_true ~msg:"color always" (Env.color_mode () = Env.Always);
-        set "WINDTRAP_COLOR" "NEVER";
+    test "color mode vocabulary and the resolution rule" (fun () ->
+        (* The vocabulary is [--color]'s; the flag's parser reads the
+           variable through it, so an unknown word is refused there, not
+           read as auto here. *)
+        is_true ~msg:"color always"
+          (Env.color_mode_of_string "always" = Some Env.Always);
         is_true ~msg:"color parsing is case-insensitive"
-          (Env.color_mode () = Env.Never);
-        set "WINDTRAP_COLOR" "auto";
-        is_true ~msg:"color auto" (Env.color_mode () = Env.Auto);
-        set "WINDTRAP_COLOR" "sometimes";
-        is_true ~msg:"unknown color mode is Auto" (Env.color_mode () = Env.Auto);
+          (Env.color_mode_of_string "NEVER" = Some Env.Never);
+        is_true ~msg:"color auto"
+          (Env.color_mode_of_string "auto" = Some Env.Auto);
+        is_true ~msg:"an unknown word is neither"
+          (Env.color_mode_of_string "sometimes" = None);
         is_true ~msg:"always ignores tty"
           (Env.resolve_color Env.Always ~tty:false ~inside_dune:false
              ~term_dumb:false);
@@ -220,7 +205,7 @@ let tests =
            [Driver.renderer] does it for the runner and [coverage_cmd] for
            the coverage command, and both are pinned end to end by child
            runs that pass --color and compare bytes. *)
-        clear "WINDTRAP_COLOR");
+        ());
     test "TERM=dumb detection" (fun () ->
         let saved = try Sys.getenv "TERM" with Not_found -> "" in
         set "TERM" "dumb";
