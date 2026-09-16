@@ -69,7 +69,7 @@
  (libraries windtrap unix))
 
 (tests
- (names test_run test_runner test_ppx_runtime test_windtrap)
- (modules test_run test_runner test_ppx_runtime test_windtrap)
+ (names test_run test_ppx_runtime test_windtrap)
+ (modules test_run test_ppx_runtime test_windtrap)
  ; ppx_windtrap.runtime and .config are test_ppx_runtime's subjects.
  (libraries windtrap ppx_windtrap.runtime ppx_windtrap.config unix harness))

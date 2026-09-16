@@ -8,7 +8,7 @@
    corrected-file versus in-place writing, and the build-copy placement.
    Each test builds its own registry over a throwaway project root and
    drives [B.check] directly; the CI refusal is the runner's and is pinned
-   in test_runner.ml. *)
+   in test_run.ml. *)
 
 open Windtrap
 open Windtrap.Private
