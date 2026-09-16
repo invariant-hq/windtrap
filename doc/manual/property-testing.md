@@ -22,7 +22,6 @@ containing commas — and for `[""]`:
 ```
 $ dune runtest
 mytool: 1 test (seed s1:fdf792804ac422b3)
-F
 ──────────────────── failures (1) ────────────────────
   FAIL  decode inverts encode
     test/test_codec.ml:14
@@ -57,6 +56,10 @@ case index. Consequences worth knowing:
   property's stream; renaming or regrouping the test re-keys it.
 - `--seed s1:…` (or `WINDTRAP_SEED`) pins the whole run; otherwise
   each run draws a fresh root, so CI keeps exploring.
+- The case index counts every generation attempt, discards included,
+  so each attempt draws fresh values; a replay re-derives the same
+  descent from the printed root, and a timeout during shrinking only
+  moves the stopping point along that path.
 
 A shrink search stops after 10,000 accepted steps — a fixed budget, so
 a replay descends to the same node — or earlier, if forcing a
@@ -235,6 +238,9 @@ it should fire.
 
 - Property tests carry the `"prop"` tag: `--tag prop` selects them,
   `--exclude-tag prop` drops them.
+- `prop` and `stateful` take no `?retries`: a property replays
+  deterministically from the root seed, the test's path and the case
+  index, so a retry would re-run the identical failing stream.
 - The per-test timeout (`~timeout`, or the runner's `--timeout`)
   bounds the whole property — generation and shrinking included. A
   timeout that expires before any case has failed fails the test as

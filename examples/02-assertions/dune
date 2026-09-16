@@ -1,4 +1,6 @@
-; The twelve assertion verbs, testable composition, and table-driven cases.
+; The assertion vocabulary (doc/manual/assertions.md): equality through
+; witnesses, the ordering verbs, assert-and-unwrap, predicates and
+; containment, exceptions, the escape hatches, and table-driven cases.
 
 (test
  (name test_assertions)

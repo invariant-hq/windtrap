@@ -19,7 +19,7 @@ open Windtrap
 module Capture = Windtrap.Private.Capture
 module Failure = Windtrap.Private.Failure
 module Loc = Windtrap.Private.Loc
-module Path_ops = Windtrap.Private.Path_ops
+module Os = Windtrap.Private.Os
 
 let check name cond = is_true ~msg:name cond
 let check_string name ~expected ~actual = equal ~msg:name string expected actual
@@ -401,15 +401,13 @@ let test_sanitized_layout () =
   let cap = Capture.create ~log_dir:root ~suite:"my suite" () in
   Capture.with_capture cap ~groups:[ "a/b" ] ~test_name:"x:y" (fun () ->
       print_string "content");
-  let suite_dir =
-    Filename.concat root (Path_ops.sanitize_component "my suite")
-  in
+  let suite_dir = Filename.concat root (Os.sanitize_component "my suite") in
   check "the suite name is sanitized into one component"
     (Sys.is_directory suite_dir);
   let path =
     Filename.concat
-      (Filename.concat suite_dir (Path_ops.sanitize_component "a/b"))
-      (Path_ops.sanitize_component "x:y" ^ ".output")
+      (Filename.concat suite_dir (Os.sanitize_component "a/b"))
+      (Os.sanitize_component "x:y" ^ ".output")
   in
   check "group and test components are sanitized" (Sys.file_exists path);
   check "a slash in a group makes one component, not two"

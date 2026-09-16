@@ -1,8 +1,8 @@
 # Windtrap manual
 
-One library for all your OCaml tests: unit, property, stateful, expect
-and expect tests from one flat API, plus coverage and mutation testing.
-This manual is the long-form companion to the API reference in
+One library for all your OCaml tests: unit, property, stateful and
+expect tests — inline or against a file — from one flat API, plus
+coverage and mutation testing. This manual is the long-form companion to the API reference in
 `lib/windtrap.mli` — the reference is the contract; these chapters show
 the workflows.
 
@@ -15,15 +15,16 @@ are independent — go where your suite needs you:
 | [Assertions](assertions.md) | The assertion verbs, testables, `Exn` predicates, failure output |
 | [Property testing](property-testing.md) | `prop`, `Gen`, shrinking, seeds and replay, distribution checks |
 | [Stateful testing](stateful-testing.md) | `stateful`, `command`, models and preconditions, per-case systems, cost |
-| [Baselines and expect tests](snapshots-and-expect.md) | `expect` literals, `expect_file` baselines, `[%expect]`, `dune promote` and `-u`, adopting ppx_expect |
+| [Baselines and expect tests](baselines.md) | `expect` literals, `expect_file` baselines, `[%expect]`, `dune promote` and `-u`, adopting ppx_expect |
 | [Resources and structure](resources-and-structure.md) | `bracket`, `scoped`, `fixture`, temp paths, `setenv`, `chdir`, `cases`, tags, focus, `xfail` |
 | [Running tests](running-tests.md) | The CLI and its `WINDTRAP_*` mirrors, selection, sharding, CI output |
-| [Coverage](coverage.md) | The one-stanza setup, the inline number, `windtrap coverage` and its gate |
-| [Mutation testing](mutation.md) | The second backend, survivors and their witnesses, arming one mutant, the `@mutate` aggregate |
+| [Coverage](coverage.md) | The one-stanza setup, the instrumented run, `windtrap coverage` and its gate |
+| [Mutation testing](mutation.md) | The second backend, survivors and their witnesses, arming one mutant, `windtrap mutants` and the `@mutate` aggregate |
 | [Cookbook](../cookbook.md) | Recipes windtrap deliberately does not absorb |
 
-Every OCaml snippet in these chapters is compiled by a mirror in
-[`snippets/`](snippets/), so a snippet that rots breaks the build.
+Every chapter but Running tests has a runnable mirror under
+[`examples/`](../../examples/), numbered in this order, so a snippet
+that rots breaks `dune runtest`.
 
 Transcripts are different, and deliberately so: each is captured from a
 real run and then adapted by hand to the chapter's story — paths, line

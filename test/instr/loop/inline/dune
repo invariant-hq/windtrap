@@ -1,0 +1,10 @@
+; An inline partition with a mutant armed reports an [%expect] mismatch as
+; a failure and writes no .corrected. See doc/dev/testing.md, "The five
+; families".
+
+(executable
+ (name runner_main)
+ (modules runner_main inline_armed)
+ (libraries windtrap ppx_windtrap.runtime mutate_loop_subject)
+ (preprocess
+  (pps ppx_windtrap)))

@@ -107,7 +107,9 @@ let tests =
 
 A fixture no selected test touches is never acquired. A `skip` raised
 during acquisition is cached: every test using the fixture skips with
-the same reason. That is how a whole suite is gated on a resource that
+the same reason. An acquisition that *raises* is cached the same way —
+every later use in the run re-raises it with the original backtrace —
+and nothing re-acquires within a run. That is how a whole suite is gated on a resource that
 may not be there — the probe runs once, and an unavailable device never
 turns the run red:
 

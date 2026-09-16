@@ -10,12 +10,14 @@
    declaration-site capture (?__POS__ preferred, backtrace fallback), cases
    naming, bracket as a scope derived from its setup and teardown, and scoped
    kept as a scope and a body (with the argument order that keeps its
-   optionals through a partial application). The trees under test are inert
+   optionals through a partial application), and the tag sets and selection
+   predicates of [Test_tree.Tag]. The trees under test are inert
    data built with [Test_tree] directly — never executed by the hosting
    runner. *)
 
 open Windtrap
 open Windtrap.Private
+module Tag = Test_tree.Tag
 module T = Test_tree
 
 (* Each [let () = reg name @@ fun () -> ...] block below registers one
@@ -653,6 +655,59 @@ let () =
     && a.T.xfail = Some { T.reason = None });
   check "xfail preserves focus sites"
     (T.focus_sites [ T.xfail (T.focus (T.group "g" [])) ] <> [])
+
+(* Tag sets and selection predicates (Test_tree.Tag) *)
+
+let () =
+  reg "tags: tag sets" @@ fun () ->
+  is_false ~msg:"empty has no tags" (Tag.mem "a" Tag.empty);
+  is_true ~msg:"of_list mem" (Tag.mem "a" (Tag.of_list [ "a"; "b" ]));
+  is_false ~msg:"mem absent" (Tag.mem "c" (Tag.of_list [ "a"; "b" ]));
+  let u = Tag.union (Tag.of_list [ "a" ]) (Tag.of_list [ "b" ]) in
+  is_true ~msg:"union keeps the left side" (Tag.mem "a" u);
+  is_true ~msg:"union keeps the right side" (Tag.mem "b" u);
+  is_false ~msg:"union invents nothing" (Tag.mem "c" u);
+  is_true ~msg:"union with empty is identity"
+    (Tag.mem "a" (Tag.union Tag.empty (Tag.of_list [ "a" ])));
+  equal ~msg:"well-known slow" string "slow" Tag.slow
+
+let () =
+  reg "tags: any accepts every tag set" @@ fun () ->
+  is_true ~msg:"accepts untagged" (Tag.accepts Tag.any Tag.empty);
+  is_true ~msg:"accepts ordinary tags"
+    (Tag.accepts Tag.any (Tag.of_list [ "slow" ]));
+  is_true ~msg:"accepts several"
+    (Tag.accepts Tag.any (Tag.of_list [ "a"; "b" ]))
+
+let () =
+  reg "tags: require and drop semantics" @@ fun () ->
+  let p = Tag.require "net" Tag.any in
+  is_false ~msg:"require rejects missing tag" (Tag.accepts p Tag.empty);
+  is_true ~msg:"require accepts present tag"
+    (Tag.accepts p (Tag.of_list [ "net" ]));
+  is_true ~msg:"require accepts superset"
+    (Tag.accepts p (Tag.of_list [ "net"; "x" ]));
+  let p = Tag.require "a" (Tag.require "b" Tag.any) in
+  is_false ~msg:"multiple requires need all"
+    (Tag.accepts p (Tag.of_list [ "a" ]));
+  is_true ~msg:"multiple requires satisfied"
+    (Tag.accepts p (Tag.of_list [ "a"; "b" ]));
+  let p = Tag.drop Tag.slow Tag.any in
+  is_false ~msg:"drop rejects tagged" (Tag.accepts p (Tag.of_list [ "slow" ]));
+  is_true ~msg:"drop accepts untagged" (Tag.accepts p (Tag.of_list [ "fast" ]))
+
+let () =
+  reg "tags: last flag wins when a tag is both required and dropped"
+  @@ fun () ->
+  let p = Tag.drop "x" (Tag.require "x" Tag.any) in
+  is_false ~msg:"drop after require rejects the tag"
+    (Tag.accepts p (Tag.of_list [ "x" ]));
+  is_true ~msg:"drop after require does not still require it"
+    (Tag.accepts p Tag.empty);
+  let p = Tag.require "x" (Tag.drop "x" Tag.any) in
+  is_true ~msg:"require after drop accepts the tag"
+    (Tag.accepts p (Tag.of_list [ "x" ]));
+  is_false ~msg:"require after drop still requires it" (Tag.accepts p Tag.empty)
 
 (* Suite *)
 

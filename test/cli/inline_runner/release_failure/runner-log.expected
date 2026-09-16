@@ -1,0 +1,10 @@
+release_failure: 1 test
+──────────────────── failures (1) ────────────────────
+  FAIL  fixture release
+    [release] test/cli/inline_runner/release_failure/inline_release_failure.ml:12
+      12 │   Windtrap.fixture ~teardown:(fun () -> failwith "release-boom") (fun () -> ())
+
+    fixture (test/cli/inline_runner/release_failure/inline_release_failure.ml:12): release raised Failure("release-boom")
+──────────────────────────────────────────────────────
+
+1 passed, 1 failed in <duration>s.

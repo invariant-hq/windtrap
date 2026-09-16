@@ -1,11 +1,7 @@
-; The ppx_windtrap rewriter and the dune inline_tests backend. The
-; rewriter is a desugaring into the core: generated code names
-; Windtrap.test, expect, expect_exact and output, the runtime's registry,
-; and the top-level Expect_test_config module (matching ppx_expect), so
-; all three are its ppx_runtime_libraries. dune builds one runner per
-; library from generate_runner, then drives it with the
-; inline-test-runner protocol; Ppx_runtime interprets the flags and runs
-; the partition through the one Windtrap.run, under --corrected.
+; The rewriter is a desugaring into the core and the runtime's registry, so
+; windtrap, the runtime and the config module are all ppx_runtime_libraries;
+; the inline_tests backend's generated main runs a partition through
+; Ppx_runtime under --corrected. See doc/dev/architecture.md, "Package map".
 
 (library
  (name ppx_windtrap)

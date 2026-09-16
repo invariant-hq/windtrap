@@ -10,38 +10,41 @@ the coverage and mutation backends, pinned to `windtrap` with
 
 - [ ] `dune build` — zero warnings; warnings are treated as broken
       implementation, never silenced.
-- [ ] `dune runtest` — green, which includes the examples, the
-      compiled manual snippets (`doc/manual/snippets/`), the PPX
-      expansion pins, and the conformance corpus's conforming sets.
+- [ ] `dune runtest` — green, which includes the examples (the manual's
+      runnable mirror, one per chapter), the PPX expansion pins, and the
+      conformance corpus's conforming sets.
 - [ ] The migration reference (the 0.2.0 entry in `CHANGES.md`) and the
-      cookbook compile against the tree by hand — their mirrors are
-      gone, so every replacement spelling and recipe is checked by
-      reading, or not at all.
+      cookbook compile against the tree by hand — nothing compiles them,
+      so every replacement spelling and recipe is checked by reading,
+      or not at all.
 - [ ] `dune fmt` — clean.
 - [ ] Conformance bar (`test/conformance/RESULTS.md`): HONORED
       byte-identical ≥ 90%, REJECTED loud = 100%. If either number
       moved since the last release, the release notes say why.
-- [ ] Coverage semantics-preservation suite green
-      (`test/coverage_ppx/semantics/`) — non-negotiable (Law 14; see
-      `testing.md`).
+- [ ] Both semantics-preservation suites green (`test/ppx/coverage/semantics/`
+      and `test/ppx/mutate/semantics/`) — non-negotiable (guarantees 10
+      and 12 in `architecture.md`; see `testing.md`).
 - [ ] Instrumented smoke run:
-      `dune runtest --instrument-with ppx_windtrap.coverage` still green with
-      the summary line present (Law 13: outcomes unchanged).
+      `dune runtest --force --instrument-with ppx_windtrap.coverage` still
+      green with no change in outcomes, counts or exit codes (guarantee
+      10), then `dune exec windtrap -- coverage` reports the tree.
 - [ ] Docs current: `doc/manual/` chapters against `lib/windtrap.mli`
       (the `.mli` is the truth), the migration notes in `CHANGES.md`
       against the surface, README against reality.
-- [ ] `SKILL.md` against reality — it names commands, knob values,
-      alias shapes and `--min` examples, and nothing compiles it.
+- [ ] `skills/windtrap-testing/SKILL.md` against reality — it names
+      commands, knob values, alias shapes and `--min` examples, and
+      nothing compiles it.
 - [ ] Manual transcripts regenerated if the renderer changed. They are
-      captured by hand and checked by nothing: `doc/manual/snippets/
-      transcript_fail.ml` regenerates the failure blocks, and the
-      mutation chapter's are re-run against `examples/x-blueprint/`
-      under `--instrument-with ppx_windtrap.mutate`.
+      captured by hand and checked by nothing: break the matching
+      example on purpose (a wrong expectation, a stale baseline, a
+      buggy `pop`), capture, restore; the mutation chapter's are re-run
+      against `examples/x-blueprint/` under
+      `--instrument-with ppx_windtrap.mutate`.
 
 ## Versioning
 
 The public surface is `lib/windtrap.mli` plus the CLI/env contract and
-the exit codes. Breaking any of it — or any Law in
+the exit codes. Breaking any of it — or any of the twelve guarantees in
 `architecture.md` — is a major version and reopens the design first.
 Additive surface (new verbs, generators, flags) is a minor version;
 fixes are a patch. `windtrap` and `ppx_windtrap` version in lockstep;

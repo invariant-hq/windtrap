@@ -1,0 +1,30 @@
+; `windtrap coverage` end to end: bin/main.exe over synthetic dumps and over
+; a real instrumented child. covcli_fixture.ml is a dep because the suite
+; replants it in a scratch project. See doc/dev/testing.md, "The five
+; families".
+
+(test
+ (name test_coverage_cmd)
+ (modules test_coverage_cmd)
+ (libraries windtrap windtrap_runtime unix)
+ (deps
+  inline_child.exe
+  raise_child.exe
+  covcli_fixture.ml
+  ../../../bin/main.exe))
+
+(executable
+ (name inline_child)
+ (modules inline_child)
+ (libraries windtrap windtrap_runtime))
+
+(library
+ (name covcli_fixture)
+ (modules covcli_fixture)
+ (preprocess
+  (pps ppx_windtrap.coverage)))
+
+(executable
+ (name raise_child)
+ (modules raise_child)
+ (libraries windtrap covcli_fixture))

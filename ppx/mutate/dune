@@ -1,12 +1,7 @@
-; The mutation instrumenter, exposed as the dune instrumentation backend
-; selected by --instrument-with ppx_windtrap.mutate: one library naming
-; itself in (instrumentation.backend) — dune reads that field of the
-; library called <name> and does not object to it naming the carrier,
-; as test/mutate_ppx/integration/ checks. Its ppx_runtime_libraries name
-; only the stdlib-only windtrap.runtime the generated code calls, so
-; instrumented user code never pulls the windtrap core into its closure.
-; Also usable directly with (preprocess (pps ppx_windtrap.mutate)),
-; which the golden expansion tests and the integration check use.
+; The mutation backend names itself in (instrumentation.backend) and lists
+; only the stdlib-only runtime in ppx_runtime_libraries, so instrumented code
+; never links the core; also usable through (pps), as test/ppx/mutate does.
+; See doc/dev/testing.md, "Windtrap under its own instrumentation".
 
 (library
  (name windtrap_mutate_ppx)

@@ -1,0 +1,96 @@
+; Tests registered by (pps ppx_windtrap) without (inline_tests) are never
+; run: the guard must exit 2 for the undriven binary and stay silent on
+; every driven path. See doc/dev/testing.md, "The five families".
+
+; One library carries the fixture so both mains link the same module.
+
+(library
+ (name undriven_inline_lib)
+ (modules inline_undriven)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name undriven_main)
+ (modules undriven_main)
+ (libraries undriven_inline_lib))
+
+(executable
+ (name undriven_runner)
+ (modules undriven_runner)
+ (libraries ppx_windtrap.runtime undriven_inline_lib))
+
+(rule
+ (targets
+  run-undriven-log
+  run-undriven-exit
+  run-driven-log
+  run-driven-exit
+  run-list-log
+  run-list-exit
+  run-byhand-log
+  run-byhand-exit)
+ (deps inline_undriven.ml)
+ (action
+  (run
+   %{dep:../drive/drive.exe}
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   run-undriven
+   %{dep:undriven_main.exe}
+   --run
+   run-driven
+   %{dep:undriven_runner.exe}
+   inline-test-runner
+   undriven
+   --run
+   run-list
+   %{dep:undriven_runner.exe}
+   inline-test-runner
+   undriven
+   -list-partitions
+   --run
+   run-byhand
+   %{dep:undriven_runner.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff undriven-log.expected run-undriven-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff undriven-exit.expected run-undriven-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff driven-log.expected run-driven-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff driven-exit.expected run-driven-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff list-log.expected run-list-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff list-exit.expected run-list-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff byhand-log.expected run-byhand-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff byhand-exit.expected run-byhand-exit)))

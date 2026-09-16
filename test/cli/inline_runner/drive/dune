@@ -1,0 +1,12 @@
+; The one process harness for these fixtures: a scrubbed environment and
+; masks over measured numbers. See doc/dev/testing.md, "The five families".
+
+(library
+ (name drive_harness)
+ (modules drive_harness)
+ (libraries unix))
+
+(executable
+ (name drive)
+ (modules drive)
+ (libraries drive_harness unix))

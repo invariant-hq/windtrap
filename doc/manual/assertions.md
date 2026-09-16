@@ -36,8 +36,11 @@ equal
 
 On failure both values render through the printer and the report
 highlights their diff — for every type, not just strings (the
-transcript is in [Getting started](getting-started.md)). The witness
-inventory:
+transcript is in [Getting started](getting-started.md)). A highlight is
+shown only when it points at a small part of a mostly shared value;
+once the marks would cover half a side, the two values print whole,
+because scattering marks over `Some _` against `None` says nothing the
+plain pair does not. The witness inventory:
 
 - `unit`, `bool`, `char`, `string`, `bytes`, `int`, `int32`, `int64`,
   `nativeint`
@@ -89,10 +92,13 @@ equal text expected actual
 
 Equality is unchanged — byte for byte, as with `string` — so a
 trailing space or a missing final newline is still a failure; the
-diff marks trailing whitespace with `·` so you can see which. Reach
+diff marks trailing whitespace with `·` so you can see which, and a
+difference that is only the final newline is stated in words rather
+than drawn (callers for whom it must not matter compare canonicalized
+text: `expect_file` forces one, and `string` renders with `%S`). Reach
 for `text` for rendered output, serialized documents, and logs. When
 the expected side is long enough that you would rather not write it
-out inline, that is what [snapshots](snapshots-and-expect.md) are for.
+out inline, that is what [baselines](baselines.md) are for.
 
 Custom types need a printer and an equality:
 
@@ -160,7 +166,7 @@ The four ordering verbs keep them. Each takes a witness, the bound as
 
 ```ocaml
 less int ~than:3 (retries ());
-at_least (float 1e-6) ~than:0.4 result.accept_rate
+at_least (float 1e-6) ~than:0.4 stats.accept_rate
 ```
 
 ```
@@ -268,8 +274,8 @@ over a bounded excerpt of the haystack, the occurrence marked when
 there is one, instead of printing `false`:
 
 ```ocaml
-contains ~sub:"user=alice" log;
-not_contains ~sub:"secret" log
+contains ~sub:"user=alice" session_log;
+not_contains ~sub:"secret" session_log
 ```
 
 For an exact occurrence count, fold the count locally and assert
@@ -325,6 +331,12 @@ expected  a list containing 42
 actual    [2; 3; 5]
 ```
 
+`mem` is not `contains` one type up in the report, either: membership
+renders through the witness, while string containment records byte
+offsets, so the two failures carry different payloads. And
+`in_order ~subs:[]` raises `Invalid_argument` — an assertion that
+demands nothing is a programmer error, not a passing test.
+
 ## Options and results
 
 Asserting an option's or a result's *shape* needs no witness: `is_none`,
@@ -367,7 +379,11 @@ raises_match (Exn.invalid_arg ~substring:"negative") (fun () ->
 
 A *whole* message is `raises`' job: `raises (Failure "boom")` says the
 same thing, and because it holds both exceptions it reports a message
-diff where a predicate could only reject.
+diff where a predicate could only reject — naming the shared
+constructor itself rather than leaving the report to recover it from a
+rendering. `Invalid_argument`, `Failure` and `Sys_error` are exactly the
+three message-carrying stdlib exceptions `raises` diffs by message,
+which is why `Exn` has exactly those three predicates.
 
 ## Escape hatches
 

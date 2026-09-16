@@ -1,27 +1,12 @@
-; The unit suite: one test_<module>.ml per lib module, each its own
-; executable ending in its own `run` — address one module by building
-; and running it, `dune exec test/unit/test_gen.exe -- -f shrink`. The
-; plural stanza declares them in one block; dune links each executable
-; from its own module's closure and runs them in parallel, where
-; windtrap's runner is deliberately sequential within one process.
-;
-; The four meta suites below drive Run.execute in-process with
-; synthetic configs (the sanctioned way to test runner behavior with
-; windtrap itself); execute refuses to nest inside an active run, so
-; they stay plain executables over the hand-rolled harness.
+; One executable per suite, run in parallel by dune. See doc/dev/testing.md.
 
 (tests
  (names
   test_pp
   test_text
-  test_clock
-  test_tag
+  test_os
   test_loc
-  test_env
-  test_path_ops
   test_seed
-  test_shrink_tree
-  test_atomic_file
   test_testable
   test_failure
   test_diff
@@ -39,14 +24,9 @@
  (modules
   test_pp
   test_text
-  test_clock
-  test_tag
+  test_os
   test_loc
-  test_env
-  test_path_ops
   test_seed
-  test_shrink_tree
-  test_atomic_file
   test_testable
   test_failure
   test_diff
@@ -62,39 +42,26 @@
   test_report_junit
   test_cli)
  (libraries windtrap windtrap_runtime unix harness render_fixtures xml_check)
- ; The report's golden transcripts are file baselines under expected/,
- ; not literals in the source. They are inputs to the run, so dune must
- ; know about them or a sandboxed action cannot read them; accept a
- ; change with `dune exec test/unit/test_report.exe -- -u`.
+ ; The report suite's golden transcripts are action inputs; accept a
+ ; change with `test_report.exe -u`.
  (deps
   (glob_files_rec expected/**)))
 
-; Modules shared by more than one test file are libraries, not extra
-; entries in a test stanza's (modules ...) — the same shape harness
-; already has. Each is a single module named after its library, so call
-; sites spell it exactly as they would a local module.
-
-; Synthetic run data for the two report suites (test_report,
-; test_report_junit).
+; Synthetic run data for the two report suites.
 
 (library
  (name render_fixtures)
  (modules render_fixtures)
  (libraries windtrap))
 
-; The JUnit suite's XML well-formedness oracle. Stdlib only, on purpose:
-; it is a test asset, never a dependency of the renderer it checks.
+; The JUnit suite's XML well-formedness oracle; stdlib only.
 
 (library
  (name xml_check)
  (modules xml_check))
 
-; The meta suites drive the ambient slot and Run.execute in-process
-; with synthetic configs; execute refuses to nest inside an active run,
-; so each is a plain executable over the shared hand-rolled harness.
-; The harness links windtrap for its output dialect only (Pp styling,
-; Env's color resolution, Report's duration format via Private) — its
-; summary line must carry the same bytes as a windtrap suite's.
+; The meta suites drive Run.execute in-process, which refuses to nest
+; inside a run, so they are plain executables over this harness.
 
 (library
  (name harness)
@@ -104,8 +71,5 @@
 (tests
  (names test_run test_runner test_ppx_runtime test_windtrap)
  (modules test_run test_runner test_ppx_runtime test_windtrap)
- ; ppx_windtrap.runtime and .config are test_ppx_runtime's subjects: the
- ; inline runtime lives there (Ppx_windtrap_runtime.Ppx_runtime), not in
- ; the core, and .config exposes the ambient Expect_test_config under
- ; exactly the top-level name generated code references.
+ ; ppx_windtrap.runtime and .config are test_ppx_runtime's subjects.
  (libraries windtrap ppx_windtrap.runtime ppx_windtrap.config unix harness))

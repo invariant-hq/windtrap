@@ -330,11 +330,13 @@ let program ?(steps = default_steps) ?pp_model ~model commands =
           draw (remaining - 1) (tree :: trees) state
       in
       let trees, state = draw steps [] state in
-      let trees = select (keep (List.map Shrink_tree.root trees)) trees in
+      let trees =
+        select (keep (List.map Gen.Private.Shrink_tree.root trees)) trees
+      in
       let tree =
-        Shrink_tree.map
+        Gen.Private.Shrink_tree.map
           (fun calls -> { initial = model; calls = select (keep calls) calls })
-          (Shrink_tree.list trees)
+          (Gen.Private.Shrink_tree.list trees)
       in
       (tree, state))
 
@@ -509,7 +511,7 @@ let execute ?loc ?invariant ~scope program =
 
 (* The entry point *)
 
-(* Stateful tests carry both tags: [Tag.prop] because they are properties —
+(* Stateful tests carry both tags: [Test_tree.Tag.prop] because they are properties —
    [--tag prop] selects them and the run header prints the root seed exactly
    when the suite declares one — and ["stateful"] so a suite can select or
    exclude them on their own cost profile. *)
@@ -520,7 +522,9 @@ let stateful ?__POS__ ?tags ?timeout ?count ?steps ?pp_model ?invariant name
   (* The declaration site, for the one failure with no site of its own: a
      scope that never ran the program. *)
   let loc = Loc.resolve ?__POS__ () in
-  let tags = Tag.prop :: stateful_tag :: Option.value ~default:[] tags in
+  let tags =
+    Test_tree.Tag.prop :: stateful_tag :: Option.value ~default:[] tags
+  in
   Run.prop ?__POS__ ~tags ?timeout ?count name
     (program ?steps ?pp_model ~model commands) (fun program ->
       execute ?loc ?invariant ~scope program)

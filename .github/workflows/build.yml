@@ -58,9 +58,9 @@ jobs:
           if-no-files-found: ignore
 
   # Coverage of windtrap by windtrap, on one platform: the number is a
-  # property of the test suite, not of the OS, and instrumented builds are
-  # slower. The gate lives in the `cover` alias (--min 87), so this job
-  # fails exactly when the project's own coverage drops.
+  # property of the test suite, not of the OS. The gate lives in the
+  # `self-cover` alias; see doc/dev/testing.md, "Windtrap under its own
+  # instrumentation".
   coverage:
     runs-on: ubuntu-latest
 
@@ -76,9 +76,5 @@ jobs:
       - name: Install OCaml dependencies
         run: opam install . --deps-only --with-test
 
-      # ppx_windtrap.coverage is the backend's one name: it keeps the
-      # windtrap core out of an instrumented library's closure, which
-      # lib/ — the core itself — needs to be instrumentable at all. See
-      # ppx/coverage/dune.
       - name: Coverage
-        run: opam exec -- dune build @cover --instrument-with ppx_windtrap.coverage
+        run: opam exec -- dune build @self-cover --instrument-with ppx_windtrap.coverage

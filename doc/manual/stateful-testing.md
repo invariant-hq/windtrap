@@ -83,7 +83,6 @@ capacity — `q.head <- (q.head + 1) mod q.size` — and a slot goes stale:
 ```
 $ dune runtest
 bounded_queue: 1 test (seed s1:667c8918d661391e)
-F
 ──────────────────── failures (1) ────────────────────
   FAIL  behaves like a list
     test/test_bounded_queue.ml:31

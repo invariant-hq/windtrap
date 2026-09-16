@@ -6,13 +6,10 @@
 (** Shared plumbing of the instrumentation data files.
 
     {!Coverage} and {!Verdicts} name their output file by the same build-path
-    rule, record the same writer identity, write through the same atomic rename,
-    and parse their files back with the same scanner. This is that shared
-    ground. Those two are its only intended callers, and everything that varies
-    between the two formats is a {!type:format} constant, never a hook.
-
-    Stdlib only: this module is in the closure of every instrumented library, so
-    it must never pull the windtrap core (or anything else) along. *)
+    rule, record the same writer identity, write through the same atomic rename
+    and parse with the same scanner; what varies between the two formats is a
+    {!type:format} constant. Stdlib only: this module is in the closure of every
+    instrumented library. *)
 
 (** {1:formats Formats} *)
 
@@ -22,50 +19,37 @@ type format = {
   kind : string;
       (** The file's name in error messages: ["coverage"] or ["verdict"]. *)
   dir : string;
-      (** The data directory's name, e.g. ["coverage"]: [_coverage] under a
-          build directory, [_windtrap/coverage] outside one ({!data_dir},
+      (** The data directory's name, e.g. ["coverage"] ({!data_dir},
           {!standalone_data_dir}). *)
   ext : string;  (** The file extension, without the dot. *)
   remedy : string;
       (** The fix an {!Unknown_format} message names, as a full clause. *)
   who : string;
-      (** The owning module's name — the prefix of its [Invalid_argument]
+      (** The owning module's name, the prefix of its [Invalid_argument]
           messages. *)
 }
-(** The type for an instrumentation on-disk format: what differs between the two
-    formats, declared once beside each magic string. Every function below that
-    names, reads or reports a data file takes one. *)
+(** The type for an instrumentation on-disk format. *)
 
 (** {1:identities Writer identities} *)
 
 type identity = { exe : string; digest : string }
 (** The type for data-file writer identities: [exe] is the writing executable's
     {!exe_identity} and [digest] the lowercase hex MD5 of its contents at write
-    time. Content, not mtimes: dune's cache restores rebuilt artifacts with
-    their original timestamps. *)
+    time. *)
 
 val file_digest : string -> string option
-(** [file_digest path] is the lowercase hex MD5 of the file at [path], [None]
-    when it cannot be read. It reads the whole file. *)
+(** [file_digest path] is the lowercase hex MD5 of the file at [path], or [None]
+    when it cannot be read. *)
 
 (** {1:paths Build paths}
 
-    One build-directory rule, shared by output naming, identity recording and
-    the reporting commands' discovery, and the same lexical rule the windtrap
-    core applies to its own paths: a path's {e build directory} is the path cut
-    after its first component whose name starts with [_build] — dune's default
-    and a private [--build-dir] alike — and paths below it are compared with any
-    [.sandbox/<digest>] prefix stripped, so sandboxed and direct runs agree.
-    Every path is normalized lexically first ([.] and empty components dropped,
-    [..] resolved against the component before it), so the spellings one
-    executable is reached by — [test/a.exe], [./test/a.exe], [test/sub/../a.exe]
-    — are one identity and one data file.
-
-    A format's files live in one of two places. An executable under a build
-    directory writes beside that directory's contexts, in {!data_dir}; an
-    executable outside any — a tree built without dune, which must never grow a
-    [_build] — writes under the directory it was started in, in
-    {!standalone_data_dir}. *)
+    A path's build directory is the path cut after its first component whose
+    name starts with [_build]; paths below it are compared with any
+    [.sandbox/<digest>] prefix stripped and lexically normalized ([.] and empty
+    components dropped, [..] resolved), so every spelling of one executable is
+    one identity and one data file. An executable under a build directory writes
+    in {!data_dir}; one outside any writes in {!standalone_data_dir} under the
+    directory it was started in. *)
 
 val absolute : string -> string
 (** [absolute path] resolves [path] against the current directory when it is
@@ -73,47 +57,37 @@ val absolute : string -> string
 
 val build_dir : path:string -> string option
 (** [build_dir ~path] is the build directory [path] ({!absolute}'d first) lies
-    in — e.g. ["/w/_build"] for ["/w/_build/default/test/t.exe"] and
-    ["/w/_build_ci"] for ["/w/_build_ci/.sandbox/3f/default"] — and [None] when
-    no component of [path] starts with [_build]. *)
+    in, e.g. ["/w/_build"] for ["/w/_build/default/test/t.exe"], or [None] when
+    no component starts with [_build]. *)
 
 val build_root : path:string -> string option
-(** [build_root ~path] is the parent of {!build_dir}[ ~path], and [None] when
-    there is none. *)
+(** [build_root ~path] is the parent of {!build_dir}[ ~path], or [None]. *)
 
 val exe_identity : exe:string -> string
 (** [exe_identity ~exe] is the identity recorded for the executable at [exe]:
-    its path below its {!build_dir} (sandbox prefix removed), or its absolute
-    path when it is under none. Normalized, so two spellings of one executable
-    give one identity. *)
+    its normalized path below its {!build_dir} (sandbox prefix removed), or its
+    absolute path when under none. *)
 
 val data_dir : format -> build_dir:string -> string
-(** [data_dir f ~build_dir] is [<build_dir>/_<f.dir>]: where every executable
-    under [build_dir] writes [f]'s files, and where the reporting commands find
-    them. *)
+(** [data_dir f ~build_dir] is [<build_dir>/_<f.dir>]. *)
 
 val standalone_data_dir : format -> root:string -> string
-(** [standalone_data_dir f ~root] is [<root>/_windtrap/<f.dir>]: where an
-    executable under no build directory writes [f]'s files, [root] being the
-    directory it was started in. *)
+(** [standalone_data_dir f ~root] is [<root>/_windtrap/<f.dir>]. *)
 
 val output_file : format -> exe:string -> string
-(** [output_file f ~exe] is [<dir>/windtrap-<hash>.<f.ext>], where [<dir>] is
-    {!data_dir} of [exe]'s {!build_dir} — or {!standalone_data_dir} of the
-    current directory when [exe] is under none — and [<hash>] the hex MD5 of
-    {!exe_identity}. One file per executable, for a format whose writer replaces
-    it on every run. *)
+(** [output_file f ~exe] is [<dir>/windtrap-<hash>.<f.ext>], [<dir>] the
+    {!data_dir} of [exe]'s {!build_dir}, or the {!standalone_data_dir} of the
+    current directory when [exe] is under none, and [<hash>] the hex MD5 of
+    {!exe_identity}. One file per executable, replaced on every run. *)
 
 val output_dir : format -> exe:string -> string
-(** [output_dir f ~exe] is [<dir>/windtrap-<hash>], the same stem as
-    {!output_file} without the extension: one directory per executable, for a
-    format whose every run keeps its own file (see {!write_new_file}). *)
+(** [output_dir f ~exe] is [<dir>/windtrap-<hash>], {!output_file}'s stem
+    without the extension: one directory per executable, for a format whose
+    every run keeps its own file ({!write_new_file}). *)
 
 (** {1:errors Errors} *)
 
-(** The type for data-file errors — the three ways a file fails that both
-    formats share. {!Verdicts} re-exports it as its [error]; {!Coverage} wraps
-    it beside a merge-time case of its own. *)
+(** The type for data-file errors shared by both formats. *)
 type error =
   | Unknown_format of { path : string; header : string }
       (** [path] does not start with the format's magic string; [header] is its
@@ -129,24 +103,22 @@ val pp_error : format -> Format.formatter -> error -> unit
 (** {1:files Reading and writing} *)
 
 val read_file : string -> (string, error) result
-(** [read_file path] is the whole file at [path], read binary.
+(** [read_file path] is the whole file at [path], read binary:
     [Error (Unreadable _)] when it cannot be opened or read, [Error (Corrupt _)]
     when it shrinks while being read. *)
 
 val write_file : string -> string -> unit
-(** [write_file path data] writes [data] atomically — a temporary file next to
-    [path], renamed over it — creating [path]'s directory if needed, so a reader
-    never observes a partial file.
+(** [write_file path data] writes [data] atomically, through a temporary next to
+    [path] renamed over it, creating [path]'s directory if needed.
 
     Raises [Sys_error] if the file cannot be written. *)
 
 val write_new_file : string -> prefix:string -> ext:string -> string -> string
-(** [write_new_file dir ~prefix ~ext data] writes [data] atomically to a fresh
-    file [<prefix><token>.<ext>] in [dir], creating [dir] if needed, and is that
+(** [write_new_file dir ~prefix ~ext data] writes [data] atomically, through a
+    [.tmp] sibling and a rename as {!write_file} does, to a fresh file
+    [<prefix><token>.<ext>] in [dir], creating [dir] if needed, and is that
     file's path. [token] is six hex digits reserved by exclusive creation, so
-    concurrent writers — several processes of one executable exiting at once —
-    never share a name; the write goes through a [.tmp] sibling and a rename, as
-    {!write_file}'s does.
+    concurrent writers never share a name.
 
     Raises [Sys_error] if no name can be reserved or the file cannot be written.
 *)
@@ -154,12 +126,12 @@ val write_new_file : string -> prefix:string -> ext:string -> string -> string
 (** {1:header The header}
 
     A data file is its magic line, an optional identity line
-    ([exe <digest> <len> <path>]), then format-specific records. The identity
-    line is unambiguous: everything after it starts with a digit. *)
+    ([exe <digest> <len> <path>]), then format-specific records; everything
+    after the identity line starts with a digit. *)
 
 val add_header : format -> Buffer.t -> identity option -> unit
 (** [add_header f buffer identity] appends [f]'s magic line, then the identity
-    line when given — merged or synthetic data, which has no single writer,
+    line when given; merged or synthetic data, which has no single writer,
     passes [None].
 
     Raises [Invalid_argument] (prefixed with [f.who]) if [identity.exe] is [""]
@@ -168,20 +140,18 @@ val add_header : format -> Buffer.t -> identity option -> unit
 (** {1:parsing Parser scaffolding}
 
     One strict scanner for both formats: a mutable {!type:cursor} over the whole
-    input, and readers that raise {!Parse_error} — caught by each format's
-    [of_string], which turns the reason into a [Corrupt] error. Nothing is
-    repaired and nothing is guessed. *)
+    input, and readers that raise {!Parse_error}, which each format's
+    [of_string] turns into a [Corrupt] error. *)
 
 type cursor
 (** The type for parse cursors: a position in an input string. *)
 
 exception Parse_error of string
-(** Raised by the readers below, carrying a human-readable reason. Never escapes
-    a format's [of_string]. *)
+(** Raised by the readers below with a human-readable reason. Never escapes a
+    format's [of_string]. *)
 
 val parse_fail : ('a, unit, string, 'b) format4 -> 'a
-(** [parse_fail fmt ...] raises {!Parse_error} with the formatted reason, so a
-    caller's own checks read in the scaffolding's vocabulary. *)
+(** [parse_fail fmt ...] raises {!Parse_error} with the formatted reason. *)
 
 val start : format -> path:string -> string -> (cursor, error) result
 (** [start f ~path s] is a cursor over [s] past [f]'s magic string, or
@@ -194,13 +164,12 @@ val read_nat : cursor -> string -> int
     it does not fit in an [int]. *)
 
 val read_count : cursor -> string -> int
-(** [read_count c what] is {!read_nat} bounded by the remaining input: a count
-    of things at least one byte wide cannot exceed it. *)
+(** [read_count c what] is {!read_nat} bounded by the remaining input. *)
 
 val read_name : cursor -> string -> string
 (** [read_name c what] reads a length-prefixed string: a natural, one space,
-    then exactly that many bytes, whitespace included. Raises {!Parse_error}
-    when any of the three is missing. *)
+    then exactly that many bytes. Raises {!Parse_error} when any of the three is
+    missing. *)
 
 val read_word : cursor -> string -> string
 (** [read_word c what] reads a maximal run of non-whitespace bytes after any

@@ -471,8 +471,8 @@ let negating_guard ~loc ~module_name ~index value =
      the match compiler emits exactly the [let]-chain this shape used to
      spell out, right operand bound first. So the guard still evaluates
      each operand exactly once, in the order the compiler gives the
-     uninstrumented application, still allocates nothing, and Law 16(a)
-     holds bit for bit; test/mutate_ppx/semantics/ checks all of it
+     uninstrumented application, still allocates nothing, and guarantee 12
+     holds bit for bit; test/ppx/mutate/semantics/ checks all of it
      against an uninstrumented twin.
 
    Order is not all an application gives its arguments: it gives each an
@@ -495,7 +495,7 @@ let negating_guard ~loc ~module_name ~index value =
    guard did not reject. [ari] does not pin: its operator's signature is
    what types both operands, an [open]-provided [+] may take two
    different types, and integer and float expected types disambiguate
-   nothing anyway. test/mutate_ppx/integration/expected_type.ml is the
+   nothing anyway. test/ppx/mutate/integration/expected_type.ml is the
    corpus.
 
    The other shape that gets both properties right, an immediately

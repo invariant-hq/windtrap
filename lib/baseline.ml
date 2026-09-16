@@ -54,13 +54,13 @@ let absolute path =
 
 let create ?root ?cwd ~mode () =
   let root =
-    match root with None -> Path_ops.project_root () | Some r -> absolute r
+    match root with None -> Os.project_root () | Some r -> absolute r
   in
   let cwd = match cwd with None -> Sys.getcwd () | Some d -> absolute d in
   (* A build context of another workspace (a project root aimed elsewhere
      by WINDTRAP_PROJECT_ROOT) holds no copy of this root's files. *)
   let build_root =
-    match Path_ops.build_root cwd with
+    match Os.build_root cwd with
     | Some b when String.starts_with ~prefix:(root ^ "/") b -> Some b
     | Some _ | None -> None
   in
@@ -84,7 +84,7 @@ let subject_file = function
   | File path -> path
 
 let resolve t subject =
-  match Path_ops.reconstruct ~root:t.root (subject_file subject) with
+  match Os.reconstruct ~root:t.root (subject_file subject) with
   | Error _ as e -> e
   | Ok source ->
       let read =
@@ -117,7 +117,7 @@ let read_baseline subject where =
   | Literal { value; exact; _ } ->
       Some (if exact then value else Source_patch.normalize value)
   | File _ ->
-      if Path_ops.file_exists where.read then
+      if Os.file_exists where.read then
         Some (canonicalize (read_file where.read))
       else None
 
@@ -213,8 +213,8 @@ let destination t where =
 let write t =
   let refuse path reason = t.refusals <- (path, reason) :: t.refusals in
   let publish path contents =
-    Path_ops.mkdir_p (Filename.dirname path);
-    Atomic_file.write ~path contents
+    Os.mkdir_p (Filename.dirname path);
+    Os.atomic_write ~path contents
   in
   (* Patches group by the file they rewrite, contents stand alone. *)
   let patches, contents =

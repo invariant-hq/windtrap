@@ -118,14 +118,14 @@ let create ~out ~ansi ?(live = false) (config : Run.config) =
    its erase/redraw control sequences would land verbatim in the CI
    log. *)
 let terminal (config : Run.config) =
-  let inside_dune = Env.inside_dune () in
-  let tty = Env.is_tty_stdout () in
+  let inside_dune = Os.inside_dune () in
+  let tty = Os.is_tty_stdout () in
   let ansi =
-    Env.resolve_color config.Run.color ~tty ~inside_dune
-      ~term_dumb:(Env.term_dumb ())
+    Os.resolve_color config.Run.color ~tty ~inside_dune
+      ~term_dumb:(Os.term_dumb ())
   in
   create ~out:Format.std_formatter ~ansi
-    ~live:(tty && not (Env.in_github_actions ()))
+    ~live:(tty && not (Os.in_github_actions ()))
     config
 
 (* As the blocks' sink: with [ansi:false] escape codes arriving in test
@@ -436,7 +436,7 @@ let pp_tail t (tail : Failure.tail) =
     put t (indent ^ st t `Faint head);
     List.iter (fun l -> put t (indent ^ l)) shown;
     match tail.log_path with
-    | Some p -> put t (indent ^ "full log: " ^ Path_ops.display_artifact p)
+    | Some p -> put t (indent ^ "full log: " ^ Os.display_artifact p)
     | None -> ()
   end
 
@@ -704,7 +704,7 @@ let finish t ~results ~duration () =
        to take, and a suite is meant to be fast enough that rerunning all of
        it costs nothing — so advertising the flag under every failing run is
        an ad, not a report. The acceptance commands stay: those name a verb
-       nobody can guess (Law 3), which is a different thing entirely. *)
+       nobody can guess (guarantee 3), which is a different thing entirely. *)
     (* Diagnosis, not signal: the slowest list is verbose-only. *)
     if t.verbose then slowest t results
   end;
@@ -729,11 +729,11 @@ let report_baselines t run =
         | 1 -> " (1 expectation)"
         | n -> spf " (%d expectations)" n
       in
-      Format.fprintf t.out "%s %s%s@." verb (Path_ops.display path) count)
+      Format.fprintf t.out "%s %s%s@." verb (Os.display_path path) count)
     (Baseline.writes baselines);
   List.iter
     (fun (path, reason) ->
-      Format.fprintf t.out "could not write %s: %s@." (Path_ops.display path)
+      Format.fprintf t.out "could not write %s: %s@." (Os.display_path path)
         reason)
     (Baseline.refusals baselines)
 
@@ -810,7 +810,7 @@ let annotations ?invocation results =
 (* Mutation lines *)
 
 (* The lines an armed run is owed. The announcement prints
-   unconditionally, because Law 16(b) makes it the guarantee that a run
+   unconditionally, because guarantee 12 makes it the promise that a run
    whose output does not say so has no mutant armed. *)
 
 let mutation_armed t ~id ~before ~after =
@@ -860,7 +860,7 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
   let seed =
     if
       List.exists
-        (fun case -> Tag.mem Tag.prop case.Test_tree.tags)
+        (fun case -> Test_tree.Tag.mem Test_tree.Tag.prop case.Test_tree.tags)
         (Test_tree.flatten tests)
     then Some config.Run.seed
     else None

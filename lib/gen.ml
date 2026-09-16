@@ -6,8 +6,106 @@
   rose trees of candidates, so shrinking falls out of composition. The
   distributions (stratified nat, float bit patterns) follow QCheck2's
   tuning (https://github.com/c-cube/qcheck); the implementation is
-  windtrap's own, built over Seed (SplitMix64) and Shrink_tree.
+  windtrap's own, built over Seed (SplitMix64) and the shrink trees below.
   --------------------------------------------------------------------------*)
+
+(* Shrink trees
+
+   Lazy rose trees for integrated shrinking (the QCheck2/Hedgehog design):
+   a strict root and a memoized, ordered sequence of candidate subtrees.
+   Cells are forced at most once, exceptions included, so a shrink search
+   that revisits a branch never re-runs user code. The list shrink removes
+   power-of-two chunks before it reduces elements. *)
+module Shrink_tree = struct
+  type 'a t = { root : 'a; children : 'a t Seq.t }
+
+  let rec memoize sequence =
+    let node =
+      lazy
+        (match sequence () with
+        | Seq.Nil -> Seq.Nil
+        | Seq.Cons (value, tail) -> Seq.Cons (value, memoize tail))
+    in
+    fun () -> Lazy.force node
+
+  let make ~root ~children = { root; children = memoize children }
+  let leaf root = make ~root ~children:Seq.empty
+  let root tree = tree.root
+  let children tree = tree.children
+
+  let rec map f tree =
+    make ~root:(f tree.root)
+      ~children:(Seq.map (fun child -> map f child) tree.children)
+
+  let rec pair left right =
+    let left_children = Seq.map (fun child -> pair child right) left.children in
+    let right_children =
+      Seq.map (fun child -> pair left child) right.children
+    in
+    make ~root:(left.root, right.root)
+      ~children:(Seq.append left_children right_children)
+
+  let roots trees =
+    let values = ref [] in
+    for index = Array.length trees - 1 downto 0 do
+      values := trees.(index).root :: !values
+    done;
+    !values
+
+  let without_range trees ~first ~length =
+    let source_length = Array.length trees in
+    let candidate = Array.make (source_length - length) trees.(0) in
+    for index = 0 to first - 1 do
+      candidate.(index) <- trees.(index)
+    done;
+    for index = first + length to source_length - 1 do
+      candidate.(index - length) <- trees.(index)
+    done;
+    candidate
+
+  let copy_with trees index value =
+    let candidate = Array.copy trees in
+    candidate.(index) <- value;
+    candidate
+
+  let largest_power_of_two_below length =
+    let rec loop power =
+      if power > (length - 1) / 2 then power else loop (power * 2)
+    in
+    if length <= 1 then 0 else loop 1
+
+  let rec list_array trees =
+    let length = Array.length trees in
+    let rec chunk_candidates chunk first () =
+      if chunk = 0 then Seq.Nil
+      else if first + chunk <= length then
+        let candidate = without_range trees ~first ~length:chunk in
+        Seq.Cons (list_array candidate, chunk_candidates chunk (first + chunk))
+      else chunk_candidates (chunk / 2) 0 ()
+    in
+    let rec element_candidates index candidates () =
+      match candidates () with
+      | Seq.Cons (candidate, tail) ->
+          let trees = copy_with trees index candidate in
+          Seq.Cons (list_array trees, element_candidates index tail)
+      | Seq.Nil ->
+          let next = index + 1 in
+          if next = length then Seq.Nil
+          else element_candidates next trees.(next).children ()
+    in
+    let structural =
+      if length = 0 then Seq.empty
+      else
+        Seq.cons (leaf [])
+          (chunk_candidates (largest_power_of_two_below length) 0)
+    in
+    let element =
+      if length = 0 then Seq.empty else element_candidates 0 trees.(0).children
+    in
+    make ~root:(roots trees) ~children:(Seq.append structural element)
+
+  let list trees = list_array (Array.of_list trees)
+end
 
 (* Renderings
 
@@ -246,8 +344,8 @@ let rec tree_towards node shrink x =
   Shrink_tree.make ~root:(node x)
     ~children:(Seq.map (tree_towards node shrink) (shrink x))
 
-(* [Shrink_tree.bind] for candidate re-generation ([bind], [one_of], sized
-   [list]): [f] runs a generator, so forcing a shrink candidate can raise
+(* [rebind] re-generates candidates for [bind], [one_of] and sized
+   [list]: [f] runs a generator, so forcing a shrink candidate can raise
    [Rejected] — a [such_that] in the re-run exhausting its budget for that
    candidate. Memoized child cells cache exceptions, so letting [Rejected]
    escape a cell would also hide every later sibling candidate; skipping the
@@ -905,6 +1003,8 @@ let ( let* ) = bind
    the vocabulary above. [Rejected] stays at the top of the file because
    [such_that] raises it and [rebind] catches it. *)
 module Private = struct
+  module Shrink_tree = Shrink_tree
+
   exception Rejected = Rejected
 
   type 'a sample = 'a node

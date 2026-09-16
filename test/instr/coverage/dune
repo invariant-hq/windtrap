@@ -1,0 +1,20 @@
+; The coverage runtime as a windtrap suite. WINDTRAP_COVERAGE_FILE is set on
+; the action because the dump's destination is resolved at the first
+; registration, before the test's own code runs. See doc/dev/testing.md,
+; "The five families".
+
+(executable
+ (name dump_child)
+ (modules dump_child)
+ (libraries windtrap_runtime))
+
+(test
+ (name test_coverage)
+ (modules test_coverage)
+ (libraries windtrap windtrap_runtime unix)
+ (deps dump_child.exe)
+ (action
+  (setenv
+   WINDTRAP_COVERAGE_FILE
+   test_coverage.coverage
+   (run %{test}))))

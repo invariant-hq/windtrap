@@ -1,0 +1,9 @@
+; A real (inline_tests) library under dune's own runner: the payload-shape
+; matrix and test nesting, driven by the live promotion protocol. See
+; doc/dev/testing.md, "The five families".
+
+(library
+ (name windtrap_test_ppx_inline)
+ (inline_tests)
+ (preprocess
+  (pps ppx_windtrap)))

@@ -1,0 +1,30 @@
+; The mutation walkthrough (doc/manual/mutation.md): the second inert
+; stanza on the library under test — this plain `dune runtest` runs the
+; original program, with no mutation output. The survey is the run you
+; already make, with --mutate: filtered to the test you just wrote and
+; scoped to the file it exercises,
+;
+;   dune exec --instrument-with ppx_windtrap.mutate \
+;     examples/08-mutation/test_calc.exe -- \
+;     --mutate=examples/08-mutation/calc.ml -f "stays positive"
+;
+; reports the a - b → a + b mutant as a survivor of that one test (it is
+; deliberately weak; see test_calc.ml), and the same command without -f
+; reports every mutant killed, because the exact test beside it catches
+; the change. `-- --arm <id>`, from the report's footer, runs the suite
+; once with that mutant armed. The project answer merges every suite's
+; verdicts under killed-anywhere-wins:
+;
+;   WINDTRAP_MUTATE=1 dune runtest --force --instrument-with ppx_windtrap.mutate
+;   dune exec windtrap -- mutants
+
+(library
+ (name windtrap_example_mutation)
+ (modules calc)
+ (instrumentation
+  (backend ppx_windtrap.mutate)))
+
+(test
+ (name test_calc)
+ (modules test_calc)
+ (libraries windtrap windtrap_example_mutation))

@@ -104,7 +104,7 @@ let source_line file n =
            raises) — an unreadable excerpt prints nothing, never crashes
            the report. *)
         let root =
-          match Path_ops.project_root () with
+          match Os.project_root () with
           | root -> Some root
           | exception Sys_error _ -> None
         in
@@ -739,7 +739,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         match baseline with
         | Failure.Literal -> "expect"
         | Failure.File path ->
-            spf "expect_file \"%s\"" (sanitize_name (Path_ops.display path))
+            spf "expect_file \"%s\"" (sanitize_name (Os.display_path path))
       in
       match state with
       | Failure.Missing { proposed } ->
@@ -763,7 +763,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             | `Mirrors, Failure.File path ->
                 put_ind
                   (spf "accept: touch %s && dune runtest, then dune promote"
-                     (shell_quote (Path_ops.display path)))
+                     (shell_quote (Os.display_path path)))
             | _ -> put_ind (accept_line invocation)
             end
       | Failure.Mismatch { expected; actual } ->
@@ -776,7 +776,7 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                subject);
           put_ind
             (spf "unverified path: %s"
-               (sanitize_name (Path_ops.display candidate)));
+               (sanitize_name (Os.display_path candidate)));
           put_ind
             "(set WINDTRAP_PROJECT_ROOT to the directory the path is relative \
              to)")
@@ -871,9 +871,9 @@ let is_subtest_failure (f : Failure.t) = f.Failure.subtest <> []
    two projections into it, drawn knowing nothing about the runtimes that
    measured the data — the subsystem that owns the numbers builds section
    data, and every name the runtime owns (a mutant identifier, the arming
-   variable) arrives pre-spelled with the runtime's own functions. Law 12:
-   a second copy of any of these drawers is exactly the drift the
-   coverage command's structure exists to prevent. *)
+   variable) arrives pre-spelled with the runtime's own functions. A second copy of
+   any of these drawers is exactly the drift the coverage command's
+   structure exists to prevent. *)
 
 (* The sink: where sections print and whether they style. With
    [ansi:false] every line is stripped at the sink, so escape codes

@@ -10,7 +10,7 @@
     prepends one generated module binding the guard closure
     [Windtrap_runtime.Mutate.register] returns for the file. Every mutant of a
     project compiles into one binary; at most one is ever armed, and only in a
-    forked child of a run that asked for it (Law 16).
+    forked child of a run that asked for it (guarantee 12).
 
     {b The emission law.} Because all mutants share one binary, an ill-typed arm
     is not one bad mutant, it is a broken build for the whole project. So
@@ -68,10 +68,10 @@
     silently ignored, exactly as its coverage counterpart is, and
     [fixture_off_edges] pins the silence.
 
-    Law 16(a) in [doc/dev/architecture.md] states the contract this pass owes —
-    an instrumented build with nothing armed is observationally identical to an
-    uninstrumented one — and [test/mutate_ppx/semantics/] enforces it against a
-    second, uninstrumented compilation. The emitted shapes and the reasoning
+    Guarantee 12 in [doc/dev/architecture.md] states the contract this pass owes
+    — an instrumented build with nothing armed is observationally identical to
+    an uninstrumented one — and [test/ppx/mutate/semantics/] enforces it against
+    a second, uninstrumented compilation. The emitted shapes and the reasoning
     behind each are in the [.ml], beside the code that emits them;
     [doc/manual/mutation.md] is the chapter a user reads. *)
 

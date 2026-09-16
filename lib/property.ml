@@ -139,7 +139,9 @@ let same_kind original candidate =
 let shrink ~budget ~body tree first_class =
   let scratch = make_context () in
   let accept candidate_tree =
-    let value = Gen.Private.value (Shrink_tree.root candidate_tree) in
+    let value =
+      Gen.Private.value (Gen.Private.Shrink_tree.root candidate_tree)
+    in
     match run_case scratch body value with
     | Control ((Failure.Timeout _ as timeout), backtrace) ->
         (* The per-test alarm fired inside a candidate: a fact about the
@@ -183,7 +185,7 @@ let shrink ~budget ~body tree first_class =
         converged, and reporting it as truncated would tell the reader the
         counterexample may not be minimal when it is. *)
      let rec descend steps tree =
-       match first_accepted (Shrink_tree.children tree) with
+       match first_accepted (Gen.Private.Shrink_tree.children tree) with
        | `Converged -> ()
        | `Stopped -> exhausted := true
        | `Accepted (candidate, accepted) ->
@@ -321,7 +323,9 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
                 ~case_index:attempts ~shrink_steps:0 ~examples:false
                 (Exception (exn, backtrace))
           | tree -> (
-              match run_one (Gen.Private.value (Shrink_tree.root tree)) with
+              match
+                run_one (Gen.Private.value (Gen.Private.Shrink_tree.root tree))
+              with
               | `Passed -> generate ~passed:(passed + 1) ~attempts:(attempts + 1)
               | `Discarded -> generate ~passed ~attempts:(attempts + 1)
               | `Failed cls ->
@@ -329,7 +333,10 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
                     shrink ~budget:shrink_budget ~body tree cls
                   in
                   let rendered, rendering =
-                    match Gen.Private.render (Shrink_tree.root final_tree) with
+                    match
+                      Gen.Private.render
+                        (Gen.Private.Shrink_tree.root final_tree)
+                    with
                     | Value text -> (text, Failure.Value)
                     | Pre_image text -> (text, Failure.Pre_image)
                   in

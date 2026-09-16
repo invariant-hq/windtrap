@@ -1,0 +1,58 @@
+; The two facts dune turns into a library-wide promotion verdict: a
+; crashing partition exits 1 and writes nothing, a stale one exits 0 and
+; writes its correction; one rule, so the runs never race on .corrected
+; files. See doc/dev/testing.md, "The five families".
+
+(executable
+ (name cross_partition_runner)
+ (modules cross_partition_runner crash stale)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(executable
+ (name drive_cross_partition)
+ (modules drive_cross_partition)
+ (libraries drive_harness unix))
+
+(rule
+ (targets
+  crash-log
+  crash-exit
+  crash-corrected
+  stale-log
+  stale-exit
+  stale.ml.corrected)
+ (deps crash.ml stale.ml)
+ (action
+  (run ./drive_cross_partition.exe %{dep:cross_partition_runner.exe})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff crash-exit.expected crash-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff crash-corrected.expected crash-corrected)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff crash-log.expected crash-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff stale-exit.expected stale-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff stale-log.expected stale-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff stale.ml.corrected.expected stale.ml.corrected)))

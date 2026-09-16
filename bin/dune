@@ -1,11 +1,7 @@
-; The windtrap reporting binary. Two subcommands, `coverage` and
-; `mutants`: find and merge the .coverage files or the .mutants verdict
-; files the instrumented executables wrote (under the build directory's
-; _coverage and _mutants, or under _windtrap in a tree built without
-; one), and render. Both layouts live in the library's report sections
-; (reached through Windtrap.Private), so the loop's in-process report
-; and these commands cannot drift. Neither command runs a test or drives
-; a build.
+; The windtrap binary: `coverage` and `mutants` merge and render the data
+; files instrumented executables wrote, through the library's report
+; sections (reached through Windtrap.Private); neither runs a test. See
+; doc/dev/architecture.md.
 
 (executable
  (name main)

@@ -1,0 +1,25 @@
+; The uninstrumented twin of ../dune's three sources: nothing here may name
+; a preprocessor (an instrumented baseline grows a module the coercions in
+; test_mutate_semantics.ml reject). See doc/dev/testing.md, "The five
+; families".
+
+(copy_files
+ (files ../../../coverage/semantics/covsem_fixtures.ml))
+
+(copy_files
+ (files ../mutsem_order.ml))
+
+(copy_files
+ (files ../mutsem_boom.ml))
+
+(library
+ (name mutsem_baseline)
+ (modules covsem_fixtures mutsem_order mutsem_boom))
+
+; The plain half of the exit-code pair; it differs from ../mutsem_exit.ml in
+; the one token the pair measures.
+
+(executable
+ (name mutsem_exit_plain)
+ (modules mutsem_exit_plain)
+ (libraries mutsem_baseline))

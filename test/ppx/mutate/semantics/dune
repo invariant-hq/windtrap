@@ -1,0 +1,71 @@
+; With nothing armed, an instrumented program is observationally identical
+; to an uninstrumented one: the same three sources are compiled with the
+; rewriter here and without it in baseline/, and every claim is checked
+; against the twin. Nothing sets an environment variable: an inert runtime
+; needs no muzzling. See doc/dev/testing.md, "The five families".
+
+; Plain copy_files, not copy_files#: the file name the instrumenter records
+; must name a file that exists in this build.
+
+(copy_files
+ (files ../../coverage/semantics/covsem_fixtures.ml))
+
+(library
+ (name mutsem_fixtures)
+ (modules covsem_fixtures mutsem_order mutsem_boom)
+ (preprocess
+  (pps ppx_windtrap.mutate)))
+
+; The suite is uninstrumented: it and mutsem_baseline are the plain side of
+; every comparison.
+
+(test
+ (name test_mutate_semantics)
+ (modules test_mutate_semantics)
+ (libraries windtrap windtrap.runtime mutsem_fixtures mutsem_baseline))
+
+; Links the fixtures alone: the rewriter's ppx_runtime_libraries inject the
+; runtime, and nothing pulls the core in.
+
+(test
+ (name test_mutate_linkonly)
+ (modules test_mutate_linkonly)
+ (libraries mutsem_fixtures))
+
+; The exit-code half: both copies of mutsem_boom's main are diffed against
+; one golden, with OCAMLRUNPARAM emptied so no backtrace names a directory.
+
+(executable
+ (name mutsem_exit)
+ (modules mutsem_exit)
+ (libraries mutsem_fixtures))
+
+(rule
+ (with-outputs-to
+  exit_instrumented.actual
+  (setenv
+   OCAMLRUNPARAM
+   ""
+   (with-accepted-exit-codes
+    2
+    (run %{dep:mutsem_exit.exe})))))
+
+(rule
+ (with-outputs-to
+  exit_plain.actual
+  (setenv
+   OCAMLRUNPARAM
+   ""
+   (with-accepted-exit-codes
+    2
+    (run %{dep:baseline/mutsem_exit_plain.exe})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff mutsem_exit.expected exit_instrumented.actual)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff mutsem_exit.expected exit_plain.actual)))

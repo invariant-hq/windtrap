@@ -142,7 +142,7 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
             in
             let log =
               match tail.log_path with
-              | Some p -> spf "\nfull log: %s" (Path_ops.display_artifact p)
+              | Some p -> spf "\nfull log: %s" (Os.display_artifact p)
               | None -> ""
             in
             Buffer.add_string buf
@@ -226,7 +226,7 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
    and each suite writes its own report into it for CI to glob. *)
 let path ~suite target =
   if Filename.check_suffix target ".xml" then target
-  else Filename.concat target (Path_ops.sanitize_component suite ^ ".xml")
+  else Filename.concat target (Os.sanitize_component suite ^ ".xml")
 
 let write ~invocation ~suite ~duration ~results target =
   let file = path ~suite target in
@@ -234,12 +234,12 @@ let write ~invocation ~suite ~duration ~results target =
   match
     (* The directory form has to exist before the first suite writes into
        it, and nothing else creates it. *)
-    if file != target then Path_ops.mkdir_p (Filename.dirname file);
-    Atomic_file.write ~path:file document
+    if file != target then Os.mkdir_p (Filename.dirname file);
+    Os.atomic_write ~path:file document
   with
   | () -> ()
   | exception Sys_error message ->
       Format.eprintf "warning: could not write JUnit report: %s@." message
   | exception Unix.Unix_error (error, _, _) ->
       Format.eprintf "warning: could not write JUnit report to %s: %s@."
-        (Path_ops.display file) (Unix.error_message error)
+        (Os.display_path file) (Unix.error_message error)

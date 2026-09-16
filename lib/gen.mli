@@ -5,45 +5,30 @@
 
 (** Random value generators with integrated shrinking and printing.
 
-    An ['a t] couples three inseparable concerns: drawing a value from a
-    {!Seed.state}, the lazy tree of shrink candidates for the drawn value, and
-    how values print in counterexamples. There is no user-written shrinker
-    anywhere: every generator shrinks, and shrink candidates satisfy the same
-    constraints as generated values — an {!int_range} candidate stays in bounds,
-    a {!such_that} candidate satisfies its predicate.
+    An ['a t] draws a value from a {!Seed.state}, carries the lazy tree of its
+    shrink candidates, and knows how values print in counterexamples. Every
+    generator shrinks, and candidates satisfy the same constraints as generated
+    values (guarantee 6).
 
-    Start from primitives ({!int}, {!float}, {!string}, ...), combine with
-    containers ({!list}, {!pair}, ...) and choice ({!of_list}, {!one_of},
-    {!frequency}), transform with {!map}, {!bind}, or the binding operators, and
-    attach a printer with {!with_pp}.
+    {b Printing.} Primitives print; containers and choices derive their printer
+    from their components'; {!constant}, {!of_list}, {!map} and {!bind} (and so
+    [let+], [and+], [let*]) have none. A counterexample whose generator has no
+    printer renders as its {e pre-image}: the same shape, with every printerless
+    [map] or [bind] result replaced by what it was computed from, down to the
+    nearest generator that prints. Where nothing prints at all the
+    counterexample renders as a placeholder naming {!with_pp}.
 
-    {b Printing.} A counterexample renders with its generator's printer.
-    Primitives print; containers and choices derive their printer from their
-    components'; {!constant} and {!of_list} have none, their values being
-    arbitrary; {!map} and {!bind} — and so [let+], [and+] and [let*] — have none
-    either. A counterexample whose generator has no printer renders as its
-    {e pre-image}: the same shape, with every printerless [map] or [bind] result
-    replaced by what it was computed from, down to the nearest generator that
-    prints (the rule per combinator is at {!map} and {!bind}). The failure
-    report marks a pre-image as such. Where nothing prints at all — a
-    {!constant} or {!of_list} leaf without {!with_pp} — the counterexample
-    renders as a placeholder naming the remedy.
-
-    {b Validation.} Generator constructors never raise: malformed arguments
-    ([one_of []], [int_range 3 1]) are reported by raising [Invalid_argument]
-    when the generator first samples, inside the running test's exception
-    boundary.
+    {b Validation.} Constructors never raise: malformed arguments ([one_of []],
+    [int_range 3 1]) raise [Invalid_argument] when the generator first samples,
+    inside the running test's boundary.
 
     Callbacks passed to {!map}, {!bind} and {!such_that} must be pure: the
-    shrink search runs them — memoized, at most once per tree node — when it
-    forces candidates. *)
+    shrink search runs them, memoized, when it forces candidates. *)
 
 (** {1:generators Generators} *)
 
 type 'a t
-(** The type for generators of values of type ['a]: generation from a
-    {!Seed.state}, integrated shrinking, and counterexample printing,
-    inseparable. *)
+(** The type for generators of values of type ['a]. *)
 
 (** {1:numeric Numeric generators} *)
 
@@ -125,17 +110,9 @@ val string : string t
     {!string_of} to control the length or character distribution. *)
 
 val string_of : ?size:int t -> char t -> string t
-(** [string_of ?size char] generates a string whose length follows the size
-    generator, [size] defaulting to {!nat}, and whose characters are drawn from
-    [char]. The result always prints, as a quoted string, even when [char] is
-    printerless.
-
-    Shrinking follows {!list}'s rule. With the default size, candidates first
-    shrink the structure — the empty string, then removal of contiguous chunks —
-    and then shrink characters individually with [char]'s own candidates. With
-    an explicit [size], lengths follow [size]'s shrink candidates — a length
-    constraint such as [~size:(int_range 2 5)] holds for every candidate — and
-    characters shrink individually.
+(** [string_of ?size char] generates a string whose length follows [size]
+    (default {!nat}) and whose characters are drawn from [char]. It always
+    prints, as a quoted string. Shrinking follows {!list}'s rule.
 
     Sampling raises [Invalid_argument] if [size] produces a negative length. *)
 
@@ -145,19 +122,15 @@ val bytes : bytes t
 
 val bytes_of : ?size:int t -> char t -> bytes t
 (** [bytes_of char_gen] is {!string_of} converted to [bytes]: same length and
-    alphabet control, same shrinking, and it keeps a printer where a
-    [map Bytes.of_string] over {!string_of} would forfeit one. *)
+    alphabet control, same shrinking, and it keeps its printer. *)
 
 val list : ?size:int t -> 'a t -> 'a list t
-(** [list gen] generates a list of [gen] values whose length follows the size
-    generator, [size] defaulting to {!nat}.
-
-    Shrinking depends on [size]. With the default, candidates first shrink the
-    structure — the empty list, then removal of contiguous chunks of descending
-    power-of-two length — and then shrink elements individually, left to right.
-    With an explicit [size], list lengths follow [size]'s own shrink candidates
-    — so a length constraint such as [~size:(int_range 2 5)] holds for every
-    candidate — and elements shrink individually.
+(** [list gen] generates a list of [gen] values whose length follows [size]
+    (default {!nat}). With the default size, candidates first shrink the
+    structure (the empty list, then removal of contiguous chunks of descending
+    power-of-two length), then elements individually left to right. With an
+    explicit [size], lengths follow [size]'s own candidates, so a constraint
+    such as [~size:(int_range 2 5)] holds for every candidate.
 
     Sampling raises [Invalid_argument] if [size] produces a negative length. *)
 
@@ -181,7 +154,7 @@ val either : 'a t -> 'b t -> ('a, 'b) Either.t t
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** [pair a b] generates both components. Candidates shrink the left component
-    first, then the right (see {!Shrink_tree.pair}). *)
+    first, then the right (see {!Private.Shrink_tree.pair}). *)
 
 val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 (** [triple a b c] is like {!pair} for three components, shrinking
@@ -197,24 +170,19 @@ val constant : 'a -> 'a t
 
 val of_list : 'a list -> 'a t
 (** [of_list values] generates a value of [values], each with equal probability.
-    Candidates shrink toward the head: the first candidate of any value is the
-    head of [values], then values at intermediate positions — order [values]
-    with the simplest value first. It has no printer until {!with_pp} attaches
-    one.
+    Candidates shrink toward the head of [values], so order it simplest first.
+    No printer until {!with_pp} attaches one.
 
     Sampling raises [Invalid_argument] if [values] is empty. *)
 
 val one_of : 'a t list -> 'a t
 (** [one_of gens] picks one generator from [gens] uniformly and generates with
-    it. The choice shrinks toward earlier generators — a candidate may
-    re-generate from an earlier branch using the same random capital, and a
-    branch whose re-generation is rejected is skipped — and the chosen value
-    shrinks with its own generator.
-
-    When every generator of [gens] prints, the choice prints: a counterexample
-    with the branch that drew it, an [~examples] value with the first branch's.
-    Otherwise a counterexample renders by the pre-image rule with the drawing
-    branch's rendering.
+    it. The choice shrinks toward earlier generators, re-generating from the
+    same random capital and skipping a branch whose re-generation is rejected;
+    the chosen value shrinks with its own generator. When every generator
+    prints, a counterexample prints with the branch that drew it and an
+    [~examples] value with the first branch's; otherwise the pre-image rule
+    applies.
 
     Sampling raises [Invalid_argument] if [gens] is empty. *)
 
@@ -228,35 +196,29 @@ val frequency : (int * 'a t) list -> 'a t
 
 val such_that : ('a -> bool) -> 'a t -> 'a t
 (** [such_that p gen] generates [gen] values satisfying [p], re-sampling up to
-    100 times; shrink candidates are filtered by [p], so every candidate
-    satisfies it. The result keeps [gen]'s printer. If no draw satisfies [p],
-    sampling raises {!Private.Rejected} and the property engine counts the case
-    as a discard.
-
-    [p] is for rare, cheap conditions; when the constraint is structural, build
-    a generator that satisfies it by construction instead. *)
+    100 times; candidates are filtered by [p]. Keeps [gen]'s printer. If no draw
+    satisfies [p], sampling raises {!Private.Rejected} and the property engine
+    counts a discard. For rare, cheap conditions; build structural constraints
+    into the generator instead. *)
 
 (** {1:composition Composition} *)
 
 val map : ('a -> 'b) -> 'a t -> 'b t
 (** [map f gen] generates [f v] for [v] generated by [gen], shrinking wherever
-    [gen] shrinks. The result has no printer: a counterexample renders as its
-    pre-image, [v] as [gen] renders it, until {!with_pp} attaches one. [f] must
-    be pure: the shrink search applies it, memoized, when forcing candidates. *)
+    [gen] shrinks. No printer: a counterexample renders as its pre-image, [v] as
+    [gen] renders it, until {!with_pp} attaches one. [f] must be pure. *)
 
 val bind : 'a t -> ('a -> 'b t) -> 'b t
 (** [bind gen f] generates [v] with [gen], then generates with [f v]. Candidates
-    first shrink [v] — re-generating with [f] on the same random capital — then
-    shrink the inner value; a candidate whose re-generation is rejected by a
-    {!such_that} is skipped. The result has no printer: a counterexample renders
-    as the inner value when [f v] prints, and as the pre-image [v -> inner]
-    otherwise, each side as its generator renders it. [f] must be pure. *)
+    first shrink [v], re-generating with [f] on the same random capital and
+    skipping a rejected re-generation, then shrink the inner value. No printer:
+    a counterexample renders as the inner value when [f v] prints and as the
+    pre-image [v -> inner] otherwise. [f] must be pure. *)
 
 val with_pp : (Format.formatter -> 'a -> unit) -> 'a t -> 'a t
-(** [with_pp pp gen] is [gen] printing with [pp] — the same printer type the
-    assertion vocabulary uses, so one printer feeds both worlds. An explicit
-    printer wins over whatever [gen] would have rendered: a pre-image, a derived
-    printer, or nothing. *)
+(** [with_pp pp gen] is [gen] printing with [pp], the assertion vocabulary's
+    printer type. An explicit printer wins over a pre-image, a derived printer
+    or nothing. *)
 
 val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
 (** [let+ x = gen in e] is [map (fun x -> e) gen]. *)
@@ -269,29 +231,74 @@ val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
 
 (** {1:engine Engine interface} *)
 
-(** The engine interface: what the property runner and {!Stateful} reach for,
-    and nothing a test writes. Not part of the vocabulary above, and carrying no
-    stability promise beyond the frozen value stream ({!Seed}). *)
+(** What the property engine and {!Stateful} reach for, and nothing a test
+    writes. No stability promise beyond the frozen value stream ({!Seed}). *)
 module Private : sig
+  (** Memoized lazy rose trees of shrink candidates: a strict root value with an
+      ordered sequence of candidate subtrees, each cell forced at most once (a
+      raised exception included), so a shrink search that revisits a branch
+      never re-runs user code. The sequences passed to {!make} and the functions
+      passed to {!map} run at the forcing points; a sampler must capture every
+      random choice before building a tree. *)
+  module Shrink_tree : sig
+    type 'a t
+    (** The type for a value and its ordered shrink candidates. Trees may be
+        infinite. *)
+
+    val make : root:'a -> children:'a t Seq.t -> 'a t
+    (** [make ~root ~children] is a tree rooted at [root] whose immediate
+        candidates are [children]. Construction forces nothing. *)
+
+    val leaf : 'a -> 'a t
+    (** [leaf root] is a tree rooted at [root] with no candidates. *)
+
+    val root : 'a t -> 'a
+    (** [root tree] is [tree]'s root value. Forces no child. *)
+
+    val children : 'a t -> 'a t Seq.t
+    (** [children tree] is [tree]'s immediate candidates in declared order. The
+        sequence is persistent: a forced cell yields the same child, or reraises
+        its cached exception, without re-evaluation; forcing a cell does not
+        force its tail. *)
+
+    val map : ('a -> 'b) -> 'a t -> 'b t
+    (** [map f tree] maps [f] over every value, preserving shape and order. [f]
+        runs on the root at once and on each descendant when its cell is forced,
+        at most once. *)
+
+    val pair : 'a t -> 'b t -> ('a * 'b) t
+    (** [pair left right] is rooted at [(root left, root right)]; its candidates
+        reduce [left] in order, retaining [right], then [right], retaining
+        [left]. [right]'s sequence stays unforced until [left]'s is exhausted.
+    *)
+
+    val list : 'a t list -> 'a list t
+    (** [list trees] is rooted at the element roots in order. For a non-empty
+        input the candidates are, in order: the empty list; contiguous
+        full-chunk removals with descending power-of-two chunk sizes strictly
+        below the length and increasing non-overlapping starts; single-element
+        reductions left to right, each in its element's child order. Candidates
+        follow the same rules recursively. Building the root is stack-safe and
+        forces no element child. *)
+  end
+
   exception Rejected
   (** Raised by {!sample} when a {!Gen.such_that} filter exhausts its resample
-      budget — a generation-time discard, which the engine counts as one.
-      Forcing shrink candidates never raises it: a candidate whose re-generation
-      is rejected is skipped and the search continues with its siblings. *)
+      budget: a generation-time discard. Forcing candidates never raises it; a
+      rejected candidate is skipped. *)
 
   type 'a sample
-  (** The type for a drawn value together with its counterexample rendering.
-      Every node of a sampled tree is one: the body runs on {!value}, the report
-      prints {!render}. *)
+  (** The type for a drawn value with its counterexample rendering: the body
+      runs on {!value}, the report prints {!render}. *)
 
   val sample : 'a t -> Seed.state -> 'a sample Shrink_tree.t
   (** [sample gen state] draws one value and its shrink tree from [state], a
       pure function of both. Only the root is drawn eagerly; candidates are
-      forced — memoized, user callbacks included — by traversing the tree.
+      forced, memoized, by traversing the tree.
 
       Raises {!Rejected} on a generation-time discard and [Invalid_argument] on
-      malformed generator arguments. Forcing candidates can raise
-      [Invalid_argument] too, but never {!Rejected}. *)
+      malformed generator arguments; forcing candidates can raise
+      [Invalid_argument] but never {!Rejected}. *)
 
   val value : 'a sample -> 'a
   (** [value sample] is the drawn value. *)
@@ -302,15 +309,14 @@ module Private : sig
   type 'a rendering = Value of 'a | Pre_image of 'a
 
   val render : 'a sample -> string rendering
-  (** [render sample] is the counterexample text for [sample]. Nothing is
+  (** [render sample] is the counterexample text for [sample]; nothing is
       formatted before this call. A sample with nothing to print renders as
       [Value] of the placeholder [<no printer: attach one with Gen.with_pp>].
-      Never raises — a printer that does renders as [<printer raised ...>]. *)
+      Never raises: a printer that does renders as [<printer raised ...>]. *)
 
   val render_value : 'a t -> 'a -> string
-  (** [render_value gen v] is [v] through [gen]'s printer, and the placeholder
-      of {!render} when [gen] has none — for a bare value with no tree to render
-      from: an [~examples] entry, a {!Stateful} argument. Never raises. *)
+  (** [render_value gen v] is [v] through [gen]'s printer, or {!render}'s
+      placeholder when [gen] has none. Never raises. *)
 
   val run : 'a t -> Seed.state -> 'a Shrink_tree.t * Seed.state
   (** [run gen state] is the tree of values {!sample} draws from [state], with
@@ -320,8 +326,7 @@ module Private : sig
     ?pp:(Format.formatter -> 'a -> unit) ->
     (Seed.state -> 'a Shrink_tree.t * Seed.state) ->
     'a t
-  (** [make ?pp draw] is the generator drawing with [draw] — a value tree and
-      the successor state, as {!run} produces — and printing with [pp], or not
-      at all. It is how {!Stateful} assembles a tree {!Gen}'s combinators cannot
-      express. *)
+  (** [make ?pp draw] is the generator drawing with [draw], a value tree and the
+      successor state as {!run} produces, and printing with [pp] or not at all.
+  *)
 end

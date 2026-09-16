@@ -25,7 +25,7 @@ let check_int name ~expected ~actual = equal ~msg:name int expected actual
 let with_root f = f (temp_dir ())
 
 let write_raw path contents =
-  Path_ops.mkdir_p (Filename.dirname path);
+  Os.mkdir_p (Filename.dirname path);
   Out_channel.with_open_bin path (fun oc ->
       Out_channel.output_string oc contents)
 

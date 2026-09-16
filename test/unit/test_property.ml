@@ -10,6 +10,7 @@
 
 open Windtrap
 open Windtrap.Private
+module Shrink_tree = Windtrap.Gen.Private.Shrink_tree
 
 (* Printf-style shims over windtrap's [fail]. [Check.*] calls inside
    property bodies are the probes the engine catches; only these shims
@@ -24,7 +25,7 @@ let check condition format =
 let contains needle haystack = Text.contains_substring ~pattern:needle haystack
 
 (* One fixed root for most tests: outcomes are deterministic across runs and
-   machines (RFC Law 7), so every assertion below is exact. *)
+   machines (guarantee 7), so every assertion below is exact. *)
 let root = 0x00c0ffee1234abcdL
 
 let property_payload (failure : Failure.t) =

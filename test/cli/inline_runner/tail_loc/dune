@@ -1,0 +1,34 @@
+; A failing tail-position let%test is attributed to its declaration line,
+; never to a generated-runner path. See doc/dev/testing.md, "The five
+; families".
+
+(executable
+ (name tail_loc_runner)
+ (modules tail_loc_runner inline_tail_loc)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit)
+ (deps inline_tail_loc.ml)
+ (action
+  (run
+   %{dep:../drive/drive.exe}
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   runner
+   %{dep:tail_loc_runner.exe}
+   inline-test-runner
+   tail_loc)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))

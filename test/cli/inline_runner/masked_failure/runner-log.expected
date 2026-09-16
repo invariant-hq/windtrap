@@ -1,0 +1,24 @@
+masked_failure: 1 test
+──────────────────── failures (1) ────────────────────
+  FAIL  Inline_masked_failure › an assertion failure beside a stale payload
+    test/cli/inline_runner/masked_failure/inline_masked_failure.ml:12
+      12 │   Windtrap.subtest "the assertion" (fun () -> Windtrap.equal Windtrap.int 1 2);
+
+    an assertion failure beside a stale payload › the assertion
+    expected  1
+    actual    2
+
+    test/cli/inline_runner/masked_failure/inline_masked_failure.ml:14
+      14 │   [%expect {| stale payload |}]
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - stale payload
+    + fresh output
+    accept: dune promote
+    ── captured output (1 line) ──
+    fresh output
+    full log: <log>
+──────────────────────────────────────────────────────
+
+1 failed (1 subtest failure) in <duration>s.

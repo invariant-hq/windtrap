@@ -1,0 +1,7 @@
+; Property tests (doc/manual/property-testing.md): Gen generators, one
+; pp feeding both worlds, ~examples, assume, cover and classify.
+
+(test
+ (name test_geo)
+ (modules test_geo geo)
+ (libraries windtrap))

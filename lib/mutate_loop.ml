@@ -59,7 +59,8 @@ let refuse fmt =
 let saturating_add x y = if x > max_int - y then max_int else x + y
 
 (* The configuration a loop hands its dry run. A mutation run's output
-   never reports a test outcome (Law 16e) and its exit code is its own, so
+   never reports a test outcome (its output is the verdict) and its exit code
+   is its own, so
    the dry run — whose whole job is to fill the reach map and prove the
    suite green — writes no JUnit. A run with one mutant armed hands the
    caller an ordinary [Ran] outcome and writes its own, exactly as an
@@ -173,7 +174,7 @@ let child_deadline ~dry_run_wall ~reach paths =
   in
   dry_run_wall +. Float.max 1. (deadline_multiplier *. scheduled)
 
-(* Child hygiene (Law 16e)
+(* Child hygiene
 
    A mutation child's whole body is wrapped so that no path reaches
    Stdlib's exit machinery. [Stdlib.at_exit] handlers run on uncaught
@@ -318,7 +319,7 @@ let fork_child ~deadline body =
       { line; status; killed = !killed }
 
 (* Every child starts from the same clean post-dry-run image; read-only
-   checking (Law 16d) is the child's config, set where it forks. *)
+   checking (guarantee 12) is the child's config, set where it forks. *)
 (* The child's selection, in the executor's own spelling: [reach] keys
    tests by path components, [Run.execute]'s allowlist by the rendered
    path the filters and the last-failed store both use. *)
@@ -355,7 +356,7 @@ let counted_failure (r : Run.result) =
 
 (* Whether a run that had a mutant armed detected it: a counted failure on
    a test row, or a fixture-release row. Read off the results and never off
-   [outcome.exit_code] (Law 16c): the exit code answers a different
+   [outcome.exit_code] (guarantee 12: the aggregate is the one exit code a build gates on): the exit code answers a different
    question — it is [2] for a selection that matched nothing, which is a
    statement about a filter and not about a mutant. *)
 let kills (r : Run.result) = counted_failure r
@@ -389,7 +390,7 @@ let decode_verdict ~paths line =
 (* Scratch: one directory for the whole loop, one subdirectory per child,
    removed by the PARENT — a child killed at the deadline never runs its
    own cleanup, and an orphaned capture tree under the system temporary
-   directory is exactly the trace Law 16(e) forbids. *)
+   directory is exactly the trace child hygiene forbids. *)
 
 (* [Unix.mkdir] with an EEXIST retry, never [mkdir_p]: the loop must OWN
    this directory, not adopt whatever is at a predictable path in a
@@ -438,8 +439,8 @@ let read_source =
     | Some contents -> contents
     | None ->
         let resolved =
-          match Path_ops.project_root () with
-          | root -> Path_ops.reconstruct ~root file
+          match Os.project_root () with
+          | root -> Os.reconstruct ~root file
           | exception Sys_error _ -> Error file
         in
         let contents =
@@ -867,7 +868,7 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
       note "%s" (Format.asprintf "%a" M.pp_arm_error error);
       Reported 1
   | Ok mutant ->
-      (* An armed run never writes: no .corrected (Law 16d) and no
+      (* An armed run never writes: no .corrected (guarantee 12: armed checking is read-only) and no
          accepted baseline. An armed mutant changes program output on
          purpose, and a run that promoted that output would rewrite the
          source tree from a lie. Baselines need no flag beyond Check: a
@@ -884,7 +885,8 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
       let result = Report.run ~suite config tests in
       (* [killed_by], not [exit_code <> 0]: a filter that matched nothing
          exits 2, and announcing [mutant killed.] there would report a
-         selection mistake as a detected behaviour change (Law 16c). A
+         selection mistake as a detected behaviour change (a verdict is never
+         an exit code). A
          completed run that killed nothing gets the other half of the
          verdict: green alone cannot tell "the tests prove nothing about
          this site" from "no selected test ran the line", so the closing

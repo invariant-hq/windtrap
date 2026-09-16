@@ -1,17 +1,10 @@
-; The ambient Expect_test_config, as a top-level module (matching
-; ppx_expect): code generated for
-; let%expect_test references the unqualified name Expect_test_config,
-; so this library — pulled in automatically via the rewriter's
-; ppx_runtime_libraries — must expose exactly that module. A user
-; module of the same name in scope shadows it. The contract is
-; expect_test_config.mli, here; the module is stdlib-only, so the
-; library needs no dependency at all.
+; Generated code names the unqualified top-level Expect_test_config, so this
+; library exposes exactly that module (stdlib-only, no dependencies); the
+; coverage stanza keeps it in windtrap's measured set. See
+; doc/dev/testing.md, "Windtrap under its own instrumentation".
 
 (library
  (name expect_test_config)
  (public_name ppx_windtrap.config)
- ; The core measures its own coverage, and this module moved out of it;
- ; keeping the backend keeps the measured set intact. Inert without
- ; --instrument-with, like every instrumentation stanza.
  (instrumentation
   (backend ppx_windtrap.coverage)))

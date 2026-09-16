@@ -25,7 +25,7 @@
      *can* alter tail-call status if mishandled, so [traverse] threads
      [is_in_tail_position] exactly as v1 does and never wraps an
      application in tail position; the mandatory semantics-preservation
-     suite (test/coverage_ppx/semantics) pins this. The [successor]
+     suite (test/ppx/coverage/semantics) pins this. The [successor]
      threading attributes an out-edge to the expression control flows into
      next when one is known, and suppresses redundant wraps ([`Redundant])
      where an enclosing form already observes the edge.
@@ -49,7 +49,7 @@ module Cf = Ast_helper.Cf
    deliberately — the manual promises the same spellings, modulo
    mutation's optional reason string — so a spelling added or an error
    message changed here changes there too. Keep them in sync; the
-   attribute-parity fixtures in test/coverage_ppx pin the promise. *)
+   attribute-parity fixtures in test/ppx/coverage pin the promise. *)
 
 let recognize_coverage_attribute { attr_name; attr_payload; attr_loc } =
   if not (String.equal attr_name.txt "coverage") then `None
@@ -308,10 +308,10 @@ class instrumenter st =
        it builds and the function silently becomes stack-consuming.
 
        Out-edge points are given up inside such a body, exactly as they are
-       given up in ordinary tail position, for the same reason: Law 13 says
-       instrumentation may not change what a program means, and Law 14 makes
-       the tail guards part of the frozen model. Entry points are
-       unaffected. *)
+       given up in ordinary tail position, for the same reason: guarantee 10
+       says instrumentation may not change what a program means, and the
+       frozen expression-grade scope keeps the tail guards in the model.
+       Entry points are unaffected. *)
     val mutable in_tmc_body = false
 
     method! expression e =

@@ -24,11 +24,9 @@
     and the surviving suite's view alone is a false survivor. This command is
     why the verdict file exists.
 
-    It runs no tests and drives no build, which is what makes it legitimate
-    under Law 12 where a subcommand that {e drives} the run was rejected — the
-    verb says so: it reports mutants, it does not mutate. It is the project's
-    gate: a mutant that survived every executable that reached it fails the
-    merge. *)
+    It runs no tests and drives no build; the verb says so: it reports mutants,
+    it does not mutate. It is the project's gate: a mutant that survived every
+    executable that reached it fails the merge. *)
 
 val run : string list -> int
 (** [run args] executes the subcommand on [args] (the arguments after [mutants])

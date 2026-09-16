@@ -1,0 +1,18 @@
+cross_partition/stale.ml: 1 test
+──────────────────── failures (1) ────────────────────
+  FAIL  Stale › a stale payload
+    test/cli/inline_runner/cross_partition/stale.ml:7
+      7 │   [%expect {| stale payload |}]
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - stale payload
+    + fresh output
+    accept: dune promote
+    ── captured output (1 line) ──
+    fresh output
+    full log: <log>
+──────────────────────────────────────────────────────
+
+1 failed in <duration>s.
+wrote test/cli/inline_runner/cross_partition/stale.ml.corrected (1 expectation)

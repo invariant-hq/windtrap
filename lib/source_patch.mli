@@ -8,11 +8,9 @@
     A correction of an [expect] literal is a {!patch}: the position the literal
     was compiled at, the value it was compiled with, and the value to write.
     {!apply} rewrites a file's bytes with every patch of that file at once,
-    keeping each literal's delimiter and the author's layout elsewhere.
-
-    The flexible comparison form of a literal ({!normalize}) and the formatting
-    of a flexible payload ({!format_flexible}) are ppx_expect's, so a correction
-    is byte-compatible with one ppx_expect would write. *)
+    keeping each literal's delimiter and the author's layout elsewhere. The
+    flexible comparison form ({!normalize}) and the formatting of a flexible
+    payload ({!format_flexible}) are ppx_expect's. *)
 
 (** {1:flexible Flexible text} *)
 
@@ -62,9 +60,8 @@ val patch : site:Loc.pos -> literal:string -> style:style -> string -> patch
 (** [patch ~site ~literal ~style content] rewrites the literal at [site], whose
     compiled value is [literal], to hold [content]. [site] is the position of
     the [__POS_OF__ literal] expression (parenthesized or not), of the literal
-    itself, as [__POS_OF__] records it, or of an [[%expect]] node whose payload
-    the literal is. A node with no payload, [[%expect]], compiles to the empty
-    literal and is patched by inserting one. *)
+    itself, or of an [[%expect]] node whose payload the literal is; a node with
+    no payload compiles to the empty literal and is patched by inserting one. *)
 
 (** The type for refused patches. *)
 type error =
@@ -78,16 +75,14 @@ val error_message : error -> string
 (** [error_message e] is a one-line description of [e] naming the site. *)
 
 val apply : string -> patch list -> (string, error) result
-(** [apply source patches] is [Ok text] where [text] is [source] with every
-    patch applied: for each, the file is lexed forward from the patch's position
-    past an optional opening parenthesis, the [__POS_OF__] token, an expect
-    node's head ([[%expect]] or [[%expect_exact]]) and whitespace to one string
-    literal, which is replaced by {!literal} of the new contents (formatted by
-    {!format_flexible} at the indentation of the position's line for a
-    {!Flexible} patch) in the literal's own delimiter; a node with no payload
-    gets the literal inserted before its closing bracket. A literal decodes as
-    the lexer compiles it, escapes and continuation lines resolved and a CRLF
-    newline read as LF. Patches apply in position order, offsets adjusted, and
-    the rest of the file is byte-identical.
-
-    [Error e] names the first patch refused, and nothing is applied. *)
+(** [apply source patches] is [Ok text], [source] with every patch applied: from
+    each patch's position the file is lexed past an optional opening
+    parenthesis, the [__POS_OF__] token, an expect node's head and whitespace to
+    one string literal, which is replaced by {!literal} of the new contents
+    (formatted by {!format_flexible} at the position's line indentation for a
+    {!Flexible} patch) in its own delimiter; a node with no payload gets the
+    literal inserted before its closing bracket. A literal decodes as the lexer
+    compiles it, escapes and continuation lines resolved and a CRLF newline read
+    as LF. Patches apply in position order and the rest of the file is
+    byte-identical. [Error e] names the first patch refused, and nothing is
+    applied. *)

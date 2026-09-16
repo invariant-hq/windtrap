@@ -5,21 +5,12 @@
 
 (** Source locations for failures and test declarations.
 
-    A location names a point in user source. It comes from exactly two places,
-    in this order of authority: an explicit {!type:pos} value (the [~__POS__]
-    the caller passed on), or a best-effort walk of the current call stack
-    ({!capture}). The explicit value always wins; when neither yields a location
-    there is none — a report without a location beats a report with a wrong one.
-    {!resolve} packages that rule for failure sites. Capture reads debug
-    information, so a program built without [-g] gets no automatic location
-    anywhere.
-
-    Capture is a provisional heuristic: it takes the first call-stack slot whose
-    compilation unit is neither windtrap's nor the standard library's, inlined
-    slots included, and returns [None] rather than guess. The walk never crosses
-    a {!delimit} frame: the runner runs every user callback under one, so a
-    failing call whose own frame was consumed by tail calls yields [None] —
-    never the line that called the runner. *)
+    A location comes from an explicit {!type:pos} (the [~__POS__] the caller
+    passed on) or, failing that, from a best-effort walk of the call stack
+    ({!capture}); {!resolve} is that rule. When neither yields one there is
+    none: a report without a location beats one with a wrong location. Capture
+    reads debug information, so a program built without [-g] gets no automatic
+    location. *)
 
 (** {1:types Types} *)
 
@@ -28,8 +19,8 @@ type pos = string * int * int * int
 
 type t = { file : string; line : int; column : int }
 (** The type for source locations. [file] is as recorded at compile time
-    (usually relative to the project root, e.g. ["test/test_users.ml"]); [line]
-    is 1-based; [column] is 0-based. *)
+    (usually relative to the project root); [line] is 1-based; [column] is
+    0-based. *)
 
 (** {1:constructors Constructors} *)
 
@@ -37,46 +28,34 @@ val of_pos : pos -> t
 (** [of_pos p] is the location of [p], keeping its start column. *)
 
 val capture : unit -> t option
-(** [capture ()] walks the current call stack (bounded, via
-    {!Printexc.get_callstack} — immune to user-level re-raise) and returns the
-    location of the first slot, inlined slots included, whose compilation unit
-    is neither windtrap's nor the standard library's. The walk stops with [None]
-    at the nearest {!delimit} frame: reaching it means every frame since the
-    failing call was windtrap machinery, so any user frame beyond it is the
-    runner's caller, not the failure site. [None] also when no eligible slot has
-    a location or the program lacks debug information. Cheap enough to call at
-    every failure construction. *)
+(** [capture ()] is the location of the first call-stack slot, inlined slots
+    included, whose compilation unit is neither windtrap's nor the standard
+    library's; [None] when the walk reaches a {!delimit} frame first, when no
+    eligible slot has a location, or without debug information. Bounded and
+    cheap enough to call at every failure construction. *)
 
 val delimit : (unit -> 'a) -> 'a
-(** [delimit fn] is [fn ()], run under a capture delimiter: a {!capture} during
-    [fn] never walks past this call's frame. The runner wraps every
-    user-callback invocation in [delimit], so an assertion in tail position —
-    whose caller's frame is gone at raise time — reports no location rather than
-    the runner's caller; recording then falls back to the test's declaration
-    location (see [Run.add_failure]). The frame is recognized by the function's
-    debug name and pinned: never inlined, and the call to [fn] is not a tail
-    call. Raises whatever [fn] raises, backtrace preserved. *)
+(** [delimit fn] is [fn ()] under a capture delimiter: a {!capture} during [fn]
+    never walks past this call's frame. The runner wraps every user callback in
+    it, so an assertion in tail position reports no location rather than the
+    runner's caller. Never inlined; the call to [fn] is not a tail call. Raises
+    whatever [fn] raises, backtrace preserved. *)
 
 val resolve : ?__POS__:pos -> unit -> t option
 (** [resolve ?__POS__ ()] is [Some (of_pos p)] when [__POS__] is [Some p], and
-    [capture ()] otherwise — the one location rule for every failure site. *)
+    [capture ()] otherwise. *)
 
 val own_unit : string -> bool
-(** [own_unit defname] is [true] iff the compilation unit of [defname] — a
-    {!Printexc.Slot} debug name such as ["Windtrap__Check.raises"] — is one of
+(** [own_unit defname] is [true] iff the compilation unit of [defname], a
+    {!Printexc.Slot} debug name such as ["Windtrap__Check.raises"], is one of
     windtrap's own: the [Windtrap] alias unit, a [Windtrap__]-wrapped module, or
-    the coverage runtime. Whole unit names are matched, so a user library named
-    [Windtrap_helpers] is not windtrap's. Backtrace rendering uses it to drop
-    the runner's own trailing frames; {!capture} uses the wider notion that also
-    covers the standard library. *)
+    the coverage runtime. Whole unit names are matched. *)
 
 (** {1:observers Observers} *)
 
 val to_string : t -> string
-(** [to_string loc] is [loc] spelled ["file:line"] — the one form reports print
-    a location in. The column is deliberately absent: it is identity data (see
-    {!equal}), not something an editor jump needs. *)
+(** [to_string loc] is [loc] spelled ["file:line"], the form reports print. *)
 
 val equal : t -> t -> bool
-(** [equal a b] is structural equality, column included — two checks on one line
+(** [equal a b] is structural equality, column included: two checks on one line
     are two distinct sites. *)

@@ -1,12 +1,7 @@
-; The expression-grade coverage instrumenter, exposed as the dune
-; instrumentation backend selected by
-; --instrument-with ppx_windtrap.coverage: one library naming itself in
-; (instrumentation.backend), as ppx/mutate/dune does. Its
-; ppx_runtime_libraries name only the stdlib-only windtrap.runtime the
-; generated code calls, so instrumented user code never pulls the
-; windtrap core into its closure. Also usable directly with
-; (preprocess (pps ppx_windtrap.coverage)), which the semantics tests
-; rely on.
+; The coverage backend names itself in (instrumentation.backend) and lists
+; only the stdlib-only runtime in ppx_runtime_libraries, so instrumented code
+; never links the core; also usable through (pps). See doc/dev/testing.md,
+; "Windtrap under its own instrumentation".
 
 (library
  (name windtrap_coverage_ppx)

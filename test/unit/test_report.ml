@@ -267,7 +267,7 @@ let test_header_forms () =
     ~actual:compact
 
 let test_seed_token_consistency () =
-  (* Law 7: the replay line prints exactly the token the header printed. *)
+  (* Guarantee 7: the replay line prints exactly the token the header printed. *)
   let token = Seed.to_string Fixtures.root in
   let t = transcript () in
   check_contains "header carries the root token"
@@ -1907,7 +1907,7 @@ let test_hints_per_invocation () =
 
 (* [--failed] is an optimization, not a step, so no run advertises it. The
    acceptance commands are the opposite case — they name a verb nobody can
-   guess — and stay under every mismatch (Law 3). *)
+   guess — and stay under every mismatch (guarantee 3). *)
 let test_no_rerun_hint () =
   let failing =
     [ Fixtures.result [ "t" ] (Failure.Fail [ Failure.message "b" ]) ]
@@ -2139,7 +2139,7 @@ let test_excerpt_project_root () =
 
 (* The coverage detail block, escape for escape
 
-   One gutter renderer serves coverage and mutation (Law 12), and this is
+   One gutter renderer serves coverage and mutation, and this is
    where its bytes are pinned: the three-column gutter, the number
    right-aligned in at least four, the [│] rule, [·····] between regions,
    the regions themselves (touching windows merged, the first clipped
@@ -3020,7 +3020,7 @@ let test_summary_dialect () =
 
    The lines printed after [finish] naming what the run wrote —
    a projection of run data, so every transcript byte leaves through the
-   renderer (Law 4). The line classes and the quiet gate are pinned here. *)
+   renderer (guarantee 4). The line classes and the quiet gate are pinned here. *)
 
 let make_run ?baselines () =
   let baselines =
@@ -3035,13 +3035,13 @@ let baseline_report ?mode ?invocation run =
 
 let write_source root =
   let path = Filename.concat root "t.ml" in
-  Path_ops.mkdir_p root;
+  Os.mkdir_p root;
   Out_channel.with_open_bin path (fun oc ->
       Out_channel.output_string oc "let () = expect x @@ __POS_OF__ {| a |}\n");
   path
 
 let test_baseline_report_writes () =
-  (* One line per file written, paths spelled by [Path_ops.display]: the
+  (* One line per file written, paths spelled by [Os.display_path]: the
      verb names the mode, and a source file counts its literals. *)
   let root = temp_dir () in
   let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Update () in
@@ -3051,7 +3051,7 @@ let test_baseline_report_writes () =
   check_string "update: an accepted line per file"
     ~expected:
       (Printf.sprintf "accepted %s\n"
-         (Path_ops.display (Filename.concat root "help.expected")))
+         (Os.display_path (Filename.concat root "help.expected")))
     ~actual:(baseline_report (make_run ~baselines ()));
   let root = temp_dir () in
   let source = write_source root in
@@ -3069,8 +3069,8 @@ let test_baseline_report_writes () =
   check_string "corrected: a wrote line per .corrected, literals counted"
     ~expected:
       (Printf.sprintf "wrote %s\nwrote %s (1 expectation)\n"
-         (Path_ops.display (Filename.concat root "help.expected.corrected"))
-         (Path_ops.display (source ^ ".corrected")))
+         (Os.display_path (Filename.concat root "help.expected.corrected"))
+         (Os.display_path (source ^ ".corrected")))
     ~actual:(baseline_report (make_run ~baselines ()));
   check_string "the report does not depend on the invocation"
     ~expected:(baseline_report ~invocation:`Mirrors (make_run ~baselines ()))
@@ -3092,7 +3092,7 @@ let test_baseline_report_quiet () =
   check_contains "a refusal names the file and the reason"
     ~sub:
       (Printf.sprintf "could not write %s: "
-         (Path_ops.display (Filename.concat root "missing.ml")))
+         (Os.display_path (Filename.concat root "missing.ml")))
     (baseline_report (make_run ~baselines ()))
 
 let tests =
@@ -3104,7 +3104,7 @@ let tests =
     test "live progress line (verbose)" test_live;
     test "live compact tail" test_live_compact_tail;
     test "header forms" test_header_forms;
-    test "seed token consistency (Law 7)" test_seed_token_consistency;
+    test "seed token consistency (guarantee 7)" test_seed_token_consistency;
     test "duration forms" test_duration_forms;
     test "create validation" test_create_validation;
     test "empty run" test_no_tests;

@@ -10,7 +10,7 @@
   ---------------------------------------------------------------------------*)
 
 module Sections = Windtrap.Private.Report_sections
-module Env = Windtrap.Private.Env
+module Os = Windtrap.Private.Os
 module Cli = Windtrap.Private.Cli
 
 let spf = Printf.sprintf
@@ -411,8 +411,8 @@ let coverage_data ~source_roots collection : Sections.coverage =
 
 let report_table ~color ~source_roots ~show_uncovered collection =
   let ansi =
-    Env.resolve_color color ~tty:(Env.is_tty_stdout ())
-      ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
+    Os.resolve_color color ~tty:(Os.is_tty_stdout ())
+      ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
   in
   Sections.print ~out:Format.std_formatter ~ansi
     (Sections.coverage_report

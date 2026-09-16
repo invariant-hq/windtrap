@@ -137,6 +137,12 @@ lib/calc.ml — 77.8% (7/9)
      11 │   | Div -> if b = 0 then invalid_arg "division by zero" else a / b
 ```
 
+A line is marked when it intersects any unvisited point's extent, so a
+one-line `function A -> 1 | B -> 2` with only `A` exercised reads as
+uncovered: marking only lines wholly inside unvisited extents would
+hide the untested arm. The percentages count points, not lines, so they
+are unaffected.
+
 ## Several test stanzas
 
 Each instrumented test executable reports its own view of the code
@@ -149,8 +155,11 @@ point. Libraries without the instrumentation stanza, code under
 from the denominator — not reported as 0%. `--expect lib/` is what
 turns that absence into a failure.
 
-Each dump records the executable that wrote it (its `_build`-relative
-path and content digest). The report excludes, with one warning line
+Each dump records the executable that wrote it: its `_build`-relative
+path and a digest of its bytes — a digest rather than a timestamp,
+because dune's cache restores rebuilt artifacts with their original
+mtimes, so time cannot tell a rebuilt executable from the one that
+wrote the dump. The report excludes, with one warning line
 per file, dumps whose executable was deleted or rebuilt since the dump
 — typically a rebuild without the backend, or a cached test action the
 build tool did not re-run — and then says, once, what heals it:
@@ -169,7 +178,7 @@ with `ppxlib` and `ppx_windtrap.coverage` — is a `-ppx` for the
 compiler, and the installed `windtrap` is two archives beside the
 compiler's own library (`$lib` below, where `META` is). Instrument the
 library under test, not the test file; link the test against
-`windtrap`; run it; merge with the installed binary. `test/facade/nodune.t`
+`windtrap`; run it; merge with the installed binary. `test/cli/nodune.t`
 in windtrap's tree is this session, held by a test:
 
 ```

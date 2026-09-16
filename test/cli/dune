@@ -1,0 +1,30 @@
+; The facade's command line as cram sessions over suite_main.exe (the deps
+; line is what rebuilds the fixture before a session); nodune.t needs the
+; installed package and one ppx driver per backend. See doc/dev/testing.md,
+; "The five families" and "Without dune".
+
+(executable
+ (name suite_main)
+ (modules suite_main)
+ (libraries windtrap))
+
+(cram
+ (applies_to :whole_subtree)
+ (deps suite_main.exe))
+
+(cram
+ (applies_to nodune)
+ (deps
+  (package windtrap)
+  coverage_ppx.exe
+  mutate_ppx.exe))
+
+(executable
+ (name coverage_ppx)
+ (modules coverage_ppx)
+ (libraries ppxlib ppx_windtrap.coverage))
+
+(executable
+ (name mutate_ppx)
+ (modules mutate_ppx)
+ (libraries ppxlib ppx_windtrap.mutate))

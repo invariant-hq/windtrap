@@ -137,6 +137,12 @@ is the only place they cannot rot — they move with the code and
 and no baseline file, and windtrap never writes the attribute for you:
 auto-dismissal is auto-suppression of real defects.
 
+There is no not-armable table either. A site the dry run evaluated only
+outside a test — during module initialization, in a fixture release —
+is recorded as unreached, not as a survivor: both mean "no test
+evaluates this", neither is forked, so the score is right and only the
+remedy offered (write a test) is imprecise for it.
+
 ## Reproducing one
 
 The `reproduce:` footer is a command with a hole. Fill it with a
@@ -158,7 +164,6 @@ made on your own suite in a second. With the boundary row in place:
 ```
 mutant examples/x-blueprint/lib/slug.ml:2:41:lt armed: c <= 'Z' → c < 'Z'
 slug: 9 tests (seed s1:25cc6d0339147053)
-........F
 ──────────────────── failures (1) ────────────────────
   FAIL  slugify › specified points › "Az Za 09"
     …
@@ -187,7 +192,9 @@ candidates listed: a silently ignored arming would report a green run
 as a survivor. One naming a file this executable catalogues *nothing*
 in is noted on standard error and the run proceeds — the project
 report's footer arms one identifier across every suite at once, where
-most binaries were built from other sources. Asking for `--mutate` and
+most binaries were built from other sources, and exiting 1 there would
+fail the build for every sibling of the binary that armed the mutant
+correctly. Asking for `--mutate` and
 `--arm` at once is a usage error, not a guess: the loop arms each
 mutant itself, so an armed parent would mutate its own dry run.
 
@@ -258,7 +265,11 @@ mutants: 18 reached · 18 killed · 4 executables
 The footer's placeholder is where your suite command goes — the first
 of the two commands above, with `--arm`'s mirror in place of
 `WINDTRAP_MUTATE=1`: the merge never ran the suite and does not know
-how you spell running it.
+how you spell running it. `WINDTRAP_MUTATE_ARM=<id> dune runtest
+--force --instrument-with ppx_windtrap.mutate` arms that one mutant in
+every suite at once, and each suite that kills it fails as an ordinary
+run does, so `dune runtest` exits 1 wherever a suite kills it — the
+aggregate's verdict, watched live.
 
 A mutant no suite in the project reaches is a second kind of finding
 with a second remedy — *write a test*, where a survivor says
@@ -306,6 +317,14 @@ directory dune names, a private `--build-dir` included), or the
 `.mutants` files and directories named as arguments, and a missing
 path is a loud error, never a silent narrowing of the merge.
 
+A `--mutate` run's own exit code is not a test verdict. It exits 0 when
+the loop completed, whatever it found — a survivor is one suite's view,
+and only the aggregate gates on survivors — and 1 when it refused to
+start or could not finish: a red or empty dry run, a probe disagreement,
+a supervision error, each with its own message on standard error. It
+never exits 2, because "nothing ran" is a statement about a test
+selection and a mutation run does not make one.
+
 ## What is mutated
 
 Four operators, chosen so that every arm of every guard is well-typed
@@ -350,12 +369,18 @@ spell it.
 Every forked child runs under a deadline derived from the dry run's own
 timings — never a knob — and a child that overruns is killed with its
 process group and its mutant scored killed, which is the right verdict:
-a fault that makes the suite hang is a fault the suite noticed. Nothing
-caps a whole run, so a run of a thousand mutants takes as long as its
-thousand children do. Mutation needs `Unix.fork` and declines by name on
+a fault that makes the suite hang is a fault the suite noticed. The
+clock is the second line: each child also arms its mutant with a hit
+budget taken from the dry run's reach count for that site, so a mutant
+that turns a terminating loop into a spinning one raises past the
+budget and is killed by the count, before any timer could see a hang
+that consumes no wall time it can measure (hits a teardown adds to a
+site the test already evaluated are reported nowhere, so the budget
+carries headroom). Nothing caps a whole run, so a run of a thousand
+mutants takes as long as its thousand children do. Mutation needs `Unix.fork` and declines by name on
 Windows. The derivation and the measurements behind those sentences are
 in
-[`doc/dev/testing.md`](../dev/testing.md#what-a-run-costs-and-where-the-deadline-comes-from).
+[`doc/dev/testing.md`](../dev/testing.md#windtrap-under-its-own-instrumentation).
 
 ## Knobs
 
@@ -390,7 +415,7 @@ compiler, and the installed `windtrap` is two archives beside the
 compiler's own library (`$lib` below, where `META` is). Instrument the
 library under test, not the test file; link the test against
 `windtrap`; run it with the flag; merge with the installed binary.
-`test/facade/nodune.t` in windtrap's tree is this session, held by a
+`test/cli/nodune.t` in windtrap's tree is this session, held by a
 test:
 
 ```

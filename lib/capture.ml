@@ -28,7 +28,7 @@ let create ~log_dir ~suite () =
   Enabled
     {
       root = log_dir;
-      suite = Path_ops.sanitize_component suite;
+      suite = Os.sanitize_component suite;
       current = None;
       consumed = 0;
     }
@@ -57,9 +57,9 @@ let output_path e ~groups ~test_name =
   let dir =
     List.fold_left Filename.concat
       (Filename.concat e.root e.suite)
-      (List.map Path_ops.sanitize_component groups)
+      (List.map Os.sanitize_component groups)
   in
-  Filename.concat dir (Path_ops.sanitize_component test_name ^ ".output")
+  Filename.concat dir (Os.sanitize_component test_name ^ ".output")
 
 (* Swap descriptors 1-2 to [fd], returning the saved originals. A partial
    failure (dup exhaustion, dup2 error) undoes whatever did switch and
@@ -103,7 +103,7 @@ let with_capture t ~groups ~test_name fn =
       e.current <- None;
       e.consumed <- 0;
       let path = output_path e ~groups ~test_name in
-      Path_ops.mkdir_p (Filename.dirname path);
+      Os.mkdir_p (Filename.dirname path);
       (* O_TRUNC is the per-attempt reset: a retry reuses the file, so the
          report shows the final attempt's output only. O_CLOEXEC for the
          same reason the saved dups below are close-on-exec (cli/F-5): a

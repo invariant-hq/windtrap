@@ -1,28 +1,15 @@
-; The core links the one instrumentation runtime (lib/runtime): the
-; mutation loop drives its catalogue and writes verdicts through its file
-; format, spelling identifiers with the runtime's own functions so the
-; report and the runtime cannot disagree. The dependency points downward
-; only — the runtime never links windtrap.
+; The library. Both backends instrument it for windtrap's own coverage and
+; mutation aliases; the modules that judge mutants opt out with
+; [@@@mutate exclude_file]. See doc/dev/architecture.md.
 
 (library
  (name windtrap)
  (public_name windtrap)
  (libraries unix windtrap_runtime)
- ; Windtrap measures its own coverage; inert without --instrument-with.
  (instrumentation
   (backend ppx_windtrap.coverage))
- ; And windtrap mutates itself. Four modules opt out with
- ; [@@@mutate exclude_file] — the executor with its ambient run state,
- ; the report, the mutation loop and the facade — because a mutant
- ; there is armed inside the process that is supposed to judge it, and
- ; the failure mode is a hang rather than a survivor. The inline
- ; runtime, excluded for the same reason, lives above the core
- ; (ppx/runtime) in a library whose dune carries no mutation stanza at
- ; all. The tree's own mutation suites scope their runs to their fixture
- ; directories (see doc/dev/testing.md), so an instrumented core adds
- ; nothing to the population they fork over.
  (instrumentation
   (backend ppx_windtrap.mutate))
  (foreign_stubs
   (language c)
-  (names capture_stubs clock_stubs env_stubs)))
+  (names capture_stubs os_stubs)))

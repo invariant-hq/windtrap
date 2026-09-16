@@ -108,9 +108,9 @@ let tests =
         equal ~msg:"to_string formats file:line" string "test/foo.ml:12"
           (Loc.to_string loc);
         is_true ~msg:"equal reflexive" (Loc.equal loc loc);
-        (* All three fields are load-bearing for site identity: snapshot
-           duplicate detection asks [equal] whether two checks are the same
-           site, and a field it ignored would merge distinct sites. *)
+        (* All three fields are load-bearing for site identity: the baseline
+           registry asks [equal] whether two checks are the same site, and
+           a field it ignored would merge distinct sites. *)
         is_false ~msg:"equal distinguishes columns"
           (Loc.equal loc (Loc.of_pos ("test/foo.ml", 12, 5, 9)));
         is_false ~msg:"equal distinguishes lines"

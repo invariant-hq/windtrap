@@ -74,8 +74,8 @@ let () =
 ```
 
 where `spawn_self` runs `Sys.executable_name` with the role variable
-set and drains its output (`Unix.create_process` + a pipe; see the
-compiled mirror for a complete `spawn_self`).
+set and drains its output (`Unix.create_process` with a pipe, a dozen
+lines of your own).
 
 This pattern is safe because `run` reads nothing but its `?argv`
 parameter (default `Sys.argv`), the documented `WINDTRAP_*` variables,

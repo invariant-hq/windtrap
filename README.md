@@ -24,8 +24,8 @@ let () =
        ]
 ```
 
-This is [`examples/01-first-test`](examples/01-first-test), verbatim apart
-from the file's header comment. `run` returns the exit code — 0 when
+This is [`examples/01-getting-started`](examples/01-getting-started),
+verbatim apart from the file's header comment. `run` returns the exit code — 0 when
 everything passed, 1 on any failure, 2 when nothing ran — and `exit`
 hands it to the shell. Running it prints:
 
@@ -103,14 +103,14 @@ does to the model and what it does to the real thing; failures print the
 shrunk program one numbered step per line, the model each call was made
 in, and the step that broke.
 
-**[Baselines](doc/manual/snapshots-and-expect.md)** — `expect actual @@
+**[Baselines](doc/manual/baselines.md)** — `expect actual @@
 __POS_OF__ {|…|}` compares against the literal at the call and
 `expect_file actual "test/help.expected"` against a committed file, and
 checking is read-only: a mismatch or a missing file fails with a diff and
 its acceptance command — `dune promote` after the stanza's `--corrected`
 run, or `-u` in place — reviewed with `git diff`.
 
-**[Expect testing](doc/manual/snapshots-and-expect.md)** —
+**[Expect testing](doc/manual/baselines.md)** —
 `let%expect_test` and `[%expect]` via `ppx_windtrap`, a desugaring into
 `test` and `expect`: the same runner, the same corrections, accepted
 through `dune promote`. Compatibility with ppx_expect is measured
@@ -178,8 +178,8 @@ WINDTRAP_JUNIT=_build/junit dune runtest        # in CI
 A variable changes nothing on a warm tree unless the run passes
 `--force` or the stanza declares `(deps (env_var WINDTRAP_FILTER))`.
 `-l`, `--failed`, `-x`, `-u`, `--corrected`, `-h` and `-V` have no
-mirror: they want a command line. A handful of variables have no flag
-either — the project root, the coverage and mutation switches — and
+mirror: they want a command line. Three variables have no flag either —
+`WINDTRAP_PROJECT_ROOT`, `WINDTRAP_COVERAGE_FILE` and `NO_COLOR` — and
 `--help` lists those too.
 
 ## Documentation
@@ -189,11 +189,15 @@ either — the project root, the coverage and mutation switches — and
 - [`doc/cookbook.md`](doc/cookbook.md) — recipes for the things windtrap
   deliberately does not absorb.
 - [`examples/`](examples/) — self-contained projects, wired into `dune
-  runtest`: a numbered walkthrough from the first test to stateful
-  testing and coverage, plus `x-blueprint`, the canonical layout ready
-  to copy.
-- [`CHANGES.md`](CHANGES.md) — the 0.2.0 entry maps the windtrap 0.1.x
-  surface to this one.
+  runtest`: one runnable example per manual chapter, numbered in the
+  manual's order, plus `x-blueprint`, the canonical layout ready to
+  copy.
+- [`skills/windtrap-testing/SKILL.md`](skills/windtrap-testing/SKILL.md)
+  — the skill for coding agents: which test kind to write, how to
+  organize a suite, and the coverage and mutation discipline, pointing
+  at the manual for mechanics.
+- [`CHANGES.md`](CHANGES.md) — the 0.2.0 entry's cheat sheet maps the
+  windtrap 0.1 surface to this one.
 
 ## License
 

@@ -40,7 +40,7 @@ type config = {
   prop_count : int option;
   log_dir : string;
   allow_focus : bool;
-  color : Env.color_mode;
+  color : Os.color_mode;
   slow_threshold : float;
   verbose : bool;
   junit : string option;
@@ -63,9 +63,9 @@ let default_config () =
     baseline = Baseline.Check;
     timeout = None;
     prop_count = None;
-    log_dir = Path_ops.default_log_dir ();
+    log_dir = Os.default_log_dir ();
     allow_focus = false;
-    color = Env.Auto;
+    color = Os.Auto;
     slow_threshold = 1.0;
     verbose = false;
     junit = None;
@@ -411,7 +411,7 @@ let temp_dir ?(prefix = "dir") () =
   let root = temp_root frame in
   let n = frame.fr_temp_seq in
   frame.fr_temp_seq <- n + 1;
-  let name = Path_ops.sanitize_component prefix ^ "-" ^ string_of_int n in
+  let name = Os.sanitize_component prefix ^ "-" ^ string_of_int n in
   let dir = Filename.concat root name in
   Unix.mkdir dir 0o700;
   dir
@@ -421,7 +421,7 @@ let temp_file ?(suffix = "") () =
   let root = temp_root frame in
   let n = frame.fr_temp_seq in
   frame.fr_temp_seq <- n + 1;
-  let suffix = if suffix = "" then "" else Path_ops.sanitize_component suffix in
+  let suffix = if suffix = "" then "" else Os.sanitize_component suffix in
   let path = Filename.concat root ("file-" ^ string_of_int n ^ suffix) in
   let fd =
     Unix.openfile path
@@ -461,13 +461,13 @@ let remove_temp frame =
 
 let setenv name value =
   let frame = current_frame () in
-  (* The prior binding is read before [Env.set] changes it, but recorded
-     only after [Env.set] returns: [Env.set] validates the name before it
+  (* The prior binding is read before [Os.setenv] changes it, but recorded
+     only after [Os.setenv] returns: [Os.setenv] validates the name before it
      touches the process, and a record made before that validation would be
      replayed at [reclaim] — where the same rejection reads as a
      restoration failure about a change that never happened. *)
   let prior = Sys.getenv_opt name in
-  Env.set name value;
+  Os.setenv name value;
   (* First set wins: what gets restored is what was there before the
      attempt's first [setenv] of this name, so a test that binds a variable
      twice still leaves behind what it found. *)
@@ -517,7 +517,7 @@ let restore_env frame =
   frame.fr_env <- [];
   List.iter
     (fun entry ->
-      match Env.set entry.er_name entry.er_prior with
+      match Os.setenv entry.er_name entry.er_prior with
       | () -> ()
       | exception exn when not (Failure.is_fatal exn) ->
           restore_failure frame ?loc:entry.er_loc
@@ -769,7 +769,7 @@ let with_timeout limit fn =
   | Some _ when Sys.win32 -> fn no_renew (* documented no-op *)
   | Some limit -> (
       let armed = ref true in
-      let started = Clock.counter () in
+      let started = Os.counter () in
       let previous_handler =
         Sys.signal Sys.sigalrm
           (Sys.Signal_handle
@@ -791,7 +791,7 @@ let with_timeout limit fn =
       in
       let renew () =
         if !armed then begin
-          let remaining = limit -. Clock.count_s started in
+          let remaining = limit -. Os.count_s started in
           set_timer (if remaining > 0. then remaining else limit)
         end
       in
@@ -1079,11 +1079,11 @@ let run_case ~on_event run (case : Test_tree.case) =
         ~corrections:(case.Test_tree.xfail = None)
         ~path:case.Test_tree.path ~loc:case.Test_tree.loc
     in
-    let start = Clock.counter () in
+    let start = Os.counter () in
     let outcome, prop_stats, corrected =
       run_attempt run frame case ~limit ~groups ~test_name
     in
-    let duration = spent +. Clock.count_s start in
+    let duration = spent +. Os.count_s start in
     let failed = counts_failed ~xfail:case.Test_tree.xfail outcome in
     if failed && number < total_attempts then attempt (number + 1) duration
     else
@@ -1106,7 +1106,7 @@ let run_case ~on_event run (case : Test_tree.case) =
              the expectation annotation, and the slow-tag decision bit. *)
           counted = failed;
           xfail = case.Test_tree.xfail;
-          slow_tagged = Tag.mem Tag.slow case.Test_tree.tags;
+          slow_tagged = Test_tree.Tag.mem Test_tree.Tag.slow case.Test_tree.tags;
           duration;
           attempts = number;
           prop_stats;
@@ -1134,8 +1134,9 @@ let shard_bucket ~shards path =
        (Int64.of_int shards))
 
 let selection_predicate (config : config) =
-  let require p tag = Tag.require tag p and drop p tag = Tag.drop tag p in
-  let predicate = List.fold_left require Tag.any config.tags in
+  let require p tag = Test_tree.Tag.require tag p
+  and drop p tag = Test_tree.Tag.drop tag p in
+  let predicate = List.fold_left require Test_tree.Tag.any config.tags in
   List.fold_left drop predicate config.exclude_tags
 
 let case_selected (config : config) ~predicate ~allowed ~focus_active
@@ -1144,7 +1145,7 @@ let case_selected (config : config) ~predicate ~allowed ~focus_active
   let contains pattern = Text.contains_substring ~pattern path in
   (match config.filter with None -> true | Some p -> contains p)
   && (match config.exclude with None -> true | Some p -> not (contains p))
-  && Tag.accepts predicate case.Test_tree.tags
+  && Test_tree.Tag.accepts predicate case.Test_tree.tags
   && allowed path
   && (match config.shard with
     | None -> true
@@ -1171,7 +1172,7 @@ let store_magic = "windtrap-last-failed 1"
 
 let store_path (config : config) ~suite =
   Filename.concat
-    (Filename.concat config.log_dir (Path_ops.sanitize_component suite))
+    (Filename.concat config.log_dir (Os.sanitize_component suite))
     ".last-failed"
 
 let read_store path =
@@ -1210,8 +1211,8 @@ let write_store path entries =
       Buffer.add_char buffer '\n')
     entries;
   match
-    Path_ops.mkdir_p (Filename.dirname path);
-    Atomic_file.write ~path (Buffer.contents buffer)
+    Os.mkdir_p (Filename.dirname path);
+    Os.atomic_write ~path (Buffer.contents buffer)
   with
   | () -> ()
   | exception Sys_error _ -> ()
@@ -1260,7 +1261,7 @@ let startup_message = function
 let ( let* ) = Result.bind
 
 let startup (config : config) ~suite ~focus_sites ~allowlist tests paths =
-  let in_ci = Env.in_ci () in
+  let in_ci = Os.in_ci () in
   let* () =
     match duplicate_paths paths with
     | [] -> Ok ()
@@ -1314,7 +1315,7 @@ type plan = {
   total : int;
   focus_active : bool;
   mode : Baseline.mode;
-  started : Clock.counter;
+  started : Os.counter;
 }
 
 let plan ?allowlist ~config ~suite tests : (plan, startup_error) Stdlib.result =
@@ -1334,7 +1335,7 @@ let plan ?allowlist ~config ~suite tests : (plan, startup_error) Stdlib.result =
   | Some (k, n) when k < 1 || n < k ->
       invalid_arg "windtrap: shard must be K/N with 1 <= K <= N"
   | Some _ | None -> ());
-  let started = Clock.counter () in
+  let started = Os.counter () in
   let cases = Test_tree.flatten tests in
   let total = List.length cases in
   let paths =
@@ -1515,7 +1516,7 @@ let execute_plan ?(on_event = fun _ -> ())
     selected;
     total;
     focus_active;
-    duration = Clock.count_s started;
+    duration = Os.count_s started;
     exit_code;
   }
 

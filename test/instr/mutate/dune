@@ -1,0 +1,13 @@
+; The mutation runtime as a windtrap suite; arm_child stands in for an
+; instrumented executable. See doc/dev/testing.md, "The five families".
+
+(executable
+ (name arm_child)
+ (modules arm_child)
+ (libraries windtrap_runtime))
+
+(test
+ (name test_mutate)
+ (modules test_mutate)
+ (libraries windtrap windtrap_runtime unix)
+ (deps arm_child.exe))

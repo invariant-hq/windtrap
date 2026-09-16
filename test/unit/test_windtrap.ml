@@ -15,6 +15,7 @@
 
 open Windtrap
 open Windtrap.Private
+module Tag = Test_tree.Tag
 open Harness
 
 let () = init "facade"
@@ -100,7 +101,7 @@ let () =
    failure as a result row the moment it happens — the one recorded list
    every sink (renderer, JUnit) projects. The one test passes, so a runner
    that dropped the row would print a clean transcript and count zero JUnit
-   failures while still exiting 1: exactly the defect (Law 8). *)
+   failures while still exiting 1: exactly the defect (guarantee 4). *)
 let leaky_release =
   fixture ~teardown:(fun () -> failwith "release-boom") (fun () -> ())
 
@@ -413,7 +414,7 @@ let () =
   check "skip is not a failure"
     (outcome_of outcome [ "skipped" ] = Some (Failure.Skip (Some "not today")))
 
-(* A nonempty selection whose every test skipped exits 0 (Law 11). *)
+(* A nonempty selection whose every test skipped exits 0 (guarantee 9). *)
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in

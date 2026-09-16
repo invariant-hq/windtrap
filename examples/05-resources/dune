@@ -1,8 +1,0 @@
-; Resources: bracket scopes a resource to one test, scoped takes a
-; callback-shaped one whole, fixture shares one across the run and the
-; runner releases it at the end; a group's ~timeout is its tests' default.
-
-(test
- (name test_storage)
- (modules test_storage db server)
- (libraries windtrap))

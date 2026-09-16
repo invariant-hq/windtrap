@@ -1,0 +1,10 @@
+; The generated code must compile under -w +a -warn-error +a: the
+; regression is the build. See doc/dev/testing.md, "The five families".
+
+(library
+ (name windtrap_test_ppx_strict)
+ (inline_tests)
+ (flags
+  (:standard -w +a -warn-error +a))
+ (preprocess
+  (pps ppx_windtrap)))

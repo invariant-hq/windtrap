@@ -1,0 +1,31 @@
+; The fork loop driven through a real spawned process: subject is
+; instrumented unconditionally so its mutants exist in a plain runtest
+; build, and plain_main links no instrumented module so the seam must
+; decline by name. See doc/dev/testing.md, "The five families".
+
+(library
+ (name mutate_loop_subject)
+ (modules subject)
+ (preprocess
+  (pps ppx_windtrap.mutate)))
+
+(executable
+ (name suite_main)
+ (modules suite_main)
+ (libraries windtrap windtrap_runtime mutate_loop_subject unix))
+
+(executable
+ (name plain_main)
+ (modules plain_main)
+ (libraries windtrap))
+
+(test
+ (name test_mutate_loop)
+ (modules test_mutate_loop)
+ (libraries windtrap windtrap_runtime unix)
+ (deps
+  suite_main.exe
+  plain_main.exe
+  inline/runner_main.exe
+  inline/inline_armed.ml
+  runaway/runaway_main.exe))

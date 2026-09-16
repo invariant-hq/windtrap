@@ -1,0 +1,33 @@
+; The coverage walkthrough (doc/manual/coverage.md): one inert stanza
+; on the library under test, committed once — this plain `dune runtest`
+; runs uninstrumented, with zero overhead and no coverage output. Two
+; commands, the instrumented run and the merge:
+;
+;   dune runtest --force --instrument-with ppx_windtrap.coverage
+;   dune exec windtrap -- coverage --min 80      (-u for the excerpts)
+;
+; Three test executables share the library, and each dump is that
+; executable's view of the code it links (README.md): test_calc leaves
+; calc.ml's Sub and Mul arms deliberately untested, so the merge has
+; arms to report; test_a and test_b split half_a.ml and half_b.ml.
+
+(library
+ (name windtrap_example_coverage)
+ (modules calc half_a half_b)
+ (instrumentation
+  (backend ppx_windtrap.coverage)))
+
+(test
+ (name test_calc)
+ (modules test_calc)
+ (libraries windtrap windtrap_example_coverage))
+
+(test
+ (name test_a)
+ (modules test_a)
+ (libraries windtrap windtrap_example_coverage))
+
+(test
+ (name test_b)
+ (modules test_b)
+ (libraries windtrap windtrap_example_coverage))

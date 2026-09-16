@@ -1,0 +1,36 @@
+; An expect body that fails an assertion and leaves a stale payload must
+; exit 1 and record no correction. See doc/dev/testing.md, "The five
+; families".
+
+(executable
+ (name masked_failure_runner)
+ (modules masked_failure_runner inline_masked_failure)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit)
+ (deps inline_masked_failure.ml)
+ (action
+  (run
+   %{dep:../drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   runner
+   %{dep:masked_failure_runner.exe}
+   inline-test-runner
+   masked_failure)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))

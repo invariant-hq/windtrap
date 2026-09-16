@@ -6,9 +6,8 @@
 (** Text utilities: newline canonicalization, UTF-8-aware truncation, ANSI
     stripping, substring search.
 
-    All functions are pure and total. Truncation respects UTF-8 sequence
-    boundaries so a multi-byte character is never split; it makes no
-    grapheme-cluster or display-width claims. *)
+    All functions are pure and total. Truncation never splits a UTF-8 sequence
+    and makes no grapheme-cluster or display-width claims. *)
 
 (** {1:newlines Newlines} *)
 
@@ -35,43 +34,35 @@ val length_utf8 : string -> int
 
 val truncate_utf8 : int -> string -> string
 (** [truncate_utf8 n s] is [s] when [s] holds at most [n] code points; otherwise
-    it is the first [n - 3] code points of [s] followed by ["..."].
-
-    The result never exceeds [n] code points — the ellipsis is inside the bound,
-    not added to it — so a caller sizing a line to the terminal gets a line that
-    fits. For [n <= 3] a too-long [s] truncates to the first [n] characters of
-    ["..."]. Never splits a UTF-8 sequence. *)
+    the first [n - 3] code points of [s] followed by ["..."], so the result
+    never exceeds [n] code points. For [n <= 3] a too-long [s] truncates to the
+    first [n] characters of ["..."]. *)
 
 val truncate_bytes_utf8 : int -> string -> string
 (** [truncate_bytes_utf8 n s] is [s] when it is at most [n] bytes long;
-    otherwise it is the longest prefix of [s] of at most [n] bytes that ends on
-    a code-point boundary, followed by an explicit truncation marker stating the
-    original byte count. It is ["<truncated>"] when [n <= 0]. The marker makes
-    the result longer than [n] bytes; callers bounding storage should budget for
-    it. *)
+    otherwise the longest prefix of [s] of at most [n] bytes ending on a
+    code-point boundary, followed by a truncation marker stating the original
+    byte count, which makes the result longer than [n] bytes. It is
+    ["<truncated>"] when [n <= 0]. *)
 
 (** {1:search Search} *)
 
 val first_occurrence : ?start:int -> pattern:string -> string -> int option
 (** [first_occurrence ~pattern s] is the byte offset of the first occurrence of
-    [pattern] in [s] as a byte substring at or after [start] (defaults to [0]),
-    and [None] when [pattern] does not occur there. An empty [pattern] occurs at
-    [start].
+    [pattern] in [s] at or after [start] (default [0]), or [None]. An empty
+    [pattern] occurs at [start].
 
-    Raises [Invalid_argument] if [start] is negative or past the end of [s]. A
-    [start] equal to [String.length s] is in range and searches nothing. *)
+    Raises [Invalid_argument] if [start] is negative or past the end of [s];
+    [String.length s] is in range and searches nothing. *)
 
 val contains_substring : pattern:string -> string -> bool
 (** [contains_substring ~pattern s] is [true] iff [s] contains [pattern] as a
-    byte substring, i.e. iff {!first_occurrence} finds an occurrence. An empty
-    [pattern] always matches. *)
+    byte substring. An empty [pattern] always matches. *)
 
 (** {1:ansi ANSI escapes} *)
 
 val strip_ansi : string -> string
 (** [strip_ansi s] is [s] with ANSI escape sequences removed: CSI sequences (ESC
-    and an opening bracket, up to and including the final byte), OSC sequences
-    (ESC and a closing bracket, up to BEL or the ESC-backslash terminator), and
-    other two-byte ESC escapes. A truncated sequence at the end of [s] is
-    dropped. Used by renderers whose transport forbids escape codes (e.g. JUnit
-    XML). *)
+    [ up to and including the final byte), OSC sequences (ESC ] up to BEL or
+    ESC-backslash), and other two-byte ESC escapes. A truncated sequence at the
+    end of [s] is dropped. *)

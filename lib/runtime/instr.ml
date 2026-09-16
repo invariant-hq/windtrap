@@ -46,7 +46,7 @@ let absolute path =
    one behind, and the report calls them stale for the rest of the
    build directory's life.
 
-   Lexical, like [Path_ops.display]: these are paths under [_build],
+   Lexical, like [Os.display_path]: these are paths under [_build],
    which dune builds out of plain directories, so no [..] can mean
    something a symlink redefined. The first component is the root ("" for
    "/x", "C:" for "C:/x") and is never touched. *)
@@ -62,7 +62,7 @@ let canonical path =
       in
       String.concat "/" (first :: List.rev (List.fold_left step [] rest))
 
-(* The one build-directory rule, the core's ([Path_ops.build_dir_of_path])
+(* The one build-directory rule, the core's ([Os.build_dir_of_path])
    restated here because this library links no core: a component whose
    name starts with [_build] - dune's default and any private
    [--build-dir] alike. [Some (build_dir, below)] when [path] has one -

@@ -1,79 +1,52 @@
 (*--------------------------------------------------------------------------
   Copyright (c) 2026 Invariant Systems. All rights reserved.
   SPDX-License-Identifier: ISC
-
-  The case loop structure and label bookkeeping derive from windtrap v1's
-  prop/prop.ml, rebuilt over Seed (per-case derivation), Gen (integrated
-  shrinking), and Failure (typed counterexamples).
   --------------------------------------------------------------------------*)
 
 (** The property engine: run one property over a generator.
 
-    {!run} drives a single property: explicit examples first, then generated
-    cases under per-case derived seeds, with discard bookkeeping, greedy
-    integrated shrinking, and per-case label accumulation. It returns a typed
-    {!outcome} — a counterexample is a {!Failure.t} with a
-    [Failure.kind.Property] payload — which the runner classifies and renderers
-    project.
-
-    {b Determinism.} The engine performs no random operation of its own. Case
-    [index] of the test named [path] generates from
-    [Seed.derive ~root ~path ~index], so an outcome is a pure function of
+    {!run} checks a body over explicit examples, then over generated cases under
+    per-case derived seeds, with discard bookkeeping, greedy integrated
+    shrinking and label accumulation, and returns a typed {!outcome}. The engine
+    draws no randomness of its own: case [index] of the test at [path] generates
+    from [Seed.derive ~root ~path ~index], so an outcome is a pure function of
     {!run}'s arguments whenever the generator's callbacks and the body are pure
-    — suite composition never perturbs a property's stream, and a recorded root
-    token replays every failure.
+    (guarantee 7).
 
-    {b Bodies.} A body is [unit]-returning and uses the ordinary assertion
-    vocabulary; raising [Failure.Check_failure] fails the case, as does any
-    other exception. The control exception [Failure.Skip_test] is re-raised
-    unchanged, skipping the whole test; a shrink candidate that raises it is
-    instead a rejected candidate — a candidate skip never turns a recorded
-    failure into a skip (see {!run}, Shrinking). [Failure.Timeout] is re-raised
-    unchanged only while the engine is still searching for a counterexample
-    (examples, generation, a case's first body run), timing out the whole test;
-    once a generated case has failed, a [Failure.Timeout] ends the shrink search
-    instead, and the failure in hand is reported with its [timed_out] mark (see
-    {!run}, Shrinking). The shrink search re-runs the body on candidate inputs,
-    so bodies must be deterministic and repeatable.
-
-    The labelling {!context} is explicit here: {!run} passes it to the body, and
-    {!collect}, {!classify}, and {!cover} take it as their first argument.
-    Nothing in this module is global. *)
+    A body returns [()] to pass and raises to fail; [Failure.Skip_test] skips
+    the whole test, and a [Failure.Timeout] raised while a counterexample is
+    still being searched for times it out. The shrink search re-runs the body on
+    candidate inputs, so bodies must be deterministic. Nothing in this module is
+    global: labels go through the {!context} {!run} passes to the body. *)
 
 (** {1:discarding Discarding} *)
 
 exception Discard
 (** Raised inside a property body to discard the current case; the engine counts
-    it and moves to the next case. Prefer {!assume} and {!reject} to raising
-    directly. Generation-time discards use [Gen.Private.Rejected] instead; the
-    engine counts both kinds together. *)
+    it and moves on. Prefer {!assume} and {!reject}. Generation-time discards
+    raise [Gen.Private.Rejected] instead; both count together. *)
 
 val assume : bool -> unit
-(** [assume cond] is [()] if [cond] and raises {!Discard} otherwise. Discarding
-    is for rare, cheap preconditions: heavy discarding exhausts the discard
-    budget and the property {e gives up} (see {!run}). When the precondition is
-    structural, constrain the generator instead. *)
+(** [assume cond] is [()] if [cond] and raises {!Discard} otherwise. For rare,
+    cheap preconditions: heavy discarding exhausts the discard budget and the
+    property gives up (see {!run}). *)
 
 val reject : unit -> 'a
-(** [reject ()] raises {!Discard}, unconditionally discarding the current case.
-*)
+(** [reject ()] raises {!Discard}. *)
 
 (** {1:labelling Labelling}
 
-    Labels report the distribution of generated inputs; a {!cover} label turns
-    "this region was reached" into a failure when it was not. Per-case marks
-    accumulate in the engine's {!context} and commit when the case {e passes}:
+    Per-case marks accumulate in the {!context} and commit when the case passes;
     discarded and failing cases contribute nothing, and shrink re-runs
     accumulate into a scratch context that is thrown away. *)
 
 type context
-(** The type for one {!run}'s label accumulator. Created by {!run} for each
-    invocation and passed to the body; it is invalid outside that run. *)
+(** The type for one {!run}'s label accumulator, passed to the body and invalid
+    outside that run. *)
 
 val collect : context -> string -> unit
-(** [collect ctx label] marks [label] for the current case. Each committed case
-    counts a label at most once, however many times it was collected; the
-    distribution is reported in {!stats.collected}. *)
+(** [collect ctx label] marks [label] for the current case. A committed case
+    counts a label at most once; the distribution is {!stats.collected}. *)
 
 val classify : context -> string -> bool -> unit
 (** [classify ctx label cond] is [collect ctx label] when [cond] and [()]
@@ -81,18 +54,10 @@ val classify : context -> string -> bool -> unit
 
 val cover : context -> string -> bool -> unit
 (** [cover ctx label cond] is {!classify}[ ctx label cond] plus the demand that
-    [label] be marked by {e at least one} passing case. The demand registers
-    even when [cond] is false — a label that never hits still reports — and is
-    answered once, at the end of a run that completes its case count: an
-    unmarked label makes the outcome {!Coverage_failed}.
-
-    {b The demand registers on the first call, not at declaration}, so a [cover]
-    the run never reaches registers nothing and cannot fail: an empty
-    requirement table is a satisfied one. For a plain property the body always
-    runs and the distinction is invisible, but a [cover] guarding
-    {e "this code path is reached at all"} must sit somewhere that executes
-    unconditionally — placing it inside the branch it is meant to police makes
-    it vacuous exactly when it should fire. *)
+    [label] be marked by at least one passing case. The demand registers on the
+    first call, whether or not [cond] holds, and is judged at the end of a run
+    that completes its case count: an unmarked label makes the outcome
+    {!Coverage_failed}. A [cover] the run never reaches registers nothing. *)
 
 (** {1:outcomes Outcomes} *)
 
@@ -105,35 +70,32 @@ type cover_status = {
 
 type stats = {
   cases : int;
-      (** Cases that ran the body to completion and passed — committed examples
+      (** Cases that ran the body to completion and passed, committed examples
           included. *)
   discards : int;
-      (** Discarded cases: {!Discard} from the body plus [Gen.Private.Rejected]
-          at generation time, examples included. *)
+      (** Discarded cases, from the body and from generation, examples included.
+      *)
   collected : (string * int) list;
-      (** The label distribution over passing cases, sorted by label. A {!cover}
-          label's marks appear here too — it marks through {!classify}. *)
+      (** The label distribution over passing cases, sorted by label; {!cover}
+          labels mark here too. *)
   coverage : cover_status list;
       (** One entry per {!cover} label, sorted by label. *)
 }
-(** The type for a run's bookkeeping tables. Every outcome carries the tables as
-    of the moment it was decided; [coverage] is judged only on the
-    {!Pass}/{!Coverage_failed} boundary. *)
+(** The type for a run's bookkeeping, as of the moment the outcome was decided;
+    [coverage] is judged only on the {!Pass}/{!Coverage_failed} boundary. *)
 
-(** The type for engine results, consumed by the runner. *)
+(** The type for engine results. *)
 type outcome =
   | Pass of stats  (** Every case passed and every {!cover} label was hit. *)
   | Fail of { failure : Failure.t; stats : stats }
       (** A case failed. [failure] carries a [Failure.kind.Property] payload:
           the rendered (shrunk) counterexample, the failing case index, the
           shrink step count, the root seed, whether the case was an explicit
-          example, and the inner failure — the body's own [Check_failure]
-          payload when it raised one, or a [Failure.kind.Raise] payload (no
-          expected side) rendering the uncaught exception and its backtrace
-          otherwise. *)
+          example, and the inner failure: the body's own [Check_failure]
+          payload, or a [Failure.kind.Raise] payload rendering an uncaught
+          exception and its backtrace. *)
   | Coverage_failed of stats
-      (** The full case count passed but at least one [coverage] entry is
-          unsatisfied. *)
+      (** The full case count passed but a [coverage] entry is unsatisfied. *)
   | Gave_up of stats
       (** More than [max_discard] cases were discarded before the case count was
           reached. *)
@@ -142,12 +104,8 @@ type outcome =
 
 val shrink_budget : int
 (** [shrink_budget] is the accepted steps a shrink search may take, [10_000].
-    Fixed rather than configured, so a replay under the same root descends the
-    same path to the same node and prints the same counterexample. Sized so no
-    ordinary value spends it — an integer shrinks by halving jumps, at most one
-    accepted step per bit, so a quad of [int64] converges within 256 — and a
-    search that does spend it is reported as stopped ([shrink_exhausted]), not
-    minimal. The per-test timeout bounds a search that must not run away. *)
+    Fixed, so a replay under the same root reaches the same node; a search that
+    spends it is reported as stopped ([shrink_exhausted]), not minimal. *)
 
 val run :
   ?loc:Loc.t ->
@@ -159,63 +117,40 @@ val run :
   'a Gen.t ->
   (context -> 'a -> unit) ->
   outcome
-(** [run ~root ~path gen body] checks [body] over [gen] and returns the
-    {!outcome}. [path] is the test's path in the suite; [root] is the run's root
-    seed. [loc] is the property's declaration site, stamped on the failure when
-    one is produced.
+(** [run ~root ~path gen body] checks [body] over [gen] and is the {!outcome}.
+    [path] is the test's path in the suite, [root] the run's root seed, [loc]
+    the property's declaration site, stamped on a failure. [count] is the number
+    of generated cases and where it came from: a [`Config n] count is restated
+    in the failure's replay line, a [`Declared n] count replays by itself.
+    Defaults: [count] is [100], [max_discard] is [2 * count] (clamped to
+    [max_int]), [examples] is [[]].
 
-    [count] is the number of generated cases and where it came from: a
-    [`Config n] count is restated in the failure's replay line, a [`Declared n]
-    count replays by itself. Defaults: [count] is [100], [max_discard] is
-    [2 * count] (clamped to [max_int]), [examples] is [[]].
+    {b Examples} run first, unshrunk, numbered from zero separately from
+    generated cases; a failing example has [shrink_steps = 0], [examples = true]
+    and [rendered] the value through the generator's printer (the placeholder
+    when it has none). Examples consume no seeds; passing ones commit their
+    labels and count in {!stats.cases}, discarding ones in {!stats.discards}.
 
-    {b Examples first.} The [examples] values run before any generation,
-    unshrunk (they are already the reviewed minimal form), and are numbered
-    separately from generated cases. A failing example fails fast with
-    [shrink_steps = 0], [examples = true], [case_index] its zero-based position
-    in [examples], and [rendered] the value through the generator's printer —
-    [Gen.Private.render_value], so a printerless generator renders the
-    placeholder. Examples consume no seeds and are never recorded for replay;
-    passing examples commit their labels and count in {!stats.cases} — the
-    coverage denominator includes them — and a discarding example counts in
-    {!stats.discards}.
+    {b Generated case} [index], zero-based and counting discarded attempts,
+    samples [gen] from [Seed.make (Seed.derive ~root ~path ~index)]. The run
+    succeeds when [count] generated cases pass and gives up when more than
+    [max_discard] cases have been discarded, examples included; the budget is
+    checked before the case-count goal. A generator raising
+    [Gen.Private.Rejected] discards the attempt; one raising anything else fails
+    the case with [<generator raised before producing a value>] as the
+    counterexample and the exception as the inner failure.
 
-    {b Generated cases.} Case [index] — zero-based, counting every generation
-    attempt, discarded attempts included, so that each attempt draws fresh
-    values — samples [gen] from [Seed.make (Seed.derive ~root ~path ~index)].
-    The run succeeds when [count] generated cases pass; it {e gives up} when
-    more than [max_discard] cases have been discarded — body discards and
-    generation-time rejections together, discarding [examples] included — so
-    [max_discard] of [0] gives up on the first discard. The budget is checked
-    before the case-count goal: a run whose examples alone exceed it gives up
-    even when [count] is [0]. A generator that raises [Gen.Private.Rejected] (a
-    [such_that] budget exhausted) discards the attempt; a generator that raises
-    anything else fails the case with
-    [<generator raised before producing a value>] as the rendered counterexample
-    and the exception as the inner failure.
-
-    {b Shrinking.} On a failing generated case the engine descends the sample's
-    shrink tree greedily: at each node it re-runs the body on the candidates in
-    order and moves to the first candidate that fails {e in the same way} — a
-    case that failed by [Check_failure] accepts candidates failing by any
-    [Check_failure], and a case that failed by any other exception accepts
-    candidates failing by any non-assertion exception (v1 semantics: the failure
-    need not be equal, only of the same kind). Passing, discarded, and skipping
+    {b Shrinking} descends the failing sample's tree greedily: at each node the
+    body re-runs on the candidates in order and the search moves to the first
+    one that fails in the same way, a [Check_failure] for a [Check_failure] and
+    any other exception for any other. Passing, discarded and skipping
     candidates are rejected. Descent stops at a node with no accepted candidate,
-    after {!shrink_budget} accepted steps, or when forcing a candidate raises. A
-    [Failure.Timeout] raised anywhere in the search — a candidate's body, a
-    candidate's forcing, or the search's own bookkeeping — also stops it, at the
-    last accepted node: the counterexample in hand is reported rather than
-    discarded, and the failure's [timed_out] field carries the limit, marking
-    the counterexample as possibly not minimal. The reported counterexample,
-    inner failure, and [shrink_steps] describe the final node. [case_index]
-    stays the original failing index: replaying the root reproduces the case and
-    the search re-derives the same descent path — a timeout moves only the
-    stopping point along that path, so a replay reports an equally or further
-    shrunk value from the same descent, never a different case.
+    after {!shrink_budget} accepted steps, when forcing a candidate raises, or
+    on a [Failure.Timeout] anywhere in the search, which reports the node in
+    hand with the failure's [timed_out] field set. The reported counterexample,
+    inner failure and [shrink_steps] describe the final node; [case_index] stays
+    the original failing index, so a replay re-derives the same descent.
 
-    Raises [Invalid_argument] if [count] or [max_discard] is negative — inside
-    the running test's boundary, since [run] executes there. Re-raises
-    [Failure.Skip_test] from the body unchanged, and [Failure.Timeout] from
-    everywhere except the shrink search, where it ends the search and marks the
-    reported failure instead (see Shrinking). *)
+    Raises [Invalid_argument] if [count] or [max_discard] is negative, inside
+    the running test's boundary. Re-raises [Failure.Skip_test] from the body
+    unchanged, and [Failure.Timeout] from everywhere but the shrink search. *)

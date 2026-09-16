@@ -99,13 +99,21 @@ inventory. The ones that matter daily:
 | `--mutate[=PREFIX,…]` | `WINDTRAP_MUTATE` | run the mutation survey, every mutant or those under a prefix (`1` in the mirror is the bare flag; see [Mutation testing](mutation.md)) |
 | `--arm ID` | `WINDTRAP_MUTATE_ARM` | run once with mutant `ID` armed |
 
-Precedence is CLI > environment > default.
+Precedence is CLI > environment > default. A mirror is read through its
+flag's own parser, so a value the flag would reject is a usage error
+naming the variable, never a silent default — a misread `WINDTRAP_SHARD`
+would rerun the whole suite in every bucket, and a misread count or
+limit would run with the default — and a mirror whose flag the command
+line already decided is not parsed at all, so a valid `--timeout`
+shadows a malformed `WINDTRAP_TIMEOUT`. The rule is mechanical, which
+is why `--help` describes the mirrors in one sentence rather than one
+row each.
 A test's path is its group names then its own, joined with `" › "`;
 `-f`/`-e` match that string as a substring.
 
-Two variables have no flag at all — the project root and the coverage
-dump's path. `--help` lists them under `ENVIRONMENT`; one is worth
-knowing here.
+Two `WINDTRAP_*` variables have no flag at all — the project root and
+the coverage dump's path — and `NO_COLOR` is honoured. `--help` lists
+the three under `ENVIRONMENT`; one is worth knowing here.
 
 `WINDTRAP_PROJECT_ROOT` overrides where the runner thinks the project
 starts: the directory baseline paths resolve under. Unset, the root is
@@ -185,7 +193,10 @@ group) — they are exempt everywhere, and `--exclude-tag slow` skips
 them entirely. `--slow-threshold SECONDS` (`WINDTRAP_SLOW_THRESHOLD`)
 moves the bar; `0` disables the warnings, so the header then comes out
 on failures and flaky tests only. The slowest-tests list — diagnosis
-rather than signal — prints under `-v` only.
+rather than signal — prints under `-v` only. A slow test that also
+failed keeps its failure block and earns the one warning besides; a
+skipped test never counts as slow, because its duration is not run
+time.
 
 Where the bar sits is a per-suite decision. Tests that do real IO —
 spawning subprocesses, driving a PTY, exercising a server end to
@@ -248,6 +259,46 @@ Under GitHub Actions the same transcript sits inside a collapsed
 `::group::` block, with failures also emitted as annotations (see
 [CI](#ci) below).
 
+### Failure blocks
+
+Every block opens with the test's path and its location, then says what
+failed in the shape of the verb that failed:
+
+- **Equality** prints `expected` and `actual` with the changed spans
+  highlighted — a `~~~` line under each marked side without colour — or,
+  for renderings that span lines, a unified diff. When the marks would
+  cover half a side or more, the two values print whole (coloured, or
+  plain and labelled), because such marks only draw the eye to
+  coincidental alignments; byte-equal renderings, or a difference that
+  is only a trailing newline, are stated in words. `not_equal` prints
+  the value once (`both sides equal: <v>`).
+- **Predicates** — `satisfies`, the `require_*` and shape verbs — print
+  the claim and the value under the same labels, never diffed.
+- **Raises** with a message diff diffs the messages instead of repeating
+  the constructor; with no expected side the line reads `raised
+  exception does not satisfy the predicate:` for `raises_match` and
+  `uncaught exception:` otherwise.
+- **Properties** print the counterexample (a pre-image marked `from`
+  and explained once), one line when the shrink did not converge, and
+  the inner failure under `which failed at:` (`which failed with:` when
+  it has no location); the replay line prints only for seeded cases and
+  restates `--prop-count N` (`WINDTRAP_PROP_COUNT=N` under dune) when
+  the count came from configuration.
+- **`fail ""`** prints `(empty failure message)`.
+
+Compared data is escaped on a terminal exactly as in a pipe: C0 bytes
+and DEL print as `\xNN` under colour as much as without, since a
+terminal is precisely where a payload-borne `ESC` would stop being
+data. The escape is a projection — equality, containment and baseline
+storage never see it — and it is not injective.
+
+The `(assertion in tail position …)` hint under a declaration-line
+location ([Assertions](assertions.md)) is suppressed where the
+declaration is the location by construction: a property failure (the
+assertion's own site rides on the inner failure), an uncaught exception
+(raised by no verb; its backtrace names the line), and `expect_file`
+(it takes no position, and its subject line names the file).
+
 ## The feedback loop
 
 The summary is the last line of a failing run — no run advertises a
@@ -301,6 +352,14 @@ operation whose meaning requires captured bytes: under `--stream` it
 fails the calling test with an explicit message instead of comparing
 against silence.
 
+Subprocesses a test spawns inherit the redirected descriptors and
+nothing else: the capture log's descriptor and the saved originals of
+standard output and error are close-on-exec, so a child writes into the
+same log, and a child that outlives the run cannot hold a piped reader
+open past the summary. Every drain also flushes C stdio, so output a C
+stub prints without an explicit flush is attributed to the next
+consumption point — the next `output ()`, or the end of the attempt.
+
 ## Sharding
 
 `--shard K/N` deterministically partitions the selected tests into `N`
@@ -332,11 +391,24 @@ override: remove the `focus`, and accept baselines under CI through a
 
   and point ingestion at `_build/junit/*.xml`. Inline (`ppx_windtrap`)
   partitions write their reports there too — the mirror is the only
-  spelling that reaches them, since the inline protocol has no CLI.
+  spelling that reaches them, since the inline protocol has no CLI. A
+  partition's suite is named `<lib>/<partition>` (`mylib/parser.ml`),
+  so its file is `<dir>/<lib>_<partition>-<digest>.xml` — the name made
+  filename-safe, the digest because the `/` was rewritten — and a glob
+  over `<dir>/*.xml` still collects every report; its capture log
+  directory and last-failed store are keyed the same way, so concurrent
+  partitions of one library never overwrite each other's. JUnit has no
+  expected-failure state, so an `xfail` failure is a `skipped` testcase
+  carrying `expected failure: <reason>`, its failures not emitted,
+  matching the run that did not fail it; a `subtest` entry is its own
+  testcase, named `parent › name: <msg>` and timed `0.000`, because
+  sub-cases are not timed.
 - **GitHub Actions**: under GitHub Actions (`CI` and `GITHUB_ACTIONS`
   both set, as Actions sets them), failures are additionally emitted
   as workflow annotations — they appear inline on the PR diff with no
-  configuration.
+  configuration. An excused expected failure gets none: an `::error` on
+  a PR demands action and an `xfail` demands none. The annotations are
+  emitted after `::endgroup::`, so they are never folded away.
 - **Color**: on by default on a terminal and under dune, off when
   `TERM=dumb` or `NO_COLOR` is set to anything;
   `--color always|never|auto` (`WINDTRAP_COLOR`) overrides either way.

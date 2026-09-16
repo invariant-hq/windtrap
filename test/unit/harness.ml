@@ -14,7 +14,7 @@
 (* Every line printed carries the suite name (set by [init]): the meta
    suites interleave with the windtrap suites under `dune runtest`, and
    an unattributed line is undebuggable there. Styling and the duration
-   format come from windtrap's own machinery (Pp, Env, Report through
+   format come from windtrap's own machinery (Pp, Os, Report through
    the facade's Private) — one output dialect tree-wide, never a second
    implementation of it. *)
 let suite = ref ""
@@ -25,14 +25,14 @@ let count = ref 0
 (* The ANSI decision, captured by [init] before it clears the
    environment — the same resolution the windtrap suites make
    (WINDTRAP_COLOR, terminal status, INSIDE_DUNE). Composed here, from
-   [Env.resolve_color] and the three inputs, exactly as [Report.terminal]
+   [Os.resolve_color] and the three inputs, exactly as [Report.terminal]
    composes it: nothing in windtrap resolves colour for a sink it did not
    name, and a harness that took a shortcut would be the one place where
    the decision could drift from the renderer's. *)
 let ansi = ref false
 
 let resolve_ansi () =
-  let module Env = Windtrap.Private.Env in
+  let module Os = Windtrap.Private.Os in
   let module Cli = Windtrap.Private.Cli in
   (* WINDTRAP_COLOR is read as the runner reads it — through [--color]'s
      parser — so a bad value is refused here as it is everywhere. *)
@@ -43,8 +43,8 @@ let resolve_ansi () =
         prerr_endline ("harness: " ^ Cli.error_message error);
         exit 2
   in
-  Env.resolve_color mode ~tty:(Env.is_tty_stdout ())
-    ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
+  Os.resolve_color mode ~tty:(Os.is_tty_stdout ())
+    ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
 
 (* The check lines' FAIL tag, ansi-explicit (like [summary_line]) so
    test_report's dialect test can pin its bytes against the renderer's

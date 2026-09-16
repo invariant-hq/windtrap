@@ -1,0 +1,12 @@
+tail_loc: 1 test
+──────────────────── failures (1) ────────────────────
+  FAIL  Inline_tail_loc › tail assertion
+    test/cli/inline_runner/tail_loc/inline_tail_loc.ml:3
+    (assertion in tail position: its line is unknown; ~__POS__ names it)
+      3 │ let%test "tail assertion" = equal int 1 2
+
+    expected  1
+    actual    2
+──────────────────────────────────────────────────────
+
+1 failed in <duration>s.

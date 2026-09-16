@@ -1,0 +1,36 @@
+; A fixture release that raises after the last test is reported as a
+; failure row, not only counted in the exit code. See doc/dev/testing.md,
+; "The five families".
+
+(executable
+ (name release_failure_runner)
+ (modules release_failure_runner inline_release_failure)
+ (libraries windtrap ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit)
+ (deps inline_release_failure.ml)
+ (action
+  (run
+   %{dep:../drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   runner
+   %{dep:release_failure_runner.exe}
+   inline-test-runner
+   release_failure)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))

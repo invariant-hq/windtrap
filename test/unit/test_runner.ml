@@ -1259,7 +1259,7 @@ let () =
     (outcome.Run.exit_code = 1 && failed_paths outcome = [ "failing-scratch" ])
 
 let () =
-  (* Scratch removal on the boundary's worst paths (amendment B9, Law 8):
+  (* Scratch removal on the boundary's worst paths (guarantee 8):
      scratch created in the body and in a raising teardown of the very test
      that trips -x is still removed. *)
   with_temp_root @@ fun root ->
@@ -1328,10 +1328,10 @@ let () =
   let config = base_config ~log_dir:root () in
   (* Four shapes of prior state: never bound, bound, bound and rebound by
      the test itself, and bound then unbound by the test. *)
-  Env.set unset_var None;
-  Env.set bound_var (Some "before");
-  Env.set twice_var (Some "before");
-  Env.set drop_var (Some "before");
+  Os.setenv unset_var None;
+  Os.setenv bound_var (Some "before");
+  Os.setenv twice_var (Some "before");
+  Os.setenv drop_var (Some "before");
   let seen = ref [] in
   let note name = seen := (name, Sys.getenv_opt name) :: !seen in
   let tests =
@@ -1366,7 +1366,7 @@ let () =
     (Sys.getenv_opt drop_var = Some "before")
 
 let () =
-  (* A rejected name records nothing: [Env.set] validates before the restore
+  (* A rejected name records nothing: [Os.setenv] validates before the restore
      entry is made, so the documented [Invalid_argument] is the whole story —
      no entry survives to replay the same rejection at the boundary as a
      restoration failure about a change that never happened. *)
@@ -1393,7 +1393,7 @@ let () =
   if not Sys.win32 then (
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
-    Env.set bound_var (Some "before");
+    Os.setenv bound_var (Some "before");
     let after = ref [] in
     let tests =
       [
@@ -1418,7 +1418,7 @@ let () =
       (failed_paths outcome = [ "fails"; "times out" ]);
     check "the binding is restored after failure, skip, and timeout alike"
       (!after = [ Some "before"; Some "before"; Some "before" ]);
-    Env.set bound_var None)
+    Os.setenv bound_var None)
 
 (* A directory that no longer exists is exactly the state a missing
    restoration leaves behind, so reading the working directory must not
@@ -1761,7 +1761,7 @@ let () =
 
 let () =
   (* A raising [on_event] observer aborts the run, but acquired fixtures
-     still release (RFC Law 8). *)
+     still release (guarantee 8). *)
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
   let released = ref false in
@@ -2054,7 +2054,7 @@ let () =
 (* Corrections
 
    The registry the runner builds resolves paths under
-   [Path_ops.project_root], so a throwaway root goes in
+   [Os.project_root], so a throwaway root goes in
    WINDTRAP_PROJECT_ROOT. The runner's own directory is dune's build tree
    of another root, so nothing here is a build action: corrections land
    beside the files themselves. *)

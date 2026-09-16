@@ -15,7 +15,7 @@
 open Harness
 module Ppx_runtime = Ppx_windtrap_runtime.Ppx_runtime
 module Test_tree = Windtrap.Private.Test_tree
-module Tag = Windtrap.Private.Tag
+module Tag = Windtrap.Private.Test_tree.Tag
 
 let pos file = (file, 1, 0, 0)
 
@@ -240,7 +240,7 @@ let () =
       check "the capture logs are keyed by the partition's suite name"
         (Sys.file_exists
            (Filename.concat log_dir
-              (Windtrap.Private.Path_ops.sanitize_component "lib/a.ml"))))
+              (Windtrap.Private.Os.sanitize_component "lib/a.ml"))))
 
 let () =
   with_temp_root (fun root ->

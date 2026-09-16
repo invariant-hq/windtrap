@@ -27,18 +27,15 @@ module Gen = Gen
 (* Internal modules (see [Private] in the .mli) *)
 
 module Private = struct
-  module Atomic_file = Atomic_file
   module Baseline = Baseline
   module Capture = Capture
   module Check = Check
   module Cli = Cli
-  module Clock = Clock
   module Diff = Diff
-  module Env = Env
   module Failure = Failure
   module Loc = Loc
   module Mutate_loop = Mutate_loop
-  module Path_ops = Path_ops
+  module Os = Os
   module Pp = Pp
   module Property = Property
   module Report = Report
@@ -46,10 +43,8 @@ module Private = struct
   module Report_sections = Report_sections
   module Run = Run
   module Seed = Seed
-  module Shrink_tree = Shrink_tree
   module Source_patch = Source_patch
   module Stateful = Stateful
-  module Tag = Tag
   module Test_tree = Test_tree
   module Text = Text
 end
@@ -150,17 +145,17 @@ let pass = Testable.pass
 
 (* Properties *)
 
-(* Facade [prop] tests carry [Tag.prop]: it makes properties selectable
+(* Facade [prop] tests carry [Test_tree.Tag.prop]: it makes properties selectable
    ([--tag prop]) and lets the report print the root seed in the header
    exactly when the suite declares property tests. *)
 let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
-  let tags = Tag.prop :: Option.value ~default:[] tags in
+  let tags = Test_tree.Tag.prop :: Option.value ~default:[] tags in
   Run.prop ?__POS__ ~tags ?timeout ?count ?max_discard ?examples name gen law
 
 let assume = Property.assume
 let reject = Property.reject
 
-(* [Stateful.stateful] applies [Tag.prop] itself, alongside its own
+(* [Stateful.stateful] applies [Test_tree.Tag.prop] itself, alongside its own
    ["stateful"] tag — so this is a re-export and not a wrapper like [prop]
    above. Adding the tag here again would duplicate it. *)
 
@@ -253,7 +248,7 @@ let version =
 let invocation_of ~corrected argv : Run.invocation =
   let argv0 = if Array.length argv > 0 then argv.(0) else "" in
   if argv0 = "" || corrected then `Mirrors
-  else if Env.inside_dune () then begin
+  else if Os.inside_dune () then begin
     let absolute =
       if Filename.is_relative argv0 then Filename.concat (Sys.getcwd ()) argv0
       else argv0
@@ -267,7 +262,7 @@ let invocation_of ~corrected argv : Run.invocation =
         "--instrument-with ppx_windtrap.mutate "
       else ""
     in
-    `Exe ("dune exec " ^ backend ^ Path_ops.display absolute ^ " --")
+    `Exe ("dune exec " ^ backend ^ Os.display_path absolute ^ " --")
   end
   else `Exe argv0
 
@@ -293,7 +288,7 @@ let run_suite ~suite ~config tests =
   | Mutate_loop.Ran (Ok outcome) ->
       if
         outcome.Run.focus_active && outcome.Run.exit_code = 0
-        && not (Env.in_ci ())
+        && not (Os.in_ci ())
       then
         Format.eprintf
           "warning: focus is active — %d of %d tests ran; remove the focus \

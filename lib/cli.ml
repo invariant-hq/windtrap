@@ -27,7 +27,7 @@ type parsed = {
   prop_count : int option;
   verbose : bool option;
   junit : string option;
-  color : Env.color_mode option;
+  color : Os.color_mode option;
   log_dir : string option;
   mutate : string list option;
   arm : string option;
@@ -161,7 +161,7 @@ let color_expected = "always, never or auto"
    commands' read of WINDTRAP_COLOR all go through it, so an unknown word
    is refused everywhere alike — never read as [auto]. *)
 let color_of_string ~source value =
-  match Env.color_mode_of_string value with
+  match Os.color_mode_of_string value with
   | Some mode -> Ok mode
   | None -> invalid ~source ~value ~expected:color_expected
 
@@ -430,7 +430,7 @@ let table =
                   let prefixes =
                     match value with
                     | None -> []
-                    | Some value -> Env.split_comma value
+                    | Some value -> Os.split_comma value
                   in
                   Ok { acc with mutate = Some prefixes });
             };
@@ -469,7 +469,7 @@ let table =
       };
     (* The settings no flag can set, after the flags so [--help] lists
        them where the flag rows end. Each is read where its owner
-       consumes it: WINDTRAP_PROJECT_ROOT by [Path_ops], and
+       consumes it: WINDTRAP_PROJECT_ROOT by [Os], and
        WINDTRAP_COVERAGE_FILE by the coverage runtime at exit. *)
     Env_setting
       {
@@ -659,19 +659,19 @@ let contribute acc entry mirror raw =
   let source = mirror.var in
   match (entry.arg, mirror.layering) with
   | Flag set, _ -> (
-      match Env.bool_of_string raw with
+      match Os.bool_of_string raw with
       | Some true -> Ok (set acc)
       | Some false -> Ok acc
-      | None -> invalid ~source ~value:raw ~expected:Env.bool_expected)
+      | None -> invalid ~source ~value:raw ~expected:Os.bool_expected)
   | Value { set; _ }, Single _ -> set ~source acc (String.trim raw)
   | Value { set; _ }, Repeatable ->
       List.fold_left
         (fun acc token ->
           let* acc = acc in
           set ~source acc token)
-        (Ok acc) (Env.split_comma raw)
+        (Ok acc) (Os.split_comma raw)
   | Optional_value { set; _ }, _ -> (
-      match Env.bool_of_string raw with
+      match Os.bool_of_string raw with
       | Some true -> set ~source acc None
       | Some false -> Ok acc
       | None -> set ~source acc (Some (String.trim raw)))
@@ -695,7 +695,7 @@ let layer_entries entries cli =
       match open_mirror with
       | None -> Ok acc
       | Some mirror -> (
-          match Env.get_string mirror.var with
+          match Os.getenv mirror.var with
           | Some raw -> contribute acc entry mirror raw
           | None -> Ok acc))
     (Ok cli) entries
@@ -731,9 +731,7 @@ let resolved below ~mutation =
            that chdirs sends the rest of the run's capture logs somewhere
            else, or nowhere, and the failure reports point at paths that do
            not exist. The default is already absolute. *)
-      (let dir =
-         Option.value below.log_dir ~default:(Path_ops.default_log_dir ())
-       in
+      (let dir = Option.value below.log_dir ~default:(Os.default_log_dir ()) in
        if not (Filename.is_relative dir) then dir
        else
          match Sys.getcwd () with
@@ -748,7 +746,7 @@ let resolved below ~mutation =
     verbose = below.verbose = Some true;
     junit = below.junit;
     mutation;
-    github = Env.in_github_actions ();
+    github = Os.in_github_actions ();
     (* Computed from argv by the facade, which alone holds it. *)
     invocation = `Mirrors;
   }
@@ -767,8 +765,8 @@ let mutation_of below =
    as the flag and its mirror, so the variable means one thing everywhere
    and a bad value is refused everywhere. *)
 let color_mode () =
-  match Env.get_string "WINDTRAP_COLOR" with
-  | None -> Ok Env.Auto
+  match Os.getenv "WINDTRAP_COLOR" with
+  | None -> Ok Os.Auto
   | Some value -> color_of_string ~source:"WINDTRAP_COLOR" (String.trim value)
 
 (* One invocation, one resolution pass: the environment layer is folded

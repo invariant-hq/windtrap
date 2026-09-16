@@ -11,7 +11,7 @@
   ---------------------------------------------------------------------------*)
 
 module Sections = Windtrap.Private.Report_sections
-module Env = Windtrap.Private.Env
+module Os = Windtrap.Private.Os
 module Cli = Windtrap.Private.Cli
 module Test_tree = Windtrap.Private.Test_tree
 module M = Windtrap_runtime.Mutate
@@ -275,8 +275,8 @@ let render_data ~resolve_source files =
 
 let print_report ~color report =
   let ansi =
-    Env.resolve_color color ~tty:(Env.is_tty_stdout ())
-      ~inside_dune:(Env.inside_dune ()) ~term_dumb:(Env.term_dumb ())
+    Os.resolve_color color ~tty:(Os.is_tty_stdout ())
+      ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
   in
   (* No command line re-runs the merged suites, so the footer's spelling
      is the mirrors'. *)

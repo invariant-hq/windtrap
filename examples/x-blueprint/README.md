@@ -1,7 +1,7 @@
 # The canonical windtrap project layout
 
 A complete, copyable instance of the layout the windtrap skill teaches
-(`SKILL.md` §3 at the repository root): one small library, its binary,
+(`skills/windtrap-testing/SKILL.md` §3): one small library, its binary,
 and a `test/` tree where **every child is one suite with its own
 `dune` file**, split along mechanical and lifecycle boundaries — never
 by test kind.
@@ -15,7 +15,7 @@ lib/            the code under test — two inert instrumentation
                 stanzas, no PPX, no test code
 bin/            a tiny CLI over the library (what cram/ tests)
 test/
-  dune          the project verdict aliases (see the rename note below)
+  dune          the project verdict aliases, @cover and @mutate
   unit/         THE windtrap suite: laws, examples, expect literals —
                 one test file per source module, one test stanza per
                 file, each file its own run; a stanza with baselines
@@ -33,20 +33,26 @@ flag the standalone copy never needs):
 ```
 dune runtest examples/x-blueprint                 # every suite
 dune runtest examples/x-blueprint/test/failures   # just the bug backlog
-dune build @examples/x-blueprint/test/example-cover \
+dune build @examples/x-blueprint/test/cover \
   --instrument-with ppx_windtrap.coverage         # coverage, gated
 dune exec --instrument-with ppx_windtrap.mutate \
   examples/x-blueprint/test/unit/test_slug.exe \
   -- --mutate=examples/x-blueprint/lib/slug.ml        # the mutation loop
 WINDTRAP_MUTATE=examples/x-blueprint/lib \
-  dune build @examples/x-blueprint/test/example-mutate \
+  dune build @examples/x-blueprint/test/mutate \
   --force --instrument-with ppx_windtrap.mutate       # the project aggregate
 ```
 
 The two aggregate aliases are sugar over two commands each — the
 instrumented run of every suite, then `dune exec windtrap -- coverage
 --min 80` or `dune exec windtrap -- mutants` over what the suites
-wrote; the manual chapters teach the two-command form first.
+wrote; the manual chapters teach the two-command form first. Inside
+windtrap's tree both merges read more than this example: they walk the
+whole build directory, so the coverage gate counts windtrap's own
+instrumented library — the two files under `lib/` here read 100%, the
+total does not, and the alias exits 1 — and the mutation merge folds in
+any verdict file windtrap's own suites left behind. Copied out, the
+same two aliases report this project alone.
 
 Flags go through `dune exec`; under `dune runtest` the `WINDTRAP_*`
 mirrors stand in for them. A variable changes nothing on a warm tree
@@ -62,7 +68,7 @@ WINDTRAP_VERBOSE=1 dune runtest --force examples/x-blueprint    # no dep declare
 
 Writing a new test here ends with the mutation loop: filter the survey
 to it, and the report says which of the faults it reaches it lets
-through. The deliberately weak law in `test_stats.ml` (the fourth
+through. The deliberately weak law in `test_stats.ml` (the third
 deliberate thing below) shows what that looks like:
 
 ```
@@ -89,11 +95,11 @@ verdicts not saved: this run's selection narrows the suite, and a partial run's 
 ```
 
 A filtered run exits 0 whatever it finds and writes no verdicts, so you
-can probe one test all afternoon without disturbing what
-`example-mutate` merges. The `--mutate` prefix is for this tree only:
-here windtrap's own library carries the backend too, so an unscoped run
-reaches the framework's sites as well; copied out, windtrap is an
-ordinary uninstrumented dependency and the prefix can go.
+can probe one test all afternoon without disturbing what `@mutate`
+merges. The `--mutate` prefix is for this tree only: here windtrap's
+own library carries the backend too, so an unscoped run reaches the
+framework's sites as well; copied out, windtrap is an ordinary
+uninstrumented dependency and the prefix can go.
 
 ## Copied out: the workspace posture
 
@@ -117,9 +123,9 @@ declares once what each command was repeating:
 
 ```
 dune runtest                                          # every suite
-dune build @example-cover                             # coverage, gated
+dune build @cover                                     # coverage, gated
 dune exec test/unit/test_slug.exe -- --mutate=lib/slug.ml  # the mutation loop
-WINDTRAP_MUTATE=1 dune build @example-mutate --force  # the project aggregate
+WINDTRAP_MUTATE=1 dune build @mutate --force          # the project aggregate
 ```
 
 Measured on a copy pinned to this tree: the whole suite runs in under
@@ -127,14 +133,8 @@ three seconds with both backends on. The built programs mean exactly what
 they meant uninstrumented: marks only count, and a mutant changes
 meaning only in a forked child that armed it.
 
-Four things are deliberate:
+Three things are deliberate:
 
-- **The aliases are named `example-cover` / `example-mutate`.** In
-  your own project they are `cover` and `mutate` — the names windtrap's
-  manual, skill, and own root `dune` use for the folded form of the two
-  commands. They are renamed here only because this example lives
-  inside windtrap's tree, where those aliases are recursive and already
-  mean the project's own aggregate.
 - **Issue #1 is a real, intentional bug.** `Slug.slugify` treats UTF-8
   letters as separators (`"Café"` → `"caf"`, not `"café"`).
   `test/failures/issue_1.ml` keeps the reproduction running as an
@@ -163,4 +163,4 @@ Four things are deliberate:
   above, so the exercise is left to the reader.
 
 A stateful suite slots into `unit/` the same way (see
-`examples/10-stateful`); this example keeps the surface small.
+`examples/04-stateful-testing`); this example keeps the surface small.

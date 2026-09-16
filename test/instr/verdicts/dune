@@ -1,0 +1,13 @@
+; The verdict lattice and file format; save_child stands in for a mutation
+; run's writing side. See doc/dev/testing.md, "The five families".
+
+(executable
+ (name save_child)
+ (modules save_child)
+ (libraries windtrap windtrap_runtime))
+
+(test
+ (name test_mutate_verdicts)
+ (modules test_mutate_verdicts)
+ (libraries windtrap windtrap_runtime unix)
+ (deps save_child.exe))

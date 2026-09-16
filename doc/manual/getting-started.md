@@ -121,6 +121,6 @@ property failure.
 From here: [Assertions](assertions.md) for the full verb set,
 [Property testing](property-testing.md) and [Stateful
 testing](stateful-testing.md), [Baselines and expect
-tests](snapshots-and-expect.md), or [Running tests](running-tests.md)
+tests](baselines.md), or [Running tests](running-tests.md)
 for the CLI. Runnable versions of each chapter's code live under
-`examples/` in the distribution.
+`examples/` in the distribution, one per chapter.

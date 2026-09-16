@@ -5,31 +5,64 @@
 
 (** The inert test declaration tree.
 
-    A suite is a list of {!type:t} values: leaf tests and nested groups. The
-    constructors and the two annotations below are the declaration surface the
-    facade re-exports, and windtrap.mli documents what each one promises a user.
-    This interface states the three rules the rest of the library depends on.
+    A suite is a list of {!type:t} values: leaf tests and nested groups.
+    Declaring is data construction: nothing a user wrote runs until the runner
+    executes the tree, there are no group hooks, and a group's tags, limit and
+    retries are resolved onto its tests at {!flatten} time, innermost wins. A
+    test's path (its enclosing group names, then its own name, joined by
+    {!path_to_string}) is its identity: what filters match, what seed derivation
+    hashes and what the last-failed store records. A node's declaration site
+    comes from its [?__POS__] when given and otherwise from {!Loc.capture},
+    which can mis-attribute through tail calls; an annotation never changes it.
+*)
 
-    {b Declaring is data construction.} Nothing a user wrote runs until the
-    runner executes the tree — there are no group hooks of any kind, so no user
-    callback can run outside a test's exception boundary, and {!scoped} stores
-    its scope and its body unrun so the runner can attribute each one's outcome
-    separately. A group's tags, limit and retries are resolved onto its tests at
-    {!flatten} time, innermost wins.
+(** {1:tags Tags}
 
-    {b A test's path is its identity.} The path is its enclosing group names,
-    root first, then its own name; {!path_to_string} renders it, and that
-    rendering is what selection filters match, what per-case seed derivation
-    hashes, and what the last-failed store records. The joined form is frozen,
-    and renaming or regrouping a test intentionally re-keys its property
-    streams. Duplicate paths are the runner's startup error; the tree only makes
-    paths derivable.
+    Tags are plain strings attached to tests and groups; a test's effective tag
+    set is the union of its own and its ancestors'. *)
 
-    {b Declaration sites come from [?__POS__], else the call stack.} A node
-    records where it was declared, from its [?__POS__] when given and otherwise
-    from {!Loc.capture} at declaration time; an annotation never changes it. The
-    fallback can mis-attribute when the constructor call is reached through tail
-    calls, so a helper that wraps a constructor threads [?__POS__] through. *)
+module Tag : sig
+  type t
+  (** The type for immutable sets of tag names. *)
+
+  val empty : t
+  (** [empty] is the set with no tags. *)
+
+  val of_list : string list -> t
+  (** [of_list names] is the set of the tags in [names]. *)
+
+  val union : t -> t -> t
+  (** [union parent child] is the union of both sets. *)
+
+  val mem : string -> t -> bool
+  (** [mem name tags] is [true] iff [name] is in [tags]. *)
+
+  val slow : string
+  (** [slow] is ["slow"], pre-applied by the {!slow} constructor. An ordinary
+      tag: [--exclude-tag slow] drops it. *)
+
+  val prop : string
+  (** [prop] is ["prop"], pre-applied by the property constructors. The run
+      header prints the root seed iff a test carries it. *)
+
+  type predicate
+  (** The type for tag selection predicates: a set of required tags and a set of
+      dropped tags. A tag cannot be both; adding it to one set removes it from
+      the other, so the last flag wins. *)
+
+  val any : predicate
+  (** [any] requires nothing and drops nothing. *)
+
+  val require : string -> predicate -> predicate
+  (** [require name p] is [p] requiring [name]. *)
+
+  val drop : string -> predicate -> predicate
+  (** [drop name p] is [p] dropping [name]. *)
+
+  val accepts : predicate -> t -> bool
+  (** [accepts p tags] is [true] iff [tags] contains every required tag of [p]
+      and none of its dropped tags. *)
+end
 
 (** {1:trees Trees} *)
 
@@ -45,20 +78,18 @@ type body =
   | Body of (unit -> unit)  (** An ordinary body. *)
   | Scoped : { scope : ('r -> unit) -> unit; body : 'r -> unit } -> body
       (** A {!scoped} test: [scope] is a scoping function and [body] the
-          callback it is expected to invoke exactly once. The two are kept apart
-          so the runner can run [body] inside [scope] and attribute what comes
-          out by how far the callback got. *)
+          callback it is expected to invoke exactly once, kept apart so the
+          runner can attribute what comes out by how far the callback got. *)
 
 (** {1:declaring Declaring tests}
 
-    Shared arguments: [__POS__] is the declaration position ([__POS__] at the
-    call site, see the preamble); [tags] are extra tag names, unioned with
-    ancestors' at {!flatten} time; [timeout] is the per-test limit in seconds
-    covering setup, body and teardown (for {!scoped}, the whole [scope] call);
-    [retries] is the number of extra attempts a failing test gets. On a group,
-    [timeout] and [retries] are defaults for every test under it, and the
-    innermost declaration wins. Constructors raise [Invalid_argument] if
-    [retries < 0] or if [timeout] is given and is not finite and positive. *)
+    Shared arguments: [__POS__] is the declaration position; [tags] are extra
+    tag names, unioned with ancestors'; [timeout] is the per-test limit in
+    seconds covering setup, body and teardown (for {!scoped}, the whole [scope]
+    call); [retries] is the number of extra attempts a failing test gets. On a
+    group, [timeout] and [retries] are defaults for every test under it,
+    innermost wins. Constructors raise [Invalid_argument] if [retries < 0] or if
+    [timeout] is given and is not finite and positive. *)
 
 val test :
   ?__POS__:Loc.pos ->
@@ -79,8 +110,7 @@ val slow :
   string ->
   (unit -> unit) ->
   t
-(** [slow] is {!test} with the {!Tag.slow} tag pre-applied ([--exclude-tag slow]
-    drops it). *)
+(** [slow] is {!test} with the {!Tag.slow} tag pre-applied. *)
 
 val group :
   ?__POS__:Loc.pos ->
@@ -106,11 +136,9 @@ val cases :
   t
 (** [cases ~name:render base inputs fn] is
     [group base (List.map (fun i -> test (render i) (fun () -> fn i)) inputs)],
-    with every child recording the [cases] call's declaration position and the
-    optional arguments on the group, so [timeout] and [retries] apply per child.
-    [name] is required because a child's path is its identity (see the
-    preamble): a positional default would re-key every later child's seeds and
-    store entry whenever a row is inserted. *)
+    every child recording the [cases] call's declaration position and the
+    optional arguments sitting on the group, so [timeout] and [retries] apply
+    per child. *)
 
 val scoped :
   (('r -> unit) -> unit) ->
@@ -121,14 +149,12 @@ val scoped :
   string ->
   ('r -> unit) ->
   t
-(** [scoped scope name fn] declares a test whose resource is scoped by [scope] —
-    a function that acquires, calls back, and releases on return
-    ([Eio_main.run], [In_channel.with_open_text path]). The runner calls [scope]
-    once with a callback that runs [fn] on the resource, and releases nothing
-    itself; {!Run} owns the attribution of what comes back out. [scope]
-    precedes the optional arguments so that [scoped Eio_main.run] keeps them:
-    applying a positional argument erases only the optionals declared before it.
-*)
+(** [scoped scope name fn] declares a test whose resource is scoped by [scope],
+    a function that acquires, calls back and releases on return ([Eio_main.run],
+    [In_channel.with_open_text path]). The runner calls [scope] once with a
+    callback that runs [fn] on the resource, and releases nothing itself.
+    [scope] precedes the optional arguments so that [scoped Eio_main.run] keeps
+    them. *)
 
 val bracket :
   ?__POS__:Loc.pos ->
@@ -143,11 +169,9 @@ val bracket :
 (** [bracket ~setup ~teardown name fn] is {!scoped} over the scope
     [fun k -> let r = setup () in match k r with () -> teardown r | exception e
      -> teardown r; raise e], except that a {!Failure.is_fatal} exception skips
-    the teardown. So [teardown] runs iff [setup] succeeded, on every outcome of
-    [fn] including a skip and a timeout — the runner re-arms the window as the
-    body leaves the callback — and a teardown failure is attributed by the
-    scoped arm's phase rule: a failure after the callback returned is a
-    [Teardown] failure, reported beside the body's. *)
+    the teardown. [teardown] runs iff [setup] succeeded, on every outcome of
+    [fn] including a skip and a timeout, and a teardown failure is a [Teardown]
+    failure reported beside the body's. *)
 
 (** {1:annotating Annotations}
 
@@ -156,25 +180,19 @@ val bracket :
     it. *)
 
 val focus : t -> t
-(** [focus t] flags [t] — and, through a group, every test under it — as
-    focused: when any focused node exists, the runner runs only focused tests
-    (see {!section-focus}). *)
+(** [focus t] flags [t], and through a group every test under it, as focused:
+    when any focused node exists, the runner runs only focused tests. *)
 
 val xfail : ?reason:string -> t -> t
-(** [xfail t] marks [t] — and, through a group, every test under it — as
-    {e expected to fail}: {!Run} inverts what counts as failed for it, and
-    [reason] names the known defect for reports. Nested annotations resolve
-    innermost-wins: the one nearest the test is the one recorded on its
-    flattened {!type:case}. *)
+(** [xfail t] marks [t], and through a group every test under it, as expected to
+    fail; [reason] names the known defect for reports. Nested annotations
+    resolve innermost-wins. *)
 
 (** {1:focus Focus} *)
 
 val focus_sites : t list -> Loc.t option list
 (** [focus_sites tests] is the declaration site of every {!focus}-flagged node
-    in declaration order. Non-empty is what "focus is active" means; the sites
-    themselves are the CI refusal's message
-    (["focused tests committed (focus at test/test_users.ml:31, …)"]) and the
-    out-of-CI warning's. *)
+    in declaration order; non-empty means focus is active. *)
 
 (** {1:flattening Flattening} *)
 
@@ -198,14 +216,13 @@ type case = {
       (** The innermost {!val:xfail} annotation on the test or an ancestor;
           [None] for a test expected to pass. *)
 }
-(** The type for flattened leaf tests: everything the runner needs to select and
-    execute one test, with ancestry already applied. *)
+(** The type for flattened leaf tests, with ancestry already applied. *)
 
 val flatten : t list -> case list
 (** [flatten tests] is the leaf tests of [tests] in depth-first declaration
-    order — the runner's execution order. Pure: bodies are not run. *)
+    order, the runner's execution order. Pure: bodies are not run. *)
 
 val path_to_string : string list -> string
-(** [path_to_string path] joins [path] with [" › "] — the canonical rendering
-    matched by [-f]/[-e] filters and hashed by per-case seed derivation
-    ({!Seed.derive}). The separator is frozen. *)
+(** [path_to_string path] joins [path] with [" › "], the canonical rendering
+    matched by [-f]/[-e] filters and hashed by {!Seed.derive}. The separator is
+    frozen. *)

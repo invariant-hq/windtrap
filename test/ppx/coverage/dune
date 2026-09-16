@@ -1,0 +1,260 @@
+; Expansion and rejection goldens for the coverage instrumenter:
+; coverage_pp.exe is a standalone ppxlib driver, the fixtures are never
+; compiled, and the goldens pin point indexes and byte extents, so read
+; every promoted diff. See doc/dev/testing.md, "Accepting a golden".
+
+(executable
+ (name coverage_pp)
+ (modules coverage_pp)
+ (libraries ppxlib windtrap_coverage_ppx))
+
+(rule
+ (with-stdout-to
+  fixture_match.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_match.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_match.expected fixture_match.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_fun.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_fun.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_fun.expected fixture_fun.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_if_loops.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_if_loops.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_if_loops.expected fixture_if_loops.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_lazy.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_lazy.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_lazy.expected fixture_lazy.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_letop.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_letop.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_letop.expected fixture_letop.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_apply.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_apply.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_apply.expected fixture_apply.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_pipeline.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_pipeline.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_pipeline.expected fixture_pipeline.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_cond.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_cond.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_cond.expected fixture_cond.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_class.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_class.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_class.expected fixture_class.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_off.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_off.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_off.expected fixture_off.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_exclude.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_exclude.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_exclude.expected fixture_exclude.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_scope.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_scope.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_scope.expected fixture_scope.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_empty.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_empty.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_empty.expected fixture_empty.actual)))
+
+(rule
+ (target reject_bad_payload.actual)
+ (action
+  (with-outputs-to
+   reject_bad_payload.actual
+   (with-accepted-exit-codes
+    1
+    (run ./coverage_pp.exe --impl %{dep:reject_bad_payload.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_bad_payload.expected reject_bad_payload.actual)))
+
+(rule
+ (target reject_misplaced_on.actual)
+ (action
+  (with-outputs-to
+   reject_misplaced_on.actual
+   (with-accepted-exit-codes
+    1
+    (run ./coverage_pp.exe --impl %{dep:reject_misplaced_on.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_misplaced_on.expected reject_misplaced_on.actual)))
+
+(rule
+ (target reject_off_reason.actual)
+ (action
+  (with-outputs-to
+   reject_off_reason.actual
+   (with-accepted-exit-codes
+    1
+    (run ./coverage_pp.exe --impl %{dep:reject_off_reason.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_off_reason.expected reject_off_reason.actual)))
+
+; Attribute-grammar parity: the acceptance and shared rejection fixtures
+; must equal their mutate twins modulo the namespace token, and
+; reject_off_reason above pins the one intended difference.
+
+(rule
+ (alias runtest)
+ (action
+  (ignore-outputs
+   (run ./coverage_pp.exe --impl %{dep:parity_spellings.ml}))))
+
+(rule
+ (target parity_spellings.here.normalized)
+ (action
+  (with-stdout-to
+   %{target}
+   (run sed "s/coverage/NS/g" %{dep:parity_spellings.ml}))))
+
+(rule
+ (target parity_spellings.twin.normalized)
+ (action
+  (with-stdout-to
+   %{target}
+   (run sed "s/mutate/NS/g" %{dep:../mutate/parity_spellings.ml}))))
+
+(rule
+ (alias runtest)
+ (action
+  (run
+   diff
+   -u
+   %{dep:parity_spellings.here.normalized}
+   %{dep:parity_spellings.twin.normalized})))
+
+(rule
+ (target reject_bad_payload.here.normalized)
+ (action
+  (with-stdout-to
+   %{target}
+   (run sed "s/coverage/NS/g" %{dep:reject_bad_payload.ml}))))
+
+(rule
+ (target reject_bad_payload.twin.normalized)
+ (action
+  (with-stdout-to
+   %{target}
+   (run sed "s/mutate/NS/g" %{dep:../mutate/reject_bad_payload.ml}))))
+
+(rule
+ (alias runtest)
+ (action
+  (run
+   diff
+   -u
+   %{dep:reject_bad_payload.here.normalized}
+   %{dep:reject_bad_payload.twin.normalized})))
+
+(rule
+ (target reject_misplaced_on.here.normalized)
+ (action
+  (with-stdout-to
+   %{target}
+   (run sed "s/coverage/NS/g" %{dep:reject_misplaced_on.ml}))))
+
+(rule
+ (target reject_misplaced_on.twin.normalized)
+ (action
+  (with-stdout-to
+   %{target}
+   (run sed "s/mutate/NS/g" %{dep:../mutate/reject_misplaced_on.ml}))))
+
+(rule
+ (alias runtest)
+ (action
+  (run
+   diff
+   -u
+   %{dep:reject_misplaced_on.here.normalized}
+   %{dep:reject_misplaced_on.twin.normalized})))

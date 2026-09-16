@@ -8,6 +8,8 @@
 
 open Windtrap
 open Windtrap.Private
+module Tag = Test_tree.Tag
+module Shrink_tree = Windtrap.Gen.Private.Shrink_tree
 
 (* Printf-style shims over windtrap's [fail]. [Check.*] calls inside command
    bodies are the probes the engine and the executor catch; only these shims

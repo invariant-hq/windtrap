@@ -104,7 +104,7 @@ let () =
       check "prop_count" (p.Cli.prop_count = Some 50);
       check "verbose" (p.Cli.verbose = Some true);
       check "junit" (p.Cli.junit = Some "out.xml");
-      check "color" (p.Cli.color = Some Env.Never);
+      check "color" (p.Cli.color = Some Os.Never);
       check "log_dir" (p.Cli.log_dir = Some "logs");
       check "mutate" (p.Cli.mutate = Some [ "lib/a.ml"; "lib/b.ml" ]);
       check "arm" (p.Cli.arm = Some "lib/a.ml:1:0:add");
@@ -119,7 +119,7 @@ let () =
       check "--filter=" (p.Cli.filter = Some "abc");
       check "--exclude=" (p.Cli.exclude = Some "xyz");
       check "--prop-count=" (p.Cli.prop_count = Some 7);
-      check "--color= is case-insensitive" (p.Cli.color = Some Env.Always));
+      check "--color= is case-insensitive" (p.Cli.color = Some Os.Always));
   expect_ok "-x is a boolean" [ "-x" ] (fun p ->
       check "-x" (p.Cli.bail = Some true));
   expect_ok "--fail-fast is -x" [ "--fail-fast" ] (fun p ->
@@ -469,7 +469,7 @@ let () =
   check "default: no timeout/prop-count"
     (config.Run.timeout = None && config.Run.prop_count = None);
   check "default: no JUnit report" (config.Run.junit = None);
-  check "default: color auto" (config.Run.color = Env.Auto);
+  check "default: color auto" (config.Run.color = Os.Auto);
   check "default: the slow threshold is one second"
     (config.Run.slow_threshold = 1.0);
   check "default: compact" (not config.Run.verbose);
@@ -759,14 +759,14 @@ let () =
   clear_env ();
   Unix.putenv "WINDTRAP_COLOR" "never";
   let render = settings Cli.empty in
-  check "WINDTRAP_COLOR fills the default" (render.Run.color = Env.Never);
-  let render = settings { Cli.empty with Cli.color = Some Env.Always } in
-  check "--color beats WINDTRAP_COLOR" (render.Run.color = Env.Always);
+  check "WINDTRAP_COLOR fills the default" (render.Run.color = Os.Never);
+  let render = settings { Cli.empty with Cli.color = Some Os.Always } in
+  check "--color beats WINDTRAP_COLOR" (render.Run.color = Os.Always);
   Unix.putenv "WINDTRAP_COLOR" " Never ";
   check "the mirror is trimmed and case-insensitive, as --color is"
-    ((settings Cli.empty).Run.color = Env.Never);
+    ((settings Cli.empty).Run.color = Os.Never);
   check "color_mode reads the same variable the same way"
-    (Cli.color_mode () = Ok Env.Never);
+    (Cli.color_mode () = Ok Os.Never);
   Unix.putenv "WINDTRAP_COLOR" "sometimes";
   (match Cli.settings Cli.empty with
   | Error
@@ -784,10 +784,9 @@ let () =
   | Ok _ | Error _ ->
       check "color_mode refuses it too, naming the variable" false);
   check "a --color on the command line shadows the bad value, unread"
-    ((settings { Cli.empty with Cli.color = Some Env.Auto }).Run.color
-   = Env.Auto);
+    ((settings { Cli.empty with Cli.color = Some Os.Auto }).Run.color = Os.Auto);
   clear_env ();
-  check "color_mode defaults to auto" (Cli.color_mode () = Ok Env.Auto)
+  check "color_mode defaults to auto" (Cli.color_mode () = Ok Os.Auto)
 
 (* Resolution: the mutation switches *)
 
@@ -891,7 +890,7 @@ let () =
   check "the flag reaches the config field" (s.Run.filter = Some "geo");
   check "the mirror reaches it too" (s.Run.seed = 0x0123456789abcdefL);
   check "the presentation fields default"
-    (s.Run.color = Env.Auto && s.Run.slow_threshold = 1.0);
+    (s.Run.color = Os.Auto && s.Run.slow_threshold = 1.0);
   check "the mutation field defaults to none" (s.Run.mutation = Run.No_mutation);
   check "the level field defaults to compact" (not s.Run.verbose);
   Unix.putenv "WINDTRAP_MUTATE" "1";

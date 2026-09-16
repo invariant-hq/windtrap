@@ -41,8 +41,8 @@ let dp_cell_limit = 4_000_000
    reader is looking at two values that differ, and scattering tildes over
    them draws the eye to coincidental character alignments instead —
    ["Some _"] against ["None"] marks [S], [m], [e ] against [N], [n], and
-   says nothing a plain pair of lines would not. Measured over the corpus in
-   examples/x-demo, every informative highlight marks 11-21% of its side and
+   says nothing a plain pair of lines would not. Measured over a corpus of
+   real failures, every informative highlight marks 11-21% of its side and
    every uninformative one marks 50% or more.
 
    The bound is per side and strict, so an insertion that marks nothing on
