@@ -119,8 +119,9 @@ let says ~msg text sub = contains ~msg ~sub text
    children test exactly those mutants whatever else they link. Every
    loop scenario passes this flag; the inline runner, whose argv is
    dune's protocol, gets the same scope through the mirror. *)
-let mutate = "--mutate=test/instr/loop/"
-let mutate_mirror = "WINDTRAP_MUTATE=test/instr/loop/"
+let scope = "test/instr/loop/"
+let mutate = "--mutate=" ^ scope
+let mutate_mirror = "WINDTRAP_MUTATE=" ^ scope
 
 (* Under --instrument-with the core this suite links catalogues its own
    mutants; the scenarios that need a catalogue holding the fixture's
@@ -137,12 +138,17 @@ let denies ~msg text sub =
 
 (* The catalogue, read out of the binary rather than transcribed: a line
    moving in subject.ml must not silently re-point an armed identifier at
-   another site. *)
+   another site. Narrowed to the scope, as the loop narrows its
+   population: under --instrument-with the binary catalogues the core's
+   sites before the fixture's, and an identifier the scenarios arm by
+   position or by rewrite must be this directory's. *)
 let catalogue =
   lazy
     (let code, out, err = spawn [ "MUTATE_FIXTURE=catalogue" ] in
      if code <> 0 then failf "catalogue mode exited %d: %s" code err;
-     List.filter (fun line -> line <> "") (String.split_on_char '\n' out))
+     List.filter
+       (String.starts_with ~prefix:scope)
+       (String.split_on_char '\n' out))
 
 let mutant_named rewrite =
   match

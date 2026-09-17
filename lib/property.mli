@@ -24,7 +24,7 @@
 exception Discard
 (** Raised inside a property body to discard the current case; the engine counts
     it and moves on. Prefer {!assume} and {!reject}. Generation-time discards
-    raise [Gen.Private.Rejected] instead; both count together. *)
+    raise [Gen.Engine.Rejected] instead; both count together. *)
 
 val assume : bool -> unit
 (** [assume cond] is [()] if [cond] and raises {!Discard} otherwise. For rare,
@@ -136,7 +136,7 @@ val run :
     succeeds when [count] generated cases pass and gives up when more than
     [max_discard] cases have been discarded, examples included; the budget is
     checked before the case-count goal. A generator raising
-    [Gen.Private.Rejected] discards the attempt; one raising anything else fails
+    [Gen.Engine.Rejected] discards the attempt; one raising anything else fails
     the case with [<generator raised before producing a value>] as the
     counterexample and the exception as the inner failure.
 

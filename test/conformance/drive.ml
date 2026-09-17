@@ -14,6 +14,24 @@
 
 let placeholder = "=== no correction produced ===\n"
 
+(* The runner's environment is stated, never inherited. The corpus is a
+   corrections harness: what it pins is the promotion protocol's exit
+   code and the corrections a plain run writes, and a runner that
+   inherited a WINDTRAP_* mirror from the invoking shell - the tree-wide
+   mutation run sets WINDTRAP_MUTATE=1 for every stanza - would run the
+   mutation loop in place of that protocol, and refuse it on a corpus
+   that fails on purpose. Nothing survives but what a process needs to
+   start. *)
+let environment =
+  String.concat " "
+    ("env" :: "-i"
+    :: List.concat_map
+         (fun name ->
+           match Sys.getenv_opt name with
+           | Some value -> [ Filename.quote (name ^ "=" ^ value) ]
+           | None -> [])
+         [ "PATH"; "HOME"; "TMPDIR"; "LANG"; "LC_ALL" ])
+
 let write_file path contents =
   let oc = open_out_bin path in
   output_string oc contents;
@@ -23,7 +41,8 @@ let () =
   match Array.to_list Sys.argv with
   | _ :: prefix :: runner :: fixtures ->
     let cmd =
-      Printf.sprintf "%s inline-test-runner conformance > %s 2>&1"
+      Printf.sprintf "%s %s inline-test-runner conformance > %s 2>&1"
+        environment
         (Filename.quote runner)
         (Filename.quote (prefix ^ "-log"))
     in

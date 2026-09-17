@@ -55,7 +55,7 @@
      nothing armed from first line to last.
 
    A windtrap suite ([run] executes tests sequentially in declaration
-   order); the reach-map and one-shot laziness assertions observe shared
+   order); the reach-map assertions and [lazy_witness] observe shared
    in-process state, so the tests are order-dependent - run the suite
    whole, not filtered. *)
 
@@ -462,22 +462,23 @@ let tests =
         (* And from the registry's side, on the shared fixture: the two
            [ari] sites in the thunk's body are unreached until the force,
            reached exactly once by it, and never again. *)
-        check "the lazy body has not run" (!F.forced = false);
-        let v, first = reached (fun () -> Lazy.force F.thunk) in
+        let thunk, forced, force_count = F.make_thunk () in
+        check "the lazy body has not run" (!forced = false);
+        let v, first = reached (fun () -> Lazy.force thunk) in
         check_int "forcing the thunk" ~expected:42 ~actual:v;
-        check "the lazy body ran on force" (!F.forced = true);
+        check "the lazy body ran on force" (!forced = true);
         equal ~msg:"forcing reached exactly the lazy body's two sites" reach
           [ ("sub", 1); ("sub", 1) ]
           first;
-        let v, again = reached (fun () -> Lazy.force F.thunk) in
+        let v, again = reached (fun () -> Lazy.force thunk) in
         check_int "forcing again computes the same value" ~expected:42 ~actual:v;
         check_int "forcing twice runs the body once" ~expected:1
-          ~actual:!F.force_count;
+          ~actual:!force_count;
         equal ~msg:"forcing again reaches nothing" reach [] again;
         check "trivial lazy compiles as in an uninstrumented build"
-          (Lazy.is_val F.trivial = Lazy.is_val (lazy 42));
+          (Lazy.is_val (F.trivial ()) = Lazy.is_val (lazy 42));
         check "and as in its twin"
-          (Lazy.is_val F.trivial = Lazy.is_val U.trivial));
+          (Lazy.is_val (F.trivial ()) = Lazy.is_val (U.trivial ())));
     (* {1 Counts: the reach map measures evaluations, not calls} *)
     test "the reach map counts evaluations, and only what ran" (fun () ->
         (* [sum_while 10] evaluates its loop condition eleven times and

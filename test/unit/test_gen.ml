@@ -7,11 +7,12 @@
    integrated-shrinking invariants (candidates satisfy generator
    constraints), greedy-shrink termination and minima, printing totality
    including the printerless placeholder, and the shrink tree itself
-   ([Gen.Private.Shrink_tree]) in its own submodule below. *)
+   ([Gen.Engine.Shrink_tree]) in its own submodule below. *)
 
 open Windtrap
 module Seed = Windtrap.Private.Seed
-module Shrink_tree = Windtrap.Gen.Private.Shrink_tree
+module Gen_engine = Windtrap.Private.Gen_engine
+module Shrink_tree = Gen_engine.Shrink_tree
 module Pp = Windtrap.Private.Pp
 
 (* Printf-style shims over windtrap's [fail], preserving the bodies'
@@ -32,8 +33,8 @@ let show_int_lists lists = String.concat " " (List.map show_ints lists)
    Everything below is deterministic across runs and machines. *)
 let root = 0x00c0ffee1234abcdL
 let state index = Seed.make (Seed.derive ~root ~path:"test_gen" ~index)
-let root_value tree = Gen.Private.value (Shrink_tree.root tree)
-let rendering tree = Gen.Private.render (Shrink_tree.root tree)
+let root_value tree = Gen_engine.value (Shrink_tree.root tree)
+let rendering tree = Gen_engine.render (Shrink_tree.root tree)
 
 (* The one placeholder a value with no printer renders as, spelled here so
    a drift in [Gen]'s spelling is a failure and not a silently passing
@@ -44,19 +45,19 @@ let placeholder = "<no printer: attach one with Gen.with_pp>"
    pre-image is marked so an assertion on the value cannot pass on it. *)
 let render tree =
   match rendering tree with
-  | Gen.Private.Value text -> text
+  | Gen_engine.Value text -> text
   | Pre_image text -> "from " ^ text
 
 let samples gen count =
   List.init count (fun index ->
-      root_value (Gen.Private.sample gen (state index)))
+      root_value (Gen_engine.sample gen (state index)))
 
 let find_sample ?(max_index = 10_000) gen accept =
   let rec loop index =
     if index >= max_index then
       failf "no matching sample within %d cases" max_index
     else
-      let tree = Gen.Private.sample gen (state index) in
+      let tree = Gen_engine.sample gen (state index) in
       if accept (root_value tree) then tree else loop (index + 1)
   in
   loop 0
@@ -104,8 +105,8 @@ let no_children tree =
 let same_seed_same_value_and_render () =
   let against : (string * (unit -> string * string)) list =
     let run gen index =
-      let once = Gen.Private.sample gen (state index) in
-      let twice = Gen.Private.sample gen (state index) in
+      let once = Gen_engine.sample gen (state index) in
+      let twice = Gen_engine.sample gen (state index) in
       (render once, render twice)
     in
     [
@@ -140,7 +141,7 @@ let int_shrinks_to_zero () =
   check (minimum = 0) "int minimized to %d, not 0" minimum
 
 let int_renders_decimal () =
-  let tree = Gen.Private.sample Gen.int (state 0) in
+  let tree = Gen_engine.sample Gen.int (state 0) in
   let rendered = render tree in
   check
     (rendered = string_of_int (root_value tree))
@@ -174,7 +175,7 @@ let small_int_is_small_and_signed () =
 let int_range_stays_in_bounds_while_shrinking () =
   let gen = Gen.int_range 10 100 in
   for index = 0 to 19 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:200 tree (fun v ->
         check (v >= 10 && v <= 100) "int_range candidate %d out of bounds" v)
   done;
@@ -183,7 +184,7 @@ let int_range_stays_in_bounds_while_shrinking () =
   check (minimum = 10) "int_range 10 100 minimized to %d, not 10" minimum
 
 let int_range_degenerate_is_a_leaf () =
-  let tree = Gen.Private.sample (Gen.int_range 5 5) (state 0) in
+  let tree = Gen_engine.sample (Gen.int_range 5 5) (state 0) in
   check (root_value tree = 5) "int_range 5 5 produced %d" (root_value tree);
   check (no_children tree) "int_range 5 5 has shrink candidates"
 
@@ -196,7 +197,7 @@ let int_range_full_range_works () =
 let int_range_invalid_raises_at_sample_time () =
   let gen = Gen.int_range 10 (-10) in
   (* Construction succeeded; sampling reports the error. *)
-  match Gen.Private.sample gen (state 0) with
+  match Gen_engine.sample gen (state 0) with
   | exception Invalid_argument _ -> ()
   | _ -> failf "int_range 10 (-10) sampled successfully"
 
@@ -253,15 +254,15 @@ let float_is_finite () =
 let float_range_stays_in_bounds () =
   let gen = Gen.float_range 2.0 5.0 in
   for index = 0 to 19 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:100 tree (fun v ->
         check (v >= 2.0 && v <= 5.0) "float_range candidate %h out of bounds" v)
   done;
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = 2.0) "float_range 2 5 minimized to %h" minimum;
   let negative = Gen.float_range (-5.0) (-2.0) in
-  let tree = Gen.Private.sample negative (state 1) in
+  let tree = Gen_engine.sample negative (state 1) in
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = -2.0) "float_range -5 -2 minimized to %h" minimum
 
@@ -276,7 +277,7 @@ let float_range_invalid_raises_at_sample_time () =
   in
   List.iter
     (fun (name, gen) ->
-      match Gen.Private.sample gen (state 0) with
+      match Gen_engine.sample gen (state 0) with
       | exception Invalid_argument _ -> ()
       | _ -> failf "float_range (%s) sampled successfully" name)
     cases
@@ -284,15 +285,15 @@ let float_range_invalid_raises_at_sample_time () =
 (* Unit, booleans, characters, strings *)
 
 let unit_generates_and_prints_parentheses () =
-  let tree = Gen.Private.sample Gen.unit (state 0) in
+  let tree = Gen_engine.sample Gen.unit (state 0) in
   check (no_children tree) "unit has shrink candidates";
   let rendered = render tree in
   check (rendered = "()") "unit rendered %S" rendered;
-  check (Gen.Private.render_value Gen.unit () = "()") "unit lost its printer";
+  check (Gen_engine.render_value Gen.unit () = "()") "unit lost its printer";
   (* Why it is not [constant ()]: a deriving composition over [constant ()]
      has no printer to derive from. *)
   let paired = Gen.(pair unit nat) in
-  let tree = Gen.Private.sample paired (state 1) in
+  let tree = Gen_engine.sample paired (state 1) in
   let (), n = root_value tree in
   let rendered = render tree in
   check
@@ -300,7 +301,7 @@ let unit_generates_and_prints_parentheses () =
     "pair over unit rendered %S" rendered;
   let bare = Gen.(pair (constant ()) nat) in
   check
-    (Gen.Private.render_value bare ((), 0) = placeholder)
+    (Gen_engine.render_value bare ((), 0) = placeholder)
     "pair over [constant ()] claims a printer"
 
 let bool_shrinks_true_to_false () =
@@ -329,7 +330,7 @@ let char_is_uniform_and_shrinks_to_a () =
 let char_range_stays_in_bounds_and_shrinks_toward_a () =
   let gen = Gen.char_range 'b' 'y' in
   for index = 0 to 19 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:100 tree (fun c ->
         check (c >= 'b' && c <= 'y') "char_range candidate %C out of bounds" c)
   done;
@@ -353,18 +354,18 @@ let char_range_outside_a_shrinks_to_nearest_bound () =
   List.iter
     (fun index ->
       explore ~limit:100
-        (Gen.Private.sample digits (state index))
+        (Gen_engine.sample digits (state index))
         (fun c ->
           check (c >= '0' && c <= '9') "digit candidate %C out of bounds" c))
     [ 0; 1; 2 ]
 
 let char_range_degenerate_is_a_leaf_and_invalid_raises () =
-  let tree = Gen.Private.sample (Gen.char_range 'x' 'x') (state 0) in
+  let tree = Gen_engine.sample (Gen.char_range 'x' 'x') (state 0) in
   check
     (root_value tree = 'x')
     "char_range 'x' 'x' produced %C" (root_value tree);
   check (no_children tree) "char_range 'x' 'x' has shrink candidates";
-  match Gen.Private.sample (Gen.char_range 'z' 'a') (state 0) with
+  match Gen_engine.sample (Gen.char_range 'z' 'a') (state 0) with
   | exception Invalid_argument _ -> ()
   | _ -> failf "char_range 'z' 'a' sampled successfully"
 
@@ -387,7 +388,7 @@ let string_of_respects_character_generator () =
   let gen = Gen.string_of letters in
   let in_range c = c >= 'a' && c <= 'p' in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:100 tree (fun s ->
         String.iter (fun c -> check (in_range c) "string_of produced %C" c) s)
   done
@@ -395,18 +396,18 @@ let string_of_respects_character_generator () =
 let string_of_size_keeps_length_in_bounds () =
   let gen = Gen.(string_of ~size:(int_range 2 5) char) in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:200 tree (fun s ->
         let n = String.length s in
         check (n >= 2 && n <= 5) "sized string candidate has length %d" n)
   done;
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = "aa") "sized string minimized to %S, not \"aa\"" minimum
 
 let string_of_negative_size_raises_at_sample_time () =
   let gen = Gen.(string_of ~size:(constant (-1)) char) in
-  match Gen.Private.sample gen (state 0) with
+  match Gen_engine.sample gen (state 0) with
   | exception Invalid_argument _ -> ()
   | _ -> failf "negative string size sampled successfully"
 
@@ -422,7 +423,7 @@ let bytes_shrink_to_empty () =
 let bytes_of_respects_size_and_character_generator () =
   let gen = Gen.(bytes_of ~size:(constant 3) (char_range 'a' 'z')) in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:100 tree (fun b ->
         check
           (Bytes.length b = 3)
@@ -431,7 +432,7 @@ let bytes_of_respects_size_and_character_generator () =
           (fun c -> check (c >= 'a' && c <= 'z') "bytes_of produced %C" c)
           b)
   done;
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   let rendered = render tree in
   check (starts_with "Bytes.of_string" rendered) "bytes_of rendered %S" rendered
 
@@ -452,12 +453,12 @@ let list_shrinks_structurally () =
 let list_with_size_keeps_length_in_bounds () =
   let gen = Gen.(list ~size:(int_range 2 5) nat) in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:200 tree (fun l ->
         let n = List.length l in
         check (n >= 2 && n <= 5) "sized list candidate has length %d" n)
   done;
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   let minimum, _ = minimize (fun _ -> true) tree in
   check
     (minimum = [ 0; 0 ])
@@ -465,7 +466,7 @@ let list_with_size_keeps_length_in_bounds () =
 
 let list_negative_size_raises_at_sample_time () =
   let gen = Gen.(list ~size:(constant (-1)) nat) in
-  match Gen.Private.sample gen (state 0) with
+  match Gen_engine.sample gen (state 0) with
   | exception Invalid_argument _ -> ()
   | _ -> failf "negative size sampled successfully"
 
@@ -520,7 +521,7 @@ let either_generates_both_constructors () =
   (* Printing derives as for [result]: a printerless side forfeits it, and
      a pre-image side carries through. *)
   check
-    (Gen.Private.render_value Gen.(either nat (constant 'k')) (Either.Left 1)
+    (Gen_engine.render_value Gen.(either nat (constant 'k')) (Either.Left 1)
     = placeholder)
     "either over a printerless side derived a printer";
   let mapped = Gen.(either (map succ nat) nat) in
@@ -541,17 +542,17 @@ let pair_shrinks_left_first_to_zeroes () =
   check
     (minimum = (0, 0))
     "pair minimized to (%d, %d)" (fst minimum) (snd minimum);
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   let a, b = root_value tree in
   check
     (render tree = Printf.sprintf "(%d, %d)" a b)
     "pair rendered %S" (render tree)
 
 let triple_and_quad_minimize_to_zeroes () =
-  let triple_tree = Gen.Private.sample Gen.(triple nat nat nat) (state 2) in
+  let triple_tree = Gen_engine.sample Gen.(triple nat nat nat) (state 2) in
   let minimum, _ = minimize (fun _ -> true) triple_tree in
   check (minimum = (0, 0, 0)) "triple minimized elsewhere";
-  let quad_tree = Gen.Private.sample Gen.(quad nat nat nat nat) (state 3) in
+  let quad_tree = Gen_engine.sample Gen.(quad nat nat nat nat) (state 3) in
   let minimum, _ = minimize (fun _ -> true) quad_tree in
   check (minimum = (0, 0, 0, 0)) "quad minimized elsewhere"
 
@@ -559,13 +560,13 @@ let triple_and_quad_minimize_to_zeroes () =
 
 let constant_is_a_leaf_and_asks_for_a_printer () =
   let gen = Gen.constant 42 in
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   check (root_value tree = 42) "constant produced %d" (root_value tree);
   check (no_children tree) "constant has shrink candidates";
   (* The rendering names the remedy itself, so a counterexample and a bare
      value spell the same placeholder. *)
   check (render tree = placeholder) "constant rendered %S" (render tree);
-  check (Gen.Private.render_value gen 42 = placeholder) "constant has a printer"
+  check (Gen_engine.render_value gen 42 = placeholder) "constant has a printer"
 
 let of_list_picks_uniformly_and_shrinks_toward_head () =
   let gen = Gen.of_list [ 10; 20; 30 ] in
@@ -581,7 +582,7 @@ let of_list_picks_uniformly_and_shrinks_toward_head () =
   check (minimum = 10) "of_list minimized to %d, not the head" minimum;
   let rendered = render tree in
   check (rendered = placeholder) "of_list rendered %S" rendered;
-  check (Gen.Private.render_value gen 20 = placeholder) "of_list has a printer"
+  check (Gen_engine.render_value gen 20 = placeholder) "of_list has a printer"
 
 (* One printerless leaf forfeits the derived printer of everything built
    over it, and [with_pp] is the one way back; the printer it attaches then
@@ -593,43 +594,43 @@ let leaf_printers_feed_the_derivation_law () =
   let rendered = render tree in
   check (rendered = "30") "printed of_list rendered %S, not the value" rendered;
   check
-    (Gen.Private.render_value gen 20 = "20")
+    (Gen_engine.render_value gen 20 = "20")
     "printed of_list does not render a bare value";
   (* The leaf's printer feeds the deriving combinators above it... *)
   let listed = Gen.list gen in
   check
-    (Gen.Private.render_value listed [ 10; 20 ] = "[10; 20]")
+    (Gen_engine.render_value listed [ 10; 20 ] = "[10; 20]")
     "list over a printed leaf does not render";
   (* ...and [map], which derives no printer, renders its argument through
      it: the pre-image. *)
   let mapped = Gen.map (fun v -> (v, ())) gen in
   check
-    (Gen.Private.render_value mapped (30, ()) = placeholder)
+    (Gen_engine.render_value mapped (30, ()) = placeholder)
     "map claimed a printer";
   let mapped_tree = find_sample mapped (fun (v, ()) -> v = 30) in
   check
     (rendering mapped_tree = Pre_image "30")
     "map over a printed leaf rendered %S" (render mapped_tree);
   let c = Gen.with_pp pp (Gen.constant 7) in
-  let c_rendered = render (Gen.Private.sample c (state 0)) in
+  let c_rendered = render (Gen_engine.sample c (state 0)) in
   check (c_rendered = "7") "printed constant rendered %S" c_rendered;
   (* Without one the leaf prints nothing at all. *)
   let bare = Gen.of_list [ 10; 20; 30 ] in
   check
-    (Gen.Private.render_value bare 10 = placeholder)
+    (Gen_engine.render_value bare 10 = placeholder)
     "of_list without a printer prints"
 
 let of_list_singleton_is_a_leaf_and_empty_raises () =
-  let tree = Gen.Private.sample (Gen.of_list [ `Only ]) (state 0) in
+  let tree = Gen_engine.sample (Gen.of_list [ `Only ]) (state 0) in
   check (root_value tree = `Only) "of_list singleton produced another value";
   check (no_children tree) "of_list singleton has shrink candidates";
-  match Gen.Private.sample (Gen.of_list []) (state 0) with
+  match Gen_engine.sample (Gen.of_list []) (state 0) with
   | exception Invalid_argument _ -> ()
   | _ -> failf "of_list [] sampled successfully"
 
 let one_of_empty_raises_at_sample_time () =
   let gen = Gen.one_of [] in
-  match Gen.Private.sample gen (state 0) with
+  match Gen_engine.sample gen (state 0) with
   | exception Invalid_argument _ -> ()
   | _ -> failf "one_of [] sampled successfully"
 
@@ -661,7 +662,7 @@ let frequency_respects_weights () =
    print — including the choice combinators. *)
 let one_of_over_printed_branches_derives_printer () =
   let gen = Gen.(one_of [ int_range 0 9; int_range 100 199 ]) in
-  check (Gen.Private.render_value gen 5 = "5") "one_of did not derive a printer";
+  check (Gen_engine.render_value gen 5 = "5") "one_of did not derive a printer";
   let tree = find_sample gen (fun v -> v >= 100) in
   let rendered = render tree in
   check
@@ -676,13 +677,13 @@ let one_of_over_printed_branches_derives_printer () =
   (* The derived printer feeds enclosing deriving combinators, and the
      pre-image of a [map] over the choice. *)
   let paired = Gen.(pair gen nat) in
-  let tree = Gen.Private.sample paired (state 0) in
+  let tree = Gen_engine.sample paired (state 0) in
   let a, b = root_value tree in
   check
     (render tree = Printf.sprintf "(%d, %d)" a b)
     "pair over a printed one_of rendered %S" (render tree);
   let mapped = Gen.map Fun.id gen in
-  let tree = Gen.Private.sample mapped (state 1) in
+  let tree = Gen_engine.sample mapped (state 1) in
   check
     (rendering tree = Pre_image (string_of_int (root_value tree)))
     "map over a printed one_of rendered %S" (render tree)
@@ -690,9 +691,9 @@ let one_of_over_printed_branches_derives_printer () =
 let frequency_over_printed_branches_derives_printer () =
   let gen = Gen.(frequency [ (1, nat); (3, int_range 100 199) ]) in
   check
-    (Gen.Private.render_value gen 7 = "7")
+    (Gen_engine.render_value gen 7 = "7")
     "frequency did not derive a printer";
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   let rendered = render tree in
   check
     (rendered = string_of_int (root_value tree))
@@ -700,7 +701,7 @@ let frequency_over_printed_branches_derives_printer () =
   (* One printerless branch forfeits the derivation for the whole choice. *)
   let mixed = Gen.(frequency [ (1, nat); (1, constant 5) ]) in
   check
-    (Gen.Private.render_value mixed 5 = placeholder)
+    (Gen_engine.render_value mixed 5 = placeholder)
     "a mixed frequency derived a printer"
 
 let frequency_invalid_raises_at_sample_time () =
@@ -713,7 +714,7 @@ let frequency_invalid_raises_at_sample_time () =
   in
   List.iter
     (fun (name, gen) ->
-      match Gen.Private.sample gen (state 0) with
+      match Gen_engine.sample gen (state 0) with
       | exception Invalid_argument _ -> ()
       | _ -> failf "frequency (%s) sampled successfully" name)
     cases
@@ -721,7 +722,7 @@ let frequency_invalid_raises_at_sample_time () =
 let such_that_filters_generation_and_shrinking () =
   let even = Gen.such_that (fun n -> n mod 2 = 0) Gen.int in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample even (state index) in
+    let tree = Gen_engine.sample even (state index) in
     explore ~limit:100 tree (fun v ->
         check (v mod 2 = 0) "such_that candidate %d is odd" v)
   done;
@@ -729,13 +730,13 @@ let such_that_filters_generation_and_shrinking () =
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = 0) "even int minimized to %d" minimum;
   check
-    (Gen.Private.render_value even 4 = "4")
+    (Gen_engine.render_value even 4 = "4")
     "such_that dropped the underlying printer"
 
 let such_that_exhaustion_is_a_discard () =
   let gen = Gen.such_that (fun _ -> false) Gen.nat in
-  match Gen.Private.sample gen (state 0) with
-  | exception Gen.Private.Rejected -> ()
+  match Gen_engine.sample gen (state 0) with
+  | exception Gen_engine.Rejected -> ()
   | _ -> failf "unsatisfiable such_that sampled successfully"
 
 (* Composition *)
@@ -745,7 +746,7 @@ let such_that_exhaustion_is_a_discard () =
    at every candidate, whose pre-image is the candidate's own. *)
 let map_renders_the_pre_image () =
   let gen = Gen.map succ Gen.int in
-  let tree = Gen.Private.sample gen (state 1) in
+  let tree = Gen_engine.sample gen (state 1) in
   check
     (rendering tree = Pre_image (string_of_int (root_value tree - 1)))
     "mapped int rendered %S for %d" (render tree) (root_value tree);
@@ -791,7 +792,7 @@ let and_plus_renders_as_a_pair () =
       and+ b = string_of ~size:(int_range 1 1) (char_range 'x' 'x') in
       (a, b))
   in
-  let tree = Gen.Private.sample gen (state 2) in
+  let tree = Gen_engine.sample gen (state 2) in
   let a, _ = root_value tree in
   check
     (rendering tree = Pre_image (Printf.sprintf "(%d, \"x\")" (a - 1)))
@@ -801,7 +802,7 @@ let and_plus_renders_as_a_pair () =
    renders as the list of their pre-images. *)
 let containers_carry_pre_images () =
   let listed = Gen.(list ~size:(int_range 2 2) (map succ nat)) in
-  let tree = Gen.Private.sample listed (state 3) in
+  let tree = Gen_engine.sample listed (state 3) in
   let expected =
     match root_value tree with
     | [ a; b ] -> Printf.sprintf "[%d; %d]" (a - 1) (b - 1)
@@ -824,12 +825,12 @@ let containers_carry_pre_images () =
    composition, exactly as it forfeits the derived printer. *)
 let no_printer_anywhere_renders_nothing () =
   let gen = Gen.(map (fun (c, n) -> (c, n)) (pair (constant 'k') nat)) in
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   check
     (rendering tree = Value placeholder)
     "a map over a constant rendered %S" (render tree);
   let bound = Gen.(bind nat (fun n -> map (fun c -> (c, n)) (constant 'k'))) in
-  let tree = Gen.Private.sample bound (state 0) in
+  let tree = Gen_engine.sample bound (state 0) in
   check
     (rendering tree = Value placeholder)
     "a bind into a constant rendered %S" (render tree)
@@ -841,12 +842,12 @@ let bind_keeps_inner_constraints_while_shrinking () =
       list ~size:(constant n) nat)
   in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:200 tree (fun l ->
         let n = List.length l in
         check (n >= 1 && n <= 3) "bound list candidate has length %d" n)
   done;
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   let minimum, _ = minimize (fun _ -> true) tree in
   check (minimum = [ 0 ]) "bound list minimized to length %d"
     (List.length minimum)
@@ -856,12 +857,12 @@ let bind_keeps_inner_constraints_while_shrinking () =
    nothing when the inner has nothing to print. *)
 let bind_renders_by_its_inner () =
   let printing = Gen.(bind nat (fun n -> int_range n (n + 1))) in
-  let tree = Gen.Private.sample printing (state 4) in
+  let tree = Gen_engine.sample printing (state 4) in
   check
     (rendering tree = Value (string_of_int (root_value tree)))
     "bind into a printing generator rendered %S" (render tree);
   let opaque = Gen.(bind nat (fun n -> constant n)) in
-  let tree = Gen.Private.sample opaque (state 4) in
+  let tree = Gen_engine.sample opaque (state 4) in
   check
     (rendering tree = Value placeholder)
     "bind into a constant rendered %S" (render tree);
@@ -899,7 +900,7 @@ let bind_renders_by_its_inner () =
       let+ c = int_range 3 3 in
       a + b + c)
   in
-  let tree = Gen.Private.sample nested (state 0) in
+  let tree = Gen_engine.sample nested (state 0) in
   check
     (rendering tree = Pre_image "1 -> 2 -> 3")
     "nested binds rendered %S" (render tree);
@@ -913,7 +914,7 @@ let bind_renders_by_its_inner () =
       let+ c = int_range 3 3 in
       ab + c)
   in
-  let tree = Gen.Private.sample outer_bind (state 0) in
+  let tree = Gen_engine.sample outer_bind (state 0) in
   check
     (rendering tree = Pre_image "(1 -> 2) -> 3")
     "a bind whose outer is a bind rendered %S" (render tree)
@@ -931,23 +932,23 @@ let letops_compose () =
 let with_pp_attaches_a_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let inner = Gen.with_pp custom (Gen.map succ Gen.int) in
-  let tree = Gen.Private.sample inner (state 5) in
+  let tree = Gen_engine.sample inner (state 5) in
   check
     (render tree = Printf.sprintf "N=%d" (root_value tree))
     "with_pp did not render directly";
   check
-    (Gen.Private.render_value inner 7 = "N=7")
+    (Gen_engine.render_value inner 7 = "N=7")
     "with_pp did not expose the printer";
   (* A [map] above it derives nothing, and renders its argument through
      the attached printer: a pre-image. *)
   let outer = Gen.map (fun n -> -n) inner in
-  let tree = Gen.Private.sample outer (state 6) in
+  let tree = Gen_engine.sample outer (state 6) in
   check
     (rendering tree = Pre_image (Printf.sprintf "N=%d" (-root_value tree)))
     "mapped with_pp rendered %S" (render tree);
   (* On the image, an explicit printer wins over the pre-image. *)
   let printed = Gen.with_pp custom outer in
-  let tree = Gen.Private.sample printed (state 6) in
+  let tree = Gen_engine.sample printed (state 6) in
   check
     (rendering tree = Value (Printf.sprintf "N=%d" (root_value tree)))
     "with_pp over a map rendered %S" (render tree)
@@ -958,7 +959,7 @@ let mixed_one_of_derives_no_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let gen = Gen.(one_of [ with_pp custom (constant 5); constant 9 ]) in
   check
-    (Gen.Private.render_value gen 5 = placeholder)
+    (Gen_engine.render_value gen 5 = placeholder)
     "a mixed one_of derived a printer";
   let printed = find_sample gen (fun v -> v = 5) in
   check
@@ -1002,7 +1003,7 @@ let shape_generator_prints_only_with_pp () =
     | Rect (w, h) -> Format.fprintf ppf "Rect (%g, %g)" w h
   in
   let printed = Gen.with_pp pp_shape shape_gen in
-  let tree = Gen.Private.sample printed (state 0) in
+  let tree = Gen_engine.sample printed (state 0) in
   check
     (starts_with "Circle" (render tree) || starts_with "Rect" (render tree))
     "with_pp shape rendered %S" (render tree)
@@ -1013,7 +1014,7 @@ let render_is_total_over_shrink_trees () =
   let check_gen : type a. string -> a Gen.t -> unit =
    fun name gen ->
     for index = 0 to 4 do
-      let tree = Gen.Private.sample gen (state index) in
+      let tree = Gen_engine.sample gen (state index) in
       let visited = ref 0 in
       let rec go tree =
         if !visited >= 50 then raise_notrace Exit;
@@ -1033,22 +1034,22 @@ let render_is_total_over_shrink_trees () =
 let raising_printer_is_contained () =
   let boom _ _ = failwith "boom" in
   let gen = Gen.with_pp boom Gen.nat in
-  let tree = Gen.Private.sample gen (state 0) in
+  let tree = Gen_engine.sample gen (state 0) in
   check
     (starts_with "<printer raised" (render tree))
     "raising printer rendered %S" (render tree);
-  let rendered = Gen.Private.render_value gen 3 in
+  let rendered = Gen_engine.render_value gen 3 in
   check
     (starts_with "<printer raised" rendered)
     "render_value let the exception through: %S" rendered
 
 let render_value_reports_printer_presence () =
-  check (Gen.Private.render_value Gen.int 42 = "42") "int printer missing";
+  check (Gen_engine.render_value Gen.int 42 = "42") "int printer missing";
   check
-    (Gen.Private.render_value Gen.(list nat) [ 1; 2 ] = "[1; 2]")
+    (Gen_engine.render_value Gen.(list nat) [ 1; 2 ] = "[1; 2]")
     "list printer missing";
   check
-    (Gen.Private.render_value (Gen.map succ Gen.int) 3 = placeholder)
+    (Gen_engine.render_value (Gen.map succ Gen.int) 3 = placeholder)
     "map kept a printer it cannot have"
 
 (* Adversarial additions *)
@@ -1059,9 +1060,9 @@ let find_sample_skipping_discards ?(max_index = 10_000) gen accept =
     if index >= max_index then
       failf "no matching sample within %d cases" max_index
     else
-      match Gen.Private.sample gen (state index) with
+      match Gen_engine.sample gen (state index) with
       | tree -> if accept (root_value tree) then tree else loop (index + 1)
-      | exception Gen.Private.Rejected -> loop (index + 1)
+      | exception Gen_engine.Rejected -> loop (index + 1)
   in
   loop 0
 
@@ -1092,7 +1093,7 @@ let rejected_one_of_candidates_are_skipped () =
 let int_range_negative_bounds_shrink_to_high () =
   let gen = Gen.int_range (-100) (-10) in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:200 tree (fun v ->
         check
           (v >= -100 && v <= -10)
@@ -1147,8 +1148,8 @@ let such_that_size_constrains_every_candidate () =
   (* An exhausted size generator is a generation-time discard, like any other
      [such_that] exhaustion. *)
   let starved = Gen.(list ~size:(such_that (fun _ -> false) nat) nat) in
-  match Gen.Private.sample starved (state 0) with
-  | exception Gen.Private.Rejected -> ()
+  match Gen_engine.sample starved (state 0) with
+  | exception Gen_engine.Rejected -> ()
   | _ -> failf "a starved size generator sampled successfully"
 
 (* [such_that] around a sized string: both constraints — fixed length and the
@@ -1162,7 +1163,7 @@ let such_that_over_sized_string_keeps_both_constraints () =
         (string_of ~size:(constant 3) (char_range 'a' 'z')))
   in
   for index = 0 to 4 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     explore ~limit:200 tree (fun s ->
         check (String.length s = 3) "candidate %S is not 3 chars" s;
         check (s <> "aaa") "candidate violated the predicate";
@@ -1184,14 +1185,14 @@ let with_pp_overrides_derived_choice_printer () =
   let custom ppf n = Format.fprintf ppf "N=%d" n in
   let overridden = Gen.(with_pp custom (one_of [ int_range 0 9; nat ])) in
   check
-    (Gen.Private.render_value overridden 5 = "N=5")
+    (Gen_engine.render_value overridden 5 = "N=5")
     "with_pp did not override the derived choice printer";
-  let tree = Gen.Private.sample overridden (state 0) in
+  let tree = Gen_engine.sample overridden (state 0) in
   check
     (render tree = Printf.sprintf "N=%d" (root_value tree))
     "overridden choice rendered %S" (render tree);
   let mapped = Gen.map Fun.id overridden in
-  let tree = Gen.Private.sample mapped (state 1) in
+  let tree = Gen_engine.sample mapped (state 1) in
   check
     (rendering tree = Pre_image (Printf.sprintf "N=%d" (root_value tree)))
     "map over the override rendered %S" (render tree)
@@ -1207,7 +1208,7 @@ let evidence_shaped_identifier_generator_composes () =
   let ident = Gen.(string_of ~size:(int_range 1 8) ident_char) in
   let in_alphabet c = (c >= 'a' && c <= 'z') || c = '-' || c = '_' in
   for index = 0 to 9 do
-    let tree = Gen.Private.sample ident (state index) in
+    let tree = Gen_engine.sample ident (state index) in
     explore ~limit:100 tree (fun s ->
         let n = String.length s in
         check (n >= 1 && n <= 8) "identifier candidate has length %d" n;
@@ -1215,7 +1216,7 @@ let evidence_shaped_identifier_generator_composes () =
           (fun c -> check (in_alphabet c) "identifier char %C off-alphabet" c)
           s)
   done;
-  let tree = Gen.Private.sample ident (state 0) in
+  let tree = Gen_engine.sample ident (state 0) in
   let rendered = render tree in
   check (starts_with "\"" rendered) "identifier lost its printer: %S" rendered;
   let minimum, _ = minimize (fun _ -> true) tree in
@@ -1393,7 +1394,7 @@ let law_tests =
       (Gen.pair Gen.string (Gen.list Gen.int))
       (fun (s, xs) ->
         let rendered =
-          Gen.Private.render_value
+          Gen_engine.render_value
             (Gen.pair Gen.string (Gen.list Gen.int))
             (s, xs)
         in

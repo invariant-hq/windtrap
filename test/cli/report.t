@@ -33,8 +33,8 @@ the block:
 JUnit has no state for it, so the testcase says so in its system-out:
 
   $ run FACADE_FIXTURE=flaky ./suite_main.exe --junit report.xml > /dev/null
-  $ grep -A1 'name="flaky"' report.xml
-      <testcase name="flaky" classname="fixture" time="0.000">
+  $ grep -A1 'name="flaky"' report.xml | sed -E 's/time="[0-9.]+"/time="TIME"/'
+      <testcase name="flaky" classname="fixture" time="TIME">
         <system-out>passed on attempt 2</system-out>
 
 A failing test's captured output ends its block with the full log's

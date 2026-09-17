@@ -116,21 +116,29 @@ let seq_order () =
   note "two" ();
   List.rev !log
 
-(* Laziness: [thunk]'s effect must not run until the caller forces it, and
-   [trivial] must still compile as an already-forced value (the
-   trivial-syntactic-value guard). *)
-let forced = ref false
-let force_count = ref 0
+(* Laziness: a thunk's effect must not run until the caller forces it, and
+   a trivial lazy must still compile as an already-forced value (the
+   trivial-syntactic-value guard). Built per call rather than held at
+   module level: a forced lazy stays forced for the rest of the process,
+   and a test that forces one may run more than once in one process - the
+   mutation loop's probe and children are forks of the process that ran
+   the dry run - so what it forces must be its own. [make_thunk ()] is
+   the suspension with its [forced] flag and its force count, a tuple
+   because the mutate suite coerces this module to its uninstrumented
+   twin's signature and a record type declared here would be two types. *)
 
 (* Trivial operators only ([:=], [!], [+]): the body is exactly one
    point, the lazy-body entry - the force test pins its delta at 1. *)
-let thunk =
-  lazy
-    (forced := true;
-     force_count := !force_count + 1;
-     41 + 1)
+let make_thunk () =
+  let forced = ref false and force_count = ref 0 in
+  ( lazy
+      (forced := true;
+       force_count := !force_count + 1;
+       41 + 1),
+    forced,
+    force_count )
 
-let trivial = lazy 42
+let trivial () = lazy 42
 
 (* Exception-raising applications: the out-edge of [f ()] fires only when
    [f ()] returns. [tap_ok] and [tap_raise] are shape-identical, so their

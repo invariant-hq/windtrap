@@ -159,7 +159,7 @@ let one_line text =
 
 let plural count = if count = 1 then "" else "s"
 
-(* [Gen.Private.render] collapses a raising printer to one [<printer raised ...>]
+(* [Gen.Engine.render] collapses a raising printer to one [<printer raised ...>]
    for the whole value, which would cost the reader the entire program while
    the rendering stays a value, so no remedy line fires. One bad cell must
    cost one cell. *)
@@ -286,7 +286,7 @@ let branch (Command { name; gen; pre; next; body; loc }) =
       {
         name;
         loc;
-        arg = lazy (Gen.Private.render_value gen argument);
+        arg = lazy (Gen.Engine.render_value gen argument);
         pre = (fun model -> pre model argument);
         next = (fun model -> next model argument);
         body = (fun model sut -> body model argument sut);
@@ -318,7 +318,7 @@ let choice commands =
 let program ?(steps = default_steps) ?pp_model ~model commands =
   let element = choice commands in
   let keep = repair model in
-  Gen.Private.make ~pp:(pp_program ?pp_model) (fun state ->
+  Gen.Engine.make ~pp:(pp_program ?pp_model) (fun state ->
       (* [?steps:0] draws no element, so the branch-level report never
          fires; a test declaring no commands must not pass vacuously. *)
       (match commands with [] -> invalid_arg no_commands | _ :: _ -> ());
@@ -326,17 +326,17 @@ let program ?(steps = default_steps) ?pp_model ~model commands =
       let rec draw remaining trees state =
         if remaining = 0 then (List.rev trees, state)
         else
-          let tree, state = Gen.Private.run element state in
+          let tree, state = Gen.Engine.run element state in
           draw (remaining - 1) (tree :: trees) state
       in
       let trees, state = draw steps [] state in
       let trees =
-        select (keep (List.map Gen.Private.Shrink_tree.root trees)) trees
+        select (keep (List.map Gen.Engine.Shrink_tree.root trees)) trees
       in
       let tree =
-        Gen.Private.Shrink_tree.map
+        Gen.Engine.Shrink_tree.map
           (fun calls -> { initial = model; calls = select (keep calls) calls })
-          (Gen.Private.Shrink_tree.list trees)
+          (Gen.Engine.Shrink_tree.list trees)
       in
       (tree, state))
 

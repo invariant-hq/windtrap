@@ -18,8 +18,8 @@
 
    A windtrap suite ([run] executes tests sequentially in declaration
    order). The registry tests accumulate state in the shared global
-   registry, which is never reset: each uses distinctive file names and
-   extents so that they cannot read each other's data. *)
+   registry, which is never reset: each registers under a file name of
+   its own ([fresh]) and reads that file back alone. *)
 
 open Windtrap
 module C = Windtrap_runtime.Coverage
@@ -115,20 +115,29 @@ let with_captured_stderr f =
     ~finally:(fun () -> close_in_noerr ic)
     (fun () -> really_input_string ic (in_channel_length ic))
 
+(* The registry is a process global, and a test here may run more than
+   once in one process: the mutation loop's probe and its children are
+   forks of the process that ran the dry run, registrations included. So
+   every registry test registers under a name no earlier run of it used
+   and reads its own file back alone; the extents stay distinctive per
+   test so a line assertion cannot match another test's table either. *)
+let fresh =
+  let n = ref 0 in
+  fun base ->
+    incr n;
+    Printf.sprintf "%s_%d.ml" base !n
+
+let own file = C.filter (String.equal file) (C.snapshot ())
+
 let registry_tests =
   [
     test "register and visit appear in the snapshot" (fun () ->
-        (* Distinctive extents per registry test keep to_string line
-           assertions unambiguous across the shared global registry. *)
+        let file = fresh "reg_vis" in
         let counts = Array.make 2 0 in
-        C.register ~file:"reg_vis.ml"
-          ~points:[| pt 100 110; pt 120 130 |]
-          ~counts;
+        C.register ~file ~points:[| pt 100 110; pt 120 130 |] ~counts;
         C.visit counts 0;
-        let reports = C.file_reports (C.snapshot ()) in
-        match List.find_opt (fun r -> r.C.file = "reg_vis.ml") reports with
-        | None -> check "visited file appears in snapshot reports" false
-        | Some r ->
+        match C.file_reports (own file) with
+        | [ r ] ->
             check_int "visit marks one of two blocks" ~expected:1
               ~actual:r.C.summary.C.visited;
             check_int "two blocks total" ~expected:2 ~actual:r.C.summary.C.total;
@@ -136,65 +145,58 @@ let registry_tests =
               (r.C.uncovered_extents = [ pt 120 130 ]);
             check "unresolvable source yields no source" (r.C.source = None);
             check "unresolvable source yields no lines"
-              (r.C.uncovered_lines = []));
+              (r.C.uncovered_lines = [])
+        | _ -> check "visited file appears in snapshot reports" false);
     test "visit saturates at max_int" (fun () ->
+        let file = fresh "reg_sat" in
         let counts = [| max_int - 1 |] in
-        C.register ~file:"reg_sat.ml" ~points:[| pt 7000 7010 |] ~counts;
+        C.register ~file ~points:[| pt 7000 7010 |] ~counts;
         C.visit counts 0;
         C.visit counts 0;
         check "visit saturates at max_int"
           (contains
              (Printf.sprintf "7000 7010 %d\n" max_int)
-             (C.to_string (C.snapshot ()))));
+             (C.to_string (own file))));
     test "duplicate registrations sum, blocks counted once" (fun () ->
         (* Same file registered twice with an equal table — a
            functor-style double instantiation: counts add, blocks are
            counted once. *)
+        let file = fresh "reg_dup" in
         let counts_a = Array.make 1 0 and counts_b = Array.make 1 0 in
-        C.register ~file:"reg_dup.ml"
-          ~points:[| pt 8000 8010 |]
-          ~counts:counts_a;
-        C.register ~file:"reg_dup.ml"
-          ~points:[| pt 8000 8010 |]
-          ~counts:counts_b;
+        C.register ~file ~points:[| pt 8000 8010 |] ~counts:counts_a;
+        C.register ~file ~points:[| pt 8000 8010 |] ~counts:counts_b;
         C.visit counts_a 0;
         C.visit counts_b 0;
         check "duplicate registrations sum in snapshot"
-          (contains "8000 8010 2\n" (C.to_string (C.snapshot ())));
-        match
-          List.find_opt
-            (fun r -> r.C.file = "reg_dup.ml")
-            (C.file_reports (C.snapshot ()))
-        with
-        | Some r ->
+          (contains "8000 8010 2\n" (C.to_string (own file)));
+        match C.file_reports (own file) with
+        | [ r ] ->
             check "duplicate registrations never double-count blocks"
               (r.C.summary = { C.visited = 1; total = 1 })
-        | None ->
-            check "duplicate registrations never double-count blocks" false);
+        | _ -> check "duplicate registrations never double-count blocks" false);
     test "a zero-block file is data, present in reports" (fun () ->
-        C.register ~file:"reg_none.ml" ~points:[||] ~counts:[||];
-        match
-          List.find_opt
-            (fun r -> r.C.file = "reg_none.ml")
-            (C.file_reports (C.snapshot ()))
-        with
-        | Some r ->
+        let file = fresh "reg_none" in
+        C.register ~file ~points:[||] ~counts:[||];
+        match C.file_reports (own file) with
+        | [ r ] ->
             check "a zero-block file reports an empty summary"
               (r.C.summary = { C.visited = 0; total = 0 });
             check "a zero-block file has no uncovered extents"
               (r.C.uncovered_extents = [])
-        | None -> check "a zero-block file appears in reports" false);
+        | _ -> check "a zero-block file appears in reports" false);
     test "snapshots are isolated copies" (fun () ->
         (* Later visits do not leak into an earlier snapshot. *)
+        let file = fresh "reg_iso" in
         let counts = Array.make 1 0 in
-        C.register ~file:"reg_iso.ml" ~points:[| pt 9000 9010 |] ~counts;
+        C.register ~file ~points:[| pt 9000 9010 |] ~counts;
         let before = C.snapshot () in
         C.visit counts 0;
         let after = C.snapshot () in
+        let of_file t = C.to_string (C.filter (String.equal file) t) in
         check "snapshot taken before a visit is unchanged"
-          (contains "9000 9010 0\n" (C.to_string before));
+          (contains "9000 9010 0\n" (of_file before));
         check "snapshot taken after a visit sees it"
-          (contains "9000 9010 1\n" (C.to_string after)));
+          (contains "9000 9010 1\n" (of_file after)));
     test "register and visit reject malformed tables" (fun () ->
         (* Loud rejection — instrumenter bugs fail fast. *)
         check_invalid_arg "register rejects points/counts length mismatch"
@@ -221,12 +223,11 @@ let registry_tests =
            program error: it must warn and be dropped, never raise
            (coverage cannot alter what the program does), and the
            snapshot keeps the first table. *)
-        C.register ~file:"reg_conf.ml"
-          ~points:[| pt 6000 6010 |]
-          ~counts:(Array.make 1 0);
+        let file = fresh "reg_conf" in
+        C.register ~file ~points:[| pt 6000 6010 |] ~counts:(Array.make 1 0);
         let err =
           with_captured_stderr (fun () ->
-              C.register ~file:"reg_conf.ml"
+              C.register ~file
                 ~points:[| pt 6000 6020 |]
                 ~counts:(Array.make 1 0))
         in
@@ -234,7 +235,7 @@ let registry_tests =
           (contains "conflicting" err);
         check "the conflict warning suggests a clean rebuild"
           (contains "rebuild from clean" err);
-        let serialized = C.to_string (C.snapshot ()) in
+        let serialized = C.to_string (own file) in
         check "a conflict keeps the first registration's table"
           (contains "6000 6010 0\n" serialized);
         check "a conflicting table is dropped from the snapshot"
@@ -901,10 +902,14 @@ let dump_tests =
           (not (Sys.file_exists child_file)));
     (* The default destination: the executable's own directory, where
        every run keeps its own file. The child is copied under a scratch
-       _build so that directory is scratch's, never this checkout's. *)
+       _build so that directory is scratch's, never this checkout's; the
+       tree is cleared first, because the counts below are of this run's
+       files and a re-run of the test in the same process would find its
+       predecessor's. *)
     test "runs of one executable accumulate; a rebuild's first run supersedes"
       (fun () ->
         let root = scratch "runs" in
+        remove_tree root;
         let exe = Filename.concat root "_build/default/child.exe" in
         (match read_file (Filename.concat exe_dir "dump_child.exe") with
         | Some bytes ->

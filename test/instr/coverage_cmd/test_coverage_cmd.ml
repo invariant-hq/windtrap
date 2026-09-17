@@ -105,17 +105,35 @@ let read_file path =
   | exception Sys_error _ -> ""
 
 (* [capture ~env ?cwd exe args] runs [exe] through the shell and returns
-   (exit code, stdout, stderr). [env] entries are NAME=value words for
-   env(1) — every inline_child run must carry WINDTRAP_COVERAGE_FILE so
-   its at_exit dump lands in scratch, never in the real _build. *)
+   (exit code, stdout, stderr). The child's environment is stated, never
+   inherited: nothing of this process's survives but what a process
+   needs to start (PATH, HOME, TMPDIR and the locale), colour is off, and
+   [env] adds the scenario's own NAME=value words for env(1). The
+   children link the core, and the tree-wide mutation run hands this
+   suite WINDTRAP_MUTATE=1: a child that inherited it would run the loop
+   in place of its scenario. Every inline_child run must carry
+   WINDTRAP_COVERAGE_FILE so its at_exit dump lands in scratch, never in
+   the real _build. *)
 let run_counter = ref 0
+
+let inherited =
+  List.concat_map
+    (fun name ->
+      match Sys.getenv_opt name with
+      | Some value -> [ name ^ "=" ^ value ]
+      | None -> [])
+    [ "PATH"; "HOME"; "TMPDIR"; "LANG"; "LC_ALL" ]
 
 let capture ?(env = []) ?cwd exe args =
   incr run_counter;
   let out = scratch (Printf.sprintf "out-%d.txt" !run_counter)
   and err = scratch (Printf.sprintf "err-%d.txt" !run_counter) in
   let command =
-    String.concat " " (List.map Filename.quote (("env" :: env) @ (exe :: args)))
+    String.concat " "
+      (List.map Filename.quote
+         (("env" :: "-i" :: inherited)
+         @ ("WINDTRAP_COLOR=never" :: env)
+         @ (exe :: args)))
     ^ " > " ^ Filename.quote out ^ " 2> " ^ Filename.quote err
   in
   let command =
@@ -270,19 +288,17 @@ let proj =
     (C.to_string b);
   root
 
-(* INSIDE_DUNE is scrubbed unless the scenario sets it: `dune runtest`
-   exports its own context to this suite, and the command would
-   otherwise report the real build directory's estate in place of the
-   scratch project's. *)
+(* INSIDE_DUNE reaches the command only when the scenario sets it: `dune
+   runtest` exports its own context to this suite, and a command that
+   inherited it would report the real build directory's estate in place
+   of the scratch project's. *)
 let coverage_cmd ?cwd ?inside_dune args =
   let inside_dune =
     match inside_dune with
     | Some context -> [ "INSIDE_DUNE=" ^ context ]
-    | None -> [ "-u"; "INSIDE_DUNE" ]
+    | None -> []
   in
-  capture
-    ~env:(inside_dune @ [ "WINDTRAP_COLOR=never" ])
-    ?cwd windtrap_exe ("coverage" :: args)
+  capture ~env:inside_dune ?cwd windtrap_exe ("coverage" :: args)
 
 (* The reporting command: merge, table, walk-up *)
 

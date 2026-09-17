@@ -9,7 +9,7 @@
 open Windtrap
 open Windtrap.Private
 module Tag = Test_tree.Tag
-module Shrink_tree = Windtrap.Gen.Private.Shrink_tree
+module Shrink_tree = Gen_engine.Shrink_tree
 
 (* Printf-style shims over windtrap's [fail]. [Check.*] calls inside command
    bodies are the probes the engine and the executor catch; only these shims
@@ -29,8 +29,8 @@ let show_ints values = show_names (List.map string_of_int values)
    Everything below is deterministic across runs and machines. *)
 let root = 0x00c0ffee1234abcdL
 let state index = Seed.make (Seed.derive ~root ~path:"test_stateful" ~index)
-let root_value tree = Gen.Private.value (Shrink_tree.root tree)
-let program_at gen index = root_value (Gen.Private.sample gen (state index))
+let root_value tree = Gen_engine.value (Shrink_tree.root tree)
+let program_at gen index = root_value (Gen_engine.sample gen (state index))
 
 (* [~scope] over a system that needs no acquisition at all: what most of
    the tests below exercise is the program, not the resource. *)
@@ -40,7 +40,7 @@ let unit_scope run = run ()
    printer's, so the tests read a program back the same way: a summary line
    and then one [<cell>  N  name [arg]] row per step. The row's number is
    the last [N  ] before the step text — a model cell may be a number too. *)
-let render gen program = Gen.Private.render_value gen program
+let render gen program = Gen_engine.render_value gen program
 let lines_of gen program = Text.split_lines (render gen program)
 
 let names gen program =
@@ -321,7 +321,7 @@ let every_forced_node_holds_only_legal_calls () =
   let index = ref 0 in
   (try
      while !nodes < budget do
-       go (Gen.Private.sample gen (state !index));
+       go (Gen_engine.sample gen (state !index));
        incr index;
        if !index > 40 then raise_notrace Exit
      done
@@ -342,7 +342,7 @@ let root_candidates_are_strictly_monotone () =
   let gen = Stateful.program ~steps:12 ~model:0 counter_commands in
   let checked = ref 0 in
   for index = 0 to 19 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     let parent = names gen (root_value tree) in
     if parent <> [] && List.length parent < 12 then begin
       incr checked;
@@ -370,7 +370,7 @@ let root_candidates_of_an_argument_spec_are_no_longer () =
   in
   let checked = ref 0 in
   for index = 0 to 19 do
-    let tree = Gen.Private.sample gen (state index) in
+    let tree = Gen_engine.sample gen (state index) in
     let parent = List.length (names gen (root_value tree)) in
     if parent < 10 then incr checked;
     Seq.iter
@@ -413,7 +413,7 @@ let no_node_invents_or_substitutes_a_call () =
         (show_names kept) (show_names drawn);
       Seq.iter go (Shrink_tree.children tree)
     in
-    try go (Gen.Private.sample repaired (state index)) with Exit -> ()
+    try go (Gen_engine.sample repaired (state index)) with Exit -> ()
   done;
   check (!nodes >= 2_000) "only %d nodes were forced" !nodes
 
@@ -479,7 +479,7 @@ let a_raising_pre_or_next_is_a_specification_bug () =
       let rec first_raise index =
         if index >= 50 then failf "no program drew boom within 50 samples"
         else
-          match Gen.Private.sample gen (state index) with
+          match Gen_engine.sample gen (state index) with
           | exception raised -> Printexc.to_string raised
           | _ -> first_raise (index + 1)
       in
@@ -545,7 +545,7 @@ let a_specification_bug_met_while_shrinking_stops_the_search () =
     else
       let path = "candidate " ^ string_of_int index in
       let seed = Seed.make (Seed.derive ~root ~path ~index:0) in
-      match names gen (root_value (Gen.Private.sample gen seed)) with
+      match names gen (root_value (Gen_engine.sample gen seed)) with
       | "inc" :: rest when List.mem "check" rest -> path
       | _ -> clean (index + 1)
       | exception _ -> clean (index + 1)
@@ -584,7 +584,7 @@ let control_exceptions_escape_pre_and_next_unconverted () =
           let gen =
             Stateful.program ~steps:4 ~model:0 (control_spec exn phase)
           in
-          match Gen.Private.sample gen (state 0) with
+          match Gen_engine.sample gen (state 0) with
           | exception raised ->
               check (raised = exn) "%s from %s came back as %s" label spelling
                 (Printexc.to_string raised)
@@ -612,7 +612,7 @@ let a_failing_step_points_at_its_command () =
     in
     let program =
       root_value
-        (Gen.Private.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0))
+        (Gen_engine.sample (Stateful.program ~steps:1 ~model:0 spec) (state 0))
     in
     expect_check_failure "a located step" (fun () ->
         Stateful.execute ~scope:unit_scope program)
@@ -647,7 +647,7 @@ let assertions_skips_and_discards_from_pre_are_specification_bugs () =
   List.iter
     (fun (label, exn, needle) ->
       let gen = Stateful.program ~steps:4 ~model:0 (control_spec exn `Pre) in
-      match Gen.Private.sample gen (state 0) with
+      match Gen_engine.sample gen (state 0) with
       | exception raised ->
           let message = Printexc.to_string raised in
           check
@@ -1248,7 +1248,7 @@ let the_model_column_shows_the_pre_state () =
     (String.concat "\n" expected)
 
 (* A [pp_model] that raises costs its own cell and no more: left to
-   [Gen.Private.render], it would collapse the whole program to one
+   [Gen_engine.render], it would collapse the whole program to one
    [<printer raised ...>] marker and the reader would lose the program. *)
 let a_raising_pp_model_costs_one_cell () =
   let pp_model ppf model =
@@ -1418,7 +1418,7 @@ let the_model_column_is_measured_over_the_printed_rows () =
    test's exception boundary. *)
 let a_malformed_declaration_raises_at_sample_time () =
   (match
-     Gen.Private.sample (Stateful.program ~steps:4 ~model:0 []) (state 0)
+     Gen_engine.sample (Stateful.program ~steps:4 ~model:0 []) (state 0)
    with
   | exception Invalid_argument message ->
       check
@@ -1428,7 +1428,7 @@ let a_malformed_declaration_raises_at_sample_time () =
   (* At [?steps:0] no element is drawn, so the branch-level report never
      fires — a test declaring no commands must not pass vacuously. *)
   (match
-     Gen.Private.sample (Stateful.program ~steps:0 ~model:0 []) (state 0)
+     Gen_engine.sample (Stateful.program ~steps:0 ~model:0 []) (state 0)
    with
   | exception Invalid_argument message ->
       check
@@ -1436,7 +1436,7 @@ let a_malformed_declaration_raises_at_sample_time () =
         "the empty-command error at ?steps:0 said %S" message
   | _ -> failf "an empty command list at ?steps:0 sampled successfully");
   match
-    Gen.Private.sample
+    Gen_engine.sample
       (Stateful.program ~steps:(-1) ~model:0 counter_draws)
       (state 0)
   with
@@ -1686,7 +1686,7 @@ let the_program_generator_always_prints () =
     ]
   in
   check
-    (Gen.Private.render_value (Gen.constant 5) 5 = placeholder)
+    (Gen_engine.render_value (Gen.constant 5) 5 = placeholder)
     "Gen.constant grew a printer — the test is vacuous";
   let gen = Stateful.program ~steps:4 ~model:0 opaque in
   check

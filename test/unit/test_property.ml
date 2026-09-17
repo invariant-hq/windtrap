@@ -10,7 +10,7 @@
 
 open Windtrap
 open Windtrap.Private
-module Shrink_tree = Windtrap.Gen.Private.Shrink_tree
+module Shrink_tree = Gen_engine.Shrink_tree
 
 (* Printf-style shims over windtrap's [fail]. [Check.*] calls inside
    property bodies are the probes the engine catches; only these shims
@@ -76,9 +76,9 @@ let expect_coverage_failed = function
 (* The value generated for case [index] of [path] under [root], as the engine
    derives it — used to predict and replay engine streams. *)
 let value_at gen ~root ~path ~index =
-  Gen.Private.value
+  Gen_engine.value
     (Shrink_tree.root
-       (Gen.Private.sample gen (Seed.make (Seed.derive ~root ~path ~index))))
+       (Gen_engine.sample gen (Seed.make (Seed.derive ~root ~path ~index))))
 
 (* Search for a root whose first failing generated case satisfies
    [first_ok] — keeps same-kind shrink tests deterministic without
@@ -812,7 +812,7 @@ let spent_shrink_budget_is_marked () =
       Shrink_tree.make ~root:k ~children:(fun () ->
           if k = 0 then Seq.Nil else Seq.Cons (tree (k - 1), Seq.empty))
     in
-    Gen.Private.make ~pp:Format.pp_print_int (fun state -> (tree n, state))
+    Gen_engine.make ~pp:Format.pp_print_int (fun state -> (tree n, state))
   in
   let law _ (_ : int) = raise Exit in
   let budget = Property.shrink_budget in
@@ -848,9 +848,9 @@ let a_raising_candidate_stops_the_search_visibly () =
       (Gen.int_range 10 50)
   in
   let root_value =
-    Gen.Private.value
+    Gen_engine.value
       (Shrink_tree.root
-         (Gen.Private.sample gen
+         (Gen_engine.sample gen
             (Seed.make (Seed.derive ~root ~path:"raising-candidate" ~index:0))))
   in
   check (root_value > 10) "the fixture's root is the raising value itself";

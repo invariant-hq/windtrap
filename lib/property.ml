@@ -139,9 +139,7 @@ let same_kind original candidate =
 let shrink ~budget ~body tree first_class =
   let scratch = make_context () in
   let accept candidate_tree =
-    let value =
-      Gen.Private.value (Gen.Private.Shrink_tree.root candidate_tree)
-    in
+    let value = Gen.Engine.value (Gen.Engine.Shrink_tree.root candidate_tree) in
     match run_case scratch body value with
     | Control ((Failure.Timeout _ as timeout), backtrace) ->
         (* The per-test alarm fired inside a candidate: a fact about the
@@ -185,7 +183,7 @@ let shrink ~budget ~body tree first_class =
         converged, and reporting it as truncated would tell the reader the
         counterexample may not be minimal when it is. *)
      let rec descend steps tree =
-       match first_accepted (Gen.Private.Shrink_tree.children tree) with
+       match first_accepted (Gen.Engine.Shrink_tree.children tree) with
        | `Converged -> ()
        | `Stopped -> exhausted := true
        | `Accepted (candidate, accepted) ->
@@ -286,7 +284,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
         match run_one value with
         | `Passed | `Discarded -> run_examples (index + 1) rest
         | `Failed cls ->
-            let rendered = Gen.Private.render_value gen value in
+            let rendered = Gen.Engine.render_value gen value in
             Some
               (fail ~rendered ~case_index:index ~shrink_steps:0 ~examples:true
                  cls))
@@ -306,8 +304,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
           else Coverage_failed final
         else
           let state = Seed.make (Seed.derive ~root ~path ~index:attempts) in
-          match Gen.Private.sample gen state with
-          | exception Gen.Private.Rejected ->
+          match Gen.Engine.sample gen state with
+          | exception Gen.Engine.Rejected ->
               incr discards;
               generate ~passed ~attempts:(attempts + 1)
           | exception ((Failure.Skip_test _ | Failure.Timeout _) as control) ->
@@ -324,7 +322,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
                 (Exception (exn, backtrace))
           | tree -> (
               match
-                run_one (Gen.Private.value (Gen.Private.Shrink_tree.root tree))
+                run_one (Gen.Engine.value (Gen.Engine.Shrink_tree.root tree))
               with
               | `Passed -> generate ~passed:(passed + 1) ~attempts:(attempts + 1)
               | `Discarded -> generate ~passed ~attempts:(attempts + 1)
@@ -334,8 +332,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
                   in
                   let rendered, rendering =
                     match
-                      Gen.Private.render
-                        (Gen.Private.Shrink_tree.root final_tree)
+                      Gen.Engine.render (Gen.Engine.Shrink_tree.root final_tree)
                     with
                     | Value text -> (text, Failure.Value)
                     | Pre_image text -> (text, Failure.Pre_image)

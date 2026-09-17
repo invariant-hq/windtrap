@@ -26,6 +26,8 @@ module Gen = Gen
 
 (* Internal modules (see [Private] in the .mli) *)
 
+module Gen_engine = Gen.Engine
+
 module Private = struct
   module Baseline = Baseline
   module Capture = Capture
@@ -33,6 +35,7 @@ module Private = struct
   module Cli = Cli
   module Diff = Diff
   module Failure = Failure
+  module Gen_engine = Gen_engine
   module Loc = Loc
   module Mutate_loop = Mutate_loop
   module Os = Os

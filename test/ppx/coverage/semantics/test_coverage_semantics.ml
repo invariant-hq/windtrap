@@ -20,9 +20,8 @@
    visit calls actually count.
 
    A windtrap suite ([run] executes tests sequentially in declaration
-   order); the visited-count deltas observe the shared in-process
-   registry, so the tests are order-dependent — run the suite whole, not
-   filtered. *)
+   order); the last test reads what the others visited in the shared
+   in-process registry, so run the suite whole, not filtered. *)
 
 open Windtrap
 module F = Covsem_fixtures
@@ -40,16 +39,55 @@ let fixture_snapshot () =
     (fun file -> Filename.basename file = "covsem_fixtures.ml")
     (Windtrap_runtime.Coverage.snapshot ())
 
-let visited () =
-  (Windtrap_runtime.Coverage.summary (fixture_snapshot ())).visited
+(* The fixture's hit count per point, read off the collection's
+   serialization — the v3 format test/instr/coverage pins byte for byte:
+   the magic line, the file count, [len name], the point count, then one
+   [start end count] line per point. Counts, not the summary's tally of
+   visited points, because a test here may run more than once in one
+   process — the mutation loop's probe and its children are forks of the
+   process that ran the dry run — and a point an earlier run visited is
+   visited still. What a call hits is the points whose counts it raised. *)
+let counts () =
+  match
+    String.split_on_char '\n'
+      (Windtrap_runtime.Coverage.to_string (fixture_snapshot ()))
+  with
+  | _magic :: "1" :: _file :: _points :: lines ->
+      List.filter_map
+        (fun line ->
+          match String.split_on_char ' ' line with
+          | [ start; stop; count ] ->
+              Some
+                ((int_of_string start, int_of_string stop), int_of_string count)
+          | _ -> None)
+        lines
+  | _ -> failf "the fixture snapshot does not serialize as one file"
+
+(* [hits f] is [f ()] with the points it raised, each with its increment. *)
+let hits f =
+  let before = counts () in
+  let value = f () in
+  let after = counts () in
+  ( value,
+    List.filter_map
+      (fun ((point, before), (_, after)) ->
+        if after > before then Some (point, after - before) else None)
+      (List.combine before after) )
+
+let hit_points hits = List.map fst hits
+
+(* What registration did before any call is observable only before
+   anything else ran, and the test that reports it may run after an
+   earlier run of itself. Captured once, at module load, before the first
+   test. *)
+let at_load = fixture_snapshot ()
 
 let tests =
   [
     test "registration happens at module load, before any call" (fun () ->
-        let s = fixture_snapshot () in
         check "fixtures registered at load"
-          (not (Windtrap_runtime.Coverage.is_empty s));
-        let summary = Windtrap_runtime.Coverage.summary s in
+          (not (Windtrap_runtime.Coverage.is_empty at_load));
+        let summary = Windtrap_runtime.Coverage.summary at_load in
         check "no point visited before any call" (summary.visited = 0);
         check "the fixture points are all registered" (summary.total >= 20));
     (* Tail calls survive entry sequencing and out-edge wrapping *)
@@ -142,21 +180,20 @@ let tests =
           (F.seq_order () = [ "one"; "two" ]));
     (* Lazy stays lazy; trivial lazy stays a value *)
     test "lazy stays lazy; trivial lazy stays a value" (fun () ->
-        check "lazy body not run at module load" (!F.forced = false);
-        let before = visited () in
-        check_int "forcing the thunk" ~expected:42 ~actual:(Lazy.force F.thunk);
-        let after = visited () in
-        check "lazy body ran on force" (!F.forced = true);
-        check_int "forcing visited exactly the lazy-body point" ~expected:1
-          ~actual:(after - before);
-        check_int "forcing again computes the same value" ~expected:42
-          ~actual:(Lazy.force F.thunk);
+        let thunk, forced, force_count = F.make_thunk () in
+        check "lazy body not run at construction" (!forced = false);
+        let v, force = hits (fun () -> Lazy.force thunk) in
+        check_int "forcing the thunk" ~expected:42 ~actual:v;
+        check "lazy body ran on force" (!forced = true);
+        check "forcing visited exactly the lazy-body point, once"
+          (match force with [ (_, 1) ] -> true | _ -> false);
+        let v, again = hits (fun () -> Lazy.force thunk) in
+        check_int "forcing again computes the same value" ~expected:42 ~actual:v;
         check_int "forcing twice runs the body once: the count stays 1"
-          ~expected:1 ~actual:!F.force_count;
-        check_int "forcing again visits nothing" ~expected:0
-          ~actual:(visited () - after);
+          ~expected:1 ~actual:!force_count;
+        check "forcing again visits nothing" (again = []);
         check "trivial lazy compiles as in an uninstrumented build"
-          (Lazy.is_val F.trivial = Lazy.is_val (lazy 42)));
+          (Lazy.is_val (F.trivial ()) = Lazy.is_val (lazy 42)));
     (* Raising applications: the out-edge is NOT counted
 
        [tap_ok] and [tap_raise] are shape-identical: leaf-body entry
@@ -165,21 +202,20 @@ let tests =
        only two - its [f ()] out-edge point never fires. This delta IS
        the re-grade: under block grade both paths looked identical. *)
     test "a raising application's out-edge is not counted" (fun () ->
-        let before = visited () in
-        check "the ok path returns" (F.tap_ok F.ret_unit = true);
-        let after_ok = visited () in
+        let returned, ok = hits (fun () -> F.tap_ok F.ret_unit) in
+        check "the ok path returns" (returned = true);
         check_int "the ok path visits its out-edge (3 points)" ~expected:3
-          ~actual:(after_ok - before);
-        let raised =
-          match F.tap_raise F.raise_unit with
-          | _ -> false
-          | exception Exit -> true
+          ~actual:(List.length ok);
+        let raised, raise =
+          hits (fun () ->
+              match F.tap_raise F.raise_unit with
+              | _ -> false
+              | exception Exit -> true)
         in
         check "the raising path still raises Exit" raised;
-        let after_raise = visited () in
         check_int
           "the raising path visits one point fewer: the out-edge is not counted"
-          ~expected:2 ~actual:(after_raise - after_ok));
+          ~expected:2 ~actual:(List.length raise));
     (* Pipelines and method calls *)
     test "pipelines and method calls compute uninstrumented results" (fun () ->
         check_int "pipeline in tail position" ~expected:12
@@ -188,25 +224,24 @@ let tests =
           ~actual:(F.pipeline_bound 3);
         check_int "method calls through an object" ~expected:6
           ~actual:(F.sum_object [ 1; 2; 3 ]);
-        let before = visited () in
-        check_int "a send with a successor" ~expected:1
-          ~actual:(F.poke (new F.adder));
-        check "the send's out-edge counted" (visited () - before > 0));
+        let poked, send = hits (fun () -> F.poke (new F.adder)) in
+        check_int "a send with a successor" ~expected:1 ~actual:poked;
+        check "the send's out-edge counted" (send <> []));
     (* An arm that is itself a function: two points, two moments *)
     test "an arm that is itself a function: two points, two moments" (fun () ->
-        let before = visited () in
-        let add = F.dispatch `Add in
-        let after_select = visited () in
+        let add, select = hits (fun () -> F.dispatch `Add) in
         check_int "selecting the arm visits exactly the arm point" ~expected:1
-          ~actual:(after_select - before);
-        check_int "applying the closure" ~expected:5 ~actual:(add 2 3);
-        let after_apply = visited () in
+          ~actual:(List.length select);
+        let sum, apply = hits (fun () -> add 2 3) in
+        check_int "applying the closure" ~expected:5 ~actual:sum;
         check_int "applying visits exactly the leaf-body point" ~expected:1
-          ~actual:(after_apply - after_select);
-        check_int "re-applying visits no new point" ~expected:9
-          ~actual:(add 4 5);
-        check_int "visited counts points, not calls" ~expected:0
-          ~actual:(visited () - after_apply));
+          ~actual:(List.length apply);
+        check "a point of its own, not the arm's"
+          (hit_points apply <> hit_points select);
+        let sum, again = hits (fun () -> add 4 5) in
+        check_int "re-applying" ~expected:9 ~actual:sum;
+        check "re-applying visits no new point: points are counted, not calls"
+          (hit_points again = hit_points apply));
     (* Instrumented forms compute the uninstrumented results *)
     test "instrumented forms compute the uninstrumented results" (fun () ->
         check_int "while loop" ~expected:55 ~actual:(F.sum_while 10);

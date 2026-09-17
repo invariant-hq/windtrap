@@ -999,10 +999,10 @@ let ( let* ) = bind
 (* Engine interface
 
    The property engine, Stateful, and this library's own tests reach these;
-   nothing else does, which is why they are behind [Private] rather than in
+   nothing else does, which is why they are behind [Engine] rather than in
    the vocabulary above. [Rejected] stays at the top of the file because
    [such_that] raises it and [rebind] catches it. *)
-module Private = struct
+module Engine = struct
   module Shrink_tree = Shrink_tree
 
   exception Rejected = Rejected
