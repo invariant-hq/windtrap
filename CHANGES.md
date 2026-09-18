@@ -503,6 +503,11 @@ Coverage and packaging:
   under `--color auto`; `--color always` still wins, and the reporting
   commands read `WINDTRAP_COLOR` too. Under `CI`, focused tests and `-u`
   refuse to start.
+- `--help` shows each option as a line with its spellings and its
+  `WINDTRAP_*` mirror (`-f PATTERN, --filter=PATTERN (env
+  WINDTRAP_FILTER)`), then its description indented under it as whole
+  sentences, within 80 columns; the variables with no flag take the same
+  form.
 
 ### Coverage
 

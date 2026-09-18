@@ -2,39 +2,86 @@ mytests.exe - windtrap test runner
 
 usage: mytests.exe [OPTIONS] [PATTERN]
 
-A bare PATTERN runs only tests whose full path contains it (same as
--f PATTERN). Every option that changes what a run does or reports
-has a WINDTRAP_* environment mirror (WINDTRAP_FILTER for --filter,
-and so on) — the command line under `dune runtest` — except -l,
---failed, -x, -u, --corrected, -h and -V; the variables listed
-under ENVIRONMENT have no flag at all.
+A bare PATTERN runs only tests whose full path contains it (same as -f PATTERN).
+(env VAR) after an option names the variable that sets it for a run with no
+command line, such as dune runtest.
 
 OPTIONS:
-  -f, --filter PATTERN          Run only tests whose path contains PATTERN
-  -e, --exclude PATTERN         Skip tests whose path contains PATTERN
-      --tag LABEL               Run only tests tagged LABEL (repeatable)
-      --exclude-tag LABEL       Skip tests tagged LABEL (repeatable)
-      --shard K/N               Run only the Kth of N deterministic path-hash buckets
-      --failed                  Rerun only the last run's failures
-  -l, --list                    List selected tests without running them
-  -x, --fail-fast               Stop after the first failure
-      --timeout SECONDS         Default per-test timeout in seconds
-      --slow-threshold SECONDS  Warn when an untagged test runs longer than SECONDS (0 disables)
-      --seed TOKEN              Root seed for property tests (s1:<16 hex>)
-      --prop-count N            Generated cases per property
-  -u, --update                  Accept baseline changes in place (refused under CI)
-      --corrected               Write corrections as <file>.corrected, for dune promote
-  -s, --stream                  Stream test output instead of capturing it
-  -v, --verbose                 One status line per test
-      --junit PATH              Also write a JUnit XML report to PATH
-      --color MODE              Color output: always, never or auto
-  -o, --output DIR              Root directory for capture logs
-      --mutate[=PREFIX,...]     Test this executable's mutants, all or those under PREFIX
-      --arm ID                  Run once with mutant ID armed
-  -V, --version                 Print the version and exit
-  -h, --help                    Print this help and exit
+  -f PATTERN, --filter=PATTERN (env WINDTRAP_FILTER)
+      Run only tests whose path contains PATTERN.
+
+  -e PATTERN, --exclude=PATTERN (env WINDTRAP_EXCLUDE)
+      Skip tests whose path contains PATTERN.
+
+  --tag=LABEL (env WINDTRAP_TAG)
+      Run only tests tagged LABEL (repeatable).
+
+  --exclude-tag=LABEL (env WINDTRAP_EXCLUDE_TAG)
+      Skip tests tagged LABEL (repeatable).
+
+  --shard=K/N (env WINDTRAP_SHARD)
+      Run only the Kth of N deterministic path-hash buckets.
+
+  --failed
+      Rerun only the last run's failures.
+
+  -l, --list
+      List selected tests without running them.
+
+  -x, --fail-fast
+      Stop after the first failure.
+
+  --timeout=SECONDS (env WINDTRAP_TIMEOUT)
+      Default per-test timeout in seconds.
+
+  --slow-threshold=SECONDS (env WINDTRAP_SLOW_THRESHOLD)
+      Warn when an untagged test runs longer than SECONDS (0 disables).
+
+  --seed=TOKEN (env WINDTRAP_SEED)
+      Root seed for property tests (s1:<16 hex>).
+
+  --prop-count=N (env WINDTRAP_PROP_COUNT)
+      Generated cases per property.
+
+  -u, --update
+      Accept baseline changes in place (refused under CI).
+
+  --corrected
+      Write corrections as <file>.corrected, for dune promote.
+
+  -s, --stream (env WINDTRAP_STREAM)
+      Stream test output instead of capturing it.
+
+  -v, --verbose (env WINDTRAP_VERBOSE)
+      One status line per test.
+
+  --junit=PATH (env WINDTRAP_JUNIT)
+      Also write a JUnit XML report to PATH.
+
+  --color=MODE (env WINDTRAP_COLOR)
+      Color output: always, never or auto.
+
+  -o DIR, --output=DIR (env WINDTRAP_OUTPUT)
+      Root directory for capture logs.
+
+  --mutate[=PREFIX,...] (env WINDTRAP_MUTATE)
+      Test this executable's mutants, all or those under PREFIX.
+
+  --arm=ID (env WINDTRAP_MUTATE_ARM)
+      Run once with mutant ID armed.
+
+  -V, --version
+      Print the version and exit.
+
+  -h, --help
+      Print this help and exit.
 
 ENVIRONMENT (no flag):
-  WINDTRAP_PROJECT_ROOT   Project root that baseline paths resolve under
-  WINDTRAP_COVERAGE_FILE  Where an instrumented run writes its coverage dump
-  NO_COLOR                Any value: never style output (--color auto)
+  WINDTRAP_PROJECT_ROOT
+      Project root that baseline paths resolve under.
+
+  WINDTRAP_COVERAGE_FILE
+      Where an instrumented run writes its coverage dump.
+
+  NO_COLOR
+      Any value: never style output (--color auto).

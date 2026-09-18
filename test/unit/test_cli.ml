@@ -208,6 +208,13 @@ let () =
       (Printf.sprintf "%s should suggest nothing, got: %s" typo m)
       (not (contains "did you mean" m))
   in
+  (* The rule at its boundary: at most [max 2 (n / 3)] edits from a long
+     flag, [n] the typed flag's length. Eight bytes allow two edits... *)
+  suggests "--fxltxr" "--filter";
+  silent "--fxxtxr";
+  (* ... and twelve allow four. *)
+  suggests "--prxx-cxxnt" "--prop-count";
+  silent "--prxx-xxxnt";
   (* Too far to be a slip. *)
   silent "--completely-different";
   (* Any two short flags are one edit apart, so any suggestion would be
@@ -293,7 +300,43 @@ let () =
       check "error messages are non-empty" (String.length message > 0))
     messages;
   check "error message names the flag"
-    (contains "--bogus" (Cli.error_message (Cli.Unknown_flag "--bogus")))
+    (contains "--bogus" (Cli.error_message (Cli.Unknown_flag "--bogus")));
+  (* One sentence each, to go behind [windtrap:]; the facade's cram pins
+     them on stderr. *)
+  List.iter
+    (fun (error, expected) ->
+      check_string expected ~expected ~actual:(Cli.error_message error))
+    [
+      (Cli.Unknown_flag "--bogus", "unknown option '--bogus'");
+      ( Cli.Unknown_flag "--filtre",
+        "unknown option '--filtre'; did you mean '--filter'?" );
+      (Cli.Missing_value "--junit", "option '--junit' requires an argument");
+      ( Cli.Invalid_value
+          { source = "--prop-count"; value = "x"; expected = "an int" },
+        "invalid value 'x' for --prop-count: expected an int" );
+      ( Cli.Extra_positional { filter = "a"; extra = "b" },
+        "unexpected argument 'b': the filter is already 'a'" );
+      ( Cli.Incompatible_flags ("--mutate", "--arm"),
+        "options '--mutate' and '--arm' cannot be combined" );
+    ];
+  let parse_error args =
+    match parse args with
+    | Ok _ -> fail "expected a parse error"
+    | Error e -> Cli.error_message e
+  in
+  check_string "a seed's accepted form is spelled in full"
+    ~expected:
+      "invalid value 'nope' for --seed: expected an s1: token with 16 \
+       lowercase hexadecimal digits"
+    ~actual:(parse_error [ "--seed"; "nope" ]);
+  check_string "a shard's accepted form carries its example"
+    ~expected:
+      "invalid value '9/2' for --shard: expected K/N with 1 <= K <= N (e.g. \
+       2/4)"
+    ~actual:(parse_error [ "--shard"; "9/2" ]);
+  check_string "a flag that takes no argument says so"
+    ~expected:"invalid value 'x' for --list: expected no argument"
+    ~actual:(parse_error [ "--list=x" ])
 
 (* --slow-threshold *)
 
@@ -381,8 +424,9 @@ let () =
     | Ok p -> p.Cli.junit
     | Error e -> fail (name ^ ": " ^ Cli.error_message e)
   in
-  check "the help heading spells the value as optional"
-    (Cli.flag_heading probe_row = "-p, --probe[=V]");
+  check_string "the help heading spells the value as optional, then the mirror"
+    ~expected:"-p, --probe[=V] (env WINDTRAP_PROBE)"
+    ~actual:(Cli.flag_heading probe_row);
   check "the bare long flag" (junit "bare" [ "--probe" ] = Some "<bare>");
   check "the bare short flag" (junit "short" [ "-p" ] = Some "<bare>");
   check "an inline value"
@@ -435,6 +479,65 @@ let () =
   expect_file
     (Cli.help ~prog:"/some/path/mytests.exe")
     "test/unit/expected/test_cli/help.expected"
+
+(* Every line the page composes fits 80 columns. An option is its flag
+   line, the mirror after it, then its sentences indented under it: a
+   description wraps and is never cut to fit. *)
+let () =
+  reg "help fits 80 columns, a description under each flag line" @@ fun () ->
+  let lines = String.split_on_char '\n' (Cli.help ~prog:"mytests.exe") in
+  List.iter
+    (fun line ->
+      check
+        (Printf.sprintf "%d columns: %s" (Text.length_utf8 line) line)
+        (Text.length_utf8 line <= 80))
+    lines;
+  let following heading =
+    let rec find = function
+      | line :: next :: _ when line = heading -> next
+      | _ :: rest -> find rest
+      | [] -> fail ("no flag line: " ^ heading)
+    in
+    find lines
+  in
+  check_string "a valued option: short and long spellings, then the mirror"
+    ~expected:"      Run only tests whose path contains PATTERN."
+    ~actual:(following "  -f PATTERN, --filter=PATTERN (env WINDTRAP_FILTER)");
+  check_string "a long-only option starts at the same column"
+    ~expected:
+      "      Warn when an untagged test runs longer than SECONDS (0 disables)."
+    ~actual:
+      (following "  --slow-threshold=SECONDS (env WINDTRAP_SLOW_THRESHOLD)");
+  check_string "an option with no mirror has nothing after its names"
+    ~expected:"      Rerun only the last run's failures."
+    ~actual:(following "  --failed");
+  check_string "the optional value keeps its brackets"
+    ~expected:"      Test this executable's mutants, all or those under PREFIX."
+    ~actual:(following "  --mutate[=PREFIX,...] (env WINDTRAP_MUTATE)");
+  check_string "a variable with no flag takes the same two-line form"
+    ~expected:"      Any value: never style output (--color auto)."
+    ~actual:(following "  NO_COLOR");
+  (* Wrapping cuts no sentence: unwrapped, every clause is whole. *)
+  let unwrapped =
+    String.concat " "
+      (List.filter (( <> ) "")
+         (List.concat_map (String.split_on_char ' ') lines))
+  in
+  List.iter
+    (fun sentence -> check ("whole: " ^ sentence) (contains sentence unwrapped))
+    [
+      "A bare PATTERN runs only tests whose full path contains it (same as -f \
+       PATTERN).";
+      "Run only the Kth of N deterministic path-hash buckets.";
+      "Skip tests tagged LABEL (repeatable).";
+      "Default per-test timeout in seconds.";
+      "Root seed for property tests (s1:<16 hex>).";
+      "Accept baseline changes in place (refused under CI).";
+      "Write corrections as <file>.corrected, for dune promote.";
+      "Stream test output instead of capturing it.";
+      "Also write a JUnit XML report to PATH.";
+      "Color output: always, never or auto.";
+    ]
 
 let () =
   reg "usage line" @@ fun () ->

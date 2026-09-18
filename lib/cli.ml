@@ -174,7 +174,7 @@ let table =
         arg =
           set_string (fun ~source:_ acc value ->
               Ok { acc with filter = Some value });
-        doc = "Run only tests whose path contains PATTERN";
+        doc = "Run only tests whose path contains PATTERN.";
         mirror = mirrored "WINDTRAP_FILTER" (fun p -> p.filter = None);
       };
     Flag_entry
@@ -184,7 +184,7 @@ let table =
         arg =
           set_string (fun ~source:_ acc value ->
               Ok { acc with exclude = Some value });
-        doc = "Skip tests whose path contains PATTERN";
+        doc = "Skip tests whose path contains PATTERN.";
         mirror = mirrored "WINDTRAP_EXCLUDE" (fun p -> p.exclude = None);
       };
     Flag_entry
@@ -199,7 +199,7 @@ let table =
                 (fun ~source:_ acc value ->
                   Ok { acc with tags = acc.tags @ [ value ] });
             };
-        doc = "Run only tests tagged LABEL (repeatable)";
+        doc = "Run only tests tagged LABEL (repeatable).";
         mirror = repeatable "WINDTRAP_TAG";
       };
     Flag_entry
@@ -214,7 +214,7 @@ let table =
                 (fun ~source:_ acc value ->
                   Ok { acc with exclude_tags = acc.exclude_tags @ [ value ] });
             };
-        doc = "Skip tests tagged LABEL (repeatable)";
+        doc = "Skip tests tagged LABEL (repeatable).";
         mirror = repeatable "WINDTRAP_EXCLUDE_TAG";
       };
     Flag_entry
@@ -231,7 +231,7 @@ let table =
                   | Some shard -> Ok { acc with shard = Some shard }
                   | None -> invalid ~source ~value ~expected:shard_expected);
             };
-        doc = "Run only the Kth of N deterministic path-hash buckets";
+        doc = "Run only the Kth of N deterministic path-hash buckets.";
         mirror = mirrored "WINDTRAP_SHARD" (fun p -> p.shard = None);
       };
     (* The three feedback-loop flags have no mirror: they want a command
@@ -244,7 +244,7 @@ let table =
         short = None;
         long = "--failed";
         arg = Flag (fun acc -> { acc with failed_only = Some true });
-        doc = "Rerun only the last run's failures";
+        doc = "Rerun only the last run's failures.";
         mirror = None;
       };
     Flag_entry
@@ -252,7 +252,7 @@ let table =
         short = Some "-l";
         long = "--list";
         arg = Flag (fun acc -> { acc with list_only = Some true });
-        doc = "List selected tests without running them";
+        doc = "List selected tests without running them.";
         mirror = None;
       };
     Flag_entry
@@ -260,7 +260,7 @@ let table =
         short = Some "-x";
         long = "--fail-fast";
         arg = Flag (fun acc -> { acc with bail = Some true });
-        doc = "Stop after the first failure";
+        doc = "Stop after the first failure.";
         mirror = None;
       };
     Flag_entry
@@ -278,7 +278,7 @@ let table =
                       Ok { acc with timeout = Some limit }
                   | _ -> invalid ~source ~value ~expected:"a positive number");
             };
-        doc = "Default per-test timeout in seconds";
+        doc = "Default per-test timeout in seconds.";
         mirror = mirrored "WINDTRAP_TIMEOUT" (fun p -> p.timeout = None);
       };
     Flag_entry
@@ -297,7 +297,8 @@ let table =
                   | _ ->
                       invalid ~source ~value ~expected:"a non-negative number");
             };
-        doc = "Warn when an untagged test runs longer than SECONDS (0 disables)";
+        doc =
+          "Warn when an untagged test runs longer than SECONDS (0 disables).";
         mirror =
           mirrored "WINDTRAP_SLOW_THRESHOLD" (fun p -> p.slow_threshold = None);
       };
@@ -315,7 +316,7 @@ let table =
                   | Ok seed -> Ok { acc with seed = Some seed }
                   | Error _ -> invalid ~source ~value ~expected:seed_expected);
             };
-        doc = "Root seed for property tests (s1:<16 hex>)";
+        doc = "Root seed for property tests (s1:<16 hex>).";
         mirror = mirrored "WINDTRAP_SEED" (fun p -> p.seed = None);
       };
     Flag_entry
@@ -323,7 +324,7 @@ let table =
         short = None;
         long = "--prop-count";
         arg = set_positive_int (fun acc n -> { acc with prop_count = Some n });
-        doc = "Generated cases per property";
+        doc = "Generated cases per property.";
         mirror = mirrored "WINDTRAP_PROP_COUNT" (fun p -> p.prop_count = None);
       };
     (* Acceptance has no mirror, deliberately: a build action must never
@@ -335,7 +336,7 @@ let table =
         short = Some "-u";
         long = "--update";
         arg = Flag (fun acc -> { acc with update = Some true });
-        doc = "Accept baseline changes in place (refused under CI)";
+        doc = "Accept baseline changes in place (refused under CI).";
         mirror = None;
       };
     Flag_entry
@@ -343,7 +344,7 @@ let table =
         short = None;
         long = "--corrected";
         arg = Flag (fun acc -> { acc with corrected = Some true });
-        doc = "Write corrections as <file>.corrected, for dune promote";
+        doc = "Write corrections as <file>.corrected, for dune promote.";
         mirror = None;
       };
     Flag_entry
@@ -351,7 +352,7 @@ let table =
         short = Some "-s";
         long = "--stream";
         arg = Flag (fun acc -> { acc with stream = Some true });
-        doc = "Stream test output instead of capturing it";
+        doc = "Stream test output instead of capturing it.";
         mirror = mirrored "WINDTRAP_STREAM" (fun p -> p.stream = None);
       };
     Flag_entry
@@ -359,7 +360,7 @@ let table =
         short = Some "-v";
         long = "--verbose";
         arg = Flag (fun acc -> { acc with verbose = Some true });
-        doc = "One status line per test";
+        doc = "One status line per test.";
         mirror = mirrored "WINDTRAP_VERBOSE" (fun p -> p.verbose = None);
       };
     Flag_entry
@@ -373,7 +374,7 @@ let table =
               set =
                 (fun ~source:_ acc value -> Ok { acc with junit = Some value });
             };
-        doc = "Also write a JUnit XML report to PATH";
+        doc = "Also write a JUnit XML report to PATH.";
         mirror = mirrored "WINDTRAP_JUNIT" (fun p -> p.junit = None);
       };
     Flag_entry
@@ -390,7 +391,7 @@ let table =
                   | Ok mode -> Ok { acc with color = Some mode }
                   | Error _ as error -> error);
             };
-        doc = "Color output: always, never or auto";
+        doc = "Color output: always, never or auto.";
         mirror = mirrored "WINDTRAP_COLOR" (fun p -> p.color = None);
       };
     Flag_entry
@@ -405,7 +406,7 @@ let table =
                 (fun ~source:_ acc value ->
                   Ok { acc with log_dir = Some value });
             };
-        doc = "Root directory for capture logs";
+        doc = "Root directory for capture logs.";
         mirror = mirrored "WINDTRAP_OUTPUT" (fun p -> p.log_dir = None);
       };
     (* The mutation switches. Bare, [--mutate] surveys every mutant this
@@ -434,7 +435,7 @@ let table =
                   in
                   Ok { acc with mutate = Some prefixes });
             };
-        doc = "Test this executable's mutants, all or those under PREFIX";
+        doc = "Test this executable's mutants, all or those under PREFIX.";
         mirror = mirrored "WINDTRAP_MUTATE" (fun p -> p.mutate = None);
       };
     Flag_entry
@@ -448,7 +449,7 @@ let table =
               set =
                 (fun ~source:_ acc value -> Ok { acc with arm = Some value });
             };
-        doc = "Run once with mutant ID armed";
+        doc = "Run once with mutant ID armed.";
         mirror = mirrored "WINDTRAP_MUTATE_ARM" (fun p -> p.arm = None);
       };
     Flag_entry
@@ -456,7 +457,7 @@ let table =
         short = Some "-V";
         long = "--version";
         arg = Flag (fun acc -> { acc with version = true });
-        doc = "Print the version and exit";
+        doc = "Print the version and exit.";
         mirror = None;
       };
     Flag_entry
@@ -464,7 +465,7 @@ let table =
         short = Some "-h";
         long = "--help";
         arg = Flag (fun acc -> { acc with help = true });
-        doc = "Print this help and exit";
+        doc = "Print this help and exit.";
         mirror = None;
       };
     (* The settings no flag can set, after the flags so [--help] lists
@@ -474,18 +475,21 @@ let table =
     Env_setting
       {
         var = "WINDTRAP_PROJECT_ROOT";
-        doc = "Project root that baseline paths resolve under";
+        doc = "Project root that baseline paths resolve under.";
       };
     Env_setting
       {
         var = "WINDTRAP_COVERAGE_FILE";
-        doc = "Where an instrumented run writes its coverage dump";
+        doc = "Where an instrumented run writes its coverage dump.";
       };
     (* Not windtrap's, and last for that reason: the de-facto standard
        every command-line tool honours. Rostered so --color's reader can
        find out here that something else can turn styling off. *)
     Env_setting
-      { var = "NO_COLOR"; doc = "Any value: never style output (--color auto)" };
+      {
+        var = "NO_COLOR";
+        doc = "Any value: never style output (--color auto).";
+      };
   ]
 
 let entries =
@@ -781,55 +785,60 @@ let settings cli =
 let usage ~prog =
   Pp.str "usage: %s [OPTIONS] [PATTERN]" (Filename.basename prog)
 
+(* cmdliner's spelling, which [split_inline] accepts: a value follows its
+   short name after a space and its long name after [=]. *)
 let flag_heading entry =
   let names =
-    match entry.short with
-    | Some short -> Pp.str "%s, %s" short entry.long
-    | None -> Pp.str "    %s" entry.long
+    match (entry.arg, entry.short) with
+    | Flag _, Some short -> Pp.str "%s, %s" short entry.long
+    | Value { metavar; _ }, Some short ->
+        Pp.str "%s %s, %s=%s" short metavar entry.long metavar
+    | Value { metavar; _ }, None -> Pp.str "%s=%s" entry.long metavar
+    | Optional_value { metavar; _ }, Some short ->
+        Pp.str "%s, %s[=%s]" short entry.long metavar
+    | Optional_value { metavar; _ }, None -> Pp.str "%s[=%s]" entry.long metavar
+    | Flag _, None -> entry.long
   in
-  match entry.arg with
-  | Flag _ -> names
-  | Value { metavar; _ } -> names ^ " " ^ metavar
-  | Optional_value { metavar; _ } -> names ^ "[=" ^ metavar ^ "]"
+  match entry.mirror with
+  | None -> names
+  | Some { var; _ } -> Pp.str "%s (env %s)" names var
 
-let two_columns rows =
-  let width =
-    List.fold_left (fun w (head, _) -> max w (String.length head)) 0 rows
+(* [text] filled greedily into lines of at most 80 columns, each behind
+   [indent] spaces. A word is never split. *)
+let fill ~indent text =
+  let margin = String.make indent ' ' in
+  let lines, last =
+    List.fold_left
+      (fun (lines, line) word ->
+        if line = "" then (lines, margin ^ word)
+        else if Text.length_utf8 line + 1 + Text.length_utf8 word <= 80 then
+          (lines, line ^ " " ^ word)
+        else (line :: lines, margin ^ word))
+      ([], "")
+      (List.filter (fun word -> word <> "") (String.split_on_char ' ' text))
   in
-  List.map
-    (fun (head, doc) ->
-      Pp.str "  %s%s  %s" head
-        (String.make (width - String.length head) ' ')
-        doc)
-    rows
+  List.rev (if last = "" then lines else last :: lines)
+
+(* One entry: its heading, its sentences indented under it, a blank line. *)
+let described ~heading doc = (("  " ^ heading) :: fill ~indent:6 doc) @ [ "" ]
 
 let help ~prog =
-  let flag_rows = List.map (fun e -> (flag_heading e, e.doc)) entries in
-  (* Only the variables no flag can spell get a row. The mirrors are one
-     mechanical rule — a row each reading "Mirror of --x" said it twenty
-     times, and said nothing the sentence above does not. *)
-  let setting_rows =
-    List.filter_map
+  let options =
+    List.concat_map (fun e -> described ~heading:(flag_heading e) e.doc) entries
+  in
+  let settings =
+    List.concat_map
       (function
-        | Env_setting { var; doc } -> Some (var, doc) | Flag_entry _ -> None)
+        | Env_setting { var; doc } -> described ~heading:var doc
+        | Flag_entry _ -> [])
       table
   in
   String.concat "\n"
-    ([
-       Pp.str "%s - windtrap test runner" (Filename.basename prog);
-       "";
-       usage ~prog;
-       "";
-       "A bare PATTERN runs only tests whose full path contains it (same as";
-       "-f PATTERN). Every option that changes what a run does or reports";
-       "has a WINDTRAP_* environment mirror (WINDTRAP_FILTER for --filter,";
-       "and so on) — the command line under `dune runtest` — except -l,";
-       "--failed, -x, -u, --corrected, -h and -V; the variables listed";
-       "under ENVIRONMENT have no flag at all.";
-       "";
-       "OPTIONS:";
-     ]
-    @ two_columns flag_rows
-    @ [ ""; "ENVIRONMENT (no flag):" ]
-    @ two_columns setting_rows)
-  ^ "\n"
+    ([ Pp.str "%s - windtrap test runner" (Filename.basename prog); "" ]
+    @ [ usage ~prog; "" ]
+    @ fill ~indent:0
+        "A bare PATTERN runs only tests whose full path contains it (same as \
+         -f PATTERN). (env VAR) after an option names the variable that sets \
+         it for a run with no command line, such as dune runtest."
+    @ [ ""; "OPTIONS:" ] @ options
+    @ ("ENVIRONMENT (no flag):" :: settings))

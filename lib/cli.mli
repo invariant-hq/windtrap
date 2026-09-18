@@ -111,7 +111,12 @@ type error =
 
 val error_message : error -> string
 (** [error_message error] is a one-line description of [error] for users, naming
-    the offending flag or variable. Not stable for programmatic matching. *)
+    the offending flag or variable, to be printed behind [windtrap:]
+    ({!Os.say}). An unknown long flag of [n] bytes ends
+    [; did you mean '<flag>'?] when a long flag lies within [max 2 (n / 3)]
+    edits of it (insertion, deletion, substitution, or transposition of two
+    adjacent bytes): the nearest, the first in {!help}'s order on a tie. A short
+    flag gets no suggestion. Not stable for programmatic matching. *)
 
 (** {1:parsing Parsing} *)
 
@@ -158,9 +163,13 @@ val usage : prog:string -> string
     basename. Callers print it with {!error_message} before exiting [2]. *)
 
 val help : prog:string -> string
-(** [help ~prog] is the full help page: usage, one line per flag, and the
-    variables no flag can spell, generated from the table that drives {!parse}.
-    The mirrors are described in one sentence, not one row each. *)
+(** [help ~prog] is the full help page, generated from the table that drives
+    {!parse}: the name line, the usage line, a paragraph, then per flag a line
+    with its spellings ([-f PATTERN, --filter=PATTERN]) followed by
+    [(env WINDTRAP_X)] when it has a mirror, and its description indented under
+    it as whole sentences, wrapped and never shortened; the variables no flag
+    can spell follow in the same form. Every line fits 80 columns when the
+    basename of [prog] leaves the first two within them. *)
 
 (**/**)
 
