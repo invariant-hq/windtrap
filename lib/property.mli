@@ -112,6 +112,7 @@ val run :
   ?count:[ `Declared of int | `Config of int ] ->
   ?max_discard:int ->
   ?examples:'a list ->
+  ?summary:('a -> string option) ->
   root:Seed.seed ->
   path:string ->
   'a Gen.t ->
@@ -122,8 +123,11 @@ val run :
     the property's declaration site, stamped on a failure. [count] is the number
     of generated cases and where it came from: a [`Config n] count is restated
     in the failure's replay line, a [`Declared n] count replays by itself.
-    Defaults: [count] is [100], [max_discard] is [2 * count] (clamped to
-    [max_int]), [examples] is [[]].
+    [summary v], when it is [Some line], is the failure's [summary] for the
+    counterexample [v], whose printer then draws a table
+    ({!Failure.kind.Property}). Defaults: [count] is [100], [max_discard] is
+    [2 * count] (clamped to [max_int]), [examples] is [[]], [summary] is
+    [Fun.const None].
 
     {b Examples} run first, unshrunk, numbered from zero separately from
     generated cases; a failing example has [shrink_steps = 0], [examples = true]

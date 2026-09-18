@@ -32,10 +32,10 @@ write fails:
 
   $ echo 'not a directory' > blocked
   $ run ./suite_main.exe -f math --junit blocked/r.xml > out 2> err
-  $ sed -E 's/ in [0-9.e+-]+s\./ in DURATION./' out
+  $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 2 passed in DURATION.
-  $ sed -E 's/^(warning: could not write JUnit report): .*/\1: REASON/' err
-  warning: could not write JUnit report: REASON
+  $ sed -E 's/^(windtrap: warning: could not write JUnit report): .*/\1: REASON/' err
+  windtrap: warning: could not write JUnit report: REASON
 
 And here the directory form cannot make its directory, over the same
 file — a different branch, and the one that names the path it failed
@@ -44,4 +44,4 @@ on. The run underneath fails, and its exit code comes through unchanged:
   $ run ./suite_main.exe -f boom --junit blocked/out > out 2> err
   [1]
   $ sed -E 's/(report to [^:]+): .*/\1: REASON/' err
-  warning: could not write JUnit report to blocked/out/fixture.xml: REASON
+  windtrap: warning: could not write JUnit report to blocked/out/fixture.xml: REASON

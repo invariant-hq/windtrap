@@ -81,6 +81,14 @@ let flaky =
         is_true (Unix.getpid () = dry_run_pid));
   ]
 
+(* Runs where it was measured and skips in every fork of it: the same
+   tests execute and none fails, so only the skip count disagrees. *)
+let skippy =
+  [
+    test "runs where it was measured and skips where it is re-run" (fun () ->
+        if Unix.getpid () <> dry_run_pid then skip ());
+  ]
+
 (* Leaves through [Unix._exit], which the runner's exit guard does not
    intercept: armed, the child dies with no verdict on the pipe. *)
 let crash =
@@ -239,6 +247,8 @@ let () =
   | "red" ->
       exit @@ run "calc" [ group "calc" (strong @ red); group "widen" weak ]
   | "flaky" -> exit @@ run "calc" [ group "calc" strong; group "flaky" flaky ]
+  | "skippy" ->
+      exit @@ run "calc" [ group "calc" strong; group "skippy" skippy ]
   | "boundary" ->
       (* Outside any test, and before the first one starts. *)
       ignore (Subject.orphan 1 2);

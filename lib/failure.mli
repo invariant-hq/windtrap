@@ -7,13 +7,13 @@
     exceptions.
 
     Every failure site constructs one {!t}: a typed {!kind}, a {!phase}, an
-    optional {!Loc.t} with its {!attribution}, and an optional captured-output
-    {!tail}. A test's {!outcome} carries a failure {e list}: a body failure and
-    a teardown failure are two entries. Failures hold no styling or command text
-    (guarantee 4); they hold pp-rendered values, each bounded at construction
-    with a marker stating the original size (64 KiB). Assertion verbs raise
-    {!Check_failure}; {!Skip_test}, {!Timeout} and {!Exit_attempt} are the other
-    control exceptions the runner understands. *)
+    optional {!Loc.t}, and an optional captured-output {!tail}. A test's
+    {!outcome} carries a failure {e list}: a body failure and a teardown failure
+    are two entries. Failures hold no styling or command text (guarantee 4);
+    they hold pp-rendered values, each bounded at construction with a marker
+    stating the original size (64 KiB). Assertion verbs raise {!Check_failure};
+    {!Skip_test}, {!Timeout} and {!Exit_attempt} are the other control
+    exceptions the runner understands. *)
 
 (** {1:types Types} *)
 
@@ -44,8 +44,9 @@ type tail = {
 
 (** The type for what a baseline check compared against. *)
 type baseline =
-  | Literal
-      (** The literal at the failure's location ([expect], [expect_exact]). *)
+  | Literal of { exact : bool }
+      (** The literal at the failure's location: [expect_exact]'s iff [exact],
+          else [expect]'s. *)
   | File of string
       (** The file at this path, relative to the project root ([expect_file]),
           stored as the call named it. *)
@@ -61,6 +62,13 @@ type baseline_state =
   | Unresolvable of { candidate : string }
       (** The baseline's path cannot be proven to lie under the project root;
           [candidate] is the unproven path. *)
+
+(** The type for why the attempt that recorded a baseline failure kept none of
+    its corrections; see {!Run}, {e Corrections}. *)
+type withheld =
+  | Failed_outside
+      (** The attempt also ended in a failure that is not a baseline failure. *)
+  | Skipped  (** The attempt also skipped. *)
 
 type message_diff = {
   constructor : string;  (** The exception constructor both sides share. *)
@@ -134,12 +142,24 @@ type kind =
           right-constructor, wrong-message failure. [predicate] is [true] iff
           the assertion was [raises_match]; [false] with no [expected] records
           an uncaught exception. *)
-  | Baseline of { baseline : baseline; state : baseline_state }
+  | Baseline of {
+      baseline : baseline;
+      state : baseline_state;
+      withheld : withheld option;
+          (** [Some _] iff the attempt kept none of its corrections: no command
+              accepts this failure's until the test is otherwise clean. [None]
+              from {!val-baseline}; the runner sets it with {!with_withheld}. *)
+    }
       (** A baseline check failed: what was compared against and how the
           comparison ended. The acceptance command is spelled by renderers from
           the invocation. *)
   | Property of {
       rendered : string;
+      summary : string option;
+          (** [Some line] iff [rendered] is a table, its first line naming the
+              columns: [line] says in one line what the table holds (a stateful
+              program's [2 calls, last: get]). Renderers print [line] where a
+              one-line counterexample goes and the table under it. *)
       case_index : int;
       shrink_steps : int;
       shrink_exhausted : bool;
@@ -151,7 +171,7 @@ type kind =
       examples : bool;
       rendering : rendering;
           (** What [rendered] is; renderers mark a pre-image as such and name
-              [Gen.with_pp] under a placeholder. *)
+              [Gen.with_pp] under it. *)
       inner : t option;
     }
       (** A property failed. [rendered] is the printed (shrunk) counterexample,
@@ -171,28 +191,10 @@ and rendering =
       (** What a printerless [map] or [bind] computed the counterexample from,
           printed by the generators that drew it. *)
 
-(** The type for how a failure's [loc] was obtained. *)
-and attribution =
-  | Recorded
-      (** [loc] is what the failure site recorded (an explicit [?__POS__], a
-          captured frame, or the site a runner-made failure names for itself: a
-          timeout, an uncaught exception or an [xfail] that passed names the
-          enclosing test's declaration, a restoration that could not happen the
-          call that made the change), or the site recorded none and nothing
-          filled it. *)
-  | Declaration
-      (** The failure site recorded no location, the failing call having sat in
-          tail position, and the runner filled [loc] with the enclosing test's
-          declaration site. Renderers print a hint naming [~__POS__] under such
-          a location, except for a {!Property} failure, an uncaught-exception
-          {!Raise} and a {!File} baseline. *)
-
 and t = {
   kind : kind;
   phase : phase;
   loc : Loc.t option;  (** [None] renders without a location header. *)
-  attribution : attribution;
-      (** How [loc] was obtained; {!Recorded} from every constructor. *)
   msg : string option;  (** The user's [?msg] annotation, when given. *)
   subtest : string list;
       (** The sub-case label's components (the test's leaf name, then the
@@ -309,6 +311,7 @@ val property :
   ?inner:t ->
   ?timed_out:float ->
   ?count:int ->
+  ?summary:string ->
   rendered:string ->
   case_index:int ->
   shrink_steps:int ->
@@ -319,8 +322,8 @@ val property :
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
-    {!Property} failure; see {!kind}. [timed_out] and [count] default to [None],
-    [rendering] to {!Value}. *)
+    {!Property} failure; see {!kind}. [timed_out], [count] and [summary] default
+    to [None], [rendering] to {!Value}. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure carrying [text]. *)
@@ -333,6 +336,10 @@ val with_phase : phase -> t -> t
 val with_output_tail : tail -> t -> t
 (** [with_output_tail tail f] is [f] carrying [tail] as its captured-output
     tail. *)
+
+val with_withheld : withheld -> t -> t
+(** [with_withheld why f] is [f] with its correction withheld for [why] if [f]
+    is a {!Baseline} failure, and [f] otherwise. *)
 
 val tail : ?log_path:string -> ?omitted_bytes:int -> string -> tail
 (** [tail text] is a {!tail} retaining the final {!tail_bytes} bytes of [text],

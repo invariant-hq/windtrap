@@ -156,6 +156,10 @@ type t = {
   fixtures : (int, fixture_entry) Hashtbl.t;
   mutable acquired : int list; (* fixture ids, most recently acquired first *)
   mutable rev_results : result list;
+  mutable releasing : string option; (* the fixture whose release is running *)
+  mutable interrupted : int option;
+      (* a signal that arrived while the runner's own code ran, honoured at
+         the next boundary *)
 }
 
 let create config ~capture ~baselines =
@@ -166,6 +170,8 @@ let create config ~capture ~baselines =
     fixtures = Hashtbl.create 8;
     acquired = [];
     rev_results = [];
+    releasing = None;
+    interrupted = None;
   }
 
 let config t = t.config
@@ -217,27 +223,18 @@ let run_of_frame frame = frame.owner
 let path frame = frame.fr_path
 let loc frame = frame.fr_loc
 
-(* The declaration site as a runner-made failure's own location: [loc] when
-   the call that the failure is about left a frame, the test's declaration
-   otherwise. Failures the runner constructs name their site through this
-   and reach [add_failure] as [Recorded]; only a failure that names none —
-   an assertion verb's, in tail position — is filled there and marked. *)
-let site_or_declaration frame loc =
-  match loc with Some _ -> loc | None -> frame.fr_loc
-
 let add_failure frame failure =
   (* The one fallback point of the attribution ladder: a failure recorded
      without a location — its failing call sat in tail position, so
      Loc.capture stopped at the runner's delimiter — is attributed to the
-     test's declaration, and marked [Declaration] so the report can say so.
+     test's declaration.
      Only the top-level failure is filled; nested failures (a property
      failure's [inner]) are left untouched, and a failure needing no fill is
      stored as given. *)
   let failure =
     match (failure.Failure.loc, frame.fr_loc) with
     | Some _, _ | None, None -> failure
-    | None, (Some _ as loc) ->
-        { failure with Failure.loc; attribution = Failure.Declaration }
+    | None, (Some _ as loc) -> { failure with Failure.loc }
   in
   frame.fr_rev_failures <- failure :: frame.fr_rev_failures
 
@@ -270,12 +267,12 @@ let with_active t fn = with_context (In_run t) fn
 let active () = Option.is_some !slot
 
 let active_run_error =
-  "windtrap: run is already active — a test body cannot start another run"
+  "windtrap: run is already active; a test body cannot start another run"
 
 let outside_run_error =
   "windtrap: no test is running. Assertions, [output ()], [expect], [collect], \
    [setenv], [chdir] and fixture accessors work only inside a test body \
-   executed by [run] — not at module toplevel, and not after the run."
+   executed by [run], not at module toplevel and not after the run."
 
 let current_frame () =
   match !slot with
@@ -490,13 +487,11 @@ let chdir dir =
    scratch directory, which is inert, a process left in the wrong place or
    still holding the test's binding is precisely the fact the next test's
    baffling failure needs stated up front. It is attributed to the call
-   that made the change, since the boundary is nobody's code — or to the
-   declaration when that call left no frame: [setenv] and [chdir] take no
-   [?__POS__], so the fallback's hint would name a remedy they lack. *)
+   that made the change, since the boundary is nobody's code — or, by
+   [add_failure], to the declaration when that call left no frame. *)
 let restore_failure frame ?loc text =
   add_failure frame
-    (Failure.with_phase Failure.Teardown
-       (Failure.message ?loc:(site_or_declaration frame loc) text))
+    (Failure.with_phase Failure.Teardown (Failure.message ?loc text))
 
 let restore_cwd frame =
   match frame.fr_cwd with
@@ -508,7 +503,7 @@ let restore_cwd frame =
         restore_failure frame ?loc
           (Printf.sprintf
              "the test changed the working directory and it could not be \
-              restored to %s: %s — every later test in this process runs from \
+              restored to %s: %s; every later test in this process runs from \
               the wrong place"
              dir (Unix.error_message err)))
 
@@ -523,7 +518,7 @@ let restore_env frame =
           restore_failure frame ?loc:entry.er_loc
             (Printf.sprintf
                "the test set %s and its prior binding could not be restored: \
-                %s — every later test in this process sees the test's value"
+                %s; every later test in this process sees the test's value"
                entry.er_name (Printexc.to_string exn)))
     entries
 
@@ -610,27 +605,39 @@ let release_failure entry exn =
     (entry.fx_name ^ ": release raised " ^ Printexc.to_string exn)
   |> Failure.with_phase Failure.Release
 
+(* Release order is contract: reverse acquisition, [t.acquired]'s order. A
+   fixture leaves [t.acquired] before its release runs, so a signal that
+   stops a release resumes with the rest and never re-enters the one in
+   flight. *)
 let release_fixtures t ~announce =
-  let ids = t.acquired in
-  t.acquired <- [];
-  (* Release order is contract — reverse acquisition —
-     so walk [ids] (most recently acquired first) with an explicit loop
-     rather than lean on a fold's unspecified effect order. *)
-  let rec release_all acc = function
+  let rec release_all acc =
+    match t.acquired with
     | [] -> List.rev acc
     | id :: ids -> (
+        t.acquired <- ids;
         match Hashtbl.find_opt t.fixtures id with
-        | None | Some { fx_release = None; _ } -> release_all acc ids
+        | None | Some { fx_release = None; _ } -> release_all acc
         | Some ({ fx_release = Some release; _ } as entry) -> (
             announce entry.fx_name;
+            t.releasing <- Some entry.fx_name;
             (* [Loc.delimit]: a location captured inside a release teardown
                must not walk past the runner into its caller. *)
             match Loc.delimit release with
-            | () -> release_all acc ids
+            | () ->
+                t.releasing <- None;
+                release_all acc
             | exception exn when not (Failure.is_fatal exn) ->
-                release_all (release_failure entry exn :: acc) ids))
+                t.releasing <- None;
+                release_all (release_failure entry exn :: acc)))
   in
-  release_all [] ids
+  (* What escapes (a fatal exception, a raising [announce]) abandons the
+     remaining releases. *)
+  try release_all []
+  with exn ->
+    let backtrace = Printexc.get_raw_backtrace () in
+    t.acquired <- [];
+    t.releasing <- None;
+    Printexc.raise_with_backtrace exn backtrace
 
 (* Results *)
 
@@ -690,7 +697,8 @@ let install_exit_guard () =
    to user code — the raise happens after the user's law returned. *)
 exception Prop_outcome of Property.outcome
 
-let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
+let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
+    law =
   let loc = Loc.resolve ?__POS__ () in
   let body () =
     let frame = current_frame () in
@@ -706,8 +714,8 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
     in
     let path = Test_tree.path_to_string (path frame) in
     let outcome =
-      Property.run ?loc ?count ?max_discard ?examples ~root:config.seed ~path
-        gen (fun context value ->
+      Property.run ?loc ?count ?max_discard ?examples ?summary ~root:config.seed
+        ~path gen (fun context value ->
           with_prop_context frame context (fun () -> law value))
     in
     raise (Prop_outcome outcome)
@@ -835,8 +843,9 @@ let xpass_failure (case : Test_tree.case) =
     (Pp.str "expected to fail%s, but the test passed" reason)
 
 (* One attempt of one test: fresh frame installed by the caller. Returns the
-   classified outcome and, for property tests, the engine's stats. Fatal
-   exceptions propagate. *)
+   classified outcome, for property tests the engine's stats, whether the
+   attempt's failures are all kept corrections, and whether it is the test's
+   last whatever its retries. Fatal exceptions propagate. *)
 let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   let prop_stats = ref None in
   let skipped = ref None in
@@ -866,8 +875,8 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
     | Failure.Exit_attempt ->
         record_failure ph
           (Failure.message ?loc:case.Test_tree.loc
-             "the test called exit — intercepted; a test must return or raise, \
-              never exit the process")
+             "the test called exit and was intercepted; a test must return or \
+              raise, never exit the process")
     | exn ->
         record_failure ph
           (Failure.raised ?loc:case.Test_tree.loc
@@ -950,14 +959,14 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
     if !entries = 0 && not !scope_raised then
       record_failure Failure.Setup
         (Failure.message ?loc:case.Test_tree.loc
-           "the scope returned without running the test body — a scope must \
+           "the scope returned without running the test body; a scope must \
             call its callback exactly once")
     else if !entries > 1 then
       record_failure Failure.Body
         (Failure.message ?loc:case.Test_tree.loc
            (Pp.str
-              "the scope called its callback %d times — a scope must call it \
-               exactly once; the test body ran on the first call only"
+              "the scope called its callback %d times and the test body ran on \
+               the first call only; a scope must call it exactly once"
               !entries))
   in
   let phases renew =
@@ -999,14 +1008,6 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
       reclaim frame;
       Printexc.raise_with_backtrace exn backtrace);
   let failures = failures frame in
-  let outcome =
-    match failures with
-    | [] -> (
-        match !skipped with
-        | Some reason -> Failure.Skip reason
-        | None -> Failure.Pass)
-    | failures -> Failure.Fail failures
-  in
   (* The one gating rule of corrections, both storages: an attempt that
      ended in any failure that is not a baseline failure keeps none of the
      corrections it recorded, nor does one that skipped, whose verdict is
@@ -1028,6 +1029,24 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   let kept = Baseline.settle (baselines run) ~keep in
   let corrected =
     failures <> [] && baseline_only && kept = List.length failures
+  in
+  (* The rule holds in every mode, so a report must not offer an acceptance
+     for a baseline failure of an attempt it fails: the failures say so. *)
+  let failures =
+    if keep then failures
+    else
+      List.map
+        (Failure.with_withheld
+           (if baseline_only then Failure.Skipped else Failure.Failed_outside))
+        failures
+  in
+  let outcome =
+    match failures with
+    | [] -> (
+        match !skipped with
+        | Some reason -> Failure.Skip reason
+        | None -> Failure.Pass)
+    | failures -> Failure.Fail failures
   in
   (outcome, !prop_stats, corrected)
 
@@ -1053,10 +1072,21 @@ let split_last path =
    owns the session (the driver reads it off the outcome); an observer
    holds only data already decided. *)
 type event =
-  | Run_started of { suite : string; total : int; selected : int }
+  | Run_started of {
+      suite : string;
+      total : int;
+      selected : int;
+      properties : bool;
+    }
   | Test_started of { path : string list }
   | Test_finished of result
   | Fixture_release of { name : string }
+  | Interrupted of {
+      running : string list option;
+      releasing : string option;
+      results : result list;
+      duration : float;
+    }
 
 (* Runs one test to completion (retries included), records its result, and
    returns it with whether it counted as failed (see [counts_failed]) — the
@@ -1397,6 +1427,97 @@ let verdict_result ~subject ~path failures =
 
 let executed_test (result : result) = result.subject = Test
 
+(* Interruption
+
+   OCaml runs a signal handler at a safepoint of the interrupted code, never
+   inside the C handler, so it may allocate and print: the runtime unlocks a
+   channel before it runs a handler inside that channel's I/O, and the
+   handler never returns to a write it stopped. What it must not do is
+   re-enter the report, whose formatter may be mid-line. A signal
+   therefore acts at once only while user code runs (a test attempt, a
+   fixture's release), where no report code is on the stack and a body may
+   never return; anywhere else it is recorded and honoured at the next
+   boundary of [drive]. *)
+
+let interrupt_signals = [ Sys.sigint; Sys.sigterm; Sys.sighup ]
+
+(* Commits what the run knows, releases what needs no unwinding (a body's
+   own teardown does), and dies by [signal] so that the parent sees the
+   signal and not an exit code. A pending alarm must not raise through
+   this, and the exit guard must not run: no [exit]. *)
+let interrupt ~on_event run ~started signal =
+  Sys.set_signal Sys.sigalrm (Sys.Signal_handle ignore);
+  ignore
+    (Unix.setitimer Unix.ITIMER_REAL { Unix.it_value = 0.; it_interval = 0. });
+  let frame =
+    match !slot with
+    | Some (In_test frame) -> Some frame
+    | Some (In_run _) | None -> None
+  in
+  (try Capture.abandon run.capture with _ -> ());
+  (try
+     on_event
+       (Interrupted
+          {
+            running = Option.map (fun frame -> frame.fr_path) frame;
+            releasing = run.releasing;
+            results = results run;
+            duration = Os.count_s started;
+          })
+   with _ -> ());
+  Option.iter remove_temp frame;
+  (try ignore (release_fixtures run ~announce:ignore) with _ -> ());
+  Unix.kill (Unix.getpid ()) signal;
+  (* Not reached while the signal can be delivered: the status a shell
+     reports for it. *)
+  Unix._exit
+    (128
+    + if signal = Sys.sighup then 1 else if signal = Sys.sigint then 2 else 15)
+
+let with_interrupts ~interrupt run fn =
+  if Sys.win32 then fn ()
+  else begin
+    let owner = Unix.getpid () in
+    let handle signal =
+      (* A second signal kills at once: the default dispositions are back,
+         and unblocked, the runtime blocking a signal while its handler
+         runs. *)
+      List.iter
+        (fun signal -> Sys.set_signal signal Sys.Signal_default)
+        interrupt_signals;
+      ignore (Unix.sigprocmask Unix.SIG_UNBLOCK interrupt_signals);
+      let in_user_code =
+        match !slot with
+        | Some (In_test _) -> true
+        | Some (In_run _) | None -> run.releasing <> None
+      in
+      (* A process a test forked inherits the handler and not the run: it
+         dies as it would have without one. *)
+      if Unix.getpid () <> owner then Unix.kill (Unix.getpid ()) signal
+      else if in_user_code then interrupt signal
+      else run.interrupted <- Some signal
+    in
+    let previous =
+      List.map
+        (fun signal -> (signal, Sys.signal signal (Sys.Signal_handle handle)))
+        interrupt_signals
+    in
+    (* A signal the parent had ignored stays ignored: nohup, a background
+       job of a shell without job control. *)
+    List.iter
+      (fun (signal, behavior) ->
+        match behavior with
+        | Sys.Signal_ignore -> Sys.set_signal signal behavior
+        | Sys.Signal_default | Sys.Signal_handle _ -> ())
+      previous;
+    Fun.protect
+      ~finally:(fun () ->
+        List.iter
+          (fun (signal, behavior) -> Sys.set_signal signal behavior)
+          previous)
+      fn
+  end
+
 (* Runs the selected tests one at a time in declaration order, stopping at
    the first counted failure under [-x]. Returns whether it bailed, how many cases
    executed (what full-run detection counts — never result rows, which the
@@ -1405,7 +1526,7 @@ let executed_test (result : result) = result.subject = Test
    and the store react to, never a recorded outcome alone — expected [xfail]
    failures are recorded but never accumulate here — and, among those, the
    paths whose failures are all kept corrections. *)
-let drive ~on_event run selected =
+let drive ~on_event ~interrupt run selected =
   let config = config run in
   let bailed = ref false in
   let executed = ref 0 in
@@ -1414,6 +1535,7 @@ let drive ~on_event run selected =
   (try
      List.iter
        (fun case ->
+         Option.iter interrupt run.interrupted;
          if not !bailed then begin
            let _result, failed, corrected = run_case ~on_event run case in
            incr executed;
@@ -1470,10 +1592,20 @@ let execute_plan ?(on_event = fun _ -> ())
      the fatal path the protect empties the slot before the exception leaves
      [execute], so the guard is inert during fatal termination. *)
   with_active run @@ fun () ->
-  on_event (Run_started { suite; total; selected = List.length selected });
-  let bailed, executed, failed_paths, corrected_paths =
-    drive ~on_event run selected
+  let interrupt = interrupt ~on_event run ~started in
+  with_interrupts ~interrupt run @@ fun () ->
+  let properties =
+    List.exists
+      (fun (case : Test_tree.case) ->
+        Test_tree.Tag.mem Test_tree.Tag.prop case.Test_tree.tags)
+      selected
   in
+  on_event
+    (Run_started { suite; total; selected = List.length selected; properties });
+  let bailed, executed, failed_paths, corrected_paths =
+    drive ~on_event ~interrupt run selected
+  in
+  Option.iter interrupt run.interrupted;
   (* Releases run after the last test, outside any per-test timeout,
      including under -x. A failure here is part of the run's verdict,
      so it is recorded the moment it happens: one row per failure, after
@@ -1496,6 +1628,7 @@ let execute_plan ?(on_event = fun _ -> ())
   (* Corrections are written once, after the last test and before the
      report; a correction that reached nothing fails the run. *)
   Baseline.write baselines;
+  Option.iter interrupt run.interrupted;
   (* A test whose failures are all kept corrections leaves the exit code
      alone: under --corrected the [diff?] that follows is the verdict. In
      every other mode no correction is kept beside a raised failure, so the

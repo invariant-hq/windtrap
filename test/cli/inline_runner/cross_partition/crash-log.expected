@@ -1,5 +1,5 @@
 cross_partition/crash.ml: 1 test
-──────────────────── failures (1) ────────────────────
+──────────────────────── failures ────────────────────────
   FAIL  Crash › an uncaught exception
     test/cli/inline_runner/cross_partition/crash.ml:8
       8 │ let%expect_test "an uncaught exception" =
@@ -7,9 +7,9 @@ cross_partition/crash.ml: 1 test
     uncaught exception:
       Failure("boom")
     <backtrace>
-    ── captured output (1 line) ──
-    before the raise
+    captured output (1 line):
+      before the raise
     full log: <log>
-──────────────────────────────────────────────────────
+──────────────────────────────────────────────────────────
 
-1 failed in <duration>s.
+1 failed in <duration>.

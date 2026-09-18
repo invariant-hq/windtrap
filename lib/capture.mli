@@ -37,6 +37,13 @@ val disabled : t
 
 (** {1:capturing Capturing} *)
 
+val drain : unit -> unit
+(** [drain ()] forces buffered output through to descriptors 1 and 2: [Format]'s
+    two standard formatters, the [stdout] and [stderr] channels, then C stdio.
+    Every capture edge does it; a [--stream] run does it at each boundary
+    between a test's bytes and the report's, so that a row never precedes bytes
+    its test wrote. *)
+
 val with_capture :
   t -> groups:string list -> test_name:string -> (unit -> 'a) -> 'a
 (** [with_capture t ~groups ~test_name fn] runs one attempt of the test
@@ -54,6 +61,14 @@ val with_capture :
     descriptors untouched and no attempt readable: {!output} is [""] and
     {!output_tail} is [None] until the next call; the runner's per-test boundary
     turns that into a test failure. *)
+
+val abandon : t -> unit
+(** [abandon t] ends the redirection of an attempt in flight, from outside
+    {!with_capture}: what the test buffered is drained into its log, then
+    descriptors 1 and 2 are the real ones again. For a run that stops inside a
+    test and will not return to it (a signal); a no-op when nothing is
+    redirected or [t] is {!disabled}. Raises [Unix.Unix_error] if the
+    descriptors cannot be restored. *)
 
 (** {1:reading Reading captured output} *)
 

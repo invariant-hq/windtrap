@@ -762,8 +762,12 @@ let staleness =
      outdated verdict, and deleting the directory drops an orphan no run
      can replace. *)
   check_contains "the remedy names deletion for leftovers"
-    ~needle:"delete the files named above" err;
+    ~needle:"; delete the files whose executable no longer exists\n" err;
   check_contains "and the re-run" ~needle:rerun err;
+  check_contains "behind windtrap's one anchor" ~needle:("windtrap: " ^ rerun)
+    err;
+  check_absent "the command's own prefix is gone" ~needle:"windtrap mutants:"
+    err;
   (* Stale beside fresh: the report still renders, the outdated kill is
      excluded, and the same sentence names the re-run that rewrites a
      stale verdict. *)
@@ -803,9 +807,63 @@ let staleness =
     ~needle:"default/test/a.exe" err;
   check_contains "and says it did not write the file"
     ~needle:"not written by the executable now at" err;
-  check_contains "the all-stale message states the situation"
-    ~needle:"every .mutants file was excluded" err;
-  check_contains "and names the one remedy" ~needle:rerun err
+  check_contains
+    "the all-stale message states the situation: the count, what the files are \
+     and what invalidates a verdict"
+    ~needle:
+      "windtrap: found 1 .mutants file and every one is stale\n\
+      \  A verdict is written only by a run asked to test its mutants, and it is\n\
+      \  invalidated by any later build of the executable that wrote it.\n\
+       windtrap: re-run every suite"
+    err;
+  check_contains "and names the one remedy" ~needle:rerun err;
+  check_absent "and spells no dune command" ~needle:"dune " err;
+  (* A rebuild excludes every verdict file of the project: three are
+     named, the rest counted, and the summary splits the stale from the
+     orphaned. *)
+  let root, _ = stale_root "stale-many" in
+  write_file
+    (Filename.concat root "_build/default/test/a.exe")
+    "a different build";
+  List.iter
+    (fun name ->
+      let identity =
+        plant_exe root ("default/test/" ^ name ^ ".exe") "the sibling build"
+      in
+      write_file
+        (Filename.concat root ("_build/_mutants/" ^ name ^ ".mutants"))
+        (V.to_string ~identity (collection [ m_lt V.Killed ]));
+      write_file
+        (Filename.concat root ("_build/default/test/" ^ name ^ ".exe"))
+        "rebuilt since")
+    [ "b"; "c"; "d" ];
+  write_file
+    (Filename.concat root "_build/_mutants/e.mutants")
+    (V.to_string
+       ~identity:
+         {
+           V.exe = "default/test/gone.exe";
+           digest = Digest.to_hex (Digest.string "gone");
+         }
+       (collection [ m_lt V.Killed ]));
+  let code, _, err = mutate ~cwd:root [] in
+  check_int "five excluded files and nothing else exits 1" ~expected:1
+    ~actual:code;
+  let lines = String.split_on_char '\n' err in
+  check_int "at most three files are named" ~expected:3
+    ~actual:
+      (List.length (List.filter (contains_sub ~sub:"; excluding it") lines));
+  check_absent "the fourth is counted, not named" ~needle:"d.mutants" err;
+  check_contains "the rest are one line, then the summary with its split"
+    ~needle:
+      "excluding it\n\
+       windtrap: ... and 2 more like that\n\
+       windtrap: found 5 .mutants files and every one is stale or orphaned (1 \
+       orphaned)\n"
+    err;
+  check_int "the remedy still prints once" ~expected:1
+    ~actual:
+      (List.length (List.filter (contains_sub ~sub:"then merge again") lines))
 
 (* The executable column *)
 
@@ -901,6 +959,12 @@ let loud_failures =
   check_absent "and spells no dune command" ~needle:"dune " err;
   check_contains "no files: the hint names the flag a verdict needs"
     ~needle:"--mutate" err;
+  equal ~msg:"behind windtrap's one anchor, the hint on its own line" text
+    "windtrap: no .mutants files found\n\
+     Instrument the library under test with ppx_windtrap.mutate and run every \
+     suite with its mutants (--mutate) first; every mutation run writes its \
+     verdicts under the build directory's _mutants or under _windtrap/mutants.\n"
+    err;
   (* An existing but empty _build/_mutants is "no files", loudly. *)
   let bare = scratch "bare" in
   mkdir_p (Filename.concat bare "_build/_mutants");
@@ -942,6 +1006,10 @@ let loud_failures =
     ~needle:"unknown option '--frobnicate'" err;
   check_contains "an unknown option prints the usage"
     ~needle:"usage: windtrap mutants" err;
+  equal ~msg:"the anchored sentence, then the usage line and nothing else" text
+    "windtrap: unknown option '--frobnicate'\n\
+     usage: windtrap mutants [PATH...]\n"
+    err;
   (* There is no threshold: one survivor is the failure. *)
   let code, _, err = mutate ~cwd:proj [ "--min"; "80" ] in
   check_int "there is no --min threshold to pass" ~expected:2 ~actual:code;
@@ -955,16 +1023,40 @@ let loud_failures =
     ~needle:"Runs no tests and drives no build" out;
   check_contains "mutate --help states the exit code"
     ~needle:"Exits 1 when any mutant survived every executable that reached it."
-    out
+    out;
+  check_contains "mutate --help opens on the name line, then the usage line"
+    ~needle:
+      "windtrap mutants - merge .mutants verdict files and report the \
+       survivors\n\n\
+       usage: windtrap mutants [PATH...]\n"
+    out;
+  check_contains "and names the one variable that has no flag"
+    ~needle:
+      "ENVIRONMENT (no flag):\n\
+      \  WINDTRAP_COLOR\n\
+      \      Color output: always, never or auto.\n"
+    out;
+  List.iter
+    (fun line ->
+      check
+        (Printf.sprintf "mutate --help fits 80 columns: %s" line)
+        (String.length line <= 80))
+    (String.split_on_char '\n' out)
 
 let dispatch =
   test "the binary dispatches mutants" @@ fun () ->
   let code, out, _ = capture [ "--help" ] in
   check_int "windtrap --help exits 0" ~expected:0 ~actual:code;
   check_contains "windtrap --help lists the subcommand and what it does"
-    ~needle:"mutants     Merge .mutants verdict files" out;
+    ~needle:
+      "  mutants\n\
+      \      Merge .mutants verdict files and report the project's survivors.\n"
+    out;
   check_contains "windtrap --help still lists coverage"
-    ~needle:"coverage    Merge .coverage files" out;
+    ~needle:
+      "  coverage\n\
+      \      Merge .coverage files and report; --min gates, --json exports.\n"
+    out;
   let code, _, err = capture [ "mutant" ] in
   check_int "a near-miss command exits 2" ~expected:2 ~actual:code;
   check_contains "a near-miss command is named"

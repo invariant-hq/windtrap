@@ -1050,7 +1050,13 @@ let render_value_reports_printer_presence () =
     "list printer missing";
   check
     (Gen_engine.render_value (Gen.map succ Gen.int) 3 = placeholder)
-    "map kept a printer it cannot have"
+    "map kept a printer it cannot have";
+  check
+    (Gen_engine.render_value
+       (Gen.with_pp Format.pp_print_int (Gen.map succ Gen.int))
+       3
+    = "3")
+    "with_pp did not attach its printer"
 
 (* Adversarial additions *)
 

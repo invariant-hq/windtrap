@@ -155,18 +155,10 @@ let () =
   | [ tail; located; prop ] ->
       check "add_failure falls back to the frame's declaration location"
         (tail.Failure.loc = Some declared);
-      (* The fill is recorded as a fact on the failure, so a renderer can
-         say the location is not the failing call's own. *)
-      check "the fallback marks the failure as declaration-attributed"
-        (tail.Failure.attribution = Failure.Declaration);
       check "add_failure keeps an explicit location"
         (located.Failure.loc = Some elsewhere);
-      check "an explicit location stays attributed as recorded"
-        (located.Failure.attribution = Failure.Recorded);
       check "the fallback fills the property failure's own location"
         (prop.Failure.loc = Some declared);
-      check "the fill marks the property failure too (renderers decide)"
-        (prop.Failure.attribution = Failure.Declaration);
       check "a property failure's inner location is left untouched"
         (match prop.Failure.kind with
         | Failure.Property { inner = Some i; _ } -> i.Failure.loc = None
@@ -177,9 +169,7 @@ let () =
   match Run.failures bare with
   | [ f ] ->
       check "a frame without a declaration location records None"
-        (f.Failure.loc = None);
-      check "nothing filled: the attribution stays as recorded"
-        (f.Failure.attribution = Failure.Recorded)
+        (f.Failure.loc = None)
   | _ -> check "bare frame failure shape" false
 
 (* Baseline checkpoints: a mismatch is recorded on the frame and the call
@@ -576,11 +566,9 @@ let () =
             | Failure.Raise { actual = Some actual; _ } ->
                 contains "Boom" actual
             | _ -> false);
-          (* No verb raised it: the declaration is its site, named as such
-             — not a fallback the report would hint [~__POS__] about. *)
+          (* No verb raised it: the declaration is its site. *)
           check "the subtest exception names the declaration as its own site"
-            (failure.Failure.loc = Run.loc frame
-            && failure.Failure.attribution = Failure.Recorded)
+            (failure.Failure.loc = Run.loc frame)
       | _ -> check "subtest exception recorded" false);
   check "siblings continue after a throwing subtest" !sibling_ran
 
@@ -1028,7 +1016,10 @@ let () =
        check "never calls back: a Setup-phase failure"
          (f.Failure.phase = Failure.Setup);
        check "never calls back: the message names what went wrong"
-         (contains "without running the test body" (message_of f))
+         (contains
+            "the scope returned without running the test body; a scope must \
+             call its callback exactly once"
+            (message_of f))
    | _ -> check "never calls back: exactly one failure" false);
   check "never calls back: the body did not run"
     (not (ran "never calls back:body"));
@@ -1054,7 +1045,10 @@ let () =
    match fs with
    | [ f ] ->
        check "calls back twice: the message states the contract"
-         (contains "exactly once" (message_of f))
+         (contains
+            "the scope called its callback 2 times and the test body ran on \
+             the first call only; a scope must call it exactly once"
+            (message_of f))
    | _ -> check "calls back twice: exactly one failure" false);
   check_int "calls back twice: the body ran once" ~expected:1
     ~actual:
@@ -1145,10 +1139,8 @@ let () =
          check "body timeout: one Body failure" (f.Failure.phase = Failure.Body);
          check "body timeout: message says timed out"
            (contains "timed out" (message_of f));
-         (* The declaration is a timeout's natural site, named by the
-            runner: never the tail-position fallback. *)
-         check "body timeout: the declaration site is recorded, not filled"
-           (f.Failure.loc <> None && f.Failure.attribution = Failure.Recorded)
+         (* The declaration is a timeout's natural site. *)
+         check "body timeout: located at the declaration" (f.Failure.loc <> None)
      | _ -> check "body timeout: one failure" false);
     (let fs = failure_list (outcome_of outcome [ "teardown-times-out" ]) in
      match fs with
@@ -1747,10 +1739,11 @@ let () =
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
+  let pos = ("test/fake_decl.ml", 12, 2, 30) in
   let tests =
     [
       Test_tree.xfail ~reason:"issue #42"
-        (Test_tree.test "fixed" (fun () -> ()));
+        (Test_tree.test ~__POS__:pos "fixed" (fun () -> ()));
     ]
   in
   expect_run "xpass suite runs" ~config tests @@ fun outcome ->
@@ -1758,7 +1751,9 @@ let () =
   | [ f ] ->
       check "an unexpected pass fails loudly, naming the reason"
         (contains "expected to fail" (message_of f)
-        && contains "issue #42" (message_of f))
+        && contains "issue #42" (message_of f));
+      check "an unexpected pass is located at the declaration"
+        (f.Failure.loc = Some (Loc.of_pos pos))
   | _ -> check "unexpected pass records one message failure" false);
   check "an unexpected pass fails the run"
     (outcome.Run.exit_code = 1 && failed_paths outcome = [ "fixed" ])
@@ -2202,7 +2197,9 @@ let () =
     in
     let on_event = function
       | Run.Test_finished _ -> after := Sys.getenv_opt bound_var :: !after
-      | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _ -> ()
+      | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _
+      | Run.Interrupted _ ->
+          ()
     in
     expect_run "setenv outcomes suite runs" ~on_event ~config tests
     @@ fun outcome ->
@@ -2241,7 +2238,7 @@ let () =
   let on_event = function
     | Run.Test_started _ | Run.Test_finished _ ->
         between := cwd_opt () :: !between
-    | Run.Run_started _ | Run.Fixture_release _ -> ()
+    | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ -> ()
   in
   expect_run "chdir suite runs" ~on_event ~config tests @@ fun outcome ->
   go_home home;
@@ -2470,7 +2467,20 @@ let () =
   | Error error ->
       check "duplicates exit 1" (Run.startup_exit_code error = 1);
       check "the message lists the path"
-        (contains "same" (Run.startup_message error))
+        (contains "same" (Run.startup_message error));
+      (* For [windtrap:], which anchors the first line: a path per line,
+         then the rule. *)
+      check_string "the paths are listed, one per line, then the rule"
+        ~expected:
+          "duplicate test paths:\n\
+          \  a\n\
+          \  b \u{203a} c\n\
+           Every full test path must be unique."
+        ~actual:
+          (Run.startup_message (Run.Duplicate_paths [ "a"; "b \u{203a} c" ]));
+      check_string "an empty --failed store keeps its sentence"
+        ~expected:"no recorded failures match the current suite"
+        ~actual:(Run.startup_message Run.No_recorded_failures)
   | Ok _ -> check "duplicate refusal expected" false
 
 let () =
@@ -2613,7 +2623,8 @@ let () =
   expect_run "event suite runs" ~on_event ~config tests @@ fun _ ->
   (match List.rev !events with
   | [
-   Run.Run_started { suite = "suite"; total = 2; selected = 2; _ };
+   Run.Run_started
+     { suite = "suite"; total = 2; selected = 2; properties = false };
    Run.Test_started { path = [ "one" ] };
    Run.Test_finished r1;
    Run.Test_started { path = [ "two" ] };
@@ -2628,6 +2639,38 @@ let () =
   | Ok paths ->
       check "--list is the selection, and runs nothing"
         (paths = [ "one"; "two" ] && !events = [])
+
+let () =
+  (* Whether the seed decides anything is known before the first result:
+     [Run_started] says whether a selected test is a property, from the
+     selection and not from the declarations. *)
+  with_temp_root @@ fun root ->
+  let tests =
+    [
+      Test_tree.test "plain" (fun () -> ());
+      Test_tree.test ~tags:[ Test_tree.Tag.prop ] "law" (fun () -> ());
+    ]
+  in
+  let started ~filter =
+    let seen = ref None in
+    let on_event = function
+      | Run.Run_started { properties; selected; _ } ->
+          seen := Some (properties, selected)
+      | Run.Test_started _ | Run.Test_finished _ | Run.Fixture_release _
+      | Run.Interrupted _ ->
+          ()
+    in
+    let config = { (base_config ~log_dir:root ()) with Run.filter } in
+    expect_run "property selection suite runs" ~on_event ~config tests (fun _ ->
+        ());
+    !seen
+  in
+  check "a selection holding a property says so"
+    (started ~filter:None = Some (true, 2));
+  check "a selected property alone says so"
+    (started ~filter:(Some "law") = Some (true, 1));
+  check "a selection that leaves the property out does not"
+    (started ~filter:(Some "plain") = Some (false, 1))
 
 (* Property wiring *)
 
@@ -2703,6 +2746,34 @@ let () =
       check "a declared ~count never rides the payload (it replays by itself)"
         (count = None)
   | _ -> check "declared-fails yields a Property failure" false
+
+(* A declared [?summary] reaches the failure the run records: what
+   [Stateful.stateful] relies on for its program's head line. *)
+let () =
+  with_temp_root @@ fun root ->
+  let tests =
+    [
+      Run.prop "summarized"
+        ~summary:(fun value -> Some (Pp.str "n=%d" value))
+        (Gen.int_range 0 1000)
+        (fun value -> Check.is_true (value < 10));
+      Run.prop "plain" (Gen.int_range 0 1000) (fun value ->
+          Check.is_true (value < 10));
+    ]
+  in
+  expect_run "a summarized property"
+    ~config:(base_config ~log_dir:root ())
+    tests
+  @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "summarized" ]) with
+  | [ { Failure.kind = Failure.Property { summary; _ }; _ } ] ->
+      check "a declared ?summary rides the failure, of the shrunk value"
+        (summary = Some "n=10")
+  | _ -> check "summarized yields a Property failure" false);
+  match failure_list (outcome_of outcome [ "plain" ]) with
+  | [ { Failure.kind = Failure.Property { summary; _ }; _ } ] ->
+      check "a property declared without one records none" (summary = None)
+  | _ -> check "plain yields a Property failure" false
 
 (* The replay-hint contract behind the payload count: a case beyond the
    default count is reachable on replay only when the failing run's
@@ -2837,6 +2908,12 @@ let () =
   let message = Run.startup_message Run.Update_refused_in_ci in
   check "the refusal names the CI-safe acceptance"
     (contains "--corrected" message && contains "dune promote" message);
+  check_string "and says why, in sentences"
+    ~expected:
+      "baseline update refused: CI is set. -u rewrites baselines in place, \
+       which is a developer's edit; under CI run with --corrected and accept \
+       with dune promote."
+    ~actual:message;
   let corrected = { config with Run.baseline = Baseline.Corrected } in
   expect_run "--corrected proceeds under CI" ~config:corrected suite
   @@ fun outcome ->
@@ -3126,8 +3203,8 @@ let () =
 
 (* The frozen interception text (runner.mli, classification). *)
 let exit_message =
-  "the test called exit — intercepted; a test must return or raise, never exit \
-   the process"
+  "the test called exit and was intercepted; a test must return or raise, \
+   never exit the process"
 
 let () =
   with_temp_root @@ fun root ->
@@ -3315,31 +3392,25 @@ let () =
   (match failure_list (outcome_of outcome [ "tail" ]) with
   | [ f ] ->
       check "a tail-position check failure is attributed to the declaration"
-        (f.Failure.loc = Some (Loc.of_pos pos));
-      check "and recorded as a declaration attribution"
-        (f.Failure.attribution = Failure.Declaration)
+        (f.Failure.loc = Some (Loc.of_pos pos))
   | _ -> check "tail-loc: exactly one failure" false);
   (match failure_list (outcome_of outcome [ "given" ]) with
   | [ f ] ->
-      check "a given ?__POS__ is the location, as recorded"
-        (f.Failure.loc = Some (Loc.of_pos given)
-        && f.Failure.attribution = Failure.Recorded)
+      check "a given ?__POS__ is the location"
+        (f.Failure.loc = Some (Loc.of_pos given))
   | _ -> check "given-loc: exactly one failure" false);
   (match failure_list (outcome_of outcome [ "captured" ]) with
   | [ f ] ->
-      check "a captured location is this file's, as recorded"
-        ((match f.Failure.loc with
-           | Some l -> Filename.basename l.Loc.file = "test_run.ml"
-           | None -> false)
-        && f.Failure.attribution = Failure.Recorded)
+      check "a captured location is this file's"
+        (match f.Failure.loc with
+        | Some l -> Filename.basename l.Loc.file = "test_run.ml"
+        | None -> false)
   | _ -> check "captured-loc: exactly one failure" false);
   match failure_list (outcome_of outcome [ "raises" ]) with
   | [ f ] ->
-      (* An uncaught exception names the declaration as its own site:
-         the runner chose it, no verb's frame was missed. *)
-      check "an uncaught exception's declaration site is recorded, not filled"
-        (f.Failure.loc = Some (Loc.of_pos pos)
-        && f.Failure.attribution = Failure.Recorded)
+      (* An uncaught exception names the declaration as its own site. *)
+      check "an uncaught exception is located at the declaration"
+        (f.Failure.loc = Some (Loc.of_pos pos))
   | _ -> check "raises-loc: exactly one failure" false
 
 (* Summary *)

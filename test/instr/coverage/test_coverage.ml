@@ -235,6 +235,14 @@ let registry_tests =
           (contains "conflicting" err);
         check "the conflict warning suggests a clean rebuild"
           (contains "rebuild from clean" err);
+        check_string "behind windtrap's one anchor, a warning, the file first"
+          ~expected:
+            (Printf.sprintf
+               "windtrap: warning: %s: conflicting instrumentation tables in \
+                one executable (stale build artifacts? rebuild from clean); \
+                ignoring one module's coverage data\n"
+               file)
+          ~actual:err;
         let serialized = C.to_string (own file) in
         check "a conflict keeps the first registration's table"
           (contains "6000 6010 0\n" serialized);
@@ -896,6 +904,24 @@ let dump_tests =
             check "the conflicting child warns on stderr"
               (contains "conflicting" err && contains "rebuild from clean" err)
         | None -> check "the conflicting child warns on stderr" false);
+        (* A dump that cannot be written costs the run nothing but the
+           line, which says what it could not write: a test executable
+           prints it at exit, with nothing else naming coverage. *)
+        let blocked = Filename.concat child_file "under-a-file.coverage" in
+        let blocked_err = scratch "blocked-stderr.txt" in
+        Unix.putenv "WINDTRAP_COVERAGE_FILE" blocked;
+        check_int "a child that cannot write its dump still exits 0" ~expected:0
+          ~actual:(run ~stderr:blocked_err "first");
+        check "and says which file, and that it is the coverage file"
+          (match read_file blocked_err with
+          | Some err ->
+              String.starts_with
+                ~prefix:
+                  ("windtrap: warning: cannot write coverage file " ^ blocked
+                 ^ ": ")
+                err
+          | None -> false);
+        Unix.putenv "WINDTRAP_COVERAGE_FILE" child_file;
         Sys.remove child_file;
         check_int "silent child exits 0" ~expected:0 ~actual:(run "silent");
         check "a process with no registrations writes no file"

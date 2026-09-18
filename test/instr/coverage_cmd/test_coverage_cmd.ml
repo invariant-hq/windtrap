@@ -30,6 +30,7 @@ module I = Windtrap_runtime.Instr
 
 let check name cond = is_true ~msg:name cond
 let check_int name ~expected ~actual = equal ~msg:name int expected actual
+let check_string name ~expected ~actual = equal ~msg:name text expected actual
 
 let check_contains name ~needle haystack =
   contains ~msg:name ~sub:needle haystack
@@ -563,7 +564,9 @@ let json_shape =
   let code, out, err = coverage_cmd ~cwd:proj [ "--json"; "--min"; "80" ] in
   check_int "--json --min still gates" ~expected:1 ~actual:code;
   check "--json --min keeps stdout pure JSON" (json_well_formed out);
-  check_contains "--json --min moves the verdict to stderr" ~needle:"FAILED" err
+  check_contains "--json --min moves the verdict to stderr" ~needle:"FAILED" err;
+  check "where it is windtrap's own line, behind the anchor"
+    (String.starts_with ~prefix:"windtrap: minimum 80%: FAILED" err)
 
 (* --expect: exhaustiveness *)
 
@@ -596,6 +599,11 @@ let expectations =
   check_contains "the unseen source is named" ~needle:"lib/baz.ml" err;
   check_contains "and the reasons it can be absent" ~needle:"not instrumented"
     err;
+  check_contains "behind windtrap's one anchor"
+    ~needle:
+      "windtrap: lib/baz.ml: expected source has no coverage data (not \
+       instrumented, or linked into no test executable that ran)\n"
+    err;
   check_absent "a preprocessed twin is its source" ~needle:"foo.pp.ml" err;
   check_absent "a lexer source is its generated module" ~needle:"bar.mll" err;
   check_absent "dot-directories are skipped" ~needle:"ghost.ml" err;
@@ -605,6 +613,11 @@ let expectations =
   in
   check_int "--do-not-expect exempts the unseen source" ~expected:0 ~actual:code;
   check "and nothing is warned about" (err = "");
+  let code, _, _ =
+    coverage_cmd ~cwd:root [ "--expect=lib"; "--do-not-expect=lib/baz.ml" ]
+  in
+  check_int "--expect=PATH and --do-not-expect=PATH equal the two-word forms"
+    ~expected:0 ~actual:code;
   let code, _, _ = coverage_cmd ~cwd:root [ "--expect"; "lib/foo.ml" ] in
   check_int "a single covered file passes" ~expected:0 ~actual:code;
   let code, _, err = coverage_cmd ~cwd:root [ "--expect"; "lib/nope" ] in
@@ -665,7 +678,11 @@ let lcov_output =
   let code, out, err = coverage_cmd ~cwd:orphan [ "--lcov" ] in
   check_int "a missing source still exits 0" ~expected:0 ~actual:code;
   check_absent "a missing source has no record" ~needle:"SF:" out;
-  check_contains "a missing source is named on stderr" ~needle:"lib/gone.ml" err
+  check_contains "a missing source is named on stderr" ~needle:"lib/gone.ml" err;
+  check_string "behind windtrap's one anchor"
+    ~expected:
+      "windtrap: lib/gone.ml: source not found; omitted from the lcov output\n"
+    ~actual:err
 
 (* Loud failures *)
 
@@ -719,18 +736,76 @@ let loud_failures =
     ~needle:"unknown option '--frobnicate'" err;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--help" ] in
   check_int "coverage --help exits 0" ~expected:0 ~actual:code;
-  check_contains "coverage --help documents --min" ~needle:"--min PCT" out;
+  check_contains "coverage --help documents --min, its sentence under it"
+    ~needle:"  --min=PCT\n      Exit 1 when total coverage is below PCT.\n" out;
+  check_contains "a description wraps and is never cut"
+    ~needle:
+      "  --expect=PATH\n\
+      \      Exit 1 unless every .ml/.mll/.mly under PATH (or PATH itself) has\n\
+      \      coverage data; repeatable.\n"
+    out;
+  check_contains "coverage --help opens on the name line, then the usage line"
+    ~needle:
+      "windtrap coverage - merge .coverage files and report\n\n\
+       usage: windtrap coverage [OPTIONS] [PATH...]\n"
+    out;
+  check_contains "and names the one variable that has no flag"
+    ~needle:
+      "ENVIRONMENT (no flag):\n\
+      \  WINDTRAP_COLOR\n\
+      \      Color output: always, never or auto.\n"
+    out;
+  List.iter
+    (fun line ->
+      check
+        (Printf.sprintf "coverage --help fits 80 columns: %s" line)
+        (String.length line <= 80))
+    (String.split_on_char '\n' out);
+  check_string "a usage error is the anchored sentence, then the usage line"
+    ~expected:
+      "windtrap: unknown option '--frobnicate'\n\
+       usage: windtrap coverage [OPTIONS] [PATH...]\n"
+    ~actual:err;
   (* Top-level dispatch. *)
   let code, _, err = capture windtrap_exe [] in
   check_int "no command exits 2" ~expected:2 ~actual:code;
   check_contains "no command prints usage" ~needle:"usage: windtrap" err;
+  let commands =
+    "usage: windtrap <command> [OPTIONS]\n\n\
+     COMMANDS:\n\
+    \  coverage\n\
+    \      Merge .coverage files and report; --min gates, --json exports.\n\n\
+    \  mutants\n\
+    \      Merge .mutants verdict files and report the project's survivors.\n\n\
+     OPTIONS:\n\
+    \  -h, --help\n\
+    \      Print this help and exit.\n\n\
+     See `windtrap <command> --help` for a subcommand's options.\n"
+  in
+  check_string "no command says so, then the usage line and the commands"
+    ~expected:("windtrap: no command given\n" ^ commands)
+    ~actual:err;
   let code, _, err = capture windtrap_exe [ "frobnicate" ] in
   check_int "an unknown command exits 2" ~expected:2 ~actual:code;
-  check_contains "an unknown command is named"
-    ~needle:"unknown command 'frobnicate'" err;
+  check_string
+    "an unknown command is named, then the usage line, the commands there are \
+     and the pointer to their help"
+    ~expected:("windtrap: unknown command 'frobnicate'\n" ^ commands)
+    ~actual:err;
   let code, out, _ = capture windtrap_exe [ "--help" ] in
   check_int "windtrap --help exits 0" ~expected:0 ~actual:code;
-  check_contains "windtrap --help lists the subcommand" ~needle:"coverage" out
+  check_contains "windtrap --help lists the subcommand" ~needle:"coverage" out;
+  check_contains "windtrap --help opens on the name line, then the usage line"
+    ~needle:
+      "windtrap - reports merged from instrumented test runs\n\n\
+       usage: windtrap <command> [OPTIONS]\n"
+    out;
+  List.iter
+    (fun line ->
+      check
+        (Printf.sprintf "windtrap --help fits 80 columns: %s" line)
+        (String.length line <= 80))
+    (String.split_on_char '\n' out)
 
 (* --min boundaries *)
 
@@ -793,6 +868,13 @@ let discovery_robustness =
   check_int "an empty _build/_coverage exits 1" ~expected:1 ~actual:code;
   check_contains "an empty _build/_coverage prints the no-files hint"
     ~needle:"no .coverage files found" err;
+  check_string "behind windtrap's one anchor, the hint on its own line"
+    ~expected:
+      "windtrap: no .coverage files found\n\
+       Instrument the library under test with ppx_windtrap.coverage and run \
+       its tests first; every instrumented test executable writes its dump at \
+       exit, under the build directory's _coverage or under _windtrap/coverage.\n"
+    ~actual:err;
   (* A truncated file is corrupt and named, never partially merged. *)
   let serialized =
     C.to_string
@@ -823,8 +905,8 @@ let discovery_robustness =
     ~expected:1 ~actual:code;
   check_contains "the dump is excluded like any other orphan"
     ~needle:"self.coverage" err;
-  check_contains "and the run says everything was excluded"
-    ~needle:"every .coverage file was excluded" err;
+  check_contains "and the run says every file found was excluded, and why"
+    ~needle:"windtrap: found 1 .coverage file and every one is orphaned\n" err;
   check_absent "and nothing is merged" ~needle:"ghost.ml" out;
   (* An explicit .coverage FILE argument is honored as-is. *)
   let code, out, _ =
@@ -982,9 +1064,74 @@ let staleness_pass =
   check_contains "the remedy is an instrumented re-run"
     ~needle:"re-run the suite instrumented" err;
   check_contains "the remedy names the cached-run cause" ~needle:"cached" err;
+  check_contains "the remedy is one line behind windtrap's one anchor"
+    ~needle:
+      "windtrap: re-run the suite instrumented (forcing the runs your build \
+       tool cached), then merge again; delete the files whose executable no \
+       longer exists\n"
+    err;
+  check_absent "the command's own prefix is gone" ~needle:"windtrap coverage:"
+    err;
   check_absent "and spells no dune command" ~needle:"dune " err;
-  check_contains "excluding everything is loud"
-    ~needle:"every .coverage file was excluded" err;
+  check_contains
+    "excluding everything is loud: the count, what the files are, where they \
+     came from and the usual cause"
+    ~needle:
+      "windtrap: found 1 .coverage file and every one is stale\n\
+      \  They were written by executables that no longer exist or have been \
+       rebuilt since.\n\
+      \  The usual cause is a build without the instrumentation flag.\n\
+       windtrap: re-run the suite instrumented"
+    err;
+  (* A build without the instrumentation excludes every dump of the
+     project: three are named, the rest counted, then the summary splits
+     the stale from the orphaned and the remedy prints once. *)
+  let root = stale_root "stale-many" in
+  ignore (plant_exe root "default/test/a.exe" "an uninstrumented rebuild");
+  List.iter
+    (fun name ->
+      let identity =
+        plant_exe root
+          ("default/test/" ^ name ^ ".exe")
+          "the instrumented build"
+      in
+      write_dump root (name ^ ".coverage") ~identity
+        [ ("lib/ghost.ml", ghost_points, [| 1 |]) ];
+      ignore
+        (plant_exe root
+           ("default/test/" ^ name ^ ".exe")
+           "an uninstrumented rebuild"))
+    [ "b"; "c"; "d" ];
+  write_dump root "e.coverage"
+    ~identity:
+      {
+        C.exe = "default/test/gone.exe";
+        digest = Digest.to_hex (Digest.string "gone");
+      }
+    [ ("lib/ghost.ml", ghost_points, [| 1 |]) ];
+  let code, _, err = coverage_cmd ~cwd:root [] in
+  check_int "five excluded dumps and nothing else exits 1" ~expected:1
+    ~actual:code;
+  let lines = String.split_on_char '\n' err in
+  check_int "at most three files are named" ~expected:3
+    ~actual:(List.length (List.filter (contains "; excluding it") lines));
+  check_contains "the first three, in path order" ~needle:"c.coverage" err;
+  check_absent "the fourth is counted, not named" ~needle:"d.coverage" err;
+  check_contains "the rest are one line, then the summary with its split"
+    ~needle:
+      "excluding it\n\
+       windtrap: ... and 2 more like that\n\
+       windtrap: found 5 .coverage files and every one is stale or orphaned (1 \
+       orphaned)\n"
+    err;
+  check_int "the remedy still prints once" ~expected:1
+    ~actual:(List.length (List.filter (contains "then merge again") lines));
+  check_absent "three or fewer excluded files draw no count line"
+    ~needle:"more like that"
+    (let root = stale_root "stale-few" in
+     ignore (plant_exe root "default/test/a.exe" "an uninstrumented rebuild");
+     let _, _, err = coverage_cmd ~cwd:root [] in
+     err);
   (* Stale beside fresh — the revert trap, measured against the blessed
      alias: reverting sources to an already-tested state makes that
      test action a dune cache hit, so its dump is never rewritten and

@@ -42,8 +42,8 @@ module Tag : sig
       tag: [--exclude-tag slow] drops it. *)
 
   val prop : string
-  (** [prop] is ["prop"], pre-applied by the property constructors. The run
-      header prints the root seed iff a test carries it. *)
+  (** [prop] is ["prop"], pre-applied by the property constructors. A run prints
+      its root seed iff a selected test carries it. *)
 
   type predicate
   (** The type for tag selection predicates: a set of required tags and a set of

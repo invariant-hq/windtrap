@@ -4,7 +4,17 @@
   ---------------------------------------------------------------------------*)
 
 type 'a t = Format.formatter -> 'a -> unit
-type style = [ `Bold | `Faint | `Red | `Green | `Yellow | `Cyan | `White ]
+
+type style =
+  [ `Bold
+  | `Faint
+  | `Red
+  | `Green
+  | `Yellow
+  | `Cyan
+  | `White
+  | `Bold_red
+  | `Bold_green ]
 
 (* Output *)
 
@@ -100,6 +110,8 @@ let code_of_style = function
   | `Yellow -> "\027[33m"
   | `Cyan -> "\027[36m"
   | `White -> "\027[37m"
+  | `Bold_red -> "\027[1;31m"
+  | `Bold_green -> "\027[1;32m"
 
 let reset = "\027[0m"
 

@@ -3,7 +3,7 @@
   <testsuite name="mylib" tests="3" failures="1" errors="0" skipped="1" time="1.234">
     <testcase name="math › addition" classname="mylib.math" time="0.000"/>
     <testcase name="users › sessions after login" classname="mylib.users" time="0.000">
-      <failure message="expected [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4])], got [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4; 5]); (&quot;carol&quot;, [])]">    test/test_users.ml:31
+      <failure message="expected [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4])], got [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;…">    test/test_users.ml:31
     expected  [("alice", [1; 2; 3]); ("bob", [4])]
     actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
                                                ~~~~~~~~~~~~~~~~~~

@@ -63,10 +63,10 @@ let attr s =
     s;
   Buffer.contents buf
 
-let failure_text ~filter ~invocation f =
+let failure_text ~filter ~invocation ~armed f =
   Pp.str "%a"
     (fun ppf f ->
-      Report_sections.pp_failure ~ansi:false ~filter ~invocation ppf f)
+      Report_sections.pp_failure ~ansi:false ~filter ~invocation ?armed ppf f)
     f
 
 (* One [Fail] outcome, projected: an excused expected failure, or a counted
@@ -84,7 +84,7 @@ let classify_fail (r : Run.result) fs =
     Counted { own; subtests }
   else Excused (Option.value ~default:{ Test_tree.reason = None } r.xfail)
 
-let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
+let render ?(invocation = `Mirrors) ?armed ~suite ~results ~duration () =
   (* Counts range over emitted testcases, not results: each subtest failure
      is its own testcase, and an excused failure is a skip. *)
   let tests = ref 0 and failures = ref 0 and skipped = ref 0 in
@@ -130,7 +130,7 @@ let render ?(invocation = `Mirrors) ~suite ~results ~duration () =
         Buffer.add_string buf
           (spf "      <failure message=\"%s\">%s</failure>\n"
              (attr (Report_sections.headline f))
-             (text (failure_text ~filter:path_string ~invocation f)))
+             (text (failure_text ~filter:path_string ~invocation ~armed f)))
       in
       let add_tail fs =
         match List.find_map (fun (f : Failure.t) -> f.output_tail) fs with
@@ -228,9 +228,9 @@ let path ~suite target =
   if Filename.check_suffix target ".xml" then target
   else Filename.concat target (Os.sanitize_component suite ^ ".xml")
 
-let write ~invocation ~suite ~duration ~results target =
+let write ~invocation ?armed ~suite ~duration ~results target =
   let file = path ~suite target in
-  let document = render ~invocation ~suite ~results ~duration () in
+  let document = render ~invocation ?armed ~suite ~results ~duration () in
   match
     (* The directory form has to exist before the first suite writes into
        it, and nothing else creates it. *)
@@ -239,7 +239,8 @@ let write ~invocation ~suite ~duration ~results target =
   with
   | () -> ()
   | exception Sys_error message ->
-      Format.eprintf "warning: could not write JUnit report: %s@." message
+      Os.warn (spf "could not write JUnit report: %s" message)
   | exception Unix.Unix_error (error, _, _) ->
-      Format.eprintf "warning: could not write JUnit report to %s: %s@."
-        (Os.display_path file) (Unix.error_message error)
+      Os.warn
+        (spf "could not write JUnit report to %s: %s" (Os.display_path file)
+           (Unix.error_message error))

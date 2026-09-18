@@ -140,7 +140,7 @@ let check t ?loc ?(correct = true) subject actual =
   let mode = if correct then t.mode else Check in
   let kind =
     match subject with
-    | Literal _ -> Failure.Literal
+    | Literal { exact; _ } -> Failure.Literal { exact }
     | File path -> Failure.File path
   in
   let fail state =

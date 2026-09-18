@@ -1,42 +1,31 @@
 mylib: 11 tests (seed s1:7be1d2c904aa31f5)
   PASS  math › addition                            0.1ms
   FAIL  users › sessions after login               0.2ms
-  FAIL  parser › rejects empty                     0.2ms
-  FAIL  cli › cli help — no baseline               0.3ms
-  FAIL  cli › version drift                        0.2ms
-  FAIL  geo › area non-negative                    18ms
-  FAIL  db › insert                                0.2ms
-  PASS  flaky › eventually                         0.2ms (3 attempts)
-  PASS  slow › big sort                            2.50s
-  PASS  slow › hash                                3.00s
-  SKIP  platform › windows paths (unix only)
-──────────────────── failures (6) ────────────────────
-  FAIL  users › sessions after login
     test/test_users.ml:31
     expected  [("alice", [1; 2; 3]); ("bob", [4])]
     actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
                                                ~~~~~~~~~~~~~~~~~~
-    ── captured output (last 2 lines, 12034 earlier bytes omitted) ──
-    [debug] session table resize 2 -> 4
-    [debug] carol: ghost session from pool reuse
+    captured output (last 2 lines, 12034 earlier bytes omitted):
+      [debug] session table resize 2 -> 4
+      [debug] carol: ghost session from pool reuse
     full log: _build/_tests/mylib/latest/users/sessions-after-login.output
 
-  FAIL  parser › rejects empty
+  FAIL  parser › rejects empty                     0.2ms
     test/test_parser.ml:12
     expected exception  Parse_error("empty")
     raised              Not_found
     Raised at Parser.parse in file "lib/parser.ml", line 40
 
-  FAIL  cli › cli help
+  FAIL  cli › cli help (no baseline)               0.3ms
     test/test_cli.ml:9
     expect_file "test/help.expected": no baseline
     proposed (3 lines):
-      ┆ Usage: mytool [OPTIONS] COMMAND
-      ┆ Commands:
-      ┆   run
-    accept: dune exec test/main.exe -- -u, then review with git diff
+      + Usage: mytool [OPTIONS] COMMAND
+      + Commands:
+      +   run
+    accept: dune exec test/main.exe -- -u -f 'cli › cli help'
 
-  FAIL  cli › version drift
+  FAIL  cli › version drift                        0.2ms
     test/test_cli.ml:14
     expect: mismatch
     @@ -1,3 +1,3 @@
@@ -44,9 +33,9 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
     - line two
     + line 2
       line three
-    accept: dune exec test/main.exe -- -u, then review with git diff
+    accept: dune exec test/main.exe -- -u -f 'cli › version drift'
 
-  FAIL  geo › area non-negative
+  FAIL  geo › area non-negative                    18ms
     test/test_geo.ml:17
     counterexample (case 12, shrunk 4 steps): Rect (2, 0)
     which failed at:
@@ -55,27 +44,23 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
       actual    false
     replay: dune exec test/main.exe -- --seed s1:7be1d2c904aa31f5 -f 'geo › area non-negative'
 
-  FAIL  db › insert
+  FAIL  db › insert                                0.2ms
     test/test_db.ml:21
     body exploded
 
     [teardown]
     teardown exploded
-──────────────────────────────────────────────────────
 
-slow tests (2):
-  3.00s  slow › hash
-  2.50s  slow › big sort
-(exempt with the "slow" tag, or raise --slow-threshold SECONDS)
+  PASS  flaky › eventually                         0.2ms (3 attempts)
+  PASS  slow › big sort                            2.5s
+  PASS  slow › hash                                3.0s
+  SKIP  platform › windows paths (unix only)
+
+slow tests (2, over 1s):
+  3.0s  slow › hash
+  2.5s  slow › big sort
 
 flaky tests (1):
   passed on attempt 3  flaky › eventually
 
-4 passed, 1 skipped, 6 failed in 6.5s.
-
-slowest tests:
-  3.00s  slow › hash
-  2.50s  slow › big sort
-   18ms  geo › area non-negative
-  0.3ms  cli › cli help
-  0.2ms  users › sessions after login
+4 passed (1 flaky), 1 skipped, 6 failed in 6.5s.

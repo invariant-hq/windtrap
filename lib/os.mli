@@ -221,3 +221,17 @@ val file_exists : string -> bool
 val mkdir_p : string -> unit
 (** [mkdir_p path] creates [path] and any missing parents with permissions
     [0o770]. Existing components are left alone. *)
+
+(** {1:stderr Standard error} *)
+
+val say : string -> unit
+(** [say message] writes ["windtrap: " ^ message] and a newline on standard
+    error, the one form of everything windtrap says about itself; a [message] of
+    several lines is anchored on its first. Standard output is flushed first,
+    [Format]'s formatter and the channel, so a log that merges both streams
+    keeps their order; standard error is flushed after. A control byte in
+    [message] other than a line feed is written escaped ([\t], [\x1b]). *)
+
+val warn : string -> unit
+(** [warn message] is [say ("warning: " ^ message)]: the line of something the
+    run survives, its verdict and exit code standing. *)

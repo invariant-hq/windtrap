@@ -28,7 +28,7 @@ bare flag, so a build that is instrumented and fine is never blamed.
 
   $ run ./suite_main.exe --mutate=::no-such-source:: -e boom > out 2> err
   [1]
-  $ sed -E 's/ in [0-9.e+-]+s\./ in DURATION./' out
+  $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 4 passed in DURATION.
   $ cat err
   windtrap: --mutate=::no-such-source:: leaves no mutant in this executable's catalogue: no instrumented file matches the prefix (is the library under test instrumented with ppx_windtrap.mutate?), or the matched files have no mutation sites
@@ -40,10 +40,18 @@ exiting 1 here would fail a whole tree's build for the one executable
 that armed the mutant correctly.
 
   $ run ./suite_main.exe --arm lib/absent.ml:1:0:add -e boom > out 2> err
-  $ sed -E 's/ in [0-9.e+-]+s\./ in DURATION./' out
+  $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 4 passed in DURATION.
   $ cat err
   windtrap: lib/absent.ml:1:0:add: not this executable's mutant; it catalogues no site in lib/absent.ml (if you expected one, is the library under test instrumented with ppx_windtrap.mutate?)
+
+Nothing is armed in such a run, so a failure in it is an ordinary one:
+its block says nothing about a mutant.
+
+  $ run ./suite_main.exe --arm lib/absent.ml:1:0:add -f boom > out 2> err
+  [1]
+  $ grep -E 'FAIL|mutant|arm' out
+    FAIL  boom
 
 A malformed identifier is refused before anything runs: the runtime's
 grammar owns the spelling, and a value it cannot parse is never a
@@ -62,7 +70,7 @@ mutant itself, so an armed parent would mutate its own dry run.
   [2]
   $ cat out
   $ cat err
-  options '--mutate' and '--arm' cannot be combined
+  windtrap: options '--mutate' and '--arm' cannot be combined
   usage: suite_main.exe [OPTIONS] [PATTERN]
 
 The mirrors reach the same code: WINDTRAP_MUTATE=1 with --arm is the
@@ -71,9 +79,9 @@ same refusal, and a falsy WINDTRAP_MUTATE is no mutation run at all.
   $ run WINDTRAP_MUTATE=1 ./suite_main.exe --arm lib/absent.ml:1:0:add > out 2> err
   [2]
   $ head -1 err
-  options '--mutate' and '--arm' cannot be combined
+  windtrap: options '--mutate' and '--arm' cannot be combined
   $ run WINDTRAP_MUTATE=off ./suite_main.exe -e boom > out 2> err
-  $ sed -E 's/ in [0-9.e+-]+s\./ in DURATION./' out
+  $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 4 passed in DURATION.
   $ cat err
 
@@ -82,4 +90,4 @@ same refusal, and a falsy WINDTRAP_MUTATE is no mutation run at all.
   $ run ./suite_main.exe --mutant > out 2> err
   [2]
   $ head -1 err
-  unknown option '--mutant'; did you mean '--mutate'?
+  windtrap: unknown option '--mutant'; did you mean '--mutate'?

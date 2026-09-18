@@ -4,9 +4,10 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Os: the monotonic clock, the environment readers and the one
-   writer, atomic file publication, and the project root, log root, sandbox
-   reconstruction and display paths. One submodule per concern, each with
-   its own helpers; the suite runs them as four groups. *)
+   writer, atomic file publication, the project root, log root, sandbox
+   reconstruction and display paths, and the standard-error line. One
+   submodule per concern, each with its own helpers; the suite runs them
+   as five groups. *)
 
 open Windtrap
 module Os = Windtrap.Private.Os
@@ -798,6 +799,45 @@ module Path_suite = struct
     ]
 end
 
+(* Standard error *)
+
+(* The capture holds both streams in the order their bytes reached the
+   descriptors, which is what makes the flush order observable. *)
+module Say_suite = struct
+  let tests =
+    [
+      test "say is one anchored line on stderr" (fun () ->
+          Os.say "could not write the verdict file: disk full";
+          equal string "windtrap: could not write the verdict file: disk full\n"
+            (output ()));
+      test "standard output is flushed first, channel and formatter" (fun () ->
+          print_string "channel, unflushed; ";
+          Format.printf "formatter, unflushed@\n";
+          Os.say "after both";
+          equal string
+            "channel, unflushed; formatter, unflushed\nwindtrap: after both\n"
+            (output ()));
+      test "warn says the run goes on, behind the same anchor" (fun () ->
+          Os.warn "could not write JUnit report: disk full";
+          equal string
+            "windtrap: warning: could not write JUnit report: disk full\n"
+            (output ()));
+      test "a message of several lines is anchored on its first" (fun () ->
+          Os.say
+            "duplicate test paths:\n  a\nEvery full test path must be unique.";
+          equal string
+            "windtrap: duplicate test paths:\n\
+            \  a\n\
+             Every full test path must be unique.\n"
+            (output ()));
+      test "a control byte other than a line feed cannot restyle the terminal"
+        (fun () ->
+          Os.say "invalid value 'a\tb\027[31mc\127'";
+          equal string "windtrap: invalid value 'a\\tb\\x1b[31mc\\x7f'\n"
+            (output ()));
+    ]
+end
+
 (* The concurrency test re-execs this executable as helper children, so the
    suite's toplevel dispatches here before its run. Never returns for a
    child invocation. *)
@@ -809,6 +849,7 @@ let tests =
     group "env" Env_suite.tests;
     group "atomic" Atomic_suite.tests;
     group "paths" Path_suite.tests;
+    group "say" Say_suite.tests;
   ]
 
 let () = exit @@ Windtrap.run "os" tests

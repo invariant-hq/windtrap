@@ -12,13 +12,20 @@
     section vocabulary and the instrumentation reports are {!Report_sections}'s;
     the JUnit document is {!Report_junit}'s.
 
-    A compact run prints, while it runs, only the erasable live tail on a
-    terminal, and at the end the failure blocks, the slow block, the flaky
-    block, the baseline report and the summary line; the header prints iff there
-    is a block to print, so a green run is one line. Under [Run.config.verbose]
-    the header prints at once, one status line streams per test, and the slowest
-    tests close the transcript. Exact layout (column positions, rule widths,
-    display bounds) is not contract. *)
+    What is committed when: a compact run shows the erasable live tail on a
+    terminal and commits each failure block when its test finishes, after the
+    header and the [── failures ──] rule, so a run that dies has printed what it
+    knew; the rule that closes the failures, the end-of-run sections (slow
+    tests, flaky tests, corrections) and the summary follow at the end, and a
+    green run with none of them is its summary line alone. Under
+    [Run.config.verbose] the header prints at once and one status row is
+    committed per finished test, a failed test's block under its row.
+    [Run.config.stream] changes no line of the transcript: a streamed test's own
+    bytes precede what the report writes next, {!Capture.drain} running before
+    the report writes on (a test's standard error is not ordered against it).
+    The summary is the last line, save the empty run's [list:] hint; every
+    committed write is flushed. Exact layout (column positions, display bounds)
+    is not contract. *)
 
 (** {1:renderer The renderer} *)
 
@@ -32,13 +39,15 @@ val create : out:Format.formatter -> ansi:bool -> ?live:bool -> Run.config -> t
     codes at all (sequences in test names and captured output are stripped),
     under [ansi:true] they pass through; compared values are escaped into
     visible text either way ({!pp_failure}). [live] (default [false], and off
-    regardless under [ansi:false]) is whether {!begin_test} maintains a
-    self-erasing progress display; pass the sink's TTY status. [config.verbose],
-    [config.slow_threshold] ([0.] disables slow warnings) and
-    [config.invocation] are read once here. Names print with C0 control bytes
-    and DEL escaped ({!Report_sections.sanitize_name}); the width is [80]
-    columns and a failure block shows the last [10] lines of the captured tail
-    with the full log's path.
+    regardless under [ansi:false] and under [config.stream], where a test's own
+    bytes would land on it) is whether {!begin_test} maintains a self-erasing
+    progress display; pass the sink's TTY status. [config.verbose],
+    [config.stream], [config.slow_threshold] ([0.] disables slow warnings),
+    [config.invocation] and the identifier of a [config.mutation] that is
+    {!Run.Armed} are read once here. Names print with C0 control bytes and DEL
+    escaped ({!Report_sections.sanitize_name}); the width is [80] columns and a
+    failure block shows the last [10] lines of the captured tail with the full
+    log's path.
 
     Raises [Invalid_argument] if [config.slow_threshold] is negative or not
     finite. *)
@@ -63,11 +72,13 @@ val header :
   unit
 (** [header t ~suite ~tests ~seed] records the run header
     ([mylib: 48 tests (seed s1:…)]) and prints it under [verbose]; compact
-    prints it at {!finish} iff the run has a block to print. [seed] is shown
-    when given; [tests] is the number of selected tests and scales the live
-    tail's [[k/n]] counter. [declared] (default [tests]), how many tests the
-    suite declares before selection, and [selection] ({!selection_description})
-    are not printed; the summary uses them to say why nothing ran. *)
+    prints it before its first failure block or end-of-run section, and not at
+    all on a run that has neither. [seed] is shown when given; [tests] is the
+    number of selected tests: it scales the live tail's [[k/n]] counter and the
+    summary's [N not run] is counted against it. [declared] (default [tests]),
+    how many tests the suite declares before selection, and [selection]
+    ({!selection_description}) are not printed; the summary uses them to say why
+    nothing ran. *)
 
 val begin_test : t -> path:string list -> unit
 (** [begin_test t ~path] shows the test at [path] on the live display
@@ -76,13 +87,19 @@ val begin_test : t -> path:string list -> unit
     and [ansi] are set. *)
 
 val result : t -> Run.result -> unit
-(** [result t r] erases the live display and, under [verbose], prints [r]'s
-    status line: status tag, full path ({!Test_tree.path_to_string}), duration
-    (the skip reason for a [SKIP]), the attempt count when [r.attempts > 1], and
-    a passing property's label distribution under it. A failing result that did
-    not count ([r.counted = false]) renders as a dim [XFAIL] tag with
-    [r.xfail]'s reason; an [xfail] test that passed arrives as a counted failure
-    whose message names the reason. Compact prints nothing per test. *)
+(** [result t r] erases the live display and commits what [r] is owed, flushed.
+    Under [verbose] that is [r]'s status line: status tag, full path
+    ({!Test_tree.path_to_string}), duration (the skip reason for a [SKIP]), the
+    attempt count when [r.attempts > 1], and a passing property's label
+    distribution under it. A failing result that did not count
+    ([r.counted = false]) renders as a dim [XFAIL] tag with [r.xfail]'s reason;
+    an [xfail] test that passed arrives as a counted failure whose message names
+    the reason. A counted failure's status line is its block's title, qualified
+    by [(mutant armed)] in an armed run: the block's lines ({!finish} describes
+    them) follow it, then one blank line. Compact prints nothing for a result
+    that did not count as failed, and for one that did its failure block,
+    preceded once per run by the header and the 58-column [── failures ──] rule
+    and separated from the previous block by one blank line. *)
 
 val note : t -> string -> unit
 (** [note t line] prints the run-scoped notice [line] ([releasing db]) on its
@@ -90,10 +107,12 @@ val note : t -> string -> unit
     and not at all elsewhere. *)
 
 val observe :
-  t -> seed:Seed.seed option -> selection:string option -> Run.event -> unit
+  t -> seed:Seed.seed -> selection:string option -> Run.event -> unit
 (** [observe t ~seed ~selection event] streams [event] through [t]: the header
-    on [Run_started], the live tail on [Test_started], the status line on
-    [Test_finished], the release notice on [Fixture_release]. Never raises. *)
+    on [Run_started], carrying the run's root [seed] iff a selected test is a
+    property; the live tail on [Test_started]; {!result} on [Test_finished]; the
+    release notice on [Fixture_release]; {!interrupted} on [Interrupted]. Never
+    raises. *)
 
 val selection_description : Run.config -> string option
 (** [selection_description config] describes what narrows the run (the filter,
@@ -108,35 +127,90 @@ val empty_selection_reason :
     [0], else ["<selection> matched none of N tests"] when something narrowed
     it, else [None]. Exported for [--list]. *)
 
-val finish : t -> results:Run.result list -> duration:float -> unit -> unit
-(** [finish t ~results ~duration ()] ends the transcript. A compact run with
-    nothing to show (no counted failure, no completed test over the slow
-    threshold that is not [slow_tagged], no passing row with [attempts > 1])
-    prints exactly one line: the summary prefixed with the suite name, the seed
-    appended when the header carried one. Otherwise the transcript ends with the
-    failure section (every counted failed result: [FAIL] header with the attempt
-    count when [r.attempts > 1], each failure through {!pp_failure} with source
-    excerpts, the property label table, the bounded captured tail and full-log
-    path); the slow block ([slow tests (n):], slowest first, with one hint
-    naming the ["slow"] tag and the threshold knob; none when the threshold is
-    [0.]); the flaky block ([flaky tests (n):], one [passed on attempt k path]
-    per passing result with [attempts > 1], in run order); the summary line
-    ([46 passed, 2 failed in 1.2s.]; flaky tests count as passed, expected
-    failures add [2 expected failures], subtest-labeled entries add
-    [(3 subtest failures)]); and under [verbose] the slowest tests, on runs of
-    at least five seconds with at least five timed tests. Excused results leave
-    the failure section and the failed count alone; skips never count as slow.
-    Durations are {!Run.result.duration}, attempts summed. *)
+val finish :
+  t ->
+  results:Run.result list ->
+  duration:float ->
+  ?baselines:Baseline.t ->
+  ?before_summary:(unit -> unit) ->
+  unit ->
+  unit
+(** [finish t ~results ~duration ()] ends the transcript. [results] extends, in
+    order, the results {!result} was given. In order:
 
-(** {1:baselines The baseline report} *)
+    - The failure blocks not committed yet (the rows the executor records after
+      the last test), as {!result} commits them: under the [── failures ──] rule
+      in a compact run, under their status lines in a [verbose] one; then, in a
+      compact run that committed a block, the 58-column rule that closes them
+      and one blank line. A block is the title ([  FAIL  <path>], qualified by
+      [(N attempts)] when [r.attempts > 1] and by [(mutant armed)] in an armed
+      run), one {!pp_failure} entry per failure with its source line, a blank
+      line between two entries, the property label table, the captured tail, and
+      last {!Report_sections.hints} for the whole test, a fixture-release row's
+      without a filter. The tail is its last {!Report_sections.max_lines} lines,
+      indented two more, under [captured output (N lines):],
+      [captured output (last 10 of N lines):] or
+      [captured output (last 10 lines, B earlier bytes omitted):], [B] every
+      byte of the output before the first line shown, then [full log: <path>] at
+      the heading's column.
+    - One blank line before the first section below in a [verbose] run, unless a
+      failed row's block has just closed on one; one after each section.
+    - [slow tests (N, over Ts):], one [<duration>  <path>] row per completed
+      test over the threshold that is not [slow_tagged], slowest first; none
+      when the threshold is [0.]. Skips never count as slow.
+    - [flaky tests (N):], one [passed on attempt K  <path>] row per passing
+      result with [attempts > 1], in run order.
+    - [corrections (N):], one [wrote <path>] ([--corrected]) or
+      [accepted <path>] ([-u]) row per {!Baseline.writes} entry of [baselines],
+      sorted by the displayed path ({!Os.display_path}), a source file's row
+      ending in [(N expectations)].
+    - The summary, always last:
+      [4 passed (1 flaky), 1 skipped, 2 expected failures, 6 failed (3 subtest
+       failures), 2 not run, 1 correction written in 6.5s.], zero terms omitted.
+      Flaky tests count as passed, excused results as expected failures only,
+      [not run] is the header's [tests] minus the test rows of [results], and
+      corrections count files. It is prefixed with the suite name, and followed
+      by the seed the header would have carried, when no header printed. A run
+      with no result says [no tests ran: <reason>.] there instead
+      ({!empty_selection_reason}), and when a selection emptied it one line
+      follows, the one line after an outcome: [list: <launcher> -l] under an
+      [`Exe] invocation, [(list the suite's tests with -l)] under a build
+      action, which has no launcher to restate.
 
-val report_baselines : t -> Run.t -> unit
-(** [report_baselines t run] prints one line per file the run wrote for its
-    baselines ({!Baseline.writes}, paths through {!Os.display_path}):
-    [wrote <path>.corrected] under [--corrected], [accepted <path>] under [-u],
-    a source file's line ending in [(N expectations)]; then one
-    [could not write <path>: <reason>] per {!Baseline.refusals} entry. Called
-    after {!finish}. *)
+    [before_summary] (default: nothing) runs between the last section and the
+    summary, after [t]'s formatter is flushed: what it writes sits against the
+    sections, and the summary stays the last line.
+
+    One blank line follows each section (a [verbose] run has no failures
+    section), the last one's after [before_summary] ran, so a compact run with
+    nothing to show (no counted failure, no slow or flaky test, no correction)
+    prints exactly the summary line. A measured duration prints as [N.Nms] below
+    10 ms, [Nms] below one second and [N.Ns] from there, rounded before its unit
+    is chosen; the threshold prints as configured. Durations are
+    {!Run.result.duration}, attempts summed. *)
+
+val interrupted :
+  t ->
+  ?before_summary:(unit -> unit) ->
+  ?releasing:string ->
+  running:string list option ->
+  results:Run.result list ->
+  duration:float ->
+  unit ->
+  unit
+(** [interrupted t ~running ~results ~duration ()] ends the transcript of a run
+    a signal is stopping: [windtrap: interrupted in <path>] on standard error
+    ({!Os.say}), [running] the test that was stopped; when it is [None],
+    [windtrap: interrupted while releasing <fixture>] if the signal stopped the
+    release of [releasing], else [windtrap: interrupted between tests]. Then
+    {!finish} over [results], whose summary counts what did not finish as
+    [N not run]: a run stopped before its first result is [N not run] alone. *)
+
+(** {1:baselines Baselines} *)
+
+val refusals : Baseline.t -> string list
+(** [refusals baselines] is one line for {!Os.say} per file the run could not
+    write ({!Baseline.refusals}): [could not write <path>: <reason>]. *)
 
 (** {1:github The GitHub Actions envelope}
 
@@ -154,16 +228,22 @@ val group_end : string
 (** [group_end] is the [::endgroup::] command line. *)
 
 val annotation :
-  ?invocation:Run.invocation -> path:string list -> Failure.t -> string
+  ?invocation:Run.invocation ->
+  ?armed:string ->
+  path:string list ->
+  Failure.t ->
+  string
 (** [annotation ~path f] is one [::error] command line for [f], raised by the
     test at [path]: [file=]/[line=] from [f]'s location when it has one,
-    whatever its {!Failure.attribution}, a [title] naming the test, and as
-    message the unstyled {!pp_failure} block with newlines [%0A]-encoded. A
-    subtest entry annotates at the parent test, with the entry's own location
-    and its [parent › name] label leading the message. [invocation] defaults to
-    [`Mirrors]. *)
+    [Test failure: <path>] as [title], the path spelled as the block's title
+    spells it ({!Report_sections.sanitize_name}), and as message the unstyled
+    {!pp_failure} block, hints included, with newlines [%0A]-encoded. A subtest
+    entry annotates at the parent test, with the entry's own location and its
+    [subtest] line. [invocation] (default [`Mirrors]) and [armed] spell the
+    hints. *)
 
-val annotations : ?invocation:Run.invocation -> Run.result list -> string
+val annotations :
+  ?invocation:Run.invocation -> ?armed:string -> Run.result list -> string
 (** [annotations results] is the concatenated {!annotation} lines for every
     failure of every counted failed result ({!Run.result.counted}), in run
     order; [""] when none. Excused expected failures produce no annotation. *)
@@ -193,11 +273,6 @@ val mutation_not_evaluated : t -> unit
     [mutant not evaluated: no selected test ran the site.], closing an armed run
     that never evaluated the site. *)
 
-val mutation_not_saved : t -> unit
-(** [mutation_not_saved t] prints
-    [verdicts not saved: this run's selection narrows the suite, …], printed by
-    a narrowed mutation run in place of writing its verdict file. *)
-
 val mutation_report : t -> Report_sections.mutation -> unit
 (** [mutation_report t m] prints {!Report_sections.mutation_report} of [m] under
     [t]'s invocation and styling. *)
@@ -218,8 +293,10 @@ val labeled_msg : Failure.t -> string option
 val pp_failure :
   ansi:bool ->
   ?excerpt:bool ->
+  ?hints:bool ->
   ?filter:string ->
   ?invocation:Run.invocation ->
+  ?armed:string ->
   Format.formatter ->
   Failure.t ->
   unit
@@ -234,13 +311,13 @@ val run :
   Test_tree.t list ->
   (Run.outcome, Run.startup_error) result
 (** [run ~suite config tests] is {!Run.execute}[ config ~suite tests] with the
-    run's whole report on standard output: the transcript on {!terminal} (the
-    header's seed is the root seed iff a test carries {!Test_tree.Tag.prop}),
-    inside the [::group::] envelope when [config.github], then for a run that
-    happened {!finish} over {!Run.results}, {!report_baselines}, the envelope's
-    close, the {!annotations} block after it, and {!Report_junit.write} to
-    [config.junit], last. Both standard formatters are flushed before it
-    returns.
+    run's whole report on standard output: the transcript on {!terminal},
+    {!observe}d as the run happens, inside the [::group::] envelope when
+    [config.github], then for a run that happened {!finish} over {!Run.results}
+    and {!Run.baselines}, the envelope's close and the {!annotations} block
+    after it sitting between the sections and the summary, then the {!refusals}
+    lines on standard error and {!Report_junit.write} to [config.junit], last.
+    Both standard formatters are flushed before it returns.
 
     [Ok outcome] is the executor's outcome, reported. [Error error] is a refused
     startup: the envelope is closed and {!Run.startup_message} is on standard

@@ -149,8 +149,8 @@ let pass = Testable.pass
 (* Properties *)
 
 (* Facade [prop] tests carry [Test_tree.Tag.prop]: it makes properties selectable
-   ([--tag prop]) and lets the report print the root seed in the header
-   exactly when the suite declares property tests. *)
+   ([--tag prop]) and lets a run print its root seed exactly when its
+   selection holds a property. *)
 let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples name gen law =
   let tags = Test_tree.Tag.prop :: Option.value ~default:[] tags in
   Run.prop ?__POS__ ~tags ?timeout ?count ?max_discard ?examples name gen law
@@ -270,12 +270,13 @@ let invocation_of ~corrected argv : Run.invocation =
   else `Exe argv0
 
 let print_cli_error ~prog error =
-  Format.eprintf "%s@.%s@." (Cli.error_message error) (Cli.usage ~prog)
+  Os.say (Cli.error_message error);
+  prerr_endline (Cli.usage ~prog)
 
 (* The run: [Report.run] writes the whole transcript. What is
    legitimately the facade's own stays visible here: the argv-computed
-   invocation, the focus warning, and the exit code — returned, never
-   applied: the process is the caller's. *)
+   invocation, the focus and promotion warnings, and the exit code —
+   returned, never applied: the process is the caller's. *)
 let run_suite ~suite ~config tests =
   (* The mutation seam: one call at run entry, in place of [Report.run].
      Without [--mutate] or [--arm] it is exactly [Report.run] — same
@@ -293,11 +294,12 @@ let run_suite ~suite ~config tests =
         outcome.Run.focus_active && outcome.Run.exit_code = 0
         && not (Os.in_ci ())
       then
-        Format.eprintf
-          "warning: focus is active — %d of %d tests ran; remove the focus \
-           before committing@."
-          (List.length outcome.Run.selected)
-          outcome.Run.total;
+        Os.warn
+          (Pp.str
+             "focus is active: %d of %d tests ran; remove the focus before \
+              committing"
+             (List.length outcome.Run.selected)
+             outcome.Run.total);
       (* A [--corrected] run is a build action's, and a build action's
          selection is a [WINDTRAP_*] variable spanning every stanza and
          partition of the tree: a stanza it empties is not a mistyped
@@ -319,15 +321,14 @@ let run_suite ~suite ~config tests =
 let run_listing ~suite ~config tests =
   match Run.list_selection config ~suite tests with
   | Error error ->
-      prerr_endline (Run.startup_message error);
+      Os.say (Run.startup_message error);
       Run.startup_exit_code error
   | Ok [] ->
       (* A listing that answered a mistyped filter with silence would be
-         the dead end the empty-selection line's own "(list the suite's
-         tests with -l)" hint leads to. The hint itself is not repeated:
-         the reader is listing. *)
+         the dead end the empty run's own [list:] hint leads to. Standard
+         output stays empty: what reads a listing reads paths. *)
       Option.iter
-        (fun reason -> print_endline ("no tests ran: " ^ reason ^ "."))
+        (fun reason -> Os.say ("no tests ran: " ^ reason ^ "."))
         (Report.empty_selection_reason
            ~declared:(List.length (Test_tree.flatten tests))
            ~selection:(Report.selection_description config));

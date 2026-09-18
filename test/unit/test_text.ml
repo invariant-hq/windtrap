@@ -68,6 +68,30 @@ let tests =
           (Text.truncate_utf8 0 "abc");
         equal ~msg:"empty string fits any budget" string ""
           (Text.truncate_utf8 0 ""));
+    test "elide_middle keeps both ends and counts what it left out" (fun () ->
+        equal ~msg:"at the bound: unchanged" string "abcdefgh"
+          (Text.elide_middle 8 ~show:Fun.id "abcdefgh");
+        equal ~msg:"over the bound: half from each end" string
+          "abcd\u{2026} (2 bytes elided)ghij"
+          (Text.elide_middle 8 ~show:Fun.id "abcdefghij");
+        (* Six two-byte characters under a bound of 6: each half is 3 bytes,
+           and a cut inside a character moves away from the middle. *)
+        equal ~msg:"cuts land on code points, short of the half" string
+          "\u{00e9}\u{2026} (8 bytes elided)\u{00e9}"
+          (Text.elide_middle 6 ~show:Fun.id
+             "\u{00e9}\u{00e9}\u{00e9}\u{00e9}\u{00e9}\u{00e9}");
+        equal ~msg:"an odd bound rounds each half down" string
+          "abc\u{2026} (4 bytes elided)hij"
+          (Text.elide_middle 7 ~show:Fun.id "abcdefghij");
+        (* [show] prints what is kept and never what is counted: the cut and
+           the count are made in the carried bytes. *)
+        equal ~msg:"show applies to each kept end, the count is of the input"
+          string "a\\tbc\u{2026} (2 bytes elided)gh\\ni"
+          (Text.elide_middle 8 ~show:String.escaped "a\tbcdegh\ni");
+        equal ~msg:"show applies to a value that fits" string "a\\tb"
+          (Text.elide_middle 8 ~show:String.escaped "a\tb");
+        raises (Invalid_argument "Text.elide_middle: negative bound") (fun () ->
+            Text.elide_middle (-1) ~show:Fun.id "a"));
     test "truncate_bytes_utf8 never splits a character" (fun () ->
         equal ~msg:"non-positive budget" string "<truncated>"
           (Text.truncate_bytes_utf8 0 "abc");

@@ -8,12 +8,14 @@
    for the driver to pin its transcripts byte for byte: five tests, no
    clock, no network, one file baseline.
 
-   Five declarations, selected by FACADE_FIXTURE, because two of the
+   Eight declarations, selected by FACADE_FIXTURE, because two of the
    things [run] refuses are properties of a suite rather than of a flag —
    a duplicate path and a committed focus — and neither can coexist with
-   the tests every other scenario selects from; a flaky test and a noisy
-   failing test likewise stand alone, so the transcripts every other
-   session pins stay exactly what they are. *)
+   the tests every other scenario selects from; a flaky test, a noisy
+   failing test, the streamed tests, and a test that fails beside a stale
+   baseline likewise stand alone,
+   so the transcripts every other session pins stay exactly what they
+   are. *)
 
 open Windtrap
 
@@ -64,6 +66,37 @@ let noisy =
         equal ~msg:"deliberate" int 1 2);
   ]
 
+(* Output that does not go through the report's formatter: left unflushed
+   in the [stdout] channel, written straight to descriptor 1, and written
+   by a subprocess through its own C stdio. The last test fails, so its
+   block is there to sit under its row. *)
+let streamed =
+  [
+    test "channel" (fun () -> print_string "through the stdout channel\n");
+    test "descriptor" (fun () ->
+        let line = "through descriptor 1\n" in
+        ignore (Unix.write_substring Unix.stdout line 0 (String.length line)));
+    test "subprocess" (fun () ->
+        let pid =
+          Unix.create_process "echo"
+            [| "echo"; "through a subprocess" |]
+            Unix.stdin Unix.stdout Unix.stderr
+        in
+        ignore (Unix.waitpid [] pid));
+    test "fails" (fun () ->
+        print_string "before the failure\n";
+        equal ~msg:"deliberate" int 1 2);
+  ]
+
+(* A stale baseline beside a failing assertion: the run keeps no
+   correction, whatever it was asked to do with one. *)
+let masked =
+  [
+    test "masked" (fun () ->
+        expect_file "fresh from the fixture\n" "test/cli/masked.expected";
+        equal ~msg:"deliberate" int 1 2);
+  ]
+
 let () =
   exit
   @@ run "fixture"
@@ -72,6 +105,8 @@ let () =
        | Some "duplicate" -> duplicate
        | Some "flaky" -> flaky
        | Some "noisy" -> noisy
+       | Some "stream" -> streamed
+       | Some "masked" -> masked
        | Some ("" | "default") | None -> default
        | Some other ->
            invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other))

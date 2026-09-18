@@ -161,3 +161,29 @@ let describe ~path = function
         "%s: not written by the executable now at %s (rebuilt since); \
          excluding it"
         path exe
+
+(* A file or two excluded among many is worth a line each. A build without
+   the instrumentation excludes every file of the project: the same line per
+   test executable, in front of the remedy. *)
+let detail_cap = 3
+
+let warnings excluded =
+  let more = List.length excluded - detail_cap in
+  List.map
+    (fun (path, freshness) -> describe ~path freshness)
+    (List.filteri (fun i _ -> i < detail_cap) excluded)
+  @ if more > 0 then [ spf "... and %d more like that" more ] else []
+
+let all_excluded ~ext excluded =
+  let total = List.length excluded in
+  let orphans =
+    List.length
+      (List.filter
+         (function Orphan _ -> true | Fresh | Stale _ -> false)
+         excluded)
+  in
+  spf "found %d .%s file%s and every one is %s" total ext
+    (if total = 1 then "" else "s")
+    (if orphans = total then "orphaned"
+     else if orphans = 0 then "stale"
+     else spf "stale or orphaned (%d orphaned)" orphans)

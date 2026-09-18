@@ -96,7 +96,7 @@ let () =
   Printexc.register_printer (function
     | Specification_raised { name; step; phase; exn } ->
         Some
-          (Pp.str "step %d: %s \u{2014} %s raised %s" step name phase
+          (Pp.str "call %d: %s, %s raised %s" step name phase
              (Printexc.to_string exn))
     | _ -> None)
 
@@ -197,20 +197,18 @@ let step_text call =
   | None -> call.name
   | Some argument -> call.name ^ " " ^ argument
 
-let pad_right width text =
-  text ^ String.make (max 0 (width - Text.length_utf8 text)) ' '
-
 let pad_left width text =
   String.make (max 0 (width - Text.length_utf8 text)) ' ' ^ text
 
-let widest texts =
-  List.fold_left (fun width text -> max width (Text.length_utf8 text)) 0 texts
+let pad_right width text =
+  text ^ String.make (max 0 (width - Text.length_utf8 text)) ' '
 
-(* Layout is this module's own: hard newlines only, columns padded here.
-   [Gen] renders through [Format.asprintf] at the default 78-column margin,
-   so a printer relying on soft breaks would have the engine re-wrap the
-   program behind its back. Both columns are measured over the rows that
-   print, so a wide model cell inside the omitted middle indents nothing. *)
+(* Layout is this module's own: hard newlines only, the columns padded
+   here. [Gen] renders through [Format.asprintf] at the default 78-column
+   margin, so a printer relying on soft breaks would have the engine
+   re-wrap the program behind its back. A table: the header row
+   [ #  model before  call], then a row per call, the model being the one
+   the call ran against; no model column without [pp_model]. *)
 let program_text ?pp_model program =
   match program.calls with
   (* The empty program is a reachable counterexample — a [~scope] that
@@ -227,7 +225,8 @@ let program_text ?pp_model program =
       in
       let steps =
         List.mapi
-          (fun index (call, cell) -> (index + 1, cell, call))
+          (fun index (call, cell) ->
+            (string_of_int (index + 1), cell, step_text call))
           (List.combine calls cells)
       in
       let head, omitted, tail =
@@ -238,35 +237,40 @@ let program_text ?pp_model program =
             List.filteri (fun index _ -> index >= total - context_steps) steps
           )
       in
-      let number_width = String.length (string_of_int total) in
-      let cell_width =
-        widest (List.filter_map (fun (_, cell, _) -> cell) (head @ tail))
+      let header =
+        ("#", Option.map (fun _ -> "model before") pp_model, "call")
       in
-      let row (number, cell, call) =
-        let model =
-          match cell with
+      let number_width = max 2 (String.length (string_of_int total)) in
+      let cell_width =
+        List.fold_left
+          (fun width (_, cell, _) ->
+            max width (Text.length_utf8 (Option.value cell ~default:"")))
+          0
+          ((header :: head) @ tail)
+      in
+      let row (number, cell, step) =
+        pad_left number_width number
+        ^ (match cell with
           | None -> ""
-          | Some cell -> pad_right cell_width cell ^ "  "
-        in
-        model
-        ^ pad_left number_width (string_of_int number)
-        ^ "  " ^ step_text call
+          | Some cell -> "  " ^ pad_right cell_width cell)
+        ^ "  " ^ step
       in
       let omission =
         if omitted = 0 then []
-        else [ Pp.str "\u{2026} (%d step%s omitted)" omitted (plural omitted) ]
-      in
-      (* The summary comes first, and says [last], not [failing at]: the
-         printer is a pure function of the program and does not know which
-         step failed. [Report.headline] flattens newlines and truncates to
-         60 code points, and that headline is the JUnit message attribute
-         and the [-v] one-liner. *)
-      let summary =
-        Pp.str "%d call%s, last: %s" total (plural total)
-          (List.nth calls (total - 1)).name
+        else [ Pp.str "\u{2026} (%d call%s omitted)" omitted (plural omitted) ]
       in
       String.concat "\n"
-        ((summary :: List.map row head) @ omission @ List.map row tail)
+        ((row header :: List.map row head) @ omission @ List.map row tail)
+
+(* [last], not [failing at]: a function of the program, which does not
+   know the call that failed. The empty program has no table to say
+   anything about. *)
+let summary program =
+  match List.rev program.calls with
+  | [] -> None
+  | last :: _ ->
+      let total = List.length program.calls in
+      Some (Pp.str "%d call%s, last: %s" total (plural total) last.name)
 
 let pp_program ?pp_model ppf program =
   Format.pp_print_string ppf (program_text ?pp_model program)
@@ -350,7 +354,7 @@ let relabel ?loc label (failure : Failure.t) =
   let msg =
     match failure.Failure.msg with
     | None -> label
-    | Some user -> label ^ " \u{2014} " ^ one_line user
+    | Some user -> label ^ "; " ^ one_line user
   in
   (* The command's declaration site fills in only where the assertion left
      none — which is the common case, since a body is idiomatically one
@@ -371,8 +375,8 @@ let attributed ?loc label fn =
 let at_step ?(after = false) ?loc ~name ~step ~total fn =
   attributed ?loc
     (fun () ->
-      if after then Pp.str "invariant after step %d of %d: %s" step total name
-      else Pp.str "step %d of %d: %s" step total name)
+      if after then Pp.str "invariant after call %d of %d: %s" step total name
+      else Pp.str "call %d of %d: %s" step total name)
     fn
 
 (* Exception-class narrowing
@@ -443,7 +447,7 @@ let ends_the_run exn =
    is what diagnoses it. No non-ASCII in [called_twice]:
    [Printexc.to_string] renders [Invalid_argument] payloads with [%S]. *)
 let no_program =
-  "the scope returned without running the program — a scope must call its \
+  "the scope returned without running the program; a scope must call its \
    callback exactly once"
 
 let called_twice =
@@ -525,6 +529,6 @@ let stateful ?__POS__ ?tags ?timeout ?count ?steps ?pp_model ?invariant name
   let tags =
     Test_tree.Tag.prop :: stateful_tag :: Option.value ~default:[] tags
   in
-  Run.prop ?__POS__ ~tags ?timeout ?count name
+  Run.prop ?__POS__ ~tags ?timeout ?count ~summary name
     (program ?steps ?pp_model ~model commands) (fun program ->
       execute ?loc ?invariant ~scope program)

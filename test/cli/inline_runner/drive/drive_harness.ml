@@ -37,8 +37,9 @@ let read_file path =
     ~finally:(fun () -> close_in_noerr ic)
     (fun () -> really_input_string ic (in_channel_length ic))
 
-(* Masks the digits of every [in <seconds>s] duration token:
-   ["1 failed in 0.0021s."] becomes ["1 failed in <duration>s."]. *)
+(* Masks every [in <number><unit>] duration token, the unit included
+   since it varies with the measurement: ["1 failed in 2.1ms."] becomes
+   ["1 failed in <duration>."]. *)
 let mask_durations s =
   let n = String.length s in
   let b = Buffer.create n in
@@ -52,9 +53,14 @@ let mask_durations s =
       while !k < n && is_num s.[!k] do
         incr k
       done;
-      if !k > j && !k < n && s.[!k] = 's' then begin
-        Buffer.add_string b "<duration>s";
-        i := !k + 1
+      let stop =
+        if !k + 1 < n && s.[!k] = 'm' && s.[!k + 1] = 's' then !k + 2
+        else if !k < n && s.[!k] = 's' then !k + 1
+        else !k
+      in
+      if !k > j && stop > !k then begin
+        Buffer.add_string b "<duration>";
+        i := stop
       end
       else i := j
     end

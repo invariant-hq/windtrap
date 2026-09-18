@@ -220,6 +220,29 @@ let test_drain_failure_restores () =
 
 (* Disabled ([--stream]) *)
 
+(* Abandon: what a signal handler does to an attempt it will not return
+   to. The body below does return, which also shows [with_capture]'s own
+   exit is harmless after it. *)
+let test_abandon () =
+  with_temp_root @@ fun root ->
+  let cap = Capture.create ~log_dir:root ~suite:"suite" () in
+  let out_before = fd_id Unix.stdout and err_before = fd_id Unix.stderr in
+  let after_abandon = ref None in
+  Capture.abandon cap;
+  check "nothing redirected: a no-op" (fd_id Unix.stdout = out_before);
+  Capture.abandon Capture.disabled;
+  Capture.with_capture cap ~groups:[] ~test_name:"stopped" (fun () ->
+      print_string "buffered when the signal came.";
+      Capture.abandon cap;
+      after_abandon := Some (fd_id Unix.stdout, fd_id Unix.stderr));
+  check "the real descriptors are back at once"
+    (!after_abandon = Some (out_before, err_before));
+  check "and still are after with_capture's own exit"
+    (fd_id Unix.stdout = out_before && fd_id Unix.stderr = err_before);
+  check_string "what the test had buffered was drained into its log"
+    ~expected:"buffered when the signal came."
+    ~actual:(read_file (concat_all root [ "suite"; "stopped.output" ]))
+
 let stream_error = "this test requires capture; rerun without --stream"
 
 let test_disabled () =
@@ -552,6 +575,7 @@ let tests =
     test "a failed setup leaves the descriptors untouched"
       test_setup_failure_isolation;
     test "a failed cleanup drain still restores" test_drain_failure_restores;
+    test "abandon restores the descriptors from inside an attempt" test_abandon;
     test "Disabled (--stream) behavior" test_disabled;
     test "bounded tails with drop counts" test_bounded_tail;
     test "tail cut lands on a UTF-8 boundary" test_utf8_boundary;

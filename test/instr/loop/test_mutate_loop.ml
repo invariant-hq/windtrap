@@ -413,8 +413,8 @@ let reach_tests =
           "2 tests ran this line and none failed:";
         (* A tag selection is a selection: the run is not the suite's
            default predicate, so its verdicts stay in the process. *)
-        says ~msg:"and a tag-selected run persists nothing" out
-          "verdicts not saved");
+        says ~msg:"and a tag-selected run persists nothing, said on stderr" err
+          "windtrap: verdicts not saved: this run's selection narrows the suite");
   ]
 
 (* Child hygiene: a mutation child leaves through [Unix._exit] and nothing
@@ -499,9 +499,9 @@ let verdict_file_tests =
               "widen > widen is nonzero");
     test "a narrowed run reports in full but persists nothing" (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, _ = spawn ~args:[ mutate ] [] in
+        let code, _, err = spawn ~args:[ mutate ] [] in
         equal ~msg:"the full run's exit code" int 0 code;
-        denies ~msg:"a full run saves without comment" out "verdicts not saved";
+        denies ~msg:"a full run saves without comment" err "verdicts not saved";
         let saved = read_file verdict_path in
         is_true ~msg:"and wrote the file" (saved <> "");
         (* The selection reaches only [sub], whose mutant dies, so the
@@ -512,22 +512,25 @@ let verdict_file_tests =
            skips the write even where the scope alone would still save. *)
         let code, out, err = spawn ~args:[ mutate; "-f"; "calc" ] [] in
         equal ~msg:"the narrowed run still completes" int 0 code;
-        equal ~msg:"stderr" text "" err;
         says ~msg:"and still reports, against its selection" out
           "mutants: 1 reached by the 3 selected tests \u{00b7} 1 killed";
         denies ~msg:"a clean report has nothing to reproduce" out "reproduce:";
-        says ~msg:"but says what it did not persist" out
-          "verdicts not saved: this run's selection narrows the suite, and a \
-           partial run's verdicts would stand in the project merge as the \
-           whole.";
+        (* Windtrap's own word, so on stderr: the report ends on its
+           [mutants:] line. *)
+        equal ~msg:"but says what it did not persist, and nothing else" text
+          "windtrap: verdicts not saved: this run's selection narrows the \
+           suite, and a partial run's verdicts would stand in the project \
+           merge as the whole.\n"
+          err;
+        denies ~msg:"never in the report" out "verdicts not saved";
         equal ~msg:"the canonical file is byte-identical" text saved
           (read_file verdict_path));
     test "a prefix-scoped run still writes: its records are project-true"
       (fun () ->
         (try Sys.remove verdict_path with Sys_error _ -> ());
-        let code, out, _ = spawn ~args:[ mutate ] [] in
+        let code, _, err = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code" int 0 code;
-        denies ~msg:"the scope narrows the mutants, not the tests" out
+        denies ~msg:"the scope narrows the mutants, not the tests" err
           "verdicts not saved";
         is_true ~msg:"so the file was written" (Sys.file_exists verdict_path));
   ]
@@ -592,6 +595,19 @@ let refusal_tests =
           "the probe executed 4, skipping 0 and failing 1";
         says ~msg:"and the test that disagreed, by name" err
           "flaky \u{203a} passes where it was measured";
+        denies ~msg:"no number was produced" out "mutants: ");
+    test "a re-run that only skips differently is refused on the skip count"
+      (fun () ->
+        let code, out, err =
+          spawn ~args:[ mutate ] [ "MUTATE_FIXTURE=skippy" ]
+        in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"both runs' counts, then why no number follows" text
+          "windtrap: the suite is not deterministic: the dry run executed 4 \
+           test(s), skipping 0 and failing none; the probe executed 4, \
+           skipping 1 and failing 0. Mutation results over a non-deterministic \
+           suite are not a weaker number, they are not a number\n"
+          err;
         denies ~msg:"no number was produced" out "mutants: ");
     test "a selection that matched nothing is refused, never scored" (fun () ->
         let code, out, err = spawn ~args:[ mutate; "-f"; "no-such-test" ] [] in
@@ -669,7 +685,11 @@ let armed_tests =
         equal ~msg:"the announcement is the first line" string
           ("mutant " ^ mutant_named "add" ^ " armed: a - b \u{2192} a + b")
           first;
-        says ~msg:"the failure block" out "FAIL";
+        says ~msg:"the failure block's title says a mutant is armed" out
+          " (mutant armed)\n";
+        says ~msg:"and the block ends on its facts" out
+          "    expected  6\n    actual    14\n\n  FAIL  ";
+        denies ~msg:"no block offers a rerun" out "rerun:";
         says ~msg:"the closing line" out "mutant killed.";
         denies ~msg:"a kill is the whole verdict" out "mutant survived";
         denies ~msg:"and the site was plainly evaluated" out

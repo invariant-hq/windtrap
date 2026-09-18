@@ -135,7 +135,9 @@ let () =
      expect_failure "flexible mismatch" (fun () ->
          B.check t (literal "\n    a\n      b\n  ") "a\nb")
    with
-  | Some (Failure.Literal, Failure.Mismatch { expected; actual }) ->
+  | Some
+      (Failure.Literal { exact = false }, Failure.Mismatch { expected; actual })
+    ->
       check_string "both sides in normalized form" ~expected:"a\n  b"
         ~actual:expected;
       check_string "the produced text, normalized" ~expected:"a\nb" ~actual
@@ -146,7 +148,9 @@ let () =
     expect_failure "exact mismatch" (fun () ->
         B.check t (literal ~line:3 ~exact:true " a ") "a")
   with
-  | Some (Failure.Literal, Failure.Mismatch { expected; actual }) ->
+  | Some
+      (Failure.Literal { exact = true }, Failure.Mismatch { expected; actual })
+    ->
       check "exact keeps the bytes" (expected = " a " && actual = "a")
   | _ -> check "exact mismatch: Literal/Mismatch payload" false
 
@@ -172,7 +176,7 @@ let () =
                   { pos = ("../t.ml", 1, 0, 0); value = "v"; exact = true })
                "w")
        with
-      | Some (Failure.Literal, Failure.Unresolvable _) ->
+      | Some (Failure.Literal { exact = true }, Failure.Unresolvable _) ->
           check "a literal outside the root cannot be corrected" true
       | _ -> check "escaping literal: Unresolvable" false);
       B.write t;

@@ -224,7 +224,8 @@ let inner_failure = function
   | Exception (exn, backtrace) ->
       Failure.raised ~actual:(Printexc.to_string exn) ?backtrace ()
 
-let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
+let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
+    =
   (* A config-sourced count rides the failure payload so the replay hint can
      restate the flag; a declared count and the default replay by
      themselves. *)
@@ -249,13 +250,14 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
   let cases = ref 0 in
   let discards = ref 0 in
   let stats () = stats_of ~cases:!cases ~discards:!discards ctx in
-  let fail ~rendered ~case_index ~shrink_steps ?timed_out
+  let summarize value = Option.bind summary (fun summary -> summary value) in
+  let fail ?summary ~rendered ~case_index ~shrink_steps ?timed_out
       ?(shrink_exhausted = false) ~examples ?rendering cls =
     (* [rendering] defaults to the value: a placeholder carries its own
        remedy in its text, so the payload need not classify it. *)
     let failure =
       Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
-        ?count:config_count ~rendered ~case_index ~shrink_steps
+        ?count:config_count ?summary ~rendered ~case_index ~shrink_steps
         ~shrink_exhausted ~root ~examples ?rendering ()
     in
     Fail { failure; stats = stats () }
@@ -286,8 +288,8 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
         | `Failed cls ->
             let rendered = Gen.Engine.render_value gen value in
             Some
-              (fail ~rendered ~case_index:index ~shrink_steps:0 ~examples:true
-                 cls))
+              (fail ?summary:(summarize value) ~rendered ~case_index:index
+                 ~shrink_steps:0 ~examples:true cls))
   in
   match run_examples 0 examples with
   | Some outcome -> outcome
@@ -330,14 +332,15 @@ let run ?loc ?count ?max_discard ?(examples = []) ~root ~path gen body =
                   let final_tree, steps, final_cls, timed_out, exhausted =
                     shrink ~budget:shrink_budget ~body tree cls
                   in
+                  let final = Gen.Engine.Shrink_tree.root final_tree in
                   let rendered, rendering =
-                    match
-                      Gen.Engine.render (Gen.Engine.Shrink_tree.root final_tree)
-                    with
+                    match Gen.Engine.render final with
                     | Value text -> (text, Failure.Value)
                     | Pre_image text -> (text, Failure.Pre_image)
                   in
-                  fail ~rendered ~case_index:attempts ~shrink_steps:steps
+                  fail
+                    ?summary:(summarize (Gen.Engine.value final))
+                    ~rendered ~case_index:attempts ~shrink_steps:steps
                     ?timed_out ~shrink_exhausted:exhausted ~examples:false
                     ~rendering final_cls)
       in

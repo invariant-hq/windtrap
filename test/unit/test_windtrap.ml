@@ -40,9 +40,81 @@ let () =
            ]
   | _ -> ()
 
+(* The signal child: re-exec'd to run a suite whose third test says it is
+   ready and then waits, for the parent to signal; or, in the [between]
+   mode, a suite whose observer signals the process from the executor's
+   own code; or, in the [releasing] mode, a suite whose last-acquired
+   fixture says it is ready from its release and then waits. The three
+   dispositions are reset first: what the parent of this test was started
+   with is not the subject, and the [ignored-hup] mode states its own. *)
+let () =
+  match Array.to_list Sys.argv with
+  | [ _; "--signal-child"; root; mode ] ->
+      clear_env ();
+      List.iter
+        (fun signal -> Sys.set_signal signal Sys.Signal_default)
+        [ Sys.sigint; Sys.sigterm; Sys.sighup ];
+      if mode = "ignored-hup" then Sys.set_signal Sys.sighup Sys.Signal_ignore;
+      let waits () =
+        print_string "captured, never shown\n";
+        ignore (temp_dir ());
+        close_out (open_out (Filename.concat root "ready"));
+        Unix.sleepf 60.
+      in
+      let touch name () = close_out (open_out (Filename.concat root name)) in
+      let first = fixture ~teardown:(touch "first released") ignore in
+      let second = fixture ~teardown:(touch "second released") ignore in
+      let hangs =
+        fixture
+          ~teardown:(fun () ->
+            touch "ready" ();
+            Unix.sleepf 60.)
+          ignore
+      in
+      let tests =
+        if mode = "releasing" then
+          [
+            test "acquires" (fun () ->
+                first ();
+                second ();
+                hangs ());
+          ]
+        else
+          [
+            test "passes" (fun () -> is_true true);
+            test "fails" (fun () -> equal int 1 2);
+            group "deep" [ test "waits" waits ];
+            test "never reached" (fun () -> is_true true);
+          ]
+      in
+      if mode = "between" then begin
+        let config =
+          {
+            (Run.default_config ()) with
+            Run.log_dir = root;
+            color = Os.Never;
+            exclude = Some "fails";
+          }
+        in
+        let signal_self = function
+          | Run.Test_finished _ -> Unix.kill (Unix.getpid ()) Sys.sigterm
+          | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _
+          | Run.Interrupted _ ->
+              ()
+        in
+        ignore (Report.run ~on_event:signal_self ~suite:"signals" config tests);
+        exit 3
+      end
+      else
+        exit
+        @@ Windtrap.run
+             ~argv:[| "signal-child"; "-o"; root; "--color"; "never" |]
+             "signals" tests
+  | _ -> ()
+
 (* The invocation child (D5 §1): re-exec'd to run the facade's [run] on a
    failing suite with a controlled argv0 and INSIDE_DUNE, so the parent
-   can assert on the rerun hint's spelling — the invocation is computed at
+   can assert on the replay hint's spelling — the invocation is computed at
    startup from exactly these two inputs. *)
 let () =
   match Array.to_list Sys.argv with
@@ -738,18 +810,35 @@ let () =
           |});
       test "exact" (fun () -> expect_exact "a\n" @@ __POS_OF__ "a\n");
       test "stale" (fun () -> expect "new" @@ __POS_OF__ {| old |});
+      test "stale exact" (fun () -> expect_exact "new" @@ __POS_OF__ "new ");
     ]
   in
   expect_run "literal baselines" ~config suite @@ fun outcome ->
-  check "flexible and exact match; the stale literal fails"
-    (failed_paths outcome = [ "stale" ]);
+  check "flexible and exact match; the stale literals fail"
+    (failed_paths outcome = [ "stale"; "stale exact" ]);
+  (* The failure says which verb read the literal: the block's first fact
+     line is [expect: mismatch] or [expect_exact: mismatch]. *)
+  (match failure_list (outcome_of outcome [ "stale exact" ]) with
+  | [
+   {
+     Failure.kind =
+       Failure.Baseline
+         {
+           baseline = Failure.Literal { exact = true };
+           state = Failure.Mismatch { expected = "new "; actual = "new" };
+         };
+     _;
+   };
+  ] ->
+      ()
+  | _ -> check "a stale exact literal fails with an exact Literal payload" false);
   match failure_list (outcome_of outcome [ "stale" ]) with
   | [
    ({
       Failure.kind =
         Failure.Baseline
           {
-            baseline = Failure.Literal;
+            baseline = Failure.Literal { exact = false };
             state = Failure.Mismatch { expected; actual };
           };
       _;
@@ -762,6 +851,84 @@ let () =
         | Some loc -> String.ends_with ~suffix:"test_windtrap.ml" loc.Loc.file
         | None -> false)
   | _ -> check "a stale literal fails with a Literal payload" false
+
+(* A stale expectation beside another failure: the run keeps no
+   correction in any mode, and says so on the baseline failure, literal
+   or file, so that no report offers an acceptance that would rewrite or
+   promote nothing. *)
+let () =
+  with_temp_root @@ fun root ->
+  with_project_root root @@ fun () ->
+  let base = base_config ~log_dir:(Filename.concat root "logs") () in
+  let suite =
+    [
+      test "masked literal" (fun () ->
+          expect "new" @@ __POS_OF__ {| old |};
+          fail "boom");
+      test "masked file" (fun () ->
+          expect_file "new\n" "src/masked.expected";
+          fail "boom");
+      test "skipped" (fun () ->
+          expect_file "new\n" "src/skipped.expected";
+          skip ());
+      test "clean" (fun () -> expect_file "new\n" "src/clean.expected");
+    ]
+  in
+  let withheld outcome path =
+    List.filter_map
+      (fun (f : Failure.t) ->
+        match f.Failure.kind with
+        | Failure.Baseline { withheld; _ } -> Some withheld
+        | _ -> None)
+      (failure_list (outcome_of outcome [ path ]))
+  in
+  let written name =
+    List.exists Sys.file_exists
+      [
+        Filename.concat root ("src/" ^ name ^ ".expected");
+        Filename.concat root ("src/" ^ name ^ ".expected.corrected");
+      ]
+  in
+  let outside = [ Some Failure.Failed_outside ] in
+  List.iter
+    (fun (mode, baseline) ->
+      expect_run
+        ("withheld corrections, " ^ mode)
+        ~config:{ base with Run.baseline } suite
+      @@ fun outcome ->
+      check
+        (mode ^ ": a literal beside another failure is withheld")
+        (withheld outcome "masked literal" = outside);
+      check
+        (mode ^ ": a file beside another failure is withheld")
+        (withheld outcome "masked file" = outside);
+      check
+        (mode ^ ": a skip after the expectation withholds it too")
+        (withheld outcome "skipped" = [ Some Failure.Skipped ]);
+      check
+        (mode ^ ": an otherwise clean test keeps its correction")
+        (withheld outcome "clean" = [ None ]);
+      check
+        (mode ^ ": nothing is written for a withheld correction")
+        (not (written "masked" || written "skipped")))
+    [ ("check", Baseline.Check); ("corrected", Baseline.Corrected) ];
+  (* Under [-u] a stale expectation is no failure: the masked tests fail on
+     their assertion alone, offer no acceptance, and rewrite nothing. *)
+  expect_run "withheld corrections, update"
+    ~config:{ base with Run.baseline = Baseline.Update }
+    suite
+  @@ fun outcome ->
+  check "update: the masked tests hold no baseline failure to accept"
+    (withheld outcome "masked literal" = []
+    && withheld outcome "masked file" = []);
+  check "update: they still fail"
+    (List.for_all
+       (fun path ->
+         List.length (failure_list (outcome_of outcome [ path ])) = 1)
+       [ "masked literal"; "masked file" ]);
+  check "update: nothing is rewritten for them"
+    (not (written "masked" || written "skipped"));
+  check "update: the clean test's file is" (written "clean")
 
 (* A checkpoint, not an assertion: a mismatch is recorded and the call
    returns, so a body with two stale literals reports both, and a
@@ -1239,16 +1406,18 @@ let () =
     ~expected:"outer \u{203a} picked\nother\n" ~actual:out;
   check_string "a list run prints nothing on stderr" ~expected:"" ~actual:err;
   (* And over an empty selection: a listing that answered a mistyped
-     filter with silence is the dead end the empty-selection line's own
-     "(list the suite's tests with -l)" hint leads to. *)
+     filter with silence is the dead end the empty run's own [list:] hint
+     leads to. The sentence is windtrap's own, so it goes to stderr, and
+     stdout stays what a reader of paths expects: empty. *)
   let code, out, err =
     run_in_process ~argv:[ "-l"; "-f"; "zzznope" ] root "listsuite" suite
   in
   check_int "an empty listing still returns 0" ~expected:0 ~actual:code;
-  check_string "an empty listing says why it is empty"
-    ~expected:"no tests ran: filter \"zzznope\" matched none of 2 tests.\n"
+  check_string "an empty listing prints nothing on stdout" ~expected:""
     ~actual:out;
-  check_string "an empty listing prints nothing on stderr" ~expected:""
+  check_string "an empty listing says why it is empty, on stderr"
+    ~expected:
+      "windtrap: no tests ran: filter \"zzznope\" matched none of 2 tests.\n"
     ~actual:err
 
 (* An empty selection says why it is empty *)
@@ -1257,8 +1426,9 @@ let () =
   (* The description is the library runner's own header policy — the
      inline runner passes [None] — so it reaches the renderer through the
      driver's call and nowhere else. The pin is the whole transcript: the
-     sentence naming the filter and the denominator, and the [-l] hint
-     under it. *)
+     sentence naming the filter and the denominator, and the [list:] hint
+     under it, the one line allowed after an outcome, spelled with the
+     launcher as typed. *)
   with_temp_root @@ fun root ->
   let code, out, err =
     run_in_process ~argv:[ "-f"; "zzznope" ] root "emptysuite"
@@ -1271,7 +1441,7 @@ let () =
   check_string "the summary names the filter, the count, and the way out"
     ~expected:
       "emptysuite: no tests ran: filter \"zzznope\" matched none of 2 tests.\n\
-       (list the suite's tests with -l)\n"
+       list: emptysuite -l\n"
     ~actual:out;
   check_string "an empty selection prints nothing on stderr" ~expected:""
     ~actual:err
@@ -1325,10 +1495,11 @@ let () =
     run_focus "focused"
       [ focus (test "picked" (fun () -> is_true true)); pass "other" ]
   in
-  check_contains "outside CI a successful focused run warns"
-    ~sub:"warning: focus is active — 1 of 2 tests ran" focused;
-  check_contains "the warning tells the committer what to do"
-    ~sub:"remove the focus before committing" focused;
+  check_string "outside CI a successful focused run warns, and says what to do"
+    ~expected:
+      "windtrap: warning: focus is active: 1 of 2 tests ran; remove the focus \
+       before committing\n"
+    ~actual:focused;
   let plain = run_focus "plain" [ pass "picked"; pass "other" ] in
   check "no focus, no warning" (not (contains "focus is active" plain))
 
@@ -1343,15 +1514,23 @@ let () =
     run_in_process ~argv:[ "-f"; "zzznope" ] root "emptied" suite
   in
   check_int "an emptied selection exits 2 by default" ~expected:2 ~actual:code;
-  check_contains "and says why" ~sub:"filter \"zzznope\" matched none of 1 test"
-    out;
+  check_string "and says why, then how to list what there is"
+    ~expected:
+      "emptied: no tests ran: filter \"zzznope\" matched none of 1 test.\n\
+       list: emptied -l\n"
+    ~actual:out;
   let code, out, _ =
     run_in_process ~argv:[ "-f"; "zzznope"; "--corrected" ] root "emptied" suite
   in
   check_int "under --corrected an emptied selection exits 0" ~expected:0
     ~actual:code;
-  check_contains "and still says why"
-    ~sub:"filter \"zzznope\" matched none of 1 test" out;
+  check_string
+    "and still says why, then names the flag: a build action has no launcher \
+     to restate"
+    ~expected:
+      "emptied: no tests ran: filter \"zzznope\" matched none of 1 test.\n\
+       (list the suite's tests with -l)\n"
+    ~actual:out;
   let code, _, err =
     run_in_process ~argv:[ "--corrected"; "--nosuchflag" ] root "emptied" suite
   in
@@ -1361,6 +1540,201 @@ let () =
   let code, _, _ = run_in_process ~argv:[ "--corrected" ] root "emptied" [] in
   check_int "a suite that declares no tests exits 2 under --corrected too"
     ~expected:2 ~actual:code
+
+(* Signals *)
+
+(* INT, TERM and HUP end a run on what it knows: one [windtrap:] line
+   naming the stopped test, the summary with what did not run, and a death
+   by the same signal, so the parent sees the signal and not a code. *)
+let read_file path = In_channel.with_open_bin path In_channel.input_all
+
+let signal_child root mode signal_it =
+  let file name =
+    Unix.openfile
+      (Filename.concat root name)
+      [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ]
+      0o600
+  in
+  let out = file "out" and err = file "err" in
+  let pid =
+    Unix.create_process Sys.executable_name
+      [| Sys.executable_name; "--signal-child"; root; mode |]
+      Unix.stdin out err
+  in
+  Unix.close out;
+  Unix.close err;
+  signal_it pid;
+  let status = snd (Unix.waitpid [] pid) in
+  ( status,
+    read_file (Filename.concat root "out"),
+    read_file (Filename.concat root "err") )
+
+(* Signals [pid] once its third test is waiting; a child that never gets
+   there is killed, and its status fails the checks below. *)
+let once_waiting root signal pid =
+  let ready = Filename.concat root "ready" in
+  let rec await tries =
+    if Sys.file_exists ready then Unix.kill pid signal
+    else if tries = 0 then Unix.kill pid Sys.sigkill
+    else begin
+      Unix.sleepf 0.01;
+      await (tries - 1)
+    end
+  in
+  await 2000
+
+let () =
+  if not Sys.win32 then begin
+    List.iter
+      (fun (name, signal) ->
+        with_temp_root @@ fun root ->
+        let status, out, err =
+          signal_child root "waiting" (once_waiting root signal)
+        in
+        check
+          (name ^ ": the run dies by the signal it got")
+          (status = Unix.WSIGNALED signal);
+        check_string
+          (name ^ ": stderr is the one line naming the stopped test")
+          ~expected:"windtrap: interrupted in deep \u{203a} waits\n" ~actual:err;
+        check_contains
+          (name ^ ": the failure so far was already committed, under its rule")
+          ~sub:
+            "signals: 4 tests\n\
+             ──────────────────────── failures ────────────────────────\n\
+            \  FAIL  fails\n"
+          out;
+        check_contains
+          (name ^ ": the closing rule still prints, before the summary")
+          ~sub:
+            "    actual    2\n\
+             ──────────────────────────────────────────────────────────\n\n\
+             1 passed, 1 failed, 2 not run in "
+          out;
+        let last =
+          List.nth
+            (String.split_on_char '\n' out)
+            (List.length (String.split_on_char '\n' out) - 2)
+        in
+        check
+          (name ^ ": the summary is the last line and counts what did not run: "
+         ^ last)
+          (String.starts_with ~prefix:"1 passed, 1 failed, 2 not run in " last
+          && String.ends_with ~suffix:"." last);
+        check
+          (name ^ ": the stopped test's bytes stay in its log")
+          ((not (contains "captured, never shown" out))
+          && contains "captured, never shown"
+               (read_file
+                  (List.fold_left Filename.concat root
+                     [ "signals"; "deep"; "waits.output" ])));
+        check
+          (name ^ ": the stopped attempt's scratch directory is removed")
+          (not
+             (Array.exists
+                (String.starts_with ~prefix:"windtrap-")
+                (Sys.readdir root))))
+      [ ("INT", Sys.sigint); ("TERM", Sys.sigterm); ("HUP", Sys.sighup) ];
+    (* A signal that arrives in the executor's own code, here an observer,
+       is honoured before the next test starts. *)
+    ( with_temp_root @@ fun root ->
+      let status, out, err = signal_child root "between" ignore in
+      check "between tests: the run dies by the signal"
+        (status = Unix.WSIGNALED Sys.sigterm);
+      check_string "between tests: stderr says so"
+        ~expected:"windtrap: interrupted between tests\n" ~actual:err;
+      check
+        ("between tests: one line, the test that finished counted: " ^ out)
+        (String.starts_with ~prefix:"signals: 1 passed, 2 not run in " out
+        && List.length (String.split_on_char '\n' out) = 2) );
+    (* A signal that stops a fixture's release names it, and the fixtures
+       still held are released: the one in flight is not re-entered. *)
+    ( with_temp_root @@ fun root ->
+      let status, out, err =
+        signal_child root "releasing" (once_waiting root Sys.sigterm)
+      in
+      check "in a release: the run dies by the signal"
+        (status = Unix.WSIGNALED Sys.sigterm);
+      check
+        ("in a release: stderr names the fixture: " ^ err)
+        (String.starts_with
+           ~prefix:"windtrap: interrupted while releasing fixture (" err
+        && List.length (String.split_on_char '\n' err) = 2);
+      check
+        ("in a release: every test had finished: " ^ out)
+        (String.starts_with ~prefix:"signals: 1 passed in " out);
+      check "in a release: the fixtures still held are released"
+        (Sys.file_exists (Filename.concat root "first released")
+        && Sys.file_exists (Filename.concat root "second released")) );
+    (* A signal the process was started ignoring stays ignored. *)
+    with_temp_root @@ fun root ->
+    let survived = ref false in
+    let status, _, err =
+      signal_child root "ignored-hup" (fun pid ->
+          once_waiting root Sys.sighup pid;
+          Unix.sleepf 0.2;
+          survived := fst (Unix.waitpid [ Unix.WNOHANG ] pid) = 0;
+          Unix.kill pid Sys.sigterm)
+    in
+    check "an ignored SIGHUP stays ignored" !survived;
+    check "and the run then dies by the SIGTERM that followed"
+      (status = Unix.WSIGNALED Sys.sigterm);
+    check_string "having said so once"
+      ~expected:"windtrap: interrupted in deep \u{203a} waits\n" ~actual:err
+  end
+
+(* A process a test forks inherits the handlers and not the run: killed, it
+   dies silently, as it did before a run handled signals, and the run goes
+   on. *)
+let () =
+  if not Sys.win32 then begin
+    with_temp_root @@ fun root ->
+    let reaped = ref None in
+    let code, out, err =
+      run_in_process root "forks"
+        [
+          test "kills the process it forked" (fun () ->
+              match Unix.fork () with
+              | 0 ->
+                  Unix.sleepf 60.;
+                  Unix._exit 0
+              | pid ->
+                  Unix.sleepf 0.05;
+                  Unix.kill pid Sys.sigterm;
+                  reaped := Some (snd (Unix.waitpid [] pid)));
+        ]
+    in
+    check "the forked process died by the signal"
+      (!reaped = Some (Unix.WSIGNALED Sys.sigterm));
+    check_int "and the run went on to pass" ~expected:0 ~actual:code;
+    check_string "saying nothing on stderr" ~expected:"" ~actual:err;
+    check
+      ("and its one line on stdout: " ^ out)
+      (String.starts_with ~prefix:"forks: 1 passed in " out
+      && List.length (String.split_on_char '\n' out) = 2)
+  end
+
+(* The handlers are the run's: what was installed before it is back after. *)
+let () =
+  if not Sys.win32 then begin
+    with_temp_root @@ fun root ->
+    let mine (_ : int) = () in
+    let signals = [ Sys.sigint; Sys.sigterm; Sys.sighup ] in
+    let before =
+      List.map (fun s -> Sys.signal s (Sys.Signal_handle mine)) signals
+    in
+    let code, _, _ =
+      run_in_process root "handlers" [ test "passes" (fun () -> is_true true) ]
+    in
+    check_int "the run passes" ~expected:0 ~actual:code;
+    List.iter2
+      (fun s previous ->
+        check "a run leaves the handler it found"
+          (match Sys.signal s previous with
+          | Sys.Signal_handle f -> f == mine
+          | Sys.Signal_default | Sys.Signal_ignore -> false))
+      signals before
+  end
 
 (* Summary *)
 

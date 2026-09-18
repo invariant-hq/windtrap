@@ -31,6 +31,7 @@
 
 val render :
   ?invocation:Run.invocation ->
+  ?armed:string ->
   suite:string ->
   results:Run.result list ->
   duration:float ->
@@ -44,8 +45,9 @@ val render :
     [failures] and [skipped] count the emitted testcases (a counted failing
     result adds one to [failures] iff it has non-subtest entries; excused
     failures count as [skipped]); [errors] is always [0]. [duration] is the
-    suite [time] in seconds. [invocation] (default [`Mirrors]) spells the
-    embedded replay and acceptance lines. *)
+    suite [time] in seconds. [invocation] (default [`Mirrors]) and [armed], the
+    armed mutant's identifier, spell each failure's hint lines
+    ({!Report_sections.hints}). *)
 
 (** {1:writing Writing} *)
 
@@ -57,12 +59,13 @@ val path : suite:string -> string -> string
 
 val write :
   invocation:Run.invocation ->
+  ?armed:string ->
   suite:string ->
   duration:float ->
   results:Run.result list ->
   string ->
   unit
-(** [write ~invocation ~suite ~duration ~results target] writes {!render}'s
-    document to {!path}[ ~suite target], creating the directory when [target] is
-    one. A report that cannot be written is a warning on standard error, never a
-    failed run. *)
+(** [write ~invocation ?armed ~suite ~duration ~results target] writes
+    {!render}'s document to {!path}[ ~suite target], creating the directory when
+    [target] is one. A report that cannot be written is a warning on standard
+    error, never a failed run. *)

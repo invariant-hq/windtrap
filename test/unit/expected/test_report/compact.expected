@@ -1,13 +1,13 @@
 mylib: 11 tests (seed s1:7be1d2c904aa31f5)
-──────────────────── failures (6) ────────────────────
+──────────────────────── failures ────────────────────────
   FAIL  users › sessions after login
     test/test_users.ml:31
     expected  [("alice", [1; 2; 3]); ("bob", [4])]
     actual    [("alice", [1; 2; 3]); ("bob", [4; 5]); ("carol", [])]
                                                ~~~~~~~~~~~~~~~~~~
-    ── captured output (last 2 lines, 12034 earlier bytes omitted) ──
-    [debug] session table resize 2 -> 4
-    [debug] carol: ghost session from pool reuse
+    captured output (last 2 lines, 12034 earlier bytes omitted):
+      [debug] session table resize 2 -> 4
+      [debug] carol: ghost session from pool reuse
     full log: _build/_tests/mylib/latest/users/sessions-after-login.output
 
   FAIL  parser › rejects empty
@@ -20,10 +20,10 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
     test/test_cli.ml:9
     expect_file "test/help.expected": no baseline
     proposed (3 lines):
-      ┆ Usage: mytool [OPTIONS] COMMAND
-      ┆ Commands:
-      ┆   run
-    accept: dune exec test/main.exe -- -u, then review with git diff
+      + Usage: mytool [OPTIONS] COMMAND
+      + Commands:
+      +   run
+    accept: dune exec test/main.exe -- -u -f 'cli › cli help'
 
   FAIL  cli › version drift
     test/test_cli.ml:14
@@ -33,7 +33,7 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
     - line two
     + line 2
       line three
-    accept: dune exec test/main.exe -- -u, then review with git diff
+    accept: dune exec test/main.exe -- -u -f 'cli › version drift'
 
   FAIL  geo › area non-negative
     test/test_geo.ml:17
@@ -50,14 +50,13 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
 
     [teardown]
     teardown exploded
-──────────────────────────────────────────────────────
+──────────────────────────────────────────────────────────
 
-slow tests (2):
-  3.00s  slow › hash
-  2.50s  slow › big sort
-(exempt with the "slow" tag, or raise --slow-threshold SECONDS)
+slow tests (2, over 1s):
+  3.0s  slow › hash
+  2.5s  slow › big sort
 
 flaky tests (1):
   passed on attempt 3  flaky › eventually
 
-4 passed, 1 skipped, 6 failed in 6.5s.
+4 passed (1 flaky), 1 skipped, 6 failed in 6.5s.

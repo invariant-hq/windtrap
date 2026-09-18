@@ -425,3 +425,38 @@ let rec mkdir_p path =
     if parent <> path then mkdir_p parent;
     try Unix.mkdir path 0o770 with Unix.Unix_error (Unix.EEXIST, _, _) -> ()
   end
+
+(* Standard error *)
+
+(* A control byte would restyle the terminal or garble the line, so each is
+   spelled out, ESC included; a line feed stays, a diagnostic may span
+   lines. *)
+let visible s =
+  let control c = (c < ' ' && c <> '\n') || c = '\127' in
+  if not (String.exists control s) then s
+  else begin
+    let b = Buffer.create (String.length s + 8) in
+    String.iter
+      (fun c ->
+        match c with
+        | '\t' -> Buffer.add_string b "\\t"
+        | '\r' -> Buffer.add_string b "\\r"
+        | c when control c ->
+            Buffer.add_string b (Printf.sprintf "\\x%02x" (Char.code c))
+        | c -> Buffer.add_char b c)
+      s;
+    Buffer.contents b
+  end
+
+(* Standard output is flushed first: a log that merges the two streams
+   orders them by flush. A closed standard output does not cost the line. *)
+let say message =
+  (try
+     Format.pp_print_flush Format.std_formatter ();
+     flush stdout
+   with Sys_error _ -> ());
+  Format.pp_print_flush Format.err_formatter ();
+  prerr_string ("windtrap: " ^ visible message ^ "\n");
+  flush stderr
+
+let warn message = say ("warning: " ^ message)

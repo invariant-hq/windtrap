@@ -68,6 +68,77 @@ let test_full_run () =
     ~sub:{|message="expect_file &quot;test/help.expected&quot;: no baseline"|}
     doc
 
+(* The message attribute: the failure as one sentence *)
+
+let test_message_forms () =
+  let doc =
+    Report_junit.render ~suite:"s" ~duration:0.1
+      ~results:
+        [
+          Fixtures.result [ "sides" ]
+            (Failure.Fail
+               [
+                 Failure.equality ~msg:"deliberate" ~expected:"1" ~actual:"2" ();
+               ]);
+          Fixtures.result [ "diff" ]
+            (Failure.Fail
+               [ Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" () ]);
+          Fixtures.result [ "baseline" ]
+            (Failure.Fail [ Fixtures.snap_mismatch ]);
+          Fixtures.result [ "long" ]
+            (Failure.Fail
+               [
+                 Failure.equality ~expected:(String.make 100 'x') ~actual:"y" ();
+               ]);
+        ]
+      ()
+  in
+  check_well_formed "the document is well-formed" doc;
+  check_contains "the user message, a colon, then the sentence"
+    ~sub:{|<failure message="deliberate: expected 1, got 2">|} doc;
+  check_contains "a diff is a sentence counting its lines"
+    ~sub:{|<failure message="expected and actual differ (5 diff lines)">|} doc;
+  check_contains "a baseline is its first fact line"
+    ~sub:{|<failure message="expect: mismatch">|} doc;
+  check_contains "80 code points, then an ellipsis"
+    ~sub:({|<failure message="expected |} ^ String.make 71 'x' ^ "\u{2026}\">")
+    doc;
+  check_absent "no em dash in the document" ~sub:"\u{2014}" doc;
+  check_absent "no em dash in the full fixture's document" ~sub:"\u{2014}"
+    (full ());
+  (* The failure text is the block's lines below the title. *)
+  check_contains "the failure text is the block's lines"
+    ~sub:"\">    deliberate\n    expected  1\n    actual    2\n</failure>" doc;
+  check_absent "no failure text carries a rerun hint" ~sub:"rerun:" doc;
+  check_absent "nor does the full fixture's document" ~sub:"rerun:" (full ())
+
+(* A withheld correction is the failure's, so the document projects it as
+   the terminal block does. *)
+
+let test_withheld_correction () =
+  let doc =
+    Report_junit.render ~suite:"s" ~duration:0.1
+      ~results:
+        [
+          Fixtures.result [ "both" ]
+            (Failure.Fail
+               [
+                 Failure.message "boom";
+                 Failure.with_withheld Failure.Failed_outside
+                   Fixtures.snap_mismatch;
+               ]);
+        ]
+      ()
+  in
+  check_well_formed "the document is well-formed" doc;
+  check_absent "no acceptance the run could not honour" ~sub:"accept:" doc;
+  check_contains "the reason closes the failure text"
+    ~sub:
+      "    no correction was kept: the test also failed outside its \
+       expectations; fix that failure and rerun\n\
+       </failure>"
+    doc
+
 (* The invocation-spelled hints (D5 §1) *)
 
 let test_invocation_hints () =
@@ -101,9 +172,8 @@ let test_invocation_hints () =
   in
   let accept = terminal_line ~filter:"cli › cli help" Fixtures.snap_missing in
   check_contains "accept hint bytes equal the terminal block's" ~sub:accept doc;
-  check_string "accept hint completes the executable"
-    ~expected:
-      "    accept: dune exec qa/x/t.exe -- -u, then review with git diff"
+  check_string "accept hint completes the executable, scoped to the test"
+    ~expected:"    accept: dune exec qa/x/t.exe -- -u -f 'cli › cli help'"
     ~actual:accept;
   let replay =
     terminal_line ~filter:"geo › area non-negative" Fixtures.prop_failure
@@ -130,7 +200,7 @@ let test_excused_as_skipped () =
   check_contains "excused failure maps to skipped-with-message"
     ~sub:{|<skipped message="expected failure: issue #42"/>|} doc;
   check_absent "excused failures emit no failure element"
-    ~sub:{|<failure message="expected 1, got 2"|} doc;
+    ~sub:{|<failure message="expected 1; actual 2"|} doc;
   check_contains "counts: excused is a skip, not a failure"
     ~sub:{|tests="3" failures="1" errors="0" skipped="1"|} doc;
   let no_reason =
@@ -165,7 +235,17 @@ let test_subtests_as_testcases () =
       ~duration:0.7 ()
   in
   expect_file doc "test/unit/expected/test_report_junit/subtests.expected";
-  check_well_formed "subtest document is well-formed" doc
+  check_well_formed "subtest document is well-formed" doc;
+  (* Sibling subtests fail alike: the label is what tells their messages
+     apart. *)
+  check_contains "a subtest's message opens with its label"
+    ~sub:
+      {|<failure message="contract › shape [0]: expected [1; 2], got [1; 3]">|}
+    doc;
+  check_contains "and its sibling's with its own"
+    ~sub:
+      {|<failure message="contract › shape [2]: expected [1; 2], got [1; 3]">|}
+    doc
 
 let test_subtests_only () =
   (* A test whose every failure is a subtest entry: the parent testcase
@@ -361,9 +441,11 @@ let tests =
   [
     test "golden document" test_golden;
     test "full fixture run is well-formed" test_full_run;
+    test "the message attribute's forms" test_message_forms;
     test "bodies carry the invocation-spelled hints (D5 §1)"
       test_invocation_hints;
     test "excused failures report as skipped" test_excused_as_skipped;
+    test "a withheld correction offers no acceptance" test_withheld_correction;
     test "subtests become testcases" test_subtests_as_testcases;
     test "subtest-only failures" test_subtests_only;
     test "subtest user msg naming" test_subtest_user_msg_name;

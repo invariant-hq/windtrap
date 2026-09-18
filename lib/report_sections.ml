@@ -12,10 +12,12 @@ let spf = Printf.sprintf
 
 (* Layout constants — illustrative, not contract. The report is not a
    canvas: one width, so a pipe and a wide terminal are byte-identical. *)
-let columns = 80
-let rule_width = 54
+let rule_width = 54 (* of an instrumentation report's rules *)
 let max_diff_lines = 200
 let max_proposed_lines = 20
+let max_lines = 10 (* of a backtrace and of a captured tail *)
+let max_value_bytes = 800 (* ten full lines *)
+let max_headline_chars = 80
 let indent = "    "
 
 (* Gap between a survivor witness's name and its declaration site. Wide,
@@ -34,34 +36,66 @@ let rec take n = function
 
 let dashes n = String.concat "" (List.init (max 0 n) (fun _ -> "\u{2500}"))
 
-(* The one description of a failing property case — "example N" / "case N"
-   / "case N, shrunk S steps" — shared by the one-line summary and the
-   failure block's counterexample line. *)
-let property_case_desc ~examples ~case_index ~shrink_steps =
+(* Which case a counterexample is. An example is never shrunk. *)
+let case_desc ~examples ~case_index ~shrink_steps =
   if examples then spf "example %d" (case_index + 1)
-  else if shrink_steps = 0 then spf "case %d" case_index
-  else spf "case %d, shrunk %d steps" case_index shrink_steps
+  else
+    spf "case %d%s" case_index
+      (if shrink_steps = 0 then ""
+       else
+         spf ", shrunk %d step%s" shrink_steps
+           (if shrink_steps = 1 then "" else "s"))
 
-(* POSIX single-quoting: closes the quote around every embedded [']. *)
+(* POSIX single-quoting: closes the quote around every embedded [']. A
+   control byte would break the line the word sits on: such a word takes
+   the [$'…'] form, which bash, zsh and ksh read. *)
 let shell_quote s =
-  "'" ^ String.concat "'\\''" (String.split_on_char '\'' s) ^ "'"
+  let control c = c < ' ' || c = '\127' in
+  if not (String.exists control s) then
+    "'" ^ String.concat "'\\''" (String.split_on_char '\'' s) ^ "'"
+  else begin
+    let buf = Buffer.create (String.length s + 8) in
+    Buffer.add_string buf "$'";
+    String.iter
+      (fun c ->
+        match c with
+        | '\'' -> Buffer.add_string buf "\\'"
+        | '\\' -> Buffer.add_string buf "\\\\"
+        | '\n' -> Buffer.add_string buf "\\n"
+        | '\t' -> Buffer.add_string buf "\\t"
+        | '\r' -> Buffer.add_string buf "\\r"
+        | c when control c ->
+            Buffer.add_string buf (spf "\\x%02x" (Char.code c))
+        | c -> Buffer.add_char buf c)
+      s;
+    Buffer.add_char buf '\'';
+    Buffer.contents buf
+  end
 
 (* Command hints
 
-   Every command hint completes the run's rerun spelling from the one
-   invocation the facade computed at startup (Run.config.invocation) — no
-   print site hard-codes an invocation, so no hint can name a command that
-   would not re-run the suite. Under [`Mirrors] (every run dune drives,
-   and the default) hints spell [WINDTRAP_*] environment prefixes to
-   [dune runtest], the only interface that exists there. No color in any
-   hint. *)
-(* The acceptance line under a baseline failure. An executable invoked by
-   hand accepts in place with [-u]; a run dune drives — the inline runner,
-   or a stanza's [--corrected] action, both [`Mirrors] — wrote its
-   corrections beside the file for [dune promote]. *)
-let accept_line = function
-  | `Exe cmd -> spf "accept: %s -u, then review with git diff" cmd
-  | `Mirrors -> "accept: dune promote"
+   A hint is a word, the run's launcher and the parameters: under [`Exe]
+   the flags after the command the facade computed at startup, under
+   [`Mirrors] (every run a build action drives, and the default) the
+   [WINDTRAP_*] mirrors before [dune runtest]. No colour in any hint. *)
+
+(* A command-line word, quoted only when a shell would split or expand
+   it. *)
+let shell_word s =
+  let safe = function
+    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
+    | '_' | '-' | '.' | '/' | ':' | '=' | '+' | ',' | '@' | '%' -> true
+    | _ -> false
+  in
+  if s <> "" && String.for_all safe s then s else shell_quote s
+
+(* An armed run's failures are the mutant's: a command line that runs the
+   test without it passes. *)
+let arm_flag = function Some id -> " --arm " ^ shell_word id | None -> ""
+
+let arm_mirror = function
+  | Some id -> spf "WINDTRAP_MUTATE_ARM=%s " (shell_word id)
+  | None -> ""
 
 (* [count] is a property failure's one config-sourced knob
    (Failure.kind.Property): the hint restates it — [--prop-count]/
@@ -69,22 +103,114 @@ let accept_line = function
    many cases as the failing run generated. A declaration-site count needs
    no flag and never reaches here, and the shrink budget is fixed, so the
    seed alone descends to the same node. *)
-let replay_line ?count invocation ~seed ~filter =
+let replay_line ?count ~armed invocation ~seed ~filter =
   let token = Seed.to_string seed in
-  let flags =
-    match count with Some n -> spf " --prop-count %d" n | None -> ""
+  match invocation with
+  | `Exe cmd ->
+      spf "replay: %s%s --seed %s%s%s" cmd (arm_flag armed) token
+        (match count with Some n -> spf " --prop-count %d" n | None -> "")
+        (match filter with Some flt -> " -f " ^ shell_quote flt | None -> "")
+  | `Mirrors ->
+      spf "replay: %sWINDTRAP_SEED=%s %s%sdune runtest" (arm_mirror armed) token
+        (match count with
+        | Some n -> spf "WINDTRAP_PROP_COUNT=%d " n
+        | None -> "")
+        (match filter with
+        | Some flt -> spf "WINDTRAP_FILTER=%s " (shell_quote flt)
+        | None -> "")
+
+(* What [dune promote] is given: the source file of a literal, the
+   displayed path of a file baseline. *)
+let promoted_file (f : Failure.t) = function
+  | Failure.Literal _ -> Option.map (fun (l : Loc.t) -> l.Loc.file) f.loc
+  | Failure.File path -> Some (Os.display_path path)
+
+(* An executable run by hand accepts in place with [-u], narrowed to the
+   block's test; a build action wrote a correction beside the file for
+   [dune promote]. Promotion fills a file and never creates one: a missing
+   file must exist before dune's [diff?] can register its correction. *)
+let accept_line invocation ~filter (f : Failure.t) =
+  let accept baseline ~missing =
+    match invocation with
+    | `Exe cmd ->
+        spf "accept: %s -u%s" cmd
+          (match filter with
+          | Some flt -> " -f " ^ shell_quote flt
+          | None -> "")
+    | `Mirrors -> (
+        match promoted_file f baseline with
+        | None -> "accept: dune promote"
+        | Some file -> (
+            let promote = "dune promote " ^ shell_word file in
+            match baseline with
+            | Failure.File _ when missing ->
+                spf "accept: touch %s && dune runtest; %s" (shell_quote file)
+                  promote
+            | Failure.File _ | Failure.Literal _ -> "accept: " ^ promote))
   in
-  let env =
-    match count with Some n -> spf " WINDTRAP_PROP_COUNT=%d" n | None -> ""
+  match f.kind with
+  | Failure.Baseline { baseline; state = Failure.Missing _; withheld = None } ->
+      Some (accept baseline ~missing:true)
+  | Failure.Baseline { baseline; state = Failure.Mismatch _; withheld = None }
+    ->
+      Some (accept baseline ~missing:false)
+  | Failure.Baseline { withheld = Some _; _ }
+  | Failure.Baseline { state = Failure.Unresolvable _; _ }
+  | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
+  | Failure.Property _ | Failure.Message _ ->
+      None
+
+(* Why a block offers no [accept:]: the run kept none of the attempt's
+   corrections (Run, Corrections), so the command would promote or rewrite
+   nothing. *)
+let withheld_fact (f : Failure.t) =
+  match f.kind with
+  | Failure.Baseline
+      { state = Failure.Missing _ | Failure.Mismatch _; withheld = Some why; _ }
+    ->
+      Some
+        ("no correction was kept: "
+        ^
+        match why with
+        | Failure.Failed_outside ->
+            "the test also failed outside its expectations; fix that failure \
+             and rerun"
+        | Failure.Skipped ->
+            "the test also skipped; skip before the expectation or not at all, \
+             and rerun")
+  | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
+  | Failure.Raise _ | Failure.Property _ | Failure.Message _ ->
+      None
+
+let replay_of ~armed invocation ~filter (f : Failure.t) =
+  match f.kind with
+  | Failure.Property { examples = false; root; count; _ } ->
+      Some (replay_line ?count ~armed invocation ~seed:root ~filter)
+  | Failure.Property { examples = true; _ }
+  | Failure.Equality _ | Failure.Containment _ | Failure.Raise _
+  | Failure.Baseline _ | Failure.Message _ ->
+      None
+
+let hints ?armed ?(invocation = `Mirrors) ~filter failures =
+  let distinct lines =
+    List.rev
+      (List.fold_left
+         (fun acc line -> if List.mem line acc then acc else line :: acc)
+         [] lines)
   in
-  match (invocation, filter) with
-  | `Exe cmd, Some flt ->
-      spf "replay: %s --seed %s%s -f %s" cmd token flags (shell_quote flt)
-  | `Exe cmd, None -> spf "replay: %s --seed %s%s" cmd token flags
-  | `Mirrors, Some flt ->
-      spf "replay: WINDTRAP_SEED=%s%s WINDTRAP_FILTER=%s dune runtest" token env
-        (shell_quote flt)
-  | `Mirrors, None -> spf "replay: WINDTRAP_SEED=%s%s dune runtest" token env
+  (* An armed run checks its baselines and writes none: what differs is the
+     mutant's output, never to be accepted, and no correction is its to
+     keep. *)
+  let withheld, accepts =
+    match armed with
+    | Some _ -> ([], [])
+    | None ->
+        ( Option.to_list (List.find_map withheld_fact failures),
+          List.filter_map (accept_line invocation ~filter) failures )
+  in
+  withheld
+  @ distinct
+      (accepts @ List.filter_map (replay_of ~armed invocation ~filter) failures)
 
 (* Failure locations record project-root-relative source paths (__POS__,
    debug info), so a relative path resolves against the project root first —
@@ -205,14 +331,6 @@ let moved_span s ({ Diff.start; length } as span) =
       length = String.length (show_controls (String.sub s start length));
     }
 
-(* One line, no escape codes, bounded: headline material. Stripping comes
-   first so truncation cannot leave a dangling partial sequence. *)
-let flat s =
-  Text.truncate_utf8 60
-    (String.map
-       (function '\n' | '\r' | '\t' -> ' ' | c -> c)
-       (Text.strip_ansi s))
-
 (* The msg slot as displayed: a sub-case entry's [leaf › name] label
    (derived from the structured components — never sniffed from the text)
    joined with the user's annotation when there is one. *)
@@ -225,99 +343,162 @@ let labeled_msg (f : Failure.t) =
       | None -> Some label
       | Some m -> Some (label ^ ": " ^ m))
 
+(* Fact lines and the headline *)
+
+(* Plain quotes, not [%S]: a path's UTF-8 must not be byte-escaped, and
+   [sanitize_name] guards the line against control bytes as on every other
+   name surface. *)
+let baseline_subject = function
+  | Failure.Literal { exact = false } -> "expect"
+  | Failure.Literal { exact = true } -> "expect_exact"
+  | Failure.File path ->
+      spf "expect_file \"%s\"" (sanitize_name (Os.display_path path))
+
+(* A chain break and a plain miss answer the same question, the first in
+   more words. *)
+let containment_verdict ~demand ~found_at =
+  match (demand, found_at) with
+  | Failure.Ordered { resumed_at; _ }, Some at ->
+      spf "found at byte %d, before the search resumed at byte %d" at resumed_at
+  | Failure.Ordered { resumed_at; _ }, None ->
+      spf "not found at or after byte %d" resumed_at
+  | Failure.Anywhere, Some at -> spf "found at byte %d" at
+  | Failure.Anywhere, None -> "not found"
+
+(* Line lists equal but bytes differ: the only such difference is a single
+   trailing newline, which a line diff cannot show. *)
+let newline_fact ~expected ~actual =
+  spf "values differ only by a trailing newline (on the %s side)"
+    (if String.length actual > String.length expected then "actual"
+     else "expected")
+
+let diff_lines hunks =
+  List.fold_left (fun acc h -> acc + 1 + List.length h.Diff.lines) 0 hunks
+
+(* The failure as one sentence after the label and the user's message,
+   padding collapsed, escape codes stripped. A diff has no side short enough
+   to quote and says how long it is. *)
 let headline (f : Failure.t) =
-  let base =
+  let fact =
     match f.kind with
     | Failure.Equality { not_ = true; expected; _ } ->
-        spf "both sides equal: %s" (flat expected)
-    | Failure.Equality { expected; actual; _ } ->
-        spf "expected %s, got %s" (flat expected) (flat actual)
+        "both sides equal: " ^ expected
+    | Failure.Equality { expected; actual; diffable = false; _ } ->
+        spf "expected %s, got %s" expected actual
+    | Failure.Equality { expected; actual; _ } -> (
+        if String.equal expected actual then "both sides render as: " ^ expected
+        else if
+          not (String.contains expected '\n' || String.contains actual '\n')
+        then spf "expected %s, got %s" expected actual
+        else
+          match Diff.hunks ~expected ~actual () with
+          | [] -> newline_fact ~expected ~actual
+          | hunks ->
+              spf "expected and actual differ (%d diff lines)"
+                (diff_lines hunks))
     | Failure.Containment { needle; found_at; haystack_length; demand; _ } -> (
-        (* The containment verdict, never a fake equality. The demand comes
-           first: a chain break and a count mismatch are their own verdicts,
-           and neither reads as "found / not found". *)
-        let quoted = flat (spf "%S" needle) in
+        (* A chain break is its own verdict: it reads as neither "found" nor
+           "not found". *)
         match (demand, found_at) with
         | Failure.Ordered { index; resumed_at }, Some at ->
-            spf "element %d %s out of order: at byte %d, before byte %d" index
-              quoted at resumed_at
+            spf "element %d %S out of order: at byte %d, before byte %d" index
+              needle at resumed_at
         | Failure.Ordered { index; resumed_at }, None ->
-            spf "element %d %s not found at or after byte %d (%d-byte haystack)"
-              index quoted resumed_at haystack_length
+            spf "element %d %S not found at or after byte %d (%d-byte haystack)"
+              index needle resumed_at haystack_length
         | Failure.Anywhere, Some at ->
-            spf "needle %s found at byte %d" quoted at
+            spf "needle %S found at byte %d" needle at
         | Failure.Anywhere, None ->
-            spf "needle %s not found (%d-byte haystack)" quoted haystack_length)
+            spf "needle %S not found (%d-byte haystack)" needle haystack_length)
     | Failure.Raise { expected = Some e; actual = Some a; _ } ->
-        spf "expected exception %s, raised %s" (flat e) (flat a)
+        spf "expected exception %s, raised %s" e a
     | Failure.Raise { expected = Some e; actual = None; _ } ->
-        spf "expected exception %s, none raised" (flat e)
+        spf "expected exception %s, none raised" e
     | Failure.Raise { expected = None; actual = Some a; predicate; _ } ->
-        (* [predicate] tells a raises_match rejection from an exception
+        (* [predicate] tells a [raises_match] rejection from an exception
            nobody expected. *)
-        if predicate then
-          spf "exception did not satisfy the predicate: %s" (flat a)
-        else spf "uncaught exception: %s" (flat a)
+        if predicate then spf "exception did not satisfy the predicate: %s" a
+        else spf "uncaught exception: %s" a
     | Failure.Raise { expected = None; actual = None; _ } ->
         "expected an exception, none raised"
-    | Failure.Baseline { baseline; state } -> (
-        let subject =
-          match baseline with
-          | Failure.Literal -> "expect"
-          | Failure.File path -> spf "expect_file %S" path
-        in
+    | Failure.Baseline { baseline; state; _ } -> (
+        let subject = baseline_subject baseline in
         match state with
-        | Failure.Missing _ -> spf "%s: no baseline" subject
-        | Failure.Mismatch _ -> spf "%s: mismatch" subject
+        | Failure.Missing _ -> subject ^ ": no baseline"
+        | Failure.Mismatch _ -> subject ^ ": mismatch"
         | Failure.Unresolvable _ ->
-            spf "%s: cannot resolve the path under the project root" subject)
+            subject ^ ": cannot resolve the path under the project root")
     | Failure.Property
         {
           rendered;
+          summary;
           case_index;
           shrink_steps;
           shrink_exhausted;
           timed_out;
           examples;
+          rendering;
           _;
         } ->
-        let desc = property_case_desc ~examples ~case_index ~shrink_steps in
-        let desc =
-          (* The shrink search hit the whole-test budget: the mark
-             travels into the one-line summary too. *)
-          match timed_out with
-          | Some _ when not examples -> desc ^ ", timed out"
-          | _ ->
-              (* Likewise the step budget: "shrunk 100 steps" alone reads
-                 as a converged search. *)
-              if shrink_exhausted && not examples then desc ^ ", budget spent"
-              else desc
-        in
-        spf "property failed (%s): %s" desc (flat rendered)
+        (* The block says why a search stopped in a line of its own; here
+           the case carries it: [shrunk 100 steps] alone reads as a converged
+           search. *)
+        spf "property failed (%s%s):%s%s"
+          (case_desc ~examples ~case_index ~shrink_steps)
+          (if examples then ""
+           else if Option.is_some timed_out then ", shrinking timed out"
+           else if shrink_exhausted then ", shrink limit reached"
+           else "")
+          (match rendering with
+          | Failure.Pre_image -> " computed from "
+          | Failure.Value -> " ")
+          (Option.value summary ~default:rendered)
     | Failure.Message "" -> "(empty failure message)"
-    | Failure.Message m -> flat m
+    | Failure.Message m -> m
   in
-  match labeled_msg f with
-  | None -> base
-  | Some m -> spf "%s \u{2014} %s" (flat m) base
+  let line =
+    String.map
+      (function '\n' | '\r' | '\t' -> ' ' | c -> c)
+      (Text.strip_ansi
+         (match labeled_msg f with
+         | None -> fact
+         | Some msg -> msg ^ ": " ^ fact))
+  in
+  let rec cut i chars =
+    if i >= String.length line then line
+    else if chars = max_headline_chars then String.sub line 0 i ^ "\u{2026}"
+    else
+      let decode = String.get_utf_8_uchar line i in
+      cut (i + Uchar.utf_decode_length decode) (chars + 1)
+  in
+  cut 0 0
 
-(* [s] with [spans] (ascending, non-overlapping byte ranges) wrapped in the
-   escape codes of [style]; [s] unchanged when [ansi] is false. *)
+(* [s] with the byte ranges [spans], ascending and disjoint, in [style]. *)
 let highlight ~ansi style s spans =
   if (not ansi) || spans = [] then s
   else begin
     let buf = Buffer.create (String.length s + 16) in
-    let pos = ref 0 in
-    List.iter
-      (fun { Diff.start; length } ->
-        Buffer.add_string buf (String.sub s !pos (start - !pos));
-        Buffer.add_string buf
-          (Pp.styled_string ~ansi style (String.sub s start length));
-        pos := start + length)
-      spans;
-    Buffer.add_string buf (String.sub s !pos (String.length s - !pos));
+    let pos =
+      List.fold_left
+        (fun pos { Diff.start; length } ->
+          Buffer.add_string buf (String.sub s pos (start - pos));
+          Buffer.add_string buf
+            (Pp.styled_string ~ansi style (String.sub s start length));
+          start + length)
+        0 spans
+    in
+    Buffer.add_string buf (String.sub s pos (String.length s - pos));
     Buffer.contents buf
   end
+
+(* Whether colour shows [spans] of [s]: a span of spaces, or an empty one,
+   has no glyph to colour. *)
+let colour_shows s spans =
+  not
+    (List.exists
+       (fun { Diff.start; length } ->
+         String.for_all (fun c -> c = ' ') (String.sub s start length))
+       spans)
 
 (* The [~~~] line under a plain string: one column per code point. *)
 let marker_line s spans =
@@ -337,172 +518,263 @@ let marker_line s spans =
     Some (Buffer.contents buf)
   end
 
-(* Trailing whitespace on a changed hunk line, made visible: one
-   [·] (U+00B7) per space and one [→] (U+2192) per tab, on both the ansi
-   and plain paths — a color-only highlight would vanish on exactly the
-   no-color sinks (pipes, JUnit bodies, annotations) where the difference
-   bites. Changed lines only; context lines are untouched. *)
-let show_trailing_ws s =
-  let n = String.length s in
-  let i = ref n in
-  while !i > 0 && (s.[!i - 1] = ' ' || s.[!i - 1] = '\t') do
-    decr i
-  done;
-  if !i = n then s
-  else begin
-    let buf = Buffer.create (n + 8) in
-    Buffer.add_substring buf s 0 !i;
-    for j = !i to n - 1 do
-      Buffer.add_string buf (if s.[j] = ' ' then "\u{00B7}" else "\u{2192}")
-    done;
-    Buffer.contents buf
-  end
-
-let pp_hunks ~ansi put ~ind hunks =
-  let st style s = Pp.styled_string ~ansi style s in
-  let total =
-    List.fold_left (fun acc h -> acc + 1 + List.length h.Diff.lines) 0 hunks
+(* Whether a [~] line under [s] lands under the code points it marks: a
+   code point past Latin Extended-B has no fixed width, and neither has a
+   tab unless the [~] line repeats it ([tabs]). *)
+let aligns ~tabs s =
+  let rec scan i =
+    i >= String.length s
+    ||
+    let decode = String.get_utf_8_uchar s i in
+    let code = Uchar.to_int (Uchar.utf_decode_uchar decode) in
+    Uchar.utf_decode_is_valid decode
+    && ((0x20 <= code && code <= 0x24F) || (tabs && code = 0x09))
+    && scan (i + Uchar.utf_decode_length decode)
   in
-  let budget = ref max_diff_lines in
+  scan 0
+
+(* The [~] line for a [-] line whose [+] line differs from it only in
+   trailing spaces and tabs, a pair that prints as two equal lines: the
+   columns up to the mark, tabs repeated so that any tab stops align it,
+   then one [~] per space or tab of the [-] line's that the [+] line lacks,
+   or of the [+] line's when the [-] line has none. *)
+let trailing_mark ~deleted ~inserted =
+  let stem s =
+    let rec scan i =
+      if i > 0 && (s.[i - 1] = ' ' || s.[i - 1] = '\t') then scan (i - 1) else i
+    in
+    scan (String.length s)
+  in
+  let at = stem deleted in
+  if
+    String.equal deleted inserted
+    || at <> stem inserted
+    || not (String.equal (String.sub deleted 0 at) (String.sub inserted 0 at))
+  then None
+  else
+    let rec shared i =
+      if
+        i < String.length deleted
+        && i < String.length inserted
+        && deleted.[i] = inserted.[i]
+      then shared (i + 1)
+      else i
+    in
+    let shared = shared at in
+    let lead = show_controls (String.sub deleted 0 shared) in
+    let marked =
+      if String.length deleted > shared then String.length deleted - shared
+      else String.length inserted - shared
+    in
+    if not (aligns ~tabs:true lead) then None
+    else
+      let buf = Buffer.create (String.length lead) in
+      let rec pad i =
+        if i < String.length lead then begin
+          Buffer.add_char buf (if lead.[i] = '\t' then '\t' else ' ');
+          pad (i + Uchar.utf_decode_length (String.get_utf_8_uchar lead i))
+        end
+      in
+      pad 0;
+      Some (Buffer.contents buf, String.make marked '~')
+
+(* Hunks under a budget of [limit] lines, [@@] lines included. *)
+let pp_hunks ~ansi put ~ind ~limit hunks =
+  let st style s = Pp.styled_string ~ansi style s in
+  let total = diff_lines hunks in
+  let budget = ref limit in
   let emit line =
     if !budget > 0 then put line;
     decr budget
+  in
+  (* [after_delete] and the line after the [+] tell a one-to-one pair from
+     a run of changes, whose lines answer each other in no fixed order. *)
+  let rec lines ~after_delete = function
+    | [] -> ()
+    | Diff.Keep s :: rest ->
+        emit (ind ^ "  " ^ show_controls s);
+        lines ~after_delete:false rest
+    | Diff.Insert s :: rest ->
+        emit (ind ^ st `Red ("+ " ^ show_controls s));
+        lines ~after_delete:false rest
+    | Diff.Delete s :: rest ->
+        (* Green is the expected side and red the actual one, here as
+           everywhere else, not the diff tool's red-for-removed: the sigils
+           say which side is which, the colour carries the report's own
+           meaning. *)
+        emit (ind ^ st `Green ("- " ^ show_controls s));
+        let mark =
+          match rest with
+          | Diff.Insert inserted :: ([] | (Diff.Keep _ | Diff.Delete _) :: _)
+            when not after_delete ->
+              trailing_mark ~deleted:s ~inserted
+          | Diff.Insert _ :: _ | (Diff.Keep _ | Diff.Delete _) :: _ | [] -> None
+        in
+        (* The mark belongs to its [-] line and is no diff line: it prints
+           iff that line did, outside the budget. *)
+        (match mark with
+        | Some (pad, tildes) when !budget >= 0 ->
+            put (ind ^ "  " ^ pad ^ st `Red tildes)
+        | Some _ | None -> ());
+        lines ~after_delete:true rest
+  in
+  (* Unified diff numbers a side with no line by the line before it:
+     [-0,0] for lines inserted before the first. *)
+  let range start count =
+    spf "%d,%d" (if count = 0 then start - 1 else start) count
   in
   List.iter
     (fun (h : Diff.hunk) ->
       emit
         (ind
         ^ st `Faint
-            (spf "@@ -%d,%d +%d,%d @@" h.expected_start h.expected_count
-               h.actual_start h.actual_count));
-      List.iter
-        (function
-          (* Green is the expected side and red the actual one, here as
-             everywhere else — not the diff tool's red-for-removed. One
-             transcript shows both this path and the span path, often for
-             the same run, and a colour that means "expected" on one line
-             and "actual" three lines down is worse than unusual. The
-             [---]/[+++] header and the [-]/[+] sigils already say which
-             side is which, so the colour is free to carry the report's
-             own meaning. *)
-          | Diff.Keep s -> emit (ind ^ "  " ^ show_controls s)
-          | Diff.Delete s ->
-              emit (ind ^ st `Green ("- " ^ show_trailing_ws (show_controls s)))
-          | Diff.Insert s ->
-              emit (ind ^ st `Red ("+ " ^ show_trailing_ws (show_controls s))))
-        h.lines)
+            (spf "@@ -%s +%s @@"
+               (range h.expected_start h.expected_count)
+               (range h.actual_start h.actual_count)));
+      lines ~after_delete:false h.lines)
     hunks;
-  if total > max_diff_lines then
-    put
-      (ind
-      ^ st `Faint
-          (spf "\u{2026} (+%d more diff lines)" (total - max_diff_lines)))
+  if total > limit then
+    put (ind ^ st `Faint (spf "\u{2026} (+%d more diff lines)" (total - limit)))
 
-let pp_eq_detail ~ansi put ~ind ~expected ~actual =
+(* A single-line value as it prints: its middle elided past
+   [max_value_bytes], cut in the carried bytes so the count is theirs, and
+   the control bytes of what is left escaped. *)
+let elided s = String.length s > max_value_bytes
+let shown s = Text.elide_middle max_value_bytes ~show:show_controls s
+
+(* What changed in [s], a value printed [lead] columns into its line. With
+   colour the spans are [style]d inside the plain value and no [~] line
+   prints, unless colour cannot show one of them; without it a [~] line
+   marks them, when [aligned]. *)
+let pp_marked ~ansi put ~lead ~aligned ~style ~before s spans =
+  let tildes = (not ansi) || not (colour_shows s spans) in
+  put (before ^ highlight ~ansi style s spans);
+  if tildes && aligned then
+    Option.iter
+      (fun m ->
+        let at = String.index m '~' in
+        put
+          (String.make (lead + at) ' '
+          ^ Pp.styled_string ~ansi style
+              (String.sub m at (String.length m - at))))
+      (marker_line s spans)
+
+(* Two single-line renderings under their anchors. Refinement ran against
+   the raw values and the spans are drawn against the escaped ones. A pair
+   that does not refine prints each side whole in its colour: so does one
+   whose anchors already state the difference ([marked] is off), and one
+   with an elided side, which has no columns left to mark. *)
+let pp_sides ~ansi put ~ind ~anchors:(expected_anchor, actual_anchor) ~marked
+    ~expected ~actual =
   let st style s = Pp.styled_string ~ansi style s in
-  if String.contains expected '\n' || String.contains actual '\n' then
-    begin match Diff.hunks ~expected ~actual () with
-    | [] ->
-        (* Line lists equal but bytes differ: the only such difference is a
-           single trailing newline, which a line diff cannot show. *)
-        let side =
-          if String.length actual > String.length expected then "actual"
-          else "expected"
-        in
-        put
-          (ind
-          ^ spf "values differ only by a trailing newline (on the %s side)" side
-          )
-    | hunks ->
-        put (ind ^ st `Faint "--- expected");
-        put (ind ^ st `Faint "+++ actual");
-        pp_hunks ~ansi put ~ind hunks
-    end
-  else
-    (* The marks under the two renderings: the changed regions character
-       refinement found, or nothing when it declined. *)
-    let marked =
-      match Diff.refine ~expected ~actual with
-      | Some r -> Some (r.Diff.expected_spans, r.Diff.actual_spans)
-      | None -> None
+  let width =
+    2 + max (String.length expected_anchor) (String.length actual_anchor)
+  in
+  let marked = marked && not (elided expected || elided actual) in
+  let expected_spans, actual_spans =
+    match if marked then Diff.refine ~expected ~actual else None with
+    | None -> ([], [])
+    | Some { Diff.expected_spans; actual_spans } ->
+        ( List.map (moved_span expected) expected_spans,
+          List.map (moved_span actual) actual_spans )
+  in
+  let refined = expected_spans <> [] || actual_spans <> [] in
+  let expected = shown expected and actual = shown actual in
+  let aligned = aligns ~tabs:false expected && aligns ~tabs:false actual in
+  let side anchor ~whole ~span value spans =
+    let before =
+      ind ^ st `Faint anchor ^ String.make (width - String.length anchor) ' '
     in
-    (* Refinement ran against the raw values; the marks are drawn against
-       the escaped ones, so both sides move into display coordinates
-       together and a widened escape carries its marks with it. *)
-    let marked =
-      Option.map
-        (fun (es, as_) ->
-          (List.map (moved_span expected) es, List.map (moved_span actual) as_))
-        marked
-    in
-    let expected = show_controls expected and actual = show_controls actual in
-    match marked with
-    | Some (es, as_) when ansi ->
-        put
-          (ind ^ st `Faint "expected" ^ "  "
-          ^ highlight ~ansi `Green expected es);
-        put (ind ^ st `Faint "actual" ^ "    " ^ highlight ~ansi `Red actual as_)
-    | None when ansi ->
-        (* Refinement declined: the values share too little for a partial
-           mark to point at anything. Green and red are side colours, not
-           change markers, so colouring each side whole is the same signal
-           extended — and it keeps every equality failure reading the same
-           way instead of the colour appearing and vanishing on a threshold
-           the reader cannot see. Plain sinks show the two labelled values
-           and stop: a full-width [~~~] would be the noise the threshold
-           just removed. *)
-        put (ind ^ st `Faint "expected" ^ "  " ^ st `Green expected);
-        put (ind ^ st `Faint "actual" ^ "    " ^ st `Red actual)
-    | _ ->
-        (* Plain sinks carry the marks on their own line, under the side they
-           belong to. Each side gets one only when it has marks to carry: a
-           pure insertion changes nothing on the expected side, so no marker
-           line prints under it. *)
-        let es, as_ = match marked with Some p -> p | None -> ([], []) in
-        let side label pad s spans =
-          put (ind ^ st `Faint label ^ pad ^ s);
-          match marker_line s spans with
-          | Some m -> put (ind ^ "          " ^ m)
-          | None -> ()
-        in
-        side "expected" "  " expected es;
-        side "actual" "    " actual as_
+    if refined then
+      pp_marked ~ansi put
+        ~lead:(String.length ind + width)
+        ~aligned ~style:span ~before value spans
+    else put (before ^ st whole value)
+  in
+  side expected_anchor ~whole:`Green ~span:`Bold_green expected expected_spans;
+  side actual_anchor ~whole:`Red ~span:`Bold_red actual actual_spans
 
 let pp_eq ~ansi put ~ind ~expected ~actual =
   let st style s = Pp.styled_string ~ansi style s in
   if String.equal expected actual then begin
-    (* The equality distinguished the values but their printer did not
-       ([equal float nan nan], a lossy pp): explain the identical lines. A
-       multi-line rendering prints once, in block form — repeating it twice
-       under expected/actual labels would only pad the block, and inlining
-       it after a label would break the four-space indentation.
-
-       The test is made on the raw renderings because the claim is about
-       them: escaping merges values it cannot tell apart, and a pair the
-       printer did distinguish must never be reported as one it did not. *)
-    let expected = show_controls expected and actual = show_controls actual in
+    (* The equality told the values apart and their printer did not
+       ([equal float nan nan], a lossy pp). Decided on the raw renderings:
+       escaping merges values it cannot tell apart, and a pair the printer
+       did distinguish must never be reported as one it did not. *)
     if String.contains expected '\n' then begin
-      put (ind ^ st `Faint "both render as:");
-      List.iter (fun l -> put (ind ^ "  " ^ l)) (Text.split_lines expected)
+      put (ind ^ st `Faint "both sides render as:");
+      List.iter
+        (fun l -> put (ind ^ "  " ^ l))
+        (Text.split_lines (show_controls expected))
     end
-    else begin
-      put (ind ^ st `Faint "expected" ^ "  " ^ expected);
-      put (ind ^ st `Faint "actual" ^ "    " ^ actual)
-    end;
-    put
-      (ind
-      ^ st `Faint
-          "(the values render identically \u{2014} the printer shows less than \
-           the equality compares)")
+    else put (ind ^ st `Faint "both sides render as:" ^ " " ^ shown expected);
+    put (ind ^ st `Faint "the printer shows less than the equality compares")
   end
-  else pp_eq_detail ~ansi put ~ind ~expected ~actual
+  else if String.contains expected '\n' || String.contains actual '\n' then
+    begin match Diff.hunks ~expected ~actual () with
+    | [] -> put (ind ^ newline_fact ~expected ~actual)
+    | hunks ->
+        put (ind ^ st `Faint "--- expected");
+        put (ind ^ st `Faint "+++ actual");
+        pp_hunks ~ansi put ~ind ~limit:max_diff_lines hunks
+    end
+  else
+    pp_sides ~ansi put ~ind ~anchors:("expected", "actual") ~marked:true
+      ~expected ~actual
 
-let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
-    (f : Failure.t) =
+(* A rendering under the sentence or the anchor that names it: a block,
+   each line in [style], so that no style spans a line. *)
+let pp_value_block ~ansi put ~ind style value =
   let st style s = Pp.styled_string ~ansi style s in
-  (* Under [ansi:false] the block must contain no escape codes (report_sections.mli):
-     payload strings from a user pp may carry them, so every line is
-     stripped at the sink. Our own styling is off on this path. *)
+  if String.contains value '\n' then
+    List.iter
+      (fun l -> put (ind ^ "  " ^ st style l))
+      (Text.split_lines (show_controls value))
+  else put (ind ^ "  " ^ st style (shown value))
+
+(* The sides of a [raises] that named its exception; [actual] is [None]
+   when nothing was raised. The anchors state the difference, so nothing is
+   marked; a rendering that spans lines is a block under its anchor. *)
+let pp_raise ~ansi put ~ind ~expected ~actual =
+  let st style s = Pp.styled_string ~ansi style s in
+  let spans_lines s = String.contains s '\n' in
+  match actual with
+  | Some actual when not (spans_lines expected || spans_lines actual) ->
+      pp_sides ~ansi put ~ind
+        ~anchors:("expected exception", "raised")
+        ~marked:false ~expected ~actual
+  | Some _ | None ->
+      let width = 2 + String.length "expected exception" in
+      let side anchor style value =
+        if spans_lines value then begin
+          put (ind ^ st `Faint (anchor ^ ":"));
+          pp_value_block ~ansi put ~ind style value
+        end
+        else
+          put
+            (ind ^ st `Faint anchor
+            ^ String.make (width - String.length anchor) ' '
+            ^ st style (shown value))
+      in
+      side "expected exception" `Green expected;
+      begin match actual with
+      | Some actual -> side "raised" `Red actual
+      | None -> put (ind ^ "but no exception was raised")
+      end
+
+(* The phase tag: on its own line when the failure has no location. *)
+let phase_tag (f : Failure.t) =
+  match f.phase with
+  | Failure.Body -> None
+  | Failure.Setup -> Some "[setup]"
+  | Failure.Teardown -> Some "[teardown]"
+  | Failure.Release -> Some "[release]"
+
+let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
+    ~ind ppf (f : Failure.t) =
+  let st style s = Pp.styled_string ~ansi style s in
+  (* Payload strings from a user pp may carry escape codes: under
+     [ansi:false] every line is stripped at the sink. *)
   let put line =
     Pp.pf ppf "%s@\n" (if ansi then line else Text.strip_ansi line)
   in
@@ -510,80 +782,61 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   let put_block s =
     List.iter (fun line -> put_ind ("  " ^ line)) (Text.split_lines s)
   in
-  (* Phase and location header. *)
-  let phase =
-    match f.phase with
-    | Failure.Body -> None
-    | Failure.Setup -> Some "setup"
-    | Failure.Teardown -> Some "teardown"
-    | Failure.Release -> Some "release"
-  in
-  (match (phase, f.loc) with
-  | None, None -> ()
-  | _ ->
-      let parts =
-        (match phase with
-          | Some p -> [ st `Yellow ("[" ^ p ^ "]") ]
-          | None -> [])
-        @
-        match f.loc with
-        | Some l -> [ st `Faint (Loc.to_string l) ]
-        | None -> []
-      in
-      put_ind (String.concat " " parts));
-  (* The location is the test's declaration, not the failing call's line:
-     say so once, under it, before the excerpt shows the reader the wrong
-     line. The runtime cannot recover a tail-called frame, so the remedy
-     is named here, at the point of use. Not for a property failure, whose
-     location is its declaration by construction (the assertion's site is
-     on [inner]), nor for an uncaught exception, which no verb raised —
-     nothing to pass [~__POS__] to, and its backtrace names the line — nor
-     for a file baseline, whose call takes no position and whose subject
-     line names the file. *)
-  (match (f.attribution, f.kind) with
-  | Failure.Recorded, _
-  | Failure.Declaration, Failure.Property _
-  | Failure.Declaration, Failure.Raise { expected = None; predicate = false; _ }
-  | Failure.Declaration, Failure.Baseline { baseline = Failure.File _; _ } ->
-      ()
-  | Failure.Declaration, _ ->
+  (match
+     Option.to_list (Option.map (st `Yellow) (phase_tag f))
+     @ Option.to_list
+         (Option.map (fun loc -> st `Faint (Loc.to_string loc)) f.loc)
+   with
+  | [] -> ()
+  | parts -> put_ind (String.concat " " parts));
+  (* The located source line, best-effort and dedented, printed as a value
+     is: a file's bytes are no more the report's than a test's are. The
+     blank line after it closes a block's head; an inner entry has none. *)
+  (match f.loc with
+  | Some { Loc.file; line; _ } when excerpt ->
+      Option.iter
+        (fun text ->
+          let gutter = st `Faint (spf "%d \u{2502}" line) in
+          put_ind
+            (match String.trim text with
+            | "" -> "  " ^ gutter
+            | text -> spf "  %s %s" gutter (shown text));
+          if not inner then put "")
+        (source_line file line)
+  | Some _ | None -> ());
+  (match f.subtest with
+  | [] -> ()
+  | [ leaf ] -> put_ind (st `Faint "subtest" ^ "   " ^ sanitize_name leaf)
+  | _ :: names ->
       put_ind
-        (st `Faint
-           "(assertion in tail position: its line is unknown; ~__POS__ names \
-            it)"));
-  (* Source excerpt, best-effort. *)
-  (if excerpt then
-     match f.loc with
-     | Some { Loc.file; line; _ } -> (
-         match source_line file line with
-         | Some text ->
-             put_ind (spf "  %s %s" (st `Faint (spf "%d \u{2502}" line)) text);
-             put ""
-         | None -> ())
-     | None -> ());
-  (match labeled_msg f with Some m -> put_ind m | None -> ());
-  match f.kind with
+        (st `Faint "subtest" ^ "   "
+        ^ sanitize_name (Test_tree.path_to_string names)));
+  Option.iter
+    (fun msg ->
+      List.iter
+        (fun line -> put_ind (sanitize_name line))
+        (Text.split_lines msg))
+    f.msg;
+  (match f.kind with
   | Failure.Equality { not_ = true; expected; _ } ->
-      let expected = show_controls expected in
       if String.contains expected '\n' then begin
         put_ind "both sides equal:";
-        put_block expected
+        put_block (show_controls expected)
       end
-      else put_ind (spf "both sides equal: %s" expected)
+      else put_ind (spf "both sides equal: %s" (shown expected))
   | Failure.Equality { expected = claim; actual = value; diffable = false; _ }
     ->
       (* A claim is a description, not a rendering: never diff or refine the
-         two (D5 §2). Colour still applies — green and red mark which side is
+         two. Colour still applies — green and red mark which side is
          which, and that is as true of a description as of a value, and so is
          visibility: a [~claim] may be built around a rendered bound
          ([greater than <x>]). *)
-      let claim = show_controls claim and value = show_controls value in
-      put_ind (st `Faint "expected" ^ "  " ^ st `Green claim);
+      put_ind (st `Faint "expected" ^ "  " ^ st `Green (shown claim));
       if String.contains value '\n' then begin
         put_ind (st `Faint "actual:");
-        put_block (st `Red value)
+        pp_value_block ~ansi put ~ind `Red value
       end
-      else put_ind (st `Faint "actual" ^ "    " ^ st `Red value)
+      else put_ind (st `Faint "actual" ^ "    " ^ st `Red (shown value))
   | Failure.Equality { expected; actual; _ } ->
       pp_eq ~ansi put ~ind ~expected ~actual
   | Failure.Containment
@@ -596,40 +849,29 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
         demand;
         claim = _;
       } ->
-      (* The block derives from the containment payload — needle, verdict,
-         byte offset, marked occurrence — never a fake equality diff; the
-         claim sentence is a description and stays out of the block. Labels
-         pad to the [expected]/[actual] 10-column gutter. *)
-      let verdict =
-        (* The demand widens the verdict slot rather than adding lines: a
-           chain break answers the same question the other verbs answer
-           there, in more words. *)
-        match (demand, found_at) with
-        | Failure.Ordered { resumed_at; _ }, Some at ->
-            spf "found at byte %d, before the search resumed at byte %d" at
-              resumed_at
-        | Failure.Ordered { resumed_at; _ }, None ->
-            spf "not found at or after byte %d" resumed_at
-        | Failure.Anywhere, Some at -> spf "found at byte %d" at
-        | Failure.Anywhere, None -> "not found"
-      in
-      (* Which element of the chain broke it: its own line, because the
-         index identifies the assertion the rest of the block is about. *)
+      (* The block is the containment payload, never a fake equality diff;
+         the claim sentence is a description and stays out of it. Anchors pad
+         to the [expected]/[actual] gutter. The element of the chain that
+         broke it has its own line: the rest of the block is about it. *)
       (match demand with
       | Failure.Ordered { index; _ } ->
           put_ind (st `Faint "element" ^ "   " ^ string_of_int index)
       | Failure.Anywhere -> ());
-      (* [%S] carries its own escapes, OCaml's decimal ones, so the needle
-         needs none of [show_controls]'s — as do the [%S]-quoted exception
-         messages [pp_eq] diffs below. Only the unquoted surfaces do. *)
-      put_ind (st `Faint "needle" ^ "    " ^ spf "%S \u{2014} %s" needle verdict);
+      (* [%S] is [String.escaped] between quotes, OCaml's decimal escapes.
+         An elided needle is cut in its carried bytes and each end escaped:
+         a cut in the quoted text would split an escape and count its
+         digits. *)
+      put_ind
+        (st `Faint "needle" ^ "    \""
+        ^ Text.elide_middle max_value_bytes ~show:String.escaped needle
+        ^ "\": "
+        ^ containment_verdict ~demand ~found_at);
       (* The occurrence's byte range inside the excerpt, when it is there to
          mark: a failed [not_contains] window always contains it, and an
          out-of-order chain break carries one that a cursor-anchored window
-         may have left behind — hence the bounds test rather than a plain
-         subtraction. Offsets are the payload's own, so the span is computed
-         in raw bytes and moved into display coordinates where it is
-         drawn. *)
+         may have left behind, hence the bounds test. The span is the
+         payload's, in raw bytes, moved into display coordinates where it
+         is drawn. *)
       let occurrence =
         match found_at with
         | None -> None
@@ -641,50 +883,44 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
             if start >= 0 && length > 0 then Some { Diff.start; length }
             else None
       in
-      (if String.contains excerpt '\n' then begin
-         (* Block form (the [both sides equal:] precedent): no unified diff,
-            no markers; under [ansi] the occurrence highlights on its line. *)
-         put_ind (st `Faint "haystack:");
-         let lines = Text.split_lines excerpt in
-         let offsets =
-           (* Byte offset of each line's first byte within the excerpt. *)
-           let rec go acc off = function
-             | [] -> List.rev acc
-             | line :: rest ->
-                 go (off :: acc) (off + String.length line + 1) rest
-           in
-           go [] 0 lines
-         in
-         List.iter2
-           (fun line off ->
-             let styled =
-               match occurrence with
-               | Some { Diff.start; length }
-                 when ansi && start >= off && start < off + String.length line
-                 ->
-                   let length = min length (off + String.length line - start) in
-                   highlight ~ansi `Red (show_controls line)
-                     [ moved_span line { Diff.start = start - off; length } ]
-               | _ -> show_controls line
-             in
-             put_ind ("  " ^ styled))
-           lines offsets
-       end
-       else
-         let shown = show_controls excerpt in
-         match occurrence with
-         | Some span when ansi ->
-             put_ind
-               (st `Faint "haystack" ^ "  "
-               ^ highlight ~ansi `Red shown [ moved_span excerpt span ])
-         | occurrence -> (
-             put_ind (st `Faint "haystack" ^ "  " ^ shown);
-             match occurrence with
-             | Some span -> (
-                 match marker_line shown [ moved_span excerpt span ] with
-                 | Some m -> put (ind ^ "          " ^ m)
-                 | None -> ())
-             | None -> ()));
+      (* The occurrence is marked as a changed span is ([pp_marked]); the
+         excerpt is the evidence and prints whole. *)
+      let haystack ~before ~lead line spans =
+        let shown = show_controls line in
+        pp_marked ~ansi put
+          ~lead:(String.length ind + lead)
+          ~aligned:(aligns ~tabs:false shown) ~style:`Bold_red
+          ~before:(ind ^ before) shown
+          (List.map (moved_span line) spans)
+      in
+      if not (String.contains excerpt '\n') then
+        haystack
+          ~before:(st `Faint "haystack" ^ "  ")
+          ~lead:10 excerpt
+          (Option.to_list occurrence)
+      else begin
+        put_ind (st `Faint "haystack:");
+        (* [offset] is the line's first byte within the excerpt; an
+           occurrence that spans lines is marked on its first. *)
+        ignore
+          (List.fold_left
+             (fun offset line ->
+               haystack ~before:"  " ~lead:2 line
+                 (match occurrence with
+                 | Some { Diff.start; length }
+                   when start >= offset && start < offset + String.length line
+                   ->
+                     [
+                       {
+                         Diff.start = start - offset;
+                         length =
+                           min length (offset + String.length line - start);
+                       };
+                     ]
+                 | Some _ | None -> []);
+               offset + String.length line + 1)
+             0 (Text.split_lines excerpt))
+      end;
       (* State what was omitted, iff the excerpt is partial. *)
       if
         excerpt_offset > 0
@@ -696,84 +932,59 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                 (excerpt_offset + String.length excerpt - 1)
                 haystack_length))
   | Failure.Raise { expected; actual; predicate; backtrace; message_diff } -> (
-      (match message_diff with
-      | Some { Failure.constructor; expected_message; actual_message } ->
-          (* Right constructor, wrong payload: diff the messages instead of
-             repeating the constructor twice. The failure site named the
-             constructor; this one decision is the whole of the field. *)
+      (match (message_diff, expected, actual) with
+      | Some { Failure.constructor; expected_message; actual_message }, _, _ ->
+          (* Right constructor, wrong payload: the messages are compared,
+             the constructor said once. *)
           put_ind (spf "raised %s with the wrong message:" constructor);
           pp_eq ~ansi put ~ind
             ~expected:(spf "%S" expected_message)
             ~actual:(spf "%S" actual_message)
-      | None -> (
-          (* An exception rendering is a value like any other: a payload
-             string reaches the block through [Printexc.to_string]. *)
-          match
-            (Option.map show_controls expected, Option.map show_controls actual)
-          with
-          | Some e, Some a ->
-              put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
-              put_ind (st `Faint "raised            " ^ "  " ^ st `Red a)
-          | Some e, None ->
-              put_ind (st `Faint "expected exception" ^ "  " ^ st `Green e);
-              put_ind "but no exception was raised"
-          | None, Some a ->
-              (* [predicate] tells a raises_match rejection from a test
-                 body's escape — the two demand different reactions. *)
-              put_ind
-                (if predicate then
-                   "raised exception does not satisfy the predicate:"
-                 else "uncaught exception:");
-              put_block (st `Red a)
-          | None, None -> put_ind "expected an exception, but none was raised"));
+      | None, Some expected, actual -> pp_raise ~ansi put ~ind ~expected ~actual
+      | None, None, Some actual ->
+          (* [predicate] tells a [raises_match] rejection from a test body's
+             escape: the two demand different reactions. *)
+          put_ind
+            (if predicate then
+               "raised exception does not satisfy the predicate:"
+             else "uncaught exception:");
+          pp_value_block ~ansi put ~ind `Red actual
+      | None, None, None -> put_ind "expected an exception, but none was raised");
       match backtrace with
       | Some bt ->
-          List.iter (fun l -> put_ind (st `Faint l)) (Text.split_lines bt)
+          let frames = Text.split_lines bt in
+          List.iter (fun l -> put_ind (st `Faint l)) (take max_lines frames);
+          let more = List.length frames - max_lines in
+          if more > 0 then
+            put_ind (st `Faint (spf "\u{2026} (+%d more frames)" more))
       | None -> ())
-  | Failure.Baseline { baseline; state } -> (
-      let accept () = if commands then put_ind (accept_line invocation) in
-      (* Plain quotes, not %S: a path's UTF-8 must not be byte-escaped;
-         [sanitize_name] guards the line against control bytes exactly as
-         on every other name surface. *)
-      let subject =
-        match baseline with
-        | Failure.Literal -> "expect"
-        | Failure.File path ->
-            spf "expect_file \"%s\"" (sanitize_name (Os.display_path path))
-      in
+  | Failure.Baseline { baseline; state; withheld = _ } -> (
+      let subject = baseline_subject baseline in
       match state with
       | Failure.Missing { proposed } ->
-          put_ind (spf "%s: no baseline" subject);
+          put_ind (subject ^ ": no baseline");
+          (* The file does not exist: its proposed text is all [+] and has
+             no hunk to head. *)
           let lines = Text.split_lines (show_controls proposed) in
           let n = List.length lines in
           put_ind (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
           List.iter
-            (fun l -> put_ind ("  " ^ st `Cyan "\u{2506}" ^ " " ^ l))
+            (fun l -> put_ind ("  " ^ st `Red ("+ " ^ l)))
             (take max_proposed_lines lines);
           if n > max_proposed_lines then
             put_ind
-              ("  " ^ st `Cyan "\u{2506}" ^ " "
+              ("  "
               ^ st `Faint
-                  (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines)));
-          (* Promotion fills a file but never creates one: under dune the
-             file must exist before a [diff?] step can register the
-             correction, so the acceptance starts by creating it. *)
-          if commands then
-            begin match (invocation, baseline) with
-            | `Mirrors, Failure.File path ->
-                put_ind
-                  (spf "accept: touch %s && dune runtest, then dune promote"
-                     (shell_quote (Os.display_path path)))
-            | _ -> put_ind (accept_line invocation)
-            end
-      | Failure.Mismatch { expected; actual } ->
-          put_ind (spf "%s: mismatch" subject);
-          pp_hunks ~ansi put ~ind (Diff.hunks ~expected ~actual ());
-          accept ()
+                  (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines)))
+      | Failure.Mismatch { expected; actual } -> (
+          put_ind (subject ^ ": mismatch");
+          match Diff.hunks ~expected ~actual () with
+          | [] -> put_ind (newline_fact ~expected ~actual)
+          | hunks -> pp_hunks ~ansi put ~ind ~limit:max_diff_lines hunks)
       | Failure.Unresolvable { candidate } ->
           put_ind
-            (spf "%s: the path cannot be proven to lie under the project root"
-               subject);
+            (subject
+           ^ ": the path cannot be proven to lie under the project root");
           put_ind
             (spf "unverified path: %s"
                (sanitize_name (Os.display_path candidate)));
@@ -783,44 +994,53 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
   | Failure.Property
       {
         rendered;
+        summary;
         case_index;
         shrink_steps;
         shrink_exhausted;
         timed_out;
-        root;
-        count;
         examples;
         rendering;
-        inner;
-      } ->
-      let desc = property_case_desc ~examples ~case_index ~shrink_steps in
-      let rendered = show_controls rendered in
-      (* A pre-image is marked in the slot itself — [from] — so a reader who
-         stops at this line does not take it for the value the body received;
-         the note below says what it is instead. *)
+        inner = inner_failure;
+        root = _;
+        count = _;
+      } -> (
+      (* A pre-image is marked in the slot itself, [computed from], so a
+         reader who stops at this line does not take it for the value the
+         body received; the aside under it says what it is and what to do. *)
       let head =
-        match rendering with
-        | Failure.Pre_image -> spf "counterexample (%s): from" desc
-        | Failure.Value -> spf "counterexample (%s):" desc
+        spf "counterexample (%s):%s"
+          (case_desc ~examples ~case_index ~shrink_steps)
+          (match rendering with
+          | Failure.Value -> ""
+          | Failure.Pre_image -> " computed from")
       in
-      if String.contains rendered '\n' then begin
-        put_ind head;
-        put_block rendered
-      end
-      else put_ind (head ^ " " ^ rendered);
-      (* A pre-image is not the value: say so once, here, where the reader
-         is looking at it. *)
+      (* A summarized counterexample is a table: the summary takes the
+         value's place on the head, and the header row is structure. *)
+      (match (summary, Text.split_lines (show_controls rendered)) with
+      | Some summary, header :: rows ->
+          put_ind (head ^ " " ^ shown summary);
+          put_ind ("  " ^ st `Faint header);
+          List.iter (fun row -> put_ind ("  " ^ row)) rows
+      | Some _, [] | None, ([] | [ _ ]) -> put_ind (head ^ " " ^ shown rendered)
+      | None, (_ :: _ :: _ as lines) ->
+          put_ind head;
+          List.iter (fun line -> put_ind ("  " ^ line)) lines);
       (match rendering with
       | Failure.Value -> ()
       | Failure.Pre_image ->
           put_ind
-            (st `Faint
-               "(the value has no printer \u{2014} shown is its pre-image, \
-                what map and bind computed it from)"));
-      (* The shrink search hit the whole-test budget: the reported
-         counterexample is the best found within it. [%g] matches the
-         runner's [timed out after %gs] phrase so timeout greps catch
-         both. *)
+            ("  "
+            ^ st `Faint
+                "(the value has no printer, so this is the input that map and \
+                 bind");
+          put_ind
+            ("  "
+            ^ st `Faint
+                " computed it from; attach a printer with Gen.with_pp to see \
+                 the value)"));
+      (* What is reported is the best the search got to. [%gs] is the
+         runner's [timed out after %gs], so one grep finds both. *)
       (match timed_out with
       | Some limit ->
           put_ind
@@ -829,36 +1049,32 @@ let rec pp_gen ~ansi ~excerpt ~filter ~commands ~invocation ~ind ppf
                 minimal"
                limit)
       | None ->
-          (* Same fact, a different stop: the search ran out of budget, or
-             out of reachable candidates because forcing one raised. Either
-             way what is reported is the best it got to, and the step count
-             is what tells the reader which — a count at the budget spent
-             it, a count below it did not. *)
           if shrink_exhausted then
             put_ind
               (spf
                  "shrinking stopped after %d steps; counterexample may not be \
                   minimal"
                  shrink_steps));
-      (match inner with
+      (* An inner failure raised in tail position has no site: [at:] over
+         no location would misread. *)
+      match inner_failure with
       | Some i ->
-          (* A tail-called check inside a law honestly has no site: a
-             dangling "at:" with no location line would misread. *)
           put_ind
             (match i.Failure.loc with
             | Some _ -> "which failed at:"
             | None -> "which failed with:");
-          pp_gen ~ansi ~excerpt:false ~filter:None ~commands:false ~invocation
-            ~ind:(ind ^ "  ") ppf i
-      | None -> ());
-      if commands && not examples then
-        put_ind (replay_line ?count invocation ~seed:root ~filter)
+          pp_gen ~ansi ~excerpt ~inner:true ~hints:false ~filter ~invocation
+            ~armed ~ind:(ind ^ "  ") ppf i
+      | None -> ())
   | Failure.Message "" -> put_ind "(empty failure message)"
   | Failure.Message m ->
-      List.iter (fun line -> put_ind line) (Text.split_lines m)
+      List.iter (fun line -> put_ind line) (Text.split_lines m));
+  if hinted then List.iter put_ind (hints ?armed ~invocation ~filter [ f ])
 
-let pp_failure ~ansi ?(excerpt = false) ?filter ?(invocation = `Mirrors) ppf f =
-  pp_gen ~ansi ~excerpt ~filter ~commands:true ~invocation ~ind:indent ppf f
+let pp_failure ~ansi ?(excerpt = false) ?(hints = true) ?filter
+    ?(invocation = `Mirrors) ?armed ppf f =
+  pp_gen ~ansi ~excerpt ~inner:false ~hints ~filter ~invocation ~armed
+    ~ind:indent ppf f
 
 (* Sub-case entries carry their identity as data (Run.subtest fills the
    [subtest] components); the msg text is never consulted. *)
@@ -885,12 +1101,13 @@ let put k line =
 
 let st k style s = Pp.styled_string ~ansi:k.ansi style s
 
-let labeled_rule label =
-  let w = min columns rule_width in
-  let inner = Text.length_utf8 label + 2 in
-  let left = max 2 ((w - inner) / 2) in
-  let right = max 2 (w - inner - left) in
-  dashes left ^ " " ^ label ^ " " ^ dashes right
+let rule ~width = function
+  | None -> dashes width
+  | Some label ->
+      let inner = Text.length_utf8 label + 2 in
+      let left = max 2 ((width - inner) / 2) in
+      let right = max 2 (width - inner - left) in
+      dashes left ^ " " ^ label ^ " " ^ dashes right
 
 let rstrip s =
   let n = ref (String.length s) in
@@ -1112,8 +1329,7 @@ let render_section k = function
   | Rows { margin; columns; rows } -> put_rows k ~margin ~columns rows
   | Excerpt { context; marker; margin; number_width; excerpt = e } ->
       excerpt k ~context ~marker ~margin ?number_width e
-  | Rule (Some label) -> put k (st k `Faint (labeled_rule label))
-  | Rule None -> put k (st k `Faint (dashes (min columns rule_width)))
+  | Rule label -> put k (st k `Faint (rule ~width:rule_width label))
 
 let print ~out ~ansi sections =
   let k = { out; ansi } in

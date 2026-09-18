@@ -14,9 +14,11 @@ module Os = Windtrap.Private.Os
 module Cli = Windtrap.Private.Cli
 
 let spf = Printf.sprintf
+let usage = "usage: windtrap coverage [OPTIONS] [PATH...]"
 
-let usage =
-  {|usage: windtrap coverage [OPTIONS] [PATH...]
+let help =
+  "windtrap coverage - merge .coverage files and report\n\n" ^ usage
+  ^ {|
 
 Merges the .coverage files written by instrumented test executables and
 reports expression coverage per source file. Without PATH arguments the files
@@ -26,15 +28,32 @@ enclosing project root; PATH arguments (.coverage files, or directories
 searched recursively) replace that default.
 
 OPTIONS:
-  --min PCT             Exit 1 when total coverage is below PCT
-  --json                Machine-readable report on standard output
-  --lcov                LCOV tracefile on standard output (genhtml, Codecov,
-                        Coveralls, GitLab, editor gutters)
-  --expect PATH         Exit 1 unless every .ml/.mll/.mly under PATH (or PATH
-                        itself) has coverage data; repeatable
-  --do-not-expect PATH  Exempt PATH, a file or a directory, from --expect
-  -u, --show-uncovered  Also render uncovered source excerpts
-  -h, --help            Print this help and exit|}
+  --min=PCT
+      Exit 1 when total coverage is below PCT.
+
+  --json
+      Machine-readable report on standard output.
+
+  --lcov
+      LCOV tracefile on standard output (genhtml, Codecov, Coveralls, GitLab,
+      editor gutters).
+
+  --expect=PATH
+      Exit 1 unless every .ml/.mll/.mly under PATH (or PATH itself) has
+      coverage data; repeatable.
+
+  --do-not-expect=PATH
+      Exempt PATH, a file or a directory, from --expect.
+
+  -u, --show-uncovered
+      Also render uncovered source excerpts.
+
+  -h, --help
+      Print this help and exit.
+
+ENVIRONMENT (no flag):
+  WINDTRAP_COLOR
+      Color output: always, never or auto.|}
 
 (* Flags *)
 
@@ -52,6 +71,22 @@ let min_of_string value =
   match float_of_string_opt value with
   | Some pct when Float.is_finite pct && 0. <= pct && pct <= 100. -> Some pct
   | _ -> None
+
+(* [--flag=value] is [--flag value], for the flags that take one: the
+   spelling the help page shows. *)
+let split_inline args =
+  List.concat_map
+    (fun arg ->
+      match String.index_opt arg '=' with
+      | Some i
+        when List.mem (String.sub arg 0 i)
+               [ "--min"; "--expect"; "--do-not-expect" ] ->
+          [
+            String.sub arg 0 i;
+            String.sub arg (i + 1) (String.length arg - i - 1);
+          ]
+      | Some _ | None -> [ arg ])
+    args
 
 let parse_args args =
   let min_error value =
@@ -78,12 +113,6 @@ let parse_args args =
         | Some pct -> go { acc with min = Some pct } rest
         | None -> min_error value)
     | [ "--min" ] -> Error (`Usage "option '--min' requires an argument")
-    | arg :: rest when String.length arg >= 6 && String.sub arg 0 6 = "--min="
-      -> (
-        let value = String.sub arg 6 (String.length arg - 6) in
-        match min_of_string value with
-        | Some pct -> go { acc with min = Some pct } rest
-        | None -> min_error value)
     | "--json" :: rest -> go { acc with json = true } rest
     | "--lcov" :: rest -> go { acc with lcov = true } rest
     | "--expect" :: path :: rest ->
@@ -109,7 +138,7 @@ let parse_args args =
       show_uncovered = false;
       paths = [];
     }
-    args
+    (split_inline args)
 
 (* Discovery: Data_files's, shared with `windtrap mutants` — the project
    root resolved as the runtime resolves its dump path, explicit PATH
@@ -142,12 +171,11 @@ let no_data =
   "no .coverage files found\n\
    Instrument the library under test with ppx_windtrap.coverage and run its \
    tests first; every instrumented test executable writes its dump at exit, \
-   under the build directory's _coverage or under _windtrap/coverage.\n"
+   under the build directory's _coverage or under _windtrap/coverage."
 
 let remedy =
   "re-run the suite instrumented (forcing the runs your build tool cached), \
-   then merge again; delete the files named above to drop leftovers of removed \
-   executables"
+   then merge again; delete the files whose executable no longer exists"
 
 (* Loads [files], excludes the ones the freshness pass flagged, and
    merges the survivors. Warnings and failure details go to stderr;
@@ -165,28 +193,23 @@ let load_merged files =
   in
   match loaded with
   | Error error ->
-      Format.eprintf "windtrap coverage: %a@."
-        Windtrap_runtime.Coverage.pp_error error;
+      Os.say (Format.asprintf "%a" Windtrap_runtime.Coverage.pp_error error);
       Error 1
   | Ok entries -> (
       let entries = List.rev entries in
       let kept, flagged =
         List.partition (fun (_, _, v) -> v = Data_files.Fresh) entries
       in
-      (* One line per excluded dump — the path, the executable and the
-         reason, which is what a reader goes and looks at — then the
-         remedy once, however many there were. *)
-      List.iter
-        (fun (path, _, v) ->
-          Printf.eprintf "windtrap coverage: %s\n%!"
-            (Data_files.describe ~path v))
-        flagged;
+      let flagged = List.map (fun (path, _, v) -> (path, v)) flagged in
+      List.iter Os.say (Data_files.warnings flagged);
       if kept = [] then
-        Printf.eprintf
-          "windtrap coverage: every .coverage file was excluded, so there is \
-           nothing to report\n\
-           %!";
-      if flagged <> [] then Printf.eprintf "windtrap coverage: %s\n%!" remedy;
+        Os.say
+          (Data_files.all_excluded ~ext:"coverage" (List.map snd flagged)
+          ^ "\n\
+            \  They were written by executables that no longer exist or have \
+             been rebuilt since.\n\
+            \  The usual cause is a build without the instrumentation flag.");
+      if flagged <> [] then Os.say remedy;
       if kept = [] then Error 1
       else
         match
@@ -197,8 +220,8 @@ let load_merged files =
         with
         | Ok collection -> Ok collection
         | Error error ->
-            Format.eprintf "windtrap coverage: %a@."
-              Windtrap_runtime.Coverage.pp_error error;
+            Os.say
+              (Format.asprintf "%a" Windtrap_runtime.Coverage.pp_error error);
             Error 1)
 
 (* JSON *)
@@ -267,10 +290,10 @@ let print_lcov ~source_roots collection =
     (fun (r : Windtrap_runtime.Coverage.file_report) ->
       match r.source with
       | None ->
-          Printf.eprintf
-            "windtrap coverage: %s: %s; omitted from the lcov output\n%!" r.file
-            (if r.stale then "the source changed since the run"
-             else "source not found")
+          Os.say
+            (spf "%s: %s; omitted from the lcov output" r.file
+               (if r.stale then "the source changed since the run"
+                else "source not found"))
       | Some _ ->
           Printf.printf "TN:\nSF:%s\n" r.file;
           List.iter
@@ -367,17 +390,17 @@ let check_expectations ~expect ~do_not_expect collection =
         (Windtrap_runtime.Coverage.files collection)
     with
     | Error message ->
-        Printf.eprintf "windtrap coverage: %s\n%!" message;
+        Os.say message;
         1
     | Ok [] -> 0
     | Ok missing ->
         List.iter
           (fun path ->
-            Printf.eprintf
-              "windtrap coverage: %s: expected source has no coverage data \
-               (not instrumented, or linked into no test executable that ran)\n\
-               %!"
-              path)
+            Os.say
+              (spf
+                 "%s: expected source has no coverage data (not instrumented, \
+                  or linked into no test executable that ran)"
+                 path))
           missing;
         1
 
@@ -427,25 +450,29 @@ let check_min ~machine summary = function
   | None -> 0
   | Some min ->
       let pct = Windtrap_runtime.Coverage.percentage summary in
-      let print = if machine then Printf.eprintf else Printf.printf in
+      (* A machine format owns standard output: the verdict is then
+         windtrap's own line. *)
+      let print line = if machine then Os.say line else print_endline line in
       if pct >= min then begin
-        print "minimum %g%%: ok\n%!" min;
+        print (spf "minimum %g%%: ok" min);
         0
       end
       else begin
-        print "minimum %g%%: FAILED \u{2014} %.1f%% (%d/%d points)\n%!" min pct
-          summary.Windtrap_runtime.Coverage.visited
-          summary.Windtrap_runtime.Coverage.total;
+        print
+          (spf "minimum %g%%: FAILED \u{2014} %.1f%% (%d/%d points)" min pct
+             summary.Windtrap_runtime.Coverage.visited
+             summary.Windtrap_runtime.Coverage.total);
         1
       end
 
 let run args =
   match parse_args args with
   | Error `Help ->
-      print_endline usage;
+      print_endline help;
       0
   | Error (`Usage message) ->
-      Printf.eprintf "windtrap coverage: %s\n%s\n" message usage;
+      Os.say message;
+      prerr_endline usage;
       2
   | Ok options -> (
       (* No --color flag here, so WINDTRAP_COLOR is the whole colour
@@ -453,14 +480,14 @@ let run args =
          the same terms, never read as "auto" out of a typo. *)
       match (Cli.color_mode (), discover options.paths) with
       | Error error, _ ->
-          Printf.eprintf "windtrap coverage: %s\n" (Cli.error_message error);
+          Os.say (Cli.error_message error);
           2
       | Ok _, Error message ->
-          Printf.eprintf "windtrap coverage: %s\n" message;
+          Os.say message;
           1
       | Ok color, Ok (files, source_roots) -> (
           if files = [] then begin
-            prerr_string ("windtrap coverage: " ^ no_data);
+            Os.say no_data;
             1
           end
           else

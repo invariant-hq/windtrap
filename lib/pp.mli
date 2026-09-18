@@ -17,8 +17,19 @@
 type 'a t = Format.formatter -> 'a -> unit
 (** The type for printers of values of type ['a]. *)
 
-type style = [ `Bold | `Faint | `Red | `Green | `Yellow | `Cyan | `White ]
-(** The type for ANSI styles understood by {!styled_string}. *)
+type style =
+  [ `Bold
+  | `Faint
+  | `Red
+  | `Green
+  | `Yellow
+  | `Cyan
+  | `White
+  | `Bold_red
+  | `Bold_green ]
+(** The type for ANSI styles understood by {!styled_string}. [`Bold_red] and
+    [`Bold_green] are one style each, styles not nesting: the changed span
+    inside a value. *)
 
 (** {1:output Output} *)
 

@@ -340,7 +340,9 @@ let tests =
               String.equal p path && String.equal candidate path
           | _ -> false);
         let f =
-          F.baseline F.Literal (F.Mismatch { expected = big; actual = "a" })
+          F.baseline
+            (F.Literal { exact = false })
+            (F.Mismatch { expected = big; actual = "a" })
         in
         check "mismatch contents are bounded"
           (match f.F.kind with
@@ -355,10 +357,15 @@ let tests =
           | _ -> false);
         let site = loc_of "test/a.ml" 3 in
         let f =
-          F.baseline ~loc:site F.Literal
+          F.baseline ~loc:site
+            (F.Literal { exact = true })
             (F.Mismatch { expected = "a"; actual = "b" })
         in
-        check "a literal failure carries its site" (f.F.loc = Some site));
+        check "a literal failure carries its site" (f.F.loc = Some site);
+        check "and the verb that read it"
+          (match f.F.kind with
+          | F.Baseline { baseline = F.Literal { exact }; _ } -> exact
+          | _ -> false));
     test "property constructor" (fun () ->
         let inner = F.equality ~expected:"true" ~actual:"false" () in
         let f =
@@ -390,6 +397,21 @@ let tests =
         check "timed_out defaults to None"
           (match f.F.kind with
           | F.Property { timed_out = None; _ } -> true
+          | _ -> false);
+        check "summary defaults to None"
+          (match f.F.kind with
+          | F.Property { summary = None; _ } -> true
+          | _ -> false);
+        check "an explicit summary is stored beside the rendering"
+          (match
+             (F.property ~summary:"2 calls, last: get" ~rendered:" #  call"
+                ~case_index:0 ~shrink_steps:0 ~root:1L ~examples:false ())
+               .F.kind
+           with
+          | F.Property
+              { summary = Some "2 calls, last: get"; rendered = " #  call"; _ }
+            ->
+              true
           | _ -> false);
         let f =
           F.property ~timed_out:0.3 ~rendered:"[]" ~case_index:0 ~shrink_steps:2

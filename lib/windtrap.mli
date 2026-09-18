@@ -807,8 +807,8 @@ val prop :
     - [examples] are explicit inputs run before any generation, unshrunk.
 
     Property tests carry the tag ["prop"] and take no [retries]: they replay
-    deterministically from the root seed. The run header prints the root seed
-    when the suite declares any. *)
+    deterministically from the root seed. A run prints its root seed when its
+    selection holds any. *)
 
 type ('model, 'sut) command
 (** The type for one operation of a system under test: its argument generator,
@@ -1053,7 +1053,10 @@ val run : ?argv:string array -> string -> test list -> int
     the run before anything executes. Under [--corrected] a test whose failures
     are all recorded corrections leaves the exit code alone, and a selection
     that runs none of the suite's tests exits [0] rather than [2]; usage errors
-    stay [2]. See [doc/manual/running-tests.md] for the flags and the report.
+    stay [2]. A [--corrected] run that wrote a correction and returns [1] warns
+    on standard error, after its summary, that dune promotes a correction only
+    from a run that exits [0]. See [doc/manual/running-tests.md] for the flags
+    and the report.
 
     Raises [Invalid_argument] inside an active run. *)
 

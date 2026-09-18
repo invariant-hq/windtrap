@@ -143,9 +143,8 @@ Coverage and packaging:
   `equal ~__POS__ int 5 x` is the whole spelling, and a helper threads it
   through as `?__POS__`. The automatic location comes from the call
   stack (`-g`, dune's default); an assertion in tail position has no
-  frame left, so the report names the test's declaration line and says
-  `(assertion in tail position: its line is unknown; ~__POS__ names it)`.
-  `?here` is gone.
+  frame left, so the report names the test's declaration line, and
+  `~__POS__` on the assertion gives its exact line. `?here` is gone.
 - **Bodies return `unit`.** 0.1 accepted `unit -> 'a` and silently
   dropped the result.
 - **Tags are plain strings** and the `Tag` module is gone. The
@@ -218,19 +217,32 @@ Coverage and packaging:
   excerpt is cut to ten lines and 1 KiB; a found occurrence keeps its
   window), and **`in_order ~subs`** asserts a chain of substrings, naming
   on a break the element, the byte the search had reached, and whether the
-  element was present but too early. **`mem t x xs`** is membership
-  through a witness.
+  element was present but too early. The block reads `needle  "<n>":
+  <verdict>` over `haystack  <excerpt>`, the occurrence bold red in the
+  haystack in color, and marked by a `~` line under its line without.
+  **`mem t x xs`** is membership through a witness.
 - **`raises exn fn`** asserts a structurally equal exception and reports
   a wrong `Invalid_argument`, `Failure` or `Sys_error` message as a
   message diff; **`raises_match pred fn`** takes a predicate, and `Exn`
   holds `invalid_arg`, `failure` and `sys_error`, each with `?substring`.
 - **Failure reports mark what changed**: a unified diff on multi-line
-  renderings, a minimal edit script over code points on short ones, marks
-  on a `~~~` line under the side they belong to in plain output and
-  tinted in place under color. A mark that would cover half a side is
-  dropped and the two values print whole. Green is the expected side and
-  red the actual one on every block that shows both, the unified-diff
-  path included, and the summary counts wear the same colors.
+  renderings, a minimal edit script over code points on short ones. In
+  color the changed span is bold in its side's color inside an otherwise
+  plain value and no `~` line prints (a changed span of spaces, which
+  color cannot show, keeps its `~` line); without color a `~` line marks
+  each side that has a changed span: both for a replacement, `actual` for
+  an insertion, `expected` for a deletion. A mark that would cover half a
+  side is dropped, and each value then prints whole in its side's color;
+  a `~` line that a tab or a wide character would misalign is dropped
+  too. Green is the expected side and red the actual one on every block
+  that shows both, the unified-diff path included, and the summary counts
+  wear the same colors.
+- In a diff, a `-`/`+` pair that differs only in trailing spaces or tabs
+  has a `~` line under the `-` line, which keeps its bytes.
+- A block is bounded: a single-line value over 800 bytes prints its first
+  and last 400 around `… (N bytes elided)` and draws no mark, a backtrace
+  prints ten frames then `… (+N more frames)`, a diff 200 lines then `…
+  (+N more diff lines)`.
 - **Control bytes are shown, not executed**: every compared value renders
   C0 bytes and DEL as `\x1b`, `\x00`, keeping newlines and tabs, so a
   failing assertion on styled output can be read and grepped. Floats
@@ -263,13 +275,13 @@ Coverage and packaging:
   `such_that` (a fixed resample budget of 100), `map`, `bind`, the binding
   operators, and `with_pp`. Printers derive by composition: a composite
   prints exactly when its components do.
-- **A counterexample built with `map` or `bind` prints its pre-image** —
-  the same shape with each printerless result replaced by the input its
-  mapping function received, marked `from …` — down to the nearest
+- **A counterexample built with `map` or `bind` prints its pre-image** — the
+  same shape with each printerless result replaced by the input its mapping
+  function received, marked `computed from …` — down to the nearest
   generator that prints; shrinking walks the same tree, so the pre-image
-  belongs to the shrunk value. A leaf with nothing to print renders the
-  one placeholder `<no printer: attach one with Gen.with_pp>`;
-  `Gen.with_pp` always wins.
+  belongs to the shrunk value. A leaf with nothing to print renders the one
+  placeholder `<no printer: attach one with Gen.with_pp>`; `Gen.with_pp`
+  always wins.
 - **Deterministic seeds.** Every generated value derives from the run's
   root seed, the test's path and the case index; the root prints as an
   `s1:` token in the header of any suite declaring properties, and every
@@ -282,11 +294,20 @@ Coverage and packaging:
   10,000 accepted steps — sized so no ordinary value spends it and a
   replay descends to the same node; there is no knob. A search that stops
   before converging, at the budget or because forcing a candidate raised,
-  says `shrinking stopped after N steps; counterexample may not be
-  minimal`. The per-test timeout (`~timeout`, or `--timeout`) bounds the
-  whole property, generation and shrinking included, and a timeout during
-  shrinking reports the best counterexample so far, marked as possibly not
-  minimal.
+  says so under the counterexample: `shrinking stopped after 10000 steps;
+  counterexample may not be minimal`. The per-test timeout (`~timeout`, or
+  `--timeout`) bounds the whole property, generation and shrinking
+  included, and a timeout during shrinking reports the best counterexample
+  so far over `timed out after 5s while shrinking; counterexample may not
+  be minimal`. A one-line message carries the same fact in its case
+  (`property failed (case 4, shrunk 10000 steps, shrink limit reached):
+  …`, `…, shrinking timed out): …`).
+- The assertion that failed on the counterexample prints under `which
+  failed at:`, over its location and source line, or under `which failed
+  with:` when its line is unknown. A pre-image prints `computed from <p>`
+  over an aside: `(the value has no printer, so this is the input that map
+  and bind computed it from; attach a printer with Gen.with_pp to see the
+  value)`.
 - **`cover label cond` is presence-only** — the property fails unless at
   least one passing case marked the label; `~at_least` and its
   `Invalid_argument`s are gone. `collect` and `classify` print the
@@ -307,11 +328,15 @@ Coverage and packaging:
 - Programs are repaired against the model so an illegal call is removed
   rather than skipped — the program you read is the program that ran —
   and shrink by deleting calls and reducing arguments, never by
-  substituting commands. The counterexample prints one numbered step per
-  line with the model before each, and the failing command's declaration
-  site. A `~pre` or `~next` that raises is reported once, unshrunk, as a
-  specification bug naming the operation, the step and which of the two
-  raised.
+  substituting commands. The counterexample is its summary, `2 calls,
+  last: get`, over a table: a row per call under the header ` #  model
+  before  call`, the model being the one the call ran against and the
+  column absent without `?pp_model` (`… (N calls omitted)` in the middle
+  of a program over 40 calls); then the failing command's declaration
+  site over `call N of M: <name>`. A
+  `~pre` or `~next` that raises is reported once, unshrunk, as a
+  specification bug naming the call, the operation and which of the two
+  raised (`call 3: close, ~pre raised Failure("nth")`).
 
 ### Baselines and expect tests
 
@@ -328,6 +353,18 @@ Coverage and packaging:
   produced text first and the literal last, so a `{|…|}` block reads as a
   block; `equal` stays expected-first. A missing file is a mismatch whose
   correction is the file.
+- A baseline block opens on the verb that checked and how it ended: `expect:
+  mismatch`, `expect_exact: mismatch`, `expect_file "<path>": mismatch` or
+  `expect_file "<path>": no baseline`. A mismatch's correction follows as a
+  diff with no `---`/`+++` head; a missing file's text follows `proposed (N
+  lines):` as `+` lines indented two columns, 20 at most, then `… (+N more
+  lines)`. An `expect_exact` that differs only by a trailing newline, which
+  no line diff shows, says `values differ only by a trailing newline (on the
+  <side> side)`. A path windtrap cannot prove to lie under the project root
+  says so (`expect_file "<path>": the path cannot be proven to lie under the
+  project root`), names the `unverified path:` and the remedy, `(set
+  WINDTRAP_PROJECT_ROOT to the directory the path is relative to)`. Under
+  `-v` the row of a test with a missing file ends `(no baseline)`.
 - **Checking is read-only, and there are two acceptance gestures.** A
   mismatch is reported with its diff and its acceptance command in every
   mode; what the run writes is its mode. Nothing by default. Under
@@ -350,10 +387,16 @@ Coverage and packaging:
   records none in any mode. A mismatch is a checkpoint, not an
   assertion: it is recorded and the call returns, later expectations are
   checked too, and one correcting run records every correction of a body
-  in one pass. The end-of-run report names what was written, one line per
-  file; a file that cannot be written — a literal that no longer decodes
-  to the value the binary was compiled with, an unwritable path — is
-  named with its reason and fails the run.
+  in one pass. A block whose correction was withheld prints no `accept:`,
+  which would promote or rewrite nothing: it ends on `no correction was
+  kept: the test also failed outside its expectations; fix that failure
+  and rerun` (for a test that skipped, `… the test also skipped; skip
+  before the expectation or not at all, and rerun`), with only a
+  property's `replay:` after it.
+  The end-of-run report names what was written, one line per file; a file
+  that cannot be written — a literal that no longer decodes to the value
+  the binary was compiled with, an unwritable path — is named with its
+  reason and fails the run.
 - **`ppx_windtrap` desugars into the library and nothing more.**
   `let%expect_test "n" = body` registers `test "n" (fun () ->
   Expect_test_config.run (fun () -> body))` under a group named after the
@@ -460,26 +503,125 @@ Coverage and packaging:
   emptied exits 0 (still printing its `no tests ran` line), because the
   `diff?` that follows is the verdict and a `WINDTRAP_*` selection spans
   every stanza of the tree; usage errors stay 2 in every mode. `--failed`
-  with nothing recorded refuses the run (exit 2). An empty selection says
-  why (`no tests ran: filter "parsr" matched none of 48 tests`, and `-l`
-  gives the same answer).
-- **The transcript is compact.** A run prints nothing per test; a green,
-  healthy run is exactly one line (`mylib: 48 passed in 1.2s.`, the root
-  seed appended when the suite declares properties). The header (`mylib:
-  N tests`) prints iff there is a block to print: the failure blocks, a
-  `slow tests (n):` block for untagged tests over `--slow-threshold`
+  with nothing recorded refuses the run (exit 2).
+- An empty selection says why, and a typed run says how to list what
+  there is: `mylib: no tests ran: filter "parsr" matched none of 48
+  tests.` then `list: ./t.exe -l`, the one line after an outcome; a build
+  action, which has no launcher to restate, prints `(list the suite's
+  tests with -l)` there. Under `-l` the sentence goes to standard error
+  (`windtrap: no tests ran: … tests.`) and standard output stays empty.
+- **The transcript is compact.** A green, healthy run is exactly one line
+  (`mylib: 48 passed in 1.2s.`). The header (`mylib: N tests`) prints iff
+  something follows it: the failure blocks, a `slow tests (N, over Ts):`
+  section for untagged tests over `--slow-threshold`
   (`WINDTRAP_SLOW_THRESHOLD`; default one second, `0` disables), a `flaky
-  tests (n):` block naming every test that passed on a later `~retries`
-  attempt, the baseline report and the summary. On a terminal an erasable
-  `[k/n] current-test…` tail names the executing test, so a hung test
-  names itself. `-v` streams one status line per test, keeps the
-  slowest-tests list and prints a passing property's label distribution.
-  No run advertises `--failed`; the summary is the last line.
+  tests (N):` section naming every test that passed on a later `~retries`
+  attempt, a `corrections (N):` section, and the summary. On a terminal an
+  erasable `[k/n] current-test…` tail names the executing test, so a hung
+  test names itself. `-v` streams one status line per test and prints a
+  passing property's label distribution. No run advertises `--failed`.
+- A failure block prints when its test finishes, under the header and a
+  58-column `── failures ──` rule, so a run that dies has already printed
+  what it knew; the rule that closes the failures, the other sections and
+  the summary print at the end. One blank line separates two blocks, and two
+  failures of one test. Under `-v` a failed test's status line is its
+  block's title: the block prints under it when the test finishes and closes
+  on a blank line, no failures section repeats it, and a blank line
+  separates the rows from the sections that end the run.
+- The summary is the last line of every run: `4 passed (1 flaky), 1
+  skipped, 1 expected failure, 6 failed (1 subtest failure), 2 not run, 1
+  correction written in 6.5s.`, zero terms omitted. `N not run` counts the
+  selected tests a run stopped by `-x` never reached.
+- A measured duration prints one way everywhere: `0.5ms` below 10 ms,
+  `60ms` below one second, `6.5s` from there. A configured threshold
+  prints as you wrote it (`over 0.01s`).
+- The seed prints iff a selected test is a property: on the header when
+  there is one, on the one line of a green run (`mylib: 48 passed in 60ms
+  (seed s1:…).`), and nowhere when the selection holds no property.
+- A failure's location is the bare `<file:line>`: the assertion's, or the
+  test's for an assertion in tail position, a timeout, an uncaught
+  exception or an `xfail` test that passed. Whenever the file can be read
+  its source line prints under it, without its leading whitespace and
+  with its control bytes escaped as a value's are, then one blank line; a
+  property's inner failure has the line and no blank line. A phase comes first, as the tag `[setup]`, `[teardown]` or
+  `[release]`: `[teardown] test/db.ml:36`, and the tag alone on its line
+  for a failure with no location.
+- A failure block ends on a command line only when the command says what
+  the block does not: `accept:` for a baseline, narrowed to the block
+  (`./t.exe -u -f '<test>'`, or `dune promote <file>` under a build
+  action); `replay:` for a property, which carries the seed. Any other
+  block ends on its facts. A test with several failures prints each
+  distinct command line once, after its captured output.
+- In an `--arm` run every `FAIL` title says `(mutant armed)`, and
+  `replay:` carries `--arm <id>`, so the command line fails for the same
+  reason. No `accept:` prints there: what differs is the mutant's output.
+- An exception failure reads `expected exception  <e>` over `raised  <e>`,
+  or over `but no exception was raised`; an uncaught exception is
+  `uncaught exception:` over the exception, a `raises_match` rejection
+  `raised exception does not satisfy the predicate:` over it, and a wrong
+  message is `raised <Constructor> with the wrong message:` over the two
+  messages as `expected` and `actual`, marked as any two values are.
+- Two unequal values the printer cannot tell apart print once, as `both
+  sides render as: <v>`; a subtest's entry names it on a `subtest   <name>`
+  line under its location.
+- What `-u` or `--corrected` wrote is the `corrections (N):` section above
+  the summary (`wrote <path> (N expectations)`, `accepted <path>`), sorted
+  by path. A file the run could not write is a standard-error line:
+  `windtrap: could not write <path>: <reason>`.
+- The slow section carries its threshold and no advice line, and `-v` no
+  longer prints a slowest-tests list: its status lines carry every
+  duration.
+- A failure block's own words hold no dash and no dot glyph: the runner's
+  messages read `<what>; <what to do>` (`the test called exit and was
+  intercepted; a test must return or raise, never exit the process`), and
+  an unmet `cover` label's row is `<label>  0  never covered`.
+- A `?msg` prints each of its lines inside its block, a skip reason and
+  an `xfail` reason stay in their row, and the control bytes of all three
+  are escaped as a test name's are.
+- **What windtrap says about itself is on standard error behind
+  `windtrap:`**, in the runner, the runtimes and the `windtrap` binary
+  alike (the `windtrap coverage:` and `windtrap mutants:` prefixes are
+  gone), standard output flushed first so a merged log keeps the order. A
+  usage error is that line and the `usage:` line, exit 2: `windtrap:
+  invalid value 'x' for --prop-count: expected a positive integer`; after
+  `windtrap: unknown command 'x'` the binary also lists its commands. A
+  message of several lines is anchored on its first, and one the run
+  survives says so: `windtrap: warning: focus is active: 1 of 2 tests ran;
+  remove the focus before committing`, `windtrap: warning: could not write
+  JUnit report: <reason>`. The words are otherwise unchanged but for the
+  lines an instrumented executable prints about its coverage dump, which
+  name it in the sentence now that the prefix does not (`windtrap:
+  warning: cannot write coverage file <path>: <reason>`).
+- `--help` shows each option as a line with its spellings and its
+  `WINDTRAP_*` mirror (`-f PATTERN, --filter=PATTERN (env
+  WINDTRAP_FILTER)`), then its description indented under it as whole
+  sentences, within 80 columns; the variables with no flag take the same
+  form. `windtrap --help`, `windtrap coverage --help` and `windtrap mutants
+  --help` take it too, open on a name line and list `WINDTRAP_COLOR`, which
+  has no flag there; `windtrap coverage` accepts `--expect=PATH` and
+  `--do-not-expect=PATH` as it did `--min=PCT`.
+- `--stream` replaces capture with pass-through and changes no line of
+  the transcript: a green streamed run is its tests' bytes and the one
+  line, and rows are `-v`'s. The stdout channel, C stdio and descriptor 1
+  are flushed at each boundary, so a failure block follows its test's
+  bytes (a test's standard error is not ordered against it).
+- **SIGINT, SIGTERM and SIGHUP end a run on what it knows**: `windtrap:
+  interrupted in <test>` (or `interrupted while releasing <fixture>`,
+  `interrupted between tests`) on standard error, the summary with `N not
+  run`, the fixtures still held released, then death by the same signal,
+  so the parent sees the signal. A second signal kills at
+  once; a signal the process was started ignoring stays ignored; the
+  handlers are installed only while a run executes. Not on Windows.
 - **Captured output** — each test's stdout and stderr, C stubs and
   subprocesses included — lives at `<log root>/<suite>/<groups…>/<test>.output`,
   the same path on every run, and a failure block ends with its tail and
-  that path. `-o DIR` moves the log root and is resolved once, at
-  startup. `--stream` disables capture.
+  that path: the last ten lines, indented two columns, under `captured
+  output (N lines):`, `captured output (last 10 of N lines):` or `captured
+  output (last 10 lines, B earlier bytes omitted):`, `B` counting every
+  byte before the first line shown, then `full log: <path>` at the
+  heading's column. `-o DIR`
+  moves the log root and is resolved once, at startup. `--stream` disables
+  capture.
 - **The project root and the log root.** The root, which `expect_file`
   paths and `.corrected` files resolve under, is `WINDTRAP_PROJECT_ROOT`
   if set; else the directory above the build directory the process
@@ -497,17 +639,18 @@ Coverage and packaging:
   `<dir>/<lib>_<partition>-<digest>.xml`, whose log directory and
   last-failed store are keyed the same way — so `WINDTRAP_JUNIT=_build/junit
   dune runtest` collects every stanza. The document carries no ANSI and
-  notes a flaky pass in `system-out`. Under GitHub Actions (`CI` and
-  `GITHUB_ACTIONS` set) failures are also emitted as workflow annotations
-  and the transcript sits in a `::group::` block. `NO_COLOR` is honoured
+  notes a flaky pass in `system-out`; a `<failure>` holds the block's lines
+  and its `message` is the failure as one sentence, after the subtest's
+  label and your `?msg` (`contract › shape [0]: expected [1; 2], got [1;
+  3]`, `deliberate: expected 1, got 2`, `uncaught exception: Not_found`,
+  `expected and actual differ (5 diff lines)`, `expect: mismatch`), cut at
+  80 characters. Under GitHub Actions (`CI` and `GITHUB_ACTIONS` set) the
+  transcript sits in a `::group::` block, one `::error` annotation per
+  failure follows its close, titled `Test failure: <path>` and carrying
+  the block's lines, and the summary is still the last line. `NO_COLOR` is honoured
   under `--color auto`; `--color always` still wins, and the reporting
   commands read `WINDTRAP_COLOR` too. Under `CI`, focused tests and `-u`
   refuse to start.
-- `--help` shows each option as a line with its spellings and its
-  `WINDTRAP_*` mirror (`-f PATTERN, --filter=PATTERN (env
-  WINDTRAP_FILTER)`), then its description indented under it as whole
-  sentences, within 80 columns; the variables with no flag take the same
-  form.
 
 ### Coverage
 
@@ -530,8 +673,11 @@ Coverage and packaging:
   per-file percentages and uncovered lines; `--lcov` prints an LCOV
   tracefile for Codecov, Coveralls, GitLab, editor gutters and `genhtml`;
   positional `PATH…` replaces the default search. A dump whose executable
-  was deleted or rebuilt since is excluded with one warning line and one
-  remedy sentence; there is no override. `WINDTRAP_COVERAGE_FILE=path`
+  was deleted or rebuilt since is excluded with a warning line, three such
+  lines at most and then `... and N more like that`, and one remedy
+  sentence; when nothing is left the run says how many files it found,
+  whether they are stale or orphaned, and that the usual cause is a build
+  without the instrumentation flag. There is no override. `WINDTRAP_COVERAGE_FILE=path`
   sends one run's dump to an explicit file, which is also how a build rule
   declares it as a target.
 - **Percentages change meaning.** Coverage is expression-grade with entry
@@ -556,7 +702,11 @@ Coverage and packaging:
   and did not fail. `--mutate=PREFIX,…` keeps to the files whose recorded
   path starts with a prefix (the loop forks per mutant, so the prefixes
   narrow the work); the ordinary selection (`-f`, tags) mutates only what
-  the selected tests reach, reports in full, and writes no verdict file. A
+  the selected tests reach, reports in full, and writes no verdict file,
+  which it says on standard error (`windtrap: verdicts not saved: this
+  run's selection narrows the suite, and a partial run's verdicts would
+  stand in the project merge as the whole.`), the report ending on its
+  `mutants:` line. A
   per-executable run exits 0 whatever it finds. Four operators: `neg`,
   `cmp` (comparisons in a boolean context), `con`, `ari`. Equivalent
   mutants are dismissed in the source with `[@mutate off "reason"]` in the
@@ -581,7 +731,9 @@ Coverage and packaging:
   `WINDTRAP_MUTATE=1 dune runtest --force --instrument-with
   ppx_windtrap.mutate`, then `dune exec windtrap -- mutants`; an alias
   folds them (the manual and `examples/x-blueprint` show `@mutate`). The
-  merge excludes a verdict whose executable was rebuilt since it ran, and
+  merge excludes a verdict whose executable was rebuilt since it ran, on
+  the coverage command's terms (three warning lines at most, the count
+  and the stale/orphaned split when nothing is left), and
   `WINDTRAP_MUTATE_ARM=<id>` in front of the suite command arms one mutant
   across every suite.
 

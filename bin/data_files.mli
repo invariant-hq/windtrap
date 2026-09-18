@@ -10,8 +10,8 @@
     where the runtime puts them, [_build/_coverage] beside a build directory's
     contexts or [_windtrap] in a tree without one. This module locates the
     estate, expands explicit [PATH] arguments and judges each file's freshness
-    from the writer identity it records; each command prints {!describe}'s
-    warning per excluded file and its own remedy sentence. *)
+    from the writer identity it records; each command prints {!warnings} for the
+    files it excludes and its own remedy sentence. *)
 
 val discover :
   Windtrap_runtime.Instr.format ->
@@ -57,3 +57,13 @@ val freshness :
 val describe : path:string -> freshness -> string
 (** [describe ~path f] is the one warning line for an excluded file: the path,
     the recorded executable and why it is excluded. Never call it on [Fresh]. *)
+
+val warnings : (string * freshness) list -> string list
+(** [warnings excluded] is the warning lines for the [excluded] files, each a
+    path and its freshness, none [Fresh]: {!describe}'s line for the first
+    three, then [... and N more like that] when there are more. *)
+
+val all_excluded : ext:string -> freshness list -> string
+(** [all_excluded ~ext excluded] is the line for a merge every file of which was
+    excluded, none [Fresh]: [found N .<ext> files and every one is stale],
+    [orphaned], or [stale or orphaned (K orphaned)]. *)

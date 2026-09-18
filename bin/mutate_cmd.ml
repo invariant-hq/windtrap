@@ -18,9 +18,12 @@ module M = Windtrap_runtime.Mutate
 module V = Windtrap_runtime.Verdicts
 
 let spf = Printf.sprintf
+let usage = "usage: windtrap mutants [PATH...]"
 
-let usage =
-  {|usage: windtrap mutants [PATH...]
+let help =
+  "windtrap mutants - merge .mutants verdict files and report the survivors\n\n"
+  ^ usage
+  ^ {|
 
 Merges the .mutants verdict files written by mutation runs and reports the
 mutants that survived every test executable. Without PATH arguments the files
@@ -33,7 +36,12 @@ Runs no tests and drives no build.
 Exits 1 when any mutant survived every executable that reached it.
 
 OPTIONS:
-  -h, --help  Print this help and exit|}
+  -h, --help
+      Print this help and exit.
+
+ENVIRONMENT (no flag):
+  WINDTRAP_COLOR
+      Color output: always, never or auto.|}
 
 (* The one remedy, spelled once, in words any build tool's user can act
    on: this command does not know how the suite is run, and a spelled-out
@@ -46,9 +54,7 @@ let rerun =
    ppx_windtrap.mutate, forcing the runs your build tool cached), then merge \
    again"
 
-let remedy =
-  rerun
-  ^ "; delete the files named above to drop leftovers of removed executables"
+let remedy = rerun ^ "; delete the files whose executable no longer exists"
 
 (* Flags *)
 
@@ -124,26 +130,24 @@ let load_fresh files =
   in
   match loaded with
   | Error error ->
-      Format.eprintf "windtrap mutants: %a@." V.pp_error error;
+      Os.say (Format.asprintf "%a" V.pp_error error);
       Error 1
   | Ok entries ->
       let entries = List.rev entries in
       let kept, excluded =
         List.partition (fun (_, _, _, f) -> f = Data_files.Fresh) entries
       in
-      (* One line per excluded file — the path, the executable and the
-         reason — then the remedy once, however many there were. *)
-      List.iter
-        (fun (path, _, _, f) ->
-          Printf.eprintf "windtrap mutants: %s\n%!"
-            (Data_files.describe ~path f))
-        excluded;
+      let excluded = List.map (fun (path, _, _, f) -> (path, f)) excluded in
+      List.iter Os.say (Data_files.warnings excluded);
       if kept = [] then
-        Printf.eprintf
-          "windtrap mutants: every .mutants file was excluded, so there is \
-           nothing to report\n\
-           %!";
-      if excluded <> [] then Printf.eprintf "windtrap mutants: %s\n%!" remedy;
+        Os.say
+          (Data_files.all_excluded ~ext:"mutants" (List.map snd excluded)
+          ^ "\n\
+            \  A verdict is written only by a run asked to test its mutants, \
+             and it is\n\
+            \  invalidated by any later build of the executable that wrote it."
+          );
+      if excluded <> [] then Os.say remedy;
       if kept = [] then Error 1
       else
         Ok
@@ -288,10 +292,11 @@ let print_report ~color report =
 let run args =
   match parse_args args with
   | Error `Help ->
-      print_endline usage;
+      print_endline help;
       0
   | Error (`Usage message) ->
-      Printf.eprintf "windtrap mutants: %s\n%s\n" message usage;
+      Os.say message;
+      prerr_endline usage;
       2
   | Ok paths -> (
       (* No --color flag here, so WINDTRAP_COLOR is the whole colour
@@ -299,19 +304,19 @@ let run args =
          the same terms, never read as "auto" out of a typo. *)
       match (Cli.color_mode (), discover paths) with
       | Error error, _ ->
-          Printf.eprintf "windtrap mutants: %s\n" (Cli.error_message error);
+          Os.say (Cli.error_message error);
           2
       | Ok _, Error message ->
-          Printf.eprintf "windtrap mutants: %s\n" message;
+          Os.say message;
           1
       | Ok color, Ok (files, roots) -> (
           if files = [] then begin
-            Printf.eprintf
-              "windtrap mutants: no .mutants files found\n\
+            Os.say
+              "no .mutants files found\n\
                Instrument the library under test with ppx_windtrap.mutate and \
                run every suite with its mutants (--mutate) first; every \
                mutation run writes its verdicts under the build directory's \
-               _mutants or under _windtrap/mutants.\n";
+               _mutants or under _windtrap/mutants.";
             1
           end
           else

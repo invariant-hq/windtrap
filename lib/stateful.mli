@@ -70,22 +70,28 @@ val program :
     re-run at every node; a deep candidate may repeat its parent, but never
     makes a call the drawn program did not.
 
-    The generator always prints: a summary line (["5 calls, last: pop"] or
-    ["(no commands)"]), then one numbered line per step with the command's name
-    and its argument through the argument generator's printer (the placeholder
-    when it has none: an argument is a bare value with no pre-image), preceded
-    by the model before the step when [pp_model] is given. A ["()"] argument is
+    The generator always prints: ["(no commands)"] for the empty program, else a
+    table, the header row [ #  model before  call] over one row per call: its
+    number, the model before the call when [pp_model] is given (no such column
+    otherwise), and the command's name with its argument through the argument
+    generator's printer ([<no printer: attach one with Gen.with_pp>] when it has
+    none: an argument is a bare value with no pre-image). A ["()"] argument is
     omitted; arguments are cut at 200 bytes and model cells at 60 code points; a
-    raising [pp_model] costs its own cell; a program over 40 steps prints its
-    first and last 20 with a ["… (N steps omitted)"] line between.
+    raising [pp_model] costs its own cell; a program over 40 calls prints its
+    first and last 20 with a ["… (N calls omitted)"] line between.
 
     Sampling raises [Invalid_argument] if [commands] is empty or [steps] is
     negative. A [~pre] or [~next] that raises escapes wrapped in an exception
-    naming the operation, step and function
-    ([step 3: close — ~pre raised Failure("nth")]) with the original backtrace:
+    naming the call, the operation and the function
+    ([call 3: close, ~pre raised Failure("nth")]) with the original backtrace:
     at sampling it fails the case, at forcing it stops the shrink search.
     {!Failure.Timeout}, {!Failure.Exit_attempt} and the {!Failure.is_fatal}
     exceptions escape as themselves. *)
+
+val summary : ('model, 'sut) program -> string option
+(** [summary program] is what [program]'s table holds, in one line
+    (["5 calls, last: pop"]), and [None] for the empty program, which prints no
+    table: the {!Failure.kind.Property} [summary] of a failing program. *)
 
 val execute :
   ?loc:Loc.t ->
@@ -107,9 +113,9 @@ val execute :
     carrying the payload the engine would have built for it; the control
     exceptions and the {!Failure.is_fatal} set pass untouched, and what the
     scope raises before the callback, or after it returned from a passing
-    program, propagates unconverted. The failure's [msg] names the step
-    (["step 3 of 5: pop"], ["invariant after step 3 of 5: pop"],
-    ["invariant on the fresh system"]) with a user [?msg] joined onto it, and a
+    program, propagates unconverted. The failure's [msg] names the call
+    (["call 3 of 5: pop"], ["invariant after call 3 of 5: pop"],
+    ["invariant on the fresh system"]) with a user [?msg] after ["; "], and a
     failure with no location takes the command's declaration site. *)
 
 (** {1:declaring Declaring} *)
@@ -130,10 +136,10 @@ val stateful :
 (** [stateful name ~model ~scope commands] declares a property test: every
     generated program over [commands], executed against the system [scope]
     builds, must satisfy every body's assertions and every [?invariant] check.
-    It is {!Run.prop} over {!program} with {!execute} as its law: [timeout],
-    [count] and [--prop-count] behave as on a property; [steps] and [pp_model]
-    are {!program}'s, [scope] and [invariant] {!execute}'s, and [__POS__] fixes
-    the declaration site a scope that never ran the program reports. Tags gain
-    ["prop"] and ["stateful"]. There is no [?examples] and no [?retries]. The
-    test fails at its first sample with [Invalid_argument] if [commands] is
-    empty or [steps] is negative. *)
+    It is {!Run.prop} over {!program} with {!execute} as its law and {!summary}
+    as its summary: [timeout], [count] and [--prop-count] behave as on a
+    property; [steps] and [pp_model] are {!program}'s, [scope] and [invariant]
+    {!execute}'s, and [__POS__] fixes the declaration site a scope that never
+    ran the program reports. Tags gain ["prop"] and ["stateful"]. There is no
+    [?examples] and no [?retries]. The test fails at its first sample with
+    [Invalid_argument] if [commands] is empty or [steps] is negative. *)

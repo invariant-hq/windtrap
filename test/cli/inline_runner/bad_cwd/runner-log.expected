@@ -1,17 +1,17 @@
 bad_cwd: 1 test
-──────────────────── failures (1) ────────────────────
+──────────────────────── failures ────────────────────────
   FAIL  Inline_bad_cwd › stale payload
     test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml:8
     expect: mismatch
     @@ -1,1 +1,1 @@
     - stale payload
     + fresh output
-    accept: dune promote
-    ── captured output (1 line) ──
-    fresh output
+    captured output (1 line):
+      fresh output
     full log: <log>
-──────────────────────────────────────────────────────
+    accept: dune promote test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml
+──────────────────────────────────────────────────────────
 
-1 failed in <duration>s.
-could not write test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml.corrected: <scratch>/test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml: No such file or directory
+1 failed in <duration>.
+windtrap: could not write test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml.corrected: <scratch>/test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml: No such file or directory
 .corrected in scratch cwd: no

@@ -199,7 +199,7 @@ let dump_exe : string option ref = ref None
 let dumped = ref false
 
 let warn fmt =
-  Printf.ksprintf (fun m -> Printf.eprintf "windtrap coverage: %s\n%!" m) fmt
+  Printf.ksprintf (fun m -> Printf.eprintf "windtrap: warning: %s\n%!" m) fmt
 
 (* The identity digests the running executable's bytes (a few
    milliseconds for a typical test binary, off the test path at exit):
@@ -254,7 +254,9 @@ let dump () =
           match target with
           | File path -> (
               try Instr.write_file path data
-              with e -> warn "cannot write %s: %s" path (Printexc.to_string e))
+              with e ->
+                warn "cannot write coverage file %s: %s" path
+                  (Printexc.to_string e))
           | Dir dir -> (
               let prefix =
                 match identity with
@@ -267,7 +269,8 @@ let dump () =
                 ignore
                   (Instr.write_new_file dir ~prefix ~ext:format.Instr.ext data)
               with e ->
-                warn "cannot write under %s: %s" dir (Printexc.to_string e)))
+                warn "cannot write a coverage file under %s: %s" dir
+                  (Printexc.to_string e)))
   end
 
 let resolve_dump_target () =
@@ -287,7 +290,7 @@ let register ~file ~points ~counts =
          registrations carry equal tables. *)
       warn
         "%s: conflicting instrumentation tables in one executable (stale build \
-         artifacts? rebuild from clean); ignoring one module's data"
+         artifacts? rebuild from clean); ignoring one module's coverage data"
         file
   | _ ->
       (match !registrations with
@@ -296,7 +299,8 @@ let register ~file ~points ~counts =
              dump_target := Some (resolve_dump_target ());
              dump_exe := Some (Instr.exe_identity ~exe:Sys.executable_name)
            with e ->
-             warn "cannot determine output file: %s" (Printexc.to_string e));
+             warn "cannot determine the coverage output file: %s"
+               (Printexc.to_string e));
           at_exit dump
       | _ :: _ -> ());
       registrations := (file, points, counts) :: !registrations

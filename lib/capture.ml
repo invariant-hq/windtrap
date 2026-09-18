@@ -20,6 +20,8 @@ type enabled = {
          replaced by the next attempt. *)
   mutable consumed : int;
       (* Byte offset up to which [output] has consumed the current file. *)
+  mutable saved : (Unix.file_descr * Unix.file_descr) option;
+      (* The real descriptors 1 and 2 while an attempt is redirected. *)
 }
 
 type t = Disabled | Enabled of enabled
@@ -31,6 +33,7 @@ let create ~log_dir ~suite () =
       suite = Os.sanitize_component suite;
       current = None;
       consumed = 0;
+      saved = None;
     }
 
 let disabled = Disabled
@@ -46,7 +49,7 @@ external flush_c_stdio : unit -> unit = "ocaml_windtrap_capture_flush_c_stdio"
    channel buffers, and C stdio buffers are independent layers, all three
    must be flushed before the capture file is read or the descriptors are
    switched. *)
-let drain_formatters () =
+let drain () =
   Format.pp_print_flush Format.std_formatter ();
   Format.pp_print_flush Format.err_formatter ();
   flush stdout;
@@ -69,7 +72,7 @@ let output_path e ~groups ~test_name =
    ones — a child that outlives the run must not hold the runner's stdout
    open, or a piped reader (`suite.exe | cat`, dune runtest) waits on it
    after the suite finished (cli/F-5). *)
-let redirect_into fd =
+let redirect_into e fd =
   let old_stdout = Unix.dup ~cloexec:true Unix.stdout in
   let old_stderr =
     try Unix.dup ~cloexec:true Unix.stderr
@@ -77,22 +80,29 @@ let redirect_into fd =
       Unix.close old_stdout;
       raise e
   in
-  (try
-     Unix.dup2 fd Unix.stdout;
-     Unix.dup2 fd Unix.stderr
-   with e ->
-     (* Best effort: the original error is the one worth reporting. *)
-     (try Unix.dup2 old_stdout Unix.stdout with Unix.Unix_error _ -> ());
-     Unix.close old_stdout;
-     Unix.close old_stderr;
-     raise e);
-  (old_stdout, old_stderr)
+  (* Recorded before the switch: [abandon] must find them from the first
+     redirected byte on. *)
+  e.saved <- Some (old_stdout, old_stderr);
+  try
+    Unix.dup2 fd Unix.stdout;
+    Unix.dup2 fd Unix.stderr
+  with exn ->
+    e.saved <- None;
+    (* Best effort: the original error is the one worth reporting. *)
+    (try Unix.dup2 old_stdout Unix.stdout with Unix.Unix_error _ -> ());
+    Unix.close old_stdout;
+    Unix.close old_stderr;
+    raise exn
 
-let restore_from (old_stdout, old_stderr) =
-  Unix.dup2 old_stdout Unix.stdout;
-  Unix.dup2 old_stderr Unix.stderr;
-  Unix.close old_stdout;
-  Unix.close old_stderr
+let restore e =
+  match e.saved with
+  | None -> ()
+  | Some (old_stdout, old_stderr) ->
+      e.saved <- None;
+      Unix.dup2 old_stdout Unix.stdout;
+      Unix.dup2 old_stderr Unix.stderr;
+      Unix.close old_stdout;
+      Unix.close old_stderr
 
 let with_capture t ~groups ~test_name fn =
   match t with
@@ -112,16 +122,14 @@ let with_capture t ~groups ~test_name fn =
       let fd =
         Unix.openfile path Unix.[ O_WRONLY; O_CREAT; O_TRUNC; O_CLOEXEC ] 0o660
       in
-      let saved =
-        (* Output buffered before this attempt belongs to the real streams,
-           not to this test: drain before redirecting. *)
-        try
-          drain_formatters ();
-          redirect_into fd
-        with e ->
-          Unix.close fd;
-          raise e
-      in
+      (* Output buffered before this attempt belongs to the real streams,
+         not to this test: drain before redirecting. *)
+      (try
+         drain ();
+         redirect_into e fd
+       with exn ->
+         Unix.close fd;
+         raise exn);
       e.current <- Some path;
       Fun.protect
         ~finally:(fun () ->
@@ -130,10 +138,16 @@ let with_capture t ~groups ~test_name fn =
              when the drain fails (its error still propagates). *)
           Fun.protect
             ~finally:(fun () ->
-              restore_from saved;
+              restore e;
               Unix.close fd)
-            drain_formatters)
+            drain)
         fn
+
+let abandon = function
+  | Disabled -> ()
+  | Enabled e ->
+      (try drain () with Sys_error _ -> ());
+      restore e
 
 (* Reading captured output *)
 
@@ -152,7 +166,7 @@ let output ?__POS__ t =
         (Failure.Check_failure
            (Failure.message ?loc:(Loc.resolve ?__POS__ ()) stream_error))
   | Enabled e -> (
-      drain_formatters ();
+      drain ();
       match e.current with
       | None -> ""
       | Some path -> (
@@ -190,7 +204,7 @@ let output_tail t =
       match e.current with
       | None -> None
       | Some path ->
-          drain_formatters ();
+          drain ();
           let read ic =
             let len = in_channel_length ic in
             (* Failure.tail owns the report bound; reading exactly that many

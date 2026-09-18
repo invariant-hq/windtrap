@@ -45,6 +45,16 @@ val truncate_bytes_utf8 : int -> string -> string
     byte count, which makes the result longer than [n] bytes. It is
     ["<truncated>"] when [n <= 0]. *)
 
+val elide_middle : int -> show:(string -> string) -> string -> string
+(** [elide_middle n ~show s] is [show s] when [s] is at most [n] bytes long;
+    otherwise [show] of the longest prefix and of the longest suffix of [s] of
+    at most [n / 2] bytes each, both cut on code-point boundaries, around
+    ["… (N bytes elided)"], [N] being the bytes of [s] left out. [show] is how
+    the kept bytes print (an escaping, say): the cut and the count are made in
+    [s], never in what [show] returns.
+
+    Raises [Invalid_argument] if [n] is negative. *)
+
 (** {1:search Search} *)
 
 val first_occurrence : ?start:int -> pattern:string -> string -> int option

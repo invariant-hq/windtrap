@@ -74,7 +74,7 @@ let snap_missing =
 let snap_mismatch =
   Failure.baseline
     ~loc:(loc "test/test_cli.ml" 14)
-    Failure.Literal
+    (Failure.Literal { exact = false })
     (Failure.Mismatch
        {
          expected = "line one\nline two\nline three";

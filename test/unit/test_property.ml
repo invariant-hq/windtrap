@@ -883,8 +883,50 @@ let count_provenance_decides_the_payload () =
     (run_with None = None)
     "the engine default rides nothing: a replay needs no flag to reproduce it"
 
+(* The summary is the declarer's, applied to the value the failure reports:
+   the shrunk counterexample, or the failing example. *)
+let the_summary_is_of_the_reported_counterexample () =
+  let summary_of (failure : Failure.t) =
+    match failure.Failure.kind with
+    | Failure.Property { summary; _ } -> summary
+    | _ -> failf "expected a Property failure kind"
+  in
+  let summary value = if value = 0 then None else Some (Pp.str "n=%d" value) in
+  let body _ value = Check.is_true (value < 10) in
+  let failure, _ =
+    expect_fail
+      (Property.run ~summary ~root ~path:"summary" (Gen.int_range 0 1000) body)
+  in
+  check
+    (summary_of failure = Some "n=10")
+    "the summary is not the shrunk counterexample's: %s"
+    (Option.value (summary_of failure) ~default:"absent");
+  let failure, _ =
+    expect_fail
+      (Property.run ~summary ~examples:[ 50 ] ~root ~path:"summary"
+         (Gen.int_range 0 1000) body)
+  in
+  check
+    (summary_of failure = Some "n=50")
+    "a failing example's summary is %s"
+    (Option.value (summary_of failure) ~default:"absent");
+  let failure, _ =
+    expect_fail
+      (Property.run ~summary ~root ~path:"summary" (Gen.int_range 0 1000)
+         (fun _ _ -> failf "always"))
+  in
+  check
+    (summary_of failure = None)
+    "a value its declarer does not summarize carries a summary";
+  let failure, _ =
+    expect_fail (Property.run ~root ~path:"summary" (Gen.int_range 0 1000) body)
+  in
+  check (summary_of failure = None) "a property declared without one has one"
+
 let suite =
   [
+    ( "the summary is of the reported counterexample",
+      the_summary_is_of_the_reported_counterexample );
     ("same inputs, same outcome", same_inputs_same_outcome);
     ("different path, different stream", different_path_different_stream);
     ("examples run first, in order", examples_run_first_in_order);

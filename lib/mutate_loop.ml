@@ -42,12 +42,7 @@ let in_scope ~scope (m : M.mutant) =
 
 type run = Ran of (Run.outcome, Run.startup_error) result | Reported of int
 
-let note fmt =
-  Printf.ksprintf
-    (fun message ->
-      Format.pp_print_flush Format.std_formatter ();
-      Format.eprintf "windtrap: %s@." message)
-    fmt
+let note fmt = Printf.ksprintf Os.say fmt
 
 let refuse fmt =
   Printf.ksprintf
@@ -122,7 +117,7 @@ let record_reached reach ~path (entry : M.reached) =
 
 let observe reach (event : Run.event) =
   match event with
-  | Run.Run_started _ | Run.Fixture_release _ -> ()
+  | Run.Run_started _ | Run.Fixture_release _ | Run.Interrupted _ -> ()
   | Run.Test_started _ ->
       ignore (M.drain ());
       M.next_epoch ()
@@ -766,7 +761,7 @@ let population ~scope =
           | [] ->
               Error
                 "every mutant this run could test is dismissed by [@mutate \
-                 off] — there is nothing to test"
+                 off]; there is nothing to test"
           | population -> Ok population))
 
 (* The loop, end to end *)
@@ -832,8 +827,14 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                 in
                 print_report renderer ~scope ~filter:config.Run.filter ~verdicts
                   tests;
-                if narrowed then Report.mutation_not_saved renderer;
                 flush_descriptors ();
+                (* Windtrap's own word, so not the report's: a loop run ends
+                   on its [mutants:] line. *)
+                if narrowed then
+                  note
+                    "verdicts not saved: this run's selection narrows the \
+                     suite, and a partial run's verdicts would stand in the \
+                     project merge as the whole.";
                 Reported 0))
 
 (* The ordinary run with one mutant armed. [spec] is the identifier as
@@ -863,7 +864,10 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
          the flag, so an uninstrumented sibling is left with its ordinary
          transcript and one line of stderr. *)
       note "%s" (Format.asprintf "%a" M.pp_arm_error error);
-      Ran (Report.run ~suite config tests)
+      (* Nothing is armed here: the report must not title its failures
+         [(mutant armed)] nor spell [--arm] in their hints. *)
+      Ran
+        (Report.run ~suite { config with Run.mutation = Run.No_mutation } tests)
   | Error error ->
       note "%s" (Format.asprintf "%a" M.pp_arm_error error);
       Reported 1
@@ -873,10 +877,12 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
          purpose, and a run that promoted that output would rewrite the
          source tree from a lie. Baselines need no flag beyond Check: a
          correction is recorded only under Corrected and Update. *)
-      let config = { config with Run.baseline = Baseline.Check } in
-      Report.mutation_armed renderer
-        ~id:(M.id_to_string mutant.M.id)
-        ~before:mutant.M.before ~after:mutant.M.after;
+      let id = M.id_to_string mutant.M.id in
+      let config =
+        { config with Run.baseline = Baseline.Check; mutation = Run.Armed id }
+      in
+      Report.mutation_armed renderer ~id ~before:mutant.M.before
+        ~after:mutant.M.after;
       flush_descriptors ();
       (* After arming, so the closing line counts the run's own
          evaluations and not module initialization's — that window ran
@@ -916,9 +922,7 @@ let execute_and_report ~suite (config : Run.config) tests =
   | Run.Armed spec -> arm_mode (renderer ()) ~spec ~suite config tests
   | Run.Loop scope -> (
       if Sys.win32 then
-        refuse
-          "mutation testing needs Unix.fork, which Windows does not have; the \
-           tests themselves still ran"
+        refuse "mutation testing needs Unix.fork, which Windows does not have"
       else
         try loop (renderer ()) ~scope ~suite config tests
         with Supervision message -> refuse "%s" message)

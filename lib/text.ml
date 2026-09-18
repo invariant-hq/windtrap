@@ -91,6 +91,25 @@ let truncate_bytes_utf8 max_bytes s =
     Printf.sprintf "%s... (truncated; %d bytes total)" (String.sub s 0 cut)
       (String.length s)
 
+(* Each cut moves away from the middle, so neither side passes its half. A
+   UTF-8 sequence has at most three continuation bytes. *)
+let elide_middle max_bytes ~show s =
+  if max_bytes < 0 then invalid_arg "Text.elide_middle: negative bound";
+  let len = String.length s in
+  if len <= max_bytes then show s
+  else
+    let continues i = Char.code s.[i] land 0xC0 = 0x80 in
+    let rec boundary i step steps =
+      if steps = 0 || i <= 0 || i >= len || not (continues i) then i
+      else boundary (i + step) step (steps - 1)
+    in
+    let head = boundary (max_bytes / 2) (-1) 3 in
+    let tail = boundary (len - (max_bytes / 2)) 1 3 in
+    Printf.sprintf "%s\u{2026} (%d bytes elided)%s"
+      (show (String.sub s 0 head))
+      (tail - head)
+      (show (String.sub s tail (len - tail)))
+
 (* Search *)
 
 (* Naive scan: patterns are assertion- and filter-sized. *)

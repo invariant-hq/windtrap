@@ -37,33 +37,41 @@ let program_at gen index = root_value (Gen_engine.sample gen (state index))
 let unit_scope run = run ()
 
 (* The program type is abstract, and the counterexample a user reads is the
-   printer's, so the tests read a program back the same way: a summary line
-   and then one [<cell>  N  name [arg]] row per step. The row's number is
-   the last [N  ] before the step text — a model cell may be a number too. *)
+   printer's, so the tests read a program back the same way: the header row
+   and then one [N  [<cell>]  name [arg]] row per step, the step's text
+   starting at the header's [call] column. *)
 let render gen program = Gen_engine.render_value gen program
 let lines_of gen program = Text.split_lines (render gen program)
 
 let names gen program =
   match lines_of gen program with
   | [] | [ _ ] -> []
-  | _summary :: rows ->
+  | header :: rows ->
+      let start =
+        match Text.first_occurrence ~pattern:"call" header with
+        | Some start -> start
+        | None -> failf "the header row names no call column: %S" header
+      in
       List.mapi
         (fun index row ->
-          let key = string_of_int (index + 1) ^ "  " in
-          let width = String.length key in
-          let rec from position =
-            if position < 0 then
-              failf "row %d of the program does not carry its number: %S"
-                (index + 1) row
-            else if String.sub row position width = key then position + width
-            else from (position - 1)
-          in
-          let start = from (String.length row - width) in
+          if
+            not
+              (String.starts_with
+                 ~prefix:(string_of_int (index + 1) ^ "  ")
+                 (String.trim row))
+          then
+            failf "row %d of the program does not carry its number: %S"
+              (index + 1) row;
           let step = String.sub row start (String.length row - start) in
           match String.index_opt step ' ' with
           | Some space -> String.sub step 0 space
           | None -> step)
         rows
+
+let summary_of program =
+  match Stateful.summary program with
+  | Some summary -> summary
+  | None -> failf "the program has no summary"
 
 let names_at gen index = names gen (program_at gen index)
 
@@ -488,7 +496,7 @@ let a_raising_pre_or_next_is_a_specification_bug () =
         (fun part ->
           check (contains part message) "%s's message %S lacks %S" spelling
             message part)
-        [ "step "; "boom"; spelling ^ " raised"; needle ];
+        [ "call "; "boom, " ^ spelling ^ " raised"; needle ];
       (* Through the engine: the failing case is the drawn one, unshrunk,
          and the inner failure is the wrapped exception. *)
       let outcome =
@@ -657,7 +665,7 @@ let assertions_skips_and_discards_from_pre_are_specification_bugs () =
             (fun part ->
               check (contains part message) "%s from ~pre read %S, lacking %S"
                 label message part)
-            [ "step 1"; "raiser"; "~pre raised"; needle ]
+            [ "call 1: raiser, ~pre raised"; needle ]
       | _ -> failf "%s from ~pre was swallowed" label)
     cases
 
@@ -705,7 +713,7 @@ let control_exceptions_escape_a_body_unconverted () =
                 })))
   in
   check
-    (failure_msg asserted = "step 1 of 1: boom \u{2014} note and more")
+    (failure_msg asserted = "call 1 of 1: boom; note and more")
     "an assertion failure was labelled %S" (failure_msg asserted);
   check
     (asserted.Failure.kind = Failure.Message "nope")
@@ -716,7 +724,7 @@ let control_exceptions_escape_a_body_unconverted () =
         Stateful.execute ~scope:unit_scope (program_of Not_found))
   in
   check
-    (failure_msg narrowed = "step 1 of 1: boom")
+    (failure_msg narrowed = "call 1 of 1: boom")
     "a narrowed exception was labelled %S" (failure_msg narrowed);
   check
     (raised_actual narrowed = "Not_found")
@@ -836,7 +844,7 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
   check
     (failure.Failure.kind
    = Failure.Message
-       "the scope returned without running the program — a scope must call its \
+       "the scope returned without running the program; a scope must call its \
         callback exactly once")
     "a scope that never called back failed with %S"
     (Printexc.to_string (Failure.Check_failure failure));
@@ -1008,7 +1016,7 @@ let a_failing_program_keeps_its_identity_through_the_scope () =
       "%s reported %S" what
       (Printexc.to_string (Failure.Check_failure failure));
     check
-      (failure_msg failure = "step 1 of 1: boom")
+      (failure_msg failure = "call 1 of 1: boom")
       "%s was labelled %S" what (failure_msg failure)
   in
   expect "a transparent scope" unit_scope;
@@ -1086,7 +1094,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
           ~scope:unit_scope program)
   in
   check
-    (failure_msg fresh = "invariant on the fresh system \u{2014} note")
+    (failure_msg fresh = "invariant on the fresh system; note")
     "the fresh-system invariant failure was labelled %S" (failure_msg fresh);
   let visits = ref 0 in
   let after =
@@ -1099,7 +1107,7 @@ let the_invariant_runs_before_step_one_and_after_every_step () =
   in
   check
     (failure_msg after
-    = Pp.str "invariant after step 1 of %d: %s" total (List.hd drawn))
+    = Pp.str "invariant after call 1 of %d: %s" total (List.hd drawn))
     "the post-step invariant failure was labelled %S" (failure_msg after)
 
 (* The narrowing and the propagating set are the executor's, not the body's:
@@ -1134,7 +1142,7 @@ let an_invariant_is_narrowed_and_propagates_like_a_body () =
   in
   check
     (failure_msg after
-    = Pp.str "invariant after step 1 of %d: %s" total (List.hd drawn))
+    = Pp.str "invariant after call 1 of %d: %s" total (List.hd drawn))
     "a raising post-step invariant was labelled %S" (failure_msg after);
   check
     (raised_actual after = "Not_found")
@@ -1181,32 +1189,43 @@ let empty_program_prints_no_commands () =
   check (names gen program = []) "the program was not empty";
   check
     (render gen program = "(no commands)")
-    "the empty program rendered %S" (render gen program)
+    "the empty program rendered %S" (render gen program);
+  check
+    (Stateful.summary program = None)
+    "the empty program, which prints no table, has a summary"
 
-(* The summary comes first, and a step whose argument renders as ["()"] —
-   every [call] — prints as its name alone. *)
+(* The table is a header row over the calls, with no model column when the
+   model has no printer; a step whose argument renders as ["()"] — every
+   [call] — prints as its name alone. The summary is not the table's: it
+   rides the failure beside it. *)
 let unit_arguments_are_suppressed_under_a_summary_line () =
   let gen = Stateful.program ~steps:3 ~model:0 counter_draws in
   let program = program_at gen 0 in
   let drawn = names gen program in
   let expected =
-    Pp.str "3 calls, last: %s" (List.nth drawn 2)
-    :: List.mapi (fun index name -> Pp.str "%d  %s" (index + 1) name) drawn
+    " #  call"
+    :: List.mapi (fun index name -> Pp.str " %d  %s" (index + 1) name) drawn
   in
   check
     (lines_of gen program = expected)
     "a nullary program rendered %S" (render gen program);
+  check
+    (not (contains "model" (render gen program)))
+    "a model without a printer drew a model column: %S" (render gen program);
+  check
+    (summary_of program = Pp.str "3 calls, last: %s" (List.nth drawn 2))
+    "a three-call program's summary was %S" (summary_of program);
   let one = Stateful.program ~steps:1 ~model:0 counter_draws in
   let program = program_at one 0 in
   check
-    (List.hd (lines_of one program)
+    (summary_of program
     = Pp.str "1 call, last: %s" (List.hd (names one program)))
-    "a one-call program's summary was %S"
-    (List.hd (lines_of one program))
+    "a one-call program's summary was %S" (summary_of program)
 
-(* The model column is the state each call was made {e in}: a fold of
+(* The model cell is the state each call was made {e in}: a fold of
    [~next] that stops one transition short, so the initial model is visible
-   and the last row shows a pre-state too. *)
+   and the last row shows a pre-state too. It sits under [model before],
+   between the number and the call, padded to the column. *)
 let the_model_column_shows_the_pre_state () =
   let gen =
     Stateful.program ~steps:12 ~model:0 ~pp_model:Format.pp_print_int
@@ -1226,20 +1245,13 @@ let the_model_column_shows_the_pre_state () =
   in
   check
     (List.exists (fun cell -> String.length cell = 2) cells)
-    "the model never left one digit — the padding is untested: %s"
+    "the model never left one digit — a wide cell is untested: %s"
     (show_names cells);
-  let width =
-    List.fold_left (fun w cell -> max w (String.length cell)) 0 cells
-  in
   let expected =
-    Pp.str "12 calls, last: %s" (List.nth drawn (total - 1))
+    " #  model before  call"
     :: List.mapi
          (fun index (cell, name) ->
-           cell
-           ^ String.make (width - String.length cell) ' '
-           ^ "  "
-           ^ Pp.str "%2d" (index + 1)
-           ^ "  " ^ name)
+           Pp.str "%2d  %-12s  %s" (index + 1) cell name)
          (List.combine cells drawn)
   in
   check
@@ -1259,16 +1271,11 @@ let a_raising_pp_model_costs_one_cell () =
   check (List.length (names gen program) = 6) "the tick program lost calls";
   let marker = "<pp_model raised Not_found>" in
   let cells = [ "0"; "1"; marker; "3"; "4"; "5" ] in
-  let width = String.length marker in
+  (* The marker is the widest cell, 27 columns, and sets the column. *)
   let expected =
-    "6 calls, last: tick"
+    " #  model before                 call"
     :: List.mapi
-         (fun index cell ->
-           cell
-           ^ String.make (width - String.length cell) ' '
-           ^ "  "
-           ^ string_of_int (index + 1)
-           ^ "  tick")
+         (fun index cell -> Pp.str " %d  %-27s  tick" (index + 1) cell)
          cells
   in
   check
@@ -1276,7 +1283,7 @@ let a_raising_pp_model_costs_one_cell () =
     "a raising pp_model rendered:\n%s\nnot:\n%s" (render gen program)
     (String.concat "\n" expected)
 
-(* A model cell is a column, so it is bounded in code points. *)
+(* A model cell is one cell of a row, so it is bounded in code points. *)
 let a_long_model_cell_truncates () =
   let pp_model ppf _ = Format.pp_print_string ppf (String.make 100 'm') in
   let gen = Stateful.program ~steps:2 ~model:0 ~pp_model tick_commands in
@@ -1284,13 +1291,16 @@ let a_long_model_cell_truncates () =
   let expected = String.make 57 'm' ^ "..." in
   check
     (lines_of gen program
-    = [ "2 calls, last: tick"; expected ^ "  1  tick"; expected ^ "  2  tick" ]
-    )
+    = [
+        " #  model before" ^ String.make 48 ' ' ^ "  call";
+        " 1  " ^ expected ^ "  tick";
+        " 2  " ^ expected ^ "  tick";
+      ])
     "a long model cell rendered %S" (render gen program)
 
 (* An argument whose own generator has no printer renders as the one
-   placeholder; the step names and the program shape survive, and the
-   program itself still prints. *)
+   placeholder, remedy included; the call names and the program shape
+   survive, and the program itself still prints. *)
 let a_printerless_argument_degrades_to_a_placeholder () =
   let commands =
     [
@@ -1303,11 +1313,7 @@ let a_printerless_argument_degrades_to_a_placeholder () =
   let program = program_at gen 0 in
   check
     (lines_of gen program
-    = [
-        "2 calls, last: opaque";
-        "1  opaque " ^ placeholder;
-        "2  opaque " ^ placeholder;
-      ])
+    = [ " #  call"; " 1  opaque " ^ placeholder; " 2  opaque " ^ placeholder ])
     "a printerless argument rendered %S" (render gen program)
 
 (* An argument rides the failure payload, so it is bounded in bytes, with a
@@ -1327,8 +1333,7 @@ let a_long_argument_truncates () =
   let expected = String.make 200 'x' ^ "... (truncated; 300 bytes total)" in
   check
     (lines_of gen program
-    = [ "2 calls, last: write"; "1  write " ^ expected; "2  write " ^ expected ]
-    )
+    = [ " #  call"; " 1  write " ^ expected; " 2  write " ^ expected ])
     "a long argument rendered %S" (render gen program)
 
 (* Hard newlines only: a name and a model cell are each flattened to one
@@ -1340,13 +1345,19 @@ let newlines_in_names_and_cells_are_flattened () =
   let program = program_at gen 0 in
   check
     (lines_of gen program
-    = [ "2 calls, last: two lines"; "a b0  1  two lines"; "a b0  2  two lines" ]
-    )
-    "newlines survived the printer: %S" (render gen program)
+    = [
+        " #  model before  call";
+        " 1  a b0          two lines";
+        " 2  a b0          two lines";
+      ])
+    "newlines survived the printer: %S" (render gen program);
+  check
+    (summary_of program = "2 calls, last: two lines")
+    "newlines survived the summary: %S" (summary_of program)
 
-(* A program longer than 40 steps prints its first and last 20 with a
-   step-omitted line between; both columns are measured over the rows that
-   print. *)
+(* A program longer than 40 calls prints its first and last 20 with a
+   calls-omitted line between; the number column is as wide as the last
+   call's number. *)
 let long_programs_truncate_with_a_step_omitted_line () =
   let gen = Stateful.program ~steps:50 ~model:0 counter_draws in
   let program = program_at gen 0 in
@@ -1369,18 +1380,22 @@ let long_programs_truncate_with_a_step_omitted_line () =
     "the unconditioned program made %d of 50 calls" (List.length drawn);
   let row index = Pp.str "%2d  %s" (index + 1) (List.nth drawn index) in
   let expected =
-    (Pp.str "50 calls, last: %s" (List.nth drawn 49) :: List.init 20 row)
-    @ [ "\u{2026} (10 steps omitted)" ]
+    (" #  call" :: List.init 20 row)
+    @ [ "\u{2026} (10 calls omitted)" ]
     @ List.init 20 (fun index -> row (30 + index))
   in
   check
     (lines_of gen program = expected)
     "a 50-step program rendered:\n%s\nnot:\n%s" (render gen program)
-    (String.concat "\n" expected)
+    (String.concat "\n" expected);
+  check
+    (summary_of program = Pp.str "50 calls, last: %s" (List.nth drawn 49))
+    "the summary counts the rows that print, not the calls: %S"
+    (summary_of program)
 
-(* Both columns are measured over the rows that print, so a wide model cell
-   inside the omitted middle indents nothing. *)
-let the_model_column_is_measured_over_the_printed_rows () =
+(* The model column is as wide as the cells that print, so a wide one
+   inside the omitted middle costs the rows that print nothing. *)
+let an_omitted_model_cell_never_prints () =
   let wide = String.make 20 'w' in
   let pp_model ppf model =
     if model = 25 then Format.pp_print_string ppf wide
@@ -1392,17 +1407,10 @@ let the_model_column_is_measured_over_the_printed_rows () =
   check (total = 50) "the tick program made %d of 50 calls" total;
   (* The cell that never prints is the widest one there is: rows 21 to 30
      are omitted, and the model before row 26 is 25. *)
-  let row index =
-    let cell = string_of_int index in
-    cell
-    ^ String.make (2 - String.length cell) ' '
-    ^ "  "
-    ^ Pp.str "%2d" (index + 1)
-    ^ "  tick"
-  in
+  let row index = Pp.str "%2d  %-12d  tick" (index + 1) index in
   let expected =
-    ("50 calls, last: tick" :: List.init 20 row)
-    @ [ "\u{2026} (10 steps omitted)" ]
+    (" #  model before  call" :: List.init 20 row)
+    @ [ "\u{2026} (10 calls omitted)" ]
     @ List.init 20 (fun index -> row (30 + index))
   in
   check
@@ -1410,7 +1418,7 @@ let the_model_column_is_measured_over_the_printed_rows () =
     "the omitted middle's model cell printed after all";
   check
     (lines_of gen program = expected)
-    "a truncated program's model column rendered:\n%s\nnot:\n%s"
+    "a truncated program's model cells rendered:\n%s\nnot:\n%s"
     (render gen program)
     (String.concat "\n" expected)
 
@@ -1712,8 +1720,8 @@ let the_program_generator_always_prints () =
    reader gets. *)
 let a_buggy_system_renders_a_diagnosable_failure () =
   let outcome =
-    Property.run ~count:(`Declared 40) ~root ~path:"bad_queue" (queue_gen ())
-      (fun _ program ->
+    Property.run ~count:(`Declared 40) ~summary:Stateful.summary ~root
+      ~path:"bad_queue" (queue_gen ()) (fun _ program ->
         Stateful.execute ~invariant:queue_invariant
           ~scope:(fun run -> run (Bad_queue.create ()))
           program)
@@ -1726,15 +1734,21 @@ let a_buggy_system_renders_a_diagnosable_failure () =
      element pops correctly, two do not, and the arguments have to differ or
      the wrong element is the right one. *)
   let expected =
-    String.concat "\n"
-      [ "3 calls, last: pop"; "1  push 0"; "2  push 1"; "3  pop" ]
+    String.concat "\n" [ " #  call"; " 1  push 0"; " 2  push 1"; " 3  pop" ]
   in
   check (rendered = expected) "the counterexample rendered:\n%s\nnot:\n%s"
     rendered expected;
+  (match failure.Failure.kind with
+  | Failure.Property { summary; _ } ->
+      check
+        (summary = Some "3 calls, last: pop")
+        "the failure's summary is %s"
+        (Option.value summary ~default:"absent")
+  | _ -> failf "expected a Property failure kind");
   (match inner with
   | Some inner ->
       check
-        (failure_msg inner = "step 3 of 3: pop")
+        (failure_msg inner = "call 3 of 3: pop")
         "the inner failure was labelled %S" (failure_msg inner);
       check
         (inner.Failure.kind
@@ -1747,10 +1761,13 @@ let a_buggy_system_renders_a_diagnosable_failure () =
       check (contains needle block) "the rendered failure lacks %S:\n%s" needle
         block)
     [
-      "counterexample (";
-      "3 calls, last: pop";
-      "which failed at:";
-      "step 3 of 3: pop";
+      "): 3 calls, last: pop\n\
+      \       #  call\n\
+      \       1  push 0\n\
+      \       2  push 1\n\
+      \       3  pop\n\
+      \    which failed at:\n";
+      "      call 3 of 3: pop\n";
       "expected  0";
       "actual    1";
       "replay:";
@@ -1814,10 +1831,9 @@ let suite =
     ("a long argument truncates", a_long_argument_truncates);
     ( "newlines in names and cells are flattened",
       newlines_in_names_and_cells_are_flattened );
-    ( "long programs truncate with a step-omitted line",
+    ( "long programs truncate with a calls-omitted line",
       long_programs_truncate_with_a_step_omitted_line );
-    ( "the model column is measured over the printed rows",
-      the_model_column_is_measured_over_the_printed_rows );
+    ("an omitted model cell never prints", an_omitted_model_cell_never_prints);
     ( "a malformed declaration raises at sample time",
       a_malformed_declaration_raises_at_sample_time );
     ( "stateful declares a prop node with its tags, timeout and site",

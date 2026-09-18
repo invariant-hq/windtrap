@@ -87,8 +87,9 @@ type config = {
       (** [--junit]/[WINDTRAP_JUNIT]: where a JUnit report is also written, a
           file or a directory; [None] for no report. *)
   mutation : mutation;
-      (** [--mutate]/[WINDTRAP_MUTATE] and [--arm]/[WINDTRAP_MUTATE_ARM]. Read
-          by [Mutate_loop] alone; {!for_subset} clears it. *)
+      (** [--mutate]/[WINDTRAP_MUTATE] and [--arm]/[WINDTRAP_MUTATE_ARM]. Acted
+          on by [Mutate_loop] alone; [Report] reads an armed identifier to spell
+          its hints. {!for_subset} clears it. *)
   github : bool;
       (** Whether the report is written for GitHub Actions
           ({!Os.in_github_actions}). *)
@@ -415,6 +416,7 @@ val prop :
   ?count:int ->
   ?max_discard:int ->
   ?examples:'a list ->
+  ?summary:('a -> string option) ->
   string ->
   'a Gen.t ->
   ('a -> unit) ->
@@ -426,10 +428,11 @@ val prop :
     shrinking together: a timeout during the shrink search ends it at the best
     counterexample found. [count] is the generated-case count: the declaration
     wins over [--prop-count], which wins over the engine's [100]. [examples] run
-    first, unshrunk. A counterexample is a {!Failure.Property} failure; an
-    unsatisfied [cover] threshold or an exhausted generation budget fails the
-    test with a message naming the labels or the discard count; every completed
-    engine run records its {!Property.stats} in {!result.prop_stats}. *)
+    first, unshrunk. [summary] is {!Property.run}'s. A counterexample is a
+    {!Failure.Property} failure; an unsatisfied [cover] threshold or an
+    exhausted generation budget fails the test with a message naming the labels
+    or the discard count; every completed engine run records its
+    {!Property.stats} in {!result.prop_stats}. *)
 
 (** {1:events Events} *)
 
@@ -437,15 +440,32 @@ val prop :
     only data already decided, never the live run record, so no observer can
     alter status, counts or scheduling. *)
 type event =
-  | Run_started of { suite : string; total : int; selected : int }
+  | Run_started of {
+      suite : string;
+      total : int;
+      selected : int;
+      properties : bool;
+    }
       (** Startup checks passed; [selected] of the suite's [total] tests are
-          about to run. *)
+          about to run. [properties] is [true] iff a selected test carries
+          {!Test_tree.Tag.prop}: the run's seed decides something. *)
   | Test_started of { path : string list }
       (** The test at [path] is about to run its first attempt. *)
   | Test_finished of result
       (** The test completed and its result was recorded. *)
   | Fixture_release of { name : string }
       (** The fixture identified by [name] is about to release. *)
+  | Interrupted of {
+      running : string list option;
+      releasing : string option;
+      results : result list;
+      duration : float;
+    }
+      (** A signal is ending the run: [running] is the test it stopped, [None]
+          outside a test; [releasing] names the fixture whose release it
+          stopped, as {!Fixture_release} does; [results] are the results
+          recorded so far and [duration] the run's so far. The last event,
+          delivered once; the process dies by the signal after it. *)
 
 (** {1:startup Startup errors} *)
 
@@ -469,8 +489,9 @@ val startup_exit_code : startup_error -> int
     a failed run). *)
 
 val startup_message : startup_error -> string
-(** [startup_message error] is a plain-text explanation of [error] for users.
-    Not stable for programmatic matching. *)
+(** [startup_message error] is a plain-text explanation of [error] for users, to
+    be printed behind [windtrap:] ({!Os.say}). Not stable for programmatic
+    matching. *)
 
 (** {1:executing Executing}
 
@@ -494,7 +515,10 @@ val startup_message : startup_error -> string
     {!Failure.Skip_test} skips the test, {!Failure.Timeout} becomes a failure of
     the phase it interrupted, [Sys.Break]/[Out_of_memory]/[Stack_overflow]
     re-raise after a best-effort fixture release, and any other exception
-    becomes a {!Failure.Raise} failure carrying its backtrace.
+    becomes a {!Failure.Raise} failure carrying its backtrace. A failure the
+    executor makes itself (a timeout, an uncaught exception, an [xfail] test
+    that passed, an intercepted [exit], a misused scope, a property that gave up
+    or missed its coverage) is located at the test's declaration.
 
     {b Scoped tests.} For a {!Test_tree.Scoped} node the body runs inside the
     callback, its failure is recorded before being re-raised through [scope], a
@@ -510,6 +534,24 @@ val startup_message : startup_error -> string
     {!Failure.Exit_attempt}, recorded as a [Message] failure of the phase that
     attempted it. The guard is inert while no run is active, and in a forked
     child.
+
+    {b Signals.} While a run executes, and not on Windows, the executor handles
+    [SIGINT], [SIGTERM] and [SIGHUP], unless the process was started with the
+    signal ignored. On the first of them the three go back to their default
+    disposition, so a second one kills at once. A signal that arrives while a
+    test attempt or a fixture's release runs acts at once; one that arrives in
+    the executor's own code, or an observer's, acts before the next test starts,
+    or at the end of the run. Acting is: the running attempt's capture is
+    abandoned ({!Capture.abandon}); the {!Interrupted} event is delivered; the
+    attempt's scratch directory is removed and the fixtures still held are
+    released best effort, never the one whose release the signal stopped; the
+    body's own teardown, which needs the stack unwound, is not run; then the
+    process sends itself the same signal, so its parent sees a death by signal
+    and no [at_exit] function runs. A run stopped before its last test finished
+    updates no store and writes no correction. The previous handlers are
+    restored when the run ends. A process a test forked inherits the handlers
+    and not the run: a signal kills it as the default disposition would,
+    silently.
 
     {b Retries.} A test with [retries = n] reruns while its outcome counts as
     failed, up to [n + 1] attempts, each a fresh frame and a truncated capture
@@ -538,12 +580,14 @@ val startup_message : startup_error -> string
     {b Corrections.} A baseline check that fails in {!Baseline.Corrected} or
     {!Baseline.Update} mode records a correction. After every attempt the
     executor keeps the attempt's corrections iff every failure of the attempt is
-    a baseline failure and the attempt did not skip ({!Baseline.settle}); an
-    {!Test_tree.xfail} test checks read-only in every mode. After the last test
-    the kept corrections are written once ({!Baseline.write}), before any
-    report. A test whose failures are all kept corrections is recorded as failed
-    but leaves the exit code alone. A correction that could not be written
-    ({!Baseline.refusals}) fails the run.
+    a baseline failure and the attempt did not skip ({!Baseline.settle}); in
+    every mode the baseline failures of an attempt that does not meet the rule
+    are recorded with [withheld] set ({!Failure.with_withheld}), so a report
+    offers no acceptance for them. An {!Test_tree.xfail} test checks read-only
+    in every mode. After the last test the kept corrections are written once
+    ({!Baseline.write}), before any report. A test whose failures are all kept
+    corrections is recorded as failed but leaves the exit code alone. A
+    correction that could not be written ({!Baseline.refusals}) fails the run.
 
     {b The last-failed store} lives at [<log_dir>/<suite>/.last-failed], written
     atomically ({!Os.atomic_write}) after every executing run; its format is

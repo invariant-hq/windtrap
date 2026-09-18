@@ -188,11 +188,16 @@ let summary_line ~ansi ~suite ~failures ~count ~duration =
         Printf.sprintf "%d checks passed, %s" (count - failures)
           (st `Red (Printf.sprintf "%d failed" failures))
     in
-    (* This harness's own duration, not the renderer's: a meta harness
-       imitating windtrap's summary line is not a reason for the library
-       to publish its formatter. Three significant digits, and these runs
-       are never long enough for [%.3g] to reach for an exponent. *)
-    Printf.sprintf "%s: %s in %.3gs." suite counts duration
+    (* This harness's own copy of the renderer's duration format: a meta
+       harness imitating windtrap's summary line is not a reason for the
+       library to publish its formatter. *)
+    let ms = duration *. 1000. in
+    let duration =
+      if Float.round (ms *. 10.) < 100. then Printf.sprintf "%.1fms" ms
+      else if Float.round ms < 1000. then Printf.sprintf "%.0fms" ms
+      else Printf.sprintf "%.1fs" duration
+    in
+    Printf.sprintf "%s: %s in %s." suite counts duration
 
 let finish () =
   let duration = Unix.gettimeofday () -. !started in

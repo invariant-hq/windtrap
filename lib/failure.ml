@@ -5,12 +5,14 @@
 
 type phase = Body | Setup | Teardown | Release
 type tail = { text : string; omitted_bytes : int; log_path : string option }
-type baseline = Literal | File of string
+type baseline = Literal of { exact : bool } | File of string
 
 type baseline_state =
   | Missing of { proposed : string }
   | Mismatch of { expected : string; actual : string }
   | Unresolvable of { candidate : string }
+
+type withheld = Failed_outside | Skipped
 
 type message_diff = {
   constructor : string;
@@ -45,9 +47,14 @@ type kind =
       backtrace : string option;
       message_diff : message_diff option;
     }
-  | Baseline of { baseline : baseline; state : baseline_state }
+  | Baseline of {
+      baseline : baseline;
+      state : baseline_state;
+      withheld : withheld option;
+    }
   | Property of {
       rendered : string;
+      summary : string option;
       case_index : int;
       shrink_steps : int;
       shrink_exhausted : bool;
@@ -61,13 +68,11 @@ type kind =
   | Message of string
 
 and rendering = Value | Pre_image
-and attribution = Recorded | Declaration
 
 and t = {
   kind : kind;
   phase : phase;
   loc : Loc.t option;
-  attribution : attribution;
   msg : string option;
   subtest : string list;
   output_tail : tail option;
@@ -189,7 +194,6 @@ let make ?loc ?msg kind =
     kind;
     phase = Body;
     loc;
-    attribution = Recorded;
     msg = cap_opt msg;
     subtest = [];
     output_tail = None;
@@ -333,14 +337,17 @@ let bound_baseline_state = function
 let baseline ?loc baseline state =
   (* The path is an identity: renderers name the file from it, so it is
      stored unmodified. *)
-  make ?loc (Baseline { baseline; state = bound_baseline_state state })
+  make ?loc
+    (Baseline { baseline; state = bound_baseline_state state; withheld = None })
 
-let property ?loc ?inner ?timed_out ?count ~rendered ~case_index ~shrink_steps
-    ?(shrink_exhausted = false) ~root ~examples ?(rendering = Value) () =
+let property ?loc ?inner ?timed_out ?count ?summary ~rendered ~case_index
+    ~shrink_steps ?(shrink_exhausted = false) ~root ~examples
+    ?(rendering = Value) () =
   make ?loc
     (Property
        {
          rendered = cap rendered;
+         summary = cap_opt summary;
          case_index;
          shrink_steps;
          shrink_exhausted;
@@ -358,6 +365,11 @@ let message ?loc text = make ?loc (Message (cap text))
 
 let with_phase phase t = { t with phase }
 let with_output_tail tail t = { t with output_tail = Some tail }
+
+let with_withheld withheld t =
+  match t.kind with
+  | Baseline b -> { t with kind = Baseline { b with withheld = Some withheld } }
+  | Equality _ | Containment _ | Raise _ | Property _ | Message _ -> t
 
 let tail ?log_path ?(omitted_bytes = 0) text =
   if omitted_bytes < 0 then
