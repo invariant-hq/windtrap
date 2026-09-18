@@ -397,6 +397,12 @@ Coverage and packaging:
   that cannot be written — a literal that no longer decodes to the value
   the binary was compiled with, an unwritable path — is named with its
   reason and fails the run.
+- A test is not retried past an attempt whose corrections were kept: the
+  next attempt would be compared with the text just recorded. Under
+  `--corrected` a test declared with `~retries` whose only failure is a
+  stale expectation runs once, is never listed under `flaky tests`, and
+  ends as it does without `~retries`. Plain checking records nothing and
+  retries as declared.
 - **`ppx_windtrap` desugars into the library and nothing more.**
   `let%expect_test "n" = body` registers `test "n" (fun () ->
   Expect_test_config.run (fun () -> body))` under a group named after the
@@ -568,6 +574,13 @@ Coverage and packaging:
   the summary (`wrote <path> (N expectations)`, `accepted <path>`), sorted
   by path. A file the run could not write is a standard-error line:
   `windtrap: could not write <path>: <reason>`.
+- A `--corrected` run that wrote a correction and exits 1 says, after its
+  summary and on standard error, that `dune promote` has nothing to
+  promote yet: `windtrap: warning: dune registers a correction for
+  promotion only when the run that wrote it exits 0, so the failures above
+  withhold the correction written here. Fix the failures, rerun, then
+  'dune promote'.` A block's `accept: dune promote <file>` prints when its
+  test ends and cannot know what fails later.
 - The slow section carries its threshold and no advice line, and `-v` no
   longer prints a slowest-tests list: its status lines carry every
   duration.

@@ -1030,6 +1030,10 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   let corrected =
     failures <> [] && baseline_only && kept = List.length failures
   in
+  (* A kept correction is permanent, and the next attempt's checks would
+     agree with it: a retry would pass a deterministic test as flaky, or
+     fail it with its correction already kept. *)
+  let final = kept > 0 in
   (* The rule holds in every mode, so a report must not offer an acceptance
      for a baseline failure of an attempt it fails: the failures say so. *)
   let failures =
@@ -1048,7 +1052,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
         | None -> Failure.Pass)
     | failures -> Failure.Fail failures
   in
-  (outcome, !prop_stats, corrected)
+  (outcome, !prop_stats, corrected, final)
 
 (* A failing test's report carries its bounded captured output — the
    final attempt's, attached to the first failure entry. *)
@@ -1110,12 +1114,13 @@ let run_case ~on_event run (case : Test_tree.case) =
         ~path:case.Test_tree.path ~loc:case.Test_tree.loc
     in
     let start = Os.counter () in
-    let outcome, prop_stats, corrected =
+    let outcome, prop_stats, corrected, final =
       run_attempt run frame case ~limit ~groups ~test_name
     in
     let duration = spent +. Os.count_s start in
     let failed = counts_failed ~xfail:case.Test_tree.xfail outcome in
-    if failed && number < total_attempts then attempt (number + 1) duration
+    if failed && (not final) && number < total_attempts then
+      attempt (number + 1) duration
     else
       let outcome =
         (* An xfail test that passed is recorded as a failure with a

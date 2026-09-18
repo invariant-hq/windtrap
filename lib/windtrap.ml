@@ -300,6 +300,21 @@ let run_suite ~suite ~config tests =
               committing"
              (List.length outcome.Run.selected)
              outcome.Run.total);
+      (* A block's [accept:] line is committed when its test ends, before
+         the run knows its exit code; dune reaches the [diff?] that registers
+         a [.corrected] file only after an action that exits 0. *)
+      let written = Baseline.writes (Run.baselines outcome.Run.run) in
+      if
+        config.Run.baseline = Baseline.Corrected
+        && written <> [] && outcome.Run.exit_code = 1
+      then
+        Os.warn
+          (Pp.str
+             "dune registers a correction for promotion only when the run that \
+              wrote it exits 0, so the failures above withhold the \
+              correction%s written here. Fix the failures, rerun, then 'dune \
+              promote'."
+             (if List.length written = 1 then "" else "s"));
       (* A [--corrected] run is a build action's, and a build action's
          selection is a [WINDTRAP_*] variable spanning every stanza and
          partition of the tree: a stanza it empties is not a mistyped

@@ -12,8 +12,8 @@
    things [run] refuses are properties of a suite rather than of a flag —
    a duplicate path and a committed focus — and neither can coexist with
    the tests every other scenario selects from; a flaky test, a noisy
-   failing test, the streamed tests, and a test that fails beside a stale
-   baseline likewise stand alone,
+   failing test, the streamed tests, a test that fails beside a stale
+   baseline and a retried test over a stale baseline likewise stand alone,
    so the transcripts every other session pins stay exactly what they
    are. *)
 
@@ -97,6 +97,14 @@ let masked =
         equal ~msg:"deliberate" int 1 2);
   ]
 
+(* A stale baseline under [~retries]: deterministic, so a second attempt
+   could only agree with what the first one recorded. *)
+let retried =
+  [
+    test ~retries:1 "retried" (fun () ->
+        expect_file "fresh from the fixture\n" "test/cli/retried.expected");
+  ]
+
 let () =
   exit
   @@ run "fixture"
@@ -107,6 +115,7 @@ let () =
        | Some "noisy" -> noisy
        | Some "stream" -> streamed
        | Some "masked" -> masked
+       | Some "retried" -> retried
        | Some ("" | "default") | None -> default
        | Some other ->
            invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other))

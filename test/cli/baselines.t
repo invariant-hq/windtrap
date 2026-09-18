@@ -105,9 +105,89 @@ summary, once, on standard error.
     wrote test/cli/greeting.expected.corrected
   
   1 passed, 2 failed, 1 correction written in DURATION.
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
   $ cat test/cli/greeting.expected.corrected
   hello from the fixture
   $ rm test/cli/greeting.expected.corrected
+  $ run ./suite_main.exe -e math --corrected 2> err | tail -1 | scrub
+  1 passed, 2 failed, 1 correction written in DURATION.
+  $ cat err
+  windtrap: warning: dune registers a correction for promotion only when the run that wrote it exits 0, so the failures above withhold the correction written here. Fix the failures, rerun, then 'dune promote'.
+  $ rm test/cli/greeting.expected.corrected
+
+The warning is for that run alone. A --corrected run whose corrections
+dune will promote (the session above, exit 0) printed none; nor does -u,
+which accepts in place whatever else fails, nor plain checking, which
+writes nothing.
+
+  $ run ./suite_main.exe -e math -u 2> err | tail -1 | scrub
+  2 passed, 1 failed, 1 correction accepted in DURATION.
+  $ cat err
+  $ echo 'stale' > test/cli/greeting.expected
+  $ run ./suite_main.exe -e math 2> err | tail -1 | scrub
+  1 passed, 2 failed in DURATION.
+  $ cat err
+
+A test declared with ~retries whose only failure is a stale baseline runs
+once under --corrected: the correction its first attempt recorded is what
+a second attempt would be compared with, so a retry could only pass, and
+the report would call a deterministic test flaky. The run is the one the
+test has without ~retries.
+
+  $ echo 'stale' > test/cli/retried.expected
+  $ retried() {
+  >   run env FACADE_FIXTURE=retried ./suite_main.exe "$@" > out 2>&1
+  >   echo "[$?]"
+  >   scrub < out
+  > }
+  $ retried --corrected
+  [0]
+  fixture: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  retried
+      test/cli/suite_main.ml:LINE
+      expect_file "test/cli/retried.expected": mismatch
+      @@ -1,1 +1,1 @@
+      - stale
+      + fresh from the fixture
+      accept: dune promote test/cli/retried.expected
+  ──────────────────────────────────────────────────────────
+  
+  corrections (1):
+    wrote test/cli/retried.expected.corrected
+  
+  1 failed, 1 correction written in DURATION.
+  $ rm test/cli/retried.expected.corrected
+
+Plain checking records nothing, so it retries as declared: an output that
+differs from one attempt to the next is what ~retries is for.
+
+  $ retried
+  [1]
+  fixture: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  retried (2 attempts)
+      test/cli/suite_main.ml:LINE
+      expect_file "test/cli/retried.expected": mismatch
+      @@ -1,1 +1,1 @@
+      - stale
+      + fresh from the fixture
+      accept: ./suite_main.exe -u -f 'retried'
+  ──────────────────────────────────────────────────────────
+  
+  1 failed in DURATION.
+
+-u accepts on the first attempt, which passes.
+
+  $ retried -u
+  [0]
+  fixture: 1 test
+  corrections (1):
+    accepted test/cli/retried.expected
+  
+  1 passed, 1 correction accepted in DURATION.
+  $ cat test/cli/retried.expected
+  fresh from the fixture
 
 A stale baseline in a test that also fails another way is never
 corrected: the output was produced beside a failure. The block then

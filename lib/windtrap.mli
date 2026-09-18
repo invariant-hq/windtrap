@@ -929,8 +929,10 @@ val cover : string -> bool -> unit
 
     Without dune, [-u] rewrites the literals and files in place, atomically; it
     is refused under [CI]. A correction is written only for a test whose every
-    failure is a baseline mismatch, and never for a test marked {!xfail}. The
-    [expect] family takes the produced text first and the literal last. *)
+    failure is a baseline mismatch, and never for a test marked {!xfail}. A test
+    is not retried past an attempt whose corrections were kept, whatever its
+    [retries]: the next attempt would be compared with the text just recorded.
+    The [expect] family takes the produced text first and the literal last. *)
 
 val expect : string -> pos * string -> unit
 (** [expect actual @@ __POS_OF__ {|…|}] compares [actual] with the literal

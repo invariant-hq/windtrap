@@ -1541,6 +1541,77 @@ let () =
   check_int "a suite that declares no tests exits 2 under --corrected too"
     ~expected:2 ~actual:code
 
+(* The promotion warning *)
+
+let () =
+  (* dune promotes a correction only from an action that exits 0, so a
+     [--corrected] run that wrote one and returns 1 says so on stderr, once,
+     whatever a block's [accept:] line offered; no other run does. Every
+     scenario has its own baseline file: [-u] leaves one behind. *)
+  with_temp_root @@ fun root ->
+  with_project_root root @@ fun () ->
+  let stale name =
+    let file = name ^ ".expected" in
+    Out_channel.with_open_bin (Filename.concat root file) (fun oc ->
+        output_string oc "old\n");
+    test name (fun () -> expect_file "new\n" file)
+  in
+  let boom = test "boom" (fun () -> equal int 1 2) in
+  let warning ~corrections =
+    "windtrap: warning: dune registers a correction for promotion only when \
+     the run that wrote it exits 0, so the failures above withhold the "
+    ^ corrections
+    ^ " written here. Fix the failures, rerun, then 'dune promote'.\n"
+  in
+  let run argv suite = run_in_process ~argv root "promotion" suite in
+  let last_line out =
+    match List.rev (String.split_on_char '\n' (String.trim out)) with
+    | last :: _ -> last
+    | [] -> ""
+  in
+  let code, out, err = run [ "--corrected" ] [ stale "one"; boom ] in
+  check_int "a correction beside another test's failure: the run returns 1"
+    ~expected:1 ~actual:code;
+  check_contains "its block offered the promotion"
+    ~sub:"    accept: dune promote one.expected\n" out;
+  check_contains "the summary is still the last line of the report"
+    ~sub:"2 failed, 1 correction written in " (last_line out);
+  check_string "and stderr is the one warning"
+    ~expected:(warning ~corrections:"correction")
+    ~actual:err;
+  let code, _, err =
+    run [ "--corrected" ] [ stale "two-a"; stale "two-b"; boom ]
+  in
+  check_int "two corrections beside a failure: the run returns 1" ~expected:1
+    ~actual:code;
+  check_string "the warning agrees in number"
+    ~expected:(warning ~corrections:"corrections")
+    ~actual:err;
+  let code, _, err = run [ "--corrected" ] [ stale "alone" ] in
+  check_int "corrections alone leave the exit code to the diff" ~expected:0
+    ~actual:code;
+  check_string "so dune will promote them, and nothing is said" ~expected:""
+    ~actual:err;
+  let masked =
+    test "masked" (fun () ->
+        expect_file "new\n" "masked.expected";
+        equal int 1 2)
+  in
+  let code, _, err = run [ "--corrected" ] [ masked; boom ] in
+  check_int "failures and no correction written: the run returns 1" ~expected:1
+    ~actual:code;
+  check_string "nothing was written, so nothing is said" ~expected:""
+    ~actual:err;
+  let code, _, err = run [] [ stale "checked"; boom ] in
+  check_int "plain checking returns 1" ~expected:1 ~actual:code;
+  check_string "and says nothing: it writes no correction" ~expected:""
+    ~actual:err;
+  let code, out, err = run [ "-u" ] [ stale "accepted"; boom ] in
+  check_int "-u beside a failure returns 1" ~expected:1 ~actual:code;
+  check_contains "having accepted in place" ~sub:"1 correction accepted in " out;
+  check_string "which no exit code undoes, so nothing is said" ~expected:""
+    ~actual:err
+
 (* Signals *)
 
 (* INT, TERM and HUP end a run on what it knows: one [windtrap:] line

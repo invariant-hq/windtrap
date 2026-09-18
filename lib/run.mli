@@ -555,9 +555,11 @@ val startup_message : startup_error -> string
 
     {b Retries.} A test with [retries = n] reruns while its outcome counts as
     failed, up to [n + 1] attempts, each a fresh frame and a truncated capture
-    file. The recorded result carries the final attempt's failures, with its
-    output tail attached to the first failure entry, and the attempt count.
-    Skips are never retried.
+    file. An attempt that kept a correction ({e Corrections} below) is the last
+    whatever [n]: the next one would be compared with the text it recorded. The
+    recorded result carries the final attempt's failures, with its output tail
+    attached to the first failure entry, and the attempt count. Skips are never
+    retried.
 
     {b Expected failures.} A test marked {!Test_tree.xfail} still runs. An
     expected failure keeps its failures but does not stop the run under [-x],

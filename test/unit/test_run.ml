@@ -3036,6 +3036,121 @@ let () =
     (read_file (Filename.concat root "src/d.expected.corrected") = "one\n");
   clear_env ()
 
+(* A kept correction ends a test's attempts whatever its retries: the next
+   attempt's check would agree with the recorded text, and a deterministic
+   test would pass as flaky, or fail beside a correction already kept.
+   Where nothing is kept (plain checking, a correction dropped beside an
+   assertion) the declared retries run. The literal's source is a real
+   file under the root, so the corrections are written too. *)
+let () =
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let base = base_config ~log_dir:(Filename.concat root "_logs") () in
+  let corrected = { base with Run.baseline = Baseline.Corrected } in
+  let update = { base with Run.baseline = Baseline.Update } in
+  let source = Filename.concat root "t.ml" in
+  let corrected_file = source ^ ".corrected" in
+  let text literal =
+    "let () =\n  expect \"new\" (__POS_OF__ {| " ^ literal ^ " |})\n"
+  in
+  let bodies = ref 0 in
+  (* A fresh stale source, and a test whose attempt number [n] also fails
+     an assertion when [also_fails n]. *)
+  let suite ~retries ~also_fails =
+    bodies := 0;
+    if Sys.file_exists corrected_file then Sys.remove corrected_file;
+    Out_channel.with_open_bin source (fun oc -> output_string oc (text "old"));
+    [
+      Test_tree.test ~retries "stale" (fun () ->
+          incr bodies;
+          Windtrap.expect "new" (("t.ml", 2, 15, 37), " old ");
+          if also_fails !bodies then Check.fail "boom");
+    ]
+  in
+  let never _ = false in
+  let attempts outcome =
+    match result_of outcome [ "stale" ] with
+    | Some r -> r.Run.attempts
+    | None -> 0
+  in
+  let only_the_mismatch outcome =
+    match failure_list (outcome_of outcome [ "stale" ]) with
+    | [ { Failure.kind = Failure.Baseline { withheld = None; _ }; _ } ] -> true
+    | _ -> false
+  in
+  let writes outcome = Baseline.writes (Run.baselines outcome.Run.run) in
+  (* Without retries is the reference: with them the row, the exit code and
+     the write are the same. *)
+  List.iter
+    (fun retries ->
+      let name = Printf.sprintf "corrected, ~retries:%d" retries in
+      expect_run name ~config:corrected (suite ~retries ~also_fails:never)
+      @@ fun outcome ->
+      check_int (name ^ ": the body runs once") ~expected:1 ~actual:!bodies;
+      check_int
+        (name ^ ": one attempt is recorded, so the row is not flaky")
+        ~expected:1 ~actual:(attempts outcome);
+      check
+        (name ^ ": the row is the stale literal's failure, acceptance offered")
+        (only_the_mismatch outcome && failed_paths outcome = [ "stale" ]);
+      check_int
+        (name ^ ": the exit code is left to the diff")
+        ~expected:0 ~actual:outcome.Run.exit_code;
+      check
+        (name ^ ": the correction is written once")
+        (writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ]
+        && read_file corrected_file = text "new"
+        && read_file source = text "old"))
+    [ 0; 2 ];
+  ( expect_run "update, ~retries:2" ~config:update
+      (suite ~retries:2 ~also_fails:never)
+  @@ fun outcome ->
+    check_int "update: the body runs once" ~expected:1 ~actual:!bodies;
+    check "update: one attempt, passed, green"
+      (attempts outcome = 1
+      && outcome_of outcome [ "stale" ] = Some Failure.Pass
+      && outcome.Run.exit_code = 0);
+    check "update: the literal is accepted in place, once"
+      (writes outcome = [ { Baseline.path = source; literals = 1 } ]
+      && read_file source = text "new") );
+  ( expect_run "check, ~retries:2" ~config:base
+      (suite ~retries:2 ~also_fails:never)
+  @@ fun outcome ->
+    check_int "check: nothing is recorded, so every declared attempt runs"
+      ~expected:3 ~actual:!bodies;
+    check "check: three attempts, failed, nothing written"
+      (attempts outcome = 3
+      && only_the_mismatch outcome && outcome.Run.exit_code = 1
+      && writes outcome = []
+      && read_file source = text "old") );
+  ( expect_run "corrected, an assertion fails beside the literal twice"
+      ~config:corrected
+      (suite ~retries:2 ~also_fails:(fun n -> n < 3))
+  @@ fun outcome ->
+    check_int "a dropped correction does not end the attempts" ~expected:3
+      ~actual:!bodies;
+    check "the third attempt's correction is the one kept"
+      (attempts outcome = 3
+      && only_the_mismatch outcome && outcome.Run.exit_code = 0
+      && writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ])
+  );
+  (* The attempt that would fail an assertion beside a correction already
+     kept never runs: the test ends as it does without retries. *)
+  ( expect_run "corrected, a second attempt would fail an assertion"
+      ~config:corrected
+      (suite ~retries:1 ~also_fails:(fun n -> n = 2))
+  @@ fun outcome ->
+    check_int "the attempt after a kept correction never runs" ~expected:1
+      ~actual:!bodies;
+    check
+      "so no correction is written beside a failure outside the expectations"
+      (attempts outcome = 1
+      && only_the_mismatch outcome && outcome.Run.exit_code = 0
+      && writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ])
+  );
+  clear_env ()
+
 (* An expected failure is a failure: an xfail test's stale baseline is the
    mismatch the annotation expects, so its attempt checks read-only in
    every mode — reported, excused, never corrected, never accepted — and
