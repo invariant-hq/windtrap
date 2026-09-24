@@ -1028,7 +1028,7 @@ let refusal_tests =
         equal ~msg:"exit code" int 1 code;
         contains ~msg:"the finding" ~sub:"the suite is not deterministic" err;
         contains ~msg:"the dry run's numbers"
-          ~sub:"the dry run executed 4 test(s), skipping 0 and failing none" err;
+          ~sub:"the dry run executed 4 tests, skipping 0 and failing none" err;
         contains ~msg:"the probe's"
           ~sub:"the probe executed 4, skipping 0 and failing 1" err;
         contains ~msg:"and the test that disagreed, by name"
@@ -1042,9 +1042,9 @@ let refusal_tests =
         equal ~msg:"exit code" int 1 code;
         equal ~msg:"both runs' counts, then why no number follows" text
           "windtrap: the suite is not deterministic: the dry run executed 4 \
-           test(s), skipping 0 and failing none; the probe executed 4, \
-           skipping 1 and failing 0. Mutation results over a non-deterministic \
-           suite are not a weaker number, they are not a number\n"
+           tests, skipping 0 and failing none; the probe executed 4, skipping \
+           1 and failing 0. Mutation results over a non-deterministic suite \
+           are not a weaker number, they are not a number\n"
           err;
         not_contains ~msg:"no number was produced" ~sub:"mutants: " out);
     test "a selection that matched nothing is refused, never scored" (fun () ->

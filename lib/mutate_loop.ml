@@ -638,12 +638,15 @@ let check_determinism ~scratch ~dry_run_wall ~suite ~(config : Run.config)
       indices
   in
   let disagreement executed skipped failed indices =
+    let measured = List.length paths in
     spf
-      "the suite is not deterministic: the dry run executed %d test(s), \
+      "the suite is not deterministic: the dry run executed %d test%s, \
        skipping %d and failing none; the probe executed %d, skipping %d and \
        failing %d%s. Mutation results over a non-deterministic suite are not a \
        weaker number, they are not a number"
-      (List.length paths) reach.skipped executed skipped failed
+      measured
+      (if measured = 1 then "" else "s")
+      reach.skipped executed skipped failed
       (match named indices with
       | [] -> ""
       | names -> " (" ^ String.concat ", " names ^ ")")
