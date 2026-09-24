@@ -14,7 +14,8 @@
    a duplicate path and a committed focus — and neither can coexist with
    the tests every other scenario selects from; a flaky test, a noisy
    failing test, the streamed tests, a test that fails beside a stale
-   baseline, a retried test over a stale baseline, a test that calls
+   baseline, a retried test over a stale baseline, a stale baseline
+   before a passing test, a test that calls
    [exit], a failing property, an expected failure, two fixtures whose
    release fails and a test that waits for a signal likewise stand alone, so the transcripts every
    other session pins stay exactly what they are. *)
@@ -107,6 +108,16 @@ let retried =
         expect_file "fresh from the fixture\n" "test/cli/retried.expected");
   ]
 
+(* A stale baseline, then a test that passes: under [--corrected] the
+   first test's only failure is a kept correction, and [-x] still stops
+   the run on it. *)
+let stops =
+  [
+    test "stale" (fun () ->
+        expect_file "fresh from the fixture\n" "test/cli/stops.expected");
+    test "after" (fun () -> is_true true);
+  ]
+
 (* The second test calls [exit], which must not end the run: the third
    still runs, and fails. *)
 let exits =
@@ -166,6 +177,7 @@ let () =
     | Some "stream" -> (Sys.argv, streamed)
     | Some "masked" -> (Sys.argv, masked)
     | Some "retried" -> (Sys.argv, retried)
+    | Some "stops" -> (Sys.argv, stops)
     | Some "exits" -> (Sys.argv, exits)
     | Some "property" -> (Sys.argv, property)
     | Some "no-argv" -> ([||], property)

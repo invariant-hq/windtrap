@@ -195,6 +195,39 @@ differs from one attempt to the next is what ~retries is for.
   $ cat test/cli/retried.expected
   fresh from the fixture
 
+A kept correction leaves the exit code alone and nothing else: the test
+it belongs to still failed. Under -x it stops the run, so the test after
+it does not run, and the run still exits 0.
+
+  $ echo 'stale' > test/cli/stops.expected
+  $ run env FACADE_FIXTURE=stops ./suite_main.exe --corrected -x > out 2>&1
+  $ scrub < out
+  fixture: 2 tests
+  ──────────────────────── failures ────────────────────────
+    FAIL  stale
+      test/cli/suite_main.ml:LINE
+      expect_file "test/cli/stops.expected": mismatch
+      @@ -1,1 +1,1 @@
+      - stale
+      + fresh from the fixture
+      accept: dune promote test/cli/stops.expected
+  ──────────────────────────────────────────────────────────
+  
+  corrections (1):
+    wrote test/cli/stops.expected.corrected
+  
+  1 failed, 1 not run, 1 correction written in DURATION.
+  $ rm test/cli/stops.expected.corrected
+
+And it enters the record of the last failed tests, which --failed reads:
+the next -l --failed lists the test whose correction was kept, not the
+one that passed.
+
+  $ run env FACADE_FIXTURE=stops ./suite_main.exe --corrected -o store > out 2>&1
+  $ rm test/cli/stops.expected.corrected
+  $ run env FACADE_FIXTURE=stops ./suite_main.exe -l --failed -o store
+  stale
+
 A stale baseline in a test that also fails another way is never
 corrected: the output was produced beside a failure. The block then
 offers no acceptance, which would promote or rewrite nothing, and ends
