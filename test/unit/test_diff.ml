@@ -120,17 +120,16 @@ let edit_distance ~with_sub equal a b =
   done;
   grid.(na).(nb)
 
-(* Deterministic pseudo-random stream for the randomized law sweeps. *)
-let seed = ref 42
-
-let rand n =
-  seed := ((!seed * 1103515245) + 12345) land 0x3FFFFFFF;
-  !seed mod n
-
-let random_lines max_len alphabet =
-  List.init
-    (rand (max_len + 1))
-    (fun _ -> List.nth alphabet (rand (List.length alphabet)))
+(* The randomized sweeps draw their cases from [Gen], so a case depends on
+   the test's own seed and path, never on which tests ran before it, and a
+   failure shrinks and prints its replay. [near_copy g xs] replaces each
+   element of [xs] by a draw of [g] one time in five. *)
+let near_copy g xs =
+  Gen.map
+    (List.map2 (fun x edit -> Option.value edit ~default:x) xs)
+    (Gen.list
+       ~size:(Gen.constant (List.length xs))
+       (Gen.frequency [ (4, Gen.constant None); (1, Gen.map Option.some g) ]))
 
 (* Refinement helpers *)
 
@@ -277,51 +276,51 @@ let hunk_tests =
           (apply_hunks (split_lines expected) hs = split_lines actual);
         is_true ~msg:"edit cap: ordering holds"
           (List.for_all (fun h -> changes_ordered_ok h.Diff.lines) hs));
-    test "randomized hunk laws (300 cases)" (fun () ->
-        let alphabet = [ "a"; "b"; "c" ] in
-        for _ = 1 to 300 do
-          let e_lines = random_lines 10 alphabet in
-          let a_lines =
-            if rand 2 = 0 then random_lines 10 alphabet
-            else
-              (* near copy: mutate up to two lines *)
-              List.map
-                (fun s -> if rand 5 = 0 then List.nth alphabet (rand 3) else s)
-                e_lines
-          in
-          let expected = text_of_lines e_lines
-          and actual = text_of_lines a_lines in
-          let context = rand 4 in
-          let hs = Diff.hunks ~context ~expected ~actual () in
-          let flag name cond =
-            if not cond then
-              failf "%s\n  expected: %S\n  actual:   %S" name expected actual
-          in
-          flag "empty iff equal" (hs = [] = (e_lines = a_lines));
-          flag "invariants" (List.for_all hunk_invariants_ok hs);
-          flag "ordering"
-            (List.for_all (fun h -> changes_ordered_ok h.Diff.lines) hs);
-          flag "patch"
-            (match apply_hunks e_lines hs with
-            | reconstructed -> reconstructed = a_lines
-            | exception Bad_patch _ -> false);
-          (* Inputs are far below the guards, so the script must be minimal:
+    (let line = Gen.of_list [ "a"; "b"; "c" ] in
+     let lines = Gen.list ~size:(Gen.int_range 0 10) line in
+     let case =
+       Gen.with_pp
+         (fun ppf (e, a, context) ->
+           Format.fprintf ppf "expected %S, actual %S, context %d"
+             (text_of_lines e) (text_of_lines a) context)
+         (let open Gen in
+          let* e_lines = lines in
+          let+ a_lines = one_of [ lines; near_copy line e_lines ]
+          and+ context = int_range 0 3 in
+          (e_lines, a_lines, context))
+     in
+     prop "randomized hunk laws" ~count:300 case
+       (fun (e_lines, a_lines, context) ->
+         let expected = text_of_lines e_lines
+         and actual = text_of_lines a_lines in
+         let hs = Diff.hunks ~context ~expected ~actual () in
+         let flag name cond =
+           if not cond then
+             failf "%s\n  expected: %S\n  actual:   %S" name expected actual
+         in
+         flag "empty iff equal" (hs = [] = (e_lines = a_lines));
+         flag "invariants" (List.for_all hunk_invariants_ok hs);
+         flag "ordering"
+           (List.for_all (fun h -> changes_ordered_ok h.Diff.lines) hs);
+         flag "patch"
+           (match apply_hunks e_lines hs with
+           | reconstructed -> reconstructed = a_lines
+           | exception Bad_patch _ -> false);
+         (* Inputs are far below the guards, so the script must be minimal:
              exactly as many changed lines as the insert/delete edit
              distance. *)
-          let changes =
-            List.fold_left
-              (fun n h ->
-                n
-                + count_lines
-                    (function
-                      | Diff.Delete _ | Diff.Insert _ -> true | _ -> false)
-                    h.Diff.lines)
-              0 hs
-          in
-          flag "minimality"
-            (changes
-            = edit_distance ~with_sub:false String.equal e_lines a_lines)
-        done);
+         let changes =
+           List.fold_left
+             (fun n h ->
+               n
+               + count_lines
+                   (function
+                     | Diff.Delete _ | Diff.Insert _ -> true | _ -> false)
+                   h.Diff.lines)
+             0 hs
+         in
+         flag "minimality"
+           (changes = edit_distance ~with_sub:false String.equal e_lines a_lines)));
   ]
 
 let refine_tests =
@@ -426,31 +425,33 @@ let refine_tests =
                         e a re ra d)
               strings)
           strings);
-    test "refinement: UTF-8 span safety (randomized, 300 cases)" (fun () ->
-        let some_count = ref 0 in
-        for _ = 1 to 300 do
-          let base = List.init (3 + rand 8) (fun _ -> utf8_alphabet.(rand 4)) in
-          let mutated =
-            List.map
-              (fun s -> if rand 4 = 0 then utf8_alphabet.(rand 4) else s)
-              base
-          in
-          let expected = String.concat "" base in
-          let actual = String.concat "" mutated in
-          match Diff.refine ~expected ~actual with
-          | None -> ()
-          | Some r ->
-              incr some_count;
-              if
-                not
-                  (spans_ok expected r.Diff.expected_spans
-                  && spans_ok actual r.Diff.actual_spans)
-              then
-                failf "bad spans\n  expected: %S\n  actual:   %S" expected
-                  actual
-        done;
-        is_true ~msg:"randomized refine exercised the Some path"
-          (!some_count > 50));
+    (let code_point = Gen.of_list (Array.to_list utf8_alphabet) in
+     let case =
+       Gen.with_pp
+         (fun ppf (e, a) ->
+           Format.fprintf ppf "expected %S, actual %S" (String.concat "" e)
+             (String.concat "" a))
+         (let open Gen in
+          let* base = list ~size:(int_range 3 10) code_point in
+          let+ mutated = near_copy code_point base in
+          (base, mutated))
+     in
+     prop "refinement: UTF-8 span safety (randomized)" ~count:300 case
+       (fun (base, mutated) ->
+         let expected = String.concat "" base in
+         let actual = String.concat "" mutated in
+         let refined = Diff.refine ~expected ~actual in
+         (* A sweep that never refines proves nothing about the spans. *)
+         cover "refine returned spans" (Option.is_some refined);
+         match refined with
+         | None -> ()
+         | Some r ->
+             if
+               not
+                 (spans_ok expected r.Diff.expected_spans
+                 && spans_ok actual r.Diff.actual_spans)
+             then
+               failf "bad spans\n  expected: %S\n  actual:   %S" expected actual));
   ]
 
 (* Refinement's allocation per grid cell.
