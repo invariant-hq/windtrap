@@ -56,7 +56,7 @@ mylib: 12 tests (seed s1:7be1d2c904aa31f5)
   PASS  slow › hash                                3.0s
   SKIP  platform › windows paths (unix only)
   PASS  math › multiplication                      42ms
-  FAIL  fixture release                            0.0ms
+  FAIL  fixture release
     [release] test/test_db.ml:3
     fixture (test/test_db.ml:3): release raised Failure("pool leaked")
 

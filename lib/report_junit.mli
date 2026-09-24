@@ -21,8 +21,7 @@
     the rows. Its [name] is the full path of the row
     ({!Test_tree.path_to_string}). Its [classname] is the suite's name followed
     by the names of the test's groups, all joined by [.], and a dot inside a
-    name is not escaped. Its [time] is the row's [duration]. The row of a
-    fixture release is a testcase like any other.
+    name is not escaped. Its [time] is the row's [duration].
     - A pass is an empty [testcase]. A pass on a retry, which is a [Pass] row
       with [attempts > 1], holds a [system-out] whose text is
       [passed on attempt N].
@@ -47,6 +46,11 @@
     keeps the other failures and the captured tail, and it holds no [failure]
     when every failure is a subtest's.
 
+    {b Fixture releases.} After the testcases of the rows, each failed release
+    is one [testcase] named {!Report_sections.release_title}, with the suite as
+    its [classname], [time="0.000"] because a release is not timed, and its one
+    [failure], written as that of a test.
+
     {b Expected failures.} A [Fail] row whose [counted] is [false] is a
     [testcase] that holds a [skipped] element, whose [message] is
     [expected failure: <reason>], or [expected failure] when [xfail] gives no
@@ -55,10 +59,10 @@
     {b Counts.} [tests], [failures] and [skipped] count the testcases of the
     document and not the rows. Each subtest failure adds one to [tests] and one
     to [failures]. A counted failing row adds one to [failures] iff the test has
-    a failure of its own, however many [failure] elements that makes. A skip and
-    an expected failure each add one to [skipped]. [errors] is always [0], and
-    no [error] element is ever written, because every kind of failure is a JUnit
-    failure.
+    a failure of its own, however many [failure] elements that makes. A failed
+    release adds one to [tests] and one to [failures]. A skip and an expected
+    failure each add one to [skipped]. [errors] is always [0], and no [error]
+    element is ever written, because every kind of failure is a JUnit failure.
 
     {b Validity.} Every string that the rows supply is first stripped of its
     escape sequences ({!Text.strip_ansi}). It is then reduced to the [Char]
@@ -79,11 +83,13 @@ val write :
   suite:string ->
   duration:float ->
   results:Run.result list ->
+  release_failures:Failure.t list ->
   string ->
   unit
-(** [write ~invocation ?armed ~suite ~duration ~results target] writes the
-    {{!section-document}document} of [results] to the file that [target], the
-    value of [--junit], names for [suite].
+(** [write ~invocation ?armed ~suite ~duration ~results ~release_failures
+     target] writes the {{!section-document}document} of [results] and
+    [release_failures] to the file that [target], the value of [--junit], names
+    for [suite].
     - A [target] that ends in [.xml] is that file, as given. The test is that of
       [Filename.check_suffix], on the name alone. Every suite that reads the
       same value writes the same file, and the last one wins.
@@ -105,7 +111,7 @@ val write :
 (**/**)
 
 (* The two halves of [write], exported for the unit suite. [render ?invocation
-   ?armed ~suite ~results ~duration ()] is the document that [write] writes, as
+   ?armed ~suite ~results ~release_failures ~duration ()] is the document that [write] writes, as
    a string, from its XML declaration to a final newline. [invocation] defaults
    to [`Mirrors]. It opens no file and writes nothing. [path ~suite target] is
    the file that [write] writes to for [target], and it reads no file system. *)
@@ -115,6 +121,7 @@ val render :
   ?armed:string ->
   suite:string ->
   results:Run.result list ->
+  release_failures:Failure.t list ->
   duration:float ->
   unit ->
   string

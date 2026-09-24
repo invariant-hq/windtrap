@@ -247,6 +247,8 @@ let source_line file n =
             in
             skip (n - 1))
 
+let release_title = "fixture release"
+
 (* Terminal surfaces print user-controlled names (test paths, suite names,
    fixture names) verbatim; a raw newline or control byte in one corrupts
    the layout — it splits the FAIL header, and the live tail's line-wise

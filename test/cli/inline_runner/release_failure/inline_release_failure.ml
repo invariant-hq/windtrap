@@ -1,11 +1,11 @@
 (* A fixture whose release raises, touched by a test that PASSES.
 
-   Releases run after the last test; the runner records the failure as a
-   result row the moment it happens (one result model), and every sink
-   projects the one recorded list. An inline runner that dropped the row
+   Releases run after the last test; the runner carries the failure on
+   the outcome, and every sink of a finished run takes it as a required
+   argument, so no sink can forget it. An inline runner that dropped it
    would print a clean transcript and still exit 1, which is the defect
-   the recorded row exists to close (guarantee 4: a release failure is a
-   row every sink projects). The library runner's end of this is pinned in
+   this suite exists to catch.
+   The library runner's end of this is pinned in
    test/unit/test_windtrap.ml; this is the inline runner's. *)
 
 let leaky =

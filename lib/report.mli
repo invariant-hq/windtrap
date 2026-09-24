@@ -138,8 +138,7 @@ val result : t -> Run.result -> unit
       {!type:Failure.tail}: its last {!Report_sections.max_lines} lines, under a
       heading that counts the lines and the bytes left out, then the path of the
       full log when the capture wrote one.
-    - {!Report_sections.hints} for the whole test, without a filter for a
-      fixture release.
+    - {!Report_sections.hints} for the whole test.
 
     [result] reads the record, [r.outcome] and [r.counted], and never a message.
 *)
@@ -188,18 +187,21 @@ val empty_selection_reason :
 val finish :
   t ->
   results:Run.result list ->
+  release_failures:Failure.t list ->
   duration:float ->
   ?baselines:Baseline.t ->
   ?before_summary:(unit -> unit) ->
   unit ->
   unit
-(** [finish t ~results ~duration ()] ends the transcript, in a compact and in a
-    [config.verbose] run alike. It commits, in this order:
+(** [finish t ~results ~release_failures ~duration ()] ends the transcript, in a
+    compact and in a [config.verbose] run alike. It commits, in this order:
     - the failure blocks that {!result} did not commit. [results] must extend,
       in order, the results that {!result} was given, because [finish] skips as
-      many of its first counted failures as [t] committed blocks. The others are
-      the rows that the executor records after the last test without an event,
-      which are the failed releases of fixtures.
+      many of its first counted failures as [t] committed blocks.
+    - one block for each of [release_failures], titled
+      {!Report_sections.release_title} with no qualifier but the mark of the
+      armed mutant and no duration, then its {!Report_sections.pp_failure} entry
+      with its source line.
     - in a compact run that committed a block, the rule that closes the
       failures.
     - the sections that have rows: slow tests, flaky tests, corrections. A
@@ -232,7 +234,7 @@ val finish :
     omitted, and [duration] closes the line. A flaky test counts as passed, an
     excused result as an expected failure only, and a failed fixture release as
     failed although it is no test. The tests not run are the [tests] of
-    {!header} less the test rows of [results], never below [0]. Subtest failures
+    {!header} less the length of [results], never below [0]. Subtest failures
     are the entries of counted failures for which {!is_subtest_failure} holds,
     and corrections count files.
 
@@ -255,8 +257,9 @@ val interrupted :
     that a signal is stopping. It first says on standard error ({!Os.say}) what
     the signal interrupted: the test at [running], or when [running] is [None]
     the release of the fixture [releasing], or else the gap between two tests.
-    It then calls {!finish} over [results], with [before_summary] and without
-    [baselines]. *)
+    It then calls {!finish} over [results], with [before_summary], without
+    [baselines] and with no failed release, since a signal stops the release
+    before it returns any failure. *)
 
 val refusals : Baseline.t -> string list
 (** [refusals baselines] is one sentence per file that the run could not write,
@@ -297,10 +300,16 @@ val annotation :
     to [`Mirrors]. *)
 
 val annotations :
-  ?invocation:Run.invocation -> ?armed:string -> Run.result list -> string
-(** [annotations results] is the {!annotation} of every failure of every counted
-    failed result of [results] ([r.counted]), in order, concatenated, and [""]
-    when there is none. *)
+  ?invocation:Run.invocation ->
+  ?armed:string ->
+  release_failures:Failure.t list ->
+  Run.result list ->
+  string
+(** [annotations ~release_failures results] is the {!annotation} of every
+    failure of every counted failed result of [results] ([r.counted]), in order,
+    then that of each of [release_failures], at the path
+    [[Report_sections.release_title]], concatenated. It is [""] when there is
+    none. *)
 
 (** {1:mutation Mutation lines}
 
@@ -415,8 +424,9 @@ val run :
     + It executes the run with {!observe} as its observer, over [config.seed]
       and [selection_description config].
     + For a run that the executor did not refuse, it calls {!finish} over
-      {!val:Run.results} and {!val:Run.baselines}. The [before_summary] closes
-      the envelope and then writes the {!val:annotations}.
+      {!val:Run.results}, [outcome.release_failures] and {!val:Run.baselines}.
+      The [before_summary] closes the envelope and then writes the
+      {!val:annotations}.
     + It says the {!refusals} on standard error, then writes the JUnit file with
       {!Report_junit.write} when [config.junit] is set.
     + It flushes both standard formatters and returns [Ok] of the executor's

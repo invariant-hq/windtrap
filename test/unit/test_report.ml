@@ -86,11 +86,9 @@ let sections ?(ansi = false) l =
   Buffer.contents buf
 
 (* As the executor drives it: each test row through [begin_test] and
-   [result], the release row only in [finish]. *)
+   [result], the failed release only in [finish]. *)
 let transcript ?ansi ?mode ?live ?invocation ?(seed = Some Fixtures.root) () =
-  let tests =
-    List.filter (fun (r : Run.result) -> r.subject = Run.Test) Fixtures.results
-  in
+  let tests = Fixtures.results in
   with_renderer ?ansi ?mode ?live ?invocation (fun r ->
       Report.header r ~suite:"mylib" ~tests:(List.length tests) ~seed ();
       List.iter
@@ -98,7 +96,9 @@ let transcript ?ansi ?mode ?live ?invocation ?(seed = Some Fixtures.root) () =
           Report.begin_test r ~path:res.path;
           Report.result r res)
         tests;
-      Report.finish r ~results:Fixtures.results ~duration:Fixtures.duration ())
+      Report.finish r ~results:tests
+        ~release_failures:[ Fixtures.release_failure ]
+        ~duration:Fixtures.duration ())
 
 let failure_block ?(ansi = false) ?excerpt ?filter ?invocation ?armed f =
   let buf = Buffer.create 256 in
@@ -255,7 +255,9 @@ let test_ansi () =
      gets its own run. *)
   let x =
     with_renderer ~ansi:true (fun r ->
-        Report.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[]
+          ~results:[ Fixtures.excused_result ]
+          ~duration:0.1 ())
   in
   contains ~msg:"ansi: summary excused count is faint"
     ~sub:"\027[2m1 expected failure\027[0m" x;
@@ -413,7 +415,7 @@ let test_duration_forms () =
   in
   let summary duration =
     with_renderer (fun r ->
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
           ~duration ())
   in
@@ -485,7 +487,7 @@ let test_stream_shape () =
     in
     Report.header r ~suite:"s" ~tests:(List.length results) ~seed:None ();
     List.iter (Report.result r) results;
-    Report.finish r ~results ~duration:0.5 ();
+    Report.finish r ~release_failures:[] ~results ~duration:0.5 ();
     Format.pp_print_flush ppf ();
     Buffer.contents buf
   in
@@ -578,14 +580,15 @@ let test_no_tests () =
   (* No header, so no selection and no declared count: nothing to say
      beyond the fact. *)
   let t =
-    with_renderer (fun r -> Report.finish r ~results:[] ~duration:0.01 ())
+    with_renderer (fun r ->
+        Report.finish r ~release_failures:[] ~results:[] ~duration:0.01 ())
   in
   equal ~msg:"finish: empty run" string "no tests ran.\n" t;
   (* A suite that declares nothing is not a mistyped filter. *)
   let declares_none =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
-        Report.finish r ~results:[] ~duration:0.01 ())
+        Report.finish r ~release_failures:[] ~results:[] ~duration:0.01 ())
   in
   equal ~msg:"empty suite names itself as the cause" string
     "mylib: no tests ran: the suite declares none.\n" declares_none;
@@ -597,7 +600,7 @@ let test_no_tests () =
     with_renderer ~invocation (fun r ->
         Report.header r ~suite:"mylib" ~tests:0 ~declared:48
           ~selection:{|filter "parsr"|} ~seed:None ();
-        Report.finish r ~results:[] ~duration:0.01 ())
+        Report.finish r ~release_failures:[] ~results:[] ~duration:0.01 ())
   in
   equal ~msg:"empty selection names the selection, the total and the way out"
     string
@@ -612,12 +615,12 @@ let test_no_tests () =
     "mylib: no tests ran: the suite declares none.\n"
     (with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
          Report.header r ~suite:"mylib" ~tests:0 ~declared:0 ~seed:None ();
-         Report.finish r ~results:[] ~duration:0.01 ()));
+         Report.finish r ~release_failures:[] ~results:[] ~duration:0.01 ()));
   let singular =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:0 ~declared:1
           ~selection:"tag \"slow\"" ~seed:None ();
-        Report.finish r ~results:[] ~duration:0.01 ())
+        Report.finish r ~release_failures:[] ~results:[] ~duration:0.01 ())
   in
   contains ~msg:"one declared test is not \"1 tests\""
     ~sub:"matched none of 1 test." singular
@@ -679,29 +682,21 @@ let test_compact_commits_blocks () =
     (occurrences_of ~sub:failures_rule (committed ()) = 1);
   not_contains ~msg:"the closing rule is the end of the run's, not a block's"
     ~sub:closing_rule (committed ());
-  (* The executor records a fixture release that raised after the last
-     test, with no event: its block is what [finish] still owes. *)
+  (* A fixture release that raised reaches [finish] alone, after the last
+     test and with no event. *)
   let release =
-    {
-      (Fixtures.result Run.fixture_release_path
-         (Failure.Fail
-            [
-              Failure.with_phase Failure.Release
-                (Failure.message
-                   ~loc:(Fixtures.loc "test/t.ml" 4)
-                   "db: release raised Exit");
-            ]))
-      with
-      Run.subject = Run.Fixture_release;
-    }
+    Failure.with_phase Failure.Release
+      (Failure.message
+         ~loc:(Fixtures.loc "test/t.ml" 4)
+         "db: release raised Exit")
   in
   Report.finish r
-    ~results:[ pass; bad "first"; bad "second"; release ]
-    ~duration:0.0042 ();
+    ~results:[ pass; bad "first"; bad "second" ]
+    ~release_failures:[ release ] ~duration:0.0042 ();
   equal
     ~msg:
-      "finish adds the block it still owes, the closing rule, then the \
-       summary: one test of the four never ran"
+      "finish adds the release's block, the closing rule, then the summary: \
+       one test of the four never ran"
     string
     (second
    ^ "\n\
@@ -712,9 +707,10 @@ let test_compact_commits_blocks () =
     (committed ());
   let exe =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
-        Report.finish r ~results:[ release ] ~duration:0.001 ())
+        Report.finish r ~results:[] ~release_failures:[ release ]
+          ~duration:0.001 ())
   in
-  contains ~msg:"a release row ends on its facts: no command closes it"
+  contains ~msg:"a release block ends on its facts: no command closes it"
     ~sub:("\n    db: release raised Exit\n" ^ closing_rule ^ "\n")
     exe;
   not_contains ~msg:"no block carries a rerun hint" ~sub:"rerun" exe
@@ -760,32 +756,23 @@ let test_verbose_commits_blocks () =
        rows"
     string second (committed ());
   let release =
-    {
-      (Fixtures.result Run.fixture_release_path
-         (Failure.Fail
-            [
-              Failure.with_phase Failure.Release
-                (Failure.message
-                   ~loc:(Fixtures.loc "test/t.ml" 4)
-                   "db: release raised Exit");
-            ]))
-      with
-      Run.subject = Run.Fixture_release;
-    }
+    Failure.with_phase Failure.Release
+      (Failure.message
+         ~loc:(Fixtures.loc "test/t.ml" 4)
+         "db: release raised Exit")
   in
   Report.finish r
-    ~results:[ pass; bad "first"; bad "second"; release ]
-    ~duration:0.0042 ();
+    ~results:[ pass; bad "first"; bad "second" ]
+    ~release_failures:[ release ] ~duration:0.0042 ();
   equal
     ~msg:
-      "finish adds the row it still owes with its block, then the summary: no \
-       failures section repeats the blocks"
+      "finish adds the release's title with its block and no duration, then \
+       the summary: no failures section repeats the blocks"
     string
-    (second
-    ^ row "FAIL" "fixture release"
-    ^ "    [release] test/t.ml:4\n\
-      \    db: release raised Exit\n\n\
-       1 passed, 3 failed, 1 not run in 4.2ms.\n")
+    (second ^ "  FAIL  fixture release\n"
+   ^ "    [release] test/t.ml:4\n\
+     \    db: release raised Exit\n\n\
+      1 passed, 3 failed, 1 not run in 4.2ms.\n")
     (committed ());
   not_contains ~msg:"verbose draws no rule" ~sub:"\u{2500}" (committed ());
   let armed =
@@ -830,7 +817,7 @@ let test_note () =
         Report.result r (Fixtures.result [ "a" ] Failure.Pass);
         Report.result r (Fixtures.result [ "b" ] Failure.Pass);
         Report.note r "releasing db";
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:
             [
               Fixtures.result [ "a" ] Failure.Pass;
@@ -852,7 +839,7 @@ let test_note () =
         Report.result r (List.nth results 0);
         Report.note r "releasing db";
         Report.result r (List.nth results 1);
-        Report.finish r ~results ~duration:0.01 ())
+        Report.finish r ~release_failures:[] ~results ~duration:0.01 ())
   in
   not_contains ~msg:"note: a compact transcript never carries the notice"
     ~sub:"releasing" noteworthy;
@@ -871,7 +858,7 @@ let test_note () =
         Report.result r (Fixtures.result [ "a" ] Failure.Pass);
         Report.begin_test r ~path:[ "b" ];
         Report.note r "releasing db";
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:[ Fixtures.result [ "a" ] Failure.Pass ]
           ~duration:0.01 ())
   in
@@ -889,7 +876,8 @@ let test_summary_terms () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:5 ~seed:None ();
         Report.result r bad;
-        Report.finish r ~results:[ bad ] ~duration:0.0004 ())
+        Report.finish r ~release_failures:[] ~results:[ bad ] ~duration:0.0004
+          ())
   in
   is_true ~msg:"a stopped run counts what it never reached"
     (String.ends_with ~suffix:"\n\n1 failed, 4 not run in 0.4ms.\n" stopped);
@@ -897,7 +885,8 @@ let test_summary_terms () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r bad;
-        Report.finish r ~results:[ bad ] ~duration:0.0004 ())
+        Report.finish r ~release_failures:[] ~results:[ bad ] ~duration:0.0004
+          ())
   in
   not_contains ~msg:"a run that reached every selected test omits the term"
     ~sub:"not run" complete;
@@ -921,7 +910,8 @@ let test_summary_terms () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:7 ~seed:None ();
         List.iter (Report.result r) results;
-        Report.finish r ~results ~duration:6.5 ~baselines ())
+        Report.finish r ~release_failures:[] ~results ~duration:6.5 ~baselines
+          ())
   in
   is_true ~msg:"every term, in order, the summary last"
     (String.ends_with
@@ -940,7 +930,8 @@ let test_summary_terms () =
     "s: 2 expected failures in 1.0ms.\n"
     (with_renderer (fun r ->
          Report.header r ~suite:"s" ~tests:2 ~seed:None ();
-         Report.finish r ~results:excused ~duration:0.001 ()))
+         Report.finish r ~release_failures:[] ~results:excused ~duration:0.001
+           ()))
 
 (* When a compact run prints more than its summary line *)
 
@@ -950,7 +941,7 @@ let test_compact_green_one_liner () =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:1 ~seed:None ();
         List.iter (Report.result r) passes;
-        Report.finish r ~results:passes ~duration:1.2 ())
+        Report.finish r ~release_failures:[] ~results:passes ~duration:1.2 ())
   in
   equal ~msg:"green compact run: exactly one named line" string
     "mylib: 1 passed in 1.2s.\n" named;
@@ -958,7 +949,7 @@ let test_compact_green_one_liner () =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:1 ~seed:(Some Fixtures.root) ();
         List.iter (Report.result r) passes;
-        Report.finish r ~results:passes ~duration:1.2 ())
+        Report.finish r ~release_failures:[] ~results:passes ~duration:1.2 ())
   in
   equal ~msg:"green compact run: the seed the header carried is appended" string
     "mylib: 1 passed in 1.2s (seed s1:7be1d2c904aa31f5).\n" seeded;
@@ -975,7 +966,7 @@ let test_compact_green_one_liner () =
         Report.result r (List.nth results 0);
         Report.result r (List.nth results 1);
         Report.result r (List.nth results 2);
-        Report.finish r ~results ~duration:0.2 ())
+        Report.finish r ~release_failures:[] ~results ~duration:0.2 ())
   in
   equal
     ~msg:
@@ -984,7 +975,7 @@ let test_compact_green_one_liner () =
   let empty =
     with_renderer (fun r ->
         Report.header r ~suite:"mylib" ~tests:0 ~seed:None ();
-        Report.finish r ~results:[] ~duration:0.01 ())
+        Report.finish r ~release_failures:[] ~results:[] ~duration:0.01 ())
   in
   (* [~declared] defaults to [~tests], which is 0 here: the suite really
      does declare nothing. *)
@@ -997,7 +988,8 @@ let test_compact_slow_trigger () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r slow_pass;
-        Report.finish r ~results:[ slow_pass ] ~duration:1.2 ())
+        Report.finish r ~release_failures:[] ~results:[ slow_pass ]
+          ~duration:1.2 ())
   in
   equal
     ~msg:
@@ -1010,7 +1002,7 @@ let test_compact_slow_trigger () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r r1;
-        Report.finish r ~results:[ r1 ] ~duration:1.0 ())
+        Report.finish r ~release_failures:[] ~results:[ r1 ] ~duration:1.0 ())
   in
   is_true ~msg:"the threshold is inclusive (duration >= threshold)"
     (String.starts_with
@@ -1024,14 +1016,16 @@ let test_compact_slow_trigger () =
           (Printf.sprintf "a threshold of %s seconds prints as given" written)
         ~sub:(Printf.sprintf "slow tests (1, over %ss):\n" written)
         (with_renderer ~slow_threshold (fun r ->
-             Report.finish r ~results:[ slow_pass ] ~duration:1.2 ())))
+             Report.finish r ~release_failures:[] ~results:[ slow_pass ]
+               ~duration:1.2 ())))
     [ (0.01, "0.01"); (0.5, "0.5"); (1e-9, "0.000000001") ];
   let tagged_pass = { slow_pass with Run.slow_tagged = true } in
   let tagged =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r tagged_pass;
-        Report.finish r ~results:[ tagged_pass ] ~duration:1.2 ())
+        Report.finish r ~release_failures:[] ~results:[ tagged_pass ]
+          ~duration:1.2 ())
   in
   equal ~msg:"a slow-tagged test is exempt everywhere: one line, no warning"
     string "s: 1 passed in 1.2s.\n" tagged;
@@ -1040,7 +1034,7 @@ let test_compact_slow_trigger () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r skip;
-        Report.finish r ~results:[ skip ] ~duration:2.0 ())
+        Report.finish r ~release_failures:[] ~results:[ skip ] ~duration:2.0 ())
   in
   equal ~msg:"a skip never triggers the threshold" string
     "s: 1 skipped in 2.0s.\n" skipped;
@@ -1050,7 +1044,9 @@ let test_compact_slow_trigger () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r Fixtures.excused_result;
-        Report.finish r ~results:[ Fixtures.excused_result ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[]
+          ~results:[ Fixtures.excused_result ]
+          ~duration:0.1 ())
   in
   equal ~msg:"an excused failure alone is not noteworthy" string
     "s: 1 expected failure in 100ms.\n" excused_fast
@@ -1066,7 +1062,8 @@ let test_slow_duration_semantics () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r retried;
-        Report.finish r ~results:[ retried ] ~duration:1.2 ())
+        Report.finish r ~release_failures:[] ~results:[ retried ] ~duration:1.2
+          ())
   in
   is_true ~msg:"a retried test is noteworthy on its summed duration"
     (String.starts_with ~prefix:"s: 1 test\n" t);
@@ -1083,7 +1080,8 @@ let test_slow_duration_semantics () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r slow_fail;
-        Report.finish r ~results:[ slow_fail ] ~duration:2.0 ())
+        Report.finish r ~release_failures:[] ~results:[ slow_fail ]
+          ~duration:2.0 ())
   in
   contains ~msg:"a slow failing test keeps its failure block"
     ~sub:(failures_rule ^ "\n  FAIL  boom\n")
@@ -1106,7 +1104,8 @@ let test_slow_threshold_zero () =
     with_renderer ~slow_threshold:0.0 (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r slow_pass;
-        Report.finish r ~results:[ slow_pass ] ~duration:5.0 ())
+        Report.finish r ~release_failures:[] ~results:[ slow_pass ]
+          ~duration:5.0 ())
   in
   equal ~msg:"threshold 0 disables the trigger and the warnings" string
     "s: 1 passed in 5.0s.\n" t;
@@ -1115,7 +1114,7 @@ let test_slow_threshold_zero () =
     with_renderer ~slow_threshold:0.0 (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r fail;
-        Report.finish r ~results:[ fail ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[] ~results:[ fail ] ~duration:0.1 ())
   in
   is_true ~msg:"threshold 0 still makes a counted failure noteworthy"
     (String.starts_with
@@ -1130,7 +1129,8 @@ let test_verbose_slow_warnings () =
     with_renderer ~mode:`Verbose (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r slow_pass;
-        Report.finish r ~results:[ slow_pass ] ~duration:1.5 ())
+        Report.finish r ~release_failures:[] ~results:[ slow_pass ]
+          ~duration:1.5 ())
   in
   contains ~msg:"verbose: header and status line stream as always"
     ~sub:"s: 1 test\n  PASS  t" t;
@@ -1142,7 +1142,8 @@ let test_verbose_slow_warnings () =
   let tagged =
     with_renderer ~mode:`Verbose (fun r ->
         Report.result r tagged_pass;
-        Report.finish r ~results:[ tagged_pass ] ~duration:1.5 ())
+        Report.finish r ~release_failures:[] ~results:[ tagged_pass ]
+          ~duration:1.5 ())
   in
   not_contains ~msg:"verbose: slow-tagged tests warn nowhere"
     ~sub:"slow tests (" tagged
@@ -1164,7 +1165,8 @@ let test_flaky_block () =
         Report.header r ~suite:"s" ~tests:2 ~seed:None ();
         Report.result r steady;
         Report.result r flaky;
-        Report.finish r ~results:[ steady; flaky ] ~duration:0.3 ())
+        Report.finish r ~release_failures:[] ~results:[ steady; flaky ]
+          ~duration:0.3 ())
   in
   equal ~msg:"a flaky pass is noteworthy: header, section, summary term" string
     "s: 2 tests\n\
@@ -1177,7 +1179,8 @@ let test_flaky_block () =
   let bad = Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "b" ]) in
   let ordered =
     with_renderer (fun r ->
-        Report.finish r ~results:[ bad; slow; flaky ] ~duration:2.0 ())
+        Report.finish r ~release_failures:[] ~results:[ bad; slow; flaky ]
+          ~duration:2.0 ())
   in
   contains ~msg:"the flaky section follows the slow section"
     ~sub:
@@ -1201,7 +1204,8 @@ let test_flaky_block () =
   in
   let not_flaky =
     with_renderer (fun r ->
-        Report.finish r ~results:[ hopeless; steady ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[] ~results:[ hopeless; steady ]
+          ~duration:0.1 ())
   in
   not_contains ~msg:"a retried failure is not flaky" ~sub:"flaky tests"
     not_flaky;
@@ -1213,7 +1217,7 @@ let test_flaky_block () =
     with_renderer ~mode:`Verbose (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r flaky;
-        Report.finish r ~results:[ flaky ] ~duration:0.3 ())
+        Report.finish r ~release_failures:[] ~results:[ flaky ] ~duration:0.3 ())
   in
   contains ~msg:"verbose: the status line carries the count"
     ~sub:"  PASS  network › fetches the manifest" verbose;
@@ -1228,7 +1232,7 @@ let test_flaky_block () =
     verbose;
   let colored =
     with_renderer ~ansi:true (fun r ->
-        Report.finish r ~results:[ flaky ] ~duration:0.3 ())
+        Report.finish r ~release_failures:[] ~results:[ flaky ] ~duration:0.3 ())
   in
   contains ~msg:"ansi: the flaky section wears the slow section's caution"
     ~sub:"\027[33mflaky tests (1):\027[0m\n" colored;
@@ -1655,7 +1659,8 @@ let test_ansi_hygiene () =
         (Failure.Fail [ Failure.with_output_tail tail (Failure.message "boom") ])
     in
     with_renderer (fun r ->
-        Report.finish r ~results:[ result ] ~duration:0.01 ())
+        Report.finish r ~release_failures:[] ~results:[ result ] ~duration:0.01
+          ())
   in
   not_contains ~msg:"ansi:false: captured tail stripped" ~sub:"\027"
     hostile_tail;
@@ -2099,7 +2104,8 @@ let tail_block tail =
     Fixtures.result [ "t" ]
       (Failure.Fail [ Failure.with_output_tail tail (Failure.message "boom") ])
   in
-  with_renderer (fun r -> Report.finish r ~results:[ result ] ~duration:0.01 ())
+  with_renderer (fun r ->
+      Report.finish r ~release_failures:[] ~results:[ result ] ~duration:0.01 ())
 
 (* The tail is a fixed ten lines over the bytes the capture kept: not a
    knob, so a twelve-line tail shows its last ten. *)
@@ -2133,7 +2139,7 @@ let test_tail () =
       \      only\n\
       \    \027[2mfull log: log.output\027[0m\n"
     (with_renderer ~ansi:true (fun r ->
-         Report.finish r
+         Report.finish r ~release_failures:[]
            ~results:
              [
                Fixtures.result [ "t" ]
@@ -2389,7 +2395,8 @@ let test_excused_collision () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r collide;
-        Report.finish r ~results:[ collide ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[] ~results:[ collide ] ~duration:0.1
+          ())
   in
   equal ~msg:"collision record: stream, summary, and count agree" string
     "s: 1 expected failure in 100ms.\n" summary
@@ -2404,7 +2411,7 @@ let test_finish_excused () =
   in
   let t =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
-        Report.finish r ~results ~duration:0.2 ())
+        Report.finish r ~release_failures:[] ~results ~duration:0.2 ())
   in
   is_true ~msg:"finish: excused leaves the failure section its one block"
     (occurrences_of ~sub:(failures_rule ^ "\n") t = 1
@@ -2414,7 +2421,7 @@ let test_finish_excused () =
     ~sub:"1 passed, 1 expected failure, 1 failed in 200ms." t;
   let only_excused =
     with_renderer ~invocation:(`Exe "exe") (fun r ->
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:
             [ Fixtures.result [ "ok" ] Failure.Pass; Fixtures.excused_result ]
           ~duration:0.2 ())
@@ -2438,7 +2445,8 @@ let test_xpass_is_loud () =
     line;
   let t =
     with_renderer (fun r ->
-        Report.finish r ~results:[ Fixtures.xpass_result ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[] ~results:[ Fixtures.xpass_result ]
+          ~duration:0.1 ())
   in
   contains ~msg:"unexpected pass: reason in the failure block"
     ~sub:"expected to fail (issue #42), but the test passed" t
@@ -2463,7 +2471,7 @@ let test_subtest_projection () =
     (not (Report.is_subtest_failure collision));
   let t =
     with_renderer (fun r ->
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:
             [
               Fixtures.result [ "backend"; "contract" ]
@@ -2479,7 +2487,9 @@ let test_subtest_projection () =
 let test_subtest_rendering () =
   let t =
     with_renderer (fun r ->
-        Report.finish r ~results:[ Fixtures.subtest_result ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[]
+          ~results:[ Fixtures.subtest_result ]
+          ~duration:0.1 ())
   in
   contains ~msg:"a subtest entry names its subtest under its location"
     ~sub:"    test/test_backend.ml:40\n    subtest   shape [0]\n    expected" t;
@@ -2499,7 +2509,7 @@ let test_subtest_rendering () =
     ~sub:"1 failed (2 subtest failures) in 100ms." t;
   let one =
     with_renderer (fun r ->
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:
             [
               Fixtures.result [ "backend"; "contract" ]
@@ -2532,7 +2542,8 @@ let test_prop_stats () =
   in
   let b =
     with_renderer (fun r ->
-        Report.finish r ~results:[ result ] ~duration:0.01 ())
+        Report.finish r ~release_failures:[] ~results:[ result ] ~duration:0.01
+          ())
   in
   contains ~msg:"prop stats: label distribution"
     ~sub:"labels (100 passing cases):" b;
@@ -2550,7 +2561,7 @@ let test_prop_stats () =
   in
   let b1 =
     with_renderer (fun r ->
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:
             [
               Fixtures.result [ "p" ]
@@ -3203,7 +3214,7 @@ let test_hint_lines () =
   in
   let t =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
-        Report.finish r ~results:[ two ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[] ~results:[ two ] ~duration:0.1 ())
   in
   contains ~msg:"the block's hints follow the tail, accept then replay"
     ~sub:
@@ -3311,7 +3322,7 @@ let test_withheld_correction () =
   in
   let t =
     with_renderer ~invocation:(`Exe "./t.exe") (fun r ->
-        Report.finish r ~results:[ both ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[] ~results:[ both ] ~duration:0.1 ())
   in
   contains ~msg:"the transcript: tail, reason, closing rule, summary"
     ~sub:
@@ -3320,7 +3331,7 @@ let test_withheld_correction () =
     t;
   not_contains ~msg:"the transcript offers no acceptance" ~sub:"accept:" t;
   (* Every transport projects the same failure. *)
-  let annotated = Report.annotations [ both ] in
+  let annotated = Report.annotations ~release_failures:[] [ both ] in
   not_contains ~msg:"the annotations offer no acceptance" ~sub:"accept:"
     annotated;
   is_true ~msg:"the baseline's annotation ends on the reason"
@@ -3338,7 +3349,8 @@ let test_armed_titles () =
   in
   let t =
     with_renderer ~invocation:(`Exe "./t.exe") ~armed:"lib/calc.ml:9:12:add"
-      (fun r -> Report.finish r ~results:failing ~duration:0.1 ())
+      (fun r ->
+        Report.finish r ~release_failures:[] ~results:failing ~duration:0.1 ())
   in
   contains ~msg:"an armed run's FAIL title says so"
     ~sub:
@@ -3349,7 +3361,8 @@ let test_armed_titles () =
   contains ~msg:"the qualifier shares its parenthesis with the attempts"
     ~sub:"  FAIL  sub › retried (2 attempts, mutant armed)\n" t;
   let unarmed =
-    with_renderer (fun r -> Report.finish r ~results:failing ~duration:0.1 ())
+    with_renderer (fun r ->
+        Report.finish r ~release_failures:[] ~results:failing ~duration:0.1 ())
   in
   not_contains ~msg:"an ordinary run's titles carry no qualifier"
     ~sub:"mutant armed" unarmed
@@ -3426,7 +3439,8 @@ let test_name_sanitization () =
            (Fixtures.result hostile (Failure.Fail [ Fixtures.prop_failure ]))));
   let block =
     with_renderer (fun r ->
-        Report.finish r ~results:[ failing ] ~duration:0.1 ())
+        Report.finish r ~release_failures:[] ~results:[ failing ] ~duration:0.1
+          ())
   in
   contains ~msg:"FAIL header escapes the newline" ~sub:{|  FAIL  first\nhalf|}
     block;
@@ -3442,7 +3456,7 @@ let test_name_sanitization () =
     with_renderer (fun r ->
         Report.header r ~suite:"my\tsuite" ~tests:1 ~seed:None ();
         Report.result r (Fixtures.result [ "t" ] Failure.Pass);
-        Report.finish r
+        Report.finish r ~release_failures:[]
           ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
           ~duration:0.1 ())
   in
@@ -3459,7 +3473,7 @@ let test_name_sanitization () =
     with_renderer (fun r ->
         Report.header r ~suite:"s" ~tests:1 ~seed:None ();
         Report.result r slow;
-        Report.finish r ~results:[ slow ] ~duration:1.5 ())
+        Report.finish r ~release_failures:[] ~results:[ slow ] ~duration:1.5 ())
   in
   contains ~msg:"slow row escapes the newline" ~sub:{|  1.5s  sl\now|} warned;
   (* ESC is left to the ansi policy (stripped under ansi:false) — pinned in
@@ -4720,7 +4734,7 @@ let test_github_invocation_hints () =
     a;
   not_contains ~msg:"no Mirrors spelling under Exe" ~sub:"WINDTRAP_SEED" a;
   let block =
-    Report.annotations ~invocation
+    Report.annotations ~release_failures:[] ~invocation
       [
         Fixtures.result [ "cli"; "cli help" ]
           (Failure.Fail [ Fixtures.snap_missing ]);
@@ -4734,11 +4748,13 @@ let test_github_invocation_hints () =
     ~sub:
       "%0A    replay: dune exec qa/x/t.exe -- --arm lib/calc.ml:9:12:add \
        --seed s1:7be1d2c904aa31f5 -f 'geo'\n"
-    (Report.annotations ~invocation ~armed:"lib/calc.ml:9:12:add"
+    (Report.annotations ~release_failures:[] ~invocation
+       ~armed:"lib/calc.ml:9:12:add"
        [ Fixtures.result [ "geo" ] (Failure.Fail [ Fixtures.prop_failure ]) ]);
   equal ~msg:"an annotation with no command ends on its facts" string
     "::error title=Test failure%3A bad::    boom\n"
-    (Report.annotations ~invocation ~armed:"lib/calc.ml:9:12:add"
+    (Report.annotations ~release_failures:[] ~invocation
+       ~armed:"lib/calc.ml:9:12:add"
        [ Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]) ])
 
 let test_github_ansi_stripped () =
@@ -4770,7 +4786,7 @@ let test_github_excused_filtered () =
       Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
     ]
   in
-  let block = Report.annotations results in
+  let block = Report.annotations ~release_failures:[] results in
   is_true ~msg:"excused failures produce no annotation"
     (occurrences_of ~sub:"::error " block = 1);
   not_contains ~msg:"excused test absent from the block" ~sub:"broken carry"
@@ -4778,13 +4794,15 @@ let test_github_excused_filtered () =
   contains ~msg:"counted failures still annotate"
     ~sub:"title=Test failure%3A bad::" block;
   equal ~msg:"all failures excused, no output" string ""
-    (Report.annotations [ Fixtures.excused_result ]);
+    (Report.annotations ~release_failures:[] [ Fixtures.excused_result ]);
   contains ~msg:"an unexpected pass still annotates"
     ~sub:"title=Test failure%3A known › fixed already::"
-    (Report.annotations [ Fixtures.xpass_result ])
+    (Report.annotations ~release_failures:[] [ Fixtures.xpass_result ])
 
 let test_github_subtest_annotations () =
-  let block = Report.annotations [ Fixtures.subtest_result ] in
+  let block =
+    Report.annotations ~release_failures:[] [ Fixtures.subtest_result ]
+  in
   is_true ~msg:"one annotation per failure entry, subtests included"
     (occurrences_of ~sub:"::error " block = 3);
   contains ~msg:"subtest annotations are titled by the parent test"
@@ -4795,7 +4813,11 @@ let test_github_subtest_annotations () =
     ~sub:"::    test/test_backend.ml:40%0A    subtest   shape [0]%0A" block
 
 let test_github_annotations () =
-  let block = Report.annotations Fixtures.results in
+  let block =
+    Report.annotations
+      ~release_failures:[ Fixtures.release_failure ]
+      Fixtures.results
+  in
   is_true
     ~msg:
       "one command per failure entry (teardown pair gives two, the release one)"
@@ -4805,12 +4827,13 @@ let test_github_annotations () =
   contains ~msg:"paths name the failing tests"
     ~sub:"title=Test failure%3A db › insert::" block;
   equal ~msg:"no failures, no output" string ""
-    (Report.annotations
+    (Report.annotations ~release_failures:[]
        [
          Fixtures.result [ "ok" ] Failure.Pass;
          Fixtures.result [ "s" ] (Failure.Skip None);
        ]);
-  equal ~msg:"empty run, no output" string "" (Report.annotations [])
+  equal ~msg:"empty run, no output" string ""
+    (Report.annotations ~release_failures:[] [])
 
 (* The composed envelope, as [Report.run] assembles it: the fold opens,
    the transcript streams inside it, the fold closes against the last
@@ -4833,10 +4856,11 @@ let test_github_envelope_composed () =
        { suite = "mylib"; total = 1; selected = 1; properties = false });
   Report.observe renderer ~seed:Fixtures.root ~selection:None
     (Run.Test_finished bad);
-  Report.finish renderer ~results:[ bad ] ~duration:0.01
+  Report.finish renderer ~release_failures:[] ~results:[ bad ] ~duration:0.01
     ~before_summary:(fun () ->
       print_string Report.group_end;
-      print_string (Report.annotations ~invocation:`Mirrors [ bad ]))
+      print_string
+        (Report.annotations ~release_failures:[] ~invocation:`Mirrors [ bad ]))
     ();
   equal
     ~msg:
@@ -4861,7 +4885,7 @@ let test_github_envelope_composed () =
     List.iter (Report.result r) results;
     (* The hook writes past the formatter, as [print_string] does: what the
        renderer committed is flushed before it runs. *)
-    Report.finish r ~results ~duration:2.0
+    Report.finish r ~release_failures:[] ~results ~duration:2.0
       ~before_summary:(fun () -> Buffer.add_string buf "::endgroup::\n")
       ();
     Format.pp_print_flush ppf ();
@@ -4907,7 +4931,7 @@ let test_observe_seed_policy () =
           ]
         in
         List.iter (fun res -> observe r (Run.Test_finished res)) results;
-        Report.finish r ~results ~duration:0.06 ())
+        Report.finish r ~release_failures:[] ~results ~duration:0.06 ())
   in
   equal ~msg:"a green property run ends on its seed" string
     "s: 2 passed in 60ms (seed s1:7be1d2c904aa31f5).\n" (green ~properties:true);
@@ -4938,7 +4962,7 @@ let test_observe_seed_policy () =
 let corrections_transcript ?invocation baselines =
   with_renderer ?invocation (fun r ->
       Report.header r ~suite:"s" ~tests:1 ~seed:None ();
-      Report.finish r
+      Report.finish r ~release_failures:[]
         ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
         ~duration:0.002 ~baselines ())
 
@@ -5218,7 +5242,7 @@ let test_stream_drains () =
   before (fun () ->
       Report.result r (Fixtures.result [ "t" ] Failure.Pass ~duration:0.1));
   before (fun () ->
-      Report.finish r
+      Report.finish r ~release_failures:[]
         ~results:[ Fixtures.result [ "t" ] Failure.Pass ]
         ~duration:0.5 ())
 
@@ -5287,7 +5311,8 @@ let test_excused_is_slow () =
   contains ~msg:"an excused result over the threshold is listed"
     ~sub:"known \u{203a} broken carry"
     ( with_renderer (fun r ->
-          Report.finish r ~results:[ excused ] ~duration:2.0 ())
+          Report.finish r ~release_failures:[] ~results:[ excused ]
+            ~duration:2.0 ())
     |> fun t ->
       match Text.first_occurrence ~pattern:"slow tests" t with
       | Some i -> String.sub t i (String.length t - i)

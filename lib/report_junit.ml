@@ -84,7 +84,8 @@ let classify_fail (r : Run.result) fs =
     Counted { own; subtests }
   else Excused (Option.value ~default:{ Test_tree.reason = None } r.xfail)
 
-let render ?(invocation = `Mirrors) ?armed ~suite ~results ~duration () =
+let render ?(invocation = `Mirrors) ?armed ~suite ~results ~release_failures
+    ~duration () =
   (* Counts range over emitted testcases, not results: each subtest failure
      is its own testcase, and an excused failure is a skip. *)
   let tests = ref 0 and failures = ref 0 and skipped = ref 0 in
@@ -102,6 +103,8 @@ let render ?(invocation = `Mirrors) ?armed ~suite ~results ~duration () =
               failures := !failures + List.length subtests;
               if own <> [] then incr failures))
     results;
+  tests := !tests + List.length release_failures;
+  failures := !failures + List.length release_failures;
   let buf = Buffer.create 4096 in
   let counts =
     spf "tests=\"%d\" failures=\"%d\" errors=\"0\" skipped=\"%d\" time=\"%.3f\""
@@ -111,6 +114,12 @@ let render ?(invocation = `Mirrors) ?armed ~suite ~results ~duration () =
   Buffer.add_string buf (spf "<testsuites name=\"windtrap\" %s>\n" counts);
   Buffer.add_string buf
     (spf "  <testsuite name=\"%s\" %s>\n" (attr suite) counts);
+  let add_failure ~filter f =
+    Buffer.add_string buf
+      (spf "      <failure message=\"%s\">%s</failure>\n"
+         (attr (Report_sections.headline f))
+         (text (failure_text ~filter ~invocation ~armed f)))
+  in
   List.iter
     (fun (r : Run.result) ->
       let path_string = Test_tree.path_to_string r.path in
@@ -126,12 +135,7 @@ let render ?(invocation = `Mirrors) ?armed ~suite ~results ~duration () =
         spf "    <testcase name=\"%s\" classname=\"%s\" time=\"%.3f\""
           (attr path_string) (attr classname) r.duration
       in
-      let add_failure f =
-        Buffer.add_string buf
-          (spf "      <failure message=\"%s\">%s</failure>\n"
-             (attr (Report_sections.headline f))
-             (text (failure_text ~filter:path_string ~invocation ~armed f)))
-      in
+      let add_failure = add_failure ~filter:path_string in
       let add_tail fs =
         match List.find_map (fun (f : Failure.t) -> f.output_tail) fs with
         | Some tail ->
@@ -212,6 +216,16 @@ let render ?(invocation = `Mirrors) ?armed ~suite ~results ~duration () =
                   Buffer.add_string buf "    </testcase>\n")
                 subtests))
     results;
+  (* A failed release is timed no more than a subtest is. *)
+  List.iter
+    (fun f ->
+      let name = Report_sections.release_title in
+      Buffer.add_string buf
+        (spf "    <testcase name=\"%s\" classname=\"%s\" time=\"0.000\">\n"
+           (attr name) (attr suite));
+      add_failure ~filter:name f;
+      Buffer.add_string buf "    </testcase>\n")
+    release_failures;
   Buffer.add_string buf "  </testsuite>\n";
   Buffer.add_string buf "</testsuites>\n";
   Buffer.contents buf
@@ -228,9 +242,12 @@ let path ~suite target =
   if Filename.check_suffix target ".xml" then target
   else Filename.concat target (Os.sanitize_component suite ^ ".xml")
 
-let write ~invocation ?armed ~suite ~duration ~results target =
+let write ~invocation ?armed ~suite ~duration ~results ~release_failures target
+    =
   let file = path ~suite target in
-  let document = render ~invocation ?armed ~suite ~results ~duration () in
+  let document =
+    render ~invocation ?armed ~suite ~results ~release_failures ~duration ()
+  in
   match
     (* The directory form has to exist before the first suite writes into
        it, and nothing else creates it. The test is physical: [path] returns

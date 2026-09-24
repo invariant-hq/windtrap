@@ -1,5 +1,5 @@
 ; A fixture release that raises after the last test is reported as a
-; failure row, not only counted in the exit code. See doc/dev/testing.md,
+; failure, not only counted in the exit code. See doc/dev/testing.md,
 ; "The five families".
 
 (executable

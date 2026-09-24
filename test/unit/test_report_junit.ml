@@ -31,12 +31,13 @@ let small_results =
       [ "platform"; "windows paths" ]
       (Failure.Skip (Some "unix only"));
     Fixtures.timed_result;
-    Fixtures.release_result;
   ]
 
 let test_golden () =
   let actual =
-    Report_junit.render ~suite:"mylib" ~results:small_results ~duration:1.234 ()
+    Report_junit.render ~suite:"mylib" ~results:small_results
+      ~release_failures:[ Fixtures.release_failure ]
+      ~duration:1.234 ()
   in
   expect_file actual "test/unit/expected/test_report_junit/document.expected";
   check_well_formed "golden document is well-formed" actual
@@ -45,6 +46,7 @@ let test_golden () =
 
 let full () =
   Report_junit.render ~suite:"mylib" ~results:Fixtures.results
+    ~release_failures:[ Fixtures.release_failure ]
     ~duration:Fixtures.duration ()
 
 let test_full_run () =
@@ -79,7 +81,7 @@ let test_message_forms () =
     ]
   in
   let doc =
-    Report_junit.render ~suite:"s" ~duration:0.1
+    Report_junit.render ~release_failures:[] ~suite:"s" ~duration:0.1
       ~results:
         (List.mapi
            (fun i f -> Fixtures.result [ string_of_int i ] (Failure.Fail [ f ]))
@@ -108,7 +110,7 @@ let test_message_forms () =
 
 let test_withheld_correction () =
   let doc =
-    Report_junit.render ~suite:"s" ~duration:0.1
+    Report_junit.render ~release_failures:[] ~suite:"s" ~duration:0.1
       ~results:
         [
           Fixtures.result [ "both" ]
@@ -137,7 +139,7 @@ let test_invocation_hints () =
      both derive from the one startup-computed invocation. *)
   let invocation = `Exe "dune exec qa/x/t.exe --" in
   let doc =
-    Report_junit.render ~invocation ~suite:"mylib"
+    Report_junit.render ~release_failures:[] ~invocation ~suite:"mylib"
       ~results:
         [
           Fixtures.result [ "cli"; "cli help" ]
@@ -184,19 +186,22 @@ let test_excused_as_skipped () =
       Fixtures.result [ "bad" ] (Failure.Fail [ Failure.message "boom" ]);
     ]
   in
-  let doc = Report_junit.render ~suite:"s" ~results ~duration:0.5 () in
+  let doc =
+    Report_junit.render ~release_failures:[] ~suite:"s" ~results ~duration:0.5
+      ()
+  in
   check_well_formed "excused document is well-formed" doc;
   contains ~msg:"excused failure maps to skipped-with-message"
     ~sub:{|<skipped message="expected failure: issue #42"/>|} doc;
   (* Alone, so the document's other failure cannot hide one. *)
   not_contains ~msg:"excused failures emit no failure element" ~sub:"<failure"
-    (Report_junit.render ~suite:"s"
+    (Report_junit.render ~release_failures:[] ~suite:"s"
        ~results:[ Fixtures.excused_result ]
        ~duration:0.1 ());
   contains ~msg:"counts: excused is a skip, not a failure"
     ~sub:{|tests="3" failures="1" errors="0" skipped="1"|} doc;
   let no_reason =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:
         [
           {
@@ -211,8 +216,8 @@ let test_excused_as_skipped () =
   (* The record's bit decides: an unexpected pass carries the annotation
      but counted, so it emits a failure element, not a skip. *)
   let xpass =
-    Report_junit.render ~suite:"s" ~results:[ Fixtures.xpass_result ]
-      ~duration:0.1 ()
+    Report_junit.render ~release_failures:[] ~suite:"s"
+      ~results:[ Fixtures.xpass_result ] ~duration:0.1 ()
   in
   contains ~msg:"an unexpected pass still counts as a failure"
     ~sub:{|failures="1"|} xpass;
@@ -222,7 +227,7 @@ let test_excused_as_skipped () =
 
 let test_subtests_as_testcases () =
   let doc =
-    Report_junit.render ~suite:"mylib"
+    Report_junit.render ~release_failures:[] ~suite:"mylib"
       ~results:[ Fixtures.subtest_result ]
       ~duration:0.7 ()
   in
@@ -244,7 +249,7 @@ let test_subtests_only () =
      carries no failure element; the failures count comes from the subtest
      testcases alone. *)
   let doc =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:
         [
           Fixtures.result [ "backend"; "contract" ]
@@ -271,7 +276,7 @@ let test_subtest_user_msg_name () =
     }
   in
   let doc =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:
         [ Fixtures.result [ "backend"; "contract" ] (Failure.Fail [ entry ]) ]
       ~duration:0.1 ()
@@ -300,7 +305,10 @@ let test_ansi_impossible () =
       Fixtures.result [ "s"; "skip" ] (Failure.Skip (Some (ansi ^ " reason")));
     ]
   in
-  let doc = Report_junit.render ~suite:ansi ~results ~duration:0.1 () in
+  let doc =
+    Report_junit.render ~release_failures:[] ~suite:ansi ~results ~duration:0.1
+      ()
+  in
   not_contains ~msg:"no ESC byte anywhere in the document" ~sub:"\027" doc;
   contains ~msg:"stripped payload text survives" ~sub:"red tail text" doc;
   (* Two ways to keep ESC out of XML, and the body uses the one that keeps
@@ -319,7 +327,7 @@ let test_xml_range () =
      UTF-8, yet no XML character. *)
   let hostile = "a\x01b\x0cc\xffd\u{FFFE}e" in
   let doc =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:
         [
           fail_result [ hostile ]
@@ -337,7 +345,7 @@ let test_xml_range () =
 let test_escaping () =
   let nasty = {|a<b>&"c'|} in
   let doc =
-    Report_junit.render ~suite:nasty
+    Report_junit.render ~release_failures:[] ~suite:nasty
       ~results:[ fail_result [ nasty ] (Failure.message ("text " ^ nasty)) ]
       ~duration:0.1 ()
   in
@@ -350,7 +358,7 @@ let test_escaping () =
    rides the one element every consumer allows on a testcase. *)
 let test_flaky_note () =
   let doc =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:
         [
           Fixtures.result [ "flaky"; "eventually" ] Failure.Pass ~attempts:3;
@@ -393,14 +401,17 @@ let test_path () =
     (partition <> Report_junit.path ~suite:"lib/lexer.ml" "reports")
 
 let test_empty_run () =
-  let doc = Report_junit.render ~suite:"empty" ~results:[] ~duration:0.0 () in
+  let doc =
+    Report_junit.render ~release_failures:[] ~suite:"empty" ~results:[]
+      ~duration:0.0 ()
+  in
   check_well_formed "empty run document is well-formed" doc;
   contains ~msg:"empty run counts are zero"
     ~sub:{|tests="0" failures="0" errors="0" skipped="0"|} doc
 
 let test_dotted_classname () =
   let doc =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:[ Fixtures.result [ "a.b"; "t.c" ] Failure.Pass ]
       ~duration:0.1 ()
   in
@@ -416,7 +427,7 @@ let test_first_tail () =
     Failure.tail ~log_path:"second.output" ~omitted_bytes:9 "second tail\n"
   in
   let doc =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:
         [
           Fixtures.result [ "t" ]
@@ -440,7 +451,7 @@ let test_first_tail () =
 let test_armed_hints () =
   let armed = "lib/a.ml:1:0:add" in
   let doc =
-    Report_junit.render ~armed ~suite:"s"
+    Report_junit.render ~release_failures:[] ~armed ~suite:"s"
       ~results:
         [
           Fixtures.result
@@ -461,7 +472,8 @@ let test_armed_hints () =
 (* Writing: the files [write] makes, as the file system shows them. *)
 
 let write ?(suite = "s") ?(results = [ Fixtures.timed_result ]) target =
-  Report_junit.write ~invocation:`Mirrors ~suite ~duration:0.1 ~results target
+  Report_junit.write ~invocation:`Mirrors ~suite ~duration:0.1 ~results
+    ~release_failures:[] target
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 
@@ -481,8 +493,8 @@ let test_write_files () =
   write ~results:Fixtures.results big;
   write big;
   equal ~msg:"an existing report is replaced whole" string
-    (Report_junit.render ~suite:"s" ~results:[ Fixtures.timed_result ]
-       ~duration:0.1 ())
+    (Report_junit.render ~release_failures:[] ~suite:"s"
+       ~results:[ Fixtures.timed_result ] ~duration:0.1 ())
     (read_file big);
   equal ~msg:"nothing of a document reaches the terminal" string "" (output ())
 
@@ -509,7 +521,7 @@ let test_project_root_paths () =
          (Failure.Missing { proposed = "x\n" }))
   in
   let doc =
-    Report_junit.render ~suite:"s"
+    Report_junit.render ~release_failures:[] ~suite:"s"
       ~results:[ Fixtures.result [ "t" ] (Failure.Fail [ failure ]) ]
       ~duration:0.1 ()
   in

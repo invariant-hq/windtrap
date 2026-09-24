@@ -795,7 +795,6 @@ let () =
   let r1 =
     {
       Run.path = [ "a" ];
-      subject = Run.Test;
       outcome = Failure.Pass;
       counted = false;
       xfail = None;
@@ -808,7 +807,6 @@ let () =
   let r2 =
     {
       Run.path = [ "g"; "b" ];
-      subject = Run.Test;
       outcome = Failure.Fail [ Failure.message "boom" ];
       counted = true;
       xfail = None;
@@ -855,20 +853,6 @@ let outcome_of outcome path =
   match result_of outcome path with
   | Some r -> Some r.Run.outcome
   | None -> None
-
-(* The end-of-run fixture-release rows, in release order: recorded by the
-   runner beside the test rows (one result model), identified by their
-   subject — never by their reporting path, which a test name could spell. *)
-let release_rows outcome =
-  List.filter
-    (fun (r : Run.result) -> r.Run.subject = Run.Fixture_release)
-    (Run.results outcome.Run.run)
-
-(* The one failure of a one-failure release row. *)
-let release_failure_of (r : Run.result) =
-  match r.Run.outcome with
-  | Failure.Fail [ f ] -> Some f
-  | Failure.Fail _ | Failure.Pass | Failure.Skip _ -> None
 
 let failure_list = function
   | Some (Failure.Fail fs) -> fs
@@ -1256,7 +1240,7 @@ let () =
     check "the test passed within its window"
       (outcome_of outcome [ "tight" ] = Some Failure.Pass);
     check "the slow release completed, untimed and unfailed"
-      (!release_done && release_rows outcome = []);
+      (!release_done && outcome.Run.release_failures = []);
     check "the run stayed green" (outcome.Run.exit_code = 0)
 
 let () =
@@ -1608,9 +1592,7 @@ let () =
 let failed_paths outcome =
   List.filter_map
     (fun (r : Run.result) ->
-      if r.Run.subject = Run.Test && r.Run.counted then
-        Some (Test_tree.path_to_string r.Run.path)
-      else None)
+      if r.Run.counted then Some (Test_tree.path_to_string r.Run.path) else None)
     (Run.results outcome.Run.run)
 
 let ran_names outcome =
@@ -2493,7 +2475,7 @@ let () =
   expect_run "fixture-skip suite runs" ~on_event ~config tests @@ fun outcome ->
   check "a skipped fixture is never announced for release" (not !announced);
   check "an unavailable optional resource does not turn the run red"
-    (outcome.Run.exit_code = 0 && release_rows outcome = [])
+    (outcome.Run.exit_code = 0 && outcome.Run.release_failures = [])
 
 (* Duplicate paths *)
 
@@ -2567,7 +2549,7 @@ let () =
   expect_run "fixture suite runs" ~on_event ~config tests @@ fun outcome ->
   check "fixtures release in reverse acquisition order"
     (List.rev !order = [ "b"; "a" ]);
-  check "no release failures" (release_rows outcome = []);
+  check "no release failures" (outcome.Run.release_failures = []);
   let events = List.rev !events in
   let is_finish = function Run.Test_finished _ -> true | _ -> false in
   let is_release = function Run.Fixture_release _ -> true | _ -> false in
@@ -2636,23 +2618,11 @@ let () =
   let fx = Run.fixture ~teardown:(fun _ -> raise Boom) (fun () -> ()) in
   let tests = [ Test_tree.test "acquires" (fun () -> ignore (fx ())) ] in
   expect_run "release-failure suite runs" ~config tests @@ fun outcome ->
-  (match release_rows outcome with
-  | [ r ] ->
+  (match outcome.Run.release_failures with
+  | [ f ] ->
       check "a failing release is a Release-phase failure"
-        (match release_failure_of r with
-        | Some f -> f.Failure.phase = Failure.Release
-        | None -> false);
-      (* The row is the verdict: counted, unannotated, reporting under the
-         release label after the test rows — what every sink projects. *)
-      check "the release row is a counted, unannotated failure"
-        (r.Run.counted && r.Run.xfail = None);
-      check "the release row reports under its own label"
-        (r.Run.path = Run.fixture_release_path);
-      check "the release row is recorded after the test rows"
-        (match List.rev (Run.results outcome.Run.run) with
-        | last :: _ -> last == r
-        | [] -> false)
-  | _ -> check "one release row" false);
+        (f.Failure.phase = Failure.Release)
+  | _ -> check "one release failure" false);
   check "a release failure exits 1, tests all green"
     (outcome.Run.exit_code = 1
     && outcome_of outcome [ "acquires" ] = Some Failure.Pass)
@@ -3245,8 +3215,8 @@ let () =
            && match r.Run.outcome with Failure.Skip _ -> true | _ -> false)
          (Run.results outcome.Run.run))
 
-(* A verdict row is not a test: a release failure beside a corrected test
-   still fails the run, and the test's own correction is still written. *)
+(* A release failure beside a corrected test still fails the run, and the
+   test's own correction is still written. *)
 let () =
   Fun.protect ~finally:clear_env @@ fun () ->
   clear_env ();
@@ -3271,7 +3241,7 @@ let () =
   expect_run "release failure beside a correction" ~config suite
   @@ fun outcome ->
   check "the release failure still fails the run"
-    (outcome.Run.exit_code = 1 && List.length (release_rows outcome) = 1);
+    (outcome.Run.exit_code = 1 && List.length outcome.Run.release_failures = 1);
   check "the correction is still written"
     (Sys.file_exists (baseline root ^ ".corrected"))
 
@@ -3467,7 +3437,7 @@ let () =
   expect_run "exit-release suite runs" ~config
     [ Test_tree.test "uses" (fun () -> ignore (fx ())) ]
   @@ fun outcome ->
-  (match List.filter_map release_failure_of (release_rows outcome) with
+  (match outcome.Run.release_failures with
   | [ f ] ->
       check "exit during fixture release is a Release-phase failure"
         (f.Failure.phase = Failure.Release);
@@ -3948,18 +3918,6 @@ let () =
   check "nor one ended by a timeout" (stats [ "times out" ] = None);
   check "the law's skip skips the test"
     (outcome_of outcome [ "skips" ] = Some (Failure.Skip None))
-
-let () =
-  with_temp_root @@ fun root ->
-  let config = base_config ~log_dir:root () in
-  let fx = Run.fixture ~teardown:(fun () -> Check.fail "leak") ignore in
-  expect_run "release row suite runs" ~config [ Test_tree.test "uses" fx ]
-  @@ fun outcome ->
-  match release_rows outcome with
-  | [ r ] ->
-      check "a release row has one attempt and no duration"
-        (r.Run.attempts = 1 && r.Run.duration = 0.)
-  | _ -> check "one release row" false
 
 let () =
   match Test_tree.flatten [ Run.prop "p" gen ignore ] with

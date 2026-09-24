@@ -206,6 +206,10 @@ val hints :
 
 (** {1:names Names and command words} *)
 
+val release_title : string
+(** [release_title] is ["fixture release"], the name under which every sink
+    reports a failed fixture release. *)
+
 val sanitize_name : string -> string
 (** [sanitize_name s] is [s] with each C0 control byte and DEL escaped, ESC
     excepted: LF, TAB and CR by their OCaml names, the others as [\xNN]. This

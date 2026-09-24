@@ -136,15 +136,8 @@ type fixture_entry = {
   fx_release : (unit -> unit) option;
 }
 
-(* Consumers dispatch on the subject, never on the path: a declared test
-   may be named ["fixture release"]. *)
-type subject = Test | Fixture_release
-
-let fixture_release_path = [ "fixture release" ]
-
 type result = {
   path : string list;
-  subject : subject;
   outcome : Failure.outcome;
   counted : bool;
   xfail : Test_tree.xfail option;
@@ -1136,7 +1129,6 @@ let run_case ~on_event run (case : Test_tree.case) =
       let result =
         {
           path = case.Test_tree.path;
-          subject = Test;
           outcome;
           (* The three rendering facts computed here and nowhere else (the
              record is the contract): whether the result counted as failed,
@@ -1406,6 +1398,7 @@ type outcome = {
   selected : Test_tree.case list;
   total : int;
   focus_active : bool;
+  release_failures : Failure.t list;
   duration : float;
   exit_code : int;
 }
@@ -1413,26 +1406,6 @@ type outcome = {
 let release ~on_event run =
   release_fixtures run ~announce:(fun name ->
       on_event (Fixture_release { name }))
-
-(* An end-of-run verdict recorded as a result row (one result model): every
-   sink projects the one recorded list, so a verdict that only rode the exit
-   code would leave the run exiting 1 under a summary that says every test
-   passed. Counted, unannotated, one attempt, no duration: renderers already
-   classify a failing row from those bits. *)
-let verdict_result ~subject ~path failures =
-  {
-    path;
-    subject;
-    outcome = Failure.Fail failures;
-    counted = true;
-    xfail = None;
-    slow_tagged = false;
-    duration = 0.;
-    attempts = 1;
-    prop_stats = None;
-  }
-
-let executed_test (result : result) = result.subject = Test
 
 (* Interruption
 
@@ -1527,8 +1500,7 @@ let with_interrupts ~interrupt run fn =
 
 (* Runs the selected tests one at a time in declaration order, stopping at
    the first counted failure under [-x]. Returns whether it bailed, how many cases
-   executed (what full-run detection counts — never result rows, which the
-   verdict rows below would inflate), the paths that counted as failed
+   executed (what full-run detection counts), the paths that counted as failed
    (see [counts_failed]) in execution order: what [-x], the exit code,
    and the store react to, never a recorded outcome alone — expected [xfail]
    failures are recorded but never accumulate here — and, among those, the
@@ -1614,22 +1586,13 @@ let execute_plan ?(on_event = fun _ -> ())
   in
   Option.iter interrupt run.interrupted;
   (* Releases run after the last test, outside any per-test timeout,
-     including under -x. A failure here is part of the run's verdict: one
-     row per failure, after every test row. *)
+     including under -x. No test owns a failure here: it rides the outcome,
+     which every sink of a finished run takes whole. *)
   let release_failures = release ~on_event run in
-  List.iter
-    (fun failure ->
-      record run
-        (verdict_result ~subject:Fixture_release ~path:fixture_release_path
-           [ failure ]))
-    release_failures;
-  (* Store maintenance ranges over executed tests: a verdict row is not a
-     test — counting one as executed would corrupt the last-failed store. *)
-  let test_results = List.filter executed_test (results run) in
   (* A full run executed the entire declared suite: only such a run may drop
      store entries for tests that no longer exist. *)
   let full = (not bailed) && executed = total in
-  update_last_failed (store_path config ~suite) ~full ~results:test_results
+  update_last_failed (store_path config ~suite) ~full ~results:(results run)
     ~failed_paths;
   (* Corrections are written once, after the last test. The blocks that
      offer them were committed as each test finished; the end-of-run
@@ -1657,6 +1620,7 @@ let execute_plan ?(on_event = fun _ -> ())
     selected;
     total;
     focus_active;
+    release_failures;
     duration = Os.count_s started;
     exit_code;
   }

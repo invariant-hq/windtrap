@@ -355,15 +355,11 @@ let pp_body t (r : Run.result) failures =
   (match r.prop_stats with Some s -> pp_prop_stats t s | None -> ());
   Option.iter (pp_tail t)
     (List.find_map (fun (f : Failure.t) -> f.output_tail) failures);
-  (* A fixture release belongs to no test: no filter selects it. *)
-  let filter =
-    match r.subject with
-    | Run.Test -> Some (Test_tree.path_to_string r.path)
-    | Run.Fixture_release -> None
-  in
   List.iter
     (fun hint -> put t (indent ^ hint))
-    (Sections.hints ?armed:t.armed ~invocation:t.invocation ~filter failures)
+    (Sections.hints ?armed:t.armed ~invocation:t.invocation
+       ~filter:(Some (Test_tree.path_to_string r.path))
+       failures)
 
 let armed_qualifier t =
   match t.armed with Some _ -> [ "mutant armed" ] | None -> []
@@ -426,26 +422,34 @@ let verbose_result t (r : Run.result) =
            ~qualifiers:(Option.to_list (Option.map sanitize_name reason))
            ~timing:"")
 
+(* A failed fixture release: no test owns it, so its title has no attempts
+   and no duration, and its block no hint. *)
+let release_block t f =
+  put t
+    (test_line ~title:true t ~tag:"FAIL" ~style:`Red
+       ~name:Sections.release_title ~qualifiers:(armed_qualifier t) ~timing:"");
+  pp_failure ~ansi:t.ansi ~excerpt:true ~hints:false t.out f;
+  if t.verbose then put t ""
+
 (* A block is committed when its test finishes, so a run that dies has
    printed what it knew. Compact precedes the first by the header and the
    section's opening rule, and [finish] closes the section; verbose has no
    section, its blocks sit under their rows. *)
-let commit_block t r =
+let commit t block =
   clear_live t;
   commit_header t;
-  if t.verbose then begin
-    verbose_result t r;
-    t.spaced <- true
-  end
-  else begin
+  if not t.verbose then
     put t
       (if t.blocks = 0 then
          st t `Faint (Sections.rule ~width:rule_width (Some "failures"))
        else "");
-    pp_block t r
-  end;
+  block ();
+  if t.verbose then t.spaced <- true;
   t.blocks <- t.blocks + 1;
   Pp.flush t.out ()
+
+let commit_block t r =
+  commit t (fun () -> if t.verbose then verbose_result t r else pp_block t r)
 
 let result t (r : Run.result) =
   sync t;
@@ -553,9 +557,8 @@ let empty_selection_reason ~declared ~selection =
 (* End of run *)
 
 (* The summary's terms. They count the results reported, not the header's
-   selected tests: a fixture release that raised is a verdict row recorded
-   after the header ([Run.Fixture_release]), and it counts as failed so that
-   the summary agrees with the exit code. *)
+   selected tests, and a fixture release that raised counts as failed so
+   that the summary agrees with the exit code. *)
 type summary = {
   passed : int;
   flaky : int;
@@ -703,7 +706,8 @@ let refusals baselines =
 
 let rec drop n = function _ :: rest when n > 0 -> drop (n - 1) rest | l -> l
 
-let finish t ~results ~duration ?baselines ?(before_summary = ignore) () =
+let finish t ~results ~release_failures ~duration ?baselines
+    ?(before_summary = ignore) () =
   sync t;
   clear_live t;
   let count p = List.length (List.filter p results) in
@@ -711,7 +715,6 @@ let finish t ~results ~duration ?baselines ?(before_summary = ignore) () =
   let slow_results = List.filter (over_threshold t) results in
   let flaky_results = List.filter flaky results in
   let written = match baselines with Some b -> corrections b | None -> [] in
-  let ran = count (fun (r : Run.result) -> r.subject = Run.Test) in
   let summary =
     {
       passed =
@@ -730,7 +733,7 @@ let finish t ~results ~duration ?baselines ?(before_summary = ignore) () =
             match r.outcome with
             | Failure.Fail _ -> not r.counted
             | Failure.Pass | Failure.Skip _ -> false);
-      failed = List.length failed_results;
+      failed = List.length failed_results + List.length release_failures;
       subtests =
         List.fold_left
           (fun acc (r : Run.result) ->
@@ -741,15 +744,14 @@ let finish t ~results ~duration ?baselines ?(before_summary = ignore) () =
           0 failed_results;
       not_run =
         (match t.declared with
-        | Some _ -> max 0 (t.total_tests - ran)
+        | Some _ -> max 0 (t.total_tests - List.length results)
         | None -> 0);
       corrections = List.length written;
       accepted = (match baselines with Some b -> accepts b | None -> false);
     }
   in
-  (* What is left of the blocks are the verdict rows, which the executor
-     records after the last test with no event. *)
   List.iter (commit_block t) (drop t.blocks failed_results);
+  List.iter (fun f -> commit t (fun () -> release_block t f)) release_failures;
   let closed = t.blocks > 0 && not t.verbose in
   if closed then put t (st t `Faint (Sections.rule ~width:rule_width None));
   (* A green run with nothing to show is its summary line alone. *)
@@ -788,7 +790,7 @@ let interrupted t ?before_summary ?releasing ~running ~results ~duration () =
     | None, Some fixture ->
         "interrupted while releasing " ^ sanitize_name fixture
     | None, None -> "interrupted between tests");
-  finish t ~results ~duration ?before_summary ()
+  finish t ~results ~release_failures:[] ~duration ?before_summary ()
 
 let observe t ~seed ~selection = function
   | Run.Run_started { suite; total; selected; properties } ->
@@ -837,9 +839,6 @@ let rec drop_trailing_newlines s =
     drop_trailing_newlines (String.sub s 0 (len - 1))
   else s
 
-(* The filter is the row's path for a fixture release too, where [pp_body]
-   passes none: such a row holds no baseline or property failure, so no hint
-   reads it. *)
 let annotation ?(invocation = `Mirrors) ?armed ~path (f : Failure.t) =
   let path_string = Test_tree.path_to_string path in
   let location =
@@ -860,7 +859,7 @@ let annotation ?(invocation = `Mirrors) ?armed ~path (f : Failure.t) =
   in
   spf "::error %stitle=%s::%s\n" location title (escape_data message)
 
-let annotations ?invocation ?armed results =
+let annotations ?invocation ?armed ~release_failures results =
   let buf = Buffer.create 256 in
   List.iter
     (fun (r : Run.result) ->
@@ -875,6 +874,11 @@ let annotations ?invocation ?armed results =
             fs
       | Failure.Fail _ | Failure.Pass | Failure.Skip _ -> ())
     results;
+  List.iter
+    (fun f ->
+      Buffer.add_string buf
+        (annotation ?invocation ?armed ~path:[ Sections.release_title ] f))
+    release_failures;
   Buffer.contents buf
 
 (* Mutation lines *)
@@ -962,19 +966,20 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
   (* The annotations follow the envelope's close: an [::error] written
      inside it folds away with the transcript. The summary stays the
      report's last line. *)
-  let close_envelope results () =
+  let close_envelope ~release_failures results () =
     if github then begin
       print_string group_end;
       print_string
         (annotations ~invocation:config.Run.invocation ?armed:renderer.armed
-           results)
+           ~release_failures results)
     end
   in
   let on_event event =
     (match event with
     | Run.Interrupted { running; releasing; results; duration } ->
         interrupted renderer ?releasing ~running ~results ~duration
-          ~before_summary:(close_envelope results) ()
+          ~before_summary:(close_envelope ~release_failures:[] results)
+          ()
     | Run.Run_started _ | Run.Test_started _ | Run.Test_finished _
     | Run.Fixture_release _ ->
         transcript event);
@@ -987,19 +992,22 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
       Os.say (Run.startup_message error);
       Error error
   | Ok outcome ->
-      (* The one recorded list: test rows plus the executor's verdict rows
-         (fixture-release failures). Every sink projects it, so a verdict
-         that sets the exit code is always visible in the report. *)
+      (* Every sink takes the failed releases as a required argument, so a
+         verdict that sets the exit code is always visible in the report. *)
       let results = Run.results outcome.Run.run in
+      let release_failures = outcome.Run.release_failures in
       let baselines = Run.baselines outcome.Run.run in
-      finish renderer ~results ~duration:outcome.Run.duration ~baselines
-        ~before_summary:(close_envelope results) ();
+      finish renderer ~results ~release_failures ~duration:outcome.Run.duration
+        ~baselines
+        ~before_summary:(close_envelope ~release_failures results)
+        ();
       List.iter Os.say (refusals baselines);
       (* Last, so a report is written from the rows the terminal has
          already shown. *)
       Option.iter
         (Report_junit.write ~invocation:config.Run.invocation
-           ?armed:renderer.armed ~suite ~duration:outcome.Run.duration ~results)
+           ?armed:renderer.armed ~suite ~duration:outcome.Run.duration ~results
+           ~release_failures)
         config.Run.junit;
       Format.pp_print_flush Format.std_formatter ();
       Format.pp_print_flush Format.err_formatter ();

@@ -126,13 +126,15 @@ module.
   the facade's, which must fire before `Cli.parse` can exit on `--help`
   — and the sentence a nested `run` gets must not depend on which one
   saw it first.
-- Fixture-release verdicts are result rows: every sink projects the one
-  recorded result list, and a verdict that sets the exit code must be
-  visible in the report. Consumers dispatch on `Run.result.subject`,
-  never on the rendered path, so a test named `fixture release` cannot
-  alias a verdict row; renderers classify a failing row from `counted`
-  and `xfail` alone (an uncounted `Fail` is an excused expected
-  failure), never by reconstructing executor decisions from messages.
+- A result row is a test's, always. A failed fixture release belongs to
+  no test: it rides the outcome (`Run.outcome.release_failures`), and
+  every sink of a finished run (`Report.finish`, `Report.annotations`,
+  `Report_junit.write`) takes that list as a required argument, so a
+  verdict that sets the exit code is visible in the report by type.
+  Nothing dispatches on a row's kind, so a test named `fixture release`
+  is a test. Renderers classify a failing row from `counted` and `xfail`
+  alone (an uncounted `Fail` is an excused expected failure), never by
+  reconstructing executor decisions from messages.
 
 **Loc.** `Loc.capture` takes the first call-stack slot whose
 compilation unit is neither windtrap's nor the stdlib's, via

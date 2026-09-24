@@ -36,7 +36,6 @@ let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats
   in
   {
     Run.path;
-    subject = Run.Test;
     outcome;
     counted;
     xfail;
@@ -164,23 +163,12 @@ let subtest_result =
 let timed_result =
   result [ "math"; "multiplication" ] Failure.Pass ~duration:0.042
 
-(* The row the executor records after the last test for a fixture release
-   that raised: no test owns it, it counts as failed, and it never went
-   through [Report.result]. *)
-let release_result =
-  {
-    (result Run.fixture_release_path
-       (Failure.Fail
-          [
-            Failure.with_phase Failure.Release
-              (Failure.message ~loc:(loc "test/test_db.ml" 3)
-                 "fixture (test/test_db.ml:3): release raised Failure(\"pool \
-                  leaked\")");
-          ]))
-    with
-    Run.subject = Run.Fixture_release;
-    duration = 0.;
-  }
+(* The failure of a fixture release that raised, as the outcome carries
+   it: no test owns it, so it is no row. *)
+let release_failure =
+  Failure.with_phase Failure.Release
+    (Failure.message ~loc:(loc "test/test_db.ml" 3)
+       "fixture (test/test_db.ml:3): release raised Failure(\"pool leaked\")")
 
 let results =
   [
@@ -201,7 +189,6 @@ let results =
     result [ "slow"; "hash" ] Failure.Pass ~duration:3.0;
     result [ "platform"; "windows paths" ] (Failure.Skip (Some "unix only"));
     timed_result;
-    release_result;
   ]
 
 let duration = 6.5

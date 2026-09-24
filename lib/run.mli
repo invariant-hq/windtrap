@@ -324,22 +324,8 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 (** {1:results Results} *)
 
-(** The type for what a result row is about. The runner records one {!Test} row
-    per executed test, and a release row, which no test owns, for each fixture
-    release that failed. A consumer that reasons about tests must dispatch on
-    this type and never on {!result.path}. *)
-type subject =
-  | Test  (** A declared test that the runner executed. *)
-  | Fixture_release
-      (** A fixture release that raised at the end of the run (see
-          {{!section-release}release}). The row carries that {!Failure.Release}
-          failure. *)
-
 type result = {
-  path : string list;
-      (** The path the row is reported under: the test's for a {!Test} row, and
-          [["fixture release"]] for a release row. *)
-  subject : subject;  (** What the row is about. *)
+  path : string list;  (** The path of the test, outermost group first. *)
   outcome : Failure.outcome;
       (** The outcome, with the failures of the last attempt. An attempt that
           skipped and also added a failure is a [Fail], and so is an [xfail]
@@ -368,14 +354,13 @@ type result = {
           outcome. [None] for any other test, and for a property that a skip or
           a timeout ended. *)
 }
-(** The type for result rows. A row carries every fact that a renderer needs, so
-    no consumer derives a decision of the runner from a message. A release row
-    is a counted [Fail] with no annotation, one attempt and no duration. *)
+(** The type for result rows, one per executed test. A row carries every fact
+    that a renderer needs, so no consumer derives a decision of the runner from
+    a message. *)
 
 val results : t -> result list
-(** [results t] is the rows recorded so far, in the order of execution: a row
-    per executed test, then the rows of the fixture releases that failed, in the
-    order of release. *)
+(** [results t] is the row of every test executed so far, in the order of
+    execution. *)
 
 (** {1:props Properties} *)
 
@@ -512,17 +497,22 @@ type outcome = {
   focus_active : bool;
       (** [true] iff the suite holds a focused node, selected or not. A caller
           reads it to warn that a run that passed was focused. *)
+  release_failures : Failure.t list;
+      (** The failures of the fixture releases that raised, in the order of
+          release, each a {!Failure.Release} message failure located at the site
+          of the fixture. No test owns them, so they are not rows. *)
   duration : float;
       (** The seconds the run took, from its startup checks to the writing of
           its corrections. *)
   exit_code : int;
-      (** [1] when a row counts as failed, or when a correction could not be
-          written ({!Baseline.refusals}). A test whose failures are all kept
-          corrections does not count here, because under [--corrected] the
-          [diff?] that follows the run decides. Otherwise [2] when no test
-          executed, in an empty suite and in an empty selection, and else [0]. A
-          selection whose tests all skipped gives [0], and so does a run whose
-          only failures were expected. A caller may return another code. *)
+      (** [1] when a row counts as failed, when a release failed, or when a
+          correction could not be written ({!Baseline.refusals}). A test whose
+          failures are all kept corrections does not count here, because under
+          [--corrected] the [diff?] that follows the run decides. Otherwise [2]
+          when no test executed, in an empty suite and in an empty selection,
+          and else [0]. A selection whose tests all skipped gives [0], and so
+          does a run whose only failures were expected. A caller may return
+          another code. *)
 }
 (** The type for finished runs: what a report renders, and what the caller needs
     to exit. *)
@@ -823,9 +813,5 @@ val release_fixtures : t -> announce:(string -> unit) -> Failure.t list
 
 val record : t -> result -> unit
 (** [record t result] adds [result] after the rows of [t]. *)
-
-val fixture_release_path : string list
-(** [fixture_release_path] is [["fixture release"]], the {!result.path} of a
-    release row. *)
 
 (**/**)

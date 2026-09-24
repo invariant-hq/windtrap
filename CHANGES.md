@@ -533,7 +533,8 @@ Coverage and packaging:
   failures of one test. Under `-v` a failed test's status line is its
   block's title: the block prints under it when the test finishes and closes
   on a blank line, no failures section repeats it, and a blank line
-  separates the rows from the sections that end the run.
+  separates the rows from the sections that end the run. The title of a
+  failed fixture release carries no duration, since no release is timed.
 - The summary is the last line of every run: `4 passed (1 flaky), 1
   skipped, 1 expected failure, 6 failed (1 subtest failure), 2 not run, 1
   correction written in 6.5s.`, zero terms omitted. `N not run` counts the

@@ -216,21 +216,12 @@ let expect_run name ?on_event ~config ?(suite = "suite") tests f =
 let result_of outcome path =
   List.find_opt (fun r -> r.Run.path = path) (Run.results outcome.Run.run)
 
-(* The end-of-run fixture-release rows the runner records beside the test
-   rows (one result model), identified by their subject. *)
-let release_rows outcome =
-  List.filter
-    (fun (r : Run.result) -> r.Run.subject = Run.Fixture_release)
-    (Run.results outcome.Run.run)
-
 (* The paths that counted as failed, in execution order — what the exit
    code and the last-failed store react to. *)
 let failed_paths outcome =
   List.filter_map
     (fun (r : Run.result) ->
-      if r.Run.subject = Run.Test && r.Run.counted then
-        Some (Test_tree.path_to_string r.Run.path)
-      else None)
+      if r.Run.counted then Some (Test_tree.path_to_string r.Run.path) else None)
     (Run.results outcome.Run.run)
 
 let outcome_of outcome path =
@@ -536,9 +527,8 @@ let () =
   let suite = [ test "touch" (fun () -> failing_release ()) ] in
   expect_run "release failure" ~config suite @@ fun outcome ->
   check "release failure is a Release-phase entry"
-    (match release_rows outcome with
-    | [ { Run.outcome = Failure.Fail [ f ]; _ } ] ->
-        f.Failure.phase = Failure.Release
+    (match outcome.Run.release_failures with
+    | [ f ] -> f.Failure.phase = Failure.Release
     | _ -> false);
   check_int "release failure exits 1" ~expected:1 ~actual:outcome.Run.exit_code
 
@@ -1158,9 +1148,8 @@ let () =
   let suite = [ test "touch" (fun () -> release_wants_scratch ()) ] in
   expect_run "temp_dir in fixture release" ~config suite @@ fun outcome ->
   check "temp_dir in a fixture release is a Release-phase failure"
-    (match release_rows outcome with
-    | [ { Run.outcome = Failure.Fail [ f ]; _ } ] ->
-        f.Failure.phase = Failure.Release
+    (match outcome.Run.release_failures with
+    | [ f ] -> f.Failure.phase = Failure.Release
     | _ -> false);
   check_int "temp_dir in fixture release exits 1" ~expected:1
     ~actual:outcome.Run.exit_code

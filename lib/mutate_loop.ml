@@ -446,19 +446,17 @@ let counted_failure (r : Run.result) =
   && match r.Run.outcome with Failure.Fail _ -> true | _ -> false
 
 (* Whether a run that had a mutant armed detected it: a counted failure on
-   a test row, or a fixture-release row. Read off the results and never off
-   [outcome.exit_code] (guarantee 12: the aggregate is the one exit code a build gates on): the exit code answers a different
-   question — it is [2] for a selection that matched nothing, which is a
-   statement about a filter and not about a mutant. *)
-let kills (r : Run.result) = counted_failure r
-let executed_test (r : Run.result) = r.Run.subject = Run.Test
-
+   a test row, or a failed fixture release. Read off the outcome and never
+   off [outcome.exit_code] (guarantee 12: the aggregate is the one exit
+   code a build gates on): the exit code answers a different question — it
+   is [2] for a selection that matched nothing, which is a statement about
+   a filter and not about a mutant. *)
 let killed_by (outcome : Run.outcome) =
-  List.exists kills (Run.results outcome.Run.run)
+  outcome.Run.release_failures <> []
+  || List.exists counted_failure (Run.results outcome.Run.run)
 
 let encode_outcome ~paths (outcome : Run.outcome) =
-  let results = Run.results outcome.Run.run in
-  if List.exists kills results then "killed"
+  if killed_by outcome then "killed"
   else if
     (* A child that recorded no test row did not survive the mutant, it
        failed to test it: reporting a survivor here would send the reader
@@ -466,7 +464,7 @@ let encode_outcome ~paths (outcome : Run.outcome) =
        run's own executed paths, so this is unreachable — and a false
        survivor is the one failure mode that makes people stop running
        the tool, so it is not left to be unreachable. *)
-    (not (List.exists executed_test results)) && paths <> []
+    Run.results outcome.Run.run = [] && paths <> []
   then "crashed"
   else "survived"
 
@@ -594,10 +592,7 @@ let probe_line ~paths ~suite ~config tests () =
   match Run.execute ~allowlist:(allowlist_of paths) config ~suite tests with
   | Error error -> "error " ^ one_line (Run.startup_message error)
   | Ok outcome ->
-      (* Test rows only: the probe's counts answer "did the same tests run
-         the same way", and a verdict row (a failed release) is not a
-         test. *)
-      let results = List.filter executed_test (Run.results outcome.Run.run) in
+      let results = Run.results outcome.Run.run in
       let skipped =
         List.length
           (List.filter
