@@ -78,8 +78,20 @@ let tests =
               (line_of p) loc.Loc.line
         | _, None -> fail "capture in an inlined function returns a location");
     test "capture is None when every frame is the standard library's" (fun () ->
-        is_true ~msg:"a domain whose stack holds no user frame"
-          (Domain.join (Domain.spawn Loc.capture) = None));
+        (* A domain's stack holds no user frame. It is spawned in a forked
+           child: once this process spawned one, OCaml refuses it every
+           later [fork], the mutation loop's included. *)
+        if Sys.win32 then
+          skip ~reason:"POSIX only: the domain runs in a fork" ();
+        match Unix.fork () with
+        | 0 ->
+            Unix._exit
+              (if Domain.join (Domain.spawn Loc.capture) = None then 0 else 1)
+        | pid -> (
+            match snd (Unix.waitpid [] pid) with
+            | Unix.WEXITED code ->
+                equal ~msg:"a domain whose stack holds no user frame" int 0 code
+            | _ -> fail "the child did not exit"));
     test "capture reads the 24 innermost entries only" (fun () ->
         (* [Seq.forever] calls [Loc.capture] from a Stdlib frame, and each
            [Seq.map] forces the one inside it from a Stdlib frame of its own:
