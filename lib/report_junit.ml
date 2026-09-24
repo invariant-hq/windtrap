@@ -262,9 +262,7 @@ let write ~invocation ?armed ~suite ~duration ~results ~release_failures target
     Os.atomic_write ~path:file document
   with
   | () -> ()
-  | exception Sys_error message ->
-      Os.warn (spf "could not write JUnit report: %s" message)
-  | exception Unix.Unix_error (error, _, _) ->
+  | exception ((Sys_error _ | Unix.Unix_error _) as e) ->
       Os.warn
         (spf "could not write JUnit report to %s: %s" (Os.display_path file)
-           (Unix.error_message error))
+           (Os.failure_reason ~path:file e))

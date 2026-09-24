@@ -763,6 +763,19 @@ module Path_suite = struct
             (fun dir ->
               equal ~msg:dir int 0o750 ((Unix.stat dir).Unix.st_perm land 0o777))
             [ deep; Filename.dirname deep ]);
+      test "failure_reason never repeats the path" (fun () ->
+          equal ~msg:"a Sys_error loses the path it starts with" string
+            "cannot write: No space left on device"
+            (Os.failure_reason ~path:"a/b.xml"
+               (Sys_error "a/b.xml: cannot write: No space left on device"));
+          equal ~msg:"another Sys_error is kept whole" string "c.xml: gone"
+            (Os.failure_reason ~path:"a/b.xml" (Sys_error "c.xml: gone"));
+          equal ~msg:"mkdir_p's error names the directory" string
+            "cannot create directory blocked/out: Not a directory"
+            (Os.failure_reason ~path:"blocked/out/r.xml"
+               (Unix.Unix_error (Unix.ENOTDIR, "mkdir", "blocked/out")));
+          equal ~msg:"any other exception is printed" string "Not_found"
+            (Os.failure_reason ~path:"a" Not_found));
       test "project_root: explicit override wins" (fun () ->
           setenv "WINDTRAP_PROJECT_ROOT" (Some "/tmp/override");
           equal ~msg:"override wins" string "/tmp/override" (Os.project_root ());

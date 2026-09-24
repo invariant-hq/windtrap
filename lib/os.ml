@@ -440,6 +440,20 @@ let rec mkdir_p path =
     try Unix.mkdir path 0o770 with Unix.Unix_error (Unix.EEXIST, _, _) -> ()
   end
 
+(* A caller names the path already, and a [Sys_error] of a file names it
+   first: the reason is what follows. *)
+let failure_reason ~path = function
+  | Sys_error message ->
+      let prefix = path ^ ": " in
+      if String.starts_with ~prefix message then
+        String.sub message (String.length prefix)
+          (String.length message - String.length prefix)
+      else message
+  | Unix.Unix_error (error, _, dir) ->
+      Printf.sprintf "cannot create directory %s: %s" (display_path dir)
+        (Unix.error_message error)
+  | exception_value -> Printexc.to_string exception_value
+
 (* Standard error *)
 
 (* Standard output is flushed first: a log that merges the two streams

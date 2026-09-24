@@ -107,8 +107,10 @@ val write :
 
     {!Os.atomic_write} writes the file, so an existing report is replaced whole.
     A report that cannot be written is one warning on standard error
-    ({!Os.warn}), at every verbosity, and never a failed run. [write] catches
-    the [Sys_error] and the [Unix.Unix_error] of these two functions for it. *)
+    ({!Os.warn}), at every verbosity, and never a failed run. It reads
+    [could not write JUnit report to <file>: <reason>], the reason being
+    {!Os.failure_reason}'s. [write] catches the [Sys_error] and the
+    [Unix.Unix_error] of these two functions for it. *)
 
 (**/**)
 

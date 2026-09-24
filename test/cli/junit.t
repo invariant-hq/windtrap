@@ -35,12 +35,13 @@ write fails:
   $ run ./suite_main.exe -f math --junit blocked/r.xml > out 2> err
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 2 passed in DURATION.
-  $ sed -E 's/^(windtrap: warning: could not write JUnit report): .*/\1: REASON/' err
-  windtrap: warning: could not write JUnit report: REASON
+  $ sed -E 's/(report to [^:]+): .*/\1: REASON/' err
+  windtrap: warning: could not write JUnit report to blocked/r.xml: REASON
 
 And here the directory form cannot make its directory, over the same
-file — a different branch, and the one that names the path it failed
-on. The run underneath fails, and its exit code comes through unchanged:
+file. The warning has the one form, the reason naming the directory it
+could not make. The run underneath fails, and its exit code comes
+through unchanged:
 
   $ run ./suite_main.exe -f boom --junit blocked/out > out 2> err
   [1]
@@ -71,4 +72,4 @@ report does not.
   corrections (1):
     could not write test/cli/greeting.expected.corrected: REASON
   $ sed -E 's/(could not write [^:]+): .*/\1: REASON/' err
-  windtrap: warning: could not write JUnit report: REASON
+  windtrap: warning: could not write JUnit report to blocked/r.xml: REASON

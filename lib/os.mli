@@ -300,6 +300,16 @@ val mkdir_p : string -> unit
     even when it is a file, and so is one that another process creates
     meanwhile. Raises [Unix.Unix_error] if a directory cannot be created. *)
 
+val failure_reason : path:string -> exn -> string
+(** [failure_reason ~path exn] is why an operation on the file [path] failed, in
+    words that do not repeat [path], for a message that names it already.
+    - A [Sys_error] is its message less a leading [path ^ ": "], which the
+      message of {!atomic_write} and that of opening [path] begin with.
+    - The [Unix.Unix_error] of {!mkdir_p} is
+      [cannot create directory <dir>: <error>], with [<dir>] through
+      {!display_path}.
+    - Any other exception is its [Printexc.to_string]. *)
+
 (** {1:stderr Standard error} *)
 
 val say : string -> unit

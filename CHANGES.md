@@ -663,7 +663,8 @@ Coverage and packaging:
   byte but a tab prints as `\xNN` (a carriage return as `\x0d`), and one
   the run survives says so: `windtrap: warning: focus is active: 1 of 2 tests ran;
   remove the focus before committing`, `windtrap: warning: could not write
-  JUnit report: <reason>`. The words are otherwise unchanged but for the
+  JUnit report to <path>: <reason>`, the one form whether the file or its
+  directory could not be made. The words are otherwise unchanged but for the
   lines an instrumented executable prints about its coverage dump, which
   name it in the sentence now that the prefix does not (`windtrap:
   warning: cannot write coverage file <path>: <reason>`).

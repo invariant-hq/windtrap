@@ -115,15 +115,6 @@ let form subject actual =
   | File _ -> canonicalize actual
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
-
-(* A [Sys_error] names its file first, and the caller names it already. *)
-let sys_reason path message =
-  let prefix = path ^ ": " in
-  if String.starts_with ~prefix message then
-    String.sub message (String.length prefix)
-      (String.length message - String.length prefix)
-  else message
-
 let unreadable reason = "the source file cannot be read: " ^ reason
 
 let read_baseline subject where =
@@ -156,8 +147,8 @@ let validate t where patch =
         let source =
           match read_file input with
           | text -> Ok text
-          | exception Sys_error message ->
-              Error (unreadable (sys_reason input message))
+          | exception (Sys_error _ as e) ->
+              Error (unreadable (Os.failure_reason ~path:input e))
         in
         Hashtbl.add t.sources input source;
         source
@@ -281,14 +272,8 @@ let write t =
       with
       | Ok () -> Written { path = output; literals }
       | Error reason -> Refused { path = output; reason }
-      | exception Sys_error message ->
-          Refused { path = output; reason = sys_reason output message }
-      | exception Unix.Unix_error (error, _, dir) ->
-          let reason =
-            Printf.sprintf "cannot create directory %s: %s"
-              (Os.display_path dir) (Unix.error_message error)
-          in
-          Refused { path = output; reason }
+      | exception ((Sys_error _ | Unix.Unix_error _) as e) ->
+          Refused { path = output; reason = Os.failure_reason ~path:output e }
     in
     t.writes <- outcome :: t.writes
   in
@@ -320,8 +305,8 @@ let write t =
             (* Every patch was valid alone on the bytes a check read: a
                refusal now is an edit since. *)
             match read_file input with
-            | exception Sys_error message ->
-                Error (unreadable (sys_reason input message))
+            | exception (Sys_error _ as e) ->
+                Error (unreadable (Os.failure_reason ~path:input e))
             | text ->
                 Result.map_error
                   (fun error ->
