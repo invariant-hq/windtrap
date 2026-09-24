@@ -1,0 +1,4 @@
+File "./reject_exclude_file_expr.ml", line 1, characters 18-40:
+1 | let f n = (n + 1) [@mutate exclude_file]
+                      ^^^^^^^^^^^^^^^^^^^^^^
+Error: mutate exclude_file is not allowed here.

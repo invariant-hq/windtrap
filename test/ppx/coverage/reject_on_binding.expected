@@ -1,0 +1,4 @@
+File "./reject_on_binding.ml", line 1, characters 16-31:
+1 | let f n = n + 1 [@@coverage on]
+                    ^^^^^^^^^^^^^^^
+Error: coverage on is not allowed here.

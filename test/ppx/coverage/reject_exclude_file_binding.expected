@@ -1,0 +1,4 @@
+File "./reject_exclude_file_binding.ml", line 1, characters 16-41:
+1 | let f n = n + 1 [@@coverage exclude_file]
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: coverage exclude_file is not allowed here.

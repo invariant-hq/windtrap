@@ -1,0 +1,4 @@
+File "./reject_on_binding.ml", line 1, characters 16-29:
+1 | let f n = n + 1 [@@mutate on]
+                    ^^^^^^^^^^^^^
+Error: mutate on is not allowed here.

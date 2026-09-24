@@ -1,0 +1,4 @@
+File "./reject_double_off.ml", line 5, characters 0-17:
+5 | [@@@coverage off]
+    ^^^^^^^^^^^^^^^^^
+Error: Coverage is already off.

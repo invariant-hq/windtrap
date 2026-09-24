@@ -291,6 +291,50 @@
   (diff reject_double_off.expected reject_double_off.actual)))
 
 (rule
+ (target reject_empty_payload.actual)
+ (action
+  (with-outputs-to
+   reject_empty_payload.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_empty_payload.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_empty_payload.expected reject_empty_payload.actual)))
+
+(rule
+ (target reject_exclude_file_binding.actual)
+ (action
+  (with-outputs-to
+   reject_exclude_file_binding.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_exclude_file_binding.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff
+   reject_exclude_file_binding.expected
+   reject_exclude_file_binding.actual)))
+
+(rule
+ (target reject_exclude_file_expr.actual)
+ (action
+  (with-outputs-to
+   reject_exclude_file_expr.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_exclude_file_expr.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_exclude_file_expr.expected reject_exclude_file_expr.actual)))
+
+(rule
  (target reject_misplaced_exclude_file.actual)
  (action
   (with-outputs-to
@@ -319,3 +363,59 @@
  (alias runtest)
  (action
   (diff reject_misplaced_on.expected reject_misplaced_on.actual)))
+
+(rule
+ (target reject_off_number.actual)
+ (action
+  (with-outputs-to
+   reject_off_number.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_off_number.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_off_number.expected reject_off_number.actual)))
+
+(rule
+ (target reject_off_two_reasons.actual)
+ (action
+  (with-outputs-to
+   reject_off_two_reasons.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_off_two_reasons.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_off_two_reasons.expected reject_off_two_reasons.actual)))
+
+(rule
+ (target reject_on_binding.actual)
+ (action
+  (with-outputs-to
+   reject_on_binding.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_on_binding.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_on_binding.expected reject_on_binding.actual)))
+
+(rule
+ (target reject_on_outside.actual)
+ (action
+  (with-outputs-to
+   reject_on_outside.actual
+   (with-accepted-exit-codes
+    1
+    (run ./mutate_pp.exe --impl %{dep:reject_on_outside.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_on_outside.expected reject_on_outside.actual)))

@@ -124,13 +124,13 @@ A fixture names each rule it pins by its id and interface line, as in
 
 | id | rule | interface | pinned by |
 | --- | --- | --- | --- |
-| C74 | A payload other than the three identifiers is refused. | cov:156, cov:212 | `coverage/reject_bad_payload`, `coverage/reject_off_reason` |
+| C74 | A payload other than the three identifiers is refused. | cov:156, cov:212 | `coverage/reject_bad_payload`, `coverage/reject_off_reason`, `coverage/reject_empty_payload` |
 | C75 | `on` on an expression is refused. | cov:213 | `coverage/reject_misplaced_on` |
-| C76 | `on` on a binding is refused. | cov:213 | unpinned |
-| C77 | `exclude_file` on an expression or a binding is refused. | cov:213 | unpinned |
-| C78 | `exclude_file` floating in a nested structure is refused. | cov:214 | unpinned |
-| C79 | `[@@@coverage off]` inside a region is refused: "Coverage is already off." | cov:215 | unpinned |
-| C80 | `[@@@coverage on]` outside a region is refused: "Coverage is already on." | cov:215 | unpinned |
+| C76 | `on` on a binding is refused. | cov:213 | `coverage/reject_on_binding` |
+| C77 | `exclude_file` on an expression or a binding is refused. | cov:213 | `coverage/reject_exclude_file_binding`, `coverage/reject_exclude_file_expr` |
+| C78 | `exclude_file` floating in a nested structure is refused. | cov:214 | `coverage/reject_misplaced_exclude_file` |
+| C79 | `[@@@coverage off]` inside a region is refused: "Coverage is already off." | cov:215 | `coverage/reject_double_off` |
+| C80 | `[@@@coverage on]` outside a region is refused: "Coverage is already on." | cov:215 | `coverage/reject_on_outside` |
 
 ## Mutation (`ppx/mutate/instrument.ml`)
 
@@ -232,12 +232,12 @@ A fixture names each rule it pins by its id and interface line, as in
 | id | rule | interface | pinned by |
 | --- | --- | --- | --- |
 | M59 | An unknown identifier payload is refused. | mut:233-234 | `mutate/reject_bad_payload` |
-| M60 | Other payload shapes (empty, `off 42`, `off "a" "b"`) are refused. | mut:233-234 | unpinned |
+| M60 | Other payload shapes (empty, `off 42`, `off "a" "b"`) are refused. | mut:233-234 | `mutate/reject_empty_payload`, `mutate/reject_off_number`, `mutate/reject_off_two_reasons` |
 | M61 | `on` on an expression is refused. | mut:235 | `mutate/reject_misplaced_on` |
-| M62 | `on` or `exclude_file` on a binding, `exclude_file` on an expression, are refused. | mut:235 | unpinned |
+| M62 | `on` or `exclude_file` on a binding, `exclude_file` on an expression, are refused. | mut:235 | `mutate/reject_on_binding`, `mutate/reject_exclude_file_binding`, `mutate/reject_exclude_file_expr` |
 | M63 | `exclude_file` floating in a nested structure is refused. | mut:236 | `mutate/reject_misplaced_exclude_file` |
 | M64 | `[@@@mutate off]` inside a region is refused: "Mutation is already off." | mut:237 | `mutate/reject_double_off` |
-| M65 | `[@@@mutate on]` outside a region is refused: "Mutation is already on." | mut:237 | unpinned |
+| M65 | `[@@@mutate on]` outside a region is refused: "Mutation is already on." | mut:237 | `mutate/reject_on_outside` |
 
 ## Expect (`ppx/ppx_windtrap.ml`)
 
