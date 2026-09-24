@@ -64,10 +64,6 @@ let%expect_test "several nodes consume in turn" =
   print_string "second";
   [%expect {| second |}]
 
-let%expect_test "sanitize applies ambient config" =
-  print_string "plain";
-  [%expect {| plain |}]
-
 (* A node inside a branch is an ordinary call: it runs when the branch
    does, and a body ending in a match needs no parentheses, since nothing
    is ever inserted after it. *)

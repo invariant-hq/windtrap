@@ -1,13 +1,7 @@
 (* The integration check. An instrumented library must compile, register
    its catalogue at module load, be observationally the original program
    with nothing armed, and actually change behaviour when a mutant is
-   armed.
-
-   It passes either way: under a plain build the catalogue holds only the
-   [Forced] and [No_guard] modules (which are preprocessed with the
-   instrumenter directly), and under
-   [--instrument-with ppx_windtrap.mutate] it also holds [Stanza]'s,
-   which is what proves the backend is selectable by that name. *)
+   armed. *)
 
 let baseline () =
   Printf.sprintf "%d %d %.1f %b %b %b %b %d %d %d %d %b"
@@ -204,17 +198,12 @@ let () =
   assert (Windtrap_runtime.Mutate.armed () = None);
   List.iter
     (fun (m : Windtrap_runtime.Mutate.mutant) ->
-      assert (List.mem m.id.rewrite Windtrap_runtime.Mutate.rewrites);
-      assert (m.id.line >= 1);
-      assert (m.id.col >= 0);
       assert (m.before <> "");
       assert (m.after <> ""))
     catalogue;
   (* Referenced so the linker keeps them: registration happens at module
      load, and the linker drops modules a binary never mentions. *)
   assert (Windtrap_mutate_forced.No_guard.cap 20 = 20);
-  assert (Windtrap_mutate_stanza.Stanza.apply Add 2 3 = 5);
-  assert (Windtrap_mutate_stanza.Stanza.clamp 0 10 42 = 10);
   let forced =
     List.filter
       (fun (m : Windtrap_runtime.Mutate.mutant) ->

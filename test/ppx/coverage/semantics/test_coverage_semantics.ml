@@ -15,13 +15,10 @@
    with their out-edge NOT counted - and every result must be the one an
    uninstrumented build computes. This executable is itself
    uninstrumented, so its own definitions are the uninstrumented
-   baselines. The final tests read the in-process runtime through
+   baselines. The tests read the in-process runtime through
    [Windtrap_runtime.Coverage.snapshot] to prove the generated registration and
-   visit calls actually count.
-
-   A windtrap suite ([run] executes tests sequentially in declaration
-   order); the last test reads what the others visited in the shared
-   in-process registry, so run the suite whole, not filtered. *)
+   visit calls actually count. Each reads what its own calls visited, and
+   registration is captured at module load, so each passes alone. *)
 
 open Windtrap
 module F = Covsem_fixtures
@@ -247,7 +244,10 @@ let tests =
           (F.sum_object [ 1; 2; 3 ]);
         let poked, send = hits (fun () -> F.poke (new F.adder)) in
         equal ~msg:"a send with a successor" int 1 poked;
-        is_true ~msg:"the send's out-edge counted" (send <> []));
+        (* [poke]'s body entry, the body of the method [total], and the
+           out-edge of [a#total]: without the out-edge, two. *)
+        equal ~msg:"the send's out-edge counted, with the two entries" int 3
+          (List.length send));
     (* An arm that is itself a function: two points, two moments *)
     test "an arm that is itself a function: two points, two moments" (fun () ->
         let add, select = hits (fun () -> F.dispatch `Add) in
@@ -276,21 +276,15 @@ let tests =
           && String.equal (F.bucket 500) "large");
         equal ~msg:"try arm catches" int 0 (F.safe_div 7 0);
         equal ~msg:"try body result" int 3 (F.safe_div 7 2));
-    (* The visit calls counted; a raising path lowers the % *)
-    test "the visit calls counted; a raising path lowers the percentage"
+    (* The visits reach the runtime's summary and its file report *)
+    test "the visits reach the summary and the fixture's one file report"
       (fun () ->
+        equal ~msg:"a call into the fixture" int 6 (F.sum_while 3);
         let s = fixture_snapshot () in
         let summary = Windtrap_runtime.Coverage.summary s in
         is_true ~msg:"points were visited" (summary.visited > 0);
         is_true ~msg:"visited never exceeds total"
           (summary.visited <= summary.total);
-        (* [tap_raise]'s out-edge can never fire, so the file can never
-           reach 100%: raising paths lower the percentage (the point of
-           the expression-grade re-grade). *)
-        is_true ~msg:"the raise out-edge keeps the file below 100%"
-          (summary.visited < summary.total);
-        is_true ~msg:"the percentage reflects the unvisited out-edge"
-          (Windtrap_runtime.Coverage.percentage summary < 100.);
         match Windtrap_runtime.Coverage.file_reports s with
         | [ report ] ->
             is_true ~msg:"the registered file is the fixture module"

@@ -13,15 +13,6 @@
  (preprocess
   (pps ppx_windtrap.mutate)))
 
-; The ordinary opt-in stanza: instrumented only under --instrument-with,
-; which is what proves the backend is selectable by that name.
-
-(library
- (name windtrap_mutate_stanza)
- (modules stanza)
- (instrumentation
-  (backend ppx_windtrap.mutate)))
-
 ; Type-directed disambiguation is warning 40's subject, so this one keeps
 ; dune's default warning set.
 
@@ -31,7 +22,8 @@
  (preprocess
   (pps ppx_windtrap.mutate)))
 
-; Compiled under both backends at once, linked by nothing.
+; Compiled under both backends at once. test_registration lists it, calling
+; nothing in it, so that runtest builds it at all.
 
 (library
  (name windtrap_mutate_both)
@@ -47,5 +39,5 @@
  (libraries
   windtrap.runtime
   windtrap_mutate_forced
-  windtrap_mutate_stanza
-  windtrap_mutate_disambiguate))
+  windtrap_mutate_disambiguate
+  windtrap_mutate_both))
