@@ -18,3 +18,5 @@ let rec or_if n = n = 0 || if n > 0 then or_if (n - 1) else false
    the stack), so the golden must show the handler's call bare and the
    body's post-wrapped. Both calls are here so the asymmetry is pinned. *)
 let rec or_try n = n = 0 || try or_try (n - 1) with Not_found -> or_try (n - 2)
+
+(* Rules pinned here, by id in RULES.md and interface line: C27, cov:62-65. *)

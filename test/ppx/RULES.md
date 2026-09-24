@@ -9,15 +9,20 @@ rule pinned by nothing is a rule any change may break unseen.
   `ppx/mutate/instrument.mli` (`mut`) that states the rule. The
   expect rewriter's rules cite `ppx/ppx_windtrap.mli` (`pwt`) or
   `ppx/config/expect_test_config.mli`.
-- **Pinned by**: a golden fixture (`coverage/`, `mutate/`, `expect/`,
-  one `.ml` and its `.expected`), a test of a semantics or integration
-  suite (named by its file and title), or a build that fails when the
-  rule breaks. `unpinned` means that deleting or inverting the rule
-  changes no test of any family; `partial` names what is pinned and what
-  is not.
+- **Pinned by**: a golden fixture (a directory under `coverage/`,
+  `mutate/` or `expect/`, one `.ml` and its `.expected`), a real
+  inline-test library or runner (named by its `.ml` file), a test of a
+  semantics or integration suite (named by its file and title), or a
+  build that fails when the rule breaks. A rule no test pins says
+  `STATED-NOT-TESTED` and why: the reason is a consequence of a pinned
+  rule, named. A part marked `CUT` goes back to the interface's writer
+  to be removed, with its L9 letter.
 
 A fixture names each rule it pins by its id and interface line, as in
-`(* C21, cov:51 *)`.
+`(* C21, cov:51 *)`. `check_rules.ml` fails the family's `runtest` when
+a fixture named here does not carry the rule's id, when a fixture cites
+a rule whose row does not name it, and when a rule is unpinned without a
+`STATED-NOT-TESTED` reason.
 
 ## Coverage (`ppx/coverage/instrument.ml`)
 
@@ -265,7 +270,7 @@ A fixture names each rule it pins by its id and interface line, as in
 | E20 | `let%test` registers `add_test` without `run`. | pwt:47-49 | `expect/test_basic`; `expect/config/config_shadow.ml` (at run time) |
 | E21 | `module%test M` becomes `enter_group`, the module, `leave_group`; `[@@tags]` consumed, other attributes kept. | pwt:51-54 | `expect/test_basic` |
 | E22 | `module%test _` or another item is refused. | pwt:73-76 | `expect/reject_test_anonymous_module`, `expect/reject_test_item` |
-| E23 | The cookie `inline_tests`: `enabled` keeps, `disabled` drops, another value is refused. | pwt:58-62, pwt:90-92 | cookie rules of `expect/dune` (`cookie_enabled`, `cookie_disabled`, `cookie_invalid`) |
+| E23 | The cookie `inline_tests`: `enabled` keeps, `disabled` drops, another value is refused. | pwt:58-62, pwt:90-92 | the cookie rules of expect/dune over `expect/expect_basic` and `expect/test_basic` (cookie_enabled, cookie_disabled, cookie_invalid) |
 | E24 | The cookie value `ignored` drops. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
 | E25 | The drop applies to `let%test` and `module%test`. | pwt:58-59 | the rule cookie_ignored of expect/dune over `expect/test_basic` |
 | E26 | Generated code is warning-free under `-w +a -warn-error +a`. | pwt:15-16 | build of `expect/strict_flags/inline_strict.ml` |

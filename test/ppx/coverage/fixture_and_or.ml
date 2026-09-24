@@ -10,3 +10,7 @@ let both x y = x && y
 let either x y = x || y
 let chain a b c = a || b || c
 let rec search p = function [] -> false | x :: rest -> p x || search p rest
+
+(* Rules pinned here, by id in RULES.md and interface line: C20, cov:47;
+   C22, cov:48-50; C24, cov:48-50; C25, cov:59-62; C50, cov:109-110;
+   C57, cov:106-107. *)

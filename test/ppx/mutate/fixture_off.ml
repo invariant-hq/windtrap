@@ -24,3 +24,7 @@ let suppressed a b = a + b
 [@@@mutate on]
 
 let visible a b = a + b
+
+(* Rules pinned here, by id in RULES.md and interface line: M38, mut:126-129;
+   M39, mut:128-129; M41, mut:132-133; M43, mut:136-140; M47, mut:151-154;
+   M50, mut:162-163. *)

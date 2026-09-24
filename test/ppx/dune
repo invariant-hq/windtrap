@@ -1,0 +1,17 @@
+; The rule catalogue is the rewriters' completeness measure, and this is its
+; check: every fixture a rule of RULES.md names carries the rule's id, every
+; rule left unpinned says why, and every fixture that cites a rule is named
+; by it.
+
+(executable
+ (name check_rules)
+ (modules check_rules))
+
+(rule
+ (alias runtest)
+ (deps
+  (source_tree coverage)
+  (source_tree mutate)
+  (source_tree expect))
+ (action
+  (run ./check_rules.exe %{dep:RULES.md})))

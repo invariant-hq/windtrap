@@ -5,3 +5,5 @@
 let cap want =
   if (want > 16) [@mutate off "both arms yield 16 at the boundary"] then want
   else 16
+
+(* Rules pinned here, by id in RULES.md and interface line: M53, mut:170-176. *)

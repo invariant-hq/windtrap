@@ -8,3 +8,5 @@ let alias = lazy const
 let none = lazy None
 let thunk = lazy (fun x -> x)
 let constrained = lazy (42 : int)
+
+(* Rules pinned here, by id in RULES.md and interface line: C14, cov:42-44. *)

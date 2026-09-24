@@ -5,3 +5,5 @@ let%expect_test "raises" =
   failwith "boom";
   [%expect {| |}]
 [@@expect.uncaught_exn {| (Failure boom) |}]
+
+(* Rules pinned here, by id in RULES.md and interface line: E18, pwt:87-89. *)

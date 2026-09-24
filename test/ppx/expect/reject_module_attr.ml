@@ -6,3 +6,5 @@ module%test Boom = struct
   let%test "inner" = ()
 end
 [@@expect.uncaught_exn {| (Failure boom) |}]
+
+(* Rules pinned here, by id in RULES.md and interface line: E18, pwt:87-89. *)

@@ -73,3 +73,6 @@ let%expect_test "a node inside a match arm" =
       Printf.printf "got %d\n" n;
       [%expect {| got 1 |}]
   | None -> print_string "none\n"
+
+(* Rules pinned here, by id in RULES.md and interface line: E10, pwt:38;
+   E12, pwt:39. *)

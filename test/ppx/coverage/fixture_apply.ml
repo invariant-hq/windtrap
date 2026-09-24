@@ -23,3 +23,6 @@ let sequenced () =
   print_string "a";
   print_string "b";
   print_newline ()
+
+(* Rules pinned here, by id in RULES.md and interface line: C31, cov:69-72;
+   C32, cov:74; C51, cov:111-114; C53, cov:115; C73, cov:185-186. *)

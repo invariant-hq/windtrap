@@ -15,3 +15,5 @@ let plain x = lazy x
    constrained application is not, and is traversed. *)
 let annotated a b = lazy (fun () -> a + b : unit -> int)
 let computed a b = lazy (a + b : int)
+
+(* Rules pinned here, by id in RULES.md and interface line: M25, mut:100-103. *)

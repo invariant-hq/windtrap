@@ -4,3 +4,5 @@
 let%expect_test "if reached" =
   if false then [%expect.if_reached {| never |}];
   [%expect {| |}]
+
+(* Rules pinned here, by id in RULES.md and interface line: E15, pwt:84-86. *)

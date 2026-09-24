@@ -3,3 +3,5 @@
    leftover scan (RFC compat mechanism (a)). *)
 
 let check () = ignore [%expectation {| x |}]
+
+(* Rules pinned here, by id in RULES.md and interface line: E17, pwt:84-86. *)

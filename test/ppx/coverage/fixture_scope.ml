@@ -26,3 +26,6 @@ let labeled_only ~f =
 
 let tail_call x = add x 1
 let never () = assert false
+
+(* Rules pinned here, by id in RULES.md and interface line: C30, cov:56-57;
+   C39, cov:77; C42, cov:86-88. *)

@@ -14,3 +14,5 @@ end
 let%expect_test "prints" =
   print_int (sum 1 2);
   [%expect {| 3 |}]
+
+(* Rules pinned here, by id in RULES.md and interface line: M27, mut:105-106. *)

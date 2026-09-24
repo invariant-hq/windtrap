@@ -22,3 +22,6 @@ class virtual shape =
     method virtual area : int
     method name = "shape"
   end
+
+(* Rules pinned here, by id in RULES.md and interface line: C5, cov:36-37;
+   C16, cov:46; C18, cov:46; C19, cov:46; C34, cov:74; C36, cov:72. *)

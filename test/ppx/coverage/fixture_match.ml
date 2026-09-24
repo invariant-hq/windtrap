@@ -9,3 +9,6 @@ let classify n =
   | _ -> assert false
 
 let safe_head l = try List.hd l with Failure _ -> "empty"
+
+(* Rules pinned here, by id in RULES.md and interface line: C6, cov:38;
+   C8, cov:38-39; C9, cov:55; C31, cov:69-72; C39, cov:77; C58, cov:129-132. *)

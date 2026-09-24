@@ -19,3 +19,6 @@ let sequenced () =
    leaf body marked like any other. *)
 let defaulted ?(x = String.length "abc") () = x
 let default_fn ?(l = fun () -> ()) () = l
+
+(* Rules pinned here, by id in RULES.md and interface line: C1, cov:33-34;
+   C2, cov:34-35; C4, cov:36-37; C6, cov:38. *)

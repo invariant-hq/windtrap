@@ -35,3 +35,6 @@ module Packed =
 [@@@coverage on]
 
 let light n = match n with 0 -> "z" | _ -> "x"
+
+(* Rules pinned here, by id in RULES.md and interface line: C62, cov:157-158;
+   C63, cov:159-160; C64, cov:160; C66, cov:163-164; C73, cov:185-186. *)
