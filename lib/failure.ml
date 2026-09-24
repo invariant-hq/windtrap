@@ -26,6 +26,8 @@ type message_diff = {
 
 type containment_demand =
   | Anywhere
+  | Prefix
+  | Suffix
   | Ordered of { index : int; resumed_at : int }
 
 type kind =
@@ -36,7 +38,6 @@ type kind =
       diffable : bool;
     }
   | Containment of {
-      claim : string;
       needle : string;
       found_at : int option;
       haystack_length : int;
@@ -217,8 +218,9 @@ let tail_bytes = 8_192
 let excerpt_limit = tail_bytes
 
 (* With nothing to centre on — a needle that occurs nowhere — the excerpt is
-   context rather than evidence, so the head is bounded to what a reader
-   scans past to reach the verdict: whichever of these comes first. *)
+   context rather than evidence, so the head, or the end for a suffix, is
+   bounded to what a reader scans past to reach the verdict: whichever of
+   these is shorter. *)
 let head_excerpt_bytes = 1_024
 let head_excerpt_lines = 10
 let cap s = Text.truncate_bytes_utf8 value_limit s
@@ -286,15 +288,44 @@ let head_window haystack =
   | Some line_stop -> min line_stop byte_stop
   | None -> byte_stop
 
+(* The end window, for an absent suffix: the head window read from the
+   other end. It starts after the newline that precedes the last
+   [head_excerpt_lines] lines, where a final newline ends the last line and
+   opens none, or at the byte bound moved forward to a code-point boundary,
+   whichever is later. *)
+let end_window haystack =
+  let len = String.length haystack in
+  let line_start =
+    (* The newline before the last [remaining] lines, searched below [i]. *)
+    let rec go i remaining =
+      match String.rindex_from_opt haystack (i - 1) '\n' with
+      | None -> None
+      | Some j -> if remaining = 1 then Some (j + 1) else go j (remaining - 1)
+    in
+    go
+      (if String.ends_with ~suffix:"\n" haystack then len - 1 else len)
+      head_excerpt_lines
+  in
+  let byte_start =
+    utf8_boundary_at_or_after haystack (max 0 (len - head_excerpt_bytes))
+  in
+  match line_start with
+  | Some line_start -> max line_start byte_start
+  | None -> byte_start
+
 (* The bounded haystack window stored as a containment failure's [excerpt].
    One bound, applied here: renderers show what is stored whole. Around
    [anchor] when there is one — the surroundings are the evidence — and the
-   bounded head otherwise. Both cuts land on UTF-8 code-point boundaries, so
-   an anchored window may exceed its limit by the up to three bytes needed to
-   complete a sequence. *)
-let excerpt_window ~anchor haystack =
+   bounded head, or end under [at_end], otherwise. Both cuts land on UTF-8
+   code-point boundaries, so an anchored window may exceed its limit by the
+   up to three bytes needed to complete a sequence. *)
+let excerpt_window ~anchor ~at_end haystack =
   let len = String.length haystack in
   match anchor with
+  | None when at_end ->
+      let start = end_window haystack in
+      if start = 0 then (0, haystack)
+      else (start, String.sub haystack start (len - start))
   | None ->
       let stop = head_window haystack in
       if stop >= len then (0, haystack) else (0, String.sub haystack 0 stop)
@@ -315,10 +346,9 @@ let excerpt_window ~anchor haystack =
 let excerpt_anchor ~found_at ~demand =
   match demand with
   | Ordered { resumed_at; _ } -> Some resumed_at
-  | Anywhere -> found_at
+  | Anywhere | Prefix | Suffix -> found_at
 
-let containment ?loc ?msg ?found_at ?(demand = Anywhere) ~claim ~needle
-    ~haystack () =
+let containment ?loc ?msg ?found_at ~demand ~needle ~haystack () =
   let outside i = i < 0 || i > String.length haystack in
   (match found_at with
   | Some i when outside i ->
@@ -327,14 +357,19 @@ let containment ?loc ?msg ?found_at ?(demand = Anywhere) ~claim ~needle
   (match demand with
   | Ordered { resumed_at; _ } when outside resumed_at ->
       invalid_arg "Failure.containment: resumed_at is outside the haystack"
-  | Anywhere | Ordered _ -> ());
+  | Anywhere | Prefix | Suffix | Ordered _ -> ());
   let excerpt_offset, excerpt =
-    excerpt_window ~anchor:(excerpt_anchor ~found_at ~demand) haystack
+    excerpt_window
+      ~anchor:(excerpt_anchor ~found_at ~demand)
+      ~at_end:
+        (match demand with
+        | Suffix -> true
+        | Anywhere | Prefix | Ordered _ -> false)
+      haystack
   in
   make ?loc ?msg
     (Containment
        {
-         claim = cap claim;
          needle = cap needle;
          found_at;
          haystack_length = String.length haystack;

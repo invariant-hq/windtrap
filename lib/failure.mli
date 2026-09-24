@@ -101,8 +101,10 @@ type message_diff = {
     occurrence, which [found_at] records. *)
 type containment_demand =
   | Anywhere
-      (** An occurrence anywhere: every containment verb but [in_order]. The
-          demand of an affix verb on the position is in its [claim] only. *)
+      (** An occurrence, for [contains], or none, for [not_contains]. [found_at]
+          tells which. *)
+  | Prefix  (** An occurrence at byte [0], for [starts_with]. *)
+  | Suffix  (** An occurrence that ends the haystack, for [ends_with]. *)
   | Ordered of { index : int; resumed_at : int }
       (** The needle is element [index], from zero, of an [in_order] chain, and
           its search started at byte [resumed_at]. [found_at] is still the first
@@ -126,16 +128,11 @@ type kind =
           renderer then computes no diff and marks neither side against the
           other. *)
   | Containment of {
-      claim : string;
-          (** What was asserted, in one line, as [string containing "eof"]. It
-              is carried as data, and no renderer shows it. *)
       needle : string;  (** The needle. *)
       found_at : int option;
           (** The byte offset of the first occurrence of the needle in the
-              haystack, if any: [None] for a failed [contains], [Some _] for a
-              failed [not_contains]. For an affix verb [Some _] says that the
-              needle occurs, and not where it was demanded (see {!Ordered} for
-              [in_order]). *)
+              haystack, if any. Under {!Prefix} and {!Suffix} [Some _] says
+              where the needle is instead (see {!Ordered} for [in_order]). *)
       haystack_length : int;  (** The length of the whole haystack in bytes. *)
       excerpt : string;
           (** A window of the haystack, which {!containment} bounds and a
@@ -392,22 +389,22 @@ val containment :
   ?loc:Loc.t ->
   ?msg:string ->
   ?found_at:int ->
-  ?demand:containment_demand ->
-  claim:string ->
+  demand:containment_demand ->
   needle:string ->
   haystack:string ->
   unit ->
   t
-(** [containment ~claim ~needle ~haystack ()] is a {!Containment} failure with
-    [claim], [needle], [found_at] and [demand] as given and a bounded excerpt of
-    [haystack]. [demand] defaults to {!Anywhere}.
+(** [containment ~demand ~needle ~haystack ()] is a {!Containment} failure with
+    [needle], [found_at] and [demand] as given and a bounded excerpt of
+    [haystack].
 
     The excerpt is cut here, once. Its anchor is the [resumed_at] of an
     {!Ordered} demand, or else [found_at]. With an anchor the excerpt is a
     window of at most {!tail_bytes} bytes around it. Without one it is the head
-    of the haystack: its first 10 lines or its first 1 KiB, whichever ends
-    first. Every cut falls on a code-point boundary, so an anchored window can
-    pass its bound by up to three bytes.
+    of the haystack, its first 10 lines or its first 1 KiB, whichever ends
+    first, and under {!Suffix} its end, its last 10 lines or its last 1 KiB,
+    whichever starts last. Every cut falls on a code-point boundary, so an
+    anchored window can pass its bound by up to three bytes.
 
     Raises [Invalid_argument] if [found_at], or the [resumed_at] of an
     {!Ordered} demand, is negative or greater than the length of [haystack]. *)

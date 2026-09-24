@@ -2281,7 +2281,7 @@ let test_value_elision () =
       ("    needle    \"" ^ nichi 133 ^ "\u{2026} (102 bytes elided)"
      ^ nichi 133 ^ "\": not found\n")
     (failure_block
-       (Failure.containment ~claim:"c"
+       (Failure.containment ~demand:Failure.Anywhere
           ~needle:(String.concat "" (List.init 300 (fun _ -> "\u{65e5}")))
           ~haystack:"hay" ()));
   (* A multi-line value is lines, bounded as lines are. *)
@@ -2609,8 +2609,8 @@ let test_prop_stats () =
 (* Containment blocks *)
 
 let not_contains_failure =
-  Failure.containment ~found_at:10 ~claim:{|string not containing "secret"|}
-    ~needle:"secret" ~haystack:"0123456789secret-end" ()
+  Failure.containment ~found_at:10 ~demand:Failure.Anywhere ~needle:"secret"
+    ~haystack:"0123456789secret-end" ()
 
 let test_containment_block () =
   let b = failure_block not_contains_failure in
@@ -2621,8 +2621,6 @@ let test_containment_block () =
     ~sub:
       ("    haystack  0123456789secret-end\n" ^ String.make 24 ' ' ^ "~~~~~~\n")
     b;
-  not_contains ~msg:"not_contains: the claim description never prints"
-    ~sub:"string not containing" b;
   not_contains ~msg:"not_contains: no fake equality labels" ~sub:"expected" b;
   not_contains ~msg:"not_contains: no excerpt line for a complete excerpt"
     ~sub:"(excerpt:" b;
@@ -2641,8 +2639,7 @@ let test_containment_block () =
      haystack. *)
   let haystack = String.make 20_006 'a' in
   let contains_failure =
-    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
-      ~haystack ()
+    Failure.containment ~demand:Failure.Anywhere ~needle:"NOPE" ~haystack ()
   in
   let b = failure_block contains_failure in
   contains ~msg:"contains: needle line with the not-found verdict"
@@ -2652,13 +2649,13 @@ let test_containment_block () =
   contains ~msg:"contains: the capped excerpt prints verbatim"
     ~sub:("haystack  " ^ String.make 100 'a')
     b;
-  not_contains ~msg:"contains: no diff against the claim sentence" ~sub:"~~~" b
+  not_contains ~msg:"contains: nothing is marked when nothing occurs" ~sub:"~~~"
+    b
 
 let test_containment_multiline () =
   let f =
-    Failure.containment ~claim:{|string containing "user=bob"|}
-      ~needle:"user=bob" ~haystack:"line one\nline two user=alice\nline three"
-      ()
+    Failure.containment ~demand:Failure.Anywhere ~needle:"user=bob"
+      ~haystack:"line one\nline two user=alice\nline three" ()
   in
   let b = failure_block f in
   contains ~msg:"multi-line haystack: block form"
@@ -2673,8 +2670,8 @@ let test_containment_multiline () =
   (* A found occurrence in a multi-line excerpt is marked under its line
      without colour, and coloured on it with. *)
   let found =
-    Failure.containment ~found_at:14 ~claim:{|string not containing "secret"|}
-      ~needle:"secret" ~haystack:"line one\nthe1 secret here\nline three" ()
+    Failure.containment ~found_at:14 ~demand:Failure.Anywhere ~needle:"secret"
+      ~haystack:"line one\nthe1 secret here\nline three" ()
   in
   let plain = failure_block found in
   contains ~msg:"multi-line occurrence marked under its line"
@@ -2709,8 +2706,7 @@ let test_containment_not_found_cap () =
      cannot scroll the diagnosis away. *)
   let haystack = String.make 20_006 'a' in
   let f =
-    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
-      ~haystack ()
+    Failure.containment ~demand:Failure.Anywhere ~needle:"NOPE" ~haystack ()
   in
   let b = failure_block f in
   contains ~msg:"cap: the verdict line is adjacent to the excerpt"
@@ -2727,8 +2723,7 @@ let test_containment_not_found_cap () =
   let line i = Printf.sprintf "line %02d filler filler" i in
   let haystack = String.concat "\n" (List.init 40 line) in
   let f =
-    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
-      ~haystack ()
+    Failure.containment ~demand:Failure.Anywhere ~needle:"NOPE" ~haystack ()
   in
   let b = failure_block f in
   contains ~msg:"cap: the tenth line still prints"
@@ -2740,8 +2735,8 @@ let test_containment_not_found_cap () =
      3 KiB haystack shows all of it, uncapped and unelided. *)
   let haystack = String.make 2_994 'x' ^ "secret" in
   let f =
-    Failure.containment ~found_at:2_994
-      ~claim:{|string not containing "secret"|} ~needle:"secret" ~haystack ()
+    Failure.containment ~found_at:2_994 ~demand:Failure.Anywhere
+      ~needle:"secret" ~haystack ()
   in
   let b = failure_block f in
   contains ~msg:"found-at: the full stored window prints" ~sub:haystack b;
@@ -2753,18 +2748,65 @@ let test_containment_not_found_cap () =
   let f =
     Failure.containment
       ~demand:(Failure.Ordered { index = 1; resumed_at = 9_000 })
-      ~claim:{|string containing "NOPE" at or after byte 9000|} ~needle:"NOPE"
-      ~haystack:(String.make 10_000 'a') ()
+      ~needle:"NOPE" ~haystack:(String.make 10_000 'a') ()
   in
   contains ~msg:"in_order: the cursor-anchored window is not capped"
     ~sub:"    (excerpt: bytes 4904-9999 of a 10000-byte haystack)\n"
     (failure_block f)
 
+(* An affix is named for its demand, and a misplaced one says where it was
+   demanded. An absent suffix shows the end of the haystack, where it was
+   demanded. *)
+let test_affix_blocks () =
+  let path = "sessions/ghost/session.json" in
+  let prefix_absent =
+    Failure.containment ~demand:Failure.Prefix ~needle:"users/" ~haystack:path
+      ()
+  in
+  let prefix_elsewhere =
+    Failure.containment ~demand:Failure.Prefix ~found_at:9 ~needle:"ghost"
+      ~haystack:path ()
+  in
+  let suffix_elsewhere =
+    Failure.containment ~demand:Failure.Suffix ~found_at:0 ~needle:"session"
+      ~haystack:path ()
+  in
+  contains ~msg:"starts_with absent: the prefix is not found"
+    ~sub:"    prefix    \"users/\": not found\n"
+    (failure_block prefix_absent);
+  contains ~msg:"starts_with elsewhere: not at the start"
+    ~sub:"    prefix    \"ghost\": found at byte 9, not at the start\n"
+    (failure_block prefix_elsewhere);
+  contains ~msg:"ends_with elsewhere: not at the end"
+    ~sub:"    suffix    \"session\": found at byte 0, not at the end\n"
+    (failure_block suffix_elsewhere);
+  equal ~msg:"headline: an absent prefix" string
+    {|prefix "users/" not found (27-byte haystack)|}
+    (Report.headline prefix_absent);
+  equal ~msg:"headline: a misplaced prefix" string
+    {|prefix "ghost" found at byte 9, not at the start|}
+    (Report.headline prefix_elsewhere);
+  equal ~msg:"headline: a misplaced suffix" string
+    {|suffix "session" found at byte 0, not at the end|}
+    (Report.headline suffix_elsewhere);
+  let line i = Printf.sprintf "line %02d filler filler" i in
+  let b =
+    failure_block
+      (Failure.containment ~demand:Failure.Suffix ~needle:"END"
+         ~haystack:(String.concat "\n" (List.init 40 line))
+         ())
+  in
+  contains ~msg:"ends_with absent: the last line prints"
+    ~sub:"      line 39 filler filler\n" b;
+  not_contains ~msg:"ends_with absent: the head does not" ~sub:"line 00" b;
+  contains ~msg:"ends_with absent: the range is the end"
+    ~sub:"    (excerpt: bytes 660-878 of a 879-byte haystack)\n" b
+
 let test_containment_headlines () =
   is_true ~msg:"headline: not_contains names the offset"
     (Report.headline not_contains_failure = {|needle "secret" found at byte 10|});
   let contains_failure =
-    Failure.containment ~claim:{|string containing "NOPE"|} ~needle:"NOPE"
+    Failure.containment ~demand:Failure.Anywhere ~needle:"NOPE"
       ~haystack:(String.make 20_006 'a') ()
   in
   is_true ~msg:"headline: contains names the haystack size"
@@ -2787,13 +2829,11 @@ let chain_haystack = "connect send disconnect authenticate"
 let out_of_order_failure =
   Failure.containment ~found_at:13
     ~demand:(Failure.Ordered { index = 2; resumed_at = 36 })
-    ~claim:{|string containing "disconnect" at or after byte 36|}
     ~needle:"disconnect" ~haystack:chain_haystack ()
 
 let missing_element_failure =
   Failure.containment
     ~demand:(Failure.Ordered { index = 2; resumed_at = 36 })
-    ~claim:{|string containing "teardown" at or after byte 36|}
     ~needle:"teardown" ~haystack:chain_haystack ()
 
 let test_in_order_block () =
@@ -2813,8 +2853,6 @@ let test_in_order_block () =
       ("    haystack  " ^ chain_haystack ^ "\n" ^ String.make 27 ' '
      ^ "~~~~~~~~~~\n")
     b;
-  not_contains ~msg:"in_order: the claim description never prints"
-    ~sub:"at or after byte 36\n" b;
   let colored = failure_block ~ansi:true out_of_order_failure in
   contains ~msg:"in_order: under colour the early occurrence is bold red"
     ~sub:
@@ -5592,6 +5630,7 @@ let tests =
     test "containment: multi-line haystack block" test_containment_multiline;
     test "containment: not-found display cap" test_containment_not_found_cap;
     test "containment: headline forms" test_containment_headlines;
+    test "containment: prefix and suffix blocks" test_affix_blocks;
     test "containment: in_order chain-break block" test_in_order_block;
     test "containment: demanded-occurrence headlines" test_demand_headlines;
     test "satisfies/matches: no refinement against the claim"

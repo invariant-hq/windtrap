@@ -308,12 +308,12 @@ Out of order and missing are different bugs; three `contains` calls
 report neither, because all three needles are there.
 
 `starts_with ~affix` and `ends_with ~affix` demand a position as well
-as presence. When the affix is nowhere in the string they report what
-`contains` would — the reason is the same — but when it is present in
-the wrong place they say where, and mark it:
+as presence. When the affix is nowhere in the string they say so, over
+the start of the string for `starts_with` and its end for `ends_with`;
+when it is present in the wrong place they say where, and mark it:
 
 ```
-needle    "ghost" — found at byte 9
+prefix    "ghost": found at byte 9, not at the start
 haystack  sessions/ghost/session.json
                    ~~~~~
 ```

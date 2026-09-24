@@ -242,7 +242,8 @@ let tests =
           | _ -> false));
     test "containment constructor: small haystack" (fun () ->
         let f =
-          F.containment ~claim:"desc" ~needle:"zz" ~haystack:"hello world" ()
+          F.containment ~demand:F.Anywhere ~needle:"zz" ~haystack:"hello world"
+            ()
         in
         containment_parts "small haystack" f
           (fun (excerpt, needle, found_at, haystack_length, excerpt_offset) ->
@@ -254,13 +255,13 @@ let tests =
               (String.length "hello world")
               haystack_length;
             equal ~msg:"whole haystack starts at 0" int 0 excerpt_offset);
-        is_true ~msg:"claim description stored"
+        is_true ~msg:"demand stored"
           (match f.F.kind with
-          | F.Containment { claim = "desc"; _ } -> true
+          | F.Containment { demand = F.Anywhere; _ } -> true
           | _ -> false));
     test "containment constructor: excerpt windows" (fun () ->
         let f =
-          F.containment ~claim:"d" ~needle:"n" ~haystack:big_haystack ()
+          F.containment ~demand:F.Anywhere ~needle:"n" ~haystack:big_haystack ()
         in
         containment_parts "head window" f
           (fun (excerpt, _, _, haystack_length, excerpt_offset) ->
@@ -275,7 +276,7 @@ let tests =
               haystack_length);
         let found_at = 20_000 in
         let f =
-          F.containment ~claim:"d" ~needle:"0002" ~haystack:big_haystack
+          F.containment ~demand:F.Anywhere ~needle:"0002" ~haystack:big_haystack
             ~found_at ()
         in
         containment_parts "centered window" f
@@ -293,8 +294,8 @@ let tests =
            end. *)
         let found_at = String.length big_haystack - 5 in
         let f =
-          F.containment ~claim:"d" ~needle:"x" ~haystack:big_haystack ~found_at
-            ()
+          F.containment ~demand:F.Anywhere ~needle:"x" ~haystack:big_haystack
+            ~found_at ()
         in
         containment_parts "window near the end" f
           (fun (excerpt, _, _, haystack_length, excerpt_offset) ->
@@ -304,7 +305,7 @@ let tests =
            odd window offset or length would mean a split UTF-8 sequence. *)
         let s = String.concat "" (List.init 10_000 (fun _ -> "\xc3\xa9")) in
         let f =
-          F.containment ~claim:"d" ~needle:"\xc3\xa9" ~haystack:s
+          F.containment ~demand:F.Anywhere ~needle:"\xc3\xa9" ~haystack:s
             ~found_at:9_999 ()
         in
         containment_parts "utf-8 window" f
@@ -314,8 +315,8 @@ let tests =
             is_true ~msg:"window never ends inside a UTF-8 sequence"
               ((excerpt_offset + String.length excerpt) mod 2 = 0)));
     test "containment constructor: an unanchored excerpt is the head" (fun () ->
-        let excerpt haystack =
-          match (F.containment ~claim:"d" ~needle:"n" ~haystack ()).F.kind with
+        let excerpt ?(demand = F.Anywhere) haystack =
+          match (F.containment ~demand ~needle:"n" ~haystack ()).F.kind with
           | F.Containment { excerpt; _ } -> excerpt
           | _ -> fail "containment kind"
         in
@@ -329,7 +330,28 @@ let tests =
           (String.sub (lines 10 200) 0 1_024)
           (excerpt (lines 10 200));
         equal ~msg:"one line: the first 1 KiB" string (String.make 1_024 'a')
-          (excerpt (String.make 5_000 'a')));
+          (excerpt (String.make 5_000 'a'));
+        (* Under [Suffix] the same bounds, read from the end. *)
+        let suffix = excerpt ~demand:F.Suffix in
+        equal ~msg:"suffix, short lines: the last 10" string
+          (String.concat ""
+             (List.init 10 (fun i -> Printf.sprintf "%09d\n" (i + 10))))
+          (suffix (lines 20 10));
+        equal ~msg:"suffix, no final newline: the last 10" string
+          "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+          (suffix "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
+        equal ~msg:"suffix, long lines: the last 1 KiB" string
+          (let all = lines 10 200 in
+           String.sub all (String.length all - 1_024) 1_024)
+          (suffix (lines 10 200));
+        equal ~msg:"suffix, fewer than 10 short lines: whole" string
+          (lines 3 10)
+          (suffix (lines 3 10));
+        equal ~msg:"suffix, an empty haystack: empty" string "" (suffix "");
+        (* 2-byte characters: the byte bound moves forward to a boundary. *)
+        equal ~msg:"suffix, one line: its end, on a code point" int 1_024
+          (String.length
+             (suffix (String.concat "" (List.init 3_000 (fun _ -> "\xc3\xa9"))))));
     test "containment constructor: an anchored window may pass its bound by 3"
       (fun () ->
         (* The window's end falls on the first continuation byte of a
@@ -341,7 +363,8 @@ let tests =
           ^ four ^ String.make 10_000 'a'
         in
         match
-          (F.containment ~claim:"d" ~needle:"a" ~haystack ~found_at ()).F.kind
+          (F.containment ~demand:F.Anywhere ~needle:"a" ~haystack ~found_at ())
+            .F.kind
         with
         | F.Containment { excerpt; _ } ->
             equal ~msg:"tail_bytes + 3" int (F.tail_bytes + 3)
@@ -352,24 +375,26 @@ let tests =
     test "containment constructor: found_at validation and bounding" (fun () ->
         raises_match ~msg:"negative found_at rejected" Exn.invalid_arg
           (fun () ->
-            F.containment ~claim:"d" ~needle:"n" ~haystack:"abc" ~found_at:(-1)
-              ());
+            F.containment ~demand:F.Anywhere ~needle:"n" ~haystack:"abc"
+              ~found_at:(-1) ());
         raises_match ~msg:"found_at past the end rejected" Exn.invalid_arg
           (fun () ->
-            F.containment ~claim:"d" ~needle:"n" ~haystack:"abc" ~found_at:4 ());
+            F.containment ~demand:F.Anywhere ~needle:"n" ~haystack:"abc"
+              ~found_at:4 ());
         is_true ~msg:"found_at at the end accepted (empty-needle case)"
           (match
-             F.containment ~claim:"d" ~needle:"" ~haystack:"abc" ~found_at:3 ()
+             F.containment ~demand:F.Anywhere ~needle:"" ~haystack:"abc"
+               ~found_at:3 ()
            with
           | _ -> true
           | exception Invalid_argument _ -> false);
-        let f = F.containment ~claim:big ~needle:big ~haystack:"abc" () in
-        is_true ~msg:"needle and description are bounded"
+        let f =
+          F.containment ~demand:F.Anywhere ~needle:big ~haystack:"abc" ()
+        in
+        is_true ~msg:"the needle is bounded"
           (match f.F.kind with
-          | F.Containment { claim; needle; _ } ->
-              String.length claim < 200_000
-              && String.length needle < 200_000
-              && has ~needle:"truncated" needle
+          | F.Containment { needle; _ } ->
+              String.length needle < 200_000 && has ~needle:"truncated" needle
           | _ -> false));
     test "baseline constructor" (fun () ->
         let f =

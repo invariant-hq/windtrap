@@ -69,20 +69,18 @@ let is_false ?__POS__ ?msg b =
 
 (* String containment *)
 
-let fail_containment ?__POS__ ?msg ?found_at ?demand ~claim ~needle ~haystack ()
-    =
+let fail_containment ?__POS__ ?msg ?found_at ~demand ~needle ~haystack () =
   raise
     (Failure.Check_failure
        (Failure.containment ?loc:(Loc.resolve ?__POS__ ()) ?msg ?found_at
-          ?demand ~claim ~needle ~haystack ()))
+          ~demand ~needle ~haystack ()))
 
 let contains ?__POS__ ?msg ~sub haystack =
   match Text.first_occurrence ~pattern:sub haystack with
   | Some _ -> ()
   | None ->
-      fail_containment ?__POS__ ?msg
-        ~claim:(Pp.str "string containing %S" sub)
-        ~needle:sub ~haystack ()
+      fail_containment ?__POS__ ?msg ~demand:Failure.Anywhere ~needle:sub
+        ~haystack ()
 
 (* Each element is searched for from the end of the previous element's
    match, so the chain never re-uses bytes and never runs backwards. On a
@@ -101,8 +99,6 @@ let in_order ?__POS__ ?msg ~subs haystack =
             fail_containment ?__POS__ ?msg
               ?found_at:(Text.first_occurrence ~pattern:sub haystack)
               ~demand:(Failure.Ordered { index; resumed_at = cursor })
-              ~claim:
-                (Pp.str "string containing %S at or after byte %d" sub cursor)
               ~needle:sub ~haystack ())
   in
   walk 0 0 subs
@@ -111,8 +107,7 @@ let not_contains ?__POS__ ?msg ~sub haystack =
   match Text.first_occurrence ~pattern:sub haystack with
   | None -> ()
   | Some found_at ->
-      fail_containment ?__POS__ ?msg ~found_at
-        ~claim:(Pp.str "string not containing %S" sub)
+      fail_containment ?__POS__ ?msg ~found_at ~demand:Failure.Anywhere
         ~needle:sub ~haystack ()
 
 (* Prefix and suffix are containment with a position demanded. Reporting
@@ -123,16 +118,14 @@ let not_contains ?__POS__ ?msg ~sub haystack =
 
 let starts_with ?__POS__ ?msg ~affix haystack =
   if not (String.starts_with ~prefix:affix haystack) then
-    fail_containment ?__POS__ ?msg
+    fail_containment ?__POS__ ?msg ~demand:Failure.Prefix
       ?found_at:(Text.first_occurrence ~pattern:affix haystack)
-      ~claim:(Pp.str "string starting with %S" affix)
       ~needle:affix ~haystack ()
 
 let ends_with ?__POS__ ?msg ~affix haystack =
   if not (String.ends_with ~suffix:affix haystack) then
-    fail_containment ?__POS__ ?msg
+    fail_containment ?__POS__ ?msg ~demand:Failure.Suffix
       ?found_at:(Text.first_occurrence ~pattern:affix haystack)
-      ~claim:(Pp.str "string ending with %S" affix)
       ~needle:affix ~haystack ()
 
 (* Membership is containment over a witnessed element type, so it cannot

@@ -336,7 +336,7 @@ let baseline_subject = function
   | Failure.File path -> spf "expect_file \"%s\"" (Os.display_path path)
 
 (* A chain break and a plain miss answer the same question, the first in
-   more words. *)
+   more words. An affix found elsewhere says where it was demanded. *)
 let containment_verdict ~demand ~found_at =
   match (demand, found_at) with
   | Failure.Ordered { resumed_at; _ }, Some at ->
@@ -344,7 +344,15 @@ let containment_verdict ~demand ~found_at =
   | Failure.Ordered { resumed_at; _ }, None ->
       spf "not found at or after byte %d" resumed_at
   | Failure.Anywhere, Some at -> spf "found at byte %d" at
-  | Failure.Anywhere, None -> "not found"
+  | Failure.Prefix, Some at -> spf "found at byte %d, not at the start" at
+  | Failure.Suffix, Some at -> spf "found at byte %d, not at the end" at
+  | (Failure.Anywhere | Failure.Prefix | Failure.Suffix), None -> "not found"
+
+(* The word that names the needle: what the verb demanded of it. *)
+let needle_word = function
+  | Failure.Prefix -> "prefix"
+  | Failure.Suffix -> "suffix"
+  | Failure.Anywhere | Failure.Ordered _ -> "needle"
 
 (* Line lists equal but bytes differ: the only such difference is a single
    trailing newline, which a line diff cannot show. *)
@@ -388,10 +396,12 @@ let headline (f : Failure.t) =
         | Failure.Ordered { index; resumed_at }, None ->
             spf "element %d %S not found at or after byte %d (%d-byte haystack)"
               index needle resumed_at haystack_length
-        | Failure.Anywhere, Some at ->
-            spf "needle %S found at byte %d" needle at
-        | Failure.Anywhere, None ->
-            spf "needle %S not found (%d-byte haystack)" needle haystack_length)
+        | (Failure.Anywhere | Failure.Prefix | Failure.Suffix), Some _ ->
+            spf "%s %S %s" (needle_word demand) needle
+              (containment_verdict ~demand ~found_at)
+        | (Failure.Anywhere | Failure.Prefix | Failure.Suffix), None ->
+            spf "%s %S not found (%d-byte haystack)" (needle_word demand) needle
+              haystack_length)
     | Failure.Raise { expected = Some e; actual = Some a; _ } ->
         spf "expected exception %s, raised %s" e a
     | Failure.Raise { expected = Some e; actual = None; _ } ->
@@ -833,31 +843,23 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
   | Failure.Equality { expected; actual; _ } ->
       pp_eq ~ansi put ~ind ~expected ~actual
   | Failure.Containment
-      {
-        needle;
-        found_at;
-        haystack_length;
-        excerpt;
-        excerpt_offset;
-        demand;
-        claim = _;
-      } ->
-      (* The block is the containment payload, never a fake equality diff;
-         the claim sentence is a description and stays out of it. Anchors pad
-         to the [expected]/[actual] gutter. The element of the chain that
-         broke it has its own line: the rest of the block is about it. *)
+      { needle; found_at; haystack_length; excerpt; excerpt_offset; demand } ->
+      (* The block is the containment payload, never a fake equality diff.
+         Anchors pad to the [expected]/[actual] gutter. The element of the
+         chain that broke it has its own line: the rest of the block is about
+         it. *)
       (match demand with
       | Failure.Ordered { index; _ } ->
           put_ind
             [ styled `Faint "element"; plain ("   " ^ string_of_int index) ]
-      | Failure.Anywhere -> ());
+      | Failure.Anywhere | Failure.Prefix | Failure.Suffix -> ());
       (* [%S] is [String.escaped] between quotes, OCaml's decimal escapes.
          An elided needle is cut in its carried bytes and each end escaped:
          a cut in the quoted text would split an escape and count its
          digits. *)
       put_ind
         [
-          styled `Faint "needle";
+          styled `Faint (needle_word demand);
           plain
             ("    \""
             ^ Text.elide_middle max_value_bytes ~show:String.escaped needle

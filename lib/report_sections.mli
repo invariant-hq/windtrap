@@ -109,11 +109,14 @@ val pp_failure :
     newline alone prints a sentence that names the longer side.
 
     {b Containment.} The entry prints the chain index of an {!Failure.Ordered}
-    demand, then the needle with the verdict of the search. The verdict says
-    whether and at which byte the needle was found, and for an ordered demand at
-    which byte the search had resumed. The excerpt of the haystack follows,
-    whole, with the occurrence marked in it as a changed span is. Its byte range
-    comes last, when it is not the whole haystack.
+    demand, then the needle with the verdict of the search. The needle is named
+    [prefix] under {!Failure.Prefix}, [suffix] under {!Failure.Suffix} and
+    [needle] otherwise. The verdict says whether and at which byte the needle
+    was found, for an affix found elsewhere that it is not at the start or not
+    at the end, and for an ordered demand at which byte the search had resumed.
+    The excerpt of the haystack follows, whole, with the occurrence marked in it
+    as a changed span is. Its byte range comes last, when it is not the whole
+    haystack.
 
     {b Raise.} The entry prints the expected exception over the raised one, each
     in one style and never marked, or over a sentence when nothing was raised. A

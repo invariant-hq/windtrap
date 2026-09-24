@@ -48,26 +48,32 @@ let equality_payload name f k =
       k (expected, actual, not_)
   | _ -> fail (name ^ ": kind is a diffable Equality")
 
-(* [k] gets the claim description and the containment payload. The demand is
-   projected separately by [containment_demand] below rather than widening
-   this continuation to a seventh component. *)
+(* The demand as a flat string, so a wrong one is legible in the report —
+   the [describe_message_diff] precedent below. *)
+let describe_demand = function
+  | F.Anywhere -> "anywhere"
+  | F.Prefix -> "prefix"
+  | F.Suffix -> "suffix"
+  | F.Ordered { index; resumed_at } ->
+      Printf.sprintf "ordered %d from %d" index resumed_at
+
+(* [k] gets the demand, flattened by [describe_demand], and the containment
+   payload. *)
 let containment_payload name f k =
   match caught name f with
   | {
    F.kind =
      F.Containment
-       {
-         claim;
-         needle;
-         found_at;
-         haystack_length;
-         excerpt;
-         excerpt_offset;
-         demand = _;
-       };
+       { needle; found_at; haystack_length; excerpt; excerpt_offset; demand };
    _;
   } ->
-      k (claim, excerpt, needle, found_at, haystack_length, excerpt_offset)
+      k
+        ( describe_demand demand,
+          excerpt,
+          needle,
+          found_at,
+          haystack_length,
+          excerpt_offset )
   | _ -> fail (name ^ ": kind is Containment")
 
 (* The counted and ordered verbs: what the assertion demanded, and the
@@ -80,13 +86,6 @@ let containment_demand name f k =
   } ->
       k (demand, found_at, excerpt, excerpt_offset)
   | _ -> fail (name ^ ": kind is Containment")
-
-(* The demand as a flat string, so a wrong one is legible in the report —
-   the [describe_message_diff] precedent below. *)
-let describe_demand = function
-  | F.Anywhere -> "anywhere"
-  | F.Ordered { index; resumed_at } ->
-      Printf.sprintf "ordered %d from %d" index resumed_at
 
 let describe_offset = function
   | Some i -> Printf.sprintf "Some %d" i
@@ -233,15 +232,15 @@ let tests =
             Check.contains ~sub:"hello" "hello");
         containment_payload "contains: fail payload"
           (fun () -> Check.contains ~sub:"zz" "hello world")
-          (fun ( claim,
+          (fun ( demand,
                  excerpt,
                  needle,
                  found_at,
                  haystack_length,
                  excerpt_offset )
              ->
-            equal ~msg:"contains: claim describes the assertion" string
-              {|string containing "zz"|} claim;
+            equal ~msg:"contains: an occurrence anywhere" string "anywhere"
+              demand;
             equal ~msg:"contains: small haystack stored whole" string
               "hello world" excerpt;
             equal ~msg:"contains: needle stored verbatim" string "zz" needle;
@@ -274,9 +273,9 @@ let tests =
             Check.not_contains ~sub:"zz" "hello");
         containment_payload "not_contains: fail payload"
           (fun () -> Check.not_contains ~sub:"NEEDLE" "abcNEEDLEdef")
-          (fun (claim, excerpt, _, found_at, _, _) ->
-            equal ~msg:"not_contains: claim describes the assertion" string
-              {|string not containing "NEEDLE"|} claim;
+          (fun (demand, excerpt, _, found_at, _, _) ->
+            equal ~msg:"not_contains: no occurrence anywhere" string "anywhere"
+              demand;
             equal ~msg:"not_contains: small haystack stored whole" string
               "abcNEEDLEdef" excerpt;
             equal ~msg:"not_contains: found_at is the occurrence offset" string
@@ -386,9 +385,9 @@ let tests =
               "Some 0" (describe_offset found_at));
         containment_payload "in_order: fail payload"
           (fun () -> Check.in_order ~subs:[ "start"; "abort" ] log)
-          (fun (claim, excerpt, needle, _, haystack_length, _) ->
-            equal ~msg:"in_order: claim names the element and the cursor" string
-              {|string containing "abort" at or after byte 5|} claim;
+          (fun (demand, excerpt, needle, _, haystack_length, _) ->
+            equal ~msg:"in_order: the demand names the element and the cursor"
+              string "ordered 1 from 5" demand;
             equal ~msg:"in_order: the needle is the element that broke" string
               "abort" needle;
             equal ~msg:"in_order: small haystack stored whole" string log
@@ -439,9 +438,8 @@ let tests =
            is the same — the affix is nowhere in the string. *)
         containment_payload "starts_with: affix absent"
           (fun () -> Check.starts_with ~affix:"users/" path)
-          (fun (claim, _, needle, found_at, _, _) ->
-            equal ~msg:"claim names the relation" string
-              {|string starting with "users/"|} claim;
+          (fun (demand, _, needle, found_at, _, _) ->
+            equal ~msg:"the demand is the prefix" string "prefix" demand;
             equal ~msg:"needle is the affix" string "users/" needle;
             is_true ~msg:"no occurrence to report" (found_at = None));
         (* Present but misplaced: the offset is the whole point, and it is
@@ -453,16 +451,36 @@ let tests =
               (found_at = Some 9));
         containment_payload "ends_with: affix present elsewhere"
           (fun () -> Check.ends_with ~affix:"session" path)
-          (fun (claim, _, _, found_at, _, _) ->
-            equal ~msg:"claim names the relation" string
-              {|string ending with "session"|} claim;
+          (fun (demand, _, _, found_at, _, _) ->
+            equal ~msg:"the demand is the suffix" string "suffix" demand;
             is_true ~msg:"located at its first occurrence" (found_at = Some 0));
         (* A suffix that overruns the string is absent, not a crash. *)
         containment_payload "ends_with: affix longer than the haystack"
           (fun () ->
             Check.ends_with ~affix:"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" "ab")
           (fun (_, _, _, found_at, _, _) ->
-            is_true ~msg:"nothing located" (found_at = None)));
+            is_true ~msg:"nothing located" (found_at = None));
+        (* An absent suffix was demanded at the end: the excerpt is the end
+           of the haystack, where the head would show nothing of it. *)
+        let lines =
+          String.concat ""
+            (List.init 40 (fun i -> Printf.sprintf "line %d\n" i))
+        in
+        containment_payload "ends_with: an absent suffix excerpts the end"
+          (fun () -> Check.ends_with ~affix:"end" lines)
+          (fun (_, excerpt, _, _, haystack_length, excerpt_offset) ->
+            equal ~msg:"the last 10 lines" string
+              (String.concat ""
+                 (List.init 10 (fun i -> Printf.sprintf "line %d\n" (i + 30))))
+              excerpt;
+            is_true ~msg:"the window ends the haystack"
+              (excerpt_offset + String.length excerpt = haystack_length));
+        let long = String.make 3_000 'x' in
+        containment_payload "ends_with: a long line excerpts its last 1 KiB"
+          (fun () -> Check.ends_with ~affix:"end" long)
+          (fun (_, excerpt, _, _, _, excerpt_offset) ->
+            is_true ~msg:"the last 1 KiB"
+              (excerpt_offset = 3_000 - 1_024 && String.length excerpt = 1_024)));
     test "mem" (fun () ->
         let calls = ref 0 in
         passes "mem: pass" (fun () -> Check.mem (counting_int calls) 2 [ 1; 2 ]);
@@ -1157,15 +1175,19 @@ let tests =
             raises_match ~msg:(Printf.sprintf "%S" s) Exn.invalid_arg (fun () ->
                 Check.in_order ~subs:[] s))
           [ ""; "abc" ]);
-    test "not_contains, starts_with and ends_with demand Anywhere" (fun () ->
+    test "each containment verb states its demand" (fun () ->
         List.iter
-          (fun (name, f) ->
+          (fun (name, f, expected) ->
             containment_demand name f (fun (demand, _, _, _) ->
-                equal ~msg:name string "anywhere" (describe_demand demand)))
+                equal ~msg:name string expected (describe_demand demand)))
           [
-            ("not_contains", fun () -> Check.not_contains ~sub:"a" "abc");
-            ("starts_with", fun () -> Check.starts_with ~affix:"z" "abc");
-            ("ends_with", fun () -> Check.ends_with ~affix:"z" "abc");
+            ( "not_contains",
+              (fun () -> Check.not_contains ~sub:"a" "abc"),
+              "anywhere" );
+            ( "starts_with",
+              (fun () -> Check.starts_with ~affix:"z" "abc"),
+              "prefix" );
+            ("ends_with", (fun () -> Check.ends_with ~affix:"z" "abc"), "suffix");
           ]);
     test "Exn predicates" (fun () ->
         is_true ~msg:"Exn.invalid_arg: matches the constructor"

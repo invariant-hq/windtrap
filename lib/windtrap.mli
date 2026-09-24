@@ -486,8 +486,8 @@ val satisfies :
 
     The string verbs compare bytes. A failure prints the wanted string and an
     excerpt of the searched one. The excerpt is a window of 8 KiB around the
-    byte offset the failure reports, and 10 lines or 1 KiB when it reports none.
-*)
+    byte offset the failure reports. When it reports none, the excerpt is the
+    first 10 lines or 1 KiB, and for {!ends_with} the last. *)
 
 val starts_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
 (** [starts_with ~affix s] asserts that [s] begins with [affix]. When [affix]
@@ -495,8 +495,9 @@ val starts_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
     occurrence. *)
 
 val ends_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
-(** [ends_with ~affix s] asserts that [s] ends with [affix]. The failure prints
-    what the failure of {!starts_with} prints. *)
+(** [ends_with ~affix s] asserts that [s] ends with [affix]. When [affix] occurs
+    elsewhere in [s], the failure gives the byte offset of its first occurrence.
+*)
 
 val contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] asserts that [sub] occurs in [s]. The empty string occurs

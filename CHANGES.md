@@ -214,12 +214,15 @@ Coverage and packaging:
   `~claim` replaces the expected side's sentence. **`contains`,
   `not_contains`, `starts_with`, `ends_with`** print the needle with its
   verdict over a bounded excerpt of the haystack (an absent needle's
-  excerpt is cut to ten lines and 1 KiB; a found occurrence keeps its
-  window), and **`in_order ~subs`** asserts a chain of substrings, naming
-  on a break the element, the byte the search had reached, and whether the
-  element was present but too early. The block reads `needle  "<n>":
-  <verdict>` over `haystack  <excerpt>`, the occurrence bold red in the
-  haystack in color, and marked by a `~` line under its line without.
+  excerpt is cut to ten lines and 1 KiB, the last ones for `ends_with`; a
+  found occurrence keeps its window), and **`in_order ~subs`** asserts a
+  chain of substrings, naming on a break the element, the byte the search
+  had reached, and whether the element was present but too early. The
+  block reads `needle  "<n>": <verdict>` over `haystack  <excerpt>`, the
+  occurrence bold red in the haystack in color, and marked by a `~` line
+  under its line without. `starts_with` and `ends_with` name the needle
+  `prefix` and `suffix`, and one found elsewhere reads `found at byte 9,
+  not at the start` (or `not at the end`).
   **`mem t x xs`** is membership through a witness.
 - **`raises exn fn`** asserts a structurally equal exception and reports
   a wrong `Invalid_argument`, `Failure` or `Sys_error` message as a

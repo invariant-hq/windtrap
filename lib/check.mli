@@ -165,18 +165,14 @@ val at_least :
 
 (** {1:containment String containment}
 
-    The five verbs compare bytes. Each builds a {!Failure.containment} from a
-    claim in one line, the needle and the whole haystack, and
-    {!Failure.containment} owns the excerpt and its bounds. [found_at] is always
-    the first occurrence of the needle from byte [0] of the haystack, when it
-    has one.
+    The five verbs compare bytes. Each builds a {!Failure.containment} from its
+    demand, the needle and the whole haystack, and {!Failure.containment} owns
+    the excerpt and its bounds. [found_at] is always the first occurrence of the
+    needle from byte [0] of the haystack, when it has one.
 
-    Three fields tell the failures apart. [demand] is {!Failure.Ordered} for
-    {!in_order} and {!Failure.Anywhere} for the other four. [found_at] tells a
-    failed {!contains} from a failed {!not_contains} (see
-    {!Failure.Containment}). Only the claim tells {!starts_with} and
-    {!ends_with} from those two and from each other, and no renderer shows a
-    claim. *)
+    The demand is {!Failure.Prefix} for {!starts_with}, {!Failure.Suffix} for
+    {!ends_with}, {!Failure.Ordered} for {!in_order} and {!Failure.Anywhere} for
+    {!contains} and {!not_contains}, which [found_at] tells apart. *)
 
 val contains : ?__POS__:pos -> ?msg:string -> sub:string -> string -> unit
 (** [contains ~sub s] is [()] iff [sub] occurs in [s]. The empty string occurs
@@ -190,8 +186,7 @@ val starts_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
 (** [starts_with ~affix s] is [()] iff [String.starts_with ~prefix:affix s]. *)
 
 val ends_with : ?__POS__:pos -> ?msg:string -> affix:string -> string -> unit
-(** [ends_with ~affix s] is [()] iff [String.ends_with ~suffix:affix s]. The
-    payload is built as {!starts_with} builds it, with a claim of its own, so
+(** [ends_with ~affix s] is [()] iff [String.ends_with ~suffix:affix s].
     [found_at] is the leftmost occurrence and not the one nearest the end. *)
 
 val in_order : ?__POS__:pos -> ?msg:string -> subs:string list -> string -> unit
