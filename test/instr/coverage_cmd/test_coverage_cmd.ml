@@ -1408,6 +1408,84 @@ let edge_tests =
           [ "-h"; "-help" ]);
   ]
 
+(* Discovery at its edges: what the walk-up takes, what it cannot read,
+   and the dumps that cannot be judged *)
+
+let discovery_edge_tests =
+  [
+    test "the walk-up takes _build by that name only, and no sandbox" (fun () ->
+        let root = scratch "walk-up" in
+        write_file
+          (Filename.concat root "_build_ci/_coverage/ci.coverage")
+          (C.to_string
+             (collection "ci" [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]));
+        mkdir_p (Filename.concat root "src");
+        let code, _, err = coverage_cmd ~cwd:(Filename.concat root "src") [] in
+        equal ~msg:"a private build directory is not walked up to" int 1 code;
+        contains ~msg:"so nothing is found" ~sub:"no .coverage files found" err;
+        (* An ancestor with a .sandbox component holds junk, the one above
+           it the data. *)
+        let root = proj () in
+        let sandboxed = Filename.concat root ".sandbox/0abc" in
+        write_file
+          (Filename.concat sandboxed "_build/_coverage/junk.coverage")
+          "not a coverage file\n";
+        let code, out, err = coverage_cmd ~cwd:sandboxed [] in
+        equal ~msg:"the sandboxed ancestor is passed over" int 0 code;
+        equal ~msg:"its junk is never read" text "" err;
+        contains ~msg:"and the project above it is reported"
+          ~sub:"coverage: 60.0% (3/5 points)" out);
+    test "what cannot be listed or inspected contributes nothing, silently"
+      (fun () ->
+        let root = proj () in
+        let locked = Filename.concat root "_build/_coverage/locked" in
+        write_file (Filename.concat locked "hidden.coverage") "not read\n";
+        Unix.chmod locked 0o000;
+        Unix.symlink
+          (Filename.concat root "nowhere")
+          (Filename.concat root "_build/_coverage/dangling.coverage");
+        let code, out, err =
+          Fun.protect
+            ~finally:(fun () -> Unix.chmod locked 0o755)
+            (fun () -> coverage_cmd ~cwd:root [])
+        in
+        equal ~msg:"exit code" int 0 code;
+        equal ~msg:"no error and no warning" text "" err;
+        contains ~msg:"the readable dumps are reported"
+          ~sub:"coverage: 60.0% (3/5 points)" out);
+    test "a dump that cannot be judged is kept" (fun () ->
+        let data =
+          collection "judged" [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]
+        in
+        (* A relative identity in a file that lies in no build directory. *)
+        let loose = scratch "loose.coverage" in
+        write_file loose
+          (C.to_string
+             ~identity:
+               {
+                 C.exe = "default/test/gone.exe";
+                 digest = Digest.to_hex (Digest.string "gone");
+               }
+             data);
+        let code, out, err = coverage_cmd ~cwd:(temp_dir ()) [ loose ] in
+        equal ~msg:"a relative identity outside a build directory: exit" int 0
+          code;
+        equal ~msg:"no warning" text "" err;
+        contains ~msg:"and merged" ~sub:"coverage: 100.0% (3/3 points)" out;
+        (* An executable that exists and cannot be read. *)
+        let root = scratch "unreadable-exe" in
+        let identity = plant_exe root "default/test/a.exe" "another build" in
+        let exe = Filename.concat root "_build/default/test/a.exe" in
+        write_file exe "yet another build";
+        Unix.chmod exe 0o000;
+        write_dump root "a.coverage" ~identity
+          [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ];
+        let code, out, err = coverage_cmd ~cwd:root [] in
+        equal ~msg:"an unreadable executable: exit" int 0 code;
+        equal ~msg:"no warning" text "" err;
+        contains ~msg:"and merged" ~sub:"coverage: 100.0% (3/3 points)" out);
+  ]
+
 (* The suite *)
 
 let () =
@@ -1430,4 +1508,5 @@ let () =
          raise_attribution;
          junit_rails;
          group "edges" edge_tests;
+         group "discovery edges" discovery_edge_tests;
        ]
