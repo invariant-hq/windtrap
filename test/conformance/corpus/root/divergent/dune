@@ -1,11 +1,10 @@
-; Formerly-divergent fixture, conforming since the D2 fix and diffed
-; on @runtest (see ../../../RESULTS.md).
+; A fixture that diverged at the first measure and conforms now.
 ;
 ; unflushed_stubs_output.ml: output printed from C stubs without
 ; flushing is attributed to the [%expect] node that follows it —
 ; Capture drains C stdio (lib/capture_stubs.c) at every consumption
 ; point, as upstream's collector does. A conforming run passes with no
-; correction, so the golden is the drive.exe placeholder.
+; correction, so the golden is the driver's placeholder.
 
 (executable
  (name conformance_runner)

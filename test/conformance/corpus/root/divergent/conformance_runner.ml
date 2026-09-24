@@ -1,5 +1,6 @@
-(* Windtrap-authored runner main for quarantined divergent fixtures
-   (see ../../../RESULTS.md). *)
+(* Windtrap-authored runner main (mirrors the inline_tests backend's
+   generated runner): one fixture per process, so its exit code and
+   transcript are its own. *)
 
 module _ = Unflushed_stubs_output
 

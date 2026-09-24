@@ -1,10 +1,9 @@
 ; similar_distinct_outputs.ml — a functor instantiated twice registers
 ; two tests with identical names/locations; windtrap renames the later
-; duplicate, runs both, and merges their reach histories per node, so
-; the two formatted-identical outputs correct once, byte-identical to
-; the upstream golden (formerly divergence D1; conforming since the
-; duplicate-registration fix, so diffed on @runtest). Kept in its own
-; runner so its exit code is pinned independently.
+; duplicate and runs both, and the node they share, reached with two
+; outputs that normalize alike, is corrected once, byte-identical to the
+; upstream golden. Kept in its own runner so its exit code and transcript
+; are its own.
 
 (executable
  (name conformance_runner)

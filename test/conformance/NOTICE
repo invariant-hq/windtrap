@@ -16,7 +16,7 @@ listed in TRIAGE.md ("source tweaks"), applied identically to fixtures
 and their goldens so the corpus builds without Jane Street
 dependencies.
 
-Windtrap-authored harness files in this tree (drive.ml, pp.ml, the
-conformance_runner*.ml mains, corpus_shim.ml, shim/, and all dune
-files) are Copyright (c) 2026 Invariant Systems, ISC licensed, like the
-rest of windtrap.
+Windtrap-authored harness files in this tree (pp.ml, the runner mains,
+corpus_shim.ml, shim/, converged/, all dune files, and the goldens that
+record windtrap's own output) are Copyright (c) 2026 Invariant Systems,
+ISC licensed, like the rest of windtrap.

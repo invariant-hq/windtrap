@@ -1,18 +1,19 @@
 ; Corrections harness for upstream test/negative-tests: every fixture
-; is an intentionally failing expect test; the observable is the
+; is an intentionally failing expect test, and the observable is the
 ; .corrected file the runner writes, compared byte-for-byte against the
-; vendored upstream golden (<f>.ml.corrected.expected). runner-exit
-; pins the promotion-protocol exit code: 0 — every failure in this set
-; is an expect mismatch with a recorded correction. export_test.ml /
-; import_test.ml pass and must produce no corrections (covered by the
-; exit code). The uncaught-exn/expectation/unreachable-family fixtures
-; (comment, exn*, expectation, function_with_distinct_outputs, functor,
-; tag, zero_alloc) are the rejected set, asserted by the pp.exe rules
-; at the bottom. Three upstream fixtures are not vendored — nine.ml and
-; three.ml want reformat-on-match, which windtrap deliberately does not
-; do, and unusual_payload_location.ml's golden contradicts its own
-; pinned source — see ../../RESULTS.md; similar_distinct_outputs lives
-; in divergent/.
+; golden <f>.ml.corrected.expected. The goldens are windtrap's own
+; recorded output, not upstream's (counts.expected says how many are
+; equal). runner-exit pins the promotion-protocol exit code: 0, since
+; every failure in this set is an expect mismatch with a recorded
+; correction; runner-log pins the transcript, which also shows
+; export_test.ml and import_test.ml passing. The uncaught-exn,
+; expectation and unreachable fixtures (comment, exn*, expectation,
+; function_with_distinct_outputs, functor, tag, zero_alloc) are the
+; rejected set, asserted by the pp.exe rules at the bottom. Three
+; upstream fixtures are not vendored (nine.ml and three.ml want
+; reformat-on-match, unusual_payload_location.ml's golden contradicts
+; its own pinned source): see ../../RESULTS.md. similar_distinct_outputs
+; lives in divergent/.
 
 (executable
  (name conformance_runner)
