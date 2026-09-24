@@ -242,7 +242,7 @@ raises, and the raise is the release's failure.
   ──────────────────────── failures ────────────────────────
     FAIL  fixture release
       [release] test/cli/suite_main.ml:LINE
-      fixture (test/cli/suite_main.ml:LINE): release raised Invalid_argument("windtrap: run is already active; a test body cannot start another run")
+      fixture (test/cli/suite_main.ml:LINE): release raised Invalid_argument("windtrap: a run is already executing; nothing inside it can start another run")
   ──────────────────────────────────────────────────────────
   
   1 passed, 1 failed in DURATION.

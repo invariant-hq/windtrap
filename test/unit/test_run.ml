@@ -2742,7 +2742,7 @@ let () =
    };
   ] ->
       check "a nested run fails the calling test"
-        (contains "already active" actual)
+        (contains "already executing" actual)
   | _ -> check "a nested run fails the calling test" false
 
 (* The baseline CI guard *)

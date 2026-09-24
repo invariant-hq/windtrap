@@ -262,13 +262,17 @@ let with_frame frame fn = with_context (In_test frame) fn
 let with_active t fn = with_context (In_run t) fn
 let active () = Option.is_some !slot
 
+(* Both name what holds wherever the call came from: a run is refused from a
+   test body, a fixture's release and an observer alike, and the operations
+   that need a test are more than any list would keep up with. *)
 let active_run_error =
-  "windtrap: run is already active; a test body cannot start another run"
+  "windtrap: a run is already executing; nothing inside it can start another \
+   run"
 
 let outside_run_error =
-  "windtrap: no test is running. Assertions, [output ()], [expect], [collect], \
-   [setenv], [chdir] and fixture accessors work only inside a test body \
-   executed by [run], not at module toplevel and not after the run."
+  "windtrap: no test is running; this call works only in a test's setup, body \
+   or teardown, not at module top level, in a fixture's release or after the \
+   run"
 
 let current_frame () =
   match !slot with

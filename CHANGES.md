@@ -120,7 +120,9 @@ Coverage and packaging:
   One binary can host two suites, a harness can post-process a run
   in-process, and a `main` that forgets the `exit` is a type error
   rather than a binary that is green on failure. `run` refuses to start
-  inside an active run, and the programmatic knobs of 0.1 (`~quick`,
+  inside an active run (`windtrap: a run is already executing; nothing
+  inside it can start another run`), whether a test body, a fixture's
+  release or an observer calls it, and the programmatic knobs of 0.1 (`~quick`,
   `~filter`, `~seed`, `~format`, `~junit`, `~update`, `~snapshot_dir`)
   are gone: the flags and their mirrors are the configuration, or a
   synthetic `~argv`.
