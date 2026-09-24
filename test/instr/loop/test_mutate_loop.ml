@@ -804,6 +804,66 @@ let verdict_file_tests =
         not_contains ~msg:"the scope narrows the mutants, not the tests"
           ~sub:"verdicts not saved" err;
         is_true ~msg:"so the file was written" (saved <> ""));
+    test "a prefix-scoped run keeps what its build wrote for other files"
+      (fun () ->
+        let { saved; _ } = Lazy.force green in
+        let verdicts, identity =
+          match load_saved saved with
+          | Ok loaded -> loaded
+          | Error e -> failf "verdict file unreadable: %a" V.pp_error e
+        in
+        (* A record of a file outside the scope, as a run under another
+           prefix of this very build would have left it. *)
+        let other =
+          {
+            V.id =
+              {
+                M.file = "elsewhere/other.ml";
+                line = 1;
+                col = 0;
+                rewrite = "add";
+              };
+            before = "a - b";
+            after = "a + b";
+            verdict = V.Killed;
+          }
+        in
+        let ids () =
+          match V.load verdict_path with
+          | Error e -> failf "verdict file unreadable: %a" V.pp_error e
+          | Ok (t, _) ->
+              List.map
+                (fun (r : V.record) -> M.id_to_string r.V.id)
+                (V.records t)
+        in
+        let rerun ?identity () =
+          V.save ?identity verdict_path (V.add verdicts other);
+          let code, _, err = spawn ~args:[ mutate ] [] in
+          equal ~msg:"exit code" int 0 code;
+          equal ~msg:"stderr" text "" err
+        in
+        let scoped =
+          List.map
+            (fun (r : V.record) -> M.id_to_string r.V.id)
+            (V.records verdicts)
+        in
+        rerun ?identity ();
+        equal ~msg:"the scope's records, and the other file's kept"
+          (list string)
+          ("elsewhere/other.ml:1:0:add" :: scoped)
+          (ids ());
+        rerun
+          ?identity:
+            (Option.map
+               (fun (i : V.identity) ->
+                 { i with V.digest = String.make 32 '0' })
+               identity)
+          ();
+        equal ~msg:"another build's file is replaced whole" (list string) scoped
+          (ids ());
+        rerun ();
+        equal ~msg:"and so is a file that names no writer" (list string) scoped
+          (ids ()));
     test "every narrowing of the suite writes no verdict file" (fun () ->
         List.iter
           (fun flags ->

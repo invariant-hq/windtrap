@@ -798,7 +798,8 @@ Coverage and packaging:
   runtime itself reads no flag and no environment.
 - **The project answer is the merge.** Each unfiltered run writes a verdict
   file under the build directory's `_mutants` (or `_windtrap/mutants`
-  without one), and `windtrap mutants` merges them under **killed
+  without one); a `--mutate=PREFIX` run replaces the records under its
+  prefixes and keeps the others when the same build wrote the file, and `windtrap mutants` merges them under **killed
   anywhere wins**, reporting survivors with the executable beside each
   reaching test plus a `never reached` section for mutants no executable's tests
   evaluate; it exits 1 when any mutant survived every executable that

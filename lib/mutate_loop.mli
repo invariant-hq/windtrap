@@ -104,9 +104,11 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     {b The verdict file.} The file holds one record per reached mutant, and one
     [Unreached] record per unreached mutant of the population. It is written to
     {!Windtrap_runtime.Verdicts.output_file} of the executable, by
-    {!Windtrap_runtime.Verdicts.save}. A file that cannot be written
-    ([Sys_error]) is one sentence on standard error after the report, and the
-    result is still [Reported 0].
+    {!Windtrap_runtime.Verdicts.save}. Under a scope, the records of the files
+    outside it stay when the file there was written by this build
+    ({!Windtrap_runtime.Verdicts.writer_identity}), and are dropped otherwise. A
+    file that cannot be written ([Sys_error]) is one sentence on standard error
+    after the report, and the result is still [Reported 0].
 
     Only a loop that ran whole, over the whole suite, writes it. A run whose
     selection narrows the suite writes none and says so on standard error after

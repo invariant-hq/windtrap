@@ -31,13 +31,11 @@ let spf = Printf.sprintf
    and still counts reaches — the runtime reads no environment and no
    flag — and what narrows is the work: a mutant outside the prefixes is
    never forked and never recorded. *)
-let in_scope ~scope (m : M.mutant) =
+let in_scope ~scope (id : M.id) =
   match scope with
   | [] -> true
   | prefixes ->
-      List.exists
-        (fun prefix -> String.starts_with ~prefix m.M.id.M.file)
-        prefixes
+      List.exists (fun prefix -> String.starts_with ~prefix id.M.file) prefixes
 
 type run = Ran of (Run.outcome, Run.startup_error) result | Reported of int
 
@@ -838,12 +836,26 @@ let narrows_suite ~(config : Run.config) ~focus =
   || config.Run.exclude_tags <> []
   || config.Run.failed_only || focus || config.Run.shard <> None
 
-(* What windtrap has to say about the file, for after the report. *)
-let write_verdicts verdicts =
+(* The file holds the executable's answer for every mutant it catalogues,
+   so a scoped run replaces only the records of its scope. The records of
+   the other files are kept when this very build wrote them, which the
+   identity proves; a file another build wrote, or none can read, says
+   nothing about this one and is replaced whole. With no scope nothing is
+   kept. What windtrap has to say about the file is for after the
+   report. *)
+let write_verdicts ~scope verdicts =
   let exe = Sys.executable_name in
-  match
-    V.save ?identity:(V.writer_identity ~exe) (V.output_file ~exe) verdicts
-  with
+  let path = V.output_file ~exe in
+  let identity = V.writer_identity ~exe in
+  let kept =
+    match (identity, V.load path) with
+    | Some identity, Ok (prior, Some writer) when writer = identity ->
+        List.filter
+          (fun (r : V.record) -> not (in_scope ~scope r.V.id))
+          (V.records prior)
+    | _ -> []
+  in
+  match V.save ?identity path (List.fold_left V.add verdicts kept) with
   | () -> None
   | exception Sys_error message ->
       Some (spf "could not write the verdict file: %s" message)
@@ -866,7 +878,9 @@ let population ~scope =
          mutate: instrument the library under test with ppx_windtrap.mutate \
          and re-run"
   | catalogue, _ -> (
-      match List.filter (in_scope ~scope) catalogue with
+      match
+        List.filter (fun (m : M.mutant) -> in_scope ~scope m.M.id) catalogue
+      with
       | [] ->
           Error
             (spf
@@ -920,7 +934,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
             in
             (* A narrowed run's reach is its selection's, and the outcome
                line says so by the count the dry run executed. *)
-            let scope =
+            let reached_by =
               if narrowed then Report_sections.Selected (List.length executed)
               else Report_sections.Suite
             in
@@ -952,7 +966,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                              the suite, and a partial run's verdicts would \
                              stand in the project merge as the whole."
                       | None ->
-                          write_verdicts
+                          write_verdicts ~scope
                             (List.fold_left
                                (fun acc (m : M.mutant) ->
                                  V.add acc (V.record_of_mutant m V.Unreached))
@@ -983,7 +997,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                            (fun (r : V.record) -> r.V.verdict = V.Killed)
                            records);
                     not_tested = List.length reached - List.length records;
-                    scope;
+                    scope = reached_by;
                   }
                 in
                 match stopped with

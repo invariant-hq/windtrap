@@ -104,9 +104,10 @@ val merge : t -> t -> t
     {!Unreached}.
 
     A run whose selection narrows the suite leaves the file alone. A run under
-    [--mutate=PREFIX] does replace the file, with the records of the mutants
-    under the prefix only. The records that an earlier run wrote for the other
-    source files are then gone until the next run without a prefix.
+    [--mutate=PREFIX] replaces the records of the mutants under the prefix. It
+    keeps the records of the other source files when the file was written by the
+    same build, with an equal {!type-identity}, and it replaces a file that
+    another build wrote, or that it cannot read, whole.
 
     The first line of a file is the magic line [windtrap-mutants-v3], which
     carries the version of the format. A file with another first line is
