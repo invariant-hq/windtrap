@@ -3569,6 +3569,842 @@ let () =
         (f.Failure.loc = Some (Loc.of_pos pos))
   | _ -> check "raises-loc: exactly one failure" false
 
+(* ------------------------------------------------------------------ *)
+(* The rest of the contract, statement by statement *)
+(* ------------------------------------------------------------------ *)
+
+let gen = Windtrap.Gen.int_range 0 100
+
+(* Standard output and standard error go to [file] for the extent of [fn]. *)
+let with_output_to file fn =
+  let flush_all () =
+    Format.pp_print_flush Format.std_formatter ();
+    Format.pp_print_flush Format.err_formatter ();
+    flush stdout;
+    flush stderr
+  in
+  flush_all ();
+  let fd =
+    Unix.openfile file [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o600
+  in
+  let saved_out = Unix.dup Unix.stdout and saved_err = Unix.dup Unix.stderr in
+  Unix.dup2 fd Unix.stdout;
+  Unix.dup2 fd Unix.stderr;
+  Unix.close fd;
+  Fun.protect
+    ~finally:(fun () ->
+      flush_all ();
+      Unix.dup2 saved_out Unix.stdout;
+      Unix.dup2 saved_err Unix.stderr;
+      Unix.close saved_out;
+      Unix.close saved_err)
+    fn
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:(Filename.concat root "logs") () in
+  let tests =
+    [
+      Test_tree.test "passes" ignore;
+      Test_tree.test "fails" (fun () -> Check.fail "x");
+      Test_tree.test "skips" (fun () -> Check.skip ());
+    ]
+  in
+  let printed = Filename.concat root "printed" in
+  with_output_to printed (fun () ->
+      ignore (Run.execute config ~suite:"quiet" tests));
+  check_string "execute prints nothing" ~expected:"" ~actual:(read_file printed)
+
+let () =
+  let a = Run.default_config () and b = Run.default_config () in
+  check "default config: colour auto, one second, the mirrors' spelling"
+    (a.Run.color = Os.Auto && a.Run.slow_threshold = 1.
+    && a.Run.invocation = `Mirrors
+    && (not a.Run.verbose) && not a.Run.github);
+  check_string "default config: the log dir is Os.default_log_dir ()"
+    ~expected:(Os.default_log_dir ()) ~actual:a.Run.log_dir;
+  check "default config: every call draws a seed" (a.Run.seed <> b.Run.seed)
+
+let () =
+  let parent =
+    {
+      (Run.default_config ()) with
+      Run.timeout = Some 3.;
+      prop_count = Some 7;
+      color = Os.Never;
+      verbose = true;
+      slow_threshold = 2.;
+      github = true;
+      invocation = `Exe "suite.exe";
+    }
+  in
+  let child = Run.for_subset parent ~log_dir:"/tmp/child" ~bail:false in
+  check "for_subset: every other field is the parent's"
+    (child.Run.timeout = Some 3.
+    && child.Run.prop_count = Some 7
+    && child.Run.color = Os.Never && child.Run.verbose
+    && child.Run.slow_threshold = 2.
+    && child.Run.github
+    && child.Run.invocation = `Exe "suite.exe")
+
+(* The fields only a report reads change nothing a run decides. *)
+let () =
+  with_temp_root @@ fun root ->
+  let tests =
+    [
+      Test_tree.test "passes" ignore;
+      Test_tree.test "fails" (fun () -> Check.fail "x");
+      Test_tree.test "skips" (fun () -> Check.skip ());
+      Test_tree.xfail (Test_tree.test "expected" (fun () -> Check.fail "y"));
+      Test_tree.slow "slow" ignore;
+    ]
+  in
+  let decided config =
+    match Run.execute config ~suite:"s" tests with
+    | Error _ -> None
+    | Ok o ->
+        Some
+          ( o.Run.exit_code,
+            List.map
+              (fun (r : Run.result) ->
+                ( r.Run.path,
+                  r.Run.counted,
+                  r.Run.attempts,
+                  match r.Run.outcome with
+                  | Failure.Pass -> "pass"
+                  | Failure.Fail _ -> "fail"
+                  | Failure.Skip _ -> "skip" ))
+              (Run.results o.Run.run) )
+  in
+  let plain = base_config ~log_dir:(Filename.concat root "a") () in
+  let dressed =
+    {
+      (base_config ~log_dir:(Filename.concat root "b") ()) with
+      Run.color = Os.Always;
+      slow_threshold = 0.;
+      verbose = true;
+      junit = Some (Filename.concat root "junit.xml");
+      github = true;
+      invocation = `Exe "suite.exe";
+    }
+  in
+  check "colour, threshold, -v, JUnit, GitHub and invocation decide nothing"
+    (decided plain <> None && decided plain = decided dressed)
+
+(* subtest: what passes through, what it labels, where *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let tests =
+    [
+      Test_tree.test ~timeout:0.02 "times out" (fun () ->
+          Run.subtest "spins" busy_forever);
+      Run.prop ~count:5 "discards in a subtest" gen (fun _ ->
+          Run.subtest "assumes" (fun () -> Windtrap.assume false));
+    ]
+  in
+  expect_run "subtest control suite runs" ~config tests @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "times out" ]) with
+  | [ f ] ->
+      check "a timeout passes through subtest, unlabelled"
+        (f.Failure.subtest = [] && contains "timed out" (message_of f))
+  | _ -> check "one timeout failure" false);
+  match failure_list (outcome_of outcome [ "discards in a subtest" ]) with
+  | f :: _ ->
+      check "an assume inside a subtest inside a law fails the test"
+        (f.Failure.subtest = [ "discards in a subtest"; "assumes" ])
+  | [] -> check "the property failed" false
+
+let () =
+  let run = make_run () in
+  in_test run ~path:[ "test" ] (fun frame ->
+      Run.subtest "outer" (fun () ->
+          Run.subtest "inner" (fun () -> Check.is_true ~msg:"ctx" false));
+      match Run.failures frame with
+      | [ f ] ->
+          check "the label is data: the test, then the open subtests"
+            (f.Failure.subtest = [ "test"; "outer"; "inner" ]);
+          check "and never in msg" (f.Failure.msg = Some "ctx")
+      | _ -> check "one nested failure" false)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let tests =
+    [
+      Test_tree.bracket
+        ~setup:(fun () -> Run.subtest "in setup" (fun () -> Check.fail "s"))
+        ~teardown:(fun () ->
+          Run.subtest "in teardown" (fun () -> Check.fail "t"))
+        "phases" ignore;
+    ]
+  in
+  expect_run "subtest phase suite runs" ~config tests @@ fun outcome ->
+  let fs = failure_list (outcome_of outcome [ "phases" ]) in
+  check_int "two subtest failures" ~expected:2 ~actual:(List.length fs);
+  check "a subtest failure stays Body, in a setup and a teardown"
+    (List.for_all (fun f -> f.Failure.phase = Failure.Body) fs)
+
+(* check_baseline *)
+
+let () =
+  let run = make_run () in
+  let subject =
+    Baseline.Literal { pos = ("test/x.ml", 3, 0, 0); value = "a"; exact = true }
+  in
+  let given = { Loc.file = "test/x.ml"; line = 3; column = 0 } in
+  in_test run ~path:[ "t" ] ~loc:declared (fun frame ->
+      Run.check_baseline ~loc:given subject "b";
+      Run.check_baseline subject "b";
+      Run.subtest "s" (fun () -> Run.check_baseline ~loc:given subject "b");
+      match Run.failures frame with
+      | [ located; unlocated; labelled ] ->
+          check "check_baseline's loc is the failure's"
+            (located.Failure.loc = Some given);
+          check "without one, the declaration"
+            (unlocated.Failure.loc = Some declared);
+          check "inside a subtest, labelled as a subtest labels one"
+            (labelled.Failure.subtest = [ "t"; "s" ])
+      | _ -> check "three recorded mismatches" false)
+
+let () =
+  with_temp_root @@ fun root ->
+  Unix.mkdir (Filename.concat root "dir.expected") 0o700;
+  let run =
+    Run.create (Run.default_config ()) ~capture:Capture.disabled
+      ~baselines:(Baseline.create ~root ~cwd:root ~mode:Baseline.Check ())
+  in
+  in_test run (fun _ ->
+      check "check_baseline raises Sys_error on a file it cannot read"
+        (match Run.check_baseline (Baseline.File "dir.expected") "x" with
+        | () -> false
+        | exception Sys_error _ -> true))
+
+(* Temporary paths, remove_tree and chdir *)
+
+let () =
+  let run = make_run () in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
+  let saved = Filename.get_temp_dir_name () in
+  Run.with_frame frame (fun () ->
+      Fun.protect
+        ~finally:(fun () -> Filename.set_temp_dir_name saved)
+        (fun () ->
+          Filename.set_temp_dir_name "/nonexistent/windtrap-temp";
+          check "temp_dir raises Unix_error when no directory can be made"
+            (match Run.temp_dir () with
+            | _ -> false
+            | exception Unix.Unix_error _ -> true)));
+  Run.reclaim frame
+
+let () =
+  let run = make_run () in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
+  Run.with_frame frame (fun () ->
+      let base = Filename.basename (Run.temp_file ()) in
+      let digits s =
+        s <> "" && String.for_all (fun c -> c >= '0' && c <= '9') s
+      in
+      check "an empty suffix adds nothing to the name"
+        (String.starts_with ~prefix:"file-" base
+        && digits (String.sub base 5 (String.length base - 5))));
+  Run.reclaim frame
+
+let () =
+  with_temp_root @@ fun root ->
+  let kept = Filename.concat root "kept" in
+  Unix.mkdir kept 0o700;
+  close_out (open_out (Filename.concat kept "file"));
+  let tree = Filename.concat root "tree" in
+  Unix.mkdir tree 0o700;
+  Unix.symlink kept (Filename.concat tree "link");
+  Run.remove_tree tree;
+  check "remove_tree removes a link, never what it points to"
+    ((not (Sys.file_exists tree))
+    && Sys.file_exists (Filename.concat kept "file"));
+  Run.remove_tree (Filename.concat root "missing");
+  check "a missing path, and no running test, raise nothing" true;
+  if Unix.geteuid () <> 0 then begin
+    let locked = Filename.concat root "locked" in
+    Unix.mkdir locked 0o700;
+    close_out (open_out (Filename.concat locked "stuck"));
+    Unix.chmod locked 0o500;
+    Run.remove_tree locked;
+    Unix.chmod locked 0o700;
+    check "an error on the way is ignored"
+      (Sys.file_exists (Filename.concat locked "stuck"))
+  end
+
+let () =
+  let run = make_run () in
+  let home = Sys.getcwd () in
+  in_test run (fun _ ->
+      check "chdir raises Unix_error for a directory it cannot enter"
+        (match Run.chdir "/nonexistent/windtrap-dir" with
+        | () -> false
+        | exception Unix.Unix_error _ -> true));
+  with_temp_root @@ fun root ->
+  let gone = Filename.concat root "gone" in
+  Unix.mkdir gone 0o700;
+  Unix.chdir gone;
+  Unix.rmdir gone;
+  let unreadable =
+    match Sys.getcwd () with _ -> false | exception Sys_error _ -> true
+  in
+  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
+  let raised =
+    Run.with_frame frame (fun () ->
+        match Run.chdir root with () -> false | exception Sys_error _ -> true)
+  in
+  Unix.chdir home;
+  if unreadable then
+    check "the first chdir raises Sys_error when the cwd cannot be read" raised
+  else skip_scenario ~reason:"a removed cwd reads here" __POS__
+
+(* Fixtures and results *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let fx, line = (Run.fixture ~teardown:ignore ignore, __LINE__) in
+  let names = ref [] in
+  let on_event = function
+    | Run.Fixture_release { name } -> names := name :: !names
+    | Run.Run_started _ | Run.Test_started _ | Run.Test_finished _
+    | Run.Interrupted _ ->
+        ()
+  in
+  expect_run "fixture naming suite runs" ~on_event ~config
+    [ Test_tree.test "acquires" fx ]
+  @@ fun _ ->
+  check_string "a fixture is named after the site of its application"
+    ~expected:(Printf.sprintf "fixture (test/unit/test_run.ml:%d)" line)
+    ~actual:(String.concat "," !names)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let tests =
+    [
+      Test_tree.slow "own" ignore;
+      Test_tree.group ~tags:[ Test_tree.Tag.slow ] "g"
+        [ Test_tree.test "inherited" ignore ];
+      Test_tree.test "plain" ignore;
+    ]
+  in
+  expect_run "slow-tag suite runs" ~config tests @@ fun outcome ->
+  let tagged path =
+    match result_of outcome path with
+    | Some r -> r.Run.slow_tagged
+    | None -> false
+  in
+  check "slow_tagged: the test's own tag, a group's, and not otherwise"
+    (tagged [ "own" ] && tagged [ "g"; "inherited" ] && not (tagged [ "plain" ]))
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let attempts = ref 0 in
+  let tests =
+    [
+      Test_tree.test ~retries:2 "twice failed" (fun () ->
+          incr attempts;
+          Unix.sleepf 0.02;
+          if !attempts < 3 then Check.fail "not yet");
+    ]
+  in
+  expect_run "duration suite runs" ~config tests @@ fun outcome ->
+  (match result_of outcome [ "twice failed" ] with
+  | Some r ->
+      check_int "three attempts" ~expected:3 ~actual:r.Run.attempts;
+      check "the duration sums them" (r.Run.duration >= 0.06)
+  | None -> check "a row" false);
+  check "the run's duration covers its tests" (outcome.Run.duration >= 0.06)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let tests =
+    [
+      Run.prop "skips" gen (fun _ -> Check.skip ());
+      Run.prop ~timeout:0.02 "times out" gen (fun _ -> busy_forever ());
+    ]
+  in
+  expect_run "prop_stats suite runs" ~config tests @@ fun outcome ->
+  let stats path =
+    match result_of outcome path with
+    | Some r -> r.Run.prop_stats
+    | None -> None
+  in
+  check "a property ended by a skip has no stats" (stats [ "skips" ] = None);
+  check "nor one ended by a timeout" (stats [ "times out" ] = None);
+  check "the law's skip skips the test"
+    (outcome_of outcome [ "skips" ] = Some (Failure.Skip None))
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let fx = Run.fixture ~teardown:(fun () -> Check.fail "leak") ignore in
+  expect_run "release row suite runs" ~config [ Test_tree.test "uses" fx ]
+  @@ fun outcome ->
+  match release_rows outcome with
+  | [ r ] ->
+      check "a release row has one attempt and no duration"
+        (r.Run.attempts = 1 && r.Run.duration = 0.)
+  | _ -> check "one release row" false
+
+let () =
+  match Test_tree.flatten [ Run.prop "p" gen ignore ] with
+  | [ c ] ->
+      check "Run.prop adds no tag"
+        (not (Test_tree.Tag.mem Test_tree.Tag.prop c.Test_tree.tags))
+  | _ -> check "one case" false
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let pos = ("test/test_props.ml", 12, 2, 0) in
+  let tests =
+    [
+      Run.prop ~__POS__:pos "gives up" gen (fun _ -> Windtrap.assume false);
+      Run.prop ~__POS__:pos "misses a label" gen (fun _ ->
+          Windtrap.cover "never" false);
+      Run.prop ~count:(-1) "negative count" gen ignore;
+      Run.prop ~max_discard:(-1) "negative max_discard" gen ignore;
+    ]
+  in
+  expect_run "property outcomes suite runs" ~config tests @@ fun outcome ->
+  let at_declaration path =
+    match failure_list (outcome_of outcome path) with
+    | [ f ] -> f.Failure.loc = Some (Loc.of_pos pos)
+    | _ -> false
+  in
+  check "a property that gave up is located at its declaration"
+    (at_declaration [ "gives up" ]);
+  check "one that missed a label too" (at_declaration [ "misses a label" ]);
+  check "a negative count fails the test from inside its body"
+    (failed_paths outcome
+    = [ "gives up"; "misses a label"; "negative count"; "negative max_discard" ]
+    )
+
+(* Startup errors *)
+
+let () =
+  let tests =
+    List.map (fun n -> Test_tree.test n ignore) [ "b"; "b"; "b"; "a"; "a" ]
+  in
+  expect_startup_error "duplicates are sorted and given once"
+    ~config:(base_config ~log_dir:"/tmp/unused" ()) tests (function
+    | Run.Duplicate_paths [ "a"; "b" ] -> true
+    | _ -> false)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  Unix.putenv "CI" "true";
+  let site n = ("test/f.ml", n, 0, 0) in
+  let tests =
+    [
+      Test_tree.focus
+        (Test_tree.group ~__POS__:(site 1) "g"
+           [ Test_tree.focus (Test_tree.test ~__POS__:(site 2) "x" ignore) ]);
+      Test_tree.test "y" ignore;
+      Test_tree.focus (Test_tree.test ~__POS__:(site 3) "z" ignore);
+    ]
+  in
+  let config =
+    { (base_config ~log_dir:"/tmp/unused" ()) with Run.filter = Some "y" }
+  in
+  expect_startup_error "the focus sites of the declared tree, in order" ~config
+    tests (function
+    | Run.Focused_in_ci sites ->
+        List.map (Option.map (fun (l : Loc.t) -> l.Loc.line)) sites
+        = [ Some 1; Some 2; Some 3 ]
+    | _ -> false)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  Unix.putenv "CI" "true";
+  let focused = Test_tree.focus (Test_tree.test "f" ignore) in
+  let config = base_config ~log_dir:"/tmp/unused" () in
+  expect_startup_error "duplicates are checked before focus" ~config
+    [ focused; Test_tree.test "f" ignore ]
+    (function Run.Duplicate_paths _ -> true | _ -> false);
+  expect_startup_error "focus before -u under CI"
+    ~config:{ config with Run.baseline = Baseline.Update } [ focused ] (function
+    | Run.Focused_in_ci _ -> true
+    | _ -> false);
+  expect_startup_error "-u under CI before --failed"
+    ~config:{ config with Run.baseline = Baseline.Update; failed_only = true }
+    [ Test_tree.test "t" ignore ]
+    (function Run.Update_refused_in_ci -> true | _ -> false)
+
+(* The outcome *)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  close_out (open_out (Filename.concat root "blocker"));
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.baseline = Baseline.Update;
+    }
+  in
+  expect_run "unwritable correction suite runs" ~config
+    [
+      Test_tree.test "accepts" (fun () ->
+          Run.check_baseline (Baseline.File "blocker/x.expected") "v");
+    ]
+  @@ fun outcome ->
+  check "every test passed" (failed_paths outcome = []);
+  check_int "a correction that could not be written exits 1" ~expected:1
+    ~actual:outcome.Run.exit_code
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.baseline = Baseline.Update;
+    }
+  in
+  expect_run "CI set by a test suite runs" ~config
+    [
+      Test_tree.test "sets CI" (fun () ->
+          Unix.putenv "CI" "true";
+          Run.check_baseline (Baseline.File "late.expected") "v");
+    ]
+  @@ fun outcome ->
+  check "CI is read once, at startup: the correction is written"
+    (outcome.Run.exit_code = 0
+    && Sys.file_exists (Filename.concat root "late.expected")
+    && read_file (Filename.concat root "late.expected") = "v\n")
+
+(* What an exception out of execute leaves behind *)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.baseline = Baseline.Corrected;
+    }
+  in
+  let released = ref false in
+  let fx = Run.fixture ~teardown:(fun () -> released := true) ignore in
+  let tests =
+    [
+      Test_tree.test "corrects" (fun () ->
+          fx ();
+          Run.check_baseline (Baseline.File "c.expected") "v");
+    ]
+  in
+  let store = Filename.concat root "_logs/suite/.last-failed" in
+  let corrected = Filename.concat root "c.expected.corrected" in
+  (match
+     Run.execute
+       ~on_event:(function Run.Test_finished _ -> raise Boom | _ -> ())
+       config ~suite:"suite" tests
+   with
+  | _ -> check "an observer's exception leaves execute" false
+  | exception Boom -> ());
+  check "after an observer's exception: fixtures released first" !released;
+  check "no store, no correction"
+    ((not (Sys.file_exists store)) && not (Sys.file_exists corrected));
+  released := false;
+  let second = ref false in
+  let fy = Run.fixture ~teardown:(fun () -> second := true) ignore in
+  (match
+     Run.execute
+       ~on_event:(function Run.Fixture_release _ -> raise Boom | _ -> ())
+       config ~suite:"suite"
+       [
+         Test_tree.test "acquires" (fun () ->
+             fx ();
+             fy ());
+       ]
+   with
+  | _ -> check "an exception on a release event leaves execute" false
+  | exception Boom -> ());
+  check "the announced fixture and the rest stay unreleased"
+    ((not !released) && not !second)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.baseline = Baseline.Corrected;
+    }
+  in
+  let released = ref false in
+  let fx = Run.fixture ~teardown:(fun () -> released := true) ignore in
+  let tests =
+    [
+      Test_tree.test "corrects" (fun () ->
+          fx ();
+          Run.check_baseline (Baseline.File "c.expected") "v");
+      Test_tree.test "overflows" (fun () -> raise Stack_overflow);
+    ]
+  in
+  (match Run.execute config ~suite:"suite" tests with
+  | _ -> check "a fatal exception leaves execute" false
+  | exception Stack_overflow -> ());
+  check "after a fatal exception: fixtures released" !released;
+  check "no store, no correction"
+    ((not (Sys.file_exists (Filename.concat root "_logs/suite/.last-failed")))
+    && not (Sys.file_exists (Filename.concat root "c.expected.corrected")))
+
+let () =
+  with_temp_root @@ fun root ->
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.stream = false;
+    }
+  in
+  let called = ref false in
+  let observer = function
+    | Run.Test_finished _ -> exit 3
+    | Run.Run_started _ | Run.Test_started _ | Run.Fixture_release _
+    | Run.Interrupted _ ->
+        called := true
+  in
+  match
+    Run.execute ~on_event:observer config ~suite:"suite"
+      [ Test_tree.test "t" ignore ]
+  with
+  | _ -> check "exit in an observer leaves execute" false
+  | exception Failure.Exit_attempt ->
+      check "exit in an observer is that observer's exception" !called
+
+(* list_selection *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let logs = Filename.concat root "_logs" in
+  let config = base_config ~log_dir:logs () in
+  (match
+     Run.list_selection config ~suite:"suite" [ Test_tree.test "t" ignore ]
+   with
+  | Ok [ "t" ] -> ()
+  | _ -> check "the selection" false);
+  check "list_selection makes no log directory" (not (Sys.file_exists logs));
+  let store = Filename.concat logs "suite/.last-failed" in
+  Os.mkdir_p (Filename.dirname store);
+  let before = "windtrap-last-failed 1\nt\n" in
+  Out_channel.with_open_bin store (fun oc -> output_string oc before);
+  ignore
+    (Run.list_selection
+       { config with Run.failed_only = true }
+       ~suite:"suite"
+       [ Test_tree.test "t" ignore ]);
+  check_string "and rewrites no store" ~expected:before
+    ~actual:(read_file store);
+  match
+    Run.list_selection config ~suite:"suite"
+      [ Test_tree.test "d" ignore; Test_tree.test "d" ignore ]
+  with
+  | Error (Run.Duplicate_paths _) -> ()
+  | _ -> check "list_selection refuses what execute refuses" false
+
+(* Attempts *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let file = Filename.concat root "a file" in
+  close_out (open_out file);
+  let config = base_config ~log_dir:file () in
+  expect_run "capture setup failure suite runs" ~config
+    [ Test_tree.test "first" ignore; Test_tree.test "second" ignore ]
+  @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "first" ]) with
+  | [ { Failure.kind = Failure.Raise _; _ } ] -> ()
+  | _ -> check "a capture that cannot be set up is a Raise failure" false);
+  check "and the run goes on to the next test"
+    (result_of outcome [ "second" ] <> None)
+
+let () =
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
+    with_temp_root @@ fun root ->
+    let config = base_config ~log_dir:root () in
+    let mine (_ : int) = () in
+    let before = Sys.signal Sys.sigalrm (Sys.Signal_handle mine) in
+    expect_run "SIGALRM suite runs" ~config
+      [ Test_tree.test ~timeout:5. "limited" ignore ]
+    @@ fun _ ->
+    check "the previous SIGALRM handler is put back"
+      (match Sys.signal Sys.sigalrm before with
+      | Sys.Signal_handle f -> f == mine
+      | Sys.Signal_default | Sys.Signal_ignore -> false)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let pos = ("test/test_decl.ml", 7, 0, 0) in
+  let tests =
+    [
+      Test_tree.bracket ~setup:ignore
+        ~teardown:(fun () -> Check.skip ~reason:"second" ())
+        "skips twice"
+        (fun () -> Check.skip ~reason:"first" ());
+      Test_tree.test ~__POS__:pos ~timeout:0.02 "times out" busy_forever;
+      Test_tree.scoped ~__POS__:pos
+        (fun k ->
+          k ();
+          k ())
+        "calls back twice" ignore;
+    ]
+  in
+  expect_run "runner-made failures suite runs" ~config tests @@ fun outcome ->
+  check "the first skip reason wins"
+    (outcome_of outcome [ "skips twice" ] = Some (Failure.Skip (Some "first")));
+  let located path =
+    match failure_list (outcome_of outcome path) with
+    | [ f ] -> f.Failure.loc = Some (Loc.of_pos pos)
+    | _ -> false
+  in
+  check "a timeout is located at the declaration" (located [ "times out" ]);
+  (match failure_list (outcome_of outcome [ "times out" ]) with
+  | [ f ] ->
+      check_string "and reads timed out after <limit>s"
+        ~expected:"timed out after 0.02s" ~actual:(message_of f)
+  | _ -> ());
+  check "a misused scope too" (located [ "calls back twice" ])
+
+(* Corrections: the marks, and when they are written *)
+
+let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
+  clear_env ();
+  with_temp_root @@ fun root ->
+  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
+  let config =
+    {
+      (base_config ~log_dir:(Filename.concat root "_logs") ()) with
+      Run.baseline = Baseline.Corrected;
+    }
+  in
+  let written_at_release = ref None in
+  let fx =
+    Run.fixture
+      ~teardown:(fun () ->
+        written_at_release :=
+          Some
+            (Sys.file_exists (Filename.concat root "kept.expected.corrected")))
+      ignore
+  in
+  let tests =
+    [
+      Test_tree.test "skipped" (fun () ->
+          Run.check_baseline (Baseline.File "s.expected") "v";
+          Check.skip ());
+      Test_tree.test "failed outside" (fun () ->
+          Run.check_baseline (Baseline.File "f.expected") "v";
+          Check.fail "other");
+      Test_tree.test "kept" (fun () ->
+          fx ();
+          Run.check_baseline (Baseline.File "kept.expected") "v");
+    ]
+  in
+  expect_run "withheld marks suite runs" ~config tests @@ fun outcome ->
+  let mark path =
+    List.find_map
+      (fun (f : Failure.t) ->
+        match f.Failure.kind with
+        | Failure.Baseline { withheld; _ } -> Some withheld
+        | _ -> None)
+      (failure_list (outcome_of outcome path))
+  in
+  check "a skip alone marks Skipped"
+    (mark [ "skipped" ] = Some (Some Failure.Skipped));
+  check "another failure marks Failed_outside"
+    (mark [ "failed outside" ] = Some (Some Failure.Failed_outside));
+  check "the corrections are written after the release"
+    (!written_at_release = Some false
+    && Sys.file_exists (Filename.concat root "kept.expected.corrected"))
+
+(* The store's file and its reading *)
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  expect_run "store path suite runs" ~config ~suite:"lib/a.ml"
+    [ Test_tree.test "t" (fun () -> Check.fail "x") ]
+  @@ fun _ ->
+  check "the store is <log_dir>/<sanitized suite>/.last-failed"
+    (Sys.file_exists
+       (Filename.concat
+          (Filename.concat root (Os.sanitize_component "lib/a.ml"))
+          ".last-failed"))
+
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let store = Filename.concat root "suite/.last-failed" in
+  Os.mkdir_p (Filename.dirname store);
+  Out_channel.with_open_bin store (fun oc -> output_string oc "t\n");
+  expect_startup_error "a store without its first line reads as empty"
+    ~config:{ config with Run.failed_only = true }
+    [ Test_tree.test "t" ignore ]
+    (function Run.No_recorded_failures -> true | _ -> false);
+  Sys.remove store;
+  Unix.mkdir store 0o700;
+  expect_run "a store that cannot be written is ignored" ~config
+    [ Test_tree.test "t" (fun () -> Check.fail "x") ]
+  @@ fun outcome ->
+  check_int "the run ends as it would" ~expected:1 ~actual:outcome.Run.exit_code
+
+(* The hidden values *)
+
+let () =
+  let config =
+    {
+      (Run.default_config ()) with
+      Run.shard = Some (0, 0);
+      timeout = Some (-1.);
+      slow_threshold = Float.nan;
+    }
+  in
+  check "create checks nothing of its config"
+    (match
+       Run.create config ~capture:Capture.disabled
+         ~baselines:(Baseline.create ~mode:Baseline.Check ())
+     with
+    | _ -> true
+    | exception _ -> false)
+
+let () =
+  let baselines = Baseline.create ~mode:Baseline.Corrected () in
+  let run =
+    Run.create (Run.default_config ()) ~capture:Capture.disabled ~baselines
+  in
+  let frame = Run.frame ~corrections:false run ~path:[ "t" ] ~loc:None in
+  Run.with_frame frame (fun () ->
+      Run.check_baseline
+        (Baseline.Literal
+           { pos = ("test/x.ml", 1, 0, 0); value = "a"; exact = true })
+        "b");
+  check "a frame without corrections records the mismatch"
+    (List.length (Run.failures frame) = 1);
+  check_int "and no correction" ~expected:0
+    ~actual:(Baseline.settle baselines ~keep:true)
+
 (* Summary *)
 
 let () = finish ()
