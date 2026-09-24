@@ -8,7 +8,8 @@ answer is a sentence on stderr rather than a green run with no report.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
+  >       WINDTRAP_PROJECT_ROOT="$PWD" \
+  >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }
 
 A mutation run needs a green dry run before it looks at the catalogue

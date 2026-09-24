@@ -3,7 +3,8 @@ is not run on Windows, where the runner handles no signal.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
+  >       WINDTRAP_PROJECT_ROOT="$PWD" \
+  >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }
   $ scrub() {
   >   sed -E 's/ in [0-9.]+m?s\./ in DURATION./; s/suite_main\.ml:[0-9]+/suite_main.ml:LINE/'

@@ -2,7 +2,8 @@ What the report shows beyond a failure, and where a run keeps its logs.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
+  >       WINDTRAP_PROJECT_ROOT="$PWD" \
+  >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }
   $ scrub() {
   >   sed -E 's/ in [0-9.]+m?s\./ in DURATION./; s/suite_main\.ml:[0-9]+/suite_main.ml:LINE/'

@@ -4,7 +4,8 @@ names the selection back to the reader in the words they typed.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
+  >       WINDTRAP_PROJECT_ROOT="$PWD" \
+  >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }
 
 -l lists the selection in declaration order, and runs nothing:

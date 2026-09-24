@@ -5,7 +5,8 @@ forks, and Windows refuses it.
 
   $ run() {
   >   env -i PATH="$PATH" WINDTRAP_COLOR=never WINDTRAP_SLOW_THRESHOLD=0 \
-  >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
+  >       WINDTRAP_PROJECT_ROOT="$PWD" \
+  >       WINDTRAP_OUTPUT="$PWD/_logs" "$@"
   > }
   $ scrub() {
   >   sed -E 's/ in [0-9.]+m?s\./ in DURATION./'
