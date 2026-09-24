@@ -353,7 +353,8 @@ let tests =
             Check.in_order ~subs:[ ""; "a"; "" ] "a");
         is_true ~msg:"in_order: an empty chain is a programmer error"
           (match outcome (fun () -> Check.in_order ~subs:[] log) with
-          | Raised (Invalid_argument _) -> true
+          | Raised (Invalid_argument m) ->
+              m = "Windtrap.in_order: subs is empty"
           | _ -> false);
         (* The element is nowhere in the string: the index and the cursor
            name the break, and there is no occurrence to record. *)
@@ -666,7 +667,7 @@ let tests =
             ~msg:(verb ^ ": no order raises Invalid_argument naming the fix")
             (match outcome f with
             | Raised (Invalid_argument m) ->
-                String.starts_with ~prefix:("Check." ^ verb ^ ":") m
+                String.starts_with ~prefix:("Windtrap." ^ verb ^ ":") m
                 && Windtrap.Private.Text.contains_substring
                      ~pattern:"Testable.with_compare" m
             | _ -> false)

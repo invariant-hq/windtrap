@@ -91,7 +91,7 @@ let contains ?__POS__ ?msg ~sub haystack =
    are different bugs and the second is the one the reader would otherwise
    have to scan a long string to discover. *)
 let in_order ?__POS__ ?msg ~subs haystack =
-  if subs = [] then invalid_arg "Check.in_order: subs is empty";
+  if subs = [] then invalid_arg "Windtrap.in_order: subs is empty";
   let rec walk index cursor = function
     | [] -> ()
     | sub :: rest -> (
@@ -172,7 +172,7 @@ let order verb t =
   | None ->
       invalid_arg
         (Pp.str
-           "Check.%s: the witness has no order; give it one with \
+           "Windtrap.%s: the witness has no order; give it one with \
             Testable.with_compare"
            verb)
 
