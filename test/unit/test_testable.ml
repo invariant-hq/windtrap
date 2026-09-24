@@ -381,6 +381,37 @@ let tests =
         check_equal "pure absolute still constructs"
           (T.float_rel ~rel:0. ~abs:0.1)
           0.0 0.05);
+    test "float: a difference of exactly eps is equal" (fun () ->
+        check_equal "|1.5 - 1.0| = 0.5" (T.float 0.5) 1.0 1.5;
+        check_differ "just past eps" (T.float 0.5) 1.0 (Float.succ 1.5));
+    test "float_rel: rel scales by the larger magnitude" (fun () ->
+        (* |1.105 - 1.0| = 0.105: within 0.1 * 1.105, not within 0.1 * 1.0. *)
+        let w = T.float_rel ~rel:0.1 ~abs:0. in
+        check_equal "expected smaller" w 1.0 1.105;
+        check_equal "expected larger" w 1.105 1.0);
+    test "equality verbs apply the equality to the expected value first"
+      (fun () ->
+        let calls = ref [] in
+        let w =
+          T.make ~pp:Format.pp_print_string ~equal:(fun a b ->
+              calls := (a, b) :: !calls;
+              true)
+        in
+        equal w "expected" "actual";
+        ignore (T.equal w "expected" "actual");
+        equal ~msg:"(expected, actual) at each call"
+          (list (pair string string))
+          [ ("expected", "actual"); ("expected", "actual") ]
+          !calls);
+    test "an exception from the equality or the printer escapes the verb"
+      (fun () ->
+        let raising_equal =
+          T.make ~pp:Format.pp_print_int ~equal:(fun _ _ -> raise Exit)
+        in
+        raises ~msg:"equality" Exit (fun () -> equal raising_equal 1 1);
+        let raising_pp = T.make ~pp:(fun _ _ -> raise Exit) ~equal:Int.equal in
+        raises ~msg:"printer of a failing equal" Exit (fun () ->
+            equal raising_pp 1 2));
     test "make: physical equality passes through" (fun () ->
         let phys = T.make ~pp:Phys.pp ~equal:Phys.equal in
         let r = ref 0 in
