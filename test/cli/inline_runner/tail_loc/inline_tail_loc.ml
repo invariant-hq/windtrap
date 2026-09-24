@@ -1,3 +1,7 @@
 open Windtrap
 
-let%test "tail assertion" = equal int 1 2
+(* The assertion is two lines below the declaration, so the golden tells
+   the declaration's line from the assertion's. *)
+let%test "tail assertion" =
+  let expected = 1 in
+  equal int expected 2

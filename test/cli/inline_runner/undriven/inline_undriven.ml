@@ -1,5 +1,5 @@
 (* One healthy expect test, registered at module load. Which executable
-   links this module decides its fate: runner_main.exe drives the
+   links this module decides its fate: undriven_runner.exe drives the
    registration through the inline-test-runner protocol and the test
    runs; undriven_main.exe links it and drives nothing — the defect
    class the guard exists for.

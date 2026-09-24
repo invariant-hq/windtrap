@@ -20,6 +20,9 @@ type mask =
   | Slow_column  (** the slow block's right-aligned duration column *)
   | Verbose_timing  (** the verbose per-test line's timing tail *)
   | Backtrace  (** backtrace frames, which name lines inside the runtime *)
+  | Os_reason
+      (** the system's own words ending a [windtrap: could not] line, which
+          differ between platforms *)
 
 let write_file path contents =
   let oc = open_out_bin path in
@@ -142,6 +145,23 @@ let mask_backtrace lines =
   in
   go [] lines
 
+(* A refusal to write names the file, then the system's reason after the
+   last [": "]; the reason is the platform's text ([strerror] here, its
+   own wording on Windows), so it is masked and the file kept. *)
+let mask_os_reason line =
+  let prefix = "windtrap: could not " in
+  if not (String.starts_with ~prefix line) then line
+  else
+    let rec last_sep i =
+      if i < String.length prefix then None
+      else if line.[i] = ':' && i + 1 < String.length line && line.[i + 1] = ' '
+      then Some i
+      else last_sep (i - 1)
+    in
+    match last_sep (String.length line - 2) with
+    | Some i -> String.sub line 0 i ^ ": <reason>"
+    | None -> line
+
 let transcript masks s =
   let masked m = List.mem m masks in
   let lines = String.split_on_char '\n' (mask_durations s) in
@@ -149,6 +169,7 @@ let transcript masks s =
   let line_mask line =
     let line = if masked Full_log then mask_full_log line else line in
     let line = if masked Slow_column then mask_slow_column line else line in
+    let line = if masked Os_reason then mask_os_reason line else line in
     if masked Verbose_timing then mask_verbose_timing line else line
   in
   String.concat "\n" (List.map line_mask lines)

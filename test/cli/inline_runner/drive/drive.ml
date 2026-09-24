@@ -18,8 +18,9 @@
 
      --env K=V       a binding for the child; before the first --run it
                      applies to every run, after one only to that run
-     --mask M        full-log | slow | verbose | backtrace: what varies
-                     between machines and runs in this directory's output
+     --mask M        full-log | slow | verbose | backtrace | os-reason:
+                     what varies between machines and runs in this
+                     directory's output
      --scratch-cwd   run from a fresh empty directory, removed afterwards
                      and masked as <scratch>
      --scratch-exe   with --scratch-cwd, run a copy of each EXE placed in
@@ -60,6 +61,7 @@ let mask_of_string = function
   | "slow" -> Drive_harness.Slow_column
   | "verbose" -> Drive_harness.Verbose_timing
   | "backtrace" -> Drive_harness.Backtrace
+  | "os-reason" -> Drive_harness.Os_reason
   | _ -> usage ()
 
 let parse argv =

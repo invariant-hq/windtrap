@@ -1,4 +1,4 @@
-(* Windtrap-authored runner main for the masked-failure fixture (mirrors
+(* Windtrap-authored runner main for the release-failure fixture (mirrors
    the inline_tests backend's generated runner, as the conformance corpus
    does). The module alias forces link order: the fixture module
    initializes — registering its test — before the protocol runs. *)
