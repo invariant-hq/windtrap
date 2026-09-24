@@ -1331,13 +1331,14 @@ let streaming_tests =
    behind: its scratch root, and the verdict file of a loop that ran
    whole. *)
 
-let scratch_root_of pid =
-  Filename.concat
-    (Filename.get_temp_dir_name ())
-    (Printf.sprintf "windtrap-mutate-%d-0" pid)
+(* The loop keeps its scratch root under TMPDIR, whatever it names it, so
+   a run given a TMPDIR of its own leaves that directory empty or has
+   left something behind: no name of the loop's is spelled here. *)
+let left_nothing ~msg tmpdir =
+  equal ~msg (list string) [] (Array.to_list (Sys.readdir tmpdir))
 
 let held_at_the_gate fixture =
-  let dir = temp_dir () in
+  let dir = temp_dir () and tmpdir = temp_dir () in
   let began = Filename.concat dir "began"
   and gate = Filename.concat dir "gate" in
   (try Sys.remove verdict_path with Sys_error _ -> ());
@@ -1348,10 +1349,11 @@ let held_at_the_gate fixture =
         ("MUTATE_FIXTURE", fixture);
         ("MUTATE_STARTED", began);
         ("MUTATE_GATE", gate);
+        ("TMPDIR", tmpdir);
       ]
   in
   await ~what:"the held child's start" run began;
-  (run, reader, writer, fun () -> close_out (open_out gate))
+  (run, tmpdir, reader, writer, fun () -> close_out (open_out gate))
 
 let killed_verdicts () =
   match V.load verdict_path with
@@ -1367,7 +1369,7 @@ let reader_tests =
     test
       "a reader that leaves mid-loop: a silent death by SIGPIPE, and nothing \
        left behind" (fun () ->
-        let run, reader, writer, open_gate = held_at_the_gate "held" in
+        let run, tmpdir, reader, writer, open_gate = held_at_the_gate "held" in
         Unix.close writer;
         Unix.close reader;
         open_gate ();
@@ -1375,8 +1377,7 @@ let reader_tests =
         is_true ~msg:"the loop died of the write its reader was not there for"
           (status = Unix.WSIGNALED Sys.sigpipe);
         equal ~msg:"the reader left on purpose: nothing is said" text "" err;
-        is_false ~msg:"the scratch root is gone"
-          (Sys.file_exists (scratch_root_of run.pid));
+        left_nothing ~msg:"the scratch root is gone" tmpdir;
         is_false ~msg:"and a loop that did not run whole saves no verdicts"
           (Sys.file_exists verdict_path));
     test
@@ -1384,7 +1385,9 @@ let reader_tests =
        written" (fun () ->
         (* Every mutant is killed, so the one write left when the gate
            opens is the [mutants:] line. *)
-        let run, reader, writer, open_gate = held_at_the_gate "pinned" in
+        let run, tmpdir, reader, writer, open_gate =
+          held_at_the_gate "pinned"
+        in
         Unix.close writer;
         Unix.close reader;
         open_gate ();
@@ -1394,8 +1397,7 @@ let reader_tests =
         equal ~msg:"stderr" text "" err;
         equal ~msg:"the complete run's verdicts were saved first" int 4
           (killed_verdicts ());
-        is_false ~msg:"the scratch root is gone"
-          (Sys.file_exists (scratch_root_of run.pid)));
+        left_nothing ~msg:"the scratch root is gone" tmpdir);
     test "a SIGINT late in the run ends it by SIGINT with the verdicts it had"
       (fun () ->
         (* The pipe is filled and never read, so the loop is most likely
@@ -1405,7 +1407,9 @@ let reader_tests =
            the run by that signal and costs the file nothing. The flag is
            on the open file the loop writes through as well: it is cleared
            before the loop has anything to write. *)
-        let run, reader, writer, open_gate = held_at_the_gate "pinned" in
+        let run, tmpdir, reader, writer, open_gate =
+          held_at_the_gate "pinned"
+        in
         Unix.set_nonblock writer;
         let rec fill chunk =
           match Unix.write writer chunk 0 (Bytes.length chunk) with
@@ -1441,8 +1445,7 @@ let reader_tests =
         equal ~msg:"stderr" text "" err;
         equal ~msg:"and cost the complete run nothing" int 4
           (killed_verdicts ());
-        is_false ~msg:"the scratch root is gone"
-          (Sys.file_exists (scratch_root_of run.pid)));
+        left_nothing ~msg:"the scratch root is gone" tmpdir);
   ]
 
 (* A loop stopped by a signal, the real one, sent to the process this
@@ -1454,18 +1457,21 @@ let reader_tests =
    the child is hanging, and whom to look for afterwards. *)
 
 let interrupted_by signal =
-  let pidfile = Filename.concat (temp_dir ()) "hanging" in
+  let pidfile = Filename.concat (temp_dir ()) "hanging"
+  and tmpdir = temp_dir () in
   (try Sys.remove verdict_path with Sys_error _ -> ());
   let run =
     start ~args:[ mutate ]
       [
-        ("MUTATE_FIXTURE", "interrupted"); ("MUTATE_GRANDCHILD_PIDFILE", pidfile);
+        ("MUTATE_FIXTURE", "interrupted");
+        ("MUTATE_GRANDCHILD_PIDFILE", pidfile);
+        ("TMPDIR", tmpdir);
       ]
   in
   await ~what:"the hanging child" run pidfile;
   Unix.kill run.pid signal;
   let status, out, err = finish run in
-  (run.pid, pidfile, status, out, err)
+  (tmpdir, pidfile, status, out, err)
 
 (* The child's session dies whole, as at a deadline: the grandchild
    ignores SIGTERM, so only the group's SIGKILL explains its death, and
@@ -1496,7 +1502,7 @@ let interrupt_tests =
     test
       "a signal stops the loop: what it found, what it did not test, and a \
        death by that signal" (fun () ->
-        let pid, pidfile, status, out, err = interrupted_by Sys.sigint in
+        let tmpdir, pidfile, status, out, err = interrupted_by Sys.sigint in
         is_true ~msg:"the parent died by the signal, as its own parent sees"
           (status = Unix.WSIGNALED Sys.sigint);
         equal ~msg:"standard error names the mutant whose child it stopped" text
@@ -1524,22 +1530,20 @@ let interrupt_tests =
           out;
         is_false ~msg:"a stopped run writes no verdict file"
           (Sys.file_exists verdict_path);
-        is_false ~msg:"and leaves no scratch directory"
-          (Sys.file_exists (scratch_root_of pid));
+        left_nothing ~msg:"and leaves no scratch directory" tmpdir;
         is_true ~msg:"no process of the stopped child outlives the run"
           (grandchild_died pidfile));
     test "SIGPIPE stops it as silently as a failed write does" (fun () ->
         (* Sent from outside while a child hangs: the child dies with the
            others' guarantees, and the reader that left is told nothing. *)
-        let pid, pidfile, status, out, err = interrupted_by Sys.sigpipe in
+        let tmpdir, pidfile, status, out, err = interrupted_by Sys.sigpipe in
         is_true ~msg:"a death by that signal"
           (status = Unix.WSIGNALED Sys.sigpipe);
         equal ~msg:"nothing is said" text "" err;
         contains ~msg:"what was printed stays" ~sub:sub_block out;
         not_contains ~msg:"and no closing report is tried" ~sub:"mutants:" out;
         is_false ~msg:"no verdict file" (Sys.file_exists verdict_path);
-        is_false ~msg:"no scratch directory"
-          (Sys.file_exists (scratch_root_of pid));
+        left_nothing ~msg:"no scratch directory" tmpdir;
         is_true ~msg:"no process of the stopped child outlives the run"
           (grandchild_died pidfile));
     test "SIGTERM and SIGHUP stop it alike" (fun () ->
