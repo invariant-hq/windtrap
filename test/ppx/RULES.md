@@ -1,0 +1,274 @@
+# The rewriters' rules
+
+Every rule the three rewriters implement, with the interface line that
+states it and what pins it. Neither self-coverage nor self-mutation
+measures the rewriters, so this list is their completeness measure: a
+rule pinned by nothing is a rule any change may break unseen.
+
+- **Interface**: the line of `ppx/coverage/instrument.mli` (`cov`) or
+  `ppx/mutate/instrument.mli` (`mut`) that states the rule. The expect
+  rewriter has no interface yet; its rules cite the comments of
+  `ppx/ppx_windtrap.ml` (`exp`), `ppx/runtime/ppx_runtime.mli` or
+  `ppx/config/expect_test_config.mli`.
+- **Pinned by**: a golden fixture (`coverage/`, `mutate/`, `expect/`,
+  one `.ml` and its `.expected`), a test of a semantics or integration
+  suite (named by its file and title), or a build that fails when the
+  rule breaks. `unpinned` means that deleting or inverting the rule
+  changes no test of any family; `partial` names what is pinned and what
+  is not.
+
+A fixture names each rule it pins by its id and interface line, as in
+`(* C21, cov:51 *)`.
+
+## Coverage (`ppx/coverage/instrument.ml`)
+
+### Entry points
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| C1 | A function has one point per curried chain, at its innermost body. | cov:33-34 | `coverage/fixture_fun`; `test_coverage_semantics.ml` "an arm that is itself a function" |
+| C2 | A type constraint on the leaf body is kept around the visit. | cov:34-35 | `coverage/fixture_fun` |
+| C3 | A coercion on the leaf body is kept around the visit. | cov:34-35 | unpinned |
+| C4 | The default of an optional argument of a function is an entry point, its inner calls traversed. | cov:36-37 | `coverage/fixture_fun` |
+| C5 | The default of an optional argument of a class is an entry point. | cov:36-37 | `coverage/fixture_class` |
+| C6 | Each arm of a `match`, `try` and `function` is an entry point, its extent from the pattern's start to the body's end. | cov:38, cov:100-102 | `coverage/fixture_match`, `coverage/fixture_fun` |
+| C7 | An arm's extent is the body alone when the pattern is ghost or starts after the body. | cov:102-103 | unpinned |
+| C8 | The guard of an arm is an entry point. | cov:38-39 | `coverage/fixture_match` |
+| C9 | An arm whose body is `assert false` has no point. | cov:55 | `coverage/fixture_match` |
+| C10 | A refutation arm has no point. | cov:55-56 | unpinned |
+| C11 | An arm whose body carries `[@coverage off]` has no point. | cov:56 | unpinned |
+| C12 | Each branch of an `if` is an entry point; an `if` without `else` has its `then` point only. | cov:40 | `coverage/fixture_if_loops` |
+| C13 | The bodies of `while` and `for` are entry points. | cov:41 | `coverage/fixture_if_loops` |
+| C14 | A non-trivial `lazy` body is an entry point; a trivial one (function, identifier, constant, constant constructor, constrained) is left alone. | cov:42-44 | `coverage/fixture_lazy`; `test_coverage_semantics.ml` "lazy stays lazy" |
+| C15 | A `lazy` of a trivial value under a coercion is left alone. | cov:44 | unpinned |
+| C16 | A method body (`Pexp_poly`) is marked unless it is a function. | cov:46 | `coverage/fixture_class` |
+| C17 | Each body of a binding operator form, nested and with `and*`, is an entry point. | cov:45 | `coverage/fixture_letop` |
+| C18 | The body of a concrete method and of an initializer is an entry point. | cov:46 | `coverage/fixture_class` |
+| C19 | A virtual method is left alone. | cov:46 | `coverage/fixture_class` |
+| C20 | The right operand of `&&` is an entry point. | cov:47 | `coverage/fixture_and_or`; `test_coverage_semantics.ml` "\|\| and && short-circuit" |
+| C21 | `&` is handled as `&&`. | cov:50-51 | unpinned |
+| C22 | `a \|\| b` becomes `if a then (v; true) else if b then (w; true) else false`. | cov:48-50 | `coverage/fixture_and_or`; `test_coverage_semantics.ml` "\|\| and && short-circuit" |
+| C23 | `or` is handled as `\|\|`. | cov:50-51 | unpinned |
+| C24 | A nested `\|\|` right operand is recursed into, not demoted. | cov:48-50 | `coverage/fixture_and_or` |
+| C25 | The right operand of `\|\|` in tail position stays the `else` branch when it is an application of a non-trivial function. | cov:59-62 | `coverage/fixture_and_or`; `test_coverage_semantics.ml` "deep tail recursion" |
+| C26 | ... when it is a method call or a `new`. | cov:61-62 | unpinned |
+| C27 | ... when it is a `let`, `let module`, `let exception`, `let open`, `match`, `try`, `if`, sequence, binding operator form, type constraint or coercion. | cov:62-65 | `coverage/fixture_or_tail_branch`, `coverage/fixture_or_tail_scope`, `coverage/fixture_or_tail_wrap`; `test_coverage_semantics.ml` "\|\| right arms that are not applications" |
+| C28 | A right operand of `\|\|` in tail position that applies a trivial primitive is demoted and marked. | cov:60-62 | unpinned |
+| C29 | What follows an `if` without `else` in a sequence is an entry point. | cov:52-53 | unpinned |
+| C30 | A function whose body is `assert false` keeps its point. | cov:56-57 | `coverage/fixture_scope` |
+
+### Out-edges
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| C31 | A non-tail application becomes `___windtrap_post_visit___ i e`. | cov:69-72 | `coverage/fixture_apply`, `coverage/fixture_match`; `test_coverage_semantics.ml` "a raising application's out-edge is not counted" |
+| C32 | An application in tail position is not wrapped. | cov:74 | `coverage/fixture_apply`; `test_coverage_semantics.ml` "deep tail recursion" |
+| C33 | A pipeline in tail position is not wrapped. | cov:74 | `coverage/fixture_pipeline`; `test_coverage_semantics.ml` "deep tail recursion" |
+| C34 | A method call in tail position is not wrapped. | cov:74 | `coverage/fixture_class` |
+| C35 | A `new` in tail position is not wrapped. | cov:74 | unpinned |
+| C36 | A method call not in tail position is wrapped. | cov:72 | `coverage/fixture_class`; `test_coverage_semantics.ml` "pipelines and method calls" |
+| C37 | A `new` that is not applied is wrapped. | cov:72 | unpinned |
+| C38 | `assert e` is wrapped in any position. | cov:72, cov:76-77 | unpinned |
+| C39 | `assert false` is never wrapped. | cov:77 | `coverage/fixture_match`, `coverage/fixture_scope` |
+| C40 | An application of a trivial primitive, matched by spelling, is not wrapped. | cov:80-85 | partial: `coverage/fixture_if_loops` (`:=`, `!`, `+`, `<`, `ref`), `coverage/fixture_match` (`>`), `coverage/fixture_and_or` and `coverage/fixture_or_tail_*` (`=`, `-`, `ignore`), `coverage/fixture_scope` (`not`); unpinned: the other 26 |
+| C41 | `Stdlib.( + ) a b` is wrapped (the match is by spelling). | cov:81 | unpinned |
+| C42 | An application whose every argument is labelled or optional is not wrapped. | cov:86-88 | `coverage/fixture_scope` |
+| C43 | An application or method call in the body of a `[@tail_mod_cons]` binding, top level or `let ... in`, is not wrapped; a `new` and an `assert` there are. | cov:89-92 | partial: `test_coverage_semantics.ml` "tail_mod_cons survives instrumentation" (top level); unpinned: a golden, the `let ... in` case, `new` and `assert` |
+| C44 | The scrutinee of a `match` has no out-edge. | cov:93-94 | unpinned |
+| C45 | The condition of an `if` has no out-edge. | cov:94 | unpinned |
+| C46 | The applied left operand of `@@` has no out-edge. | cov:95 | unpinned |
+| C47 | The right operand of `\|>` or `\|.` has no out-edge. | cov:95 | unpinned |
+| C48 | A method call in callee position has no out-edge. | cov:95-96 | unpinned |
+| C49 | `\|.` is handled as `\|>`. | cov:74, cov:95 | unpinned |
+
+### Extents, identity and numbering
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| C50 | An entry point is keyed at its block's start; an operand of `\|\|` at its last byte. | cov:109-110 | `coverage/fixture_and_or` |
+| C51 | An out-edge with a known successor is keyed at the successor's start: a one-binding `let`'s body, a sequence's second expression, a pipeline's right operand. | cov:111-114 | `coverage/fixture_apply`, `coverage/fixture_pipeline` |
+| C52 | A `let` with several bindings gives no successor. | cov:112-113 | unpinned |
+| C53 | Any other out-edge of an application is keyed at its callee's last byte. | cov:115 | `coverage/fixture_apply` |
+| C54 | ... at `l`'s last byte for `l @@ x`. | cov:116 | unpinned |
+| C55 | ... at the last byte of the head function of a successor-less pipeline's last stage. | cov:116-117 | unpinned |
+| C56 | A method call or `new` without successor is keyed at the expression's last byte. | cov:118-119 | unpinned |
+| C57 | Two marks at one offset are one point, keeping the extent recorded first. | cov:106-107, cov:121-127 | `coverage/fixture_and_or` |
+| C58 | Points are numbered by first allocation, a node's sub-expressions before its own blocks. | cov:129-132 | every coverage golden (`coverage/fixture_match`) |
+| C59 | A mark at a ghost location is not inserted. | cov:134-135 | unpinned |
+| C60 | The payloads of extension nodes and attributes are never traversed. | cov:135-136 | unpinned |
+| C61 | The four effects on a file the mutation rewriter ran on first. | cov:138-151 | unpinned |
+
+### Exclusion attributes
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| C62 | `[@coverage off]` on an expression leaves it as written. | cov:157-158 | `coverage/fixture_off` |
+| C63 | `[@@coverage off]` on a top-level value binding. | cov:159-160 | `coverage/fixture_off` |
+| C64 | `[@@coverage off]` on a module binding, recursive or not. | cov:160 | partial: `coverage/fixture_off` (non-recursive); unpinned: recursive |
+| C65 | `[@@coverage off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | cov:160-162 | unpinned |
+| C66 | `[@@@coverage off]` ... `[@@@coverage on]` is a region, module expressions included. | cov:163-164 | `coverage/fixture_off` |
+| C67 | A nested structure inherits a region, and its end restores the outer setting. | cov:164-166 | unpinned |
+| C68 | A region never closed runs to the end of its structure. | cov:166-167 | unpinned |
+| C69 | A top-level `[@@@coverage exclude_file]` returns the file as parsed. | cov:168-169, cov:199 | `coverage/fixture_exclude` |
+| C70 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | cov:200-201 | unpinned |
+| C71 | A file where no point was allocated is returned as parsed. | cov:202-203 | partial: `coverage/fixture_empty` (no instrumented form); unpinned: every form switched off |
+| C81 | An attribute inside excluded code is never examined. | cov:207-208 | unpinned |
+
+### Generated code
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| C72 | Four items in order: stop comment, `Windtrap_cov___<name>`, its `open`, stop comment; `register ~file ~points ~counts` once. | cov:173-184 | every coverage golden |
+| C73 | `___windtrap_post_visit___` is bound when the file has an out-edge, and only then. | cov:185-186 | `coverage/fixture_apply` (bound), `coverage/fixture_off` (not bound) |
+
+### Rejections
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| C74 | A payload other than the three identifiers is refused. | cov:156, cov:212 | `coverage/reject_bad_payload`, `coverage/reject_off_reason` |
+| C75 | `on` on an expression is refused. | cov:213 | `coverage/reject_misplaced_on` |
+| C76 | `on` on a binding is refused. | cov:213 | unpinned |
+| C77 | `exclude_file` on an expression or a binding is refused. | cov:213 | unpinned |
+| C78 | `exclude_file` floating in a nested structure is refused. | cov:214 | unpinned |
+| C79 | `[@@@coverage off]` inside a region is refused: "Coverage is already off." | cov:215 | unpinned |
+| C80 | `[@@@coverage on]` outside a region is refused: "Coverage is already on." | cov:215 | unpinned |
+
+## Mutation (`ppx/mutate/instrument.ml`)
+
+### Operators
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M1 | `neg` on an `if` or `while` condition and an arm's guard that is neither comparison nor connective. | mut:56-58 | `mutate/fixture_neg`; `test_mutate_semantics.ml` "evaluates exactly as its twin does"; `integration/test_registration.ml` behaviour |
+| M2 | `neg` nowhere else. | mut:56-58 | `mutate/fixture_con`, `mutate/fixture_nesting` |
+| M3 | The six `cmp` rewrites and their names. | mut:59-62 | `mutate/fixture_cmp`; `integration/test_registration.ml` behaviour |
+| M4 | An ordering's armed arm swaps its operands under `Stdlib.not`, pinned by `operands`; an equality's negates the whole comparison. | mut:74-75, mut:182-183 | `mutate/fixture_cmp`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
+| M5 | `cmp` sites lie in a boolean context alone. | mut:62, mut:68-72 | `mutate/fixture_cmp` |
+| M6 | An operand of `\|\|` is a boolean context. | mut:68-69 | partial: `test_mutate_semantics.ml` "evaluates exactly as its twin does"; unpinned: a golden |
+| M7 | A boolean context does not reach through a sequence. | mut:70 | `mutate/fixture_assert` |
+| M8 | ... nor through a `let` body, a type constraint or `not`. | mut:70-71 | unpinned |
+| M9 | `con` swaps `&&` and `\|\|` in one branch, through `Stdlib.(<>)`/`Stdlib.(=)` and `Stdlib.Bool.t`, short-circuit kept. | mut:63-64 | `mutate/fixture_con`; `test_mutate_semantics.ml` "tail calls survive instrumentation" |
+| M10 | `&` and `or` are not sites. | mut:64 | unpinned |
+| M11 | The four `ari` rewrites, in every context. | mut:65-66, mut:72 | `mutate/fixture_ari`; `integration/test_registration.ml` behaviour |
+| M12 | Unary minus is not a site. | mut:52-53 | `mutate/fixture_ari` |
+| M13 | A qualified operator is not a site. | mut:53-55 | unpinned |
+| M14 | A labelled or partial application is not a site. | mut:53-55 | unpinned |
+| M15 | An armed ordering differs from its `after` text on NaN. | mut:75-76 | unpinned |
+
+### Placement
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M16 | One mutant per expression: a comparison condition carries `cmp`, a connective one `con`, any other `neg`. | mut:81-83 | `mutate/fixture_nesting` |
+| M17 | A connective with a connective operand carries no mutant. | mut:84-86 | `mutate/fixture_nesting`, `mutate/fixture_chain` |
+| M18 | The operands of such a connective are boolean contexts all the same. | mut:86 | unpinned |
+| M19 | In a file that lost `cmp` or `con`, such a condition carries `neg`. | mut:87-88 | unpinned |
+| M20 | In a chain of one arithmetic operator the outermost application alone is a site, read from the tree. | mut:89-93 | `mutate/fixture_chain`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
+| M21 | The chain rule applied to `con`. | none (unreachable code) | unpinned |
+| M22 | In `a < b < c` only the outer comparison is a site. | mut:68-72 | `mutate/fixture_chain` |
+| M23 | Guards bind `__windtrap_mut_<i>_<role>`, distinct under nesting. | mut:94-95 | `mutate/fixture_chain` |
+
+### Code that is never mutated
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M24 | An `assert`, with everything under it. | mut:99 | `mutate/fixture_assert` |
+| M25 | A `lazy` of a trivial value, with everything under it. | mut:100-103 | `mutate/fixture_lazy`; `test_mutate_semantics.ml` "lazy stays lazy" |
+| M26 | The payloads of attributes and extension nodes. | mut:104 | unpinned |
+| M27 | A file holding an extension node named `test` or `expect_test`. | mut:105-106 | partial: `mutate/fixture_inline_tests` (both names together); unpinned: each name alone |
+| M28 | A file naming an identifier under `Ppx_windtrap_runtime.Ppx_runtime`. | mut:106-108 | `mutate/fixture_inline_expanded` |
+| M29 | A site at a ghost location. | mut:109 | unpinned |
+| M30 | A site whose line, column and rewrite an earlier site has. | mut:110-112 | unpinned |
+| M31 | Module initialization code is mutated. | mut:114-115 | `mutate/fixture_ari` |
+
+### The emission law
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M32 | A variable pattern named after an operator removes its family (`ari` for `+`). | mut:34-40 | `mutate/fixture_shadow` |
+| M33 | A value description (an `external`) named after an operator removes its family. | mut:39-40 | unpinned |
+| M34 | The `cmp` and `con` families are removed as `ari` is. | mut:36-37 | unpinned |
+| M35 | `neg` names `Stdlib.not` and is never lost. | mut:37-38 | partial: build of `mutate/integration/shadowed.ml`; unpinned: "never lost" |
+| M36 | Guards name `Stdlib.Bool.t`, which survives a local `type bool`. | mut:28-30 | build of `mutate/integration/shadowed.ml` |
+| M37 | Operands are typed left to right, the right one given the left one's type. | mut:182-183 (the annotation; the typing order is stated nowhere) | builds of `mutate/integration/disambiguate.ml`, `expected_type.ml`; `integration/test_registration.ml` typing_context, expected_type |
+
+### Dismissal attributes
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M38 | `[@mutate off "r"]` on a site records it dismissed with the reason, with an index and no guard. | mut:126-129 | `mutate/fixture_off`, `mutate/fixture_all_dismissed`, `mutate/fixture_off_edges` |
+| M39 | `[@mutate off]` without a reason records `""`. | mut:128-129 | `mutate/fixture_off` |
+| M40 | `[@mutate off]` on an expression that is no site records nothing and suppresses what is inside. | mut:129-131 | `mutate/fixture_off_edges` |
+| M41 | `[@@mutate off]` on a top-level value binding and a module binding, recursive or not. | mut:132-133 | partial: `mutate/fixture_off` (non-recursive); unpinned: recursive |
+| M42 | `[@@mutate off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | mut:133-135 | partial: `mutate/fixture_off_edges` (ignored); unpinned: payload unchecked |
+| M43 | `[@@@mutate off]` ... `[@@@mutate on]` is a region; a nested structure inherits it and restores the outer setting; an unclosed one runs to the end. | mut:136-140 | partial: `mutate/fixture_off`, `mutate/fixture_off_unclosed`; unpinned: nested inheritance |
+| M44 | A reason on `[@@mutate off]` or `[@@@mutate off]` is accepted and dropped. | mut:144-145 | unpinned |
+| M45 | A top-level `[@@@mutate exclude_file]` returns the file as parsed. | mut:141-142, mut:217 | `mutate/fixture_exclude` |
+| M46 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | mut:219-220 | unpinned |
+
+### Identification
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M47 | Line one-based, column zero-based in bytes, a bracketed site starting at its bracket. | mut:151-154 | every mutation golden (`mutate/fixture_off`, `mutate/fixture_ari`) |
+| M48 | Two sites may share a line and column under two rewrites. | mut:155 | `mutate/fixture_cmp`, `mutate/fixture_chain` |
+| M49 | Sites are numbered top-down, left operand before right. | mut:157-160 | `mutate/fixture_cmp`, `mutate/fixture_chain`, `mutate/fixture_neg` |
+| M50 | `before` and `after` are printed from the parsetree, the site's attributes left out. | mut:162-163 | `mutate/fixture_off` |
+| M51 | Each run of blanks in a text becomes one space. | mut:163-165 | `integration/test_registration.ml` typing_context |
+| M52 | ... inside a string literal too. | mut:164 | unpinned |
+
+### Generated code
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M53 | Three items in order, the module `Windtrap_mut___<name>` never opened. | mut:170-176 | every mutation golden; build of `mutate/integration/no_guard.ml` |
+| M54 | `type site = Windtrap_runtime.Mutate.site = { ... }` with its six fields. | mut:179-181 | every mutation golden |
+| M55 | `type 'a operands` only in a file with an ordering guard. | mut:182-183 | `mutate/fixture_cmp` (present), `mutate/fixture_ari` (absent) |
+| M56 | Every generated node is ghost; the disarmed arm keeps its location and attributes. | mut:189-191 | unpinned |
+| M57 | A file whose every site is dismissed is registered, by a module no guard refers to. | mut:221-223 | `mutate/fixture_all_dismissed` |
+| M58 | The two effects on a file the coverage rewriter ran on first. | mut:195-201 | unpinned |
+
+### Rejections
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| M59 | An unknown identifier payload is refused. | mut:233-234 | `mutate/reject_bad_payload` |
+| M60 | Other payload shapes (empty, `off 42`, `off "a" "b"`) are refused. | mut:233-234 | unpinned |
+| M61 | `on` on an expression is refused. | mut:235 | `mutate/reject_misplaced_on` |
+| M62 | `on` or `exclude_file` on a binding, `exclude_file` on an expression, are refused. | mut:235 | unpinned |
+| M63 | `exclude_file` floating in a nested structure is refused. | mut:236 | `mutate/reject_misplaced_exclude_file` |
+| M64 | `[@@@mutate off]` inside a region is refused: "Mutation is already off." | mut:237 | `mutate/reject_double_off` |
+| M65 | `[@@@mutate on]` outside a region is refused: "Mutation is already on." | mut:237 | unpinned |
+
+## Expect (`ppx/ppx_windtrap.ml`)
+
+| id | rule | interface | pinned by |
+| --- | --- | --- | --- |
+| E1 | `let%expect_test "n"` registers `add_test`, its body under `Expect_test_config.run` constrained to the synchronous type. | exp:6-13, exp:291-294; ppx_runtime.mli:10-11 | `expect/expect_basic` |
+| E2 | A `_` name becomes `line_<N>`. | exp:164-166 | `expect/expect_basic`, `expect/test_basic` |
+| E3 | Any other name pattern is refused. | exp:156-162 | unpinned |
+| E4 | Anything but one non-recursive binding is refused. | exp:211 | unpinned |
+| E5 | `[@tags "s"]` and `[@tags "a", "b"]` on the name pattern. | exp:119-154 | `expect/expect_basic`, `expect/test_basic` |
+| E6 | A malformed `[@tags]` is refused. | exp:147-153 | unpinned |
+| E7 | A `[@@tags]` on the binding, not the pattern, is ignored. | stated nowhere | unpinned |
+| E8 | `pos` is file, line, and both columns from the start line. | exp:55-65 | `expect/expect_basic`, `expect/test_basic` |
+| E9 | `[%expect lit]` and `[%expect_exact lit]` become core calls, the literal kept with its delimiters. | exp:237-241 | `expect/expect_basic` |
+| E10 | A bare `[%expect]` has the literal `""`. | exp:213-215 | `expect/expect_basic`; `expect/inline/inline_expect.ml` "bare expect" |
+| E11 | A node's attributes are carried onto its call. | exp:267, exp:270 | unpinned |
+| E12 | `[%expect.output]` is the sanitized read. | exp:12-13, exp:232-233 | `expect/expect_basic`; `expect/inline/inline_expect.ml` "output is consumed, not matched" |
+| E13 | `[%expect.output]` with a payload is refused. | exp:271-272 | unpinned |
+| E14 | A payload that is not a string literal is refused. | exp:213-230 | `expect/reject_bad_payload` |
+| E15 | An unimplemented family node inside a body is refused. | exp:15-18, exp:237-241 | `expect/reject_unreachable`, `expect/reject_if_reached` |
+| E16 | An implemented node outside a body is refused. | exp:92-104 | `expect/reject_expect_outside` |
+| E17 | An unimplemented node outside a body is refused. | exp:92-107 | partial: `expect/reject_expectation`; unpinned: the `expect.`/`expectation.` prefix forms |
+| E18 | A family attribute on the binding, the name pattern or a `module%test` is refused. | exp:204-206 | partial: `expect/reject_uncaught_exn`, `expect/reject_pattern_attr`, `expect/reject_module_attr`; unpinned: a `let%test` binding and pattern |
+| E19 | A family attribute anywhere else is refused by the leftover scan. | exp:92-95 | unpinned |
+| E20 | `let%test` registers `add_test` without `run`. | exp:6-8 | `expect/test_basic` |
+| E21 | `module%test M` becomes `enter_group`, the module, `leave_group`; `[@@tags]` consumed, other attributes kept. | exp:304-306, exp:371-374 | `expect/test_basic` |
+| E22 | `module%test _` or another item is refused. | exp:354-357 | unpinned |
+| E23 | The cookie `inline_tests`: `enabled` keeps, `disabled` drops, another value is refused. | exp:25-30 | cookie rules of `expect/dune` (`cookie_enabled`, `cookie_disabled`, `cookie_invalid`) |
+| E24 | The cookie value `ignored` drops. | exp:44 | unpinned |
+| E25 | The drop applies to `let%test` and `module%test`. | exp:25-30 | unpinned |
+| E26 | Generated code is warning-free under `-w +a -warn-error +a`. | stated nowhere | partial: build of `expect/strict_flags`; unpinned: anonymous names, nested groups |
+| E27 | `Expect_test_config` is named unqualified, so a local module shadows it. | exp:18-20, exp:232-233; expect_test_config.mli:15-16 | unpinned (run only by `examples/05-baselines/sanitized.ml`) |
+| E28 | A monadic `run` fails to compile at the reference. | exp:19-20, exp:291-294 | `test/conformance`, `hello_async.compile-rejected.expected` |
