@@ -121,8 +121,8 @@ val semi : unit t
     that holds a styled one.
 
     A styled string holds its escape sequences as plain bytes, which [Format]
-    counts as columns. A caller that lays out columns must measure with
-    {!Text.strip_ansi} and {!Text.length_utf8}. *)
+    counts as columns. A caller that lays out columns must measure the text
+    before it is styled. *)
 
 val styled_string : ansi:bool -> style -> string -> string
 (** [styled_string ~ansi style s] is [s] between the escape sequence of [style]

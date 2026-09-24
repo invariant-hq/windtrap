@@ -697,8 +697,9 @@ Coverage and packaging:
   which every suite writes `<dir>/<suite>.xml` — inline partitions as
   `<dir>/<lib>_<partition>-<digest>.xml`, whose log directory and
   last-failed store are keyed the same way — so `WINDTRAP_JUNIT=_build/junit
-  dune runtest` collects every stanza. The document carries no ANSI and
-  notes a flaky pass in `system-out`; a `<failure>` holds the block's lines
+  dune runtest` collects every stanza. The document prints a control
+  byte as the terminal does (`\x1b`, `\x0a` in a name), never strips it,
+  and notes a flaky pass in `system-out`; a `<failure>` holds the block's lines
   and its `message` is the failure as one sentence, after the subtest's
   label and your `?msg` (`contract › shape [0]: expected [1; 2], got [1;
   3]`, `deliberate: expected 1, got 2`, `uncaught exception: Not_found`,

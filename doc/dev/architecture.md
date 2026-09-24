@@ -158,9 +158,9 @@ windtrap frames is dropped (a user callback keeps itself and the frames
 below it). `Report` reads its presentation settings once, at `create`.
 The section vocabulary is priced like `Failure.kind`: a new constructor
 is a design amendment. `Pp` has no styled printer combinator, only
-`styled_string` over a finished string, because the renderer emits
-whole lines through `%s` and measures with
-`Text.strip_ansi` and `length_utf8`; `Pp.float_exact` is the only float
+`styled_string` over a finished string, because a report line is a list
+of spans that `Report_sections.render` escapes and styles once, and
+that `Report_sections.width` measures; `Pp.float_exact` is the only float
 printer, so anything printed can be pasted back as the same double, and
 a lossy `%g` spelling is asked for at the call site.
 

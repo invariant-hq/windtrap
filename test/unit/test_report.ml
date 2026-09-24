@@ -25,6 +25,28 @@ module Sections = Report_sections
 
 let has ~sub s = Text.contains_substring ~pattern:sub s
 
+(* A styled transcript without its styling: every CSI sequence, from ESC
+   [\[] to its final byte, the one kind the renderer writes, since a
+   payload's own ESC prints escaped. *)
+let strip_ansi s =
+  let n = String.length s in
+  let b = Buffer.create n in
+  let rec final i =
+    if i >= n then i
+    else if s.[i] >= '\x40' && s.[i] <= '\x7e' then i + 1
+    else final (i + 1)
+  in
+  let rec go i =
+    if i < n then
+      if s.[i] = '\027' && i + 1 < n && s.[i + 1] = '[' then go (final (i + 2))
+      else begin
+        Buffer.add_char b s.[i];
+        go (i + 1)
+      end
+  in
+  go 0;
+  Buffer.contents b
+
 let occurrences_of ~sub s =
   let n = String.length sub in
   let rec go i acc =
@@ -1812,7 +1834,7 @@ let test_mark_criterion () =
           "the coloured block, stripped, is the plain block without its marks"
         string
         (without_marks (failure_block f))
-        (Text.strip_ansi (failure_block ~ansi:true f)))
+        (strip_ansi (failure_block ~ansi:true f)))
     [
       ("Xbcdefghij", "Ybcdefghij");
       ("user:alice", "user:alice:admin");
@@ -1897,7 +1919,7 @@ let test_control_bytes_containment () =
     ~msg:
       "containment: the coloured bytes, stripped, are the plain ones without \
        the mark"
-    (Text.strip_ansi colored = without_marks b)
+    (strip_ansi colored = without_marks b)
 
 let test_control_bytes_alphabet () =
   (* One rule: every C0 byte and DEL as [\xNN], LF and TAB excepted because
@@ -2605,7 +2627,7 @@ let test_containment_block () =
     colored;
   not_contains ~msg:"not_contains: no mark under colour" ~sub:"~" colored;
   is_true ~msg:"not_contains: colour replaces the mark and nothing else"
-    (Text.strip_ansi colored = without_marks b);
+    (strip_ansi colored = without_marks b);
   (* contains: needle absent, display-capped head excerpt of a huge
      haystack. *)
   let haystack = String.make 20_006 'a' in
@@ -2665,7 +2687,7 @@ let test_containment_multiline () =
     colored;
   is_true
     ~msg:"multi-line occurrence: colour replaces the mark and nothing else"
-    (Text.strip_ansi colored = without_marks plain)
+    (strip_ansi colored = without_marks plain)
 
 (* The not-found display cap: with no occurrence to mark, the haystack is
    context rather than evidence, so the display shows a small head window
@@ -2791,7 +2813,7 @@ let test_in_order_block () =
        authenticate\n"
     colored;
   is_true ~msg:"in_order: colour replaces the mark and nothing else"
-    (Text.strip_ansi colored = without_marks b);
+    (strip_ansi colored = without_marks b);
   (* No occurrence anywhere: the verdict is the cursor alone and there is
      nothing to mark. *)
   let b = failure_block missing_element_failure in
@@ -2916,7 +2938,7 @@ let test_trailing_whitespace_hunks () =
      ^ "\027[31m~\027[0m\n")
     colored;
   is_true ~msg:"ansi path: the same bytes once the escapes are stripped"
-    (Text.strip_ansi colored = plain);
+    (strip_ansi colored = plain);
   (* One meaning for green, across both diff paths.
 
      A transcript routinely shows both — a short value marks its spans,
@@ -3685,7 +3707,7 @@ let test_excerpt_project_root () =
 let check_report name ~marked render =
   equal ~msg:(name ^ ": with colour") string (roles marked) (render ~ansi:true);
   equal ~msg:(name ^ ": without") string
-    (Text.strip_ansi (roles marked))
+    (strip_ansi (roles marked))
     (render ~ansi:false)
 
 let lines_of ranges =
@@ -4208,7 +4230,7 @@ let test_mutation_streams () =
       { (config ()) with Run.invocation = exe_invocation }
   in
   let committed () = Buffer.contents buf in
-  let plain marked = Text.strip_ansi (roles marked) in
+  let plain marked = strip_ansi (roles marked) in
   Report.mutation_testing r ~index:1 ~total:5 ~id:"lib/calc.ml:9:3:sub";
   equal ~msg:"trying a mutant commits nothing" string "" (committed ());
   Report.mutation_testing r ~index:2 ~total:5 ~id:"lib/calc.ml:13:11:add";
@@ -4281,7 +4303,7 @@ let test_mutation_interrupted () =
     }
   in
   equal ~msg:"the closing sections, and what was not tested" string
-    (Text.strip_ansi (roles closing)
+    (strip_ansi (roles closing)
     ^ "\n\
        ─────────────────── never reached (2) ────────────────────\n\
       \  2  lib/calc.ml   lines 40-41\n" ^ closing_rule
@@ -5252,8 +5274,7 @@ let test_live_line_cut () =
         Report.begin_test r ~path:[ long ])
   in
   let drawn =
-    Text.strip_ansi t |> String.split_on_char '\r'
-    |> List.filter (fun l -> l <> "")
+    strip_ansi t |> String.split_on_char '\r' |> List.filter (fun l -> l <> "")
   in
   (match drawn with
   | [ line ] ->

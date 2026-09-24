@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Adapted from windtrap 0.1's lib/text.ml; [strip_ansi] and
+(* Adapted from windtrap 0.1's lib/text.ml; [escape_controls] and
    [ensure_trailing_newline] are new in v3. *)
 
 (* Newlines *)
@@ -146,42 +146,3 @@ let escape_controls s =
       s;
     Buffer.contents b
   end
-
-(* ANSI escapes *)
-
-let strip_ansi s =
-  let len = String.length s in
-  let b = Buffer.create len in
-  let rec loop i =
-    if i >= len then ()
-    else
-      match s.[i] with
-      | '\027' ->
-          if i + 1 >= len then () (* trailing ESC: drop *)
-          else
-            begin match s.[i + 1] with
-            | '[' -> csi (i + 2)
-            | ']' -> osc (i + 2)
-            | _ -> loop (i + 2)
-            (* two-byte escape: drop both *)
-            end
-      | c ->
-          Buffer.add_char b c;
-          loop (i + 1)
-  and csi i =
-    (* Skip parameter/intermediate bytes up to and including the final
-       byte, which lies in 0x40..0x7e. *)
-    if i >= len then ()
-    else if s.[i] >= '\x40' && s.[i] <= '\x7e' then loop (i + 1)
-    else csi (i + 1)
-  and osc i =
-    (* Terminated by BEL or by the two-byte string terminator ESC \. *)
-    if i >= len then ()
-    else
-      match s.[i] with
-      | '\007' -> loop (i + 1)
-      | '\027' when i + 1 < len && s.[i + 1] = '\\' -> loop (i + 2)
-      | _ -> osc (i + 1)
-  in
-  loop 0;
-  Buffer.contents b

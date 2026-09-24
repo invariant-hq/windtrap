@@ -10,7 +10,9 @@
 let spf = Printf.sprintf
 
 (* [s] reduced to the XML 1.0 character range: every XML-invalid scalar
-   value and every malformed UTF-8 byte becomes U+FFFD. *)
+   value and every malformed UTF-8 byte becomes U+FFFD. [s] has been
+   through the report's escape, so TAB and LF are the only control bytes
+   left. *)
 let xml_valid s =
   let buf = Buffer.create (String.length s) in
   let len = String.length s in
@@ -20,7 +22,7 @@ let xml_valid s =
     let n = Uchar.utf_decode_length d in
     let c = Uchar.to_int (Uchar.utf_decode_uchar d) in
     let xml_char =
-      c = 0x9 || c = 0xA || c = 0xD
+      c = 0x9 || c = 0xA
       || (c >= 0x20 && c <= 0xD7FF)
       || (c >= 0xE000 && c <= 0xFFFD)
       || (c >= 0x10000 && c <= 0x10FFFF)
@@ -39,25 +41,29 @@ let escape_common buf c =
   | '>' -> Buffer.add_string buf "&gt;"
   | c -> Buffer.add_char buf c
 
-(* Element-content sanitization: ANSI-stripped, XML-1.0-ranged, escaped. *)
+(* Element content: the report's escape line by line, XML-1.0-ranged,
+   escaped. *)
 let text s =
-  let s = xml_valid (Text.strip_ansi s) in
+  let s =
+    xml_valid
+      (String.concat "\n"
+         (List.map Text.escape_controls (String.split_on_char '\n' s)))
+  in
   let buf = Buffer.create (String.length s) in
   String.iter (escape_common buf) s;
   Buffer.contents buf
 
-(* Attribute-value sanitization: as {!text}, plus quotes and the whitespace
-   characters parsers would normalize away. *)
+(* Attribute value: one line, the report's escape over the whole of it,
+   XML-1.0-ranged, escaped with the quotes and the tab that a parser would
+   normalize away. *)
 let attr s =
-  let s = xml_valid (Text.strip_ansi s) in
+  let s = xml_valid (Text.escape_controls s) in
   let buf = Buffer.create (String.length s) in
   String.iter
     (fun c ->
       match c with
       | '"' -> Buffer.add_string buf "&quot;"
       | '\'' -> Buffer.add_string buf "&apos;"
-      | '\n' -> Buffer.add_string buf "&#10;"
-      | '\r' -> Buffer.add_string buf "&#13;"
       | '\t' -> Buffer.add_string buf "&#9;"
       | c -> escape_common buf c)
     s;

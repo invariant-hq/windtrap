@@ -64,11 +64,13 @@
     failure each add one to [skipped]. [errors] is always [0], and no [error]
     element is ever written, because every kind of failure is a JUnit failure.
 
-    {b Validity.} Every string that the rows supply is first stripped of its
-    escape sequences ({!Text.strip_ansi}). It is then reduced to the [Char]
-    range of XML 1.0, in which any other code point and each malformed UTF-8
-    sequence becomes U+FFFD. It is escaped last, as element text or as an
-    attribute value. No payload can therefore make the document malformed.
+    {b Validity.} Every string that the rows supply first goes through
+    {!Text.escape_controls}, element text line by line and an attribute value
+    whole, so a control byte other than TAB, and LF in text, prints as [\xNN].
+    It is then reduced to the [Char] range of XML 1.0, in which any other code
+    point and each malformed UTF-8 sequence becomes U+FFFD. It is escaped last,
+    as element text or as an attribute value. No payload can therefore make the
+    document malformed.
 
     {b Determinism.} The document holds no clock, no host name and no timestamp.
     Its paths are printed against {!Os.project_root}, which reads the

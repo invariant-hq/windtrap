@@ -182,33 +182,6 @@ let tests =
         equal ~msg:"C0 bytes, LF and CR included, and DEL" string
           "\\x00a\\x0ab\\x0dc\\x1b[31m\\x1f\\x7f"
           (Text.escape_controls "\x00a\nb\rc\027[31m\x1f\x7f"));
-    test "strip_ansi removes escapes and keeps text" (fun () ->
-        equal ~msg:"plain text unchanged" string "plain"
-          (Text.strip_ansi "plain");
-        equal ~msg:"strips color sequence" string "redtext"
-          (Text.strip_ansi "\027[31mred\027[0mtext");
-        equal ~msg:"strips multi-parameter csi" string "x"
-          (Text.strip_ansi "\027[1;32;44mx");
-        equal ~msg:"strips private-mode csi" string "x"
-          (Text.strip_ansi "\027[?25lx");
-        equal ~msg:"strips cursor movement" string "ab"
-          (Text.strip_ansi "a\027[2Kb");
-        equal ~msg:"strips osc terminated by bel" string "ab"
-          (Text.strip_ansi "a\027]0;title\007b");
-        equal ~msg:"strips osc terminated by st" string "ab"
-          (Text.strip_ansi "a\027]8;;http://x\027\\b");
-        equal ~msg:"strips two-byte escape" string "ab"
-          (Text.strip_ansi "a\027cb");
-        equal ~msg:"drops truncated escape at end" string "a"
-          (Text.strip_ansi "a\027[31");
-        equal ~msg:"drops trailing lone esc" string "a"
-          (Text.strip_ansi "a\027");
-        equal ~msg:"keeps newlines and text intact" string "a\nb"
-          (Text.strip_ansi "\027[1ma\n\027[31mb\027[0m"));
-    test "strip_ansi opens a sequence at ESC only" (fun () ->
-        equal ~msg:"the 8-bit CSI byte and other controls stay" string
-          "a\x9b31mb\x07\x00\rc"
-          (Text.strip_ansi "a\x9b31mb\x07\x00\rc"));
   ]
 
 let () = exit @@ Windtrap.run "text" tests

@@ -6,7 +6,8 @@
 (* Tests for Report_junit: golden document over a small synthetic run,
    well-formedness of the full fixture run (checked with the minimal
    Xml_check parser), the flaky-pass note, the ANSI-in-JUnit
-   impossibility, XML 1.0 range sanitization of hostile payloads,
+   impossibility, control bytes escaped and the XML 1.0 range of hostile
+   payloads,
    escaping, counts, the report's path, and the checker's own sanity. *)
 
 open Windtrap
@@ -310,21 +311,22 @@ let test_ansi_impossible () =
       ()
   in
   not_contains ~msg:"no ESC byte anywhere in the document" ~sub:"\027" doc;
-  contains ~msg:"stripped payload text survives" ~sub:"red tail text" doc;
-  (* Two ways to keep ESC out of XML, and the body uses the one that keeps
-     the bytes: [pp_failure] escapes comparison data before this transport
-     ever sees it, so a styled expected value arrives readable instead of
-     stripped down to its letters. The captured tail keeps the old
-     treatment — it is a log excerpt with a full-log path. *)
+  (* ESC is escaped as every control byte is, in every field, so a styled
+     value arrives readable instead of stripped down to its letters. *)
+  contains ~msg:"the captured tail keeps its bytes, escaped"
+    ~sub:{|\x1b[31mred\x1b[0m tail text|} doc;
   contains ~msg:"the failure body carries the value's own bytes, escaped"
     ~sub:{|\x1b[31mred\x1b[0m expected|} doc;
   contains ~msg:"and the OSC-carrying side too" ~sub:{|\x1b]0;title\x07 actual|}
     doc;
-  check_well_formed "ANSI-stripped document is well-formed" doc
+  contains ~msg:"an attribute escapes them too"
+    ~sub:{|<skipped message="\x1b[31mred\x1b[0m reason"/>|} doc;
+  check_well_formed "escaped document is well-formed" doc
 
 let test_xml_range () =
   (* A control byte, a form feed, a malformed byte, and U+FFFE: valid
-     UTF-8, yet no XML character. *)
+     UTF-8, yet no XML character. The two control bytes are escaped
+     first; the other two are no XML character. *)
   let hostile = "a\x01b\x0cc\xffd\u{FFFE}e" in
   let doc =
     Report_junit.render ~release_failures:[] ~suite:"s"
@@ -338,8 +340,8 @@ let test_xml_range () =
   not_contains ~msg:"control byte removed" ~sub:"\x01" doc;
   not_contains ~msg:"form feed removed" ~sub:"\x0c" doc;
   not_contains ~msg:"malformed UTF-8 byte removed" ~sub:"\xff" doc;
-  contains ~msg:"invalid characters become U+FFFD"
-    ~sub:"a\u{FFFD}b\u{FFFD}c\u{FFFD}d\u{FFFD}e" doc;
+  contains ~msg:"control bytes escaped, invalid characters become U+FFFD"
+    ~sub:"a\\x01b\\x0cc\u{FFFD}d\u{FFFD}e" doc;
   check_well_formed "sanitized document is well-formed" doc
 
 let test_escaping () =

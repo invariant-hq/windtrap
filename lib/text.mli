@@ -3,8 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Strings read as text: lines, UTF-8 code points, byte search, control bytes
-    and ANSI escape sequences.
+(** Strings read as text: lines, UTF-8 code points, byte search and control
+    bytes.
 
     Every function is pure, and {!elide_middle} is as pure as the [show] that it
     is given. Lengths are in code points. No function knows grapheme clusters or
@@ -85,18 +85,3 @@ val escape_controls : string -> string
     written as [\xNN] in lowercase hexadecimal. LF is escaped too, so the result
     is one line. Every other byte passes. It is not injective: the four
     characters [\x1b] print as ESC does. *)
-
-(** {1:ansi ANSI escape sequences} *)
-
-val strip_ansi : string -> string
-(** [strip_ansi s] is [s] without its ANSI escape sequences. It removes three
-    forms:
-    - A CSI sequence, from ESC [\[] up to and including the first byte in the
-      range [0x40] to [0x7e].
-    - An OSC sequence, from ESC [\]] up to and including BEL, or ESC and a
-      backslash.
-    - Any other ESC, with the byte that follows it.
-
-    A sequence that the end of [s] cuts short is removed too. Only ESC opens a
-    sequence, so the 8-bit CSI byte [0x9b] and every other control byte stay. It
-    never raises. *)
