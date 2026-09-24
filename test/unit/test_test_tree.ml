@@ -676,6 +676,102 @@ let () =
     (Tag.accepts p (Tag.of_list [ "x" ]));
   is_false ~msg:"require after drop still requires it" (Tag.accepts p Tag.empty)
 
+(* Names, paths and duplicates *)
+
+let () =
+  reg "a name is never validated and a path is never empty" @@ fun () ->
+  let names = [ ""; "a › b"; "line\nbreak"; "\x1b[31mred" ] in
+  equal ~msg:"every name is a path as given"
+    (list (list string))
+    (List.map (fun n -> [ n ]) names)
+    (List.map
+       (fun (c : T.case) -> c.T.path)
+       (T.flatten (List.map (fun n -> T.test n nop) names)));
+  equal ~msg:"an empty group name is a component too"
+    (list (list string))
+    [ [ ""; "" ] ]
+    (List.map
+       (fun (c : T.case) -> c.T.path)
+       (T.flatten [ T.group "" [ T.test "" nop ] ]))
+
+let () =
+  reg "flatten keeps two tests of one path" @@ fun () ->
+  let tree = [ T.test "same" nop; T.group "g" []; T.test "same" nop ] in
+  equal ~msg:"both are returned, in order"
+    (list (list string))
+    [ [ "same" ]; [ "same" ] ]
+    (List.map (fun (c : T.case) -> c.T.path) (T.flatten tree))
+
+let () =
+  reg "the prop tag is \"prop\"" @@ fun () ->
+  equal ~msg:"Tag.prop" string "prop" Tag.prop
+
+let () =
+  reg "cases names its inputs at declaration, in order" @@ fun () ->
+  let seen = ref [] in
+  let name i =
+    seen := i :: !seen;
+    string_of_int i
+  in
+  let tree = T.cases ~name "c" [ 3; 1; 2 ] ignore in
+  equal ~msg:"name ran on every input, in input order" (list int) [ 3; 1; 2 ]
+    (List.rev !seen);
+  ignore (T.flatten [ tree ]);
+  equal ~msg:"and never again" int 3 (List.length !seen);
+  raises ~msg:"what name raises escapes at declaration" Boom (fun () ->
+      T.cases ~name:(fun _ -> raise Boom) "c" [ 0 ] ignore)
+
+let () =
+  reg "on one node the first xfail applied stays" @@ fun () ->
+  let c =
+    only "twice" (T.xfail ~reason:"b" (T.xfail ~reason:"a" (T.test "t" nop)))
+  in
+  is_true ~msg:"the inner annotation's reason"
+    (c.T.xfail = Some { T.reason = Some "a" })
+
+let () =
+  reg "focus_sites lists a group before what it holds, once" @@ fun () ->
+  let site n = ("test/fake.ml", n, 0, 0) in
+  let tree =
+    [
+      T.focus
+        (T.group ~__POS__:(site 1) "g"
+           [
+             T.test "a" nop;
+             T.focus (T.test ~__POS__:(site 2) "b" nop);
+             T.test "c" nop;
+           ]);
+      T.focus (T.test ~__POS__:(site 3) "d" nop);
+    ]
+  in
+  equal ~msg:"the group, its focused child, then the next node"
+    (list (option int))
+    [ Some 1; Some 2; Some 3 ]
+    (List.map (Option.map (fun (l : Loc.t) -> l.Loc.line)) (T.focus_sites tree))
+
+(* The body's backtrace survives the teardown, even one that raises and
+   catches inside it, which would overwrite a plain re-raise's. *)
+let[@inline never] fail_in_body () = raise Boom
+
+let[@inline never] catch_in_teardown () =
+  try raise Not_found with Not_found -> ()
+
+let () =
+  reg "bracket re-raises the body's exception with its backtrace" @@ fun () ->
+  let tree =
+    T.bracket ~setup:nop
+      ~teardown:(fun () -> catch_in_teardown ())
+      "b"
+      (fun () -> fail_in_body ())
+  in
+  match scope_of "bracket" tree () with
+  | () -> fail "the body's exception did not come back"
+  | exception Boom ->
+      let bt = Printexc.get_backtrace () in
+      contains ~msg:"the backtrace names the body's raise" ~sub:"fail_in_body"
+        bt;
+      not_contains ~msg:"and not the teardown's" ~sub:"catch_in_teardown" bt
+
 (* Suite *)
 
 let tests = List.rev !registered
