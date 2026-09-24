@@ -182,8 +182,8 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     runs.
 
     A signal that arrives once the last child has ended stops nothing. The
-    verdict file is written, a second signal excepted, the report ends as usual,
-    and the result is [Reported 0].
+    verdict file is written, a second signal excepted, and the report ends as
+    usual. The loop then dies by that signal, and says nothing more.
 
     [SIGPIPE] is handled over the same span. When the reader of standard output
     has gone away, the write that finds it gone fails. The loop then stops as it

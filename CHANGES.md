@@ -846,7 +846,9 @@ Coverage and packaging:
   reader that goes away (`… --mutate | head -1`) ends it as quietly as it
   left: nothing is said, the loop's scratch directory is removed, and the
   process dies by SIGPIPE. A loop that ran whole has written its
-  verdict file before its last lines print, so neither costs it.
+  verdict file before its last lines print, so neither costs it: a signal
+  that arrives once the last child has ended lets the report finish,
+  then the process dies by it.
 
 ### Packages and libraries
 

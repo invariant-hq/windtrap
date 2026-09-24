@@ -1011,11 +1011,20 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                       report;
                     flush_descriptors ();
                     die_by signal
-                | None ->
-                    Report.mutation_finish renderer report;
-                    flush_descriptors ();
-                    Option.iter (note "%s") unsaved;
-                    Reported 0)))
+                | None -> (
+                    (* A signal recorded once the last child had ended
+                       stopped nothing: the file is written and the report
+                       is whole. The loop still dies by it, so what sent it
+                       sees the death it asked for. *)
+                    match interrupt.signal with
+                    | Some signal when signal = Sys.sigpipe -> die_by signal
+                    | late -> (
+                        Report.mutation_finish renderer report;
+                        flush_descriptors ();
+                        Option.iter (note "%s") unsaved;
+                        match late with
+                        | Some signal -> die_by signal
+                        | None -> Reported 0)))))
 
 (* The ordinary run with one mutant armed. [spec] is the identifier as
    [--arm] read it, unparsed: the runtime's grammar decides what it

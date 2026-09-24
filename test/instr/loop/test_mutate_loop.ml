@@ -1992,6 +1992,28 @@ let interrupt_tests =
             "mutants: 1 reached by this suite, 3 never reached, 1 not tested\n"
           out;
         left_nothing ~msg:"no scratch directory" tmpdir);
+    test
+      "a signal after the last child ends: the file, the whole report, then a \
+       death by it" (fun () ->
+        (try Sys.remove verdict_path with Sys_error _ -> ());
+        (* What holds the loop in the window: see [late] in suite_main.ml. *)
+        Unix.mkfifo verdict_path 0o600;
+        let tmpdir = temp_dir () in
+        let status, out, err =
+          finish
+            (start ~args:[ mutate ]
+               [ ("MUTATE_FIXTURE", "late"); ("TMPDIR", tmpdir) ])
+        in
+        is_true ~msg:"the loop died by the signal"
+          (status = Unix.WSIGNALED Sys.sigint);
+        equal ~msg:"and said nothing of it" text "" err;
+        ends_with ~msg:"after its whole report"
+          ~affix:
+            "mutants: 1 survived of 1 reached by this suite, 3 never reached\n"
+          out;
+        is_true ~msg:"after the verdict file"
+          ((Unix.stat verdict_path).Unix.st_kind = Unix.S_REG);
+        left_nothing ~msg:"no scratch directory" tmpdir);
     test "SIGTERM and SIGHUP stop it alike" (fun () ->
         List.iter
           (fun (name, signal) ->

@@ -247,6 +247,46 @@ let pinned =
     test "crasher subtracts" (fun () -> equal int 2 (Subject.crasher 3 1));
   ]
 
+(* [late] reaches one mutant, so its child is the last. Armed, the test
+   leaves a watcher behind that outlives the child. It waits until the
+   loop's scratch directory, the one entry of TMPDIR, is gone, which the
+   loop removes once its last child has ended, and sends SIGINT to the
+   loop. The harness has put a FIFO where the verdict file goes, and the
+   loop reads the file it replaces: its open blocks until the watcher,
+   after the signal, holds the FIFO open, or until the signal interrupts
+   it. So the signal lands after the last child and before the loop can
+   restore its handlers, on any schedule. The watcher lets go once the
+   loop has written its file over the FIFO, or is gone. It is an exec'd
+   shell, so it holds no descriptor of the child's (the verdict pipe is
+   close-on-exec). *)
+let signal_the_loop_after_its_last_child () =
+  let tmp = Filename.get_temp_dir_name () in
+  match Array.to_list (Sys.readdir tmp) with
+  | [ scratch ] ->
+      let loop = Unix.getppid () in
+      ignore
+        (Unix.create_process "sh"
+           [|
+             "sh";
+             "-c";
+             "while [ -e \"$1\" ] && kill -0 \"$2\" 2>/dev/null; do sleep \
+              0.01; done; kill -INT \"$2\"; exec 3<>\"$3\"; while [ -p \"$3\" \
+              ] && kill -0 \"$2\" 2>/dev/null; do sleep 0.01; done";
+             "sh";
+             Filename.concat tmp scratch;
+             string_of_int loop;
+             Windtrap_runtime.Verdicts.output_file ~exe:Sys.executable_name;
+           |]
+           Unix.stdin Unix.stdout Unix.stderr)
+  | _ -> failwith "TMPDIR holds one entry, the loop's scratch directory"
+
+let late =
+  [
+    test "signals the loop once its last child ends" (fun () ->
+        if Subject.sub 10 4 <> 6 then signal_the_loop_after_its_last_child ();
+        is_true (Subject.sub 10 4 < 100));
+  ]
+
 let slow =
   [
     test "sleeps briefly and pins nothing about sub" (fun () ->
@@ -376,6 +416,7 @@ let () =
   | "pinned" ->
       exit @@ run "calc" [ group "calc" strong; group "pinned" pinned ]
   | "slow" -> exit @@ run "calc" [ group "slow" slow ]
+  | "late" -> exit @@ run "calc" [ group "late" late ]
   | "probe_block" -> exit @@ run "calc" [ group "probe" probe_block ]
   | "baseline" -> exit @@ run "calc" [ group "baseline" baseline ]
   | "release" -> exit @@ run "calc" [ group "release" release ]
