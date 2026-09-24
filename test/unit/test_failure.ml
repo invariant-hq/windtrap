@@ -430,16 +430,16 @@ let tests =
         with
         | F.Baseline { withheld; _ } -> is_true (withheld = None)
         | _ -> fail "baseline kind");
-    test "property constructor: count, shrink_exhausted and rendering defaults"
+    test "property constructor: count, shrink_end and rendering defaults"
       (fun () ->
         match
           (F.property ~rendered:"[]" ~case_index:0 ~shrink_steps:0 ~root:1L
              ~examples:false ())
             .F.kind
         with
-        | F.Property { count; shrink_exhausted; rendering; _ } ->
+        | F.Property { count; shrink_end; rendering; _ } ->
             is_true ~msg:"count None" (count = None);
-            is_false ~msg:"shrink_exhausted false" shrink_exhausted;
+            is_true ~msg:"shrink_end Converged" (shrink_end = F.Converged);
             is_true ~msg:"rendering Value" (rendering = F.Value)
         | _ -> fail "property kind");
     test "property constructor" (fun () ->
@@ -455,7 +455,7 @@ let tests =
                 rendered = "Rect (2, 0)";
                 case_index = 12;
                 shrink_steps = 4;
-                timed_out = None;
+                shrink_end = F.Converged;
                 root = 0x7be1d2c904aa31f5L;
                 examples = false;
                 inner = Some i;
@@ -470,10 +470,7 @@ let tests =
           (match f.F.kind with
           | F.Property { examples = true; inner = None; _ } -> true
           | _ -> false);
-        is_true ~msg:"timed_out defaults to None"
-          (match f.F.kind with
-          | F.Property { timed_out = None; _ } -> true
-          | _ -> false);
+
         is_true ~msg:"summary defaults to None"
           (match f.F.kind with
           | F.Property { summary = None; _ } -> true
@@ -490,12 +487,22 @@ let tests =
               true
           | _ -> false);
         let f =
-          F.property ~timed_out:0.3 ~rendered:"[]" ~case_index:0 ~shrink_steps:2
-            ~root:1L ~examples:false ()
+          F.property ~shrink_end:(F.Timed_out 0.3) ~rendered:"[]" ~case_index:0
+            ~shrink_steps:2 ~root:1L ~examples:false ()
         in
-        is_true ~msg:"an explicit timed_out limit is stored"
+        is_true ~msg:"an explicit shrink_end is stored"
           (match f.F.kind with
-          | F.Property { timed_out = Some 0.3; _ } -> true
+          | F.Property { shrink_end = F.Timed_out 0.3; _ } -> true
+          | _ -> false);
+        let long = String.make 70_000 'e' in
+        is_true ~msg:"the text of a raising candidate is bounded"
+          (match
+             (F.property ~shrink_end:(F.Candidate_raised long) ~rendered:"[]"
+                ~case_index:0 ~shrink_steps:0 ~root:1L ~examples:false ())
+               .F.kind
+           with
+          | F.Property { shrink_end = F.Candidate_raised text; _ } ->
+              String.length text < String.length long
           | _ -> false));
     test "with_phase and with_output_tail" (fun () ->
         let f = F.message "boom" in

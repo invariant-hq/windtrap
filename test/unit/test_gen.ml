@@ -73,7 +73,7 @@ let shrink ?(from = fun _ -> true) ?(failing = fun _ -> true) gen =
       ~path:"test_gen" gen law
   with
   | Fail { failure = { kind = Property payload; _ }; _ } ->
-      if payload.shrink_exhausted then
+      if payload.shrink_end <> Converged then
         failf "the search stopped at %s before it converged" payload.rendered;
       let text =
         match payload.rendering with

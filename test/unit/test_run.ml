@@ -1193,9 +1193,9 @@ let () =
     expect_run "mid-shrink timeout suite runs" ~config tests @@ fun outcome ->
     let wall = Unix.gettimeofday () -. started in
     (match failure_list (outcome_of outcome [ "slow-shrink" ]) with
-    | [ { Failure.kind = Failure.Property { timed_out; _ }; _ } ] ->
+    | [ { Failure.kind = Failure.Property { shrink_end; _ }; _ } ] ->
         check "prop timeout mid-shrink reports the marked counterexample"
-          (timed_out = Some 0.2)
+          (shrink_end = Failure.Timed_out 0.2)
     | _ -> check "mid-shrink timeout: one Property failure" false);
     (* 0.2s measured; the bound leaves ten times that to a loaded host. *)
     check "the whole-test budget bounds the wall time" (wall < 2.0);

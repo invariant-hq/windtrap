@@ -150,9 +150,9 @@ val shrink_budget : int
     bounds neither the time of a search nor the candidates probed at one node,
     which only the test's timeout bounds.
 
-    A search that the budget stops marks its failure [shrink_exhausted]. The
-    mark is set only when a further candidate would have been accepted, so a
-    search that converges on its last allowed step is not marked. *)
+    A search that the budget stops ends its failure with [Failure.Budget_spent],
+    only when a further candidate would have been accepted, so a search that
+    converges on its last allowed step is [Failure.Converged]. *)
 
 val run :
   ?loc:Loc.t ->
@@ -207,17 +207,18 @@ val run :
     two failures need not be equal. A candidate that passes or raises a control
     other than [`Timeout] is rejected.
 
-    The search ends at a node with no accepted candidate. It also ends, and
-    marks the failure [shrink_exhausted], after {!shrink_budget} steps, and when
+    The search ends at a node with no accepted candidate, [Failure.Converged].
+    It also ends after {!shrink_budget} steps, [Failure.Budget_spent], and when
     the forcing of a candidate raises anything but a [`Timeout], as a function
-    given to {!Gen.map} or a [pre] of {!Stateful} can. That exception is
-    dropped, whatever it is, so no report names it.
+    given to {!Gen.map} or a [pre] of {!Stateful} can:
+    [Failure.Candidate_raised] with that exception as [Printexc.to_string]
+    prints it.
 
-    A [`Timeout] raised anywhere in the search ends it as well. The failure then
-    describes the last accepted node, its [timed_out] holds the limit, and the
-    test does not time out. [case_index] is always that of the first failure, so
-    a replay descends the same path, and a timeout changes only where on that
-    path the descent stops.
+    A [`Timeout] raised anywhere in the search ends it as well,
+    [Failure.Timed_out] with the limit. The failure then describes the last
+    accepted node, and the test does not time out. [case_index] is always that
+    of the first failure, so a replay descends the same path, and a timeout
+    changes only where on that path the descent stops.
 
     Raises [Invalid_argument] if [count] or [max_discard] is negative, inside
     the running test, where [run] executes. Raises a [Failure.Control] other

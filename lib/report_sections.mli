@@ -137,8 +137,10 @@ val pp_failure :
     An explicit example is named by its one-based index, any other case by its
     zero-based index and, when it has some, by its shrink steps. A [summary] and
     a {!Failure.Pre_image} print as {!type:Failure.kind} asks of a renderer. A
-    search that the timeout cut short, or that stopped without converging
-    ([shrink_exhausted]), adds a line that says which.
+    search that did not converge ({!Failure.type-shrink_end}) adds a line that
+    says why, and a candidate that raised adds a second line with its exception.
+    The {!headline} of such a failure names the stop: [shrink limit reached],
+    [shrinking stopped] or [shrinking timed out].
 
     The entry of the inner failure comes last. It is an entry as above, nested,
     with no blank line after its source line and no hint lines.

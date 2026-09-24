@@ -186,14 +186,9 @@ type kind =
               {!Seed.derive} took, which counts the discarded cases too. *)
       shrink_steps : int;
           (** The accepted shrink steps that led to [rendered]. *)
-      shrink_exhausted : bool;
-          (** [true] iff the shrink search stopped before it converged, because
-              it spent its budget or because the forcing of a candidate raised.
-              [rendered] is then the best node that the search reached. *)
-      timed_out : float option;
-          (** [Some limit] iff the limit of the test, in seconds, expired during
-              the shrink search, of which [rendered] is then the last accepted
-              node. It is never [Some _] beside [examples]. *)
+      shrink_end : shrink_end;
+          (** How the shrink search ended. [rendered] is the last node that it
+              accepted. It is {!Converged} beside [examples]. *)
       root : Seed.seed;  (** The root seed of the run. *)
       count : int option;
           (** The case count when the configuration of the run gave it, and
@@ -217,6 +212,18 @@ type kind =
   | Message of string
       (** A direct failure: the text of a [fail], or a failure that the library
           words itself, as it does a timeout and an intercepted [exit]. *)
+
+(** The type for how a shrink search ended. Every case but {!Converged} says
+    that the counterexample may not be minimal. *)
+and shrink_end =
+  | Converged  (** No candidate of the last node was accepted. *)
+  | Budget_spent  (** The search took its budget of accepted steps. *)
+  | Candidate_raised of string
+      (** Forcing a candidate raised the exception printed here, and the
+          siblings behind it were unreachable. *)
+  | Timed_out of float
+      (** The test's limit, in seconds, expired while shrinking, and the test
+          did not time out. *)
 
 (** The type for what the [rendered] of a {!constructor-Property} failure is. *)
 and rendering =
@@ -428,23 +435,23 @@ val baseline : ?loc:Loc.t -> baseline -> baseline_state -> t
 val property :
   ?loc:Loc.t ->
   ?inner:t ->
-  ?timed_out:float ->
   ?count:int ->
   ?summary:string ->
   rendered:string ->
   case_index:int ->
   shrink_steps:int ->
-  ?shrink_exhausted:bool ->
+  ?shrink_end:shrink_end ->
   root:Seed.seed ->
   examples:bool ->
   ?rendering:rendering ->
   unit ->
   t
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
-    {!constructor-Property} failure with the fields given. [inner], [timed_out],
-    [count] and [summary] default to [None], [shrink_exhausted] to [false] and
-    [rendering] to {!Value}. Nothing is validated, so the invariants that
-    {!type-kind} states are the producer's to keep. *)
+    {!constructor-Property} failure with the fields given. [inner], [count] and
+    [summary] default to [None], [shrink_end] to {!Converged} and [rendering] to
+    {!Value}. The text of a {!Candidate_raised} is bounded. Nothing is
+    validated, so the invariants that {!type-kind} states are the producer's to
+    keep. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure that carries [text]. *)

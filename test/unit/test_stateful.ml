@@ -583,8 +583,12 @@ let a_specification_bug_met_while_shrinking_stops_the_search () =
   in
   let failure, _ = expect_fail outcome in
   match failure.Failure.kind with
-  | Failure.Property { rendered; shrink_exhausted; inner; _ } -> (
-      is_true ~msg:"the search did not say it stopped" shrink_exhausted;
+  | Failure.Property { rendered; shrink_end; inner; _ } -> (
+      is_true ~msg:"the search did not name the ~pre that stopped it"
+        (match shrink_end with
+        | Failure.Candidate_raised text ->
+            contains "~pre raised" text && contains "Candidate_boom" text
+        | _ -> false);
       is_true
         ~msg:
           (Printf.sprintf "the drawn program's failure was replaced: %S"

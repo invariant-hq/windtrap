@@ -21,15 +21,27 @@ let root = 0x00c0ffee1234abcdL
 let property_payload (failure : Failure.t) =
   match failure.Failure.kind with
   | Failure.Property
-      { rendered; case_index; shrink_steps; timed_out; root; examples; inner }
+      { rendered; case_index; shrink_steps; shrink_end; root; examples; inner }
     ->
+      let timed_out =
+        match shrink_end with
+        | Failure.Timed_out limit -> Some limit
+        | _ -> None
+      in
       (rendered, case_index, shrink_steps, timed_out, root, examples, inner)
   | _ -> failf "expected a Property failure kind"
 
-let shrink_exhausted (failure : Failure.t) =
+let shrink_end (failure : Failure.t) =
   match failure.Failure.kind with
-  | Failure.Property { shrink_exhausted; _ } -> shrink_exhausted
+  | Failure.Property { shrink_end; _ } -> shrink_end
   | _ -> failf "expected a Property failure kind"
+
+(* The search stopped before it converged, at the budget or at a candidate
+   that raised. *)
+let shrink_exhausted failure =
+  match shrink_end failure with
+  | Failure.Budget_spent | Failure.Candidate_raised _ -> true
+  | Failure.Converged | Failure.Timed_out _ -> false
 
 let payload_count (failure : Failure.t) =
   match failure.Failure.kind with
@@ -687,7 +699,7 @@ let mapped_counterexample_renders_its_shrunk_pre_image () =
 let timeout_during_first_candidate_keeps_unshrunk () =
   (* Call 1 is the failing case; call 2 (the first shrink candidate) raises
      the per-test alarm. The search must end at the unshrunk original with
-     the timed_out mark — never abort the test, never lose the
+     the timeout mark — never abort the test, never lose the
      counterexample. *)
   let path = "timeout first candidate" in
   let calls = ref 0 in
@@ -937,13 +949,17 @@ let a_raising_candidate_stops_the_search_visibly () =
       (Property.run ~root ~path:"raising-candidate" gen (fun _ _ ->
            Check.fail "always"))
   in
-  is_true ~msg:"a descent stopped by a raising candidate reads as converged"
-    (shrink_exhausted failure);
-  (* The forcing's exception is dropped: no text of the payload names it. *)
+  (* The forcing's exception is named in the payload, and only there: it is
+     neither the counterexample nor the law's failure. *)
+  equal ~msg:"the stop names the forcing's exception" string
+    {|Failure("forcing raised")|}
+    (match shrink_end failure with
+    | Failure.Candidate_raised text -> text
+    | _ -> fail "a descent stopped by a raising candidate reads as converged");
   let rendered, _, _, _, _, _, _ = property_payload failure in
   List.iter
     (fun text ->
-      is_false ~msg:"no payload text names the forcing's exception"
+      is_false ~msg:"the counterexample is not the forcing's exception"
         (contains "forcing raised" text))
     (rendered :: Option.to_list (inner_exception failure))
 

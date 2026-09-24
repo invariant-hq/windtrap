@@ -137,8 +137,9 @@ nowhere else, and `-f` filters test paths, not commands.
 `shrunk 6 steps` is the search's work, and the last step is the failing
 one once it converges — deleting a call after the failure never stops
 the failure, and the search tries exactly that. When the block also
-carries `shrinking stopped after 10000 steps` or `timed out after Ns while
-shrinking`, the search stopped early and trailing calls may survive.
+carries `shrinking stopped after …` or `timed out after Ns while
+shrinking`, the search stopped early and trailing calls may survive; a
+`~pre` or `~next` that raised on a candidate is named on that line.
 
 ## Preconditions: filter and selector
 

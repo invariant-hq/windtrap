@@ -429,8 +429,7 @@ let headline (f : Failure.t) =
           summary;
           case_index;
           shrink_steps;
-          shrink_exhausted;
-          timed_out;
+          shrink_end;
           examples;
           rendering;
           _;
@@ -441,9 +440,12 @@ let headline (f : Failure.t) =
         spf "property failed (%s%s):%s%s"
           (case_desc ~examples ~case_index ~shrink_steps)
           (if examples then ""
-           else if Option.is_some timed_out then ", shrinking timed out"
-           else if shrink_exhausted then ", shrink limit reached"
-           else "")
+           else
+             match shrink_end with
+             | Failure.Converged -> ""
+             | Failure.Budget_spent -> ", shrink limit reached"
+             | Failure.Candidate_raised _ -> ", shrinking stopped"
+             | Failure.Timed_out _ -> ", shrinking timed out")
           (match rendering with
           | Failure.Pre_image -> " computed from "
           | Failure.Value -> " ")
@@ -995,8 +997,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         summary;
         case_index;
         shrink_steps;
-        shrink_exhausted;
-        timed_out;
+        shrink_end;
         examples;
         rendering;
         inner = inner_failure;
@@ -1039,20 +1040,26 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
                  the value)"));
       (* What is reported is the best the search got to. [%gs] is the
          runner's [timed out after %gs], so one grep finds both. *)
-      (match timed_out with
-      | Some limit ->
+      (match shrink_end with
+      | Failure.Timed_out limit ->
           put_ind
             (spf
                "timed out after %gs while shrinking; counterexample may not be \
                 minimal"
                limit)
-      | None ->
-          if shrink_exhausted then
-            put_ind
-              (spf
-                 "shrinking stopped after %d steps; counterexample may not be \
-                  minimal"
-                 shrink_steps));
+      | Failure.Budget_spent ->
+          put_ind
+            (spf
+               "shrinking stopped after %d steps; counterexample may not be \
+                minimal"
+               shrink_steps)
+      | Failure.Candidate_raised text ->
+          (* Two lines: the exception is the user's text, of any length. *)
+          put_ind
+            (spf "shrinking stopped after %d steps: a candidate raised %s"
+               shrink_steps text);
+          put_ind "counterexample may not be minimal"
+      | Failure.Converged -> ());
       (* An inner failure raised in tail position has no site: [at:] over
          no location would misread. *)
       match inner_failure with

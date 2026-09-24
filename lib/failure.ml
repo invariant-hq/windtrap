@@ -57,8 +57,7 @@ type kind =
       summary : string option;
       case_index : int;
       shrink_steps : int;
-      shrink_exhausted : bool;
-      timed_out : float option;
+      shrink_end : shrink_end;
       root : Seed.seed;
       count : int option;
       examples : bool;
@@ -66,6 +65,12 @@ type kind =
       inner : t option;
     }
   | Message of string
+
+and shrink_end =
+  | Converged
+  | Budget_spent
+  | Candidate_raised of string
+  | Timed_out of float
 
 and rendering = Value | Pre_image
 
@@ -382,9 +387,8 @@ let baseline ?loc baseline state =
   make ?loc
     (Baseline { baseline; state = bound_baseline_state state; withheld = None })
 
-let property ?loc ?inner ?timed_out ?count ?summary ~rendered ~case_index
-    ~shrink_steps ?(shrink_exhausted = false) ~root ~examples
-    ?(rendering = Value) () =
+let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
+    ?(shrink_end = Converged) ~root ~examples ?(rendering = Value) () =
   make ?loc
     (Property
        {
@@ -392,8 +396,11 @@ let property ?loc ?inner ?timed_out ?count ?summary ~rendered ~case_index
          summary = cap_opt summary;
          case_index;
          shrink_steps;
-         shrink_exhausted;
-         timed_out;
+         shrink_end =
+           (match shrink_end with
+           | Candidate_raised text -> Candidate_raised (cap text)
+           | (Converged | Budget_spent | Timed_out _) as shrink_end ->
+               shrink_end);
          root;
          count;
          examples;

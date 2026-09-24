@@ -66,7 +66,9 @@ a replay descends to the same node — or earlier, if forcing a
 candidate raises and leaves the rest unreachable. When it stops before
 converging the report says so — `shrinking stopped after 10000 steps;
 counterexample may not be minimal` — so a truncated search never reads
-like a converged one, and the step count tells the two stops apart. No
+like a converged one. A candidate that raised is named on its own line,
+`shrinking stopped after 3 steps: a candidate raised Not_found`, above
+`counterexample may not be minimal`. No
 ordinary value spends the budget (a quad of `int64` converges within a
 few hundred steps); a search that must not run away is bounded by the
 test's `~timeout`.

@@ -293,15 +293,17 @@ Coverage and packaging:
 - **Shrinking you can see the end of.** The shrink budget is fixed at
   10,000 accepted steps — sized so no ordinary value spends it and a
   replay descends to the same node; there is no knob. A search that stops
-  before converging, at the budget or because forcing a candidate raised,
-  says so under the counterexample: `shrinking stopped after 10000 steps;
-  counterexample may not be minimal`. The per-test timeout (`~timeout`, or
+  before converging says so under the counterexample: at the budget,
+  `shrinking stopped after 10000 steps; counterexample may not be
+  minimal`; when forcing a candidate raised, `shrinking stopped after 3
+  steps: a candidate raised Not_found` over `counterexample may not be
+  minimal`. The per-test timeout (`~timeout`, or
   `--timeout`) bounds the whole property, generation and shrinking
   included, and a timeout during shrinking reports the best counterexample
   so far over `timed out after 5s while shrinking; counterexample may not
   be minimal`. A one-line message carries the same fact in its case
   (`property failed (case 4, shrunk 10000 steps, shrink limit reached):
-  …`, `…, shrinking timed out): …`).
+  …`, `…, shrinking stopped): …`, `…, shrinking timed out): …`).
 - The assertion that failed on the counterexample prints under `which
   failed at:`, over its location and source line, or under `which failed
   with:` when its line is unknown. A pre-image prints `computed from <p>`

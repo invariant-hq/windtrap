@@ -144,7 +144,7 @@ let shrink ~budget ~body tree first_class =
   let rec first_accepted seq =
     match Failure.catch seq with
     | Error (`Timeout _ as timeout) -> Failure.reraise timeout
-    | Error _ -> `Stopped
+    | Error c -> `Stopped (Failure.caught_to_string c)
     | Ok Seq.Nil -> `Converged
     | Ok (Seq.Cons (candidate, rest)) -> (
         match accept candidate with
@@ -158,12 +158,11 @@ let shrink ~budget ~body tree first_class =
      by the guard of [Gen.Engine.render]; everywhere else it propagates to
      the runner. *)
   let best = ref (tree, 0, first_class) in
-  let timed_out = ref None in
   (* A descent that stopped is not a descent that converged, and the two used
      to render identically — a truncated search and a minimal counterexample
      both read "shrunk 100 steps". Set by the two stops the search survives:
      the step budget, and a candidate whose forcing raised. *)
-  let exhausted = ref false in
+  let stop = ref Failure.Converged in
   (* Probe first, then read the budget: a search whose last accepted step
      landed exactly on the budget with no further candidate had already
      converged, and reporting it as truncated would tell the reader the
@@ -171,9 +170,9 @@ let shrink ~budget ~body tree first_class =
   let rec descend steps tree =
     match first_accepted (Gen.Engine.Shrink_tree.children tree) with
     | `Converged -> ()
-    | `Stopped -> exhausted := true
+    | `Stopped text -> stop := Failure.Candidate_raised text
     | `Accepted (candidate, accepted) ->
-        if steps >= budget then exhausted := true
+        if steps >= budget then stop := Failure.Budget_spent
         else begin
           best := (candidate, steps + 1, accepted);
           descend (steps + 1) candidate
@@ -181,10 +180,10 @@ let shrink ~budget ~body tree first_class =
   in
   (match Failure.catch (fun () -> descend 0 tree) with
   | Ok () -> ()
-  | Error (`Timeout limit) -> timed_out := Some limit
+  | Error (`Timeout limit) -> stop := Failure.Timed_out limit
   | Error c -> Failure.reraise c);
   let tree, steps, cls = !best in
-  (tree, steps, cls, !timed_out, !exhausted)
+  (tree, steps, cls, !stop)
 
 (* The engine *)
 
@@ -206,7 +205,7 @@ let default_count = 100
    each shrunk bit by bit. A law that is not a threshold can accept more
    steps per integer, each still strictly nearer the origin. A change to a
    primitive's candidates reopens this sizing. A search that spends it is
-   reported as stopped ([shrink_exhausted]) rather than minimal; the
+   reported as stopped ([Failure.Budget_spent]) rather than minimal; the
    per-test timeout, not this number, bounds a search that must not run
    away. *)
 let shrink_budget = 10_000
@@ -245,14 +244,14 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
   let discards = ref 0 in
   let stats () = stats_of ~cases:!cases ~discards:!discards ctx in
   let summarize value = Option.bind summary (fun summary -> summary value) in
-  let fail ?summary ~rendered ~case_index ~shrink_steps ?timed_out
-      ?(shrink_exhausted = false) ~examples ?rendering cls =
+  let fail ?summary ~rendered ~case_index ~shrink_steps ?shrink_end ~examples
+      ?rendering cls =
     (* [rendering] defaults to the value: a placeholder carries its own
        remedy in its text, so the payload need not classify it. *)
     let failure =
-      Failure.property ?loc ~inner:(inner_failure cls) ?timed_out
-        ?count:config_count ?summary ~rendered ~case_index ~shrink_steps
-        ~shrink_exhausted ~root ~examples ?rendering ()
+      Failure.property ?loc ~inner:(inner_failure cls) ?count:config_count
+        ?summary ~rendered ~case_index ~shrink_steps ?shrink_end ~root ~examples
+        ?rendering ()
     in
     Fail { failure; stats = stats () }
   in
@@ -318,7 +317,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
               | `Passed -> generate ~passed:(passed + 1) ~attempts:(attempts + 1)
               | `Discarded -> generate ~passed ~attempts:(attempts + 1)
               | `Failed cls ->
-                  let final_tree, steps, final_cls, timed_out, exhausted =
+                  let final_tree, steps, final_cls, shrink_end =
                     shrink ~budget:shrink_budget ~body tree cls
                   in
                   let final = Gen.Engine.Shrink_tree.root final_tree in
@@ -330,7 +329,6 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
                   fail
                     ?summary:(summarize (Gen.Engine.value final))
                     ~rendered ~case_index:attempts ~shrink_steps:steps
-                    ?timed_out ~shrink_exhausted:exhausted ~examples:false
-                    ~rendering final_cls)
+                    ~shrink_end ~examples:false ~rendering final_cls)
       in
       generate ~passed:0 ~attempts:0

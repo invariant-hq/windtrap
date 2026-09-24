@@ -1444,7 +1444,7 @@ let test_property_projections () =
      is fixed, so no clause restates it, even for a search that spent it. *)
   let spent =
     Failure.property ~count:1000 ~rendered:"0" ~case_index:499
-      ~shrink_steps:10_000 ~shrink_exhausted:true ~root:Fixtures.root
+      ~shrink_steps:10_000 ~shrink_end:Failure.Budget_spent ~root:Fixtures.root
       ~examples:false ()
   in
   contains ~msg:"a spent budget: the Mirrors replay line ends at the count"
@@ -2998,8 +2998,8 @@ let test_uncaught_wording () =
 
 let test_timed_out_marker () =
   let f =
-    Failure.property ~timed_out:0.3 ~rendered:"9" ~case_index:4 ~shrink_steps:2
-      ~root:Fixtures.root ~examples:false ()
+    Failure.property ~shrink_end:(Failure.Timed_out 0.3) ~rendered:"9"
+      ~case_index:4 ~shrink_steps:2 ~root:Fixtures.root ~examples:false ()
   in
   let b = failure_block f in
   contains ~msg:"timed-out: marker line follows the counterexample"
@@ -3030,8 +3030,8 @@ let test_timed_out_marker () =
 
 let test_budget_spent_marker () =
   let f =
-    Failure.property ~shrink_exhausted:true ~rendered:"9" ~case_index:4
-      ~shrink_steps:50 ~root:Fixtures.root ~examples:false ()
+    Failure.property ~shrink_end:Failure.Budget_spent ~rendered:"9"
+      ~case_index:4 ~shrink_steps:50 ~root:Fixtures.root ~examples:false ()
   in
   let b = failure_block f in
   contains ~msg:"budget spent: detail line follows the counterexample"
@@ -3056,11 +3056,36 @@ let test_budget_spent_marker () =
     (Report.headline Fixtures.prop_failure);
   (* An example never shrinks, so neither mark applies to one. *)
   let example =
-    Failure.property ~shrink_exhausted:true ~rendered:"9" ~case_index:0
-      ~shrink_steps:0 ~root:Fixtures.root ~examples:true ()
+    Failure.property ~shrink_end:Failure.Budget_spent ~rendered:"9"
+      ~case_index:0 ~shrink_steps:0 ~root:Fixtures.root ~examples:true ()
   in
   is_true ~msg:"an example carries no clause"
     (Report.headline example = "property failed (example 1): 9")
+
+(* A candidate whose forcing raised: the block names the exception on a line
+   of its own, above the line every stopped search prints, and the headline
+   says that shrinking stopped, not that a limit was reached. *)
+let test_candidate_raised_marker () =
+  let f =
+    Failure.property
+      ~shrink_end:(Failure.Candidate_raised {|Failure("no small values")|})
+      ~rendered:"9" ~case_index:4 ~shrink_steps:3 ~root:Fixtures.root
+      ~examples:false ()
+  in
+  let b = failure_block f in
+  contains ~msg:"candidate raised: two lines follow the counterexample"
+    ~sub:
+      "    counterexample (case 4, shrunk 3 steps): 9\n\
+      \    shrinking stopped after 3 steps: a candidate raised Failure(\"no \
+       small values\")\n\
+      \    counterexample may not be minimal\n\
+      \    replay: "
+    b;
+  not_contains ~msg:"candidate raised: no limit is claimed"
+    ~sub:"shrink limit reached" b;
+  is_true ~msg:"candidate raised: headline says shrinking stopped"
+    (Report.headline f
+   = "property failed (case 4, shrunk 3 steps, shrinking stopped): 9")
 
 (* Inner failures without a location (D4) *)
 
@@ -5473,6 +5498,7 @@ let tests =
       test_trailing_whitespace_hunks;
     test "raise: uncaught wording" test_uncaught_wording;
     test "property: timed-out shrink marker (D2)" test_timed_out_marker;
+    test "property: a raising candidate is named" test_candidate_raised_marker;
     test "property: spent shrink budget marker (D2)" test_budget_spent_marker;
     test "property: inner label without a location (D4)"
       test_inner_label_without_location;

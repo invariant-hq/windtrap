@@ -816,11 +816,11 @@ val pass : 'a testable
     before any case failed.
 
     Shrinking takes at most [10_000] steps. It also stops when a function of the
-    generator raises on a candidate, and that exception is never printed. A
-    block whose search stopped either way says that shrinking stopped and that
-    the counterexample may not be minimal. A function of the generator that
-    raises while a case is drawn fails the case, and the block prints its
-    exception.
+    generator raises on a candidate, and the block then names that exception, as
+    in [shrinking stopped after 3 steps: a candidate raised Not_found]. A block
+    whose search stopped either way says that shrinking stopped and that the
+    counterexample may not be minimal. A function of the generator that raises
+    while a case is drawn fails the case, and the block prints its exception.
 
     A property that passes prints nothing. Under [-v] it prints its line and,
     under it, the labels it collected. The number of discarded cases prints only
@@ -1235,11 +1235,10 @@ val command :
 
     A [pre] or [next] that raises while a program is drawn fails the case
     unshrunk, reported as [call <k>: <name>, ~pre raised <exn>] with its
-    backtrace. One that raises only on a shrink candidate stops the search and
-    is never printed (see the {{!section-properties}reports} of a property). The
-    block then shows the last program the search accepted and says that
-    shrinking stopped. On a stateful test that line may point at a [pre] or a
-    [next] that raises. *)
+    backtrace. One that raises only on a shrink candidate stops the search (see
+    the {{!section-properties}reports} of a property). The block then shows the
+    last program the search accepted and says that shrinking stopped, naming the
+    exception as [call <k>: <name>, ~pre raised <exn>]. *)
 
 val call :
   ?__POS__:pos ->
