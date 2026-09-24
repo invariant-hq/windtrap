@@ -307,8 +307,8 @@ val say : string -> unit
     cannot link this module, and write the same prefix themselves.
     - A [message] of several lines is anchored on its first, so the prefix
       prints once.
-    - Each control byte of [message] other than LF is written as an escape,
-      [\t], [\r] or [\xNN], DEL included. Bytes from [0x80] up pass.
+    - Each line of [message] is written through {!Text.escape_controls}, so a
+      control byte other than LF and TAB prints as [\xNN].
     - Standard output is flushed first, [Format.std_formatter] and then the
       channel, so a log that merges the two streams keeps their order. A
       [Sys_error] from that flush is dropped, so a closed standard output does

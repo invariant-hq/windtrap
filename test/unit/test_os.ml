@@ -1007,12 +1007,13 @@ module Say_suite = struct
             \  a\n\
              Every full test path must be unique.\n"
             (said "lines"));
-      test "a control byte other than a line feed cannot restyle the terminal"
-        (fun () ->
-          equal string "windtrap: invalid value 'a\\tb\\x1b[31mc\\x7f'\n"
+      test
+        "a control byte other than a line feed or a tab cannot restyle the \
+         terminal" (fun () ->
+          equal string "windtrap: invalid value 'a\tb\\x1b[31mc\\x7f'\n"
             (said "control"));
       test "a carriage return is escaped, bytes from 0x80 pass" (fun () ->
-          equal string "windtrap: a\\rb \xc3\xa9 \xff\n" (said "bytes"));
+          equal string "windtrap: a\\x0db \xc3\xa9 \xff\n" (said "bytes"));
       test "a closed standard output does not cost the line" (fun () ->
           equal string "windtrap: still said\n" (said "closed"));
       test "Format.err_formatter is flushed before the line, stderr after"

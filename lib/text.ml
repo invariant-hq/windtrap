@@ -130,6 +130,23 @@ let first_occurrence ?(start = 0) ~pattern s =
 
 let contains_substring ~pattern s = first_occurrence ~pattern s <> None
 
+(* Control bytes *)
+
+let control c = (c < ' ' && c <> '\t') || c = '\127'
+
+let escape_controls s =
+  if not (String.exists control s) then s
+  else begin
+    let b = Buffer.create (String.length s + 8) in
+    String.iter
+      (fun c ->
+        if control c then
+          Buffer.add_string b (Printf.sprintf "\\x%02x" (Char.code c))
+        else Buffer.add_char b c)
+      s;
+    Buffer.contents b
+  end
+
 (* ANSI escapes *)
 
 let strip_ansi s =

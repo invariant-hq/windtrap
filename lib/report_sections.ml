@@ -307,17 +307,8 @@ let sanitize_name s =
 let control_byte c = (c < ' ' && c <> '\n' && c <> '\t') || c = '\127'
 
 let show_controls s =
-  if not (String.exists control_byte s) then s
-  else begin
-    let buf = Buffer.create (String.length s + 8) in
-    String.iter
-      (fun c ->
-        if control_byte c then
-          Buffer.add_string buf (spf "\\x%02x" (Char.code c))
-        else Buffer.add_char buf c)
-      s;
-    Buffer.contents buf
-  end
+  String.concat "\n"
+    (List.map Text.escape_controls (String.split_on_char '\n' s))
 
 (* [span], given in [s]'s byte coordinates, moved into those of
    [show_controls s]. The escape is per byte and context-free, so escaping

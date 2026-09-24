@@ -3,8 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Strings read as text: lines, UTF-8 code points, byte search and ANSI escape
-    sequences.
+(** Strings read as text: lines, UTF-8 code points, byte search, control bytes
+    and ANSI escape sequences.
 
     Every function is pure, and {!elide_middle} is as pure as the [show] that it
     is given. Lengths are in code points. No function knows grapheme clusters or
@@ -77,6 +77,14 @@ val first_occurrence : ?start:int -> pattern:string -> string -> int option
 val contains_substring : pattern:string -> string -> bool
 (** [contains_substring ~pattern s] is [true] iff [first_occurrence ~pattern s]
     is not [None]. *)
+
+(** {1:controls Control bytes} *)
+
+val escape_controls : string -> string
+(** [escape_controls s] is [s] with each byte below [0x20] but TAB, and DEL,
+    written as [\xNN] in lowercase hexadecimal. LF is escaped too, so the result
+    is one line. Every other byte passes. It is not injective: the four
+    characters [\x1b] print as ESC does. *)
 
 (** {1:ansi ANSI escape sequences} *)
 

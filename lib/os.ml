@@ -433,26 +433,6 @@ let rec mkdir_p path =
 
 (* Standard error *)
 
-(* A control byte would restyle the terminal or garble the line, so each is
-   spelled out, ESC included; a line feed stays, a diagnostic may span
-   lines. *)
-let visible s =
-  let control c = (c < ' ' && c <> '\n') || c = '\127' in
-  if not (String.exists control s) then s
-  else begin
-    let b = Buffer.create (String.length s + 8) in
-    String.iter
-      (fun c ->
-        match c with
-        | '\t' -> Buffer.add_string b "\\t"
-        | '\r' -> Buffer.add_string b "\\r"
-        | c when control c ->
-            Buffer.add_string b (Printf.sprintf "\\x%02x" (Char.code c))
-        | c -> Buffer.add_char b c)
-      s;
-    Buffer.contents b
-  end
-
 (* Standard output is flushed first: a log that merges the two streams
    orders them by flush. A closed standard output does not cost the line. *)
 let say message =
@@ -461,7 +441,12 @@ let say message =
      flush stdout
    with Sys_error _ -> ());
   Format.pp_print_flush Format.err_formatter ();
-  prerr_string ("windtrap: " ^ visible message ^ "\n");
+  (* A control byte would restyle the terminal or garble the line; a line
+     feed stays, since a diagnostic may span lines. *)
+  let lines =
+    List.map Text.escape_controls (String.split_on_char '\n' message)
+  in
+  prerr_string ("windtrap: " ^ String.concat "\n" lines ^ "\n");
   flush stderr
 
 let warn message = say ("warning: " ^ message)

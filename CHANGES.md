@@ -637,8 +637,9 @@ Coverage and packaging:
   usage error is that line and the `usage:` line, exit 2: `windtrap:
   invalid value 'x' for --prop-count: expected a positive integer`; after
   `windtrap: unknown command 'x'` the binary also lists its commands. A
-  message of several lines is anchored on its first, and one the run
-  survives says so: `windtrap: warning: focus is active: 1 of 2 tests ran;
+  message of several lines is anchored on its first, any other control
+  byte but a tab prints as `\xNN` (a carriage return as `\x0d`), and one
+  the run survives says so: `windtrap: warning: focus is active: 1 of 2 tests ran;
   remove the focus before committing`, `windtrap: warning: could not write
   JUnit report: <reason>`. The words are otherwise unchanged but for the
   lines an instrumented executable prints about its coverage dump, which

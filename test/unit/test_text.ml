@@ -176,6 +176,12 @@ let tests =
           (Text.contains_substring ~pattern:"hello!" "hello");
         is_true ~msg:"repeated prefix backtracking"
           (Text.contains_substring ~pattern:"aab" "aaab"));
+    test "escape_controls spells every control byte but TAB" (fun () ->
+        equal ~msg:"plain text unchanged" string "plain \t\xc3\xa9 \xff"
+          (Text.escape_controls "plain \t\xc3\xa9 \xff");
+        equal ~msg:"C0 bytes, LF and CR included, and DEL" string
+          "\\x00a\\x0ab\\x0dc\\x1b[31m\\x1f\\x7f"
+          (Text.escape_controls "\x00a\nb\rc\027[31m\x1f\x7f"));
     test "strip_ansi removes escapes and keeps text" (fun () ->
         equal ~msg:"plain text unchanged" string "plain"
           (Text.strip_ansi "plain");
