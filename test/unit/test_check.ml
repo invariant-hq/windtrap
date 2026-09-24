@@ -1006,6 +1006,22 @@ let tests =
             equal ~msg:"raises: the diff names the shared constructor" string
               {|Invalid_argument: "index 3" -> "index 4"|}
               (describe_message_diff diff));
+        raise_message_diff "raises: two Failures"
+          (fun () ->
+            Check.raises (Stdlib.Failure "port 80") (fun () ->
+                failwith "port 81"))
+          (fun diff ->
+            equal ~msg:"raises: Failure messages are diffed" string
+              {|Failure: "port 80" -> "port 81"|}
+              (describe_message_diff diff));
+        raise_message_diff "raises: two Sys_errors"
+          (fun () ->
+            Check.raises (Sys_error "a: denied") (fun () ->
+                raise (Sys_error "b: denied")))
+          (fun diff ->
+            equal ~msg:"raises: Sys_error messages are diffed" string
+              {|Sys_error: "a: denied" -> "b: denied"|}
+              (describe_message_diff diff));
         raise_message_diff "raises: different constructors"
           (fun () -> Check.raises Not_found (fun () -> failwith "boom"))
           (fun diff ->
@@ -1034,6 +1050,128 @@ let tests =
             equal ~msg:"raises_match: a predicate has no expected side to diff"
               string "none"
               (describe_message_diff diff)));
+    test "raises sets predicate false, raises_match sets it true" (fun () ->
+        let predicate name f =
+          match caught name f with
+          | { F.kind = F.Raise { predicate; _ }; _ } -> predicate
+          | _ -> fail (name ^ ": kind is Raise")
+        in
+        is_false ~msg:"raises, nothing raised"
+          (predicate "raises" (fun () -> Check.raises Not_found ignore));
+        is_false ~msg:"raises, another exception"
+          (predicate "raises" (fun () ->
+               Check.raises Not_found (fun () -> raise Exit)));
+        is_true ~msg:"raises_match, nothing raised"
+          (predicate "raises_match" (fun () ->
+               Check.raises_match (fun _ -> true) ignore));
+        is_true ~msg:"raises_match, a rejected exception"
+          (predicate "raises_match" (fun () ->
+               Check.raises_match (fun _ -> false) (fun () -> raise Exit))));
+    (* Only Check_failure, Skip_test and Timeout pass through the two verbs;
+       the other exceptions the runner treats apart are compared like any
+       other. *)
+    test "raises and raises_match compare exit, discard and fatal exceptions"
+      (fun () ->
+        List.iter
+          (fun (name, e) ->
+            passes (name ^ ": raises takes it") (fun () ->
+                Check.raises e (fun () -> raise e));
+            passes (name ^ ": raises_match accepts it") (fun () ->
+                Check.raises_match (fun x -> x == e) (fun () -> raise e));
+            raise_payload
+              (name ^ ": raises_match rejects it")
+              (fun () ->
+                Check.raises_match (fun _ -> false) (fun () -> raise e))
+              (fun (_, actual, _) ->
+                equal
+                  ~msg:(name ^ ": the rejected exception is held")
+                  (option string)
+                  (Some (Printexc.to_string e))
+                  actual);
+            raise_payload
+              (name ^ ": raises of another fails")
+              (fun () -> Check.raises Not_found (fun () -> raise e))
+              (fun (_, actual, _) ->
+                equal
+                  ~msg:(name ^ ": the raised exception is held")
+                  (option string)
+                  (Some (Printexc.to_string e))
+                  actual))
+          [
+            ("Exit_attempt", F.Exit_attempt);
+            ("Discard", Windtrap.Private.Property.Discard);
+            ("Sys.Break", Sys.Break);
+            ("Out_of_memory", Out_of_memory);
+            ("Stack_overflow", Stack_overflow);
+          ]);
+    test "an exception from a witness, a ?pp or a predicate escapes the verb"
+      (fun () ->
+        let escapes name f =
+          match outcome f with
+          | Raised Extractor_bug -> ()
+          | Raised e -> fail (name ^ ": raised " ^ Printexc.to_string e)
+          | Returned -> fail (name ^ ": returned")
+          | Failed _ -> fail (name ^ ": became a Check_failure")
+        in
+        let bad_equal =
+          Testable.make ~pp:Format.pp_print_int ~equal:(fun _ _ ->
+              raise Extractor_bug)
+        in
+        let bad_pp =
+          Testable.make ~pp:(fun _ _ -> raise Extractor_bug) ~equal:Int.equal
+          |> Testable.with_compare Int.compare
+        in
+        let bad_order =
+          Testable.with_compare (fun _ _ -> raise Extractor_bug) Testable.int
+        in
+        let raising_pp _ _ = raise Extractor_bug in
+        escapes "equal: the equality" (fun () -> Check.equal bad_equal 1 1);
+        escapes "not_equal: the equality" (fun () ->
+            Check.not_equal bad_equal 1 2);
+        escapes "mem: the equality" (fun () -> Check.mem bad_equal 1 [ 1 ]);
+        escapes "equal: the printer" (fun () -> Check.equal bad_pp 1 2);
+        escapes "less: the order" (fun () -> Check.less bad_order ~than:2 1);
+        escapes "less: the printer" (fun () -> Check.less bad_pp ~than:1 2);
+        escapes "satisfies: the predicate" (fun () ->
+            Check.satisfies Testable.int (fun _ -> raise Extractor_bug) 1);
+        escapes "satisfies: the printer" (fun () ->
+            Check.satisfies bad_pp (fun _ -> false) 1);
+        escapes "is_none: the ?pp" (fun () ->
+            Check.is_none ~pp:raising_pp (Some 1));
+        escapes "require_ok: the ?pp" (fun () ->
+            ignore (Check.require_ok ~pp:raising_pp (Error 1)));
+        escapes "raises_match: the predicate" (fun () ->
+            Check.raises_match
+              (fun _ -> raise Extractor_bug)
+              (fun () -> raise Exit)));
+    test "mem puts the element on the expected side" (fun () ->
+        let calls = ref [] in
+        let w =
+          Testable.make ~pp:Format.pp_print_string ~equal:(fun a b ->
+              calls := (a, b) :: !calls;
+              false)
+        in
+        ignore (outcome (fun () -> Check.mem w "x" [ "a"; "b" ]));
+        equal ~msg:"(x, element) at each call"
+          (list (pair string string))
+          [ ("x", "b"); ("x", "a") ]
+          !calls);
+    test "in_order refuses no needles, whatever the haystack" (fun () ->
+        List.iter
+          (fun s ->
+            raises_match ~msg:(Printf.sprintf "%S" s) Exn.invalid_arg (fun () ->
+                Check.in_order ~subs:[] s))
+          [ ""; "abc" ]);
+    test "not_contains, starts_with and ends_with demand Anywhere" (fun () ->
+        List.iter
+          (fun (name, f) ->
+            containment_demand name f (fun (demand, _, _, _) ->
+                equal ~msg:name string "anywhere" (describe_demand demand)))
+          [
+            ("not_contains", fun () -> Check.not_contains ~sub:"a" "abc");
+            ("starts_with", fun () -> Check.starts_with ~affix:"z" "abc");
+            ("ends_with", fun () -> Check.ends_with ~affix:"z" "abc");
+          ]);
     test "Exn predicates" (fun () ->
         is_true ~msg:"Exn.invalid_arg: matches the constructor"
           (Check.Exn.invalid_arg (Invalid_argument "x"));
