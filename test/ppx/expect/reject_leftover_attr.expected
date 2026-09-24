@@ -1,0 +1,4 @@
+File "./reject_leftover_attr.ml", line 1, characters 13-25:
+1 | let x = (1 [@expect_exact])
+                 ^^^^^^^^^^^^
+Error: [@@expect_exact] is not supported by ppx_windtrap

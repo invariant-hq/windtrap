@@ -1,0 +1,4 @@
+File "./reject_malformed_tags_tuple.ml", line 1, characters 21-35:
+1 | let%expect_test ("n" [@tags "a", 1]) = ()
+                         ^^^^^^^^^^^^^^
+Error: Expected [@tags "..."] or [@tags ("...", ...)]

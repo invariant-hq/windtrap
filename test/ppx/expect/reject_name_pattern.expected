@@ -1,0 +1,4 @@
+File "./reject_name_pattern.ml", line 1, characters 0-39:
+1 | let%expect_test name = print_string "x"
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Expected let%expect_test "name" = ... or let%expect_test _ = ...

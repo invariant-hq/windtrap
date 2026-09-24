@@ -1,0 +1,4 @@
+File "./reject_test_item.ml", line 1, characters 0-21:
+1 | [%%test type t = int]
+    ^^^^^^^^^^^^^^^^^^^^^
+Error: Expected let%test "name" = ..., let%test _ = ..., or module%test Name = ...

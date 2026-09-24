@@ -1,0 +1,4 @@
+File "./reject_rec_binding.ml", line 1, characters 0-26:
+1 | let%expect_test rec f = ()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: Expected let%expect_test <name> = <expr>

@@ -1,0 +1,4 @@
+File "./reject_output_payload.ml", line 3, characters 11-24:
+3 |   ignore [%expect.output "x"]
+               ^^^^^^^^^^^^^
+Error: [%expect.output] takes no payload

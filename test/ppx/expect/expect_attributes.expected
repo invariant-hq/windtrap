@@ -1,0 +1,18 @@
+let () =
+  Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_attributes.ml"
+    ~pos:("./expect_attributes.ml", 7, 0, 75) ~tags:["kept"] "dropped"
+    (fun () ->
+       (Expect_test_config.run : (unit -> unit) -> unit) (fun () -> ()))
+let () =
+  Ppx_windtrap_runtime.Ppx_runtime.add_test ~file:"./expect_attributes.ml"
+    ~pos:("./expect_attributes.ml", 11, 0, 125) ~tags:[] "carried"
+    (fun () ->
+       (Expect_test_config.run : (unit -> unit) -> unit)
+         (fun () ->
+            print_string "x";
+            ((Windtrap.expect
+                (Expect_test_config.sanitize (Windtrap.output ()))
+                (("./expect_attributes.ml", 13, 2, 19), {| x |}))
+            [@carried ]);
+            ignore ((Expect_test_config.sanitize (Windtrap.output ()))
+              [@carried_output ])))

@@ -82,3 +82,116 @@
  (alias runtest)
  (action
   (diff cookie_invalid.expected cookie_invalid.actual)))
+
+; Under "ignored", as under "disabled", every form of test_basic.ml expands
+; to nothing, let%test and module%test included.
+
+(rule
+ (with-stdout-to
+  cookie_ignored.actual
+  (run
+   ./expect_pp.exe
+   -cookie
+   "inline_tests=\"ignored\""
+   --impl
+   %{dep:test_basic.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff cookie_ignored.expected cookie_ignored.actual)))
+
+; A dropped form is still refused for a bad name, shape or [@tags], and a
+; dropped let%expect_test for a bad node, with the message of the enabled
+; build; the rest of a dropped body is not checked.
+
+(rule
+ (target cookie_disabled_name.actual)
+ (action
+  (with-outputs-to
+   cookie_disabled_name.actual
+   (with-accepted-exit-codes
+    1
+    (run
+     ./expect_pp.exe
+     -cookie
+     "inline_tests=\"disabled\""
+     --impl
+     %{dep:reject_name_pattern.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_name_pattern.expected cookie_disabled_name.actual)))
+
+(rule
+ (target cookie_disabled_shape.actual)
+ (action
+  (with-outputs-to
+   cookie_disabled_shape.actual
+   (with-accepted-exit-codes
+    1
+    (run
+     ./expect_pp.exe
+     -cookie
+     "inline_tests=\"disabled\""
+     --impl
+     %{dep:reject_two_bindings.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_two_bindings.expected cookie_disabled_shape.actual)))
+
+(rule
+ (target cookie_disabled_tags.actual)
+ (action
+  (with-outputs-to
+   cookie_disabled_tags.actual
+   (with-accepted-exit-codes
+    1
+    (run
+     ./expect_pp.exe
+     -cookie
+     "inline_tests=\"disabled\""
+     --impl
+     %{dep:reject_malformed_tags.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_malformed_tags.expected cookie_disabled_tags.actual)))
+
+(rule
+ (target cookie_disabled_node.actual)
+ (action
+  (with-outputs-to
+   cookie_disabled_node.actual
+   (with-accepted-exit-codes
+    1
+    (run
+     ./expect_pp.exe
+     -cookie
+     "inline_tests=\"disabled\""
+     --impl
+     %{dep:reject_bad_payload.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff reject_bad_payload.expected cookie_disabled_node.actual)))
+
+(rule
+ (with-stdout-to
+  cookie_disabled_body.actual
+  (run
+   ./expect_pp.exe
+   -cookie
+   "inline_tests=\"disabled\""
+   --impl
+   %{dep:reject_dropped_body.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff cookie_disabled_body.expected cookie_disabled_body.actual)))
