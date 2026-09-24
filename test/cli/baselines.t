@@ -274,6 +274,15 @@ anything runs, so a stale baseline stays as it was.
   $ cat test/cli/greeting.expected
   stale
 
+A listing is refused the same way, with the same code: -l makes the
+checks a run makes before anything executes.
+
+  $ run env CI=1 ./suite_main.exe -l -u > out 2> err
+  [1]
+  $ cat out
+  $ cat err
+  windtrap: baseline update refused: CI is set. -u rewrites baselines in place, which is a developer's edit; under CI run with --corrected and accept with dune promote.
+
 The two acceptances contradict each other, so asking for both is a
 usage error.
 

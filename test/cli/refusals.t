@@ -37,3 +37,20 @@ remove:
   $ cat out
   $ sed -E 's/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' err
   windtrap: focused tests committed (focus at test/cli/suite_main.ml:LINE); remove focus to run under CI
+
+A listing makes the startup checks a real run makes: -l over either
+refused suite is the same refusal, with the same code, and lists
+nothing.
+
+  $ run FACADE_FIXTURE=duplicate ./suite_main.exe -l > out 2> err
+  [1]
+  $ cat out
+  $ cat err
+  windtrap: duplicate test paths:
+    dup › twice
+  Every full test path must be unique.
+  $ run CI=1 FACADE_FIXTURE=focus ./suite_main.exe -l > out 2> err
+  [1]
+  $ cat out
+  $ sed -E 's/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' err
+  windtrap: focused tests committed (focus at test/cli/suite_main.ml:LINE); remove focus to run under CI
