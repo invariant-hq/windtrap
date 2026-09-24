@@ -616,7 +616,8 @@ val list_selection :
     - a {!Failure.Check_failure} keeps its payload;
     - a [`Timeout] is a failure of the phase it interrupted, and an [`Exit] one
       of the phase that called [exit];
-    - a [`Discard] outside a property is a {!Failure.Raise} failure;
+    - a [`Discard], which only a property owns, is the message failure
+      [assume or reject was called outside a property];
     - any other exception is a {!Failure.Raise} failure with its backtrace.
 
     A [`Skip] skips the test, and the first reason wins. A failure added without

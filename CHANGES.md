@@ -308,6 +308,8 @@ Coverage and packaging:
   over an aside: `(the value has no printer, so this is the input that map
   and bind computed it from; attach a printer with Gen.with_pp to see the
   value)`.
+- **`assume` or `reject` outside a property fails the test** with the
+  message `assume or reject was called outside a property`.
 - **A discard during generation discards the case**: an `assume` or a
   `reject` in a function given to `Gen.map`, `Gen.bind` or another
   combinator counts as a discard, as an exhausted `such_that` does, and a

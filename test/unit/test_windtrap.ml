@@ -618,6 +618,28 @@ let () =
         (contains "collect" rendered && contains "property" rendered)
   | _ -> check "collect outside a property fails the test" false
 
+(* A discard outside a property has no owner: the test fails with a
+   message that names the two verbs. *)
+let () =
+  with_temp_root @@ fun root ->
+  let config = base_config ~log_dir:root () in
+  let suite =
+    [
+      test "stray assume" (fun () -> assume false);
+      test "stray reject" (fun () -> reject ());
+    ]
+  in
+  expect_run "discard outside a property" ~config suite @@ fun outcome ->
+  List.iter
+    (fun name ->
+      match failure_list (outcome_of outcome [ name ]) with
+      | [ { Failure.kind = Failure.Message text; _ } ] ->
+          check
+            (name ^ " fails with the message")
+            (text = "assume or reject was called outside a property")
+      | _ -> check (name ^ " fails with one message") false)
+    [ "stray assume"; "stray reject" ]
+
 (* Captured output *)
 
 let () =

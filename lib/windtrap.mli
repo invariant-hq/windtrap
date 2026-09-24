@@ -1142,7 +1142,8 @@ val assume : bool -> unit
     case counts against [max_discard] and another is generated. It is for a rare
     and cheap precondition. Prefer {!Gen.such_that}, or a generator correct by
     construction, when the precondition is structural. Outside a property,
-    [assume false] raises an exception the test reports as uncaught. *)
+    [assume false] fails the test with the message
+    [assume or reject was called outside a property]. *)
 
 val reject : unit -> 'a
 (** [reject ()] discards the current case. See {!assume}. *)

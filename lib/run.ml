@@ -881,13 +881,11 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
           (Failure.message ?loc:case.Test_tree.loc
              "the test called exit and was intercepted; a test must return or \
               raise, never exit the process")
-    | `Discard as discard ->
-        (* An [assume] or a [reject] outside a property, where nothing owns
-           the discard. *)
+    | `Discard ->
+        (* Nothing owns a discard outside a property. *)
         record_failure ph
-          (Failure.raised ?loc:case.Test_tree.loc
-             ~actual:(Failure.caught_to_string discard)
-             ())
+          (Failure.message ?loc:case.Test_tree.loc
+             "assume or reject was called outside a property")
   in
   (* Run one phase, classifying everything it raises. [Loc.delimit] bounds
      location capture: a tail-called assertion whose own frame is gone
