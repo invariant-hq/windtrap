@@ -50,6 +50,57 @@ let () =
              guard's [at_exit] handler turns this [0] into a [2]. *)
           add ~file:"a.ml" "never driven" ignore;
           Stdlib.exit 0
+      | "undriven-exit-1", [] ->
+          add ~file:"a.ml" "never driven" ignore;
+          Stdlib.exit 1
+      | "drained", [] ->
+          (* A hand-written main that drains the registry owns it. *)
+          add ~file:"a.ml" "drained" ignore;
+          ignore (Ppx_runtime.collect ());
+          Stdlib.exit 0
+      | "drain-raises", [] ->
+          add ~file:"a.ml" "drained" ignore;
+          Ppx_runtime.enter_group ~file:"a.ml" ~tags:[] "Open";
+          (try ignore (Ppx_runtime.collect ()) with Invalid_argument _ -> ());
+          Stdlib.exit 0
+      | "no-init", [] -> Ppx_runtime.exit ()
+      | "bad-mirror", [] ->
+          Unix.putenv "WINDTRAP_TIMEOUT" "banana";
+          add ~file:"a.ml" "t" ignore;
+          run_protocol [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ]
+      | "empty-partition", [ log_dir ] ->
+          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
+          add ~file:"a.ml" "t" ignore;
+          run_protocol [ "inline-test-runner"; "lib"; "-partition"; "c.ml" ]
+      | "junit", [ log_dir; junit ] ->
+          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
+          Unix.putenv "WINDTRAP_JUNIT" junit;
+          add ~file:"a.ml" "passes" ignore;
+          run_protocol [ "inline-test-runner"; "lib"; "-partition"; "a.ml" ]
+      | "own-suite", [ log_dir ] ->
+          (* Runs a suite of its own and never drains what it registered. *)
+          Unix.putenv "WINDTRAP_OUTPUT" log_dir;
+          add ~file:"a.ml" "undrained" ignore;
+          Stdlib.exit
+            (Windtrap.run ~argv:[| "own" |] "own"
+               [ Windtrap.test "ran" ignore ])
+      | "fork", [] ->
+          add ~file:"a.ml" "never driven" ignore;
+          (match Unix.fork () with
+          | 0 -> Stdlib.exit 0
+          | pid -> (
+              match Unix.waitpid [] pid with
+              | _, Unix.WEXITED n ->
+                  Printf.printf "forked child exited %d\n%!" n
+              | _ -> print_endline "forked child died"));
+          run_protocol []
+      | "at-exit", [] ->
+          (* Registered before the guard, so it runs after it. *)
+          at_exit (fun () ->
+              print_endline "the earlier at_exit function ran";
+              flush stdout);
+          add ~file:"a.ml" "never driven" ignore;
+          Stdlib.exit 0
       | _ ->
           prerr_endline "unknown child scenario";
           exit 3)
@@ -214,6 +265,122 @@ let () =
        (a.ml)"
     err;
   check_contains "the guard names the remedy" ~sub:"add (inline_tests)" err
+
+(* Registration: files, groups and their names *)
+
+let () =
+  (* One basename, one partition and one group; the module name stops at
+     the first dot. *)
+  add ~file:"src/dup.ml" "one" ignore;
+  add ~file:"test/dup.ml" "two" ignore;
+  add ~file:"gen/x.pp.ml" "three" ignore;
+  check_paths "one basename is one group, named up to its first dot"
+    ~expected:[ "Dup \u{203a} one"; "Dup \u{203a} two"; "X \u{203a} three" ]
+    (Ppx_runtime.collect ());
+  check "one basename is one partition"
+    (List.length
+       (List.filter (String.equal "dup.ml") (Ppx_runtime.partitions ()))
+     = 1
+    && List.mem "x.pp.ml" (Ppx_runtime.partitions ()))
+
+let () =
+  Ppx_runtime.enter_group ~file:"twice.ml" ~tags:[] "G";
+  add ~file:"twice.ml" "t" ignore;
+  Ppx_runtime.leave_group ();
+  Ppx_runtime.enter_group ~file:"twice.ml" ~tags:[] "G";
+  add ~file:"twice.ml" "t" ignore;
+  Ppx_runtime.leave_group ();
+  check_paths "a group name its scope holds is renamed"
+    ~expected:
+      [ "Twice \u{203a} G \u{203a} t"; "Twice \u{203a} G (2) \u{203a} t" ]
+    (Ppx_runtime.collect ())
+
+let () =
+  Ppx_runtime.enter_group ~file:"host.ml" ~tags:[] "G";
+  add ~file:"guest.ml" "t" ignore;
+  Ppx_runtime.leave_group ();
+  check_paths "inside a group the test lands in the group, whatever its file"
+    ~expected:[ "Host \u{203a} G \u{203a} t" ]
+    (Ppx_runtime.collect ());
+  check "and its file is still a partition"
+    (List.mem "guest.ml" (Ppx_runtime.partitions ()))
+
+let () =
+  add ~file:"plain.ml" "untagged" ignore;
+  match Test_tree.flatten (Ppx_runtime.collect ()) with
+  | [ case ] -> check "the module's group adds no tag" (case.tags = Tag.empty)
+  | _ -> check "one case" false
+
+let () =
+  add ~file:"kept.ml" "t" ignore;
+  ignore (Ppx_runtime.collect ());
+  check "collect keeps the partitions"
+    (List.mem "kept.ml" (Ppx_runtime.partitions ()))
+
+(* exit and the guard, on children *)
+
+let () =
+  let code, out, err = spawn_child [ "--child"; "drained" ] in
+  check_int "a main that drains the registry exits as it chose" ~expected:0
+    ~actual:code;
+  check_string "and the guard is silent" ~expected:"" ~actual:(out ^ err);
+  let code, out, err = spawn_child [ "--child"; "drain-raises" ] in
+  check_int "a collect that raised still claimed" ~expected:0 ~actual:code;
+  check_string "silently" ~expected:"" ~actual:(out ^ err)
+
+let () =
+  let code, out, err = spawn_child [ "--child"; "no-init" ] in
+  check_int "exit without init exits 0" ~expected:0 ~actual:code;
+  check_string "and prints nothing" ~expected:"" ~actual:(out ^ err)
+
+let () =
+  let code, _, err = spawn_child [ "--child"; "bad-mirror" ] in
+  check_int "a malformed mirror exits 2 under --corrected" ~expected:2
+    ~actual:code;
+  check_contains "the usage line names argv.(0)"
+    ~sub:"usage: child [OPTIONS] [PATTERN]" err;
+  with_temp_root (fun log_dir ->
+      let code, _, _ = spawn_child [ "--child"; "empty-partition"; log_dir ] in
+      check_int "a partition that declares no test exits 2" ~expected:2
+        ~actual:code)
+
+let () =
+  with_temp_root (fun log_dir ->
+      let junit = Filename.concat log_dir "junit" in
+      let code, _, _ = spawn_child [ "--child"; "junit"; log_dir; junit ] in
+      check_int "the partition passes" ~expected:0 ~actual:code;
+      check "a JUnit directory holds one file per partition"
+        (Sys.file_exists
+           (Filename.concat junit
+              (Windtrap.Private.Os.sanitize_component "lib/a.ml" ^ ".xml"))))
+
+let () =
+  let code, _, err = spawn_child [ "--child"; "undriven-exit-1" ] in
+  check_int "an unclaimed registry turns an exit 1 into 2" ~expected:2
+    ~actual:code;
+  check_contains "with the diagnostic" ~sub:"add (inline_tests)" err
+
+let () =
+  with_temp_root (fun log_dir ->
+      let code, out, err = spawn_child [ "--child"; "own-suite"; log_dir ] in
+      check_int "a suite that leaves the registry undrained exits 2" ~expected:2
+        ~actual:code;
+      check_contains "after its report" ~sub:"own: 1 passed" out;
+      check_contains "and the diagnostic" ~sub:"add (inline_tests)" err)
+
+let () =
+  let code, out, err = spawn_child [ "--child"; "fork" ] in
+  check_string "a forked child leaves through exit, silent" ~expected:""
+    ~actual:err;
+  check_string "with its own code" ~expected:"forked child exited 0\n"
+    ~actual:out;
+  check_int "and the parent claims and exits 0" ~expected:0 ~actual:code
+
+let () =
+  let code, out, _ = spawn_child [ "--child"; "at-exit" ] in
+  check_int "the guard exits 2" ~expected:2 ~actual:code;
+  check_contains "through Stdlib.exit: the earlier at_exit function runs"
+    ~sub:"the earlier at_exit function ran" out
 
 (* The ambient config module *)
 
