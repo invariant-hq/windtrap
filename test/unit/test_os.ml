@@ -792,12 +792,43 @@ end
 (* The capture holds both streams in the order their bytes reached the
    descriptors, which is what makes the flush order observable. *)
 module Say_suite = struct
+  (* The messages, each said by a child on its own streams, so the parent
+     reads standard output and standard error apart; the capture of a test
+     merges them. *)
+  let messages =
+    [
+      ("say", fun () -> Os.say "could not write the verdict file: disk full");
+      ("warn", fun () -> Os.warn "could not write JUnit report: disk full");
+      ( "lines",
+        fun () ->
+          Os.say
+            "duplicate test paths:\n  a\nEvery full test path must be unique."
+      );
+      ("control", fun () -> Os.say "invalid value 'a\tb\027[31mc\127'");
+    ]
+
+  (* Re-exec dispatch for the children above; the suite's toplevel calls it
+     before its run. Never returns for a child invocation. *)
+  let dispatch_child () =
+    match Array.to_list Sys.argv with
+    | [ _; "--say-child"; name ] ->
+        (List.assoc name messages) ();
+        exit 0
+    | _ -> ()
+
+  (* What the child said on stderr, once it exited 0 with an empty stdout. *)
+  let said name =
+    let module Child = Windtrap_test_support.Child in
+    let r = Child.run Sys.executable_name [ "--say-child"; name ] in
+    equal ~msg:"the child exits 0" int 0 (Child.exit_code r);
+    equal ~msg:"nothing goes to standard output" string "" r.Child.out;
+    r.Child.err
+
   let tests =
     [
       test "say is one anchored line on stderr" (fun () ->
-          Os.say "could not write the verdict file: disk full";
           equal string "windtrap: could not write the verdict file: disk full\n"
-            (output ()));
+            (said "say"));
       test "standard output is flushed first, channel and formatter" (fun () ->
           print_string "channel, unflushed; ";
           Format.printf "formatter, unflushed@\n";
@@ -806,30 +837,27 @@ module Say_suite = struct
             "channel, unflushed; formatter, unflushed\nwindtrap: after both\n"
             (output ()));
       test "warn says the run goes on, behind the same anchor" (fun () ->
-          Os.warn "could not write JUnit report: disk full";
           equal string
             "windtrap: warning: could not write JUnit report: disk full\n"
-            (output ()));
+            (said "warn"));
       test "a message of several lines is anchored on its first" (fun () ->
-          Os.say
-            "duplicate test paths:\n  a\nEvery full test path must be unique.";
           equal string
             "windtrap: duplicate test paths:\n\
             \  a\n\
              Every full test path must be unique.\n"
-            (output ()));
+            (said "lines"));
       test "a control byte other than a line feed cannot restyle the terminal"
         (fun () ->
-          Os.say "invalid value 'a\tb\027[31mc\127'";
           equal string "windtrap: invalid value 'a\\tb\\x1b[31mc\\x7f'\n"
-            (output ()));
+            (said "control"));
     ]
 end
 
-(* The concurrency test re-execs this executable as helper children, so the
-   suite's toplevel dispatches here before its run. Never returns for a
-   child invocation. *)
+(* The concurrency and say tests re-exec this executable as helper
+   children, so the suite's toplevel dispatches here before its run. Never
+   returns for a child invocation. *)
 let () = Atomic_suite.dispatch_child ()
+let () = Say_suite.dispatch_child ()
 
 let tests =
   [

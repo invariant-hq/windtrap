@@ -41,7 +41,14 @@
   test_report
   test_report_junit
   test_cli)
- (libraries windtrap windtrap_runtime unix harness render_fixtures xml_check)
+ (libraries
+  windtrap
+  windtrap_runtime
+  windtrap_test_support
+  unix
+  harness
+  render_fixtures
+  xml_check)
  ; The report suite's golden transcripts are action inputs; accept a
  ; change with `test_report.exe -u`.
  (deps
@@ -72,4 +79,10 @@
  (names test_run test_ppx_runtime test_windtrap)
  (modules test_run test_ppx_runtime test_windtrap)
  ; ppx_windtrap.runtime and .config are test_ppx_runtime's subjects.
- (libraries windtrap ppx_windtrap.runtime ppx_windtrap.config unix harness))
+ (libraries
+  windtrap
+  ppx_windtrap.runtime
+  ppx_windtrap.config
+  windtrap_test_support
+  unix
+  harness))

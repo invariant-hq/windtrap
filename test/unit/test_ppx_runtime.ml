@@ -70,33 +70,12 @@ let () =
 
 let () = init "ppx_runtime"
 
-(* Re-exec this executable with [args], returning its exit status and its
-   standard output and error, merged. *)
+(* Re-exec this executable with [args] in a stated environment, returning
+   its exit code, standard output and standard error, apart. *)
 let spawn_child args =
-  let out_read, out_write = Unix.pipe () in
-  let pid =
-    Unix.create_process Sys.executable_name
-      (Array.of_list (Sys.executable_name :: args))
-      Unix.stdin out_write out_write
-  in
-  Unix.close out_write;
-  let buffer = Buffer.create 1024 in
-  let chunk = Bytes.create 4096 in
-  let rec drain () =
-    let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
-    if n > 0 then begin
-      Buffer.add_subbytes buffer chunk 0 n;
-      drain ()
-    end
-  in
-  drain ();
-  Unix.close out_read;
-  let code =
-    match snd (Unix.waitpid [] pid) with
-    | Unix.WEXITED code -> code
-    | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> -1
-  in
-  (code, Buffer.contents buffer)
+  let module Child = Windtrap_test_support.Child in
+  let r = Child.run Sys.executable_name args in
+  (Child.exit_code r, r.Child.out, r.Child.err)
 
 let paths tests =
   List.map
@@ -211,20 +190,22 @@ let () =
 (* exit, on a child *)
 
 let () =
-  let code, out = spawn_child [ "--child"; "byhand" ] in
+  let code, out, err = spawn_child [ "--child"; "byhand" ] in
   check_int "invoked by hand, the runner exits 0" ~expected:0 ~actual:code;
   check_string "invoked by hand, the runner prints nothing" ~expected:""
-    ~actual:out
+    ~actual:(out ^ err)
 
 let () =
-  let code, out = spawn_child [ "--child"; "list" ] in
+  let code, out, err = spawn_child [ "--child"; "list" ] in
   check_int "-list-partitions exits 0" ~expected:0 ~actual:code;
-  check_string "-list-partitions prints the sorted basenames"
-    ~expected:"a.ml\nb.ml\n" ~actual:out
+  check_string "-list-partitions prints the sorted basenames on stdout"
+    ~expected:"a.ml\nb.ml\n" ~actual:out;
+  check_string "and nothing on stderr" ~expected:"" ~actual:err
 
 let () =
   with_temp_root (fun log_dir ->
-      let code, out = spawn_child [ "--child"; "run"; log_dir ] in
+      let code, out, err = spawn_child [ "--child"; "run"; log_dir ] in
+      check_string "the transcript is all on stdout" ~expected:"" ~actual:err;
       check_int "a partition with a failing test exits 1" ~expected:1
         ~actual:code;
       (* The suite is named per partition: dune runs a library's
@@ -249,7 +230,7 @@ let () =
         Out_channel.with_open_bin path (fun oc -> output_string oc contents)
       in
       write source "let%expect_test \"stale\" =\n  [%expect {| stale |}]\n";
-      let code, out = spawn_child [ "--child"; "corrected"; root ] in
+      let code, out, _ = spawn_child [ "--child"; "corrected"; root ] in
       check_int "a run whose only failure is a recorded correction exits 0"
         ~expected:0 ~actual:code;
       check_contains "the mismatch is reported with dune's acceptance"
@@ -266,14 +247,15 @@ let () =
         = "let%expect_test \"stale\" =\n  [%expect {| stale |}]\n"))
 
 let () =
-  let code, out = spawn_child [ "--child"; "undriven" ] in
+  let code, out, err = spawn_child [ "--child"; "undriven" ] in
   check_int "registrations nothing drives exit 2" ~expected:2 ~actual:code;
-  check_contains "the guard names the registered file"
+  check_string "the guard writes nothing on stdout" ~expected:"" ~actual:out;
+  check_contains "the guard names the registered file, on stderr"
     ~sub:
       "never driven: this executable links ppx_windtrap-preprocessed test code \
        (a.ml)"
-    out;
-  check_contains "the guard names the remedy" ~sub:"add (inline_tests)" out
+    err;
+  check_contains "the guard names the remedy" ~sub:"add (inline_tests)" err
 
 (* The ambient config module *)
 
