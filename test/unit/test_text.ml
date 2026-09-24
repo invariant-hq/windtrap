@@ -38,12 +38,27 @@ let tests =
           (Text.split_lines "a\n\nb");
         equal ~msg:"empty string has no lines" (list string) []
           (Text.split_lines ""));
+    test "split_lines keeps the CR of a CRLF line" (fun () ->
+        equal (list string) [ "a\r"; "b\r" ] (Text.split_lines "a\r\nb\r\n"));
     test "length_utf8 counts characters, not bytes" (fun () ->
         equal ~msg:"ascii length" int 5 (Text.length_utf8 "hello");
         equal ~msg:"two-byte chars" int 5 (Text.length_utf8 "héllo");
         equal ~msg:"four-byte emoji counts once" int 1
           (Text.length_utf8 "\240\159\144\171");
         equal ~msg:"empty length" int 0 (Text.length_utf8 ""));
+    (* No grapheme knowledge: a letter and its combining accent are two code
+       points, and a wide character is one. *)
+    test "length_utf8 counts code points, not graphemes or columns" (fun () ->
+        equal ~msg:"e and a combining acute" int 2
+          (Text.length_utf8 "e\u{0301}");
+        equal ~msg:"a wide character" int 1 (Text.length_utf8 "\u{6f22}"));
+    test "a malformed sequence counts one code point per replacement" (fun () ->
+        equal ~msg:"two stray bytes are two" int 2 (Text.length_utf8 "\xff\xfe");
+        equal ~msg:"a cut-short sequence is one" int 1
+          (Text.length_utf8 "\xe2\x82");
+        equal ~msg:"a cut keeps the replacement's bytes whole" string
+          "\xe2\x82a..."
+          (Text.truncate_utf8 5 "\xe2\x82abcdef"));
     test "truncate_utf8 keeps whole characters" (fun () ->
         equal ~msg:"short string unchanged" string "abc"
           (Text.truncate_utf8 5 "abc");
@@ -68,6 +83,10 @@ let tests =
           (Text.truncate_utf8 0 "abc");
         equal ~msg:"empty string fits any budget" string ""
           (Text.truncate_utf8 0 ""));
+    test "truncate_utf8 under 3 gives a prefix of the ellipsis" (fun () ->
+        equal ~msg:"budget of two" string ".." (Text.truncate_utf8 2 "abc");
+        equal ~msg:"a negative budget gives nothing and never raises" string ""
+          (Text.truncate_utf8 (-4) "abc"));
     test "elide_middle keeps both ends and counts what it left out" (fun () ->
         equal ~msg:"at the bound: unchanged" string "abcdefgh"
           (Text.elide_middle 8 ~show:Fun.id "abcdefgh");
@@ -95,6 +114,8 @@ let tests =
     test "truncate_bytes_utf8 never splits a character" (fun () ->
         equal ~msg:"non-positive budget" string "<truncated>"
           (Text.truncate_bytes_utf8 0 "abc");
+        equal ~msg:"negative budget" string "<truncated>"
+          (Text.truncate_bytes_utf8 (-1) "abc");
         equal ~msg:"fits in budget unchanged" string "abc"
           (Text.truncate_bytes_utf8 3 "abc");
         equal ~msg:"byte truncation notes total" string
@@ -178,6 +199,10 @@ let tests =
           (Text.strip_ansi "a\027");
         equal ~msg:"keeps newlines and text intact" string "a\nb"
           (Text.strip_ansi "\027[1ma\n\027[31mb\027[0m"));
+    test "strip_ansi opens a sequence at ESC only" (fun () ->
+        equal ~msg:"the 8-bit CSI byte and other controls stay" string
+          "a\x9b31mb\x07\x00\rc"
+          (Text.strip_ansi "a\x9b31mb\x07\x00\rc"));
   ]
 
 let () = exit @@ Windtrap.run "text" tests
