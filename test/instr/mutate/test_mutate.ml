@@ -487,7 +487,12 @@ let registry_tests =
                 ~sites:
                   [| site ~line:1 ~col:0 ~rewrite:"lt" ~before:"x < y" () |])
         in
-        contains ~msg:"warns" ~sub:"conflicting instrumentation tables" err;
+        equal ~msg:"behind windtrap's one anchor, a warning, the file first"
+          string
+          "windtrap: warning: t/conflict.ml: conflicting instrumentation \
+           tables in one executable (stale build artifacts? rebuild from \
+           clean); ignoring one module's sites\n"
+          err;
         fresh ();
         is_false ~msg:"the dropped guard is inert" (g 0);
         equal ~msg:"the dropped guard reports no reach" (list reached_t) []

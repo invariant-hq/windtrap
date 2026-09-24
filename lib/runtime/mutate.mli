@@ -119,10 +119,10 @@ val register : file:string -> sites:site array -> int -> bool
     {!val-catalogue} and {!drain} report each mutant once. Two tables are equal
     when their sites agree on the six fields. A table that differs from an
     earlier one for [file] is dropped. One line then goes to standard error,
-    behind [windtrap:], when the module loads and whatever the flags of a run.
-    The guard that is returned answers [false] at every index, counts nothing
-    and never raises. The executable links two incompatible instrumentations of
-    one source, and rebuilding from scratch is the remedy.
+    behind [windtrap: warning:], when the module loads and whatever the flags of
+    a run. The guard that is returned answers [false] at every index, counts
+    nothing and never raises. The executable links two incompatible
+    instrumentations of one source, and rebuilding from scratch is the remedy.
 
     Raises [Invalid_argument] if a site has [line < 1], [col < 0] or a [rewrite]
     outside {!rewrites}. Only a broken instrumenter produces such a table, and
