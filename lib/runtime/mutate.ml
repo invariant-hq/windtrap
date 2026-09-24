@@ -93,6 +93,8 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
 
 exception Runaway of { id : id; hits : int; budget : int }
 
+(* The runtime links no core, so its messages skip the report's escape of
+   control bytes; what they print is identifiers and build paths. *)
 let warn fmt =
   Printf.ksprintf (fun m -> Printf.eprintf "windtrap: %s\n%!" m) fmt
 

@@ -303,6 +303,8 @@ let print_lcov ~source_roots collection =
                (if r.stale then "the source changed since the run"
                 else "source not found"))
       | Some _ ->
+          (* A tracefile has no escape syntax: the path is written as
+             recorded. *)
           Printf.printf "TN:\nSF:%s\n" r.file;
           List.iter
             (fun (line, hits) -> Printf.printf "DA:%d,%d\n" line hits)

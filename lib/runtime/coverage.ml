@@ -207,6 +207,8 @@ let dump_target : target option ref = ref None
 let dump_exe : string option ref = ref None
 let dumped = ref false
 
+(* The runtime links no core, so its messages skip the report's escape of
+   control bytes; what they print is build paths. *)
 let warn fmt =
   Printf.ksprintf (fun m -> Printf.eprintf "windtrap: warning: %s\n%!" m) fmt
 
