@@ -103,15 +103,15 @@ A fixture names each rule it pins by its id and interface line, as in
 | --- | --- | --- | --- |
 | C62 | `[@coverage off]` on an expression leaves it as written. | cov:157-158 | `coverage/fixture_off` |
 | C63 | `[@@coverage off]` on a top-level value binding. | cov:159-160 | `coverage/fixture_off` |
-| C64 | `[@@coverage off]` on a module binding, recursive or not. | cov:160 | partial: `coverage/fixture_off` (non-recursive); unpinned: recursive |
-| C65 | `[@@coverage off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | cov:160-162 | unpinned |
+| C64 | `[@@coverage off]` on a module binding, recursive or not. | cov:160 | `coverage/fixture_off` (non-recursive), `coverage/fixture_off_structure` (recursive) |
+| C65 | `[@@coverage off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | cov:160-162 | `coverage/fixture_off_structure` |
 | C66 | `[@@@coverage off]` ... `[@@@coverage on]` is a region, module expressions included. | cov:163-164 | `coverage/fixture_off` |
-| C67 | A nested structure inherits a region, and its end restores the outer setting. | cov:164-166 | unpinned |
-| C68 | A region never closed runs to the end of its structure. | cov:166-167 | unpinned |
+| C67 | A nested structure inherits a region, and its end restores the outer setting. | cov:164-166 | `coverage/fixture_off_structure` |
+| C68 | A region never closed runs to the end of its structure. | cov:166-167 | `coverage/fixture_off_structure` |
 | C69 | A top-level `[@@@coverage exclude_file]` returns the file as parsed. | cov:168-169, cov:199 | `coverage/fixture_exclude` |
-| C70 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | cov:200-201 | unpinned |
-| C71 | A file where no point was allocated is returned as parsed. | cov:202-203 | partial: `coverage/fixture_empty` (no instrumented form); unpinned: every form switched off |
-| C81 | An attribute inside excluded code is never examined. | cov:207-208 | unpinned |
+| C70 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | cov:200-201 | `coverage/fixture_input_name` and the input_name rules of coverage/dune |
+| C71 | A file where no point was allocated is returned as parsed. | cov:202-203 | `coverage/fixture_empty` (no instrumented form), `coverage/fixture_all_off` (every form switched off); every form generated: STATED-NOT-TESTED, a consequence of C59 and of the switched-off case |
+| C81 | An attribute inside excluded code is never examined. | cov:207-208 | `coverage/fixture_off_structure` |
 
 ### Generated code
 

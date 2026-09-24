@@ -4,6 +4,16 @@
 
 (rule
  (with-stdout-to
+  fixture_all_off.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_all_off.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_all_off.expected fixture_all_off.actual)))
+
+(rule
+ (with-stdout-to
   fixture_and_or.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_and_or.ml})))
 
@@ -84,6 +94,16 @@
 
 (rule
  (with-stdout-to
+  fixture_input_name.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_input_name.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_input_name.expected fixture_input_name.actual)))
+
+(rule
+ (with-stdout-to
   fixture_keys.actual
   (run ./coverage_pp.exe --impl %{dep:fixture_keys.ml})))
 
@@ -131,6 +151,16 @@
  (alias runtest)
  (action
   (diff fixture_off.expected fixture_off.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_off_structure.actual
+  (run ./coverage_pp.exe --impl %{dep:fixture_off_structure.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_off_structure.expected fixture_off_structure.actual)))
 
 (rule
  (with-stdout-to

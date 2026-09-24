@@ -47,3 +47,67 @@
  (action
   (ignore-outputs
    (run ./coverage_pp.exe --impl %{dep:parity_spellings.ml}))))
+
+; Under the input names //toplevel// and (stdin), and a base name .ocamlinit
+; or topfind, the rewriter returns fixture_input_name.ml as parsed; under its
+; own name, the fixture's golden shows it instrumented.
+
+(rule
+ (with-stdout-to
+  input_name_toplevel.actual
+  (run
+   ./coverage_pp.exe
+   -loc-filename
+   //toplevel//
+   --impl
+   %{dep:fixture_input_name.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff input_name_ignored.expected input_name_toplevel.actual)))
+
+(rule
+ (with-stdout-to
+  input_name_stdin.actual
+  (run
+   ./coverage_pp.exe
+   -loc-filename
+   "(stdin)"
+   --impl
+   %{dep:fixture_input_name.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff input_name_ignored.expected input_name_stdin.actual)))
+
+(rule
+ (with-stdout-to
+  input_name_ocamlinit.actual
+  (run
+   ./coverage_pp.exe
+   -loc-filename
+   lib/.ocamlinit
+   --impl
+   %{dep:fixture_input_name.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff input_name_ignored.expected input_name_ocamlinit.actual)))
+
+(rule
+ (with-stdout-to
+  input_name_topfind.actual
+  (run
+   ./coverage_pp.exe
+   -loc-filename
+   lib/topfind
+   --impl
+   %{dep:fixture_input_name.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff input_name_ignored.expected input_name_topfind.actual)))
