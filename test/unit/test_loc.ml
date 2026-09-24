@@ -59,6 +59,43 @@ let tests =
               loc.Loc.line
         | [ (_, None) ] -> fail "capture through List.map returns a location"
         | _ -> fail "List.map shape");
+    test "capture skips a Camlinternal frame that calls it" (fun () ->
+        (* The lazy's closure is [Loc.capture] itself, so the frame that calls
+           it is CamlinternalLazy's; the first eligible frame is this
+           line's. *)
+        let p = __POS__ and l = Lazy.force (Lazy.from_fun Loc.capture) in
+        match l with
+        | None -> fail "capture under Lazy.force returns a location"
+        | Some loc ->
+            is_true ~msg:"the location is this file's" (in_this_file loc);
+            equal ~msg:"the location is the force's line" int (line_of p)
+              loc.Loc.line);
+    test "capture counts an inlined frame" (fun () ->
+        let[@inline always] here () = (__POS__, Loc.capture ()) in
+        match here () with
+        | p, Some loc ->
+            equal ~msg:"the inlined function's line, not its caller's" int
+              (line_of p) loc.Loc.line
+        | _, None -> fail "capture in an inlined function returns a location");
+    test "capture is None when every frame is the standard library's" (fun () ->
+        is_true ~msg:"a domain whose stack holds no user frame"
+          (Domain.join (Domain.spawn Loc.capture) = None));
+    test "capture reads the 24 innermost entries only" (fun () ->
+        (* [Seq.forever] calls [Loc.capture] from a Stdlib frame, and each
+           [Seq.map] forces the one inside it from a Stdlib frame of its own:
+           [depth] entries stand between the capture and this function. *)
+        let under depth =
+          let rec nest n s =
+            if n = 0 then s else nest (n - 1) (Seq.map Fun.id s)
+          in
+          match (nest depth (Seq.forever Loc.capture)) () with
+          | Seq.Cons (l, _) -> l
+          | Seq.Nil -> assert false
+        in
+        is_true ~msg:"a user frame within reach is found"
+          (Option.is_some (under 4));
+        is_true ~msg:"a user frame beyond the 24th entry is not"
+          (under 30 = None));
     test "delimit stops capture instead of escaping the boundary" (fun () ->
         (* [f] tail-calls capture, so its own frame is gone at capture time;
            the walk must stop at the delimiter with None — never surface this
@@ -89,6 +126,43 @@ let tests =
           (Loc.delimit (fun () -> 7));
         raises ~msg:"delimit re-raises fn's exception" (Stdlib.Failure "boom")
           (fun () -> Loc.delimit (fun () -> failwith "boom")));
+    test "delimit re-raises with the exception's backtrace" (fun () ->
+        let recording = Printexc.backtrace_status () in
+        Printexc.record_backtrace true;
+        Fun.protect ~finally:(fun () -> Printexc.record_backtrace recording)
+        @@ fun () ->
+        let[@inline never] raiser () = raise (Stdlib.Failure "deep") in
+        let raise_line = line_of __POS__ - 1 in
+        match Loc.delimit (fun () -> ignore (raiser ())) with
+        | () -> fail "delimit returned"
+        | exception Stdlib.Failure _ ->
+            let slots =
+              Option.value ~default:[||]
+                (Printexc.backtrace_slots (Printexc.get_raw_backtrace ()))
+            in
+            let raised_here slot =
+              match Printexc.Slot.location slot with
+              | Some l -> l.Printexc.line_number = raise_line
+              | None -> false
+            in
+            is_true ~msg:"the backtrace reaches the raise inside fn"
+              (Array.exists raised_here slots));
+    test "own_unit names windtrap's units by whole name" (fun () ->
+        List.iter
+          (fun (name, own) -> equal ~msg:name bool own (Loc.own_unit name))
+          [
+            ("Windtrap", true);
+            ("Windtrap.run", true);
+            ("Windtrap__Check.raises", true);
+            ("Windtrap_runtime", true);
+            ("Windtrap_runtime.Coverage.hit", true);
+            ("Windtrap_runtime__Mutate.arm", true);
+            ("Windtrap_helpers.f", false);
+            ("Windtrapper", false);
+            ("Stdlib__List.map", false);
+            ("Dune__exe__Test_loc.f", false);
+            ("Dune__exe__Test_loc.Windtrap__Check", false);
+          ]);
     test "resolve prefers ?__POS__ over the backtrace" (fun () ->
         (match Loc.resolve ~__POS__:("other.ml", 42, 7, 20) () with
         | Some loc ->
