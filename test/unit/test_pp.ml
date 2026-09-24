@@ -18,7 +18,7 @@ let tests =
         equal ~msg:"int64" string "9007199254740993"
           (s Pp.int64 9007199254740993L);
         (* [float_exact] is the only float printer here: what it renders, a
-           reader may copy back and get the same double — a property
+           reader may copy back and get the same double: a property
            counterexample pasted into [~examples], a bit-exact witness. A
            fixed-precision rendering would print 0.3 for this value. *)
         equal ~msg:"float_exact keeps the bits" string "0.30000000000000004"

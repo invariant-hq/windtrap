@@ -51,8 +51,8 @@ let length_utf8 s =
   count 0 0
 
 (* The result is at most [max_chars] code points, ellipsis included. It used
-   to be [max_chars - 1] code points PLUS ["..."] — two over the bound it was
-   asked for — which is a display bound that does not bind: the live tail
+   to be [max_chars - 1] code points PLUS ["..."] (two over the bound it was
+   asked for) which is a display bound that does not bind: the live tail
    sized to the terminal wrapped, and the erase that follows it then left
    residue on the wrapped line. *)
 let truncate_utf8 max_chars s =

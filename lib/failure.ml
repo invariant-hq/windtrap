@@ -178,8 +178,8 @@ let caught_to_string c = Printexc.to_string (to_exn c)
    none of the reader's code, and on a short backtrace they outnumber it.
    Drop that trailing run.
 
-   Only a trailing run. A user callback invoked by windtrap — a [bracket]
-   teardown, a property body, a [such_that] predicate — sits below windtrap
+   Only a trailing run. A user callback invoked by windtrap (a [bracket]
+   teardown, a property body, a [such_that] predicate) sits below windtrap
    frames and above more of them, and both it and the machinery it names
    have to survive. A backtrace that is windtrap's all the way up is kept
    whole: it means the raise never crossed user code, and trimming would
@@ -190,7 +190,7 @@ let backtrace_to_string raw =
   | None -> whole ()
   | Some slots ->
       (* A slot without a debug name cannot be proven to be ours, so it
-         ends the run — the same "no guess" rule [Loc.capture] follows. *)
+         ends the run, the same "no guess" rule [Loc.capture] follows. *)
       let rec deepest_foreign i =
         if i < 0 then -1
         else
@@ -228,7 +228,7 @@ let tail_bytes = 8_192
    to store on every failure. Reuses the tail bound. *)
 let excerpt_limit = tail_bytes
 
-(* With nothing to centre on — a needle that occurs nowhere — the excerpt is
+(* With nothing to centre on (a needle that occurs nowhere) the excerpt is
    context rather than evidence, so the head, or the end for a suffix, is
    bounded to what a reader scans past to reach the verdict: whichever of
    these is shorter. *)
@@ -324,7 +324,7 @@ let end_window haystack =
 
 (* The bounded haystack window stored as a containment failure's [excerpt].
    One bound, applied here: renderers show what is stored whole. Around
-   [anchor] when there is one — the surroundings are the evidence — and the
+   [anchor] when there is one (the surroundings are the evidence) and the
    bounded head, or end under [at_end], otherwise. Both cuts land on UTF-8
    code-point boundaries, so an anchored window may exceed its limit by the
    up to three bytes needed to complete a sequence. *)
@@ -351,7 +351,7 @@ let excerpt_window ~anchor ~at_end haystack =
 
 (* Which offset the excerpt centres on. An [Ordered] failure is about a
    search that began at the cursor, so the cursor wins over an occurrence
-   that — being before it — is precisely the one that did not count. *)
+   that (being before it) is precisely the one that did not count. *)
 let excerpt_anchor ~found_at ~demand =
   match demand with
   | Ordered { resumed_at; _ } -> Some resumed_at

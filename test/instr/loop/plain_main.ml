@@ -5,7 +5,7 @@
 
 (* An ordinary suite linking no instrumented module: the control for
    everything the mutation seam must not do. Asking it to mutate is the
-   commonest misconfiguration of all — the backend on nothing — and the
+   commonest misconfiguration of all (the backend on nothing), and the
    answer has to be a sentence, not a green run with no report. *)
 
 open Windtrap

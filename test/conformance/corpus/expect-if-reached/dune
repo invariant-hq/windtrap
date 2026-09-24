@@ -1,4 +1,4 @@
-; Upstream test/expect-if-reached — rejected set: [%expect.unreachable]
+; Upstream test/expect-if-reached, rejected set: [%expect.unreachable]
 ; and [%expect.if_reached] must be rejected at expansion time with the
 ; explicit "not supported by ppx_windtrap" diagnostic. The upstream
 ; negative-test/ files are vendored flat here (unique basenames).

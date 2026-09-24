@@ -5,8 +5,8 @@
    as a bare application does. The expansion must show the arm verbatim as
    the [else] branch, with no [___windtrap_post_visit___] around the calls
    that sit in tail position inside it. Dropping a shape from the guard
-   demotes that arm to an [if] condition — [else if <arm> then (visit k;
-   true) else false] — which traverses it out of tail position and wraps
+   demotes that arm to an [if] condition, [else if <arm> then (visit k;
+   true) else false], which traverses it out of tail position and wraps
    the call. The semantics suite runs [match] and [if] deep under a
    bounded stack; this golden pins every shape. *)
 

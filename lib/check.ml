@@ -85,7 +85,7 @@ let contains ?__POS__ ?msg ~sub haystack =
 (* Each element is searched for from the end of the previous element's
    match, so the chain never re-uses bytes and never runs backwards. On a
    break, [found_at] is the element's first occurrence in the WHOLE string
-   — [starts_with]'s rule — because "absent" and "present, but too early"
+   ([starts_with]'s rule) because "absent" and "present, but too early"
    are different bugs and the second is the one the reader would otherwise
    have to scan a long string to discover. *)
 let in_order ?__POS__ ?msg ~subs haystack =
@@ -129,7 +129,7 @@ let ends_with ?__POS__ ?msg ~affix haystack =
       ~needle:affix ~haystack ()
 
 (* Membership is containment over a witnessed element type, so it cannot
-   reuse [Failure.Containment] — that payload is byte offsets into a
+   reuse [Failure.Containment]. That payload is byte offsets into a
    haystack. The claim sentence names the element, the value is the list
    the reader has to look at. *)
 let mem ?__POS__ ?msg t x xs =
@@ -152,7 +152,7 @@ let satisfies ?__POS__ ?msg ?(claim = "value satisfying the predicate") t pred v
 
    The four verbs are one comparison under the witness's order, read
    through its sign, and one predicate payload whose claim is derived from
-   the verb and the bound — the shape [satisfies ~claim] leaves the caller
+   the verb and the bound, the shape [satisfies ~claim] leaves the caller
    to build, and to keep in step with the predicate, by hand. A witness
    without an order is a programmer error: the verb raises whether or not
    the assertion would have passed, so the mistake surfaces on the first
@@ -199,8 +199,8 @@ let at_least ?__POS__ ?msg t ~than v =
 
    The shape assertions, for when the value is not wanted: a witness would
    be a printer and an equality for a type these never compare, so they take
-   the same optional printer the unwrapping verbs do — "render the branch
-   you did not want" — and nothing more. *)
+   the same optional printer the unwrapping verbs do, "render the branch
+   you did not want", and nothing more. *)
 
 let is_none ?__POS__ ?msg ?pp = function
   | None -> ()
@@ -253,7 +253,7 @@ let require_match ?__POS__ ?msg ?pp extract v =
    anything would hide an intercepted [exit]. *)
 
 (* The exception's constructor name and message payload, for the stdlib's
-   string-carrying exceptions — the only ones whose message a renderer can
+   string-carrying exceptions, the only ones whose message a renderer can
    diff. ([Stdlib.Failure] is qualified for the reader: windtrap's [Failure]
    module shadows only the module namespace, not the exception
    constructor.) *)

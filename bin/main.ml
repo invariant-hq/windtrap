@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* The `windtrap` binary: subcommand dispatch only. Both subcommands
-   merge instrumentation data and render it — test executables are their
+   merge instrumentation data and render it. Test executables are their
    own runners, so nothing else lives here. *)
 
 module Os = Windtrap.Private.Os

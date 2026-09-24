@@ -1,8 +1,8 @@
 (* The resources-and-structure chapter's examples: [bracket] scopes a
    resource to one test (teardown always runs if setup succeeded), [scoped]
    takes a callback-shaped resource whole, [fixture] is acquired on first
-   use, shared, and released by the runner at the end of the run — a
-   fixture that skips gates every test that uses it — and [temp_dir],
+   use, shared, and released by the runner at the end of the run (a
+   fixture that skips gates every test that uses it), and [temp_dir],
    [setenv] and [chdir] are put back by the runner on every outcome. The
    optional arguments shape the suite: [~timeout] and [~retries] on a group
    are the defaults for every test under it, [slow] tags the long one so

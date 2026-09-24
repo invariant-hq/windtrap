@@ -38,7 +38,7 @@ let id_t = Testable.structural ~pp:pp_id
    ("lib/calc.ml"), so they cannot be told apart by shape.
 
    They can be told apart by TIME. Whatever is in the catalogue at this
-   module's load — after the library's, before any test's — is not this
+   module's load (after the library's, before any test's) is not this
    suite's. Capturing it costs one list and needs no maintenance when a
    test adds a name. *)
 let foreign_files =
@@ -47,7 +47,7 @@ let foreign_files =
 let mine file = not (List.mem file foreign_files)
 
 (* [M.drain ()] and [M.catalogue ()], restricted to this suite's files.
-   The raw drain must still happen — draining is what closes a window —
+   The raw drain must still happen (draining is what closes a window),
    so these filter the result rather than skipping the call. *)
 let drain () =
   List.filter (fun (r : M.reached) -> mine r.M.mutant.M.id.M.file) (M.drain ())

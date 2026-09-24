@@ -615,8 +615,8 @@ let tests =
     (* Only a *trailing* run of windtrap frames goes. Here the exception is
        caught in this file, so the deepest frame is the reader's and there
        is no trailing run at all: the two [Loc.delimit] frames the raise
-       passed through are interior, and every one of them must survive —
-       user code windtrap invoked sits between them. The trailing case,
+       passed through are interior, and every one of them must survive.
+       User code windtrap invoked sits between them. The trailing case,
        where windtrap itself catches, is pinned in test_check.ml. *)
     test "backtrace_to_string: keeps interior own frames" (fun () ->
         let raw =

@@ -23,7 +23,7 @@ let conn a b c = if a && b && c then 1 else 0
 
 (* The same chains where the parser locates the outer node at a [(]
    instead of at the chain's first operand: one mutant each, exactly as
-   above. Note these all use parentheses ocamlformat keeps — it removes
+   above. Note these all use parentheses ocamlformat keeps. It removes
    redundant ones, including the [if (a && b && c) then] spelling, so a
    bracketed chain can only be pinned where the brackets are load-bearing
    syntax. An argument is the common case anyway, and the case the defect

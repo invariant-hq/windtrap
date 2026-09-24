@@ -60,8 +60,8 @@ module Env_suite = struct
      dune runtest), and [Os.setenv]'s real unbinding is proven on its own
      below. *)
 
-  (* The reader is generic over the variable name — a mirror is named in
-     [Cli]'s flag table, not here — so each test names a real variable and
+  (* The reader is generic over the variable name (a mirror is named in
+     [Cli]'s flag table, not here) so each test names a real variable and
      exercises the lookup its mirror uses; the vocabularies are pure
      functions over the value. *)
   let string_of = Os.getenv
@@ -217,7 +217,7 @@ module Env_suite = struct
             (Os.resolve_color Os.Always ~tty:true ~inside_dune:false
                ~term_dumb:true);
           (* NO_COLOR, the de-facto standard: any non-empty value, whatever
-             it says, and Auto only — an explicit request still wins. *)
+             it says, and Auto only. An explicit request still wins. *)
           setenv "NO_COLOR" (Some "1");
           is_false ~msg:"NO_COLOR silences auto on a tty"
             (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
@@ -233,8 +233,8 @@ module Env_suite = struct
           is_true ~msg:"an empty NO_COLOR is unset"
             (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
                ~term_dumb:false);
-          (* Composing the two — a mode read from the environment applied to
-             a named sink — is the caller's job, not this module's:
+          (* Composing the two (a mode read from the environment applied to
+             a named sink) is the caller's job, not this module's:
              [Report.terminal] does it for the runner and [coverage_cmd] for
              the coverage command, and both are pinned end to end by child
              runs that pass --color and compare bytes. *)
@@ -449,7 +449,7 @@ module Atomic_suite = struct
     (* Refusal subsumes the two protections this test has pinned in turn:
        writing through the link would modify a file the caller never named,
        and replacing the link (the previous contract) silently substituted a
-       regular file for it while its referent kept the old bytes — reported
+       regular file for it while its referent kept the old bytes, reported
        as success to the caller. Publication never changes what kind of
        thing a path names; both sides survive byte-intact. *)
     if Sys.win32 then skip ~reason:"POSIX only" ();
@@ -803,8 +803,8 @@ module Path_suite = struct
       test
         "project_root and default_log_dir: the build directory, from \
          INSIDE_DUNE" (fun () ->
-          (* INSIDE_DUNE is dune's build context — never a sandbox path, and
-             a private --build-dir when one was given — and the root is the
+          (* INSIDE_DUNE is dune's build context (never a sandbox path, and
+             a private --build-dir when one was given) and the root is the
              directory above its build component, the log root inside it. *)
           setenv "WINDTRAP_PROJECT_ROOT" None;
           let under context =
@@ -821,7 +821,7 @@ module Path_suite = struct
           equal ~msg:"a private build directory keeps its own logs" triple
             (Some "/w/_build_priv", "/w", "/w/_build_priv/_tests")
             (under "/w/_build_priv/default");
-          (* A boolean spelling — a harness's INSIDE_DUNE=1 — names no build
+          (* A boolean spelling (a harness's INSIDE_DUNE=1) names no build
              directory, and the executable's own path decides. *)
           let own = Os.build_dir_of_path Sys.executable_name in
           equal ~msg:"a non-path value falls through to the executable"

@@ -1,5 +1,5 @@
 (* The property chapter's examples (doc/manual/property-testing.md): one
-   [pp] feeds both worlds — Testable.make for assertions and Gen.with_pp for
+   [pp] feeds both worlds: Testable.make for assertions and Gen.with_pp for
    counterexamples; known regressions worth keeping forever go in code via
    [~examples]; [assume] discards a rare precondition; [cover] and
    [classify] say whether the generator reaches the interesting region. *)

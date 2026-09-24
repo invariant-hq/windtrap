@@ -8,7 +8,7 @@
    structural exception equality, and the control-exception re-raise guard.
 
    The probes call [Check.*] directly and classify what comes back through
-   [outcome] — keeping [Raised] apart from [Failed] stops a stray exception
+   [outcome]. Keeping [Raised] apart from [Failed] stops a stray exception
    from passing for either path, and keeps the meta-assertions from leaning
    on the verb under test. *)
 
@@ -48,8 +48,8 @@ let equality_payload name f k =
       k (expected.F.kept, actual.F.kept, not_)
   | _ -> fail (name ^ ": kind is a diffable Equality")
 
-(* The demand as a flat string, so a wrong one is legible in the report —
-   the [describe_message_diff] precedent below. *)
+(* The demand as a flat string, so a wrong one is legible in the report
+   (the [describe_message_diff] precedent below). *)
 let describe_demand = function
   | F.Anywhere -> "anywhere"
   | F.Prefix -> "prefix"
@@ -201,7 +201,7 @@ let tests =
               actual);
         (* Witness equality can be coarser than printing: under tolerance
            the two floats are equal but would print differently. The payload
-           must still carry a single rendering — the first argument's. *)
+           must still carry a single rendering, the first argument's. *)
         equality_payload "not_equal: tolerance-equal floats render once"
           (fun () -> Check.not_equal (Testable.float 0.5) 1.0 1.2)
           (fun (expected, actual, _) ->
@@ -367,8 +367,8 @@ let tests =
             equal ~msg:"in_order: a missing element records no occurrence"
               string "None" (describe_offset found_at));
         (* The out-of-order bug: the element IS in the string, before the
-           cursor. [found_at] carries that occurrence — [starts_with]'s rule
-           — so the report says "there, but too early", not "not there". *)
+           cursor. [found_at] carries that occurrence ([starts_with]'s rule)
+           so the report says "there, but too early", not "not there". *)
         containment_demand "in_order: an element present only before the cursor"
           (fun () -> Check.in_order ~subs:[ "send"; "connect" ] log)
           (fun (demand, found_at, _, _) ->
@@ -397,7 +397,7 @@ let tests =
             is_true ~msg:"in_order: haystack_length is the whole string"
               (haystack_length = String.length log));
         (* On a haystack too big to store whole the excerpt shows where the
-           search stood — the region still to be matched — not the head the
+           search stood (the region still to be matched), not the head the
            reader has already matched past. *)
         let filler =
           String.concat ""
@@ -437,7 +437,7 @@ let tests =
         passes "starts_with: the whole string" (fun () ->
             Check.starts_with ~affix:path path);
         (* Absent: same verdict a [contains] would give, because the reason
-           is the same — the affix is nowhere in the string. *)
+           is the same. The affix is nowhere in the string. *)
         containment_payload "starts_with: affix absent"
           (fun () -> Check.starts_with ~affix:"users/" path)
           (fun (demand, _, needle, found_at, _, _) ->
@@ -445,7 +445,7 @@ let tests =
             equal ~msg:"needle is the affix" string "users/" needle;
             is_true ~msg:"no occurrence to report" (found_at = None));
         (* Present but misplaced: the offset is the whole point, and it is
-           a report only these verbs can produce — [contains] passes here. *)
+           a report only these verbs can produce; [contains] passes here. *)
         containment_payload "starts_with: affix present elsewhere"
           (fun () -> Check.starts_with ~affix:"ghost" path)
           (fun (_, _, _, found_at, _, _) ->
@@ -680,7 +680,7 @@ let tests =
           (fun () -> Check.less explosive ~than:1 2)
           ~claim:"less than 1" ~value:"2";
         (* A witness without an order is a programmer error, and it surfaces
-           whether or not the assertion would have held — on the first run,
+           whether or not the assertion would have held, on the first run,
            not the first failure. *)
         let no_order verb f =
           is_true
@@ -867,7 +867,7 @@ let tests =
               (Some (Printexc.to_string (Payload (1, "y"))))
               actual);
         (* Structural comparison cannot see through functional payloads: the
-           compare raises and propagates raw — never a silent pass, never a
+           compare raises and propagates raw, never a silent pass, never a
            "wrong exception" misreport. The .mli points such cases at
            [raises_match]. *)
         is_true ~msg:"raises: non-comparable payload raises Invalid_argument"
@@ -919,7 +919,7 @@ let tests =
                   | Some s -> String.length s > 0
                   | None -> false));
             (* [Check.raises] catches the exception, so the frames below the
-               thunk are windtrap's own — the trailing run
+               thunk are windtrap's own, the trailing run
                [Failure.backtrace_to_string] drops. Here that run is the
                whole of the backtrace bar the raise site, which is why an
                untrimmed report read half machinery. *)
@@ -1331,7 +1331,7 @@ let tests =
           ]);
     test "default location is captured from the call stack" (fun () ->
         (* Without ?__POS__ the location is captured from the call stack and
-           points at this file — user code, not windtrap's frames. *)
+           points at this file (user code, not windtrap's frames). *)
         (match
            caught "equal: default location" (fun () ->
                Check.equal Testable.int 1 2)

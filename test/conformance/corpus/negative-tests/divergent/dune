@@ -1,4 +1,4 @@
-; similar_distinct_outputs.ml — a functor instantiated twice registers
+; similar_distinct_outputs.ml: a functor instantiated twice registers
 ; two tests with identical names/locations; windtrap renames the later
 ; duplicate and runs both, and the node they share, reached with two
 ; outputs that normalize alike, is corrected once, byte-identical to the

@@ -1,4 +1,4 @@
-(* Everything that constrains Slug, in one file — its own suite: the
+(* Everything that constrains Slug, in one file (its own suite): the
    laws first (the normative core), then the specified points. Slug's
    known bug lives in ../failures/issue_1.ml, not here. *)
 
@@ -37,7 +37,8 @@ let () =
                  ("MiXeD", "mixed");
                  (* The alphabet boundaries: without this row, the mutation
                  loop reports boundary survivors (c <= 'z' vs c < 'z' and
-                 friends) — every character class edge in one input. *)
+                 friends). The row holds every character class edge in one
+                 input. *)
                  ("Az Za 09", "az-za-09");
                ]
                (fun (input, expected) ->

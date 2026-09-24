@@ -4,7 +4,7 @@
 ; The (test) stanza holds an expect literal in the test file and an
 ; expect_file against help.expected. It runs the suite with --corrected
 ; and diffs each corrected file, so a stale expectation shows as a diff
-; under `dune runtest` and `dune promote` accepts it — the same
+; under `dune runtest` and `dune promote` accepts it, the same
 ; promotion protocol as for [%expect] and cram tests.
 ;
 ; The (library) beside it is the inline form: (inline_tests) with

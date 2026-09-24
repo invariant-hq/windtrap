@@ -4,14 +4,14 @@
   ---------------------------------------------------------------------------*)
 
 (* Not mutated. This module is part of the machinery a mutation run uses
-   to judge mutants — the scheduler, the ambient run state, the reporting
-   spine, the loop itself — so a mutant here is armed inside the process
+   to judge mutants (the scheduler, the ambient run state, the reporting
+   spine, the loop itself) so a mutant here is armed inside the process
    that is supposed to detect it. The failure mode is not a false
    survivor but a hang or a corrupted verdict: a mutated bail counter or
    timeout does not fail the reaching tests, it stops them from
    finishing. Coverage still measures these files; only mutation is off.
-   Everything below the scheduler — the verbs, the generators, the
-   diffing, the renderers — is mutated. *)
+   Everything below the scheduler (the verbs, the generators, the
+   diffing, the renderers) is mutated. *)
 [@@@mutate exclude_file]
 
 (* Configuration *)
@@ -20,9 +20,9 @@ type invocation = [ `Exe of string | `Mirrors ]
 type mutation = No_mutation | Loop of string list | Armed of string
 
 (* One record for everything an invocation resolves. The executor reads
-   the selection and execution fields; the presentation fields — color,
+   the selection and execution fields; the presentation fields (color,
    the slow threshold, verbosity, the JUnit target, the GitHub envelope
-   and the hint context — are read by Report alone, and the mutation
+   and the hint context) are read by Report alone, and the mutation
    field by the loop alone. A field the executor ignores is not a
    coupling. *)
 type config = {
@@ -79,8 +79,8 @@ let default_config () =
    which to keep is a statement about this record, so it lives here,
    where whoever adds a fourteenth selection knob is already editing.
 
-   The knobs that select by PATH are cleared — filter, exclude, shard, the
-   [--failed] store — because the allowlist the caller hands its child IS
+   The knobs that select by PATH are cleared (filter, exclude, shard, the
+   [--failed] store) because the allowlist the caller hands its child IS
    that selection: it names the paths the parent executed, so applying
    any of them again could only narrow it further.
 
@@ -93,11 +93,11 @@ let default_config () =
    saw.
 
    [baseline = Check] makes baseline checking read-only by construction
-   — a correction is recorded only under Corrected and Update — and the
+   (a correction is recorded only under Corrected and Update) and the
    log directory is the child's own so that its capture files and its
    last-failed store cannot touch the parent's. A child reports nothing,
-   so it writes no JUnit either; and it is not itself a mutation run —
-   the loop is its parent, and it arms what the parent hands it.
+   so it writes no JUnit either; and it is not itself a mutation run.
+   The loop is its parent, and it arms what the parent hands it.
 
    [allow_focus]: the run of the parent already passed the CI focus guard
    over the same tree, so a child has nothing left to refuse. *)
@@ -179,7 +179,7 @@ let baselines t = t.baselines
 (* Per-test frames *)
 
 (* What one [setenv] recorded: the binding to put back when the attempt
-   ends, and where the change was made — a restoration that cannot happen
+   ends, and where the change was made. A restoration that cannot happen
    is reported at the call that made the change, not at the runner's
    boundary, which is nobody's code. *)
 type env_restore = {
@@ -221,8 +221,8 @@ let frame ?(corrections = true) t ~path ~loc =
 
 let add_failure frame failure =
   (* The one fallback point of the attribution ladder: a failure recorded
-     without a location — its failing call sat in tail position, so
-     Loc.capture stopped at the runner's delimiter — is attributed to the
+     without a location (its failing call sat in tail position, so
+     Loc.capture stopped at the runner's delimiter) is attributed to the
      test's declaration.
      Only the top-level failure is filled; nested failures (a property
      failure's [inner]) are left untouched, and a failure needing no fill is
@@ -245,7 +245,7 @@ let with_prop_context frame ctx fn =
 (* The ambient slot *)
 
 (* The one ambient slot: the only run-state [ref] in the
-   library. It holds what the process is currently executing — the run
+   library. It holds what the process is currently executing: the run
    itself while the runner's executing span is open, overlaid by the frame
    of the test attempt while one runs; the runner is sequential, one
    domain. *)
@@ -320,7 +320,7 @@ let subtest name fn =
       (* Any other exception is this sub-case's failure, not the test's:
          record it labeled, with its backtrace, and let siblings run. Its
          location is the declaration, named here as the runner names it for
-         an uncaught exception at the test boundary — no verb raised it, so
+         an uncaught exception at the test boundary. No verb raised it, so
          there is no site to have missed. *)
       let failure =
         Failure.raised ?loc:frame.fr_loc ~actual:(Printexc.to_string exn)
@@ -426,8 +426,8 @@ let temp_file ?(suffix = "") () =
   path
 
 (* Best-effort recursive removal: [lstat] so symbolic links are removed,
-   never followed; every filesystem error is swallowed — scratch cleanup
-   must not fail a test or mask its outcome — resources are released on
+   never followed; every filesystem error is swallowed, since scratch
+   cleanup must not fail a test or mask its outcome; resources are released on
    every path where the runner regains control. *)
 let rec remove_tree path =
   match (Unix.lstat path).Unix.st_kind with
@@ -449,7 +449,7 @@ let remove_temp frame =
 
    The environment and the working directory belong to the process, not to
    the test: nothing scopes them but putting them back. So the body records
-   what it changed and the runner undoes it at the attempt boundary — the
+   what it changed and the runner undoes it at the attempt boundary, the
    same bargain the scratch paths make, holding on every outcome for the
    same reason, that the runner regains control on every outcome. *)
 
@@ -458,7 +458,7 @@ let setenv name value =
   (* The prior binding is read before [Os.setenv] changes it, but recorded
      only after [Os.setenv] returns: [Os.setenv] validates the name before it
      touches the process, and a record made before that validation would be
-     replayed at [reclaim] — where the same rejection reads as a
+     replayed at [reclaim], where the same rejection reads as a
      restoration failure about a change that never happened. *)
   let prior = Sys.getenv_opt name in
   Os.setenv name value;
@@ -480,11 +480,11 @@ let chdir dir =
   Unix.chdir dir
 
 (* A restoration that cannot happen is recorded, never raised: the attempt
-   is over, so there is no phase left to interrupt — and unlike a leaked
+   is over, so there is no phase left to interrupt, and unlike a leaked
    scratch directory, which is inert, a process left in the wrong place or
    still holding the test's binding is precisely the fact the next test's
    baffling failure needs stated up front. It is attributed to the call
-   that made the change, since the boundary is nobody's code — or, by
+   that made the change, since the boundary is nobody's code, or, by
    [add_failure], to the declaration when that call left no frame. *)
 let restore_failure frame ?loc text =
   add_failure frame
@@ -532,7 +532,7 @@ let reclaim frame =
 (* Fixtures *)
 
 (* Accessor identity. Not run state: ids mint process-wide identities for
-   fixture accessors and never reset — the per-run cache in [t] is keyed by
+   fixture accessors and never reset. The per-run cache in [t] is keyed by
    them, which is what makes a later run re-acquire. *)
 let next_fixture_id = ref 0
 
@@ -578,7 +578,7 @@ let fixture : type a. ?teardown:(a -> unit) -> (unit -> a) -> unit -> a =
             value
         | Error (`Skip reason as skip) ->
             (* A skip during acquisition is cached as a skip,
-               not an error — nothing is registered for release. *)
+               not an error. Nothing is registered for release. *)
             Hashtbl.replace run.fixtures id
               {
                 fx_name = name;
@@ -659,7 +659,7 @@ let results t = List.rev t.rev_results
    per-run data flows through the ambient slot. Stdlib.at_exit runs each
    registered function at most once, so an interception consumes the
    registration: the guard re-arms itself before raising. Relies on
-   Stdlib.exit = do_at_exit (); sys_exit — an exception from an at_exit
+   Stdlib.exit = do_at_exit (); sys_exit. An exception from an at_exit
    function propagates to exit's caller (pinned by the child-status
    regression test).
 
@@ -668,7 +668,7 @@ let results t = List.rev t.rev_results
    child's exit is intercepted too: instead of terminating, the child
    returns into the runner, executes every remaining test, prints a second
    report, rewrites the last-failed store and any JUnit file, and exits
-   with the run's code rather than its own — a parent test asserting on
+   with the run's code rather than its own. A parent test asserting on
    the child's status then reads the wrong answer. *)
 let exit_guard_owner = ref None
 
@@ -750,7 +750,7 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
 (* The per-test boundary *)
 
 (* Root for the per-test global [Random] reseed: an arbitrary frozen
-   constant, deliberately not the run's root seed — the property path never
+   constant, deliberately not the run's root seed. The property path never
    touches [Random], and [Random] users get a stream that depends on the
    test's path only. *)
 let random_reseed_root = 0x57696e6474726170L
@@ -764,18 +764,18 @@ let with_isolated_random ~path fn =
 (* A SIGALRM window bounding setup + body + teardown, and the [renew] that
    keeps it bounding them.
 
-   The timer is one-shot, so once it has fired the scope is unguarded — and
+   The timer is one-shot, so once it has fired the scope is unguarded, and
    a timeout is not fatal, so the body's phase guard absorbs it and
    [phases] goes on to run teardown. Without re-arming, a teardown that
    blocks after a body timeout runs forever: the run hangs with no output,
    which is precisely what the per-test limit exists to prevent. [renew]
    re-arms for whatever remains of the limit, or for a fresh limit when the
-   earlier phases consumed it — cleanup is not optional, so it is given a
+   earlier phases consumed it. Cleanup is not optional, so it is given a
    bounded window rather than none.
 
    This hand-rolls the cleanup instead of Fun.protect: the alarm can expire
    exactly as the scope exits and be delivered at a poll point inside the
-   cleanup itself, and that late [Timeout] must be absorbed — never surface
+   cleanup itself, and that late [Timeout] must be absorbed, never surface
    as [Finally_raised] or leak into caller code. The [armed] flag inertizes
    the handler; [disarm] retries once around a delivery that interrupts it. *)
 let with_timeout limit fn =
@@ -826,7 +826,7 @@ let with_timeout limit fn =
 (* Whether a raw attempt outcome counts as failed for retries, -x, the
    exit code, and the last-failed store, under the test's expectation: an
    expected failure does not count; an unexpected pass does; skips never
-   count. Defined over the outcome as classified — the synthesized xfail-pass
+   count. Defined over the outcome as classified. The synthesized xfail-pass
    failure below is applied only after this decision. *)
 let counts_failed ~(xfail : Test_tree.xfail option) (outcome : Failure.outcome)
     =
@@ -909,7 +909,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
      through [scope]: a scope that cancels or cleans up on the exception
      path still sees it, and a scope that swallows it cannot turn a failed
      test green. Anything else escaping is the scope's own, attributed by
-     how far the callback got — [Setup] before it, [Teardown] after it
+     how far the callback got: [Setup] before it, [Teardown] after it
      returned.
 
      Calling back exactly once is the contract. Zero calls means the body
@@ -958,7 +958,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
              else if !body_left then Failure.Teardown
              else Failure.Body)
             c);
-    (* A scope that raised — or skipped — instead of calling back has
+    (* A scope that raised (or skipped) instead of calling back has
        already said what happened; only a clean return needs explaining. *)
     if !entries = 0 && not !scope_raised then
       record_failure Failure.Setup
@@ -991,7 +991,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
             | Error c -> Failure.reraise c))
   in
   (* Reclamation runs after the attempt, outside the timeout window and the
-     capture redirection, on every path where the runner regains control —
+     capture redirection, on every path where the runner regains control;
      only a fatal exception escapes the frame, and it too passes through the
      cleanup. [reclaim] never raises; a restoration it could not perform is
      recorded on the frame, so the outcome below picks it up. *)
@@ -1074,7 +1074,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   in
   (outcome, frame.fr_prop_stats, corrected, final)
 
-(* A failing test's report carries its bounded captured output — the
+(* A failing test's report carries its bounded captured output, the
    final attempt's, attached to the first failure entry. *)
 let attach_tail capture outcome =
   match outcome with
@@ -1092,7 +1092,7 @@ let split_last path =
 (* Events *)
 
 (* Payloads are immutable projections: counts, identities, recorded
-   results — never the live run record. The run handle belongs to whoever
+   results, never the live run record. The run handle belongs to whoever
    owns the session (the driver reads it off the outcome); an observer
    holds only data already decided. *)
 type event =
@@ -1113,9 +1113,9 @@ type event =
     }
 
 (* Runs one test to completion (retries included), records its result, and
-   returns it with whether it counted as failed (see [counts_failed]) — the
+   returns it with whether it counted as failed (see [counts_failed]; the
    caller drives -x, the exit code, and the last-failed store from the
-   flag, never from the recorded outcome alone — and whether its final
+   flag, never from the recorded outcome alone) and whether its final
    attempt's failures are all kept corrections (see [run_attempt]). *)
 let run_case ~on_event run (case : Test_tree.case) =
   on_event (Test_started { path = case.Test_tree.path });
@@ -1175,7 +1175,7 @@ let run_case ~on_event run (case : Test_tree.case) =
 (* Selection *)
 
 (* Frozen root for --shard bucketing: buckets must be a pure
-   function of the test's path — never of the run's seed — so they are
+   function of the test's path (never of the run's seed) so they are
    stable across runs, machines, and suite composition. Frozen with
    Seed.derive; changing either silently repartitions every sharded CI
    matrix. *)
@@ -1220,8 +1220,8 @@ let duplicate_paths paths =
 
 (* The format is explicitly unstable: a magic first
    line, then one String.escaped test path per line. Unrecognized content
-   reads as empty; I/O errors are swallowed — the store only feeds
-   [--failed], it must never fail a run. *)
+   reads as empty; I/O errors are swallowed, since the store only feeds
+   [--failed] and must never fail a run. *)
 let store_magic = "windtrap-last-failed 1"
 
 let store_path (config : config) ~suite =
@@ -1304,13 +1304,13 @@ let startup_message = function
 (* Startup
 
    Everything a run must clear before a single test executes. The order is
-   contractual — duplicate paths, the CI focus guard, the baseline CI guard,
-   the [--failed] store — because a suite that trips two of them must always
+   contractual (duplicate paths, the CI focus guard, the baseline CI guard,
+   the [--failed] store) because a suite that trips two of them must always
    be told about the same one. Between them the checks also decide the two
    values the rest of the run reads out of them: the baseline mode and the
    path allowlist ([None] when neither the caller nor [--failed] narrowed by
-   path, and never [Some []] under [--failed] — an allowlist matching nothing
-   is the refusal above it). *)
+   path, and never [Some []] under [--failed], where an allowlist matching
+   nothing is the refusal above it). *)
 
 let ( let* ) = Result.bind
 
@@ -1334,7 +1334,7 @@ let startup (config : config) ~suite ~focus_sites ~allowlist tests paths =
   in
   let* allowlist =
     (* The two narrowings intersect rather than override, which costs
-       nothing: they never co-occur — a caller-supplied allowlist comes
+       nothing: they never co-occur. A caller-supplied allowlist comes
        from [for_subset], which clears [failed_only]. *)
     if not config.failed_only then Ok allowlist
     else
@@ -1356,7 +1356,7 @@ let startup (config : config) ~suite ~focus_sites ~allowlist tests paths =
 (* Plans
 
    The staged half of [execute]: everything a run decides before a single
-   test runs — the process checks, the startup checks, the selection — as
+   test runs (the process checks, the startup checks, the selection) as
    a value, so a caller that must separate deciding from running (the
    mutation loop's forked children) does it through the same code path
    [execute] composes. The clock starts here: a run's duration has always
@@ -1377,7 +1377,7 @@ let plan ?allowlist ~config ~suite tests : (plan, startup_error) Stdlib.result =
   (* An unexpected exception's report is only as useful as its backtrace,
      and the runtime records one only when asked. Without this a test that
      raises names the constructor and the test's declaration line and
-     nothing else — no raise site — unless the user knew to set
+     nothing else (no raise site) unless the user knew to set
      OCAMLRUNPARAM=b, which nothing tells them. Left on: the run owns the
      process, and every raise site here already reads the raw backtrace. *)
   Printexc.record_backtrace true;
@@ -1527,8 +1527,8 @@ let with_interrupts ~interrupt run fn =
    the first counted failure under [-x]. Returns whether it bailed, how many cases
    executed (what full-run detection counts), the paths that counted as failed
    (see [counts_failed]) in execution order: what [-x], the exit code,
-   and the store react to, never a recorded outcome alone — expected [xfail]
-   failures are recorded but never accumulate here — and, among those, the
+   and the store react to, never a recorded outcome alone (expected [xfail]
+   failures are recorded but never accumulate here) and, among those, the
    paths whose failures are all kept corrections. *)
 let drive ~on_event ~interrupt run selected =
   let config = config run in
@@ -1555,8 +1555,8 @@ let drive ~on_event ~interrupt run selected =
      (* Release on every path where the runner regains control. Test-level
         exceptions were classified inside the boundary, so only a fatal
         exception or a raising [on_event] observer reaches here: release best
-        effort — announcements swallowed too, a teardown must not be lost to
-        an observer that keeps raising — then the exception wins. *)
+        effort (announcements swallowed too, a teardown must not be lost to
+        an observer that keeps raising) then the exception wins. *)
      let backtrace = Printexc.get_raw_backtrace () in
      let announce name =
        try on_event (Fixture_release { name }) with _ -> ()
@@ -1566,8 +1566,8 @@ let drive ~on_event ~interrupt run selected =
   (!bailed, !executed, List.rev !rev_failed, List.rev !rev_corrected)
 
 (* Rewrites the last-failed store at [path] with this run's failures. Entries
-   for tests a partial run never reached survive; only a [full] run — one that
-   executed the entire declared suite — drops entries whose paths no longer
+   for tests a partial run never reached survive; only a [full] run (one that
+   executed the entire declared suite) drops entries whose paths no longer
    exist. *)
 let update_last_failed path ~full ~results ~failed_paths =
   let survivors =
@@ -1592,7 +1592,7 @@ let execute_plan ?(on_event = fun _ -> ())
   let run = create config ~capture ~baselines in
   (* The executing span: everything from the first event to the completed
      outcome runs with the slot marked, so the exit guard covers fixture
-     release, observers, and store maintenance — not only test attempts. On
+     release, observers, and store maintenance, not only test attempts. On
      the fatal path the protect empties the slot before the exception leaves
      [execute], so the guard is inert during fatal termination. *)
   with_active run @@ fun () ->
@@ -1655,8 +1655,8 @@ let execute_plan ?(on_event = fun _ -> ())
 let execute ?on_event ?allowlist config ~suite tests =
   Result.map (execute_plan ?on_event) (plan ?allowlist ~config ~suite tests)
 
-(* [--list]: the deciding half alone. A listing is not a run — nothing
-   executes, so there is no capture, no store rewrite and no report — and
+(* [--list]: the deciding half alone. A listing is not a run (nothing
+   executes, so there is no capture, no store rewrite and no report) and
    the caller that asked for it prints it. *)
 let list_selection config ~suite tests =
   Result.map

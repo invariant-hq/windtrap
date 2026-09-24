@@ -9,12 +9,12 @@
    group around a module, each [[%expect]] / [[%expect_exact]] node is a
    [Windtrap.expect] / [Windtrap.expect_exact] call over the sanitized
    captured output with the node's position as its baseline, and
-   [[%expect.output]] is that sanitized read. Every semantic decision —
-   matching, corrections, exit codes — is the core's.
+   [[%expect.output]] is that sanitized read. Every semantic decision
+   (matching, corrections, exit codes) is the core's.
 
    Two ppx_expect compatibility mechanisms live here: (a) expect-family
    attributes and extensions this PPX does not implement are rejected at
-   expansion time with a "not supported by ppx_windtrap" error — never
+   expansion time with a "not supported by ppx_windtrap" error, never
    left unexpanded; (b) generated code references the ambient
    [Expect_test_config], so user code can shadow it exactly as with
    ppx_expect, and a monadic config fails to compile at that reference. *)
@@ -53,7 +53,7 @@ let maybe_drop items = match !maybe_drop_mode with Keep -> items | Drop -> []
 (* Positions *)
 
 (* [__POS_OF__]'s tuple for [l]: file, line, and both columns measured
-   from the start line — the shape [Windtrap.pos] declares. *)
+   from the start line (the shape [Windtrap.pos] declares). *)
 let pos_expr ~loc (l : Location.t) =
   let s = l.loc_start and e = l.loc_end in
   pexp_tuple ~loc
@@ -302,7 +302,7 @@ let expect_test_extension =
 (* let%test and module%test *)
 
 (* [mod_attributes] is the binding's attributes minus the consumed
-   [@tags], kept on the rebuilt module — doc comments and [@@warning]
+   [@tags], kept on the rebuilt module. Doc comments and [@@warning]
    must survive the rewrite. *)
 type test_module = {
   mod_name : string;
@@ -370,7 +370,7 @@ let test_extension =
       | Test_module { mod_name; mod_tags; mod_expr; mod_attributes } ->
           (* Wrap the module with enter_group/leave_group: the module's
              initializers register its tests between the two calls, so
-             they nest under the group — including nested
+             they nest under the group, including nested
              module%test. *)
           let enter =
             [%stri

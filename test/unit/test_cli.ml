@@ -24,7 +24,7 @@ let contains needle haystack = Text.contains_substring ~pattern:needle haystack
    runner's own environment. Each resolution test clears what it reads,
    through the runner's [setenv], which restores every variable when the
    attempt ends, so a test that fails half-way leaves nothing behind. The
-   variable inventory is the harness's ([Harness.windtrap_vars]) — one
+   variable inventory is the harness's ([Harness.windtrap_vars]). One
    list, one owner, so a mirror added there is cleared here by
    construction. INSIDE_DUNE and WINDTRAP_PROJECT_ROOT stay untouched:
    they configure the hosting run itself, not [Cli] resolution. *)
@@ -706,7 +706,7 @@ let () =
 
 (* The mirrors that only existed as flags. Under `dune runtest` the mirrors
    *are* the CLI, so a flag without one is a documented feature no dune user
-   can reach — `--junit`, which the CI guide recommends, most of all. *)
+   can reach (`--junit`, which the CI guide recommends, most of all). *)
 let () =
   reg "env-only settings: the CI mirrors" @@ fun () ->
   clear_env ();
@@ -904,7 +904,7 @@ let () =
   is_true ~msg:"--arm=ID spells the same"
     (mutation (parsed [ "--arm=x" ]) = Run.Armed "x");
   (* WINDTRAP_MUTATE reads both ways: a boolean is the bare flag or its
-     absence, anything else the prefixes — so a CI recipe's `1` and a
+     absence, anything else the prefixes, so a CI recipe's `1` and a
      developer's file name both keep working. *)
   setenv "WINDTRAP_MUTATE" (Some "1");
   is_true ~msg:"WINDTRAP_MUTATE=1 is the bare flag"

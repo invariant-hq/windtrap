@@ -1,14 +1,14 @@
 ; The project verdict aliases, once, at the top of the test tree. Each
-; folds two commands — the instrumented run of every suite under it,
-; then the `windtrap` merge of what the suites wrote — into one:
+; folds two commands (the instrumented run of every suite under it,
+; then the `windtrap` merge of what the suites wrote) into one:
 ;
 ;   dune build @cover --instrument-with ppx_windtrap.coverage
 ;   WINDTRAP_MUTATE=1 dune build @mutate --force --instrument-with ppx_windtrap.mutate
 ;
 ; Coverage accumulates as a side effect of any instrumented run. A
 ; mutation VERDICT only exists if a suite was asked to test its mutants,
-; so the mutation command carries WINDTRAP_MUTATE — the --mutate flag's
-; mirror, which is what reaches every stanza under a build — the backend
+; so the mutation command carries WINDTRAP_MUTATE (the --mutate flag's
+; mirror, which is what reaches every stanza under a build), the backend
 ; flag because the suites must carry the mutants, and --force because a
 ; mutation run is not a cached artifact; a plain `dune build @mutate`
 ; without them rebuilds the executables uninstrumented, which stales
@@ -18,8 +18,8 @@
 ; test executables at exit and are not declarable dependencies, so it
 ; makes the milliseconds-cheap merge re-run on every build.
 ;
-; Inside windtrap's own tree the run half reaches the framework too —
-; lib/ carries both backends — so the README's mutation command scopes
+; Inside windtrap's own tree the run half reaches the framework too
+; (lib/ carries both backends), so the README's mutation command scopes
 ; the survey with WINDTRAP_MUTATE=examples/x-blueprint/lib; copied out,
 ; WINDTRAP_MUTATE=1 is the whole spelling.
 

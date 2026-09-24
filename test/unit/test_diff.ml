@@ -271,7 +271,7 @@ let hunk_tests =
           "@@ -1,1 +1,0 @@|-x\n@@ -3,1 +2,1 @@|-b|+c");
     test "size guards fall back to a complete diff" (fun () ->
         (* Differing region of 2,400 lines: above the line guard, reported
-           as all deletions then all insertions — complete, never omitted. *)
+           as all deletions then all insertions, complete, never omitted. *)
         let mid_e = List.init 1_200 (Printf.sprintf "e%d") in
         let mid_a = List.init 1_200 (Printf.sprintf "a%d") in
         let expected = text_of_lines (("top" :: mid_e) @ [ "bottom" ]) in
@@ -297,7 +297,7 @@ let hunk_tests =
               (apply_hunks (split_lines expected) hs = split_lines actual)
         | _ -> ());
         (* 1,200 differing middle lines is under the line guard, but the
-           minimal script needs 1,200 edits — above the edit cap, same
+           minimal script needs 1,200 edits, above the edit cap, same
            complete fallback. *)
         let expected =
           text_of_lines ("s" :: List.init 600 (Printf.sprintf "e%d"))
@@ -427,7 +427,7 @@ let refine_tests =
         check_refine "deletion marks only the expected side" ~expected:"abc"
           ~actual:"ac" "e[1+1] a[]";
         (* In context: the bare "abcd"/"axyd" pair marks half of each side,
-           which the noise rule declines — see the coverage cases below. *)
+           which the noise rule declines (see the coverage cases below). *)
         check_refine "adjacent changes coalesce" ~expected:"the abcd end"
           ~actual:"the axyd end" "e[5+2] a[5+2]";
         check_refine "separate changes stay separate" ~expected:"abcde"
@@ -552,12 +552,12 @@ let refine_tests =
 
    [wagner_fischer] calls [cp_equal] once per cell, so anything [cp_equal]
    allocates is multiplied by the grid. A local [let rec] closing over the
-   offsets used to put a closure there — ~8 minor words per cell, 194M words
+   offsets used to put a closure there, ~8 minor words per cell, 194M words
    for the sweep below, against 9M once the loop was lifted to a top-level
    function. Timing is too machine-dependent to assert, but minor-word counts
    are deterministic, so this pins the shape: per-cell allocation stays O(1)
-   words and well under the closure regime. The bound is loose on purpose —
-   it is here to catch a reintroduced per-cell allocation, not to freeze the
+   words and well under the closure regime. The bound is loose on purpose.
+   It is here to catch a reintroduced per-cell allocation, not to freeze the
    current figure.
 
    It is a performance guard, not a contract: no interface states the

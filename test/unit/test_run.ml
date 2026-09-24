@@ -54,7 +54,7 @@ let () =
 
 (* [for_subset] is the loop's child configuration: every path-selecting
    knob cleared, the tag knobs and the seed kept, and the child no
-   mutation run of its own — its parent is the loop, and it arms what it
+   mutation run of its own. Its parent is the loop, and it arms what it
    is handed. A knob this forgets gives the child a selection its
    parent's tree already applied. *)
 let () =
@@ -141,7 +141,7 @@ let at_pos (file, line, _, _) = function
   | None -> false
 
 (* The displayed label: the sub-case components joined with the user's
-   annotation — the derivation renderers share ([Report.labeled_msg]).
+   annotation, the derivation renderers share ([Report.labeled_msg]).
    Recording keeps [msg] purely the user's; the label is data. *)
 let msg_of (f : Failure.t) =
   Option.value (Report.labeled_msg f) ~default:"<none>"
@@ -897,7 +897,7 @@ let () =
   (* [execute] turns backtrace recording on for the run. The runtime records
      nothing unless asked, and nothing tells a user to set OCAMLRUNPARAM=b,
      so without that call an uncaught exception's report is the constructor
-     and the test's declaration line — never the raise site. Recording is
+     and the test's declaration line, never the raise site. Recording is
      switched OFF first: whatever left it on (the harness, a previous run)
      must not be what makes this pass. *)
   with_temp_root @@ fun root ->
@@ -1187,8 +1187,8 @@ let () =
 
 let () =
   (* D2: a timeout expiring during the shrink search ends the search at the
-     last accepted node and reports the counterexample in hand, marked —
-     the budget bounds wall time without erasing what the engine found. *)
+     last accepted node and reports the counterexample in hand, marked.
+     The budget bounds wall time without erasing what the engine found. *)
   if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
   else
     with_temp_root @@ fun root ->
@@ -1252,8 +1252,8 @@ let () =
           (root = config.Run.seed && count = None)
     | _ -> check "pre-failure timeout: one timeout in a case" false
 
-(* The per-test budget is declarable at the site — [prop ~timeout] and
-   [cases ~timeout]/[~retries] — not only through the global [--timeout]:
+(* The per-test budget is declarable at the site ([prop ~timeout] and
+   [cases ~timeout]/[~retries]), not only through the global [--timeout]:
    both routes converge on the same Test_tree fields, so the memo semantics
    pinned above (pre-failure timeout, mid-shrink marking) hold unchanged. *)
 let () =
@@ -1425,7 +1425,7 @@ let () =
 
 (* The paths the exit code and the last-failed store react to: test rows
    the runner counted as failed, in execution order. Derived from the
-   recorded rows rather than read off the outcome — no product consumer
+   recorded rows rather than read off the outcome. No product consumer
    asks for the list, so the runner keeps it as a local. *)
 let failed_paths outcome =
   List.filter_map
@@ -1843,7 +1843,7 @@ let () =
 
 let () =
   (* Sharding composes with focus: the bucket applies to the focused set, so
-     exactly one bucket runs the focused test — alone — and the others are
+     exactly one bucket runs the focused test (alone) and the others are
      empty selections. *)
   clear_env ();
   with_temp_root @@ fun root ->
@@ -2031,7 +2031,7 @@ let () =
           (twice_var, Some "second");
           (drop_var, None);
         ]);
-  check "a variable the test found unbound is unbound again — not empty"
+  check "a variable the test found unbound is unbound again, not empty"
     (Sys.getenv_opt unset_var = None);
   check "a variable the test found bound is restored to its prior value"
     (Sys.getenv_opt bound_var = Some "before");
@@ -2042,8 +2042,8 @@ let () =
 
 let () =
   (* A rejected name records nothing: [Os.setenv] validates before the restore
-     entry is made, so the documented [Invalid_argument] is the whole story —
-     no entry survives to replay the same rejection at the boundary as a
+     entry is made, so the documented [Invalid_argument] is the whole story.
+     No entry survives to replay the same rejection at the boundary as a
      restoration failure about a change that never happened. *)
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
@@ -2059,7 +2059,7 @@ let () =
     ]
   in
   expect_run "setenv rejection suite runs" ~config tests @@ fun outcome ->
-  check "a handled rejection is the whole story — the test passes"
+  check "a handled rejection is the whole story; the test passes"
     (outcome.Run.exit_code = 0)
 
 let () =
@@ -2108,7 +2108,7 @@ let go_home home = try Unix.chdir home with Unix.Unix_error _ -> ()
 let () =
   (* chdir is per attempt like the scratch paths: every retry captures and
      restores its own directory, so each attempt starts where the first
-     one did — and not in the deleted scratch of the attempt before. *)
+     one did, and not in the deleted scratch of the attempt before. *)
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
   let home = Sys.getcwd () in
@@ -2644,7 +2644,7 @@ let () =
    config-sourced count is restated. The body fails on its 500th call, so
    under [--prop-count 1000] the failure lands at case 499; replaying the
    root with the payload count reproduces it, while the same root under
-   the default count never reaches the case — the pre-payload hint's lie. *)
+   the default count never reaches the case (the pre-payload hint's lie). *)
 let () =
   with_temp_root @@ fun root ->
   let calls = ref 0 in
@@ -3022,7 +3022,7 @@ let () =
 
 (* An expected failure is a failure: an xfail test's stale baseline is the
    mismatch the annotation expects, so its attempt checks read-only in
-   every mode — reported, excused, never corrected, never accepted — and
+   every mode (reported, excused, never corrected, never accepted) and
    a test that skipped after a check records nothing either. *)
 let () =
   Fun.protect ~finally:clear_env @@ fun () ->
@@ -3369,7 +3369,7 @@ let () =
     [
       (* The check sits in tail position: its caller's frame is gone at
          raise time, so capture must stop at the runner's delimiter and the
-         recording falls back to the declaration — never the line that
+         recording falls back to the declaration, never the line that
          called [execute]. *)
       Test_tree.test ~__POS__:pos "tail" (fun () ->
           Check.equal Testable.int 1 2);
@@ -3377,7 +3377,7 @@ let () =
       Test_tree.test ~__POS__:pos "given" (fun () ->
           Check.equal ~__POS__:given Testable.int 1 2);
       (* Not in tail position: the body's frame is live, so capture finds
-         this file's line — no fallback, nothing to hint. *)
+         this file's line, no fallback, nothing to hint. *)
       Test_tree.test ~__POS__:pos "captured" (fun () ->
           Check.equal Testable.int 1 2;
           ());

@@ -2,7 +2,7 @@
 
    Upstream builds this directory against Core/Async/ppx_jane; the
    conformance corpus builds with zero dependencies. Fixtures that said
-   [open Core] say [open Corpus_shim] instead — a single-line,
+   [open Core] say [open Corpus_shim] instead, a single-line,
    line-count-preserving substitution listed as a finding in
    ../../../TRIAGE.md. This module supplies the few Core values the
    fixture bodies actually use (control_chars.ml). *)

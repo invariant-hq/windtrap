@@ -8,8 +8,8 @@
    test points WINDTRAP_COVERAGE_FILE at a scratch path and inspects it.
    Modes: [silent] registers nothing (no file must be written); [first]
    visits block 0 once; [second] additionally visits block 1 twice;
-   [conflict] additionally registers the same file with a differing table
-   — which must warn and be ignored, never crash the process; [saturate]
+   [conflict] additionally registers the same file with a differing table,
+   which must warn and be ignored, never crash the process; [saturate]
    visits block 0 twice from [max_int - 1]; [duplicate] registers the
    file twice with an equal table and visits block 0 through each; [files]
    first registers [lib/zero.ml], a file of no block.

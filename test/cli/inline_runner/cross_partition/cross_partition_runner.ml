@@ -1,8 +1,8 @@
 (* Windtrap-authored runner main for the cross-partition fixture (mirrors
    the inline_tests backend's generated runner, as masked_failure and the
    conformance corpus do). The module aliases force link order: both
-   fixture modules initialize — registering their tests, and their
-   partitions — before the protocol runs. *)
+   fixture modules initialize (registering their tests, and their
+   partitions) before the protocol runs. *)
 
 module _ = Crash
 module _ = Stale

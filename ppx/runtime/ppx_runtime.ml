@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Not mutated. This module is part of the machinery a mutation run uses
-   to judge mutants — it collects the suite and calls [run] — so a
+   to judge mutants (it collects the suite and calls [run]), so a
    mutant here is armed inside the process that is supposed to detect
    it: a dropped registration or a wrong exit code is not a survivor but
    a corrupted verdict. This library's dune carries no mutation stanza,
@@ -46,12 +46,12 @@ let partitions_seen = ref String_set.empty
    The silent success this closes: [let%expect_test] code preprocessed
    with ppx_windtrap inside a plain (executable) or (test) stanza
    registers its tests at module load, and with no (inline_tests) stanza
-   nothing ever drives the registry — the binary exits 0 having run
+   nothing ever drives the registry; the binary exits 0 having run
    nothing, and its expectations are never checked against anything.
    The first registration therefore installs a [Stdlib.at_exit] handler;
    every legitimate driving path claims the registry ([init] and
    [collect]); a process that terminates normally with registrations
-   never claimed prints the diagnostic and exits 2 — the nothing-ran
+   never claimed prints the diagnostic and exits 2, the nothing-ran
    code, which can be read as neither a pass nor a test failure.
 
    Ordering against the core runner's exit guard: registration is a
@@ -61,7 +61,7 @@ let partitions_seen = ref String_set.empty
    fires only at the exit that finally proceeds, when no run is active.
    Firing calls [Stdlib.exit] from inside an [at_exit] handler, which is
    safe: each registered handler runs at most once, so the nested
-   [do_at_exit] skips this one and still runs the rest — a coverage
+   [do_at_exit] skips this one and still runs the rest, a coverage
    runtime's at_exit dump included, which is why this is [Stdlib.exit]
    and not [Unix._exit].
 
@@ -103,7 +103,7 @@ let install_undriven_guard () =
 
 let note_partition file =
   (* Every registration entry point passes through here, so the first
-     registration is what arms the undriven guard — a process that
+     registration is what arms the undriven guard. A process that
      merely links this runtime, registering nothing, installs no
      handler. *)
   install_undriven_guard ();
@@ -121,8 +121,8 @@ let module_name_of_file file =
 (* Duplicate names in one scope: a functor containing [let%expect_test]
    instantiated twice registers the same name and location twice.
    ppx_expect runs both; windtrap's runner requires unique full paths, so
-   later duplicates get a " (2)", " (3)", … suffix — deterministic in
-   registration order — and both run. Top-level names are counted per
+   later duplicates get a " (2)", " (3)", … suffix (deterministic in
+   registration order) and both run. Top-level names are counted per
    (module, name); a group's siblings are counted in the frame's own
    table, so the scopes cannot collide. *)
 let uniquify tbl key_of name =
@@ -176,7 +176,7 @@ let partition = ref None
 let list_only = ref false
 
 let init argv =
-  (* The runner protocol's entry claims the registry in every mode — a
+  (* The runner protocol's entry claims the registry in every mode: a
      partition run, -list-partitions, and the generated runner invoked
      by hand (which then does nothing, by [exit]'s documented contract:
      a deliberate invocation is not a silent one). *)
@@ -202,11 +202,11 @@ let init argv =
   in
   parse (Array.to_list argv)
 
-(* Partition filtering happens at collection, not registration: init —
-   which sets the partition — runs after the test modules have loaded. *)
+(* Partition filtering happens at collection, not registration: init
+   (which sets the partition) runs after the test modules have loaded. *)
 let collect () =
   (* Draining claims the registry for the undriven guard: whoever takes
-     the trees owns the execution of what they took — the rule that
+     the trees owns the execution of what they took, the rule that
      covers a hand-rolled main driving [Windtrap.run] itself. *)
   claim_registry ();
   if !group_stack <> [] then
@@ -258,8 +258,8 @@ let exit () =
     | None, _ -> "inline tests"
   in
   (* One runner: the inline suite is an ordinary [run] under
-     [--corrected], which is dune's promotion protocol — a recorded
+     [--corrected], which is dune's promotion protocol (a recorded
      correction leaves the exit code alone so the [diff?] that follows
-     is the verdict — with the [WINDTRAP_*] mirrors as the rest of the
+     is the verdict), with the [WINDTRAP_*] mirrors as the rest of the
      command line, as for every run dune drives. *)
   Stdlib.exit (Windtrap.run ~argv:[| !prog; "--corrected" |] suite (collect ()))

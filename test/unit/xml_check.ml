@@ -9,7 +9,7 @@
    character data, and every character, written or referenced, valid UTF-8
    inside the [Char] production (tab, LF, CR, U+0020-U+D7FF,
    U+E000-U+FFFD, U+10000-U+10FFFF). A test asset, deliberately not a
-   dependency; not a general parser (no DOCTYPE, PIs, or CDATA — the
+   dependency; not a general parser (no DOCTYPE, PIs, or CDATA; the
    renderer emits none). *)
 
 exception Bad of string

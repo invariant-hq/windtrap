@@ -10,7 +10,7 @@
 
 (* Flexible text *)
 
-(* Whitespace is Base.Char.is_whitespace — the set ppx_expect strips with. *)
+(* Whitespace is Base.Char.is_whitespace, the set ppx_expect strips with. *)
 let is_ws = function
   | ' ' | '\t' | '\n' | '\011' | '\012' | '\r' -> true
   | _ -> false
@@ -51,8 +51,8 @@ let drop_blank_edges lines =
 
 (* [(relative indent, stripped contents)] per line of pretty output.
    Indentation counts leading spaces only; contents are stripped of all
-   whitespace, tabs included — ppx_expect's legacy rule, kept for
-   byte-compatible matching and corrections. *)
+   whitespace, tabs included (ppx_expect's legacy rule, kept for
+   byte-compatible matching and corrections). *)
 let pretty_lines raw =
   let lines = drop_blank_edges (List.map rstrip (split_lines raw)) in
   let indented =
@@ -167,7 +167,7 @@ let error_message = function
    or without its parentheses, the literal itself, or an [[%expect]] node
    whose payload the literal is: from its first byte the literal is the
    next token after any parentheses, the [__POS_OF__] identifier, the
-   node's [[%ident] head and whitespace — never a slice of the recorded
+   node's [[%ident] head and whitespace, never a slice of the recorded
    span, whose end column is measured from the start line. A node with no
    payload is the one shape with no literal to rewrite: its correction is
    inserted before the closing bracket. *)

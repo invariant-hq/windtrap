@@ -1,7 +1,7 @@
 (* The library under test: the coverage example's calculator, carrying
    the mutate backend. Its comparisons and arithmetic are the mutation
    sites. [abs] carries a dismissed mutant: [n >= 0] and its mutant
-   [n > 0] agree at zero — both arms yield 0 — so no test can tell them
+   [n > 0] agree at zero (both arms yield 0), so no test can tell them
    apart, and the attribute records that reasoning where git blame sees
    it. *)
 

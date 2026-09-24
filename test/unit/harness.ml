@@ -5,8 +5,8 @@
 
 (* Minimal hand-rolled harness for the meta suites (test_run,
    test_ppx_runtime, test_windtrap). Those suites drive the ambient slot
-   and Run.execute in-process with synthetic configs — the sanctioned
-   way to test runner behavior with windtrap itself — and [execute]
+   and Run.execute in-process with synthetic configs (the sanctioned
+   way to test runner behavior with windtrap itself) and [execute]
    refuses to nest inside an active run, so they cannot host their own
    assertions under the windtrap runner. Everything else lives in the
    per-module suites beside them, one executable each. *)
@@ -15,7 +15,7 @@
    suites interleave with the windtrap suites under `dune runtest`, and
    an unattributed line is undebuggable there. Styling and the duration
    format come from windtrap's own machinery (Pp, Os, Report through
-   the facade's Private) — one output dialect tree-wide, never a second
+   the facade's Private), one output dialect tree-wide, never a second
    implementation of it. *)
 let suite = ref ""
 let started = ref 0.
@@ -24,7 +24,7 @@ let count = ref 0
 let skipped = ref 0
 
 (* The ANSI decision, captured by [init] before it clears the
-   environment — the same resolution the windtrap suites make
+   environment, the same resolution the windtrap suites make
    (WINDTRAP_COLOR, terminal status, INSIDE_DUNE). Composed here, from
    [Os.resolve_color] and the three inputs, exactly as [Report.terminal]
    composes it: nothing in windtrap resolves colour for a sink it did not
@@ -35,8 +35,8 @@ let ansi = ref false
 let resolve_ansi () =
   let module Os = Windtrap.Private.Os in
   let module Cli = Windtrap.Private.Cli in
-  (* WINDTRAP_COLOR is read as the runner reads it — through [--color]'s
-     parser — so a bad value is refused here as it is everywhere. *)
+  (* WINDTRAP_COLOR is read as the runner reads it (through [--color]'s
+     parser) so a bad value is refused here as it is everywhere. *)
   let mode =
     match Cli.color_mode () with
     | Ok mode -> mode
@@ -106,7 +106,7 @@ let check_contains name ~sub haystack =
 
    Empty means unset for every windtrap variable (Env's contract): the
    suites' scripted runs must not inherit ambient configuration. The list
-   must name every variable the runner reads — one missing entry is one
+   must name every variable the runner reads. One missing entry is one
    setting the suites silently take from whoever is running them. The
    Cli suite holds it equal to the variables of `--help` and the few
    named below. *)
@@ -178,7 +178,7 @@ let with_temp_root ?(prefix = "windtrap-meta-") f =
 (* Summary
 
    One output dialect for the whole tree: the one-liner is the windtrap
-   summary line with "checks" inserted — the harness counts assertions,
+   summary line with "checks" inserted. The harness counts assertions,
    a windtrap suite counts tests, and the word keeps the two countable
    ("run: 115 checks" is not 115 tests). Styling and the duration bytes
    are the renderer's own: green wraps the passed segment of a green

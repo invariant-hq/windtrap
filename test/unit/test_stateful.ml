@@ -131,7 +131,7 @@ let counter_commands =
 
 (* The same two commands with no precondition, in the same order over the
    same (nullary) argument generator: [~pre] is bound into a call after its
-   argument is drawn, so the same seed draws the same name sequence — the
+   argument is drawn, so the same seed draws the same name sequence, the
    drawn program repair is folded over. *)
 let counter_draws =
   [
@@ -160,7 +160,7 @@ let counter_repair drawn =
 (* Five distinct nullary commands, and the same five with no precondition.
    The name space is wide enough that a candidate substituting one command
    for another shows up as a call sequence that is not a subsequence of the
-   drawn one — with two names, coincidence hides it. *)
+   drawn one; with two names, coincidence hides it. *)
 let wide_names = [ "alpha"; "bravo"; "charlie"; "delta"; "echo" ]
 
 let wide_commands ~pre =
@@ -179,7 +179,7 @@ let tick_commands =
   [ Stateful.call "tick" ~next:(fun model -> model + 1) (fun _ () -> ()) ]
 
 (* A set model with an argument-dependent precondition: legality is not a
-   function of the command name, so the check has to be the body's own — it
+   function of the command name, so the check has to be the body's own. It
    sees the pre-state and re-derives its own precondition there. *)
 module Ints = Set.Make (Int)
 
@@ -239,7 +239,7 @@ let queue_invariant model queue =
 (* Repair *)
 
 (* The root program contains exactly the calls the model-threading fold
-   keeps — checked against the drawn program, which the unconditioned twin
+   keeps, checked against the drawn program, which the unconditioned twin
    of the same spec draws from the same seed. *)
 let repair_keeps_exactly_the_fold_s_calls () =
   let repaired = Stateful.program ~steps:20 ~model:0 counter_commands in
@@ -261,7 +261,7 @@ let repair_keeps_exactly_the_fold_s_calls () =
       (kept = expected);
     dropped := !dropped + (20 - List.length kept)
   done;
-  is_true ~msg:"the precondition dropped nothing in 30 draws — vacuous"
+  is_true ~msg:"the precondition dropped nothing in 30 draws: vacuous"
     (!dropped > 0);
   (* [?steps] is a work budget with a documented default. *)
   let default = names_at (Stateful.program ~model:0 counter_draws) 0 in
@@ -293,7 +293,7 @@ let a_state_dependent_precondition_filters () =
          0 kept
         : int)
   done;
-  is_true ~msg:"no program was shortened in 20 draws — vacuous" (!shortened > 0);
+  is_true ~msg:"no program was shortened in 20 draws: vacuous" (!shortened > 0);
   let never = Stateful.program ~steps:8 ~model:0 never_commands in
   for index = 0 to 4 do
     is_true ~msg:"an unsatisfiable ~pre left calls in the program"
@@ -339,7 +339,7 @@ let every_forced_node_holds_only_legal_calls () =
 
 (* At depth 1 no candidate equals its parent and none is longer. With
    nullary commands [Gen.unit] is a leaf, so every immediate move is a
-   deletion and a name list is the whole program — masking applied on top of
+   deletion and a name list is the whole program; masking applied on top of
    an assembled tree would delete a call the mask already dropped and hand
    back the parent. *)
 let root_candidates_are_strictly_monotone () =
@@ -366,7 +366,7 @@ let root_candidates_are_strictly_monotone () =
         (Shrink_tree.children tree)
     end
   done;
-  is_true ~msg:"no repaired-and-shortened program in 20 draws — vacuous"
+  is_true ~msg:"no repaired-and-shortened program in 20 draws: vacuous"
     (!checked > 0)
 
 (* And with generated arguments in play: a dropped call contributes no
@@ -392,7 +392,7 @@ let root_candidates_of_an_argument_spec_are_no_longer () =
           (child <= parent))
       (Shrink_tree.children tree)
   done;
-  is_true ~msg:"the mask dropped nothing in 20 draws — vacuous" (!checked > 0)
+  is_true ~msg:"the mask dropped nothing in 20 draws: vacuous" (!checked > 0)
 
 let rec is_subsequence sub whole =
   match (sub, whole) with
@@ -401,8 +401,8 @@ let rec is_subsequence sub whole =
   | x :: sub', y :: whole' ->
       if x = y then is_subsequence sub' whole' else is_subsequence sub whole'
 
-(* Deeper than depth 1 the monotonicity weakens by design — a candidate can
-   repeat its parent or re-legalise a call its parent dropped — but the
+(* Deeper than depth 1 the monotonicity weakens by design (a candidate can
+   repeat its parent or re-legalise a call its parent dropped), but the
    vocabulary does not: shrinking never substitutes one command for another
    and never invents one, so every node's calls are a subsequence of the
    calls the program was drawn from. *)
@@ -473,8 +473,8 @@ let control_spec exn phase =
   ]
 
 (* A [~pre] or [~next] that raises is a specification bug, and it is
-   reported as one: the exception escapes the generator — so the engine
-   fails the case where it was drawn, unshrunk, with the backtrace — wrapped
+   reported as one: the exception escapes the generator (so the engine
+   fails the case where it was drawn, unshrunk, with the backtrace), wrapped
    to name the operation, the step and the function that raised. *)
 exception Pre_boom
 exception Next_boom
@@ -634,7 +634,7 @@ let control_exceptions_escape_pre_and_next_unconverted () =
 
 (* The failing step points at the command. A body is idiomatically one
    assertion in tail position, and under the runner's [Loc.delimit] barrier
-   nothing is capturable when it raises — so the failure arrives with no
+   nothing is capturable when it raises, so the failure arrives with no
    location and the command's own site fills it. A body that did record a
    site keeps it, being nearer the failure. Both halves raise the payload
    directly rather than through [Check], whose capture succeeds outside a
@@ -738,7 +738,7 @@ let control_exceptions_escape_a_body_unconverted () =
       ("Sys.Break", Sys.Break);
     ];
   (* A Check_failure is already the class the narrowing aims at: it keeps
-     its payload and gains the step label, joined onto the user's ~msg —
+     its payload and gains the step label, joined onto the user's ~msg,
      which is flattened first, since the slot renders as one line. *)
   let asserted =
     expect_check_failure "an asserting body" (fun () ->
@@ -794,7 +794,7 @@ let one_call_program exn =
     0
 
 (* The scope owns release, so a [Fun.protect] inside it fires on every
-   path [execute] leaves — and on none it does not: a scope that raises
+   path [execute] leaves, and on none it does not: a scope that raises
    while acquiring never reached its own release. *)
 let a_scope_releases_on_every_path () =
   let paths =
@@ -847,7 +847,7 @@ let a_release_failure_never_replaces_the_program_s () =
   in
   (* A scope whose release raises on both paths. Hand-rolled rather than
      [Fun.protect] with a raising [~finally], which would deliver
-     [Fun.Finally_raised] in place of the program's failure — the caveat
+     [Fun.Finally_raised] in place of the program's failure, the caveat
      a scope author owns. *)
   let releasing exn run =
     match run () with () -> raise exn | exception _ -> raise exn
@@ -859,7 +859,7 @@ let a_release_failure_never_replaces_the_program_s () =
   is_true ~msg:"the release's exception replaced the program's failure"
     (failure.Failure.kind = Failure.Message (Failure.text "the body"));
   (* Passing path: the release's exception is the only one there is, and it
-     propagates as itself — [execute] converts nothing outside a step. *)
+     propagates as itself; [execute] converts nothing outside a step. *)
   (match Stateful.execute ~scope:(releasing Not_found) (counter_program 0) with
   | exception Not_found -> ()
   | exception exn ->
@@ -957,7 +957,7 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
 
 (* A second call is the harness itself being wrong, not a counterexample:
    [Invalid_argument] at the call, and it outranks whatever else the case
-   had to say — including a scope that swallows it, which would otherwise
+   had to say, including a scope that swallows it, which would otherwise
    report a program that ran twice as a pass. *)
 let a_scope_that_runs_the_program_twice_is_invalid () =
   let runs = ref 0 in
@@ -1006,7 +1006,7 @@ let a_scope_that_runs_the_program_twice_is_invalid () =
   | () -> failf "a double call after a failing program was accepted");
   (* And through the engine: the misuse is classified like any exception,
      so the search re-runs the broken scope and converges on the empty
-     program — accurately, since a scope that calls back twice does so
+     program, accurately, since a scope that calls back twice does so
      whatever the program says. The message, not the counterexample, is
      the diagnosis, and the reader must be shown it. *)
   let outcome =
@@ -1033,7 +1033,7 @@ let a_scope_that_runs_the_program_twice_is_invalid () =
     (contains "called its callback twice" block)
 
 (* Before the callback the scope is acquiring, and what it raises there
-   propagates as itself — unconverted and unlabelled — so an assertion is
+   propagates as itself (unconverted and unlabelled) so an assertion is
    an exception-class failure, a skip skips the whole test, and an alarm
    ends the run. *)
 let a_scope_that_raises_before_the_callback_propagates_unconverted () =
@@ -1103,7 +1103,7 @@ let a_failing_program_keeps_its_identity_through_the_scope () =
   expect "a scope that swallows the failure" (fun run ->
       try run () with Failure.Check_failure _ -> ())
 
-(* [scope] runs once per [execute] — so once per generated case and once
+(* [scope] runs once per [execute], so once per generated case and once
    per shrink candidate, counted across a real failing run. *)
 let the_scope_runs_once_per_case_and_per_shrink_candidate () =
   let scopes = ref 0 and releases = ref 0 and executions = ref 0 in
@@ -1131,13 +1131,13 @@ let the_scope_runs_once_per_case_and_per_shrink_candidate () =
   is_true
     ~msg:
       (Printf.sprintf
-         "%d executions for a failure at case %d — no candidate got its own \
+         "%d executions for a failure at case %d; no candidate got its own \
           system"
          !executions case_index)
     (!executions > case_index + 1)
 
-(* The invariant runs on the fresh system before step 1 — which is what
-   makes the empty program a real test — and after every step, under labels
+(* The invariant runs on the fresh system before step 1 (which is what
+   makes the empty program a real test) and after every step, under labels
    that tell the two apart. *)
 let the_invariant_runs_before_step_one_and_after_every_step () =
   let program = counter_program 0 in
@@ -1299,8 +1299,8 @@ let empty_program_prints_no_commands () =
     (Stateful.summary program = None)
 
 (* The table is a header row over the calls, with no model column when the
-   model has no printer; a step whose argument renders as ["()"] — every
-   [call] — prints as its name alone. The summary is not the table's: it
+   model has no printer; a step whose argument renders as ["()"] (every
+   [call]) prints as its name alone. The summary is not the table's: it
    rides the failure beside it. *)
 let unit_arguments_are_suppressed_under_a_summary_line () =
   let gen = Stateful.program ~steps:3 ~model:0 counter_draws in
@@ -1357,7 +1357,7 @@ let the_model_column_shows_the_pre_state () =
   is_true
     ~msg:
       (Printf.sprintf
-         "the model never left one digit — a wide cell is untested: %s"
+         "the model never left one digit; a wide cell is untested: %s"
          (show_names cells))
     (List.exists (fun cell -> String.length cell = 2) cells);
   let expected =
@@ -1529,7 +1529,7 @@ let a_malformed_declaration_raises_at_sample_time () =
   raises_naming_stateful "an empty command list"
     (Stateful.program ~steps:4 ~model:0 []);
   (* At [?steps:0] no element is drawn, so the branch-level report never
-     fires — a test declaring no commands must not pass vacuously. *)
+     fires. A test declaring no commands must not pass vacuously. *)
   raises_naming_stateful "an empty command list at ?steps:0"
     (Stateful.program ~steps:0 ~model:0 []);
   raises_naming_stateful "a negative ?steps"
@@ -1539,7 +1539,7 @@ let a_malformed_declaration_raises_at_sample_time () =
 
 (* Through the facade, whose [command] is abstract: this is the surface a
    user meets. Everything [stateful] hands to the declaration layer is
-   visible on the flattened case — the tags [--tag] selects on, the
+   visible on the flattened case: the tags [--tag] selects on, the
    per-test limit, and the declaration site. *)
 let tick_facade =
   [ Windtrap.call "tick" ~next:(fun model -> model + 1) (fun _ () -> ()) ]
@@ -1615,7 +1615,7 @@ let stateful_runs_one_fresh_system_per_case_over_steps_calls () =
   is_true
     ~msg:
       (Printf.sprintf
-         "%d bodies over %d systems — ?steps:3 did not reach the generator"
+         "%d bodies over %d systems; ?steps:3 did not reach the generator"
          !bodies !scopes)
     (!bodies = 3 * !scopes);
   is_true
@@ -1678,7 +1678,7 @@ let the_same_seed_reproduces_the_same_counterexample () =
   is_true
     ~msg:
       (Printf.sprintf
-         "the run executed %d programs — the trace is too short to be evidence"
+         "the run executed %d programs; the trace is too short to be evidence"
          (List.length trace))
     (List.length trace > 20);
   is_true
@@ -1707,8 +1707,8 @@ let the_same_seed_reproduces_the_same_counterexample () =
       (Printf.sprintf "the shrink step count differed: %d and %d" steps steps')
     (steps = steps')
 
-(* The generator prints, always — even over a command whose own argument
-   generator does not — so a printerless stateful counterexample is
+(* The generator prints, always (even over a command whose own argument
+   generator does not) so a printerless stateful counterexample is
    unreachable and the report's [Gen.with_pp] remedy line never fires. *)
 let the_program_generator_always_prints () =
   let opaque =
@@ -1718,7 +1718,7 @@ let the_program_generator_always_prints () =
         (fun _ _ () -> ());
     ]
   in
-  is_true ~msg:"Gen.constant grew a printer — the test is vacuous"
+  is_true ~msg:"Gen.constant grew a printer; the test is vacuous"
     (Gen_engine.render_value (Gen.constant 5) 5 = placeholder);
   let gen = Stateful.program ~steps:4 ~model:0 opaque in
   is_true ~msg:"a program over a printerless command carries no printer"

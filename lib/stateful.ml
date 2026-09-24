@@ -26,7 +26,7 @@ type ('model, 'sut) command =
    time it raises, so [Loc.capture] there answers [None] and the step is
    reported without a location. Capturing where the command is written
    points the report at the code that failed, which is the same fallback
-   the runner makes for a test — one level finer. *)
+   the runner makes for a test, one level finer. *)
 let command ?__POS__ ?(pre = fun _ _ -> true) name gen ~next body =
   Command { name; gen; pre; next; body; loc = Loc.resolve ?__POS__ () }
 
@@ -34,7 +34,7 @@ let command ?__POS__ ?(pre = fun _ _ -> true) name gen ~next body =
    what lets a nullary step print as its name alone. *)
 let call ?__POS__ ?pre name ~next body =
   (* [?__POS__] forwards; without one, [command]'s own capture walks past
-     both of these frames — they are windtrap's — and lands on the caller. *)
+     both of these frames (they are windtrap's) and lands on the caller. *)
   command ?__POS__
     ?pre:(Option.map (fun pre model () -> pre model) pre)
     name Gen.unit
@@ -46,7 +46,7 @@ let call ?__POS__ ?pre name ~next body =
    One drawn call: the command's five facts with the argument already bound
    into each of them, which discharges the existential at the one point
    where ['arg] is still in scope. [arg] is the argument's rendering,
-   deferred — a program is drawn, executed and discarded thousands of times
+   deferred, since a program is drawn, executed and discarded thousands of times
    per failing test and printed once. *)
 
 type ('model, 'sut) call = {
@@ -66,8 +66,8 @@ type ('model, 'sut) program = {
 }
 
 (* A [~pre] or [~next] that raises is a specification bug, not a
-   counterexample. It escapes into the generator — the engine reports it
-   once, unshrunk, with its backtrace — wrapped so the report names the
+   counterexample. It escapes into the generator (the engine reports it
+   once, unshrunk, with its backtrace) wrapped so the report names the
    operation, the step and the function. A control is about the run or the
    case rather than the model, and escapes as itself: a discard there
    discards the case. *)
@@ -199,9 +199,9 @@ let pad_right width text =
    the call ran against; no model column without [pp_model]. *)
 let program_text ?pp_model program =
   match program.calls with
-  (* The empty program is a reachable counterexample — a [~scope] that
+  (* The empty program is a reachable counterexample (a [~scope] that
      raises while acquiring, or an [?invariant] that rejects the fresh
-     system, shrinks to it in one step — and an empty rendering would take
+     system, shrinks to it in one step) and an empty rendering would take
      the renderer's single-line branch and print a bare colon. *)
   | [] -> empty_program
   | calls ->
@@ -270,7 +270,7 @@ let no_commands = "Windtrap.stateful: no commands to draw from"
 
 (* One branch per command: the argument generator with the command's facts
    bound into a call. [Gen.map] loses the printer, deliberately and
-   harmlessly — the program printer replaces it at the top. *)
+   harmlessly. The program printer replaces it at the top. *)
 let branch (Command { name; gen; pre; next; body; loc }) =
   let name = one_line name in
   Gen.map
@@ -288,7 +288,7 @@ let branch (Command { name; gen; pre; next; body; loc }) =
 (* Weight 1 per branch, and [frequency] rather than [one_of] because
    [frequency]'s choice itself does not shrink: shrinking never turns one
    command into another, and the order of the command list carries no
-   meaning — it is a list, not a priority.
+   meaning. It is a list, not a priority.
 
    An empty command list has no branch to draw. Reporting that at sample
    time puts it inside the running test's exception boundary, and naming
@@ -299,8 +299,8 @@ let choice commands =
   | commands ->
       Gen.frequency (List.map (fun command -> (1, branch command)) commands)
 
-(* [steps] calls drawn with [Gen.list]'s default-size move set — so the
-   length shrinks by chunk deletion — under a mask no combinator expresses:
+(* [steps] calls drawn with [Gen.list]'s default-size move set (so the
+   length shrinks by chunk deletion) under a mask no combinator expresses:
    repair runs on the drawn calls before the tree is assembled, so a dropped
    call contributes no subtree at all, and again at every node, so a call
    that a deletion elsewhere invalidates is dropped in the same candidate.
@@ -357,7 +357,7 @@ let relabel ?loc label (failure : Failure.t) =
     | Some user -> label ^ "; " ^ one_line user.Failure.kept
   in
   (* The command's declaration site fills in only where the assertion left
-     none — which is the common case, since a body is idiomatically one
+     none, which is the common case, since a body is idiomatically one
      assertion in tail position. A body that did record its own site keeps
      it: it is nearer the failure than the declaration is. *)
   let loc = match failure.Failure.loc with None -> loc | some -> some in
@@ -436,12 +436,12 @@ let run_program ?invariant program sut =
    different in kind. A scope that never runs the program fails the case:
    a program that did not run is not a passing program, and silently green
    is the worst outcome available here. A second call is the harness
-   itself being wrong — one execution is what the whole case is keyed by,
-   and the system the first call used is spent — so it is
+   itself being wrong (one execution is what the whole case is keyed by,
+   and the system the first call used is spent) so it is
    [Invalid_argument] at the call. The engine classifies that like any
    exception, so the search re-runs the broken scope and converges on the
-   empty program: accurate — a scope that calls back twice does so
-   whatever the program says — and the message, not the counterexample,
+   empty program: accurate (a scope that calls back twice does so
+   whatever the program says) and the message, not the counterexample,
    is what diagnoses it. No non-ASCII in [called_twice]:
    [Printexc.to_string] renders [Invalid_argument] payloads with [%S]. *)
 let no_program =
@@ -482,7 +482,7 @@ let execute ?loc ?invariant ~scope program =
   match (!misused, escaped, !failed) with
   (* The harness being wrong outranks whatever else the case had to say,
      and it keeps the backtrace of the second call when the scope let it
-     out — which is the one frame a reader needs. *)
+     out, which is the one frame a reader needs. *)
   | Some exn, Some (`Exception (raised, _) as c), _ when raised == exn ->
       Failure.reraise c
   | Some exn, _, _ -> raise exn
@@ -494,8 +494,8 @@ let execute ?loc ?invariant ~scope program =
       Failure.reraise c
   | None, Some c, None ->
       (* The scope's own, and unconverted either way: before the callback
-         it is an acquisition that failed — or a skip declining a system
-         the machine cannot build — and after it returned it is a release
+         it is an acquisition that failed (or a skip declining a system
+         the machine cannot build) and after it returned it is a release
          that failed with no failure in hand to outrank. *)
       Failure.reraise c
   | None, Some (#Failure.control as c), Some _ ->
@@ -512,10 +512,10 @@ let execute ?loc ?invariant ~scope program =
 
 (* The entry point *)
 
-(* Stateful tests carry both tags: [Test_tree.Tag.prop] because they are properties —
-   [--tag prop] selects them and a report shows the root seed exactly when
-   the selection holds one — and ["stateful"] so a suite can select or
-   exclude them on their own cost profile. *)
+(* Stateful tests carry both tags: [Test_tree.Tag.prop] because they are
+   properties ([--tag prop] selects them and a report shows the root seed
+   exactly when the selection holds one) and ["stateful"] so a suite can
+   select or exclude them on their own cost profile. *)
 let stateful_tag = "stateful"
 
 let stateful ?__POS__ ?tags ?timeout ?count ?steps ?pp_model ?invariant name

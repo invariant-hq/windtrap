@@ -215,7 +215,7 @@ let expect_run name ?on_event ~config ?(suite = "suite") tests f =
 let result_of outcome path =
   List.find_opt (fun r -> r.Run.path = path) (Run.results outcome.Run.run)
 
-(* The paths that counted as failed, in execution order — what the exit
+(* The paths that counted as failed, in execution order, what the exit
    code and the last-failed store react to. *)
 let failed_paths outcome =
   List.filter_map
@@ -931,7 +931,7 @@ let () =
 
 (* A checkpoint, not an assertion: a mismatch is recorded and the call
    returns, so a body with two stale literals reports both, and a
-   correcting run records both corrections in one pass — the source is
+   correcting run records both corrections in one pass. The source is
    a real file under the root, so the pass also writes them. *)
 let () =
   with_temp_root @@ fun root ->
@@ -1231,7 +1231,7 @@ let () =
   | _ -> check "require_match propagates the extractor's exception" false
 
 (* xfail through a [cases] group marks every child; the inversion is per
-   test — a passing child is an unexpected pass and counts as failed. *)
+   test. A passing child is an unexpected pass and counts as failed. *)
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
@@ -1271,8 +1271,8 @@ let () =
   check_int "xfail over an excluded slow tag: exit code" ~expected:0
     ~actual:outcome.Run.exit_code
 
-(* Scratch paths work in every phase of a test attempt — a bracket
-   teardown included — and are removed with the attempt. *)
+(* Scratch paths work in every phase of a test attempt (a bracket
+   teardown included) and are removed with the attempt. *)
 let () =
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
@@ -1296,7 +1296,7 @@ let () =
     (!teardown_scratch <> "" && not (Sys.file_exists !teardown_scratch))
 
 (* A fixture release runs outside any test attempt: [temp_dir] there hits
-   the ambient guard, surfacing as a Release-phase failure — the run fails
+   the ambient guard, surfacing as a Release-phase failure. The run fails
    loudly instead of leaking or crashing. *)
 let release_wants_scratch =
   fixture ~teardown:(fun () -> ignore (temp_dir ())) (fun () -> ())
@@ -1317,7 +1317,7 @@ let () =
 
 let () =
   (* Every path out of [run] is a returned code, never an exit: the four
-     informational and refusal pages, then the verdicts — and a second
+     informational and refusal pages, then the verdicts, and a second
      suite runs in the same process after the first, which is what a
      returned code is for. *)
   with_temp_root @@ fun root ->
@@ -1363,8 +1363,8 @@ let () =
 (* A list-only run prints the selection and nothing else *)
 
 let () =
-  (* A list run selects and stops — the facade answers it from
-     [Run.list_selection], before the drive spine — so the whole
+  (* A list run selects and stops (the facade answers it from
+     [Run.list_selection], before the drive spine) so the whole
      transcript must be the paths and nothing else: no header, no
      summary line. *)
   with_temp_root @@ fun root ->
@@ -1404,8 +1404,8 @@ let () =
 (* An empty selection says why it is empty *)
 
 let () =
-  (* The description is the library runner's own header policy — the
-     inline runner passes [None] — so it reaches the renderer through the
+  (* The description is the library runner's own header policy (the
+     inline runner passes [None]) so it reaches the renderer through the
      driver's call and nowhere else. The pin is the whole transcript: the
      sentence naming the filter and the denominator, and the [list:] hint
      under it, the one line allowed after an outcome, spelled with the
@@ -1427,7 +1427,7 @@ let () =
   check_string "an empty selection prints nothing on stderr" ~expected:""
     ~actual:err
 
-(* Under --corrected — a build action's run — a selection that runs none
+(* Under --corrected (a build action's run) a selection that runs none
    of the suite's tests exits 0 rather than 2, still saying why; without
    the flag it exits 2 as before, a usage error exits 2 either way, and a
    suite that declares no tests keeps its 2. *)

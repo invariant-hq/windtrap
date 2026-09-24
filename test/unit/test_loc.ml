@@ -110,7 +110,7 @@ let tests =
           (under 30 = None));
     test "delimit stops capture instead of escaping the boundary" (fun () ->
         (* [f] tail-calls capture, so its own frame is gone at capture time;
-           the walk must stop at the delimiter with None — never surface this
+           the walk must stop at the delimiter with None, never surface this
            test's frame beyond it. Pins delimiter recognition by defname: a
            toolchain or wrapping change that renames the frame fails here
            loudly. *)

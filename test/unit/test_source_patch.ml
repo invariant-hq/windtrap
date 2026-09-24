@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Tests for Source_patch: the flexible normalization, literal rendering,
-   and the rewriting of literals at __POS_OF__ positions — quoted and
+   and the rewriting of literals at __POS_OF__ positions, quoted and
    tagged delimiters, multi-line re-indentation, tag growth on conflict,
    the drift refusal, several patches in one file, and a literal inside
    parentheses. Everything here drives [P.apply] on strings. *)

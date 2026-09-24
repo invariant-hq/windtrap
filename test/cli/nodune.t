@@ -1,6 +1,6 @@
 Coverage and mutation without dune: the toolchain's compiler, the
-installed windtrap, and nothing else — no dune and no ocamlfind in this
-session. The two driver executables are what a findlib user builds
+installed windtrap, and nothing else (no dune and no ocamlfind in this
+session). The two driver executables are what a findlib user builds
 once (a Ppxlib standalone linked against the backend); everything
 after that is ocamlopt.
 
@@ -55,8 +55,8 @@ not, and links windtrap as any test does:
   $ ocamlopt -I +unix -I "$lib/windtrap/runtime" -I "$lib/windtrap" \
   >   unix.cmxa windtrap_runtime.cmxa windtrap.cmxa calc.cmx test_calc.ml -o test_calc.exe
 
-The run is one green line — a run prints no coverage number of its own
-— and the dump lands under the working directory's _windtrap, never a
+The run is one green line (a run prints no coverage number of its own),
+and the dump lands under the working directory's _windtrap, never a
 _build, in one directory per executable:
 
   $ run ./test_calc.exe
@@ -124,7 +124,7 @@ first survivor in an otherwise ordinary run:
   mutant survived: the armed site was evaluated 2 times and no test failed.
 
 The verdict file is the run's, beside the coverage dumps, and the
-installed binary merges it — exiting 1, because a survivor of every
+installed binary merges it, exiting 1, because a survivor of every
 suite that reached it is the one mutation exit code a build gates on:
 
   $ find _windtrap/mutants -type f | sed -E 's|windtrap-[0-9a-f]+|windtrap-HASH|'

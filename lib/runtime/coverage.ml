@@ -216,7 +216,7 @@ let warn fmt =
    milliseconds for a typical test binary, off the test path at exit):
    the reporting command re-digests the file at the recorded path, and
    any difference means the executable on disk is not the one that wrote
-   the dump — mtimes cannot say that (dune's shared cache restores
+   the dump; mtimes cannot say that (dune's shared cache restores
    artifacts with their original timestamps). Best-effort: no identity
    is recorded when the executable cannot be read back. *)
 let dump_identity () =
@@ -294,7 +294,7 @@ let register ~file ~points ~counts =
   match List.find_opt (fun (f, _, _) -> String.equal f file) !registrations with
   | Some (_, prior, _) when not (points_equal prior points) ->
       (* Two incompatible instrumentations of one source file are linked into
-         this executable — stale build artifacts, most likely. Registration
+         this executable (stale build artifacts, most likely). Registration
          runs at module load inside the user's program, so it must not raise
          (coverage never changes what programs mean): warn loudly and drop
          this registration, keeping the snapshot invariant that same-file
@@ -431,7 +431,8 @@ let find_source ~roots file =
    byte (a consistent extent's [end_ofs] is at most the length), so the
    source changed since the run. Mapping stale extents to lines would
    paint the wrong code; the report says so instead. Edits that keep the
-   file at least as long as the extents are undetectable — best effort. *)
+   file at least as long as the extents are undetectable: the check is
+   best effort. *)
 let stale_source entry source =
   let len = String.length source in
   Array.exists (fun p -> p.end_ofs > len) entry.points

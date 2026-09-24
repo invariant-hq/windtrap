@@ -684,7 +684,7 @@ let frequency_respects_weights () =
     (rendered = placeholder)
 
 (* The Gen doc law: a composite prints exactly when all its components
-   print — including the choice combinators. *)
+   print, including the choice combinators. *)
 let one_of_over_printed_branches_derives_printer () =
   let gen = Gen.(one_of [ int_range 0 9; int_range 100 199 ]) in
   is_true ~msg:"one_of did not derive a printer"
@@ -792,7 +792,7 @@ let a_discarding_map_candidate_is_skipped () =
 (* Composition *)
 
 (* A [map] over a printing generator renders its pre-image: the argument
-   the function received, through the argument's printer — at the root and
+   the function received, through the argument's printer, at the root and
    at every candidate, whose pre-image is the candidate's own. *)
 let map_renders_the_pre_image () =
   let gen = Gen.map succ Gen.int in
@@ -1207,8 +1207,8 @@ let such_that_size_constrains_every_candidate () =
   | exception Windtrap.Private.Failure.Control `Discard -> ()
   | _ -> failf "a starved size generator sampled successfully"
 
-(* [such_that] around a sized string: both constraints — fixed length and the
-   predicate — hold for the root and every candidate, and the greedy minimum
+(* [such_that] around a sized string: both constraints (fixed length and the
+   predicate) hold for the root and every candidate, and the greedy minimum
    is the predicate boundary. *)
 let such_that_over_sized_string_keeps_both_constraints () =
   let gen =
@@ -1887,12 +1887,12 @@ let suite =
    Everything above walks a generator from fixed seeds: [samples] and
    [find_sample] draw at chosen indexes, and [shrink] runs the real search
    from one chosen tree. That is deliberate for the tests that must pin an
-   exact candidate order or a specific distribution — but it pins
+   exact candidate order or a specific distribution, but it pins
    behaviour at those seeds and says nothing about the rest of the space.
 
    The laws below are universally quantified statements, which is what
    [prop] is. They exercise the engine end to end under the run's own
-   seed: draw, run the body, and — when one breaks — shrink through the
+   seed: draw, run the body, and (when one breaks) shrink through the
    real search and print a replayable seed. That is the property engine
    testing itself with the property engine, which is the point.
 

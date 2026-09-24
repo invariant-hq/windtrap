@@ -67,7 +67,7 @@ let output_path e ~groups ~test_name =
    re-raises, so a raise here never leaves a descriptor redirected or a
    saved dup leaked. The saved dups are close-on-exec: a subprocess the test
    execs inherits the redirected descriptors 1-2 (captured), never the real
-   ones — a child that outlives the run must not hold the runner's stdout
+   ones. A child that outlives the run must not hold the runner's stdout
    open, or a piped reader (`suite.exe | cat`, dune runtest) waits on it
    after the suite finished (cli/F-5). *)
 let redirect_into e fd =

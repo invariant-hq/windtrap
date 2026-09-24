@@ -6,8 +6,8 @@
 (* Tests for coverage's reporting surface: a real windtrap run over an
    instrumented-like executable, which prints no number of its own (the
    dump is the report, and guarantee 10's exit codes hold), the at_exit dump
-   feeding the reporting command — under a build directory and, for a
-   tree built without one, under _windtrap — and `windtrap coverage` end
+   feeding the reporting command (under a build directory and, for a
+   tree built without one, under _windtrap) and `windtrap coverage` end
    to end (walk-up discovery, merge across two executables, the
    orphan/stale matrix, --min matrix, --json shape, --show-uncovered,
    loud failures). A windtrap suite ([run] executes tests sequentially
@@ -17,7 +17,7 @@
 
    The one thing not reproducible here: the freshness of the blessed
    @self-cover rule itself ((alias_rec runtest) + (universe)) is dune
-   semantics — reproducing it needs a nested `dune build` inside this
+   semantics; reproducing it needs a nested `dune build` inside this
    dune-run test, which would contend for the workspace lock. What this
    file covers instead is everything the rule's action does:
    discovery from a rule-like cwd, the staleness pass over the dumps the
@@ -76,8 +76,8 @@ let capture ?(env = []) ?cwd exe args =
 (* Each child dumps into its own fresh directory, so a run never reads
    or overwrites another's data. The child links the windtrap core,
    which under --instrument-with is itself instrumented and carries
-   thousands of points; the dump is deliberately left whole — it is what
-   `windtrap coverage` merges — and the assertions that read it scope
+   thousands of points; the dump is deliberately left whole (it is what
+   `windtrap coverage` merges), and the assertions that read it scope
    themselves to one file's report. *)
 let child ?(env = []) ?(args = []) () =
   let dump = scratch "self.coverage" in
@@ -102,7 +102,7 @@ let dump_of ?source_roots ?(only = "lib/fake.ml") path =
       | _ -> None)
 
 (* Six lines of nine characters: block [i] is line [i + 1]'s text. Four
-   of six blocks visited leaves lines 5-6 uncovered — the shape the
+   of six blocks visited leaves lines 5-6 uncovered, the shape the
    reporting command renders from this run's dump. Written once, read by
    every run that registers it. *)
 let child_source =
@@ -351,7 +351,7 @@ let standalone_layout =
 
 (* `dune exec windtrap -- coverage` under a private --build-dir: dune
    exports the context it built in as INSIDE_DUNE, and the estate is
-   that build directory's — never the _build an ancestor scan would
+   that build directory's, never the _build an ancestor scan would
    find first. The same rule the core applies to its own root. *)
 let inside_dune_estate =
   test "INSIDE_DUNE names the build directory whose estate is reported"
@@ -378,7 +378,7 @@ let inside_dune_estate =
   let _, out, _ = coverage_cmd ~cwd:proj [] in
   contains ~msg:"unset, the scan reports the shared _build"
     ~sub:"coverage: 100.0% (3/3 points)" out;
-  (* A boolean spelling — a harness's INSIDE_DUNE=1 — names no build
+  (* A boolean spelling (a harness's INSIDE_DUNE=1) names no build
      directory, and the scan runs as if it were unset. *)
   let _, out, _ = coverage_cmd ~cwd:proj ~inside_dune:"1" [] in
   contains ~msg:"a value that names no build directory is ignored"
@@ -418,7 +418,7 @@ let min_matrix =
 (* --json *)
 
 (* Minimal well-formedness walk: the artifact must parse as one JSON
-   value with balanced structure — shape drift or a stray comma is a
+   value with balanced structure; shape drift or a stray comma is a
    frozen-contract break, not a formatting choice. *)
 let json_well_formed s =
   let n = String.length s in
@@ -861,8 +861,8 @@ let discovery_robustness =
   contains ~msg:"a truncated file is named" ~sub:"cut.coverage" err;
   contains ~msg:"a truncated file is called corrupt" ~sub:"corrupt" err;
   (* A dump recorded as written by the reporting binary itself gets no
-     special treatment: it is judged by its identity like any other —
-     here the recorded executable does not exist under this root, so
+     special treatment: it is judged by its identity like any other.
+     Here the recorded executable does not exist under this root, so
      it is an orphan, excluded and named. *)
   let selfish = scratch "selfish" in
   write_file
@@ -890,7 +890,7 @@ let discovery_robustness =
   equal ~msg:"an explicit file argument exits 0" int 0 code;
   contains ~msg:"an explicit file argument reports its data alone"
     ~sub:"coverage: 33.3% (1/3 points)" out;
-  (* A rule-action cwd — inside _build — resolves the root by the
+  (* A rule-action cwd (inside _build) resolves the root by the
      topmost-_build rule (the runtime's), never the ancestor scan. *)
   mkdir_p (Filename.concat proj "_build/default/examples");
   let code, out, _ =
@@ -901,7 +901,7 @@ let discovery_robustness =
     ~sub:"coverage: 60.0% (3/5 points)" out;
   contains ~msg:"sources resolve from that root too" ~sub:"lib/foo.ml   3\n" out;
   (* The sandbox trap: v1 garbage planted at _build/.sandbox/_build/_coverage
-     must not capture discovery from a sandboxed action's cwd — the
+     must not capture discovery from a sandboxed action's cwd. The
      topmost _build wins. *)
   write_file
     (Filename.concat proj "_build/.sandbox/_build/_coverage/junk.coverage")
@@ -922,7 +922,7 @@ let explicit_path_contract =
   let proj = proj () in
   let elsewhere = temp_dir () in
   (* A nonexistent explicit path is an error naming the path and the
-     reason — never a silent drop into the no-data report, whose
+     reason, never a silent drop into the no-data report, whose
      instrument-your-library remedy would be wrong here. *)
   let absent = scratch "no-such-dir/absent.coverage" in
   let code, _, err = coverage_cmd ~cwd:elsewhere [ absent ] in
@@ -932,7 +932,7 @@ let explicit_path_contract =
     ~sub:"no such file or directory" err;
   not_contains ~msg:"a missing explicit path never blames instrumentation"
     ~sub:"Instrument the library" err;
-  (* An existing file without the .coverage suffix — a renamed dump —
+  (* An existing file without the .coverage suffix (a renamed dump)
      is equally loud, whatever its content. *)
   let renamed = scratch "renamed.cov" in
   write_file renamed (collection [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]);
@@ -961,15 +961,15 @@ let explicit_path_contract =
 (* The staleness pass: orphaned and outdated dumps *)
 
 (* The holes the @cover alias cannot see: a
-   dump whose executable was deleted (orphan — silently inflates the
-   merge) and a dump whose executable is not the one now on disk — a
+   dump whose executable was deleted (orphan, silently inflates the
+   merge) and a dump whose executable is not the one now on disk, a
    re-run without --instrument-with (wrote nothing fresh), or a test
    action dune replayed from cache after sources reverted to an
    already-tested state (measured against the blessed alias: the dump
    stays a different build's, and plain re-runs stay cache hits, so
    only `--force` heals it). Both are detected from the recorded
-   identity; staleness is a content comparison — the recorded digest
-   against the executable now on disk — because dune's cache restores
+   identity; staleness is a content comparison (the recorded digest
+   against the executable now on disk) because dune's cache restores
    rebuilt artifacts with their original mtimes. Both are warned about
    and excluded, always: there is no override. Identity-less dumps (the
    fixtures above) are never flagged. *)
@@ -997,8 +997,8 @@ let stale_root name =
 
 let staleness_pass =
   test "the staleness pass: orphaned and outdated dumps" @@ fun () ->
-  (* Fresh: the executable on disk is the dump's writer — full
-     inclusion. *)
+  (* Fresh: the executable on disk is the dump's writer (full
+     inclusion). *)
   let root = stale_root "stale-fresh" in
   let code, out, err = coverage_cmd ~cwd:root [] in
   equal ~msg:"a fresh identity-carrying dump exits 0" int 0 code;
@@ -1024,7 +1024,7 @@ let staleness_pass =
   contains ~msg:"the orphan warning names the missing executable"
     ~sub:"default/test/gone.exe" err;
   contains ~msg:"the orphan warning says what it did" ~sub:"excluding it" err;
-  (* Stale: the executable was rebuilt since the dump — its content no
+  (* Stale: the executable was rebuilt since the dump. Its content no
      longer matches the recorded digest (its mtime is irrelevant). *)
   let root = stale_root "stale-rebuilt" in
   ignore (plant_exe root "default/test/a.exe" "an uninstrumented rebuild");
@@ -1102,7 +1102,7 @@ let staleness_pass =
    let _, _, err = coverage_cmd ~cwd:root [] in
    not_contains ~msg:"three or fewer excluded files draw no count line"
      ~sub:"more like that" err);
-  (* Stale beside fresh — the revert trap, measured against the blessed
+  (* Stale beside fresh (the revert trap), measured against the blessed
      alias: reverting sources to an already-tested state makes that
      test action a dune cache hit, so its dump is never rewritten and
      stays a different (intermediate) build's. The report must keep
@@ -1194,7 +1194,7 @@ let raise_attribution =
   equal ~msg:"the raise child exits 0" int 0 code;
   not_contains ~msg:"the run prints no number of its own" ~sub:"coverage:" out;
   (* The fixture source is a declared test dep, copied beside the
-     executable — resolved absolutely so a by-hand run from anywhere in
+     executable, resolved absolutely so a by-hand run from anywhere in
      the checkout reads it too. *)
   let source = read_file (Filename.concat exe_dir "covcli_fixture.ml") in
   let sources = scratch "raise-sources" in
@@ -1247,7 +1247,7 @@ let junit_rails =
   contains ~msg:"the JUnit report is JUnit" ~sub:"<testsuites" xml;
   not_contains ~msg:"JUnit carries no coverage line" ~sub:"coverage:" xml;
   not_contains ~msg:"JUnit carries no coverage counts" ~sub:"points)" xml;
-  (* An uninstrumented run renders nothing — no line, no empty table. *)
+  (* An uninstrumented run renders nothing: no line, no empty table. *)
   let code, out, _, _ =
     child ~env:[ ("CHILD_TOTAL", "0") ] ~args:[ "--color"; "never" ] ()
   in

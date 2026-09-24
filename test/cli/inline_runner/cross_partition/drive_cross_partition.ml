@@ -6,7 +6,7 @@
 (* Cross-partition fixture driver: [drive_cross_partition.exe RUNNER]
    spawns RUNNER once per partition, in the harness's stated
    environment, and records each run's transcript, exit code, and what it
-   wrote — which is the whole of what dune reads when it decides whether
+   wrote, which is the whole of what dune reads when it decides whether
    a correction is promotable. The one directory with a driver of its
    own: the two runs must share one process. Two rules in one dune
    directory share a build directory and may run concurrently, so each

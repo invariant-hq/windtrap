@@ -7,8 +7,8 @@
    refinement adapts the Wagner-Fischer edit script from v1's lib/distance.ml,
    itself derived from Craig Ferguson's work on Alcotest
    (https://github.com/mirage/alcotest/pull/247). v3 merges the two behind a
-   data-only interface — no styling, no truncation, renderers project the
-   data — and adds size guards against pathological inputs.
+   data-only interface (no styling, no truncation, renderers project the
+   data) and adds size guards against pathological inputs.
   ---------------------------------------------------------------------------*)
 
 type line = Keep of string | Delete of string | Insert of string
@@ -39,7 +39,7 @@ let dp_cell_limit = 4_000_000
 (* A highlight earns its place by pointing at a small part of a mostly
    shared value. Once half of a side is marked, it stops doing that: the
    reader is looking at two values that differ, and scattering tildes over
-   them draws the eye to coincidental character alignments instead —
+   them draws the eye to coincidental character alignments instead.
    ["Some _"] against ["None"] marks [S], [m], [e ] against [N], [n], and
    says nothing a plain pair of lines would not. Measured over a corpus of
    real failures, every informative highlight marks 11-21% of its side and
@@ -47,7 +47,7 @@ let dp_cell_limit = 4_000_000
 
    The bound is per side and strict, so an insertion that marks nothing on
    the expected side still refines, and two two-character values (["13"] and
-   ["14"], marking half of each) do not — nobody needs a marker to find that
+   ["14"], marking half of each) do not. Nobody needs a marker to find that
    difference. *)
 let noise_threshold = 1. /. 2.
 
@@ -299,7 +299,7 @@ let code_points s =
    The byte loop is a top-level function taking everything it needs, not a
    local [let rec] closing over the offsets: [wagner_fischer] calls this once
    per grid cell, and a closure capturing five locals was being allocated on
-   every one of them — ~8 minor words per cell, which dominated refinement's
+   every one of them, ~8 minor words per cell, which dominated refinement's
    allocation. *)
 let rec bytes_equal sa oa sb ob len k =
   k = len || (sa.[oa + k] = sb.[ob + k] && bytes_equal sa oa sb ob len (k + 1))

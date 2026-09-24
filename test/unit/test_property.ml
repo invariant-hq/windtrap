@@ -91,14 +91,14 @@ let expect_coverage_failed = function
   | Property.Gave_up _ -> failf "expected Coverage_failed, got Gave_up"
 
 (* The value generated for case [index] of [path] under [root], as the engine
-   derives it — used to predict and replay engine streams. *)
+   derives it, used to predict and replay engine streams. *)
 let value_at gen ~root ~path ~index =
   Gen_engine.value
     (Shrink_tree.root
        (Gen_engine.sample gen (Seed.make (Seed.derive ~root ~path ~index))))
 
 (* Search for a root whose first failing generated case satisfies
-   [first_ok] — keeps same-kind shrink tests deterministic without
+   [first_ok], which keeps same-kind shrink tests deterministic without
    depending on one lucky constant. *)
 let find_root gen ~path ~fails ~first_ok =
   let first_failing root =
@@ -514,7 +514,7 @@ let shrinks_to_minimal_counterexample () =
 
 (* The budget is fixed and sized against the primitives' descent: a quad
    of int64, every component shrunk toward its origin under a threshold
-   law, is the yardstick the number was chosen against — it converges,
+   law, is the yardstick the number was chosen against. It converges,
    far inside the budget, and is reported as converged. *)
 let shrink_budget_covers_a_quad_of_int64 () =
   let gen = Gen.quad Gen.int64 Gen.int64 Gen.int64 Gen.int64 in
@@ -722,7 +722,7 @@ let mapped_counterexample_renders_its_shrunk_pre_image () =
 let timeout_during_first_candidate_keeps_unshrunk () =
   (* Call 1 is the failing case; call 2 (the first shrink candidate) raises
      the per-test alarm. The search must end at the unshrunk original with
-     the timeout mark — never abort the test, never lose the
+     the timeout mark, never abort the test, never lose the
      counterexample. *)
   let path = "timeout first candidate" in
   let calls = ref 0 in
@@ -748,8 +748,8 @@ let timeout_during_first_candidate_keeps_unshrunk () =
     (rendered = string_of_int original)
 
 let timeout_after_accepted_steps_keeps_best_so_far () =
-  (* Cases and candidates fail above a threshold — the greedy descent must
-     walk the halving chain, rejecting the passing dest-first candidates —
+  (* Cases and candidates fail above a threshold; the greedy descent must
+     walk the halving chain, rejecting the passing dest-first candidates,
      until the counter raises the alarm: the search must stop at the last
      accepted node, never discard it. *)
   let calls = ref 0 in
@@ -945,7 +945,7 @@ let assume_and_reject_raise_discard () =
    "shrunk N steps"; only the flag tells them apart, and without it a user
    cannot know whether the reported counterexample is minimal. The budget
    is fixed, so spending it takes a generator whose tree is one long
-   chain — [n] down to [0], one accepted step per node under a law that
+   chain, [n] down to [0], one accepted step per node under a law that
    fails on every value, so the descent ends only at the leaf. *)
 let spent_shrink_budget_is_marked () =
   let chain n =
@@ -984,15 +984,15 @@ let spent_shrink_budget_is_marked () =
     ~msg:(Printf.sprintf "and reports the minimal node, got %s" rendered)
     (rendered = "0")
 
-(* Forcing a candidate can raise — here a [map] whose function divides by
-   the drawn value. The memoized cell caches the exception, so the siblings
+(* Forcing a candidate can raise (here a [map] whose function divides by
+   the drawn value). The memoized cell caches the exception, so the siblings
    behind it are unreachable and the descent stops; what it must not do is
    report that as convergence, which told the reader a counterexample was
    minimal when the search never finished. *)
 let a_raising_candidate_stops_the_search_visibly () =
   (* [int_range] shrinks toward the in-range point closest to zero, so the
      mapped function raises on the first candidate of any root above the
-     bound — while the root itself, being above it, maps fine. *)
+     bound, while the root itself, being above it, maps fine. *)
   let gen =
     Gen.map
       (fun n -> if n = 10 then failwith "forcing raised" else n)

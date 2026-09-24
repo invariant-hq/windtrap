@@ -1,6 +1,6 @@
 (* let%test and module%test under the real backend: nested groups
    register in order, and let%test / let%expect_test coexist inside a
-   module%test — the enter/leave wrapping keeps module contents (here
+   module%test. The enter/leave wrapping keeps module contents (here
    [answer]) in scope for the tests that follow. *)
 
 let%test "top-level unit test" = assert (2 + 2 = 4)

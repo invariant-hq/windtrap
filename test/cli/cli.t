@@ -25,8 +25,8 @@ stderr.
   $ cat err
 
 --version prints one line and exits 0. The version itself is the
-release watermark — "dev" in a working tree, a number in a distribution
-tarball — so the shape is what this pins; a broken format leaves the
+release watermark ("dev" in a working tree, a number in a distribution
+tarball), so the shape is what this pins; a broken format leaves the
 line unmatched and shows itself.
 
   $ run ./suite_main.exe --version > out 2> err
@@ -83,7 +83,7 @@ A value the flag cannot take names the flag and what it expected:
 
 Under `dune runtest` there is no command line and the mirrors are the
 CLI, so a value arriving through the environment is refused with the
-same sentence and the same code — naming the variable, not the flag.
+same sentence and the same code, naming the variable, not the flag.
 This is the facade's second error exit: the first is the parse above,
 this one is the resolution after it. A valueless flag's mirror reads
 the boolean vocabulary and refuses anything outside it, and the color

@@ -1,4 +1,4 @@
-; Upstream test/no-output-patterns/test.ml — honored pass set: output
+; Upstream test/no-output-patterns/test.ml, honored pass set: output
 ; containing "(regexp)" is matched literally, never as a pattern.
 
 (library

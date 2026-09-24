@@ -1,4 +1,4 @@
-(* The coverage example's suite — deliberately partial: the Sub and Mul
+(* The coverage example's suite, deliberately partial: the Sub and Mul
    arms stay untested so an instrumented run has arms to report (see the
    dune file for the commands). *)
 

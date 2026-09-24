@@ -115,8 +115,8 @@ let await ~what started path =
 
 (* The scope that keeps this suite's fixtures controlled. Under
    --instrument-with the children link a mutation-instrumented windtrap
-   core, and every count here — five sites, the reach map, the verdict
-   file — is written against this directory's own fixtures: subject.ml,
+   core, and every count here (five sites, the reach map, the verdict
+   file) is written against this directory's own fixtures: subject.ml,
    runaway/spinner.ml, inline/inline_armed.ml. The loop applies
    [--mutate]'s prefixes to the population it forks over, so the
    children test exactly those mutants whatever else they link. Every
@@ -318,7 +318,7 @@ let scope_tests =
         let code, _, err = spawn ~args:[ "--mutate=::no-such-source::" ] [] in
         equal ~msg:"asking it to mutate exits 1" int 1 code;
         (* The build is instrumented and fine; the scope is what emptied
-           the population, so the refusal must name it — blaming
+           the population, so the refusal must name it; blaming
            instrumentation would send the reader to rebuild. *)
         contains ~msg:"declines by naming the flag, value included"
           ~sub:"windtrap: --mutate=::no-such-source:: leaves no mutant" err;
@@ -678,7 +678,7 @@ let reach_tests =
   ]
 
 (* Child hygiene: a mutation child leaves through [Unix._exit] and nothing
-   else, so no [at_exit] handler of the parent's image ever runs in one —
+   else, so no [at_exit] handler of the parent's image ever runs in one,
    which is what stops a crashing child overwriting the parent's
    [.coverage] dump, since that dump IS an at_exit handler. The witness
    generalizes it: the fixture appends its pid on every path through
@@ -688,7 +688,7 @@ let reach_tests =
    The [fatal] fixture is the case that makes it bite: [Out_of_memory] is
    fatal, so no failure boundary in the runner may swallow it, it escapes
    [Run.execute], and the child's own wrapper is the only thing between
-   it and OCaml's uncaught-exception handler — which runs [at_exit] before
+   it and OCaml's uncaught-exception handler, which runs [at_exit] before
    it prints. Remove that wrapper's catch-all and this file gains a
    line. *)
 let no_trace_tests =
@@ -712,7 +712,7 @@ let no_trace_tests =
             (fun l -> l <> "")
             (String.split_on_char '\n' (read_file log))
         in
-        equal ~msg:"exactly one process reached at_exit — the parent" int 1
+        equal ~msg:"exactly one process reached at_exit: the parent" int 1
           (List.length lines));
   ]
 
@@ -772,7 +772,7 @@ let verdict_file_tests =
         Out_channel.with_open_bin verdict_path (fun oc ->
             output_string oc saved);
         (* The selection reaches only [sub], whose mutant dies, so the
-           loop completes — and its verdicts call [widen] unreached, which
+           loop completes, and its verdicts call [widen] unreached, which
            is exactly the selection-relative record that must not
            overwrite the full run's survivor. [mutate]'s scope is in
            force here too, so this is also the combined case: a filter
@@ -956,7 +956,7 @@ let crash_tests =
             in
             (* A verdict file names no cause, so the assertion is the one
                that matters: the crashing child's mutant is recorded
-               killed like the ordinary one, and never as a survivor — a
+               killed like the ordinary one, and never as a survivor. A
                false survivor sends the reader to strengthen a test that
                already noticed. *)
             equal ~msg:"both kills are in the file" int 2
@@ -1248,7 +1248,7 @@ let armed_tests =
         (* [mutant killed.] is a verdict, and a verdict is never an exit
            code: a filter that matched nothing exits 2, which
            says something about the filter and nothing about the
-           mutant — so neither of the other closing lines may print
+           mutant, so neither of the other closing lines may print
            either. *)
         let code, out, _ =
           spawn ~args:[ "--arm"; mutant_named "add"; "-f"; "no-such-test" ] []
@@ -1301,7 +1301,7 @@ let armed_tests =
         (* The other green: the suite passed and proved nothing, because
            the selection deselected every test that reaches the line. The
            two endings are what make an armed run's green readable at
-           all — without them this transcript and the survivor's are the
+           all; without them this transcript and the survivor's are the
            same bytes. *)
         let code, out, _ =
           spawn
@@ -1351,13 +1351,13 @@ let armed_tests =
 
    The inline runtime records its correction directory at module load
    ([Sys.getcwd ()]) and, for a recorded source [f], re-reads
-   [<dir>/<basename f>] and writes [<dir>/<basename f>.corrected] — see
-   [Ppx_runtime.absolute_path] and [flush_corrections_report]. So the
+   [<dir>/<basename f>] and writes [<dir>/<basename f>.corrected] (see
+   [Ppx_runtime.absolute_path] and [flush_corrections_report]). So the
    child is started in a directory that carries a copy of the fixture at
    exactly the name the writer will open: with read-only checking removed
    this scenario writes [inline_armed.ml.corrected] into the staging
    directory and the assertion below fails on the file. Staging it
-   anywhere else would make the write fail with ENOENT — the test would
+   anywhere else would make the write fail with ENOENT. The test would
    still go red, but on a missing file rather than on the law. *)
 
 let inline_exe =
@@ -1374,9 +1374,9 @@ let staged_source_dir () =
       output_string oc contents);
   root
 
-(* The two halves of the read-only clause fail independently — the recorders write no
-   correction, and the exit protocol reports no failure as covered by one
-   — so they are two tests: whichever half regresses, the report names
+(* The two halves of the read-only clause fail independently (the recorders write no
+   correction, and the exit protocol reports no failure as covered by one),
+   so they are two tests: whichever half regresses, the report names
    it. *)
 let armed_inline () =
   let cwd = staged_source_dir () in
@@ -1463,8 +1463,8 @@ let read_only_tests =
    non-terminating one, and the budget must stop it BEFORE the per-child
    deadline does: the guard counts hits in microseconds where the
    deadline waits out its one-second floor. A verdict file names no
-   cause, so the CLOCK is the assertion: the whole run — dry run, probe
-   and one child — measures 0.06 s here, while a deadline kill would add
+   cause, so the CLOCK is the assertion: the whole run (dry run, probe
+   and one child) measures 0.06 s here, while a deadline kill would add
    the child's full one-second floor on top. A run that finishes inside
    that floor cannot have been ended by it, so the floor is the bound: the
    widest one that still tells the two kills apart. *)
@@ -1504,9 +1504,9 @@ let runaway_tests =
 
 (* The per-child deadline, end to end.
 
-   Every deadline below is the loop's own derivation — the fixture
+   Every deadline below is the loop's own derivation (the fixture
    suite's measured dry-run wall clock plus ten times the scheduled
-   tests' measured timings, floored at one second — so a loaded machine
+   tests' measured timings, floored at one second), so a loaded machine
    that slows the tests slows the budget with them: no scenario races an
    absolute sleep against an absolute deadline. It is the only clock over
    a child, and over a run there is none. *)
@@ -1655,8 +1655,8 @@ let deadline_tests =
       "a probe that blocks is killed by its own deadline and refused as \
        non-determinism" (fun () ->
         (* The probe shares [fork_child], so it shares the deadline; an
-           expiry there means something else — nothing is armed, so the
-           hang is the suite's own — and the refusal must say so rather
+           expiry there means something else (nothing is armed, so the
+           hang is the suite's own), and the refusal must say so rather
            than score anything. The fixture blocks only on its SECOND
            run, on the marker the dry run leaves. *)
         let marker = Filename.concat (temp_dir ()) "marker" in
@@ -2033,7 +2033,7 @@ let interrupt_tests =
           [ ("SIGTERM", Sys.sigterm); ("SIGHUP", Sys.sighup) ]);
   ]
 
-(* One identifier, every executable — the report's own remedy
+(* One identifier, every executable (the report's own remedy)
 
    A report whose suite is reached through the build (a build action's
    loop, an inline runner's verdicts) tells the reader to arm a survivor
@@ -2042,8 +2042,8 @@ let interrupt_tests =
    instrumented executable with the variable set, and
    windtrap's own lib/ is covered by seven. So
    the scenario here is the real one: one identifier handed to two
-   executables built from disjoint sources — suite_main from subject.ml,
-   runaway_main from spinner.ml — once to the binary that holds the
+   executables built from disjoint sources (suite_main from subject.ml,
+   runaway_main from spinner.ml), once to the binary that holds the
    mutant and once to a binary that does not. Both must be usable answers
    to one command, or dune fails the build BECAUSE the one binary that
    has the mutant armed it correctly. *)
@@ -2085,7 +2085,7 @@ let cross_executable_tests =
           out);
   ]
 
-(* The control: no instrumented module in the executable at all — in an
+(* The control: no instrumented module in the executable at all, in an
    ordinary build. Under --instrument-with it links an instrumented core
    and is a control for nothing; the one scenario that needs it to
    catalogue nothing says so and steps aside. This executable links the
@@ -2139,7 +2139,7 @@ let uninstrumented_tests =
           ~sub:"instrumented with ppx_windtrap.mutate" err);
     test "a scope is loud even where there is nothing to mutate" (fun () ->
         (* Whether this binary catalogues nothing or only the core's
-           mutants, a prefix matching no file refuses by name — the same
+           mutants, a prefix matching no file refuses by name, the same
            sentence under a plain and an instrumented core, so the
            missing-backend diagnosis is never what a prefix gets. *)
         let code, _, err =

@@ -1,6 +1,6 @@
-(* Stats mixes the ladder's rungs in one place — its own suite: a shape
+(* Stats mixes the ladder's rungs in one place (its own suite): a shape
    law, two hand-derived points, and an expect literal for the render
-   nobody wants to hand-maintain. Labels are generated [a-z] only — the
+   nobody wants to hand-maintain. Labels are generated [a-z] only. The
    line-count law is about rows, so newline-bearing labels are excluded
    by construction rather than by [assume]. *)
 
@@ -21,7 +21,7 @@ let () =
            [
              (* Deliberately weak, and kept that way: this law counts lines,
              and no arithmetic inside a line moves a line count, so on its
-             own it kills nothing — the README's living specimen of a
+             own it kills nothing. It is the README's living specimen of a
              test that reaches a mutant without pinning it, and the
              faults it misses are killed by the tests beside it.
              Strengthening it is the exercise; doing so here would orphan

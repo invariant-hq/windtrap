@@ -6,8 +6,8 @@
 (* The process harness behind every transcript golden under
    test/cli/inline_runner and every runner run of test/conformance.
 
-   Each of these rules asks the same question — what does a real
-   generated runner print, on which stream, and what does it exit with —
+   Each of these rules asks the same question (what does a real
+   generated runner print, on which stream, and what does it exit with)
    and each answer is diffed byte-for-byte against a committed golden.
    Only two things can make such a golden lie: an environment variable
    the developer's shell happens to carry, and a number that is measured
@@ -16,7 +16,7 @@
    reach it; [transcript] answers the second by masking what varies. *)
 
 type mask =
-  | Full_log  (** the [full log: <path>] tail — a random per-run directory *)
+  | Full_log  (** the [full log: <path>] tail, a random per-run directory *)
   | Slow_column  (** the slow block's right-aligned duration column *)
   | Verbose_timing  (** the verbose per-test line's timing tail *)
   | Backtrace  (** backtrace frames, which name lines inside the runtime *)
@@ -76,7 +76,7 @@ let mask_full_log line =
   | None -> line
   | Some i -> String.sub line 0 (i + mlen) ^ "<log>"
 
-(* Offset of the first double-space run at or after [from] — the boundary
+(* Offset of the first double-space run at or after [from], the boundary
    both timing maskers cut on, since every column in these transcripts is
    separated by two spaces. *)
 let gap_from line from =
@@ -91,7 +91,7 @@ let gap_from line from =
 (* The slow block's entries lead with a right-aligned duration column
    (["  1.3ms  <path>"]); the value and the alignment padding both vary with
    the measurement, so the column is masked whole. An entry is an indented
-   line whose first non-blank character is a digit — the verbose per-test
+   line whose first non-blank character is a digit. The verbose per-test
    lines lead with their status tag instead, and the heading with a letter. *)
 let mask_slow_column line =
   let n = String.length line in
@@ -120,7 +120,7 @@ let mask_verbose_timing line =
 (* Backtrace frames, collapsed to one marker
 
    A crashing partition's report carries a real backtrace whose frames
-   name file:line inside ppx/runtime/ppx_runtime.ml — an unmasked golden
+   name file:line inside ppx/runtime/ppx_runtime.ml. An unmasked golden
    would break on every future edit to the runtime, over a line number
    that is not what the directory pins. The marker keeps the fact that a
    backtrace was printed, which is the part that matters: a crash is

@@ -1,4 +1,4 @@
-; Upstream test/example/*.ml — honored pass set (see corpus/root/dune).
+; Upstream test/example/*.ml, honored pass set (see corpus/root/dune).
 ; hello_async.ml is deliberately not in (modules): it is the rejected
 ; monadic-Expect_test_config fixture (RFC compat mechanism (b)),
 ; asserted by the compile-must-fail rule below against the monadic
@@ -18,7 +18,7 @@
  (preprocess
   (pps ppx_windtrap)))
 
-; hello_async.ml — REJECTED via compat mechanism (b): a monadic
+; hello_async.ml, REJECTED via compat mechanism (b): a monadic
 ; Expect_test_config (Async's shape, provided byte-compatibly by the
 ; shims in shim/) must make the generated code fail to COMPILE at the
 ; ambient [Expect_test_config.run] reference. The fixture is expanded

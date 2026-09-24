@@ -268,7 +268,7 @@ let test_subtests_only () =
 
 let test_subtest_user_msg_name () =
   (* A subtest entry whose assertion also carried a user [?msg]: the
-     testcase name is the displayed label — the sub-case components joined,
+     testcase name is the displayed label, the sub-case components joined,
      the user text appended after ": " (Report.labeled_msg). *)
   let entry =
     {

@@ -4,14 +4,14 @@
   ---------------------------------------------------------------------------*)
 
 (* Not mutated. This module is part of the machinery a mutation run uses
-   to judge mutants — the scheduler, the ambient run state, the reporting
-   spine, the loop itself — so a mutant here is armed inside the process
+   to judge mutants (the scheduler, the ambient run state, the reporting
+   spine, the loop itself) so a mutant here is armed inside the process
    that is supposed to detect it. The failure mode is not a false
    survivor but a hang or a corrupted verdict: a mutated bail counter or
    timeout does not fail the reaching tests, it stops them from
    finishing. Coverage still measures these files; only mutation is off.
-   Everything below the scheduler — the verbs, the generators, the
-   diffing, the renderers — is mutated. *)
+   Everything below the scheduler (the verbs, the generators, the
+   diffing, the renderers) is mutated. *)
 [@@@mutate exclude_file]
 
 (* The parent of a mutation run: dry run, probe, fork loop, verdict
@@ -28,8 +28,8 @@ let spf = Printf.sprintf
 
 (* The scope: [--mutate]'s source-path prefixes, applied here to the
    population the loop forks over. Every instrumented file still registers
-   and still counts reaches — the runtime reads no environment and no
-   flag — and what narrows is the work: a mutant outside the prefixes is
+   and still counts reaches (the runtime reads no environment and no
+   flag) and what narrows is the work: a mutant outside the prefixes is
    never forked and never recorded. *)
 let in_scope ~scope (id : M.id) =
   match scope with
@@ -53,8 +53,8 @@ let saturating_add x y = if x > max_int - y then max_int else x + y
 (* The configuration a loop hands its dry run. A mutation run's output
    never reports a test outcome (its output is the verdict) and its exit code
    is its own, so
-   the dry run — whose whole job is to fill the reach map and prove the
-   suite green — writes no JUnit. A run with one mutant armed hands the
+   the dry run (whose whole job is to fill the reach map and prove the
+   suite green) writes no JUnit. A run with one mutant armed hands the
    caller an ordinary [Ran] outcome and writes its own, exactly as an
    uninstrumented run would. *)
 let dry_run (config : Run.config) = { config with Run.junit = None }
@@ -64,9 +64,9 @@ let dry_run (config : Run.config) = { config with Run.junit = None }
    Built from the runner's events while the dry run prints its ordinary
    output. The protocol is the runtime's, and its one ordering rule is
    load-bearing: on [Test_started] the window that just closed is drained
-   FIRST — whatever accumulated since the previous drain was evaluated
+   FIRST, whatever accumulated since the previous drain was evaluated
    OUTSIDE any test (module initialization before the first test, teardown
-   after the previous one) and belongs to nobody — and only THEN is a
+   after the previous one) and belongs to nobody, and only THEN is a
    fresh epoch opened for the test that is starting. Bumping the epoch
    first would fold that window into the test about to run, and the very
    mutants it would fold in are the ones a warm-fork loop can never arm:
@@ -144,14 +144,14 @@ let test_time reach path =
 
 (* The per-child deadline: derived, never a knob. Every child pays the
    fork and a whole process's module initialization before its first
-   test, and the dry run just measured that fixed cost for free — it is
+   test, and the dry run just measured that fixed cost for free. It is
    one whole in-process run of this same suite, so its wall clock bounds
    any child's startup. On top of it the child gets ten times the dry
    run's own timings for exactly the tests it is scheduled to run, with a
    one-second floor absorbing measurement noise on fast suites. A mutant
-   that blocks — a flipped comparison deadlocking a pipe reader spends
+   that blocks (a flipped comparison deadlocking a pipe reader spends
    the budget at 0% CPU, where the runtime's runaway hit-count budget
-   sees nothing — is killed at the deadline and scored, and the loop goes
+   sees nothing) is killed at the deadline and scored, and the loop goes
    on: the suite noticed the change by hanging, the same reasoning as a
    crash kill. *)
 
@@ -172,7 +172,7 @@ let child_deadline ~dry_run_wall ~reach paths =
    Stdlib's exit machinery. [Stdlib.at_exit] handlers run on uncaught
    exceptions too, so a child dying of Out_of_memory, Stack_overflow or an
    escaped Runaway would otherwise run the coverage at-exit dump against a
-   path resolved at module load — before the fork — and overwrite the
+   path resolved at module load (before the fork) and overwrite the
    parent's .coverage. Every exception is caught, fatal ones included,
    reduced to a verdict line, and followed by Unix._exit. The fallback
    line is a constant, so reducing an Out_of_memory allocates nothing. *)
@@ -193,8 +193,8 @@ let child_body fd body =
   (try write_all fd line with _ -> ());
   Unix._exit 0
 
-(* A mutated program can print from anywhere — a fixture, a toplevel
-   effect, a teardown — and hundreds of children printing into the
+(* A mutated program can print from anywhere (a fixture, a toplevel
+   effect, a teardown) and hundreds of children printing into the
    parent's transcript would destroy the report. Both standard descriptors
    go to /dev/null; the pipe is a separate descriptor and is unaffected. *)
 let silence_output () =
@@ -218,8 +218,8 @@ let rec waitpid_retry pid =
   | _, status -> status
   | exception Unix.Unix_error (Unix.EINTR, _, _) -> waitpid_retry pid
 
-(* A failure of the parent's own supervision — a pipe, fork or waitpid
-   that fails, or a child that refuses to run at all — aborts the run and
+(* A failure of the parent's own supervision (a pipe, fork or waitpid
+   that fails, or a child that refuses to run at all) aborts the run and
    names the cause: a score over an unknown number of unsupervised
    children is not a score. *)
 exception Supervision of string
@@ -327,7 +327,7 @@ type report = {
 }
 
 (* One child, one process group, one deadline. [setsid] at fork puts the
-   child — and everything a test under it spawns — in a session of its
+   child (and everything a test under it spawns) in a session of its
    own, so an expiry or an interruption kills the lot with one signal to
    the group ([kill_group]); a child left alive would block the drain
    below. A recorded signal is looked for before every [select]: the
@@ -408,8 +408,8 @@ let fork_child ~deadline body =
       in
       let contents = Buffer.contents buffer in
       (* Derived, so a torn write cannot decode as a survivor: bytes that
-         never got their newline are not a line — a killed or crashed
-         child can leave a partial trailing one — and the readers then
+         never got their newline are not a line (a killed or crashed
+         child can leave a partial trailing one) and the readers then
          see nothing rather than seeing "survived". A false survivor is
          the one failure mode that makes people stop running the tool. *)
       let line =
@@ -429,16 +429,16 @@ let child_prologue () = silence_output ()
 
 (* The verdict line
 
-   A survivor's reaching tests are the parent's — they are the tests the dry
+   A survivor's reaching tests are the parent's (they are the tests the dry
    run measured as reaching the mutant, which is exactly what the report
-   claims — so a child never spells a test name. A kill names the failing
+   claims) so a child never spells a test name. A kill names the failing
    test by its index in the list the parent handed it. The line is
    therefore ASCII, of fixed shape, and cannot be malformed by a test name
    carrying a space or a newline. *)
 
 (* A child's [error] line carries a diagnostic the parent prints verbatim,
-   and both sources of one — an arming error listing candidates, a startup
-   refusal — are written for a terminal and span several lines. The line
+   and both sources of one (an arming error listing candidates, a startup
+   refusal) are written for a terminal and span several lines. The line
    is the framing, so the newlines become spaces here rather than
    truncating the message at the parent's end. *)
 let one_line message =
@@ -458,7 +458,7 @@ let counted_failure (r : Run.result) =
 (* Whether a run that had a mutant armed detected it: a counted failure on
    a test row, or a failed fixture release. Read off the outcome and never
    off [outcome.exit_code] (guarantee 12: the aggregate is the one exit
-   code a build gates on): the exit code answers a different question — it
+   code a build gates on): the exit code answers a different question. It
    is [2] for a selection that matched nothing, which is a statement about
    a filter and not about a mutant. *)
 let killed_by (outcome : Run.outcome) =
@@ -471,7 +471,7 @@ let encode_outcome ~paths (outcome : Run.outcome) =
     (* A child that recorded no test row did not survive the mutant, it
        failed to test it: reporting a survivor here would send the reader
        to strengthen tests that never ran. The allowlist is the dry
-       run's own executed paths, so this is unreachable — and a false
+       run's own executed paths, so this is unreachable, and a false
        survivor is the one failure mode that makes people stop running
        the tool, so it is not left to be unreachable. *)
     Run.results outcome.Run.run = [] && paths <> []
@@ -487,7 +487,7 @@ let decode_verdict ~paths line =
   | _ -> Ok V.Killed
 
 (* Scratch: one directory for the whole loop, one subdirectory per child,
-   removed by the PARENT — a child killed at the deadline never runs its
+   removed by the PARENT. A child killed at the deadline never runs its
    own cleanup, and an orphaned capture tree under the system temporary
    directory is exactly the trace child hygiene forbids. *)
 
@@ -518,7 +518,7 @@ let scratch_root () =
 
 (* Sources, best effort: a survivor whose file cannot be read still names
    its line in the head row. Recorded paths are workspace-relative, as
-   coverage's are, so they resolve against the project root — under
+   coverage's are, so they resolve against the project root; under
    [dune runtest] the cwd is inside _build, where they never open. *)
 let read_source =
   let cache = Hashtbl.create 16 in
@@ -592,7 +592,7 @@ let survivor ~locations (r : V.record) reaching : Report_sections.survivor =
 
    One unarmed fork over exactly the tests the dry run executed. Its line
    is three counts and the indices of any counted failure, which is all
-   the parent needs — it holds the names. Disagreement aborts: mutation
+   the parent needs. It holds the names. Disagreement aborts: mutation
    results over a non-deterministic suite are not a weaker number, they
    are not a number. *)
 
@@ -760,7 +760,7 @@ let run_mutant ~scratch ~dry_run_wall ~index ~suite ~(config : Run.config)
   | `Deadline ->
       (* The suite noticed the change by hanging: a kill, on the crash
          kill's own reasoning. Whatever reached the pipe first is not a
-         verdict — the child did not finish. *)
+         verdict. The child did not finish. *)
       V.Killed
   | `No -> (
       match decode_verdict ~paths line with
@@ -821,9 +821,9 @@ let run_children renderer ~locations ~scratch ~dry_run_wall ~suite ~config
 (* Whether the run's selection NARROWS THE SUITE: a filter, an exclude,
    a tag selection, a [--failed] rerun, an in-source focus (the runner's
    own finding, so the two cannot disagree about what focus means), or a
-   shard. A narrowed run's verdicts are relative to its selection — a
+   shard. A narrowed run's verdicts are relative to its selection (a
    mutant only deselected tests reach records Unreached, a survivor
-   survived only the selection — and the file format carries no
+   survived only the selection) and the file format carries no
    partial-run marking, so a written file would stand in the project
    merge as this executable's whole answer until the next full run.
    The mutation scope is deliberately not here: it narrows which mutants
@@ -861,10 +861,10 @@ let write_verdicts ~scope verdicts =
 (* The population, before the dry run: the catalogue is complete once
    module initialization is over, and the scope is [--mutate]'s. The
    three ways it comes up empty are three different refusals. A prefix
-   that leaves nothing is one sentence whatever the catalogue holds —
-   the prefix is what the reader typed, and a file it matches nothing
+   that leaves nothing is one sentence whatever the catalogue holds
+   (the prefix is what the reader typed, and a file it matches nothing
    of is uninstrumented, misspelled or without sites in a plain build
-   and an instrumented one alike — so it never blames a build that is
+   and an instrumented one alike) so it never blames a build that is
    instrumented and fine, and reads the same under either; the
    missing-backend diagnosis is the bare flag's, where there is no
    prefix to name. *)
@@ -1072,7 +1072,7 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
         ~after:mutant.M.after;
       flush_descriptors ();
       (* After arming, so the closing line counts the run's own
-         evaluations and not module initialization's — that window ran
+         evaluations and not module initialization's. That window ran
          before the arming and evaluated nothing mutated. *)
       M.reset_reach ();
       let result = Report.run ~suite config tests in
@@ -1083,7 +1083,7 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
          completed run that killed nothing gets the other half of the
          verdict: green alone cannot tell "the tests prove nothing about
          this site" from "no selected test ran the line", so the closing
-         line says which — except on exit 2, where the run made no claim
+         line says which, except on exit 2, where the run made no claim
          about the mutant at all. *)
       (match result with
       | Ok outcome when killed_by outcome -> Report.mutation_killed renderer

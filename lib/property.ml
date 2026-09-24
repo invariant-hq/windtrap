@@ -48,7 +48,7 @@ let collect ctx label = Hashtbl.replace ctx.case_collect label ()
 let classify ctx label condition = if condition then collect ctx label
 
 (* Presence, not proportion. The requirement registers wherever [cover] is
-   written, and the marks are [classify]'s — so a label the run never marks
+   written, and the marks are [classify]'s, so a label the run never marks
    on a passing case is the failure, and one it marks on every case is the
    same pass as one it marks on a tenth of them. *)
 let cover ctx label condition =
@@ -101,9 +101,9 @@ let run_case ctx body value =
 (* Shrinking
 
    Greedy descent over the sample's shrink tree: move to the first candidate
-   whose body run fails in the same way — assertion failures accept any
-   assertion failure, exception failures any non-assertion exception (v1
-   semantics) — and stop when no candidate is accepted, the step cap is
+   whose body run fails in the same way (assertion failures accept any
+   assertion failure, exception failures any non-assertion exception, as
+   in v1) and stop when no candidate is accepted, the step cap is
    reached, or forcing a candidate raises (a memoized cell caches its
    exception, so its siblings are unreachable). A timeout raised
    anywhere in the search also stops it, at the last accepted node: the
@@ -130,12 +130,12 @@ let shrink ~budget ~body tree first_class =
     match run_case scratch body value with
     | Error (`Timeout _ as timeout) ->
         (* The per-test alarm fired inside a candidate: a fact about the
-           whole test, not this candidate — end the search (caught below). *)
+           whole test, not this candidate; end the search (caught below). *)
         Failure.reraise timeout
     | result -> same_kind first_class result
   in
   (* Three outcomes, and the third is why this is not an option. Forcing a
-     candidate can raise — a [map]'s function, a stateful [~pre] — and a
+     candidate can raise (a [map]'s function, a stateful [~pre]) and a
      memoized cell caches the exception, so the siblings behind it are
      unreachable and the descent must stop. What it must not do is stop the
      way convergence stops: that reported a truncated search as a minimal
@@ -159,7 +159,7 @@ let shrink ~budget ~body tree first_class =
      the runner. *)
   let best = ref (tree, 0, first_class) in
   (* A descent that stopped is not a descent that converged, and the two used
-     to render identically — a truncated search and a minimal counterexample
+     to render identically. A truncated search and a minimal counterexample
      both read "shrunk 100 steps". Set by the two stops the search survives:
      the step budget, and a candidate whose forcing raised. *)
   let stop = ref Failure.Converged in
@@ -194,7 +194,7 @@ let default_count = 100
 
 (* The accepted-step budget of a shrink search: fixed, so a replay under
    the same root descends the same path to the same node and prints the
-   same counterexample — a knob here made the printed value depend on its
+   same counterexample. A knob here made the printed value depend on its
    setting. Sized against the primitives' descent: an integer's candidates
    halve the gap to its origin, so each accepted step at least halves the
    distance to the smallest failing value, and a 64-bit integer takes at
@@ -307,7 +307,7 @@ let run ?loc ?count ?max_discard ?(examples = []) ?summary ~root ~path gen body
   | None ->
       let rec generate ~passed ~attempts =
         (* Budget before goal: a run whose discards exceed the budget gives
-           up even when [count] is already met — examples can discard past
+           up even when [count] is already met. Examples can discard past
            the budget before any generation, including when [count] is 0. *)
         if !discards > max_discard then Gave_up (stats ())
         else if passed >= count then

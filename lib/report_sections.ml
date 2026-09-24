@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
 
    The failure blocks adapt windtrap v1's progress.ml, rebuilt over typed
-   Failure payloads and Diff data — the report projects run data, never
+   Failure payloads and Diff data. The report projects run data, never
    alters it.
   ---------------------------------------------------------------------------*)
 
@@ -102,8 +102,8 @@ let arm_mirror = function
   | None -> ""
 
 (* [count] is a property failure's one config-sourced knob
-   (Failure.kind.Property): the hint restates it — [--prop-count]/
-   [WINDTRAP_PROP_COUNT] — because replaying a late case needs at least as
+   (Failure.kind.Property): the hint restates it ([--prop-count]/
+   [WINDTRAP_PROP_COUNT]) because replaying a late case needs at least as
    many cases as the failing run generated. A declaration-site count needs
    no flag and never reaches here, and the shrink budget is fixed, so the
    seed alone descends to the same node. *)
@@ -226,9 +226,9 @@ let hints ?armed ?(invocation = `Mirrors) ~filter failures =
       (accepts @ List.filter_map (replay_of ~armed invocation ~filter) failures)
 
 (* Failure locations record project-root-relative source paths (__POS__,
-   debug info), so a relative path resolves against the project root first —
-   under [dune runtest] the process cwd is inside _build, where the recorded
-   path never opens — then, best-effort, as given. The excerpt therefore
+   debug info), so a relative path resolves against the project root first
+   (under [dune runtest] the process cwd is inside _build, where the recorded
+   path never opens) then, best-effort, as given. The excerpt therefore
    renders identically from the repo root and under dune. *)
 let open_source file =
   match open_in file with ic -> Some ic | exception Sys_error _ -> None
@@ -240,7 +240,7 @@ let source_line file n =
       if Filename.is_relative file then
         (* Best-effort all the way down: root discovery reads the cwd,
            which code under test may have deleted ([Sys.getcwd] then
-           raises) — an unreadable excerpt prints nothing, never crashes
+           raises). An unreadable excerpt prints nothing, never crashes
            the report. *)
         let root =
           match Os.project_root () with
@@ -333,7 +333,7 @@ let shown_text (t : Failure.text) =
   else t.kept
 
 (* The msg slot as displayed: a sub-case entry's [leaf › name] label
-   (derived from the structured components — never sniffed from the text)
+   (derived from the structured components, never sniffed from the text)
    joined with the user's annotation when there is one. *)
 let labeled_msg (f : Failure.t) =
   let msg = Option.map shown_text f.Failure.msg in
@@ -915,7 +915,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
     ->
       let claim = shown_text claim and value = shown_text value in
       (* A claim is a description, not a rendering: never diff or refine the
-         two. Colour still applies — green and red mark which side is
+         two. Colour still applies; green and red mark which side is
          which, and that is as true of a description as of a value, and so is
          visibility: a [~claim] may be built around a rendered bound
          ([greater than <x>]). *)
@@ -1189,7 +1189,7 @@ let is_subtest_failure (f : Failure.t) = f.Failure.subtest <> []
    hint lines, aligned rows, source excerpts, and the failure section's
    rules. Coverage's per-file table and mutation's survivor blocks are
    two projections into it, drawn knowing nothing about the runtimes that
-   measured the data — the subsystem that owns the numbers builds section
+   measured the data. The subsystem that owns the numbers builds section
    data, and every name the runtime owns (a mutant identifier, the arming
    variable) arrives pre-spelled with the runtime's own functions. A source
    line has two drawers: [source_excerpt] for a failure block and a

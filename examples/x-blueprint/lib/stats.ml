@@ -1,6 +1,6 @@
 (* [clamp]'s comparison carries a dismissed mutant: [n > 0] and
    [n >= 0] agree at zero (both arms yield zero marks), so the mutation
-   loop cannot distinguish them — the attribute records that reasoning
+   loop cannot distinguish them. The attribute records that reasoning
    where [git blame] can see it. *)
 let clamp n =
   if (n > 0) [@mutate off "both arms yield zero marks at 0"] then n else 0

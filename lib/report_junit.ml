@@ -4,7 +4,7 @@
 
    The testsuites/testsuite/testcase structure adapts windtrap v1's
    progress.ml write_junit_xml, rebuilt over typed Failure payloads with
-   XML 1.0 field sanitization — the renderer owns its transport's validity.
+   XML 1.0 field sanitization. The renderer owns its transport's validity.
   ---------------------------------------------------------------------------*)
 
 let spf = Printf.sprintf
@@ -205,7 +205,7 @@ let render ?(invocation = `Mirrors) ?armed ~suite ~results ~release_failures
                 (fun (f : Failure.t) ->
                   (* The name is the displayed label: the [parent › name]
                      components joined, plus the user's [?msg] suffix when
-                     the entry carried one — the same spelling the terminal
+                     the entry carried one, the same spelling the terminal
                      block prints. *)
                   let name =
                     match Report_sections.labeled_msg f with
@@ -238,8 +238,8 @@ let render ?(invocation = `Mirrors) ?armed ~suite ~results ~release_failures
 
 (* Writing
 
-   One process per suite is the normal case under `dune runtest` — a
-   process per (test) stanza, and one per inline-test partition — so a
+   One process per suite is the normal case under `dune runtest`, a
+   process per (test) stanza, and one per inline-test partition, so a
    single fixed path would have every suite overwrite the last, silently.
    A value naming an [.xml] file stays exactly that, for the one-process
    invocations `--junit` was written for; anything else is a directory,

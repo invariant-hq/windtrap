@@ -1,5 +1,5 @@
 (* A stale [%expect] payload, in its own partition. Its correction is
-   computed and written whatever happens in crash.ml — and, under dune,
+   computed and written whatever happens in crash.ml, and, under dune,
    registered for promotion only if crash.ml's partition also exits 0. *)
 
 let%expect_test "a stale payload" =

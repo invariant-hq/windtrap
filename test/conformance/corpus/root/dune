@@ -1,4 +1,4 @@
-; Upstream test/*.ml — honored pass set: a real (inline_tests) library
+; Upstream test/*.ml, honored pass set: a real (inline_tests) library
 ; preprocessed with ppx_windtrap, driven by dune's generated runner
 ; under @runtest, exactly the swap the RFC promises adopting suites.
 ; Every fixture must pass; any mismatch fails runtest with a

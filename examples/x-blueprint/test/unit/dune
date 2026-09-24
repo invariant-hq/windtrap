@@ -6,7 +6,7 @@
 ; Both suites declare properties, and the env_var deps make them react
 ; to a seed or a case count set in the environment: `WINDTRAP_SEED=…
 ; dune runtest` replays on a warm tree without --force. An ad hoc run
-; passes flags instead — `dune exec test/unit/test_slug.exe -- -f slug`.
+; passes flags instead: `dune exec test/unit/test_slug.exe -- -f slug`.
 
 (test
  (name test_slug)

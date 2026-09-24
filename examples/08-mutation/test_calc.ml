@@ -1,5 +1,5 @@
-(* The mutation example's suite. One test is deliberately weak — a boolean
-   that the a - b → a + b mutant also satisfies — and the exact test beside
+(* The mutation example's suite. One test is deliberately weak (a boolean
+   that the a - b → a + b mutant also satisfies), and the exact test beside
    it kills that mutant, so the whole suite kills everything it reaches
    while a survey filtered to the weak test shows a survivor (the dune
    file has the commands). *)

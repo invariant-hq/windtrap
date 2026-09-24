@@ -23,8 +23,8 @@ let root =
 let result ?(attempts = 1) ?(duration = 0.0002) ?prop_stats
     ?(slow_tagged = false) ?xfail ?counted path outcome =
   (* [counted] defaults to the executor's rule (Run.counts_failed): a
-     [Fail] counts unless the test is xfail-annotated — then it is an
-     excused expected failure; passes and skips never count. The
+     [Fail] counts unless the test is xfail-annotated (then it is an
+     excused expected failure); passes and skips never count. The
      unexpected-pass fixture overrides the default. *)
   let counted =
     match counted with
@@ -101,7 +101,7 @@ let body_teardown =
 
 (* Additions only from here: the values above feed byte-exact goldens. *)
 
-(* Same constructor, different message payloads — the message-diff case. *)
+(* Same constructor, different message payloads (the message-diff case). *)
 let raise_message_failure =
   Failure.raised
     ~loc:(loc "test/test_bounds.ml" 8)
@@ -117,7 +117,7 @@ let raise_message_failure =
 
 (* An xfail annotation, an excused failing result (annotated, not
    counted), and the runner's synthesized unexpected-pass result (annotated
-   and counted — the record's bit keeps it loud). *)
+   and counted; the record's bit keeps it loud). *)
 let xfail_reason = { Test_tree.reason = Some "issue #42" }
 
 let excused_result =

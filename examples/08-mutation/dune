@@ -1,5 +1,5 @@
 ; The mutation walkthrough (doc/manual/mutation.md): the second inert
-; stanza on the library under test — this plain `dune runtest` runs the
+; stanza on the library under test. This plain `dune runtest` runs the
 ; original program, with no mutation output. The survey is the run you
 ; already make, with --mutate: filtered to the test you just wrote and
 ; scoped to the file it exercises,

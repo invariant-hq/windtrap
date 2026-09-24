@@ -38,7 +38,7 @@ let rec any_odd n = if n <= 0 then false else n mod 2 = 1 || any_odd (n - 2)
 
 (* [||] right arms that are not bare applications. Each of these shapes
    inherits tail position in its own sub-expressions, so the recursive call
-   inside is a tail call — and the arm used to be demoted to an [if]
+   inside is a tail call, and the arm used to be demoted to an [if]
    condition, which traversed it out of tail position and post-wrapped the
    call. Instrumented, these overflowed at the depths below. [or_try] is
    the exception: its call sits in the body of the [try], which is never a
@@ -55,9 +55,9 @@ let rec or_try n = n = 0 || try or_try (n - 1) with Not_found -> false
 
 (* [[@tail_mod_cons]]: the recursive call sits in a constructor argument of
    a tail expression, which is where TMC rewrites it. Out-edge wrapping
-   there leaves the function with no TMC-able call — warning 71, fatal
+   there leaves the function with no TMC-able call (warning 71, fatal
    under dune's dev profile ([-warn-error +a]), so an instrumented build of
-   this file would not compile at all — or, under a profile where the
+   this file would not compile at all) or, under a profile where the
    warning is not fatal, silently turns the function stack-consuming. *)
 let[@tail_mod_cons] rec tmc_map f = function
   | [] -> []

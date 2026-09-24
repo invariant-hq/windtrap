@@ -165,7 +165,7 @@ let family (m : M.mutant) =
    core this executable links is itself mutation-instrumented, and its
    sites drain into the same window as the fixtures'. Every claim in this
    suite is about the three fixture sources, so the drain is read through
-   this rather than raw — the same discipline the coverage twin applies
+   this rather than raw, the same discipline the coverage twin applies
    to its snapshot. Basenames, because the fixtures' recorded paths are
    this directory's and the baseline library's are one directory down;
    the path assertions below still check the whole path. *)

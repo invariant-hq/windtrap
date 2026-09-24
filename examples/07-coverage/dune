@@ -1,5 +1,5 @@
 ; The coverage walkthrough (doc/manual/coverage.md): one inert stanza
-; on the library under test, committed once — this plain `dune runtest`
+; on the library under test, committed once. This plain `dune runtest`
 ; runs uninstrumented, with zero overhead and no coverage output. Two
 ; commands, the instrumented run and the merge:
 ;

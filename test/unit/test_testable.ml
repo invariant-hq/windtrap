@@ -37,8 +37,8 @@ module Version = struct
   let compare = Stdlib.compare
 end
 
-(* A module whose [equal] is finer than structural equality — physical
-   equality. The witness must pass it through untouched: no structural
+(* A module whose [equal] is finer than structural equality (physical
+   equality). The witness must pass it through untouched: no structural
    fallback, no comparison mediated by the printed form. *)
 module Phys = struct
   type t = int ref
@@ -352,7 +352,7 @@ let tests =
           (T.float_rel ~rel:1.0 ~abs:0.0)
           Float.infinity Float.max_float);
     test "float: a non-positive eps is rejected" (fun () ->
-        (* [float 0.] — and any eps below it — is exact equality wearing a
+        (* [float 0.] (and any eps below it) is exact equality wearing a
            tolerance's syntax; the guard names the honest spelling. *)
         let rejects msg fn =
           raises_match ~msg (Exn.invalid_arg ~substring:"float_exact") fn
@@ -486,7 +486,7 @@ let tests =
           (T.structural ~pp:(Pp.list Pp.int))
           [ 1; 2 ] [ 1; 3 ];
         (* [contramap] sends the order through the projection with the
-           equality and the printer — and has none to send when the
+           equality and the printer, and has none to send when the
            underlying witness has none. *)
         ordered_or_fail "contramap: orders through the projection"
           (T.contramap String.length T.int)

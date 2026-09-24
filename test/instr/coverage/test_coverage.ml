@@ -56,7 +56,7 @@ let exe_dir = Filename.dirname Sys.executable_name
 (* The parent's own at_exit dump must not land in the project's
    _build/_coverage. The destination is resolved at the FIRST
    registration in the process, and under `--instrument-with` that is a
-   windtrap core module's, at library load — before this file's
+   windtrap core module's, at library load, before this file's
    initializer runs. So the override is set by the dune action
    (WINDTRAP_COVERAGE_FILE=test_coverage.coverage, resolved against the
    action's directory) and not by a putenv here, which would be too late
@@ -152,7 +152,7 @@ let fresh =
 let registry_tests =
   [
     test "register and visit reject malformed tables" (fun () ->
-        (* Loud rejection — instrumenter bugs fail fast. *)
+        (* Loud rejection, so instrumenter bugs fail fast. *)
         raises_match ~msg:"register rejects points/counts length mismatch"
           Exn.invalid_arg (fun () ->
             C.register ~file:"reg_bad_len.ml"
@@ -1074,7 +1074,7 @@ let dump_tests =
         equal ~msg:"visit saturates at max_int" string
           (child_dump ~exe:child_exe [| max_int; 0; 0 |])
           (read_file (run "saturate"));
-        (* Same file registered twice with an equal table — a
+        (* Same file registered twice with an equal table, a
            functor-style double instantiation: counts add, points are
            counted once. *)
         let duplicate = run "duplicate" in

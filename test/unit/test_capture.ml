@@ -11,7 +11,7 @@
    saves and restores the (already redirected) descriptors, so the outer
    capture is unaffected.
 
-   Discipline: no assertion may run inside [with_capture] — a printed
+   Discipline: no assertion may run inside [with_capture]. A printed
    report would land in the inner file. Bodies collect values into refs;
    checks run after. *)
 
@@ -454,7 +454,7 @@ let test_disabled () =
 
 (* Bounded tails.
 
-   The bound is [Failure.tail_bytes] — no per-state knob to dial down — so
+   The bound is [Failure.tail_bytes] (no per-state knob to dial down) so
    every case below has to overrun 8 KiB for real, and the expectations are
    computed from the bound rather than written out. Where the cut lands
    inside a UTF-8 sequence is a property of the payload's character width
@@ -538,7 +538,7 @@ let test_utf8_max_skip () =
   let cap = Capture.create ~log_dir:root ~suite:"s" () in
   (* Four-byte scalars would align with the bound exactly; the trailing
      one-byte 'z' shifts the run so the suffix starts one byte after a lead
-     and three continuation bytes must be skipped — the maximum. *)
+     and three continuation bytes must be skipped, the maximum. *)
   let pile = "\xF0\x9F\x92\xA9" in
   let payload = repeat ((bound / 4) + 10) pile ^ "z" in
   let cut = String.length payload - bound in
@@ -611,7 +611,7 @@ let test_name_collisions () =
   (* Two names that differ only in punctuation map to the same readable
      form ([parse__empty]): the sanitizer keeps them apart only because it
      appends a digest of the original. Without it both attempts open one
-     path — and [with_capture] opens it O_TRUNC — so the second test erases
+     path (and [with_capture] opens it O_TRUNC) so the second test erases
      the first test's output while the first failure's tail still points at
      the file. Asserted on the files themselves, since reconstructing the
      names with the sanitizer would hold for any mapping at all. *)
@@ -638,7 +638,7 @@ let test_name_collisions () =
 
 let test_stable_paths () =
   (* The log path is a function of the test's identity, so a second run of
-     the same suite writes the same file — which is what makes a path
+     the same suite writes the same file, which is what makes a path
      printed in a failure report worth typing into an editor. *)
   let root = temp_dir () in
   let log_of cap =
@@ -675,7 +675,7 @@ let child_spawn_holder log_dir =
 
 let test_saved_descriptors_are_cloexec () =
   (* Capture's saved dups of the real stdout/stderr must be
-     close-on-exec — an exec'd child that outlives the run must not hold
+     close-on-exec. An exec'd child that outlives the run must not hold
      the runner's stdout open, or a piped reader (`suite.exe | cat`, dune
      runtest) waits on the child after the suite finished. EOF on the
      child's pipe must arrive when the child exits, while its sleeper
@@ -744,7 +744,7 @@ let test_log_fd_is_cloexec () =
   (* The companion of the test above: the .output fd must be as close-on-exec as
      the saved dups. An exec'd child writes through the redirected fds 1-2
      and must not also inherit the raw log fd. The child probes which of
-     its fds 3-9 alias its own stdout — the log file during capture — so
+     its fds 3-9 alias its own stdout (the log file during capture) so
      unrelated descriptors open in this process cannot trip it. *)
   if Sys.win32 then skip ~reason:"no /bin/sh on Windows" ();
   let root = temp_dir () in

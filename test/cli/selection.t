@@ -42,7 +42,7 @@ suite named, and the way out spelled:
   list: ./suite_main.exe -l
   [2]
 
-Under --corrected — what a build action passes — the same emptied
+Under --corrected (what a build action passes) the same emptied
 selection is not an error: a WINDTRAP_* selection spans every stanza
 and inline partition of the tree, so a stanza it leaves empty exits 0
 with the same line, and dune's diff? is the verdict. A build action has
@@ -82,8 +82,8 @@ selected tests the run never reached: "1 failed" alone would read as
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out | tail -n 1
   2 passed, 1 failed, 2 not run in DURATION.
 
-A selection that passes exits 0 — the four tests left when the one
-failing test is excluded, baseline and slow-tagged test included. The
+A selection that passes exits 0 (the four tests left when the one
+failing test is excluded, baseline and slow-tagged test included). The
 baseline is planted where WINDTRAP_PROJECT_ROOT sends the child's
 lookup:
 
@@ -109,7 +109,7 @@ control characters, and a hex fallback for everything else below space.
   windtrap: no tests ran: filter "a\"b\\c\nd\te\rf\x01g\x7fh" matched none of 5 tests.
 
 --failed is the one part of the sentence with a prerequisite: the store
-the last run left under -o. That coupling is the whole scenario — the
+the last run left under -o. That coupling is the whole scenario: the
 recording run first, the flag joining the sentence second.
 
   $ run ./suite_main.exe -f boom -o store > /dev/null 2>&1

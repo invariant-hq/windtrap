@@ -6,10 +6,11 @@
 (* Tests for Report and Report_sections: golden transcripts over a
    synthetic run covering every failure kind (equality with diff, raise,
    baseline missing/mismatch, property with inner failure, body + teardown
-   pair, captured tail with a drop count) at both levels — compact (nothing
-   per test, the header iff a block follows) and verbose (a line per test)
-   — when a compact run prints more than its summary, the slow and flaky blocks, ANSI styling and diff
-   highlighting, ANSI hygiene (payload-borne escapes shown, never
+   pair, captured tail with a drop count) at both levels, compact (nothing
+   per test, the header iff a block follows) and verbose (a line per test),
+   when a compact run prints more than its summary, the slow and flaky
+   blocks, ANSI styling and diff highlighting,
+   ANSI hygiene (payload-borne escapes shown, never
    obeyed), the live displays, the failure projections (headline,
    pp_failure), degenerate equalities, diff and proposed-content display
    bounds, duration forms, replay-line quoting and root-token consistency,
@@ -212,7 +213,7 @@ let test_golden_verbose () =
   not_contains ~msg:"plain transcript has no escape codes" ~sub:"\027" actual
 
 (* The coloured transcript, which had no golden at all: [test_ansi] pins
-   nine substrings, so every escape run BETWEEN them was unpinned — and a
+   nine substrings, so every escape run BETWEEN them was unpinned, and a
    colour bug is exactly a wrong byte next to a right one. A baseline of
    the whole thing costs one file and pins every escape, each spelled as
    its role, so a colour change is a diff a reader can review. The golden
@@ -267,7 +268,7 @@ let test_ansi () =
   not_contains ~msg:"ansi: the slow section carries no advice line"
     ~sub:"exempt with the" t;
   let c = transcript ~ansi:true () in
-  (* The summary counts wear the block palette — one convention for the
+  (* The summary counts wear the block palette, one convention for the
      whole transcript, not two for the same run. *)
   contains ~msg:"ansi: summary skip count is yellow"
     ~sub:"\027[33m1 skipped\027[0m" c;
@@ -284,7 +285,7 @@ let test_ansi () =
   contains ~msg:"ansi: summary excused count is faint"
     ~sub:"\027[2m1 expected failure\027[0m" x;
   (* A pair that refines: ["true"]/["false"] marks 80% of a side, which the
-     noise rule declines — the styling has to be shown on a real span. *)
+     noise rule declines. The styling has to be shown on a real span. *)
   let b =
     failure_block ~ansi:true
       (Failure.equality ~expected:"the quick brown fox"
@@ -356,7 +357,7 @@ let test_live () =
 let test_live_compact_tail () =
   (* The compact erasable tail is the only thing a green compact run
      prints while it runs: it draws from column zero, never brings the
-     header out, and its erasure re-prints nothing — a green run's screen
+     header out, and its erasure re-prints nothing. A green run's screen
      stays blank, and what a pipe sees is exactly the committed
      transcript. *)
   let t =
@@ -848,7 +849,7 @@ let test_verbose_commits_blocks () =
 let test_note () =
   (* Run-scoped notices (fixture releases) land between results. Compact
      prints nothing per test, so the notice is an erasable live line and
-     never part of the transcript — a green run keeps its one line and a
+     never part of the transcript. A green run keeps its one line and a
      noteworthy one its blocks; verbose prints it in position. *)
   let green =
     with_renderer (fun r ->
@@ -1077,7 +1078,7 @@ let test_compact_slow_trigger () =
   in
   equal ~msg:"a skip never triggers the threshold" string
     "s: 1 skipped in 2.0s.\n" skipped;
-  (* An excused expected failure is not a counted failure — but its
+  (* An excused expected failure is not a counted failure, but its
      duration still counts against the threshold when untagged. *)
   let excused_fast =
     with_renderer (fun r ->
@@ -1091,8 +1092,8 @@ let test_compact_slow_trigger () =
     "s: 1 expected failure in 100ms.\n" excused_fast
 
 let test_slow_duration_semantics () =
-  (* The compared duration is [Run.result.duration] — the attempts summed
-     (run.mli) — so a retried test whose attempts together cross the
+  (* The compared duration is [Run.result.duration], the attempts summed
+     (run.mli), so a retried test whose attempts together cross the
      threshold is slow even when its final attempt was fast. *)
   let retried =
     Fixtures.result [ "flaky" ] Failure.Pass ~duration:1.2 ~attempts:3
@@ -1108,8 +1109,8 @@ let test_slow_duration_semantics () =
     (String.starts_with ~prefix:"s: 1 test\n" t);
   contains ~msg:"the warning shows the summed duration"
     ~sub:"slow tests (1, over 1s):\n  1.2s  flaky\n" t;
-  (* A slow test that also fails: one block and one warning — they report
-     different things — and the summary counts the failure once. *)
+  (* A slow test that also fails: one block and one warning (they report
+     different things) and the summary counts the failure once. *)
   let slow_fail =
     Fixtures.result [ "boom" ]
       (Failure.Fail [ Failure.message "b" ])
@@ -1476,7 +1477,7 @@ let test_property_projections () =
   contains ~msg:"replay filter is shell-quoted"
     ~sub:{|WINDTRAP_FILTER='it'\''s › tricky'|} quoted;
   (* A config-sourced count rides the payload and the replay line restates
-     it — replaying a late case needs at least as many cases as the failing
+     it. Replaying a late case needs at least as many cases as the failing
      run. A payload without a count (the declaration-site form) is pinned
      flagless just above. *)
   let counted =
@@ -1642,7 +1643,7 @@ let test_kind_details () =
 
 let test_degenerate_equalities () =
   (* Renderings line-equal but byte-different: the only such difference is a
-     trailing newline, which a line diff cannot show — say so instead of
+     trailing newline, which a line diff cannot show; say so instead of
      printing an empty diff. *)
   let b =
     failure_block (Failure.equality ~expected:"a\nb" ~actual:"a\nb\n" ())
@@ -1664,7 +1665,7 @@ let test_degenerate_equalities () =
     b;
   not_contains ~msg:"identical renderings print no expected/actual pair"
     ~sub:"expected" b;
-  (* Identical and multi-line: printed once, in block form — inlining after
+  (* Identical and multi-line: printed once, in block form. Inlining after
      an [expected] label would put continuation lines at column zero. *)
   let b =
     failure_block
@@ -1730,8 +1731,8 @@ let test_ansi_hygiene () =
    report, and a grep for the reported bytes found nothing. Comparison
    surfaces escape C0 and DEL at render time; comparison and storage stay
    byte-raw. The three surfaces the escape has to reach are the short-value
-   refinement path, the multi-line hunk path, and the containment excerpt —
-   and on all three the marks are computed against the raw value and drawn
+   refinement path, the multi-line hunk path, and the containment excerpt;
+   on all three the marks are computed against the raw value and drawn
    against the escaped one, so the columns are what these tests are really
    pinning. *)
 
@@ -1902,7 +1903,7 @@ let test_control_bytes_hunks () =
   in
   contains ~msg:"hunks: CR renders as its hex escape" ~sub:"- two\\x0d\n" cr;
   not_contains ~msg:"hunks: no raw CR survives" ~sub:"two\r" cr;
-  (* Baseline mismatches share [pp_hunks] — the single producer. *)
+  (* Baseline mismatches share [pp_hunks], the single producer. *)
   let snap =
     failure_block
       (Failure.baseline
@@ -2474,7 +2475,7 @@ let test_excused_collision () =
   (* The F4 regression, renderer level: an xfail test whose REAL failure
      message equals the runner's unexpected-pass string. The record says
      excused ([counted = false]); classification is record-driven, so the
-     stream agrees with the exit code and the summary — no failure message
+     stream agrees with the exit code and the summary. No failure message
      is ever inspected. *)
   let collide =
     Fixtures.result [ "collide" ]
@@ -2647,7 +2648,7 @@ let test_prop_stats () =
   contains ~msg:"prop stats: percentages" ~sub:"36.0%  empty" b;
   contains ~msg:"prop stats: uncovered label"
     ~sub:"      collision  0  never covered\n" b;
-  (* The list carries the covered label too — that is what it adds over the
+  (* The list carries the covered label too. That is what it adds over the
      failure headline, which names only the ones that were not. *)
   contains ~msg:"prop stats: covered label listed alongside" ~sub:"singleton  9"
     b;
@@ -2871,12 +2872,12 @@ let test_containment_multiline () =
 
 (* The not-found display cap: with no occurrence to mark, the haystack is
    context rather than evidence, so the display shows a small head window
-   — at most 10 lines and 1 KiB — and the excerpt line states the cut in
+   (at most 10 lines and 1 KiB) and the excerpt line states the cut in
    the same words it states the stored bound. A found occurrence keeps the
    full stored window: there the excerpt is the evidence. *)
 let test_containment_not_found_cap () =
   (* Single-line content cuts at the byte bound, and the verdict sits
-     directly above the excerpt — the cap exists so an 8 KiB context dump
+     directly above the excerpt. The cap exists so an 8 KiB context dump
      cannot scroll the diagnosis away. *)
   let haystack = String.make 20_006 'a' in
   let f =
@@ -2998,7 +2999,7 @@ let chain_haystack = "connect send disconnect authenticate"
 
 (* [in_order ~subs:["connect"; "authenticate"; "disconnect"]]: the log shows
    the last two events the wrong way round, so the search for "disconnect"
-   resumed at 36 — past "authenticate" — and its only occurrence, byte 13,
+   resumed at 36 (past "authenticate") and its only occurrence, byte 13,
    is behind the cursor. *)
 let out_of_order_failure =
   Failure.containment ~found_at:13
@@ -3014,7 +3015,7 @@ let test_in_order_block () =
   let b = failure_block out_of_order_failure in
   (* Which element broke the chain is its own line, on the label gutter;
      the verdict slot carries where the search stood and where the element
-     actually is — "there, but too early" rather than "not there". *)
+     actually is ("there, but too early" rather than "not there"). *)
   contains ~msg:"in_order: the element index is a line of its own"
     ~sub:"    element   2\n" b;
   contains ~msg:"in_order: the verdict names both offsets"
@@ -3162,8 +3163,8 @@ let test_trailing_whitespace_hunks () =
     (strip_ansi colored = plain);
   (* One meaning for green, across both diff paths.
 
-     A transcript routinely shows both — a short value marks its spans,
-     a multi-line one emits hunks — and until [text] made the multi-line
+     A transcript routinely shows both (a short value marks its spans,
+     a multi-line one emits hunks) and until [text] made the multi-line
      path ordinary, nobody hit them side by side often enough to notice
      that green meant "expected" on one and "actual" on the other. The
      [-]/[+] sigils carry the diff convention; the colour carries the
@@ -3187,7 +3188,7 @@ let test_trailing_whitespace_hunks () =
     ~sub:"\027[31m+ actual\027[0m" hunks;
   not_contains ~msg:"hunk path: no diff-tool colouring survives"
     ~sub:"\027[31m- expected" hunks;
-  (* Baseline mismatch diffs share pp_hunks — the single producer. *)
+  (* Baseline mismatch diffs share pp_hunks, the single producer. *)
   let snap =
     failure_block
       (Failure.baseline
@@ -3235,7 +3236,7 @@ let test_uncaught_wording () =
   contains ~msg:"uncaught: a multi-line exception is a block under the sentence"
     ~sub:"    uncaught exception:\n      Parse_error(\n        line 3)\n"
     (failure_block (Failure.raised ~actual:"Parse_error(\n  line 3)" ()));
-  (* raises_match keeps its wording — pinned above in
+  (* raises_match keeps its wording, pinned above in
      [test_raise_message_diff_guards]; the (None, None) arm serves both. *)
   contains ~msg:"wanted-any arm unchanged"
     ~sub:"    expected an exception, but none was raised\n"
@@ -3936,7 +3937,7 @@ let test_location_forms () =
 let test_excerpt_project_root () =
   (* The recorded location is project-root-relative, exactly as __POS__
      records it. Under [dune runtest] the process cwd is inside _build,
-     where this path never opens — resolution against the project root
+     where this path never opens. Resolution against the project root
      must find it; run directly from the repo root, the relative open
      works too, and the block renders identically. *)
   let f =
@@ -5057,8 +5058,8 @@ let test_github_replay_info () =
     ~sub:"counterexample (case 12, shrunk 4 steps): Rect (2, 0)" a
 
 let test_github_invocation_hints () =
-  (* Annotation messages carry the same hint bytes as the terminal block —
-     both derive from the one startup-computed invocation. *)
+  (* Annotation messages carry the same hint bytes as the terminal block.
+     Both derive from the one startup-computed invocation. *)
   let invocation = `Exe "dune exec qa/x/t.exe --" in
   let a =
     Report.annotation ~invocation
@@ -5115,8 +5116,8 @@ let test_github_groups () =
     (Report.group_start "a\nb")
 
 let test_github_excused_filtered () =
-  (* Classification is record-driven: an excused expected failure — a
-     failing record that did not count — annotates nothing, while the
+  (* Classification is record-driven: an excused expected failure (a
+     failing record that did not count) annotates nothing, while the
      unexpected-pass record (counted, annotation and all) stays loud. *)
   let results =
     [

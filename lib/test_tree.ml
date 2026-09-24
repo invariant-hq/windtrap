@@ -91,7 +91,7 @@ let declared ?(tags = []) ?timeout ?retries () =
   { tags = Tag.of_list tags; focused = false; timeout; retries; xfail = None }
 
 (* Declaration location: [?__POS__] wins, and the backtrace fallback is
-   best-effort — it can attribute to the wrong frame when the constructor
+   best-effort. It can attribute to the wrong frame when the constructor
    call was reached through tail calls (documented in the interface).
    Every constructor binds it with a [let], which keeps the capture out of
    tail position. Inside these definitions [__POS__] is the parameter, not
@@ -140,7 +140,7 @@ let scoped scope ?__POS__ ?tags ?timeout ?retries name fn =
 
 (* A bracket is a scoped test whose scope is spelled by hand rather than
    with [Fun.protect]: a raising teardown must reach the runner as itself
-   — an assertion, a skip, the re-armed timeout — not wrapped in
+   (an assertion, a skip, the re-armed timeout) not wrapped in
    [Finally_raised], and a fatal exception, which [Failure.catch] never
    returns, must not run user code on its way out. *)
 let bracket ?__POS__ ?tags ?timeout ?retries ~setup ~teardown name fn =
@@ -162,8 +162,8 @@ let annotate f = function
 
 let focus t = annotate (fun a -> { a with focused = true }) t
 
-(* Innermost wins: the value nearest the test — its own, else its closest
-   annotated ancestor's — is the one that applies. *)
+(* Innermost wins: the value nearest the test (its own, else its closest
+   annotated ancestor's) is the one that applies. *)
 let nearest own inherited = match own with Some _ -> own | None -> inherited
 
 let xfail ?reason t =

@@ -72,8 +72,8 @@ let is_fixture file = Filename.basename file = "covsem_fixtures.ml"
    identity if any, the file count, then per file [len name], the point
    count and one [start end count] per point. Counts, not a tally of
    visited points, because a test here may run more than once in one
-   process — the mutation loop's probe and its children are forks of the
-   process that ran the dry run — and a point an earlier run visited is
+   process (the mutation loop's probe and its children are forks of the
+   process that ran the dry run), and a point an earlier run visited is
    visited still. *)
 let counts () =
   let text = In_channel.with_open_bin dump In_channel.input_all in

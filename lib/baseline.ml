@@ -17,8 +17,8 @@ type key = Site of Loc.pos | Path of string
 
 let key_of = function Literal { pos; _ } -> Site pos | File path -> Path path
 
-(* Where a subject's file is: [read], the copy the run reads and — in
-   Corrected mode — patches, which is dune's build copy inside a build
+(* Where a subject's file is: [read], the copy the run reads and (in
+   Corrected mode) patches, which is dune's build copy inside a build
    action and the source otherwise; [source], the file under the project
    root that Update mode rewrites. *)
 type where = { read : string; source : string }

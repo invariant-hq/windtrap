@@ -10,8 +10,8 @@
    file baseline.
 
    More declarations, selected by FACADE_FIXTURE, because two of the
-   things [run] refuses are properties of a suite rather than of a flag —
-   a duplicate path and a committed focus — and neither can coexist with
+   things [run] refuses are properties of a suite rather than of a flag
+   (a duplicate path and a committed focus), and neither can coexist with
    the tests every other scenario selects from; a flaky test, a noisy
    failing test, the streamed tests, a test that fails beside a stale
    baseline, a retried test over a stale baseline, a stale baseline

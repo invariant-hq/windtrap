@@ -123,15 +123,15 @@ let float_exact =
   }
 
 (* Combined tolerance: relative handles large magnitudes, absolute handles
-   near-zero values. NaN is equal to nothing here — IEEE 754's rule, stated
+   near-zero values. NaN is equal to nothing here, by IEEE 754's rule, stated
    rather than left to fall out of the comparisons. The relative test
    requires a finite [max_ab]: with an infinite side, [rel *. max_ab] is
    [infinity] and [diff <= infinity] would make [infinity] "equal" to any
    float (v1's behavior, a latent bug). Equal infinities are caught by
    [a = b].
 
-   One zero bound is a real configuration — it switches that component off
-   while the other still tolerates — so each bound is only required
+   One zero bound is a real configuration (it switches that component off
+   while the other still tolerates) so each bound is only required
    non-negative and non-NaN. Both zero, though, is exact equality in a
    tolerance's syntax, refused the same way [float] refuses it.
 
@@ -164,7 +164,7 @@ let float_rel ~rel ~abs =
    [a = b] already did. One equality, so the two witnesses cannot drift.
 
    Any eps <= 0 (NaN included) degenerates the tolerance test to the [a = b]
-   shortcut — exact equality wearing a tolerance's syntax. Refused loudly and
+   shortcut, exact equality wearing a tolerance's syntax. Refused loudly and
    here, before [float_rel]'s own wording could name the wrong function: the
    caller either meant a tolerance and mistyped it, or meant exactness and
    should say so. [not (eps > 0.)] rather than [eps <= 0.] so NaN is caught

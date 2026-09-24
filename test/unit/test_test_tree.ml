@@ -5,14 +5,14 @@
 
 (* Tests for Test_tree: inert construction, path derivation and the frozen
    separator, the optional arguments (tags, timeout, retries) on every
-   constructor — group-level defaults, innermost-wins, tag union, [slow] —
+   constructor (group-level defaults, innermost-wins, tag union, [slow]),
    the two annotations (focus, xfail) and the sites they preserve,
    declaration-site capture (?__POS__ preferred, backtrace fallback), cases
    naming, bracket as a scope derived from its setup and teardown, and scoped
    kept as a scope and a body (with the argument order that keeps its
    optionals through a partial application), and the tag sets and selection
    predicates of [Test_tree.Tag]. The trees under test are inert
-   data built with [Test_tree] directly — never executed by the hosting
+   data built with [Test_tree] directly, never executed by the hosting
    runner. *)
 
 open Windtrap
@@ -334,8 +334,8 @@ let () =
 let () =
   reg "backtrace fallback attributes every constructor to the declaring file"
   @@ fun () ->
-  (* The fallback walks past windtrap's own frames — [make_test], the
-     derived bracket's scope builder, the [cases] child loop — and lands on
+  (* The fallback walks past windtrap's own frames ([make_test], the
+     derived bracket's scope builder, the [cases] child loop) and lands on
      the user frame that applied the constructor, whichever constructor it
      was and whatever optional arguments it took. *)
   let declared_here name tree =
@@ -352,7 +352,7 @@ let () =
   declared_here "bracket"
     (T.bracket ~retries:1 ~setup:nop ~teardown:ignore "b" ignore);
   declared_here "scoped" (T.scoped (fun fn -> fn ()) ~tags:[ "s" ] "s" ignore);
-  (* A partially applied bracket — the [with_db] idiom — captures where the
+  (* A partially applied bracket (the [with_db] idiom) captures where the
      resulting constructor is applied, still user code. *)
   let with_unit = T.bracket ~setup:nop ~teardown:ignore in
   declared_here "partially applied bracket" (with_unit ~timeout:1. "b" ignore);
@@ -412,7 +412,7 @@ let () =
 
 (* bracket: a scope derived from setup and teardown *)
 
-(* The derived scope, applied to its body by hand — what the runner does
+(* The derived scope, applied to its body by hand, what the runner does
    through [Run]'s scoped path. *)
 let scope_of name tree =
   match T.flatten [ tree ] with

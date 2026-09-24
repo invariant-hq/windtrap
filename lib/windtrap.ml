@@ -4,20 +4,20 @@
   ---------------------------------------------------------------------------*)
 
 (* Not mutated. This module is part of the machinery a mutation run uses
-   to judge mutants — the scheduler, the ambient run state, the reporting
-   spine, the loop itself — so a mutant here is armed inside the process
+   to judge mutants (the scheduler, the ambient run state, the reporting
+   spine, the loop itself) so a mutant here is armed inside the process
    that is supposed to detect it. The failure mode is not a false
    survivor but a hang or a corrupted verdict: a mutated bail counter or
    timeout does not fail the reaching tests, it stops them from
    finishing. Coverage still measures these files; only mutation is off.
-   Everything below the scheduler — the verbs, the generators, the
-   diffing, the renderers — is mutated. *)
+   Everything below the scheduler (the verbs, the generators, the
+   diffing, the renderers) is mutated. *)
 [@@@mutate exclude_file]
 
 (* The facade: flat re-exports of the public surface, the ambient wiring
    (operations that reach the current run through Run's one documented
-   slot), and the [run] entry gluing Cli, Run and Report. Wiring only —
-   semantics live in the modules below. *)
+   slot), and the [run] entry gluing Cli, Run and Report. It is wiring
+   only; semantics live in the modules below. *)
 
 (* Public modules *)
 
@@ -108,7 +108,7 @@ let skip = Check.skip
 (* Inside a run the control exceptions never reach uncaught-exception
    rendering: the runner's boundary consumes them. One escaping without a
    run (an assertion at module toplevel, a helper script) would print as an
-   opaque constructor; render the typed payload instead — a projection on
+   opaque constructor; render the typed payload instead, a projection on
    the only path with no renderer downstream. *)
 let () =
   Printexc.register_printer (function
@@ -155,7 +155,7 @@ let assume = Property.assume
 let reject = Property.reject
 
 (* [Stateful.stateful] applies [Test_tree.Tag.prop] itself, alongside its own
-   ["stateful"] tag — so this is a re-export and not a wrapper like [prop]
+   ["stateful"] tag, so this is a re-export and not a wrapper like [prop]
    above. Adding the tag here again would duplicate it. *)
 
 type ('model, 'sut) command = ('model, 'sut) Stateful.command
@@ -211,12 +211,12 @@ let chdir = Run.chdir
 
 (* The watermark below is a dune substitution point. [dune-release distrib]
    runs [dune subst] in the clone it archives, so the published tarball
-   already carries the tag's version before opam ever sees it —
-   doc/dev/release.md: "Bump nothing in source: the version comes from the
-   git tag". The opam build's own [["dune" "subst"] {dev}] step is not what
+   already carries the tag's version before opam ever sees it
+   (doc/dev/release.md: "Bump nothing in source: the version comes from the
+   git tag"). The opam build's own [["dune" "subst"] {dev}] step is not what
    does it: [dev] is false for a release installed from opam-repository, so
-   that step only covers a pinned checkout. Every other source — a working
-   tree, a plain [git archive] — reaches this line unsubstituted, and the
+   that step only covers a pinned checkout. Every other source (a working
+   tree, a plain [git archive]) reaches this line unsubstituted, and the
    watermark is still here: report "dev" rather than a number that would be a
    lie either way. *)
 let version =
@@ -226,13 +226,13 @@ let version =
 
 (* The hint context, computed once at startup and carried in the
    configuration to every hint: under dune, a [dune exec] spelling of
-   this executable — truthful for every dune invocation of every stanza
+   this executable, truthful for every dune invocation of every stanza
    kind, where [dune runtest] and [dune exec] are indistinguishable (both
    set INSIDE_DUNE); standalone, argv0 as the user typed it. Either path
    is quoted where a shell would split it, so a hint runs as pasted. An
    embedder passing [~argv:[||]] gets [`Mirrors], the fixed dune
-   wording. A [--corrected] run is dune's — a stanza's action, or the
-   inline runner — so its hints spell the mirrors and its acceptance is
+   wording. A [--corrected] run is dune's (a stanza's action, or the
+   inline runner) so its hints spell the mirrors and its acceptance is
    [dune promote], whatever argv says.
 
    The dune spelling carries [--instrument-with ppx_windtrap.mutate] when
@@ -242,7 +242,7 @@ let version =
    flag, the [arm] line of every survivor block would tell dune to rebuild
    the target UNINSTRUMENTED, and the command that is supposed to resolve
    the finding would arm nothing. Every other hint spelled from this
-   context — [--failed], [-u], the replay line — gains it too, which is
+   context ([--failed], [-u], the replay line) gains it too, which is
    right for the same reason: re-running the suite without the flag
    rebuilds a different binary. *)
 let invocation_of ~corrected argv : Run.invocation =
@@ -256,7 +256,7 @@ let invocation_of ~corrected argv : Run.invocation =
     let backend =
       (* The runtime's catalogue, not the loop: a binary with mutants
          registered was necessarily built with the mutation backend, and
-         the catalogue is the runtime's own record of that — complete by
+         the catalogue is the runtime's own record of that, complete by
          now, since module initialization is long over at run entry. *)
       if Windtrap_runtime.Mutate.catalogue () <> [] then
         "--instrument-with ppx_windtrap.mutate "
@@ -275,11 +275,11 @@ let print_cli_error ~prog error =
 
 (* The run: [Report.run] writes the whole transcript. What is
    legitimately the facade's own stays visible here: the argv-computed
-   invocation, the focus and promotion warnings, and the exit code —
+   invocation, the focus and promotion warnings, and the exit code,
    returned, never applied: the process is the caller's. *)
 let run_suite ~suite ~config tests =
   (* The mutation seam: one call at run entry, in place of [Report.run].
-     Without [--mutate] or [--arm] it is exactly [Report.run] — same
+     Without [--mutate] or [--arm] it is exactly [Report.run]: same
      transcript, same bytes, same cost; with one of them it
      wraps the run on both sides (an armed mutant is announced before any
      output, and the loop forks after the dry run) and may take the
@@ -319,7 +319,7 @@ let run_suite ~suite ~config tests =
       (* A [--corrected] run is a build action's, and a build action's
          selection is a [WINDTRAP_*] variable spanning every stanza and
          partition of the tree: a stanza it empties is not a mistyped
-         filter, so nothing-ran is not an error there — the "no tests ran"
+         filter, so nothing-ran is not an error there; the "no tests ran"
          line still says so, and the [diff?] that follows is the verdict.
          A suite that declares no tests keeps its 2, since no selection
          emptied it; a usage error never reaches this branch. *)
@@ -359,7 +359,7 @@ let run_listing ~suite ~config tests =
 
 let run ?(argv = Sys.argv) suite tests =
   (* [Run.active], not a frame probe: the slot also holds the run itself
-     between attempts — a fixture release or an observer starting a
+     between attempts. A fixture release or an observer starting a
      nested run is refused like a test body would be. The check stands
      before [Cli.parse]: [--help], [--version] and a usage error return
      without reaching [Run.execute], which would otherwise be the only

@@ -9,12 +9,12 @@
   ---------------------------------------------------------------------------*)
 
 (* Not mutated. This module is part of the machinery a mutation run uses
-   to judge mutants — the executor, the ambient run state, the reporting
-   spine, the loop itself — so a mutant here is armed inside the process
+   to judge mutants (the executor, the ambient run state, the reporting
+   spine, the loop itself) so a mutant here is armed inside the process
    that is supposed to detect it. The failure mode is not a false
    survivor but a hang or a corrupted verdict. Coverage still measures
-   these files; only mutation is off. Everything below — the verbs, the
-   generators, the diffing, the blocks — is mutated. *)
+   these files; only mutation is off. Everything below (the verbs, the
+   generators, the diffing, the blocks) is mutated. *)
 [@@@mutate exclude_file]
 
 module Sections = Report_sections
@@ -75,7 +75,7 @@ type t = {
          the results [finish] is given, in their order. *)
   mutable survivors : int; (* survivor blocks a mutation loop committed *)
   mutable declared : int option;
-      (* tests the suite declares, before selection — the denominator the
+      (* tests the suite declares, before selection, the denominator the
          empty-selection message needs; [total_tests] is what survived.
          [None] until [header] runs: an embedder that renders results
          without one gets the bare wording rather than a guess. *)
@@ -83,7 +83,7 @@ type t = {
       (* the active selection, described by the caller (which owns the
          config), used only to say why nothing ran. *)
   mutable suite : string option;
-      (* recorded by [header] so that a compact run can name itself — in
+      (* recorded by [header] so that a compact run can name itself, in
          the header it prints before its first section, or in its one-line
          summary. *)
   mutable seed : Seed.seed option;
@@ -125,7 +125,7 @@ let create ~out ~ansi ?(live = false) (config : Run.config) =
   }
 
 (* The level decides what prints; the sink only decides color ([ansi])
-   and the erasable live tail ([live], TTY only) — no sink changes shape.
+   and the erasable live tail ([live], TTY only). No sink changes shape.
    Under GITHUB_ACTIONS the same transcript sits inside the ::group::
    envelope, and the live tail is explicitly off even if stdout is a TTY:
    its erase/redraw control sequences would land verbatim in the CI
@@ -244,7 +244,7 @@ let test_line ?(title = false) ~tag ~style ~name ~qualifiers ~timing () =
     line @ [ plain (String.make pad ' '); styled `Faint timing ]
 
 (* The label-distribution table (one producer, two placements): the failure
-   blocks always show it; a passing property's prints under verbose — the
+   blocks always show it; a passing property's prints under verbose, the
    calibration view for collect/classify. *)
 let pp_prop_stats t (s : Property.stats) =
   if s.collected <> [] then begin
@@ -268,7 +268,7 @@ let pp_prop_stats t (s : Property.stats) =
       s.collected
   end;
   (* The failure headline already names every label that was never covered,
-     so this list earns its place only by showing the ones that were —
+     so this list earns its place only by showing the ones that were,
      which is the question a reader asks next. *)
   if
     List.length s.coverage > 1
@@ -287,7 +287,7 @@ let pp_prop_stats t (s : Property.stats) =
   end
 
 (* Record-driven classification: a failing result that did not count is an
-   excused expected failure — the executor's unexpected-pass synthesis
+   excused expected failure. The executor's unexpected-pass synthesis
    arrives counted, so no failure message is ever inspected. *)
 let counted_failure (r : Run.result) =
   match r.outcome with
@@ -414,7 +414,7 @@ let verbose_result t (r : Run.result) =
   | Failure.Pass -> (
       put t
         (test_line ~tag:"PASS" ~style:`Green ~name ~qualifiers:[] ~timing ());
-      (* A passing property with collected labels prints its distribution —
+      (* A passing property with collected labels prints its distribution,
          the same [pp_prop_stats] projection as the failure blocks, so the
          bytes cannot drift. XFAIL and SKIP lines print no table. *)
       match r.prop_stats with
@@ -494,7 +494,7 @@ let result t (r : Run.result) =
 
 (* Run-scoped notices arrive between results (fixture releases fire after
    the last test, before [finish]). Verbose prints them as lines; compact
-   prints nothing per test, so the notice is an erasable live line — a
+   prints nothing per test, so the notice is an erasable live line. A
    hanging fixture release still names itself on a terminal. *)
 let note t line =
   sync t;
@@ -576,7 +576,7 @@ let selection_description ~focused (config : Run.config) =
       let rest = List.filteri (fun i _ -> i < List.length many - 1) many in
       Some (String.concat ", " rest ^ " and " ^ last)
 
-(* Why a selection is empty, in one sentence — exit 2 either way, but
+(* Why a selection is empty, in one sentence. It exits 2 either way, but
    the two causes call for different words: a suite with nothing in it is
    not a mistyped filter, and neither is a shard that legitimately drew an
    empty bucket. Naming the selection and the denominator is what turns a
@@ -1028,14 +1028,14 @@ let mutation_interrupted t ~testing m =
 (* The one composition: build the renderer and the observer, open the
    GitHub envelope, run the suite, and project the run into every sink.
    The [Error] arm prints the startup message here and hands the error
-   back; everything after the report — the focus warning, the exit code —
+   back; everything after the report (the focus warning, the exit code)
    is the facade's own. *)
 let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
     tests =
   let renderer = terminal config in
   (* [Run.execute]'s [?on_event] has one slot and the transcript owns it.
      A second subscriber composes here rather than replacing it, in a
-     fixed order — transcript first — so no caller can drop the run's own
+     fixed order (transcript first) so no caller can drop the run's own
      output by subscribing, and none can reorder it. *)
   let transcript =
     observe renderer ~seed:config.Run.seed

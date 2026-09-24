@@ -118,8 +118,8 @@ JUnit has no state for it, so the testcase says so in its system-out:
 A failing test's captured output ends its block with the full log's
 path. The sessions above run the executable from under the build
 directory, where the logs live in its _tests; run by hand from anywhere
-else — a copy in a temporary directory, with no WINDTRAP_PROJECT_ROOT
-and no build directory in sight — the logs go under the system
+else (a copy in a temporary directory, with no WINDTRAP_PROJECT_ROOT
+and no build directory in sight), the logs go under the system
 temporary directory, keyed by suite, and never grow a _build.
 
   $ dir=$(mktemp -d)

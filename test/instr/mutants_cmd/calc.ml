@@ -4,8 +4,8 @@
   ---------------------------------------------------------------------------*)
 
 (* The library the two executables below disagree about. Exactly four
-   mutation sites — one arithmetic operator per binding and nothing else
-   the instrumenter can reach — so the merged report's counts are exact
+   mutation sites (one arithmetic operator per binding and nothing else
+   the instrumenter can reach), so the merged report's counts are exact
    rather than approximately right, and a change to the operator set that
    grew the population here would fail the test loudly instead of quietly
    shifting a number.

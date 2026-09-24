@@ -3,8 +3,8 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The code under mutation. Exactly five sites — one per verdict the loop
-   must produce, plus one dismissed — and nothing else the instrumenter
+(* The code under mutation. Exactly five sites (one per verdict the loop
+   must produce, plus one dismissed) and nothing else the instrumenter
    can reach: no comparison in a boolean context, no connective, no
    toplevel arithmetic. The suite's counts are therefore exact rather than
    approximately right, and a change to the operator set that grew the

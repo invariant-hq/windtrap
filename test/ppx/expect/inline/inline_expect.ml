@@ -1,7 +1,7 @@
 (* The payload-shape matrix under the real backend: every [%expect]
    spelling the PPX accepts must round-trip through the core's matcher
    without churn. Payloads are formatted exactly as a correction would
-   write them, so a promote of any of these tests is a no-op — the
+   write them, so a promote of any of these tests is a no-op. The
    transient promote-loop check relies on that. Two exercise
    matcher-accepted spellings that are not the writer's fixed point
    ({||} and bare [%expect]): they match, and a correction patches only

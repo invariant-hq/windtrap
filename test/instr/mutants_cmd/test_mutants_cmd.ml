@@ -12,9 +12,9 @@
    discovery, the explicit-PATH contract, the staleness pass, the file
    format's rejections and every exit code need neither the instrumenter
    nor a mutation run, and stating the data by hand is what makes the
-   counts exact. The first test is not synthetic — two instrumented
+   counts exact. The first test is not synthetic (two instrumented
    executables over one library, each running its own mutation loop and
-   writing its own verdict file — because the claim the command is built
+   writing its own verdict file), because the claim the command is built
    on (two executables that disagree merge to something truer than
    either) is a claim about real runs, and a fixture that assumed it
    could not test it.
@@ -25,8 +25,8 @@
    tagged with the executable that ran it, a survivor that survives
    everywhere, the never-reached rows, the colours as raw bytes, discovery
    under _build/_mutants and through explicit PATH arguments, the
-   staleness pass, and every exit code — 1 when a mutant survived the
-   merge, 0 when none did, unreached mutants alone staying green.
+   staleness pass, and every exit code (1 when a mutant survived the
+   merge, 0 when none did, unreached mutants alone staying green).
 
    A windtrap suite ([run] executes tests sequentially in declaration
    order); every subject under test is a spawned process, so hosting the
@@ -107,7 +107,7 @@ let util = "lib/util.ml"
 
 (* The four mutants, each spelled once and applied to a verdict: three in
    calc.ml, one in util.ml. Every field is what an instrumented build
-   would have recorded, renderings included — the report is drawn from
+   would have recorded, renderings included. The report is drawn from
    them and from nothing else. *)
 let mutant ~file ~line ~col ~rewrite ~before ~after verdict =
   { V.id = { M.file; line; col; rewrite }; before; after; verdict }
@@ -232,7 +232,7 @@ let proj () =
    discovery, the exit codes and the file format. It cannot pin the one
    claim the command is built on: that two instrumented executables which
    disagree about a library merge to something truer than either. So this
-   part runs the real thing — two executables over Mutcli_fixture.Calc,
+   part runs the real thing: two executables over Mutcli_fixture.Calc,
    each driving its own mutation loop and writing its own verdict file,
    and [windtrap mutants] over what they wrote. [pins_add] pins [add] and
    merely reaches [sub]; [pins_sub] is its mirror image; both reach
@@ -280,8 +280,8 @@ let two_executables =
   let loop name =
     (* The scope keeps this scenario's catalogue the fixture's. Under
        --instrument-with these executables link a mutation-instrumented
-       windtrap core, and the claim under test — two executables that
-       disagree about ONE library merge to the truth — is about calc.ml's
+       windtrap core, and the claim under test (two executables that
+       disagree about ONE library merge to the truth) is about calc.ml's
        mutants, not about the core's thousand. *)
     capture ~cwd:root
       ~exe:(Filename.concat root (Filename.concat "_build/default/test" name))
@@ -456,7 +456,7 @@ let merge_is_total =
      and counts mean the command folded all three and folded them the
      runtime's way. A dropped file or a re-ordered fold moves bytes. The
      witness rows are compared as a set of names, because the merged
-     file cannot say which executable ran which — that attribution is
+     file cannot say which executable ran which. That attribution is
      the command's own, and the merge test above pins it. *)
   let proj = proj () in
   let reference = scratch "reference" in
@@ -491,8 +491,8 @@ let merge_is_total =
 let single_file =
   test "one executable's file alone still reports its own view" @@ fun () ->
   (* The contrast that makes the merge worth having: B alone calls [add]
-     a survivor. Reading B's file alone must say so — the command reports
-     what it was given — which is exactly why narrowing the merge by
+     a survivor. Reading B's file alone must say so (the command reports
+     what it was given), which is exactly why narrowing the merge by
      accident has to be loud. *)
   let proj = proj () in
   let code, out, _ =
@@ -561,7 +561,7 @@ let discovery =
     ~sub:"mutants: 1 survived of 3 reached" out;
   contains ~msg:"walk-up discovery still resolves sources"
     ~sub:"let sub a b = a - b" out;
-  (* A rule-action cwd — inside _build — resolves the root by the
+  (* A rule-action cwd (inside _build) resolves the root by the
      topmost-_build rule (the runtime's), never the ancestor scan. *)
   mkdir_p (Filename.concat proj "_build/default/lib");
   let code, out, _ =
@@ -599,7 +599,7 @@ let explicit_paths =
   contains ~msg:"an explicit directory merges the same data"
     ~sub:"mutants: 1 survived of 3 reached" out;
   (* A nonexistent explicit path is an error naming the path and the
-     reason — never a silent narrowing, which under killed-anywhere-wins
+     reason, never a silent narrowing, which under killed-anywhere-wins
      would turn another executable's kill back into a survivor. *)
   let absent = scratch "no-such-dir/absent.mutants" in
   let code, _, err = mutate ~cwd:elsewhere [ absent ] in
@@ -682,7 +682,7 @@ let staleness =
        -- --arm lib/calc.ml:3:14:lt\n"
     out;
   (* Orphan: a second file whose executable no longer exists. Its data
-     must not reach the report — under killed-anywhere-wins an excluded
+     must not reach the report; under killed-anywhere-wins an excluded
      kill is the difference between a survivor and none, which is what
      the payload here is chosen to expose: [lt] is the live file's only
      survivor, and the orphan claims a crash killed it. *)

@@ -73,7 +73,7 @@ type error =
 (* The argument grammar *)
 
 (* What a flag takes on the command line. [Flag] takes nothing. [Value]
-   takes one argument — the next one, or inline as [--flag=value]. An
+   takes one argument: the next one, or inline as [--flag=value]. An
    [Optional_value] flag takes an inline value or none: [--flag] alone is
    the bare form and never consumes the next argument, so a value attaches
    only with [=] ([--mutate[=PREFIX,...]]). *)
@@ -89,7 +89,7 @@ type arg =
     }
 
 (* How a flag's WINDTRAP_* mirror layers under the command line. [Single
-   absent]: the first layer that gives the flag decides it — the mirror
+   absent]: the first layer that gives the flag decides it. The mirror
    is read only while [absent p], and a mirror whose flag the command
    line already decided is never even parsed, which is what
    lets a valid [--timeout] shadow a malformed WINDTRAP_TIMEOUT.
@@ -108,7 +108,7 @@ type entry = {
 
 (* A table row: a flag with its optional mirror, or a setting only the
    environment can spell. One inventory drives parsing, [--help]'s two
-   sections, and the environment layer — the flagless rows once lived in
+   sections, and the environment layer. The flagless rows once lived in
    a second, hand-maintained list that could drift from what resolution
    actually read. *)
 type item =
@@ -136,9 +136,9 @@ let set_positive_int store =
 let seed_expected = "an s1: token with 16 lowercase hexadecimal digits"
 let shard_expected = "K/N with 1 <= K <= N (e.g. 2/4)"
 
-(* "K/N" with K and N plain decimal numerals — the spelling is CI-facing
+(* "K/N" with K and N plain decimal numerals (the spelling is CI-facing
    and frozen, so int_of_string's 0x/0b/underscore/sign leniency is
-   deliberately rejected — and 1 <= K <= N. *)
+   deliberately rejected) and 1 <= K <= N. *)
 let shard_of_string value =
   let decimal s =
     s <> "" && String.for_all (function '0' .. '9' -> true | _ -> false) s
@@ -158,7 +158,7 @@ let color_expected = "always, never or auto"
 
 (* The one [--color] parser: the flag, its mirror and the flagless
    commands' read of WINDTRAP_COLOR all go through it, so an unknown word
-   is refused everywhere alike — never read as [auto]. *)
+   is refused everywhere alike, never read as [auto]. *)
 let color_of_string ~source value =
   match Os.color_mode_of_string value with
   | Some mode -> Ok mode
@@ -416,7 +416,7 @@ let table =
       };
     (* The mutation switches. Bare, [--mutate] surveys every mutant this
        executable catalogues; with a value, only those whose recorded
-       source path starts with one of the prefixes — the loop forks once
+       source path starts with one of the prefixes. The loop forks once
        per mutant, so the scope narrows the work. Its mirror reads both
        ways: WINDTRAP_MUTATE=1 is the bare flag, 0 its absence, and
        anything else the prefixes. [--arm] runs the suite once with one
@@ -512,7 +512,7 @@ let entries =
 
    Long names only, and only for an input that looks like one. Any two
    short flags are one edit apart, so a suggestion for [-Z] would be
-   arbitrary — and a confident wrong suggestion is worse than none. *)
+   arbitrary, and a confident wrong suggestion is worse than none. *)
 
 let edit_distance a b =
   let la = String.length a and lb = String.length b in
@@ -641,7 +641,7 @@ let parse argv = parse_entries entries argv
 (* The environment layer: every WINDTRAP_* mirror is read here and nowhere
    else, and every value reaches [parsed] through its flag's own parser
    with the variable as the source. That is what makes a mirror incapable
-   of drifting from its flag — WINDTRAP_SHARD=9/2 fails exactly as
+   of drifting from its flag. WINDTRAP_SHARD=9/2 fails exactly as
    [--shard 9/2] does, because it runs the same [set].
 
    Two reading rules turn the variable into what the parser takes, plus
@@ -649,7 +649,7 @@ let parse argv = parse_entries entries argv
    " 2/4 " works as a shard; a repeatable flag's is a comma-separated
    list, one token per item. A valueless flag's mirror is a boolean:
    [true] applies the flag, [false] is what an unset variable is, and
-   anything else is refused — a typo must not read as "off". An
+   anything else is refused. A typo must not read as "off". An
    optional-value flag's mirror reads both ways: a boolean is the bare
    flag or its absence, anything else is the value. *)
 let contribute acc entry mirror raw =
@@ -674,9 +674,9 @@ let contribute acc entry mirror raw =
       | None -> set ~source acc (Some (String.trim raw)))
 
 (* [layer_entries entries cli] is [cli] with each mirror filled into the
-   fields the command line left open — the CLI and environment layers
+   fields the command line left open, the CLI and environment layers
    merged, in that precedence. A malformed value in a mirror that wins is
-   [Error] naming the variable, and the fold stops there — never a
+   [Error] naming the variable, and the fold stops there, never a
    silently defaulted run. *)
 let layer_entries entries cli =
   List.fold_left
@@ -749,7 +749,7 @@ let resolved below ~mutation =
   }
 
 (* The mutation switches, after both layers: the loop arms each mutant
-   itself, so an armed parent would mutate its own dry run — asking for
+   itself, so an armed parent would mutate its own dry run. Asking for
    both is refused, whether each came from its flag or its mirror. *)
 let mutation_of below =
   match (below.mutate, below.arm) with

@@ -5,7 +5,7 @@
 
 (* One of the two test executables over Mutcli_fixture.Calc. It pins
    [add] and merely reaches [sub], so its own mutation report calls
-   [sub]'s mutant a survivor — which is a lie about the project, because
+   [sub]'s mutant a survivor, which is a lie about the project, because
    the sibling executable kills it. *)
 
 open Windtrap

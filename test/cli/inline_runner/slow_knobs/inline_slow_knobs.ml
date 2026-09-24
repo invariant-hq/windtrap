@@ -1,6 +1,6 @@
 (* Both tests exceed the driver's 1ns threshold by construction (a ~1ms
    spin), so the tagged test's missing warning can only be the ["slow"]
-   exemption — never a fast clock reading. *)
+   exemption, never a fast clock reading. *)
 
 open Windtrap
 

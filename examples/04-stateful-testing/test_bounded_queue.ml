@@ -1,7 +1,7 @@
 (* The guide's stateful example: four commands over a bounded queue, a list
    as the model, and an invariant that ties the two sizes together. A
-   precondition both excludes an illegal call and selects a rare state —
-   "push when full" is generated only at capacity. *)
+   precondition both excludes an illegal call and selects a rare state
+   ("push when full" is generated only at capacity). *)
 
 open Windtrap
 

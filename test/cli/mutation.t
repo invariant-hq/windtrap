@@ -1,4 +1,4 @@
-The mutation flags on an executable with nothing to mutate — the
+The mutation flags on an executable with nothing to mutate, the
 commonest sibling of all, since the aggregate's remedy hands one
 identifier to every suite in a tree at once, and `--mutate` asked of a
 build that was never instrumented is the commonest misconfiguration.
@@ -33,7 +33,7 @@ bare flag, so a build that is instrumented and fine is never blamed.
 
 --arm with an identifier naming a file this executable catalogues
 nothing of is not a refusal: the run proceeds exactly as it would
-unarmed, exits 0, and says once on stderr whose mutant it is not —
+unarmed, exits 0, and says once on stderr whose mutant it is not;
 exiting 1 here would fail a whole tree's build for the one executable
 that armed the mutant correctly.
 

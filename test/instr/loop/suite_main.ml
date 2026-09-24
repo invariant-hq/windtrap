@@ -7,7 +7,7 @@
    instrumented module, so that the whole mutation loop runs in a real
    process with a real catalogue. Which tests it DECLARES is chosen by
    MUTATE_FIXTURE, because the loop's refusals are properties of a suite
-   and not of a build — the catalogue is the binary and is the same in
+   and not of a build. The catalogue is the binary and is the same in
    every fixture.
 
    [catalogue] prints the mutant identifiers instead of running: the
@@ -21,7 +21,7 @@ module Subject = Mutate_loop_subject.Subject
 (* The child-hygiene rule's witness. Every process reaching Stdlib's exit machinery
    appends its pid here; a mutation child must never appear, because it
    leaves through [Unix._exit] and its whole body is wrapped so that not
-   even a fatal exception escapes to the toplevel handler — which runs
+   even a fatal exception escapes to the toplevel handler, which runs
    [at_exit] before it prints. This is the general form of "no child
    overwrote the parent's .coverage dump": the coverage dump IS an at_exit
    handler, and so is this. *)
@@ -76,7 +76,7 @@ let domain =
   ]
 
 (* Green in the process that measured the reach map and red in every fork
-   of it — the sharpest possible non-determinism, and the one the probe
+   of it, the sharpest possible non-determinism, and the one the probe
    exists to catch: without it the loop would score every mutant against a
    suite that fails for reasons of its own. *)
 let dry_run_pid = Unix.getpid ()
@@ -107,7 +107,7 @@ let crash =
 (* Leaves through a FATAL exception, which no failure boundary in the
    runner may swallow ({!Failure.catch} never returns it): armed, it escapes
    [Run.execute] and reaches the mutation child's own wrapper, which is
-   the only thing between it and OCaml's uncaught-exception handler — and
+   the only thing between it and OCaml's uncaught-exception handler, and
    that handler runs [at_exit]. Unarmed the answer is 2 and nothing
    raises, so the dry run is green. *)
 let fatal =
@@ -138,15 +138,15 @@ let fatal =
 (* The per-child deadline's fixtures.
 
    - [block] pairs a watcher of [sub] that pins nothing with a test that
-     BLOCKS when [sub]'s answer changes — a pipe read with no writer, the
+     BLOCKS when [sub]'s answer changes, a pipe read with no writer, the
      measured shape: a blocked child spends its deadline at 0% CPU, where
      the runaway hit-count budget sees nothing. Unarmed nothing blocks,
      so the dry run and the probe are green and fast, which is what keeps
      the derived deadline short. Under MUTATE_GRANDCHILD_PIDFILE the
-     blocking test first spawns a subprocess that IGNORES SIGTERM — it
+     blocking test first spawns a subprocess that IGNORES SIGTERM (it
      outlives its inner sleeps for as long as its bounded loop respawns
      them, thirty seconds at most, so only an unignorable signal to the
-     whole group clears it — and records its pid: the file is how the
+     whole group clears it) and records its pid: the file is how the
      harness finds the grandchild to poll.
    - [slow] sleeps on every run, armed and unarmed alike, and pins nothing
      about [sub]: the dry run measures the sleep, so the derived deadline

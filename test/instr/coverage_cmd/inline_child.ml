@@ -5,7 +5,7 @@
 
 (* Stands in for an instrumented test executable: registers a synthetic
    point table exactly as a PPX-generated per-module initializer would
-   (the frozen interchange contract — [register ~file ~points ~counts]),
+   (the frozen interchange contract, [register ~file ~points ~counts]),
    then runs a real windtrap suite, so the at_exit dump and the exit
    path are exercised through the real facade. Driven by environment
    variables:

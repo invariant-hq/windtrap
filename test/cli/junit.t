@@ -17,7 +17,7 @@ A value naming an .xml file stays exactly that:
   1
 
 Anything else is a directory, and each suite writes its own report into
-it for CI to glob — the directory is created if it is not there:
+it for CI to glob. The directory is created if it is not there:
 
   $ run ./suite_main.exe -f math --junit reports > out 2> err
   $ cat err

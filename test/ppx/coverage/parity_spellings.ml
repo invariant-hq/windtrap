@@ -1,6 +1,6 @@
 (* Parity fixture: the exclusion grammar's legal spellings. Each suite
    pins that its own driver accepts this file, the mutation suite with the
-   namespace swapped — together they hold the manual's promise that both
+   namespace swapped; together they hold the manual's promise that both
    backends read the same spellings. *)
 
 let expr_off x = (x + 1) [@coverage off]

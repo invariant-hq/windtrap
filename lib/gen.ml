@@ -121,13 +121,13 @@ end
 (* Renderings
 
    A shrink tree carries, at every node, the value and how that value
-   prints as a counterexample — the two are drawn together and shrink
+   prints as a counterexample. The two are drawn together and shrink
    together, so what the search minimises and what the report prints
    coincide. A rendering is a lazy document: nothing is formatted until a
    failure is reported. [Value] renders the value itself, through the
    printer of the generator that drew it. [Pre_image] renders what the
-   value was computed from, when the generator has no printer of its own —
-   a [map]'s argument, a [bind]'s draws — down to the nearest generator
+   value was computed from, when the generator has no printer of its own
+   (a [map]'s argument, a [bind]'s draws) down to the nearest generator
    that prints. [None] is a leaf with nothing to print ([constant],
    [of_list]) and every composition over it; it renders as the one
    placeholder below. The same classification, over the formatted text, is
@@ -274,8 +274,8 @@ let list_node nodes =
 let pre_image =
   Option.map (function Value doc -> Pre_image doc | shown -> shown)
 
-(* A [bind]'s result is the inner value when the inner generator prints —
-   that is the value, so the outer draw adds nothing — and [outer -> inner]
+(* A [bind]'s result is the inner value when the inner generator prints
+   (that is the value, so the outer draw adds nothing) and [outer -> inner]
    when the inner renders as a pre-image, each side by its own rule. *)
 let bound outer inner =
   match inner with
@@ -294,7 +294,7 @@ let bound outer inner =
 (* Binary-search shrink candidates: from [dest], repeatedly close half of
    the remaining gap toward [x], stopping just short of [x] itself (the
    value being shrunk is not a candidate). The gap is computed as a
-   difference of halves — never [(x - current) / 2], which overflows on
+   difference of halves, never [(x - current) / 2], which overflows on
    min_int/max_int spans. *)
 let int_towards dest x () =
   let rec steps current () =
@@ -357,7 +357,7 @@ let rec tree_towards node shrink x =
     ~children:(Seq.map (tree_towards node shrink) (shrink x))
 
 (* [rebind] re-generates candidates for [bind], [one_of] and sized
-   [list]: [f] runs a generator, so forcing a shrink candidate can discard —
+   [list]: [f] runs a generator, so forcing a shrink candidate can discard:
    a [such_that] in the re-run exhausting its budget for that candidate, an
    [assume] in a function of the generator. Memoized child cells cache
    exceptions, so letting the discard escape a cell would also hide every
@@ -994,8 +994,8 @@ let such_that keep gen =
         attempt resample_budget state);
   }
 
-(* An explicit printer wins over whatever the tree would have rendered —
-   a pre-image, a derived printer, nothing — at every node. *)
+(* An explicit printer wins over whatever the tree would have rendered
+   (a pre-image, a derived printer, nothing) at every node. *)
 let with_pp pp gen =
   {
     pp = Some pp;

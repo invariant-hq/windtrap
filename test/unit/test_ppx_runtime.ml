@@ -5,7 +5,7 @@
 
 (* Tests for Ppx_runtime: the module-load registry generated code fills,
    the inline-test-runner protocol, and the undriven-registration guard.
-   The PPX is not involved — registrations are made by hand, exactly as
+   The PPX is not involved; registrations are made by hand, exactly as
    generated code makes them. The registry and the protocol's parsing are
    checked in-process through [collect]; what [exit] does is checked on a
    re-exec'd child, since it ends the process. The transcripts and

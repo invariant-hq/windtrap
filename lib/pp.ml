@@ -59,8 +59,8 @@ let float_exact ppf f =
     in
     (* [%g] drops the point on a whole value: [1.] renders as ["1"], which is
        an int literal, not a float one. The whole reason to round-trip is
-       that a reader can paste the value back — into [~examples], into a
-       [let] — so it has to stay syntactically a float. *)
+       that a reader can paste the value back (into [~examples], into a
+       [let]) so it has to stay syntactically a float. *)
     let is_float_syntax =
       String.exists (fun c -> c = '.' || c = 'e' || c = 'E') s
     in
