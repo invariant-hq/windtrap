@@ -1,0 +1,5 @@
+; Writes each rewriter directory's dune.inc from its fixture list, and
+; normalizes the rejection outputs that coverage/ diffs against mutate/.
+
+(executable
+ (name gen_dune))

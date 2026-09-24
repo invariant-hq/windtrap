@@ -9,236 +9,42 @@
  (modules mutate_pp)
  (libraries ppxlib windtrap_mutate_ppx))
 
-(rule
- (with-stdout-to
-  fixture_neg.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_neg.ml})))
+; dune.inc holds one golden rule pair per fixture, written by
+; ../gen/gen_dune.exe from the list of .ml files here: a new fixture is one
+; X.ml and one X.expected, then dune build @gen-rules --auto-promote. A
+; reject_* fixture must exit 1, and its whole output is its golden.
+
+(include dune.inc)
 
 (rule
- (alias runtest)
+ (deps
+  (glob_files *.ml))
  (action
-  (diff fixture_neg.expected fixture_neg.actual)))
+  (with-stdout-to
+   dune.inc.gen
+   (run ../gen/gen_dune.exe rules mutate_pp.exe %{deps}))))
 
 (rule
- (with-stdout-to
-  fixture_cmp.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_cmp.ml})))
-
-(rule
- (alias runtest)
+ (alias gen-rules)
  (action
-  (diff fixture_cmp.expected fixture_cmp.actual)))
+  (diff dune.inc dune.inc.gen)))
 
-(rule
- (with-stdout-to
-  fixture_con.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_con.ml})))
+(alias
+ (name runtest)
+ (deps
+  (alias gen-rules)))
 
-(rule
- (alias runtest)
- (action
-  (diff fixture_con.expected fixture_con.actual)))
-
-(rule
- (with-stdout-to
-  fixture_ari.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_ari.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_ari.expected fixture_ari.actual)))
+; The legal spellings of the exclusion grammar are accepted: the coverage
+; suite's parity_spellings.ml with the namespace swapped, so the two
+; drivers read one list of spellings.
 
 (rule
  (with-stdout-to
-  fixture_nesting.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_nesting.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_nesting.expected fixture_nesting.actual)))
-
-(rule
- (with-stdout-to
-  fixture_chain.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_chain.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_chain.expected fixture_chain.actual)))
-
-(rule
- (with-stdout-to
-  fixture_shadow.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_shadow.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_shadow.expected fixture_shadow.actual)))
-
-(rule
- (with-stdout-to
-  fixture_off.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_off.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_off.expected fixture_off.actual)))
-
-(rule
- (with-stdout-to
-  fixture_off_edges.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_off_edges.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_off_edges.expected fixture_off_edges.actual)))
-
-(rule
- (with-stdout-to
-  fixture_off_unclosed.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_off_unclosed.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_off_unclosed.expected fixture_off_unclosed.actual)))
-
-(rule
- (with-stdout-to
-  fixture_all_dismissed.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_all_dismissed.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_all_dismissed.expected fixture_all_dismissed.actual)))
-
-(rule
- (with-stdout-to
-  fixture_assert.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_assert.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_assert.expected fixture_assert.actual)))
-
-(rule
- (with-stdout-to
-  fixture_lazy.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_lazy.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_lazy.expected fixture_lazy.actual)))
-
-(rule
- (with-stdout-to
-  fixture_inline_tests.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_inline_tests.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_inline_tests.expected fixture_inline_tests.actual)))
-
-(rule
- (with-stdout-to
-  fixture_inline_expanded.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_inline_expanded.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_inline_expanded.expected fixture_inline_expanded.actual)))
-
-(rule
- (with-stdout-to
-  fixture_exclude.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_exclude.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_exclude.expected fixture_exclude.actual)))
-
-(rule
- (with-stdout-to
-  fixture_empty.actual
-  (run ./mutate_pp.exe --impl %{dep:fixture_empty.ml})))
-
-(rule
- (alias runtest)
- (action
-  (diff fixture_empty.expected fixture_empty.actual)))
-
-(rule
- (target reject_bad_payload.actual)
- (action
-  (with-outputs-to
-   reject_bad_payload.actual
-   (with-accepted-exit-codes
-    1
-    (run ./mutate_pp.exe --impl %{dep:reject_bad_payload.ml})))))
-
-(rule
- (alias runtest)
- (action
-  (diff reject_bad_payload.expected reject_bad_payload.actual)))
-
-(rule
- (target reject_misplaced_on.actual)
- (action
-  (with-outputs-to
-   reject_misplaced_on.actual
-   (with-accepted-exit-codes
-    1
-    (run ./mutate_pp.exe --impl %{dep:reject_misplaced_on.ml})))))
-
-(rule
- (alias runtest)
- (action
-  (diff reject_misplaced_on.expected reject_misplaced_on.actual)))
-
-(rule
- (target reject_misplaced_exclude_file.actual)
- (action
-  (with-outputs-to
-   reject_misplaced_exclude_file.actual
-   (with-accepted-exit-codes
-    1
-    (run ./mutate_pp.exe --impl %{dep:reject_misplaced_exclude_file.ml})))))
-
-(rule
- (alias runtest)
- (action
-  (diff
-   reject_misplaced_exclude_file.expected
-   reject_misplaced_exclude_file.actual)))
-
-(rule
- (target reject_double_off.actual)
- (action
-  (with-outputs-to
-   reject_double_off.actual
-   (with-accepted-exit-codes
-    1
-    (run ./mutate_pp.exe --impl %{dep:reject_double_off.ml})))))
-
-(rule
- (alias runtest)
- (action
-  (diff reject_double_off.expected reject_double_off.actual)))
+  parity_spellings.txt
+  (run sed "s/coverage/mutate/g" %{dep:../coverage/parity_spellings.ml})))
 
 (rule
  (alias runtest)
  (action
   (ignore-outputs
-   (run ./mutate_pp.exe --impl %{dep:parity_spellings.ml}))))
+   (run ./mutate_pp.exe --impl %{dep:parity_spellings.txt}))))

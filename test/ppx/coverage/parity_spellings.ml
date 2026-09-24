@@ -1,9 +1,7 @@
-(* Parity fixture: the exclusion grammar's legal spellings, byte-identical
-   to its twin in the sibling instrumenter's suite modulo the attribute
-   namespace. The runtest mirror rule pins the twins equal after
-   normalization, and each suite pins that its own driver accepts the
-   file — together they hold the manual's promise that both backends
-   read the same spellings. *)
+(* Parity fixture: the exclusion grammar's legal spellings. Each suite
+   pins that its own driver accepts this file, the mutation suite with the
+   namespace swapped — together they hold the manual's promise that both
+   backends read the same spellings. *)
 
 let expr_off x = (x + 1) [@coverage off]
 let binding_off = List.length [ 1 ] [@@coverage off]
