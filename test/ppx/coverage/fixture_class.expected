@@ -2,7 +2,7 @@
 module Windtrap_cov_________fixture_class___ml =
   struct
     let ___windtrap_visit___ =
-      let counts = Array.make 7 0 in
+      let counts = Array.make 8 0 in
       Windtrap_runtime.Coverage.register ~file:"./fixture_class.ml"
         ~points:[|{
                     Windtrap_runtime.Coverage.start_ofs = 378;
@@ -25,7 +25,10 @@ module Windtrap_cov_________fixture_class___ml =
                             };{
                                 Windtrap_runtime.Coverage.start_ofs = 458;
                                 Windtrap_runtime.Coverage.end_ofs = 503
-                              }|] ~counts;
+                              };{
+                                  Windtrap_runtime.Coverage.start_ofs = 584;
+                                  Windtrap_runtime.Coverage.end_ofs = 591
+                                }|] ~counts;
       (fun index -> Windtrap_runtime.Coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =
       ___windtrap_visit___ point_index; result
@@ -43,3 +46,8 @@ let use () =
   ___windtrap_visit___ 6;
   (let c = ___windtrap_post_visit___ 4 ((new counter) ()) in
    ___windtrap_post_visit___ 5 c#bump; c#value)
+class virtual shape =
+  object
+    method virtual  area : int
+    method name = ___windtrap_visit___ 7; "shape"
+  end

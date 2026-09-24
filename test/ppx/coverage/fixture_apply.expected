@@ -20,21 +20,21 @@ module Windtrap_cov_________fixture_apply___ml =
                             Windtrap_runtime.Coverage.start_ofs = 630;
                             Windtrap_runtime.Coverage.end_ofs = 657
                           };{
-                              Windtrap_runtime.Coverage.start_ofs = 754;
-                              Windtrap_runtime.Coverage.end_ofs = 762
+                              Windtrap_runtime.Coverage.start_ofs = 749;
+                              Windtrap_runtime.Coverage.end_ofs = 757
                             };{
-                                Windtrap_runtime.Coverage.start_ofs = 744;
-                                Windtrap_runtime.Coverage.end_ofs = 762
+                                Windtrap_runtime.Coverage.start_ofs = 739;
+                                Windtrap_runtime.Coverage.end_ofs = 757
                               };{
-                                  Windtrap_runtime.Coverage.start_ofs = 879;
-                                  Windtrap_runtime.Coverage.end_ofs = 895
+                                  Windtrap_runtime.Coverage.start_ofs = 874;
+                                  Windtrap_runtime.Coverage.end_ofs = 890
                                 };{
-                                    Windtrap_runtime.Coverage.start_ofs = 859;
-                                    Windtrap_runtime.Coverage.end_ofs = 875
+                                    Windtrap_runtime.Coverage.start_ofs = 854;
+                                    Windtrap_runtime.Coverage.end_ofs = 870
                                   };{
                                       Windtrap_runtime.Coverage.start_ofs =
-                                        859;
-                                      Windtrap_runtime.Coverage.end_ofs = 915
+                                        854;
+                                      Windtrap_runtime.Coverage.end_ofs = 910
                                     }|] ~counts;
       (fun index -> Windtrap_runtime.Coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =

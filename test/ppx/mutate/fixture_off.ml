@@ -1,7 +1,7 @@
 (* [[@mutate off]] in all four spellings. An expression-level dismissal
-   leaves the expression exactly as written and catalogues what it
-   suppressed, with its reason, for [report] mode; the three coarser
-   spellings suppress without cataloguing, because there is nothing to
+   leaves the expression exactly as written and records the site it
+   suppressed, with its reason, in the catalogue; the three coarser
+   spellings suppress without recording, because there is nothing to
    dismiss individually where a whole binding, region or file is out of
    scope. *)
 

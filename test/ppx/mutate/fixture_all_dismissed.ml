@@ -1,7 +1,7 @@
-(* Every site of the file dismissed: it still registers, so [report] mode
-   can list the dismissal with its reason, but nothing references the
-   guard closure - so the preamble binds it and does not open it. An
-   unused [open] is a fatal warning in a library built with
+(* Every site of the file dismissed: the file still registers, and the
+   catalogue holds each dismissal with its reason, but no guard refers to
+   the module that binds the guard closure. That module is never opened,
+   so no unused [open] can fail a library built with
    [-w +a -warn-error +a]. *)
 
 let cap want =

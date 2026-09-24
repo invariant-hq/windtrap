@@ -16,3 +16,9 @@ let use () =
   let c = new counter () in
   c#bump;
   c#value
+
+class virtual shape =
+  object
+    method virtual area : int
+    method name = "shape"
+  end

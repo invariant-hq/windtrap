@@ -15,7 +15,7 @@ let bound () =
   let r = helper 1 in
   r + 1
 
-(* [f @@ x] with an applied left side: the wrap keys on the callee. *)
+(* [@@] in tail position is not wrapped; its argument call is. *)
 let at_op x = helper @@ helper x
 
 (* Effectful statements: each out-edge is attributed to its successor. *)

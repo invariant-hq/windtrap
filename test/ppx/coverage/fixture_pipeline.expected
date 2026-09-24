@@ -5,20 +5,20 @@ module Windtrap_cov_________fixture_pipeline___ml =
       let counts = Array.make 5 0 in
       Windtrap_runtime.Coverage.register ~file:"./fixture_pipeline.ml"
         ~points:[|{
-                    Windtrap_runtime.Coverage.start_ofs = 321;
-                    Windtrap_runtime.Coverage.end_ofs = 326
+                    Windtrap_runtime.Coverage.start_ofs = 294;
+                    Windtrap_runtime.Coverage.end_ofs = 299
                   };{
-                      Windtrap_runtime.Coverage.start_ofs = 342;
-                      Windtrap_runtime.Coverage.end_ofs = 353
+                      Windtrap_runtime.Coverage.start_ofs = 315;
+                      Windtrap_runtime.Coverage.end_ofs = 326
                     };{
-                        Windtrap_runtime.Coverage.start_ofs = 342;
-                        Windtrap_runtime.Coverage.end_ofs = 363
+                        Windtrap_runtime.Coverage.start_ofs = 315;
+                        Windtrap_runtime.Coverage.end_ofs = 336
                       };{
-                          Windtrap_runtime.Coverage.start_ofs = 389;
-                          Windtrap_runtime.Coverage.end_ofs = 400
+                          Windtrap_runtime.Coverage.start_ofs = 362;
+                          Windtrap_runtime.Coverage.end_ofs = 373
                         };{
-                            Windtrap_runtime.Coverage.start_ofs = 381;
-                            Windtrap_runtime.Coverage.end_ofs = 411
+                            Windtrap_runtime.Coverage.start_ofs = 354;
+                            Windtrap_runtime.Coverage.end_ofs = 384
                           }|] ~counts;
       (fun index -> Windtrap_runtime.Coverage.visit counts index)
     let ___windtrap_post_visit___ point_index result =

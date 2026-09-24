@@ -1,6 +1,6 @@
-(* Compiled with -w +a -warn-error +a (see ./dune): every extension this
-   PPX implements appears at least once, so the build fails if any
-   generated code provokes a warning under the harshest user regime. *)
+(* Compiled with -w +a -warn-error +a (see ./dune): each form below
+   expands to generated code under the harshest user regime, so the build
+   fails if any of it provokes a warning. *)
 
 let%test "strict unit test" = assert (1 + 1 = 2)
 
@@ -9,7 +9,7 @@ module%test Strict_group = struct
   let%test "grouped unit test" = assert (41 + 1 = answer)
 end
 
-let%expect_test "tagged payload" =
+let%expect_test ("tagged payload" [@tags "strict"]) =
   print_string "tagged";
   [%expect {| tagged |}]
 
