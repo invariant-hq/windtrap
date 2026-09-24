@@ -153,22 +153,28 @@ let accept_line invocation ~filter (f : Failure.t) =
   | Failure.Property _ | Failure.Message _ ->
       None
 
-(* Why a block offers no [accept:]: the run kept none of the attempt's
-   corrections (Run, Corrections), so the command would promote or rewrite
-   nothing. *)
+(* Why a failure offers no [accept:]: the run kept none of the attempt's
+   corrections (Run, Corrections), or this one could not be recorded, so
+   the command would promote or rewrite nothing. *)
 let withheld_fact (f : Failure.t) =
+  let kept_none reason = Some ("no correction was kept: " ^ reason) in
   match f.kind with
   | Failure.Baseline
       { state = Failure.Missing _ | Failure.Mismatch _; withheld = Some why; _ }
-    ->
-      Some
-        ("no correction was kept: "
-        ^
-        match why with
-        | Failure.Failed_outside ->
+    -> (
+      match why with
+      | Failure.Refused { line; reason } ->
+          Some (spf "correction refused (line %d): %s" line reason)
+      | Failure.Conflict ->
+          kept_none
+            "another check of this baseline produced a different text earlier \
+             in the run"
+      | Failure.Failed_outside ->
+          kept_none
             "the test also failed outside its expectations; fix that failure \
              and rerun"
-        | Failure.Skipped ->
+      | Failure.Skipped ->
+          kept_none
             "the test also skipped; skip before the expectation or not at all, \
              and rerun")
   | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
@@ -198,10 +204,10 @@ let hints ?armed ?(invocation = `Mirrors) ~filter failures =
     match armed with
     | Some _ -> ([], [])
     | None ->
-        ( Option.to_list (List.find_map withheld_fact failures),
+        ( List.filter_map withheld_fact failures,
           List.filter_map (accept_line invocation ~filter) failures )
   in
-  withheld
+  distinct withheld
   @ distinct
       (accepts @ List.filter_map (replay_of ~armed invocation ~filter) failures)
 

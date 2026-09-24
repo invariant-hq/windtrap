@@ -105,8 +105,8 @@ val check : t -> ?loc:Loc.t -> ?correct:bool -> subject -> string -> unit
       compiled [value] of a literal, for which no file is read, or the file at
       its resolved path.
     + A key that has an accepted content is compared with it alone. Any other
-      content is a {!Failure.Mismatch} against it, in every mode, and records no
-      correction.
+      content is a {!Failure.Mismatch} against it, in every mode, marked
+      {!Failure.Conflict}, and records no correction.
     + Otherwise a difference is a {!Failure.Mismatch} of both texts in their
       comparison form, and a missing file a {!Failure.Missing} of the canonical
       content that the check would accept. Under {!Corrected} and {!Update} the
@@ -114,6 +114,12 @@ val check : t -> ?loc:Loc.t -> ?correct:bool -> subject -> string -> unit
       failure bounds it: the literal as {!Source_patch.val-patch} rewrites it to
       [actual], or the file holding the canonical [actual]. The key is accepted
       with that content from then on, unless a {!settle} drops the attempt.
+    + Before it records the correction of a literal, the check reads the source
+      file that {!val-write} will patch, once per run, and tries the patch on it
+      alone. When the file cannot be read or the patch is refused, no correction
+      is recorded and the check fails, under {!Update} too, with the mismatch
+      marked {!Failure.Refused} with the literal's line and a reason that names
+      no path. A file baseline is not tried.
 
     Raises [Sys_error] if a file exists and cannot be read. *)
 
@@ -147,8 +153,8 @@ val write : t -> unit
     [write] raises no [Sys_error] and no [Unix.Unix_error]. A file that cannot
     be written is a {!Refused} entry of {!writes}, none of its literals is
     written, and the files after it are still written. It is refused when its
-    source cannot be read, when the patcher refuses it ({!Source_patch.error}),
-    when a parent directory cannot be created, or when its write fails. *)
+    source cannot be read or changed since the check tried its patches, when a
+    parent directory cannot be created, or when its write fails. *)
 
 (** The type for what {!val-write} did with one file. [path] is absolute: the
     [.corrected] file under {!Corrected}, the file itself under {!Update}. *)
@@ -157,10 +163,8 @@ type write =
       (** [path] was written with [literals] patched literals, [0] for a file
           baseline. *)
   | Refused of { path : string; reason : string }
-      (** [path] was not written, for [reason]: the sentence of
-          {!Source_patch.error_message}, the message of the [Sys_error], or that
-          a directory cannot be created, with the directory and the system's
-          message. *)
+      (** [path] was not written, for [reason], one sentence that does not
+          repeat [path]. *)
 
 val writes : t -> write list
 (** [writes t] is every file that {!val-write} attempted, in the order of their

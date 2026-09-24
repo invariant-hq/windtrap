@@ -1394,10 +1394,10 @@ val stateful :
     is the failure it expects. A test is not retried past an attempt whose
     corrections were kept, whatever its [retries].
 
-    The kept corrections are written once, after the last test. One that cannot
-    be written fails the run. The project root is [WINDTRAP_PROJECT_ROOT] when
-    set, else the parent of dune's build directory, else the working directory.
-*)
+    A correction that the source cannot take fails its test and says why. The
+    kept corrections are written once, after the last test. One that cannot be
+    written fails the run. The project root is [WINDTRAP_PROJECT_ROOT] when set,
+    else the parent of dune's build directory, else the working directory. *)
 
 val expect : string -> pos * string -> unit
 (** [expect actual @@ __POS_OF__ {|…|}] compares [actual] with the literal up to
@@ -1421,10 +1421,11 @@ val expect : string -> pos * string -> unit
     {!cases}, must produce one text. Once a text is accepted, another is a
     mismatch.
 
-    A correction is refused, and the run fails, when the source changed since
-    the build. A source file that cannot be proven to lie under the project root
-    fails the test at once, as an assertion does. Raises [Invalid_argument] if
-    no test is running. *)
+    When the source changed since the build, or cannot be read, a correcting run
+    keeps no correction for the literal: the expectation fails, under [-u] too,
+    and says why. A source file that cannot be proven to lie under the project
+    root fails the test at once, as an assertion does. Raises [Invalid_argument]
+    if no test is running. *)
 
 val expect_exact : string -> pos * string -> unit
 (** [expect_exact actual @@ __POS_OF__ {|…|}] is {!expect} comparing byte for

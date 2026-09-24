@@ -70,12 +70,11 @@ type error =
           is not [""]. The file changed since the build. *)
 
 val error_message : error -> string
-(** [error_message e] is one sentence on [e], on one line, which names the file
-    of the site, as compiled, and its line:
+(** [error_message e] is one sentence on [e], on one line, naming neither file
+    nor line, which its caller names:
     [no string literal at the recorded position] for {!No_literal}, and for
     {!Drifted} that the literal differs from the value the binary was compiled
-    with, then [rebuild and rerun]. It prints nowhere but as the reason of a
-    refusal ({!Report.refusals}). *)
+    with, then [rebuild and rerun]. *)
 
 val apply : string -> patch list -> (string, error) result
 (** [apply source patches] is [Ok text], where [text] is [source] with every

@@ -12,7 +12,11 @@ type baseline_state =
   | Mismatch of { expected : string; actual : string }
   | Unresolvable of { candidate : string }
 
-type withheld = Failed_outside | Skipped
+type withheld =
+  | Failed_outside
+  | Skipped
+  | Refused of { line : int; reason : string }
+  | Conflict
 
 type message_diff = {
   constructor : string;
@@ -417,6 +421,7 @@ let with_output_tail tail t = { t with output_tail = Some tail }
 
 let with_withheld withheld t =
   match t.kind with
+  | Baseline { withheld = Some (Refused _ | Conflict); _ } -> t
   | Baseline b -> { t with kind = Baseline { b with withheld = Some withheld } }
   | Equality _ | Containment _ | Raise _ | Property _ | Message _ -> t
 

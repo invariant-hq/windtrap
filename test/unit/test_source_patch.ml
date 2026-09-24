@@ -153,8 +153,8 @@ let () =
   (match P.apply source [ flexible ~site ~literal:"old" "new" ] with
   | Error (P.Drifted p) ->
       is_true ~msg:"the refusal names the site" (p = site);
-      is_true ~msg:"the message names the file and line"
-        (Text.contains_substring ~pattern:"test/t.ml:1"
+      is_false ~msg:"the message names no file: its caller does"
+        (Text.contains_substring ~pattern:"test/t.ml"
            (P.error_message (P.Drifted p)))
   | Ok _ | Error (P.No_literal _) -> is_true ~msg:"drift is refused" false);
   let site = pos_of source "expect" in
@@ -322,12 +322,11 @@ let () =
 let () =
   reg "the two refusals' sentences" @@ fun () ->
   let site = ("test/t.ml", 4, 2, 0) in
-  equal ~msg:"No_literal" string
-    "test/t.ml:4: no string literal at the recorded position"
+  equal ~msg:"No_literal" string "no string literal at the recorded position"
     (P.error_message (P.No_literal site));
   equal ~msg:"Drifted" string
-    "test/t.ml:4: the literal differs from the value the binary was compiled \
-     with; rebuild and rerun"
+    "the literal differs from the value the binary was compiled with; rebuild \
+     and rerun"
     (P.error_message (P.Drifted site))
 
 let () =

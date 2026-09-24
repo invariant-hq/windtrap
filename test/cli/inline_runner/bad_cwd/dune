@@ -1,11 +1,7 @@
 ; A partition whose sources cannot be found must fail loudly and write no
-; correction: run from a scratch cwd outside any project, it exits 1.
+; correction: run from a scratch cwd outside any project, it exits 1, and
+; its block says why no correction was kept instead of offering one.
 ; See doc/dev/testing.md, "The five families".
-;
-; The golden also pins a defect, as it is until the product fixes it: the
-; block offers `accept: dune promote` for the correction the run then
-; fails to write, because a block is printed when its test ends and the
-; write comes after.
 
 (executable
  (name bad_cwd_runner)

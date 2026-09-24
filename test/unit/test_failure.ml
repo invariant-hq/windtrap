@@ -545,7 +545,23 @@ let tests =
             ~examples:false ()
         in
         is_true ~msg:"a Property's inner is not reached"
-          (F.with_withheld F.Skipped prop = prop));
+          (F.with_withheld F.Skipped prop = prop);
+        let refused =
+          F.with_withheld
+            (F.Refused { line = 3; reason = "why" })
+            (F.baseline (F.File "p")
+               (F.Mismatch { expected = "a"; actual = "b" }))
+        in
+        is_true ~msg:"a Refused mark holds whatever the attempt adds"
+          (withheld (F.with_withheld F.Failed_outside refused)
+          = Some (F.Refused { line = 3; reason = "why" }));
+        let conflict =
+          F.with_withheld F.Conflict
+            (F.baseline (F.File "p")
+               (F.Mismatch { expected = "a"; actual = "b" }))
+        in
+        is_true ~msg:"so does a Conflict mark"
+          (withheld (F.with_withheld F.Skipped conflict) = Some F.Conflict));
     test "tail_bytes is 8 KiB, what a tail keeps" (fun () ->
         equal ~msg:"tail_bytes" int 8_192 F.tail_bytes;
         let tl = F.tail (String.make 10_000 'a') in

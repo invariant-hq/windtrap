@@ -310,25 +310,81 @@ let () =
     (B.writes t
     = [ B.Written { path = Filename.concat root "test/t.ml"; literals = 2 } ])
 
+(* A refused mismatch, as ["line N: reason"]. *)
+let refused label f =
+  match f () with
+  | () -> fail (label ^ ": the check passed")
+  | exception Failure.Check_failure fl -> (
+      match fl.Failure.kind with
+      | Failure.Baseline
+          {
+            state = Failure.Mismatch _;
+            withheld = Some (Failure.Refused { line; reason });
+            _;
+          } ->
+          Printf.sprintf "line %d: %s" line reason
+      | _ -> fail (label ^ ": not a refused mismatch"))
+
 let () =
-  reg "literal correction: a drifted source is refused" @@ fun () ->
-  let root = temp_dir () in
+  reg "literal correction: a drifted source fails the check, under Update too"
+  @@ fun () ->
   let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n" in
-  write_raw (Filename.concat root "test/t.ml") edited;
+  List.iter
+    (fun mode ->
+      let root = temp_dir () in
+      write_raw (Filename.concat root "test/t.ml") edited;
+      let t = B.create ~root ~cwd:root ~mode () in
+      equal ~msg:"the literal's line and the reason, naming no file" string
+        "line 2: the literal differs from the value the binary was compiled \
+         with; rebuild and rerun"
+        (refused "drifted" (fun () -> B.check t (literal " old ") "new"));
+      equal ~msg:"no correction is recorded" int 0 (B.settle t ~keep:true);
+      B.write t;
+      is_true ~msg:"nothing is attempted" (B.writes t = []);
+      equal ~msg:"the file is left alone" string edited
+        (read_raw (Filename.concat root "test/t.ml")))
+    [ B.Corrected; B.Update ]
+
+let () =
+  reg "literal correction: an unreadable source fails the check" @@ fun () ->
+  let root = temp_dir () in
+  let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
+  equal ~msg:"the literal's line and the reason, naming no file" string
+    "line 2: the source file cannot be read: No such file or directory"
+    (refused "missing source" (fun () -> B.check t (literal " old ") "new"));
+  is_true ~msg:"Check mode reads no source"
+    (match
+       B.check
+         (B.create ~root ~cwd:root ~mode:B.Check ())
+         (literal " old ") "new"
+     with
+    | () -> false
+    | exception Failure.Check_failure { Failure.kind; _ } -> (
+        match kind with
+        | Failure.Baseline { withheld = None; _ } -> true
+        | _ -> false))
+
+let () =
+  reg "literal correction: an edit between the check and the write is refused"
+  @@ fun () ->
+  let root = temp_dir () in
+  let path = Filename.concat root "test/t.ml" in
+  write_raw path source;
   let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  expect_pass "the check compares with the compiled literal" (fun () ->
-      B.check t (literal " old ") "new");
+  expect_pass "accepted" (fun () -> B.check t (literal " old ") "new");
   ignore (B.settle t ~keep:true);
+  let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n" in
+  write_raw path edited;
   B.write t;
   (match B.writes t with
-  | [ B.Refused { path; reason } ] ->
-      is_true ~msg:"the refusal names the file"
-        (path = Filename.concat root "test/t.ml");
-      is_true ~msg:"and the reason"
-        (Text.contains_substring ~pattern:"rebuild and rerun" reason)
-  | _ -> is_true ~msg:"one refusal and nothing written" false);
-  equal ~msg:"the file is left alone" string edited
-    (read_raw (Filename.concat root "test/t.ml"))
+  | [ B.Refused { path = refused; reason } ] ->
+      equal ~msg:"the refusal names the file" string path refused;
+      equal ~msg:"and says it changed" string
+        "it changed during the run: the literal differs from the value the \
+         binary was compiled with; rebuild and rerun"
+        reason
+  | _ -> fail "one refusal and nothing written");
+  equal ~msg:"the file is left alone" string edited (read_raw path)
 
 (* Build-copy placement *)
 
@@ -619,18 +675,19 @@ let () =
 let () =
   reg "refused and written files are in one list, in path order" @@ fun () ->
   let root = temp_dir () in
-  let edited = "let () =\n  expect (f ()) @@ __POS_OF__ {| edited |}\n" in
-  write_raw (Filename.concat root "test/c.ml") edited;
   write_raw (Filename.concat root "test/b.ml") source;
-  write_raw (Filename.concat root "test/a.ml") edited;
   let t = B.create ~root ~cwd:root ~mode:B.Update () in
-  let lit file =
-    B.Literal { pos = (file, 2, 19, 40); value = " old "; exact = false }
-  in
-  expect_pass "c first" (fun () -> B.check t (lit "test/c.ml") "new");
-  expect_pass "then b" (fun () -> B.check t (lit "test/b.ml") "new");
-  expect_pass "then a" (fun () -> B.check t (lit "test/a.ml") "new");
+  expect_pass "c first" (fun () -> B.check t (B.File "test/c.ml") "c");
+  expect_pass "then b" (fun () ->
+      B.check t
+        (B.Literal
+           { pos = ("test/b.ml", 2, 19, 40); value = " old "; exact = false })
+        "new");
+  expect_pass "then a" (fun () -> B.check t (B.File "test/a.ml") "a");
   ignore (B.settle t ~keep:true);
+  (* Directories where the two files go: their renames fail. *)
+  Os.mkdir_p (Filename.concat root "test/a.ml");
+  Os.mkdir_p (Filename.concat root "test/c.ml");
   B.write t;
   let file name = Filename.concat root ("test/" ^ name) in
   equal ~msg:"sorted by path, whatever their outcome" (list string)

@@ -21,8 +21,9 @@ type mask =
   | Verbose_timing  (** the verbose per-test line's timing tail *)
   | Backtrace  (** backtrace frames, which name lines inside the runtime *)
   | Os_reason
-      (** the system's own words ending a [windtrap: could not] line, which
-          differ between platforms *)
+      (** the system's own words ending a [windtrap: could not] line or a
+          block's [correction refused] fact on a source that cannot be read,
+          which differ between platforms *)
 
 let write_file path contents =
   let oc = open_out_bin path in
@@ -146,11 +147,22 @@ let mask_backtrace lines =
   go [] lines
 
 (* A refusal to write names the file, then the system's reason after the
-   last [": "]; the reason is the platform's text ([strerror] here, its
-   own wording on Windows), so it is masked and the file kept. *)
+   last [": "], and so does a block's fact on a source that cannot be
+   read; the reason is the platform's text ([strerror] here, its own
+   wording on Windows), so it is masked and the rest kept. *)
 let mask_os_reason line =
   let prefix = "windtrap: could not " in
-  if not (String.starts_with ~prefix line) then line
+  let unreadable =
+    let fact = String.trim line in
+    String.starts_with ~prefix:"correction refused (" fact
+    &&
+    match String.index_opt fact ')' with
+    | Some i ->
+        String.starts_with ~prefix:"): the source file cannot be read: "
+          (String.sub fact i (String.length fact - i))
+    | None -> false
+  in
+  if not (String.starts_with ~prefix line || unreadable) then line
   else
     let rec last_sep i =
       if i < String.length prefix then None

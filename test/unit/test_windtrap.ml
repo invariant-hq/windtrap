@@ -810,10 +810,14 @@ let () =
   with_temp_root @@ fun root ->
   with_project_root root @@ fun () ->
   let base = base_config ~log_dir:(Filename.concat root "logs") () in
+  (* The literal's source is a real file under the root, which a
+     correcting check reads. *)
+  Out_channel.with_open_bin (Filename.concat root "t.ml") (fun oc ->
+      output_string oc "let () =\n  expect \"new\" (__POS_OF__ {| old |})\n");
   let suite =
     [
       test "masked literal" (fun () ->
-          expect "new" @@ __POS_OF__ {| old |};
+          expect "new" (("t.ml", 2, 15, 0), " old ");
           fail "boom");
       test "masked file" (fun () ->
           expect_file "new\n" "src/masked.expected";
@@ -924,6 +928,75 @@ let () =
              \  expect \"x\" (__POS_OF__ {| x |});\n\
              \  expect \"y\" (__POS_OF__ {| y |})\n")
   | _ -> check "one run corrects both literals" false
+
+(* A test leaves the exit code to dune's [diff?] only when each of its
+   failures carries a kept correction. Under [-u] an accepted expectation
+   raises nothing, so a failure beside it that carries none still fails
+   the run: a literal the source refuses, a path outside the root. Under
+   [--corrected] a second text for a baseline carries none either. *)
+let () =
+  with_temp_root @@ fun root ->
+  with_project_root root @@ fun () ->
+  let base = base_config ~log_dir:(Filename.concat root "logs") () in
+  let update = { base with Run.baseline = Baseline.Update } in
+  Out_channel.with_open_bin (Filename.concat root "t.ml") (fun oc ->
+      output_string oc
+        "let () =\n\
+        \  expect \"x\" (__POS_OF__ {| old1 |});\n\
+        \  expect \"y\" (__POS_OF__ {| edited |})\n");
+  let refused =
+    test "refused beside accepted" (fun () ->
+        expect "x" (("t.ml", 2, 13, 36), " old1 ");
+        expect "y" (("t.ml", 3, 13, 36), " old2 "))
+  in
+  expect_run "a refused literal beside an accepted one" ~config:update
+    [ refused ]
+  @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "refused beside accepted" ]) with
+  | [
+   {
+     Failure.kind =
+       Failure.Baseline { withheld = Some (Failure.Refused { line = 3; _ }); _ };
+     _;
+   };
+  ] ->
+      check "update: the refused literal is the test's one failure" true
+  | _ -> check "update: the refused literal is the test's one failure" false);
+  check_int "update: a refused literal beside an accepted one exits 1"
+    ~expected:1 ~actual:outcome.Run.exit_code;
+  let outside =
+    test "outside beside accepted" (fun () ->
+        expect_file "a\n" "a.expected";
+        expect_file "b\n" "../outside.expected")
+  in
+  expect_run "an out-of-root file beside an accepted one" ~config:update
+    [ outside ]
+  @@ fun outcome ->
+  check "update: the file under the root is accepted"
+    (read_file (Filename.concat root "a.expected") = "a\n");
+  check_int "update: an out-of-root file beside an accepted one exits 1"
+    ~expected:1 ~actual:outcome.Run.exit_code;
+  let conflict =
+    test "two texts" (fun () ->
+        expect_file "one\n" "c.expected";
+        expect_file "two\n" "c.expected")
+  in
+  expect_run "a second text for one baseline"
+    ~config:{ base with Run.baseline = Baseline.Corrected }
+    [ conflict ]
+  @@ fun outcome ->
+  (match failure_list (outcome_of outcome [ "two texts" ]) with
+  | [
+   { Failure.kind = Failure.Baseline { withheld = None; _ }; _ };
+   {
+     Failure.kind = Failure.Baseline { withheld = Some Failure.Conflict; _ };
+     _;
+   };
+  ] ->
+      check "corrected: the second text is marked a conflict" true
+  | _ -> check "corrected: the second text is marked a conflict" false);
+  check_int "corrected: a conflict beside a kept correction exits 1" ~expected:1
+    ~actual:outcome.Run.exit_code
 
 (* A baseline check inside a bracket body reaches the run's registry like
    any ambient operation. *)

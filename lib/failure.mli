@@ -68,8 +68,8 @@ type baseline_state =
       (** The path cannot be proven to lie under the project root. [candidate]
           is the unproven path, stored whole. *)
 
-(** The type for why the attempt that recorded a baseline failure kept none of
-    its corrections (see {{!Run.section-corrections}corrections}). *)
+(** The type for why a baseline failure offers no correction (see
+    {{!Run.section-corrections}corrections}). *)
 type withheld =
   | Failed_outside
       (** The attempt also has a failure that is not a baseline failure, whether
@@ -77,6 +77,12 @@ type withheld =
   | Skipped
       (** Every failure of the attempt is a baseline failure, and the attempt
           skipped. *)
+  | Refused of { line : int; reason : string }
+      (** The source cannot take the correction of the literal at [line] of its
+          file. [reason] is one sentence that names no path. *)
+  | Conflict
+      (** An earlier check of the same baseline in the run recorded a correction
+          to a different text. *)
 
 type message_diff = {
   constructor : string;
@@ -166,8 +172,7 @@ type kind =
       baseline : baseline;
       state : baseline_state;
       withheld : withheld option;
-          (** [Some _] iff the attempt kept none of its corrections (see
-              {!with_withheld}). *)
+          (** [Some _] iff this failure offers no correction. *)
     }
       (** A baseline check failed: what it compared against and how it ended. *)
   | Property of {
@@ -470,8 +475,10 @@ val with_output_tail : tail -> t -> t
 
 val with_withheld : withheld -> t -> t
 (** [with_withheld why f] is [f] with its correction withheld for [why] when [f]
-    is a {!constructor-Baseline} failure, in any state, and [f] otherwise. It
-    does not reach the [inner] of a {!constructor-Property} failure. *)
+    is a {!constructor-Baseline} failure, in any state, and [f] otherwise. A
+    failure already marked {!Refused} or {!Conflict} keeps that mark, because it
+    holds whatever the rest of the attempt does. It does not reach the [inner]
+    of a {!constructor-Property} failure. *)
 
 (** {1:tails Captured-output tails} *)
 

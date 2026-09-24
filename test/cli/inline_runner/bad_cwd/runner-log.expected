@@ -1,7 +1,7 @@
 bad_cwd: 1 test
 ──────────────────────── failures ────────────────────────
   FAIL  Inline_bad_cwd › stale payload
-    test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml:8
+    test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml:7
     expect: mismatch
     @@ -1,1 +1,1 @@
     - stale payload
@@ -9,11 +9,10 @@ bad_cwd: 1 test
     captured output (1 line):
       fresh output
     full log: <log>
-    accept: dune promote test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml
+    correction refused (line 7): the source file cannot be read: <reason>
 ──────────────────────────────────────────────────────────
 
 1 failed in <duration>.
 --- stderr ---
-windtrap: could not write test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml.corrected: <scratch>/test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml: <reason>
 --- probe ---
 .corrected in scratch cwd: no

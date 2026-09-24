@@ -404,11 +404,20 @@ Coverage and packaging:
   and rerun` (for a test that skipped, `… the test also skipped; skip
   before the expectation or not at all, and rerun`), with only a
   property's `replay:` after it.
+  A literal whose source no longer decodes to the value the binary was
+  compiled with, or cannot be read, keeps no correction: its expectation
+  fails, under `-u` too, and its block says `correction refused (line N):
+  <reason>` instead of an `accept:`. A second text for a baseline that the
+  run already corrected keeps none either: `no correction was kept:
+  another check of this baseline produced a different text earlier in the
+  run`. A test counts as corrected, and leaves the exit code to dune's
+  `diff?`, only when each of its failures carries a kept correction; a
+  refused literal or an out-of-root `expect_file` beside an accepted
+  expectation fails the run under `-u`, where it used to exit 0.
   The end-of-run report names what was written, one line per file; a file
-  that cannot be written — a literal that no longer decodes to the value
-  the binary was compiled with, an unwritable path, a directory that
-  cannot be created — is named with its reason and fails the run, and the
-  files after it are still written.
+  that cannot be written — an unwritable path, a directory that cannot be
+  created, a source edited during the run — is named with its reason and
+  fails the run, and the files after it are still written.
 - A test is not retried past an attempt whose corrections were kept: the
   next attempt would be compared with the text just recorded. Under
   `--corrected` a test declared with `~retries` whose only failure is a

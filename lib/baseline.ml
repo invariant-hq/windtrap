@@ -46,6 +46,9 @@ type t = {
   entries : (key, entry) Hashtbl.t;
   mutable pending : (key * correction) list; (* this attempt's, newest first *)
   mutable kept : correction list; (* newest first *)
+  sources : (string, (string, string) result) Hashtbl.t;
+      (* a source file's bytes as a check first read them, or why it could
+         not *)
   mutable writes : write list;
 }
 
@@ -72,6 +75,7 @@ let create ?root ?cwd ~mode () =
     entries = Hashtbl.create 16;
     pending = [];
     kept = [];
+    sources = Hashtbl.create 4;
     writes = [];
   }
 
@@ -112,6 +116,16 @@ let form subject actual =
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 
+(* A [Sys_error] names its file first, and the caller names it already. *)
+let sys_reason path message =
+  let prefix = path ^ ": " in
+  if String.starts_with ~prefix message then
+    String.sub message (String.length prefix)
+      (String.length message - String.length prefix)
+  else message
+
+let unreadable reason = "the source file cannot be read: " ^ reason
+
 let read_baseline subject where =
   match subject with
   | Literal { value; exact; _ } ->
@@ -121,20 +135,56 @@ let read_baseline subject where =
         Some (canonicalize (read_file where.read))
       else None
 
+(* The destination of a correction: the bytes it applies to and the file
+   it produces. *)
+let destination t where =
+  match t.mode with
+  | Corrected -> (where.read, where.read ^ ".corrected")
+  | Update | Check -> (where.source, where.source)
+
 (* Checking *)
+
+(* A patch is tried alone on the bytes that [write] will patch: [apply]
+   locates every patch of a file against the same original bytes, so one
+   valid alone is valid with the others. *)
+let validate t where patch =
+  let input, _ = destination t where in
+  let source =
+    match Hashtbl.find_opt t.sources input with
+    | Some source -> source
+    | None ->
+        let source =
+          match read_file input with
+          | text -> Ok text
+          | exception Sys_error message ->
+              Error (unreadable (sys_reason input message))
+        in
+        Hashtbl.add t.sources input source;
+        source
+  in
+  Result.bind source (fun text ->
+      match Source_patch.apply text [ patch ] with
+      | Ok _ -> Ok ()
+      | Error error -> Error (Source_patch.error_message error))
 
 let record t key entry subject where actual accepted =
   let correction =
     match subject with
-    | Literal { pos; value; exact } ->
+    | Literal { pos = (_, line, _, _) as pos; value; exact } -> (
         let style =
           if exact then Source_patch.Exact else Source_patch.Flexible
         in
-        Patch (where, Source_patch.patch ~site:pos ~literal:value ~style actual)
-    | File _ -> Content (where, accepted)
+        let patch = Source_patch.patch ~site:pos ~literal:value ~style actual in
+        match validate t where patch with
+        | Ok () -> Ok (Patch (where, patch))
+        | Error reason -> Error (Failure.Refused { line; reason }))
+    | File _ -> Ok (Content (where, accepted))
   in
-  entry.accepted <- Some accepted;
-  t.pending <- (key, correction) :: t.pending
+  Result.map
+    (fun correction ->
+      entry.accepted <- Some accepted;
+      t.pending <- (key, correction) :: t.pending)
+    correction
 
 let check t ?loc ?(correct = true) subject actual =
   let mode = if correct then t.mode else Check in
@@ -143,8 +193,13 @@ let check t ?loc ?(correct = true) subject actual =
     | Literal { exact; _ } -> Failure.Literal { exact }
     | File path -> Failure.File path
   in
-  let fail state =
-    raise (Failure.Check_failure (Failure.baseline ?loc kind state))
+  let fail ?withheld state =
+    let failure = Failure.baseline ?loc kind state in
+    raise
+      (Failure.Check_failure
+         (match withheld with
+         | None -> failure
+         | Some why -> Failure.with_withheld why failure))
   in
   match resolve t subject with
   | Error candidate -> fail (Failure.Unresolvable { candidate })
@@ -164,7 +219,8 @@ let check t ?loc ?(correct = true) subject actual =
       match entry.accepted with
       | Some accepted ->
           if not (String.equal actual' accepted) then
-            fail (Failure.Mismatch { expected = accepted; actual = actual' })
+            fail ~withheld:Failure.Conflict
+              (Failure.Mismatch { expected = accepted; actual = actual' })
       | None -> (
           match entry.baseline with
           | Some expected when String.equal expected actual' -> ()
@@ -177,10 +233,10 @@ let check t ?loc ?(correct = true) subject actual =
               in
               match mode with
               | Check -> fail state
-              | Corrected ->
-                  record t key entry subject where actual actual';
-                  fail state
-              | Update -> record t key entry subject where actual actual')))
+              | Corrected | Update -> (
+                  match record t key entry subject where actual actual' with
+                  | Error refused -> fail ~withheld:refused state
+                  | Ok () -> if mode = Corrected then fail state))))
 
 let settle t ~keep =
   let pending = t.pending in
@@ -203,13 +259,6 @@ let settle t ~keep =
 
 module String_map = Map.Make (String)
 
-(* The destination of a correction: the bytes it applies to and the file
-   it produces. *)
-let destination t where =
-  match t.mode with
-  | Corrected -> (where.read, where.read ^ ".corrected")
-  | Update | Check -> (where.source, where.source)
-
 let write t =
   (* One file's every failure is its refusal, so the files after it are
      still written. *)
@@ -223,8 +272,9 @@ let write t =
           (contents ())
       with
       | Ok () -> Written { path = output; literals }
-      | Error reason | (exception Sys_error reason) ->
-          Refused { path = output; reason }
+      | Error reason -> Refused { path = output; reason }
+      | exception Sys_error message ->
+          Refused { path = output; reason = sys_reason output message }
       | exception Unix.Unix_error (error, _, dir) ->
           let reason =
             Printf.sprintf "cannot create directory %s: %s"
@@ -259,8 +309,17 @@ let write t =
         let input = fst (List.hd entries) in
         let patches = List.map snd entries in
         publish output ~literals:(List.length patches) (fun () ->
-            Result.map_error Source_patch.error_message
-              (Source_patch.apply (read_file input) patches)))
+            (* Every patch was valid alone on the bytes a check read: a
+               refusal now is an edit since. *)
+            match read_file input with
+            | exception Sys_error message ->
+                Error (unreadable (sys_reason input message))
+            | text ->
+                Result.map_error
+                  (fun error ->
+                    "it changed during the run: "
+                    ^ Source_patch.error_message error)
+                  (Source_patch.apply text patches)))
       patches;
     String_map.iter
       (fun output text -> publish output ~literals:0 (fun () -> Ok text))

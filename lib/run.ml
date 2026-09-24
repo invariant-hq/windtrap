@@ -1017,12 +1017,13 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
      corrections it recorded, nor does one that skipped, whose verdict is
      withheld. (An [xfail] test's attempt records none in the first place:
      its frame checks read-only, since its mismatch is the failure the
-     annotation expects.) The attempt is [corrected] when every failure
-     it has is a baseline failure with a kept correction — [Baseline.check]
-     records exactly one correction per failure it raises in Corrected
-     mode, none for a failure it cannot correct (an unresolvable path, a
-     second content for an accepted key) — which is what lets the exit
-     code leave such an attempt to the [diff?] that follows. *)
+     annotation expects.) The attempt is [corrected] when each of its
+     failures carries a kept correction, which lets the exit code leave it
+     to the [diff?] that follows. Only a correcting check under Corrected
+     raises a failure that carries one: a mismatch or a missing file that
+     withholds nothing ([Baseline.check] marks a correction it could not
+     record). Under Update a recorded correction raises no failure, so
+     every failure there counts. *)
   let baseline_only =
     List.for_all
       (fun (f : Failure.t) ->
@@ -1031,8 +1032,21 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
   in
   let keep = baseline_only && !skipped = None in
   let kept = Baseline.settle (baselines run) ~keep in
+  let carries_correction (f : Failure.t) =
+    match f.Failure.kind with
+    | Failure.Baseline
+        { state = Failure.Missing _ | Failure.Mismatch _; withheld = None; _ }
+      ->
+        true
+    | Failure.Baseline _ | Failure.Equality _ | Failure.Containment _
+    | Failure.Raise _ | Failure.Property _ | Failure.Message _ ->
+        false
+  in
   let corrected =
-    failures <> [] && baseline_only && kept = List.length failures
+    keep && frame.fr_corrections
+    && Baseline.mode (baselines run) = Baseline.Corrected
+    && failures <> []
+    && List.for_all carries_correction failures
   in
   (* A kept correction is permanent, and the next attempt's checks would
      agree with it: a retry would pass a deterministic test as flaky, or

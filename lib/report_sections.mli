@@ -182,10 +182,12 @@ val hints :
     The lines are one [accept:] for each baseline failure that is missing or
     mismatched, then one [replay:] for each {!Failure.Property} failure whose
     case was generated. Equal lines print once, and the result is [[]] when no
-    failure has a command. A baseline failure whose correction the run withheld
-    ({!Failure.with_withheld}) has no [accept:], since the command would accept
-    nothing. The lines then open with one fact line, which gives the reason of
-    the first such failure.
+    failure has a command. A baseline failure whose correction is withheld
+    ([withheld = Some _]) has no [accept:], since the command would accept
+    nothing. The lines then open with one fact line per such failure, in their
+    order, equal lines once: [correction refused (line N): <reason>] for a
+    {!Failure.Refused} literal, and [no correction was kept: <reason>]
+    otherwise.
 
     - [filter] is the path of the block's test as a string. It is single-quoted
       into each command, in the [$'…'] form when it holds a control byte, so a

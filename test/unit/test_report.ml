@@ -3322,6 +3322,33 @@ let test_withheld_correction () =
         "no correction was kept: the test also skipped; skip before the \
          expectation or not at all, and rerun";
       ]);
+  (* A correction the source refused names its literal's line, beside the
+     accept of a correction the attempt kept; each refused literal has its
+     line, and a fact of the attempt follows them. *)
+  let refused line =
+    Failure.with_withheld
+      (Failure.Refused { line; reason = "the source file cannot be read: x" })
+      Fixtures.snap_mismatch
+  in
+  is_true ~msg:"a refused literal beside a kept one: its fact, then the accept"
+    (hints [ refused 4; Fixtures.snap_mismatch ]
+    = [
+        "correction refused (line 4): the source file cannot be read: x";
+        "accept: ./t.exe -u -f 't'";
+      ]);
+  is_true ~msg:"two refused literals, then a failure outside: three facts"
+    (hints [ plain; outside (refused 4); outside (refused 9); literal ]
+    = [
+        "correction refused (line 4): the source file cannot be read: x";
+        "correction refused (line 9): the source file cannot be read: x";
+        kept_none;
+      ]);
+  is_true ~msg:"a conflict: its own fact, no accept"
+    (hints [ Failure.with_withheld Failure.Conflict Fixtures.snap_mismatch ]
+    = [
+        "no correction was kept: another check of this baseline produced a \
+         different text earlier in the run";
+      ]);
   (* An unresolvable path never had a correction to keep. *)
   is_true ~msg:"an unresolvable path draws no reason"
     (hints
@@ -5052,17 +5079,16 @@ let test_corrections_quiet () =
   (* A refusal is named with its reason: the correction reached nothing. *)
   let root = temp_dir () in
   let baselines = Baseline.create ~root ~cwd:root ~mode:Baseline.Update () in
-  Baseline.check baselines
-    (Baseline.Literal
-       { pos = ("missing.ml", 1, 0, 0); value = "a"; exact = true })
-    "b";
+  Baseline.check baselines (Baseline.File "help.expected") "hello\n";
   ignore (Baseline.settle baselines ~keep:true);
+  (* A directory where the file goes: its rename fails. *)
+  Os.mkdir_p (Filename.concat root "help.expected");
   Baseline.write baselines;
   (match Report.refusals baselines with
   | [ line ] ->
       let head =
         Printf.sprintf "could not write %s: "
-          (Os.display_path (Filename.concat root "missing.ml"))
+          (Os.display_path (Filename.concat root "help.expected"))
       in
       is_true
         ~msg:"a refusal is a sentence naming the file, then why, for Os.say"

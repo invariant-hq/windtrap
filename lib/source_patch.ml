@@ -158,14 +158,10 @@ let patch ~site ~literal ~style content =
 type error = No_literal of Loc.pos | Drifted of Loc.pos
 
 let error_message = function
-  | No_literal (file, line, _, _) ->
-      Printf.sprintf "%s:%d: no string literal at the recorded position" file
-        line
-  | Drifted (file, line, _, _) ->
-      Printf.sprintf
-        "%s:%d: the literal differs from the value the binary was compiled \
-         with; rebuild and rerun"
-        file line
+  | No_literal _ -> "no string literal at the recorded position"
+  | Drifted _ ->
+      "the literal differs from the value the binary was compiled with; \
+       rebuild and rerun"
 
 (* Lexing. The position names the [__POS_OF__ literal] expression, with
    or without its parentheses, the literal itself, or an [[%expect]] node
