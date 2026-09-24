@@ -1,0 +1,10 @@
+; Expect_test_config shadowed in a file, under dune's own inline runner: what
+; the generated code hands to [sanitize] and to [run]. The default module's
+; own values are test_ppx_runtime's.
+
+(library
+ (name windtrap_test_expect_config)
+ (inline_tests)
+ (libraries windtrap)
+ (preprocess
+  (pps ppx_windtrap)))
