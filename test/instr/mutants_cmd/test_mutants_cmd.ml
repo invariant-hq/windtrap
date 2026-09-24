@@ -75,6 +75,11 @@ let write_file path contents =
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 
+(* A verdict file, written as a mutation run writes it. *)
+let save ?identity path t =
+  mkdir_p (Filename.dirname path);
+  V.save ?identity path t
+
 (* [capture ?cwd ?color ?env ?exe args] runs [exe] (the windtrap binary by
    default) and returns (exit code, stdout, stderr). The environment is
    stated in full rather than extended: this suite asserts on
@@ -213,9 +218,7 @@ let proj () =
   plant_sources root;
   List.iter
     (fun (name, t) ->
-      write_file
-        (Filename.concat root (Filename.concat "_build/_mutants" name))
-        (V.to_string t))
+      save (Filename.concat root (Filename.concat "_build/_mutants" name)) t)
     [
       ("windtrap-a.mutants", file_a);
       ("windtrap-b.mutants", file_b);
@@ -458,9 +461,9 @@ let merge_is_total =
   let proj = proj () in
   let reference = scratch "reference" in
   plant_sources reference;
-  write_file
+  save
     (Filename.concat reference "_build/_mutants/merged.mutants")
-    (V.to_string (V.merge (V.merge file_a file_b) file_c));
+    (V.merge (V.merge file_a file_b) file_c);
   let _, expected, _ = mutate ~cwd:reference [] in
   not_equal ~msg:"the reference report is not empty" text "" expected;
   let expected = without_executables_term expected in
@@ -514,9 +517,9 @@ let clean_report =
   test "a project with nothing to report is one line" @@ fun () ->
   let root = scratch "clean" in
   plant_sources root;
-  write_file
+  save
     (Filename.concat root "_build/_mutants/all.mutants")
-    (V.to_string (collection [ m_add V.Killed; m_sub V.Killed; m_lt V.Killed ]));
+    (collection [ m_add V.Killed; m_sub V.Killed; m_lt V.Killed ]);
   let code, out, err = mutate ~cwd:root [] in
   equal ~msg:"a clean project exits 0" int 0 code;
   equal ~msg:"a clean project keeps stderr empty" text "" err;
@@ -530,10 +533,9 @@ let only_unreached =
      it is not scored, so the merge stays green. *)
   let root = scratch "unreached-only" in
   plant_sources root;
-  write_file
+  save
     (Filename.concat root "_build/_mutants/all.mutants")
-    (V.to_string
-       (collection [ m_add V.Killed; m_sub V.Killed; m_or V.Unreached ]));
+    (collection [ m_add V.Killed; m_sub V.Killed; m_or V.Unreached ]);
   let code, out, err = mutate ~cwd:root [] in
   equal ~msg:"only unreached mutants exit 0" int 0 code;
   equal ~msg:"and warn about nothing" text "" err;
@@ -610,7 +612,7 @@ let explicit_paths =
   (* An existing file without the .mutants suffix is equally loud,
      whatever its content. *)
   let renamed = scratch "renamed.verdicts" in
-  write_file renamed (V.to_string file_a);
+  save renamed file_a;
   let code, _, err = mutate ~cwd:elsewhere [ renamed ] in
   equal ~msg:"a wrong-suffix explicit file exits 1" int 1 code;
   contains ~msg:"a wrong-suffix explicit file is named" ~sub:renamed err;
@@ -635,9 +637,9 @@ let explicit_paths =
      killed-anywhere-wins is exactly how a kill turns back into a
      survivor: here the file holding [add]'s kill is the deepest one. *)
   let nested = scratch "explicit-nested" in
-  write_file (Filename.concat nested "one/two/a.mutants") (V.to_string file_a);
-  write_file (Filename.concat nested "one/b.mutants") (V.to_string file_b);
-  write_file (Filename.concat nested "c.mutants") (V.to_string file_c);
+  save (Filename.concat nested "one/two/a.mutants") file_a;
+  save (Filename.concat nested "one/b.mutants") file_b;
+  save (Filename.concat nested "c.mutants") file_c;
   let code, out, _ = mutate ~cwd:elsewhere [ nested ] in
   equal ~msg:"a nested explicit directory finds the survivor" int 1 code;
   equal ~msg:"and every depth reaches the merge" text
@@ -654,9 +656,7 @@ let stale_root name =
   let root = scratch name in
   plant_sources root;
   let identity = plant_exe root "default/test/a.exe" "the instrumented build" in
-  write_file
-    (Filename.concat root "_build/_mutants/a.mutants")
-    (V.to_string ~identity file_a);
+  save ~identity (Filename.concat root "_build/_mutants/a.mutants") file_a;
   (root, identity)
 
 let staleness =
@@ -687,15 +687,14 @@ let staleness =
      the payload here is chosen to expose: [lt] is the live file's only
      survivor, and the orphan claims a crash killed it. *)
   let root, _ = stale_root "stale-orphan" in
-  write_file
+  save
+    ~identity:
+      {
+        V.exe = "default/test/gone.exe";
+        digest = Digest.to_hex (Digest.string "gone");
+      }
     (Filename.concat root "_build/_mutants/gone.mutants")
-    (V.to_string
-       ~identity:
-         {
-           V.exe = "default/test/gone.exe";
-           digest = Digest.to_hex (Digest.string "gone");
-         }
-       (collection [ m_lt V.Killed ]));
+    (collection [ m_lt V.Killed ]);
   let code, out, err = mutate ~cwd:root [] in
   equal ~msg:"an orphan still reports the live data" int 1 code;
   equal ~msg:"the orphan's kill never reaches the report" text
@@ -719,9 +718,9 @@ let staleness =
      stale verdict. *)
   let root, _ = stale_root "stale-mixed" in
   let other = plant_exe root "default/test/b.exe" "the sibling build" in
-  write_file
+  save ~identity:other
     (Filename.concat root "_build/_mutants/b.mutants")
-    (V.to_string ~identity:other (collection [ m_lt V.Killed ]));
+    (collection [ m_lt V.Killed ]);
   write_file (Filename.concat root "_build/default/test/b.exe") "rebuilt since";
   let code, out, err = mutate ~cwd:root [] in
   equal ~msg:"a stale file beside a fresh one still reports" int 1 code;
@@ -772,22 +771,21 @@ let staleness =
       let identity =
         plant_exe root ("default/test/" ^ name ^ ".exe") "the sibling build"
       in
-      write_file
+      save ~identity
         (Filename.concat root ("_build/_mutants/" ^ name ^ ".mutants"))
-        (V.to_string ~identity (collection [ m_lt V.Killed ]));
+        (collection [ m_lt V.Killed ]);
       write_file
         (Filename.concat root ("_build/default/test/" ^ name ^ ".exe"))
         "rebuilt since")
     [ "b"; "c"; "d" ];
-  write_file
+  save
+    ~identity:
+      {
+        V.exe = "default/test/gone.exe";
+        digest = Digest.to_hex (Digest.string "gone");
+      }
     (Filename.concat root "_build/_mutants/e.mutants")
-    (V.to_string
-       ~identity:
-         {
-           V.exe = "default/test/gone.exe";
-           digest = Digest.to_hex (Digest.string "gone");
-         }
-       (collection [ m_lt V.Killed ]));
+    (collection [ m_lt V.Killed ]);
   let code, _, err = mutate ~cwd:root [] in
   equal ~msg:"five excluded files and nothing else exits 1" int 1 code;
   equal ~msg:"at most three files are named" int 3
@@ -822,16 +820,15 @@ let executable_labels =
   let unit = plant_exe root "default/test/test_calc.exe" "the unit suite" in
   let inline = plant_exe root inline_exe "the inline runner" in
   let verdicts tests = collection [ m_add (V.survived tests) ] in
-  write_file
+  save ~identity:unit
     (Filename.concat root "_build/_mutants/unit.mutants")
-    (V.to_string ~identity:unit
-       (verdicts [ [ "calc"; "adds" ]; [ "calc"; "adds zero" ] ]));
-  write_file
+    (verdicts [ [ "calc"; "adds" ]; [ "calc"; "adds zero" ] ]);
+  save ~identity:inline
     (Filename.concat root "_build/_mutants/inline.mutants")
-    (V.to_string ~identity:inline (verdicts [ [ "my_lib_expect"; "add" ] ]));
-  write_file
+    (verdicts [ [ "my_lib_expect"; "add" ] ]);
+  save
     (Filename.concat root "_build/_mutants/plain.mutants")
-    (V.to_string (verdicts [ [ "hand"; "written" ] ]));
+    (verdicts [ [ "hand"; "written" ] ]);
   let code, out, err = mutate ~cwd:root [] in
   equal ~msg:"the survivor exits 1" int 1 code;
   equal ~msg:"nothing is stale" text "" err;
@@ -869,12 +866,10 @@ let executable_labels =
   plant_sources bare;
   let exe = Filename.concat bare "test_calc.exe" in
   write_file exe "built by hand";
-  write_file
+  save
+    ~identity:{ V.exe; digest = Digest.to_hex (Digest.string "built by hand") }
     (Filename.concat bare "_windtrap/mutants/calc.mutants")
-    (V.to_string
-       ~identity:
-         { V.exe; digest = Digest.to_hex (Digest.string "built by hand") }
-       (verdicts [ [ "calc"; "adds" ] ]));
+    (verdicts [ [ "calc"; "adds" ] ]);
   let code, out, err = mutate ~cwd:bare [] in
   equal ~msg:"the hand-built project's survivor exits 1" int 1 code;
   equal ~msg:"its file is fresh" text "" err;
@@ -888,9 +883,9 @@ let executable_labels =
   let spaced = scratch "spaced" in
   plant_sources spaced;
   let identity = plant_exe spaced "default/my tests/a.exe" "a suite" in
-  write_file
+  save ~identity
     (Filename.concat spaced "_build/_mutants/a.mutants")
-    (V.to_string ~identity (verdicts [ [ "calc"; "adds" ] ]));
+    (verdicts [ [ "calc"; "adds" ] ]);
   let _, out, _ = mutate ~cwd:spaced [] in
   contains ~msg:"a dune target with a space is one quoted word"
     ~sub:
@@ -908,17 +903,16 @@ let survivor_order =
      files; [add] (line 1) has one. *)
   let root = scratch "order" in
   plant_sources root;
-  write_file
+  save
     (Filename.concat root "_build/_mutants/one.mutants")
-    (V.to_string
-       (collection
-          [
-            m_add (V.survived [ [ "t"; "a" ] ]);
-            m_sub (V.survived [ [ "t"; "b" ]; [ "t"; "c" ] ]);
-          ]));
-  write_file
+    (collection
+       [
+         m_add (V.survived [ [ "t"; "a" ] ]);
+         m_sub (V.survived [ [ "t"; "b" ]; [ "t"; "c" ] ]);
+       ]);
+  save
     (Filename.concat root "_build/_mutants/two.mutants")
-    (V.to_string (collection [ m_sub (V.survived [ [ "u"; "d" ] ]) ]));
+    (collection [ m_sub (V.survived [ [ "u"; "d" ] ]) ]);
   let code, out, _ = mutate ~cwd:root [] in
   equal ~msg:"two survivors exit 1" int 1 code;
   contains ~msg:"the most-watched survivor's sentence"
@@ -953,7 +947,11 @@ let loud_failures =
   contains ~msg:"an empty _build/_mutants prints the no-files hint"
     ~sub:"no .mutants files found" err;
   (* A truncated file is corrupt and named, never partially merged. *)
-  let serialized = V.to_string file_a in
+  let serialized =
+    let path = scratch "whole.mutants" in
+    save path file_a;
+    read_file path
+  in
   let trunc = scratch "trunc" in
   write_file
     (Filename.concat trunc "_build/_mutants/cut.mutants")
@@ -1069,9 +1067,9 @@ let edge_tests =
     test "a survivor whose source is not found keeps its identifier and rewrite"
       (fun () ->
         let root = scratch "no-sources" in
-        write_file
+        save
           (Filename.concat root "_build/_mutants/b.mutants")
-          (V.to_string (collection [ m_sub (V.survived [ [ "t"; "b" ] ]) ]));
+          (collection [ m_sub (V.survived [ [ "t"; "b" ] ]) ]);
         let code, out, _ = mutate ~cwd:root [] in
         equal ~msg:"the survivor exits 1" int 1 code;
         contains ~msg:"the block's head, and no source line under it"
@@ -1088,13 +1086,12 @@ let edge_tests =
         plant_sources root;
         let first = plant_exe root "default/a/t.exe" "suite a"
         and second = plant_exe root "default/b/t.exe" "suite b" in
-        write_file
+        save ~identity:first
           (Filename.concat root "_build/_mutants/1.mutants")
-          (V.to_string ~identity:first (collection [ m_add V.Unreached ]));
-        write_file
+          (collection [ m_add V.Unreached ]);
+        save ~identity:second
           (Filename.concat root "_build/_mutants/2.mutants")
-          (V.to_string ~identity:second
-             (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]));
+          (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]);
         let code, out, err = mutate ~cwd:root [] in
         equal ~msg:"the survivor exits 1" int 1 code;
         equal ~msg:"both files are fresh" text "" err;
@@ -1109,14 +1106,12 @@ let edge_tests =
         plant_sources root;
         let short = plant_exe root "default/test/t.exe" "short"
         and long = plant_exe root "default/test/a_long_name.exe" "long" in
-        write_file
+        save ~identity:short
           (Filename.concat root "_build/_mutants/short.mutants")
-          (V.to_string ~identity:short
-             (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]));
-        write_file
+          (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]);
+        save ~identity:long
           (Filename.concat root "_build/_mutants/long.mutants")
-          (V.to_string ~identity:long
-             (collection [ m_sub (V.survived [ [ "calc"; "subtracts" ] ]) ]));
+          (collection [ m_sub (V.survived [ [ "calc"; "subtracts" ] ]) ]);
         let _, out, _ = mutate ~cwd:root [] in
         (* [t.exe]'s block holds no longer label, and is padded to the
            other block's. *)

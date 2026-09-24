@@ -5,10 +5,11 @@
 
 (* Tests for Windtrap_runtime.Verdicts: the verdict lattice (killed
    anywhere wins, and the algebraic laws that make merging any number of
-   files in any order give one answer), the v3 verdict format (exact bytes, round
-   trip, every corruption class), deterministic output filenames, and
-   the atomic write - the last also end to end through a child
-   executable standing in for a mutation run's writing side. The
+   files in any order give one answer), the v3 verdict format as [save] writes it and [load] reads it
+   (exact bytes, round trip, every corruption class), deterministic
+   output filenames, and the atomic write - the last also end to end
+   through a child executable standing in for a mutation run's writing
+   side. The
    runtime's own suite is test/instr/mutate: identifiers, the registry,
    arming.
 
@@ -18,6 +19,7 @@
 open Windtrap
 module M = Windtrap_runtime.Mutate
 module V = Windtrap_runtime.Verdicts
+module I = Windtrap_runtime.Instr
 module Child = Windtrap_test_support.Child
 
 (* Printers and lookups the module does not export: they are for
@@ -69,6 +71,39 @@ let ok_error name = function
    temp_dir. Nothing is ever written under _build/_mutants. *)
 let exe_dir = Filename.dirname Sys.executable_name
 let scratch path = Filename.concat (temp_dir ()) path
+let read_file path = In_channel.with_open_bin path In_channel.input_all
+
+let write_file path s =
+  Out_channel.with_open_bin path (fun oc -> Out_channel.output_string oc s)
+
+(* The bytes of the verdict file that [save] writes for [t]. *)
+let bytes ?identity t =
+  let path = scratch "saved.mutants" in
+  V.save ?identity path t;
+  read_file path
+
+(* [load] of what [save] wrote for [t]. *)
+let round_trip ?identity t =
+  let path = scratch "saved.mutants" in
+  V.save ?identity path t;
+  V.load path
+
+(* [load] of a file holding [s], and the file's path. *)
+let load_text s =
+  let path = scratch "f.mutants" in
+  write_file path s;
+  (path, V.load path)
+
+(* The verdict of one mutant that two files hold, one verdict each: how
+   [merge] combines two verdicts. *)
+let merged a b =
+  let m = { M.file = "lib/lattice.ml"; line = 1; col = 0; rewrite = "add" } in
+  let one v =
+    V.add V.empty { V.id = m; before = "b"; after = "a"; verdict = v }
+  in
+  match V.records (V.merge (one a) (one b)) with
+  | [ r ] -> r.V.verdict
+  | records -> failf "one record expected, got %d" (List.length records)
 
 (* The verdict lattice *)
 
@@ -92,10 +127,9 @@ let verdict_tests =
                   ~msg:
                     (Format.asprintf "%a merged with %a" pp_verdict killed
                        pp_verdict other)
-                  verdict_t killed
-                  (V.merge_verdict killed other);
+                  verdict_t killed (merged killed other);
                 equal ~msg:"the other way round" verdict_t killed
-                  (V.merge_verdict other killed))
+                  (merged other killed))
               [
                 V.Unreached;
                 V.survived [ [ "a" ] ];
@@ -116,31 +150,31 @@ let verdict_tests =
     test "survived only when every executable that reached it survived"
       (fun () ->
         equal ~msg:"survived and unreached" verdict_t (V.survived [ [ "a" ] ])
-          (V.merge_verdict (V.survived [ [ "a" ] ]) V.Unreached);
+          (merged (V.survived [ [ "a" ] ]) V.Unreached);
         equal ~msg:"unreached and unreached" verdict_t V.Unreached
-          (V.merge_verdict V.Unreached V.Unreached);
+          (merged V.Unreached V.Unreached);
         equal ~msg:"witnesses union and deduplicate" verdict_t
           (V.survived [ [ "a" ]; [ "b" ]; [ "c" ] ])
-          (V.merge_verdict
+          (merged
              (V.survived [ [ "b" ]; [ "a" ] ])
              (V.survived [ [ "c" ]; [ "b" ] ])));
-    test "merge_verdict is commutative, associative and idempotent" (fun () ->
+    test "merging verdicts is commutative, associative and idempotent"
+      (fun () ->
         List.iter
           (fun a ->
             equal
               ~msg:(Format.asprintf "idempotent on %a" pp_verdict a)
-              verdict_t a (V.merge_verdict a a);
+              verdict_t a (merged a a);
             equal
               ~msg:(Format.asprintf "unreached is the unit of %a" pp_verdict a)
-              verdict_t a
-              (V.merge_verdict a V.Unreached);
+              verdict_t a (merged a V.Unreached);
             List.iter
               (fun b ->
                 equal
                   ~msg:
                     (Format.asprintf "commutative on %a, %a" pp_verdict a
                        pp_verdict b)
-                  verdict_t (V.merge_verdict a b) (V.merge_verdict b a);
+                  verdict_t (merged a b) (merged b a);
                 List.iter
                   (fun c ->
                     equal
@@ -148,8 +182,8 @@ let verdict_tests =
                         (Format.asprintf "associative on %a, %a, %a" pp_verdict
                            a pp_verdict b pp_verdict c)
                       verdict_t
-                      (V.merge_verdict (V.merge_verdict a b) c)
-                      (V.merge_verdict a (V.merge_verdict b c)))
+                      (merged (merged a b) c)
+                      (merged a (merged b c)))
                   sample_verdicts)
               sample_verdicts)
           sample_verdicts);
@@ -201,9 +235,7 @@ let verdict_tests =
         in
         let t = V.add V.empty r in
         equal ~msg:"kept whole" (option record_t) (Some r) (find t m);
-        let round_tripped, _ =
-          ok_error "round trip" (V.of_string (V.to_string t))
-        in
+        let round_tripped, _ = ok_error "round trip" (round_trip t) in
         equal ~msg:"and survives the file" (option record_t) (Some r)
           (find round_tripped m));
     test "records disagreeing on a rendering merge deterministically" (fun () ->
@@ -223,8 +255,8 @@ let verdict_tests =
           equal
             ~msg:(msg ^ ", through merge either way")
             text
-            (V.to_string (V.merge (V.add V.empty a) (V.add V.empty b)))
-            (V.to_string (V.merge (V.add V.empty b) (V.add V.empty a)))
+            (bytes (V.merge (V.add V.empty a) (V.add V.empty b)))
+            (bytes (V.merge (V.add V.empty b) (V.add V.empty a)))
         in
         both ~msg:"the smaller before wins"
           ~expected:(record ~before:"a - b" ~after:"x + y" m V.Killed)
@@ -271,7 +303,6 @@ let verdict_tests =
               ("lib/a.ml", 3, V.Killed);
             ]
         in
-        let bytes = V.to_string in
         equal ~msg:"idempotent" text (bytes a) (bytes (V.merge a a));
         equal ~msg:"empty is the unit" text (bytes a)
           (bytes (V.merge a V.empty));
@@ -310,7 +341,7 @@ let verdict_tests =
                dismissed = Some "equivalent";
              }
              V.Killed));
-    test "add checks no identifier, and the file of one it took does not parse"
+    test "add checks no identifier, and load refuses what save wrote for it"
       (fun () ->
         List.iter
           (fun (name, bad) ->
@@ -320,10 +351,10 @@ let verdict_tests =
               (List.map
                  (fun (r : V.record) -> M.id_to_string r.V.id)
                  (V.records t));
-            match V.of_string (V.to_string t) with
+            match round_trip t with
             | Error (V.Corrupt _) -> ()
             | Error e -> failf "%s: expected Corrupt, got %a" name V.pp_error e
-            | Ok _ -> failf "%s: what to_string wrote parsed" name)
+            | Ok _ -> failf "%s: what save wrote loaded" name)
           [
             ("an empty file", id ~file:"" ~line:1 ~col:0 ~rewrite:"lt");
             ("line 0", id ~file:"a.ml" ~line:0 ~col:0 ~rewrite:"lt");
@@ -384,39 +415,33 @@ let format_tests =
        format's stated contract (verdicts.mli, "Verdict files"; the header
        is instr.mli's grammar). The layout of a record is stated nowhere,
        and these bytes pin it as this release writes it. *)
-    test "to_string is the v3 encoding: magic, count, records by identifier"
+    test "save writes the v3 encoding: magic, count, records by identifier"
       (fun () ->
         equal ~msg:"exact bytes" text sample_bytes
-          (V.to_string (sample_collection ())));
+          (bytes (sample_collection ())));
     test "an identity is recorded after the magic line" (fun () ->
         equal ~msg:"exact bytes" text
           ("windtrap-mutants-v3\nexe " ^ digest ^ " 10 test/a.exe\n0\n")
-          (V.to_string ~identity:{ V.exe = "test/a.exe"; digest } V.empty);
+          (bytes ~identity:{ V.exe = "test/a.exe"; digest } V.empty);
         raises_match ~msg:"an empty exe is refused" Exn.invalid_arg (fun () ->
-            V.to_string ~identity:{ V.exe = ""; digest } V.empty);
+            bytes ~identity:{ V.exe = ""; digest } V.empty);
         raises_match ~msg:"a short digest is refused" Exn.invalid_arg (fun () ->
-            V.to_string ~identity:{ V.exe = "a"; digest = "abc" } V.empty);
+            bytes ~identity:{ V.exe = "a"; digest = "abc" } V.empty);
         raises_match ~msg:"a non-hex digest is refused" Exn.invalid_arg
           (fun () ->
-            V.to_string
-              ~identity:{ V.exe = "a"; digest = String.make 32 'X' }
-              V.empty));
-    test "of_string inverts to_string, identity included" (fun () ->
+            bytes ~identity:{ V.exe = "a"; digest = String.make 32 'X' } V.empty));
+    test "load inverts save, identity included" (fun () ->
         let t = sample_collection () in
         let identity = { V.exe = "_build/test/a.exe"; digest } in
-        let parsed, recorded =
-          ok_error "round trip" (V.of_string (V.to_string ~identity t))
-        in
-        equal ~msg:"the collection" text (V.to_string t) (V.to_string parsed);
+        let parsed, recorded = ok_error "round trip" (round_trip ~identity t) in
+        equal ~msg:"the collection" text (bytes t) (bytes parsed);
         equal ~msg:"the identity"
           (option (pair string string))
           (Some ("_build/test/a.exe", digest))
           (Option.map (fun (i : V.identity) -> (i.V.exe, i.V.digest)) recorded);
-        let parsed, recorded =
-          ok_error "no identity" (V.of_string (V.to_string t))
-        in
+        let parsed, recorded = ok_error "no identity" (round_trip t) in
         is_none ~msg:"none recorded" recorded;
-        equal ~msg:"the collection" text (V.to_string t) (V.to_string parsed));
+        equal ~msg:"the collection" text (bytes t) (bytes parsed));
     test "witnesses holding spaces and newlines survive the round trip"
       (fun () ->
         let t =
@@ -425,8 +450,8 @@ let format_tests =
                (id ~file:"lib/odd names.ml" ~line:1 ~col:0 ~rewrite:"eq")
                (V.survived [ [ "a group"; "a test\nwith a newline" ]; [ "" ] ]))
         in
-        let parsed, _ = ok_error "round trip" (V.of_string (V.to_string t)) in
-        equal ~msg:"identical" text (V.to_string t) (V.to_string parsed));
+        let parsed, _ = ok_error "round trip" (round_trip t) in
+        equal ~msg:"identical" text (bytes t) (bytes parsed));
     test "serialization does not depend on construction order" (fun () ->
         let ids =
           [
@@ -437,16 +462,16 @@ let format_tests =
           ]
         in
         let build order =
-          V.to_string
+          bytes
             (List.fold_left
                (fun t (i, v) -> V.add t (record i v))
                V.empty order)
         in
         equal ~msg:"reversed insertion" text (build ids) (build (List.rev ids)));
     test "empty collections round-trip" (fun () ->
-        equal ~msg:"bytes" text "windtrap-mutants-v3\n0\n" (V.to_string V.empty);
+        equal ~msg:"bytes" text "windtrap-mutants-v3\n0\n" (bytes V.empty);
         let parsed, _ =
-          ok_error "parse" (V.of_string "windtrap-mutants-v3\n0\n")
+          ok_error "parse" (snd (load_text "windtrap-mutants-v3\n0\n"))
         in
         is_true ~msg:"still empty" (is_empty parsed));
   ]
@@ -454,7 +479,7 @@ let format_tests =
 (* Rejections *)
 
 let check_corrupt name ~sub s =
-  match V.of_string s with
+  match snd (load_text s) with
   | Error (V.Corrupt { reason; _ }) -> contains ~msg:name ~sub reason
   | Error e -> failf "%s: expected Corrupt, got %a" name V.pp_error e
   | Ok _ -> failf "%s: parsed, expected a rejection mentioning %S" name sub
@@ -472,9 +497,10 @@ let rejection_tests =
         ("plain text", "hello\nworld\n");
       ]
       (fun (name, s) ->
-        match V.of_string ~path:"f.mutants" s with
+        let file, loaded = load_text s in
+        match loaded with
         | Error (V.Unknown_format { path; header }) ->
-            equal ~msg:"path" string "f.mutants" path;
+            equal ~msg:"path" string file path;
             let rendered =
               Format.asprintf "%a" V.pp_error
                 (V.Unknown_format { path; header })
@@ -574,8 +600,11 @@ let rejection_tests =
     test "the drop rewrite is read, though no instrumenter emits it" (fun () ->
         let t, _ =
           ok_error "drop"
-            (V.of_string
-               "windtrap-mutants-v3\n1\n8 lib/a.ml 1 2 4 drop 1 b 1 a killed\n")
+            (snd
+               (load_text
+                  "windtrap-mutants-v3\n\
+                   1\n\
+                   8 lib/a.ml 1 2 4 drop 1 b 1 a killed\n"))
         in
         equal ~msg:"its record" (list string) [ "lib/a.ml:1:2:drop" ]
           (List.map (fun (r : V.record) -> M.id_to_string r.V.id) (V.records t)));
@@ -630,7 +659,7 @@ let filename_tests =
         match V.writer_identity ~exe with
         | None -> fail "the child executable must be readable"
         | Some i ->
-            equal ~msg:"exe" string (V.exe_identity ~exe) i.V.exe;
+            equal ~msg:"exe" string (I.exe_identity ~exe) i.V.exe;
             equal ~msg:"digest" string
               (Digest.to_hex (Digest.file exe))
               i.V.digest);
@@ -648,7 +677,7 @@ let file_tests =
         let identity = { V.exe = "test/a.exe"; digest } in
         V.save ~identity path t;
         let parsed, recorded = ok_error "load" (V.load path) in
-        equal ~msg:"round trip" text (V.to_string t) (V.to_string parsed);
+        equal ~msg:"round trip" text (bytes t) (bytes parsed);
         equal ~msg:"identity" (option string) (Some "test/a.exe")
           (Option.map (fun (i : V.identity) -> i.V.exe) recorded);
         equal ~msg:"no temporary files are left behind" (list string) []
@@ -689,7 +718,7 @@ let child_tests =
         equal ~msg:"the writer identity"
           (option (pair string string))
           (Some
-             ( V.exe_identity ~exe:child_exe,
+             ( I.exe_identity ~exe:child_exe,
                Digest.to_hex (Digest.file child_exe) ))
           (Option.map (fun (i : V.identity) -> (i.V.exe, i.V.digest)) recorded);
         equal ~msg:"no temporary files are left behind" (list string) []

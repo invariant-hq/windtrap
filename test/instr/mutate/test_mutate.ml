@@ -87,10 +87,16 @@ let fresh () =
   ignore (drain ());
   M.next_epoch ()
 
-(* Every test that arms runs inside [disarming]: a failure between [arm]
-   and [disarm] would otherwise leave the mutant armed for every test
-   after it. *)
-let disarming f = Fun.protect ~finally:M.disarm f
+(* Every test that arms runs inside [disarming]: a failure after [arm]
+   would otherwise leave the mutant armed for every test after it. [arm]
+   disarms whatever was armed before it resolves, so arming an identifier
+   of no catalogued file leaves nothing armed (pinned below). *)
+let disarming f =
+  Fun.protect
+    ~finally:(fun () ->
+      ignore
+        (M.arm { M.file = "t/nowhere.ml"; line = 1; col = 0; rewrite = "not" }))
+    f
 
 let arm_ok ?budget sel =
   match M.arm ?budget sel with
@@ -584,7 +590,6 @@ let arming_tests =
               contains ~msg:"and names the remedies that do work"
                 ~sub:"[@mutate off]" rendered
           | Error e -> failf "expected Ambiguous, got %a" M.pp_arm_error e );
-        is_none ~msg:"nothing is armed" (M.armed ());
         fresh ();
         is_false ~msg:"the first site stays disarmed" (g 0);
         is_false ~msg:"the second site stays disarmed" (g 1);
@@ -598,12 +603,10 @@ let arming_tests =
         ignore (arm_ok (id ~file:"t/refuse.ml" ~line:1 ~col:0 ~rewrite:"or"));
         fresh ();
         is_true ~msg:"armed" (g 0);
-        is_some ~msg:"armed () reports it" (M.armed ());
         (match M.arm (id ~file:"t/nothing.ml" ~line:1 ~col:0 ~rewrite:"or") with
         | Ok m -> failf "armed %a" pp_mutant m
         | Error _ -> ());
         is_false ~msg:"the previous mutant is no longer armed" (g 0);
-        is_none ~msg:"armed () is None" (M.armed ());
         ignore (drain ()));
     test "arming a second mutant disarms the first, budget included" (fun () ->
         (* At most one mutant is armed per process (guarantee 12), and the two
@@ -625,12 +628,7 @@ let arming_tests =
         let second =
           arm_ok (id ~file:"t/rearm_b.ml" ~line:1 ~col:0 ~rewrite:"gt")
         in
-        equal ~msg:"armed () names the second" (option string)
-          (Some "t/rearm_b.ml:1:0:gt")
-          (Option.map
-             (fun (m : M.mutant) -> M.id_to_string m.M.id)
-             (M.armed ()));
-        equal ~msg:"and so does arm's result" string "t/rearm_b.ml:1:0:gt"
+        equal ~msg:"arm's result names the second" string "t/rearm_b.ml:1:0:gt"
           (M.id_to_string second.M.id);
         is_false ~msg:"the first is no longer armed" (ga 0);
         (* The first arming's budget of 2 must not survive into the
@@ -732,7 +730,7 @@ let arming_tests =
               (fun () -> g1 0));
         equal ~msg:"nothing armed is none" int 0 (M.armed_hits ());
         ignore (drain ()));
-    test "disarm keeps the counts, and arm starts none" (fun () ->
+    test "arm counts since reset_reach, not since itself" (fun () ->
         let g =
           M.register ~file:"t/kept.ml"
             ~sites:[| site ~line:1 ~col:0 ~rewrite:"ge" () |]
@@ -743,9 +741,6 @@ let arming_tests =
             M.reset_reach ();
             ignore (g 0);
             ignore (g 0);
-            M.disarm ();
-            equal ~msg:"disarmed, nothing is armed to count" int 0
-              (M.armed_hits ());
             ignore (arm_ok the_id);
             equal ~msg:"armed again, the two evaluations are still counted" int
               2 (M.armed_hits ());
@@ -764,13 +759,8 @@ let arming_tests =
             raises_match ~msg:"a budget of 0" Exn.invalid_arg (fun () ->
                 M.arm ~budget:0
                   (id ~file:"t/kept_armed.ml" ~line:1 ~col:0 ~rewrite:"sub"));
-            equal ~msg:"the mutant armed before stays armed" (option string)
-              (Some "t/kept_armed.ml:1:0:sub")
-              (Option.map
-                 (fun (m : M.mutant) -> M.id_to_string m.M.id)
-                 (M.armed ()));
             fresh ();
-            is_true ~msg:"and its guard answers true" (g 0));
+            is_true ~msg:"the mutant armed before stays armed" (g 0));
         ignore (drain ()));
     test "a dismissed mutant arms" (fun () ->
         register_only ~file:"t/off.ml"
@@ -851,10 +841,8 @@ let arming_tests =
            and nothing in this library looks at the environment. *)
         setenv "WINDTRAP_MUTATE_ARM" (Some "t/env.ml:6:2:fadd");
         disarming @@ fun () ->
-        equal ~msg:"the variable alone arms nothing" (option mutant_t) None
-          (M.armed ());
         fresh ();
-        is_false ~msg:"and the guard answers false" (g 0);
+        is_false ~msg:"the variable alone arms nothing" (g 0);
         (match Result.bind (M.id_of_string "t/env.ml:6:2:fadd") M.arm with
         | Ok m ->
             equal ~msg:"armed" string "t/env.ml:6:2:fadd"

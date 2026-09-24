@@ -38,6 +38,20 @@ let () =
       | "list", [] ->
           add ~file:"src/b.ml" "b" ignore;
           add ~file:"src/a.ml" "a" ignore;
+          add ~file:"src/a.ml" "a2" ignore;
+          run_protocol [ "inline-test-runner"; "lib"; "-list-partitions" ]
+      | "list-files", [] ->
+          (* One basename from two directories, a name with two dots, a
+             group's file and the file of a test inside it, and a file
+             whose registrations were collected before the listing. *)
+          add ~file:"src/dup.ml" "one" ignore;
+          add ~file:"test/dup.ml" "two" ignore;
+          add ~file:"gen/x.pp.ml" "three" ignore;
+          Ppx_runtime.enter_group ~file:"host.ml" ~tags:[] "G";
+          add ~file:"guest.ml" "t" ignore;
+          Ppx_runtime.leave_group ();
+          add ~file:"kept.ml" "t" ignore;
+          ignore (Ppx_runtime.collect ());
           run_protocol [ "inline-test-runner"; "lib"; "-list-partitions" ]
       | "run", [ log_dir ] ->
           Unix.putenv "WINDTRAP_OUTPUT" log_dir;
@@ -206,12 +220,6 @@ let () =
   add ~file:"src/zeta.ml" "z" ignore;
   add ~file:"src/alpha.ml" "a" ignore;
   add ~file:"src/alpha.ml" "a2" ignore;
-  check "partitions are the sorted basenames of every file seen"
-    (List.for_all
-       (fun p -> List.mem p (Ppx_runtime.partitions ()))
-       [ "alpha.ml"; "zeta.ml" ]
-    && Ppx_runtime.partitions () = List.sort compare (Ppx_runtime.partitions ())
-    );
   Ppx_runtime.init
     [| "runner"; "inline-test-runner"; "lib"; "-partition"; "alpha.ml" |];
   check_paths "-partition keeps one file's registrations"
@@ -230,9 +238,15 @@ let () =
 let () =
   let code, out, err = spawn_child [ "--child"; "list" ] in
   check_int "-list-partitions exits 0" ~expected:0 ~actual:code;
-  check_string "-list-partitions prints the sorted basenames on stdout"
+  check_string
+    "-list-partitions prints the sorted basenames on stdout, each once"
     ~expected:"a.ml\nb.ml\n" ~actual:out;
-  check_string "and nothing on stderr" ~expected:"" ~actual:err
+  check_string "and nothing on stderr" ~expected:"" ~actual:err;
+  let _, out, _ = spawn_child [ "--child"; "list-files" ] in
+  check_string
+    "a partition per basename, a group's file and its tests' files are \
+     partitions, and collect keeps them"
+    ~expected:"dup.ml\nguest.ml\nhost.ml\nkept.ml\nx.pp.ml\n" ~actual:out
 
 let () =
   with_temp_root (fun log_dir ->
@@ -276,12 +290,7 @@ let () =
   add ~file:"gen/x.pp.ml" "three" ignore;
   check_paths "one basename is one group, named up to its first dot"
     ~expected:[ "Dup \u{203a} one"; "Dup \u{203a} two"; "X \u{203a} three" ]
-    (Ppx_runtime.collect ());
-  check "one basename is one partition"
-    (List.length
-       (List.filter (String.equal "dup.ml") (Ppx_runtime.partitions ()))
-     = 1
-    && List.mem "x.pp.ml" (Ppx_runtime.partitions ()))
+    (Ppx_runtime.collect ())
 
 let () =
   Ppx_runtime.enter_group ~file:"twice.ml" ~tags:[] "G";
@@ -301,21 +310,13 @@ let () =
   Ppx_runtime.leave_group ();
   check_paths "inside a group the test lands in the group, whatever its file"
     ~expected:[ "Host \u{203a} G \u{203a} t" ]
-    (Ppx_runtime.collect ());
-  check "and its file is still a partition"
-    (List.mem "guest.ml" (Ppx_runtime.partitions ()))
+    (Ppx_runtime.collect ())
 
 let () =
   add ~file:"plain.ml" "untagged" ignore;
   match Test_tree.flatten (Ppx_runtime.collect ()) with
   | [ case ] -> check "the module's group adds no tag" (case.tags = Tag.empty)
   | _ -> check "one case" false
-
-let () =
-  add ~file:"kept.ml" "t" ignore;
-  ignore (Ppx_runtime.collect ());
-  check "collect keeps the partitions"
-    (List.mem "kept.ml" (Ppx_runtime.partitions ()))
 
 (* exit and the guard, on children *)
 

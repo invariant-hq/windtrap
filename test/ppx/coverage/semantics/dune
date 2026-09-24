@@ -14,7 +14,7 @@
 (test
  (name test_coverage_semantics)
  (modules test_coverage_semantics)
- (libraries covsem_fixtures windtrap windtrap_runtime)
+ (libraries covsem_fixtures windtrap windtrap_runtime unix)
  (action
   (setenv
    WINDTRAP_COVERAGE_FILE

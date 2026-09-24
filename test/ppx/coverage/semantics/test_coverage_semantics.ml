@@ -15,13 +15,15 @@
    with their out-edge NOT counted - and every result must be the one an
    uninstrumented build computes. This executable is itself
    uninstrumented, so its own definitions are the uninstrumented
-   baselines. The tests read the in-process runtime through
-   [Windtrap_runtime.Coverage.snapshot] to prove the generated registration and
+   baselines. The tests read the counts of this process through the
+   at_exit dump of a forked child, to prove the generated registration and
    visit calls actually count. Each reads what its own calls visited, and
    registration is captured at module load, so each passes alone. *)
 
 open Windtrap
 module F = Covsem_fixtures
+module C = Windtrap_runtime.Coverage
+module I = Windtrap_runtime.Instr
 
 (* A lost tail call overflows only a bounded stack, and OCaml 5's default
    bound is 1 GiB, which no depth a test can afford reaches. The dune
@@ -37,45 +39,74 @@ let rec non_tail_map f = function
   | [] -> []
   | x :: xs -> f x :: non_tail_map f xs
 
-(* Every claim below is about the fixture library, and the registry is the
+(* [dump_after f] forks a child that runs [f] and exits, and waits for its
+   at_exit dump: the counts of this process as they stood, plus what [f]
+   visited. WINDTRAP_COVERAGE_FILE names one path, fixed at the first
+   registration, so each dump is read before the next child writes it.
+   The buffers are flushed first, or the child's exit would print them
+   again. *)
+let dump = Sys.getenv "WINDTRAP_COVERAGE_FILE"
+
+let dump_after f =
+  Stdlib.flush_all ();
+  Format.pp_print_flush Format.std_formatter ();
+  Format.pp_print_flush Format.err_formatter ();
+  match Unix.fork () with
+  | 0 ->
+      (try ignore (f ()) with _ -> ());
+      exit 0
+  | pid -> (
+      match Unix.waitpid [] pid with
+      | _, Unix.WEXITED 0 -> ()
+      | _ -> failf "the dumping child did not exit 0")
+
+(* Every claim below is about the fixture library, and the dump is the
    whole process: under `--instrument-with` this executable links an
    instrumented windtrap core, whose thousands of points would drown the
    fixture's twenty. Scope once, here, and the suite says the same thing
    instrumented or not. *)
-let fixture_snapshot () =
-  Windtrap_runtime.Coverage.filter
-    (fun file -> Filename.basename file = "covsem_fixtures.ml")
-    (Windtrap_runtime.Coverage.snapshot ())
+let is_fixture file = Filename.basename file = "covsem_fixtures.ml"
 
-(* The fixture's hit count per point, read off the collection's
-   serialization — the v3 format test/instr/coverage pins byte for byte:
-   the magic line, the file count, [len name], the point count, then one
-   [start end count] line per point. Counts, not the summary's tally of
+(* The fixture's count per point, read with the runtime's scanner in the
+   v3 format that test/instr/coverage pins: the magic line, the writer's
+   identity if any, the file count, then per file [len name], the point
+   count and one [start end count] per point. Counts, not a tally of
    visited points, because a test here may run more than once in one
    process — the mutation loop's probe and its children are forks of the
    process that ran the dry run — and a point an earlier run visited is
-   visited still. What a call hits is the points whose counts it raised. *)
+   visited still. *)
 let counts () =
-  match
-    String.split_on_char '\n'
-      (Windtrap_runtime.Coverage.to_string (fixture_snapshot ()))
-  with
-  | _magic :: "1" :: _file :: _points :: lines ->
-      List.filter_map
-        (fun line ->
-          match String.split_on_char ' ' line with
-          | [ start; stop; count ] ->
-              Some
-                ((int_of_string start, int_of_string stop), int_of_string count)
-          | _ -> None)
-        lines
-  | _ -> failf "the fixture snapshot does not serialize as one file"
+  let text = In_channel.with_open_bin dump In_channel.input_all in
+  let c =
+    match I.start C.format ~path:"dump" text with
+    | Ok c -> c
+    | Error e -> failf "the dump does not start: %a" (I.pp_error C.format) e
+  in
+  ignore (I.read_identity c);
+  let fixture = ref None in
+  for _ = 1 to I.read_count c "files" do
+    let file = I.read_name c "file" in
+    let rows = ref [] in
+    for _ = 1 to I.read_count c "points" do
+      let start = I.read_nat c "start" in
+      let stop = I.read_nat c "end" in
+      rows := ((start, stop), I.read_nat c "count") :: !rows
+    done;
+    if is_fixture file then fixture := Some (List.rev !rows)
+  done;
+  match !fixture with
+  | Some rows -> rows
+  | None -> failf "the dump holds no fixture file"
 
-(* [hits f] is [f ()] with the points it raised, each with its increment. *)
+(* [hits f] is [f ()] with the points it raised, each with its increment:
+   a child that exits at once dumps the counts before, a child that runs
+   [f] dumps them after, and this process then runs [f] for its value. *)
 let hits f =
+  dump_after ignore;
   let before = counts () in
-  let value = f () in
+  dump_after f;
   let after = counts () in
+  let value = f () in
   ( value,
     List.filter_map
       (fun ((point, before), (_, after)) ->
@@ -84,18 +115,31 @@ let hits f =
 
 let hit_points hits = List.map fst hits
 
+(* The fixture's report in the dump of a child forked now. *)
+let fixture_report () =
+  dump_after ignore;
+  match C.load dump with
+  | Error e -> failf "the dump does not load: %a" C.pp_error e
+  | Ok (t, _) -> (
+      match
+        List.filter
+          (fun (r : C.file_report) -> is_fixture r.C.file)
+          (C.file_reports t)
+      with
+      | [ report ] -> report
+      | reports ->
+          failf "exactly one fixture report, got %d" (List.length reports))
+
 (* What registration did before any call is observable only before
    anything else ran, and the test that reports it may run after an
    earlier run of itself. Captured once, at module load, before the first
    test. *)
-let at_load = fixture_snapshot ()
+let at_load = fixture_report ()
 
 let tests =
   [
     test "registration happens at module load, before any call" (fun () ->
-        is_true ~msg:"fixtures registered at load"
-          (not (Windtrap_runtime.Coverage.is_empty at_load));
-        let summary = Windtrap_runtime.Coverage.summary at_load in
+        let summary = at_load.C.summary in
         is_true ~msg:"no point visited before any call" (summary.visited = 0);
         is_true ~msg:"the fixture points are all registered"
           (summary.total >= 20));
@@ -280,17 +324,10 @@ let tests =
     test "the visits reach the summary and the fixture's one file report"
       (fun () ->
         equal ~msg:"a call into the fixture" int 6 (F.sum_while 3);
-        let s = fixture_snapshot () in
-        let summary = Windtrap_runtime.Coverage.summary s in
+        let summary = (fixture_report ()).C.summary in
         is_true ~msg:"points were visited" (summary.visited > 0);
         is_true ~msg:"visited never exceeds total"
-          (summary.visited <= summary.total);
-        match Windtrap_runtime.Coverage.file_reports s with
-        | [ report ] ->
-            is_true ~msg:"the registered file is the fixture module"
-              (Filename.basename report.file = "covsem_fixtures.ml")
-        | reports ->
-            failf "exactly one instrumented file, got %d" (List.length reports));
+          (summary.visited <= summary.total));
   ]
 
 let () = exit @@ run "coverage semantics" tests

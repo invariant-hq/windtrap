@@ -3,16 +3,17 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Tests for Windtrap_runtime.Coverage: the register/visit/snapshot registry
-   (saturation, duplicate and zero-block registrations, the warn-and-drop
-   conflicting-registration path), collection algebra (add/merge matrices:
-   disjoint, overlapping, conflicting), the v3 serialization with its
-   optional writer identity (exact bytes, round trip, v1/v2-magic and
-   corruption rejection), deterministic
-   output filenames (sandbox-invariant exe hashing), extent -> line
-   derivation (nesting, one-line matches, boundary offsets, huge files),
-   report data (including stale-source rejection), and the at_exit dump
-   end to end through a child executable. Below both formats, the
+(* Tests for Windtrap_runtime.Coverage: register and visit (malformed
+   tables, the warning of a conflicting registration), collection algebra
+   over dumps written by hand (merge matrices: disjoint, overlapping,
+   conflicting), the v3 grammar that load reads with its optional writer
+   identity (v1/v2-magic and corruption rejection), deterministic output
+   filenames (sandbox-invariant exe hashing), extent -> line derivation
+   (nesting, one-line matches, boundary offsets, huge files), report data
+   (including stale-source rejection), and the at_exit dump end to end
+   through a child executable, which is where the bytes of the format and
+   what register and visit recorded (saturation, duplicate and zero-point
+   registrations, the first of two conflicting tables) are read. Below both formats, the
    plumbing of Windtrap_runtime.Instr that no other suite reaches: the
    build-path rule's edges, the header, the atomic writes and the
    scanner, reader by reader. Ranges and excerpt regions are
@@ -22,7 +23,7 @@
    A windtrap suite ([run] executes tests sequentially in declaration
    order). The registry tests accumulate state in the shared global
    registry, which is never reset: each registers under a file name of
-   its own ([fresh]) and reads that file back alone. *)
+   its own ([fresh]). *)
 
 open Windtrap
 module C = Windtrap_runtime.Coverage
@@ -62,7 +63,65 @@ let exe_dir = Filename.dirname Sys.executable_name
    to move it and would silently do nothing. The children are started
    with their own variable stated, never with the parent's. *)
 
-(* Registry: register / visit / snapshot *)
+(* Dumps written by hand, in the grammar of the runtime's own: the header
+   that [Instr.add_header] writes, the file count, then for each file
+   [len name], its point count and one [start end count] line per point.
+   The parse tests below pin that grammar, and the dump tests pin that an
+   instrumented process writes it. *)
+let dump ?identity files =
+  let b = Buffer.create 128 in
+  I.add_header C.format b identity;
+  Printf.bprintf b "%d\n" (List.length files);
+  List.iter
+    (fun (file, rows) ->
+      Printf.bprintf b "%d %s\n%d\n" (String.length file) file
+        (List.length rows);
+      List.iter
+        (fun ((p : C.point), count) ->
+          Printf.bprintf b "%d %d %d\n" p.C.start_ofs p.C.end_ofs count)
+        rows)
+    files;
+  Buffer.contents b
+
+let load_text text =
+  let path = Filename.concat (temp_dir ()) "fixture.coverage" in
+  I.write_file path text;
+  C.load path
+
+let collection files =
+  fst (ok "the fixture dump loads" (load_text (dump files)))
+
+let write_source root path contents =
+  let path = Filename.concat root path in
+  let rec mkdir_p dir =
+    if not (Sys.file_exists dir) then begin
+      mkdir_p (Filename.dirname dir);
+      Sys.mkdir dir 0o755
+    end
+  in
+  mkdir_p (Filename.dirname path);
+  Out_channel.with_open_bin path (fun oc -> output_string oc contents)
+
+(* [line n] is the extent of the [n]th line of a source of five-byte
+   lines, which [hits] writes for every file: a report's [line_hits] then
+   reads the count of each such point. *)
+let line n = pt (6 * (n - 1)) ((6 * (n - 1)) + 5)
+
+let hits t =
+  let root = temp_dir () in
+  List.iter
+    (fun file ->
+      write_source root file
+        (String.concat "" (List.init 9 (fun _ -> "xxxxx\n"))))
+    (C.files t);
+  List.map
+    (fun (r : C.file_report) -> (r.C.file, r.C.line_hits))
+    (C.file_reports ~source_roots:[ root ] t)
+
+let hits_t = list (pair string (list (pair int int)))
+
+(* Registry: register and visit, in this process. What they record is
+   read through the at_exit dump of a child (see "dump" below). *)
 
 (* Runs [f] with [stderr] captured to a scratch file; returns what it
    wrote. The runtime's warnings end with [%!], so no flushing races. *)
@@ -83,94 +142,15 @@ let with_captured_stderr f =
 (* The registry is a process global, and a test here may run more than
    once in one process: the mutation loop's probe and its children are
    forks of the process that ran the dry run, registrations included. So
-   every registry test registers under a name no earlier run of it used
-   and reads its own file back alone; the extents stay distinctive per
-   test so a line assertion cannot match another test's table either. *)
+   a registry test registers under a name no earlier run of it used. *)
 let fresh =
   let n = ref 0 in
   fun base ->
     incr n;
     Printf.sprintf "%s_%d.ml" base !n
 
-let own file = C.filter (String.equal file) (C.snapshot ())
-
 let registry_tests =
   [
-    test "register and visit appear in the snapshot" (fun () ->
-        let file = fresh "reg_vis" in
-        let counts = Array.make 2 0 in
-        C.register ~file ~points:[| pt 100 110; pt 120 130 |] ~counts;
-        C.visit counts 0;
-        match C.file_reports (own file) with
-        | [ r ] ->
-            equal ~msg:"visit marks one of two blocks" int 1
-              r.C.summary.C.visited;
-            equal ~msg:"two blocks total" int 2 r.C.summary.C.total;
-            equal ~msg:"uncovered extent is the unvisited block" (list point)
-              [ pt 120 130 ]
-              r.C.uncovered_extents;
-            is_none ~msg:"unresolvable source yields no source" r.C.source;
-            equal ~msg:"unresolvable source yields no lines" (list int) []
-              r.C.uncovered_lines
-        | reports ->
-            failf "the visited file is one report of the snapshot, got %d"
-              (List.length reports));
-    test "visit saturates at max_int" (fun () ->
-        let file = fresh "reg_sat" in
-        let counts = [| max_int - 1 |] in
-        C.register ~file ~points:[| pt 7000 7010 |] ~counts;
-        C.visit counts 0;
-        C.visit counts 0;
-        contains ~msg:"visit saturates at max_int"
-          ~sub:(Printf.sprintf "7000 7010 %d\n" max_int)
-          (C.to_string (own file)));
-    test "duplicate registrations sum, blocks counted once" (fun () ->
-        (* Same file registered twice with an equal table — a
-           functor-style double instantiation: counts add, blocks are
-           counted once. *)
-        let file = fresh "reg_dup" in
-        let counts_a = Array.make 1 0 and counts_b = Array.make 1 0 in
-        C.register ~file ~points:[| pt 8000 8010 |] ~counts:counts_a;
-        C.register ~file ~points:[| pt 8000 8010 |] ~counts:counts_b;
-        C.visit counts_a 0;
-        C.visit counts_b 0;
-        contains ~msg:"duplicate registrations sum in snapshot"
-          ~sub:"8000 8010 2\n"
-          (C.to_string (own file));
-        match C.file_reports (own file) with
-        | [ r ] ->
-            equal ~msg:"duplicate registrations never double-count blocks"
-              summary
-              { C.visited = 1; total = 1 }
-              r.C.summary
-        | reports ->
-            failf "the file is one report, got %d" (List.length reports));
-    test "a zero-block file is data, present in reports" (fun () ->
-        let file = fresh "reg_none" in
-        C.register ~file ~points:[||] ~counts:[||];
-        match C.file_reports (own file) with
-        | [ r ] ->
-            equal ~msg:"a zero-block file reports an empty summary" summary
-              { C.visited = 0; total = 0 }
-              r.C.summary;
-            equal ~msg:"a zero-block file has no uncovered extents" (list point)
-              [] r.C.uncovered_extents
-        | reports ->
-            failf "a zero-block file is one report, got %d"
-              (List.length reports));
-    test "snapshots are isolated copies" (fun () ->
-        (* Later visits do not leak into an earlier snapshot. *)
-        let file = fresh "reg_iso" in
-        let counts = Array.make 1 0 in
-        C.register ~file ~points:[| pt 9000 9010 |] ~counts;
-        let before = C.snapshot () in
-        C.visit counts 0;
-        let after = C.snapshot () in
-        let of_file t = C.to_string (C.filter (String.equal file) t) in
-        contains ~msg:"snapshot taken before a visit is unchanged"
-          ~sub:"9000 9010 0\n" (of_file before);
-        contains ~msg:"snapshot taken after a visit sees it"
-          ~sub:"9000 9010 1\n" (of_file after));
     test "register and visit reject malformed tables" (fun () ->
         (* Loud rejection — instrumenter bugs fail fast. *)
         raises_match ~msg:"register rejects points/counts length mismatch"
@@ -195,11 +175,11 @@ let registry_tests =
               ~counts:[| -1 |]);
         raises_match ~msg:"visit rejects an out-of-bounds index" Exn.invalid_arg
           (fun () -> C.visit (Array.make 1 0) 1));
-    test "a conflicting registration warns and is dropped" (fun () ->
+    test "a conflicting registration warns" (fun () ->
         (* A conflicting same-file registration is a build problem, not a
-           program error: it must warn and be dropped, never raise
-           (coverage cannot alter what the program does), and the
-           snapshot keeps the first table. *)
+           program error: it must warn, never raise (coverage cannot alter
+           what the program does). That the first table is the one dumped
+           is pinned by the conflicting child below. *)
         let file = fresh "reg_conf" in
         C.register ~file ~points:[| pt 6000 6010 |] ~counts:(Array.make 1 0);
         let err =
@@ -215,180 +195,83 @@ let registry_tests =
               executable (stale build artifacts? rebuild from clean); ignoring \
               one module's coverage data\n"
              file)
-          err;
-        let serialized = C.to_string (own file) in
-        contains ~msg:"a conflict keeps the first registration's table"
-          ~sub:"6000 6010 0\n" serialized;
-        not_contains ~msg:"a conflicting table is dropped from the snapshot"
-          ~sub:"6000 6020" serialized);
+          err);
   ]
 
-(* Collections: add / merge matrices *)
+(* Collections: merge matrices *)
 
 let ab () =
-  let t =
-    ok "ab b"
-      (C.add C.empty ~file:"lib/b.ml"
-         ~points:[| pt 10 20; pt 30 40 |]
-         ~counts:[| 1; 0 |])
-  in
-  ok "ab a" (C.add t ~file:"lib/a.ml" ~points:[| pt 0 5 |] ~counts:[| 7 |])
+  collection
+    [
+      ("lib/b.ml", [ (line 1, 1); (line 2, 0) ]); ("lib/a.ml", [ (line 1, 7) ]);
+    ]
 
-let ab_serialized =
-  "windtrap-coverage-v3\n\
-   2\n\
-   8 lib/a.ml\n\
-   1\n\
-   0 5 7\n\
-   8 lib/b.ml\n\
-   2\n\
-   10 20 1\n\
-   30 40 0\n"
-
+let ab_hits = [ ("lib/a.ml", [ (1, 7) ]); ("lib/b.ml", [ (1, 1); (2, 0) ]) ]
 let digest_of s = Digest.to_hex (Digest.string s)
 
 let collection_tests =
   [
-    test "serialization is the frozen v3 format" (fun () ->
-        equal ~msg:"serialization is the frozen v3 format, files sorted" string
-          ab_serialized
-          (C.to_string (ab ()));
-        let reordered =
-          let t =
-            ok "reorder a"
-              (C.add C.empty ~file:"lib/a.ml"
-                 ~points:[| pt 0 5 |]
-                 ~counts:[| 7 |])
-          in
-          ok "reorder b"
-            (C.add t ~file:"lib/b.ml"
-               ~points:[| pt 10 20; pt 30 40 |]
-               ~counts:[| 1; 0 |])
-        in
-        equal ~msg:"serialization is insertion-order independent" string
-          ab_serialized (C.to_string reordered);
-        is_true ~msg:"empty collection is empty" (C.is_empty C.empty);
-        is_false ~msg:"non-empty collection is not empty" (C.is_empty (ab ())));
-    test "the serialized form round-trips, with and without identity" (fun () ->
-        let reparsed, identity =
-          ok "of_string inverts to_string" (C.of_string ab_serialized)
-        in
-        equal ~msg:"of_string inverts to_string" string ab_serialized
-          (C.to_string reparsed);
-        is_none ~msg:"a collection without an identity line parses to none"
-          identity;
+    test "a collection's files are ordered by name" (fun () ->
+        equal ~msg:"whatever the order of the dump" (list string)
+          [ "lib/a.ml"; "lib/b.ml" ]
+          (C.files (ab ()));
+        equal ~msg:"each with its counts" hits_t ab_hits (hits (ab ()));
+        equal ~msg:"empty has no file" (list string) [] (C.files C.empty));
+    test "load reads the identity after the magic line, and none without one"
+      (fun () ->
         let identity =
           { C.exe = "default/test/a.exe"; digest = digest_of "exe-a" }
         in
-        let with_identity = C.to_string ~identity (ab ()) in
-        contains ~msg:"to_string records the identity after the magic"
+        let files = [ ("lib/a.ml", [ (line 1, 7) ]) ] in
+        let text = dump ~identity files in
+        contains ~msg:"the identity line follows the magic line"
           ~sub:
             (Printf.sprintf
-               "windtrap-coverage-v3\nexe %s 18 default/test/a.exe\n2\n"
+               "windtrap-coverage-v3\nexe %s 18 default/test/a.exe\n1\n"
                identity.C.digest)
-          with_identity;
-        let reparsed, parsed =
-          ok "the identity line round-trips" (C.of_string with_identity)
-        in
-        is_true ~msg:"the identity line round-trips" (parsed = Some identity);
-        equal ~msg:"the identity line does not disturb the collection" string
-          ab_serialized (C.to_string reparsed);
+          text;
+        let t, parsed = ok "a dump with an identity" (load_text text) in
+        is_true ~msg:"the identity is read" (parsed = Some identity);
+        equal ~msg:"and does not disturb the collection" hits_t
+          [ ("lib/a.ml", [ (1, 7) ]) ]
+          (hits t);
+        let _, parsed = ok "a dump without one" (load_text (dump files)) in
+        is_none ~msg:"a dump without an identity line reads none" parsed;
         (* Identities with spaces survive the length prefix. *)
         let spaced = { identity with C.exe = "default/my tests/a.exe" } in
         let _, parsed =
-          ok "an exe path with spaces round-trips"
-            (C.of_string (C.to_string ~identity:spaced (ab ())))
+          ok "an exe path with spaces" (load_text (dump ~identity:spaced files))
         in
-        is_true ~msg:"an exe path with spaces round-trips" (parsed = Some spaced);
-        raises_match ~msg:"to_string rejects an empty exe path" Exn.invalid_arg
-          (fun () -> C.to_string ~identity:{ identity with C.exe = "" } (ab ()));
-        raises_match ~msg:"to_string rejects a malformed digest" Exn.invalid_arg
-          (fun () ->
-            C.to_string ~identity:{ identity with C.digest = "abc123" } (ab ()));
-        raises_match ~msg:"to_string rejects an uppercase digest"
-          Exn.invalid_arg (fun () ->
-            C.to_string
-              ~identity:
-                {
-                  identity with
-                  C.digest = String.uppercase_ascii identity.C.digest;
-                }
-              (ab ())));
+        is_true ~msg:"an exe path with spaces is read whole"
+          (parsed = Some spaced));
     test "merge of disjoint collections is their union" (fun () ->
-        let a =
-          ok "disjoint a"
-            (C.add C.empty ~file:"lib/a.ml"
-               ~points:[| pt 0 5 |]
-               ~counts:[| 7 |])
-        in
-        let b =
-          ok "disjoint b"
-            (C.add C.empty ~file:"lib/b.ml"
-               ~points:[| pt 10 20; pt 30 40 |]
-               ~counts:[| 1; 0 |])
-        in
-        equal ~msg:"merge of disjoint collections is their union" string
-          ab_serialized
-          (C.to_string (ok "disjoint merge" (C.merge a b))));
+        let a = collection [ ("lib/a.ml", [ (line 1, 7) ]) ] in
+        let b = collection [ ("lib/b.ml", [ (line 1, 1); (line 2, 0) ]) ] in
+        equal ~msg:"merge of disjoint collections is their union" hits_t ab_hits
+          (hits (ok "disjoint merge" (C.merge a b))));
     test "merge adds counts for a shared file" (fun () ->
-        let one =
-          ok "overlap one"
-            (C.add C.empty ~file:"lib/x.ml"
-               ~points:[| pt 0 5; pt 6 9 |]
-               ~counts:[| 1; 0 |])
-        in
-        let two =
-          ok "overlap two"
-            (C.add C.empty ~file:"lib/x.ml"
-               ~points:[| pt 0 5; pt 6 9 |]
-               ~counts:[| 4; 2 |])
-        in
-        equal ~msg:"merge adds counts for a shared file" string
-          "windtrap-coverage-v3\n1\n8 lib/x.ml\n2\n0 5 5\n6 9 2\n"
-          (C.to_string (ok "overlap merge" (C.merge one two))));
+        let one = collection [ ("lib/x.ml", [ (line 1, 1); (line 2, 0) ]) ] in
+        let two = collection [ ("lib/x.ml", [ (line 1, 4); (line 2, 2) ]) ] in
+        equal ~msg:"merge adds counts for a shared file" hits_t
+          [ ("lib/x.ml", [ (1, 5); (2, 2) ]) ]
+          (hits (ok "overlap merge" (C.merge one two))));
     test "merge saturates counts at max_int" (fun () ->
-        let one =
-          ok "sat one"
-            (C.add C.empty ~file:"lib/x.ml"
-               ~points:[| pt 0 5 |]
-               ~counts:[| max_int - 1 |])
-        in
-        let two =
-          ok "sat two"
-            (C.add C.empty ~file:"lib/x.ml"
-               ~points:[| pt 0 5 |]
-               ~counts:[| 5 |])
-        in
-        contains ~msg:"merge saturates counts at max_int"
-          ~sub:(Printf.sprintf "0 5 %d\n" max_int)
-          (C.to_string (ok "sat merge" (C.merge one two)));
-        let both = ok "sat both" (C.merge two two) in
-        contains ~msg:"an unsaturated merge still adds" ~sub:"0 5 10\n"
-          (C.to_string both));
+        let one = collection [ ("lib/x.ml", [ (line 1, max_int - 1) ]) ] in
+        let two = collection [ ("lib/x.ml", [ (line 1, 5) ]) ] in
+        equal ~msg:"merge saturates counts at max_int" hits_t
+          [ ("lib/x.ml", [ (1, max_int) ]) ]
+          (hits (ok "sat merge" (C.merge one two)));
+        equal ~msg:"an unsaturated merge still adds" hits_t
+          [ ("lib/x.ml", [ (1, 10) ]) ]
+          (hits (ok "sat both" (C.merge two two))));
     test "conflicting point tables fail loudly, never silently" (fun () ->
-        let one =
-          ok "conflict one"
-            (C.add C.empty ~file:"lib/x.ml"
-               ~points:[| pt 0 5 |]
-               ~counts:[| 1 |])
-        in
-        let two =
-          ok "conflict two"
-            (C.add C.empty ~file:"lib/x.ml"
-               ~points:[| pt 0 6 |]
-               ~counts:[| 1 |])
-        in
+        let one = collection [ ("lib/x.ml", [ (pt 0 5, 1) ]) ] in
+        let two = collection [ ("lib/x.ml", [ (pt 0 6, 1) ]) ] in
         (match C.merge one two with
         | Error (C.Point_mismatch { file }) ->
             equal ~msg:"mismatch names the conflicting file" string "lib/x.ml"
               file
         | Ok _ -> fail "a conflicting merge succeeded"
-        | Error e -> failf "expected Point_mismatch, got %a" C.pp_error e);
-        (match
-           C.add one ~file:"lib/x.ml" ~points:[| pt 0 6 |] ~counts:[| 1 |]
-         with
-        | Error (C.Point_mismatch _) -> ()
-        | Ok _ -> fail "a conflicting add succeeded"
         | Error e -> failf "expected Point_mismatch, got %a" C.pp_error e);
         (* The mismatch hint: re-run everything together, deletion as
            fallback. *)
@@ -410,12 +293,12 @@ let collection_tests =
       "merge names the first file of its second argument, by name, that \
        disagrees" (fun () ->
         (* [lib/a.ml] agrees, [lib/m.ml] and [lib/z.ml] disagree, and [b]
-           was built in the reverse of the order of names. *)
+           was written in the reverse of the order of names. *)
         let of_list tables =
-          List.fold_left
-            (fun t (file, end_ofs) ->
-              ok file (C.add t ~file ~points:[| pt 0 end_ofs |] ~counts:[| 1 |]))
-            C.empty tables
+          collection
+            (List.map
+               (fun (file, end_ofs) -> (file, [ (pt 0 end_ofs, 1) ]))
+               tables)
         in
         let a = of_list [ ("lib/a.ml", 5); ("lib/m.ml", 5); ("lib/z.ml", 5) ]
         and b = of_list [ ("lib/z.ml", 6); ("lib/m.ml", 6); ("lib/a.ml", 5) ] in
@@ -424,53 +307,22 @@ let collection_tests =
             equal ~msg:"the first disagreeing name" string "lib/m.ml" file
         | Ok _ -> fail "a conflicting merge succeeded"
         | Error e -> failf "expected Point_mismatch, got %a" C.pp_error e);
-    test "filter keeps the files whose name the predicate accepts" (fun () ->
-        equal ~msg:"one file kept, its counts whole" string
-          "windtrap-coverage-v3\n1\n8 lib/b.ml\n2\n10 20 1\n30 40 0\n"
-          (C.to_string (C.filter (String.equal "lib/b.ml") (ab ())));
-        equal ~msg:"every file kept" string ab_serialized
-          (C.to_string (C.filter (fun _ -> true) (ab ())));
-        is_true ~msg:"no file kept is the empty collection"
-          (C.is_empty (C.filter (fun _ -> false) (ab ()))));
     test "empty is a merge identity" (fun () ->
         let t = ab () in
-        equal ~msg:"empty is a left identity for merge" string ab_serialized
-          (C.to_string (ok "left id" (C.merge C.empty t)));
-        equal ~msg:"empty is a right identity for merge" string ab_serialized
-          (C.to_string (ok "right id" (C.merge t C.empty))));
-    test "add rejects malformed tables" (fun () ->
-        raises_match ~msg:"add rejects points/counts length mismatch"
-          Exn.invalid_arg (fun () ->
-            C.add C.empty ~file:"x" ~points:[| pt 0 1 |] ~counts:[| 0; 0 |]);
-        raises_match ~msg:"add rejects inverted extents" Exn.invalid_arg
-          (fun () ->
-            C.add C.empty ~file:"x" ~points:[| pt 3 1 |] ~counts:[| 0 |]);
-        raises_match ~msg:"add rejects negative counts" Exn.invalid_arg
-          (fun () ->
-            C.add C.empty ~file:"x" ~points:[| pt 0 1 |] ~counts:[| -2 |]));
-    test "a zero-block file serializes and round-trips" (fun () ->
-        (* A zero-block file: data (not emptiness), 0/0 summary, 100%,
-           and a stable round trip through the serialized form. *)
-        let empty_points_serialized =
-          "windtrap-coverage-v3\n1\n8 lib/e.ml\n0\n"
-        in
-        let t =
-          ok "zero-block add"
-            (C.add C.empty ~file:"lib/e.ml" ~points:[||] ~counts:[||])
-        in
-        is_false ~msg:"a zero-block file is data, not emptiness" (C.is_empty t);
-        equal ~msg:"a zero-block collection sums to 0/0" summary
+        equal ~msg:"empty is a left identity for merge" hits_t ab_hits
+          (hits (ok "left id" (C.merge C.empty t)));
+        equal ~msg:"empty is a right identity for merge" hits_t ab_hits
+          (hits (ok "right id" (C.merge t C.empty))));
+    test "a zero-point file is data" (fun () ->
+        (* A zero-point file: data (not emptiness), a 0/0 summary, 100%. *)
+        let t = collection [ ("lib/e.ml", []) ] in
+        equal ~msg:"a zero-point file is data, not emptiness" (list string)
+          [ "lib/e.ml" ] (C.files t);
+        equal ~msg:"a zero-point collection sums to 0/0" summary
           { C.visited = 0; total = 0 }
           (C.summary t);
         equal ~msg:"a 0/0 summary reads as fully covered" float_exact 100.
-          (C.percentage (C.summary t));
-        equal ~msg:"a zero-block file serializes" string empty_points_serialized
-          (C.to_string t);
-        equal ~msg:"a zero-block file round-trips" string
-          empty_points_serialized
-          (C.to_string
-             (ok "zero-block parse"
-                (Result.map fst (C.of_string empty_points_serialized)))));
+          (C.percentage (C.summary t)));
   ]
 
 (* Rejection of foreign and corrupt data *)
@@ -479,7 +331,7 @@ let rejection_tests =
   [
     test "foreign and corrupt data are rejected" (fun () ->
         let unknown name payload ~header =
-          match C.of_string payload with
+          match load_text payload with
           | Error (C.Data (I.Unknown_format { header = h; _ })) ->
               contains ~msg:name ~sub:header h
           | Ok _ -> failf "%s: parsed" name
@@ -495,7 +347,7 @@ let rejection_tests =
         unknown "magic must be followed by whitespace"
           "windtrap-coverage-v33\n0\n" ~header:"";
         let corrupt name payload =
-          match C.of_string payload with
+          match load_text payload with
           | Error (C.Data (I.Corrupt _)) -> ()
           | Ok _ -> failf "%s: parsed" name
           | Error e -> failf "%s: got %a" name C.pp_error e
@@ -524,11 +376,12 @@ let rejection_tests =
         corrupt "an identity with a short digest is corrupt"
           "windtrap-coverage-v3\nexe abc123 14 default/a.exe\n0\n";
         let t, _ =
-          ok "zero files parses" (C.of_string "windtrap-coverage-v3\n0\n")
+          ok "zero files parses" (load_text "windtrap-coverage-v3\n0\n")
         in
-        is_true ~msg:"zero files parses to the empty collection" (C.is_empty t);
+        equal ~msg:"zero files parses to the empty collection" (list string) []
+          (C.files t);
         (match
-           C.of_string
+           load_text
              "windtrap-coverage-v3\n\
               2\n\
               8 lib/a.ml\n\
@@ -546,7 +399,7 @@ let rejection_tests =
         | Error e -> failf "expected Point_mismatch, got %a" C.pp_error e);
         let t, _ =
           ok "equal duplicate entries in one payload"
-            (C.of_string
+            (load_text
                "windtrap-coverage-v3\n\
                 2\n\
                 8 lib/a.ml\n\
@@ -556,12 +409,13 @@ let rejection_tests =
                 1\n\
                 0 5 2\n")
         in
-        contains ~msg:"equal duplicate entries in one payload sum"
-          ~sub:"0 5 3\n" (C.to_string t));
+        equal ~msg:"equal duplicate entries in one payload sum" hits_t
+          [ ("lib/a.ml", [ (1, 3) ]) ]
+          (hits t));
     test "an unknown first line is reported cut to 64 bytes, then escaped"
       (fun () ->
         let line = "\t\"" ^ String.make 100 'x' in
-        match C.of_string (line ^ "\n0\n") with
+        match load_text (line ^ "\n0\n") with
         | Error (C.Data (I.Unknown_format { header; _ })) ->
             equal ~msg:"the header" string
               (String.escaped (String.sub line 0 64))
@@ -572,18 +426,16 @@ let rejection_tests =
       (fun () ->
         let t, _ =
           ok "CR LF line ends and tabs"
-            (C.of_string
+            (load_text
                "windtrap-coverage-v3\r\n1\r\n8 lib/a.ml\r\n1\r\n0\t5\t7\r\n")
         in
-        equal ~msg:"CR LF line ends and tabs separate as spaces do" string
-          "windtrap-coverage-v3\n1\n8 lib/a.ml\n1\n0 5 7\n" (C.to_string t);
+        equal ~msg:"CR LF line ends and tabs separate as spaces do" hits_t
+          [ ("lib/a.ml", [ (1, 7) ]) ]
+          (hits t);
         let odd = "lib/a\tb \r.ml" in
-        let t =
-          ok "odd name" (C.add C.empty ~file:odd ~points:[||] ~counts:[||])
-        in
         equal ~msg:"a name holding whitespace keeps it" (list string) [ odd ]
-          (C.files (fst (ok "odd round trip" (C.of_string (C.to_string t)))));
-        match C.of_string "windtrap-coverage-v3\n1\n8\tlib/a.ml\n0\n" with
+          (C.files (collection [ (odd, []) ]));
+        match load_text "windtrap-coverage-v3\n1\n8\tlib/a.ml\n0\n" with
         | Error (C.Data (I.Corrupt _)) -> ()
         | Ok _ -> fail "a tab before a name parsed"
         | Error e -> failf "expected Corrupt, got %a" C.pp_error e);
@@ -601,34 +453,37 @@ let rejection_tests =
 let filename_tests =
   [
     test "output filenames are deterministic" (fun () ->
-        let direct = C.output_dir ~exe:"/w/p/_build/default/test/a.exe" in
+        let direct =
+          I.output_dir C.format ~exe:"/w/p/_build/default/test/a.exe"
+        in
         equal ~msg:"output_dir is deterministic" string direct
-          (C.output_dir ~exe:"/w/p/_build/default/test/a.exe");
+          (I.output_dir C.format ~exe:"/w/p/_build/default/test/a.exe");
         starts_with ~msg:"output_dir lives under the root's _build/_coverage"
           ~affix:"/w/p/_build/_coverage/windtrap-" direct;
         equal ~msg:"output_dir is a directory name, not a file's" string ""
           (Filename.extension direct);
         equal ~msg:"sandboxed and direct runs share a file" string direct
-          (C.output_dir ~exe:"/w/p/_build/.sandbox/0abc12/default/test/a.exe");
+          (I.output_dir C.format
+             ~exe:"/w/p/_build/.sandbox/0abc12/default/test/a.exe");
         not_equal ~msg:"different executables get different files" string direct
-          (C.output_dir ~exe:"/w/p/_build/default/test/b.exe");
+          (I.output_dir C.format ~exe:"/w/p/_build/default/test/b.exe");
         not_equal ~msg:"different build contexts get different files" string
           direct
-          (C.output_dir ~exe:"/w/p/_build/alt/test/a.exe");
+          (I.output_dir C.format ~exe:"/w/p/_build/alt/test/a.exe");
         equal ~msg:"the project location does not affect the name" string
           (Filename.basename direct)
           (Filename.basename
-             (C.output_dir ~exe:"/elsewhere/_build/default/test/a.exe"));
+             (I.output_dir C.format ~exe:"/elsewhere/_build/default/test/a.exe"));
         starts_with ~msg:"a private build directory keeps its own dumps"
           ~affix:"/w/p/_build_ci/_coverage/windtrap-"
-          (C.output_dir ~exe:"/w/p/_build_ci/default/test/a.exe");
+          (I.output_dir C.format ~exe:"/w/p/_build_ci/default/test/a.exe");
         (* A tree built without dune must never grow a _build: the dumps
            go under the working directory's own _windtrap. *)
         starts_with
           ~msg:"an executable under no build directory dumps under _windtrap"
           ~affix:
             (Filename.concat (Sys.getcwd ()) "_windtrap/coverage/windtrap-")
-          (C.output_dir ~exe:"/opt/tools/mytool.exe"));
+          (I.output_dir C.format ~exe:"/opt/tools/mytool.exe"));
     test "build_dir, build_root and exe_identity follow the first _build*"
       (fun () ->
         equal ~msg:"build_dir is the path cut after the first _build* component"
@@ -675,8 +530,9 @@ let filename_tests =
           "/opt/tools/mytool.exe"
           (I.exe_identity ~exe:"/opt/tools/mytool.exe");
         equal ~msg:"the identity is what output_dir hashes" string
-          (C.output_dir ~exe:"/w/p/_build/default/test/a.exe")
-          (C.output_dir ~exe:"/w/p/_build/.sandbox/9f/default/test/a.exe"));
+          (I.output_dir C.format ~exe:"/w/p/_build/default/test/a.exe")
+          (I.output_dir C.format
+             ~exe:"/w/p/_build/.sandbox/9f/default/test/a.exe"));
     (* One executable is one dump. Dune spells the same binary
        [runner_main.exe] in one rule and [./runner_main.exe] in another,
        and a suite that spawns a sibling names it [../../../bin/main.exe];
@@ -697,8 +553,9 @@ let filename_tests =
           (fun spelling ->
             equal
               ~msg:("every spelling shares the direct run's file: " ^ spelling)
-              string (C.output_dir ~exe:direct)
-              (C.output_dir ~exe:spelling))
+              string
+              (I.output_dir C.format ~exe:direct)
+              (I.output_dir C.format ~exe:spelling))
           [
             "/w/p/_build/default/test/./a.exe";
             "/w/p/_build/default/test/sub/../a.exe";
@@ -793,6 +650,11 @@ let plumbing_tests =
           [
             { I.exe = ""; digest = md5_of_bytes };
             { I.exe = "a.exe"; digest = "abc" };
+            {
+              I.exe = "a.exe";
+              digest =
+                String.uppercase_ascii (Digest.to_hex (Digest.string "x"));
+            };
           ]);
     test "write_file that cannot rename leaves no temporary file" (fun () ->
         let dir = temp_dir () in
@@ -922,14 +784,25 @@ let scanner_tests =
 (* Extent -> line derivation *)
 
 let three_lines = "line one\nline two\nline three\n"
-(* offsets: line 1 = 0-8 (newline at 8), line 2 = 9-17, line 3 = 18-27 *)
+(* offsets: line 1 = 0-8 (newline at 8), line 2 = 9-17, line 3 = 18-28 *)
+
+(* The uncovered lines of a report on one file of [source], every extent
+   unvisited. *)
+let uncovered ?(source = three_lines) extents =
+  let root = temp_dir () in
+  write_source root "lib/lines.ml" source;
+  match
+    C.file_reports ~source_roots:[ root ]
+      (collection [ ("lib/lines.ml", List.map (fun p -> (p, 0)) extents) ])
+  with
+  | [ r ] -> r.C.uncovered_lines
+  | reports -> failf "one file, %d reports" (List.length reports)
 
 let line_tests =
   [
     test "extents derive their line numbers" (fun () ->
         let lines ~msg expected extents =
-          equal ~msg (list int) expected
-            (C.lines_of_extents ~source:three_lines extents)
+          equal ~msg (list int) expected (uncovered extents)
         in
         lines ~msg:"an extent spanning the file marks every line" [ 1; 2; 3 ]
           [ pt 0 28 ];
@@ -943,17 +816,13 @@ let line_tests =
           [ pt 0 4; pt 5 8 ];
         lines ~msg:"an empty extent marks the line containing it" [ 2 ]
           [ pt 9 9 ];
-        lines ~msg:"offsets past the end clamp to the last line" [ 3 ]
-          [ pt 100 200 ];
         lines ~msg:"nested uncovered extents are the outer extent's lines"
           [ 1; 2; 3 ]
           [ pt 0 28; pt 9 17 ];
         lines ~msg:"no extents mark no lines" [] [];
-        equal ~msg:"an empty source has no lines" (list int) []
-          (C.lines_of_extents ~source:"" [ pt 0 5 ]);
         equal ~msg:"a source without a trailing newline keeps its last line"
           (list int) [ 2 ]
-          (C.lines_of_extents ~source:"a\nb" [ pt 2 3 ]));
+          (uncovered ~source:"a\nb" [ pt 2 3 ]));
     test "a huge file stays exact" (fun () ->
         (* One file-spanning extent over 20 000 lines marks each of them,
            once and in order. *)
@@ -963,11 +832,9 @@ let line_tests =
           Printf.bprintf buf "line %d\n" i
         done;
         let source = Buffer.contents buf in
-        let lines =
-          C.lines_of_extents ~source [ pt 0 (String.length source) ]
-        in
         equal ~msg:"a file-spanning extent marks every line of a huge file"
-          (list int) (List.init n succ) lines);
+          (list int) (List.init n succ)
+          (uncovered ~source [ pt 0 (String.length source) ]));
   ]
 
 (* Summaries *)
@@ -982,17 +849,6 @@ let summary_tests =
 
 (* Reports against real sources *)
 
-let write_source root path contents =
-  let path = Filename.concat root path in
-  let rec mkdir_p dir =
-    if not (Sys.file_exists dir) then begin
-      mkdir_p (Filename.dirname dir);
-      Sys.mkdir dir 0o755
-    end
-  in
-  mkdir_p (Filename.dirname path);
-  Out_channel.with_open_bin path (fun oc -> output_string oc contents)
-
 let report_tests =
   [
     test "reports resolve sources; inner extents override outer" (fun () ->
@@ -1002,10 +858,7 @@ let report_tests =
         let root = temp_dir () in
         write_source root "lib/eval.ml" three_lines;
         let t =
-          ok "report add"
-            (C.add C.empty ~file:"lib/eval.ml"
-               ~points:[| pt 0 28; pt 9 17 |]
-               ~counts:[| 1; 0 |])
+          collection [ ("lib/eval.ml", [ (pt 0 28, 1); (pt 9 17, 0) ]) ]
         in
         (match C.file_reports ~source_roots:[ root ] t with
         | [ r ] ->
@@ -1043,7 +896,7 @@ let report_tests =
             is_none ~msg:"a missing source is reported as absent" rb.C.source;
             is_false ~msg:"a missing source is not stale" rb.C.stale;
             equal ~msg:"extents are available without the source" (list point)
-              [ pt 30 40 ]
+              [ line 2 ]
               rb.C.uncovered_extents;
             equal ~msg:"no source means no line numbers" (list int) []
               rb.C.uncovered_lines;
@@ -1057,10 +910,7 @@ let report_tests =
         let root = temp_dir () in
         write_source root "lib/stale.ml" three_lines;
         let t =
-          ok "stale add"
-            (C.add C.empty ~file:"lib/stale.ml"
-               ~points:[| pt 0 10; pt 20 40 |]
-               ~counts:[| 1; 0 |])
+          collection [ ("lib/stale.ml", [ (pt 0 10, 1); (pt 20 40, 0) ]) ]
         in
         (match C.file_reports ~source_roots:[ root ] t with
         | [ r ] ->
@@ -1078,10 +928,8 @@ let report_tests =
             failf "stale file yields one report, got %d" (List.length reports));
         (* An extent ending exactly at the last byte is consistent. *)
         let t =
-          ok "eof add"
-            (C.add C.empty ~file:"lib/stale.ml"
-               ~points:[| pt 0 (String.length three_lines) |]
-               ~counts:[| 0 |])
+          collection
+            [ ("lib/stale.ml", [ (pt 0 (String.length three_lines), 0) ]) ]
         in
         match C.file_reports ~source_roots:[ root ] t with
         | [ r ] ->
@@ -1103,12 +951,7 @@ let report_tests =
         let short = temp_dir () and whole = temp_dir () in
         write_source short "lib/order.ml" "short\n";
         write_source whole "lib/order.ml" three_lines;
-        let t =
-          ok "order add"
-            (C.add C.empty ~file:"lib/order.ml"
-               ~points:[| pt 0 20 |]
-               ~counts:[| 0 |])
-        in
+        let t = collection [ ("lib/order.ml", [ (pt 0 20, 0) ]) ] in
         is_true ~msg:"the first root's copy is taken, though it is stale"
           (report ~roots:[ short; whole ] t).C.stale;
         equal ~msg:"in the other order the whole copy is" (option string)
@@ -1120,22 +963,36 @@ let report_tests =
         let recorded = Filename.concat (temp_dir ()) "recorded.ml" in
         write_source "/" recorded three_lines;
         write_source short recorded "short\n";
-        let t =
-          ok "recorded add"
-            (C.add C.empty ~file:recorded ~points:[| pt 0 20 |] ~counts:[| 0 |])
-        in
+        let t = collection [ (recorded, [ (pt 0 20, 0) ]) ] in
         equal ~msg:"the recorded name comes before every root" (option string)
           (Some three_lines) (report ~roots:[ short ] t).C.source);
   ]
 
 (* The at_exit dump, end to end *)
 
-let child_expected counts =
-  Printf.sprintf
-    "windtrap-coverage-v3\n1\n12 lib/child.ml\n3\n0 5 %d\n6 9 %d\n10 20 %d\n"
-    counts.(0) counts.(1) counts.(2)
+(* The bytes of the child's dump: the magic line, the identity of [exe]
+   when the writer could read itself back, then [lib/child.ml]. *)
+let child_dump ?exe counts =
+  "windtrap-coverage-v3\n"
+  ^ (match exe with
+    | Some exe ->
+        let id = I.exe_identity ~exe in
+        Printf.sprintf "exe %s %d %s\n"
+          (Digest.to_hex (Digest.file exe))
+          (String.length id) id
+    | None -> "")
+  ^ Printf.sprintf "1\n12 lib/child.ml\n3\n0 5 %d\n6 11 %d\n12 17 %d\n"
+      counts.(0) counts.(1) counts.(2)
 
 let child_exe = Filename.concat exe_dir "dump_child.exe"
+
+let merge_dumps dir names =
+  List.fold_left
+    (fun acc name ->
+      match C.load (Filename.concat dir name) with
+      | Ok (t, _) -> ok "the merge of the dumps" (C.merge acc t)
+      | Error e -> failf "%s: %a" name C.pp_error e)
+    C.empty names
 
 let dump_tests =
   [
@@ -1145,16 +1002,15 @@ let dump_tests =
           Child.run ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ] child_exe [ mode ]
         in
         equal ~msg:"child run exits 0" int 0 (Child.exit_code (run "first"));
+        (* The dump records its writer: the child's identity under this
+           checkout's _build (sandbox-stripped, so it agrees with the
+           parent's spelling of the same path) and its content digest. *)
+        equal ~msg:"the dump is the frozen v3 format, with its writer" string
+          (child_dump ~exe:child_exe [| 1; 0; 0 |])
+          (read_file child_file);
         (match C.load child_file with
-        | Ok (t, exe) ->
-            equal ~msg:"the at_exit dump round-trips through load" string
-              (child_expected [| 1; 0; 0 |])
-              (C.to_string t);
-            (* The dump records its writer: the child's identity under
-               this checkout's _build (sandbox-stripped, so it agrees
-               with the parent's spelling of the same path) and its
-               content digest. *)
-            is_true ~msg:"the dump records the child's executable identity"
+        | Ok (_, exe) ->
+            is_true ~msg:"load reads the child's executable identity"
               (exe
               = Some
                   {
@@ -1163,12 +1019,9 @@ let dump_tests =
                   })
         | Error e -> failf "the child's dump does not load: %a" C.pp_error e);
         equal ~msg:"child re-run exits 0" int 0 (Child.exit_code (run "second"));
-        (match C.load child_file with
-        | Ok (t, _) ->
-            equal ~msg:"a re-run overwrites, never accumulates" string
-              (child_expected [| 1; 2; 0 |])
-              (C.to_string t)
-        | Error e -> failf "the re-run's dump does not load: %a" C.pp_error e);
+        equal ~msg:"a re-run overwrites, never accumulates" string
+          (child_dump ~exe:child_exe [| 1; 2; 0 |])
+          (read_file child_file);
         equal ~msg:"the dump leaves no temporary files behind" (list string) []
           (Sys.readdir (Filename.dirname child_file)
           |> Array.to_list
@@ -1178,13 +1031,9 @@ let dump_tests =
            table, and warns on stderr. *)
         let conflict = run "conflict" in
         equal ~msg:"conflicting child exits 0" int 0 (Child.exit_code conflict);
-        (match C.load child_file with
-        | Ok (t, _) ->
-            equal ~msg:"a conflicting child dumps the first table" string
-              (child_expected [| 1; 0; 0 |])
-              (C.to_string t)
-        | Error e ->
-            failf "the conflicting child's dump does not load: %a" C.pp_error e);
+        equal ~msg:"a conflicting child dumps the first table" string
+          (child_dump ~exe:child_exe [| 1; 0; 0 |])
+          (read_file child_file);
         contains ~msg:"the conflicting child warns on stderr" ~sub:"conflicting"
           conflict.Child.err;
         contains ~msg:"and names the remedy" ~sub:"rebuild from clean"
@@ -1204,6 +1053,47 @@ let dump_tests =
         equal ~msg:"silent child exits 0" int 0 (Child.exit_code (run "silent"));
         is_false ~msg:"a process with no registrations writes no file"
           (Sys.file_exists child_file));
+    test "the dump holds what register and visit recorded" (fun () ->
+        let run mode =
+          let dump = Filename.concat (temp_dir ()) "child.coverage" in
+          equal
+            ~msg:(mode ^ ": the child exits 0")
+            int 0
+            (Child.exit_code
+               (Child.run
+                  ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ]
+                  child_exe [ mode ]));
+          dump
+        in
+        equal ~msg:"visit saturates at max_int" string
+          (child_dump ~exe:child_exe [| max_int; 0; 0 |])
+          (read_file (run "saturate"));
+        (* Same file registered twice with an equal table — a
+           functor-style double instantiation: counts add, points are
+           counted once. *)
+        let duplicate = run "duplicate" in
+        equal ~msg:"duplicate registrations sum" string
+          (child_dump ~exe:child_exe [| 2; 0; 0 |])
+          (read_file duplicate);
+        (match C.load duplicate with
+        | Ok (t, _) ->
+            equal ~msg:"and their points count once" summary
+              { C.visited = 1; total = 3 }
+              (C.summary t)
+        | Error e -> failf "the duplicate dump does not load: %a" C.pp_error e);
+        (* A file of no point registered first: the dump lists files by
+           name, and the empty one is data. *)
+        let exe_line =
+          let id = I.exe_identity ~exe:child_exe in
+          Printf.sprintf "exe %s %d %s\n"
+            (Digest.to_hex (Digest.file child_exe))
+            (String.length id) id
+        in
+        equal ~msg:"files by name, a zero-point file among them" string
+          ("windtrap-coverage-v3\n" ^ exe_line
+         ^ "2\n12 lib/child.ml\n3\n0 5 1\n6 11 0\n12 17 0\n11 lib/zero.ml\n0\n"
+          )
+          (read_file (run "files")));
     (* The default destination: the executable's own directory, where
        every run keeps its own file. The child is copied under a scratch
        _build so that directory is scratch's, never this checkout's. The
@@ -1218,7 +1108,7 @@ let dump_tests =
           Child.exit_code
             (Child.run ~env:[ ("WINDTRAP_COVERAGE_FILE", "") ] exe [ mode ])
         in
-        let dir = C.output_dir ~exe in
+        let dir = I.output_dir C.format ~exe in
         equal ~msg:"the directory sits under the executable's root" string
           (Filename.concat root "_build/_coverage")
           (Filename.dirname dir);
@@ -1239,25 +1129,17 @@ let dump_tests =
             starts_with ~msg:"the files are named after the writer's digest"
               ~affix:(digest ^ "-") name)
           (dumps ());
-        let merged =
-          List.fold_left
-            (fun acc name ->
-              match C.load (Filename.concat dir name) with
-              | Ok (t, _) -> ok "merge of the runs" (C.merge acc t)
-              | Error e -> failf "%s: %a" name C.pp_error e)
-            C.empty (dumps ())
-        in
-        equal ~msg:"the runs add up in the merge" string
-          (child_expected [| 2; 2; 0 |])
-          (C.to_string merged);
+        equal ~msg:"the runs add up in the merge" hits_t
+          [ ("lib/child.ml", [ (1, 2); (2, 2); (3, 0) ]) ]
+          (hits (merge_dumps dir (dumps ())));
         (* A predecessor's dump: named after, and recording, another
            build's digest. The next run removes it and keeps its own. *)
         let older = Digest.to_hex (Digest.string "an older build") in
         let stale = Filename.concat dir (older ^ "-000001.coverage") in
         I.write_file stale
-          (C.to_string
+          (dump
              ~identity:{ C.exe = I.exe_identity ~exe; digest = older }
-             merged);
+             [ ("lib/child.ml", [ (line 1, 1); (line 2, 0); (line 3, 0) ]) ]);
         equal ~msg:"third run exits 0" int 0 (run "first");
         is_false
           ~msg:
@@ -1279,12 +1161,12 @@ let dump_tests =
             child_exe [ "moved"; later ]
         in
         equal ~msg:"the child exits 0" int 0 (Child.exit_code r);
-        (match C.load (Filename.concat first "rel.coverage") with
-        | Ok (t, _) ->
-            equal ~msg:"the dump is where the first registration put it" string
-              (child_expected [| 1; 0; 0 |])
-              (C.to_string t)
-        | Error e -> failf "no dump where it was resolved: %a" C.pp_error e);
+        let path = Filename.concat first "rel.coverage" in
+        is_true ~msg:"the dump is where the first registration put it"
+          (Sys.file_exists path);
+        equal ~msg:"with the child's data" string
+          (child_dump ~exe:child_exe [| 1; 0; 0 |])
+          (read_file path);
         equal ~msg:"a later move and a later variable change nothing"
           (list string) []
           (Array.to_list (Sys.readdir later)));
@@ -1298,12 +1180,9 @@ let dump_tests =
             child_exe [ "fork" ]
         in
         equal ~msg:"the parent exits 0" int 0 (Child.exit_code r);
-        (match C.load dump with
-        | Ok (t, _) ->
-            equal ~msg:"the last to exit wins, and nothing is merged" string
-              (child_expected [| 1; 0; 1 |])
-              (C.to_string t)
-        | Error e -> failf "the dump does not load: %a" C.pp_error e);
+        equal ~msg:"the last to exit wins, and nothing is merged" string
+          (child_dump ~exe:child_exe [| 1; 0; 1 |])
+          (read_file dump);
         (* Under the executable's own directory each keeps a file, and the
            counts from before the fork are in both. *)
         let root = temp_dir () in
@@ -1314,24 +1193,16 @@ let dump_tests =
           Child.run ~env:[ ("WINDTRAP_COVERAGE_FILE", "") ] exe [ "fork" ]
         in
         equal ~msg:"the copy exits 0" int 0 (Child.exit_code r);
-        let dir = C.output_dir ~exe in
+        let dir = I.output_dir C.format ~exe in
         let dumps =
           List.filter
             (fun n -> Filename.check_suffix n ".coverage")
             (Array.to_list (Sys.readdir dir))
         in
         equal ~msg:"two files, one per process" int 2 (List.length dumps);
-        let merged =
-          List.fold_left
-            (fun acc name ->
-              match C.load (Filename.concat dir name) with
-              | Ok (t, _) -> ok "merge of the two" (C.merge acc t)
-              | Error e -> failf "%s: %a" name C.pp_error e)
-            C.empty dumps
-        in
-        equal ~msg:"the counts before the fork add up twice" string
-          (child_expected [| 2; 1; 1 |])
-          (C.to_string merged));
+        equal ~msg:"the counts before the fork add up twice" hits_t
+          [ ("lib/child.ml", [ (1, 2); (2, 1); (3, 1) ]) ]
+          (hits (merge_dumps dir dumps)));
     test
       "a first registration that needs an unreadable current directory warns \
        and writes no dump" (fun () ->
@@ -1366,14 +1237,13 @@ let dump_tests =
         let dump = Filename.concat (temp_dir ()) "abs.coverage" in
         equal ~msg:"an absolute path needs no directory: no warning" text ""
           (run dump);
-        match C.load dump with
-        | Ok (t, identity) ->
-            equal ~msg:"the dump is written" string
-              (child_expected [| 1; 0; 0 |])
-              (C.to_string t);
-            is_none ~msg:"without the identity of an executable now gone"
-              identity
-        | Error e -> failf "no dump at the absolute path: %a" C.pp_error e);
+        equal
+          ~msg:
+            "the dump is written, without the identity of an executable now \
+             gone"
+          string
+          (child_dump [| 1; 0; 0 |])
+          (read_file dump));
     test
       "an executable named _build* below no build directory dies at exit on \
        its empty identity" (fun () ->
@@ -1387,7 +1257,7 @@ let dump_tests =
           Child.run ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ] exe [ "first" ]
         in
         equal ~msg:"the process ends on the exception" int 2 (Child.exit_code r);
-        contains ~msg:"which is to_string's Invalid_argument"
+        contains ~msg:"which is the dump's Invalid_argument"
           ~sub:
             "Invalid_argument(\"Windtrap_runtime.Coverage: empty identity \
              exe\")"

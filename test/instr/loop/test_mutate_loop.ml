@@ -260,6 +260,13 @@ let reproduce_command report =
    the loop failed to write. *)
 let verdict_path = V.output_file ~exe:suite_exe
 
+(* [V.load] of the bytes a run left at [verdict_path], captured when the
+   run ended: a later run of this suite replaces the file. *)
+let load_saved saved =
+  let path = Filename.concat (temp_dir ()) (Filename.basename verdict_path) in
+  Out_channel.with_open_bin path (fun oc -> Out_channel.output_string oc saved);
+  V.load path
+
 (* The [green] suite's loop under the directory's scope, run once for
    every scenario that reads it: its exit code, its two streams, and the
    verdict file as the run left it, read at once, before another
@@ -722,7 +729,7 @@ let verdict_file_tests =
         let { code; saved; _ } = Lazy.force green in
         equal ~msg:"exit code" int 0 code;
         is_true ~msg:"the file exists" (saved <> "");
-        match V.of_string ~path:verdict_path saved with
+        match load_saved saved with
         | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, identity) ->
             is_true ~msg:"the writer identity is recorded" (identity <> None);
@@ -1501,7 +1508,7 @@ let deadline_tests =
         contains ~msg:"the kill counted"
           ~sub:"mutants: 1 reached by this suite, 1 killed, 3 never reached\n"
           out;
-        match V.of_string ~path:verdict_path saved with
+        match load_saved saved with
         | Error e -> failf "verdict file unreadable: %a" V.pp_error e
         | Ok (verdicts, _) ->
             equal ~msg:"the blocked mutant is killed" (list string) [ "killed" ]

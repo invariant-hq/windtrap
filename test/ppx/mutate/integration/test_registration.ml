@@ -25,6 +25,21 @@ let baseline () =
    [f], and disarms - failing loudly if the mutant is not unique, which
    is also what keeps the [before] renderings under test. *)
 
+(* [arm] disarms whatever was armed before it resolves, so arming an
+   identifier of no catalogued file leaves nothing armed. *)
+let disarm () =
+  match
+    Windtrap_runtime.Mutate.arm
+      {
+        Windtrap_runtime.Mutate.file = "<nowhere>.ml";
+        line = 1;
+        col = 0;
+        rewrite = "not";
+      }
+  with
+  | Error (Windtrap_runtime.Mutate.Uncatalogued _) -> ()
+  | Ok _ | Error _ -> failwith "an uncatalogued identifier armed something"
+
 let mutants_of file =
   List.filter
     (fun (m : Windtrap_runtime.Mutate.mutant) ->
@@ -51,7 +66,7 @@ let with_mutant ~file ~rewrite ~before f =
       Format.kasprintf failwith "%d %s mutants render as %S in %s"
         (List.length matching) rewrite before file);
   f ();
-  Windtrap_runtime.Mutate.disarm ()
+  disarm ()
 
 let with_oracle_mutant = with_mutant ~file:"oracle.ml"
 
@@ -195,7 +210,6 @@ let () =
   typing_context ();
   expected_type ();
   let catalogue = Windtrap_runtime.Mutate.catalogue () in
-  assert (Windtrap_runtime.Mutate.armed () = None);
   List.iter
     (fun (m : Windtrap_runtime.Mutate.mutant) ->
       assert (m.before <> "");
@@ -213,7 +227,9 @@ let () =
   assert (forced <> []);
   (* Arming changes what the program computes, and disarming puts it back
      exactly. Every mutant is tried rather than one named by position, so
-     the check does not rot when the fixture is edited. *)
+     the check does not rot when the fixture is edited. The battery above
+     disarmed after each of its mutants, so [unarmed] is the original
+     program: the disarmed checks at its start say so. *)
   let unarmed = baseline () in
   let changed =
     List.filter
@@ -224,12 +240,11 @@ let () =
             Format.kasprintf failwith "%a" Windtrap_runtime.Mutate.pp_arm_error
               e);
         let armed = baseline () in
-        Windtrap_runtime.Mutate.disarm ();
+        disarm ();
         assert (baseline () = unarmed);
         armed <> unarmed)
       forced
   in
   assert (changed <> []);
-  assert (Windtrap_runtime.Mutate.armed () = None);
   Printf.printf "mutants: %d (forced: %d, %d of them observable here)\n"
     (List.length catalogue) (List.length forced) (List.length changed)

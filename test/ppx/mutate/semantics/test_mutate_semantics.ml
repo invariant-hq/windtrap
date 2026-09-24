@@ -116,6 +116,16 @@ let run_battery reset ws =
     ws
 
 let instrumented_battery () = run_battery I.trace I.witnesses
+
+(* [arm] disarms whatever was armed before it resolves, so arming an
+   identifier of no catalogued file leaves nothing armed. *)
+let disarm () =
+  match
+    M.arm { M.file = "<nowhere>.ml"; line = 1; col = 0; rewrite = "not" }
+  with
+  | Error (M.Uncatalogued _) -> ()
+  | Ok _ | Error _ -> failf "an uncatalogued identifier armed something"
+
 let witness = pair string string
 let baseline_battery = lazy (run_battery B.trace B.witnesses)
 
@@ -200,7 +210,6 @@ let tests =
     test "registration happens at module load, before any call" (fun () ->
         let catalogue = fixture_catalogue () in
         is_true ~msg:"the fixtures registered at load" (catalogue <> []);
-        is_true ~msg:"nothing is armed" (M.armed () = None);
         (* The mutation dialect of coverage's "no point visited before any
            call": a site marks itself the first time it is evaluated, and
            no fixture's module initialization evaluates one. *)
@@ -317,7 +326,7 @@ let tests =
               | Error e -> failf "%a" M.pp_arm_error e);
               M.reset_reach ();
               let armed_out = instrumented_battery () in
-              M.disarm ();
+              disarm ();
               armed_out <> baseline)
             mutants
         in
@@ -330,7 +339,6 @@ let tests =
           (list string)
           [ "ari"; "cmp"; "con"; "neg" ]
           families;
-        is_true ~msg:"nothing is left armed" (M.armed () = None);
         equal ~msg:"disarming restores the program exactly" (list witness)
           baseline (instrumented_battery ()));
     (* {1 Tail position, measured} *)
@@ -502,7 +510,9 @@ let tests =
         equal ~msg:"the connective was evaluated once" reach [ ("or", 1) ] rs);
     (* {1 Inertness, restated at the end} *)
     test "nothing was armed from the first line to the last" (fun () ->
-        is_true ~msg:"no mutant is armed" (M.armed () = None);
+        equal ~msg:"the program is still the original" (list witness)
+          (Lazy.force baseline_battery)
+          (instrumented_battery ());
         (* [id_of_string] round-trips every catalogued identifier: the
            report the loop will print names sites that can be found
            again. *)

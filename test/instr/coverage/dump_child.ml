@@ -9,7 +9,10 @@
    Modes: [silent] registers nothing (no file must be written); [first]
    visits block 0 once; [second] additionally visits block 1 twice;
    [conflict] additionally registers the same file with a differing table
-   — which must warn and be ignored, never crash the process.
+   — which must warn and be ignored, never crash the process; [saturate]
+   visits block 0 twice from [max_int - 1]; [duplicate] registers the
+   file twice with an equal table and visits block 0 through each; [files]
+   first registers [lib/zero.ml], a file of no block.
 
    Three modes act around the first registration, which is when the
    runtime decides where the dump goes: [moved DIR] registers as [first]
@@ -27,8 +30,8 @@ let register () =
     ~points:
       [|
         { C.start_ofs = 0; end_ofs = 5 };
-        { start_ofs = 6; end_ofs = 9 };
-        { start_ofs = 10; end_ofs = 20 };
+        { start_ofs = 6; end_ofs = 11 };
+        { start_ofs = 12; end_ofs = 17 };
       |]
     ~counts;
   counts
@@ -52,6 +55,20 @@ let () =
       | pid ->
           ignore (Unix.waitpid [] pid);
           C.visit counts 2)
+  | [ "saturate" ] ->
+      let counts = register () in
+      counts.(0) <- max_int - 1;
+      C.visit counts 0;
+      C.visit counts 0
+  | [ "duplicate" ] ->
+      let first = register () in
+      let second = register () in
+      C.visit first 0;
+      C.visit second 0
+  | [ "files" ] ->
+      C.register ~file:"lib/zero.ml" ~points:[||] ~counts:[||];
+      let counts = register () in
+      C.visit counts 0
   | [ "cwd-gone" ] ->
       let here = Sys.getcwd () in
       Sys.remove (Filename.basename Sys.executable_name);

@@ -561,23 +561,23 @@ let refine_tests =
    current figure.
 
    It is a performance guard, not a contract: no interface states the
-   figure. Instrumented (coverage or mutation), the module counts every
-   point it passes and the figure means nothing, so the guard skips. *)
-let diff_is_instrumented () =
-  let module Coverage = Windtrap_runtime.Coverage in
+   figure. Coverage's probes increment an int array and allocate nothing,
+   so the figure holds under them. Instrumented for mutation, the module
+   counts every site it passes and the figure means nothing, so the guard
+   skips. *)
+let diff_is_mutated () =
   let module Mutate = Windtrap_runtime.Mutate in
-  List.mem "lib/diff.ml" (Coverage.files (Coverage.snapshot ()))
-  || List.exists
-       (fun (m : Mutate.mutant) ->
-         String.starts_with ~prefix:"lib/diff.ml:" (Mutate.id_to_string m.id))
-       (Mutate.catalogue ())
+  List.exists
+    (fun (m : Mutate.mutant) ->
+      String.starts_with ~prefix:"lib/diff.ml:" (Mutate.id_to_string m.id))
+    (Mutate.catalogue ())
 
 let alloc_tests =
   [
     test "performance guard: refine allocates under 2 words per grid cell"
       (fun () ->
-        if diff_is_instrumented () then
-          skip ~reason:"lib/diff.ml is instrumented" ();
+        if diff_is_mutated () then
+          skip ~reason:"lib/diff.ml is instrumented for mutation" ();
         let sizes = [ (200, 20); (600, 3) ] in
         let cells =
           List.fold_left (fun acc (n, it) -> acc + (n * n * it)) 0 sizes

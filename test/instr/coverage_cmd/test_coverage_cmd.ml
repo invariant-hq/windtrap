@@ -78,7 +78,7 @@ let capture ?(env = []) ?cwd exe args =
    which under --instrument-with is itself instrumented and carries
    thousands of points; the dump is deliberately left whole — it is what
    `windtrap coverage` merges — and the assertions that read it scope
-   themselves with [C.filter]. *)
+   themselves to one file's report. *)
 let child ?(env = []) ?(args = []) () =
   let dump = scratch "self.coverage" in
   let code, out, err =
@@ -86,12 +86,20 @@ let child ?(env = []) ?(args = []) () =
   in
   (code, out, err, dump)
 
-(* A dump read back for assertions: scoped to the file the test planted,
-   for the same reason the run is. *)
-let dump_of ?(only = "lib/fake.ml") path =
+(* A dump read back for assertions: the report of the file the test
+   planted, for the same reason the run is, with the dump's identity.
+   [None] when the dump does not load or does not hold the file. *)
+let dump_of ?source_roots ?(only = "lib/fake.ml") path =
   match C.load path with
   | Error _ -> None
-  | Ok (t, id) -> Some (C.filter (fun file -> file = only) t, id)
+  | Ok (t, id) -> (
+      match
+        List.filter
+          (fun (r : C.file_report) -> r.C.file = only)
+          (C.file_reports ?source_roots t)
+      with
+      | [ r ] -> Some (r, id)
+      | _ -> None)
 
 (* Six lines of nine characters: block [i] is line [i + 1]'s text. Four
    of six blocks visited leaves lines 5-6 uncovered — the shape the
@@ -125,8 +133,8 @@ let dump_is_the_report =
      and names the executable that wrote it, so `windtrap coverage` can
      merge and vet it. *)
   (match dump_of ~only:child_src_path dump with
-  | Some (t, exe) ->
-      let s = C.summary t in
+  | Some (r, exe) ->
+      let s = r.C.summary in
       equal ~msg:"the dump holds what the run measured" (pair int int) (4, 6)
         (s.C.visited, s.C.total);
       is_true ~msg:"the dump records the child executable's identity"
@@ -145,7 +153,7 @@ let dump_is_the_report =
   in
   equal ~msg:"a failing instrumented run still exits 1" int 1 code;
   (match dump_of ~only:child_src_path dump with
-  | Some (t, _) -> equal ~msg:"and still dumps" int 6 (C.summary t).C.total
+  | Some (r, _) -> equal ~msg:"and still dumps" int 6 r.C.summary.C.total
   | None -> fail "the failing run's dump does not load");
   (* An uninstrumented child registers nothing: the file may exist
      anyway, because under `--instrument-with` the windtrap core this
@@ -156,7 +164,7 @@ let dump_is_the_report =
   in
   equal ~msg:"an uninstrumented child exits 0" int 0 code;
   is_true ~msg:"an uninstrumented run contributes nothing to the dump"
-    (match dump_of dump with None -> true | Some (t, _) -> C.is_empty t);
+    (dump_of dump = None);
   (* The retired knobs are gone: an unknown option and an unlisted
      variable, never silently ignored ones. *)
   let code, _, err, _ = child ~args:[ "--coverage"; "report" ] () in
@@ -181,15 +189,24 @@ let foo_points =
 let bar_points =
   [| { C.start_ofs = 0; end_ofs = 9 }; { C.start_ofs = 10; end_ofs = 19 } |]
 
-let collection name adds =
-  List.fold_left
-    (fun acc (file, points, counts) ->
-      match C.add acc ~file ~points ~counts with
-      | Ok t -> t
-      | Error e ->
-          failf "%s: the fixture collection does not build: %a" name C.pp_error
-            e)
-    C.empty adds
+(* A dump written by hand, in the grammar of the runtime's own (pinned by
+   test/instr/coverage): the header that [Instr.add_header] writes, the
+   file count, then for each file [len name], its point count and one
+   [start end count] line per point. *)
+let collection ?identity adds =
+  let b = Buffer.create 256 in
+  I.add_header C.format b identity;
+  Printf.bprintf b "%d\n" (List.length adds);
+  List.iter
+    (fun (file, (points : C.point array), counts) ->
+      Printf.bprintf b "%d %s\n%d\n" (String.length file) file
+        (Array.length points);
+      Array.iteri
+        (fun i (p : C.point) ->
+          Printf.bprintf b "%d %d %d\n" p.C.start_ofs p.C.end_ofs counts.(i))
+        points)
+    adds;
+  Buffer.contents b
 
 (* Two executables' worth of data: foo.ml visited [1;0;0] in one and
    [0;1;0] in the other (merge must add to 2/3, uncovered line 3);
@@ -202,20 +219,16 @@ let proj () =
     (Filename.concat root "lib/foo.ml")
     "let a = 1\nlet b = 2\nlet c = 3\n";
   write_file (Filename.concat root "lib/bar.ml") "let d = 4\nlet e = 5\n";
-  let a = collection "exe-a" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]
+  let a = collection [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]
   and b =
-    collection "exe-b"
+    collection
       [
         ("lib/foo.ml", foo_points, [| 0; 1; 0 |]);
         ("lib/bar.ml", bar_points, [| 1; 0 |]);
       ]
   in
-  write_file
-    (Filename.concat root "_build/_coverage/windtrap-a.coverage")
-    (C.to_string a);
-  write_file
-    (Filename.concat root "_build/_coverage/windtrap-b.coverage")
-    (C.to_string b);
+  write_file (Filename.concat root "_build/_coverage/windtrap-a.coverage") a;
+  write_file (Filename.concat root "_build/_coverage/windtrap-b.coverage") b;
   root
 
 (* INSIDE_DUNE reaches the command only when the scenario sets it: `dune
@@ -347,17 +360,14 @@ let inside_dune_estate =
   write_file
     (Filename.concat proj "lib/foo.ml")
     "let a = 1\nlet b = 2\nlet c = 3\n";
-  let shared =
-    collection "exe-shared" [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]
-  and private_dir =
-    collection "exe-private" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]
-  in
+  let shared = collection [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]
+  and private_dir = collection [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ] in
   write_file
     (Filename.concat proj "_build/_coverage/windtrap-s.coverage")
-    (C.to_string shared);
+    shared;
   write_file
     (Filename.concat proj "_build_ci/_coverage/windtrap-p.coverage")
-    (C.to_string private_dir);
+    private_dir;
   let context = Filename.concat proj "_build_ci/default" in
   let code, out, err = coverage_cmd ~cwd:proj ~inside_dune:context [] in
   equal ~msg:"the command exits 0" int 0 code;
@@ -649,7 +659,7 @@ let lcov_output =
   let orphan = scratch "lcov-orphan" in
   write_file
     (Filename.concat orphan "_build/_coverage/x.coverage")
-    (C.to_string (collection "x" [ ("lib/gone.ml", bar_points, [| 1; 0 |]) ]));
+    (collection [ ("lib/gone.ml", bar_points, [| 1; 0 |]) ]);
   let code, out, err = coverage_cmd ~cwd:orphan [ "--lcov" ] in
   equal ~msg:"a missing source still exits 0" int 0 code;
   not_contains ~msg:"a missing source has no record" ~sub:"SF:" out;
@@ -691,17 +701,10 @@ let loud_failures =
     ~sub:"delete" err;
   (* Mismatched point tables across executables. *)
   let mismatch = scratch "mismatch" in
-  let one =
-    collection "mismatch-one" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]
-  and two =
-    collection "mismatch-two" [ ("lib/foo.ml", bar_points, [| 1; 0 |]) ]
-  in
-  write_file
-    (Filename.concat mismatch "_build/_coverage/one.coverage")
-    (C.to_string one);
-  write_file
-    (Filename.concat mismatch "_build/_coverage/two.coverage")
-    (C.to_string two);
+  let one = collection [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]
+  and two = collection [ ("lib/foo.ml", bar_points, [| 1; 0 |]) ] in
+  write_file (Filename.concat mismatch "_build/_coverage/one.coverage") one;
+  write_file (Filename.concat mismatch "_build/_coverage/two.coverage") two;
   let code, _, err = coverage_cmd ~cwd:mismatch [] in
   equal ~msg:"mismatched point tables exit 1" int 1 code;
   contains ~msg:"mismatched point tables name the file" ~sub:"lib/foo.ml" err;
@@ -798,15 +801,13 @@ let min_boundaries =
     ~sub:"coverage: 60.0% (3/5 points), minimum 100%: FAILED\n" out;
   let full = scratch "fullproj" in
   let all =
-    collection "full"
+    collection
       [
         ("lib/foo.ml", foo_points, [| 1; 1; 1 |]);
         ("lib/bar.ml", bar_points, [| 2; 1 |]);
       ]
   in
-  write_file
-    (Filename.concat full "_build/_coverage/full.coverage")
-    (C.to_string all);
+  write_file (Filename.concat full "_build/_coverage/full.coverage") all;
   let code, out, _ = coverage_cmd ~cwd:full [ "--min"; "100" ] in
   equal ~msg:"--min 100 passes at exactly 100%" int 0 code;
   contains ~msg:"full coverage meets the 100% gate" ~sub:"minimum 100%: ok" out;
@@ -822,12 +823,8 @@ let min_boundaries =
      to the 66.7 it is gated against and still falls short. The verdict
      makes no comparative claim, so the fraction is what says why. *)
   let thirds = scratch "twothirds" in
-  let two_of_three =
-    collection "two-thirds" [ ("lib/foo.ml", foo_points, [| 1; 1; 0 |]) ]
-  in
-  write_file
-    (Filename.concat thirds "_build/_coverage/t.coverage")
-    (C.to_string two_of_three);
+  let two_of_three = collection [ ("lib/foo.ml", foo_points, [| 1; 1; 0 |]) ] in
+  write_file (Filename.concat thirds "_build/_coverage/t.coverage") two_of_three;
   let code, out, _ = coverage_cmd ~cwd:thirds [ "--min"; "66.7" ] in
   equal ~msg:"the gate compares raw percentages" int 1 code;
   contains ~msg:"a display-equal shortfall still fails, with its fraction"
@@ -854,10 +851,7 @@ let discovery_robustness =
      under the build directory's _coverage or under _windtrap/coverage.\n"
     err;
   (* A truncated file is corrupt and named, never partially merged. *)
-  let serialized =
-    C.to_string
-      (collection "trunc" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ])
-  in
+  let serialized = collection [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ] in
   let trunc = scratch "trunc" in
   write_file
     (Filename.concat trunc "_build/_coverage/cut.coverage")
@@ -873,13 +867,13 @@ let discovery_robustness =
   let selfish = scratch "selfish" in
   write_file
     (Filename.concat selfish "_build/_coverage/self.coverage")
-    (C.to_string
+    (collection
        ~identity:
          {
            C.exe = I.exe_identity ~exe:windtrap_exe;
            digest = Digest.to_hex (Digest.string "some earlier build");
          }
-       (collection "self" [ ("lib/ghost.ml", foo_points, [| 1; 1; 1 |]) ]));
+       [ ("lib/ghost.ml", foo_points, [| 1; 1; 1 |]) ]);
   let code, out, err = coverage_cmd ~cwd:selfish [] in
   equal ~msg:"a directory holding only the reporter's own dump exits 1" int 1
     code;
@@ -941,9 +935,7 @@ let explicit_path_contract =
   (* An existing file without the .coverage suffix — a renamed dump —
      is equally loud, whatever its content. *)
   let renamed = scratch "renamed.cov" in
-  write_file renamed
-    (C.to_string
-       (collection "renamed" [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]));
+  write_file renamed (collection [ ("lib/foo.ml", foo_points, [| 1; 0; 0 |]) ]);
   let code, _, err = coverage_cmd ~cwd:elsewhere [ renamed ] in
   equal ~msg:"a wrong-suffix explicit file exits 1" int 1 code;
   contains ~msg:"a wrong-suffix explicit file is named" ~sub:renamed err;
@@ -991,7 +983,7 @@ let plant_exe root exe contents =
 let write_dump root name ~identity adds =
   write_file
     (Filename.concat root (Filename.concat "_build/_coverage" name))
-    (C.to_string ~identity (collection name adds))
+    (collection ~identity adds)
 
 let stale_root name =
   let root = scratch name in
@@ -1162,6 +1154,34 @@ let staleness_pass =
    uncovered: a raising path lowers the percentage. *)
 let raise_child_exe = Filename.concat exe_dir "raise_child.exe"
 
+(* The records of [only] in the dump at [path], read with the runtime's
+   scanner: the dump is the child's whole process, and a report replanted
+   from it must hold the fixture alone. *)
+let records_of ~only path =
+  let c =
+    match I.start C.format ~path (read_file path) with
+    | Ok c -> c
+    | Error e -> failf "the dump does not start: %a" (I.pp_error C.format) e
+  in
+  ignore (I.read_identity c);
+  let found = ref None in
+  for _ = 1 to I.read_count c "files" do
+    let file = I.read_name c "file" in
+    let n = I.read_count c "points" in
+    let points = Array.make n { C.start_ofs = 0; end_ofs = 0 } in
+    let counts = Array.make n 0 in
+    for i = 0 to n - 1 do
+      let start_ofs = I.read_nat c "start" in
+      let end_ofs = I.read_nat c "end" in
+      points.(i) <- { C.start_ofs; end_ofs };
+      counts.(i) <- I.read_nat c "count"
+    done;
+    if file = only then found := Some (file, points, counts)
+  done;
+  match !found with
+  | Some records -> records
+  | None -> failf "the dump holds no %s" only
+
 let raise_attribution =
   test "raise attribution end to end" @@ fun () ->
   let dump = scratch "raise.coverage" in
@@ -1173,44 +1193,39 @@ let raise_attribution =
   in
   equal ~msg:"the raise child exits 0" int 0 code;
   not_contains ~msg:"the run prints no number of its own" ~sub:"coverage:" out;
-  match dump_of ~only:fixture dump with
+  (* The fixture source is a declared test dep, copied beside the
+     executable — resolved absolutely so a by-hand run from anywhere in
+     the checkout reads it too. *)
+  let source = read_file (Filename.concat exe_dir "covcli_fixture.ml") in
+  let sources = scratch "raise-sources" in
+  write_file (Filename.concat sources fixture) source;
+  match dump_of ~source_roots:[ sources ] ~only:fixture dump with
   | None -> fail "the raise child's dump does not load"
-  | Some (t, _) -> (
-      let s = C.summary t in
+  | Some (r, _) ->
       equal ~msg:"exactly one point - the out-edge - is unvisited"
-        (pair int int) (2, 3) (s.C.visited, s.C.total);
-      match C.file_reports t with
-      | [ r ] ->
-          equal ~msg:"one uncovered extent: the raising call" int 1
-            (List.length r.C.uncovered_extents);
-          (* The fixture source is a declared test dep, copied beside the
-             executable — resolved absolutely so a by-hand run from
-             anywhere in the checkout reads it too. *)
-          let source =
-            read_file (Filename.concat exe_dir "covcli_fixture.ml")
-          in
-          equal ~msg:"the uncovered extent is the call line (line 7)" (list int)
-            [ 7 ]
-            (C.lines_of_extents ~source r.C.uncovered_extents);
-          (* Replant source and dump in a scratch project: the reporting
-             command must attribute the unreached out-edge to the call
-             line. *)
-          let root = scratch "raiseproj" in
-          write_file (Filename.concat root r.C.file) source;
-          write_file
-            (Filename.concat root "_build/_coverage/raise.coverage")
-            (C.to_string t);
-          let code, out, _ = coverage_cmd ~cwd:root [] in
-          equal ~msg:"the raise report exits 0" int 0 code;
-          contains ~msg:"the report totals the unreached out-edge"
-            ~sub:"coverage: 66.7% (2/3 points)" out;
-          contains ~msg:"the unreached out-edge is an uncovered line"
-            ~sub:"covcli_fixture.ml   7\n" out;
-          let code, out, _ = coverage_cmd ~cwd:root [ "--show-uncovered" ] in
-          equal ~msg:"the raise excerpt exits 0" int 0 code;
-          contains ~msg:"the excerpt paints the raising call" ~sub:"boom ()" out
-      | reports ->
-          failf "exactly one instrumented file, got %d" (List.length reports))
+        (pair int int) (2, 3)
+        (r.C.summary.C.visited, r.C.summary.C.total);
+      equal ~msg:"one uncovered extent: the raising call" int 1
+        (List.length r.C.uncovered_extents);
+      equal ~msg:"the uncovered extent is the call line (line 7)" (list int)
+        [ 7 ] r.C.uncovered_lines;
+      (* Replant source and the fixture's records in a scratch project:
+         the reporting command must attribute the unreached out-edge to
+         the call line. *)
+      let root = scratch "raiseproj" in
+      write_file (Filename.concat root fixture) source;
+      write_file
+        (Filename.concat root "_build/_coverage/raise.coverage")
+        (collection [ records_of ~only:fixture dump ]);
+      let code, out, _ = coverage_cmd ~cwd:root [] in
+      equal ~msg:"the raise report exits 0" int 0 code;
+      contains ~msg:"the report totals the unreached out-edge"
+        ~sub:"coverage: 66.7% (2/3 points)" out;
+      contains ~msg:"the unreached out-edge is an uncovered line"
+        ~sub:"covcli_fixture.ml   7\n" out;
+      let code, out, _ = coverage_cmd ~cwd:root [ "--show-uncovered" ] in
+      equal ~msg:"the raise excerpt exits 0" int 0 code;
+      contains ~msg:"the excerpt paints the raising call" ~sub:"boom ()" out
 
 (* Containment rails: JUnit and uninstrumented modes *)
 
@@ -1252,13 +1267,12 @@ let edges () =
   write_file (Filename.concat root "lib/Z.ml") "";
   write_file
     (Filename.concat root "_build/_coverage/edges.coverage")
-    (C.to_string
-       (collection "edges"
-          [
-            ("lib/s.ml", bar_points, [| 1; 0 |]);
-            ("lib/a.ml", ghost_points, [| 0 |]);
-            ("lib/Z.ml", [||], [||]);
-          ]));
+    (collection
+       [
+         ("lib/s.ml", bar_points, [| 1; 0 |]);
+         ("lib/a.ml", ghost_points, [| 0 |]);
+         ("lib/Z.ml", [||], [||]);
+       ]);
   root
 
 let edge_tests =
@@ -1336,7 +1350,7 @@ let edge_tests =
         let root = scratch "no-point" in
         write_file
           (Filename.concat root "_build/_coverage/none.coverage")
-          (C.to_string (collection "none" [ ("lib/Z.ml", [||], [||]) ]));
+          (collection [ ("lib/Z.ml", [||], [||]) ]);
         let _, out, _ = coverage_cmd ~cwd:root [ "--json" ] in
         contains ~msg:"a merge of no point is 100.00"
           ~sub:
@@ -1417,8 +1431,7 @@ let discovery_edge_tests =
         let root = scratch "walk-up" in
         write_file
           (Filename.concat root "_build_ci/_coverage/ci.coverage")
-          (C.to_string
-             (collection "ci" [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]));
+          (collection [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]);
         mkdir_p (Filename.concat root "src");
         let code, _, err = coverage_cmd ~cwd:(Filename.concat root "src") [] in
         equal ~msg:"a private build directory is not walked up to" int 1 code;
@@ -1454,19 +1467,16 @@ let discovery_edge_tests =
         contains ~msg:"the readable dumps are reported"
           ~sub:"coverage: 60.0% (3/5 points)" out);
     test "a dump that cannot be judged is kept" (fun () ->
-        let data =
-          collection "judged" [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]
-        in
         (* A relative identity in a file that lies in no build directory. *)
         let loose = scratch "loose.coverage" in
         write_file loose
-          (C.to_string
+          (collection
              ~identity:
                {
                  C.exe = "default/test/gone.exe";
                  digest = Digest.to_hex (Digest.string "gone");
                }
-             data);
+             [ ("lib/foo.ml", foo_points, [| 1; 1; 1 |]) ]);
         let code, out, err = coverage_cmd ~cwd:(temp_dir ()) [ loose ] in
         equal ~msg:"a relative identity outside a build directory: exit" int 0
           code;
