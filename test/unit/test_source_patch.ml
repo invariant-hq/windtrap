@@ -248,5 +248,160 @@ let () =
     "  [%expect {| new |}]\n"
     (apply node [ flexible ~site ~literal:"old" "new" ])
 
+(* Whitespace *)
+
+let () =
+  reg "normalize: VT and FF are whitespace, and tabs are not indentation"
+  @@ fun () ->
+  let n = P.normalize in
+  equal ~msg:"VT and FF strip and blank like spaces" string "a"
+    (n "\x0b\n a \x0c\n\x0c");
+  equal ~msg:"a tab-indented block loses its relative indentation" string "a\nb"
+    (n "\ta\n\t\tb")
+
+(* Expect nodes *)
+
+let () =
+  reg "a node without payload compiles to \"\" and gets a literal" @@ fun () ->
+  let node = "  [%expect]\n" in
+  let site = pos_of node "[%expect]" in
+  equal ~msg:"a space and a {|...|} before the closing bracket" string
+    "  [%expect {| new |}]\n"
+    (apply node [ flexible ~site ~literal:"" "new" ]);
+  match P.apply node [ flexible ~site ~literal:"stale" "new" ] with
+  | Error (P.Drifted p) -> is_true ~msg:"the site" (p = site)
+  | Ok _ | Error (P.No_literal _) ->
+      fail "a payloadless node with a non-empty literal is Drifted"
+
+let () =
+  reg "the head of a tagged expect node is kept" @@ fun () ->
+  let node = "  {%expect t|old|t}\n" in
+  let site = pos_of node "{%expect" in
+  equal ~msg:"the head and its tag" string "  {%expect t| new |t}\n"
+    (apply node [ flexible ~site ~literal:"old" "new" ])
+
+(* Quoted literals *)
+
+let () =
+  reg "a quoted literal escapes non-ASCII bytes as decimal" @@ fun () ->
+  let source = "let () = expect x @@ __POS_OF__ \"old\"\n" in
+  let site = pos_of source "__POS_OF__" in
+  equal ~msg:"é is two decimal escapes" string
+    "let () = expect x @@ __POS_OF__ \"caf\\195\\169\"\n"
+    (apply source [ flexible ~site ~literal:"old" "café" ])
+
+let () =
+  reg "a quoted literal lays several lines out one space in" @@ fun () ->
+  let source = "  expect x @@ __POS_OF__ \"old\"\n" in
+  let site = pos_of source "__POS_OF__" in
+  equal
+    ~msg:"a space and a newline, each line one space in, a newline and a space"
+    string "  expect x @@ __POS_OF__ \" \\n a\\n   b\\n \"\n"
+    (apply source [ flexible ~site ~literal:"old" "a\n  b" ])
+
+(* Refusals *)
+
+let () =
+  reg "anything but whitespace, (, __POS_OF__ and a node head is no literal"
+  @@ fun () ->
+  let commented = "let () = expect x @@ __POS_OF__ (* c *) \"old\"\n" in
+  (match
+     P.apply commented
+       [ flexible ~site:(pos_of commented "__POS_OF__") ~literal:"old" "new" ]
+   with
+  | Error (P.No_literal _) -> ()
+  | Ok _ | Error (P.Drifted _) -> fail "a comment before the literal");
+  let unclosed = "let () = expect x @@ __POS_OF__ {|old\n" in
+  match
+    P.apply unclosed
+      [ flexible ~site:(pos_of unclosed "__POS_OF__") ~literal:"old" "new" ]
+  with
+  | Error (P.No_literal _) -> ()
+  | Ok _ | Error (P.Drifted _) -> fail "a literal never closed"
+
+let () =
+  reg "the two refusals' sentences" @@ fun () ->
+  let site = ("test/t.ml", 4, 2, 0) in
+  equal ~msg:"No_literal" string
+    "test/t.ml:4: no string literal at the recorded position"
+    (P.error_message (P.No_literal site));
+  equal ~msg:"Drifted" string
+    "test/t.ml:4: the literal differs from the value the binary was compiled \
+     with; rebuild and rerun"
+    (P.error_message (P.Drifted site))
+
+let () =
+  reg "a CR before an LF inside a literal is refused as drifted" @@ fun () ->
+  let drifted source literal =
+    match
+      P.apply source
+        [ flexible ~site:(pos_of source "__POS_OF__") ~literal "new" ]
+    with
+    | Error (P.Drifted _) -> true
+    | Ok _ | Error (P.No_literal _) -> false
+  in
+  let one = "let () = expect x @@ __POS_OF__ {|a\r\nb|}\n" in
+  is_true ~msg:"OCaml 5.0 and 5.1 keep the CR in the compiled value"
+    (drifted one "a\r\nb");
+  let two = "let () = expect x @@ __POS_OF__ {|a\r\r\nb|}\n" in
+  is_true ~msg:"no compiler drops two CRs, the decoder does"
+    (drifted two "a\r\nb")
+
+let () =
+  reg "the first refused patch of the list is the error, and none applies"
+  @@ fun () ->
+  let source =
+    "let () = expect a @@ __POS_OF__ {|x|};\n  expect b @@ __POS_OF__ {|y|}\n"
+  in
+  let first = pos_of source "__POS_OF__ {|x|}" in
+  let second = pos_of source "__POS_OF__ {|y|}" in
+  (match
+     P.apply source
+       [
+         flexible ~site:second ~literal:"stale" "z";
+         flexible ~site:first ~literal:"stale" "w";
+       ]
+   with
+  | Error (P.Drifted p) ->
+      is_true ~msg:"the list's first, not the file's" (p = second)
+  | Ok _ | Error (P.No_literal _) -> fail "two refused patches");
+  match
+    P.apply source
+      [
+        flexible ~site:first ~literal:"x" "w";
+        flexible ~site:second ~literal:"stale" "z";
+      ]
+  with
+  | Error (P.Drifted p) -> is_true ~msg:"one refusal refuses all" (p = second)
+  | Ok _ | Error (P.No_literal _) -> fail "a refused patch among good ones"
+
+(* The layout's law *)
+
+let () =
+  registered :=
+    prop "a flexible correction normalizes to the content's normal form"
+      Gen.(
+        triple
+          (list ~size:(int_range 0 6)
+             (string_of ~size:(int_range 0 12)
+                (of_list [ ' '; ' '; 'a'; 'b'; '\t'; '|'; '}' ])))
+          (of_list [ P.Quote; P.Tag ""; P.Tag "t" ])
+          (int_range 0 8))
+      (fun (lines, delimiter, column) ->
+        let content = String.concat "\n" lines in
+        equal ~msg:"normalize of the written contents" string
+          (P.normalize content)
+          (P.normalize (P.format_flexible ~delimiter ~column content)))
+    :: !registered
+
+let () =
+  reg "fix_tag grows a tag until the contents hold neither delimiter"
+  @@ fun () ->
+  equal ~msg:"no conflict: as given" string "t" (P.fix_tag ~contents:"x" "t");
+  equal ~msg:"an opening delimiter inside" string "txxx"
+    (P.fix_tag ~contents:"a {t| b" "t");
+  equal ~msg:"both, grown twice" string "txxxxxx"
+    (P.fix_tag ~contents:"|t} {txxx|" "t")
+
 let tests = List.rev !registered
 let () = exit @@ Windtrap.run "source_patch" tests
