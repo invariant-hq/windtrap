@@ -1,0 +1,39 @@
+; wrong_run.ml must not compile: it is typechecked by ocamlc with
+; ../expect_pp.exe as its -ppx, so the error is located in the source as the
+; user wrote it. Exit 2 is required and the diagnostic is the golden. The
+; -I paths reach library .objs directories that the declared .cma
+; dependencies guarantee are built, hence (sandbox none); the golden is the
+; compiler's text, so it depends on the compiler's version.
+
+(rule
+ (target wrong_run.compile-rejected)
+ (deps
+  (sandbox none)
+  ../expect_pp.exe
+  ../../../../lib/windtrap.cma
+  ../../../../ppx/runtime/ppx_windtrap_runtime.cma)
+ (action
+  (with-outputs-to
+   wrong_run.compile-rejected
+   (with-accepted-exit-codes
+    2
+    (run
+     %{ocaml_bin}/ocamlc
+     -color
+     never
+     -stop-after
+     typing
+     -w
+     -a
+     -ppx
+     "../expect_pp.exe --as-ppx"
+     -I
+     ../../../../lib/.windtrap.objs/byte
+     -I
+     ../../../../ppx/runtime/.ppx_windtrap_runtime.objs/byte
+     %{dep:wrong_run.ml})))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff wrong_run.compile-rejected.expected wrong_run.compile-rejected)))

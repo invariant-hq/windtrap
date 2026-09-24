@@ -1,0 +1,21 @@
+correction: 1 test
+──────────────────────── failures ────────────────────────
+  FAIL  Sanitized › a correction writes the sanitized text
+    test/ppx/expect/correction/sanitized.ml:14
+      14 │ [%expect {| stale |}];
+
+    expect: mismatch
+    @@ -1,1 +1,1 @@
+    - stale
+    + pid NNNN
+    captured output (1 line):
+      pid 4242same
+    full log: <log>
+    accept: dune promote test/ppx/expect/correction/sanitized.ml
+──────────────────────────────────────────────────────────
+
+corrections (1):
+  wrote test/ppx/expect/correction/sanitized.ml.corrected (1 expectation)
+
+1 failed, 1 correction written in <duration>.
+--- stderr ---

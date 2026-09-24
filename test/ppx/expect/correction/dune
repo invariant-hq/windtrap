@@ -1,0 +1,41 @@
+; A failing expect test under a sanitizing Expect_test_config, run through
+; the promotion protocol by the transcript driver: the correction it writes
+; is diffed, with the run's transcript and exit code.
+
+(executable
+ (name correction_runner)
+ (modules correction_runner sanitized)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets runner-log runner-exit sanitized.ml.corrected)
+ (deps sanitized.ml)
+ (action
+  (run
+   %{dep:../../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --placeholder
+   sanitized.ml
+   --run
+   runner
+   %{dep:correction_runner.exe}
+   inline-test-runner
+   correction)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-exit.expected runner-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff runner-log.expected runner-log)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff sanitized.ml.corrected.expected sanitized.ml.corrected)))
