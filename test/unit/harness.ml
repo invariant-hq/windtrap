@@ -99,8 +99,9 @@ let check_contains name ~sub haystack =
    Empty means unset for every windtrap variable (Env's contract): the
    suites' scripted runs must not inherit ambient configuration. The list
    must name every variable the runner reads — one missing entry is one
-   setting the suites silently take from whoever is running them, so keep
-   it against the ENVIRONMENT section of `--help`. *)
+   setting the suites silently take from whoever is running them. The
+   Cli suite holds it equal to the variables of `--help` and the few
+   named below. *)
 
 let windtrap_vars =
   [
@@ -134,6 +135,14 @@ let windtrap_vars =
     (* Not a windtrap variable, but it turns styling off in Auto mode,
        so a developer's shell setting would reshape a pinned transcript. *)
     "NO_COLOR";
+    (* Not variables of the runner at all: the Cli suite binds them to
+       prove that a flag without a mirror reads no variable, and that the
+       optional-value grammar reads the one its test row names. *)
+    "WINDTRAP_UPDATE";
+    "WINDTRAP_BAIL";
+    "WINDTRAP_FAILED";
+    "WINDTRAP_LIST";
+    "WINDTRAP_PROBE";
   ]
 
 (* Unset is neutral for every variable above. Cleared here rather than

@@ -21,16 +21,18 @@ let reg name body = registered := Windtrap.test name body :: !registered
 let contains needle haystack = Text.contains_substring ~pattern:needle haystack
 
 (* No toplevel clear: module initialization must not clear the hosting
-   runner's own environment. Each resolution test clears what it reads.
-   The variable inventory is the harness's ([Harness.windtrap_vars]) —
-   one list, one owner, so a mirror added there is cleared here by
+   runner's own environment. Each resolution test clears what it reads,
+   through the runner's [setenv], which restores every variable when the
+   attempt ends, so a test that fails half-way leaves nothing behind. The
+   variable inventory is the harness's ([Harness.windtrap_vars]) — one
+   list, one owner, so a mirror added there is cleared here by
    construction. INSIDE_DUNE and WINDTRAP_PROJECT_ROOT stay untouched:
    they configure the hosting run itself, not [Cli] resolution. *)
 let clear_env () =
   List.iter
     (fun var ->
       if var <> "INSIDE_DUNE" && var <> "WINDTRAP_PROJECT_ROOT" then
-        Unix.putenv var "")
+        setenv var (Some ""))
     Harness.windtrap_vars
 
 let parse args = Cli.parse (Array.of_list ("windtrap-test" :: args))
@@ -445,15 +447,15 @@ let () =
     | Ok p -> Ok p.Cli.junit
     | Error e -> Error e
   in
-  Unix.putenv "WINDTRAP_PROBE" "1";
+  setenv "WINDTRAP_PROBE" (Some "1");
   is_true ~msg:"a truthy value is the bare flag"
     (layered Cli.empty = Ok (Some "<bare>"));
-  Unix.putenv "WINDTRAP_PROBE" "off";
+  setenv "WINDTRAP_PROBE" (Some "off");
   is_true ~msg:"a falsy value is absence" (layered Cli.empty = Ok None);
-  Unix.putenv "WINDTRAP_PROBE" " lib/a.ml ";
+  setenv "WINDTRAP_PROBE" (Some " lib/a.ml ");
   is_true ~msg:"anything else is the value, trimmed"
     (layered Cli.empty = Ok (Some "lib/a.ml"));
-  Unix.putenv "WINDTRAP_PROBE" "bad";
+  setenv "WINDTRAP_PROBE" (Some "bad");
   (match layered Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_PROBE"; value = "bad"; _ }) ->
       is_true
@@ -464,8 +466,7 @@ let () =
         ~msg:"the mirror refuses through the same parser, naming the variable"
         false);
   is_true ~msg:"the command line shadows the mirror, unread"
-    (layered { Cli.empty with Cli.junit = Some "cli" } = Ok (Some "cli"));
-  Unix.putenv "WINDTRAP_PROBE" ""
+    (layered { Cli.empty with Cli.junit = Some "cli" } = Ok (Some "cli"))
 
 (* Help and usage *)
 
@@ -478,6 +479,51 @@ let () =
   expect_file
     (Cli.help ~prog:"/some/path/mytests.exe")
     "test/unit/expected/test_cli/help.expected"
+
+(* The meta harness clears the runner's variables by name, and a name it
+   misses is a setting the scripted runs silently take from the shell
+   running them. The page names every variable a user sets: the mirrors
+   after their flags, the rest under ENVIRONMENT. *)
+let () =
+  reg "the harness clears every variable the help page names" @@ fun () ->
+  let page = Cli.help ~prog:"mytests.exe" in
+  let is_name_char c = (c >= 'A' && c <= 'Z') || c = '_' in
+  let rec names i acc =
+    if i >= String.length page then acc
+    else if is_name_char page.[i] then begin
+      let j = ref i in
+      while !j < String.length page && is_name_char page.[!j] do
+        incr j
+      done;
+      let word = String.sub page i (!j - i) in
+      let acc =
+        if String.starts_with ~prefix:"WINDTRAP_" word || word = "NO_COLOR" then
+          word :: acc
+        else acc
+      in
+      names !j acc
+    end
+    else names (i + 1) acc
+  in
+  let on_the_page = List.sort_uniq String.compare (names 0 []) in
+  let read_but_not_listed =
+    (* Set by the host, never by a user of the page: the CI service and
+       dune. *)
+    [ "CI"; "GITHUB_ACTIONS"; "INSIDE_DUNE" ]
+  in
+  let bound_by_this_suite =
+    [
+      "WINDTRAP_UPDATE";
+      "WINDTRAP_BAIL";
+      "WINDTRAP_FAILED";
+      "WINDTRAP_LIST";
+      "WINDTRAP_PROBE";
+    ]
+  in
+  equal ~msg:"the harness's list is the page's names and the named extras"
+    (slist string String.compare)
+    (on_the_page @ read_but_not_listed @ bound_by_this_suite)
+    Harness.windtrap_vars
 
 (* Every line the page composes fits 80 columns. An option is its flag
    line, the mirror after it, then its sentences indented under it: a
@@ -585,53 +631,50 @@ let () =
 let () =
   reg "resolution precedence: CLI > env" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_FILTER" "envpat";
+  setenv "WINDTRAP_FILTER" (Some "envpat");
   let config = resolve Cli.empty in
   is_true ~msg:"env fills an absent flag" (config.Run.filter = Some "envpat");
   let config = resolve { Cli.empty with Cli.filter = Some "clipat" } in
-  is_true ~msg:"CLI beats env" (config.Run.filter = Some "clipat");
-  clear_env ()
+  is_true ~msg:"CLI beats env" (config.Run.filter = Some "clipat")
 
 let () =
   reg "tags are additive across layers" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_TAG" "e1, e2";
-  Unix.putenv "WINDTRAP_EXCLUDE_TAG" "x1 ,, x2 ";
+  setenv "WINDTRAP_TAG" (Some "e1, e2");
+  setenv "WINDTRAP_EXCLUDE_TAG" (Some "x1 ,, x2 ");
   let config =
     resolve { Cli.empty with Cli.tags = [ "c" ]; exclude_tags = [ "xc" ] }
   in
   is_true ~msg:"tags are additive across layers, the CLI's first"
     (config.Run.tags = [ "c"; "e1"; "e2" ]);
   is_true ~msg:"exclude tags are additive too, commas split and trimmed"
-    (config.Run.exclude_tags = [ "xc"; "x1"; "x2" ]);
-  clear_env ()
+    (config.Run.exclude_tags = [ "xc"; "x1"; "x2" ])
 
 (* Resolution: the two reading rules *)
 
 let () =
   reg "reading rules: a plain value is one token, trimmed" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_FILTER" "  parser ";
-  Unix.putenv "WINDTRAP_SHARD" " 2/4 ";
-  Unix.putenv "WINDTRAP_PROP_COUNT" " 12 ";
-  Unix.putenv "WINDTRAP_JUNIT" " out.xml ";
+  setenv "WINDTRAP_FILTER" (Some "  parser ");
+  setenv "WINDTRAP_SHARD" (Some " 2/4 ");
+  setenv "WINDTRAP_PROP_COUNT" (Some " 12 ");
+  setenv "WINDTRAP_JUNIT" (Some " out.xml ");
   let s = settings Cli.empty in
   is_true ~msg:"a pattern is trimmed" (s.Run.filter = Some "parser");
   is_true ~msg:"a shard is trimmed" (s.Run.shard = Some (2, 4));
   is_true ~msg:"a count is trimmed" (s.Run.prop_count = Some 12);
-  is_true ~msg:"a path is trimmed" (s.Run.junit = Some "out.xml");
-  clear_env ()
+  is_true ~msg:"a path is trimmed" (s.Run.junit = Some "out.xml")
 
 let () =
   reg "reading rules: a valueless flag's mirror is a boolean" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_STREAM" "yes";
-  Unix.putenv "WINDTRAP_VERBOSE" " OFF ";
+  setenv "WINDTRAP_STREAM" (Some "yes");
+  setenv "WINDTRAP_VERBOSE" (Some " OFF ");
   let s = settings Cli.empty in
   is_true ~msg:"a truthy spelling applies the flag" s.Run.stream;
   is_true ~msg:"a falsy spelling is absence, trimmed and case-insensitively"
     (not s.Run.verbose);
-  Unix.putenv "WINDTRAP_STREAM" "maybe";
+  setenv "WINDTRAP_STREAM" (Some "maybe");
   (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value
@@ -644,15 +687,14 @@ let () =
         ~msg:"anything else is refused, naming the variable and the vocabulary"
         false);
   is_true ~msg:"a flag on the command line shadows the bad value, unread"
-    (resolve { Cli.empty with Cli.stream = Some true }).Run.stream;
-  clear_env ()
+    (resolve { Cli.empty with Cli.stream = Some true }).Run.stream
 
 (* The two acceptance flags have no mirror: a build action accepts nothing
    through its environment. Neither do the three feedback-loop flags. *)
 let () =
   reg "acceptance flags: no mirror, one mode each, never both" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_UPDATE" "1";
+  setenv "WINDTRAP_UPDATE" (Some "1");
   is_true ~msg:"WINDTRAP_UPDATE is not a mirror"
     ((resolve Cli.empty).Run.baseline = Baseline.Check);
   clear_env ();
@@ -680,26 +722,22 @@ let () =
 let () =
   reg "feedback-loop flags: no mirror" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_BAIL" "1";
-  Unix.putenv "WINDTRAP_FAILED" "1";
-  Unix.putenv "WINDTRAP_LIST" "1";
+  setenv "WINDTRAP_BAIL" (Some "1");
+  setenv "WINDTRAP_FAILED" (Some "1");
+  setenv "WINDTRAP_LIST" (Some "1");
   let config = resolve Cli.empty in
   is_true ~msg:"WINDTRAP_BAIL is not a mirror" (not config.Run.bail);
   is_true ~msg:"WINDTRAP_FAILED is not a mirror" (not config.Run.failed_only);
   is_true ~msg:"-x resolves to bail"
-    (resolve { Cli.empty with Cli.bail = Some true }).Run.bail;
-  Unix.putenv "WINDTRAP_BAIL" "";
-  Unix.putenv "WINDTRAP_FAILED" "";
-  Unix.putenv "WINDTRAP_LIST" "";
-  clear_env ()
+    (resolve { Cli.empty with Cli.bail = Some true }).Run.bail
 
 let () =
   reg "seed precedence and malformed env seeds" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_SEED" "s1:00000000000000aa";
+  setenv "WINDTRAP_SEED" (Some "s1:00000000000000aa");
   let config = resolve Cli.empty in
   is_true ~msg:"env seed is parsed" (config.Run.seed = 0xaaL);
-  Unix.putenv "WINDTRAP_SEED" "not-a-seed";
+  setenv "WINDTRAP_SEED" (Some "not-a-seed");
   (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_SEED"; value; _ }) ->
       is_true ~msg:"malformed env seed errors with its source"
@@ -707,22 +745,20 @@ let () =
   | Ok _ | Error _ -> is_true ~msg:"malformed env seed errors" false);
   let config = resolve { Cli.empty with Cli.seed = Some 7L } in
   is_true ~msg:"a CLI seed leaves a malformed env seed unread"
-    (config.Run.seed = 7L);
-  clear_env ()
+    (config.Run.seed = 7L)
 
 let () =
   reg "env-only settings" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_STREAM" "1";
-  Unix.putenv "WINDTRAP_TIMEOUT" "1.5";
-  Unix.putenv "WINDTRAP_PROP_COUNT" "7";
-  Unix.putenv "WINDTRAP_EXCLUDE" "skipme";
+  setenv "WINDTRAP_STREAM" (Some "1");
+  setenv "WINDTRAP_TIMEOUT" (Some "1.5");
+  setenv "WINDTRAP_PROP_COUNT" (Some "7");
+  setenv "WINDTRAP_EXCLUDE" (Some "skipme");
   let config = resolve Cli.empty in
   is_true ~msg:"WINDTRAP_STREAM" config.Run.stream;
   is_true ~msg:"WINDTRAP_TIMEOUT" (config.Run.timeout = Some 1.5);
   is_true ~msg:"WINDTRAP_PROP_COUNT" (config.Run.prop_count = Some 7);
-  is_true ~msg:"WINDTRAP_EXCLUDE" (config.Run.exclude = Some "skipme");
-  clear_env ()
+  is_true ~msg:"WINDTRAP_EXCLUDE" (config.Run.exclude = Some "skipme")
 
 (* The mirrors that only existed as flags. Under `dune runtest` the mirrors
    *are* the CLI, so a flag without one is a documented feature no dune user
@@ -730,8 +766,8 @@ let () =
 let () =
   reg "env-only settings: the CI mirrors" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_JUNIT" "reports/junit.xml";
-  Unix.putenv "WINDTRAP_OUTPUT" "custom-logs";
+  setenv "WINDTRAP_JUNIT" (Some "reports/junit.xml");
+  setenv "WINDTRAP_OUTPUT" (Some "custom-logs");
   let config = resolve Cli.empty in
   is_true ~msg:"WINDTRAP_JUNIT"
     ((settings Cli.empty).Run.junit = Some "reports/junit.xml");
@@ -739,14 +775,13 @@ let () =
      not move the rest of the run's logs. *)
   is_true ~msg:"WINDTRAP_OUTPUT"
     (Filename.is_relative config.Run.log_dir = false
-    && Filename.basename config.Run.log_dir = "custom-logs");
-  clear_env ()
+    && Filename.basename config.Run.log_dir = "custom-logs")
 
 let () =
   reg "the mirrors lose to their flags" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_PROP_COUNT" "3";
-  Unix.putenv "WINDTRAP_JUNIT" "from-env.xml";
+  setenv "WINDTRAP_PROP_COUNT" (Some "3");
+  setenv "WINDTRAP_JUNIT" (Some "from-env.xml");
   let cli =
     { Cli.empty with Cli.prop_count = Some 1; junit = Some "from-cli.xml" }
   in
@@ -757,23 +792,22 @@ let () =
   (* A malformed mirror is a usage error naming the *variable*, not a
      silent default. *)
   clear_env ();
-  Unix.putenv "WINDTRAP_PROP_COUNT" "0";
+  setenv "WINDTRAP_PROP_COUNT" (Some "0");
   (match Cli.settings Cli.empty with
   | Ok _ -> is_true ~msg:"WINDTRAP_PROP_COUNT=0 is rejected" false
   | Error e ->
       is_true ~msg:"the error names the variable, not the flag"
         (contains "WINDTRAP_PROP_COUNT" (Cli.error_message e)));
   (* A losing layer stays unread: a valid flag shadows a malformed mirror. *)
-  Unix.putenv "WINDTRAP_PROP_COUNT" "not-a-number";
-  (match Cli.settings { Cli.empty with Cli.prop_count = Some 2 } with
+  setenv "WINDTRAP_PROP_COUNT" (Some "not-a-number");
+  match Cli.settings { Cli.empty with Cli.prop_count = Some 2 } with
   | Ok s ->
       is_true ~msg:"a valid flag shadows a malformed mirror"
         (s.Run.prop_count = Some 2)
   | Error e ->
       is_true
         ~msg:("malformed mirror leaked past the flag: " ^ Cli.error_message e)
-        false);
-  clear_env ()
+        false
 
 let () =
   reg "parsed values land in the config" @@ fun () ->
@@ -799,7 +833,7 @@ let () =
 let () =
   reg "numeric mirrors are validated by their flag's parser" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_TIMEOUT" "-5";
+  setenv "WINDTRAP_TIMEOUT" (Some "-5");
   (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value = "-5"; _ })
     ->
@@ -810,7 +844,7 @@ let () =
   is_true ~msg:"a valid CLI timeout shadows the bad env value"
     (config.Run.timeout = Some 1.0);
   clear_env ();
-  Unix.putenv "WINDTRAP_PROP_COUNT" "0";
+  setenv "WINDTRAP_PROP_COUNT" (Some "0");
   (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_PROP_COUNT"; value = "0"; _ })
     ->
@@ -820,7 +854,7 @@ let () =
   clear_env ();
   (* Malformed mirror tokens error like their flags (prop/F-4): same knob,
      same garbage, same loud refusal in every layer. *)
-  Unix.putenv "WINDTRAP_PROP_COUNT" "1O0";
+  setenv "WINDTRAP_PROP_COUNT" (Some "1O0");
   (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value { source = "WINDTRAP_PROP_COUNT"; value = "1O0"; _ })
@@ -834,7 +868,7 @@ let () =
   is_true ~msg:"a valid CLI prop count leaves a malformed mirror unread"
     (config.Run.prop_count = Some 50);
   clear_env ();
-  Unix.putenv "WINDTRAP_TIMEOUT" "banana";
+  setenv "WINDTRAP_TIMEOUT" (Some "banana");
   (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value = "banana"; _ })
@@ -850,19 +884,18 @@ let () =
   (* A mirror quotes the token as typed, exactly as its flag does: "-5.0"
      is what the user wrote and "-5.0" is what the message must show, not
      the shortest spelling of the float it parsed to. *)
-  Unix.putenv "WINDTRAP_TIMEOUT" "-5.0";
+  setenv "WINDTRAP_TIMEOUT" (Some "-5.0");
   (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
       is_true ~msg:"a mirror quotes the token as written" (value = "-5.0")
   | Ok _ | Error _ -> is_true ~msg:"a mirror quotes the token as written" false);
-  Unix.putenv "WINDTRAP_TIMEOUT" "1e400";
-  (match Cli.settings Cli.empty with
+  setenv "WINDTRAP_TIMEOUT" (Some "1e400");
+  match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_TIMEOUT"; value; _ }) ->
       is_true ~msg:"an overflowing token is quoted, not printed as 'inf'"
         (value = "1e400")
   | Ok _ | Error _ ->
-      is_true ~msg:"an overflowing token is quoted, not printed as 'inf'" false);
-  clear_env ()
+      is_true ~msg:"an overflowing token is quoted, not printed as 'inf'" false
 
 (* WINDTRAP_COLOR is a mirror like every other: --color's parser reads
    it, so a word the flag refuses is refused here too, never read as
@@ -872,17 +905,17 @@ let () =
   reg "color precedence, and the mirror refuses what the flag refuses"
   @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_COLOR" "never";
+  setenv "WINDTRAP_COLOR" (Some "never");
   let render = settings Cli.empty in
   is_true ~msg:"WINDTRAP_COLOR fills the default" (render.Run.color = Os.Never);
   let render = settings { Cli.empty with Cli.color = Some Os.Always } in
   is_true ~msg:"--color beats WINDTRAP_COLOR" (render.Run.color = Os.Always);
-  Unix.putenv "WINDTRAP_COLOR" " Never ";
+  setenv "WINDTRAP_COLOR" (Some " Never ");
   is_true ~msg:"the mirror is trimmed and case-insensitive, as --color is"
     ((settings Cli.empty).Run.color = Os.Never);
   is_true ~msg:"color_mode reads the same variable the same way"
     (Cli.color_mode () = Ok Os.Never);
-  Unix.putenv "WINDTRAP_COLOR" "sometimes";
+  setenv "WINDTRAP_COLOR" (Some "sometimes");
   (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value
@@ -929,22 +962,22 @@ let () =
   (* WINDTRAP_MUTATE reads both ways: a boolean is the bare flag or its
      absence, anything else the prefixes — so a CI recipe's `1` and a
      developer's file name both keep working. *)
-  Unix.putenv "WINDTRAP_MUTATE" "1";
+  setenv "WINDTRAP_MUTATE" (Some "1");
   is_true ~msg:"WINDTRAP_MUTATE=1 is the bare flag"
     (mutation Cli.empty = Run.Loop []);
-  Unix.putenv "WINDTRAP_MUTATE" "off";
+  setenv "WINDTRAP_MUTATE" (Some "off");
   is_true ~msg:"a falsy WINDTRAP_MUTATE is no mutation run"
     (mutation Cli.empty = Run.No_mutation);
-  Unix.putenv "WINDTRAP_MUTATE" " lib/calc.ml ";
+  setenv "WINDTRAP_MUTATE" (Some " lib/calc.ml ");
   is_true ~msg:"any other WINDTRAP_MUTATE is the prefixes, trimmed"
     (mutation Cli.empty = Run.Loop [ "lib/calc.ml" ]);
-  Unix.putenv "WINDTRAP_MUTATE" "lib/a.ml,lib/b.ml";
+  setenv "WINDTRAP_MUTATE" (Some "lib/a.ml,lib/b.ml");
   is_true ~msg:"and splits on commas as the flag does"
     (mutation Cli.empty = Run.Loop [ "lib/a.ml"; "lib/b.ml" ]);
   is_true ~msg:"the flag shadows the mirror"
     (mutation (parsed [ "--mutate=lib/x.ml" ]) = Run.Loop [ "lib/x.ml" ]);
   clear_env ();
-  Unix.putenv "WINDTRAP_MUTATE_ARM" "lib/a.ml:9:12:add";
+  setenv "WINDTRAP_MUTATE_ARM" (Some "lib/a.ml:9:12:add");
   is_true ~msg:"WINDTRAP_MUTATE_ARM mirrors --arm"
     (mutation Cli.empty = Run.Armed "lib/a.ml:9:12:add");
   (* Both at once, whichever layer each arrived by: the loop arms each
@@ -959,13 +992,12 @@ let () =
   clear_env ();
   is_true ~msg:"--mutate and --arm on one command line are refused"
     (refused (parsed [ "--mutate"; "--arm"; "x" ]));
-  Unix.putenv "WINDTRAP_MUTATE" "1";
+  setenv "WINDTRAP_MUTATE" (Some "1");
   is_true ~msg:"WINDTRAP_MUTATE=1 with --arm is refused"
     (refused (parsed [ "--arm"; "x" ]));
   is_true ~msg:"the message names both flags"
     (contains "'--mutate' and '--arm' cannot be combined"
-       (Cli.error_message (Cli.Incompatible_flags ("--mutate", "--arm"))));
-  clear_env ()
+       (Cli.error_message (Cli.Incompatible_flags ("--mutate", "--arm"))))
 
 (* Resolution: the output level *)
 
@@ -980,11 +1012,11 @@ let () =
         `Compact
   in
   is_true ~msg:"default level is compact" (level Cli.empty = `Compact);
-  Unix.putenv "WINDTRAP_VERBOSE" "1";
+  setenv "WINDTRAP_VERBOSE" (Some "1");
   is_true ~msg:"WINDTRAP_VERBOSE reaches verbose (the dune runtest path)"
     (level Cli.empty = `Verbose);
   clear_env ();
-  Unix.putenv "WINDTRAP_VERBOSE" "maybe";
+  setenv "WINDTRAP_VERBOSE" (Some "maybe");
   (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value { source = "WINDTRAP_VERBOSE"; value = "maybe"; _ }) ->
@@ -993,17 +1025,16 @@ let () =
       is_true ~msg:"an unparseable boolean is refused, naming the variable"
         false);
   clear_env ();
-  Unix.putenv "WINDTRAP_VERBOSE" " 1 ";
+  setenv "WINDTRAP_VERBOSE" (Some " 1 ");
   is_true ~msg:"boolean spellings are trimmed, as WINDTRAP_STREAM's"
-    (level Cli.empty = `Verbose);
-  clear_env ()
+    (level Cli.empty = `Verbose)
 
 (* Resolution: the one call the facade makes *)
 
 let () =
   reg "settings resolves both layers in one call" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_SEED" "s1:0123456789abcdef";
+  setenv "WINDTRAP_SEED" (Some "s1:0123456789abcdef");
   let s = settings { Cli.empty with Cli.filter = Some "geo" } in
   is_true ~msg:"the flag reaches the config field" (s.Run.filter = Some "geo");
   is_true ~msg:"the mirror reaches it too" (s.Run.seed = 0x0123456789abcdefL);
@@ -1012,26 +1043,24 @@ let () =
   is_true ~msg:"the mutation field defaults to none"
     (s.Run.mutation = Run.No_mutation);
   is_true ~msg:"the level field defaults to compact" (not s.Run.verbose);
-  Unix.putenv "WINDTRAP_MUTATE" "1";
-  Unix.putenv "WINDTRAP_VERBOSE" "1";
+  setenv "WINDTRAP_MUTATE" (Some "1");
+  setenv "WINDTRAP_VERBOSE" (Some "1");
   let s = settings Cli.empty in
   is_true ~msg:"WINDTRAP_MUTATE reaches the mutation field"
     (s.Run.mutation = Run.Loop []);
-  is_true ~msg:"WINDTRAP_VERBOSE reaches the level field" s.Run.verbose;
-  clear_env ()
+  is_true ~msg:"WINDTRAP_VERBOSE reaches the level field" s.Run.verbose
 
 let () =
   reg "settings reports the configuration error" @@ fun () ->
   clear_env ();
-  Unix.putenv "WINDTRAP_SEED" "garbage";
-  (match Cli.settings Cli.empty with
+  setenv "WINDTRAP_SEED" (Some "garbage");
+  match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_SEED"; _ }) ->
       is_true ~msg:"a malformed seed mirror is an error naming the variable"
         true
   | Ok _ | Error _ ->
       is_true ~msg:"a malformed seed mirror is an error naming the variable"
-        false);
-  clear_env ()
+        false
 
 (* Resolution: --slow-threshold and WINDTRAP_SLOW_THRESHOLD *)
 
@@ -1041,14 +1070,14 @@ let () =
   let render = settings Cli.empty in
   is_true ~msg:"the built-in default is one second"
     (render.Run.slow_threshold = 1.0);
-  Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "3";
+  setenv "WINDTRAP_SLOW_THRESHOLD" (Some "3");
   let render = settings Cli.empty in
   is_true ~msg:"WINDTRAP_SLOW_THRESHOLD fills an absent flag"
     (render.Run.slow_threshold = 3.0);
   let render = settings { Cli.empty with Cli.slow_threshold = Some 0.5 } in
   is_true ~msg:"--slow-threshold beats the env mirror"
     (render.Run.slow_threshold = 0.5);
-  Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "-2";
+  setenv "WINDTRAP_SLOW_THRESHOLD" (Some "-2");
   (match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value { source = "WINDTRAP_SLOW_THRESHOLD"; value = "-2"; _ })
@@ -1061,8 +1090,8 @@ let () =
   let render = settings { Cli.empty with Cli.slow_threshold = Some 1.5 } in
   is_true ~msg:"a CLI threshold shadows the bad env value"
     (render.Run.slow_threshold = 1.5);
-  Unix.putenv "WINDTRAP_SLOW_THRESHOLD" "soon";
-  (match Cli.settings Cli.empty with
+  setenv "WINDTRAP_SLOW_THRESHOLD" (Some "soon");
+  match Cli.settings Cli.empty with
   | Error
       (Cli.Invalid_value
          { source = "WINDTRAP_SLOW_THRESHOLD"; value = "soon"; _ }) ->
@@ -1072,8 +1101,7 @@ let () =
   | Ok _ | Error _ ->
       is_true
         ~msg:"a malformed winning env threshold errors, as WINDTRAP_TIMEOUT's"
-        false);
-  clear_env ()
+        false
 
 (* Resolution: --shard and WINDTRAP_SHARD (amendment B14) *)
 
@@ -1082,13 +1110,13 @@ let () =
   clear_env ();
   let config = resolve Cli.empty in
   is_true ~msg:"no layer means no shard" (config.Run.shard = None);
-  Unix.putenv "WINDTRAP_SHARD" "2/3";
+  setenv "WINDTRAP_SHARD" (Some "2/3");
   let config = resolve Cli.empty in
   is_true ~msg:"WINDTRAP_SHARD fills an absent flag"
     (config.Run.shard = Some (2, 3));
   let config = resolve { Cli.empty with Cli.shard = Some (1, 2) } in
   is_true ~msg:"--shard beats WINDTRAP_SHARD" (config.Run.shard = Some (1, 2));
-  Unix.putenv "WINDTRAP_SHARD" "9/2";
+  setenv "WINDTRAP_SHARD" (Some "9/2");
   (match Cli.settings Cli.empty with
   | Error (Cli.Invalid_value { source = "WINDTRAP_SHARD"; value = "9/2"; _ }) ->
       is_true ~msg:"a malformed winning env shard errors with its source" true
@@ -1096,8 +1124,7 @@ let () =
       is_true ~msg:"a malformed winning env shard errors with its source" false);
   let config = resolve { Cli.empty with Cli.shard = Some (1, 2) } in
   is_true ~msg:"a CLI shard leaves a malformed env shard unread"
-    (config.Run.shard = Some (1, 2));
-  clear_env ()
+    (config.Run.shard = Some (1, 2))
 
 (* Suite *)
 

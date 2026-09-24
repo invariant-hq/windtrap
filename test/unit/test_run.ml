@@ -1640,6 +1640,7 @@ let () =
 (* The CI focus guard *)
 
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
   let suite = [ Test_tree.focus (Test_tree.test "starred" (fun () -> ())) ] in
@@ -1658,10 +1659,10 @@ let () =
      its only setter, through [Run.for_subset]. *)
   let config = { config with Run.allow_focus = true } in
   expect_run "a subset run lifts the guard" ~config suite @@ fun outcome ->
-  check "focused test ran" (ran_names outcome = [ "starred" ]);
-  clear_env ()
+  check "focused test ran" (ran_names outcome = [ "starred" ])
 
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   (* CI falsy spellings do not arm the guard (Env: set-and-not-falsy). *)
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
@@ -1674,8 +1675,7 @@ let () =
         ~config suite
       @@ fun outcome ->
       check "focused test ran" (ran_names outcome = [ "starred" ]))
-    [ ""; "false"; "0" ];
-  clear_env ()
+    [ ""; "false"; "0" ]
 
 (* Exit codes *)
 
@@ -2110,7 +2110,15 @@ let bound_var = "WINDTRAP_TEST_SCOPED_BOUND"
 let twice_var = "WINDTRAP_TEST_SCOPED_TWICE"
 let drop_var = "WINDTRAP_TEST_SCOPED_DROP"
 
+(* The blocks below bind the four variables outside any run; this unbinds
+   them when a block ends, however it ends. *)
+let unbind_scoped () =
+  List.iter
+    (fun var -> Os.setenv var None)
+    [ unset_var; bound_var; twice_var; drop_var ]
+
 let () =
+  Fun.protect ~finally:unbind_scoped @@ fun () ->
   with_temp_root @@ fun root ->
   let config = base_config ~log_dir:root () in
   (* Four shapes of prior state: never bound, bound, bound and rebound by
@@ -2178,6 +2186,7 @@ let () =
   (* Restoration is not the pass path's privilege: it happens on failure,
      on skip, and on a timeout that cut the body short. *)
   if not Sys.win32 then (
+    Fun.protect ~finally:unbind_scoped @@ fun () ->
     with_temp_root @@ fun root ->
     let config = base_config ~log_dir:root () in
     Os.setenv bound_var (Some "before");
@@ -2206,8 +2215,7 @@ let () =
     check "the timing-out test is a failure"
       (failed_paths outcome = [ "fails"; "times out" ]);
     check "the binding is restored after failure, skip, and timeout alike"
-      (!after = [ Some "before"; Some "before"; Some "before" ]);
-    Os.setenv bound_var None)
+      (!after = [ Some "before"; Some "before"; Some "before" ]))
 
 (* A directory that no longer exists is exactly the state a missing
    restoration leaves behind, so reading the working directory must not
@@ -2896,6 +2904,7 @@ let () =
 (* The baseline CI guard *)
 
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   with_temp_root @@ fun root ->
   let config =
     { (base_config ~log_dir:root ()) with Run.baseline = Baseline.Update }
@@ -2916,9 +2925,7 @@ let () =
     ~actual:message;
   let corrected = { config with Run.baseline = Baseline.Corrected } in
   expect_run "--corrected proceeds under CI" ~config:corrected suite
-  @@ fun outcome ->
-  check "corrected run is green" (outcome.Run.exit_code = 0);
-  clear_env ()
+  @@ fun outcome -> check "corrected run is green" (outcome.Run.exit_code = 0)
 
 (* Corrections
 
@@ -2932,6 +2939,7 @@ let read_file path = In_channel.with_open_bin path In_channel.input_all
 let baseline root = Filename.concat root "src/help.expected"
 
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   clear_env ();
   with_temp_root @@ fun root ->
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
@@ -2979,13 +2987,13 @@ let () =
     = [ { Baseline.path = baseline root; literals = 0 } ]);
   expect_run "the accepted baseline matches from then on" ~config:base suite
   @@ fun outcome ->
-  check "green" (outcome.Run.exit_code = 0 && failed_paths outcome = []);
-  clear_env ()
+  check "green" (outcome.Run.exit_code = 0 && failed_paths outcome = [])
 
 (* Gating: a correction never blesses output produced beside another
    failure, an unresolvable path is not a correction, and a key checked
    with two contents in one run is a real failure. *)
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   clear_env ();
   with_temp_root @@ fun root ->
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
@@ -3033,8 +3041,7 @@ let () =
   check "the first is a correction, the second a failure"
     (outcome.Run.exit_code = 1 && failed_paths outcome = [ "a"; "b" ]);
   check "the first content is what is written"
-    (read_file (Filename.concat root "src/d.expected.corrected") = "one\n");
-  clear_env ()
+    (read_file (Filename.concat root "src/d.expected.corrected") = "one\n")
 
 (* A kept correction ends a test's attempts whatever its retries: the next
    attempt's check would agree with the recorded text, and a deterministic
@@ -3043,6 +3050,7 @@ let () =
    assertion) the declared retries run. The literal's source is a real
    file under the root, so the corrections are written too. *)
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   clear_env ();
   with_temp_root @@ fun root ->
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
@@ -3137,25 +3145,23 @@ let () =
   );
   (* The attempt that would fail an assertion beside a correction already
      kept never runs: the test ends as it does without retries. *)
-  ( expect_run "corrected, a second attempt would fail an assertion"
-      ~config:corrected
-      (suite ~retries:1 ~also_fails:(fun n -> n = 2))
+  expect_run "corrected, a second attempt would fail an assertion"
+    ~config:corrected
+    (suite ~retries:1 ~also_fails:(fun n -> n = 2))
   @@ fun outcome ->
-    check_int "the attempt after a kept correction never runs" ~expected:1
-      ~actual:!bodies;
-    check
-      "so no correction is written beside a failure outside the expectations"
-      (attempts outcome = 1
-      && only_the_mismatch outcome && outcome.Run.exit_code = 0
-      && writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ])
-  );
-  clear_env ()
+  check_int "the attempt after a kept correction never runs" ~expected:1
+    ~actual:!bodies;
+  check "so no correction is written beside a failure outside the expectations"
+    (attempts outcome = 1
+    && only_the_mismatch outcome && outcome.Run.exit_code = 0
+    && writes outcome = [ { Baseline.path = corrected_file; literals = 1 } ])
 
 (* An expected failure is a failure: an xfail test's stale baseline is the
    mismatch the annotation expects, so its attempt checks read-only in
    every mode — reported, excused, never corrected, never accepted — and
    a test that skipped after a check records nothing either. *)
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   clear_env ();
   with_temp_root @@ fun root ->
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
@@ -3198,12 +3204,12 @@ let () =
          (fun (r : Run.result) ->
            r.Run.path = [ "undecided" ]
            && match r.Run.outcome with Failure.Skip _ -> true | _ -> false)
-         (Run.results outcome.Run.run));
-  clear_env ()
+         (Run.results outcome.Run.run))
 
 (* A verdict row is not a test: a release failure beside a corrected test
    still fails the run, and the test's own correction is still written. *)
 let () =
+  Fun.protect ~finally:clear_env @@ fun () ->
   clear_env ();
   with_temp_root @@ fun root ->
   Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
@@ -3228,8 +3234,7 @@ let () =
   check "the release failure still fails the run"
     (outcome.Run.exit_code = 1 && List.length (release_rows outcome) = 1);
   check "the correction is still written"
-    (Sys.file_exists (baseline root ^ ".corrected"));
-  clear_env ()
+    (Sys.file_exists (baseline root ^ ".corrected"))
 
 (* The last-failed store *)
 

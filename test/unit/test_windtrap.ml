@@ -733,9 +733,13 @@ let () =
 
 (* Baselines through the facade *)
 
+(* [Run.execute] resolves the project root before any test runs, so no
+   test can bind it through [setenv]: the scenario binds it around its
+   runs, and puts back what the variable held, bound or not. *)
 let with_project_root root f =
-  Unix.putenv "WINDTRAP_PROJECT_ROOT" root;
-  Fun.protect ~finally:(fun () -> Unix.putenv "WINDTRAP_PROJECT_ROOT" "") f
+  let prior = Sys.getenv_opt "WINDTRAP_PROJECT_ROOT" in
+  Os.setenv "WINDTRAP_PROJECT_ROOT" (Some root);
+  Fun.protect ~finally:(fun () -> Os.setenv "WINDTRAP_PROJECT_ROOT" prior) f
 
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 

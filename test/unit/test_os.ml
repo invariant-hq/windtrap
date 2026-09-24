@@ -43,12 +43,13 @@ end
 (* Environment variables *)
 
 module Env_suite = struct
-  (* The readers treat the empty string as unset, which is what makes these
-     tests deterministic regardless of the ambient environment (e.g.
-     INSIDE_DUNE under dune runtest) — so they clear with putenv rather than
-     through [Os.setenv], whose real unbinding is proven on its own below. *)
-  let set = Unix.putenv
-  let clear name = Unix.putenv name ""
+  (* Every write goes through the runner's [setenv], which restores the
+     variable when the attempt ends, so no test hands its bindings to the
+     next. The readers treat the empty string as unset, and the tests clear
+     a variable by binding it to [""]: that reading is what makes them
+     deterministic whatever the ambient environment holds (INSIDE_DUNE under
+     dune runtest), and [Os.setenv]'s real unbinding is proven on its own
+     below. *)
 
   (* The reader is generic over the variable name — a mirror is named in
      [Cli]'s flag table, not here — so each test names a real variable and
@@ -60,6 +61,9 @@ module Env_suite = struct
     [
       test "set binds, and unbinds for real" (fun () ->
           let var = "WINDTRAP_TEST_ENV_SET" in
+          (* The runner restores the variable's absence, whatever happens
+             to [Os.setenv] below. *)
+          setenv var None;
           Os.setenv var (Some "bound");
           equal ~msg:"the binding reaches the stdlib, not just Env's readers"
             (option string) (Some "bound") (Sys.getenv_opt var);
@@ -82,19 +86,19 @@ module Env_suite = struct
           raises_match ~msg:"the empty name" refused (fun () ->
               Os.setenv "" None));
       test "empty value reads as unset" (fun () ->
-          clear "WINDTRAP_FILTER";
+          setenv "WINDTRAP_FILTER" (Some "");
           equal (option string) None (string_of "WINDTRAP_FILTER");
-          set "WINDTRAP_FILTER" "users";
+          setenv "WINDTRAP_FILTER" (Some "users");
           equal ~msg:"set value is returned" (option string) (Some "users")
             (string_of "WINDTRAP_FILTER");
-          clear "WINDTRAP_FILTER";
-          clear "WINDTRAP_EXCLUDE";
+          setenv "WINDTRAP_FILTER" (Some "");
+          setenv "WINDTRAP_EXCLUDE" (Some "");
           equal ~msg:"exclude unset" (option string) None
             (string_of "WINDTRAP_EXCLUDE");
-          set "WINDTRAP_EXCLUDE" "slow suite";
+          setenv "WINDTRAP_EXCLUDE" (Some "slow suite");
           equal ~msg:"exclude set" (option string) (Some "slow suite")
             (string_of "WINDTRAP_EXCLUDE");
-          clear "WINDTRAP_EXCLUDE");
+          setenv "WINDTRAP_EXCLUDE" (Some ""));
       cases ~name:Fun.id "truthy bool spellings"
         [ "1"; "true"; "TRUE"; "yes"; "Y"; "on" ] (fun v ->
           equal (option bool) (Some true) (Os.bool_of_string v));
@@ -117,30 +121,30 @@ module Env_suite = struct
           (* The CLI layer owns validation (prop/F-4): a malformed winning
              token must reach it verbatim so it can error naming the
              variable, never vanish into a silent default. *)
-          set "WINDTRAP_PROP_COUNT" "500";
+          setenv "WINDTRAP_PROP_COUNT" (Some "500");
           equal ~msg:"prop_count raw" (option string) (Some "500")
             (string_of "WINDTRAP_PROP_COUNT");
-          set "WINDTRAP_PROP_COUNT" "1O0";
+          setenv "WINDTRAP_PROP_COUNT" (Some "1O0");
           equal ~msg:"malformed prop_count is passed through" (option string)
             (Some "1O0")
             (string_of "WINDTRAP_PROP_COUNT");
-          clear "WINDTRAP_PROP_COUNT";
+          setenv "WINDTRAP_PROP_COUNT" (Some "");
           equal ~msg:"prop_count unset" (option string) None
             (string_of "WINDTRAP_PROP_COUNT");
-          set "WINDTRAP_TIMEOUT" "2.5";
+          setenv "WINDTRAP_TIMEOUT" (Some "2.5");
           equal ~msg:"timeout raw" (option string) (Some "2.5")
             (string_of "WINDTRAP_TIMEOUT");
-          set "WINDTRAP_TIMEOUT" "soon";
+          setenv "WINDTRAP_TIMEOUT" (Some "soon");
           equal ~msg:"malformed timeout is passed through" (option string)
             (Some "soon")
             (string_of "WINDTRAP_TIMEOUT");
-          clear "WINDTRAP_TIMEOUT";
+          setenv "WINDTRAP_TIMEOUT" (Some "");
           equal ~msg:"timeout unset" (option string) None
             (string_of "WINDTRAP_TIMEOUT");
-          set "WINDTRAP_SEED" "s1:7be1d2c904aa31f5";
+          setenv "WINDTRAP_SEED" (Some "s1:7be1d2c904aa31f5");
           equal ~msg:"seed raw" (option string) (Some "s1:7be1d2c904aa31f5")
             (string_of "WINDTRAP_SEED");
-          clear "WINDTRAP_SEED";
+          setenv "WINDTRAP_SEED" (Some "");
           equal ~msg:"seed unset" (option string) None
             (string_of "WINDTRAP_SEED"));
       test "comma lists split, trim, and drop empties" (fun () ->
@@ -151,35 +155,31 @@ module Env_suite = struct
           equal ~msg:"separators alone are no labels" (list string) []
             (Os.split_comma " , "));
       test "CI detection: CI must be set and not falsy" (fun () ->
-          clear "CI";
-          clear "GITHUB_ACTIONS";
+          setenv "CI" (Some "");
+          setenv "GITHUB_ACTIONS" (Some "");
           is_false ~msg:"no CI" (Os.in_ci ());
           is_false ~msg:"no GitHub Actions" (Os.in_github_actions ());
-          set "CI" "true";
+          setenv "CI" (Some "true");
           is_true ~msg:"in_ci true" (Os.in_ci ());
           is_false ~msg:"CI alone is not GitHub Actions"
             (Os.in_github_actions ());
-          set "GITHUB_ACTIONS" "true";
+          setenv "GITHUB_ACTIONS" (Some "true");
           is_true ~msg:"CI plus GITHUB_ACTIONS" (Os.in_github_actions ());
-          set "CI" "false";
+          setenv "CI" (Some "false");
           is_false ~msg:"CI=false does not count as CI" (Os.in_ci ());
           is_false ~msg:"GITHUB_ACTIONS without CI is not GitHub Actions"
             (Os.in_github_actions ());
-          set "CI" "woodpecker";
+          setenv "CI" (Some "woodpecker");
           is_true ~msg:"non-boolean CI value counts as set" (Os.in_ci ());
           is_true ~msg:"a non-boolean CI still resolves GitHub Actions"
-            (Os.in_github_actions ());
-          clear "CI";
-          clear "GITHUB_ACTIONS");
+            (Os.in_github_actions ()));
       test "INSIDE_DUNE" (fun () ->
-          let saved = try Sys.getenv "INSIDE_DUNE" with Not_found -> "" in
-          clear "INSIDE_DUNE";
+          setenv "INSIDE_DUNE" (Some "");
           is_false ~msg:"inside_dune false when cleared" (Os.inside_dune ());
-          set "INSIDE_DUNE" "1";
+          setenv "INSIDE_DUNE" (Some "1");
           is_true ~msg:"inside_dune true when set" (Os.inside_dune ());
-          set "INSIDE_DUNE" "false";
-          is_false ~msg:"INSIDE_DUNE=false does not count" (Os.inside_dune ());
-          set "INSIDE_DUNE" saved);
+          setenv "INSIDE_DUNE" (Some "false");
+          is_false ~msg:"INSIDE_DUNE=false does not count" (Os.inside_dune ()));
       test "color mode vocabulary and the resolution rule" (fun () ->
           (* The vocabulary is [--color]'s; the flag's parser reads the
              variable through it, so an unknown word is refused there, not
@@ -221,18 +221,18 @@ module Env_suite = struct
                ~term_dumb:true);
           (* NO_COLOR, the de-facto standard: any non-empty value, whatever
              it says, and Auto only — an explicit request still wins. *)
-          set "NO_COLOR" "1";
+          setenv "NO_COLOR" (Some "1");
           is_false ~msg:"NO_COLOR silences auto on a tty"
             (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
                ~term_dumb:false);
-          set "NO_COLOR" "0";
+          setenv "NO_COLOR" (Some "0");
           is_false ~msg:"NO_COLOR counts by presence, not by value"
             (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
                ~term_dumb:false);
           is_true ~msg:"always beats NO_COLOR"
             (Os.resolve_color Os.Always ~tty:false ~inside_dune:false
                ~term_dumb:false);
-          clear "NO_COLOR";
+          setenv "NO_COLOR" (Some "");
           is_true ~msg:"an empty NO_COLOR is unset"
             (Os.resolve_color Os.Auto ~tty:true ~inside_dune:false
                ~term_dumb:false);
@@ -243,14 +243,12 @@ module Env_suite = struct
              runs that pass --color and compare bytes. *)
           ());
       test "TERM=dumb detection" (fun () ->
-          let saved = try Sys.getenv "TERM" with Not_found -> "" in
-          set "TERM" "dumb";
+          setenv "TERM" (Some "dumb");
           is_true ~msg:"TERM=dumb detected" (Os.term_dumb ());
-          set "TERM" "xterm-256color";
+          setenv "TERM" (Some "xterm-256color");
           is_false ~msg:"a capable TERM is not dumb" (Os.term_dumb ());
-          set "TERM" "";
-          is_false ~msg:"unset TERM is not dumb" (Os.term_dumb ());
-          set "TERM" saved);
+          setenv "TERM" (Some "");
+          is_false ~msg:"unset TERM is not dumb" (Os.term_dumb ()));
     ]
 end
 
