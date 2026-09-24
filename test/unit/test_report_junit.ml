@@ -322,7 +322,9 @@ let test_ansi_impossible () =
   check_well_formed "ANSI-stripped document is well-formed" doc
 
 let test_xml_range () =
-  let hostile = "a\x01b\x0cc\xffd" in
+  (* A control byte, a form feed, a malformed byte, and U+FFFE: valid
+     UTF-8, yet no XML character. *)
+  let hostile = "a\x01b\x0cc\xffd\u{FFFE}e" in
   let doc =
     Report_junit.render ~suite:"s"
       ~results:
@@ -336,7 +338,7 @@ let test_xml_range () =
   not_contains ~msg:"form feed removed" ~sub:"\x0c" doc;
   not_contains ~msg:"malformed UTF-8 byte removed" ~sub:"\xff" doc;
   contains ~msg:"invalid characters become U+FFFD"
-    ~sub:"a\u{FFFD}b\u{FFFD}c\u{FFFD}d" doc;
+    ~sub:"a\u{FFFD}b\u{FFFD}c\u{FFFD}d\u{FFFD}e" doc;
   check_well_formed "sanitized document is well-formed" doc
 
 let test_escaping () =
@@ -434,6 +436,16 @@ let test_checker_sanity () =
   is_true ~msg:"checker rejects unknown entities" (rejected "<a>&nope;</a>");
   is_true ~msg:"checker rejects raw ampersands" (rejected "<a>t & u</a>");
   is_true ~msg:"checker rejects control bytes" (rejected "<a>\x01</a>");
+  is_true ~msg:"checker accepts multi-byte characters"
+    (ok "<a x='\u{e9}'>\u{20ac}\u{1d11e}</a>");
+  is_true ~msg:"checker rejects a repeated attribute"
+    (rejected "<a x='1' x='2'/>");
+  is_true ~msg:"checker rejects invalid UTF-8" (rejected "<a>\xff</a>");
+  is_true ~msg:"checker rejects a non-character" (rejected "<a>\u{fffe}</a>");
+  is_true ~msg:"checker rejects a control byte in an attribute"
+    (rejected "<a x='\x01'/>");
+  is_true ~msg:"checker rejects a reference to a non-character"
+    (rejected "<a>&#0;</a>");
   is_true ~msg:"checker rejects trailing content" (rejected "<a/><b/>")
 
 let tests =

@@ -4,14 +4,24 @@
   ---------------------------------------------------------------------------*)
 
 (* A minimal XML 1.0 well-formedness checker for the JUnit renderer tests:
-   optional declaration, one root element, balanced tags, quoted attributes,
-   known entity references, no raw '<'/'&' in character data, no control
-   bytes. A test asset, deliberately not a dependency; not a general parser
-   (no DOCTYPE, PIs, or CDATA — the renderer emits none). *)
+   optional declaration, one root element, balanced tags, quoted attributes
+   named once per element, known entity references, no raw '<'/'&' in
+   character data, and every character, written or referenced, valid UTF-8
+   inside the [Char] production (tab, LF, CR, U+0020-U+D7FF,
+   U+E000-U+FFFD, U+10000-U+10FFFF). A test asset, deliberately not a
+   dependency; not a general parser (no DOCTYPE, PIs, or CDATA — the
+   renderer emits none). *)
 
 exception Bad of string
 
 let bad fmt = Printf.ksprintf (fun m -> raise (Bad m)) fmt
+
+(* XML 1.0's [Char] production. *)
+let is_xml_char u =
+  u = 0x9 || u = 0xA || u = 0xD
+  || (u >= 0x20 && u <= 0xD7FF)
+  || (u >= 0xE000 && u <= 0xFFFD)
+  || (u >= 0x10000 && u <= 0x10FFFF)
 
 let check (s : string) : (unit, string) result =
   let len = String.length s in
@@ -32,6 +42,16 @@ let check (s : string) : (unit, string) result =
     else bad "expected %S at byte %d" p !pos
   in
   let is_ws c = c = ' ' || c = '\t' || c = '\n' || c = '\r' in
+  (* The character at [pos]: valid UTF-8 and an XML [Char], or [Bad]. *)
+  let character () =
+    let d = String.get_utf_8_uchar s !pos in
+    if not (Uchar.utf_decode_is_valid d) then
+      bad "invalid UTF-8 at byte %d" !pos;
+    let u = Uchar.to_int (Uchar.utf_decode_uchar d) in
+    if not (is_xml_char u) then
+      bad "U+%04X is no XML character at byte %d" u !pos;
+    pos := !pos + Uchar.utf_decode_length d
+  in
   let skip_ws () =
     while match peek () with Some c -> is_ws c | None -> false do
       incr pos
@@ -65,7 +85,7 @@ let check (s : string) : (unit, string) result =
     let body = String.sub s !pos (semi - !pos) in
     (match body with
     | "lt" | "gt" | "amp" | "quot" | "apos" -> ()
-    | _ when String.length body > 1 && body.[0] = '#' ->
+    | _ when String.length body > 1 && body.[0] = '#' -> (
         let digits = String.sub body 1 (String.length body - 1) in
         let num =
           if digits.[0] = 'x' then
@@ -73,32 +93,40 @@ let check (s : string) : (unit, string) result =
               ("0x" ^ String.sub digits 1 (String.length digits - 1))
           else int_of_string_opt digits
         in
-        if num = None then
-          bad "bad character reference &%s; at byte %d" body start
+        match num with
+        | Some u when is_xml_char u -> ()
+        | Some _ | None ->
+            bad "bad character reference &%s; at byte %d" body start)
     | _ -> bad "unknown entity &%s; at byte %d" body start);
     pos := semi + 1
   in
   let attributes () =
     let stop = ref false in
+    let seen = ref [] in
     while not !stop do
       skip_ws ();
       match peek () with
       | Some ('/' | '>') | None -> stop := true
       | Some _ ->
-          ignore (name ());
+          let start = !pos in
+          let attribute = name () in
+          if List.mem attribute !seen then
+            bad "attribute %s repeated at byte %d" attribute start;
+          seen := attribute :: !seen;
           expect "=";
           let quote = next () in
           if quote <> '"' && quote <> '\'' then
             bad "unquoted attribute at byte %d" !pos;
           let finished = ref false in
           while not !finished do
-            match next () with
-            | c when c = quote -> finished := true
-            | '<' -> bad "raw '<' in attribute at byte %d" (!pos - 1)
-            | '&' ->
-                decr pos;
-                entity ()
-            | _ -> ()
+            match peek () with
+            | None -> bad "unexpected end of document"
+            | Some c when c = quote ->
+                incr pos;
+                finished := true
+            | Some '<' -> bad "raw '<' in attribute at byte %d" !pos
+            | Some '&' -> entity ()
+            | Some _ -> character ()
           done
     done
   in
@@ -125,9 +153,7 @@ let check (s : string) : (unit, string) result =
         | None -> stop := true
         | Some '<' -> element ()
         | Some '&' -> entity ()
-        | Some c when Char.code c < 0x20 && not (is_ws c) ->
-            bad "control byte 0x%02x in text at byte %d" (Char.code c) !pos
-        | Some _ -> incr pos
+        | Some _ -> character ()
     done
   in
   match
