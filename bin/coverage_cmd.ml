@@ -177,30 +177,38 @@ let remedy =
   "re-run the suite instrumented (forcing the runs your build tool cached), \
    then merge again; delete the files whose executable no longer exists"
 
-(* Loads [files], excludes the ones the freshness pass flagged, and
-   merges the survivors. Warnings and failure details go to stderr;
-   [Error code] is the exit code (data problems are 1). *)
+(* Judges [files] from their headers, excludes the ones the freshness
+   pass flagged, loads the rest and merges them. The judgement comes
+   before the load, so a corrupt leftover of another build is excluded
+   like any other, while a dump of this build must load. Warnings and
+   failure details go to stderr; [Error code] is the exit code (data
+   problems are 1). *)
 let load_merged files =
-  let loaded =
+  let judged =
     List.fold_left
       (fun acc path ->
-        Result.bind acc (fun entries ->
-            Result.map
-              (fun (t, exe) ->
-                (path, t, Data_files.freshness ~path exe) :: entries)
-              (Windtrap_runtime.Coverage.load path)))
-      (Ok []) files
+        Result.bind acc (fun (kept, flagged) ->
+            Result.bind
+              (Result.map_error
+                 (fun e -> Windtrap_runtime.Coverage.Data e)
+                 (Data_files.identity Windtrap_runtime.Coverage.format path))
+              (fun identity ->
+                match Data_files.freshness ~path identity with
+                | Data_files.Fresh ->
+                    Result.map
+                      (fun (t, _) -> (t :: kept, flagged))
+                      (Windtrap_runtime.Coverage.load path)
+                | (Data_files.Orphan _ | Data_files.Stale _) as freshness ->
+                    Ok (kept, (path, freshness) :: flagged))))
+      (Ok ([], []))
+      files
   in
-  match loaded with
+  match judged with
   | Error error ->
       Os.say (Format.asprintf "%a" Windtrap_runtime.Coverage.pp_error error);
       Error 1
-  | Ok entries -> (
-      let entries = List.rev entries in
-      let kept, flagged =
-        List.partition (fun (_, _, v) -> v = Data_files.Fresh) entries
-      in
-      let flagged = List.map (fun (path, _, v) -> (path, v)) flagged in
+  | Ok (kept, flagged) -> (
+      let kept = List.rev kept and flagged = List.rev flagged in
       List.iter Os.say (Data_files.warnings flagged);
       if kept = [] then
         Os.say
@@ -214,7 +222,7 @@ let load_merged files =
       else
         match
           List.fold_left
-            (fun acc (_, t, _) ->
+            (fun acc t ->
               Result.bind acc (fun acc -> Windtrap_runtime.Coverage.merge acc t))
             (Ok Windtrap_runtime.Coverage.empty) kept
         with

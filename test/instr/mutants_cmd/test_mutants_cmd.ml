@@ -1049,20 +1049,52 @@ let dispatch =
 
 let edge_tests =
   [
-    test "every file is loaded before any is excluded" (fun () ->
-        (* A corrupt file that records a gone executable ends the command
-           on its corruption: it is never excluded as an orphan first. *)
-        let root, _ = stale_root "load-first" in
-        write_file
-          (Filename.concat root "_build/_mutants/gone.mutants")
-          ("windtrap-mutants-v3\nexe "
-          ^ Digest.to_hex (Digest.string "gone")
-          ^ " 21 default/test/gone.exe\n2\n");
+    test "a file is judged from its header before it is loaded" (fun () ->
+        (* A leftover whose header is intact and whose records are
+           corrupt: two claimed records, none written. *)
+        let root, identity = stale_root "judge-first" in
+        let leftover ~exe ~digest =
+          write_file
+            (Filename.concat root "_build/_mutants/leftover.mutants")
+            (Printf.sprintf "windtrap-mutants-v3\nexe %s %d %s\n2\n" digest
+               (String.length exe) exe)
+        in
+        let live =
+          "mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 \
+           executable"
+        in
+        (* Of a gone executable: excluded as an orphan, its records never
+           read, and the live file's report stands. *)
+        leftover ~exe:"default/test/gone.exe"
+          ~digest:(Digest.to_hex (Digest.string "gone"));
         let code, out, err = mutate ~cwd:root [] in
-        equal ~msg:"exit code" int 1 code;
-        equal ~msg:"no report" text "" out;
-        contains ~msg:"the corrupt file is named" ~sub:"gone.mutants: corrupt"
+        equal ~msg:"the live survivor exits 1" int 1 code;
+        equal ~msg:"the live file is reported" text live (summary out);
+        contains ~msg:"the corrupt orphan is excluded with its reason"
+          ~sub:
+            "leftover.mutants: its executable (default/test/gone.exe) no \
+             longer exists; excluding it"
           err;
+        not_contains ~msg:"its records are never read" ~sub:"corrupt" err;
+        (* Of an earlier build of the executable on disk: excluded as
+           stale. *)
+        leftover ~exe:identity.V.exe
+          ~digest:(Digest.to_hex (Digest.string "an earlier build"));
+        let code, out, err = mutate ~cwd:root [] in
+        equal ~msg:"the live survivor exits 1 again" int 1 code;
+        equal ~msg:"the live file is reported again" text live (summary out);
+        contains ~msg:"the corrupt stale file is excluded with its reason"
+          ~sub:"leftover.mutants: not written by the executable now at" err;
+        not_contains ~msg:"its records are never read either" ~sub:"corrupt" err;
+        (* Of the executable on disk: a file of this build must load, since
+           leaving it out could drop a kill, so its corruption ends the
+           command. *)
+        leftover ~exe:identity.V.exe ~digest:identity.V.digest;
+        let code, out, err = mutate ~cwd:root [] in
+        equal ~msg:"a corrupt file of this build exits 1" int 1 code;
+        equal ~msg:"with no report" text "" out;
+        contains ~msg:"the corrupt file is named"
+          ~sub:"leftover.mutants: corrupt" err;
         not_contains ~msg:"and never excluded" ~sub:"excluding it" err);
     test "a survivor whose source is not found keeps its identifier and rewrite"
       (fun () ->

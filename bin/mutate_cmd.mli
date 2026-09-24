@@ -26,13 +26,16 @@
     out can hold the one kill of a mutant, which would then be reported as a
     survivor.
 
-    Every file is loaded before any is excluded, and the first one that cannot
-    be read or parsed ends the command with its
-    {!Windtrap_runtime.Verdicts.pp_error}, even when its executable is gone. A
-    file whose {!Data_files.val-freshness} is not [Fresh] is then excluded from
-    the merge, because a verdict of another build can claim a kill that the code
-    no longer earns. No flag keeps such a file. On standard error the command
-    says the {!Data_files.warnings} of the excluded files, then
+    A file is judged from the identity on its header ({!Data_files.identity})
+    before it is loaded: a file of another build is excluded whatever its
+    records hold, and a file of the current build must load. A file of another
+    build is one whose {!Data_files.val-freshness} is not [Fresh]. It is
+    excluded from the merge because a verdict of another build can claim a kill
+    that the code no longer earns, and no flag keeps it. The first file that is
+    not excluded and cannot be read or parsed, its header included, ends the
+    command with its {!Windtrap_runtime.Verdicts.pp_error}, because leaving it
+    out could turn a killed mutant into a survivor. On standard error the
+    command says the {!Data_files.warnings} of the excluded files, then
     {!Data_files.all_excluded} when no file is left, and then once, in a
     sentence of its own, how to refresh them.
 
@@ -95,7 +98,7 @@ val run : string list -> int
     {!Windtrap.Private.Os.resolve_color}.
 
     [run] parses the arguments, reads [WINDTRAP_COLOR], finds the
-    {{!section-files}files}, loads and judges them, and prints the report of the
+    {{!section-files}files}, judges and loads them, and prints the report of the
     {{!section-merge}merge} on standard output, in that order. A step that fails
     returns its code, so a failure prints no report. Every other line goes to
     standard error, through {!Windtrap.Private.Os.say} but for the usage line
@@ -108,8 +111,8 @@ val run : string list -> int
       executable that reached it. The command has no threshold, so one survivor
       fails it, and a mutant that is equivalent to the original is dismissed at
       its site with [[@mutate off]]. It is also [1], with no report, when a
-      [PATH] cannot be used, when no verdict file is found, when a file cannot
-      be read, is corrupt or has another format version, or when every file is
-      excluded.
+      [PATH] cannot be used, when no verdict file is found, when a file that is
+      not excluded cannot be read, is corrupt or has another format version, or
+      when every file is excluded.
     - [2] for an unknown option, which is the one usage error, and for a
       [WINDTRAP_COLOR] that the [--color] flag of a runner would refuse. *)

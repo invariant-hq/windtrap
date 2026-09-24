@@ -1277,20 +1277,50 @@ let edges () =
 
 let edge_tests =
   [
-    test "every dump is loaded before any is excluded" (fun () ->
-        (* A corrupt dump that records a gone executable ends the command
-           on its corruption: it is never excluded as an orphan first. *)
-        let root = stale_root "load-first" in
-        write_file
-          (Filename.concat root "_build/_coverage/gone.coverage")
-          ("windtrap-coverage-v3\nexe "
-          ^ Digest.to_hex (Digest.string "gone")
-          ^ " 21 default/test/gone.exe\n2\n");
+    test "a dump is judged from its header before it is loaded" (fun () ->
+        (* A leftover whose header is intact and whose records are
+           corrupt: two claimed records, none written. *)
+        let root = stale_root "judge-first" in
+        let leftover ~exe ~digest =
+          write_file
+            (Filename.concat root "_build/_coverage/leftover.coverage")
+            (Printf.sprintf "windtrap-coverage-v3\nexe %s %d %s\n2\n" digest
+               (String.length exe) exe)
+        in
+        (* Of a gone executable: excluded as an orphan, its records never
+           read, and the live dump's report stands. *)
+        leftover ~exe:"default/test/gone.exe"
+          ~digest:(Digest.to_hex (Digest.string "gone"));
         let code, out, err = coverage_cmd ~cwd:root [] in
-        equal ~msg:"exit code" int 1 code;
-        equal ~msg:"no report" text "" out;
-        contains ~msg:"the corrupt dump is named" ~sub:"gone.coverage: corrupt"
+        equal ~msg:"the live dump exits 0" int 0 code;
+        contains ~msg:"the live dump is reported"
+          ~sub:"coverage: 100.0% (3/3 points)" out;
+        contains ~msg:"the corrupt orphan is excluded with its reason"
+          ~sub:
+            "leftover.coverage: its executable (default/test/gone.exe) no \
+             longer exists; excluding it"
           err;
+        not_contains ~msg:"its records are never read" ~sub:"corrupt" err;
+        (* Of an earlier build of the executable on disk: excluded as
+           stale. *)
+        leftover ~exe:"default/test/a.exe"
+          ~digest:(Digest.to_hex (Digest.string "an earlier build"));
+        let code, out, err = coverage_cmd ~cwd:root [] in
+        equal ~msg:"the live dump exits 0 again" int 0 code;
+        contains ~msg:"the live dump is reported again"
+          ~sub:"coverage: 100.0% (3/3 points)" out;
+        contains ~msg:"the corrupt stale dump is excluded with its reason"
+          ~sub:"leftover.coverage: not written by the executable now at" err;
+        not_contains ~msg:"its records are never read either" ~sub:"corrupt" err;
+        (* Of the executable on disk: a dump of this build must load, so its
+           corruption ends the command. *)
+        leftover ~exe:"default/test/a.exe"
+          ~digest:(Digest.to_hex (Digest.string "the instrumented build"));
+        let code, out, err = coverage_cmd ~cwd:root [] in
+        equal ~msg:"a corrupt dump of this build exits 1" int 1 code;
+        equal ~msg:"with no report" text "" out;
+        contains ~msg:"the corrupt dump is named"
+          ~sub:"leftover.coverage: corrupt" err;
         not_contains ~msg:"and never excluded" ~sub:"excluding it" err);
     test "the --expect walk skips _build and _opam" (fun () ->
         let root = proj () in

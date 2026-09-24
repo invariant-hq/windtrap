@@ -81,14 +81,18 @@ let discover paths = Data_files.discover V.format paths
 
 (* The staleness pass
 
-   Data_files.freshness's, judged from the identity each file records: a
-   verdict file whose executable was deleted or renamed (an orphan), and
-   one not written by the executable now on disk, after a rebuild without
-   the backend, or a run the build tool replayed from its cache.
+   Data_files.freshness's, judged from the identity each file records on
+   its header: a verdict file whose executable was deleted or renamed (an
+   orphan), and one not written by the executable now on disk, after a
+   rebuild without the backend, or a run the build tool replayed from its
+   cache.
 
    A flagged verdict file is excluded, never merged: a stale verdict can
    claim a kill the code no longer earns, and a false kill hides a live
-   defect. Excluding is the only answer that cannot lie. *)
+   defect. Excluding is the only answer that cannot lie. The judgement
+   comes before the load, so a corrupt leftover of another build is
+   excluded like any other, while a file of this build must load: dropping
+   it could drop the one kill of a mutant. *)
 
 (* Dune's inline-test runner is [inline-test-runner.exe] in every
    library's [.<lib>.inline-tests] directory: the library is what tells
@@ -135,32 +139,34 @@ let invocation identity =
        ^ Sections.shell_word target ^ " --")
   | Some { exe; _ } -> `Exe (Sections.shell_word exe)
 
-(* Loads [files], drops the orphaned and stale ones loudly, and returns
-   what is left, each collection with its executable's label and how to
-   run it again. Warnings and failure details go to stderr; [Error code]
-   is the exit code (data problems are 1). *)
+(* Judges [files] from their headers, drops the orphaned and stale ones
+   loudly, loads the rest and returns them, each collection with its
+   executable's label and how to run it again. Warnings and failure
+   details go to stderr; [Error code] is the exit code (data problems are
+   1). *)
 let load_fresh files =
-  let loaded =
+  let judged =
     List.fold_left
       (fun acc path ->
-        Result.bind acc (fun entries ->
-            Result.map
-              (fun (t, identity) ->
-                (path, t, identity, Data_files.freshness ~path identity)
-                :: entries)
-              (V.load path)))
-      (Ok []) files
+        Result.bind acc (fun (kept, excluded) ->
+            Result.bind (Data_files.identity V.format path) (fun identity ->
+                match Data_files.freshness ~path identity with
+                | Data_files.Fresh ->
+                    Result.map
+                      (fun (t, identity) ->
+                        ((path, t, identity) :: kept, excluded))
+                      (V.load path)
+                | (Data_files.Orphan _ | Data_files.Stale _) as freshness ->
+                    Ok (kept, (path, freshness) :: excluded))))
+      (Ok ([], []))
+      files
   in
-  match loaded with
+  match judged with
   | Error error ->
       Os.say (Format.asprintf "%a" V.pp_error error);
       Error 1
-  | Ok entries ->
-      let entries = List.rev entries in
-      let kept, excluded =
-        List.partition (fun (_, _, _, f) -> f = Data_files.Fresh) entries
-      in
-      let excluded = List.map (fun (path, _, _, f) -> (path, f)) excluded in
+  | Ok (kept, excluded) ->
+      let kept = List.rev kept and excluded = List.rev excluded in
       List.iter Os.say (Data_files.warnings excluded);
       if kept = [] then
         Os.say
@@ -175,7 +181,7 @@ let load_fresh files =
       else
         Ok
           (List.map
-             (fun (path, t, identity, _) ->
+             (fun (path, t, identity) ->
                (executable_label ~path identity, invocation identity, t))
              kept)
 

@@ -8,14 +8,16 @@
 
     {!discover} finds the dumps or the verdict files of a
     {!Windtrap_runtime.Instr.format}, by the build-path rule under which the
-    runtime wrote them or under the paths of the command line. {!val-freshness}
-    judges a file from the writer identity that it records, and {!warnings} and
-    {!all_excluded} are the lines for the files that a command excludes.
+    runtime wrote them or under the paths of the command line. {!identity} reads
+    the writer identity that a file records on its header, {!val-freshness}
+    judges the file from it, and {!warnings} and {!all_excluded} are the lines
+    for the files that a command excludes.
 
     The module prints nothing and writes nothing. Each command says the strings
     of this module on standard error behind [windtrap:]. The module reads
-    [INSIDE_DUNE], the current directory, the directories that it searches, and
-    the bytes of the executables that it judges. *)
+    [INSIDE_DUNE], the current directory, the directories that it searches, the
+    files whose identity it reads, and the bytes of the executables that it
+    judges. *)
 
 (** {1:discovery Discovery} *)
 
@@ -57,6 +59,18 @@ val discover :
     contribute nothing, without an error. *)
 
 (** {1:freshness Freshness} *)
+
+val identity :
+  Windtrap_runtime.Instr.format ->
+  string ->
+  (Windtrap_runtime.Instr.identity option, Windtrap_runtime.Instr.error) result
+(** [identity format path] is [Ok identity], the writer identity on the header
+    of the file at [path], or [Ok None] when the header records none. The
+    records that follow the header are not parsed, so a file whose records are
+    corrupt has an identity. The result is the error of
+    {!Windtrap_runtime.Instr.read_file} when the file cannot be read,
+    [Error (Unknown_format _)] when it does not start with the magic line of
+    [format], and [Error (Corrupt _)] when its identity line is malformed. *)
 
 (** The type for the freshness of a file, judged from the
     {!Windtrap_runtime.Instr.identity} that it records. [Orphan] and [Stale]

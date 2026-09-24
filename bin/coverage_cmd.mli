@@ -20,11 +20,13 @@
 (** {1:files Files}
 
     The dumps are those that {!Data_files.discover} finds for
-    [Windtrap_runtime.Coverage.format] and the [PATH] arguments. Every dump is
-    loaded before any is excluded, and the first one that cannot be read or
-    parsed ends the command with its {!Windtrap_runtime.Coverage.pp_error}. A
-    dump whose {!Data_files.val-freshness} is not [Fresh] is then excluded from
-    the merge, and no flag keeps it.
+    [Windtrap_runtime.Coverage.format] and the [PATH] arguments. A dump is
+    judged from the identity on its header ({!Data_files.identity}) before it is
+    loaded: a dump of another build is excluded whatever its records hold, and a
+    dump of the current build must load. A dump of another build is one whose
+    {!Data_files.val-freshness} is not [Fresh], and no flag keeps it. The first
+    dump that is not excluded and cannot be read or parsed, its header included,
+    ends the command with its {!Windtrap_runtime.Coverage.pp_error}.
 
     On standard error the command says the {!Data_files.warnings} of the
     excluded dumps, then {!Data_files.all_excluded} when no dump is left, and
@@ -113,7 +115,7 @@ val run : string list -> int
     standard output by {!Windtrap.Private.Os.resolve_color}.
 
     [run] parses the arguments, reads [WINDTRAP_COLOR], finds the
-    {{!section-files}files}, loads, judges and merges them, prints the report or
+    {{!section-files}files}, judges, loads and merges them, prints the report or
     the document, and runs the two {{!section-gates}gates}, in that order. A
     step before the gates that fails returns its code, so standard output stays
     empty until the merge has succeeded. The report, the document and the help
@@ -125,12 +127,12 @@ val run : string list -> int
     - [0] when the report or the document was printed and every gate that was
       given is met. It is also [0] for [-h], [--help] and [-help], which print
       the help page and read nothing.
-    - [1] when a [PATH] cannot be used, when no dump is found, when a dump
-      cannot be read, is corrupt or has another format version, when two dumps
-      disagree on the points of a file, or when every dump is excluded. It is
-      also [1] when a gate fails: a path of [--expect] or [--do-not-expect] does
-      not exist, a source under [--expect] has no data, or the coverage is below
-      [--min].
+    - [1] when a [PATH] cannot be used, when no dump is found, when a dump that
+      is not excluded cannot be read, is corrupt or has another format version,
+      when two dumps disagree on the points of a file, or when every dump is
+      excluded. It is also [1] when a gate fails: a path of [--expect] or
+      [--do-not-expect] does not exist, a source under [--expect] has no data,
+      or the coverage is below [--min].
     - [2] for a usage error. The usage errors are an unknown option, a [--min]
       that is not a number of the interval \[[0];[100]\], a flag that lacks its
       value, and [--json] given with [--lcov]. It is also [2] for a

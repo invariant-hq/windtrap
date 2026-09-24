@@ -112,6 +112,17 @@ let discover (format : Instr.format) = function
 
 (* Freshness *)
 
+(* The header alone: the magic line and the identity line, and never the
+   records, so a file whose records are corrupt is still judged by the
+   writer it names. *)
+let identity (format : Instr.format) path =
+  Result.bind (Instr.read_file path) (fun contents ->
+      Result.bind (Instr.start format ~path contents) (fun cursor ->
+          match Instr.read_identity cursor with
+          | identity -> Ok identity
+          | exception Instr.Parse_error reason ->
+              Error (Instr.Corrupt { path; reason })))
+
 type freshness = Fresh | Orphan of string | Stale of string
 
 (* One digest per executable, however many dumps it wrote: every run of
