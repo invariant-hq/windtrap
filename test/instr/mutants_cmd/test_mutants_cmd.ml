@@ -1047,6 +1047,113 @@ let dispatch =
   equal ~msg:"the old verb exits 2" int 2 code;
   contains ~msg:"the old verb is unknown" ~sub:"unknown command 'mutate'" err
 
+(* The command at its edges *)
+
+let edge_tests =
+  [
+    test "every file is loaded before any is excluded" (fun () ->
+        (* A corrupt file that records a gone executable ends the command
+           on its corruption: it is never excluded as an orphan first. *)
+        let root, _ = stale_root "load-first" in
+        write_file
+          (Filename.concat root "_build/_mutants/gone.mutants")
+          ("windtrap-mutants-v3\nexe "
+          ^ Digest.to_hex (Digest.string "gone")
+          ^ " 21 default/test/gone.exe\n2\n");
+        let code, out, err = mutate ~cwd:root [] in
+        equal ~msg:"exit code" int 1 code;
+        equal ~msg:"no report" text "" out;
+        contains ~msg:"the corrupt file is named" ~sub:"gone.mutants: corrupt"
+          err;
+        not_contains ~msg:"and never excluded" ~sub:"excluding it" err);
+    test "a survivor whose source is not found keeps its identifier and rewrite"
+      (fun () ->
+        let root = scratch "no-sources" in
+        write_file
+          (Filename.concat root "_build/_mutants/b.mutants")
+          (V.to_string (collection [ m_sub (V.survived [ [ "t"; "b" ] ]) ]));
+        let code, out, _ = mutate ~cwd:root [] in
+        equal ~msg:"the survivor exits 1" int 1 code;
+        contains ~msg:"the block's head, and no source line under it"
+          ~sub:
+            "  SURVIVED  lib/calc.ml:2:14:sub  a - b \u{2192} a + b\n\n\
+            \    1 test ran this line and did not fail:\n\
+            \      b.mutants  t \u{203a} b\n"
+          out);
+    test "the launcher's file is one in which the mutant survived" (fun () ->
+        (* Two files bear one label, [t.exe]. The first in path order
+           reached the mutant and did not let it survive, so the command is
+           spelled from the second. *)
+        let root = scratch "launcher" in
+        plant_sources root;
+        let first = plant_exe root "default/a/t.exe" "suite a"
+        and second = plant_exe root "default/b/t.exe" "suite b" in
+        write_file
+          (Filename.concat root "_build/_mutants/1.mutants")
+          (V.to_string ~identity:first (collection [ m_add V.Unreached ]));
+        write_file
+          (Filename.concat root "_build/_mutants/2.mutants")
+          (V.to_string ~identity:second
+             (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]));
+        let code, out, err = mutate ~cwd:root [] in
+        equal ~msg:"the survivor exits 1" int 1 code;
+        equal ~msg:"both files are fresh" text "" err;
+        contains ~msg:"the command runs the executable it survived"
+          ~sub:
+            "\n\
+             reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+             b/t.exe -- --arm lib/calc.ml:1:14:add\n"
+          out);
+    test "one column of executables across every block" (fun () ->
+        let root = scratch "exe-column" in
+        plant_sources root;
+        let short = plant_exe root "default/test/t.exe" "short"
+        and long = plant_exe root "default/test/a_long_name.exe" "long" in
+        write_file
+          (Filename.concat root "_build/_mutants/short.mutants")
+          (V.to_string ~identity:short
+             (collection [ m_add (V.survived [ [ "calc"; "adds" ] ]) ]));
+        write_file
+          (Filename.concat root "_build/_mutants/long.mutants")
+          (V.to_string ~identity:long
+             (collection [ m_sub (V.survived [ [ "calc"; "subtracts" ] ]) ]));
+        let _, out, _ = mutate ~cwd:root [] in
+        (* [t.exe]'s block holds no longer label, and is padded to the
+           other block's. *)
+        let width = 2 + String.length "a_long_name.exe" in
+        contains ~msg:"the short label's row, padded to the long one"
+          ~sub:
+            (Printf.sprintf "\n      %-*s%s\n" width "t.exe"
+               "calc \u{203a} adds")
+          out;
+        contains ~msg:"the long label's row"
+          ~sub:
+            (Printf.sprintf "\n      %-*s%s\n" width "a_long_name.exe"
+               "calc \u{203a} subtracts")
+          out);
+    test "-h and -help print the help page" (fun () ->
+        let _, help, _ = mutate [ "--help" ] in
+        List.iter
+          (fun flag ->
+            let code, out, err = mutate [ flag ] in
+            equal ~msg:(flag ^ " exits 0") int 0 code;
+            equal ~msg:(flag ^ " is --help") text help out;
+            equal ~msg:(flag ^ " says nothing else") text "" err)
+          [ "-h"; "-help" ]);
+    test "a refused WINDTRAP_COLOR is a usage error" (fun () ->
+        let code, out, err = mutate ~cwd:(proj ()) ~color:"sometimes" [] in
+        equal ~msg:"exit code" int 2 code;
+        equal ~msg:"no report" text "" out;
+        equal ~msg:"the runner's sentence" text
+          "windtrap: invalid value 'sometimes' for WINDTRAP_COLOR: expected \
+           always, never or auto\n"
+          err;
+        let code, _, err = mutate ~cwd:(proj ()) [ "--color"; "never" ] in
+        equal ~msg:"there is no --color flag" int 2 code;
+        contains ~msg:"it is an unknown option" ~sub:"unknown option '--color'"
+          err);
+  ]
+
 (* The suite *)
 
 let () =
@@ -1066,4 +1173,5 @@ let () =
          survivor_order;
          loud_failures;
          dispatch;
+         group "edges" edge_tests;
        ]
