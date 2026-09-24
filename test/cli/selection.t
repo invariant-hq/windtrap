@@ -7,13 +7,6 @@ names the selection back to the reader in the words they typed.
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
 
-The fixture's one file baseline, planted where WINDTRAP_PROJECT_ROOT
-sends the child's lookup — the runs below that execute tests execute
-that one too:
-
-  $ mkdir -p test/cli
-  $ echo 'hello from the fixture' > test/cli/greeting.expected
-
 -l lists the selection in declaration order, and runs nothing:
 
   $ run ./suite_main.exe -l -f math
@@ -25,7 +18,9 @@ stdout empty for whatever reads the paths, and still exits 0: it did
 what it was asked, and answering a mistyped filter with silence would be
 the dead end the empty run's own "list:" hint leads to.
 
-  $ run ./suite_main.exe -l -f zzznope
+  $ run ./suite_main.exe -l -f zzznope > out 2> err
+  $ cat out
+  $ cat err
   windtrap: no tests ran: filter "zzznope" matched none of 5 tests.
 
 Without -l the same selection is Law 11's nothing-ran: exit 2, the
@@ -77,8 +72,12 @@ selected tests the run never reached: "1 failed" alone would read as
   2 passed, 1 failed, 2 not run in DURATION.
 
 A selection that passes exits 0 — the four tests left when the one
-failing test is excluded, baseline and slow-tagged test included:
+failing test is excluded, baseline and slow-tagged test included. The
+baseline is planted where WINDTRAP_PROJECT_ROOT sends the child's
+lookup:
 
+  $ mkdir -p test/cli
+  $ echo 'hello from the fixture' > test/cli/greeting.expected
   $ run ./suite_main.exe -e boom > out 2> err
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 4 passed in DURATION.

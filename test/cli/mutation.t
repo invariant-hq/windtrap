@@ -11,12 +11,9 @@ answer is a sentence on stderr rather than a green run with no report.
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
 
-The fixture's one file baseline, planted where WINDTRAP_PROJECT_ROOT
-sends the lookup, and its one deliberate failure excluded: a mutation
-run needs a green dry run before it looks at the catalogue at all.
-
-  $ mkdir -p test/cli
-  $ echo 'hello from the fixture' > test/cli/greeting.expected
+A mutation run needs a green dry run before it looks at the catalogue
+at all, so the runs below that are meant to get that far select the two
+tests that pass with nothing planted beside them: -f math.
 
 --mutate on an executable that catalogues nothing under the prefix is
 refused by name after the suite ran: exit 1, the ordinary transcript on
@@ -26,10 +23,10 @@ prefix leaves empty) or plain (no catalogue at all): the prefix is what
 the reader typed, and the missing-backend diagnosis is reserved for the
 bare flag, so a build that is instrumented and fine is never blamed.
 
-  $ run ./suite_main.exe --mutate=::no-such-source:: -e boom > out 2> err
+  $ run ./suite_main.exe --mutate=::no-such-source:: -f math > out 2> err
   [1]
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
-  fixture: 4 passed in DURATION.
+  fixture: 2 passed in DURATION.
   $ cat err
   windtrap: --mutate=::no-such-source:: leaves no mutant in this executable's catalogue: no instrumented file matches the prefix (is the library under test instrumented with ppx_windtrap.mutate?), or the matched files have no mutation sites
 
@@ -39,9 +36,9 @@ unarmed, exits 0, and says once on stderr whose mutant it is not —
 exiting 1 here would fail a whole tree's build for the one executable
 that armed the mutant correctly.
 
-  $ run ./suite_main.exe --arm lib/absent.ml:1:0:add -e boom > out 2> err
+  $ run ./suite_main.exe --arm lib/absent.ml:1:0:add -f math > out 2> err
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
-  fixture: 4 passed in DURATION.
+  fixture: 2 passed in DURATION.
   $ cat err
   windtrap: lib/absent.ml:1:0:add: not this executable's mutant; it catalogues no site in lib/absent.ml (if you expected one, is the library under test instrumented with ppx_windtrap.mutate?)
 
@@ -80,9 +77,9 @@ same refusal, and a falsy WINDTRAP_MUTATE is no mutation run at all.
   [2]
   $ head -1 err
   windtrap: options '--mutate' and '--arm' cannot be combined
-  $ run WINDTRAP_MUTATE=off ./suite_main.exe -e boom > out 2> err
+  $ run WINDTRAP_MUTATE=off ./suite_main.exe -f math > out 2> err
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
-  fixture: 4 passed in DURATION.
+  fixture: 2 passed in DURATION.
   $ cat err
 
 --mutant is the verb a reader types; the near miss is suggested.

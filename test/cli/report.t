@@ -13,7 +13,8 @@ exits 0 and counts it as passed, but the header comes out, the flaky
 section names the test with the attempt it passed on, and the summary
 says how many of the passes were flaky.
 
-  $ run FACADE_FIXTURE=flaky ./suite_main.exe | scrub
+  $ run FACADE_FIXTURE=flaky ./suite_main.exe > out 2>&1
+  $ scrub < out
   fixture: 1 test
   flaky tests (1):
     passed on attempt 2  flaky
@@ -23,7 +24,8 @@ says how many of the passes were flaky.
 Verbose already carries the attempt count on the status line, and keeps
 the section:
 
-  $ run FACADE_FIXTURE=flaky ./suite_main.exe -v | scrub | sed -E 's/  +[0-9.]+m?s /  TIME /'
+  $ run FACADE_FIXTURE=flaky ./suite_main.exe -v > out 2>&1
+  $ scrub < out | sed -E 's/  +[0-9.]+m?s /  TIME /'
   fixture: 1 test
     PASS  flaky  TIME (2 attempts)
   
@@ -76,7 +78,8 @@ run is therefore its tests' bytes and the one line.
   
   3 passed, 1 failed in DURATION.
   $ cat err
-  $ run FACADE_FIXTURE=stream ./suite_main.exe -s -e fails | scrub | sed -E 's/  +[0-9.]+m?s$/  TIME/'
+  $ run FACADE_FIXTURE=stream ./suite_main.exe -s -e fails > out 2>&1
+  $ scrub < out
   through the stdout channel
   through descriptor 1
   through a subprocess

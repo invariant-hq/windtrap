@@ -20,13 +20,13 @@ rule stated, and nothing on stdout because nothing ran.
 
 Focus outside CI narrows, it never fails: the run exits 0 and the
 warning goes to stderr, where it cannot be mistaken for part of the
-transcript. The declaration line moves with the fixture, so it is
-filtered; the rest is what the committer is told.
+transcript. The warning names no site: it is what the committer is
+told.
 
   $ run FACADE_FIXTURE=focus ./suite_main.exe > out 2> err
   $ sed -E 's/ in [0-9.]+m?s\./ in DURATION./' out
   fixture: 1 passed in DURATION.
-  $ sed -E 's/suite_main\.ml:[0-9]+/suite_main.ml:LINE/' err
+  $ cat err
   windtrap: warning: focus is active: 1 of 2 tests ran; remove the focus before committing
 
 Under CI the same suite refuses to start, and says which site to

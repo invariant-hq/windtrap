@@ -73,7 +73,8 @@ report, and the --min gate (test/instr/coverage_cmd pins it) would
 then measure the core rather than calc.ml; the columns are squeezed
 because the table aligns to its widest row:
 
-  $ run windtrap coverage | grep calc.ml | tr -s ' '
+  $ run windtrap coverage > report
+  $ grep calc.ml report | tr -s ' '
    85.7% 6/7 calc.ml 3
 
 Mutation. The same library through the other backend, then the survey

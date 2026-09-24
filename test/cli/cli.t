@@ -12,9 +12,10 @@ inside this sandbox.
   >       WINDTRAP_PROJECT_ROOT="$PWD" "$@"
   > }
 
---help prints the usage banner and exits 0 — the whole page is pinned
-by test/unit's help.expected, so what is asserted here is that the facade
-prints it, on stdout, and gets out of the way:
+--help prints the usage banner and exits 0. The whole page is pinned by
+test/unit's help.expected; what only a real process shows is asserted
+here: the program named by its real argv.(0), on stdout, and nothing on
+stderr.
 
   $ run ./suite_main.exe --help > out 2> err
   $ sed -n '1p;3p' out
