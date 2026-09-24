@@ -1685,54 +1685,6 @@ let the_same_seed_reproduces_the_same_counterexample () =
       (Printf.sprintf "the shrink step count differed: %d and %d" steps steps')
     (steps = steps')
 
-let collect_and_cover_work_inside_command_bodies () =
-  let frame = Run.current_frame () in
-  let labelled ~unreachable =
-    [
-      Stateful.call "tick"
-        ~next:(fun model -> model + 1)
-        (fun model () ->
-          Windtrap.collect "ticked";
-          Windtrap.classify "past three" (model > 3);
-          Windtrap.cover "reached five"
-            (if unreachable then model >= 500 else model >= 5));
-    ]
-  in
-  let run ~unreachable path =
-    Property.run ~count:(`Declared 10) ~root ~path
-      (Stateful.program ~steps:12 ~model:0 (labelled ~unreachable))
-      (fun context program ->
-        Run.with_prop_context frame context (fun () ->
-            Stateful.execute ~scope:unit_scope program))
-  in
-  let stats = expect_pass (run ~unreachable:false "labels") in
-  is_true
-    ~msg:
-      (Printf.sprintf "collect from a command body reported %s"
-         (show_names (List.map fst stats.Property.collected)))
-    (List.assoc_opt "ticked" stats.Property.collected = Some 10);
-  is_true ~msg:"classify from a command body did not mark every case"
-    (List.assoc_opt "past three" stats.Property.collected = Some 10);
-  (match stats.Property.coverage with
-  | [ status ] ->
-      is_true
-        ~msg:
-          (Printf.sprintf "the coverage demand %s went unmarked over %d cases"
-             status.Property.label stats.Property.cases)
-        (status.Property.label = "reached five" && status.Property.satisfied)
-  | statuses ->
-      failf "expected one coverage entry, got %d" (List.length statuses));
-  (* And a requirement registered from a command body can fail the run. *)
-  match run ~unreachable:true "labels-unreachable" with
-  | Property.Coverage_failed stats -> (
-      match stats.Property.coverage with
-      | [ status ] ->
-          is_true ~msg:"an unreachable requirement reported satisfied"
-            (not status.Property.satisfied)
-      | statuses ->
-          failf "expected one coverage entry, got %d" (List.length statuses))
-  | _ -> failf "an unreachable cover requirement did not fail the run"
-
 (* The generator prints, always — even over a command whose own argument
    generator does not — so a printerless stateful counterexample is
    unreachable and the report's [Gen.with_pp] remedy line never fires. *)
@@ -2116,8 +2068,6 @@ let suite =
       stateful_threads_pp_model_into_the_counterexample );
     ( "the same seed reproduces the same counterexample",
       the_same_seed_reproduces_the_same_counterexample );
-    ( "collect and cover work inside command bodies",
-      collect_and_cover_work_inside_command_bodies );
     ("the program generator always prints", the_program_generator_always_prints);
     ( "a buggy system renders a diagnosable failure",
       a_buggy_system_renders_a_diagnosable_failure );
