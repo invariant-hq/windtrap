@@ -35,43 +35,23 @@
 open Windtrap
 module M = Windtrap_runtime.Mutate
 module V = Windtrap_runtime.Verdicts
+module Child = Windtrap_test_support.Child
 
-let check name cond = is_true ~msg:name cond
-let check_int name ~expected ~actual = equal ~msg:name int expected actual
-
-let check_contains name ~needle haystack =
-  contains ~msg:name ~sub:needle haystack
-
-let check_absent name ~needle haystack =
-  not_contains ~msg:name ~sub:needle haystack
-
-(* Boolean containment, for predicates rather than assertions. *)
-let contains_sub ~sub s =
+(* [occurs ~sub s] is [true] iff [sub] occurs in [s]: a predicate, for
+   finding and counting lines, where the facade's [contains] asserts. *)
+let occurs ~sub s =
   let n = String.length s and m = String.length sub in
   let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
-  m = 0 || go 0
-
-(* The offset of [sub]'s first occurrence in [s], for ordering assertions:
-   a block that must print before another. Fails the test when absent,
-   so an ordering check never passes vacuously on a missing block. *)
-let index_of ~sub s =
-  let n = String.length s and m = String.length sub in
-  let rec go i =
-    if i + m > n then failf "%S is not in the report" sub
-    else if String.sub s i m = sub then i
-    else go (i + 1)
-  in
   go 0
 
-let check_before name ~first ~second out =
-  check name (index_of ~sub:first out < index_of ~sub:second out)
+let lines_with ~sub text =
+  List.filter (occurs ~sub) (String.split_on_char '\n' text)
 
 (* Scratch and process helpers *)
 
 (* Hermeticity: absolute paths throughout, so the test behaves the same
-   under dune's sandbox and by hand; scratch lives in a private temp
-   directory removed at exit. Nothing is ever written under the real
-   _build/_mutants. *)
+   under dune's sandbox and by hand; each test's scratch lives in its own
+   temp_dir. Nothing is ever written under the real _build/_mutants. *)
 let exe_dir = Filename.dirname Sys.executable_name
 
 let windtrap_exe =
@@ -79,25 +59,9 @@ let windtrap_exe =
     (Filename.concat ".."
        (Filename.concat ".." (Filename.concat ".." "bin/main.exe")))
 
-let rec remove_tree path =
-  match (Unix.lstat path).Unix.st_kind with
-  | Unix.S_DIR ->
-      Array.iter
-        (fun name -> remove_tree (Filename.concat path name))
-        (Sys.readdir path);
-      Sys.rmdir path
-  | _ -> Sys.remove path
-  | exception Unix.Unix_error _ -> ()
-  | exception Sys_error _ -> ()
-
-let scratch_dir =
-  let dir = Filename.temp_file "windtrap_mut_cli" "" in
-  Sys.remove dir;
-  Sys.mkdir dir 0o755;
-  at_exit (fun () -> remove_tree dir);
-  dir
-
-let scratch path = Filename.concat scratch_dir path
+(* [scratch name] is a path named [name] in a directory of the test's
+   own; nothing exists there yet. *)
+let scratch name = Filename.concat (temp_dir ()) name
 
 let rec mkdir_p dir =
   if not (Sys.file_exists dir) then begin
@@ -107,54 +71,20 @@ let rec mkdir_p dir =
 
 let write_file path contents =
   mkdir_p (Filename.dirname path);
-  let oc = open_out_bin path in
-  output_string oc contents;
-  close_out oc
+  Out_channel.with_open_bin path (fun oc -> output_string oc contents)
 
-let read_file path =
-  match open_in_bin path with
-  | ic ->
-      Fun.protect
-        ~finally:(fun () -> close_in_noerr ic)
-        (fun () -> really_input_string ic (in_channel_length ic))
-  | exception Sys_error _ -> ""
+let read_file path = In_channel.with_open_bin path In_channel.input_all
 
-let run_counter = ref 0
-
-(* The environment is stated in full rather than extended: this suite
-   asserts on transcripts byte for byte, and a WINDTRAP_VERBOSE in a
-   developer's shell would reshape them. Nothing is inherited but what a
-   process needs to start. *)
-let inherited =
-  List.concat_map
-    (fun name ->
-      match Sys.getenv_opt name with
-      | Some value -> [ name ^ "=" ^ value ]
-      | None -> [])
-    [ "PATH"; "HOME"; "TMPDIR"; "LANG"; "LC_ALL" ]
-
-(* [capture ?cwd ?env ?exe args] runs [exe] (the windtrap binary by
-   default) and returns (exit code, stdout, stderr). Color is off so the
-   report is comparable bytes, except where a test asks for [~color:"always"]
-   to read the escape codes themselves. *)
+(* [capture ?cwd ?color ?env ?exe args] runs [exe] (the windtrap binary by
+   default) and returns (exit code, stdout, stderr). The environment is
+   stated in full rather than extended: this suite asserts on
+   transcripts byte for byte, and a WINDTRAP_VERBOSE in a developer's
+   shell would reshape them. Color is off so the report is comparable
+   bytes, except where a test asks for [~color:"always"] to read the
+   escape codes themselves. *)
 let capture ?cwd ?(color = "never") ?(env = []) ?(exe = windtrap_exe) args =
-  incr run_counter;
-  let out = scratch (Printf.sprintf "out-%d.txt" !run_counter)
-  and err = scratch (Printf.sprintf "err-%d.txt" !run_counter) in
-  let command =
-    String.concat " "
-      (List.map Filename.quote
-         ((("env" :: "-i" :: inherited) @ (("WINDTRAP_COLOR=" ^ color) :: env))
-         @ (exe :: args)))
-    ^ " > " ^ Filename.quote out ^ " 2> " ^ Filename.quote err
-  in
-  let command =
-    match cwd with
-    | None -> command
-    | Some dir -> "cd " ^ Filename.quote dir ^ " && " ^ command
-  in
-  let code = Sys.command command in
-  (code, read_file out, read_file err)
+  let r = Child.run ?cwd ~env:(("WINDTRAP_COLOR", color) :: env) exe args in
+  (Child.exit_code r, r.Child.out, r.Child.err)
 
 let mutate ?cwd ?color args = capture ?cwd ?color ("mutants" :: args)
 
@@ -275,7 +205,10 @@ let plant_sources root =
      let neither p q = not (p || q)\n\
      let both p q = p && q\n"
 
-let proj =
+(* The three files under a project of their own. Each test that reads
+   it plants its own copy, so what one test adds to the tree no other
+   test sees. *)
+let proj () =
   let root = scratch "proj" in
   plant_sources root;
   List.iter
@@ -316,28 +249,27 @@ let calc_line binding =
   in
   go 1 (String.split_on_char '\n' fixture_source)
 
-let real_project =
-  lazy
-    (let root = scratch "two-executables" in
-     (* The instrumenter records workspace-relative paths, so the source
-        the survivor excerpt resolves against is planted where it was
-        recorded. *)
-     write_file
-       (Filename.concat root "test/instr/mutants_cmd/calc.ml")
-       fixture_source;
-     List.iter
-       (fun name ->
-         let target =
-           Filename.concat root (Filename.concat "_build/default/test" name)
-         in
-         write_file target (read_file (Filename.concat exe_dir name));
-         Unix.chmod target 0o755)
-       [ "pins_add.exe"; "pins_sub.exe" ];
-     root)
+let real_project () =
+  let root = scratch "two-executables" in
+  (* The instrumenter records workspace-relative paths, so the source
+     the survivor excerpt resolves against is planted where it was
+     recorded. *)
+  write_file
+    (Filename.concat root "test/instr/mutants_cmd/calc.ml")
+    fixture_source;
+  List.iter
+    (fun name ->
+      let target =
+        Filename.concat root (Filename.concat "_build/default/test" name)
+      in
+      write_file target (read_file (Filename.concat exe_dir name));
+      Unix.chmod target 0o755)
+    [ "pins_add.exe"; "pins_sub.exe" ];
+  root
 
 let two_executables =
   test "two executables that disagree merge to the project's truth" @@ fun () ->
-  let root = Lazy.force real_project in
+  let root = real_project () in
   let at binding =
     Printf.sprintf "test/instr/mutants_cmd/calc.ml:%d:" (calc_line binding)
   in
@@ -355,44 +287,44 @@ let two_executables =
   (* Each executable is right about what it ran and wrong about the
      project. *)
   let code, out, err = loop "pins_add.exe" in
-  check_int "the first executable's loop exits 0" ~expected:0 ~actual:code;
-  check "the first executable's loop keeps stderr empty" (err = "");
-  check_contains "it calls the mutant its sibling kills a survivor"
-    ~needle:("SURVIVED  " ^ sub) out;
-  check_absent "and kills the one it pins itself" ~needle:("SURVIVED  " ^ add)
+  equal ~msg:"the first executable's loop exits 0" int 0 code;
+  equal ~msg:"the first executable's loop keeps stderr empty" text "" err;
+  contains ~msg:"it calls the mutant its sibling kills a survivor"
+    ~sub:("SURVIVED  " ^ sub) out;
+  not_contains ~msg:"and kills the one it pins itself" ~sub:("SURVIVED  " ^ add)
     out;
   let code, out, err = loop "pins_sub.exe" in
-  check_int "the second executable's loop exits 0" ~expected:0 ~actual:code;
-  check "the second executable's loop keeps stderr empty" (err = "");
-  check_contains "it calls the other's kill a survivor"
-    ~needle:("SURVIVED  " ^ add) out;
-  check_absent "and kills the one it pins itself" ~needle:("SURVIVED  " ^ sub)
+  equal ~msg:"the second executable's loop exits 0" int 0 code;
+  equal ~msg:"the second executable's loop keeps stderr empty" text "" err;
+  contains ~msg:"it calls the other's kill a survivor" ~sub:("SURVIVED  " ^ add)
+    out;
+  not_contains ~msg:"and kills the one it pins itself" ~sub:("SURVIVED  " ^ sub)
     out;
   (* And neither false survivor survives the merge. This is the whole
      claim: reporting either executable's view alone sends the reader to
      write a test that already exists. *)
   let code, out, err = mutate ~cwd:root [] in
-  check_int "the merged report exits 1: a mutant survived everywhere"
-    ~expected:1 ~actual:code;
-  check "the merged report keeps stderr empty" (err = "");
-  check_absent "a mutant killed by one executable is not a survivor"
-    ~needle:("SURVIVED  " ^ add) out;
-  check_absent "nor is the one killed by the other" ~needle:("SURVIVED  " ^ sub)
-    out;
-  check_contains "the survivor is the one neither executable pinned"
-    ~needle:("SURVIVED  " ^ shared) out;
-  check_contains "its witnesses are both executables' tests"
-    ~needle:"2 tests in 2 executables ran this line and none failed:" out;
+  equal ~msg:"the merged report exits 1: a mutant survived everywhere" int 1
+    code;
+  equal ~msg:"the merged report keeps stderr empty" text "" err;
+  not_contains ~msg:"a mutant killed by one executable is not a survivor"
+    ~sub:("SURVIVED  " ^ add) out;
+  not_contains ~msg:"nor is the one killed by the other"
+    ~sub:("SURVIVED  " ^ sub) out;
+  contains ~msg:"the survivor is the one neither executable pinned"
+    ~sub:("SURVIVED  " ^ shared) out;
+  contains ~msg:"its witnesses are both executables' tests"
+    ~sub:"2 tests in 2 executables ran this line and none failed:" out;
   (* Each witness names the executable that ran it, by the basename of
      the identity its verdict file recorded. *)
-  check_contains "the first executable's witness, in its column"
-    ~needle:"\n      pins_add.exe  shared \u{203a} shared is nonzero\n" out;
-  check_contains "the second executable's witness, in its column"
-    ~needle:"\n      pins_sub.exe  shared \u{203a} shared is not 99\n" out;
-  check_contains "the excerpt is drawn from the planted source"
-    ~needle:"let shared a b = a + b" out;
-  check_contains "the mutant neither executable reached is still a finding"
-    ~needle:
+  contains ~msg:"the first executable's witness, in its column"
+    ~sub:"\n      pins_add.exe  shared \u{203a} shared is nonzero\n" out;
+  contains ~msg:"the second executable's witness, in its column"
+    ~sub:"\n      pins_sub.exe  shared \u{203a} shared is not 99\n" out;
+  contains ~msg:"the excerpt is drawn from the planted source"
+    ~sub:"let shared a b = a + b" out;
+  contains ~msg:"the mutant neither executable reached is still a finding"
+    ~sub:
       (Printf.sprintf "\n  1  test/instr/mutants_cmd/calc.ml   lines %d\n"
          (calc_line "let never"))
     out;
@@ -404,17 +336,21 @@ let two_executables =
      recorded, less the build context. Its identifier is pasted back into
      that executable, the only proof that it is one the runtime
      resolves. *)
-  let reproduce =
-    List.find
-      (String.starts_with ~prefix:"reproduce: ")
-      (String.split_on_char '\n' out)
-  in
   let launcher =
     "reproduce: dune exec --instrument-with ppx_windtrap.mutate \
      test/pins_add.exe -- --arm "
   in
-  check "the command is dune's, over the recorded executable"
-    (String.starts_with ~prefix:(launcher ^ shared) reproduce);
+  let reproduce =
+    match
+      List.filter
+        (String.starts_with ~prefix:"reproduce: ")
+        (String.split_on_char '\n' out)
+    with
+    | [ line ] -> line
+    | lines -> failf "%d reproduce lines in:\n%s" (List.length lines) out
+  in
+  starts_with ~msg:"the command is dune's, over the recorded executable"
+    ~affix:(launcher ^ shared) reproduce;
   let id =
     String.sub reproduce (String.length launcher)
       (String.length reproduce - String.length launcher)
@@ -424,68 +360,40 @@ let two_executables =
       ~exe:(Filename.concat root "_build/default/test/pins_add.exe")
       [ "--arm"; id ]
   in
-  check_int "the armed run's exit code (this mutant survives)" ~expected:0
-    ~actual:code;
-  check_contains "the pasted identifier armed the survivor"
-    ~needle:("mutant " ^ id ^ " armed: a + b \u{2192} a - b")
+  equal ~msg:"the armed run's exit code (this mutant survives)" int 0 code;
+  contains ~msg:"the pasted identifier armed the survivor"
+    ~sub:("mutant " ^ id ^ " armed: a + b \u{2192} a - b")
     armed
 
 (* The merge *)
 
 let merge_report =
   test "killed anywhere wins across three executables" @@ fun () ->
+  let proj = proj () in
   let code, out, err = mutate ~cwd:proj [] in
-  check_int "the merged report exits 1: a mutant survived everywhere"
-    ~expected:1 ~actual:code;
-  check "the merged report keeps stderr empty" (err = "");
+  equal ~msg:"the merged report exits 1: a mutant survived everywhere" int 1
+    code;
+  equal ~msg:"the merged report keeps stderr empty" text "" err;
   (* The load-bearing case: A killed [add], B only reached it. A report
      that listed it would send the reader to write a test that exists. *)
-  check_absent "a mutant killed by one suite is not a survivor"
-    ~needle:"lib/calc.ml:1:14:add" out;
+  not_contains ~msg:"a mutant killed by one suite is not a survivor"
+    ~sub:"lib/calc.ml:1:14:add" out;
   (* A crash in one executable outranks survival in another. *)
-  check_absent "a crash in one suite kills for the project"
-    ~needle:"lib/calc.ml:3:14:lt" out;
-  check_contains "the survivor is the one no suite killed"
-    ~needle:"SURVIVED  lib/calc.ml:2:14:sub  a - b \u{2192} a + b\n" out;
-  check_int "exactly one survivor block" ~expected:1
-    ~actual:
-      (List.length
-         (List.filter
-            (fun l -> String.length l > 2 && String.sub l 2 8 = "SURVIVED")
-            (String.split_on_char '\n' out)));
-  check_contains "the section counts it" ~needle:"survivors (1)" out;
+  not_contains ~msg:"a crash in one suite kills for the project"
+    ~sub:"lib/calc.ml:3:14:lt" out;
   (* The renderings come from the file: the catalogue lives in binaries
      this command never links, so a report drawn without them would be
-     strictly worse than the per-executable one. *)
-  check_contains "the excerpt is drawn from the planted source"
-    ~needle:"2 \u{2502} let sub a b = a - b" out;
-  check_contains
-    "files that record no executable are reached through the build: the \
-     command arms the survivor there, by its identifier"
-    ~needle:
-      "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest \
-       --force --instrument-with ppx_windtrap.mutate\n"
-    out;
-  (* Witnesses union across the two executables that reached it, each
-     naming its executable. These files record no identity, so the label
-     is the file's own name; the staleness tests pin the identity case. *)
-  check_contains "the sentence counts both witnesses and both executables"
-    ~needle:"2 tests in 2 executables ran this line and none failed:" out;
-  check_contains "the first executable's witness, in its column"
-    ~needle:"\n      windtrap-b.mutants  cli \u{203a} subtracts\n" out;
-  check_contains "the second executable's witness, in its column"
-    ~needle:"\n      windtrap-c.mutants  prop \u{203a} sub law\n" out;
-  (* Unreached is a finding with its own remedy, and prints by default:
-     one row per file, how many of its mutants no test reached and the
-     lines they are on. *)
-  check_contains "the never-reached section counts mutants, not files or lines"
-    ~needle:"never reached (2)" out;
-  check_contains "the never-reached row: the count, the file, the lines"
-    ~needle:"\n  2  lib/util.ml   lines 1, 3\n" out;
-  check_absent "no block per never-reached mutant" ~needle:"UNREACHED" out;
-  (* The sections at rest, whole: the survivors counted, no blank line
-     just inside a rule, the command above the outcome. *)
+     strictly worse than the per-executable one. Files that record no
+     executable are reached through the build: the command arms the
+     survivor there, by its identifier. Witnesses union across the two
+     executables that reached it, each naming its executable; these
+     files record no identity, so the label is the file's own name (the
+     staleness tests pin the identity case). Unreached is a finding with
+     its own remedy, and prints by default: one row per file, how many of
+     its mutants no test reached and the lines they are on, never a block
+     per mutant. The sections at rest, whole: the survivors counted, no
+     blank line just inside a rule, the command above the outcome, and
+     the summary the project's, over three executables. *)
   equal ~msg:"the report, whole" text
     "───────────────────── survivors (1) ──────────────────────\n\
     \  SURVIVED  lib/calc.ml:2:14:sub  a - b \u{2192} a + b\n\
@@ -501,31 +409,26 @@ let merge_report =
      --instrument-with ppx_windtrap.mutate\n\
      mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 executables\n"
     out;
-  (* The summary is the project's, not one executable's: the reached
-     count, and how many executables it is over. *)
-  equal ~msg:"the summary line, whole" text
-    "mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 executables"
-    (summary out);
   (* The same report with colour on, read as the bytes it is: SURVIVED
      red, a never-reached count yellow, the counts in the suite summary's
      palette, the reproduce command plain. *)
   let code, coloured, _ = mutate ~color:"always" ~cwd:proj [] in
-  check_int "colour changes no exit code" ~expected:1 ~actual:code;
-  check_contains "SURVIVED is red, the identifier bold"
-    ~needle:
+  equal ~msg:"colour changes no exit code" int 1 code;
+  contains ~msg:"SURVIVED is red, the identifier bold"
+    ~sub:
       "  \027[31mSURVIVED\027[0m  \027[1mlib/calc.ml:2:14:sub\027[0m  a - b \
        \u{2192} a + b\n"
     coloured;
-  check_contains "a never-reached count is yellow, the file and lines plain"
-    ~needle:"\n  \027[33m2\027[0m  lib/util.ml   lines 1, 3\n" coloured;
-  check_contains "the counts are coloured as the suite summary's are"
-    ~needle:
+  contains ~msg:"a never-reached count is yellow, the file and lines plain"
+    ~sub:"\n  \027[33m2\027[0m  lib/util.ml   lines 1, 3\n" coloured;
+  contains ~msg:"the counts are coloured as the suite summary's are"
+    ~sub:
       "\n\
        mutants: \027[31m1 survived\027[0m of 3 reached, \027[32m2 \
        killed\027[0m, \027[33m2 never reached\027[0m, 3 executables\n"
     coloured;
-  check_contains "the reproduce command is never coloured"
-    ~needle:
+  contains ~msg:"the reproduce command is never coloured"
+    ~sub:
       "\n\
        reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest \
        --force --instrument-with ppx_windtrap.mutate\n"
@@ -535,7 +438,7 @@ let merge_report =
    legitimately differs between a merge of three files and the same data
    written as one, because it names the file each witness came from. *)
 let is_witness_line line =
-  contains_sub ~sub:"\u{203a}" line || contains_sub ~sub:"ran this line" line
+  occurs ~sub:"\u{203a}" line || occurs ~sub:"ran this line" line
 
 let without_witnesses out =
   String.concat "\n"
@@ -552,13 +455,14 @@ let merge_is_total =
      witness rows are compared as a set of names, because the merged
      file cannot say which executable ran which — that attribution is
      the command's own, and the merge test above pins it. *)
+  let proj = proj () in
   let reference = scratch "reference" in
   plant_sources reference;
   write_file
     (Filename.concat reference "_build/_mutants/merged.mutants")
     (V.to_string (V.merge (V.merge file_a file_b) file_c));
   let _, expected, _ = mutate ~cwd:reference [] in
-  check "the reference report is not empty" (expected <> "");
+  not_equal ~msg:"the reference report is not empty" text "" expected;
   let expected = without_executables_term expected in
   let _, out, _ = mutate ~cwd:proj [] in
   equal ~msg:"three files merge to the runtime's verdicts" text
@@ -566,8 +470,8 @@ let merge_is_total =
     (without_witnesses (without_executables_term out));
   List.iter
     (fun witness ->
-      check_contains "the reference names the witness" ~needle:witness expected;
-      check_contains "and so does the merge" ~needle:witness out)
+      contains ~msg:"the reference names the witness" ~sub:witness expected;
+      contains ~msg:"and so does the merge" ~sub:witness out)
     [ "cli \u{203a} subtracts"; "prop \u{203a} sub law" ];
   (* And the argument order is not part of the answer. *)
   let named name = Filename.concat proj ("_build/_mutants/" ^ name) in
@@ -587,19 +491,21 @@ let single_file =
      a survivor. Reading B's file alone must say so — the command reports
      what it was given — which is exactly why narrowing the merge by
      accident has to be loud. *)
+  let proj = proj () in
   let code, out, _ =
     mutate ~cwd:proj
       [ Filename.concat proj "_build/_mutants/windtrap-b.mutants" ]
   in
-  check_int "a single file with survivors exits 1" ~expected:1 ~actual:code;
-  check_contains "B alone reports the false survivor"
-    ~needle:"SURVIVED  lib/calc.ml:1:14:add" out;
-  check_contains "B alone counts two survivors" ~needle:"survivors (2)" out;
-  check_before "equal witness counts leave survivors in identifier order"
-    ~first:"SURVIVED  lib/calc.ml:1:14:add"
-    ~second:"SURVIVED  lib/calc.ml:2:14:sub" out;
-  check_contains "one executable's witnesses still name it"
-    ~needle:"\n      windtrap-b.mutants  cli \u{203a} runs\n" out;
+  equal ~msg:"a single file with survivors exits 1" int 1 code;
+  contains ~msg:"B alone counts two survivors" ~sub:"survivors (2)" out;
+  in_order
+    ~msg:
+      "B alone reports the false survivor, and equal witness counts leave \
+       survivors in identifier order"
+    ~subs:[ "SURVIVED  lib/calc.ml:1:14:add"; "SURVIVED  lib/calc.ml:2:14:sub" ]
+    out;
+  contains ~msg:"one executable's witnesses still name it"
+    ~sub:"\n      windtrap-b.mutants  cli \u{203a} runs\n" out;
   equal ~msg:"B alone scores itself" text
     "mutants: 2 survived of 3 reached, 1 killed, 2 never reached, 1 executable"
     (summary out)
@@ -612,8 +518,8 @@ let clean_report =
     (Filename.concat root "_build/_mutants/all.mutants")
     (V.to_string (collection [ m_add V.Killed; m_sub V.Killed; m_lt V.Killed ]));
   let code, out, err = mutate ~cwd:root [] in
-  check_int "a clean project exits 0" ~expected:0 ~actual:code;
-  check "a clean project keeps stderr empty" (err = "");
+  equal ~msg:"a clean project exits 0" int 0 code;
+  equal ~msg:"a clean project keeps stderr empty" text "" err;
   equal ~msg:"and prints exactly the summary" text
     "mutants: 3 reached, 3 killed, 1 executable\n" out
 
@@ -629,15 +535,15 @@ let only_unreached =
     (V.to_string
        (collection [ m_add V.Killed; m_sub V.Killed; m_or V.Unreached ]));
   let code, out, err = mutate ~cwd:root [] in
-  check_int "only unreached mutants exit 0" ~expected:0 ~actual:code;
-  check "and warn about nothing" (err = "");
-  check_absent "there is no survivor section" ~needle:"survivors (" out;
-  check_contains "the never-reached row still prints"
-    ~needle:"\n  1  lib/util.ml   lines 1\n" out;
-  check "and its rule opens the report: nothing precedes it"
-    (String.starts_with ~prefix:"\u{2500}" out);
-  check_absent "no survivor, no mutant to arm: no command" ~needle:"reproduce:"
-    out;
+  equal ~msg:"only unreached mutants exit 0" int 0 code;
+  equal ~msg:"and warn about nothing" text "" err;
+  not_contains ~msg:"there is no survivor section" ~sub:"survivors (" out;
+  contains ~msg:"the never-reached row still prints"
+    ~sub:"\n  1  lib/util.ml   lines 1\n" out;
+  starts_with ~msg:"and its rule opens the report: nothing precedes it"
+    ~affix:"\u{2500}" out;
+  not_contains ~msg:"no survivor, no mutant to arm: no command"
+    ~sub:"reproduce:" out;
   equal ~msg:"the summary counts it without a survived term" text
     "mutants: 2 reached, 2 killed, 1 never reached, 1 executable" (summary out)
 
@@ -646,25 +552,24 @@ let only_unreached =
 let discovery =
   test "discovery: walk-up, a cwd inside _build, and planted garbage"
   @@ fun () ->
+  let proj = proj () in
   let code, out, _ = mutate ~cwd:(Filename.concat proj "lib") [] in
-  check_int "walk-up discovery finds the survivor and exits 1" ~expected:1
-    ~actual:code;
-  check_contains "walk-up discovery finds the same data"
-    ~needle:"mutants: 1 survived of 3 reached" out;
-  check_contains "walk-up discovery still resolves sources"
-    ~needle:"let sub a b = a - b" out;
+  equal ~msg:"walk-up discovery finds the survivor and exits 1" int 1 code;
+  contains ~msg:"walk-up discovery finds the same data"
+    ~sub:"mutants: 1 survived of 3 reached" out;
+  contains ~msg:"walk-up discovery still resolves sources"
+    ~sub:"let sub a b = a - b" out;
   (* A rule-action cwd — inside _build — resolves the root by the
      topmost-_build rule (the runtime's), never the ancestor scan. *)
   mkdir_p (Filename.concat proj "_build/default/lib");
   let code, out, _ =
     mutate ~cwd:(Filename.concat proj "_build/default/lib") []
   in
-  check_int "a cwd inside _build finds the survivor too" ~expected:1
-    ~actual:code;
-  check_contains "a cwd inside _build resolves the workspace root"
-    ~needle:"mutants: 1 survived of 3 reached" out;
-  check_contains "sources resolve from that root too"
-    ~needle:"let sub a b = a - b" out;
+  equal ~msg:"a cwd inside _build finds the survivor too" int 1 code;
+  contains ~msg:"a cwd inside _build resolves the workspace root"
+    ~sub:"mutants: 1 survived of 3 reached" out;
+  contains ~msg:"sources resolve from that root too" ~sub:"let sub a b = a - b"
+    out;
   (* Garbage planted at _build/.sandbox/_build/_mutants must not capture
      discovery from a sandboxed action's cwd: the topmost _build wins. *)
   write_file
@@ -674,56 +579,57 @@ let discovery =
   let code, out, err =
     mutate ~cwd:(Filename.concat proj "_build/.sandbox/0abc/default") []
   in
-  check_int "a sandboxed cwd escapes planted garbage" ~expected:1 ~actual:code;
-  check_contains "a sandboxed cwd reports the workspace data"
-    ~needle:"mutants: 1 survived of 3 reached" out;
-  check_absent "the planted file is never read" ~needle:"junk.mutants" err
+  equal ~msg:"a sandboxed cwd escapes planted garbage" int 1 code;
+  contains ~msg:"a sandboxed cwd reports the workspace data"
+    ~sub:"mutants: 1 survived of 3 reached" out;
+  not_contains ~msg:"the planted file is never read" ~sub:"junk.mutants" err
 
 let explicit_paths =
   test "explicit PATH arguments replace discovery, and are loud when invalid"
   @@ fun () ->
+  let proj = proj () in
+  let elsewhere = temp_dir () in
   (* A directory argument contributes what it holds. *)
   let code, out, _ =
-    mutate ~cwd:scratch_dir [ Filename.concat proj "_build/_mutants" ]
+    mutate ~cwd:elsewhere [ Filename.concat proj "_build/_mutants" ]
   in
-  check_int "an explicit directory reports the survivor, exit 1" ~expected:1
-    ~actual:code;
-  check_contains "an explicit directory merges the same data"
-    ~needle:"mutants: 1 survived of 3 reached" out;
+  equal ~msg:"an explicit directory reports the survivor, exit 1" int 1 code;
+  contains ~msg:"an explicit directory merges the same data"
+    ~sub:"mutants: 1 survived of 3 reached" out;
   (* A nonexistent explicit path is an error naming the path and the
      reason — never a silent narrowing, which under killed-anywhere-wins
      would turn another executable's kill back into a survivor. *)
   let absent = scratch "no-such-dir/absent.mutants" in
-  let code, _, err = mutate ~cwd:scratch_dir [ absent ] in
-  check_int "a missing explicit path exits 1" ~expected:1 ~actual:code;
-  check_contains "a missing explicit path is named" ~needle:absent err;
-  check_contains "a missing explicit path states the reason"
-    ~needle:"no such file or directory" err;
-  check_absent "a missing explicit path never blames instrumentation"
-    ~needle:"Instrument the library" err;
+  let code, _, err = mutate ~cwd:elsewhere [ absent ] in
+  equal ~msg:"a missing explicit path exits 1" int 1 code;
+  contains ~msg:"a missing explicit path is named" ~sub:absent err;
+  contains ~msg:"a missing explicit path states the reason"
+    ~sub:"no such file or directory" err;
+  not_contains ~msg:"a missing explicit path never blames instrumentation"
+    ~sub:"Instrument the library" err;
   (* An existing file without the .mutants suffix is equally loud,
      whatever its content. *)
   let renamed = scratch "renamed.verdicts" in
   write_file renamed (V.to_string file_a);
-  let code, _, err = mutate ~cwd:scratch_dir [ renamed ] in
-  check_int "a wrong-suffix explicit file exits 1" ~expected:1 ~actual:code;
-  check_contains "a wrong-suffix explicit file is named" ~needle:renamed err;
-  check_contains "a wrong-suffix explicit file states the reason"
-    ~needle:"not a .mutants file" err;
+  let code, _, err = mutate ~cwd:elsewhere [ renamed ] in
+  equal ~msg:"a wrong-suffix explicit file exits 1" int 1 code;
+  contains ~msg:"a wrong-suffix explicit file is named" ~sub:renamed err;
+  contains ~msg:"a wrong-suffix explicit file states the reason"
+    ~sub:"not a .mutants file" err;
   (* An invalid path beside valid ones fails the whole invocation. *)
   let valid = Filename.concat proj "_build/_mutants/windtrap-a.mutants" in
-  let code, out, err = mutate ~cwd:scratch_dir [ valid; absent ] in
-  check_int "one bad path fails the whole invocation" ~expected:1 ~actual:code;
-  check_contains "the bad path is the one named" ~needle:absent err;
-  check "nothing is reported from the good one" (out = "");
+  let code, out, err = mutate ~cwd:elsewhere [ valid; absent ] in
+  equal ~msg:"one bad path fails the whole invocation" int 1 code;
+  contains ~msg:"the bad path is the one named" ~sub:absent err;
+  equal ~msg:"nothing is reported from the good one" text "" out;
   (* Directories keep the scan's tolerance: an empty one falls through to
      the no-data report. *)
   let empty_dir = scratch "explicit-empty" in
   mkdir_p empty_dir;
-  let code, _, err = mutate ~cwd:scratch_dir [ empty_dir ] in
-  check_int "an empty explicit directory exits 1" ~expected:1 ~actual:code;
-  check_contains "an empty explicit directory is a no-data report"
-    ~needle:"no .mutants files found" err;
+  let code, _, err = mutate ~cwd:elsewhere [ empty_dir ] in
+  equal ~msg:"an empty explicit directory exits 1" int 1 code;
+  contains ~msg:"an empty explicit directory is a no-data report"
+    ~sub:"no .mutants files found" err;
   (* And they are searched to the bottom. A scan that stopped at the top
      level would narrow the merge without saying so, which under
      killed-anywhere-wins is exactly how a kill turns back into a
@@ -732,9 +638,8 @@ let explicit_paths =
   write_file (Filename.concat nested "one/two/a.mutants") (V.to_string file_a);
   write_file (Filename.concat nested "one/b.mutants") (V.to_string file_b);
   write_file (Filename.concat nested "c.mutants") (V.to_string file_c);
-  let code, out, _ = mutate ~cwd:scratch_dir [ nested ] in
-  check_int "a nested explicit directory finds the survivor" ~expected:1
-    ~actual:code;
+  let code, out, _ = mutate ~cwd:elsewhere [ nested ] in
+  equal ~msg:"a nested explicit directory finds the survivor" int 1 code;
   equal ~msg:"and every depth reaches the merge" text
     "mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 executables"
     (summary out)
@@ -760,18 +665,18 @@ let staleness =
   (* Fresh: the executable on disk is the file's writer. *)
   let root, _ = stale_root "stale-fresh" in
   let code, out, err = mutate ~cwd:root [] in
-  check_int "a fresh identity-carrying file reports its survivor" ~expected:1
-    ~actual:code;
-  check "a fresh identity-carrying file warns about nothing" (err = "");
+  equal ~msg:"a fresh identity-carrying file reports its survivor" int 1 code;
+  equal ~msg:"a fresh identity-carrying file warns about nothing" text "" err;
   equal ~msg:"and is merged" text
     "mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable"
     (summary out);
-  check_contains "its witness names the recorded executable, by basename"
-    ~needle:"\n      a.exe  calc \u{203a} compares\n" out;
-  check_contains
-    "an executable under a dune build directory is run again through dune: its \
-     identity less the build context, the backend before it"
-    ~needle:
+  contains ~msg:"its witness names the recorded executable, by basename"
+    ~sub:"\n      a.exe  calc \u{203a} compares\n" out;
+  contains
+    ~msg:
+      "an executable under a dune build directory is run again through dune: \
+       its identity less the build context, the backend before it"
+    ~sub:
       "\n\
        reproduce: dune exec --instrument-with ppx_windtrap.mutate test/a.exe \
        -- --arm lib/calc.ml:3:14:lt\n"
@@ -792,24 +697,22 @@ let staleness =
          }
        (collection [ m_lt V.Killed ]));
   let code, out, err = mutate ~cwd:root [] in
-  check_int "an orphan still reports the live data" ~expected:1 ~actual:code;
+  equal ~msg:"an orphan still reports the live data" int 1 code;
   equal ~msg:"the orphan's kill never reaches the report" text
     "mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable"
     (summary out);
-  check_contains "the orphan warning names the file" ~needle:"gone.mutants" err;
-  check_contains "the orphan warning names the missing executable"
-    ~needle:"default/test/gone.exe" err;
-  check_contains "the orphan warning says what it did" ~needle:"excluding it"
-    err;
+  contains ~msg:"the orphan warning names the file" ~sub:"gone.mutants" err;
+  contains ~msg:"the orphan warning names the missing executable"
+    ~sub:"default/test/gone.exe" err;
+  contains ~msg:"the orphan warning says what it did" ~sub:"excluding it" err;
   (* One remedy sentence covers both exclusions: a re-run rewrites an
      outdated verdict, and deleting the directory drops an orphan no run
      can replace. *)
-  check_contains "the remedy names deletion for leftovers"
-    ~needle:"; delete the files whose executable no longer exists\n" err;
-  check_contains "and the re-run" ~needle:rerun err;
-  check_contains "behind windtrap's one anchor" ~needle:("windtrap: " ^ rerun)
-    err;
-  check_absent "the command's own prefix is gone" ~needle:"windtrap mutants:"
+  contains ~msg:"the remedy names deletion for leftovers"
+    ~sub:"; delete the files whose executable no longer exists\n" err;
+  contains ~msg:"and the re-run, behind windtrap's one anchor"
+    ~sub:("windtrap: " ^ rerun) err;
+  not_contains ~msg:"the command's own prefix is gone" ~sub:"windtrap mutants:"
     err;
   (* Stale beside fresh: the report still renders, the outdated kill is
      excluded, and the same sentence names the re-run that rewrites a
@@ -821,45 +724,42 @@ let staleness =
     (V.to_string ~identity:other (collection [ m_lt V.Killed ]));
   write_file (Filename.concat root "_build/default/test/b.exe") "rebuilt since";
   let code, out, err = mutate ~cwd:root [] in
-  check_int "a stale file beside a fresh one still reports" ~expected:1
-    ~actual:code;
+  equal ~msg:"a stale file beside a fresh one still reports" int 1 code;
   equal ~msg:"the stale file's kill never reaches the report" text
     "mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable"
     (summary out);
-  check_contains "a stale file's warning says it was rebuilt"
-    ~needle:"rebuilt since" err;
-  check_contains "and the remedy is the one sentence" ~needle:rerun err;
-  check_int "the remedy is said once, however many files" ~expected:1
-    ~actual:
-      (List.length
-         (List.filter
-            (fun line -> contains_sub ~sub:"then merge again" line)
-            (String.split_on_char '\n' err)));
+  contains ~msg:"a stale file's warning says it was rebuilt"
+    ~sub:"rebuilt since" err;
+  contains ~msg:"and the remedy is the one sentence" ~sub:rerun err;
+  equal ~msg:"the remedy is said once, however many files" int 1
+    (List.length (lines_with ~sub:"then merge again" err));
   (* Stale everywhere: the executable was rebuilt since the run, detected
      by content and not by mtime. *)
   let root, identity = stale_root "stale-rebuilt" in
   write_file
     (Filename.concat root "_build/default/test/a.exe")
     "a different build";
-  check "the fixture really changed the executable"
-    (Digest.to_hex (Digest.string "a different build") <> identity.V.digest);
+  not_equal ~msg:"the fixture really changed the executable" string
+    identity.V.digest
+    (Digest.to_hex (Digest.string "a different build"));
   let code, _, err = mutate ~cwd:root [] in
-  check_int "every file stale exits 1" ~expected:1 ~actual:code;
-  check_contains "the stale warning names the executable"
-    ~needle:"default/test/a.exe" err;
-  check_contains "and says it did not write the file"
-    ~needle:"not written by the executable now at" err;
-  check_contains
-    "the all-stale message states the situation: the count, what the files are \
-     and what invalidates a verdict"
-    ~needle:
+  equal ~msg:"every file stale exits 1" int 1 code;
+  contains ~msg:"the stale warning names the executable"
+    ~sub:"default/test/a.exe" err;
+  contains ~msg:"and says it did not write the file"
+    ~sub:"not written by the executable now at" err;
+  contains
+    ~msg:
+      "the all-stale message states the situation: the count, what the files \
+       are and what invalidates a verdict"
+    ~sub:
       "windtrap: found 1 .mutants file and every one is stale\n\
       \  A verdict is written only by a run asked to test its mutants, and it is\n\
       \  invalidated by any later build of the executable that wrote it.\n\
        windtrap: re-run every suite"
     err;
-  check_contains "and names the one remedy" ~needle:rerun err;
-  check_absent "and spells no dune command" ~needle:"dune " err;
+  contains ~msg:"and names the one remedy" ~sub:rerun err;
+  not_contains ~msg:"and spells no dune command" ~sub:"dune " err;
   (* A rebuild excludes every verdict file of the project: three are
      named, the rest counted, and the summary splits the stale from the
      orphaned. *)
@@ -889,23 +789,19 @@ let staleness =
          }
        (collection [ m_lt V.Killed ]));
   let code, _, err = mutate ~cwd:root [] in
-  check_int "five excluded files and nothing else exits 1" ~expected:1
-    ~actual:code;
-  let lines = String.split_on_char '\n' err in
-  check_int "at most three files are named" ~expected:3
-    ~actual:
-      (List.length (List.filter (contains_sub ~sub:"; excluding it") lines));
-  check_absent "the fourth is counted, not named" ~needle:"d.mutants" err;
-  check_contains "the rest are one line, then the summary with its split"
-    ~needle:
+  equal ~msg:"five excluded files and nothing else exits 1" int 1 code;
+  equal ~msg:"at most three files are named" int 3
+    (List.length (lines_with ~sub:"; excluding it" err));
+  not_contains ~msg:"the fourth is counted, not named" ~sub:"d.mutants" err;
+  contains ~msg:"the rest are one line, then the summary with its split"
+    ~sub:
       "excluding it\n\
        windtrap: ... and 2 more like that\n\
        windtrap: found 5 .mutants files and every one is stale or orphaned (1 \
        orphaned)\n"
     err;
-  check_int "the remedy still prints once" ~expected:1
-    ~actual:
-      (List.length (List.filter (contains_sub ~sub:"then merge again") lines))
+  equal ~msg:"the remedy still prints once" int 1
+    (List.length (lines_with ~sub:"then merge again" err))
 
 (* The executable column *)
 
@@ -937,18 +833,18 @@ let executable_labels =
     (Filename.concat root "_build/_mutants/plain.mutants")
     (V.to_string (verdicts [ [ "hand"; "written" ] ]));
   let code, out, err = mutate ~cwd:root [] in
-  check_int "the survivor exits 1" ~expected:1 ~actual:code;
-  check "nothing is stale" (err = "");
-  check_contains "the sentence counts tests and executables"
-    ~needle:"4 tests in 3 executables ran this line and none failed:" out;
+  equal ~msg:"the survivor exits 1" int 1 code;
+  equal ~msg:"nothing is stale" text "" err;
+  contains ~msg:"the sentence counts tests and executables"
+    ~sub:"4 tests in 3 executables ran this line and none failed:" out;
   (* The column is as wide as the widest label plus the gap. *)
   let labels = [ "my_lib_expect"; "plain.mutants"; "test_calc.exe" ] in
   let width =
     2 + List.fold_left (fun w l -> max w (String.length l)) 0 labels
   in
   let row exe test = Printf.sprintf "      %-*s%s\n" width exe test in
-  check_contains "the witness rows, labelled, in (executable, test) order"
-    ~needle:
+  contains ~msg:"the witness rows, labelled, in (executable, test) order"
+    ~sub:
       (String.concat ""
          [
            row "my_lib_expect" "my_lib_expect \u{203a} add";
@@ -961,8 +857,8 @@ let executable_labels =
     "mutants: 1 survived of 1 reached, 3 executables" (summary out);
   (* The first row is an inline suite's. Dune's inline runner takes its
      arguments from dune alone, so the command is the build's. *)
-  check_contains "an inline runner is reached through the build"
-    ~needle:
+  contains ~msg:"an inline runner is reached through the build"
+    ~sub:
       "\n\
        reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:1:14:add dune runtest \
        --force --instrument-with ppx_windtrap.mutate\n"
@@ -980,12 +876,13 @@ let executable_labels =
          { V.exe; digest = Digest.to_hex (Digest.string "built by hand") }
        (verdicts [ [ "calc"; "adds" ] ]));
   let code, out, err = mutate ~cwd:bare [] in
-  check_int "the hand-built project's survivor exits 1" ~expected:1 ~actual:code;
-  check "its file is fresh" (err = "");
-  check_contains
-    "an executable under no build directory is run as it is, its path quoted \
-     where a shell would split it"
-    ~needle:("\nreproduce: '" ^ exe ^ "' --arm lib/calc.ml:1:14:add\n")
+  equal ~msg:"the hand-built project's survivor exits 1" int 1 code;
+  equal ~msg:"its file is fresh" text "" err;
+  contains
+    ~msg:
+      "an executable under no build directory is run as it is, its path quoted \
+       where a shell would split it"
+    ~sub:("\nreproduce: '" ^ exe ^ "' --arm lib/calc.ml:1:14:add\n")
     out;
   (* The same for the target dune is given. *)
   let spaced = scratch "spaced" in
@@ -995,8 +892,8 @@ let executable_labels =
     (Filename.concat spaced "_build/_mutants/a.mutants")
     (V.to_string ~identity (verdicts [ [ "calc"; "adds" ] ]));
   let _, out, _ = mutate ~cwd:spaced [] in
-  check_contains "a dune target with a space is one quoted word"
-    ~needle:
+  contains ~msg:"a dune target with a space is one quoted word"
+    ~sub:
       "\n\
        reproduce: dune exec --instrument-with ppx_windtrap.mutate 'my \
        tests/a.exe' -- --arm lib/calc.ml:1:14:add\n"
@@ -1022,27 +919,25 @@ let survivor_order =
     (Filename.concat root "_build/_mutants/two.mutants")
     (V.to_string (collection [ m_sub (V.survived [ [ "u"; "d" ] ]) ]));
   let code, out, _ = mutate ~cwd:root [] in
-  check_int "two survivors exit 1" ~expected:1 ~actual:code;
-  check_contains "the most-watched survivor's sentence"
-    ~needle:"3 tests in 2 executables ran this line and none failed:" out;
-  check_before "the most-watched survivor prints first"
-    ~first:"SURVIVED  lib/calc.ml:2:14:sub"
-    ~second:"SURVIVED  lib/calc.ml:1:14:add" out
+  equal ~msg:"two survivors exit 1" int 1 code;
+  contains ~msg:"the most-watched survivor's sentence"
+    ~sub:"3 tests in 2 executables ran this line and none failed:" out;
+  in_order ~msg:"the most-watched survivor prints first"
+    ~subs:[ "SURVIVED  lib/calc.ml:2:14:sub"; "SURVIVED  lib/calc.ml:1:14:add" ]
+    out
 
 (* Loud failures and usage *)
 
 let loud_failures =
   test "failures are loud: no data, corrupt data, foreign formats, usage"
   @@ fun () ->
+  let proj = proj () in
   let empty = scratch "empty-root" in
   mkdir_p empty;
   let code, _, err = mutate ~cwd:empty [] in
-  check_int "no .mutants files exit 1" ~expected:1 ~actual:code;
-  check_contains "no files: the hint names the backend, not a build tool"
-    ~needle:"ppx_windtrap.mutate" err;
-  check_absent "and spells no dune command" ~needle:"dune " err;
-  check_contains "no files: the hint names the flag a verdict needs"
-    ~needle:"--mutate" err;
+  equal ~msg:"no .mutants files exit 1" int 1 code;
+  (* The hint names the backend and the flag a verdict needs, not a
+     build tool. *)
   equal ~msg:"behind windtrap's one anchor, the hint on its own line" text
     "windtrap: no .mutants files found\n\
      Instrument the library under test with ppx_windtrap.mutate and run every \
@@ -1053,104 +948,103 @@ let loud_failures =
   let bare = scratch "bare" in
   mkdir_p (Filename.concat bare "_build/_mutants");
   let code, _, err = mutate ~cwd:bare [] in
-  check_int "an empty _build/_mutants exits 1" ~expected:1 ~actual:code;
-  check_contains "an empty _build/_mutants prints the no-files hint"
-    ~needle:"no .mutants files found" err;
+  equal ~msg:"an empty _build/_mutants exits 1" int 1 code;
+  contains ~msg:"an empty _build/_mutants prints the no-files hint"
+    ~sub:"no .mutants files found" err;
   (* A truncated file is corrupt and named, never partially merged. *)
   let serialized = V.to_string file_a in
+  let trunc = scratch "trunc" in
   write_file
-    (scratch "trunc/_build/_mutants/cut.mutants")
+    (Filename.concat trunc "_build/_mutants/cut.mutants")
     (String.sub serialized 0 (String.length serialized - 6));
-  let code, out, err = mutate ~cwd:(scratch "trunc") [] in
-  check_int "a truncated file exits 1" ~expected:1 ~actual:code;
-  check_contains "a truncated file is named" ~needle:"cut.mutants" err;
-  check_contains "a truncated file is called corrupt" ~needle:"corrupt" err;
-  check "a corrupt file reports nothing at all" (out = "");
+  let code, out, err = mutate ~cwd:trunc [] in
+  equal ~msg:"a truncated file exits 1" int 1 code;
+  contains ~msg:"a truncated file is named" ~sub:"cut.mutants" err;
+  contains ~msg:"a truncated file is called corrupt" ~sub:"corrupt" err;
+  equal ~msg:"a corrupt file reports nothing at all" text "" out;
   (* A foreign magic is rejected, not converted: no partial merge, and
      the remedy is deletion because a re-run cannot remove it. *)
-  let foreign = scratch "foreign/_build/_mutants/old.mutants" in
-  write_file foreign "windtrap-mutants-v0\n1\nsome older payload\n";
-  let code, _, err = mutate ~cwd:(scratch "foreign") [] in
-  check_int "a foreign-format file exits 1" ~expected:1 ~actual:code;
-  check_contains "a foreign-format file is named" ~needle:"old.mutants" err;
-  check_contains "a foreign-format file names the expected magic"
-    ~needle:"windtrap-mutants-v3" err;
-  check_contains "a foreign format instructs deletion" ~needle:"delete" err;
+  let foreign = scratch "foreign" in
+  write_file
+    (Filename.concat foreign "_build/_mutants/old.mutants")
+    "windtrap-mutants-v0\n1\nsome older payload\n";
+  let code, _, err = mutate ~cwd:foreign [] in
+  equal ~msg:"a foreign-format file exits 1" int 1 code;
+  contains ~msg:"a foreign-format file is named" ~sub:"old.mutants" err;
+  contains ~msg:"a foreign-format file names the expected magic"
+    ~sub:"windtrap-mutants-v3" err;
+  contains ~msg:"a foreign format instructs deletion" ~sub:"delete" err;
   (* A coverage dump under _build/_mutants is the same rejection. *)
-  let crossed = scratch "crossed/_build/_mutants/cov.mutants" in
-  write_file crossed "WINDTRAP-COVERAGE-1\nsome v1 payload\n";
-  let code, _, err = mutate ~cwd:(scratch "crossed") [] in
-  check_int "a coverage dump in the mutants directory exits 1" ~expected:1
-    ~actual:code;
-  check_contains "and is named" ~needle:"cov.mutants" err;
+  let crossed = scratch "crossed" in
+  write_file
+    (Filename.concat crossed "_build/_mutants/cov.mutants")
+    "WINDTRAP-COVERAGE-1\nsome v1 payload\n";
+  let code, _, err = mutate ~cwd:crossed [] in
+  equal ~msg:"a coverage dump in the mutants directory exits 1" int 1 code;
+  contains ~msg:"and is named" ~sub:"cov.mutants" err;
   (* Usage errors are 2, and are the only 2 this command produces. *)
   let code, _, err = mutate ~cwd:proj [ "--frobnicate" ] in
-  check_int "an unknown option exits 2" ~expected:2 ~actual:code;
-  check_contains "an unknown option is named"
-    ~needle:"unknown option '--frobnicate'" err;
-  check_contains "an unknown option prints the usage"
-    ~needle:"usage: windtrap mutants" err;
+  equal ~msg:"an unknown option exits 2" int 2 code;
   equal ~msg:"the anchored sentence, then the usage line and nothing else" text
     "windtrap: unknown option '--frobnicate'\n\
      usage: windtrap mutants [PATH...]\n"
     err;
   (* There is no threshold: one survivor is the failure. *)
   let code, _, err = mutate ~cwd:proj [ "--min"; "80" ] in
-  check_int "there is no --min threshold to pass" ~expected:2 ~actual:code;
-  check_contains "and --min is simply unknown" ~needle:"unknown option '--min'"
-    err;
+  equal ~msg:"there is no --min threshold to pass" int 2 code;
+  contains ~msg:"and --min is simply unknown" ~sub:"unknown option '--min'" err;
   let code, out, _ = mutate ~cwd:proj [ "--help" ] in
-  check_int "mutate --help exits 0" ~expected:0 ~actual:code;
-  check_contains "mutate --help documents the PATH arguments"
-    ~needle:"[PATH...]" out;
-  check_contains "mutate --help says it drives nothing"
-    ~needle:"Runs no tests and drives no build" out;
-  check_contains "mutate --help states the exit code"
-    ~needle:"Exits 1 when any mutant survived every executable that reached it."
+  equal ~msg:"mutate --help exits 0" int 0 code;
+  contains ~msg:"mutate --help says it drives nothing"
+    ~sub:"Runs no tests and drives no build" out;
+  contains ~msg:"mutate --help states the exit code"
+    ~sub:"Exits 1 when any mutant survived every executable that reached it."
     out;
-  check_contains "mutate --help opens on the name line, then the usage line"
-    ~needle:
+  contains
+    ~msg:
+      "mutate --help opens on the name line, then the usage line with the PATH \
+       arguments"
+    ~sub:
       "windtrap mutants - merge .mutants verdict files and report the \
        survivors\n\n\
        usage: windtrap mutants [PATH...]\n"
     out;
-  check_contains "and names the one variable that has no flag"
-    ~needle:
+  contains ~msg:"and names the one variable that has no flag"
+    ~sub:
       "ENVIRONMENT (no flag):\n\
       \  WINDTRAP_COLOR\n\
       \      Color output: always, never or auto.\n"
     out;
   List.iter
     (fun line ->
-      check
-        (Printf.sprintf "mutate --help fits 80 columns: %s" line)
-        (String.length line <= 80))
+      at_most
+        ~msg:(Printf.sprintf "mutate --help fits 80 columns: %s" line)
+        int ~than:80 (String.length line))
     (String.split_on_char '\n' out)
 
 let dispatch =
   test "the binary dispatches mutants" @@ fun () ->
   let code, out, _ = capture [ "--help" ] in
-  check_int "windtrap --help exits 0" ~expected:0 ~actual:code;
-  check_contains "windtrap --help lists the subcommand and what it does"
-    ~needle:
+  equal ~msg:"windtrap --help exits 0" int 0 code;
+  contains ~msg:"windtrap --help lists the subcommand and what it does"
+    ~sub:
       "  mutants\n\
       \      Merge .mutants verdict files and report the project's survivors.\n"
     out;
-  check_contains "windtrap --help still lists coverage"
-    ~needle:
+  contains ~msg:"windtrap --help still lists coverage"
+    ~sub:
       "  coverage\n\
       \      Merge .coverage files and report; --min gates, --json exports.\n"
     out;
   let code, _, err = capture [ "mutant" ] in
-  check_int "a near-miss command exits 2" ~expected:2 ~actual:code;
-  check_contains "a near-miss command is named"
-    ~needle:"unknown command 'mutant'" err;
+  equal ~msg:"a near-miss command exits 2" int 2 code;
+  contains ~msg:"a near-miss command is named" ~sub:"unknown command 'mutant'"
+    err;
   (* The verb that promised a run is gone, not aliased: the command
      reports mutants and mutates nothing. *)
   let code, _, err = capture [ "mutate" ] in
-  check_int "the old verb exits 2" ~expected:2 ~actual:code;
-  check_contains "the old verb is unknown" ~needle:"unknown command 'mutate'"
-    err
+  equal ~msg:"the old verb exits 2" int 2 code;
+  contains ~msg:"the old verb is unknown" ~sub:"unknown command 'mutate'" err
 
 (* The suite *)
 
