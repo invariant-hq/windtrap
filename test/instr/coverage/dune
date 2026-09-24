@@ -6,7 +6,7 @@
 (executable
  (name dump_child)
  (modules dump_child)
- (libraries windtrap_runtime))
+ (libraries windtrap_runtime unix))
 
 (test
  (name test_coverage)

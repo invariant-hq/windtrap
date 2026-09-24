@@ -403,6 +403,32 @@ let collection_tests =
           ~sub:"delete the stale coverage files"
           (Format.asprintf "%a" C.pp_error
              (C.Data (I.Unknown_format { path = "old.coverage"; header = "V1" }))));
+    test
+      "merge names the first file of its second argument, by name, that \
+       disagrees" (fun () ->
+        (* [lib/a.ml] agrees, [lib/m.ml] and [lib/z.ml] disagree, and [b]
+           was built in the reverse of the order of names. *)
+        let of_list tables =
+          List.fold_left
+            (fun t (file, end_ofs) ->
+              ok file (C.add t ~file ~points:[| pt 0 end_ofs |] ~counts:[| 1 |]))
+            C.empty tables
+        in
+        let a = of_list [ ("lib/a.ml", 5); ("lib/m.ml", 5); ("lib/z.ml", 5) ]
+        and b = of_list [ ("lib/z.ml", 6); ("lib/m.ml", 6); ("lib/a.ml", 5) ] in
+        match C.merge a b with
+        | Error (C.Point_mismatch { file }) ->
+            equal ~msg:"the first disagreeing name" string "lib/m.ml" file
+        | Ok _ -> fail "a conflicting merge succeeded"
+        | Error e -> failf "expected Point_mismatch, got %a" C.pp_error e);
+    test "filter keeps the files whose name the predicate accepts" (fun () ->
+        equal ~msg:"one file kept, its counts whole" string
+          "windtrap-coverage-v3\n1\n8 lib/b.ml\n2\n10 20 1\n30 40 0\n"
+          (C.to_string (C.filter (String.equal "lib/b.ml") (ab ())));
+        equal ~msg:"every file kept" string ab_serialized
+          (C.to_string (C.filter (fun _ -> true) (ab ())));
+        is_true ~msg:"no file kept is the empty collection"
+          (C.is_empty (C.filter (fun _ -> false) (ab ()))));
     test "empty is a merge identity" (fun () ->
         let t = ab () in
         equal ~msg:"empty is a left identity for merge" string ab_serialized
@@ -827,6 +853,40 @@ let report_tests =
               (list int) [ 1; 2; 3 ] r.C.uncovered_lines
         | reports ->
             failf "eof file yields one report, got %d" (List.length reports));
+    test
+      "a source is looked up by its recorded name, then under each root in \
+       order, and the first readable one wins, stale or not" (fun () ->
+        let report ~roots t =
+          match C.file_reports ~source_roots:roots t with
+          | [ r ] -> r
+          | reports -> failf "one file, %d reports" (List.length reports)
+        in
+        let short = temp_dir () and whole = temp_dir () in
+        write_source short "lib/order.ml" "short\n";
+        write_source whole "lib/order.ml" three_lines;
+        let t =
+          ok "order add"
+            (C.add C.empty ~file:"lib/order.ml"
+               ~points:[| pt 0 20 |]
+               ~counts:[| 0 |])
+        in
+        is_true ~msg:"the first root's copy is taken, though it is stale"
+          (report ~roots:[ short; whole ] t).C.stale;
+        equal ~msg:"in the other order the whole copy is" (option string)
+          (Some three_lines) (report ~roots:[ whole; short ] t).C.source;
+        equal ~msg:"a root holding no copy is passed over" (option string)
+          (Some three_lines) (report ~roots:[ temp_dir (); whole ] t).C.source;
+        (* An absolute recorded name, found as it is before any root is
+           tried, where a root holds a stale copy under the same name. *)
+        let recorded = Filename.concat (temp_dir ()) "recorded.ml" in
+        write_source "/" recorded three_lines;
+        write_source short recorded "short\n";
+        let t =
+          ok "recorded add"
+            (C.add C.empty ~file:recorded ~points:[| pt 0 20 |] ~counts:[| 0 |])
+        in
+        equal ~msg:"the recorded name comes before every root" (option string)
+          (Some three_lines) (report ~roots:[ short ] t).C.source);
   ]
 
 (* The at_exit dump, end to end *)
@@ -970,6 +1030,130 @@ let dump_tests =
           (List.filter
              (fun n -> Filename.check_suffix n ".tmp")
              (Array.to_list (Sys.readdir dir))));
+    test
+      "the destination is fixed at the first registration, a relative path \
+       against the directory of that moment" (fun () ->
+        let first = temp_dir () and later = temp_dir () in
+        let r =
+          Child.run ~cwd:first
+            ~env:[ ("WINDTRAP_COVERAGE_FILE", "rel.coverage") ]
+            child_exe [ "moved"; later ]
+        in
+        equal ~msg:"the child exits 0" int 0 (Child.exit_code r);
+        (match C.load (Filename.concat first "rel.coverage") with
+        | Ok (t, _) ->
+            equal ~msg:"the dump is where the first registration put it" string
+              (child_expected [| 1; 0; 0 |])
+              (C.to_string t)
+        | Error e -> failf "no dump where it was resolved: %a" C.pp_error e);
+        equal ~msg:"a later move and a later variable change nothing"
+          (list string) []
+          (Array.to_list (Sys.readdir later)));
+    test "a forked child that leaves through exit dumps too" (fun () ->
+        (* Under the variable the two share one path, and the parent,
+           which waits for the child, is the last writer. *)
+        let dump = Filename.concat (temp_dir ()) "fork.coverage" in
+        let r =
+          Child.run
+            ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ]
+            child_exe [ "fork" ]
+        in
+        equal ~msg:"the parent exits 0" int 0 (Child.exit_code r);
+        (match C.load dump with
+        | Ok (t, _) ->
+            equal ~msg:"the last to exit wins, and nothing is merged" string
+              (child_expected [| 1; 0; 1 |])
+              (C.to_string t)
+        | Error e -> failf "the dump does not load: %a" C.pp_error e);
+        (* Under the executable's own directory each keeps a file, and the
+           counts from before the fork are in both. *)
+        let root = temp_dir () in
+        let exe = Filename.concat root "_build/default/child.exe" in
+        I.write_file exe (read_file child_exe);
+        Unix.chmod exe 0o755;
+        let r =
+          Child.run ~env:[ ("WINDTRAP_COVERAGE_FILE", "") ] exe [ "fork" ]
+        in
+        equal ~msg:"the copy exits 0" int 0 (Child.exit_code r);
+        let dir = C.output_dir ~exe in
+        let dumps =
+          List.filter
+            (fun n -> Filename.check_suffix n ".coverage")
+            (Array.to_list (Sys.readdir dir))
+        in
+        equal ~msg:"two files, one per process" int 2 (List.length dumps);
+        let merged =
+          List.fold_left
+            (fun acc name ->
+              match C.load (Filename.concat dir name) with
+              | Ok (t, _) -> ok "merge of the two" (C.merge acc t)
+              | Error e -> failf "%s: %a" name C.pp_error e)
+            C.empty dumps
+        in
+        equal ~msg:"the counts before the fork add up twice" string
+          (child_expected [| 2; 1; 1 |])
+          (C.to_string merged));
+    test
+      "a first registration that needs an unreadable current directory warns \
+       and writes no dump" (fun () ->
+        (* The child removes its directory, with the copy of itself in it,
+           before it registers. A relative path needs the directory; an
+           absolute one does not, and then only the identity is missing,
+           since the executable cannot be read back at exit. *)
+        let run dump =
+          let parent = temp_dir () in
+          let dir = Filename.concat parent "here" in
+          Sys.mkdir dir 0o755;
+          I.write_file
+            (Filename.concat dir "dump_child.exe")
+            (read_file child_exe);
+          Unix.chmod (Filename.concat dir "dump_child.exe") 0o755;
+          let r =
+            Child.run ~cwd:dir
+              ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ]
+              "./dump_child.exe" [ "cwd-gone" ]
+          in
+          equal ~msg:"the child exits 0" int 0 (Child.exit_code r);
+          is_false ~msg:"its directory is gone" (Sys.file_exists dir);
+          r.Child.err
+        in
+        let err = run "rel.coverage" in
+        starts_with ~msg:"a relative path: a warning"
+          ~affix:
+            "windtrap: warning: cannot determine the coverage output file: "
+          err;
+        equal ~msg:"on one line, and nothing else" int 1
+          (List.length (String.split_on_char '\n' (String.trim err)));
+        let dump = Filename.concat (temp_dir ()) "abs.coverage" in
+        equal ~msg:"an absolute path needs no directory: no warning" text ""
+          (run dump);
+        match C.load dump with
+        | Ok (t, identity) ->
+            equal ~msg:"the dump is written" string
+              (child_expected [| 1; 0; 0 |])
+              (C.to_string t);
+            is_none ~msg:"without the identity of an executable now gone"
+              identity
+        | Error e -> failf "no dump at the absolute path: %a" C.pp_error e);
+    test
+      "an executable named _build* below no build directory dies at exit on \
+       its empty identity" (fun () ->
+        let dir = temp_dir () in
+        let exe = Filename.concat dir "_build_child.exe" in
+        I.write_file exe (read_file child_exe);
+        Unix.chmod exe 0o755;
+        equal ~msg:"its identity is empty" string "" (I.exe_identity ~exe);
+        let dump = Filename.concat dir "never.coverage" in
+        let r =
+          Child.run ~env:[ ("WINDTRAP_COVERAGE_FILE", dump) ] exe [ "first" ]
+        in
+        equal ~msg:"the process ends on the exception" int 2 (Child.exit_code r);
+        contains ~msg:"which is to_string's Invalid_argument"
+          ~sub:
+            "Invalid_argument(\"Windtrap_runtime.Coverage: empty identity \
+             exe\")"
+          r.Child.err;
+        is_false ~msg:"and nothing is written" (Sys.file_exists dump));
   ]
 
 (* The suite *)
