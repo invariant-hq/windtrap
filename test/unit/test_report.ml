@@ -577,7 +577,7 @@ let test_interrupted () =
 (* The selection in words that hold whichever layer set it, a flag or a
    mirror: the empty run's sentence is read, and its values retyped. *)
 let test_selection_description () =
-  let describe config = Report.selection_description config in
+  let describe config = Report.selection_description ~focused:false config in
   let base = Run.default_config () in
   is_true ~msg:"nothing narrows a default run" (describe base = None);
   equal ~msg:"every part named, the last joined with and" string
@@ -605,7 +605,15 @@ let test_selection_description () =
   equal ~msg:"the empty selection names every pattern" (option string)
     (Some {|filter "a" or "b" matched none of 5 tests|})
     (Report.empty_selection_reason ~declared:5
-       ~selection:(describe { base with Run.filter = [ "a"; "b" ] }))
+       ~selection:(describe { base with Run.filter = [ "a"; "b" ] }));
+  (* A focus narrows from the source, so the empty run names it too, first,
+     and a focus alone is a selection. *)
+  equal ~msg:"a focus is named first" (option string)
+    (Some {|focus and filter "a"|})
+    (Report.selection_description ~focused:true
+       { base with Run.filter = [ "a" ] });
+  equal ~msg:"a focus alone is a selection" (option string) (Some "focus")
+    (Report.selection_description ~focused:true base)
 
 let test_no_tests () =
   (* No header, so no selection and no declared count: nothing to say
@@ -5607,7 +5615,7 @@ let test_observe_raises_nothing () =
 let test_selection_escapes () =
   equal ~msg:"a double quote and a backslash are escaped" (option string)
     (Some {|filter "a\"b\\c"|})
-    (Report.selection_description
+    (Report.selection_description ~focused:false
        { (Run.default_config ()) with Run.filter = [ {|a"b\c|} ] })
 
 let test_excused_is_slow () =

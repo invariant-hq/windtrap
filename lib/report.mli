@@ -158,15 +158,16 @@ val observe :
 
 (** {2:selection The selection} *)
 
-val selection_description : Run.config -> string option
-(** [selection_description config] describes what narrows the run, in the words
-    of the command line, or is [None] when nothing does. It names in this order
-    the filter, the exclusion, the tags, the excluded tags, [--failed] and the
-    shard, and never an in-source focus. The parts are joined by commas and a
-    final [and], as in [tag "a", "b" and shard 1/3], and the patterns of the
-    filter or of the exclusion by [or], as in [filter "a" or "b"]. A value
-    stands in double quotes, with its double quotes, backslashes and control
-    characters escaped and the rest as typed. *)
+val selection_description : focused:bool -> Run.config -> string option
+(** [selection_description ~focused config] describes what narrows the run, in
+    the words of the command line, or is [None] when nothing does. [focused]
+    says whether the suite holds a focused test. It names in this order the
+    focus, as [focus], the filter, the exclusion, the tags, the excluded tags,
+    [--failed] and the shard. The parts are joined by commas and a final [and],
+    as in [tag "a", "b" and shard 1/3], and the patterns of the filter or of the
+    exclusion by [or], as in [filter "a" or "b"]. A value stands in double
+    quotes, with its double quotes, backslashes and control characters escaped
+    and the rest as typed. *)
 
 val empty_selection_reason :
   declared:int -> selection:string option -> string option
@@ -413,7 +414,8 @@ val run :
     + It builds [terminal config] and, when [config.github] is set, opens the
       envelope with [group_start suite].
     + It executes the run with {!observe} as its observer, over [config.seed]
-      and [selection_description config].
+      and the {!selection_description} of [config], focused iff [tests] holds a
+      focused node.
     + For a run that the executor did not refuse, it calls {!finish} over
       {!val:Run.results}, [outcome.release_failures] and {!val:Run.baselines}.
       The [before_summary] closes the envelope and then writes the

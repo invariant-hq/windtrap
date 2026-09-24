@@ -509,14 +509,16 @@ let quote s =
 
 (* What narrowed the run, in the words the reader typed. Used only to
    explain an empty selection: a bare "no tests ran." names neither the
-   filter that matched nothing nor how many tests there were to match. *)
-let selection_description (config : Run.config) =
+   filter that matched nothing nor how many tests there were to match. A
+   focus narrows as a filter does, from the source, so it is named first. *)
+let selection_description ~focused (config : Run.config) =
   let quoted values = String.concat ", " (List.map quote values) in
   (* A test is kept by any one pattern, and dropped by any one. *)
   let either values = String.concat " or " (List.map quote values) in
   let parts =
     List.concat
       [
+        (if focused then [ "focus" ] else []);
         (match config.Run.filter with
         | [] -> []
         | ps -> [ Pp.str "filter %s" (either ps) ]);
@@ -999,7 +1001,10 @@ let run ?(on_event = fun (_ : Run.event) -> ()) ~suite (config : Run.config)
      output by subscribing, and none can reorder it. *)
   let transcript =
     observe renderer ~seed:config.Run.seed
-      ~selection:(selection_description config)
+      ~selection:
+        (selection_description
+           ~focused:(Test_tree.focus_sites tests <> [])
+           config)
   in
   let github = config.Run.github in
   (* The annotations follow the envelope's close: an [::error] written

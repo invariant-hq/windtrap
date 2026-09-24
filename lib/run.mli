@@ -495,7 +495,7 @@ type outcome = {
   total : int;  (** The tests that the suite declares, before any selection. *)
   focus_active : bool;
       (** [true] iff the suite holds a focused node, selected or not. A caller
-          reads it to warn that a run that passed was focused. *)
+          reads it to warn that the run was focused. *)
   release_failures : Failure.t list;
       (** The failures of the fixture releases that raised, in the order of
           release, each a {!Failure.Release} message failure located at the site

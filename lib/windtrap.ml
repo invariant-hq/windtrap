@@ -290,10 +290,7 @@ let run_suite ~suite ~config tests =
       (* The message is already on stderr; only the code is left. *)
       Run.startup_exit_code error
   | Mutate_loop.Ran (Ok outcome) ->
-      if
-        outcome.Run.focus_active && outcome.Run.exit_code = 0
-        && not (Os.in_ci ())
-      then
+      if outcome.Run.focus_active && not (Os.in_ci ()) then
         Os.warn
           (Pp.str
              "focus is active: %d of %d tests ran; remove the focus before \
@@ -350,7 +347,10 @@ let run_listing ~suite ~config tests =
         (fun reason -> Os.say ("no tests ran: " ^ reason ^ "."))
         (Report.empty_selection_reason
            ~declared:(List.length (Test_tree.flatten tests))
-           ~selection:(Report.selection_description config));
+           ~selection:
+             (Report.selection_description
+                ~focused:(Test_tree.focus_sites tests <> [])
+                config));
       0
   | Ok paths ->
       (* One path per line, whatever a name holds. *)

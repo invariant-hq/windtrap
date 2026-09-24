@@ -134,7 +134,10 @@ Coverage and packaging:
   `focus (group "g" ts)`, and just as well `focus (cases …)` or
   `focus (with_db "x" fn)`, which `ftest`/`fgroup` could not spell. Under
   `CI` a run containing focused tests refuses to start, naming the
-  focus site; outside CI a successful focused run prints a warning.
+  focus site; outside CI a focused run prints a warning whatever its exit
+  code, and a focus that the rest of the selection empties is named where
+  the run says so: `no tests ran: focus and filter "x" matched none of 2
+  tests.`
   `xfail ?reason t` keeps a known-bug reproduction in-tree: a failure
   reports as `XFAIL` without failing the run, and a pass fails loudly.
   Nested `xfail`s resolve innermost-wins.

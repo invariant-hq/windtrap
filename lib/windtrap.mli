@@ -358,8 +358,9 @@ val fixture : ?teardown:('a -> unit) -> (unit -> 'a) -> unit -> 'a
 
 val focus : test -> test
 (** [focus t] is [t] focused. When a suite holds a focused test, only focused
-    tests run, within the rest of the selection. A focused run that returns [0]
-    warns on standard error that focus is active.
+    tests run, within the rest of the selection. A focused run warns on standard
+    error that focus is active, whatever its exit code, and a focus that leaves
+    no test to run is named in the sentence that says no tests ran.
 
     Under [CI] (see the {{!section-command_line}environment}) a suite that holds
     a [focus], selected or not, is refused. {!run} names the [focus] sites on

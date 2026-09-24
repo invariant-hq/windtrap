@@ -30,6 +30,18 @@ told.
   $ cat err
   windtrap: warning: focus is active: 1 of 2 tests ran; remove the focus before committing
 
+A focus that the rest of the selection empties is named in the
+sentence that says no tests ran, and the warning follows whatever the
+exit code:
+
+  $ run FACADE_FIXTURE=focus ./suite_main.exe -f unfocused > out 2> err
+  [2]
+  $ cat out
+  fixture: no tests ran: focus and filter "unfocused" matched none of 2 tests.
+  list: ./suite_main.exe -l
+  $ cat err
+  windtrap: warning: focus is active: 0 of 2 tests ran; remove the focus before committing
+
 Under CI the same suite refuses to start, and says which site to
 remove:
 
