@@ -260,11 +260,13 @@ let tests =
         equal ~msg:"every mutant identifier is unique" int (List.length ids)
           (List.length (List.sort_uniq compare ids)));
     (* {1 Operand order: the premise, then the conclusion} *)
-    test "the compiler evaluates operands right to left" (fun () ->
-        (* The premise the instrumenter's fixed binding order relies on,
-           read off the UNINSTRUMENTED twin. If a future compiler
-           evaluates left to right, this test names the change and the
-           next one names the damage. *)
+    test "compiler guard: the compiler evaluates operands right to left"
+      (fun () ->
+        (* Not a claim about windtrap: the premise the instrumenter's fixed
+           binding order relies on, read off the UNINSTRUMENTED twin. It
+           goes red on a compiler change with windtrap unchanged. If a
+           future compiler evaluates left to right, this test names the
+           change and the next one names the damage. *)
         equal ~msg:"a < b evaluates b, then a" string "t | r,l"
           (B.show (B.cmp_lt 1 2));
         equal ~msg:"a + b evaluates b, then a" string "3 | r,l"
