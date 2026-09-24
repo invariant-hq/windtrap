@@ -1,0 +1,56 @@
+conformance: 6 tests
+──────────────────────── failures ────────────────────────
+  FAIL  Escaped_strings › escaped trailing carriage return
+    test/conformance/converged/escaped_strings.ml:49
+    expect_exact: mismatch
+    @@ -1,2 +1,2 @@
+    - a
+    - b
+    + a\x0d
+    + b\x0d
+    captured output (8 lines):
+      a
+      b
+      a
+      b
+      a
+      b
+      a
+      b
+    full log: <log>
+    accept: dune promote test/conformance/converged/escaped_strings.ml
+
+  FAIL  Escaped_strings › unescaped carriage return --- empty expect
+    test/conformance/converged/escaped_strings.ml:61
+    expect_exact: mismatch
+    @@ -1,2 +1,2 @@
+    - a
+    + a\x0d
+      b
+    captured output (3 lines):
+      a
+      ba
+      b
+    full log: <log>
+    accept: dune promote test/conformance/converged/escaped_strings.ml
+
+  FAIL  Escaped_strings › unescaped carriage return --- populated expect
+    test/conformance/converged/escaped_strings.ml:72
+    expect_exact: mismatch
+    @@ -1,2 +1,2 @@
+    - a
+    + a\x0d
+      b
+    captured output (3 lines):
+      a
+      ba
+      b
+    full log: <log>
+    accept: dune promote test/conformance/converged/escaped_strings.ml
+──────────────────────────────────────────────────────────
+
+corrections (1):
+  wrote test/conformance/converged/escaped_strings.ml.corrected (3 expectations)
+
+3 passed, 3 failed, 1 correction written in <duration>.
+--- stderr ---

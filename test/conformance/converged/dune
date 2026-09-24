@@ -1,0 +1,191 @@
+; Every correction the corpus records converges: the corrected source,
+; run again, passes and corrects nothing. Each golden
+; <f>.ml.corrected.expected of the corpus is copied here as <f>.ml and run
+; by the same protocol; the transcript pins which tests ran and that none
+; failed. chdir.ml runs in a process of its own, as in the corpus.
+; escaped_strings.ml is the known exception, pinned apart below.
+
+(rule
+ (copy ../corpus/negative-tests/exact.ml.corrected.expected exact.ml))
+
+(rule
+ (copy ../corpus/negative-tests/flexible.ml.corrected.expected flexible.ml))
+
+(rule
+ (copy ../corpus/negative-tests/missing.ml.corrected.expected missing.ml))
+
+(rule
+ (copy ../corpus/negative-tests/normal_strings.ml.corrected.expected normal_strings.ml))
+
+(rule
+ (copy ../corpus/negative-tests/semicolon.ml.corrected.expected semicolon.ml))
+
+(rule
+ (copy ../corpus/negative-tests/spacing.ml.corrected.expected spacing.ml))
+
+(rule
+ (copy ../corpus/negative-tests/string_extension_syntax.ml.corrected.expected string_extension_syntax.ml))
+
+(rule
+ (copy ../corpus/negative-tests/string_padding.ml.corrected.expected string_padding.ml))
+
+(rule
+ (copy ../corpus/negative-tests/unidiomatic_syntax.ml.corrected.expected unidiomatic_syntax.ml))
+
+(rule
+ (copy ../corpus/negative-tests/divergent/similar_distinct_outputs.ml.corrected.expected similar_distinct_outputs.ml))
+
+(rule
+ (copy ../corpus/negative-tests/for-mdx/foo.ml.corrected.expected foo.ml))
+
+(rule
+ (copy ../corpus/explicit-strict-false/negative-test/nine.ml.corrected.expected nine.ml))
+
+(rule
+ (copy ../corpus/negative-tests/corpus_shim.ml corpus_shim.ml))
+
+(executable
+ (name converged_runner)
+ (modules
+  converged_runner
+  corpus_shim
+  exact
+  flexible
+  missing
+  normal_strings
+  semicolon
+  spacing
+  string_extension_syntax
+  string_padding
+  unidiomatic_syntax
+  similar_distinct_outputs
+  foo
+  nine)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets converged-log converged-exit)
+ (deps
+  exact.ml
+  flexible.ml
+  missing.ml
+  normal_strings.ml
+  semicolon.ml
+  spacing.ml
+  string_extension_syntax.ml
+  string_padding.ml
+  unidiomatic_syntax.ml
+  similar_distinct_outputs.ml
+  foo.ml
+  nine.ml)
+ (action
+  (run
+   %{dep:../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   converged
+   %{dep:converged_runner.exe}
+   inline-test-runner
+   conformance)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff converged-exit.expected converged-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff converged-log.expected converged-log)))
+
+(rule
+ (copy ../corpus/negative-tests/chdir.ml.corrected.expected chdir.ml))
+
+(executable
+ (name chdir_runner)
+ (modules chdir_runner chdir)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets chdir-log chdir-exit)
+ (deps chdir.ml)
+ (action
+  (run
+   %{dep:../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   chdir
+   %{dep:chdir_runner.exe}
+   inline-test-runner
+   conformance)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff chdir-exit.expected chdir-exit)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff chdir-log.expected chdir-log)))
+
+; escaped_strings.ml does NOT converge on OCaml 5.2 and later, and is
+; pinned as the known failure it is until the product decides: its
+; correction of an [%expect_exact] over "a\r\nb" writes the CR LF raw
+; inside a {|...|} literal, the compiler reads a CR LF line end in a
+; literal as LF since 5.2, so the corrected source prints "a\r\nb"
+; against a payload of "a\nb" and mismatches again.
+
+(rule
+ (copy
+  ../corpus/negative-tests/escaped_strings.ml.corrected.expected
+  escaped_strings.ml))
+
+(executable
+ (name escaped_strings_runner)
+ (modules escaped_strings_runner escaped_strings)
+ (libraries ppx_windtrap.runtime)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (targets escaped_strings-log escaped_strings-exit)
+ (enabled_if
+  (>= %{ocaml_version} 5.2))
+ (deps escaped_strings.ml)
+ (action
+  (run
+   %{dep:../../cli/inline_runner/drive/drive.exe}
+   --mask
+   full-log
+   --env
+   WINDTRAP_SLOW_THRESHOLD=0
+   --run
+   escaped_strings
+   %{dep:escaped_strings_runner.exe}
+   inline-test-runner
+   conformance)))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (>= %{ocaml_version} 5.2))
+ (action
+  (diff escaped_strings-exit.expected escaped_strings-exit)))
+
+(rule
+ (alias runtest)
+ (enabled_if
+  (>= %{ocaml_version} 5.2))
+ (action
+  (diff escaped_strings-log.expected escaped_strings-log)))
