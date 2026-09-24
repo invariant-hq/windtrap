@@ -173,11 +173,11 @@ A fixture names each rule it pins by its id and interface line, as in
 | --- | --- | --- | --- |
 | M24 | An `assert`, with everything under it. | mut:99 | `mutate/fixture_assert` |
 | M25 | A `lazy` of a trivial value, with everything under it. | mut:100-103 | `mutate/fixture_lazy`; `test_mutate_semantics.ml` "lazy stays lazy" |
-| M26 | The payloads of attributes and extension nodes. | mut:104 | unpinned |
-| M27 | A file holding an extension node named `test` or `expect_test`. | mut:105-106 | partial: `mutate/fixture_inline_tests` (both names together); unpinned: each name alone |
+| M26 | The payloads of attributes and extension nodes. | mut:104 | `mutate/fixture_payloads` |
+| M27 | A file holding an extension node named `test` or `expect_test`. | mut:105-106 | `mutate/fixture_inline_tests` (both names), `mutate/fixture_inline_test_only`, `mutate/fixture_inline_expect_only` |
 | M28 | A file naming an identifier under `Ppx_windtrap_runtime.Ppx_runtime`. | mut:106-108 | `mutate/fixture_inline_expanded` |
-| M29 | A site at a ghost location. | mut:109 | unpinned |
-| M30 | A site whose line, column and rewrite an earlier site has. | mut:110-112 | unpinned |
+| M29 | A site at a ghost location. | mut:109 | `mutate/generated/fixture_generated` |
+| M30 | A site whose line, column and rewrite an earlier site has. | mut:110-112 | `mutate/generated/fixture_generated` |
 | M31 | Module initialization code is mutated. | mut:114-115 | `mutate/fixture_ari` |
 
 ### The emission law
@@ -198,12 +198,12 @@ A fixture names each rule it pins by its id and interface line, as in
 | M38 | `[@mutate off "r"]` on a site records it dismissed with the reason, with an index and no guard. | mut:126-129 | `mutate/fixture_off`, `mutate/fixture_all_dismissed`, `mutate/fixture_off_edges` |
 | M39 | `[@mutate off]` without a reason records `""`. | mut:128-129 | `mutate/fixture_off` |
 | M40 | `[@mutate off]` on an expression that is no site records nothing and suppresses what is inside. | mut:129-131 | `mutate/fixture_off_edges` |
-| M41 | `[@@mutate off]` on a top-level value binding and a module binding, recursive or not. | mut:132-133 | partial: `mutate/fixture_off` (non-recursive); unpinned: recursive |
-| M42 | `[@@mutate off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | mut:133-135 | partial: `mutate/fixture_off_edges` (ignored); unpinned: payload unchecked |
-| M43 | `[@@@mutate off]` ... `[@@@mutate on]` is a region; a nested structure inherits it and restores the outer setting; an unclosed one runs to the end. | mut:136-140 | partial: `mutate/fixture_off`, `mutate/fixture_off_unclosed`; unpinned: nested inheritance |
-| M44 | A reason on `[@@mutate off]` or `[@@@mutate off]` is accepted and dropped. | mut:144-145 | unpinned |
+| M41 | `[@@mutate off]` on a top-level value binding and a module binding, recursive or not. | mut:132-133 | `mutate/fixture_off` (non-recursive), `mutate/fixture_off_structure` (recursive) |
+| M42 | `[@@mutate off]` on a `let ... in` binding or another item is ignored, its payload unchecked. | mut:133-135 | `mutate/fixture_off_edges` (ignored), `mutate/fixture_off_structure` (payload not checked) |
+| M43 | `[@@@mutate off]` ... `[@@@mutate on]` is a region; a nested structure inherits it and restores the outer setting; an unclosed one runs to the end. | mut:136-140 | `mutate/fixture_off`, `mutate/fixture_off_unclosed`, `mutate/fixture_off_structure` (nested) |
+| M44 | A reason on `[@@mutate off]` or `[@@@mutate off]` is accepted and dropped. | mut:144-145 | `mutate/fixture_off_structure` |
 | M45 | A top-level `[@@@mutate exclude_file]` returns the file as parsed. | mut:141-142, mut:217 | `mutate/fixture_exclude` |
-| M46 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | mut:219-220 | unpinned |
+| M46 | The input names `//toplevel//`, `(stdin)`, `.ocamlinit`, `topfind` return the file as parsed. | mut:219-220 | `mutate/fixture_input_name` and the input_name rules of mutate/dune |
 
 ### Identification
 
@@ -214,7 +214,7 @@ A fixture names each rule it pins by its id and interface line, as in
 | M49 | Sites are numbered top-down, left operand before right. | mut:157-160 | `mutate/fixture_cmp`, `mutate/fixture_chain`, `mutate/fixture_neg` |
 | M50 | `before` and `after` are printed from the parsetree, the site's attributes left out. | mut:162-163 | `mutate/fixture_off` |
 | M51 | Each run of blanks in a text becomes one space. | mut:163-165 | `integration/test_registration.ml` typing_context |
-| M52 | ... inside a string literal too. | mut:164 | unpinned |
+| M52 | ... inside a string literal too. | mut:164 | `mutate/fixture_texts` |
 
 ### Generated code
 
@@ -223,9 +223,9 @@ A fixture names each rule it pins by its id and interface line, as in
 | M53 | Three items in order, the module `Windtrap_mut___<name>` never opened. | mut:170-176 | every mutation golden; build of `mutate/integration/no_guard.ml` |
 | M54 | `type site = Windtrap_runtime.Mutate.site = { ... }` with its six fields. | mut:179-181 | every mutation golden |
 | M55 | `type 'a operands` only in a file with an ordering guard. | mut:182-183 | `mutate/fixture_cmp` (present), `mutate/fixture_ari` (absent) |
-| M56 | Every generated node is ghost; the disarmed arm keeps its location and attributes. | mut:189-191 | unpinned |
+| M56 | Every generated node is ghost; the disarmed arm keeps its location and attributes. | mut:189-191 | `mutate/fixture_texts` (attributes), `coverage/after_mutate/fixture_guards` (ghost: the disarmed arm alone takes a mark) |
 | M57 | A file whose every site is dismissed is registered, by a module no guard refers to. | mut:221-223 | `mutate/fixture_all_dismissed` |
-| M58 | The two effects on a file the coverage rewriter ran on first. | mut:195-201 | unpinned |
+| M58 | The two effects on a file the coverage rewriter ran on first. | mut:195-201 | `mutate/after_coverage/fixture_visits` |
 
 ### Rejections
 

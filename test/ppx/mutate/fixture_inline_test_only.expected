@@ -1,0 +1,2 @@
+let add a b = a + b
+[%%test let "adds" = (add 1 2) = 3]

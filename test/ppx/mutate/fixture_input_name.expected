@@ -1,0 +1,33 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_input_name___ml =
+  struct
+    type site = Windtrap_runtime.Mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    type 'a operands = ('a * 'a)
+    let ___windtrap_armed___ =
+      Windtrap_runtime.Mutate.register ~file:"./fixture_input_name.ml"
+        ~sites:[|{
+                   line = 6;
+                   col = 16;
+                   rewrite = "ge";
+                   before = "n > 0";
+                   after = "n >= 0";
+                   dismissed = None
+                 }|]
+  end
+[@@@ocaml.text "/*"]
+let sign n =
+  if
+    let (__windtrap_mut_0_l, __windtrap_mut_0_r) =
+      ((n, 0) : _ Windtrap_mut_________fixture_input_name___ml.operands) in
+    (if Windtrap_mut_________fixture_input_name___ml.___windtrap_armed___ 0
+     then Stdlib.not (__windtrap_mut_0_r > __windtrap_mut_0_l)
+     else __windtrap_mut_0_l > __windtrap_mut_0_r)
+  then 1
+  else 0

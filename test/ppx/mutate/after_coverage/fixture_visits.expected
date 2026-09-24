@@ -1,0 +1,102 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_visits___ml =
+  struct
+    type site = Windtrap_runtime.Mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    type 'a operands = ('a * 'a)
+    let ___windtrap_armed___ =
+      Windtrap_runtime.Mutate.register ~file:"./fixture_visits.ml"
+        ~sites:[|{
+                   line = 7;
+                   col = 22;
+                   rewrite = "not";
+                   before = "b";
+                   after = "not b";
+                   dismissed = None
+                 };{
+                     line = 7;
+                     col = 17;
+                     rewrite = "not";
+                     before = "a";
+                     after = "not a";
+                     dismissed = None
+                   };{
+                       line = 10;
+                       col = 18;
+                       rewrite = "le";
+                       before =
+                         "(___windtrap_post_visit___ 2 (f x)) < (___windtrap_post_visit___ 3 (g x))";
+                       after =
+                         "(___windtrap_post_visit___ 2 (f x)) <= (___windtrap_post_visit___ 3 (g x))";
+                       dismissed = None
+                     }|]
+  end
+[@@@ocaml.text "/*"]
+[@@@ocaml.text "/*"]
+module Windtrap_cov_________fixture_visits___ml =
+  struct
+    let ___windtrap_visit___ =
+      let counts = Array.make 7 0 in
+      Windtrap_runtime.Coverage.register ~file:"./fixture_visits.ml"
+        ~points:[|{
+                    Windtrap_runtime.Coverage.start_ofs = 280;
+                    Windtrap_runtime.Coverage.end_ofs = 281
+                  };{
+                      Windtrap_runtime.Coverage.start_ofs = 285;
+                      Windtrap_runtime.Coverage.end_ofs = 286
+                    };{
+                        Windtrap_runtime.Coverage.start_ofs = 380;
+                        Windtrap_runtime.Coverage.end_ofs = 383
+                      };{
+                          Windtrap_runtime.Coverage.start_ofs = 386;
+                          Windtrap_runtime.Coverage.end_ofs = 389
+                        };{
+                            Windtrap_runtime.Coverage.start_ofs = 402;
+                            Windtrap_runtime.Coverage.end_ofs = 403
+                          };{
+                              Windtrap_runtime.Coverage.start_ofs = 395;
+                              Windtrap_runtime.Coverage.end_ofs = 396
+                            };{
+                                Windtrap_runtime.Coverage.start_ofs = 377;
+                                Windtrap_runtime.Coverage.end_ofs = 403
+                              }|] ~counts;
+      (fun index -> Windtrap_runtime.Coverage.visit counts index)
+    let ___windtrap_post_visit___ point_index result =
+      ___windtrap_visit___ point_index; result
+  end
+open Windtrap_cov_________fixture_visits___ml
+[@@@ocaml.text "/*"]
+let either a b =
+  ___windtrap_visit___ 0;
+  if
+    (let __windtrap_mut_1_p = a in
+     if Windtrap_mut_________fixture_visits___ml.___windtrap_armed___ 1
+     then Stdlib.not __windtrap_mut_1_p
+     else __windtrap_mut_1_p)
+  then (___windtrap_visit___ 0; true)
+  else
+    if
+      (let __windtrap_mut_0_p = b in
+       if Windtrap_mut_________fixture_visits___ml.___windtrap_armed___ 0
+       then Stdlib.not __windtrap_mut_0_p
+       else __windtrap_mut_0_p)
+    then (___windtrap_visit___ 1; true)
+    else false
+let lt f g x =
+  ___windtrap_visit___ 6;
+  if
+    (let (__windtrap_mut_2_l, __windtrap_mut_2_r) =
+       (((___windtrap_post_visit___ 2 (f x)),
+          (___windtrap_post_visit___ 3 (g x))) : _
+                                                   Windtrap_mut_________fixture_visits___ml.operands) in
+     if Windtrap_mut_________fixture_visits___ml.___windtrap_armed___ 2
+     then Stdlib.not (__windtrap_mut_2_r < __windtrap_mut_2_l)
+     else __windtrap_mut_2_l < __windtrap_mut_2_r)
+  then (___windtrap_visit___ 5; 1)
+  else (___windtrap_visit___ 4; 0)

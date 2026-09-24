@@ -104,6 +104,26 @@
 
 (rule
  (with-stdout-to
+  fixture_inline_expect_only.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_inline_expect_only.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_inline_expect_only.expected fixture_inline_expect_only.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_inline_test_only.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_inline_test_only.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_inline_test_only.expected fixture_inline_test_only.actual)))
+
+(rule
+ (with-stdout-to
   fixture_inline_tests.actual
   (run ./mutate_pp.exe --impl %{dep:fixture_inline_tests.ml})))
 
@@ -111,6 +131,16 @@
  (alias runtest)
  (action
   (diff fixture_inline_tests.expected fixture_inline_tests.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_input_name.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_input_name.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_input_name.expected fixture_input_name.actual)))
 
 (rule
  (with-stdout-to
@@ -184,6 +214,16 @@
 
 (rule
  (with-stdout-to
+  fixture_off_structure.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_off_structure.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_off_structure.expected fixture_off_structure.actual)))
+
+(rule
+ (with-stdout-to
   fixture_off_unclosed.actual
   (run ./mutate_pp.exe --impl %{dep:fixture_off_unclosed.ml})))
 
@@ -194,6 +234,16 @@
 
 (rule
  (with-stdout-to
+  fixture_payloads.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_payloads.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_payloads.expected fixture_payloads.actual)))
+
+(rule
+ (with-stdout-to
   fixture_shadow.actual
   (run ./mutate_pp.exe --impl %{dep:fixture_shadow.ml})))
 
@@ -201,6 +251,16 @@
  (alias runtest)
  (action
   (diff fixture_shadow.expected fixture_shadow.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_texts.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_texts.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_texts.expected fixture_texts.actual)))
 
 (rule
  (target reject_bad_payload.actual)

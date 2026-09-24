@@ -1,0 +1,30 @@
+[@@@ocaml.text "/*"]
+module Windtrap_mut_________fixture_payloads___ml =
+  struct
+    type site = Windtrap_runtime.Mutate.site =
+      {
+      line: int ;
+      col: int ;
+      rewrite: string ;
+      before: string ;
+      after: string ;
+      dismissed: string option }
+    let ___windtrap_armed___ =
+      Windtrap_runtime.Mutate.register ~file:"./fixture_payloads.ml"
+        ~sites:[|{
+                   line = 7;
+                   col = 18;
+                   rewrite = "sub";
+                   before = "a + b";
+                   after = "a - b";
+                   dismissed = None
+                 }|]
+  end
+[@@@ocaml.text "/*"]
+let extended = [%ext a + b]
+let attributed = ((0)[@attr a + b])
+let written a b =
+  let (__windtrap_mut_0_l, __windtrap_mut_0_r) = (a, b) in
+  if Windtrap_mut_________fixture_payloads___ml.___windtrap_armed___ 0
+  then __windtrap_mut_0_l - __windtrap_mut_0_r
+  else __windtrap_mut_0_l + __windtrap_mut_0_r
