@@ -399,8 +399,26 @@ let random_produces_distinct_seeds () =
   in
   is_true ~msg:"six entropy draws produced a single value" (distinct 3)
 
+(* Every value of the module, then one draw of the global state against a
+   copy taken before them: a value that read the global state advanced it,
+   and one that wrote it replaced it. *)
+let leaves_the_global_random_state_alone () =
+  let before = Random.get_state () in
+  ignore (Seed.random () : Seed.seed);
+  ignore (Seed.of_string "s1:0000000000000001");
+  ignore (Seed.to_string 1L : string);
+  ignore (Seed.derive ~root:1L ~path:"a" ~index:0 : Seed.seed);
+  let state = Seed.make 1L in
+  ignore (Seed.bits64 state);
+  ignore (Seed.below ~bound:7L state);
+  ignore (Seed.split state);
+  equal ~msg:"the next global draw is the one due" int
+    (Random.State.bits before) (Random.bits ())
+
 let tests =
   [
+    test "no value reads or writes the global Random state"
+      leaves_the_global_random_state_alone;
     test "canonical token literals" canonical_token_literals;
     test "all token patterns round trip" all_token_patterns_round_trip;
     test "token parser rejection matrix" token_parser_rejects_malformed_text;
