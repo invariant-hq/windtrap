@@ -191,6 +191,23 @@ let identity_tests =
             failf "%S: expected Malformed, got %a" spec M.pp_arm_error e);
   ]
 
+(* [with_stderr f] is [f ()] and what it wrote on standard error. *)
+let with_stderr f =
+  let path = temp_file () in
+  let saved = Unix.dup Unix.stderr in
+  let fd = Unix.openfile path [ Unix.O_WRONLY; Unix.O_TRUNC ] 0o644 in
+  Unix.dup2 fd Unix.stderr;
+  Unix.close fd;
+  let result =
+    Fun.protect
+      ~finally:(fun () ->
+        flush stderr;
+        Unix.dup2 saved Unix.stderr;
+        Unix.close saved)
+      f
+  in
+  (result, In_channel.with_open_bin path In_channel.input_all)
+
 (* Registration and the guard *)
 
 let registry_tests =
@@ -292,6 +309,75 @@ let registry_tests =
         (* Between tests. *)
         equal ~msg:"the teardown evaluation is still observed" (list int) [ 1 ]
           (List.map (fun (r : M.reached) -> r.M.hits) (drain ())));
+    test "marks a window left undrained stay for the next drain" (fun () ->
+        let g =
+          M.register ~file:"t/undrained.ml"
+            ~sites:
+              [|
+                site ~line:1 ~col:0 ~rewrite:"lt" ();
+                site ~line:2 ~col:0 ~rewrite:"gt" ();
+              |]
+        in
+        fresh ();
+        ignore (g 0);
+        M.next_epoch ();
+        ignore (g 1);
+        equal ~msg:"the earlier window's site, and the later one's"
+          (list string)
+          [ "t/undrained.ml:1:0:lt"; "t/undrained.ml:2:0:gt" ]
+          (List.map
+             (fun (r : M.reached) -> M.id_to_string r.M.mutant.M.id)
+             (drain ())));
+    test "an evaluation again in the epoch after a drain is never drained"
+      (fun () ->
+        (* The lower bound: the site marked itself at its first evaluation
+           of the epoch, that mark is drained, and a later evaluation in the
+           same epoch marks nothing. *)
+        let g =
+          M.register ~file:"t/lower.ml"
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"eq" () |]
+        in
+        fresh ();
+        ignore (g 0);
+        equal ~msg:"the first evaluation is drained" (list int) [ 1 ]
+          (List.map (fun (r : M.reached) -> r.M.hits) (drain ()));
+        ignore (g 0);
+        ignore (g 0);
+        equal ~msg:"the next two are not" (list reached_t) [] (drain ());
+        M.next_epoch ();
+        ignore (g 0);
+        equal ~msg:"until a new epoch opens" (list int) [ 1 ]
+          (List.map (fun (r : M.reached) -> r.M.hits) (drain ())));
+    test "drop is catalogued, though no instrumenter emits it" (fun () ->
+        register_only ~file:"t/drop.ml"
+          ~sites:[| site ~line:3 ~col:2 ~rewrite:"drop" () |];
+        equal ~msg:"register accepts it" (list string) [ "t/drop.ml:3:2:drop" ]
+          (List.map
+             (fun (m : M.mutant) -> M.id_to_string m.M.id)
+             (List.filter
+                (fun (m : M.mutant) -> m.M.id.M.file = "t/drop.ml")
+                (catalogue ())));
+        equal ~msg:"and so does id_of_string" (result id_t string)
+          (Ok (id ~file:"t/drop.ml" ~line:3 ~col:2 ~rewrite:"drop"))
+          (Result.map_error
+             (fun e -> Format.asprintf "%a" M.pp_arm_error e)
+             (M.id_of_string "t/drop.ml:3:2:drop")));
+    test
+      "the empty file name is registered, and its identifier does not \
+       round-trip" (fun () ->
+        register_only ~file:"" ~sites:[| site ~line:1 ~col:0 ~rewrite:"or" () |];
+        match
+          List.filter (fun (m : M.mutant) -> m.M.id.M.file = "") (catalogue ())
+        with
+        | [ m ] -> (
+            match M.id_of_string (M.id_to_string m.M.id) with
+            | Error (M.Malformed { reason; _ }) ->
+                contains ~msg:"the spelling is refused" ~sub:"empty file name"
+                  reason
+            | Ok i -> failf "%a parsed" pp_id i
+            | Error e -> failf "expected Malformed, got %a" M.pp_arm_error e)
+        | mutants ->
+            failf "one mutant of the empty file, got %d" (List.length mutants));
     test "reset_reach zeroes counts and opens a fresh window" (fun () ->
         let g =
           M.register ~file:"t/reset.ml"
@@ -389,24 +475,13 @@ let registry_tests =
     test "a conflicting registration warns and yields an inert guard" (fun () ->
         let sites = [| site ~line:1 ~col:0 ~rewrite:"lt" () |] in
         register_only ~file:"t/conflict.ml" ~sites;
-        let path = temp_file () in
-        let saved = Unix.dup Unix.stderr in
-        let fd = Unix.openfile path [ Unix.O_WRONLY; Unix.O_TRUNC ] 0o644 in
-        Unix.dup2 fd Unix.stderr;
-        Unix.close fd;
-        let g =
-          Fun.protect
-            ~finally:(fun () ->
-              flush stderr;
-              Unix.dup2 saved Unix.stderr;
-              Unix.close saved)
-            (fun () ->
+        let g, err =
+          with_stderr (fun () ->
               M.register ~file:"t/conflict.ml"
                 ~sites:
                   [| site ~line:1 ~col:0 ~rewrite:"lt" ~before:"x < y" () |])
         in
-        contains ~msg:"warns" ~sub:"conflicting instrumentation tables"
-          (In_channel.with_open_bin path In_channel.input_all);
+        contains ~msg:"warns" ~sub:"conflicting instrumentation tables" err;
         fresh ();
         is_false ~msg:"the dropped guard is inert" (g 0);
         equal ~msg:"the dropped guard reports no reach" (list reached_t) []
@@ -617,6 +692,148 @@ let arming_tests =
           (function M.Runaway _ -> true | _ -> false)
           (fun () -> g 0);
         ignore (drain ()));
+    test "the runaway is raised again at every later evaluation" (fun () ->
+        let g =
+          M.register ~file:"t/again.ml"
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"not" () |]
+        in
+        disarming (fun () ->
+            ignore
+              (arm_ok ~budget:1
+                 (id ~file:"t/again.ml" ~line:1 ~col:0 ~rewrite:"not"));
+            M.reset_reach ();
+            is_true ~msg:"within the budget" (g 0);
+            List.iter
+              (fun expected ->
+                raises_match
+                  ~msg:(Printf.sprintf "evaluation %d, after a catch" expected)
+                  (function
+                    | M.Runaway { hits; _ } -> hits = expected | _ -> false)
+                  (fun () -> g 0))
+              [ 2; 3; 4 ]);
+        ignore (drain ()));
+    test "the budget bounds each registration, where armed_hits adds them up"
+      (fun () ->
+        let sites = [| site ~line:1 ~col:0 ~rewrite:"le" () |] in
+        let g1 = M.register ~file:"t/per_copy.ml" ~sites in
+        let g2 = M.register ~file:"t/per_copy.ml" ~sites:(Array.copy sites) in
+        disarming (fun () ->
+            ignore
+              (arm_ok ~budget:2
+                 (id ~file:"t/per_copy.ml" ~line:1 ~col:0 ~rewrite:"le"));
+            M.reset_reach ();
+            List.iter
+              (fun g -> is_true ~msg:"two evaluations of each copy" (g 0))
+              [ g1; g1; g2; g2 ];
+            equal ~msg:"four in all, over a budget of two" int 4
+              (M.armed_hits ());
+            raises_match ~msg:"the third of one copy runs away"
+              (function M.Runaway { hits; _ } -> hits = 3 | _ -> false)
+              (fun () -> g1 0));
+        equal ~msg:"nothing armed is none" int 0 (M.armed_hits ());
+        ignore (drain ()));
+    test "disarm keeps the counts, and arm starts none" (fun () ->
+        let g =
+          M.register ~file:"t/kept.ml"
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"ge" () |]
+        in
+        let the_id = id ~file:"t/kept.ml" ~line:1 ~col:0 ~rewrite:"ge" in
+        disarming (fun () ->
+            ignore (arm_ok the_id);
+            M.reset_reach ();
+            ignore (g 0);
+            ignore (g 0);
+            M.disarm ();
+            equal ~msg:"disarmed, nothing is armed to count" int 0
+              (M.armed_hits ());
+            ignore (arm_ok the_id);
+            equal ~msg:"armed again, the two evaluations are still counted" int
+              2 (M.armed_hits ());
+            M.reset_reach ();
+            equal ~msg:"until reset_reach" int 0 (M.armed_hits ()));
+        ignore (drain ()));
+    test "a refused budget disarms nothing" (fun () ->
+        let g =
+          M.register ~file:"t/kept_armed.ml"
+            ~sites:[| site ~line:1 ~col:0 ~rewrite:"sub" () |]
+        in
+        disarming (fun () ->
+            ignore
+              (arm_ok
+                 (id ~file:"t/kept_armed.ml" ~line:1 ~col:0 ~rewrite:"sub"));
+            raises_match ~msg:"a budget of 0" Exn.invalid_arg (fun () ->
+                M.arm ~budget:0
+                  (id ~file:"t/kept_armed.ml" ~line:1 ~col:0 ~rewrite:"sub"));
+            equal ~msg:"the mutant armed before stays armed" (option string)
+              (Some "t/kept_armed.ml:1:0:sub")
+              (Option.map
+                 (fun (m : M.mutant) -> M.id_to_string m.M.id)
+                 (M.armed ()));
+            fresh ();
+            is_true ~msg:"and its guard answers true" (g 0));
+        ignore (drain ()));
+    test "a dismissed mutant arms" (fun () ->
+        register_only ~file:"t/off.ml"
+          ~sites:
+            [| site ~line:2 ~col:1 ~rewrite:"add" ~dismissed:"equivalent" () |];
+        disarming @@ fun () ->
+        equal ~msg:"the mutant, dismissal included" mutant_t
+          (mutant ~file:"t/off.ml" ~line:2 ~col:1 ~rewrite:"add"
+             ~dismissed:"equivalent" ())
+          (arm_ok (id ~file:"t/off.ml" ~line:2 ~col:1 ~rewrite:"add")));
+    test "an unknown rewrite at a catalogued file is Unmatched" (fun () ->
+        (* [arm] checks no rewrite, so the vocabulary refuses nothing here:
+           the identifier simply matches no site. *)
+        register_only ~file:"t/unknown_rewrite.ml"
+          ~sites:[| site ~line:1 ~col:0 ~rewrite:"lt" () |];
+        disarming @@ fun () ->
+        match
+          M.arm (id ~file:"t/unknown_rewrite.ml" ~line:1 ~col:0 ~rewrite:"plus")
+        with
+        | Error (M.Unmatched _) -> ()
+        | Ok m -> failf "armed %a" pp_mutant m
+        | Error e -> failf "expected Unmatched, got %a" M.pp_arm_error e);
+    test "a refusal lists six candidates, then how many remain" (fun () ->
+        register_only ~file:"t/many.ml"
+          ~sites:
+            (Array.init 9 (fun i -> site ~line:(i + 1) ~col:0 ~rewrite:"or" ()));
+        disarming @@ fun () ->
+        match M.arm (id ~file:"t/many.ml" ~line:99 ~col:0 ~rewrite:"or") with
+        | Error (M.Unmatched { candidates; _ } as e) ->
+            equal ~msg:"the error holds all nine" int 9 (List.length candidates);
+            let rendered = Format.asprintf "%a" M.pp_arm_error e in
+            List.iter
+              (fun line ->
+                contains ~msg:"one of the first six"
+                  ~sub:(Printf.sprintf "t/many.ml:%d:0:or" line)
+                  rendered)
+              [ 1; 2; 3; 4; 5; 6 ];
+            List.iter
+              (fun line ->
+                not_contains ~msg:"not one of the last three"
+                  ~sub:(Printf.sprintf "t/many.ml:%d:0:or" line)
+                  rendered)
+              [ 7; 8; 9 ];
+            contains ~msg:"the number left" ~sub:"3 more" rendered
+        | Ok m -> failf "armed %a" pp_mutant m
+        | Error e -> failf "expected Unmatched, got %a" M.pp_arm_error e);
+    test "a dropped registration's guard never raises" (fun () ->
+        let sites = [| site ~line:1 ~col:0 ~rewrite:"eq" () |] in
+        register_only ~file:"t/inert.ml" ~sites;
+        let inert, _warning =
+          with_stderr (fun () ->
+              M.register ~file:"t/inert.ml"
+                ~sites:[| site ~line:1 ~col:0 ~rewrite:"eq" ~before:"x" () |])
+        in
+        disarming (fun () ->
+            ignore
+              (arm_ok ~budget:1
+                 (id ~file:"t/inert.ml" ~line:1 ~col:0 ~rewrite:"eq"));
+            List.iter
+              (fun i ->
+                is_false ~msg:"false past the budget and past the table"
+                  (inert i))
+              [ 0; 0; 0; 99; -1 ]));
     test "a non-positive budget is a programmer error" (fun () ->
         disarming @@ fun () ->
         List.iter
