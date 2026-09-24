@@ -48,8 +48,7 @@ val register : file:string -> points:point array -> counts:int array -> unit
     the dump goes (see {{!section-ondisk}Dumps}). It reads
     [WINDTRAP_COVERAGE_FILE], the current directory and [Sys.executable_name]
     then, and not at exit. If it needs the current directory and cannot read it,
-    a warning goes to standard error. The process then writes no dump or, under
-    an absolute [WINDTRAP_COVERAGE_FILE], a dump with no identity.
+    a warning goes to standard error. The process then writes no dump.
 
     When [file] is registered again with an equal table, as when one source is
     compiled into two modules, {!snapshot} adds up the counts of the two

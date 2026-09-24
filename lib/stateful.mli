@@ -233,7 +233,7 @@ val stateful :
       {!execute}'s.
     - [__POS__] is the declaration site, resolved once at this call. It is the
       site of the test and {!execute}'s [loc].
-    - [tags] come after ["prop"] and ["stateful"], which are always added.
+    - ["prop"] and ["stateful"] are always added to [tags].
 
     It takes no [examples], since a program cannot be written by hand, no
     [max_discard], the budget being {!Property.run}'s default, and no [retries],

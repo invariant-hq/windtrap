@@ -69,10 +69,7 @@ val derive : root:seed -> path:string -> index:int -> seed
     - [derive ~root ~path ~index] is
       [mix64 (mix64 (root lxor hash64 path) + 0x9e3779b97f4a7c15 * index)].
 
-    The bucket of a test under [--shard] and the seed of the global [Random]
-    state while a test runs also come from [derive], each under a fixed root. A
-    change to the definition thus changes what every recorded token replays, the
-    bucket of every test and what a body that reads [Random] sees. *)
+    A change to the definition changes what every recorded token replays. *)
 
 (** {1:sampling Sampling states} *)
 

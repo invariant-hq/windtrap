@@ -100,8 +100,7 @@ val write :
     {!Os.atomic_write} writes the file, so an existing report is replaced whole.
     A report that cannot be written is one warning on standard error
     ({!Os.warn}), at every verbosity, and never a failed run. [write] catches
-    the [Sys_error] and the [Unix.Unix_error] of these two functions for it, and
-    no other exception. *)
+    the [Sys_error] and the [Unix.Unix_error] of these two functions for it. *)
 
 (**/**)
 

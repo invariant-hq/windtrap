@@ -35,8 +35,7 @@ val run : (unit -> unit) -> unit
     [run].
 
     An override must call [f] once. If it never calls [f] the test passes with
-    nothing checked, and if it calls [f] twice every expectation of the body
-    runs twice. *)
+    nothing checked. *)
 
 val sanitize : string -> string
 (** [sanitize s] is [s]. The generated code applies [sanitize] to the captured

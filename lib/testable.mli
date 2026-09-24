@@ -37,10 +37,7 @@ val with_compare : ('a -> 'a -> int) -> 'a t -> 'a t
 
 val structural : pp:(Format.formatter -> 'a -> unit) -> 'a t
 (** [structural ~pp] is
-    [with_compare Stdlib.compare (make ~pp ~equal:Stdlib.( = ))].
-
-    {b Warning.} Polymorphic equality and comparison raise on functional values
-    and loop on cyclic ones. *)
+    [with_compare Stdlib.compare (make ~pp ~equal:Stdlib.( = ))]. *)
 
 val of_equal : ('a -> 'a -> bool) -> 'a t
 (** [of_equal equal] is {!make} with [equal] and a printer that prints every

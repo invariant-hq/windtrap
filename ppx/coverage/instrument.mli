@@ -59,10 +59,10 @@
     The right operand of a [||] in tail position gives up its point when a tail
     call can sit in it, and stays the [else] branch as written. This is the case
     of an application of a function that is not a
-    {{!section-out_edges}trivial primitive}, of a method call and of [new]. It
-    is also the case of a [let], [let module], [let exception], [let open],
-    [match], [try], [if], sequence, binding operator form, type constraint and
-    coercion. *)
+    {{!section-out_edges}trivial primitive}, and of a method call. It is also
+    the case of a [let], [let module], [let exception], [let open], [match],
+    [try], [if], sequence, binding operator form, type constraint and coercion.
+*)
 
 (** {2:out_edges Out-edge points}
 
@@ -115,8 +115,8 @@
     - for any other out-edge of an application, the last byte of its callee. For
       [l @@ x] it is the last byte of [l], and for a pipeline that of the head
       function of its last stage.
-    - for any other out-edge of a method call or of a [new], the last byte of
-      the expression, and for an [assert e] the start of [e].
+    - for any other out-edge of a method call, the last byte of the expression,
+      and for an [assert e] the start of [e].
 
     A mark whose offset is also that of a block entry thus shares the point of
     that entry, which counts when the block is entered. This is the case of a

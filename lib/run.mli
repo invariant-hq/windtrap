@@ -581,8 +581,8 @@ val list_selection :
     [Error error] when {!execute} would refuse the run. Its effects are those of
     the startup alone: the exit guard, the recording of backtraces, the read of
     [CI] and, under [config.failed_only], of the store. It makes no log
-    directory, captures nothing, rewrites no store and reads no baseline. Raises
-    [Invalid_argument] as {!execute} does. *)
+    directory and rewrites no store. Raises [Invalid_argument] as {!execute}
+    does. *)
 
 (** {2:selection Selection}
 
@@ -718,9 +718,8 @@ val list_selection :
 (** {2:exits Exits and backtraces}
 
     {!execute} and {!list_selection} turn the recording of backtraces on
-    ([Printexc.record_backtrace]) and leave it on. The first of them in a
-    process registers an [at_exit] function, the exit guard, which stays
-    registered.
+    ([Printexc.record_backtrace]) and leave it on. They register an [at_exit]
+    function, the exit guard.
 
     While a run is {!active}, a call to [exit] raises {!Failure.Exit_attempt}
     from the guard and the process does not end. The exception is classified

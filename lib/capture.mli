@@ -51,9 +51,9 @@ val disabled : t
 
 val drain : unit -> unit
 (** [drain ()] forces buffered output through to descriptors 1 and 2. It flushes
-    the two standard formatters of [Format], then the [stdout] and [stderr]
-    channels, then the C stdio streams of the same names. It reaches no other
-    buffer, such as a formatter of the user's or the buffers of a child process.
+    the two standard formatters of [Format], the [stdout] and [stderr] channels
+    and the C stdio streams of the same names. It reaches no other buffer, such
+    as a formatter of the user's or the buffers of a child process.
 
     Raises [Sys_error] if a flush fails, as on a closed descriptor. *)
 
