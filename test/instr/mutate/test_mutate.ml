@@ -14,8 +14,9 @@
 
    A windtrap suite ([run] executes tests sequentially in declaration
    order). The registry is a module global: every test registers under
-   its own file name, and tests that arm disarm again before returning,
-   so run the suite whole rather than filtered. *)
+   its own file name and opens its own window, and every arming is undone
+   on the way out, failure included ([disarming]), so a test passes alone
+   as in the whole suite. *)
 
 open Windtrap
 module M = Windtrap_runtime.Mutate
@@ -85,6 +86,16 @@ let register_only ~file ~sites =
 let fresh () =
   ignore (drain ());
   M.next_epoch ()
+
+(* Every test that arms runs inside [disarming]: a failure between [arm]
+   and [disarm] would otherwise leave the mutant armed for every test
+   after it. *)
+let disarming f = Fun.protect ~finally:M.disarm f
+
+let arm_ok ?budget sel =
+  match M.arm ?budget sel with
+  | Ok m -> m
+  | Error e -> failf "arm %a: %a" pp_id sel M.pp_arm_error e
 
 (* Hermeticity: all paths are absolute, so the suite behaves identically
    under dune's sandbox and when run by hand from anywhere. The child
@@ -362,16 +373,14 @@ let registry_tests =
           (List.map (fun (r : M.reached) -> r.M.hits) (drain ()));
         (* Both copies must arm: leaving one disarmed would report a false
            survivor for code reached through it. *)
-        let armed =
-          match M.arm (id ~file:"t/twice.ml" ~line:2 ~col:4 ~rewrite:"gt") with
-          | Ok m -> m
-          | Error e -> failf "arm: %a" M.pp_arm_error e
-        in
-        equal ~msg:"armed mutant" string "t/twice.ml:2:4:gt"
-          (M.id_to_string armed.M.id);
-        is_true ~msg:"the first copy is armed" (g1 0);
-        is_true ~msg:"the second copy is armed" (g2 0);
-        M.disarm ();
+        disarming (fun () ->
+            let armed =
+              arm_ok (id ~file:"t/twice.ml" ~line:2 ~col:4 ~rewrite:"gt")
+            in
+            equal ~msg:"armed mutant" string "t/twice.ml:2:4:gt"
+              (M.id_to_string armed.M.id);
+            is_true ~msg:"the first copy is armed" (g1 0);
+            is_true ~msg:"the second copy is armed" (g2 0));
         is_false ~msg:"disarm clears the first copy" (g1 0);
         is_false ~msg:"disarm clears the second copy" (g2 0);
         ignore (drain ()));
@@ -421,6 +430,7 @@ let arming_tests =
            "not mine" and runs on, so it must be a case of its own and
            not an [Unmatched] whose candidate list happens to be
            empty. *)
+        disarming @@ fun () ->
         match M.arm (id ~file:"t/absent.ml" ~line:1 ~col:0 ~rewrite:"lt") with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Uncatalogued { id } as e) ->
@@ -440,6 +450,7 @@ let arming_tests =
            than someone else's, and a caller must refuse on it. *)
         register_only ~file:"t/stale.ml"
           ~sites:[| site ~line:5 ~col:3 ~rewrite:"lt" () |];
+        disarming @@ fun () ->
         match M.arm (id ~file:"t/stale.ml" ~line:9 ~col:0 ~rewrite:"lt") with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Unmatched { candidates; _ }) ->
@@ -457,6 +468,7 @@ let arming_tests =
               site ~line:5 ~col:3 ~rewrite:"lt" ();
               site ~line:8 ~col:1 ~rewrite:"add" ();
             |];
+        disarming @@ fun () ->
         match M.arm (id ~file:"t/near.ml" ~line:5 ~col:4 ~rewrite:"lt") with
         | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
         | Error (M.Unmatched { candidates; _ } as e) ->
@@ -484,16 +496,17 @@ let arming_tests =
                 site ~line:4 ~col:2 ~rewrite:"eq" ();
               |]
         in
-        (match M.arm (id ~file:"t/dup.ml" ~line:4 ~col:2 ~rewrite:"eq") with
-        | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
-        | Error (M.Ambiguous { candidates; _ } as e) ->
-            equal ~msg:"both sites are named" int 2 (List.length candidates);
-            let rendered = Format.asprintf "%a" M.pp_arm_error e in
-            contains ~msg:"the message says they are alike"
-              ~sub:"tell them apart" rendered;
-            contains ~msg:"and names the remedies that do work"
-              ~sub:"[@mutate off]" rendered
-        | Error e -> failf "expected Ambiguous, got %a" M.pp_arm_error e);
+        ( disarming @@ fun () ->
+          match M.arm (id ~file:"t/dup.ml" ~line:4 ~col:2 ~rewrite:"eq") with
+          | Ok m -> failf "armed %a, expected a refusal" pp_mutant m
+          | Error (M.Ambiguous { candidates; _ } as e) ->
+              equal ~msg:"both sites are named" int 2 (List.length candidates);
+              let rendered = Format.asprintf "%a" M.pp_arm_error e in
+              contains ~msg:"the message says they are alike"
+                ~sub:"tell them apart" rendered;
+              contains ~msg:"and names the remedies that do work"
+                ~sub:"[@mutate off]" rendered
+          | Error e -> failf "expected Ambiguous, got %a" M.pp_arm_error e );
         is_none ~msg:"nothing is armed" (M.armed ());
         fresh ();
         is_false ~msg:"the first site stays disarmed" (g 0);
@@ -504,9 +517,8 @@ let arming_tests =
           M.register ~file:"t/refuse.ml"
             ~sites:[| site ~line:1 ~col:0 ~rewrite:"or" () |]
         in
-        (match M.arm (id ~file:"t/refuse.ml" ~line:1 ~col:0 ~rewrite:"or") with
-        | Ok _ -> ()
-        | Error e -> failf "arm: %a" M.pp_arm_error e);
+        disarming @@ fun () ->
+        ignore (arm_ok (id ~file:"t/refuse.ml" ~line:1 ~col:0 ~rewrite:"or"));
         fresh ();
         is_true ~msg:"armed" (g 0);
         is_some ~msg:"armed () reports it" (M.armed ());
@@ -527,19 +539,14 @@ let arming_tests =
           M.register ~file:"t/rearm_b.ml"
             ~sites:[| site ~line:1 ~col:0 ~rewrite:"gt" () |]
         in
-        let arm_ok name ?budget sel =
-          match M.arm ?budget sel with
-          | Ok m -> m
-          | Error e -> failf "%s: %a" name M.pp_arm_error e
-        in
-        let _ =
-          arm_ok "first" ~budget:2
-            (id ~file:"t/rearm_a.ml" ~line:1 ~col:0 ~rewrite:"lt")
-        in
+        disarming @@ fun () ->
+        ignore
+          (arm_ok ~budget:2
+             (id ~file:"t/rearm_a.ml" ~line:1 ~col:0 ~rewrite:"lt"));
         fresh ();
         is_true ~msg:"the first is armed" (ga 0);
         let second =
-          arm_ok "second" (id ~file:"t/rearm_b.ml" ~line:1 ~col:0 ~rewrite:"gt")
+          arm_ok (id ~file:"t/rearm_b.ml" ~line:1 ~col:0 ~rewrite:"gt")
         in
         equal ~msg:"armed () names the second" (option string)
           (Some "t/rearm_b.ml:1:0:gt")
@@ -554,40 +561,36 @@ let arming_tests =
         for _ = 1 to 5 do
           is_true ~msg:"the second is armed, without an inherited budget" (gb 0)
         done;
-        M.disarm ();
         ignore (drain ()));
     test "the runaway budget fires on the evaluation that exceeds it" (fun () ->
         let g =
           M.register ~file:"t/runaway.ml"
             ~sites:[| site ~line:2 ~col:0 ~rewrite:"not" () |]
         in
-        (match
-           M.arm ~budget:3
-             (id ~file:"t/runaway.ml" ~line:2 ~col:0 ~rewrite:"not")
-         with
-        | Ok _ -> ()
-        | Error e -> failf "arm: %a" M.pp_arm_error e);
-        fresh ();
-        is_true ~msg:"hit 1 is within budget" (g 0);
-        is_true ~msg:"hit 2 is within budget" (g 0);
-        is_true ~msg:"hit 3 is within budget" (g 0);
-        raises_match ~msg:"hit 4 exceeds it"
-          (function
-            | M.Runaway { id; hits; budget } ->
-                M.id_to_string id = "t/runaway.ml:2:0:not"
-                && hits = 4 && budget = 3
-            | _ -> false)
-          (fun () -> g 0);
-        contains ~msg:"the exception prints its mutant"
-          ~sub:"t/runaway.ml:2:0:not"
-          (Printexc.to_string
-             (M.Runaway
-                {
-                  id = id ~file:"t/runaway.ml" ~line:2 ~col:0 ~rewrite:"not";
-                  hits = 4;
-                  budget = 3;
-                }));
-        M.disarm ();
+        disarming (fun () ->
+            ignore
+              (arm_ok ~budget:3
+                 (id ~file:"t/runaway.ml" ~line:2 ~col:0 ~rewrite:"not"));
+            fresh ();
+            is_true ~msg:"hit 1 is within budget" (g 0);
+            is_true ~msg:"hit 2 is within budget" (g 0);
+            is_true ~msg:"hit 3 is within budget" (g 0);
+            raises_match ~msg:"hit 4 exceeds it"
+              (function
+                | M.Runaway { id; hits; budget } ->
+                    M.id_to_string id = "t/runaway.ml:2:0:not"
+                    && hits = 4 && budget = 3
+                | _ -> false)
+              (fun () -> g 0);
+            contains ~msg:"the exception prints its mutant"
+              ~sub:"t/runaway.ml:2:0:not"
+              (Printexc.to_string
+                 (M.Runaway
+                    {
+                      id = id ~file:"t/runaway.ml" ~line:2 ~col:0 ~rewrite:"not";
+                      hits = 4;
+                      budget = 3;
+                    })));
         is_false ~msg:"a disarmed site has no budget to exceed" (g 0);
         ignore (drain ()));
     test "reset_reach restores the budget headroom a fork consumed" (fun () ->
@@ -601,21 +604,19 @@ let arming_tests =
         for _ = 1 to 10 do
           ignore (g 0)
         done;
-        (match
-           M.arm ~budget:2
-             (id ~file:"t/forked.ml" ~line:1 ~col:0 ~rewrite:"and")
-         with
-        | Ok _ -> ()
-        | Error e -> failf "arm: %a" M.pp_arm_error e);
+        disarming @@ fun () ->
+        ignore
+          (arm_ok ~budget:2
+             (id ~file:"t/forked.ml" ~line:1 ~col:0 ~rewrite:"and"));
         M.reset_reach ();
         is_true ~msg:"the first armed hit is within budget" (g 0);
         is_true ~msg:"the second is too" (g 0);
         raises_match ~msg:"the third exceeds it"
           (function M.Runaway _ -> true | _ -> false)
           (fun () -> g 0);
-        M.disarm ();
         ignore (drain ()));
     test "a non-positive budget is a programmer error" (fun () ->
+        disarming @@ fun () ->
         List.iter
           (fun n ->
             raises_match ~msg:(string_of_int n) Exn.invalid_arg (fun () ->
@@ -629,7 +630,8 @@ let arming_tests =
         (* The core's mirror set in the environment arms nothing here:
            the core parses the value and hands the identifier to [arm],
            and nothing in this library looks at the environment. *)
-        Unix.putenv "WINDTRAP_MUTATE_ARM" "t/env.ml:6:2:fadd";
+        setenv "WINDTRAP_MUTATE_ARM" (Some "t/env.ml:6:2:fadd");
+        disarming @@ fun () ->
         equal ~msg:"the variable alone arms nothing" (option mutant_t) None
           (M.armed ());
         fresh ();
@@ -649,8 +651,6 @@ let arming_tests =
         | Ok _ -> fail "a malformed identifier must be refused"
         | Error (M.Malformed _) -> ()
         | Error e -> failf "expected Malformed, got %a" M.pp_arm_error e);
-        Unix.putenv "WINDTRAP_MUTATE_ARM" "";
-        M.disarm ();
         ignore (drain ()));
   ]
 
