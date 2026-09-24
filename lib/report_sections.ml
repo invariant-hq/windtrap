@@ -366,6 +366,33 @@ let newline_fact ~expected ~actual =
     (if String.length actual > String.length expected then "actual"
      else "expected")
 
+(* Whether a comparison of two texts is a comparison of the whole values:
+   a cut side was compared on what the failure kept of it. *)
+let whole (expected : Failure.text) (actual : Failure.text) =
+  not (Failure.is_cut expected || Failure.is_cut actual)
+
+(* Two texts that agree on what the failure kept, one of them cut: their
+   renderings may differ past the cut, and nothing here says whether. *)
+let agree_fact ~(expected : Failure.text) ~(actual : Failure.text) =
+  spf
+    "the sides agree on the %d bytes a failure keeps of each (expected %d \
+     bytes, actual %d bytes)"
+    (String.length expected.kept)
+    expected.length actual.length
+
+(* What a diff of two texts, one of them cut, covers. *)
+let cut_fact ~(expected : Failure.text) ~(actual : Failure.text) =
+  let side name (t : Failure.text) =
+    spf "the first %d of the %d bytes of %s" (String.length t.kept) t.length
+      name
+  in
+  "the diff covers "
+  ^ String.concat " and "
+      (List.filter_map
+         (fun (name, t) ->
+           if Failure.is_cut t then Some (side name t) else None)
+         [ ("expected", expected); ("actual", actual) ])
+
 let diff_lines hunks =
   List.fold_left (fun acc h -> acc + 1 + List.length h.Diff.lines) 0 hunks
 
@@ -380,15 +407,18 @@ let headline (f : Failure.t) =
         "both sides equal: " ^ shown_text expected
     | Failure.Equality { expected; actual; diffable = false; _ } ->
         spf "expected %s, got %s" (shown_text expected) (shown_text actual)
-    | Failure.Equality { expected; actual; _ } -> (
-        let expected = shown_text expected and actual = shown_text actual in
-        if String.equal expected actual then "both sides render as: " ^ expected
+    | Failure.Equality { expected = e; actual = a; _ } -> (
+        let whole = whole e a and expected = e.kept and actual = a.kept in
+        if String.equal expected actual then
+          if whole then "both sides render as: " ^ expected
+          else agree_fact ~expected:e ~actual:a
         else if
           not (String.contains expected '\n' || String.contains actual '\n')
-        then spf "expected %s, got %s" expected actual
+        then spf "expected %s, got %s" (shown_text e) (shown_text a)
         else
           match Diff.hunks ~expected ~actual () with
-          | [] -> newline_fact ~expected ~actual
+          | [] when whole -> newline_fact ~expected ~actual
+          | [] -> cut_fact ~expected:e ~actual:a
           | hunks ->
               spf "expected and actual differ (%d diff lines)"
                 (diff_lines hunks))
@@ -704,8 +734,43 @@ let pp_sides ~ansi put ~ind ~anchors:(expected_anchor, actual_anchor) ~marked
   side expected_anchor ~whole:`Green ~span:`Bold_green expected expected_spans;
   side actual_anchor ~whole:`Red ~span:`Bold_red actual actual_spans
 
-let pp_eq ~ansi put ~ind ~expected ~actual =
-  if String.equal expected actual then begin
+(* The hunks between two texts, over what the failure kept of each and
+   through [show]. A cut pair that kept the same bytes says so instead; a
+   cut side adds a line after the hunks that names the cut, and a
+   difference in a final newline is a fact only of two whole texts. *)
+let pp_text_diff put ~ind ~headers ~show ~(expected : Failure.text)
+    ~(actual : Failure.text) =
+  let whole = whole expected actual in
+  if (not whole) && String.equal expected.kept actual.kept then
+    put [ plain (ind ^ agree_fact ~expected ~actual) ]
+  else begin
+    (match
+       Diff.hunks ~expected:(show expected.kept) ~actual:(show actual.kept) ()
+     with
+    | [] ->
+        if whole then
+          put
+            [
+              plain
+                (ind
+                ^ newline_fact ~expected:(show expected.kept)
+                    ~actual:(show actual.kept));
+            ]
+    | hunks ->
+        if headers then begin
+          put [ plain ind; styled `Faint "--- expected" ];
+          put [ plain ind; styled `Faint "+++ actual" ]
+        end;
+        pp_hunks put ~ind ~limit:max_diff_lines hunks);
+    if not whole then
+      put [ plain ind; styled `Faint ("(" ^ cut_fact ~expected ~actual ^ ")") ]
+  end
+
+(* An equality's two sides, through [show]. *)
+let pp_eq ~ansi put ~ind ?(show = Fun.id) ~(expected : Failure.text)
+    ~(actual : Failure.text) () =
+  if whole expected actual && String.equal expected.kept actual.kept then begin
+    let expected = show expected.kept in
     (* The equality told the values apart and their printer did not
        ([equal float nan nan], a lossy pp). Decided on the raw renderings:
        escaping merges values it cannot tell apart, and a pair the printer
@@ -729,17 +794,15 @@ let pp_eq ~ansi put ~ind ~expected ~actual =
         styled `Faint "the printer shows less than the equality compares";
       ]
   end
-  else if String.contains expected '\n' || String.contains actual '\n' then
-    begin match Diff.hunks ~expected ~actual () with
-    | [] -> put [ plain (ind ^ newline_fact ~expected ~actual) ]
-    | hunks ->
-        put [ plain ind; styled `Faint "--- expected" ];
-        put [ plain ind; styled `Faint "+++ actual" ];
-        pp_hunks put ~ind ~limit:max_diff_lines hunks
-    end
+  else if
+    String.equal expected.kept actual.kept
+    || String.contains (show expected.kept) '\n'
+    || String.contains (show actual.kept) '\n'
+  then pp_text_diff put ~ind ~headers:true ~show ~expected ~actual
   else
     pp_sides ~ansi put ~ind ~anchors:("expected", "actual") ~marked:true
-      ~expected ~actual
+      ~expected:(show (shown_text expected))
+      ~actual:(show (shown_text actual))
 
 (* A rendering under the sentence or the anchor that names it: a block,
    each line in [style], so that no style spans a line. *)
@@ -853,8 +916,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         put_ind
           [ styled `Faint "actual"; plain "    "; styled `Red (shown value) ]
   | Failure.Equality { expected; actual; _ } ->
-      pp_eq ~ansi put ~ind ~expected:(shown_text expected)
-        ~actual:(shown_text actual)
+      pp_eq ~ansi put ~ind ~expected ~actual ()
   | Failure.Containment
       { needle; found_at; haystack_length; excerpt; excerpt_offset; demand } ->
       (* The block is the containment payload, never a fake equality diff.
@@ -951,9 +1013,8 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
           (* Right constructor, wrong payload: the messages are compared,
              the constructor said once. *)
           put_text (spf "raised %s with the wrong message:" constructor);
-          pp_eq ~ansi put ~ind
-            ~expected:(spf "%S" (shown_text expected_message))
-            ~actual:(spf "%S" (shown_text actual_message))
+          pp_eq ~ansi put ~ind ~show:(spf "%S") ~expected:expected_message
+            ~actual:actual_message ()
       | None, Some expected, actual ->
           pp_raise ~ansi put ~ind ~expected:(shown_text expected)
             ~actual:(Option.map shown_text actual)
@@ -997,12 +1058,9 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
                 styled `Faint
                   (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines));
               ]
-      | Failure.Mismatch { expected; actual } -> (
-          let expected = shown_text expected and actual = shown_text actual in
+      | Failure.Mismatch { expected; actual } ->
           put_text (subject ^ ": mismatch");
-          match Diff.hunks ~expected ~actual () with
-          | [] -> put_text (newline_fact ~expected ~actual)
-          | hunks -> pp_hunks put ~ind ~limit:max_diff_lines hunks)
+          pp_text_diff put ~ind ~headers:false ~show:Fun.id ~expected ~actual
       | Failure.Unresolvable { candidate } ->
           put_text
             (subject

@@ -2644,6 +2644,100 @@ let test_cut_text_marker () =
   contains ~msg:"the headline prints it too" ~sub:"mmm"
     (Report.headline (Failure.message long))
 
+(* Two sides cut to the same 64 KiB are not known equal: the report says
+   what it knows, never that the printer merged them. A diff with a cut
+   side names the cut after its hunks, and the marker is never a line of
+   the diff. *)
+let test_cut_comparisons () =
+  let head = String.make 65_536 'a' in
+  let agree =
+    "the sides agree on the 65536 bytes a failure keeps of each (expected \
+     65537 bytes, actual 65537 bytes)"
+  in
+  let merged b =
+    not_contains ~msg:"never the printer's fault" ~sub:"printer shows less" b;
+    not_contains ~msg:"never one rendering" ~sub:"both sides render as" b;
+    not_contains ~msg:"never a newline" ~sub:"trailing newline" b
+  in
+  let single =
+    Failure.equality ~expected:(head ^ "x") ~actual:(head ^ "y") ()
+  in
+  let b = failure_block single in
+  contains ~msg:"single-line: the sides agree on what was kept"
+    ~sub:("    " ^ agree ^ "\n")
+    b;
+  merged b;
+  is_true ~msg:"the headline says it too"
+    (String.starts_with ~prefix:"the sides agree on the 65536 bytes"
+       (Report.headline single));
+  let lines =
+    String.concat "\n" (List.init 8_000 (fun i -> Printf.sprintf "line %05d" i))
+  in
+  let b =
+    failure_block
+      (Failure.equality ~expected:(lines ^ "\nA") ~actual:(lines ^ "\nB") ())
+  in
+  contains ~msg:"multi-line: the same sentence"
+    ~sub:
+      "the sides agree on the 65536 bytes a failure keeps of each (expected \
+       88001 bytes, actual 88001 bytes)"
+    b;
+  merged b;
+  let b =
+    failure_block
+      (Failure.baseline (Failure.File "p.expected")
+         (Failure.Mismatch
+            {
+              expected = Failure.text (head ^ "x");
+              actual = Failure.text (head ^ "y");
+            }))
+  in
+  contains ~msg:"a baseline: the same sentence after the mismatch"
+    ~sub:("    expect_file \"p.expected\": mismatch\n    " ^ agree ^ "\n")
+    b;
+  merged b;
+  let b =
+    failure_block
+      (Failure.raised ~expected:"Failure(_)" ~actual:"Failure(_)"
+         ~message_diff:
+           {
+             Failure.constructor = "Failure";
+             expected_message = Failure.text (head ^ "x");
+             actual_message = Failure.text (head ^ "y");
+           }
+         ())
+  in
+  contains ~msg:"a message diff: the same sentence"
+    ~sub:("    " ^ agree ^ "\n")
+    b;
+  merged b;
+  (* One side cut, one whole: the hunks are over the kept bytes, and a line
+     after them names the cut. *)
+  let long = "a\n" ^ String.make 70_000 'x' in
+  let short = "a\n" ^ String.make 100 'x' in
+  let b = failure_block (Failure.equality ~expected:long ~actual:short ()) in
+  contains ~msg:"the cut is named after the hunks"
+    ~sub:
+      "    (the diff covers the first 65536 of the 70002 bytes of expected)\n"
+    b;
+  not_contains ~msg:"the marker is no line of the diff" ~sub:"truncated" b;
+  let b =
+    failure_block
+      (Failure.baseline (Failure.File "p.expected")
+         (Failure.Mismatch
+            {
+              expected = Failure.text long;
+              actual = Failure.text ("b\n" ^ String.make 70_001 'x');
+            }))
+  in
+  contains ~msg:"both sides cut: both are named"
+    ~sub:
+      "(the diff covers the first 65536 of the 70002 bytes of expected and the \
+       first 65536 of the 70003 bytes of actual)"
+    b;
+  not_contains ~msg:"and nothing is claimed of their equal kept bytes"
+    ~sub:"trailing newline" b
+
 (* Containment blocks *)
 
 let not_contains_failure =
@@ -5672,6 +5766,7 @@ let tests =
     test "subtest rendering" test_subtest_rendering;
     test "property stats" test_prop_stats;
     test "a cut text prints its marker" test_cut_text_marker;
+    test "cut texts are compared as cut" test_cut_comparisons;
     test "containment: claim-aware block" test_containment_block;
     test "containment: multi-line haystack block" test_containment_multiline;
     test "containment: not-found display cap" test_containment_not_found_cap;

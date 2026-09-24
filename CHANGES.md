@@ -620,7 +620,11 @@ Coverage and packaging:
   messages as `expected` and `actual`, marked as any two values are.
 - Two unequal values the printer cannot tell apart print once, as `both
   sides render as: <v>`; a subtest's entry names it on a `subtest   <name>`
-  line under its location.
+  line under its location. A failure keeps 64 KiB of a value, and two
+  values cut to the same bytes read `the sides agree on the 65536 bytes a
+  failure keeps of each (expected 70000 bytes, actual 70001 bytes)`; a diff
+  with a cut side ends with `(the diff covers the first 65536 of the 70000
+  bytes of expected)`, never with the marker as a changed line.
 - What `-u` or `--corrected` wrote is the `corrections (N):` section above
   the summary (`wrote <path> (N expectations)`, `accepted <path>`), sorted
   by path. A file the run could not write is a row of that section,

@@ -106,10 +106,16 @@ val pp_failure :
     under both [ansi] settings.
 
     Three equalities have nothing to mark. A negated one ([not_]) prints the one
-    value that both sides render as. An equality whose renderings are equal byte
-    for byte prints that value too, with a line saying that the printer shows
-    less than the equality compares. One whose renderings differ by a final
-    newline alone prints a sentence that names the longer side.
+    value that both sides render as. An equality whose renderings are whole and
+    equal byte for byte prints that value too, with a line saying that the
+    printer shows less than the equality compares. One whose renderings are
+    whole and differ by a final newline alone prints a sentence that names the
+    longer side.
+
+    A cut side ({!Failure.is_cut}) is compared on what the failure kept of it.
+    Two sides that kept the same bytes, one of them cut, print one sentence with
+    the number of bytes kept and the length of each side. A diff with a cut side
+    ends with a line that gives, for each cut side, the bytes that it covers.
 
     {b Containment.} The entry prints the chain index of an {!Failure.Ordered}
     demand, then the needle with the verdict of the search. The needle is named
@@ -134,8 +140,9 @@ val pp_failure :
     [expect_exact], or [expect_file] with its path through {!Os.display_path}. A
     mismatch then prints the correction as hunks, from the baseline to the
     produced text and under the cap of an equality's diff. It prints the
-    final-newline sentence of an equality when that is all that differs. A
-    missing baseline prints the content that it would hold, at most 20 lines
+    final-newline sentence of an equality when that is all that differs, and the
+    sentence or the line of a cut side as an equality does. A missing baseline
+    prints the content that it would hold, at most 20 lines
     ([max_proposed_lines]) and then a count of the rest. An unresolvable path
     prints the unproven path and names [WINDTRAP_PROJECT_ROOT] as the way out.
 
