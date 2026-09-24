@@ -987,6 +987,191 @@ let () =
   is_true ~msg:"a CLI shard leaves a malformed env shard unread"
     (config.Run.shard = Some (1, 2))
 
+(* Parsing: the edges of the argument grammar *)
+
+let () =
+  reg "an argument of two bytes that starts with a dash is a flag" @@ fun () ->
+  List.iter
+    (fun (arg, typed) ->
+      expect_error (Printf.sprintf "%s is an unknown flag" arg) [ arg ]
+        (function
+        | Cli.Unknown_flag f -> f = typed
+        | _ -> false))
+    [ ("-1", "-1"); ("-xv", "-xv"); ("--bogus=1", "--bogus") ]
+
+let () =
+  reg "a short flag takes no inline value" @@ fun () ->
+  List.iter
+    (fun arg ->
+      expect_error (Printf.sprintf "%s is an unknown flag" arg) [ arg ]
+        (function
+        | Cli.Unknown_flag _ -> true
+        | _ -> false))
+    [ "-f=x"; "-fx" ]
+
+let () =
+  reg "a flag takes the next argument whatever it looks like" @@ fun () ->
+  expect_ok "-f --verbose" [ "-f"; "--verbose" ] (fun p ->
+      equal ~msg:"the filter is the flag-shaped word" (option string)
+        (Some "--verbose") p.Cli.filter;
+      equal ~msg:"and --verbose was not read as a flag" (option bool) None
+        p.Cli.verbose)
+
+let () =
+  reg "an error before --help wins over it" @@ fun () ->
+  expect_error "an unknown flag before --help" [ "--bogus"; "--help" ] (function
+    | Cli.Unknown_flag "--bogus" -> true
+    | _ -> false);
+  expect_error "-u --corrected --help" [ "-u"; "--corrected"; "--help" ]
+    (function
+    | Cli.Incompatible_flags ("-u", "--corrected") -> true
+    | _ -> false)
+
+let () =
+  reg "the acceptance refusal names -u first in either order" @@ fun () ->
+  expect_error "--corrected --update" [ "--corrected"; "--update" ] (function
+    | Cli.Incompatible_flags ("-u", "--corrected") -> true
+    | _ -> false)
+
+let () =
+  reg "parse reads no environment" @@ fun () ->
+  clear_env ();
+  setenv "WINDTRAP_FILTER" (Some "from-env");
+  setenv "WINDTRAP_STREAM" (Some "1");
+  is_true ~msg:"no argument is the empty record, the mirrors set"
+    (parse [] = Ok Cli.empty)
+
+(* Command lines made of whole arguments: every flag that takes no value in
+   both spellings, value flags with a good value, and the misspellings and
+   separators, so most vectors parse and some do not. Whatever a vector
+   holds, [parse] returns. *)
+let argv_chunks =
+  List.map
+    (fun a -> [ a ])
+    [
+      "--failed";
+      "-l";
+      "--list";
+      "-x";
+      "--fail-fast";
+      "-s";
+      "--stream";
+      "-u";
+      "--update";
+      "--corrected";
+      "-v";
+      "--verbose";
+      "--mutate";
+    ]
+  @ [
+      [ "-f"; "p" ];
+      [ "--tag=a" ];
+      [ "--shard"; "2/4" ];
+      [ "--seed"; "s1:00000000000000ff" ];
+      [ "--color"; "never" ];
+      [ "--list=1" ];
+      [ "--prop-count"; "0" ];
+      [ "-xv" ];
+      [ "-fx" ];
+      [ "-1" ];
+      [ "--" ];
+      [ "-h" ];
+      [ "" ];
+    ]
+
+let () =
+  registered :=
+    prop "parse never raises and never gives Some false"
+      Gen.(map List.concat (list (of_list argv_chunks)))
+      (fun args ->
+        match parse args with
+        | Error _ -> ()
+        | Ok p ->
+            let flags =
+              [
+                p.Cli.failed_only;
+                p.Cli.list_only;
+                p.Cli.bail;
+                p.Cli.stream;
+                p.Cli.update;
+                p.Cli.corrected;
+                p.Cli.verbose;
+              ]
+            in
+            is_true ~msg:"a boolean flag is None or Some true"
+              (List.for_all (fun b -> b <> Some false) flags))
+    :: !registered
+
+(* Resolution: the order of the mirrors, and the edges of each layer *)
+
+let invalid_source = function
+  | Error (Cli.Invalid_value { source; _ }) -> Some source
+  | Ok _ | Error _ -> None
+
+let () =
+  reg "the mirrors are read in help order and the first error wins" @@ fun () ->
+  clear_env ();
+  (* Help order is SHARD, STREAM, COLOR; the alphabet puts COLOR first. *)
+  setenv "WINDTRAP_COLOR" (Some "sometimes");
+  setenv "WINDTRAP_SHARD" (Some "9/2");
+  equal ~msg:"the earlier row's variable is named" (option string)
+    (Some "WINDTRAP_SHARD")
+    (invalid_source (Cli.settings Cli.empty));
+  setenv "WINDTRAP_SHARD" None;
+  setenv "WINDTRAP_STREAM" (Some "maybe");
+  equal ~msg:"then the next bad one in help order" (option string)
+    (Some "WINDTRAP_STREAM")
+    (invalid_source (Cli.settings Cli.empty))
+
+let () =
+  reg "a bad mirror wins over --mutate with --arm" @@ fun () ->
+  clear_env ();
+  setenv "WINDTRAP_COLOR" (Some "sometimes");
+  equal ~msg:"the incompatibility is checked after every mirror" (option string)
+    (Some "WINDTRAP_COLOR")
+    (invalid_source
+       (Cli.settings
+          { Cli.empty with Cli.mutate = Some []; arm = Some "lib/a.ml:1:0:add" }))
+
+let () =
+  reg "WINDTRAP_CORRECTED is not a mirror" @@ fun () ->
+  clear_env ();
+  setenv "WINDTRAP_CORRECTED" (Some "1");
+  is_true ~msg:"the baselines are checked"
+    ((resolve Cli.empty).Run.baseline = Baseline.Check)
+
+let () =
+  reg "a relative -o is kept as given when the directory cannot be read"
+  @@ fun () ->
+  clear_env ();
+  let gone = Filename.concat (temp_dir ()) "gone" in
+  Unix.mkdir gone 0o700;
+  chdir gone;
+  Unix.rmdir gone;
+  (match Sys.getcwd () with
+  | _ -> skip ~reason:"this system reads a removed working directory" ()
+  | exception Sys_error _ -> ());
+  equal ~msg:"the log dir is the relative spelling" string "logs"
+    (resolve { Cli.empty with Cli.log_dir = Some "logs" }).Run.log_dir
+
+let () =
+  reg "settings: github from the environment, the mirrors' spelling"
+  @@ fun () ->
+  clear_env ();
+  let c = resolve Cli.empty in
+  is_true ~msg:"outside GitHub Actions" (not c.Run.github);
+  is_true ~msg:"commands are spelled with the mirrors"
+    (c.Run.invocation = `Mirrors);
+  setenv "CI" (Some "true");
+  setenv "GITHUB_ACTIONS" (Some "true");
+  is_true ~msg:"under GitHub Actions" (resolve Cli.empty).Run.github
+
+let () =
+  reg "settings draws a fresh seed on every call" @@ fun () ->
+  clear_env ();
+  let a = (resolve Cli.empty).Run.seed and b = (resolve Cli.empty).Run.seed in
+  is_true ~msg:"two calls, two seeds" (a <> b)
+
 (* Suite *)
 
 let tests = List.rev !registered
