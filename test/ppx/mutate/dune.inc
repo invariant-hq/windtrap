@@ -64,6 +64,16 @@
 
 (rule
  (with-stdout-to
+  fixture_contexts.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_contexts.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_contexts.expected fixture_contexts.actual)))
+
+(rule
+ (with-stdout-to
   fixture_empty.actual
   (run ./mutate_pp.exe --impl %{dep:fixture_empty.ml})))
 
@@ -111,6 +121,26 @@
  (alias runtest)
  (action
   (diff fixture_lazy.expected fixture_lazy.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_lost_cmp.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_lost_cmp.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_lost_cmp.expected fixture_lost_cmp.actual)))
+
+(rule
+ (with-stdout-to
+  fixture_lost_con.actual
+  (run ./mutate_pp.exe --impl %{dep:fixture_lost_con.ml})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff fixture_lost_con.expected fixture_lost_con.actual)))
 
 (rule
  (with-stdout-to

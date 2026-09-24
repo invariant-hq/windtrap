@@ -143,16 +143,16 @@ A fixture names each rule it pins by its id and interface line, as in
 | M3 | The six `cmp` rewrites and their names. | mut:59-62 | `mutate/fixture_cmp`; `integration/test_registration.ml` behaviour |
 | M4 | An ordering's armed arm swaps its operands under `Stdlib.not`, pinned by `operands`; an equality's negates the whole comparison. | mut:74-75, mut:182-183 | `mutate/fixture_cmp`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
 | M5 | `cmp` sites lie in a boolean context alone. | mut:62, mut:68-72 | `mutate/fixture_cmp` |
-| M6 | An operand of `\|\|` is a boolean context. | mut:68-69 | partial: `test_mutate_semantics.ml` "evaluates exactly as its twin does"; unpinned: a golden |
+| M6 | An operand of `\|\|` is a boolean context. | mut:68-69 | `mutate/fixture_contexts`, `mutate/fixture_lost_con` (a file without `con`); `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
 | M7 | A boolean context does not reach through a sequence. | mut:70 | `mutate/fixture_assert` |
-| M8 | ... nor through a `let` body, a type constraint or `not`. | mut:70-71 | unpinned |
+| M8 | ... nor through a `let` body, a type constraint or `not`. | mut:70-71 | `mutate/fixture_contexts` |
 | M9 | `con` swaps `&&` and `\|\|` in one branch, through `Stdlib.(<>)`/`Stdlib.(=)` and `Stdlib.Bool.t`, short-circuit kept. | mut:63-64 | `mutate/fixture_con`; `test_mutate_semantics.ml` "tail calls survive instrumentation" |
-| M10 | `&` and `or` are not sites. | mut:64 | unpinned |
+| M10 | `&` and `or` are not sites. | mut:64 | `mutate/fixture_contexts` |
 | M11 | The four `ari` rewrites, in every context. | mut:65-66, mut:72 | `mutate/fixture_ari`; `integration/test_registration.ml` behaviour |
 | M12 | Unary minus is not a site. | mut:52-53 | `mutate/fixture_ari` |
-| M13 | A qualified operator is not a site. | mut:53-55 | unpinned |
-| M14 | A labelled or partial application is not a site. | mut:53-55 | unpinned |
-| M15 | An armed ordering differs from its `after` text on NaN. | mut:75-76 | unpinned |
+| M13 | A qualified operator is not a site. | mut:53-55 | `mutate/fixture_contexts` |
+| M14 | A labelled or partial application is not a site. | mut:53-55 | `mutate/fixture_contexts` |
+| M15 | An armed ordering differs from its `after` text on NaN. | mut:75-76 | STATED-NOT-TESTED: a consequence of M4 (the armed arm is `not (b < a)`) and of the float comparisons on NaN |
 
 ### Placement
 
@@ -160,10 +160,10 @@ A fixture names each rule it pins by its id and interface line, as in
 | --- | --- | --- | --- |
 | M16 | One mutant per expression: a comparison condition carries `cmp`, a connective one `con`, any other `neg`. | mut:81-83 | `mutate/fixture_nesting` |
 | M17 | A connective with a connective operand carries no mutant. | mut:84-86 | `mutate/fixture_nesting`, `mutate/fixture_chain` |
-| M18 | The operands of such a connective are boolean contexts all the same. | mut:86 | unpinned |
-| M19 | In a file that lost `cmp` or `con`, such a condition carries `neg`. | mut:87-88 | unpinned |
+| M18 | The operands of such a connective are boolean contexts all the same. | mut:86 | `mutate/fixture_contexts` |
+| M19 | In a file that lost `cmp` or `con`, such a condition carries `neg`. | mut:87-88 | `mutate/fixture_lost_cmp`, `mutate/fixture_lost_con` |
 | M20 | In a chain of one arithmetic operator the outermost application alone is a site, read from the tree. | mut:89-93 | `mutate/fixture_chain`; `test_mutate_semantics.ml` "evaluates exactly as its twin does" |
-| M21 | The chain rule applied to `con`. | none (unreachable code) | unpinned |
+| M21 | The chain rule applied to `con`. | none (unreachable code) | STATED-NOT-TESTED: unreachable, a consequence of M17 (a connective with a connective operand carries no mutant, so no `con` chain reaches the chain rule) |
 | M22 | In `a < b < c` only the outer comparison is a site. | mut:68-72 | `mutate/fixture_chain` |
 | M23 | Guards bind `__windtrap_mut_<i>_<role>`, distinct under nesting. | mut:94-95 | `mutate/fixture_chain` |
 
@@ -185,9 +185,9 @@ A fixture names each rule it pins by its id and interface line, as in
 | id | rule | interface | pinned by |
 | --- | --- | --- | --- |
 | M32 | A variable pattern named after an operator removes its family (`ari` for `+`). | mut:34-40 | `mutate/fixture_shadow` |
-| M33 | A value description (an `external`) named after an operator removes its family. | mut:39-40 | unpinned |
-| M34 | The `cmp` and `con` families are removed as `ari` is. | mut:36-37 | unpinned |
-| M35 | `neg` names `Stdlib.not` and is never lost. | mut:37-38 | partial: build of `mutate/integration/shadowed.ml`; unpinned: "never lost" |
+| M33 | A value description (an `external`) named after an operator removes its family. | mut:39-40 | `mutate/fixture_lost_con` |
+| M34 | The `cmp` and `con` families are removed as `ari` is. | mut:36-37 | `mutate/fixture_lost_cmp`, `mutate/fixture_lost_con` |
+| M35 | `neg` names `Stdlib.not` and is never lost. | mut:37-38 | build of `mutate/integration/shadowed.ml`; never lost: `mutate/fixture_lost_cmp` |
 | M36 | Guards name `Stdlib.Bool.t`, which survives a local `type bool`. | mut:28-30 | build of `mutate/integration/shadowed.ml` |
 | M37 | Operands are typed left to right, the right one given the left one's type. | mut:182-183 (the annotation; the typing order is stated nowhere) | builds of `mutate/integration/disambiguate.ml`, `expected_type.ml`; `integration/test_registration.ml` typing_context, expected_type |
 
