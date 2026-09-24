@@ -1479,8 +1479,7 @@ let () =
 
 let () =
   (* A passing two-test suite, focused or not, outside CI ([init] unset
-     CI). The mli-promised warning — windtrap.mli: "outside CI a
-     successful focused run prints a warning" — goes to stderr, and is
+     CI). The warning [Windtrap.focus] documents goes to stderr, and is
      absent without focus. *)
   with_temp_root @@ fun root ->
   let pass name = test name (fun () -> is_true true) in
