@@ -797,9 +797,11 @@ val pass : 'a testable
     and its mirror [WINDTRAP_SEED] (see the
     {{!section-command_line}command line}) set it.
 
-    The derivation and the value streams are frozen under the [s1] prefix. A
-    seed replays every value on another machine, under another OCaml version and
-    whatever else the suite holds.
+    The derivation of the case seeds and the stream of bits are frozen under the
+    [s1] prefix. What a generator draws from the stream is not, so a seed
+    replays every value within one version of windtrap, on another machine,
+    under another OCaml version and whatever else the suite holds. Another
+    version of windtrap may draw other values from the same seed.
 
     A law must be deterministic, because the search for a counterexample runs it
     again on candidate inputs. Every test sees a fixed stream of the global

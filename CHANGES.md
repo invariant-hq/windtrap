@@ -306,7 +306,9 @@ Coverage and packaging:
   was invoked (`dune exec <path> -- --seed … -f '…'` under dune, argv0
   when run directly, `WINDTRAP_SEED=… dune runtest` for inline suites).
   Adding, removing or reordering other tests never perturbs a property's
-  stream.
+  stream. A seed replays within one version of windtrap: the derivation
+  and the bit stream are frozen under `s1`, and a release that changes
+  what a generator draws from them says so here.
 - **Shrinking you can see the end of.** The shrink budget is fixed at
   10,000 accepted steps — sized so no ordinary value spends it and a
   replay descends to the same node; there is no knob. A search that stops

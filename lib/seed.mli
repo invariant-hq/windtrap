@@ -21,7 +21,9 @@
     {!to_string}), {!derive}, the stream ({!make}, {!bits64}, {!below}) and
     {!split}. The [s1] prefix of a token names this version of all four, so a
     change to one of them needs another prefix. Under the same prefix the change
-    is silent, and a recorded token then replays other values. *)
+    is silent, and a recorded token then replays other values. What a generator
+    makes of the stream is no part of the four, so a recorded token replays the
+    same values within one version of the library only. *)
 
 (** {1:seeds Seeds and tokens} *)
 
@@ -51,7 +53,7 @@ val derive : root:seed -> path:string -> index:int -> seed
 (** [derive ~root ~path ~index] is the seed of case [index] of the test [path]
     under [root]. It is a pure function of the three, so the other tests of a
     suite never change what a property draws, and a recorded root replays every
-    generated case.
+    generated case of the same version of the library.
     - [path] is the path of the test as one string
       ({!Test_tree.path_to_string}), hashed byte by byte. A test that is renamed
       or moved to another group derives other seeds.

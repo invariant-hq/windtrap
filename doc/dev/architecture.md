@@ -235,7 +235,9 @@ is a design decision, recorded here first.
    printerless `map` or `bind` renders its pre-image, and `with_pp`
    overrides.
 7. **Per-case seeds derive from (root, path, index)**; every failure
-   replays from the printed token.
+   replays from the printed token, within one version of windtrap: the
+   derivation and the bit stream are frozen under the token's `s1` prefix,
+   what a generator draws from the stream is not.
 8. **Every user callback runs inside a test's boundary, and a resource
    acquired is released on every path where the runner regains
    control.**
