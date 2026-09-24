@@ -190,9 +190,9 @@ val project_root : unit -> string
     executable outside any build directory that is run from a subdirectory of
     its project.
 
-    The value of the variable is not normalized, and under a root with a
-    trailing [/] or a [.] segment {!display_path} and {!display_artifact} remove
-    no prefix.
+    The value of the variable is normalized lexically: [.] and [..] segments,
+    repeated separators and a trailing [/] are removed, and no symbolic link is
+    resolved. A value whose [..] climbs above the root is kept as it is.
 
     Raises [Sys_error] if the current directory is needed and cannot be read. *)
 

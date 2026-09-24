@@ -685,7 +685,7 @@ Coverage and packaging:
   capture.
 - **The project root and the log root.** The root, which `expect_file`
   paths and `.corrected` files resolve under, is `WINDTRAP_PROJECT_ROOT`
-  if set; else the directory above the build directory the process
+  if set, normalized lexically (`.`, `..`, a trailing `/`); else the directory above the build directory the process
   belongs to — from `INSIDE_DUNE`, which dune exports as the build
   context, or from the executable's own path when it lies under a
   directory whose name starts with `_build` — else the working directory.

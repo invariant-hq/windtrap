@@ -870,17 +870,27 @@ module Path_suite = struct
           equal ~msg:"display_artifact returns the path as given" string
             "/r/_build/./a.ml"
             (Os.display_artifact "/r/_build/./a.ml"));
-      test "an un-normalized WINDTRAP_PROJECT_ROOT removes no prefix" (fun () ->
+      test "WINDTRAP_PROJECT_ROOT is normalized lexically" (fun () ->
           List.iter
             (fun root ->
               setenv "WINDTRAP_PROJECT_ROOT" (Some root);
-              equal ~msg:(root ^ ": display_path") string "/r/a/b.ml"
+              equal ~msg:(root ^ ": project_root") string "/r"
+                (Os.project_root ());
+              equal ~msg:(root ^ ": display_path") string "a/b.ml"
                 (Os.display_path "/r/a/b.ml");
               equal
                 ~msg:(root ^ ": display_artifact")
-                string "/r/_build/x.log"
+                string "_build/x.log"
                 (Os.display_artifact "/r/_build/x.log"))
-            [ "/r/"; "/r/." ]);
+            [ "/r/"; "/r/."; "/r//"; "/x/../r"; "//r/./" ];
+          chdir (temp_dir ());
+          let cwd = Sys.getcwd () in
+          setenv "WINDTRAP_PROJECT_ROOT" (Some "./sub/../r/");
+          equal ~msg:"a relative one, against the working directory" string
+            (cwd ^ "/r") (Os.project_root ());
+          setenv "WINDTRAP_PROJECT_ROOT" (Some "/..");
+          equal ~msg:"one that climbs above the root is kept" string "/.."
+            (Os.project_root ()));
       test "display_path outside the root strips the build segment first"
         (fun () ->
           setenv "WINDTRAP_PROJECT_ROOT" (Some "/r");

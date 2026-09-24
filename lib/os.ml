@@ -240,6 +240,31 @@ let absolute path =
   if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
   else path
 
+let is_drive c0 c1 =
+  (('A' <= c0 && c0 <= 'Z') || ('a' <= c0 && c0 <= 'z')) && c1 = ':'
+
+let is_absolute p =
+  let n = String.length p in
+  (n > 0 && p.[0] = '/') || (n >= 3 && is_drive p.[0] p.[1] && p.[2] = '/')
+
+(* Splits an absolute '/'-separated path into an anchor ("" for Unix
+   roots, "C:" for drives) and lexically normalized components. [None]
+   when the path is not absolute or ".." escapes above the anchor. *)
+let split_normalize p =
+  if not (is_absolute p) then None
+  else
+    match String.split_on_char '/' p with
+    | anchor :: rest ->
+        let rec norm acc = function
+          | [] -> Some (List.rev acc)
+          | ("" | ".") :: rest -> norm acc rest
+          | ".." :: rest -> (
+              match acc with [] -> None | _ :: tl -> norm tl rest)
+          | c :: rest -> norm (c :: acc) rest
+        in
+        Option.map (fun comps -> (anchor, comps)) (norm [] rest)
+    | [] -> None
+
 (* INSIDE_DUNE first: dune exports the context it is building in, which
    is the one answer under a sandboxed action and under a private build
    directory. The executable's directory, never its own name: a binary
@@ -252,9 +277,17 @@ let build_dir () =
     ((match getenv "INSIDE_DUNE" with Some d -> [ d ] | None -> [])
     @ [ Filename.dirname Sys.executable_name ])
 
+(* The variable is a user's spelling, and every prefix test below compares
+   bytes: [.], [..], a doubled or trailing separator would each make the
+   root prefix nothing. *)
+let lexical path =
+  match split_normalize path with
+  | Some (anchor, comps) -> anchor ^ "/" ^ String.concat "/" comps
+  | None -> path
+
 let project_root () =
   match getenv "WINDTRAP_PROJECT_ROOT" with
-  | Some root -> absolute root
+  | Some root -> lexical (absolute root)
   | None -> (
       match build_dir () with
       | Some dir -> Filename.dirname dir
@@ -313,31 +346,6 @@ let build_root dir =
   | Some rest ->
       let kept = List.length comps - List.length rest in
       Some (String.concat "/" (List.filteri (fun i _ -> i < kept) comps))
-
-let is_drive c0 c1 =
-  (('A' <= c0 && c0 <= 'Z') || ('a' <= c0 && c0 <= 'z')) && c1 = ':'
-
-let is_absolute p =
-  let n = String.length p in
-  (n > 0 && p.[0] = '/') || (n >= 3 && is_drive p.[0] p.[1] && p.[2] = '/')
-
-(* Splits an absolute '/'-separated path into an anchor ("" for Unix
-   roots, "C:" for drives) and lexically normalized components. [None]
-   when the path is not absolute or ".." escapes above the anchor. *)
-let split_normalize p =
-  if not (is_absolute p) then None
-  else
-    match String.split_on_char '/' p with
-    | anchor :: rest ->
-        let rec norm acc = function
-          | [] -> Some (List.rev acc)
-          | ("" | ".") :: rest -> norm acc rest
-          | ".." :: rest -> (
-              match acc with [] -> None | _ :: tl -> norm tl rest)
-          | c :: rest -> norm (c :: acc) rest
-        in
-        Option.map (fun comps -> (anchor, comps)) (norm [] rest)
-    | [] -> None
 
 let rec is_prefix xs ys =
   match (xs, ys) with
