@@ -386,6 +386,28 @@ let () =
   | _ -> fail "one refusal and nothing written");
   equal ~msg:"the file is left alone" string edited (read_raw path)
 
+let () =
+  reg "literal correction: a source unreadable at the write is refused"
+  @@ fun () ->
+  let root = temp_dir () in
+  let path = Filename.concat root "test/t.ml" in
+  write_raw path source;
+  let t = B.create ~root ~cwd:root ~mode:B.Update () in
+  expect_pass "accepted" (fun () -> B.check t (literal " old ") "new");
+  ignore (B.settle t ~keep:true);
+  (* A directory in the source's place: the open succeeds and the read
+     fails, with a message that does not name the file. *)
+  Sys.remove path;
+  Unix.mkdir path 0o700;
+  B.write t;
+  match B.writes t with
+  | [ B.Refused { path = refused; reason } ] ->
+      equal ~msg:"the refusal names the file" string path refused;
+      starts_with ~msg:"and says it cannot be read"
+        ~affix:"the source file cannot be read: " reason;
+      not_contains ~msg:"without repeating the path" ~sub:path reason
+  | _ -> fail "one refusal and nothing written"
+
 (* Build-copy placement *)
 
 let () =
