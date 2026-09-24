@@ -451,6 +451,7 @@ let () =
 let () =
   reg "create raises Sys_error when the root needs an unreadable directory"
   @@ fun () ->
+  if Sys.win32 then skip ~reason:"POSIX only" ();
   let gone = Filename.concat (temp_dir ()) "gone" in
   Unix.mkdir gone 0o700;
   chdir gone;

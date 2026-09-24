@@ -320,6 +320,7 @@ let test_abandon_ignores_drain_failure () =
     (!after = Some (out_before, err_before))
 
 let test_unopenable_log () =
+  if Sys.win32 then skip ~reason:"POSIX only" ();
   let root = temp_dir () in
   let cap = Capture.create ~log_dir:root ~suite:"s" () in
   let log = concat_all root [ "s"; "t.output" ] in

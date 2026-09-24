@@ -3812,29 +3812,31 @@ let () =
   Run.reclaim frame
 
 let () =
-  with_temp_root @@ fun root ->
-  let kept = Filename.concat root "kept" in
-  Unix.mkdir kept 0o700;
-  close_out (open_out (Filename.concat kept "file"));
-  let tree = Filename.concat root "tree" in
-  Unix.mkdir tree 0o700;
-  Unix.symlink kept (Filename.concat tree "link");
-  Run.remove_tree tree;
-  check "remove_tree removes a link, never what it points to"
-    ((not (Sys.file_exists tree))
-    && Sys.file_exists (Filename.concat kept "file"));
-  Run.remove_tree (Filename.concat root "missing");
-  check "a missing path, and no running test, raise nothing" true;
-  if Unix.geteuid () <> 0 then begin
-    let locked = Filename.concat root "locked" in
-    Unix.mkdir locked 0o700;
-    close_out (open_out (Filename.concat locked "stuck"));
-    Unix.chmod locked 0o500;
-    Run.remove_tree locked;
-    Unix.chmod locked 0o700;
-    check "an error on the way is ignored"
-      (Sys.file_exists (Filename.concat locked "stuck"))
-  end
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
+    with_temp_root @@ fun root ->
+    let kept = Filename.concat root "kept" in
+    Unix.mkdir kept 0o700;
+    close_out (open_out (Filename.concat kept "file"));
+    let tree = Filename.concat root "tree" in
+    Unix.mkdir tree 0o700;
+    Unix.symlink kept (Filename.concat tree "link");
+    Run.remove_tree tree;
+    check "remove_tree removes a link, never what it points to"
+      ((not (Sys.file_exists tree))
+      && Sys.file_exists (Filename.concat kept "file"));
+    Run.remove_tree (Filename.concat root "missing");
+    check "a missing path, and no running test, raise nothing" true;
+    if Unix.geteuid () <> 0 then begin
+      let locked = Filename.concat root "locked" in
+      Unix.mkdir locked 0o700;
+      close_out (open_out (Filename.concat locked "stuck"));
+      Unix.chmod locked 0o500;
+      Run.remove_tree locked;
+      Unix.chmod locked 0o700;
+      check "an error on the way is ignored"
+        (Sys.file_exists (Filename.concat locked "stuck"))
+    end
 
 let () =
   let run = make_run () in
@@ -3844,23 +3846,28 @@ let () =
         (match Run.chdir "/nonexistent/windtrap-dir" with
         | () -> false
         | exception Unix.Unix_error _ -> true));
-  with_temp_root @@ fun root ->
-  let gone = Filename.concat root "gone" in
-  Unix.mkdir gone 0o700;
-  Unix.chdir gone;
-  Unix.rmdir gone;
-  let unreadable =
-    match Sys.getcwd () with _ -> false | exception Sys_error _ -> true
-  in
-  let frame = Run.frame run ~path:[ "t" ] ~loc:None in
-  let raised =
-    Run.with_frame frame (fun () ->
-        match Run.chdir root with () -> false | exception Sys_error _ -> true)
-  in
-  Unix.chdir home;
-  if unreadable then
-    check "the first chdir raises Sys_error when the cwd cannot be read" raised
-  else skip_scenario ~reason:"a removed cwd reads here" __POS__
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
+    with_temp_root @@ fun root ->
+    let gone = Filename.concat root "gone" in
+    Unix.mkdir gone 0o700;
+    Unix.chdir gone;
+    Unix.rmdir gone;
+    let unreadable =
+      match Sys.getcwd () with _ -> false | exception Sys_error _ -> true
+    in
+    let frame = Run.frame run ~path:[ "t" ] ~loc:None in
+    let raised =
+      Run.with_frame frame (fun () ->
+          match Run.chdir root with
+          | () -> false
+          | exception Sys_error _ -> true)
+    in
+    Unix.chdir home;
+    if unreadable then
+      check "the first chdir raises Sys_error when the cwd cannot be read"
+        raised
+    else skip_scenario ~reason:"a removed cwd reads here" __POS__
 
 (* Fixtures and results *)
 

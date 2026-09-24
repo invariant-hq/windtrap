@@ -369,12 +369,14 @@ let () =
       check_contains "and the diagnostic" ~sub:"add (inline_tests)" err)
 
 let () =
-  let code, out, err = spawn_child [ "--child"; "fork" ] in
-  check_string "a forked child leaves through exit, silent" ~expected:""
-    ~actual:err;
-  check_string "with its own code" ~expected:"forked child exited 0\n"
-    ~actual:out;
-  check_int "and the parent claims and exits 0" ~expected:0 ~actual:code
+  if Sys.win32 then skip_scenario ~reason:"POSIX only" __POS__
+  else
+    let code, out, err = spawn_child [ "--child"; "fork" ] in
+    check_string "a forked child leaves through exit, silent" ~expected:""
+      ~actual:err;
+    check_string "with its own code" ~expected:"forked child exited 0\n"
+      ~actual:out;
+    check_int "and the parent claims and exits 0" ~expected:0 ~actual:code
 
 let () =
   let code, out, _ = spawn_child [ "--child"; "at-exit" ] in

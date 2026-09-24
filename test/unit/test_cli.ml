@@ -1143,6 +1143,7 @@ let () =
 let () =
   reg "a relative -o is kept as given when the directory cannot be read"
   @@ fun () ->
+  if Sys.win32 then skip ~reason:"POSIX only" ();
   clear_env ();
   let gone = Filename.concat (temp_dir ()) "gone" in
   Unix.mkdir gone 0o700;
