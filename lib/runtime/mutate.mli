@@ -53,9 +53,9 @@ val rewrites : string list
 
     A name outside the list is refused wherever one enters: in a site table by
     {!register}, in an identifier by {!id_of_string} and in a verdict file by
-    {!Verdicts.of_string}. {!arm} takes an {!type-id} and does not check its
-    rewrite, so an unknown one matches no site. No instrumenter emits ["drop"],
-    so no catalogue holds it, although the three places above accept it. *)
+    {!Verdicts.load}. {!arm} takes an {!type-id} and does not check its rewrite,
+    so an unknown one matches no site. No instrumenter emits ["drop"], so no
+    catalogue holds it, although the three places above accept it. *)
 
 val id_to_string : id -> string
 (** [id_to_string id] is [<file>:<line>:<col>:<rewrite>], as
@@ -137,16 +137,12 @@ type mutant = {
 }
 (** The type for catalogued mutants: a {!type-site} with its file. *)
 
-val compare_mutant : mutant -> mutant -> int
-(** [compare_mutant a b] is [compare_id a.id b.id]. [before], [after] and
-    [dismissed] take no part. *)
-
 val catalogue : unit -> mutant list
 (** [catalogue ()] is every mutant registered in this executable, the dismissed
-    ones included, ordered by {!compare_mutant} and without duplicates. It does
-    not depend on the link order, so two runs of one executable enumerate the
-    mutants alike. It is complete once module initialization is over, and it is
-    empty when the executable links no instrumented file. *)
+    ones included, ordered by {!compare_id} on [id] and without duplicates. It
+    does not depend on the link order, so two runs of one executable enumerate
+    the mutants alike. It is complete once module initialization is over, and it
+    is empty when the executable links no instrumented file. *)
 
 (** {1:arming Arming}
 
@@ -170,8 +166,8 @@ type arm_error =
   | Unmatched of { id : id; candidates : mutant list }
       (** [id.file] is catalogued here, and none of its sites matches the line,
           the column and the rewrite of [id]. [candidates] is the mutants of
-          that file, in {!compare_mutant} order and never empty. The identifier
-          is wrong, or it comes from an older build. *)
+          that file, ordered by {!compare_id} on [id] and never empty. The
+          identifier is wrong, or it comes from an older build. *)
   | Ambiguous of { id : id; candidates : mutant list }
       (** [id] matches several sites of one file. [candidates] has one entry for
           each, and the entries are equal as identifiers. The instrumenter
@@ -218,15 +214,6 @@ val arm : ?budget:int -> id -> (mutant, arm_error) result
     Raises [Invalid_argument] if [budget] is not positive, and nothing is
     disarmed then. *)
 
-val disarm : unit -> unit
-(** [disarm ()] disarms the armed mutant and removes the budget. The guard is
-    [false] at every site afterwards. The counts of evaluations are kept. *)
-
-val armed : unit -> mutant option
-(** [armed ()] is the armed mutant, or [None]. While it is [None] every guard
-    answers [false], and the instrumented program computes what the original one
-    computes. *)
-
 val armed_hits : unit -> int
 (** [armed_hits ()] is the number of evaluations of the armed site since the
     last {!reset_reach}, added over every module that registered its file. It
@@ -272,11 +259,11 @@ val next_epoch : unit -> unit
 
 val drain : unit -> reached list
 (** [drain ()] is the mutants marked since the previous [drain], ordered by
-    {!compare_mutant} and without duplicates. Each comes with its evaluations,
-    counted from the one that marked it up to this call. [drain] then empties
-    the list of marks, so a second [drain ()] right after it is [[]]. A mutant
-    that two modules registered for one file appears once, with its evaluations
-    added up.
+    {!compare_id} on [id] and without duplicates. Each comes with its
+    evaluations, counted from the one that marked it up to this call. [drain]
+    then empties the list of marks, so a second [drain ()] right after it is
+    [[]]. A mutant that two modules registered for one file appears once, with
+    its evaluations added up.
 
     A site marks itself at its first evaluation in an epoch, and only then. When
     it is evaluated again in that epoch after a [drain], as when the release of

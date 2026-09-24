@@ -11,9 +11,8 @@
     The first registration installs an [at_exit] function, which writes the
     counts of the process to a [.coverage] dump. The [windtrap coverage] command
     loads the dumps of several executables, merges them and renders
-    {!file_reports}. {!snapshot} gives a test or a tool the counts of its own
-    process. This module computes the data of a report, which is counts of
-    points, uncovered lines and percentages, and it renders nothing.
+    {!file_reports}. This module computes the data of a report, which is counts
+    of points, uncovered lines and percentages, and it renders nothing.
 
     Coverage never changes what a program or a test means, with the one
     exception that {{!section-ondisk}Dumps} states. A dump that cannot be
@@ -33,8 +32,8 @@ type point = { start_ofs : int; end_ofs : int }
     has the extent of its block, which for an arm of a [match] or of [&&] is the
     whole arm. An out-edge fires when the application returns and has the extent
     of the application, so a call that raises leaves the call uncovered.
-    Out-edges nest inside their block, and {!lines_of_extents} says what lines
-    follow from extents that overlap. *)
+    Out-edges nest inside their block, and {!file_report.uncovered_lines} says
+    what lines follow from extents that overlap. *)
 
 val register : file:string -> points:point array -> counts:int array -> unit
 (** [register ~file ~points ~counts] records the point table of [file] and the
@@ -51,7 +50,7 @@ val register : file:string -> points:point array -> counts:int array -> unit
     a warning goes to standard error. The process then writes no dump.
 
     When [file] is registered again with an equal table, as when one source is
-    compiled into two modules, {!snapshot} adds up the counts of the two
+    compiled into two modules, the dump adds up the counts of the two
     registrations and counts the points of the file once. A table that differs
     from an earlier one for [file] is dropped, with a warning on standard error.
     The executable links two incompatible instrumentations of one source, and
@@ -74,9 +73,8 @@ val visit : int array -> int -> unit
 (** {1:collections Collections}
 
     A collection is plain data: for each source file, a point table and the
-    counts accumulated for it. Collections come from {!snapshot} for this
-    process, from {!load} for a dump, and from {!add}. {!merge} combines them.
-*)
+    counts accumulated for it. {!load} reads one from a dump, and {!merge}
+    combines them. *)
 
 (** The type for the errors of coverage data. *)
 type error =
@@ -101,21 +99,6 @@ type t
 val empty : t
 (** [empty] is the collection with no file. *)
 
-val is_empty : t -> bool
-(** [is_empty t] is [true] iff [t] has no file. *)
-
-val add :
-  t ->
-  file:string ->
-  points:point array ->
-  counts:int array ->
-  (t, error) result
-(** [add t ~file ~points ~counts] is [t] with the data of [file] added. When [t]
-    has no [file], copies of the two arrays go in. When [t] has [file] with an
-    equal point table, the counts are added, saturating at [max_int]. Otherwise
-    it is [Error (Point_mismatch _)]. Raises [Invalid_argument] as {!register}
-    does for a malformed table. *)
-
 val merge : t -> t -> (t, error) result
 (** [merge a b] is the union of [a] and [b], where the counts of a file that
     both hold are added, saturating at [max_int]. It is
@@ -125,30 +108,31 @@ val merge : t -> t -> (t, error) result
 val files : t -> string list
 (** [files t] is the file names of [t], in the order of [String.compare]. *)
 
-val filter : (string -> bool) -> t -> t
-(** [filter keep t] is [t] with only the files whose name satisfies [keep].
-    {!snapshot} holds every instrumented library that the executable links,
-    whether or not it is the code under test, so a caller that speaks of
-    particular files narrows with [filter]. *)
-
-val snapshot : unit -> t
-(** [snapshot ()] is a collection that copies the counts of this process as they
-    stand, or {!empty} when nothing has registered. A later {!visit} does not
-    change it. It covers the whole process, and it is what the [at_exit] dump
-    serializes. *)
-
 (** {1:ondisk Dumps}
 
-    When an instrumented process exits, it writes the serialization of
-    {!snapshot} to a new file under [output_dir ~exe:Sys.executable_name]. Every
-    run keeps a dump of its own there, so the runs of one executable add up in
-    the merge of [windtrap coverage]. When [WINDTRAP_COVERAGE_FILE] is set and
-    not empty, the process writes to that path instead and replaces the file
-    atomically on every run. A relative path is resolved against the directory
-    that was current at the first {!register}.
+    When an instrumented process that registered a file exits, it writes the
+    counts of the process as they stand then. The dump holds every instrumented
+    library that the executable links, whether or not it is the code under test.
+
+    By default the dump is a new file [<digest>-<token>.coverage] in the
+    directory [Instr.output_dir format ~exe:Sys.executable_name] (see
+    {!Instr.output_dir}), named after the digest of its writer. Every run keeps
+    a dump of its own there, so the runs of one executable add up in the merge
+    of [windtrap coverage], and a cram test that runs a command-line tool
+    several times leaves as many dumps. The directory belongs to the runtime. A
+    dump that has an identity first removes every [.coverage] file of the
+    directory whose name does not start with its own digest, so the first dump
+    of a rebuilt executable removes those of its predecessors. The name of the
+    directory depends on the path of the executable, so an executable that is
+    renamed or moved leaves its previous directory behind.
+
+    When [WINDTRAP_COVERAGE_FILE] is set and not empty, the process writes to
+    that path instead and replaces the file atomically on every run. A relative
+    path is resolved against the directory that was current at the first
+    {!register}.
 
     The dump is an [at_exit] function that runs once in a process. A forked
-    child that leaves through [exit] dumps too. Under {!output_dir} that is one
+    child that leaves through [exit] dumps too. In the directory that is one
     more file. The counts from before the fork are in both dumps, so they add up
     twice in the merge. Under [WINDTRAP_COVERAGE_FILE] it is the same path,
     where the last process to exit wins and nothing is merged. The same holds
@@ -160,16 +144,16 @@ val snapshot : unit -> t
 
     Only the write is protected that way. The dump builds its string first, and
     an executable that lies below no build directory and whose own file name
-    starts with [_build] has the identity [""] (see {!Instr.exe_identity}).
-    {!to_string} then raises [Invalid_argument] at exit, and the process ends on
-    that exception, whatever exit code it was ending with. An executable that
-    runs from dune's build directory is never in that case.
+    starts with [_build] has the identity [""] (see {!Instr.exe_identity}). The
+    dump then raises [Invalid_argument] at exit, and the process ends on that
+    exception, whatever exit code it was ending with. An executable that runs
+    from dune's build directory is never in that case.
 
     The first line of a dump is the magic line [windtrap-coverage-v3], which
-    carries the version of the format. {!of_string} and {!load} refuse another
-    first line, and nothing is promised from one version to the next. The
-    writer's {!type-identity} may follow the magic line. The [at_exit] dump
-    records it when the executable can be read back at exit. *)
+    carries the version of the format. {!load} refuses another first line, and
+    nothing is promised from one version to the next. The writer's
+    {!type-identity} may follow the magic line. The [at_exit] dump records it
+    when the executable can be read back at exit. *)
 
 type identity = Instr.identity = { exe : string; digest : string }
 (** The type for the identity of the writer of a dump, which is
@@ -181,32 +165,11 @@ val format : Instr.format
     [coverage]. [windtrap coverage] discovers the dumps with it (see
     {!Instr.data_dir}). *)
 
-val output_dir : exe:string -> string
-(** [output_dir ~exe] is [Instr.output_dir format ~exe], the directory that the
-    executable at [exe] dumps into.
-
-    Every run writes a new [<digest>-<token>.coverage] there, named after the
-    digest of its writer, so a cram test that runs a command-line tool several
-    times leaves as many dumps. The directory belongs to the runtime. A dump
-    that has an identity first removes every [.coverage] file of the directory
-    whose name does not start with its own digest, so the first dump of a
-    rebuilt executable removes those of its predecessors.
-
-    The name of the directory depends on the path of [exe], so an executable
-    that is renamed or moved leaves its previous directory behind. *)
-
-val to_string : ?identity:identity -> t -> string
-(** [to_string ?identity t] is [t] in the format of a dump. Files are ordered by
-    name, so equal collections give equal strings. [identity] is recorded after
-    the magic line when it is given. A merged or synthetic collection has no
-    single writer and is written without one. Raises [Invalid_argument] if
-    [identity.exe] is empty or if [identity.digest] is not 32 lowercase
-    hexadecimal digits. *)
-
-val of_string : ?path:string -> string -> (t * identity option, error) result
-(** [of_string ?path s] is [Ok (t, identity)] when [s] parses, where [identity]
-    is the recorded writer, if any. [path] names the input in errors and
-    defaults to ["<string>"]. Otherwise it is:
+val load : string -> (t * identity option, error) result
+(** [load path] is [Ok (t, identity)] when the file at [path] is a dump, where
+    [identity] is the recorded writer, if any. The file is read with
+    {!Instr.read_file}, and every error names [path]. Otherwise it is:
+    - [Error (Data e)] with the error [e] of the read.
     - [Error (Data (Unknown_format _))] for another first line.
     - [Error (Data (Corrupt _))] for data that is truncated or invalid: a
       negative count or a count larger than the input, an inverted extent, a
@@ -215,11 +178,8 @@ val of_string : ?path:string -> string -> (t * identity option, error) result
       point tables. Two entries with an equal table are accepted, and their
       counts are added.
 
-    [of_string (to_string ?identity t)] is [Ok (t, identity)]. *)
-
-val load : string -> (t * identity option, error) result
-(** [load path] reads the file at [path] with {!Instr.read_file} and parses it
-    as [of_string ~path] does, with the errors of the read under {!Data}. *)
+    The dump of a process loads as the counts of the process at its exit, with
+    the identity of its writer when the dump records one. *)
 
 (** {1:reports Report data}
 
@@ -247,7 +207,15 @@ type file_report = {
   uncovered_lines : int list;
       (** The 1-based lines that an unvisited extent touches, sorted and without
           duplicates. They are the lines of [line_hits] with [0] visits, and
-          [[]] when [source] is [None]. *)
+          [[]] when [source] is [None].
+
+          One unvisited extent is enough to mark a line, so a line that visited
+          and unvisited points share is marked, as the line of
+          [let f = function A -> 1 | B -> 2] when only [A] was exercised. An
+          unvisited inner point marks the lines of its own extent only, and an
+          unvisited outer point covers the lines of the points inside it. An
+          empty extent marks the line that holds its [start_ofs]. The summary
+          counts points and not lines, so this rule does not change it. *)
   line_hits : (int * int) list;
       (** [(line, visits)] for every 1-based line that a point touches, sorted
           by line. [visits] is the smallest count among the points that touch
@@ -275,19 +243,3 @@ val file_reports : ?source_roots:string list -> t -> file_report list
     defaults to [["."]]. A file whose source is missing still reports its
     summary and its extents. The function reads each source from disk, once in a
     call. *)
-
-val lines_of_extents : source:string -> point list -> int list
-(** [lines_of_extents ~source extents] is the 1-based lines of [source] that an
-    extent of [extents] intersects, sorted and without duplicates. It is the
-    rule that turns uncovered points into uncovered lines.
-
-    One unvisited extent is enough to mark a line, so a line that visited and
-    unvisited points share is marked, as the line of
-    [let f = function A -> 1 | B -> 2] when only [A] was exercised. An unvisited
-    inner point marks the lines of its own extent only, and an unvisited outer
-    point covers the lines of the points inside it. The summary counts points
-    and not lines, so this rule does not change it.
-
-    An empty extent marks the line that holds [start_ofs]. An offset past the
-    end of [source] counts as its last line, and an empty [source] gives [[]].
-*)

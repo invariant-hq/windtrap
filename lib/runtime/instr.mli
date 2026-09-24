@@ -181,10 +181,10 @@ val add_header : format -> Buffer.t -> identity option -> unit
 (** {1:parsing Parsing}
 
     One strict scanner reads both formats. A {!type-cursor} runs over the whole
-    input, and the readers below raise {!Parse_error}, which the [of_string] of
-    each format turns into a {!Corrupt} error. Nothing is repaired and nothing
-    is guessed. Whitespace is a space, a tab, a carriage return or a line feed.
-    The readers skip it before a number or a word, and never inside a name. *)
+    input, and the readers below raise {!Parse_error}, which the [load] of each
+    format turns into a {!Corrupt} error. Nothing is repaired and nothing is
+    guessed. Whitespace is a space, a tab, a carriage return or a line feed. The
+    readers skip it before a number or a word, and never inside a name. *)
 
 type cursor
 (** The type for cursors: a position in an input string, which the readers
@@ -192,7 +192,7 @@ type cursor
 
 exception Parse_error of string
 (** Raised by the readers below, with a reason for a person. It never escapes
-    the [of_string] of a format. *)
+    the [load] of a format. *)
 
 val parse_fail : ('a, unit, string, 'b) format4 -> 'a
 (** [parse_fail fmt ...] raises {!Parse_error} with the formatted reason. A

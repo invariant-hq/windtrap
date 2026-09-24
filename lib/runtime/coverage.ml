@@ -100,7 +100,6 @@ let merge a b =
           add t ~file ~points:entry.points ~counts:entry.counts))
     b (Ok a)
 
-let filter keep t = File_map.filter (fun file _ -> keep file) t
 let files t = List.map fst (File_map.bindings t)
 
 (* In-Process Registry *)
@@ -374,24 +373,11 @@ let line_range starts p =
   let last = line_of starts (max p.start_ofs (p.end_ofs - 1)) in
   (first, last)
 
-(* One extent that touches a line marks it. Marking only the lines that lie
-   wholly inside unvisited extents would hide an unvisited arm that shares
-   its line with visited code. *)
-let lines_of_extents ~source extents =
-  let starts = line_starts source in
-  if Array.length starts = 0 then []
-  else
-    List.concat_map
-      (fun p ->
-        let first, last = line_range starts p in
-        List.init (last - first + 1) (fun i -> first + i))
-      extents
-    |> List.sort_uniq Int.compare
-
 (* Every line a point touches, with the fewest visits of any point
-   touching it: the uncovered-line rule ([lines_of_extents] over the
-   unvisited extents) restated per line, so a line's hits are 0 exactly
-   when it is uncovered. *)
+   touching it, so a line's hits are 0 exactly when an unvisited extent
+   touches it. Marking only the lines that lie wholly inside unvisited
+   extents would hide an unvisited arm that shares its line with visited
+   code. *)
 let line_hits ~source entry =
   let starts = line_starts source in
   if Array.length starts = 0 then []

@@ -230,8 +230,6 @@ let load path =
 
 (* Output Path and Identity *)
 
-let build_root = Instr.build_root
-let exe_identity = Instr.exe_identity
 let output_file ~exe = Instr.output_file format ~exe
 
 (* Digesting the executable's bytes is what makes a stale verdict
@@ -241,7 +239,7 @@ let output_file ~exe = Instr.output_file format ~exe
    cache restores artifacts with their original timestamps. *)
 let writer_identity ~exe =
   Option.map
-    (fun digest -> { exe = exe_identity ~exe; digest })
+    (fun digest -> { exe = Instr.exe_identity ~exe; digest })
     (Instr.file_digest exe)
 
 (* Atomic Write *)

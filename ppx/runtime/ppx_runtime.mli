@@ -84,11 +84,6 @@ val collect : unit -> Windtrap.test list
     Raises [Invalid_argument] if a group is still open, and the registry is
     claimed by then. *)
 
-val partitions : unit -> string list
-(** [partitions ()] is the basenames of the source files that have registered,
-    sorted and without duplicates. {!exit} prints it under [-list-partitions],
-    and {!collect} does not reset it. *)
-
 (** {1:protocol The runner protocol}
 
     Dune's [inline_tests] backend runs the generated main once as
@@ -110,8 +105,9 @@ val exit : unit -> 'a
     - Outside the runner mode it exits [0]. That is the case when {!init} saw no
       [inline-test-runner] and when it was never called, so the generated main
       does nothing when it is run by hand.
-    - Under [-list-partitions] it prints {!partitions} on standard output, one
-      on each line, and exits [0].
+    - Under [-list-partitions] it prints on standard output the basenames of the
+      source files that have registered, sorted, without duplicates and one on
+      each line, and exits [0]. {!collect} does not reset them.
     - Otherwise it exits with the code of
       [Windtrap.run ~argv:[| argv0; "--corrected" |] suite (collect ())], where
       [suite] is [<lib>/<file>] under [-partition] and [<lib>] without.

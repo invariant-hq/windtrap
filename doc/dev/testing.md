@@ -76,7 +76,7 @@ so their points and mutants exist in a plain `dune runtest` build and no
 `--instrument-with` is needed for a suite to mean something. And under
 `--instrument-with` every suite links an instrumented core, so nothing
 may assume it is alone in a process-global registry: coverage suites
-narrow what they read with `Coverage.filter`; suites that must not write
+read only the reports of their own files; suites that must not write
 under the real `_build/_coverage` point the dump elsewhere with
 `WINDTRAP_COVERAGE_FILE` on the action, because the destination is
 resolved at the first registration, before the test's own code runs; the

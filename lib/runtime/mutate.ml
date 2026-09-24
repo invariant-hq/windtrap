@@ -87,7 +87,6 @@ let registry : entry list ref = ref []
    recorded value. *)
 let current_epoch = ref 1
 let dirty : (entry * int) list ref = ref []
-let armed_mutant : mutant option ref = ref None
 let armed_slots : (entry * int) list ref = ref []
 let runaway_budget = ref max_int
 let saturating_add x y = if x > max_int - y then max_int else x + y
@@ -301,10 +300,7 @@ let matching id =
 let disarm () =
   List.iter (fun (entry, _) -> entry.armed_index := -1) !armed_slots;
   armed_slots := [];
-  armed_mutant := None;
   runaway_budget := max_int
-
-let armed () = !armed_mutant
 
 (* The guard counts hits whether or not it answers [true], so the armed
    site's count is on the same arrays the reach map reads. Summed over the
@@ -365,7 +361,6 @@ let arm ?budget id =
          mutant evaluated through it would report a false survivor. *)
       List.iter (fun (entry, i) -> entry.armed_index := i) slots;
       armed_slots := slots;
-      armed_mutant := Some mutant;
       (runaway_budget := match budget with Some n -> n | None -> max_int);
       Ok mutant
   | Some entry, [ _ ] ->
