@@ -45,3 +45,16 @@ on. The run underneath fails, and its exit code comes through unchanged:
   [1]
   $ sed -E 's/(report to [^:]+): .*/\1: REASON/' err
   windtrap: warning: could not write JUnit report to blocked/out/fixture.xml: REASON
+
+When a run also has a file it could not write, it says so first, and
+writes its JUnit file after: the two warnings come in that order. Here
+the correction's path is taken by a directory, and the report's parent
+is the regular file from above. The exit code is the correction's: a
+correction the run could not write fails it, the report does not.
+
+  $ mkdir -p test/cli/greeting.expected.corrected
+  $ run ./suite_main.exe -f greeting --corrected --junit blocked/r.xml > out 2> err
+  [1]
+  $ sed -E 's/(could not write [^:]+): .*/\1: REASON/' err
+  windtrap: could not write test/cli/greeting.expected.corrected: REASON
+  windtrap: warning: could not write JUnit report: REASON

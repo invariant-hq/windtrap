@@ -47,3 +47,12 @@ code.
   1 passed, 1 failed, 2 not run in DURATION.
   $ cat err
   windtrap: interrupted in deep › waits
+
+An interrupted run writes no JUnit file: the process dies by the signal
+once its transcript has ended, and the file --junit names is never
+created.
+
+  $ run FACADE_FIXTURE=waiting ./send_signal.exe INT ./suite_main.exe --junit report.xml
+  killed by SIGINT
+  $ test -e report.xml || echo 'no report'
+  no report
