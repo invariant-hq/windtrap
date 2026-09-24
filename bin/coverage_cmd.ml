@@ -140,7 +140,7 @@ let parse_args args =
     }
     (split_inline args)
 
-(* Discovery: Data_files's, shared with `windtrap mutants` — the project
+(* Discovery: Data_files's, shared with `windtrap mutants`, with the project
    root resolved as the runtime resolves its dump path, explicit PATH
    arguments as a loud contract (a silent narrowing of the merge would
    end in the no-data message and its wrong remedy). [files] come back
@@ -153,7 +153,7 @@ let discover paths = Data_files.discover Windtrap_runtime.Coverage.format paths
 
    "Up to date" is not "re-run": the holes are dumps whose executable
    was deleted or renamed (orphans, which would silently inflate the
-   merge) and dumps not written by the executable now on disk — a
+   merge) and dumps not written by the executable now on disk, after a
    rebuild without the backend (writes no fresh dump), or a test run the
    build tool replayed from its cache after sources reverted to an
    already-tested state (the dump on disk stays a different build's, and
@@ -166,7 +166,7 @@ let discover paths = Data_files.discover Windtrap_runtime.Coverage.format paths
    does not know how the suite is run, and a spelled-out command would
    be wrong everywhere but the tree it was written in. *)
 
-(* The empty-estate message: no dump the merge could use. *)
+(* The no-data message: no dump the merge could use. *)
 let no_data =
   "no .coverage files found\n\
    Instrument the library under test with ppx_windtrap.coverage and run its \
@@ -446,7 +446,12 @@ let report_table ~color ~source_roots ~show_uncovered ~min collection =
 (* The gate compares raw percentages, as the outcome line it is stated on
    does. The report ends on that line; a machine format owns standard
    output, so under one the line is windtrap's own, and only a gate asks
-   for it. *)
+   for it.
+
+   The exit code is computed here with [Coverage.percentage]. The word [ok]
+   or [FAILED] is computed by [Sections.coverage_line] with its own copy of
+   the formula: the two must stay the same function of [visited] and
+   [total], and nothing but this comment says so. *)
 let check_min ~machine (summary : Windtrap_runtime.Coverage.summary) = function
   | None -> 0
   | Some min ->

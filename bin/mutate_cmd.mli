@@ -3,76 +3,113 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The [windtrap mutants] subcommand: project-level mutation reporting.
+(** The [windtrap mutants] command.
 
-    Finds the [.mutants] verdict files that instrumented test executables wrote
-    — under the build directory's [_mutants], or under [_windtrap/mutants] in a
-    tree built without one, located as the runtime locates its output
-    ({!Data_files.discover}) — or under explicit [PATH] arguments; excludes
-    verdicts whose recorded executable was deleted or rebuilt since the run;
-    merges the rest — loudly rejecting foreign formats — under
-    {b killed anywhere wins}, and renders through the library renderer the
-    survivors that survived {e everywhere}, the mutants no executable reached,
-    and the project's summary line. A merge runs nothing and seeds nothing, so
-    that line carries neither a duration nor a seed, and it never scopes itself
-    to one executable the way a single run's does.
+    The command merges the verdict files that [--mutate] runs wrote and reports
+    on a whole project. It reports the mutants that survived every executable
+    that reached them, and the mutants that no executable reached. It only reads
+    files, so it runs no test and drives no build. Its exit code is the one
+    mutation exit code that a build may gate on (guarantee 12 of
+    [doc/dev/architecture.md]).
 
-    A library covered by several test executables is the normal case, and
-    mutation verdicts do not merge the way coverage counts do: coverage merges
-    by addition, so two executables over one file can only agree more, while a
-    mutant {e killed} by one suite and merely {e reached} by another is killed
-    and the surviving suite's view alone is a false survivor. This command is
-    why the verdict file exists.
+    {!run} is the whole command.
+    {!Windtrap.Private.Report_sections.mutation_report} states what the report
+    holds. This interface states the {{!section-files}files} that are merged and
+    what the {{!section-merge}merge} decides: the verdicts, the reaching tests,
+    the order of the survivors and the launcher of the [reproduce:] command. *)
 
-    It runs no tests and drives no build; the verb says so: it reports mutants,
-    it does not mutate. It is the project's gate: a mutant that survived every
-    executable that reached it fails the merge. *)
+(** {1:files Files}
+
+    The verdict files are those that {!Data_files.discover} finds for
+    [Windtrap_runtime.Verdicts.format] and the [PATH] arguments. A [PATH] that
+    cannot be used fails the command and is never skipped, because a file left
+    out can hold the one kill of a mutant, which would then be reported as a
+    survivor.
+
+    Every file is loaded before any is excluded, and the first one that cannot
+    be read or parsed ends the command with its
+    {!Windtrap_runtime.Verdicts.pp_error}, even when its executable is gone. A
+    file whose {!Data_files.val-freshness} is not [Fresh] is then excluded from
+    the merge, because a verdict of another build can claim a kill that the code
+    no longer earns. No flag keeps such a file. On standard error the command
+    says the {!Data_files.warnings} of the excluded files, then
+    {!Data_files.all_excluded} when no file is left, and then once, in a
+    sentence of its own, how to refresh them.
+
+    The source of a mutated file is looked for under the roots of
+    {!Data_files.discover}: the root of the project after a search, and the
+    current directory under [PATH] arguments. A survivor whose source is not
+    found keeps its identifier and its rewrite, and its block has no source
+    line. *)
+
+(** {1:merge The merge}
+
+    The verdicts are those of [Windtrap_runtime.Verdicts.merge] over the files
+    that are kept, in which a kill by one executable wins. A mutant that some
+    file reached survives the merge iff it survived in each of those files, and
+    a mutant that no file reached is unreached. The counts of the report are
+    read off the merged verdicts, and its scope is
+    {!Windtrap.Private.Report_sections.scope.Executables} with the number of
+    files kept.
+
+    {b Reaching tests.} The reaching tests of a survivor are the union of those
+    of every file in which the mutant survived. Each is paired with the label of
+    its file, and the pairs are sorted by label and then by test, without
+    duplicates. The label is the base name of the executable that the file
+    records. For the inline-test runner of dune, whose base name is the same in
+    every library, it is the name of the library, [<lib>] in
+    [.<lib>.inline-tests/inline-test-runner.exe]. For a file that records no
+    identity it is the base name of the file. No reaching test has a location,
+    because the command links no test tree.
+
+    {b Order.} The survivors are sorted by their number of reaching tests, the
+    most first, and then in the order of [Windtrap_runtime.Mutate.compare_id].
+
+    {b Launcher.} The [reproduce:] command of the report arms the first
+    survivor, and its launcher is spelled from one verdict file. That file is
+    the first one kept, in path order, that bears the label of the first
+    reaching test of that survivor and in which the mutant survived. The
+    launcher is a {!type:Windtrap.Private.Run.invocation}:
+    - [`Mirrors] when the file records no identity, or that of an inline-test
+      runner, which takes its arguments from dune alone.
+    - [`Exe] of [dune exec --instrument-with ppx_windtrap.mutate <target> --]
+      when the identity is relative, which means an executable below a build
+      directory. [<target>] is the identity without its first component, the
+      build context, as one word of
+      {!Windtrap.Private.Report_sections.shell_word}.
+    - [`Exe] of the path of the executable, as one such word, when the identity
+      is absolute. *)
+
+(** {1:running Running} *)
 
 val run : string list -> int
-(** [run args] executes the subcommand on [args] (the arguments after [mutants])
-    and is the process exit code:
+(** [run args] executes the command on [args], the arguments that follow
+    [mutants] on the command line, and is the exit code of the process. It never
+    calls [exit].
 
-    - [0] — report rendered and no mutant survived the merge. Unreached mutants
-      alone are not red: a mutant no executable's tests evaluate is a
-      coverage-style finding, listed and not scored;
-    - [1] — report rendered and at least one mutant survived every executable
-      that reached it. There is deliberately no [--min] and no
-      [--max-survivors]: one survivor is the failure, and an equivalent mutant
-      is dismissed at its site with [[@mutate off]], not absorbed by a
-      threshold;
-    - [1] — no [.mutants] files were found; an explicit [PATH] argument named a
-      missing file or a file without the [.mutants] suffix; a file was
-      unreadable, corrupt or of a foreign format version; or every file was
-      orphaned or stale;
-    - [2] — usage error (unknown flag).
+    The command line is [windtrap mutants [PATH...]]. [-h], [--help] and [-help]
+    print the help page on standard output. Every other argument that starts
+    with [-] is refused, and the rest are [PATH]s. The command has no [--color]
+    flag. [WINDTRAP_COLOR] is the whole colour decision, read by
+    {!Windtrap.Private.Cli.color_mode} and resolved for standard output by
+    {!Windtrap.Private.Os.resolve_color}.
 
-    Explicit [PATH] arguments are a contract: a file argument must exist and
-    carry the [.mutants] suffix, and a violation is an error naming the path and
-    the reason — never a silent narrowing of the merge, which under
-    killed-anywhere-wins would turn another executable's kill back into a
-    survivor. A directory argument contributes the [.mutants] files found under
-    it at any depth, however many that is.
+    [run] parses the arguments, reads [WINDTRAP_COLOR], finds the
+    {{!section-files}files}, loads and judges them, and prints the report of the
+    {{!section-merge}merge} on standard output, in that order. A step that fails
+    returns its code, so a failure prints no report. Every other line goes to
+    standard error, through {!Windtrap.Private.Os.say} but for the usage line
+    that follows a usage error.
 
-    Discovery and explicit arguments differ in one further way, because they
-    settle different source roots: discovery knows the project root and resolves
-    a survivor's excerpt against it, while explicit arguments resolve against
-    the current directory, so a file named from outside its checkout reports its
-    survivors without excerpts. Excerpts are best-effort throughout — a survivor
-    whose source cannot be read still names its file, line and rewrite.
-
-    An orphaned or outdated verdict file is excluded and warned about, never
-    merged: a verdict from a previous build can claim a kill the code no longer
-    earns, and a false kill hides a live defect where a false survivor merely
-    wastes a reader's time. One warning line names each excluded file, and one
-    sentence after them says what heals both cases — re-running the mutation
-    tests rewrites an outdated verdict, deleting the directory drops an orphan.
-    The check needs the file's own [_build] to resolve the executable it names:
-    a verdict file copied out of one — a CI artifact, say — records an identity
-    nothing can locate, and is merged rather than guessed about.
-
-    The report prints on standard output; errors and staleness warnings print on
-    standard error. Each witness names the executable that ran it — the basename
-    of the identity its verdict file records, or the library's [.inline-tests]
-    directory for dune's inline-test runner, whose basename is the same in every
-    library — but is not located: a test's declaration site lives in the
-    executable's test tree, which this command does not link. *)
+    The result is:
+    - [0] when the report was printed and no mutant survived. Unreached mutants
+      are listed and do not fail the command. It is also [0] for the help page.
+    - [1] when the report was printed and at least one mutant survived every
+      executable that reached it. The command has no threshold, so one survivor
+      fails it, and a mutant that is equivalent to the original is dismissed at
+      its site with [[@mutate off]]. It is also [1], with no report, when a
+      [PATH] cannot be used, when no verdict file is found, when a file cannot
+      be read, is corrupt or has another format version, or when every file is
+      excluded.
+    - [2] for an unknown option, which is the one usage error, and for a
+      [WINDTRAP_COLOR] that the [--color] flag of a runner would refuse. *)

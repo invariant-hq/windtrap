@@ -68,7 +68,7 @@ let parse_args args =
   in
   go [] args
 
-(* Discovery: Data_files's, shared with `windtrap coverage` — the project
+(* Discovery: Data_files's, shared with `windtrap coverage`, with the project
    root resolved as the runtime resolves its output path, explicit PATH
    arguments as a loud contract. A silently narrowed merge would be worse
    here than in coverage: under killed-anywhere-wins, dropping the file
@@ -83,8 +83,8 @@ let discover paths = Data_files.discover V.format paths
 
    Data_files.freshness's, judged from the identity each file records: a
    verdict file whose executable was deleted or renamed (an orphan), and
-   one not written by the executable now on disk — a rebuild without the
-   backend, or a run the build tool replayed from its cache.
+   one not written by the executable now on disk, after a rebuild without
+   the backend, or a run the build tool replayed from its cache.
 
    A flagged verdict file is excluded, never merged: a stale verdict can
    claim a kill the code no longer earns, and a false kill hides a live
@@ -209,18 +209,23 @@ let read_source ~roots =
 
 (* The aggregate report, from the labelled collections and nothing else.
 
+   Coverage merges by addition, so two executables over one file can only
+   agree more. Verdicts do not add: a mutant killed by one suite and merely
+   reached by another is killed, and the second suite's view alone is a
+   false survivor. That is why a verdict file exists.
+
    The verdicts and the counts are the merge's: [V.merge] is
    killed-anywhere-wins, the one algebra of the file format, and this
    projection never re-derives it. What the merge cannot carry is who ran
-   a witness — a merged survivor's witnesses are a union with the
-   executables folded away — so those are collected beside it: every
-   survived record's witnesses, tagged with its file's executable. A file
-   that killed the mutant contributes none; its tests noticed. A merged
-   survivor's witnesses are then the tagged union from every file that
-   reported it survived, sorted by (executable, test), without
-   duplicates. Survivors are ordered by reaching-test count descending,
-   then by identifier: the one the most tests watched is the one a reader
-   can act on soonest.
+   a witness (a merged survivor's witnesses are a union with the
+   executables folded away), so those are collected beside it: every
+   survived record's witnesses, tagged with its file's executable. What is
+   tagged for a mutant that some file killed is never read, since such a
+   mutant is no survivor of the merge. A merged survivor's witnesses are
+   then the tagged union from every file that reported it survived, sorted
+   by (executable, test), without duplicates. Survivors are ordered by
+   reaching-test count descending, then by identifier: the one the most
+   tests watched is the one a reader can act on soonest.
 
    The second component is how the executable of the first survivor's
    first reaching-test row is run again, for the report's one command: it

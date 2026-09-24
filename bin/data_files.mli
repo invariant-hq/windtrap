@@ -3,67 +3,108 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** Locating and vetting the instrumentation data files.
+(** The files that the two reporting commands merge: where they are found, and
+    whether each still speaks for the executable that wrote it.
 
-    The [coverage] and [mutants] subcommands read the same kind of estate: a
-    directory of data files, each written by an instrumented test executable
-    where the runtime puts them, [_build/_coverage] beside a build directory's
-    contexts or [_windtrap] in a tree without one. This module locates the
-    estate, expands explicit [PATH] arguments and judges each file's freshness
-    from the writer identity it records; each command prints {!warnings} for the
-    files it excludes and its own remedy sentence. *)
+    {!discover} finds the dumps or the verdict files of a
+    {!Windtrap_runtime.Instr.format}, by the build-path rule under which the
+    runtime wrote them or under the paths of the command line. {!val-freshness}
+    judges a file from the writer identity that it records, and {!warnings} and
+    {!all_excluded} are the lines for the files that a command excludes.
+
+    The module prints nothing and writes nothing. Each command says the strings
+    of this module on standard error behind [windtrap:]. The module reads
+    [INSIDE_DUNE], the current directory, the directories that it searches, and
+    the bytes of the executables that it judges. *)
+
+(** {1:discovery Discovery} *)
 
 val discover :
   Windtrap_runtime.Instr.format ->
   string list ->
   (string list * string list, string) result
-(** [discover format paths] is [Ok (files, roots)]: the data files of [format]
-    to merge, sorted, and the source roots reports resolve files against.
+(** [discover format paths] is [Ok (files, roots)]. [files] is the files of
+    [format] to merge, those whose name ends in [.] and [format.ext], sorted
+    with [String.compare] and without duplicates. [roots] is the directories
+    under which a report looks for a recorded source file.
 
-    With [paths] empty, [files] is every file of [format]'s extension under the
-    estate and [roots] is [[root]]. Inside a build directory (the one
-    [INSIDE_DUNE] names when it holds a path with a component starting with
-    [_build], else the one the current directory is inside) the estate is that
-    directory's {!Windtrap_runtime.Instr.data_dir} and the root its parent.
-    Outside any, the estate is the nearest ancestor of the current directory,
-    itself included, holding a [_build/<dir>] or a [_windtrap/<dir>] (both when
-    it holds both), never one inside a [.sandbox] component. No estate found is
-    [Ok ([], ["."])].
+    When [paths] is empty the files are searched for where the runtime writes
+    them, so a reader finds what a writer wrote:
+    - The build directory is that of the path in [INSIDE_DUNE] when it has one
+      ({!Windtrap_runtime.Instr.build_dir}), and otherwise that of the current
+      directory. Dune sets [INSIDE_DUNE] to its build context for a rule action
+      and under [dune exec] alike. When there is a build directory, [files] is
+      every file of [format] at any depth under its
+      {!Windtrap_runtime.Instr.data_dir}, and [roots] is the parent of the build
+      directory. No other directory is searched, so [files] is [[]] when that
+      data directory does not exist.
+    - When there is no build directory, the search goes to the nearest ancestor
+      of the current directory, itself included, that holds a [_build/_<dir>] or
+      a [_windtrap/<dir>] directory, where [<dir>] is [format.dir]. [files] is
+      every file of [format] under those of the two that exist, and [roots] is
+      that ancestor. The build directory must be named [_build] here. An
+      ancestor whose path has a [.sandbox] component is never chosen. When no
+      ancestor holds one, the result is [Ok ([], ["."])].
 
-    Explicit [paths] replace that default and [roots] is [["."]]. A file
-    argument must exist and carry the format's extension, else the result is
-    [Error message] naming the path and the reason; a directory argument
-    contributes the files found under it at any depth, however many. *)
+    When [paths] is not empty it replaces the search, and [roots] is [["."]]. A
+    path that is a directory contributes every file of [format] under it, at any
+    depth, which may be none. Any other path must be an existing file whose name
+    ends in the extension of [format]. Otherwise the result is [Error message],
+    which names the first such path of [paths] and the reason. A path that
+    cannot be used thus fails the whole call and never gives a shorter [files].
 
-(** The type for a data file's freshness, judged from the
-    {!Windtrap_runtime.Instr.identity} it records. [Orphan] and [Stale] carry
-    the recorded executable identity. *)
+    A directory that cannot be listed and an entry that cannot be inspected
+    contribute nothing, without an error. *)
+
+(** {1:freshness Freshness} *)
+
+(** The type for the freshness of a file, judged from the
+    {!Windtrap_runtime.Instr.identity} that it records. [Orphan] and [Stale]
+    carry the [exe] of that identity as it was recorded, which is a path below a
+    build directory or an absolute one. *)
 type freshness =
   | Fresh
-      (** The recorded executable wrote this file, or the file records no
-          identity (hand-written or merged). *)
-  | Orphan of string  (** The recorded executable no longer exists. *)
+      (** The executable at the recorded path has the recorded digest, or
+          nothing can be judged (see {!val-freshness}). *)
+  | Orphan of string  (** No executable exists at the recorded path. *)
   | Stale of string
-      (** The executable on disk is not the one that wrote the file. *)
+      (** The executable at the recorded path does not have the recorded digest,
+          so another build wrote the file. *)
 
 val freshness :
   path:string -> Windtrap_runtime.Instr.identity option -> freshness
-(** [freshness ~path identity] judges the data file at [path] against the
-    [identity] it recorded. A relative identity is resolved below the file's own
-    build directory ({!Windtrap_runtime.Instr.build_dir}); an identity nothing
-    can locate is [Fresh]. The comparison is by content digest, never by mtime.
-*)
+(** [freshness ~path identity] is the freshness of the file at [path], which
+    recorded [identity]. An absolute [identity.exe] is the path of the
+    executable. A relative one is resolved below the build directory of [path]
+    ({!Windtrap_runtime.Instr.build_dir}). The comparison is by
+    {!Windtrap_runtime.Instr.file_digest} and never by modification time.
 
-val describe : path:string -> freshness -> string
-(** [describe ~path f] is the one warning line for an excluded file: the path,
-    the recorded executable and why it is excluded. Never call it on [Fresh]. *)
+    Three files cannot be judged and are [Fresh]: one that records no identity,
+    which was written by hand or merged, one whose identity is relative and
+    which lies in no build directory, and one whose executable exists and cannot
+    be read. *)
 
 val warnings : (string * freshness) list -> string list
 (** [warnings excluded] is the warning lines for the [excluded] files, each a
-    path and its freshness, none [Fresh]: {!describe}'s line for the first
-    three, then [... and N more like that] when there are more. *)
+    path with its freshness, which must not be [Fresh]. There is one line for
+    each of the first 3 files, in the order given. A line names the path and the
+    recorded executable, and says why the file is excluded and that it is. When
+    there are more files, a last line counts the rest. Raises [Assert_failure]
+    if one of the first 3 files is [Fresh]. *)
 
 val all_excluded : ext:string -> freshness list -> string
-(** [all_excluded ~ext excluded] is the line for a merge every file of which was
-    excluded, none [Fresh]: [found N .<ext> files and every one is stale],
-    [orphaned], or [stale or orphaned (K orphaned)]. *)
+(** [all_excluded ~ext excluded] is the sentence for a merge that excluded every
+    file. It counts the files, names them by [ext], and says whether they are
+    stale, orphaned, or both, with the number of orphaned ones. [excluded] must
+    not be empty and must hold no [Fresh], and neither is checked. *)
+
+(**/**)
+
+(* [describe] has no caller outside this module, because the two commands go
+   through [warnings]. [describe ~path f] is the warning line of the excluded
+   file at [path]: the path, the recorded executable, why the file is excluded
+   and that it is. It raises [Assert_failure] on [Fresh]. *)
+
+val describe : path:string -> freshness -> string
+
+(**/**)

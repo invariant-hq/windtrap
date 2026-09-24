@@ -3,39 +3,136 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(** The [windtrap coverage] subcommand.
+(** The [windtrap coverage] command.
 
-    Merges the [.coverage] files instrumented test executables wrote and renders
-    expression coverage per source file through the library's report sections.
-    Without [PATH] arguments the files are found as {!Data_files.discover} finds
-    them; [PATH] arguments ([.coverage] files, or directories searched
-    recursively) replace that default. A dump whose recorded executable was
-    deleted or rebuilt since the run is excluded with a warning naming it, and
-    there is no override. *)
+    The command merges the dumps that instrumented test executables wrote and
+    reports expression coverage for each source file. It only reads files, so it
+    runs no test and drives no build. A test run prints no coverage number, so
+    this command is the one coverage reporter, and the one place where coverage
+    is gated (guarantee 10 of [doc/dev/architecture.md]).
+
+    {!run} is the whole command.
+    {!Windtrap.Private.Report_sections.coverage_report} states what the report
+    holds. This interface states the {{!section-files}files} that are merged,
+    the {{!section-gates}gates}, and the two
+    {{!section-formats}machine formats}, whose keys and records are frozen. *)
+
+(** {1:files Files}
+
+    The dumps are those that {!Data_files.discover} finds for
+    [Windtrap_runtime.Coverage.format] and the [PATH] arguments. Every dump is
+    loaded before any is excluded, and the first one that cannot be read or
+    parsed ends the command with its {!Windtrap_runtime.Coverage.pp_error}. A
+    dump whose {!Data_files.val-freshness} is not [Fresh] is then excluded from
+    the merge, and no flag keeps it.
+
+    On standard error the command says the {!Data_files.warnings} of the
+    excluded dumps, then {!Data_files.all_excluded} when no dump is left, and
+    then once, in a sentence of its own, how to refresh them.
+
+    A recorded source is looked for by {!Windtrap_runtime.Coverage.file_reports}
+    under the roots of {!Data_files.discover}: the root of the project after a
+    search, and the current directory under [PATH] arguments. The rows of the
+    report come in the order of file names that
+    {!Windtrap_runtime.Coverage.file_reports} gives. *)
+
+(** {1:gates Gates}
+
+    Both gates run after the report or the document is printed, whatever the
+    first one finds.
+
+    [--expect PATH] may be repeated. It requires coverage data for [PATH] when
+    it is a file, and for every [.ml], [.mll] and [.mly] file under it when it
+    is a directory. The walk skips [_build], [_opam] and every directory whose
+    name starts with a dot. [--do-not-expect PATH] exempts a file, or the
+    sources under a directory, and is read only under [--expect].
+
+    A path and a recorded name are compared as stems. A stem is the path without
+    its empty and [.] components and with its base name cut at the first dot.
+    [lib/calc.ml], [./lib/calc.ml], [lib/calc.pp.ml] and [lib/calc.mll] are one
+    source. The comparison is lexical, and under dune a recorded name is
+    relative to the root of the project. A path must be given relative to that
+    root, from which the command must run. Each source that has no data is named
+    on standard error, in path order, after the report or the document.
+
+    [--min PCT] requires the unrounded percentage of visited points to be at
+    least [PCT]. A merge of no point counts as 100. The outcome line of the
+    report states the gate and whether it is met
+    ({!Windtrap.Private.Report_sections.coverage_line}). Coverage that prints
+    equal to the threshold can thus fail, and the two counts on the line show
+    why. *)
+
+(** {1:formats Machine formats}
+
+    [--json] and [--lcov] each make standard output the document, so the report
+    is not printed and [-u] has no effect. Under either, and only under [--min],
+    the text of the outcome line is said on standard error behind [windtrap:],
+    whether the gate is met or not. The keys and the records below are frozen,
+    so a column that is added to the report is not added to them.
+
+    {b JSON.} The document is one object with two keys.
+    - ["summary"] is an object with the keys ["visited"], ["total"] and
+      ["percentage"], over all files.
+    - ["files"] is an array with one object per source file, in the order of the
+      recorded names under [String.compare]. Its keys are ["path"], the name as
+      recorded at instrumentation, then ["visited"], ["total"], ["percentage"]
+      and ["uncovered_lines"].
+
+    A percentage is a number with two decimals, [100.00] for no point.
+    ["uncovered_lines"] is the ascending array of the one-based lines that an
+    unvisited point touches. It is empty for a file whose source the runtime
+    does not find or judges stale ({!Windtrap_runtime.Coverage.file_reports}).
+
+    {b LCOV.} The document is one record per source file, in the same order. A
+    record is these lines, in this order:
+    - [TN:], with no test name.
+    - [SF:<file>], the name as recorded at instrumentation.
+    - [DA:<line>,<hits>] for each line that a point touches, in line order.
+      [<hits>] is the fewest visits among the points that touch the line, so it
+      is [0] iff the line is uncovered.
+    - [LF:<n>], the number of [DA] lines, and [LH:<n>], the number of those with
+      a hit.
+    - [end_of_record].
+
+    A file whose source is not found or is judged stale has no record. It is
+    named on standard error with the reason, and the exit code does not change.
+*)
+
+(** {1:running Running} *)
 
 val run : string list -> int
-(** [run args] executes the subcommand on [args], the arguments after
-    [coverage], and is the process exit code:
+(** [run args] executes the command on [args], the arguments that follow
+    [coverage] on the command line, and is the exit code of the process. It
+    never calls [exit].
 
-    - [0]: report rendered, and every gate given was met;
-    - [1]: no [.coverage] file was found; a [PATH] named a missing file or a
-      file without the [.coverage] suffix; a file was unreadable, corrupt, of a
-      foreign format version or carried a mismatched point table; every file was
-      orphaned or stale; total coverage fell below [--min]; or a source under an
-      [--expect] path has no coverage data;
-    - [2]: usage error (unknown flag, malformed [--min]), or a [WINDTRAP_COLOR]
-      the runner's [--color] parser refuses.
+    The flags are those of the help page. [-u] asks
+    {!Windtrap.Private.Report_sections.coverage_report} for [`Full]. An argument
+    that starts with [-] and is no flag is refused, and the rest are [PATH]s.
+    The command has no [--color] flag. [WINDTRAP_COLOR] is the whole colour
+    decision, read by {!Windtrap.Private.Cli.color_mode} and resolved for
+    standard output by {!Windtrap.Private.Os.resolve_color}.
 
-    Flags: [--min PCT] gates the raw percentage, never its rendering, and a
-    failed verdict states the threshold as given and the measurement as the
-    report line states it; [--json] and [--lcov] are machine formats that own
-    standard output; [--expect PATH] (repeatable) requires every [.ml], [.mll]
-    and [.mly] under [PATH], or [PATH] itself, to have coverage data, and
-    [--do-not-expect PATH] exempts a file or directory from it; [-u]
-    ([--show-uncovered]) also renders uncovered source excerpts; [-h] prints the
-    usage on standard output and returns [0]. Both gates run, so one run names
-    everything wrong.
+    [run] parses the arguments, reads [WINDTRAP_COLOR], finds the
+    {{!section-files}files}, loads, judges and merges them, prints the report or
+    the document, and runs the two {{!section-gates}gates}, in that order. A
+    step before the gates that fails returns its code, so standard output stays
+    empty until the merge has succeeded. The report, the document and the help
+    page print on standard output. Every other line goes to standard error,
+    through {!Windtrap.Private.Os.say} but for the usage line that follows a
+    usage error.
 
-    The report and the [--min] verdict print on standard output; errors,
-    exclusion warnings and, under a machine format, the verdict print on
-    standard error. *)
+    The result is:
+    - [0] when the report or the document was printed and every gate that was
+      given is met. It is also [0] for [-h], [--help] and [-help], which print
+      the help page and read nothing.
+    - [1] when a [PATH] cannot be used, when no dump is found, when a dump
+      cannot be read, is corrupt or has another format version, when two dumps
+      disagree on the points of a file, or when every dump is excluded. It is
+      also [1] when a gate fails: a path of [--expect] or [--do-not-expect] does
+      not exist, a source under [--expect] has no data, or the coverage is below
+      [--min].
+    - [2] for a usage error. The usage errors are an unknown option, a [--min]
+      that is not a number of the interval \[[0];[100]\], a flag that lacks its
+      value, and [--json] given with [--lcov]. It is also [2] for a
+      [WINDTRAP_COLOR] that the [--color] flag of a runner would refuse, under a
+      machine format too. *)

@@ -18,7 +18,9 @@
      naming its partner ([comparison_rewrite]), and fires only where the
      expression is syntactically obliged to be [bool] (the [`Cond] and
      [`Bool] contexts), so a user-shadowed comparison cannot make the two
-     arms disagree in type.
+     arms disagree in type. Naming the partner would also fail in silence:
+     under an [open Version] that exports [<] and not [<=], an armed arm
+     written [a <= b] would compare with [Stdlib.( <= )].
    - [con] uses the branch-on-the-armed-flag encoding ([con_guard]), the
      only shape that keeps [&&]/[||]'s short-circuiting without
      duplicating an operand.
@@ -41,8 +43,8 @@ open Ast_builder.Default
    exactly - [[@mutate off]] on an expression, [[@@mutate off]] on a
    value or module binding, [[@@@mutate off]]/[[@@@mutate on]] around a
    region, [[@@@mutate exclude_file]] for a file - plus an optional
-   reason string, which lands in the site table's [dismissed] field so a
-   dismissal is reviewable rather than merely obeyed. *)
+   reason string on [off]. The reason of an expression that is a site
+   lands in the site table's [dismissed] field; no report prints it. *)
 
 type directive = No_directive | Off of string | On | Exclude_file
 
@@ -260,10 +262,10 @@ let suppress_chain st name left =
      and rewriters such as [[@@deriving]] duplicate non-ghost locations,
      so a later collider is dropped rather than instrumented;
    - the node was suppressed by the chain rule ([suppress_chain]);
-   - the expression carries [[@mutate off]]. The site is catalogued, so
-     [report] mode can list the dismissal with its reason, but the
-     expression is left exactly as written: a dismissal that still
-     rewrote the code would be a dismissal in name only. *)
+   - the expression carries [[@mutate off]]. The site is catalogued with
+     its reason, but the expression is left exactly as written: a
+     dismissal that still rewrote the code would be a dismissal in name
+     only. *)
 let add_site st ~(loc : Location.t) ~rewrite ~before ~after ~dismissed =
   if loc.loc_ghost then None
   else begin
@@ -299,7 +301,12 @@ let add_site st ~(loc : Location.t) ~rewrite ~before ~after ~dismissed =
      a <> b  =  not (a =  b)      a =  b  =  not (a <> b)
 
    The third component of [comparison_rewrite] records which shape
-   applies. *)
+   applies.
+
+   The ordering identities need a total order. On floats they fail on NaN:
+   [nan <= 1.] is [false] and [not (1. < nan)] is [true]. An armed ordering
+   mutant thus differs from its [after] text when an operand is NaN, and
+   the interface states that limit. *)
 let comparison_rewrite = function
   | "<" -> Some ("le", "<=", true)
   | "<=" -> Some ("lt", "<", true)
@@ -502,7 +509,14 @@ let negating_guard ~loc ~module_name ~index value =
    applied function [(fun l r -> …) left right], is not used: native
    code reduces it to the same chain, but bytecode under [-g] keeps the
    call - a closure allocation and a frame per comparison - and "still
-   allocates nothing" is part of the law. *)
+   allocates nothing" is part of the law.
+
+   Binding the operator to a value, [let op = if armed i then ( <= ) else
+   ( < ) in op l r], is rejected twice over. It names a second operator,
+   against the emission law. And a comparison reached through a value is
+   the polymorphic one on both paths, so an integer comparison that the
+   compiler inlined becomes a call to [caml_lessthan] in the program that
+   arms nothing. *)
 let binary_guard ~loc ~module_name ~index ~operator ~attrs ~original_loc ~pin
     ~armed_arm left right =
   let l = binder index "l" and r = binder index "r" in
@@ -630,7 +644,13 @@ let rec is_trivial_syntactic_value e =
      be a boolean, so [cmp] may fire; [neg] may not, because negating a
      connective's operand is not one of this slice's operators.
    - [`Ordinary] - everywhere else. Only [con] and [ari] fire, both of
-     which are well-typed with no assumption about the context. *)
+     which are well-typed with no assumption about the context.
+
+   The restriction of [cmp] to the first two costs the mutants of
+   [let ok = a < b]. If they are wanted, the way is to carry the context
+   through the forms that are transparent for the type (the last
+   expression of a sequence, the body of a [let], a constraint), never to
+   drop the restriction. *)
 type context = [ `Cond | `Bool | `Ordinary ]
 
 (* What guard, if any, [e] carries in a given context. Computed from the
@@ -638,7 +658,7 @@ type context = [ `Cond | `Bool | `Ordinary ]
    recorder answer the same question. *)
 (* A binary application as [binary] destructured it: the operator's name,
    the operator expression, and the two operands. Carried on the shape so
-   that the guard emitter destructures nothing a second time — the four
+   that the guard emitter destructures nothing a second time: the four
    impossible-case handlers that cost, one per shape, are what a shape
    that forgets its own operands buys. *)
 type application = {
@@ -671,7 +691,9 @@ let shape_of capabilities (context : context) e =
           | Some (rewrite, replacement), _, _ when capabilities.con ->
               (* Placement rule 2: no guard whose expansion duplicates
                  another mutation site. In [a && b && c] only the inner
-                 connective is mutated. *)
+                 connective is mutated. The rule is conservative:
+                 [con_guard] mentions each operand once, so a guard around
+                 [a && (b && c)] would duplicate nothing today. *)
               if
                 is_connective_apply capabilities left
                 || is_connective_apply capabilities right
@@ -713,7 +735,7 @@ class instrumenter st capabilities module_name =
       | Some reason ->
           (* [[@mutate off]] leaves the expression exactly as written -
              including everything inside it - and records what was
-             dismissed, with its reason, for [report] mode. *)
+             dismissed, with its reason, in the catalogue. *)
           (match shape_of capabilities context e with
           | Some (_, rewrite, after) ->
               ignore
@@ -950,7 +972,14 @@ class instrumenter st capabilities module_name =
    qualified instead of being opened: opening it would put labels named
    [line], [col], [before] and [after] into the user's scope,
    where they could shadow the user's own or make the user's records
-   ambiguous. *)
+   ambiguous. Not opening it also keeps a file whose every site is
+   dismissed, where no guard refers to the module, free of an unused
+   [open] (warning 33).
+
+   The preamble stands above the user's structure, so it may name [int],
+   [string], [option], [None] and [Some] unqualified: no definition of the
+   file can shadow them there. A guard sits inside the user's code and has
+   no such shelter, which is why its arms name [Stdlib]. *)
 
 (* The runtime module the generated code calls, spelled once: the
    re-exported type and the registration call are built from it. *)

@@ -12,9 +12,9 @@ let spf = Printf.sprintf
 let is_dir path = Sys.file_exists path && Sys.is_directory path
 
 (* Ancestor-scan fallback: the nearest ancestor (the current directory
-   included) holding an estate — `dune exec windtrap` runs from wherever
-   the user is in the checkout, and a tree built without dune keeps its
-   files under _windtrap. Both layouts are the runtime's own rule, and
+   included) holding a data directory. `dune exec windtrap` runs from
+   wherever the user is in the checkout, and a tree built without dune keeps
+   its files under _windtrap. Both layouts are the runtime's own rule, and
    both are searched, so a project can hold either. Candidates inside a
    sandbox are never roots: planted garbage under _build/.sandbox must
    not capture the scan. *)
@@ -40,11 +40,11 @@ let rec scan_ancestors format current =
 
 (* The build-directory rule, shared with the runtimes' output path and
    the core's own root rule: the build directory dune names in
-   INSIDE_DUNE — the context it is building in, [<root>/_build/default]
+   INSIDE_DUNE (the context it is building in, [<root>/_build/default]
    or a private --build-dir's, exported to rule actions and to `dune
-   exec` alike — else the one the current directory is inside, a binary
+   exec` alike), else the one the current directory is inside, a binary
    run by hand from under a build directory. A value that is not such a
-   path — a harness's INSIDE_DUNE=1 — names no build directory. Unlike
+   path (a harness's INSIDE_DUNE=1) names no build directory. Unlike
    the core's rule, this binary's own path is never consulted: an
    installed windtrap lives under dune's install tree, itself a
    _build, and says nothing about the project it is reporting on. *)
@@ -56,7 +56,7 @@ let build_dir cwd =
   in
   List.find_map (fun path -> Instr.build_dir ~path) (named @ [ cwd ])
 
-(* Inside a build directory the estate is that directory's,
+(* Inside a build directory the data directory is that directory's,
    unconditionally, and the root is its parent; only outside any does
    the ancestor scan run. *)
 let estate format cwd =
@@ -129,6 +129,9 @@ let exe_digest exe_path =
       Hashtbl.replace digests exe_path digest;
       digest
 
+(* The comparison is by content digest because a modification time proves
+   nothing here: dune's shared cache restores a rebuilt artifact with its
+   original timestamp. *)
 let freshness ~path identity =
   match (identity : Instr.identity option) with
   | None -> Fresh
@@ -137,7 +140,7 @@ let freshness ~path identity =
         if not (Filename.is_relative exe) then Some exe
         else
           (* A relative identity is a path below a build directory; the
-             file's own locates it — the same directory whether the file
+             file's own locates it, the same directory whether the file
              was discovered or named on the command line. *)
           Option.map
             (fun build_dir -> Filename.concat build_dir exe)

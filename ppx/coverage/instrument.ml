@@ -5,10 +5,10 @@
   ---------------------------------------------------------------------------*)
 
 (* The expression-grade instrumenter. Instrumentation must never change
-   what programs or tests mean — tail-call status, lazy compilation, and
+   what programs or tests mean: tail-call status, lazy compilation, and
    evaluation order are preserved by construction.
 
-   The instrumented population is v1's Bisect-derived one: block entries
+   The instrumented population is derived from Bisect_ppx's: block entries
    (function leaf bodies and optional-argument defaults, match/try/function
    arms and guards, if branches, while/for bodies, lazy and letop bodies,
    class bodies) *and* application
@@ -23,9 +23,9 @@
    - post-visit wrapping, [___windtrap_post_visit___ i e] - evaluates [e]
      first and visits only if it returned. Post-visit wrapping is what
      *can* alter tail-call status if mishandled, so [traverse] threads
-     [is_in_tail_position] exactly as v1 does and never wraps an
-     application in tail position; the mandatory semantics-preservation
-     suite (test/ppx/coverage/semantics) pins this. The [successor]
+     [is_in_tail_position] and never wraps an application in tail
+     position; the mandatory semantics-preservation suite
+     (test/ppx/coverage/semantics) pins this. The [successor]
      threading attributes an out-edge to the expression control flows into
      next when one is known, and suppresses redundant wraps ([`Redundant])
      where an enclosing form already observes the edge.
@@ -34,8 +34,8 @@
    mixed by design: entry points carry their block's extent (an arm's spans
    the whole arm, pattern start to body end); out-edge points carry the
    application's extent, so a raising call paints the call itself. Point
-   *identity* is v1's: a single attribution offset (start, or end-1
-   under [at_end]) - two marks at one offset share a point, first extent
+   *identity* is a single attribution offset (start, or end-1 under
+   [at_end]) - two marks at one offset share a point, first extent
    wins. The table is emitted in the per-file initialization module that
    [transform_impl_file] prepends. *)
 
@@ -46,8 +46,8 @@ module Cf = Ast_helper.Cf
 
 (* The [coverage] attributes (Bisect_ppx's spelling). The mutate
    attribute grammar in ppx/mutate/instrument.ml mirrors this one
-   deliberately — the manual promises the same spellings, modulo
-   mutation's optional reason string — so a spelling added or an error
+   deliberately (the manual promises the same spellings, modulo
+   mutation's optional reason string), so a spelling added or an error
    message changed here changes there too. Keep them in sync; the
    attribute-parity fixtures in test/ppx/coverage pin the promise. *)
 
@@ -107,7 +107,7 @@ let has_exclude_file_attribute structure =
 
 (* Points *)
 
-(* [key] is v1's point identity - one byte offset inside the
+(* [key] is the point's identity - one byte offset inside the
    attribution expression; [start_ofs]/[end_ofs] the extent the report
    paints. [uses_post] records whether any out-edge wrap was emitted, so
    the initialization module only binds [___windtrap_post_visit___] when
@@ -122,9 +122,9 @@ type state = {
 
 let create_state () = { rev_points = []; count = 0; uses_post = false }
 
-(* v1's point identity: reuse the existing point at [key] (its
-   first-recorded extent wins); allocate otherwise. Linear search over the
-   (small) per-file table, exactly as v1. *)
+(* Point identity: reuse the existing point at [key] (its first-recorded
+   extent wins); allocate otherwise. Linear search over the (small)
+   per-file table. *)
 let point_index st ~key ~start_ofs ~end_ofs =
   let rec find index = function
     | p :: _ when p.key = key -> index
@@ -231,8 +231,8 @@ let rec is_trivial_syntactic_value e =
 (* Applications of these never carry an out-edge point: they are
    primitives that cannot fail interestingly (or, for [raise] and friends,
    whose whole point is not returning), and wrapping every arithmetic
-   operator would double the table for no signal. v1's list,
-   verbatim. *)
+   operator would double the table for no signal. The list is
+   Bisect_ppx's. *)
 let is_trivial_function = function
   | [%expr ( && )]
   | [%expr ( & )]
@@ -277,14 +277,14 @@ let is_trivial_function = function
 
 (* Traversal *)
 
-(* [traverse] is v1's engine: a manual walk over the whole
-   expression language that threads [is_in_tail_position] (never post-wrap
-   a tail application) and [successor] (attribute an out-edge to the
-   expression control reaches next; [`Redundant] when an enclosing form
-   already observes the edge). Marks are inserted bottom-up: children are
-   traversed first, then the current node's slots are wrapped - generated
-   wrappers are never re-traversed. Extension and attribute payloads are
-   left entirely untouched. *)
+(* [traverse] is a manual walk over the whole expression language that
+   threads [is_in_tail_position] (never post-wrap a tail application) and
+   [successor] (attribute an out-edge to the expression control reaches
+   next; [`Redundant] when an enclosing form already observes the edge).
+   Marks are inserted bottom-up: children are traversed first, then the
+   current node's slots are wrapped - generated wrappers are never
+   re-traversed. Extension and attribute payloads are left entirely
+   untouched. *)
 class instrumenter st =
   let instrument_expr ?use_loc_of ?at_end ?post ?extent e =
     instrument_expr st ?use_loc_of ?at_end ?post ?extent e
@@ -302,7 +302,7 @@ class instrumenter st =
        TMC rewrites calls that sit in a constructor argument of a tail
        expression, which is a position out-edge wrapping destroys: wrapping
        the call in [___windtrap_post_visit___] leaves the function with no
-       TMC-able call, and warning 71 is fatal under stock dune — so a
+       TMC-able call, and warning 71 is fatal under stock dune, so a
        library with one TMC function simply fails to build under
        [--instrument-with ppx_windtrap.coverage]. Under a non-fatal warning setting
        it builds and the function silently becomes stack-consuming.
@@ -386,7 +386,7 @@ class instrumenter st =
                      sub-expressions, so a tail call can sit inside one.
                      Demoting the arm to an [if] condition would traverse it
                      with [is_in_tail_position:false] and post-wrap that
-                     call, taking it out of tail position — Stack_overflow
+                     call, taking it out of tail position: Stack_overflow
                      under instrumentation only. The arm keeps its position
                      and gives up its point, as the application case does. *)
                   | Pexp_let _ | Pexp_letmodule _ | Pexp_letexception _
@@ -445,6 +445,11 @@ class instrumenter st =
                   | _ -> traverse ~is_in_tail_position:false fn
                 in
                 let apply = Exp.apply ~loc ~attrs fn_new arguments in
+                (* An application whose every argument is labelled may be
+                   partial, and a partial application returns a closure,
+                   which says nothing of the call. The labels are all that
+                   the parsetree shows, so a total application of that shape
+                   gives up its out-edge too. *)
                 let all_arguments_labeled =
                   List.for_all (fun (label, _) -> label <> Nolabel) arguments
                 in
@@ -882,8 +887,8 @@ let runtime_initialization st ~file =
       (List.rev_map
          (fun { key = _; start_ofs; end_ofs } ->
            (* Every field qualified: a bare field would resolve by
-              type-directed disambiguation — warning 42, fatal in files
-              compiled with -w +a -warn-error +a. *)
+              type-directed disambiguation (warning 42, fatal in files
+              compiled with -w +a -warn-error +a). *)
            Ast_builder.Default.pexp_record ~loc
              [
                ( runtime_name ~loc "start_ofs",
