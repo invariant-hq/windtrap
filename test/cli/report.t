@@ -190,7 +190,9 @@ the line spells the run through the mirrors:
 An expected failure is the run's record of the test, never a reading of
 its message: a test expected to fail, whose own failure is the sentence
 the runner writes for an unexpected pass, is still an expected failure.
-The run exits 0 on one line, and under -v its line says XFAIL.
+The run exits 0 on one line, and under -v its line says XFAIL, with its
+failure under it, dim and uncounted, so a slip of the author's does not
+pass for the known defect:
 
   $ run FACADE_FIXTURE=collide ./suite_main.exe > out 2> err
   $ scrub < out
@@ -199,6 +201,9 @@ The run exits 0 on one line, and under -v its line says XFAIL.
   $ scrub < out | sed -E 's/  +[0-9.]+m?s$/  TIME/'
   fixture: 1 test
     XFAIL  collide (expected failure)  TIME
+      test/cli/suite_main.ml:LINE
+      expected to fail, but the test passed
+  
   1 expected failure in DURATION.
 
 A fixture is released after the last test, and a release that raises is

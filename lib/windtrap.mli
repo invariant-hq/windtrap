@@ -377,9 +377,10 @@ val xfail : ?reason:string -> test -> test
     unexpected pass. A JUnit file ([--junit]) has no expected failure: it
     records one as a skipped test whose message is [expected failure: <reason>].
 
-    {b Warning.} The failure of an [xfail] test is never printed, not even under
-    [-v]. A test that fails for another cause than its known defect looks the
-    same. Reading the failure takes a run without the annotation.
+    Under [-v] the failure prints dim under the [XFAIL] line, as the block of a
+    failing test would but with no [accept:] or [replay:] line, so a test that
+    fails for another cause than its known defect can be told apart. A run
+    without [-v] prints only the count.
 
     [xfail] keeps the test of a known defect running. Prefer {!skip} when the
     body must not run. *)
@@ -827,8 +828,7 @@ val pass : 'a testable
 
     A property that passes prints nothing. Under [-v] it prints its line and,
     under it, the labels it collected. The number of discarded cases prints only
-    in the message of a property that gave up. A property under {!xfail} prints
-    none of this, not even under [-v]. *)
+    in the message of a property that gave up. *)
 
 (**/**)
 

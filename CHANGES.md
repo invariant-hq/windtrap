@@ -141,7 +141,10 @@ Coverage and packaging:
   the run says so: `no tests ran: focus and filter "x" matched none of 2
   tests.`
   `xfail ?reason t` keeps a known-bug reproduction in-tree: a failure
-  reports as `XFAIL` without failing the run, and a pass fails loudly.
+  reports as `XFAIL` without failing the run, and under `-v` the failure
+  prints dim under that row, without `accept:` or `replay:`, so a test
+  failing for another cause than its known bug can be told apart; a pass
+  fails loudly.
   Nested `xfail`s resolve innermost-wins.
 - **`?__POS__` is the explicit position** on every verb, every
   constructor and `command`/`call`: the label puns with the builtin, so

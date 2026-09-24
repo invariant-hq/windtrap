@@ -2436,6 +2436,40 @@ let test_xfail_line () =
   contains ~msg:"an xfail annotation on a pass changes nothing" ~sub:"PASS"
     pass_ignores
 
+(* Under -v an expected failure shows its failure: the block of a counted
+   one without its hints, dim, under the row. Compact prints nothing of it,
+   and neither counts it. *)
+let test_xfail_block () =
+  let property =
+    Failure.property
+      ~loc:(Fixtures.loc "test/test_carry.ml" 5)
+      ~inner:(Failure.message "carry lost")
+      ~rendered:"(1, 2)" ~case_index:3 ~shrink_steps:0 ~root:Fixtures.root
+      ~examples:false ()
+  in
+  let excused =
+    { Fixtures.excused_result with Run.outcome = Failure.Fail [ property ] }
+  in
+  equal ~msg:"the block under the row, closed by a blank line, no replay:"
+    string
+    "  XFAIL  known \u{203a} broken carry (expected failure: issue #42)  0.2ms\n\
+    \    test/test_carry.ml:5\n\
+    \    counterexample (case 3): (1, 2)\n\
+    \    which failed with:\n\
+    \      carry lost\n\n"
+    (with_renderer ~mode:`Verbose ~invocation:(`Exe "./t.exe") (fun r ->
+         Report.result r excused));
+  equal ~msg:"styled, each line is dim past its indent" string
+    "  \027[2mXFAIL\027[0m  known \u{203a} broken carry \027[2m(expected \
+     failure: issue #42)\027[0m  \027[2m0.2ms\027[0m\n\
+    \    \027[2mtest/test_carry.ml:5\027[0m\n\
+    \    \027[2mcounterexample (case 3): (1, 2)\027[0m\n\
+    \    \027[2mwhich failed with:\027[0m\n\
+    \      \027[2mcarry lost\027[0m\n\n"
+    (with_renderer ~ansi:true ~mode:`Verbose (fun r -> Report.result r excused));
+  equal ~msg:"compact prints nothing of it" string ""
+    (with_renderer (fun r -> Report.result r excused))
+
 let test_excused_collision () =
   (* The F4 regression, renderer level: an xfail test whose REAL failure
      message equals the runner's unexpected-pass string. The record says
@@ -3679,7 +3713,8 @@ let test_verbose_pass_labels () =
         Report.result r
           { Fixtures.excused_result with Run.prop_stats = Some stats })
   in
-  not_contains ~msg:"verbose: XFAIL lines print no table" ~sub:"labels ("
+  (* An expected failure's table is its block's, as a failure's is. *)
+  contains ~msg:"verbose: an XFAIL's table is in its block" ~sub:"labels ("
     excused
 
 (* Names on terminal surfaces: escaped by the sink, as every text *)
@@ -5764,6 +5799,7 @@ let tests =
     test "raise message diff" test_raise_message_diff;
     test "raise message diff guards" test_raise_message_diff_guards;
     test "xfail line" test_xfail_line;
+    test "an expected failure's block is dim under -v" test_xfail_block;
     test "xpass-string collision stays excused (F4)" test_excused_collision;
     test "finish with excused failures" test_finish_excused;
     test "unexpected pass is loud" test_xpass_is_loud;

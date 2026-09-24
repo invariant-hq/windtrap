@@ -114,7 +114,8 @@ val result : t -> Run.result -> unit
     shows nowhere else. A passing property that collected labels prints its
     label table under its row. A failing [r] with [r.counted = false] is an
     excused expected failure. Its row carries the reason of [r.xfail], and its
-    failures print nowhere on the terminal.
+    block follows it, without the hints and every line faint past its indent,
+    then a blank line. A compact run prints nothing of an excused failure.
 
     A counted failure commits its block in both kinds of run. Under
     [config.verbose] its row is the title of the block. In a compact run nothing

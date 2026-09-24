@@ -344,7 +344,7 @@ let pp_tail t (tail : Failure.tail) =
    subtests, or a body and its teardown, fail independently) with a blank
    line between two, the label table, the captured tail, and last the
    hints, once for the whole test. *)
-let pp_body t (r : Run.result) failures =
+let pp_body ?(hints = true) t (r : Run.result) failures =
   List.iteri
     (fun i f ->
       if i > 0 then put t [];
@@ -353,11 +353,37 @@ let pp_body t (r : Run.result) failures =
   (match r.prop_stats with Some s -> pp_prop_stats t s | None -> ());
   Option.iter (pp_tail t)
     (List.find_map (fun (f : Failure.t) -> f.output_tail) failures);
+  if hints then
+    List.iter
+      (fun hint -> put t [ plain (indent ^ hint) ])
+      (Sections.hints ?armed:t.armed ~invocation:t.invocation
+         ~filter:(Some (Test_tree.path_to_string r.path))
+         failures)
+
+(* An expected failure's block: the lines of a counted one, dim, so it
+   reads as evidence and not as a failure. It has no hints, since an
+   [accept:] or a [replay:] offers to act on a failure the test expects.
+   The block is drawn without style and each line dimmed whole, its indent
+   left plain; the text is escaped already, and escaping is idempotent. *)
+let excused_block t (r : Run.result) failures =
+  let buffer = Buffer.create 256 in
+  let out = Format.formatter_of_buffer buffer in
+  pp_body ~hints:false { t with out; ansi = false } r failures;
+  Format.pp_print_flush out ();
+  let rec indent_of line i =
+    if i < String.length line && line.[i] = ' ' then indent_of line (i + 1)
+    else i
+  in
   List.iter
-    (fun hint -> put t [ plain (indent ^ hint) ])
-    (Sections.hints ?armed:t.armed ~invocation:t.invocation
-       ~filter:(Some (Test_tree.path_to_string r.path))
-       failures)
+    (fun line ->
+      let i = indent_of line 0 in
+      put t
+        [
+          plain (String.sub line 0 i);
+          styled `Faint (String.sub line i (String.length line - i));
+        ])
+    (Text.split_lines (Buffer.contents buffer));
+  put t []
 
 let armed_qualifier t =
   match t.armed with Some _ -> [ "mutant armed" ] | None -> []
@@ -394,8 +420,8 @@ let verbose_result t (r : Run.result) =
       match r.prop_stats with
       | Some s when s.Property.collected <> [] -> pp_prop_stats t s
       | _ -> ())
-  | Failure.Fail _ when not r.counted ->
-      (* An expected failure: informational and dim. *)
+  | Failure.Fail failures when not r.counted ->
+      (* An expected failure: informational and dim, its block too. *)
       let expected =
         match r.xfail with
         | Some { Test_tree.reason = Some reason } ->
@@ -404,7 +430,8 @@ let verbose_result t (r : Run.result) =
       in
       put t
         (test_line ~tag:"XFAIL" ~style:`Faint ~name ~qualifiers:[ expected ]
-           ~timing ())
+           ~timing ());
+      excused_block t r failures
   | Failure.Fail failures ->
       let qualifiers =
         (if has_missing_baseline failures then [ "no baseline" ] else [])
@@ -456,7 +483,11 @@ let result t (r : Run.result) =
   else if t.verbose then begin
     clear_live t;
     verbose_result t r;
-    t.spaced <- false;
+    (* An expected failure's block closes on a blank line, as a block does. *)
+    t.spaced <-
+      (match r.outcome with
+      | Failure.Fail _ -> true
+      | Failure.Pass | Failure.Skip _ -> false);
     Pp.flush t.out ()
   end
   else clear_live t
