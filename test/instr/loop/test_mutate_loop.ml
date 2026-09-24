@@ -158,6 +158,52 @@ let mutant_named rewrite =
       failf "no %S mutant in the catalogue: %s" rewrite
         (String.concat ", " (Lazy.force catalogue))
 
+(* A report with what is measured or located rather than computed
+   masked: the dry run's duration, and the fixture's line beside each
+   reaching test (suite_main.ml moves under edits no claim here is about).
+   Everything else is compared byte for byte. *)
+let masked report =
+  let find ~sub ?(from = 0) s =
+    let n = String.length s and m = String.length sub in
+    let rec go i =
+      if i + m > n then None
+      else if String.sub s i m = sub then Some i
+      else go (i + 1)
+    in
+    go from
+  in
+  let mask_line line =
+    let line =
+      match find ~sub:" passed in " line with
+      | Some i when String.starts_with ~prefix:"calc: " line ->
+          String.sub line 0 (i + String.length " passed in ") ^ "<time>."
+      | _ -> line
+    in
+    match find ~sub:"suite_main.ml:" line with
+    | Some i ->
+        let start = i + String.length "suite_main.ml:" in
+        let stop = ref start in
+        while
+          !stop < String.length line
+          && line.[!stop] >= '0'
+          && line.[!stop] <= '9'
+        do
+          incr stop
+        done;
+        String.sub line 0 start ^ "<line>"
+        ^ String.sub line !stop (String.length line - !stop)
+    | None -> line
+  in
+  String.concat "\n" (List.map mask_line (String.split_on_char '\n' report))
+
+(* The first block of [held]'s report, up to the location of its one
+   reaching test. *)
+let sub_block =
+  "  SURVIVED  test/instr/loop/subject.ml:15:14:add  a - b \u{2192} a + b\n\
+  \      15 \u{2502} let sub a b = a - b\n\n\
+  \    1 test ran this line and did not fail:\n\
+  \      held \u{203a} watches sub without pinning it  "
+
 (* A real identifier of this executable's own catalogue with its line
    moved off every site: the file is one the binary was built from, so
    the identifier is stale rather than another binary's, and it is the
@@ -294,49 +340,34 @@ let loop_tests =
         let code, out, err = spawn ~args:[ mutate ] [] in
         equal ~msg:"exit code (a survivor never fails the build)" int 0 code;
         equal ~msg:"stderr" text "" err;
-        contains ~msg:"the dry run printed its ordinary summary"
-          ~sub:"calc: 6 passed" out;
-        contains
-          ~msg:"survivor section, opened before the loop knew their count"
-          ~sub:
-            "\n\n\
-             ─────────────────────── survivors ────────────────────────\n\
-            \  SURVIVED  "
-          out;
-        contains ~msg:"survivor head row" ~sub:"SURVIVED" out;
-        contains ~msg:"the mutated expression" ~sub:"  a + b \u{2192} a - b\n"
-          out;
-        contains ~msg:"the sentence that is the product"
-          ~sub:"2 tests ran this line and none failed:" out;
-        contains ~msg:"first witness" ~sub:"widen \u{203a} widen is nonzero" out;
-        contains ~msg:"second witness" ~sub:"widen \u{203a} widen is not 99" out;
-        (* The block is the finding and the footer the remedy: no per-block
-           command, no attribute to paste. *)
-        not_contains ~msg:"no arm line" ~sub:"    arm " out;
-        not_contains ~msg:"no dismissal hint" ~sub:"[@mutate off" out;
-        is_true ~msg:"the reproduce command, above the outcome, which is last"
-          (String.ends_with
-             ~suffix:
-               ("\nreproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "sub"
-              ^ "\n\
-                 mutants: 1 survived of 2 reached by this suite, 1 killed, 2 \
-                 never reached\n")
-             out);
-        (* The mutants no test of this suite evaluated are one row for
-           their file: [orphan] and [crasher], by line. *)
-        contains
-          ~msg:"the never-reached section, after the survivors' closing rule"
-          ~sub:
-            "──────────────────────────────────────────────────────────\n\n\
-             ─────────────────── never reached (2) ────────────────────\n\
-            \  2  test/instr/loop/subject.ml   lines 21, 27\n\
-             ──────────────────────────────────────────────────────────\n\n\
-             reproduce: "
-          out;
-        not_contains ~msg:"no block per unreached mutant" ~sub:"UNREACHED" out;
-        (* The killed mutant is not a survivor and not unreached. *)
-        equal ~msg:"only one block" int 1
-          (List.length (lines_with ~sub:"  SURVIVED  " out)));
+        (* The dry run's ordinary summary, then the survivors section,
+           opened before the loop knew their count, holding one block: the
+           killed mutant is not a survivor and not unreached. The block is
+           the finding and the footer the remedy: no per-block command, no
+           attribute to paste. The mutants no test of this suite evaluated
+           are one row for their file, [orphan] and [crasher] by line, never
+           a block each. The reproduce command comes above the outcome,
+           which is last. *)
+        equal ~msg:"the report, whole" text
+          ("calc: 6 passed in <time>.\n\n\
+            ─────────────────────── survivors ────────────────────────\n\
+           \  SURVIVED  " ^ mutant_named "sub"
+         ^ "  a + b \u{2192} a - b\n\
+           \      18 \u{2502} let widen a b = a + b\n\n\
+           \    2 tests ran this line and none failed:\n\
+           \      widen \u{203a} widen is nonzero  \
+            test/instr/loop/suite_main.ml:<line>\n\
+           \      widen \u{203a} widen is not 99   \
+            test/instr/loop/suite_main.ml:<line>\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            ─────────────────── never reached (2) ────────────────────\n\
+           \  2  test/instr/loop/subject.ml   lines 21, 27\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            reproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "sub"
+         ^ "\n\
+            mutants: 1 survived of 2 reached by this suite, 1 killed, 2 never \
+            reached\n")
+          (masked out));
     test "a dismissed mutant is in no block and no count" (fun () ->
         let _, out, _ = spawn ~args:[ mutate ] [] in
         (* The [green] suite runs the [@mutate off] site and pins nothing
@@ -437,15 +468,35 @@ let loop_tests =
         let _, out, _ =
           spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "capped") ]
         in
-        contains ~msg:"the first block"
-          ~sub:"SURVIVED  test/instr/loop/subject.ml:18" out;
-        contains ~msg:"then the second, one blank line under it"
-          ~sub:"\n\n  SURVIVED  test/instr/loop/subject.ml:21" out;
-        contains ~msg:"and the summary counts both"
-          ~sub:
-            "mutants: 2 survived of 3 reached by this suite, 1 killed, 1 never \
-             reached\n"
-          out);
+        (* Both blocks, the second one blank line under the first, and
+           the summary counts both. *)
+        equal ~msg:"the report, whole" text
+          ("calc: 6 passed in <time>.\n\n\
+            ─────────────────────── survivors ────────────────────────\n\
+           \  SURVIVED  " ^ mutant_named "sub"
+         ^ "  a + b \u{2192} a - b\n\
+           \      18 \u{2502} let widen a b = a + b\n\n\
+           \    2 tests ran this line and none failed:\n\
+           \      widen \u{203a} widen is nonzero  \
+            test/instr/loop/suite_main.ml:<line>\n\
+           \      widen \u{203a} widen is not 99   \
+            test/instr/loop/suite_main.ml:<line>\n\n\
+           \  SURVIVED  "
+          ^ List.nth (Lazy.force catalogue) 2
+          ^ "  a + b \u{2192} a - b\n\
+            \      21 \u{2502} let orphan a b = a + b\n\n\
+            \    1 test ran this line and did not fail:\n\
+            \      orphan \u{203a} orphan is nonzero  \
+             test/instr/loop/suite_main.ml:<line>\n\
+             ──────────────────────────────────────────────────────────\n\n\
+             ─────────────────── never reached (1) ────────────────────\n\
+            \  1  test/instr/loop/subject.ml   lines 27\n\
+             ──────────────────────────────────────────────────────────\n\n\
+             reproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "sub"
+          ^ "\n\
+             mutants: 2 survived of 3 reached by this suite, 1 killed, 1 never \
+             reached\n")
+          (masked out));
     test
       "survivors print in the catalogue's order, however many tests reach them"
       (fun () ->
@@ -453,21 +504,28 @@ let loop_tests =
            the children run in: [sub], which one test reaches, before
            [widen], which two do. *)
         let _, out, _ = spawn ~args:[ mutate ] [ ("MUTATE_FIXTURE", "held") ] in
-        in_order ~msg:"the survivor one test reaches prints first"
-          ~subs:
-            [
-              "SURVIVED  " ^ mutant_named "add";
-              "SURVIVED  " ^ mutant_named "sub";
-            ]
-          out;
-        contains ~msg:"the first's sentence"
-          ~sub:"1 test ran this line and did not fail:" out;
-        contains ~msg:"the second's"
-          ~sub:"2 tests ran this line and none failed:" out;
-        contains ~msg:"the command arms the first one printed"
-          ~sub:
-            ("\nreproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "add" ^ "\n")
-          out);
+        (* The survivor one test reaches prints first, and the command
+           arms the first one printed. *)
+        equal ~msg:"the report, whole" text
+          ("calc: 3 passed in <time>.\n\n\
+            ─────────────────────── survivors ────────────────────────\n"
+         ^ sub_block ^ "test/instr/loop/suite_main.ml:<line>\n\n  SURVIVED  "
+         ^ mutant_named "sub"
+         ^ "  a + b \u{2192} a - b\n\
+           \      18 \u{2502} let widen a b = a + b\n\n\
+           \    2 tests ran this line and none failed:\n\
+           \      held \u{203a} widen is nonzero, once the gate opens  \
+            test/instr/loop/suite_main.ml:<line>\n\
+           \      held \u{203a} widen is not 99                        \
+            test/instr/loop/suite_main.ml:<line>\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            ─────────────────── never reached (2) ────────────────────\n\
+           \  2  test/instr/loop/subject.ml   lines 21, 27\n\
+            ──────────────────────────────────────────────────────────\n\n\
+            reproduce: " ^ suite_exe ^ " --arm " ^ mutant_named "add"
+         ^ "\nmutants: 2 survived of 2 reached by this suite, 2 never reached\n"
+          )
+          (masked out));
     test
       "a loop that kills everything it reaches, and reaches everything, is two \
        lines" (fun () ->
@@ -476,14 +534,10 @@ let loop_tests =
         in
         equal ~msg:"exit code" int 0 code;
         equal ~msg:"stderr" text "" err;
-        (match String.split_on_char '\n' out with
-        | [ dry_run; outcome; "" ] ->
-            is_true ~msg:"the dry run's summary"
-              (String.starts_with ~prefix:"calc: 6 passed in " dry_run);
-            equal ~msg:"then the outcome" string
-              "mutants: 4 reached by this suite, 4 killed" outcome
-        | _ -> failf "not two lines:\n%s" out);
-        not_contains ~msg:"no rule without a survivor" ~sub:"\u{2500}" out);
+        equal ~msg:"the dry run's summary, then the outcome, and no rule" text
+          "calc: 6 passed in <time>.\n\
+           mutants: 4 reached by this suite, 4 killed\n"
+          (masked out));
   ]
 
 (* The reach map's boundaries. Every claim here has a wrong answer the
@@ -1271,12 +1325,6 @@ let deadline_tests =
    this suite opens, so the report is read while that child provably
    runs: the first child has ended, and the loop has not. The margin is
    the second child's deadline, at least a second. *)
-
-let sub_block =
-  "  SURVIVED  test/instr/loop/subject.ml:15:14:add  a - b \u{2192} a + b\n\
-  \      15 \u{2502} let sub a b = a - b\n\n\
-  \    1 test ran this line and did not fail:\n\
-  \      held \u{203a} watches sub without pinning it  "
 
 let streaming_tests =
   [

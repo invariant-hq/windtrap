@@ -278,16 +278,22 @@ let reporting_command =
   (* Excerpts. *)
   let code, out, _ = coverage_cmd ~cwd:proj [ "--show-uncovered" ] in
   equal ~msg:"--show-uncovered exits 0" int 0 code;
-  contains ~msg:"--show-uncovered paints the uncovered arm" ~sub:"\u{258c}" out;
-  contains ~msg:"--show-uncovered shows the uncovered source" ~sub:"let c = 3"
-    out;
-  contains ~msg:"the source is shown, so the header does not say how"
-    ~sub:"file         uncovered lines\n" out;
-  contains ~msg:"a file's heading ends on its numbers"
-    ~sub:"\nlib/foo.ml: 66.7% (2/3)\n\n" out;
-  ends_with
-    ~msg:"and the outcome follows the last file, one blank line under it"
-    ~affix:"\n\ncoverage: 60.0% (3/5 points)\n" out
+  (* The table, whose header no longer says how to see the source since
+     it is shown; then each file under a heading that ends on its
+     numbers, its uncovered source painted; and the outcome one blank
+     line under the last file. *)
+  equal ~msg:"--show-uncovered paints the uncovered source, whole" text
+    "   cover    points   file         uncovered lines\n\
+    \   50.0%    1/2      lib/bar.ml   2\n\
+    \   66.7%    2/3      lib/foo.ml   3\n\n\
+     lib/bar.ml: 50.0% (1/2)\n\n\
+    \      1 \u{2502} let d = 4\n\
+    \  \u{258c}   2 \u{2502} let e = 5\n\n\
+     lib/foo.ml: 66.7% (2/3)\n\n\
+    \      2 \u{2502} let b = 2\n\
+    \  \u{258c}   3 \u{2502} let c = 3\n\n\
+     coverage: 60.0% (3/5 points)\n"
+    out
 
 (* A tree built without dune: the executable is under no build
    directory, so it dumps under the working directory's _windtrap, the
@@ -415,6 +421,11 @@ let json_well_formed s =
     done
   in
   let expect c = if peek () = Some c then incr pos else fail := true in
+  let literal word =
+    let m = String.length word in
+    if !pos + m <= n && String.sub s !pos m = word then pos := !pos + m
+    else fail := true
+  in
   let string_lit () =
     expect '"';
     let closed = ref false in
@@ -482,9 +493,9 @@ let json_well_formed s =
           end
       | Some '"' -> string_lit ()
       | Some ('0' .. '9' | '-') -> number ()
-      | Some 't' -> pos := !pos + 4
-      | Some 'f' -> pos := !pos + 5
-      | Some 'n' -> pos := !pos + 4
+      | Some 't' -> literal "true"
+      | Some 'f' -> literal "false"
+      | Some 'n' -> literal "null"
       | _ -> fail := true
     end
   in
