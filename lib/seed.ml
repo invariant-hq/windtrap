@@ -26,15 +26,15 @@ let hex_value = function
 let of_string text =
   if
     String.length text <> 19
-    || String.unsafe_get text 0 <> 's'
-    || String.unsafe_get text 1 <> '1'
-    || String.unsafe_get text 2 <> ':'
+    || String.get text 0 <> 's'
+    || String.get text 1 <> '1'
+    || String.get text 2 <> ':'
   then Error invalid_token
   else
     let rec decode index seed =
       if index = 19 then Ok seed
       else
-        match hex_value (String.unsafe_get text index) with
+        match hex_value (String.get text index) with
         | None -> Error invalid_token
         | Some value ->
             decode (index + 1) Int64.(logor (shift_left seed 4) (of_int value))
@@ -47,7 +47,7 @@ let to_string seed =
   for index = 0 to 15 do
     let shift = 4 * (15 - index) in
     let value = Int64.(to_int (logand (shift_right_logical seed shift) 0xfL)) in
-    Bytes.unsafe_set text (index + 3) (String.unsafe_get hex_digits value)
+    Bytes.set text (index + 3) hex_digits.[value]
   done;
   Bytes.unsafe_to_string text
 
