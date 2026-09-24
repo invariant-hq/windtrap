@@ -728,7 +728,8 @@ Coverage and packaging:
   failure follows its close, titled `Test failure: <path>` and carrying
   the block's lines, and the summary is still the last line. `NO_COLOR` is honoured
   under `--color auto`; `--color always` still wins, and the reporting
-  commands read `WINDTRAP_COLOR` too. Under `CI`, focused tests and `-u`
+  commands read `WINDTRAP_COLOR` too, `windtrap coverage` for its report
+  only: under `--json` or `--lcov` it reads no colour. Under `CI`, focused tests and `-u`
   refuse to start.
 
 ### Coverage

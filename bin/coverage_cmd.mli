@@ -114,7 +114,7 @@ val run : string list -> int
     decision, read by {!Windtrap.Private.Cli.color_mode} and resolved for
     standard output by {!Windtrap.Private.Os.resolve_color}.
 
-    [run] parses the arguments, reads [WINDTRAP_COLOR], finds the
+    [run] parses the arguments, reads [WINDTRAP_COLOR] for the report, finds the
     {{!section-files}files}, judges, loads and merges them, prints the report or
     the document, and runs the two {{!section-gates}gates}, in that order. A
     step before the gates that fails returns its code, so standard output stays
@@ -136,5 +136,5 @@ val run : string list -> int
     - [2] for a usage error. The usage errors are an unknown option, a [--min]
       that is not a number of the interval \[[0];[100]\], a flag that lacks its
       value, and [--json] given with [--lcov]. It is also [2] for a
-      [WINDTRAP_COLOR] that the [--color] flag of a runner would refuse, under a
-      machine format too. *)
+      [WINDTRAP_COLOR] that the [--color] flag of a runner would refuse, when
+      the report is printed. A machine format reads no [WINDTRAP_COLOR]. *)

@@ -1424,23 +1424,35 @@ let edge_tests =
         equal ~msg:"there is no --color flag" int 2 code;
         contains ~msg:"it is an unknown option" ~sub:"unknown option '--color'"
           err;
+        let colour args =
+          capture ~cwd:root
+            ~env:[ ("WINDTRAP_COLOR", "sometimes") ]
+            windtrap_exe ("coverage" :: args)
+        in
+        let code, out, err = colour [] in
+        equal ~msg:"a refused value is a usage error" int 2 code;
+        equal ~msg:"nothing on stdout" text "" out;
+        equal ~msg:"the runner's sentence" text
+          "windtrap: invalid value 'sometimes' for WINDTRAP_COLOR: expected \
+           always, never or auto\n"
+          err;
+        (* A document has no colour: the variable is not read, so a value
+           the report would refuse changes nothing. *)
         List.iter
-          (fun args ->
-            let code, out, err =
-              capture ~cwd:root
-                ~env:[ ("WINDTRAP_COLOR", "sometimes") ]
-                windtrap_exe ("coverage" :: args)
+          (fun flag ->
+            let code, out, err = colour [ flag ] in
+            let plain_code, plain_out, plain_err =
+              coverage_cmd ~cwd:root [ flag ]
             in
-            let name = String.concat " " ("coverage" :: args) in
-            equal ~msg:(name ^ ": a refused value is a usage error") int 2 code;
-            equal ~msg:(name ^ ": nothing on stdout") text "" out;
             equal
-              ~msg:(name ^ ": the runner's sentence")
-              text
-              "windtrap: invalid value 'sometimes' for WINDTRAP_COLOR: \
-               expected always, never or auto\n"
-              err)
-          [ []; [ "--json" ]; [ "--lcov" ] ]);
+              ~msg:(flag ^ " exits as without the variable")
+              int plain_code code;
+            is_true ~msg:(flag ^ " prints a document") (out <> "");
+            equal ~msg:(flag ^ " prints its document") text plain_out out;
+            equal
+              ~msg:(flag ^ " says what it says without it")
+              text plain_err err)
+          [ "--json"; "--lcov" ]);
     test "-h and -help print the help page" (fun () ->
         let _, help, _ = coverage_cmd [ "--help" ] in
         List.iter

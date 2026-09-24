@@ -57,10 +57,12 @@ ENVIRONMENT (no flag):
 
 (* Flags *)
 
+(* What standard output carries: the report, or a document that owns it. *)
+type output = Report | Json | Lcov
+
 type options = {
   min : float option;
-  json : bool;
-  lcov : bool;
+  output : output;
   expect : string list;
   do_not_expect : string list;
   show_uncovered : bool;
@@ -97,24 +99,27 @@ let parse_args args =
   in
   let rec go acc = function
     | [] ->
-        if acc.json && acc.lcov then
-          Error (`Usage "--json and --lcov each own standard output; pick one")
-        else
-          Ok
-            {
-              acc with
-              paths = List.rev acc.paths;
-              expect = List.rev acc.expect;
-              do_not_expect = List.rev acc.do_not_expect;
-            }
+        Ok
+          {
+            acc with
+            paths = List.rev acc.paths;
+            expect = List.rev acc.expect;
+            do_not_expect = List.rev acc.do_not_expect;
+          }
     | ("-h" | "--help" | "-help") :: _ -> Error `Help
     | "--min" :: value :: rest -> (
         match min_of_string value with
         | Some pct -> go { acc with min = Some pct } rest
         | None -> min_error value)
     | [ "--min" ] -> Error (`Usage "option '--min' requires an argument")
-    | "--json" :: rest -> go { acc with json = true } rest
-    | "--lcov" :: rest -> go { acc with lcov = true } rest
+    | (("--json" | "--lcov") as flag) :: rest -> (
+        let output = if flag = "--json" then Json else Lcov in
+        match acc.output with
+        | Report -> go { acc with output } rest
+        | given when given = output -> go acc rest
+        | Json | Lcov ->
+            Error
+              (`Usage "--json and --lcov each own standard output; pick one"))
     | "--expect" :: path :: rest ->
         go { acc with expect = path :: acc.expect } rest
     | [ "--expect" ] -> Error (`Usage "option '--expect' requires an argument")
@@ -131,8 +136,7 @@ let parse_args args =
   go
     {
       min = None;
-      json = false;
-      lcov = false;
+      output = Report;
       expect = [];
       do_not_expect = [];
       show_uncovered = false;
@@ -482,16 +486,23 @@ let run args =
       2
   | Ok options -> (
       (* No --color flag here, so WINDTRAP_COLOR is the whole colour
-         decision: read through the runner's --color parser and refused on
-         the same terms, never read as "auto" out of a typo. *)
-      match (Cli.color_mode (), discover options.paths) with
+         decision of the report: read through the runner's --color parser
+         and refused on the same terms, never read as "auto" out of a typo.
+         A document has no colour, so it reads no variable. *)
+      let output =
+        match options.output with
+        | Report -> Result.map (fun color -> `Report color) (Cli.color_mode ())
+        | Json -> Ok `Json
+        | Lcov -> Ok `Lcov
+      in
+      match (output, discover options.paths) with
       | Error error, _ ->
           Os.say (Cli.error_message error);
           2
       | Ok _, Error message ->
           Os.say message;
           1
-      | Ok color, Ok (files, source_roots) -> (
+      | Ok output, Ok (files, source_roots) -> (
           if files = [] then begin
             Os.say no_data;
             1
@@ -500,12 +511,13 @@ let run args =
             match load_merged files with
             | Error code -> code
             | Ok collection ->
-                if options.json then print_json ~source_roots collection
-                else if options.lcov then print_lcov ~source_roots collection
-                else
-                  report_table ~color ~source_roots
-                    ~show_uncovered:options.show_uncovered ~min:options.min
-                    collection;
+                (match output with
+                | `Json -> print_json ~source_roots collection
+                | `Lcov -> print_lcov ~source_roots collection
+                | `Report color ->
+                    report_table ~color ~source_roots
+                      ~show_uncovered:options.show_uncovered ~min:options.min
+                      collection);
                 (* Both gates run, so one run names everything wrong;
                    either failing is exit 1. *)
                 let expectations =
@@ -513,8 +525,7 @@ let run args =
                     ~do_not_expect:options.do_not_expect collection
                 in
                 let gate =
-                  check_min
-                    ~machine:(options.json || options.lcov)
+                  check_min ~machine:(options.output <> Report)
                     (Windtrap_runtime.Coverage.summary collection)
                     options.min
                 in
