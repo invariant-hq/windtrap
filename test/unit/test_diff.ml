@@ -235,6 +235,40 @@ let hunk_tests =
           "@@ -3,5 +3,5 @@| l3|-l4|+x4| l5|-l6|+x6| l7";
         raises_match ~msg:"negative context is rejected" Exn.invalid_arg
           (fun () -> Diff.hunks ~context:(-1) ~expected:"a" ~actual:"b" ()));
+    test "lines are equal by their bytes, trailing blanks included" (fun () ->
+        check_hunks "a trailing space" ~expected:"a \n" ~actual:"a\n"
+          "@@ -1,1 +1,1 @@|-a |+a";
+        check_hunks "a trailing tab" ~expected:"a\n" ~actual:"a\t\n"
+          "@@ -1,1 +1,1 @@|-a|+a\t");
+    test "the default context is 3 lines" (fun () ->
+        let lines = List.init 12 (fun i -> Printf.sprintf "l%d" (i + 1)) in
+        check_hunks "three lines on each side of line 6"
+          ~expected:(text_of_lines lines)
+          ~actual:
+            (text_of_lines
+               (List.map (fun s -> if s = "l6" then "x6" else s) lines))
+          "@@ -3,7 +3,7 @@| l3| l4| l5|-l6|+x6| l7| l8| l9");
+    test "regions merge at up to 2 * context unchanged lines" (fun () ->
+        let lines = List.init 10 (fun i -> Printf.sprintf "l%d" (i + 1)) in
+        let changed ks =
+          text_of_lines
+            (List.map (fun s -> if List.mem s ks then "x" ^ s else s) lines)
+        in
+        check_hunks "two unchanged lines between: one hunk" ~context:1
+          ~expected:(text_of_lines lines)
+          ~actual:(changed [ "l3"; "l6" ])
+          "@@ -2,6 +2,6 @@| l2|-l3|+xl3| l4| l5|-l6|+xl6| l7";
+        check_hunks "three unchanged lines between: two hunks" ~context:1
+          ~expected:(text_of_lines lines)
+          ~actual:(changed [ "l3"; "l7" ])
+          "@@ -2,3 +2,3 @@| l2|-l3|+xl3| l4\n@@ -6,3 +6,3 @@| l6|-l7|+xl7| l8");
+    test "actual_start counts in actual" (fun () ->
+        (* The first hunk deletes a line, so the second starts one line
+           earlier in [actual] than in [expected]; the first's empty actual
+           side starts at the next line of [actual]. *)
+        check_hunks "a deletion shifts the next hunk's actual_start" ~context:0
+          ~expected:"x\na\nb\n" ~actual:"a\nc\n"
+          "@@ -1,1 +1,0 @@|-x\n@@ -3,1 +2,1 @@|-b|+c");
     test "size guards fall back to a complete diff" (fun () ->
         (* Differing region of 2,400 lines: above the line guard, reported
            as all deletions then all insertions — complete, never omitted. *)
@@ -276,6 +310,58 @@ let hunk_tests =
           (apply_hunks (split_lines expected) hs = split_lines actual);
         is_true ~msg:"edit cap: ordering holds"
           (List.for_all (fun h -> changes_ordered_ok h.Diff.lines) hs));
+    test "the guards are 2000 region lines and 1000 edits" (fun () ->
+        let is_change = function Diff.Keep _ -> false | _ -> true in
+        let keeps_between_changes hs =
+          let rec go seen = function
+            | Diff.Keep _ :: rest when seen && List.exists is_change rest ->
+                true
+            | l :: rest -> go (seen || is_change l) rest
+            | [] -> false
+          in
+          List.exists (fun h -> go false h.Diff.lines) hs
+        in
+        (* One changed line at each end of a region of [n] lines per side:
+           four edits, and [2 * n] region lines. *)
+        let ends n =
+          let common = List.init (n - 2) (Printf.sprintf "c%d") in
+          let text first last = text_of_lines ((first :: common) @ [ last ]) in
+          Diff.hunks ~expected:(text "e0" "e1") ~actual:(text "a0" "a1") ()
+        in
+        equal ~msg:"2000 region lines: the minimal script, two hunks" int 2
+          (List.length (ends 1_000));
+        (match ends 1_001 with
+        | [ h ] ->
+            equal ~msg:"2002 region lines: every expected line deleted" int
+              1_001
+              (count_lines
+                 (function Diff.Delete _ -> true | _ -> false)
+                 h.Diff.lines)
+        | hs -> failf "2002 region lines: one hunk, got %d" (List.length hs));
+        (* Groups of one kept line and two changed ones: four edits per
+           group, six region lines. *)
+        let groups n =
+          let lines side =
+            List.concat_map
+              (fun i ->
+                [
+                  Printf.sprintf "c%d" i;
+                  Printf.sprintf "%s%d" side i;
+                  Printf.sprintf "%s%d'" side i;
+                ])
+              (List.init n Fun.id)
+          in
+          Diff.hunks
+            ~expected:(text_of_lines (lines "e"))
+            ~actual:(text_of_lines (lines "a"))
+            ()
+        in
+        is_true ~msg:"1000 edits: the minimal script keeps the common lines"
+          (keeps_between_changes (groups 250));
+        let over = groups 251 in
+        equal ~msg:"1004 edits: one hunk" int 1 (List.length over);
+        is_false ~msg:"1004 edits: no line kept between the changes"
+          (keeps_between_changes over));
     (* Lines come from a three-letter alphabet on purpose: distinct random
        strings almost never match, and a diff over inputs with no common
        lines exercises none of the alignment; a tiny alphabet makes
@@ -369,7 +455,11 @@ let refine_tests =
         (* Coverage counts code points, so the multi-byte side is judged the
            same as its ASCII equivalent rather than penalised for its width. *)
         check_refine "multi-byte against single-byte" ~expected:"aa\xc3\xa9zz"
-          ~actual:"aaazz" "e[2+2] a[2+1]");
+          ~actual:"aaazz" "e[2+2] a[2+1]";
+        (* A stray byte is one unit, as its decode's replacement character:
+           two different stray bytes differ, and only there. *)
+        check_refine "malformed UTF-8 compares byte by byte"
+          ~expected:"abc\xffdefgh" ~actual:"abc\xfedefgh" "e[3+1] a[3+1]");
     test "refinement: cell guard" (fun () ->
         (* Differing region above the cell guard: refinement declines, even
            though only two characters differ. *)
