@@ -25,6 +25,26 @@
   (<> %{os_type} Win32))
  (deps send_signal.exe))
 
+; instrumented.t runs the mutation loop, which forks, over a suite whose
+; one module is instrumented in every build.
+
+(library
+ (name mutant_subject)
+ (modules mutant_subject)
+ (preprocess
+  (pps ppx_windtrap.mutate)))
+
+(executable
+ (name mutant_main)
+ (modules mutant_main)
+ (libraries windtrap mutant_subject))
+
+(cram
+ (applies_to instrumented)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (deps mutant_main.exe))
+
 (cram
  (applies_to nodune)
  (deps
