@@ -26,6 +26,20 @@
 open Windtrap
 module F = Covsem_fixtures
 
+(* A lost tail call overflows only a bounded stack, and OCaml 5's default
+   bound is 1 GiB, which no depth a test can afford reaches. The dune
+   action runs this suite under OCAMLRUNPARAM=l=1M, an 8 MiB stack, where
+   a recursion of [depth] frames overflows whatever its frame size, and a
+   tail recursion of any depth does not. [non_tail] is the positive
+   control: deliberately not a tail call, so the suite shows the bound
+   bites before trusting what the tail tests read under it. *)
+let depth = 2_000_000
+let rec non_tail n = if n = 0 then 0 else 1 + non_tail (n - 1)
+
+let rec non_tail_map f = function
+  | [] -> []
+  | x :: xs -> f x :: non_tail_map f xs
+
 (* Every claim below is about the fixture library, and the registry is the
    whole process: under `--instrument-with` this executable links an
    instrumented windtrap core, whose thousands of points would drown the
@@ -89,45 +103,53 @@ let tests =
         is_true ~msg:"the fixture points are all registered"
           (summary.total >= 20));
     (* Tail calls survive entry sequencing and out-edge wrapping *)
-    test "deep tail recursion survives instrumentation" ~tags:[ "slow" ]
-      (fun () ->
+    test "a non-tail recursion as deep as the tail tests overflows" (fun () ->
+        match non_tail depth with
+        | _ ->
+            failf
+              "a non-tail recursion %d frames deep returned: the stack is not \
+               bounded, so no tail test below can fail (the dune action runs \
+               this suite under OCAMLRUNPARAM=l=1M)"
+              depth
+        | exception Stack_overflow -> ());
+    test "deep tail recursion survives instrumentation" (fun () ->
         is_true ~msg:"deep tail recursion through a match arm"
-          (String.equal (F.countdown 100_000_000) "done");
+          (String.equal (F.countdown depth) "done");
         is_true ~msg:"deep mutual tail recursion through if branches"
-          (F.even 50_000_000 = true);
+          (F.even depth = true);
         equal ~msg:"deep CPS recursion: closures unwind through tail calls" int
-          1_000_000
-          (F.cps_count 1_000_000 (fun x -> x));
+          depth
+          (F.cps_count depth (fun x -> x));
         equal ~msg:"deep tail recursion through a pipeline" int 0
-          (F.pipe_down 50_000_000);
+          (F.pipe_down depth);
         is_true ~msg:"deep tail recursion through a || right arm"
-          (F.any_odd 20_000_000 = false);
+          (F.any_odd depth = false);
         is_true ~msg:"the || arm still answers" (F.any_odd 7 = true);
         is_true ~msg:"deep tail recursion through a && right arm"
-          (F.all_even 20_000_000 = true);
+          (F.all_even depth = true);
         is_true ~msg:"the && arm still answers" (F.all_even 3 = false));
-    test "|| right arms that are not applications still compute" (fun () ->
-        (* What this proves: each arm still computes the uninstrumented
-           result. What it does NOT prove: that the arm kept its tail call —
-           these return [true] whether or not the call was post-wrapped,
-           because OCaml 5 grows the main fibre's stack on demand and a lost
-           tail call does not reliably overflow at these depths. The
-           tail-call property is pinned byte-wise on the expansion, in
-           test/ppx/coverage/fixture_cond.expected, which carries one
-           function per shape the instrumenter's tail guard lists (let,
-           match, if, try, sequence, open, letmodule, letexception, letop,
-           constraint, coerce). Only the four with a fixture here are also
-           run. *)
-        is_true ~msg:"let arm" (F.or_let 3_000_000 = true);
-        is_true ~msg:"match arm" (F.or_match 3_000_000 = true);
-        is_true ~msg:"if arm" (F.or_if 3_000_000 = true);
-        is_true ~msg:"try arm" (F.or_try 1_000_000 = true));
+    test "|| right arms that are not applications keep their tail calls"
+      (fun () ->
+        is_true ~msg:"let arm" (F.or_let depth = true);
+        is_true ~msg:"match arm" (F.or_match depth = true);
+        is_true ~msg:"if arm" (F.or_if depth = true);
+        (* The recursive call of [or_try] is in the body of its [try],
+           which is never a tail position, instrumented or not: the arm
+           computes, and its depth stays within the bound. The expansion
+           golden pins that the [try] arm keeps its position and that its
+           handler's call stays bare. *)
+        is_true ~msg:"try arm" (F.or_try 1_000 = true));
     test "tail_mod_cons survives instrumentation" (fun () ->
-        (* If the attribute had been stripped this file would not compile;
-           if it were honoured but the call wrapped, this would overflow. *)
-        let n = 2_000_000 in
-        let xs = List.init n (fun i -> i) in
-        equal ~msg:"the TMC map is constant-stack and correct" int n
+        (* A lost TMC call is warning 71, which the dev profile's
+           [-warn-error +a] makes a build failure of the fixture library;
+           under a profile that does not, the map silently consumes stack,
+           and the bound makes that an overflow here. The control shows a
+           map that is not TMC overflows at this length. *)
+        let xs = List.init depth (fun i -> i) in
+        (match non_tail_map succ xs with
+        | _ -> failf "a non-TMC map over %d elements returned" depth
+        | exception Stack_overflow -> ());
+        equal ~msg:"the TMC map is constant-stack and correct" int depth
           (List.length (F.tmc_map succ xs)));
     (* Evaluation order is untouched *)
     test "branch and guard evaluation order is untouched" (fun () ->

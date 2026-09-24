@@ -1,8 +1,8 @@
 ; With nothing armed, an instrumented program is observationally identical
 ; to an uninstrumented one: the same three sources are compiled with the
 ; rewriter here and without it in baseline/, and every claim is checked
-; against the twin. Nothing sets an environment variable: an inert runtime
-; needs no muzzling. See doc/dev/testing.md, "The five families".
+; against the twin. No variable muzzles the runtime: an inert one needs
+; none. See doc/dev/testing.md, "The five families".
 
 ; Plain copy_files, not copy_files#: the file name the instrumenter records
 ; must name a file that exists in this build.
@@ -17,12 +17,18 @@
   (pps ppx_windtrap.mutate)))
 
 ; The suite is uninstrumented: it and mutsem_baseline are the plain side of
-; every comparison.
+; every comparison. OCAMLRUNPARAM=l=1M bounds the stack at 8 MiB, so a lost
+; tail_mod_cons overflows (OCaml 5's default bound of 1 GiB absorbs it).
 
 (test
  (name test_mutate_semantics)
  (modules test_mutate_semantics)
- (libraries windtrap windtrap.runtime mutsem_fixtures mutsem_baseline))
+ (libraries windtrap windtrap.runtime mutsem_fixtures mutsem_baseline)
+ (action
+  (setenv
+   OCAMLRUNPARAM
+   l=1M
+   (run %{test}))))
 
 ; Links the fixtures alone: the rewriter's ppx_runtime_libraries inject the
 ; runtime, and nothing pulls the core in.

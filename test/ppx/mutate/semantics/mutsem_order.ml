@@ -38,10 +38,10 @@
    and - through [tail_depths] - that the [con] encoding keeps its right
    arm in tail position. That last one is measured with
    [Printexc.get_callstack] rather than by recursing until something
-   overflows: OCaml 5 grows a fibre's stack on demand, and a non-tail
-   recursion of this shape returns normally at fifty million frames on
-   this build, so no affordable depth decides anything.
-   [control_depths] is the positive control for that measurement. *)
+   overflows, which decides only under a bounded stack: under OCaml 5's
+   default bound of 1 GiB a non-tail recursion of this shape returns
+   normally at fifty million frames. [control_depths] is the positive
+   control for that measurement. *)
 
 (* {1 The trace} *)
 
@@ -279,9 +279,9 @@ let generalizes = (true, [])
    [Printexc.get_callstack] reports the frames live at the moment it is
    called, so the depth reached at the base case of a recursion is a
    direct reading of whether the recursive call was a tail call: constant
-   in [n] if it was, linear in [n] if it was not. That is a decision, not
-   a hope - unlike recursing until the stack overflows, which OCaml 5's
-   growable fibre stacks make unreliable at any depth a test can afford.
+   in [n] if it was, linear in [n] if it was not. That is a decision at
+   any stack bound, where recursing until the stack overflows decides
+   only under a bound small enough for the depth.
 
    [accumulate] is the positive control: it is deliberately NOT tail
    recursive, so the suite can prove the measurement can tell the two

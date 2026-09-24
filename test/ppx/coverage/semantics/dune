@@ -1,6 +1,8 @@
 ; Coverage never changes what a program means: covsem_fixtures is
 ; instrumented unconditionally and compared with the uninstrumented answer.
-; WINDTRAP_COVERAGE_FILE keeps the at_exit dump out of _build/_coverage.
+; WINDTRAP_COVERAGE_FILE keeps the at_exit dump out of _build/_coverage;
+; OCAMLRUNPARAM=l=1M bounds the stack at 8 MiB, so a lost tail call
+; overflows (OCaml 5's default bound of 1 GiB absorbs it).
 ; See doc/dev/testing.md, "The five families".
 
 (library
@@ -17,7 +19,10 @@
   (setenv
    WINDTRAP_COVERAGE_FILE
    test_coverage_semantics.coverage
-   (run %{test}))))
+   (setenv
+    OCAMLRUNPARAM
+    l=1M
+    (run %{test})))))
 
 ; Links the fixtures alone: the rewriter's ppx_runtime_libraries inject the
 ; runtime, and nothing pulls the core in.

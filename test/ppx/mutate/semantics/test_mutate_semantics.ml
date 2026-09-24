@@ -36,15 +36,13 @@
      instrumented copy (the conclusion). If a compiler ever evaluates
      the two forms in different orders, the first goes red naming the
      premise and the second goes red naming the divergent expression.
-   - Tail position is MEASURED, with [Printexc.get_callstack], not hoped
-     for: OCaml 5 grows a fibre's stack on demand, so a lost tail call
-     does not overflow at any depth a test can afford - a non-tail
-     recursion fifty million frames deep returns normally on this build.
-     The fixture carries a deliberately non-tail control so the
-     measurement is shown to bite before it is trusted, and there is no
-     deep-recursion test: recursing far proves the answer is right at
-     scale, which the outcomes test already establishes at a thousand
-     levels, and nothing else.
+   - Tail position is MEASURED, with [Printexc.get_callstack]: the depth
+     at the base case of a recursion is constant in its length exactly
+     when the recursive call is a tail call. The fixture carries a
+     deliberately non-tail control so the measurement is shown to bite
+     before it is trusted. The one deep run is [tail_mod_cons]'s, whose
+     loss shows as stack consumption alone: the dune action bounds the
+     stack at 8 MiB (OCAMLRUNPARAM=l=1M), where it overflows.
    - The differential is shown NOT to be vacuous: every mutant of
      mutsem_order.ml is armed in turn and the same battery replayed, so
      a build in which the rewriter quietly emitted nothing - which would
@@ -354,28 +352,30 @@ let tests =
         in
         List.iter (constant "instrumented") (I.tail_depths ());
         List.iter (constant "uninstrumented twin") (B.tail_depths ()));
-    (* There is deliberately NO "recurse until it overflows" test here,
-       and the shared fixture's deep shapes are exercised at a thousand
-       levels in the outcomes test below rather than at twenty million.
-       Recursing deep is not a decision procedure for tail position on
-       OCaml 5: a fibre's stack grows on demand, and a non-tail recursion
-       fifty million frames deep returns normally on this build (measured
-       - a standalone probe of the same shape as [accumulate], run at
-       1M, 3M, 20M and 50M, printed its answer every time). A suite that
-       spent 0.7s on 130 million iterations to conclude nothing would be
-       worse than no test, because its name would say otherwise. What
-       decides tail position is [tail_depths] above, and the shapes the
-       deep runs used to gesture at - a [||] arm that is a [let], a [&&]
-       arm that is a [match] - are witnesses there.
-
-       [tmc_map] is the one place a deep run still earns its keep, and
-       even there the load-bearing half is the compilation: [tail_mod_cons]
-       is an error, not a warning, when the compiler cannot apply it, so
-       a rewriter that disturbed the attribute or the constructor
-       argument would fail the build. The run is what pins the result. *)
+    (* What decides tail position is [tail_depths] above, and the shared
+       fixture's deep shapes are exercised at a thousand levels in the
+       outcomes test below. [tmc_map] is where a deep run earns its keep.
+       A rewriter that disturbed the attribute or the constructor argument
+       leaves the compiler no TMC call: warning 71, which the dev profile's
+       [-warn-error +a] makes a build failure of the fixture library, and
+       which another profile only prints, leaving a map that consumes
+       stack. Under the 8 MiB bound the dune action sets, such a map
+       overflows at this length, as the non-TMC control shows. *)
     test "tail_mod_cons survives instrumentation" (fun () ->
-        let n = 100_000 in
+        let n = 2_000_000 in
         let xs = List.init n (fun i -> i) in
+        let rec non_tail_map f = function
+          | [] -> []
+          | x :: xs -> f x :: non_tail_map f xs
+        in
+        (match non_tail_map succ xs with
+        | _ ->
+            failf
+              "a non-TMC map over %d elements returned: the stack is not \
+               bounded (the dune action runs this suite under \
+               OCAMLRUNPARAM=l=1M)"
+              n
+        | exception Stack_overflow -> ());
         equal ~msg:"the TMC map is correct" (list int) (U.tmc_map succ xs)
           (F.tmc_map succ xs));
     (* {1 Outcomes: the shared fixture computes what its twin computes} *)
