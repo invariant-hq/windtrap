@@ -9,9 +9,11 @@
    typed outcomes. Plain executable: [run] and [execute] both refuse to
    nest inside an active run, so a windtrap suite could drive neither.
    The facade's [run] returns its exit code, so its command-line paths
-   are driven in this process too ([run_in_process] below); only what
-   needs a process of its own — an environment of its own, a real exit
-   — is re-exec'd as a child. *)
+   are driven in this process too ([run_in_process] below); only the
+   signal scenarios, which need a process to signal, re-exec this
+   executable as a child. The transcripts of a real process (a test that
+   calls [exit], the replay line's spelling, a failing release) are
+   test/cli's. *)
 
 open Windtrap
 open Windtrap.Private
@@ -19,26 +21,6 @@ module Tag = Test_tree.Tag
 open Harness
 
 let () = init "facade"
-
-(* The exit-guard child (D1): re-exec'd with a marker to run the facade's
-   [run] on a suite whose second test calls [Stdlib.exit 0], and to exit
-   with the code [run] returns — the guard's whole subject is which of
-   the two exits ends the process. The parent below asserts on the
-   child's status and transcript; never returns for a child invocation. *)
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--exit-guard-child"; log_dir ] ->
-      clear_env ();
-      exit
-      @@ Windtrap.run
-           ~argv:[| "exit-guard-child"; "-o"; log_dir; "--color"; "never" |]
-           "exitguard"
-           [
-             test "before" (fun () -> is_true true);
-             test "bomb" (fun () -> Stdlib.exit 0);
-             test "after" (fun () -> equal int 1 2);
-           ]
-  | _ -> ()
 
 (* The signal child: re-exec'd to run a suite whose third test says it is
    ready and then waits, for the parent to signal; or, in the [between]
@@ -111,116 +93,6 @@ let () =
              ~argv:[| "signal-child"; "-o"; root; "--color"; "never" |]
              "signals" tests
   | _ -> ()
-
-(* The invocation child (D5 §1): re-exec'd to run the facade's [run] on a
-   failing suite with a controlled argv0 and INSIDE_DUNE, so the parent
-   can assert on the replay hint's spelling — the invocation is computed at
-   startup from exactly these two inputs. *)
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--invocation-child"; log_dir; mode ] ->
-      clear_env ();
-      let argv0 =
-        match mode with
-        | "standalone" -> "./_build/default/qa/x/t.exe"
-        | "dune" ->
-            (* dune runs test actions with argv0 [./t.exe] and cwd = the
-               test's build directory: the concatenation carries a [/./]
-               unless the spelling is normalized (render/F-3). *)
-            Unix.putenv "INSIDE_DUNE" "1";
-            "./t.exe"
-        | "mirrors" -> ""
-        | _ -> assert false
-      in
-      let argv =
-        if argv0 = "" then [||]
-        else [| argv0; "-o"; log_dir; "--color"; "never" |]
-      in
-      (* A property, so the transcript carries a replay line: that is the
-         surviving hint the invocation spelling reaches. *)
-      exit
-      @@ Windtrap.run ~argv "invsuite"
-           [ prop "boom" Gen.int (fun _ -> equal int 1 2) ]
-  | _ -> ()
-
-(* The xpass-collision child (F4): re-exec'd to run the facade's [run] on
-   an xfail test whose real failure message equals the runner's synthesized
-   unexpected-pass string. Classification is record-driven ([Run.result]'s
-   [counted] bit), so the stream must render the failure as excused —
-   agreeing with the exit code and the "1 expected failure" summary — never
-   reconstruct the decision by matching the message. *)
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--xpass-collide-child"; log_dir; level ] ->
-      clear_env ();
-      let argv =
-        Array.of_list
-          ([ "collide-child"; "-o"; log_dir; "--color"; "never" ]
-          @ if level = "verbose" then [ "--verbose" ] else [])
-      in
-      exit
-      @@ Windtrap.run ~argv "collide"
-           [
-             xfail
-               (test "collide" (fun () ->
-                    fail "expected to fail, but the test passed"));
-           ]
-  | _ -> ()
-
-(* The release-failure child (runner, "fixture releases"): re-exec'd to run
-   the facade's [run] on a suite that touches a fixture whose teardown
-   raises. Releases run after the last test, and the runner records each
-   failure as a result row the moment it happens — the one recorded list
-   every sink (renderer, JUnit) projects. The one test passes, so a runner
-   that dropped the row would print a clean transcript and count zero JUnit
-   failures while still exiting 1: exactly the defect (guarantee 4). *)
-let leaky_release =
-  fixture ~teardown:(fun () -> failwith "release-boom") (fun () -> ())
-
-let () =
-  match Array.to_list Sys.argv with
-  | [ _; "--release-failure-child"; log_dir; junit ] ->
-      clear_env ();
-      exit
-      @@ Windtrap.run
-           ~argv:
-             [|
-               "release-child";
-               "-o";
-               log_dir;
-               "--color";
-               "never";
-               "--junit";
-               junit;
-             |]
-           "releasesuite"
-           [ test "touches the fixture" (fun () -> leaky_release ()) ]
-  | _ -> ()
-
-(* Re-exec this executable with [args], returning its exit status and its
-   standard output — plus its standard error when [merge_stderr]. *)
-let spawn_child ?(merge_stderr = false) args =
-  let out_read, out_write = Unix.pipe () in
-  let child_stderr = if merge_stderr then out_write else Unix.stderr in
-  let pid =
-    Unix.create_process Sys.executable_name
-      (Array.of_list (Sys.executable_name :: args))
-      Unix.stdin out_write child_stderr
-  in
-  Unix.close out_write;
-  let buffer = Buffer.create 1024 in
-  let chunk = Bytes.create 4096 in
-  let rec drain () =
-    let n = Unix.read out_read chunk 0 (Bytes.length chunk) in
-    if n > 0 then begin
-      Buffer.add_subbytes buffer chunk 0 n;
-      drain ()
-    end
-  in
-  drain ();
-  Unix.close out_read;
-  let status = snd (Unix.waitpid [] pid) in
-  (status, Buffer.contents buffer)
 
 (* Standard output and standard error redirected at the descriptor level
    to two files under [root] for the extent of [fn]: what an in-process
@@ -1235,82 +1107,6 @@ let () =
   check_int "temp_dir in fixture release exits 1" ~expected:1
     ~actual:outcome.Run.exit_code
 
-(* The exit guard, process level (D1) *)
-
-(* The one implementation-behavior dependency of the exit guard: an
-   exception raised by an [at_exit] function propagates out of
-   [Stdlib.exit] to its caller. If a future stdlib swallowed it, the child
-   below would exit 0 with a truncated transcript — this test flips
-   loudly. *)
-let () =
-  if not Sys.win32 then (
-    with_temp_root @@ fun root ->
-    let status, transcript = spawn_child [ "--exit-guard-child"; root ] in
-    check "an exit-bombed suite exits through windtrap's own path with 1"
-      (status = Unix.WEXITED 1);
-    check_contains "the transcript names the interception"
-      ~sub:"the test called exit" transcript;
-    check_contains "the test after the bomb still ran and failed"
-      ~sub:"2 failed" transcript)
-
-(* The startup-computed invocation, process level (D5 §1) *)
-
-let () =
-  if not Sys.win32 then (
-    let spawn_invocation_child mode =
-      with_temp_root @@ fun root ->
-      let status, transcript =
-        spawn_child [ "--invocation-child"; root; mode ]
-      in
-      check (mode ^ " child fails its one test") (status = Unix.WEXITED 1);
-      transcript
-    in
-    let standalone = spawn_invocation_child "standalone" in
-    check "standalone: the hint keeps argv0 verbatim"
-      (contains "replay: ./_build/default/qa/x/t.exe --seed " standalone);
-    let dune = spawn_invocation_child "dune" in
-    check "under dune: the hint is a dune exec spelling"
-      (contains "replay: dune exec " dune && contains " -- --seed " dune);
-    check "under dune: the spelling carries no /./ (render/F-3)"
-      (not (contains "/./" dune));
-    let mirrors = spawn_invocation_child "mirrors" in
-    check "empty argv: the hint falls back to the environment mirrors"
-      (contains "replay: WINDTRAP_SEED=" mirrors
-      && not (contains "dune exec" mirrors)))
-
-(* The xpass-string collision stays excused, process level (F4) *)
-
-let () =
-  if not Sys.win32 then (
-    let spawn_collide_child level =
-      with_temp_root @@ fun root ->
-      let status, transcript =
-        spawn_child [ "--xpass-collide-child"; root; level ]
-      in
-      check
-        ("collide " ^ level ^ " child exits 0 (the failure was expected)")
-        (status = Unix.WEXITED 0);
-      transcript
-    in
-    (* Compact: the excused failure is not noteworthy, so the transcript is
-       the one named summary line — no header. *)
-    let compact = spawn_collide_child "compact" in
-    check "collide compact: summary counts one expected failure"
-      (contains "collide: 1 expected failure in " compact);
-    check "collide compact: no header flush" (not (contains "1 test" compact));
-    check "collide compact: no loud F on the stream"
-      (not (contains "F" compact));
-    (* Verbose streams a line per test: the collision must render XFAIL.
-       The FAIL probe keeps the tag's two-space gutter so it cannot match
-       inside the XFAIL tag itself. *)
-    let verbose = spawn_collide_child "verbose" in
-    check "collide verbose: the stream line is XFAIL"
-      (contains "  XFAIL  collide" verbose);
-    check "collide verbose: no loud FAIL line"
-      (not (contains "  FAIL  collide" verbose));
-    check "collide verbose: summary counts one expected failure"
-      (contains "1 expected failure in " verbose))
-
 (* [run] returns the exit code (design review 3.2) *)
 
 let () =
@@ -1417,35 +1213,6 @@ let () =
     ~actual:out;
   check_string "an empty selection prints nothing on stderr" ~expected:""
     ~actual:err
-
-(* Release failures reach every sink, process level *)
-
-let () =
-  if not Sys.win32 then (
-    with_temp_root @@ fun root ->
-    let junit = Filename.concat root "junit.xml" in
-    let status, transcript =
-      spawn_child [ "--release-failure-child"; root; junit ]
-    in
-    (* The runner's own verdict is not the guard here: the exit code is 1
-       whether or not the failure was projected. What the projection buys
-       is that the reader is told — so assert the transcript and JUnit,
-       not just the code. *)
-    check "a failing fixture release exits 1" (status = Unix.WEXITED 1);
-    check_contains "the transcript carries a failure block for the release"
-      ~sub:"fixture release" transcript;
-    check_contains "the release failure names its cause" ~sub:"release-boom"
-      transcript;
-    check_contains "the summary counts the release failure" ~sub:"1 failed"
-      transcript;
-    check "the one real test is still reported as passing"
-      (contains "1 passed" transcript);
-    (* Raises if the child never wrote the file — a silently absent JUnit
-       report would let the two checks below pass vacuously. *)
-    let xml = In_channel.with_open_bin junit In_channel.input_all in
-    check_contains "JUnit counts the release failure" ~sub:"failures=\"1\"" xml;
-    check_contains "the JUnit case is the release's own path"
-      ~sub:"fixture release" xml)
 
 (* Under --corrected — a build action's run — a selection that runs none
    of the suite's tests exits 0 rather than 2, still saying why; without

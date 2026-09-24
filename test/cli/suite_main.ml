@@ -3,19 +3,21 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The suite the cram sessions in this directory drive. What the facade's [run] does with a
-   command line is the subject, so the suite itself stays small enough
-   for the driver to pin its transcripts byte for byte: five tests, no
-   clock, no network, one file baseline.
+(* The suite the cram sessions in this directory drive. What the facade's
+   [run] does with a command line is the subject, so the suite itself
+   stays small enough for the sessions to pin its transcripts byte for
+   byte: the default declaration is five tests, no clock, no network, one
+   file baseline.
 
-   Eight declarations, selected by FACADE_FIXTURE, because two of the
+   More declarations, selected by FACADE_FIXTURE, because two of the
    things [run] refuses are properties of a suite rather than of a flag —
    a duplicate path and a committed focus — and neither can coexist with
    the tests every other scenario selects from; a flaky test, a noisy
    failing test, the streamed tests, a test that fails beside a stale
-   baseline and a retried test over a stale baseline likewise stand alone,
-   so the transcripts every other session pins stay exactly what they
-   are. *)
+   baseline, a retried test over a stale baseline, a test that calls
+   [exit], a failing property, an expected failure and two fixtures
+   whose release fails likewise stand alone, so the transcripts every
+   other session pins stay exactly what they are. *)
 
 open Windtrap
 
@@ -105,17 +107,56 @@ let retried =
         expect_file "fresh from the fixture\n" "test/cli/retried.expected");
   ]
 
+(* The second test calls [exit], which must not end the run: the third
+   still runs, and fails. *)
+let exits =
+  [
+    test "before" (fun () -> is_true true);
+    test "bomb" (fun () -> Stdlib.exit 0);
+    test "after" (fun () -> equal ~msg:"deliberate" int 1 2);
+  ]
+
+(* A property that fails on its first case: its block ends on the replay
+   line, the command a report spells for the way the run was started. *)
+let property = [ prop "boom" Gen.int (fun _ -> equal int 1 2) ]
+
+(* An expected failure whose own message is the sentence the runner
+   writes for an unexpected pass: the report must still read it as the
+   expected failure it is. *)
+let collide =
+  [
+    xfail
+      (test "collide" (fun () -> fail "expected to fail, but the test passed"));
+  ]
+
+(* A fixture whose release raises after the one test, which passes. *)
+let leaky = fixture ~teardown:(fun () -> failwith "release-boom") ignore
+let release = [ test "touches the fixture" (fun () -> leaky ()) ]
+
+(* A fixture whose release starts a run of its own, while this one is
+   still executing. *)
+let nesting = fixture ~teardown:(fun () -> ignore (run "inner" [])) ignore
+let nested = [ test "touches the fixture" (fun () -> nesting ()) ]
+
+(* [no-argv] runs the property suite as a host that passes [run] no
+   command line at all. *)
 let () =
-  exit
-  @@ run "fixture"
-       (match Sys.getenv_opt "FACADE_FIXTURE" with
-       | Some "focus" -> focused
-       | Some "duplicate" -> duplicate
-       | Some "flaky" -> flaky
-       | Some "noisy" -> noisy
-       | Some "stream" -> streamed
-       | Some "masked" -> masked
-       | Some "retried" -> retried
-       | Some ("" | "default") | None -> default
-       | Some other ->
-           invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other))
+  let argv, tests =
+    match Sys.getenv_opt "FACADE_FIXTURE" with
+    | Some "focus" -> (Sys.argv, focused)
+    | Some "duplicate" -> (Sys.argv, duplicate)
+    | Some "flaky" -> (Sys.argv, flaky)
+    | Some "noisy" -> (Sys.argv, noisy)
+    | Some "stream" -> (Sys.argv, streamed)
+    | Some "masked" -> (Sys.argv, masked)
+    | Some "retried" -> (Sys.argv, retried)
+    | Some "exits" -> (Sys.argv, exits)
+    | Some "property" -> (Sys.argv, property)
+    | Some "no-argv" -> ([||], property)
+    | Some "collide" -> (Sys.argv, collide)
+    | Some "release" -> (Sys.argv, release)
+    | Some "nested" -> (Sys.argv, nested)
+    | Some ("" | "default") | None -> (Sys.argv, default)
+    | Some other -> invalid_arg ("suite_main: unknown FACADE_FIXTURE " ^ other)
+  in
+  exit (run ~argv "fixture" tests)

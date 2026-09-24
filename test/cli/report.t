@@ -147,3 +147,102 @@ temporary directory, keyed by suite, and never grow a _build.
   $ test -e "$dir/_build" || echo 'no _build grown'
   no _build grown
   $ rm -rf "$dir"
+
+A failing property's block ends on the replay line, the command that
+reruns its case, spelled for the way the run was started. Run by hand,
+it restates the program as it was typed, then the seed and the test:
+
+  $ run FACADE_FIXTURE=property ./suite_main.exe > out 2> err
+  [1]
+  $ scrub < out | sed -E 's/s1:[0-9a-f]+/SEED/'
+  fixture: 1 test (seed SEED)
+  ──────────────────────── failures ────────────────────────
+    FAIL  boom
+      test/cli/suite_main.ml:LINE
+      counterexample (case 0, shrunk 1 step): 0
+      which failed with:
+        expected  1
+        actual    2
+      replay: ./suite_main.exe --seed SEED -f 'boom'
+  ──────────────────────────────────────────────────────────
+  
+  1 failed in DURATION.
+  $ cat err
+
+Run by dune, the program is dune's test action (INSIDE_DUNE set, the
+path relative to the action's directory): the line is a dune exec of the
+program's path from the project root, with no ./ left in it.
+
+  $ run INSIDE_DUNE=1 FACADE_FIXTURE=property ./suite_main.exe > out 2> err
+  [1]
+  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
+      replay: dune exec suite_main.exe -- --seed SEED -f 'boom'
+
+A host that passes run no command line gives no program to restate, so
+the line spells the run through the mirrors:
+
+  $ run FACADE_FIXTURE=no-argv ./suite_main.exe > out 2> err
+  [1]
+  $ grep 'replay:' out | sed -E 's/s1:[0-9a-f]+/SEED/'
+      replay: WINDTRAP_SEED=SEED WINDTRAP_FILTER='boom' dune runtest
+
+An expected failure is the run's record of the test, never a reading of
+its message: a test expected to fail, whose own failure is the sentence
+the runner writes for an unexpected pass, is still an expected failure.
+The run exits 0 on one line, and under -v its line says XFAIL.
+
+  $ run FACADE_FIXTURE=collide ./suite_main.exe > out 2> err
+  $ scrub < out
+  fixture: 1 expected failure in DURATION.
+  $ run FACADE_FIXTURE=collide ./suite_main.exe -v > out 2> err
+  $ scrub < out | sed -E 's/  +[0-9.]+m?s$/  TIME/'
+  fixture: 1 test
+    XFAIL  collide (expected failure)  TIME
+  1 expected failure in DURATION.
+
+A fixture is released after the last test, and a release that raises is
+a failure row of its own, named after the fixture's site. The one test
+passed, the run fails, and every sink says why: the transcript and the
+JUnit report alike, rather than an exit code nothing explains.
+
+  $ run FACADE_FIXTURE=release ./suite_main.exe --junit release.xml > out 2> err
+  [1]
+  $ scrub < out
+  fixture: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  fixture release
+      [release] test/cli/suite_main.ml:LINE
+      fixture (test/cli/suite_main.ml:LINE): release raised Failure("release-boom")
+  ──────────────────────────────────────────────────────────
+  
+  1 passed, 1 failed in DURATION.
+  $ cat err
+  $ sed -E 's/time="[0-9.]+"/time="TIME"/g; s/suite_main\.ml:[0-9]+/suite_main.ml:LINE/g' release.xml
+  <?xml version="1.0" encoding="UTF-8"?>
+  <testsuites name="windtrap" tests="2" failures="1" errors="0" skipped="0" time="TIME">
+    <testsuite name="fixture" tests="2" failures="1" errors="0" skipped="0" time="TIME">
+      <testcase name="touches the fixture" classname="fixture" time="TIME"/>
+      <testcase name="fixture release" classname="fixture" time="TIME">
+        <failure message="fixture (test/cli/suite_main.ml:LINE): release raised Failure(&quot;release-boom&quot;)">    [release] test/cli/suite_main.ml:LINE
+      fixture (test/cli/suite_main.ml:LINE): release raised Failure("release-boom")
+  </failure>
+      </testcase>
+    </testsuite>
+  </testsuites>
+
+A release runs while its run is still executing, so a release that
+starts a run of its own is refused as a test body's would be: run
+raises, and the raise is the release's failure.
+
+  $ run FACADE_FIXTURE=nested ./suite_main.exe > out 2> err
+  [1]
+  $ scrub < out
+  fixture: 1 test
+  ──────────────────────── failures ────────────────────────
+    FAIL  fixture release
+      [release] test/cli/suite_main.ml:LINE
+      fixture (test/cli/suite_main.ml:LINE): release raised Invalid_argument("windtrap: run is already active; a test body cannot start another run")
+  ──────────────────────────────────────────────────────────
+  
+  1 passed, 1 failed in DURATION.
+  $ cat err
