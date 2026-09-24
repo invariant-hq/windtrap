@@ -12,7 +12,10 @@
    output filenames (sandbox-invariant exe hashing), extent -> line
    derivation (nesting, one-line matches, boundary offsets, huge files),
    report data (including stale-source rejection), and the at_exit dump
-   end to end through a child executable. Ranges and excerpt regions are
+   end to end through a child executable. Below both formats, the
+   plumbing of Windtrap_runtime.Instr that no other suite reaches: the
+   build-path rule's edges, the header, the atomic writes and the
+   scanner, reader by reader. Ranges and excerpt regions are
    layout, live with the renderer, and are pinned in test/unit's render
    suite.
 
@@ -555,6 +558,35 @@ let rejection_tests =
         in
         contains ~msg:"equal duplicate entries in one payload sum"
           ~sub:"0 5 3\n" (C.to_string t));
+    test "an unknown first line is reported cut to 64 bytes, then escaped"
+      (fun () ->
+        let line = "\t\"" ^ String.make 100 'x' in
+        match C.of_string (line ^ "\n0\n") with
+        | Error (C.Data (I.Unknown_format { header; _ })) ->
+            equal ~msg:"the header" string
+              (String.escaped (String.sub line 0 64))
+              header
+        | Ok _ -> fail "a foreign first line parsed"
+        | Error e -> failf "expected Unknown_format, got %a" C.pp_error e);
+    test "whitespace is a space, a tab, a CR or a LF, and never inside a name"
+      (fun () ->
+        let t, _ =
+          ok "CR LF line ends and tabs"
+            (C.of_string
+               "windtrap-coverage-v3\r\n1\r\n8 lib/a.ml\r\n1\r\n0\t5\t7\r\n")
+        in
+        equal ~msg:"CR LF line ends and tabs separate as spaces do" string
+          "windtrap-coverage-v3\n1\n8 lib/a.ml\n1\n0 5 7\n" (C.to_string t);
+        let odd = "lib/a\tb \r.ml" in
+        let t =
+          ok "odd name" (C.add C.empty ~file:odd ~points:[||] ~counts:[||])
+        in
+        equal ~msg:"a name holding whitespace keeps it" (list string) [ odd ]
+          (C.files (fst (ok "odd round trip" (C.of_string (C.to_string t)))));
+        match C.of_string "windtrap-coverage-v3\n1\n8\tlib/a.ml\n0\n" with
+        | Error (C.Data (I.Corrupt _)) -> ()
+        | Ok _ -> fail "a tab before a name parsed"
+        | Error e -> failf "expected Corrupt, got %a" C.pp_error e);
     test "loading a missing file is Unreadable" (fun () ->
         match
           C.load (Filename.concat (temp_dir ()) "no-such-file.coverage")
@@ -678,6 +710,213 @@ let filename_tests =
         equal ~msg:".. above the root stops at the root" string
           "/opt/mytool.exe"
           (I.exe_identity ~exe:"/../../opt/mytool.exe"));
+    test "every backslash is a separator, on every platform" (fun () ->
+        equal ~msg:"a Windows spelling has the identity of the / one" string
+          "default/test/a.exe"
+          (I.exe_identity ~exe:"/w/p\\_build\\default\\test\\a.exe");
+        equal ~msg:"and the same build directory" (option string)
+          (Some "/w/p/_build")
+          (I.build_dir ~path:"/w/p\\_build\\default");
+        equal ~msg:"a name holding one names another path" string
+          "default/a/b.exe"
+          (I.exe_identity ~exe:"/w/_build/default/a\\b.exe"));
+    test "a path that ends at its build directory has the empty identity"
+      (fun () ->
+        equal ~msg:"the build directory itself" string ""
+          (I.exe_identity ~exe:"/w/p/_build");
+        equal ~msg:"with a trailing separator" string ""
+          (I.exe_identity ~exe:"/w/p/_build/"));
+    test "a file is named by the MD5 of its executable's identity" (fun () ->
+        let md5 s = Digest.to_hex (Digest.string s) in
+        equal ~msg:"below a build directory" string
+          ("/w/p/_build/_coverage/windtrap-" ^ md5 "default/test/a.exe"
+         ^ ".coverage")
+          (I.output_file C.format ~exe:"/w/p/_build/default/test/a.exe");
+        equal ~msg:"the directory is the file without its extension" string
+          ("/w/p/_build/_coverage/windtrap-" ^ md5 "default/test/a.exe")
+          (I.output_dir C.format ~exe:"/w/p/_build/default/test/a.exe");
+        equal ~msg:"below none, the hash of the absolute path" string
+          (Filename.concat (Sys.getcwd ())
+             ("_windtrap/coverage/windtrap-" ^ md5 "/opt/t.exe" ^ ".coverage"))
+          (I.output_file C.format ~exe:"/opt/t.exe"));
+    test "what needs an unreadable current directory raises Sys_error"
+      (fun () ->
+        let gone = Filename.concat (temp_dir ()) "gone" in
+        Sys.mkdir gone 0o755;
+        chdir gone;
+        Sys.rmdir gone;
+        let needs_cwd ~msg f = raises_match ~msg Exn.sys_error f in
+        needs_cwd ~msg:"a relative path made absolute" (fun () ->
+            I.absolute "a.exe");
+        needs_cwd ~msg:"the build directory of a relative path" (fun () ->
+            I.build_dir ~path:"_build/default");
+        needs_cwd ~msg:"the identity of a relative executable" (fun () ->
+            I.exe_identity ~exe:"_build/default/a.exe");
+        needs_cwd ~msg:"the file of an executable below no build directory"
+          (fun () -> I.output_file C.format ~exe:"/opt/t.exe");
+        equal ~msg:"an absolute path below a build directory needs none" string
+          "/w/_build/_coverage"
+          (Filename.dirname
+             (I.output_file C.format ~exe:"/w/_build/default/a.exe")));
+  ]
+
+(* The shared file plumbing and the scanner, below the two formats *)
+
+let md5_of_bytes = String.make 32 'a'
+
+(* [parse_error ~msg ~names f] asserts that [f] raises [Parse_error] with
+   a reason that holds [names]. *)
+let parse_error ~msg ~names f =
+  match f () with
+  | _ -> failf "%s: no Parse_error" msg
+  | exception I.Parse_error reason -> contains ~msg ~sub:names reason
+
+let cursor s =
+  match I.start C.format ~path:"<test>" s with
+  | Ok c -> c
+  | Error e -> failf "start refused %S: %a" s (I.pp_error C.format) e
+
+let plumbing_tests =
+  [
+    test "add_header refuses a malformed identity after writing the magic line"
+      (fun () ->
+        List.iter
+          (fun identity ->
+            let buffer = Buffer.create 64 in
+            (match I.add_header C.format buffer (Some identity) with
+            | () -> fail "a malformed identity was written"
+            | exception Invalid_argument message ->
+                starts_with ~msg:"the message is prefixed by the format's owner"
+                  ~affix:(C.format.I.who ^ ": ") message);
+            equal ~msg:"the magic line is already in the buffer" string
+              "windtrap-coverage-v3\n" (Buffer.contents buffer))
+          [
+            { I.exe = ""; digest = md5_of_bytes };
+            { I.exe = "a.exe"; digest = "abc" };
+          ]);
+    test "write_file that cannot rename leaves no temporary file" (fun () ->
+        let dir = temp_dir () in
+        let target = Filename.concat dir "target" in
+        Sys.mkdir target 0o755;
+        raises_match ~msg:"a directory in the way is a Sys_error" Exn.sys_error
+          (fun () -> I.write_file target "data");
+        equal ~msg:"and nothing but it remains" (list string) [ "target" ]
+          (Array.to_list (Sys.readdir dir)));
+    test "write_new_file names a new file by six hexadecimal digits" (fun () ->
+        let dir = Filename.concat (temp_dir ()) "made/on/demand" in
+        let first = I.write_new_file dir ~prefix:"run-" ~ext:"coverage" "one" in
+        let second =
+          I.write_new_file dir ~prefix:"run-" ~ext:"coverage" "two"
+        in
+        List.iter
+          (fun path ->
+            let name = Filename.basename path in
+            equal ~msg:"in the directory, created on demand" string dir
+              (Filename.dirname path);
+            equal ~msg:"prefix, six digits, extension" int
+              (String.length "run-" + 6 + String.length ".coverage")
+              (String.length name);
+            starts_with ~msg:"the prefix" ~affix:"run-" name;
+            ends_with ~msg:"the extension" ~affix:".coverage" name;
+            is_true ~msg:"six lowercase hexadecimal digits"
+              (String.for_all
+                 (function '0' .. '9' | 'a' .. 'f' -> true | _ -> false)
+                 (String.sub name 4 6)))
+          [ first; second ];
+        not_equal ~msg:"every call is a new file" string first second;
+        equal ~msg:"each holds its own data" (pair string string) ("one", "two")
+          (read_file first, read_file second);
+        equal ~msg:"and nothing else is left" int 2
+          (Array.length (Sys.readdir dir));
+        let blocked = Filename.concat (temp_file ()) "under-a-file" in
+        raises_match ~msg:"a directory that cannot be made is a Sys_error"
+          Exn.sys_error (fun () ->
+            I.write_new_file blocked ~prefix:"" ~ext:"coverage" "data"));
+  ]
+
+let scanner_tests =
+  [
+    test "start stands after the magic, before whitespace or the end" (fun () ->
+        I.finish (cursor "windtrap-coverage-v3");
+        equal ~msg:"the magic, then whitespace" int 7
+          (I.read_nat (cursor "windtrap-coverage-v3\t7") "n");
+        match I.start C.format ~path:"f.coverage" "windtrap-coverage-v30 1" with
+        | Error (I.Unknown_format { path; header }) ->
+            equal ~msg:"another format, named by its path" (pair string string)
+              ("f.coverage", "windtrap-coverage-v30 1")
+              (path, header)
+        | Error e ->
+            failf "expected Unknown_format, got %a" (I.pp_error C.format) e
+        | Ok _ -> fail "a longer magic started");
+    test "read_nat reads a decimal natural after whitespace" (fun () ->
+        let c = cursor "windtrap-coverage-v3 \t\r\n 42 7" in
+        equal ~msg:"after every kind of whitespace" (pair int int) (42, 7)
+          (let a = I.read_nat c "a" in
+           (a, I.read_nat c "b"));
+        parse_error ~msg:"a negative number" ~names:"negative size" (fun () ->
+            I.read_nat (cursor "windtrap-coverage-v3 -1") "size");
+        parse_error ~msg:"no number" ~names:"expected size" (fun () ->
+            I.read_nat (cursor "windtrap-coverage-v3 x") "size");
+        parse_error ~msg:"none at the end" ~names:"expected size" (fun () ->
+            I.read_nat (cursor "windtrap-coverage-v3 ") "size");
+        parse_error ~msg:"a number past max_int" ~names:"invalid size"
+          (fun () ->
+            I.read_nat
+              (cursor "windtrap-coverage-v3 99999999999999999999")
+              "size"));
+    test "read_count is bounded by the whole input" (fun () ->
+        (* 23 bytes in all, the part already read included. *)
+        let input n = "windtrap-coverage-v3 " ^ string_of_int n in
+        equal ~msg:"the length of the input is a count" int 23
+          (I.read_count (cursor (input 23)) "records");
+        parse_error ~msg:"one more is not" ~names:"records exceeds data"
+          (fun () -> I.read_count (cursor (input 24)) "records"));
+    test "read_name reads a length, one space and that many bytes" (fun () ->
+        let c = cursor "windtrap-coverage-v3 5 a b\tc 0 " in
+        equal ~msg:"whitespace inside a name is its own" string "a b\tc"
+          (I.read_name c "file");
+        equal ~msg:"an empty name" string "" (I.read_name c "file");
+        parse_error ~msg:"another whitespace before the bytes"
+          ~names:"expected space before file" (fun () ->
+            I.read_name (cursor "windtrap-coverage-v3 3\tabc") "file");
+        parse_error ~msg:"fewer bytes than the length" ~names:"truncated file"
+          (fun () -> I.read_name (cursor "windtrap-coverage-v3 9 abc") "file");
+        parse_error ~msg:"no length" ~names:"expected file length" (fun () ->
+            I.read_name (cursor "windtrap-coverage-v3 abc") "file"));
+    test "read_word reads the bytes up to the next whitespace" (fun () ->
+        let c = cursor "windtrap-coverage-v3  killed\tsurvived" in
+        equal ~msg:"two words" (pair string string) ("killed", "survived")
+          (let a = I.read_word c "verdict" in
+           (a, I.read_word c "verdict"));
+        parse_error ~msg:"at the end of the input" ~names:"expected verdict"
+          (fun () -> I.read_word c "verdict"));
+    test "read_identity reads the line that starts with exe, or nothing"
+      (fun () ->
+        let digest = md5_of_bytes in
+        equal ~msg:"an identity whose path holds a space"
+          (option (pair string string))
+          (Some ("a b.exe", digest))
+          (Option.map
+             (fun (i : I.identity) -> (i.I.exe, i.I.digest))
+             (I.read_identity
+                (cursor ("windtrap-coverage-v3\nexe " ^ digest ^ " 7 a b.exe"))));
+        let c = cursor "windtrap-coverage-v3 \n 3 lib" in
+        is_none ~msg:"no identity" (I.read_identity c);
+        equal ~msg:"and the cursor is past the whitespace only" int 3
+          (I.read_nat c "count");
+        parse_error ~msg:"a short digest" ~names:"digest" (fun () ->
+            I.read_identity (cursor "windtrap-coverage-v3\nexe abc 1 a"));
+        parse_error ~msg:"an empty path" ~names:"empty executable identity"
+          (fun () ->
+            I.read_identity
+              (cursor ("windtrap-coverage-v3\nexe " ^ digest ^ " 0 ")));
+        parse_error ~msg:"a truncated path" ~names:"truncated" (fun () ->
+            I.read_identity
+              (cursor ("windtrap-coverage-v3\nexe " ^ digest ^ " 9 a"))));
+    test "finish accepts trailing whitespace and nothing else" (fun () ->
+        I.finish (cursor "windtrap-coverage-v3 \t\r\n");
+        parse_error ~msg:"a trailing byte" ~names:"trailing data" (fun () ->
+            I.finish (cursor "windtrap-coverage-v3\nx")));
   ]
 
 (* Extent -> line derivation *)
@@ -1166,6 +1405,8 @@ let () =
          group "collections" collection_tests;
          group "parse" rejection_tests;
          group "filenames" filename_tests;
+         group "files" plumbing_tests;
+         group "scanner" scanner_tests;
          group "lines" line_tests;
          group "summaries" summary_tests;
          group "reports" report_tests;
