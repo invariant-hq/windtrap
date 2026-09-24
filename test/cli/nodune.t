@@ -7,14 +7,16 @@ after that is ocamlopt.
 The installed windtrap is found the way findlib finds it, on OCAMLPATH
 or beside the compiler's own library. The scratch project lives in a
 directory that is under no build directory, because that is the case
-the session exists to show, and every run gets a clean environment:
+the session exists to show, named by its physical path, because that is
+how a verdict file names the executable that wrote it, and every run
+gets a clean environment:
 a developer's INSIDE_DUNE or WINDTRAP_* setting must not reshape it.
 
   $ lib=$(for d in $(echo "$OCAMLPATH" | tr ':' ' ') $(dirname "$(ocamlopt -where)"); do
   >   if [ -f "$d/windtrap/META" ]; then echo "$d"; break; fi; done)
   $ test -f "$lib/windtrap/windtrap.cmxa" && test -f "$lib/windtrap/runtime/windtrap_runtime.cmxa"
   $ here=$PWD
-  $ proj=$(mktemp -d "${TMPDIR:-/tmp}/nodune.XXXXXX")
+  $ proj=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/nodune.XXXXXX")" && pwd -P)
   $ cd "$proj"
   $ run() {
   >   env -i PATH="$PATH" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
@@ -72,7 +74,7 @@ then measure the core rather than calc.ml; the columns are squeezed
 because the table aligns to its widest row:
 
   $ run windtrap coverage | grep calc.ml | tr -s ' '
-   85.7% 6/7 calc.ml uncovered: 3
+   85.7% 6/7 calc.ml 3
 
 Mutation. The same library through the other backend, then the survey
 scoped to the file, with --mutate:
@@ -83,34 +85,31 @@ scoped to the file, with --mutate:
   $ run ./test_calc.exe --mutate=calc.ml
   calc: 4 passed in TIME.
   
-  ─────────────────── survivors (2) ────────────────────
-  
-    SURVIVED  calc.ml:2:16:ge   n > 0  →  n >= 0
+  ─────────────────────── survivors ────────────────────────
+    SURVIVED  calc.ml:2:16:ge  n > 0 → n >= 0
         2 │ let sign n = if n > 0 then 1 else 0
   
       2 tests ran this line and none failed:
-        sign of a negative      test_calc.ml:9
-        sign of a positive      test_calc.ml:8
+        sign of a negative  test_calc.ml:9
+        sign of a positive  test_calc.ml:8
   
-    SURVIVED  calc.ml:3:20:ge   n > 0  →  n >= 0
+    SURVIVED  calc.ml:3:20:ge  n > 0 → n >= 0
         3 │ let describe n = if n > 0 then "positive" else "non-positive"
   
       1 test ran this line and did not fail:
-        describe                test_calc.ml:10
+        describe  test_calc.ml:10
+  ──────────────────────────────────────────────────────────
   
-  ──────────────────────────────────────────────────────
-  
-  mutants: 2 survived of 3 reached by this suite · 1 killed
-  reproduce: ./test_calc.exe --arm <id>
+  reproduce: ./test_calc.exe --arm calc.ml:2:16:ge
+  mutants: 2 survived of 3 reached by this suite, 1 killed
 
-The footer's flag, with a survivor's identifier from its head row,
-arms that one mutant in an otherwise ordinary run:
+The reproduce: line is a command that runs as pasted. It arms the
+first survivor in an otherwise ordinary run:
 
-  $ id=$(grep SURVIVED out | head -1 | awk '{print $2}')
-  $ run ./test_calc.exe --arm "$id"
+  $ run $(sed -n 's/^reproduce: //p' out)
   mutant calc.ml:2:16:ge armed: n > 0 → n >= 0
   calc: 4 passed in TIME.
-  mutant survived: the armed site was evaluated 2 time(s) and no test failed.
+  mutant survived: the armed site was evaluated 2 times and no test failed.
 
 The verdict file is the run's, beside the coverage dumps, and the
 installed binary merges it — exiting 1, because a survivor of every
@@ -119,26 +118,23 @@ suite that reached it is the one mutation exit code a build gates on:
   $ find _windtrap/mutants -type f | sed -E 's|windtrap-[0-9a-f]+|windtrap-HASH|'
   _windtrap/mutants/windtrap-HASH.mutants
   $ run windtrap mutants
-  
-  ─────────────────── survivors (2) ────────────────────
-  
-    SURVIVED  calc.ml:2:16:ge   n > 0  →  n >= 0
+  ───────────────────── survivors (2) ──────────────────────
+    SURVIVED  calc.ml:2:16:ge  n > 0 → n >= 0
         2 │ let sign n = if n > 0 then 1 else 0
   
       2 tests ran this line and none failed:
-        test_calc.exe   sign of a negative
-        test_calc.exe   sign of a positive
+        test_calc.exe  sign of a negative
+        test_calc.exe  sign of a positive
   
-    SURVIVED  calc.ml:3:20:ge   n > 0  →  n >= 0
+    SURVIVED  calc.ml:3:20:ge  n > 0 → n >= 0
         3 │ let describe n = if n > 0 then "positive" else "non-positive"
   
       1 test ran this line and did not fail:
-        test_calc.exe   describe
+        test_calc.exe  describe
+  ──────────────────────────────────────────────────────────
   
-  ──────────────────────────────────────────────────────
-  
-  mutants: 2 survived of 3 reached · 1 killed · 1 executable
-  reproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>
+  reproduce: PROJ/test_calc.exe --arm calc.ml:2:16:ge
+  mutants: 2 survived of 3 reached, 1 killed, 1 executable
   [1]
 
 The scratch project is the session's own and leaves with it:

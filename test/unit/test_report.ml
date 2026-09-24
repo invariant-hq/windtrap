@@ -3584,313 +3584,841 @@ let test_excerpt_project_root () =
     ~sub:"1 \u{2502} (*---"
     (failure_block ~excerpt:true f)
 
-(* The coverage detail block, escape for escape
+(* Whole reports, colour and plain
 
-   One gutter renderer serves coverage and mutation, and this is
-   where its bytes are pinned: the three-column gutter, the number
-   right-aligned in at least four, the [│] rule, [·····] between regions,
-   the regions themselves (touching windows merged, the first clipped
-   against the top of the file), and the [1, 5-6, 11] range dialect the
-   table prints. Driven through the real [coverage_report] over section
-   data built by hand — the sections name no runtime, so this is the
-   whole of their input; the builder that derives it from the runtime's
-   file reports is the reporting command's, driven over the real binary
-   in test/coverage_cli, and the runtime's line attribution is pinned in
-   test/coverage — rather than through the projection's own vals, because
-   the difference a review over stripped output cannot see is *where* an
-   escape opens: a marker spelled [margin ^ red "▌"] prints the same
-   glyphs as [red (margin ^ "▌")]. So this pins the plain bytes whole,
-   then pins that colour adds escapes and nothing else, and that the
-   marker's escape opens at column zero. *)
+   A report's expected text is written once, with its colour roles marked
+   [«role|text»]: [r] red, [g] green, [y] yellow, [d] faint, [b] bold.
+   [roles] is that text with the escapes the marks stand for, and stripping
+   them gives the plain bytes, so one literal pins both and a failure is a
+   readable diff. *)
 
-let coverage_fixture_source =
+let roles marked =
+  let escapes =
+    [
+      ("\u{ab}r|", "\027[31m");
+      ("\u{ab}g|", "\027[32m");
+      ("\u{ab}y|", "\027[33m");
+      ("\u{ab}d|", "\027[2m");
+      ("\u{ab}b|", "\027[1m");
+      ("\u{bb}", "\027[0m");
+    ]
+  in
+  let buf = Buffer.create (String.length marked) in
+  let rec go i =
+    if i < String.length marked then
+      match
+        List.find_opt
+          (fun (mark, _) ->
+            i + String.length mark <= String.length marked
+            && String.sub marked i (String.length mark) = mark)
+          escapes
+      with
+      | Some (mark, escape) ->
+          Buffer.add_string buf escape;
+          go (i + String.length mark)
+      | None ->
+          Buffer.add_char buf marked.[i];
+          go (i + 1)
+  in
+  go 0;
+  Buffer.contents buf
+
+(* Checks [render] against [marked] twice: the escapes under colour, and
+   the same text without one under none. *)
+let check_report name ~marked render =
+  check_string (name ^ ": with colour") ~expected:(roles marked)
+    ~actual:(render ~ansi:true);
+  check_string (name ^ ": without")
+    ~expected:(Text.strip_ansi (roles marked))
+    ~actual:(render ~ansi:false)
+
+let lines_of ranges =
+  List.concat_map (fun (s, e) -> List.init (e - s + 1) (fun i -> s + i)) ranges
+
+(* The coverage report
+
+   Driven through the real [coverage_report] over section data built by
+   hand: the sections name no runtime, so this is the whole of their
+   input. The builder that derives it from the runtime's file reports is
+   the reporting command's, driven over the real binary in
+   test/instr/coverage_cmd. *)
+
+let coverage_file ?source file visited total uncovered =
+  {
+    Sections.file;
+    visited;
+    total;
+    uncovered = lines_of uncovered;
+    source;
+    stale = false;
+  }
+
+let table_files =
+  [
+    coverage_file "lib/env.ml" 50 52 [ (88, 89) ];
+    coverage_file "lib/eval.ml" 69 119
+      [
+        (41, 47);
+        (60, 60);
+        (93, 104);
+        (131, 131);
+        (140, 152);
+        (160, 170);
+        (180, 180);
+        (190, 195);
+        (200, 200);
+        (210, 210);
+        (220, 230);
+      ];
+    coverage_file "lib/lexer.ml" 38 38 [];
+    coverage_file "lib/parser.ml" 91 142
+      [
+        (17, 17);
+        (52, 58);
+        (77, 77);
+        (102, 119);
+        (140, 140);
+        (151, 160);
+        (170, 170);
+        (180, 180);
+        (190, 190);
+        (200, 200);
+      ];
+    coverage_file "lib/printer.ml" 64 86 [ (23, 31); (70, 74); (90, 90) ];
+  ]
+
+let table_data = { Sections.visited = 312; total = 437; files = table_files }
+
+let coverage ?(mode = `Report) ?min data ~ansi =
+  sections ~ansi (Sections.coverage_report ~mode ~min data)
+
+let table_rows =
+  "\u{ab}d|   cover    points   file             uncovered lines (-u shows the \
+   source)\u{bb}\n\
+  \   96.2%    50/52    lib/env.ml       88-89\n\
+  \  \u{ab}r| 58.0%\u{bb}    69/119   lib/eval.ml      41-47, 60, 93-104, 131, \
+   140-152, 160-170, 180, 190-195 (+3 more)\n\
+  \  100.0%    38/38    lib/lexer.ml\n\
+  \  \u{ab}r| 64.1%\u{bb}    91/142   lib/parser.ml    17, 52-58, 77, 102-119, \
+   140, 151-160, 170, 180 (+2 more)\n"
+
+let test_coverage_table () =
+  check_report "the table under a gate it misses"
+    ~marked:
+      (table_rows
+     ^ "  \u{ab}r| 74.4%\u{bb}    64/86    lib/printer.ml   23-31, 70-74, 90\n\
+        coverage: \u{ab}r|71.4%\u{bb} (312/437 points), minimum 80%: \
+        \u{ab}r|FAILED\u{bb}\n")
+    (coverage ~min:80. table_data);
+  check_report "the table under a gate it meets"
+    ~marked:
+      (table_rows
+     ^ "   74.4%    64/86    lib/printer.ml   23-31, 70-74, 90\n\
+        coverage: 71.4% (312/437 points), minimum 70%: \u{ab}g|ok\u{bb}\n")
+    (coverage ~min:70. table_data)
+
+(* The source view. Two regions in one file, so the block carries a
+   [·····] separator; the first file is above its gate and the second
+   below, so both heading forms print. *)
+
+let source_of texts =
+  let last = List.fold_left (fun n (line, _) -> max n line) 0 texts in
   String.concat "\n"
-    (List.init 12 (fun i -> Printf.sprintf "let v%d = %d" (i + 1) (i + 1)))
+    (List.init last (fun i ->
+         Option.value ~default:"" (List.assoc_opt (i + 1) texts)))
   ^ "\n"
 
-(* One file, four of its eight points never visited, the four falling
-   into three runs of lines — so the block carries two [·····] separators
-   and a region clipped against the top of the file. *)
-let coverage_fixture_data : Sections.coverage =
+let env_source =
+  source_of
+    [
+      (87, "  | Some frame ->");
+      (88, "      if frame.sealed then invalid_arg \"Env.set: sealed frame\"");
+      (89, "      else Hashtbl.replace frame.vars name v");
+      (90, "  | None -> raise Not_found");
+    ]
+
+let eval_source =
+  source_of
+    [
+      (40, "  | Let (x, e, body) ->");
+      (41, "      let v = eval env e in");
+      (42, "      eval (Env.bind env x v) body");
+      (43, "  | If (c, t, e) ->");
+      (59, "  | Div (a, b) ->");
+      (60, "      if eval env b = Int 0 then raise Division_by_zero");
+      (61, "      else div (eval env a) (eval env b)");
+    ]
+
+let source_data =
   {
-    Sections.visited = 4;
-    total = 8;
+    Sections.visited = 119;
+    total = 171;
     files =
       [
-        {
-          Sections.file = "lib/fake.ml";
-          visited = 4;
-          total = 8;
-          uncovered = [ 1; 5; 6; 11 ];
-          source = Some coverage_fixture_source;
-          stale = false;
-        };
+        coverage_file ~source:env_source "lib/env.ml" 50 52 [ (88, 89) ];
+        coverage_file ~source:eval_source "lib/eval.ml" 69 119
+          [ (41, 42); (60, 60) ];
       ];
   }
 
-let expected_coverage_report =
-  "coverage: 50.0% (4/8 points)\n\
-  \   50.0%  4/8  lib/fake.ml   uncovered: 1, 5-6, 11\n\n\
-   lib/fake.ml \u{2014} 50.0% (4/8)\n\n\
-  \  \u{258c}   1 \u{2502} let v1 = 1\n\
-  \      2 \u{2502} let v2 = 2\n\
-  \   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}\n\
-  \      4 \u{2502} let v4 = 4\n\
-  \  \u{258c}   5 \u{2502} let v5 = 5\n\
-  \  \u{258c}   6 \u{2502} let v6 = 6\n\
-  \      7 \u{2502} let v7 = 7\n\
-  \   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}\n\
-  \     10 \u{2502} let v10 = 10\n\
-  \  \u{258c}  11 \u{2502} let v11 = 11\n\
-  \     12 \u{2502} let v12 = 12\n"
+let source_view =
+  "\u{ab}d|   cover    points   file          uncovered lines\u{bb}\n\
+  \   96.2%    50/52    lib/env.ml    88-89\n\
+  \  \u{ab}r| 58.0%\u{bb}    69/119   lib/eval.ml   41-42, 60\n\n\
+   \u{ab}b|lib/env.ml\u{bb}: 96.2% (50/52)\n\n\
+  \     87 \u{2502}   | Some frame ->\n\
+   \u{ab}r|  \u{258c}\u{bb}  88 \u{2502}       if frame.sealed then \
+   invalid_arg \"Env.set: sealed frame\"\n\
+   \u{ab}r|  \u{258c}\u{bb}  89 \u{2502}       else Hashtbl.replace frame.vars \
+   name v\n\
+  \     90 \u{2502}   | None -> raise Not_found\n\n\
+   \u{ab}b|lib/eval.ml\u{bb}: \u{ab}r|58.0%\u{bb} (69/119)\n\n\
+  \     40 \u{2502}   | Let (x, e, body) ->\n\
+   \u{ab}r|  \u{258c}\u{bb}  41 \u{2502}       let v = eval env e in\n\
+   \u{ab}r|  \u{258c}\u{bb}  42 \u{2502}       eval (Env.bind env x v) body\n\
+  \     43 \u{2502}   | If (c, t, e) ->\n\
+   \u{ab}d|   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{bb}\n\
+  \     59 \u{2502}   | Div (a, b) ->\n\
+   \u{ab}r|  \u{258c}\u{bb}  60 \u{2502}       if eval env b = Int 0 then \
+   raise Division_by_zero\n\
+  \     61 \u{2502}       else div (eval env a) (eval env b)\n\n\
+   coverage: \u{ab}r|69.6%\u{bb} (119/171 points), minimum 80%: \
+   \u{ab}r|FAILED\u{bb}\n"
 
-let test_coverage_report_bytes () =
-  let data = coverage_fixture_data in
-  let render ?ansi () =
-    sections ?ansi (Sections.coverage_report ~mode:`Full data)
-  in
-  let plain = render () and colored = render ~ansi:true () in
-  check_string "coverage report: the frozen bytes, full mode"
-    ~expected:expected_coverage_report ~actual:plain;
-  check_string "coverage report: colour adds escapes and nothing else"
-    ~expected:plain ~actual:(Text.strip_ansi colored);
-  check_contains "coverage report: the marker's escape opens at column zero"
-    ~sub:"\027[31m  \u{258c}\027[0m   5 \u{2502} let v5 = 5" colored;
-  check_absent "coverage report: the marker is not styled past the margin"
+let test_coverage_source () =
+  check_report "the source view" ~marked:source_view
+    (coverage ~mode:`Full ~min:80. source_data);
+  let colored = coverage ~mode:`Full ~min:80. source_data ~ansi:true in
+  check_contains "the marker's escape opens at column zero"
+    ~sub:"\n\027[31m  \u{258c}\027[0m  88 \u{2502}" colored;
+  check_absent "the marker is not styled past the margin"
     ~sub:"  \027[31m\u{258c}" colored;
-  check_contains "coverage report: the table percentage is styled with its pad"
-    ~sub:"  \027[31m 50.0%\027[0m  4/8  lib/fake.ml" colored;
-  check_string "coverage report: report mode stops before the excerpts"
-    ~expected:
-      "coverage: 50.0% (4/8 points)\n\
-      \   50.0%  4/8  lib/fake.ml   uncovered: 1, 5-6, 11\n"
-    ~actual:(sections (Sections.coverage_report ~mode:`Report data))
-
-(* A barely-tested file has hundreds of uncovered regions, and their
-   ranges would render as one cell of thousands of characters. The cell
-   is bounded, and names the flag that shows the rest. *)
-
-let test_coverage_uncovered_cap () =
-  let data =
+  (* A region at the top of a file has no line above it to show. *)
+  let top =
     {
-      Sections.visited = 0;
-      total = 60;
+      Sections.visited = 1;
+      total = 2;
       files =
         [
+          coverage_file ~source:"let a = 1\nlet b = 2\nlet c = 3\n" "top.ml" 1 2
+            [ (1, 1) ];
+        ];
+    }
+  in
+  check_contains "a region is clipped against the top of the file"
+    ~sub:"\n\n  \u{258c}   1 \u{2502} let a = 1\n      2 \u{2502} let b = 2\n\n"
+    (coverage ~mode:`Full top ~ansi:false)
+
+(* The outcome is the last line in every mode, the gate on it. The table
+   under a gate, met and missed, is [test_coverage_table]'s. *)
+
+let last_line out =
+  match List.rev (String.split_on_char '\n' out) with
+  | "" :: last :: _ -> last
+  | _ -> "\u{ab}the output does not end on a newline\u{bb}"
+
+let test_coverage_outcome_last () =
+  let last ?mode ?min data = last_line (coverage ?mode ?min data ~ansi:false) in
+  check_string "the table, no gate" ~expected:"coverage: 71.4% (312/437 points)"
+    ~actual:(last table_data);
+  check_string "the source view, no gate"
+    ~expected:"coverage: 69.6% (119/171 points)"
+    ~actual:(last ~mode:`Full source_data);
+  check_string "the source view, a gate missed"
+    ~expected:"coverage: 69.6% (119/171 points), minimum 80%: FAILED"
+    ~actual:(last ~mode:`Full ~min:80. source_data);
+  check_string "the source view, a gate met"
+    ~expected:"coverage: 69.6% (119/171 points), minimum 69.5%: ok"
+    ~actual:(last ~mode:`Full ~min:69.5 source_data);
+  let plain = coverage ~min:80. table_data ~ansi:false in
+  check "the outcome prints once" (occurrences_of ~sub:"coverage: " plain = 1);
+  check "and the gate with it" (occurrences_of ~sub:"minimum" plain = 1)
+
+let test_coverage_header () =
+  let first out = List.hd (String.split_on_char '\n' out) in
+  check_absent "no row repeats the column's name" ~sub:"uncovered:"
+    (coverage table_data ~ansi:false);
+  let long =
+    {
+      Sections.visited = 1;
+      total = 2;
+      files =
+        [ coverage_file "examples/07-coverage/a_long_module.ml" 1 2 [ (9, 9) ] ];
+    }
+  in
+  check_string
+    "long paths do not cost the header its hint: it is what says how to see a \
+     cut row's other ranges"
+    ~expected:
+      "   cover    points   file                                    uncovered \
+       lines (-u shows the source)"
+    ~actual:(first (coverage long ~ansi:false));
+  (* Narrow cells do not pull a label off its column. *)
+  let narrow =
+    {
+      Sections.visited = 4;
+      total = 8;
+      files = [ coverage_file "a.ml" 4 8 [ (3, 3) ] ];
+    }
+  in
+  check_string "a label is a floor on its column's width"
+    ~expected:
+      "   cover    points   file   uncovered lines (-u shows the source)\n\
+      \   50.0%    4/8      a.ml   3\n\
+       coverage: 50.0% (4/8 points)\n"
+    ~actual:(coverage narrow ~ansi:false);
+  (* The two notes, at the width a real path gives them: a stale row is
+     a sentence, and passes 80 columns. *)
+  let notes =
+    {
+      Sections.visited = 2;
+      total = 4;
+      files =
+        [
+          coverage_file "examples/07-coverage/half_a.ml" 1 2 [];
           {
-            Sections.file = "lib/wide.ml";
-            visited = 0;
-            total = 60;
-            uncovered = List.init 30 (fun i -> (i * 2) + 1);
-            source = None;
-            stale = false;
+            (coverage_file "examples/07-coverage/half_b.ml" 1 2 []) with
+            Sections.stale = true;
           };
         ];
     }
   in
-  let out = sections (Sections.coverage_report ~mode:`Report data) in
-  check_contains "the uncovered cell stops after eight regions"
-    ~sub:"uncovered: 1, 3, 5, 7, 9, 11, 13, 15 (+22 more, -u shows them)" out;
-  check_absent "and drops the ninth" ~sub:"17" out
+  check_string
+    "unvisited points without a line say why; a stale file says so, and what \
+     to do"
+    ~expected:
+      "   cover    points   file                             uncovered lines \
+       (-u shows the source)\n\
+      \   50.0%    1/2      examples/07-coverage/half_a.ml   (source not found)\n\
+      \   50.0%    1/2      examples/07-coverage/half_b.ml   stale: the source \
+       changed; re-run the instrumented tests\n\
+       coverage: 50.0% (2/4 points)\n"
+    ~actual:(coverage notes ~ansi:false)
 
-(* The coverage thresholds, pinned at the bytes
+(* A barely tested file has hundreds of uncovered ranges. A row prints its
+   first eight and counts the rest, whatever the width of its path. *)
 
-   Green at 80% and above, yellow at 60%, red below — the classification
-   used to live on the runtime as [style]; it is styling, so it lives
-   with the renderer now, and the summary line is where it shows. *)
-
-let test_coverage_thresholds () =
-  let line ~visited ~total =
-    sections ~ansi:true
-      (Sections.coverage_report ~mode:`Report
-         { Sections.visited; total; files = [] })
+let test_coverage_cap () =
+  let row (f : Sections.coverage_file) =
+    let out =
+      coverage
+        { Sections.visited = f.visited; total = f.total; files = [ f ] }
+        ~ansi:false
+    in
+    List.nth (String.split_on_char '\n' out) 1
   in
-  check_contains "80 percent is green" ~sub:"\027[32m80.0%\027[0m"
-    (line ~visited:8 ~total:10);
-  check_contains "60 percent is yellow" ~sub:"\027[33m60.0%\027[0m"
-    (line ~visited:6 ~total:10);
-  check_contains "79 percent is yellow" ~sub:"\027[33m79.0%\027[0m"
-    (line ~visited:79 ~total:100);
-  check_contains "59 percent is red" ~sub:"\027[31m59.0%\027[0m"
-    (line ~visited:59 ~total:100);
-  check_contains "an empty summary is 100% and green"
-    ~sub:"\027[32m100.0%\027[0m (0/0 points)" (line ~visited:0 ~total:0)
+  let ranges n name =
+    coverage_file name 0 60 (List.init n (fun i -> ((i * 4) + 1, (i * 4) + 2)))
+  in
+  let eight = "1-2, 5-6, 9-10, 13-14, 17-18, 21-22, 25-26, 29-30" in
+  let long_path =
+    "a/very/long/path/to/a/barely/tested/module/in/a/deep/tree/wide.ml"
+  in
+  check_string "eight ranges, then the count of the rest"
+    ~expected:("    0.0%    0/60     lib/wide.ml   " ^ eight ^ " (+22 more)")
+    ~actual:(row (ranges 30 "lib/wide.ml"));
+  check_string "eight ranges print whole, with no count"
+    ~expected:("    0.0%    0/60     lib/wide.ml   " ^ eight)
+    ~actual:(row (ranges 8 "lib/wide.ml"));
+  check_string "a long path does not cut the ranges"
+    ~expected:
+      ("    0.0%    0/60     " ^ long_path ^ "   " ^ eight ^ " (+1 more)")
+    ~actual:(row (ranges 9 long_path))
 
-(* The mutation report (SPEC transcripts, byte for byte)
+(* A percentage is red below the gate, or below 80 when there is none,
+   and plain otherwise: on a row, on a heading and on the outcome line. *)
 
-   The survivor block is the ordinary failure block: the same 54-column
-   labelled rule, the same [  VERB  subject] head row, the same excerpt
-   row. One fixture serves both reports the type carries: the
-   per-executable one (no executable column, no unreached) and the
-   aggregate (both). *)
+let test_coverage_colour () =
+  let outcome ?min ~visited ~total () =
+    coverage ?min { Sections.visited; total; files = [] } ~ansi:true
+  in
+  check_string "no gate: 80 percent is plain"
+    ~expected:"coverage: 80.0% (80/100 points)\n"
+    ~actual:(outcome ~visited:80 ~total:100 ());
+  check_string "no gate: below 80 is red"
+    ~expected:"coverage: \027[31m79.9%\027[0m (799/1000 points)\n"
+    ~actual:(outcome ~visited:799 ~total:1000 ());
+  check_string "a gate met at its boundary: plain, and ok green"
+    ~expected:
+      "coverage: 70.0% (70/100 points), minimum 70%: \027[32mok\027[0m\n"
+    ~actual:(outcome ~min:70. ~visited:70 ~total:100 ());
+  check_string "a gate missed: red, and FAILED red"
+    ~expected:
+      "coverage: \027[31m69.9%\027[0m (699/1000 points), minimum 70%: \
+       \027[31mFAILED\027[0m\n"
+    ~actual:(outcome ~min:70. ~visited:699 ~total:1000 ());
+  check_string "a gate above 80 reddens what the default would not"
+    ~expected:
+      "coverage: \027[31m85.0%\027[0m (85/100 points), minimum 90%: \
+       \027[31mFAILED\027[0m\n"
+    ~actual:(outcome ~min:90. ~visited:85 ~total:100 ());
+  check_string "the gate compares the measurement, not its rounding"
+    ~expected:
+      "coverage: \027[31m66.7%\027[0m (2/3 points), minimum 66.7%: \
+       \027[31mFAILED\027[0m\n"
+    ~actual:(outcome ~min:66.7 ~visited:2 ~total:3 ());
+  check_string "no file to tabulate: the outcome alone, 100% and plain"
+    ~expected:"coverage: 100.0% (0/0 points)\n"
+    ~actual:(outcome ~visited:0 ~total:0 ());
+  let rows =
+    coverage ~min:50.
+      {
+        Sections.visited = 9;
+        total = 20;
+        files =
+          [ coverage_file "at.ml" 5 10 []; coverage_file "under.ml" 4 10 [] ];
+      }
+      ~ansi:true
+  in
+  check_contains "a row at the gate is plain" ~sub:"\n   50.0%    5/10 " rows;
+  check_contains "a row under it is red, its pad inside the colour"
+    ~sub:"\n  \027[31m 40.0%\027[0m    4/10 " rows;
+  let ungated =
+    coverage
+      {
+        Sections.visited = 24;
+        total = 30;
+        files =
+          [
+            coverage_file "full.ml" 10 10 [];
+            coverage_file "most.ml" 8 10 [];
+            coverage_file "some.ml" 6 10 [];
+          ];
+      }
+      ~ansi:true
+  in
+  check_contains "below 80 without a gate is red on a row too"
+    ~sub:"\n  \027[31m 60.0%\027[0m     6/10 " ungated;
+  check_absent "no percentage is green" ~sub:"\027[32m" ungated;
+  check_absent "nor yellow" ~sub:"\027[33m" ungated
+
+(* A source file's bytes are not the report's: a control byte in one
+   prints as a failure block's source line prints it, under both colour
+   settings. *)
+
+let test_coverage_escapes () =
+  let data =
+    {
+      Sections.visited = 1;
+      total = 2;
+      files =
+        [
+          coverage_file
+            ~source:"let plain = 1\nlet red = \"\027[31mred\r\"\nlet c = 3\n"
+            "esc.ml" 1 2
+            [ (2, 2) ];
+        ];
+    }
+  in
+  List.iter
+    (fun ansi ->
+      let out = coverage ~mode:`Full data ~ansi in
+      check_contains "the bytes print as text"
+        ~sub:"   2 \u{2502} let red = \"\\x1b[31mred\\x0d\"\n" out;
+      check_absent "and never raw" ~sub:"\027[31mred" out;
+      check_absent "a carriage return neither" ~sub:"\r" out)
+    [ true; false ]
+
+(* The mutation report
+
+   Two producers, one layout. The loop commits a survivor's block when
+   its child ends and closes its report when the last one does; [windtrap
+   mutants] prints the same sections at rest over a merge. The loop is
+   driven here as [Mutate_loop] drives it, over a renderer whose sink is
+   read between two calls, so what is committed when is pinned with the
+   bytes; the loop itself runs in test/instr/loop. *)
 
 let calc_source =
-  String.concat "\n"
-    (List.init 31 (fun i ->
-         match i + 1 with
-         | 9 -> "  | Sub -> a - b"
-         | 11 ->
-             "  | Div -> if b = 0 then invalid_arg \"division by zero\" else a \
-              / b"
-         | 22 -> "  if n < limit then"
-         | 31 -> "  List.fold_left (fun acc x -> acc + x) 0"
-         | n -> Printf.sprintf "(* line %d *)" n))
-  ^ "\n"
+  source_of
+    [
+      (13, "  | Sub -> a - b");
+      (21, "let sign n = if n > 0 then 1 else 0");
+      (40, "let clamp lo hi n = if n < lo then lo else if n > hi then hi else n");
+      (41, "let pred n = n - 1");
+    ]
 
-let witness ?exe test file line =
-  { Sections.test; loc = Some { Loc.file; line; column = 0 }; exe }
-
-let mutant id line before after =
+let witness ?exe ?file test line =
   {
-    Sections.id;
-    file = "lib/calc.ml";
-    line;
-    before;
-    after;
-    source = Some calc_source;
+    Sections.test;
+    loc = Option.map (fun file -> { Loc.file; line; column = 0 }) file;
+    exe;
   }
 
-let add_mutant = mutant "lib/calc.ml:9:12:add" 9 "a - b" "a + b"
-let neq_mutant = mutant "lib/calc.ml:11:15:neq" 11 "b = 0" "b <> 0"
-let le_mutant = mutant "lib/calc.ml:22:5:le" 22 "n < limit" "n <= limit"
-let sub_mutant = mutant "lib/calc.ml:31:14:sub" 31 "acc + x" "acc - x"
+let mutant ?(file = "lib/calc.ml") ?(source = calc_source) id line before after
+    =
+  { Sections.id; file; line; before; after; source = Some source }
 
-let suite_report =
+let add_survivor =
   {
-    (* Pre-spelled, as the loop spells it with the runtime's own
-       function: the identifier in its canonical form. *)
-    Sections.survivors =
+    Sections.mutant = mutant "lib/calc.ml:13:11:add" 13 "a - b" "a + b";
+    witnesses =
       [
-        {
-          Sections.mutant = add_mutant;
-          witnesses =
-            [
-              witness "calc \u{203a} sub of two positives" "test/test_calc.ml"
-                14;
-              witness "calc \u{203a} sub to zero" "test/test_calc.ml" 19;
-              witness "eval \u{203a} Sub node" "test/test_eval.ml" 31;
-            ];
-        };
-        {
-          Sections.mutant = neq_mutant;
-          witnesses =
-            [
-              witness "calc \u{203a} div by zero raises" "test/test_calc.ml" 24;
-            ];
-        };
+        witness ~file:"test/test_calc.ml" "subtraction \u{203a} stays positive"
+          19;
       ];
-    unreached = [];
-    killed = 181;
+  }
+
+let ge_survivor =
+  {
+    Sections.mutant = mutant "lib/calc.ml:21:16:ge" 21 "n > 0" "n >= 0";
+    witnesses =
+      [
+        witness ~file:"test/test_calc.ml" "sign of a negative" 31;
+        witness ~file:"test/test_calc.ml" "sign of a positive" 30;
+      ];
+  }
+
+let loop_report =
+  {
+    Sections.survivors = [ add_survivor; ge_survivor ];
+    unreached = [ ("lib/calc.ml", 40); ("lib/calc.ml", 41) ];
+    killed = 3;
+    not_tested = 0;
     scope = Sections.Suite;
-    filter = None;
   }
-
-let aggregate_report =
-  {
-    Sections.survivors =
-      [
-        {
-          Sections.mutant = add_mutant;
-          witnesses =
-            [
-              witness ~exe:"test_calc.exe" "calc \u{203a} sub of two positives"
-                "test/test_calc.ml" 14;
-              witness ~exe:"test_calc.exe" "calc \u{203a} sub to zero"
-                "test/test_calc.ml" 19;
-              witness ~exe:"test_eval.exe" "eval \u{203a} Sub node"
-                "test/test_eval.ml" 31;
-            ];
-        };
-      ];
-    unreached = [ le_mutant; sub_mutant ];
-    killed = 11;
-    scope = Sections.Executables 3;
-    filter = None;
-  }
-
-let mutation_report ?ansi ?mode ?invocation m =
-  with_renderer ?ansi ?mode ?invocation (fun r -> Report.mutation_report r m)
 
 let exe_invocation =
   `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe --"
 
-let expected_suite_report =
-  {|
-─────────────────── survivors (2) ────────────────────
+(* A loop's report, from the line after its dry run's summary. *)
+let loop ?(invocation = exe_invocation) ?live (m : Sections.mutation) ~ansi =
+  with_renderer ~ansi ?live ~invocation (fun r ->
+      let total = List.length m.Sections.survivors + m.Sections.killed in
+      List.iteri
+        (fun i (s : Sections.survivor) ->
+          Report.mutation_testing r ~index:(i + 1) ~total
+            ~id:s.Sections.mutant.Sections.id;
+          Report.mutation_survivor r s)
+        m.Sections.survivors;
+      Report.mutation_finish r m)
 
-  SURVIVED  lib/calc.ml:9:12:add    a - b  →  a + b
-       9 │   | Sub -> a - b
+let at_rest ?(invocation = `Mirrors) m ~ansi =
+  sections ~ansi (Sections.mutation_report ~invocation m)
 
-    3 tests ran this line and none failed:
-      calc › sub of two positives      test/test_calc.ml:14
-      calc › sub to zero               test/test_calc.ml:19
-      eval › Sub node                  test/test_eval.ml:31
+let add_block =
+  "  \u{ab}r|SURVIVED\u{bb}  \u{ab}b|lib/calc.ml:13:11:add\u{bb}  a - b \
+   \u{2192} a + b\n\
+  \      \u{ab}d|13 \u{2502}\u{bb} | Sub -> a - b\n\n\
+  \    1 test ran this line and did not fail:\n\
+  \      subtraction \u{203a} stays positive  \u{ab}d|test/test_calc.ml:19\u{bb}\n"
 
-  SURVIVED  lib/calc.ml:11:15:neq   b = 0  →  b <> 0
-      11 │   | Div -> if b = 0 then invalid_arg "division by zero" else a / b
+let ge_block =
+  "  \u{ab}r|SURVIVED\u{bb}  \u{ab}b|lib/calc.ml:21:16:ge\u{bb}  n > 0 \
+   \u{2192} n >= 0\n\
+  \      \u{ab}d|21 \u{2502}\u{bb} let sign n = if n > 0 then 1 else 0\n\n\
+  \    2 tests ran this line and none failed:\n\
+  \      sign of a negative  \u{ab}d|test/test_calc.ml:31\u{bb}\n\
+  \      sign of a positive  \u{ab}d|test/test_calc.ml:30\u{bb}\n"
 
-    1 test ran this line and did not fail:
-      calc › div by zero raises        test/test_calc.ml:24
+let survivors_rule =
+  "\u{ab}d|─────────────────────── survivors ────────────────────────\u{bb}\n"
 
-──────────────────────────────────────────────────────
+let closing = "\u{ab}d|" ^ closing_rule ^ "\u{bb}\n"
 
-mutants: 2 survived of 183 reached by this suite · 181 killed
-reproduce: dune exec --instrument-with ppx_windtrap.mutate test/test_calc.exe -- --arm <id>
-|}
+let loop_text =
+  "\n" ^ survivors_rule ^ add_block ^ "\n" ^ ge_block ^ closing
+  ^ "\n\
+     \u{ab}d|─────────────────── never reached (2) ────────────────────\u{bb}\n\
+    \  \u{ab}y|2\u{bb}  lib/calc.ml   lines 40-41\n" ^ closing
+  ^ "\n\
+     reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+     test/test_calc.exe -- --arm lib/calc.ml:13:11:add\n\
+     mutants: \u{ab}r|2 survived\u{bb} of 5 reached by this suite, \u{ab}g|3 \
+     killed\u{bb}, \u{ab}y|2 never reached\u{bb}\n"
 
-let expected_aggregate_report =
-  {|
-─────────────────── survivors (1) ────────────────────
-
-  SURVIVED  lib/calc.ml:9:12:add   a - b  →  a + b
-       9 │   | Sub -> a - b
-
-    3 tests in 2 executables ran this line and none failed:
-      test_calc.exe   calc › sub of two positives      test/test_calc.ml:14
-      test_calc.exe   calc › sub to zero               test/test_calc.ml:19
-      test_eval.exe   eval › Sub node                  test/test_eval.ml:31
-
-───────────────── never reached (2) ──────────────────
-
-  UNREACHED  lib/calc.ml:22:5:le     n < limit  →  n <= limit
-      22 │   if n < limit then
-
-  UNREACHED  lib/calc.ml:31:14:sub   acc + x  →  acc - x
-      31 │   List.fold_left (fun acc x -> acc + x) 0
-
-──────────────────────────────────────────────────────
-
-mutants: 1 survived of 12 reached · 11 killed · 2 never reached · 3 executables
-reproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>
-|}
-
-let test_mutation_report () =
-  check_string "the per-executable report, byte for byte"
-    ~expected:expected_suite_report
-    ~actual:(mutation_report ~invocation:exe_invocation suite_report);
-  check_string "the aggregate report, byte for byte"
-    ~expected:expected_aggregate_report
-    ~actual:(mutation_report aggregate_report);
-  let out = mutation_report ~invocation:exe_invocation suite_report in
-  (* The block is the finding and the footer is the remedy: no per-block
-     command, no attribute to paste. *)
+let test_mutation_loop () =
+  check_report "the loop's report" ~marked:loop_text (loop loop_report);
+  check_string "every mutant killed and none unreached: the outcome alone"
+    ~expected:"mutants: 3 reached by this suite, \027[32m3 killed\027[0m\n"
+    ~actual:
+      (loop
+         { loop_report with Sections.survivors = []; unreached = [] }
+         ~ansi:true);
+  check_absent "no survivor: no rule" ~sub:"\u{2500}"
+    (loop
+       { loop_report with Sections.survivors = []; unreached = [] }
+       ~ansi:false);
+  (* The block is the finding and the command the remedy. *)
+  let out = loop loop_report ~ansi:false in
   check_absent "no arm line in a block" ~sub:"    arm " out;
-  check_absent "no dismiss line in a block" ~sub:"dismiss" out;
-  check_absent "no [@mutate off] to paste" ~sub:"[@mutate off" out
+  check_absent "no [@mutate off] to paste" ~sub:"[@mutate off" out;
+  check_absent "the loop's rule carries no count" ~sub:"survivors (" out
+
+(* What a loop commits as it runs. Read off the sink without flushing it
+   here, so the order of the bytes and the flush are both pinned. *)
+
+let test_mutation_streams () =
+  let buf = Buffer.create 256 in
+  let r =
+    Report.create
+      ~out:(Format.formatter_of_buffer buf)
+      ~ansi:false
+      { (config ()) with Run.invocation = exe_invocation }
+  in
+  let committed () = Buffer.contents buf in
+  let plain marked = Text.strip_ansi (roles marked) in
+  Report.mutation_testing r ~index:1 ~total:5 ~id:"lib/calc.ml:9:3:sub";
+  check_string "trying a mutant commits nothing" ~expected:""
+    ~actual:(committed ());
+  Report.mutation_testing r ~index:2 ~total:5 ~id:"lib/calc.ml:13:11:add";
+  Report.mutation_survivor r add_survivor;
+  let first = plain ("\n" ^ survivors_rule ^ add_block) in
+  check_string
+    "a survivor commits the blank line, the opening rule and its block when \
+     its child ends, flushed"
+    ~expected:first ~actual:(committed ());
+  Report.mutation_testing r ~index:3 ~total:5 ~id:"lib/calc.ml:21:16:ge";
+  Report.mutation_survivor r ge_survivor;
+  let second = first ^ plain ("\n" ^ ge_block) in
+  check_string "the next block follows one blank line" ~expected:second
+    ~actual:(committed ());
+  check "the opening rule prints once, before the first block"
+    (occurrences_of ~sub:" survivors " (committed ()) = 1);
+  check_absent "the closing rule is the end of the loop's, not a block's"
+    ~sub:closing_rule (committed ());
+  check_absent "and so is the outcome" ~sub:"mutants:" (committed ());
+  Report.mutation_finish r loop_report;
+  check_string "the last child's end commits the rest"
+    ~expected:(plain loop_text) ~actual:(committed ())
+
+let test_mutation_live () =
+  let tail =
+    loop ~live:true
+      { loop_report with Sections.survivors = [ add_survivor ]; unreached = [] }
+      ~ansi:true
+  in
+  check "the live line is erased before the first committed byte"
+    (String.starts_with
+       ~prefix:
+         ("\r\027[2K\027[2m  [1/4] \
+           lib/calc.ml:13:11:add\u{2026}\027[0m\r\027[2K"
+         ^ roles ("\n" ^ survivors_rule))
+       tail);
+  check "and none is drawn or erased after it"
+    (occurrences_of ~sub:"\r\027[2K" tail = 2);
+  let killed =
+    with_renderer ~ansi:true ~live:true (fun r ->
+        Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub";
+        Report.mutation_testing r ~index:2 ~total:2 ~id:"lib/calc.ml:13:11:add")
+  in
+  check_string "a killed mutant leaves nothing: the next line draws over it"
+    ~expected:
+      "\r\027[2K\027[2m  [1/2] \
+       lib/calc.ml:9:3:sub\u{2026}\027[0m\r\027[2K\r\027[2K\027[2m  [2/2] \
+       lib/calc.ml:13:11:add\u{2026}\027[0m"
+    ~actual:killed;
+  check_string "off without a terminal" ~expected:""
+    ~actual:
+      (with_renderer ~ansi:true (fun r ->
+           Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"));
+  check_string "off without colour" ~expected:""
+    ~actual:
+      (with_renderer ~ansi:false ~live:true (fun r ->
+           Report.mutation_testing r ~index:1 ~total:2 ~id:"lib/calc.ml:9:3:sub"))
+
+(* An interrupted loop closes as a complete one does, over the children
+   that ended: the reached mutants left without a verdict are counted
+   last. Its [windtrap:] line is standard error's, pinned with a real
+   signal in test/instr/loop. *)
+
+let test_mutation_interrupted () =
+  let stopped =
+    {
+      loop_report with
+      Sections.survivors = [ add_survivor ];
+      killed = 0;
+      not_tested = 2;
+    }
+  in
+  check_string "the closing sections, and what was not tested"
+    ~expected:
+      (Text.strip_ansi (roles closing)
+      ^ "\n\
+         ─────────────────── never reached (2) ────────────────────\n\
+        \  2  lib/calc.ml   lines 40-41\n" ^ closing_rule
+      ^ "\n\n\
+         reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+         test/test_calc.exe -- --arm lib/calc.ml:13:11:add\n\
+         mutants: 1 survived of 3 reached by this suite, 2 never reached, 2 \
+         not tested\n")
+    ~actual:
+      (with_renderer ~invocation:exe_invocation (fun r ->
+           Report.mutation_finish r stopped));
+  check_string "stopped before a child ended"
+    ~expected:"mutants: 5 reached by this suite, 5 not tested\n"
+    ~actual:
+      (with_renderer (fun r ->
+           Report.mutation_finish r
+             {
+               loop_report with
+               Sections.survivors = [];
+               unreached = [];
+               killed = 0;
+               not_tested = 5;
+             }))
+
+(* [windtrap mutants]: the same sections at rest, the survivors counted,
+   the executables one column for the report. *)
+
+let eq_survivor =
+  {
+    Sections.mutant =
+      mutant ~file:"lib/eval.ml"
+        ~source:
+          (source_of
+             [ (60, "      if eval env b = Int 0 then raise Division_by_zero") ])
+        "lib/eval.ml:60:24:eq" 60 "eval env b = Int 0" "eval env b <> Int 0";
+    witnesses =
+      [
+        witness ~exe:"test_eval.exe" "division \u{203a} divides" 0;
+        witness ~exe:"test_eval.exe" "division \u{203a} rounds toward zero" 0;
+        witness ~exe:"test_printer.exe" "round trip \u{203a} arithmetic" 0;
+      ];
+  }
+
+let not_survivor =
+  {
+    Sections.mutant =
+      mutant ~file:"lib/parser.ml"
+        ~source:
+          (source_of
+             [ (102, "    if at_end p then Error (Unexpected_eof p.pos)") ])
+        "lib/parser.ml:102:9:not" 102 "at_end p" "not (at_end p)";
+    witnesses =
+      [
+        witness ~exe:"test_parser.exe" "errors \u{203a} unexpected end of input"
+          0;
+      ];
+  }
+
+let merge_report =
+  {
+    Sections.survivors = [ eq_survivor; not_survivor ];
+    unreached =
+      List.map (fun line -> ("lib/text.ml", line)) [ 12; 13; 14; 32 ]
+      @ [ ("lib/run.ml", 40); ("lib/run.ml", 40); ("lib/report.ml", 61) ];
+    killed = 16;
+    not_tested = 0;
+    scope = Sections.Executables 3;
+  }
+
+let merge_invocation =
+  `Exe "dune exec --instrument-with ppx_windtrap.mutate test/test_eval.exe --"
+
+let merge_text =
+  "\u{ab}d|───────────────────── survivors (2) ──────────────────────\u{bb}\n\
+  \  \u{ab}r|SURVIVED\u{bb}  \u{ab}b|lib/eval.ml:60:24:eq\u{bb}  eval env b = \
+   Int 0 \u{2192} eval env b <> Int 0\n\
+  \      \u{ab}d|60 \u{2502}\u{bb} if eval env b = Int 0 then raise \
+   Division_by_zero\n\n\
+  \    3 tests in 2 executables ran this line and none failed:\n\
+  \      test_eval.exe     division \u{203a} divides\n\
+  \      test_eval.exe     division \u{203a} rounds toward zero\n\
+  \      test_printer.exe  round trip \u{203a} arithmetic\n\n\
+  \  \u{ab}r|SURVIVED\u{bb}  \u{ab}b|lib/parser.ml:102:9:not\u{bb}  at_end p \
+   \u{2192} not (at_end p)\n\
+  \      \u{ab}d|102 \u{2502}\u{bb} if at_end p then Error (Unexpected_eof \
+   p.pos)\n\n\
+  \    1 test ran this line and did not fail:\n\
+  \      test_parser.exe   errors \u{203a} unexpected end of input\n" ^ closing
+  ^ "\n\
+     \u{ab}d|─────────────────── never reached (7) ────────────────────\u{bb}\n\
+    \  \u{ab}y|1\u{bb}  lib/report.ml   lines 61\n\
+    \  \u{ab}y|2\u{bb}  lib/run.ml      lines 40\n\
+    \  \u{ab}y|4\u{bb}  lib/text.ml     lines 12-14, 32\n" ^ closing
+  ^ "\n\
+     reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+     test/test_eval.exe -- --arm lib/eval.ml:60:24:eq\n\
+     mutants: \u{ab}r|2 survived\u{bb} of 18 reached, \u{ab}g|16 killed\u{bb}, \
+     \u{ab}y|7 never reached\u{bb}, 3 executables\n"
+
+let test_mutation_at_rest () =
+  check_report "the merge's report" ~marked:merge_text
+    (at_rest ~invocation:merge_invocation merge_report);
+  let out = at_rest ~invocation:merge_invocation merge_report ~ansi:false in
+  check_absent "no blank line just inside a rule: after one"
+    ~sub:"\u{2500}\n\n  SURVIVED" out;
+  check_absent "nor before one" ~sub:("\n\n" ^ closing_rule) out;
+  check "nothing precedes the report"
+    (String.starts_with ~prefix:"\u{2500}" out);
+  (* Each finding stands alone. *)
+  check_string "never reached alone: its rule, its rows, the outcome"
+    ~expected:
+      ("─────────────────── never reached (7) ────────────────────\n\
+       \  1  lib/report.ml   lines 61\n\
+       \  2  lib/run.ml      lines 40\n\
+       \  4  lib/text.ml     lines 12-14, 32\n" ^ closing_rule
+     ^ "\n\nmutants: 16 reached, 16 killed, 7 never reached, 3 executables\n")
+    ~actual:(at_rest { merge_report with Sections.survivors = [] } ~ansi:false);
+  check_absent "survivors alone: no never-reached section" ~sub:"never reached"
+    (at_rest { merge_report with Sections.unreached = [] } ~ansi:false);
+  check_string "neither: the outcome alone"
+    ~expected:"mutants: 16 reached, 16 killed, 3 executables\n"
+    ~actual:
+      (at_rest
+         { merge_report with Sections.survivors = []; unreached = [] }
+         ~ansi:false);
+  (* An unreadable source drops the source line and nothing else. *)
+  let sourceless =
+    {
+      merge_report with
+      Sections.survivors =
+        List.map
+          (fun (s : Sections.survivor) ->
+            {
+              s with
+              Sections.mutant =
+                { s.Sections.mutant with Sections.source = None };
+            })
+          merge_report.Sections.survivors;
+    }
+  in
+  check_absent "an unreadable source drops the source line" ~sub:"\u{2502}"
+    (at_rest sourceless ~ansi:false);
+  check_contains "and keeps the title, the sentence one blank line under it"
+    ~sub:
+      "  SURVIVED  lib/parser.ml:102:9:not  at_end p \u{2192} not (at_end p)\n\n\
+      \    1 test ran this line and did not fail:\n"
+    (at_rest sourceless ~ansi:false);
+  check_absent "a line past the end of the source prints no source line"
+    ~sub:"\u{2502}"
+    (at_rest
+       {
+         merge_report with
+         Sections.survivors =
+           [
+             {
+               not_survivor with
+               Sections.mutant =
+                 {
+                   not_survivor.Sections.mutant with
+                   Sections.source = Some "one line\n";
+                 };
+             };
+           ];
+       }
+       ~ansi:false)
 
 let test_mutation_sentence () =
   let block witnesses =
-    mutation_report
+    at_rest
       {
-        suite_report with
-        Sections.survivors = [ { Sections.mutant = add_mutant; witnesses } ];
+        loop_report with
+        Sections.survivors = [ { add_survivor with Sections.witnesses } ];
       }
+      ~ansi:false
   in
-  let one = witness "calc \u{203a} sub to zero" "test/test_calc.ml" 19 in
-  let other = witness "eval \u{203a} Sub node" "test/test_eval.ml" 31 in
+  let one = witness ~file:"test/test_calc.ml" "calc \u{203a} sub to zero" 19 in
+  let other = witness ~file:"test/test_eval.ml" "eval \u{203a} Sub node" 31 in
   check_contains "singular"
     ~sub:"\n    1 test ran this line and did not fail:\n" (block [ one ]);
   check_contains "plural" ~sub:"\n    2 tests ran this line and none failed:\n"
+    (block [ one; other ]);
+  check_contains "names are padded to the widest of the block"
+    ~sub:
+      "\n\
+      \      calc \u{203a} sub to zero  test/test_calc.ml:19\n\
+      \      eval \u{203a} Sub node     test/test_eval.ml:31\n"
     (block [ one; other ]);
   (* The executable column appears exactly when a witness names one, and
      it is one column for the report: a row without an executable still
@@ -3901,8 +4429,8 @@ let test_mutation_sentence () =
   check_contains "the column appears when one witness names an executable"
     ~sub:
       "\n\
-      \      test_calc.exe   calc \u{203a} sub to zero      test/test_calc.ml:19\n\
-      \                      eval \u{203a} Sub node         test/test_eval.ml:31\n"
+      \      test_calc.exe  calc \u{203a} sub to zero  test/test_calc.ml:19\n\
+      \                     eval \u{203a} Sub node     test/test_eval.ml:31\n"
     (block [ named; other ]);
   check_contains "one executable is just tests"
     ~sub:"\n    2 tests ran this line and none failed:\n"
@@ -3911,220 +4439,229 @@ let test_mutation_sentence () =
     ~sub:"\n    2 tests in 2 executables ran this line and none failed:\n"
     (block [ named; { other with Sections.exe = Some "test_eval.exe" } ])
 
-let test_mutation_colors () =
-  let out =
-    mutation_report ~ansi:true ~invocation:exe_invocation suite_report
-  in
-  check_contains "SURVIVED wears the failure red, the identifier the bold"
-    ~sub:"  \027[31mSURVIVED\027[0m  \027[1mlib/calc.ml:9:12:add\027[0m" out;
-  check_contains "the witness location is faint"
-    ~sub:"\027[2mtest/test_calc.ml:14\027[0m" out;
-  check_contains "the labelled rule is faint" ~sub:"\027[2m\u{2500}" out;
-  check_contains "the survived count is red, the killed count green"
-    ~sub:
-      "mutants: \027[31m2 survived\027[0m of 183 reached by this suite \
-       \u{00b7} \027[32m181 killed\027[0m\n"
-    out;
-  (* No color in the footer, as in every hint — pinned by the whole
-     line, so a footer that went missing fails too. *)
-  check_contains "the reproduce footer carries no color"
-    ~sub:
-      "\n\
-       reproduce: dune exec --instrument-with ppx_windtrap.mutate \
-       test/test_calc.exe -- --arm <id>\n"
-    out;
-  let out = mutation_report ~ansi:true aggregate_report in
-  check_contains "UNREACHED wears yellow, the identifier the bold"
-    ~sub:"  \027[33mUNREACHED\027[0m  \027[1mlib/calc.ml:22:5:le\027[0m" out;
-  check_contains "the never-reached count is yellow, the rest plain"
-    ~sub:
-      "mutants: \027[31m1 survived\027[0m of 12 reached \u{00b7} \027[32m11 \
-       killed\027[0m \u{00b7} \027[33m2 never reached\027[0m \u{00b7} 3 \
-       executables\n"
-    out;
-  (* The same lines without color carry no escape at all: the styling is
-     the renderer's decision, never the data's. *)
-  check_absent "no escape without color" ~sub:"\027["
-    (mutation_report ~invocation:exe_invocation suite_report);
-  check_absent "no escape without color, aggregate" ~sub:"\027["
-    (mutation_report aggregate_report)
-
 let test_mutation_summary_forms () =
-  let summary ?(survivors = []) ?(unreached = []) ~killed scope =
-    mutation_report ~invocation:exe_invocation
-      { suite_report with Sections.survivors; unreached; killed; scope }
+  let summary ?(survivors = []) ?(unreached = []) ?(not_tested = 0) ~killed
+      scope =
+    last_line
+      (at_rest
+         { Sections.survivors; unreached; killed; not_tested; scope }
+         ~ansi:false)
   in
-  let survivor =
-    { Sections.mutant = add_mutant; witnesses = [ witness "t" "test/t.ml" 1 ] }
-  in
-  (* A report with nothing to say is one line, and the clean form is the
-     absence of a survived term, not a zero. *)
+  let unreached = [ ("lib/calc.ml", 22); ("lib/calc.ml", 31) ] in
+  (* The clean form is the absence of a survived term, not a zero. *)
   check_string "suite, clean"
-    ~expected:"mutants: 5 reached by this suite \u{00b7} 5 killed\n"
+    ~expected:"mutants: 5 reached by this suite, 5 killed"
     ~actual:(summary ~killed:5 Sections.Suite);
   check_string "selected, clean"
-    ~expected:"mutants: 2 reached by the 2 selected tests \u{00b7} 2 killed\n"
+    ~expected:"mutants: 2 reached by the 2 selected tests, 2 killed"
     ~actual:(summary ~killed:2 (Sections.Selected 2));
   check_string "one selected test"
-    ~expected:"mutants: 1 reached by the 1 selected test \u{00b7} 1 killed\n"
+    ~expected:"mutants: 1 reached by the 1 selected test, 1 killed"
     ~actual:(summary ~killed:1 (Sections.Selected 1));
   check_string "executables, clean"
-    ~expected:"mutants: 14 reached \u{00b7} 14 killed \u{00b7} 3 executables\n"
+    ~expected:"mutants: 14 reached, 14 killed, 3 executables"
     ~actual:(summary ~killed:14 (Sections.Executables 3));
   check_string "one executable"
-    ~expected:"mutants: 3 reached \u{00b7} 3 killed \u{00b7} 1 executable\n"
+    ~expected:"mutants: 3 reached, 3 killed, 1 executable"
     ~actual:(summary ~killed:3 (Sections.Executables 1));
   (* Zero terms are omitted: nothing killed and nothing reached. *)
   check_string "nothing reached, nothing killed"
-    ~expected:"mutants: 0 reached by this suite\n"
+    ~expected:"mutants: 0 reached by this suite"
     ~actual:(summary ~killed:0 Sections.Suite);
-  let line out =
-    match
-      List.filter
-        (String.starts_with ~prefix:"mutants: ")
-        (String.split_on_char '\n' out)
-    with
-    | [ l ] -> l
-    | _ -> "\u{ab}no single mutants line\u{bb}"
-  in
   check_string "nothing reached in the aggregate is all never reached"
-    ~expected:
-      "mutants: 0 reached \u{00b7} 2 never reached \u{00b7} 1 executable"
-    ~actual:
-      (line
-         (summary ~unreached:[ le_mutant; sub_mutant ] ~killed:0
-            (Sections.Executables 1)));
-  (* With survivors the reached count is the sum of both lists. *)
+    ~expected:"mutants: 0 reached, 2 never reached, 1 executable"
+    ~actual:(summary ~unreached ~killed:0 (Sections.Executables 1));
+  (* With survivors the reached count is the sum of the lists. *)
   check_string "suite, survivors"
-    ~expected:"mutants: 1 survived of 5 reached by this suite \u{00b7} 4 killed"
-    ~actual:(line (summary ~survivors:[ survivor ] ~killed:4 Sections.Suite));
+    ~expected:"mutants: 1 survived of 5 reached by this suite, 4 killed"
+    ~actual:(summary ~survivors:[ add_survivor ] ~killed:4 Sections.Suite);
   check_string "selected, survivors"
     ~expected:
-      "mutants: 1 survived of 2 reached by the 3 selected tests \u{00b7} 1 \
-       killed"
+      "mutants: 1 survived of 2 reached by the 3 selected tests, 1 killed"
     ~actual:
-      (line (summary ~survivors:[ survivor ] ~killed:1 (Sections.Selected 3)));
+      (summary ~survivors:[ add_survivor ] ~killed:1 (Sections.Selected 3));
   check_string "executables, survivors and never reached"
     ~expected:
-      "mutants: 1 survived of 12 reached \u{00b7} 11 killed \u{00b7} 2 never \
-       reached \u{00b7} 3 executables"
+      "mutants: 1 survived of 12 reached, 11 killed, 2 never reached, 3 \
+       executables"
     ~actual:
-      (line
-         (summary ~survivors:[ survivor ] ~unreached:[ le_mutant; sub_mutant ]
-            ~killed:11 (Sections.Executables 3)));
+      (summary ~survivors:[ add_survivor ] ~unreached ~killed:11
+         (Sections.Executables 3));
   check_string "every kill a survivor: no killed term"
     ~expected:"mutants: 1 survived of 1 reached by this suite"
-    ~actual:(line (summary ~survivors:[ survivor ] ~killed:0 Sections.Suite))
-
-let test_mutation_footer () =
-  (* The footer is the one command, under the summary, with the
-     placeholder where the identifier goes: [--arm] after the invocation
-     under [`Exe], the flag's mirror before the reader's own suite
-     command under [`Mirrors], where no command line reaches the suite. *)
-  check_contains "the footer follows the exe invocation"
-    ~sub:
-      "mutants: 2 survived of 183 reached by this suite \u{00b7} 181 killed\n\
-       reproduce: dune exec --instrument-with ppx_windtrap.mutate \
-       test/test_calc.exe -- --arm <id>\n"
-    (mutation_report ~invocation:exe_invocation suite_report);
-  check_contains "the footer under mirrors names no build tool"
-    ~sub:
-      "\nreproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
-    (mutation_report suite_report);
-  (* A clean report has nothing to reproduce. *)
-  let clean = { suite_report with Sections.survivors = []; killed = 183 } in
-  check_absent "no footer on a clean report" ~sub:"reproduce:"
-    (mutation_report ~invocation:exe_invocation clean);
-  (* Never-reached mutants alone are still something to arm. *)
-  check_contains "never reached alone keeps the footer" ~sub:"\nreproduce: "
-    (mutation_report
-       { aggregate_report with Sections.survivors = []; killed = 12 });
-  (* A filtered run's survivor survived that selection, so the footer
-     restates the filter exactly as the replay line does: [-f], quoted,
-     after the command under [`Exe]; [WINDTRAP_FILTER] before the
-     placeholder under [`Mirrors]. *)
-  let filtered =
-    {
-      suite_report with
-      Sections.scope = Sections.Selected 2;
-      filter = Some "sub";
-    }
-  in
-  check_contains "the exe footer carries the filter"
-    ~sub:
-      "\n\
-       reproduce: dune exec --instrument-with ppx_windtrap.mutate \
-       test/test_calc.exe -- --arm <id> -f 'sub'\n"
-    (mutation_report ~invocation:exe_invocation filtered);
-  check_contains "the mirror footer carries the filter"
-    ~sub:
-      "\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> WINDTRAP_FILTER='sub' <re-run the \
-       instrumented suite>\n"
-    (mutation_report filtered);
-  check_contains "the filter is shell-quoted, as the replay line's is"
-    ~sub:" -f 'it'\\''s'\n"
-    (mutation_report ~invocation:exe_invocation
-       { filtered with Sections.filter = Some "it's" })
-
-let test_mutation_sections () =
-  (* Every survivor gets a block: a survivor is a failure block, and
-     windtrap caps no failure block. *)
-  check_contains "the label counts the blocks it printed" ~sub:"survivors (1) "
-    (mutation_report
-       {
-         suite_report with
-         Sections.survivors = [ List.hd suite_report.Sections.survivors ];
-       });
-  (* Each finding stands alone: never reached without survivors, and
-     survivors without never reached. *)
-  let unreached_only =
-    { aggregate_report with Sections.survivors = []; killed = 12 }
-  in
-  check_string "never reached alone: its rule, its blocks, the summary"
+    ~actual:(summary ~survivors:[ add_survivor ] ~killed:0 Sections.Suite);
+  check_string "what an interrupted loop did not test is reached, and last"
     ~expected:
-      "\n\
-       \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500} \
-       never reached (2) \
-       \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n\
-      \  UNREACHED  lib/calc.ml:22:5:le     n < limit  \u{2192}  n <= limit\n\
-      \      22 \u{2502}   if n < limit then\n\n\
-      \  UNREACHED  lib/calc.ml:31:14:sub   acc + x  \u{2192}  acc - x\n\
-      \      31 \u{2502}   List.fold_left (fun acc x -> acc + x) 0\n\n\
-       \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\n\
-       mutants: 12 reached \u{00b7} 12 killed \u{00b7} 2 never reached \
-       \u{00b7} 3 executables\n\
-       reproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
-    ~actual:(mutation_report unreached_only);
-  check_absent "survivors alone: no never-reached section" ~sub:"never reached"
-    (mutation_report ~invocation:exe_invocation suite_report);
-  (* An unreadable source drops the excerpt row and nothing else. *)
-  let sourceless =
-    {
-      aggregate_report with
-      Sections.survivors =
-        List.map
-          (fun (s : Sections.survivor) ->
-            {
-              s with
-              Sections.mutant =
-                { s.Sections.mutant with Sections.source = None };
-            })
-          aggregate_report.Sections.survivors;
-      unreached =
-        List.map
-          (fun (m : Sections.mutant) -> { m with Sections.source = None })
-          aggregate_report.Sections.unreached;
-    }
+      "mutants: 1 survived of 6 reached by this suite, 2 killed, 2 never \
+       reached, 3 not tested"
+    ~actual:
+      (summary ~survivors:[ add_survivor ] ~unreached ~not_tested:3 ~killed:2
+         Sections.Suite);
+  check_absent "no middle dot joins the terms" ~sub:"\u{00b7}"
+    (summary ~survivors:[ add_survivor ] ~unreached ~killed:11
+       (Sections.Executables 3))
+
+(* One command, once, above the outcome: the one that arms the first
+   survivor printed, under the run's launcher and the run's selection. *)
+
+let test_mutation_reproduce () =
+  let line ?invocation m =
+    match
+      List.filter
+        (String.starts_with ~prefix:"reproduce: ")
+        (String.split_on_char '\n' (loop ?invocation m ~ansi:true))
+    with
+    | [ l ] -> l
+    | [] -> "\u{ab}no reproduce line\u{bb}"
+    | _ -> "\u{ab}several reproduce lines\u{bb}"
   in
-  check_absent "an unreadable source drops the excerpt row" ~sub:"\u{2502}"
-    (mutation_report sourceless);
-  check_contains "an unreadable source keeps the survivor head row"
-    ~sub:"  SURVIVED  lib/calc.ml:9:12:add"
-    (mutation_report sourceless);
-  check_contains "an unreadable source keeps the unreached head row"
-    ~sub:"  UNREACHED  lib/calc.ml:22:5:le"
-    (mutation_report sourceless)
+  check_string "under dune: dune exec, the backend before the target"
+    ~expected:
+      "reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+       test/test_calc.exe -- --arm lib/calc.ml:13:11:add"
+    ~actual:(line loop_report);
+  check_string "by hand: the bare executable"
+    ~expected:"reproduce: ./test_calc.exe --arm lib/calc.ml:13:11:add"
+    ~actual:(line ~invocation:(`Exe "./test_calc.exe") loop_report);
+  check_string
+    "under a build action: the mirror, and a run dune does not replay"
+    ~expected:
+      "reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:13:11:add dune runtest \
+       --force --instrument-with ppx_windtrap.mutate"
+    ~actual:(line ~invocation:`Mirrors loop_report);
+  check_string "the first survivor printed is the one it arms"
+    ~expected:"reproduce: ./t.exe --arm lib/calc.ml:21:16:ge"
+    ~actual:
+      (line ~invocation:(`Exe "./t.exe")
+         { loop_report with Sections.survivors = [ ge_survivor; add_survivor ] });
+  check_string "an identifier a shell would split is quoted"
+    ~expected:"reproduce: ./t.exe --arm 'lib/my calc.ml:13:11:add'"
+    ~actual:
+      (line ~invocation:(`Exe "./t.exe")
+         {
+           loop_report with
+           Sections.survivors =
+             [
+               {
+                 add_survivor with
+                 Sections.mutant =
+                   {
+                     add_survivor.Sections.mutant with
+                     Sections.id = "lib/my calc.ml:13:11:add";
+                   };
+               };
+             ];
+         });
+  let narrowed invocation =
+    let config =
+      {
+        (config ~invocation ()) with
+        Run.filter = Some "stays positive";
+        exclude = Some "slow";
+        tags = [ "unit"; "fast" ];
+        exclude_tags = [ "flaky" ];
+        shard = Some (2, 4);
+        failed_only = true;
+      }
+    in
+    List.find
+      (String.starts_with ~prefix:"reproduce: ")
+      (String.split_on_char '\n'
+         (sections (Sections.mutation_closing ~config loop_report)))
+  in
+  check_string "a narrowed run: each selection flag, restated"
+    ~expected:
+      "reproduce: ./t.exe --arm lib/calc.ml:13:11:add -f 'stays positive' -e \
+       'slow' --tag unit --tag fast --exclude-tag flaky --shard 2/4 --failed"
+    ~actual:(narrowed (`Exe "./t.exe"));
+  check_string "under a build action: their mirrors, and --failed has none"
+    ~expected:
+      "reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:13:11:add \
+       WINDTRAP_FILTER='stays positive' WINDTRAP_EXCLUDE='slow' \
+       WINDTRAP_TAG=unit,fast WINDTRAP_EXCLUDE_TAG=flaky WINDTRAP_SHARD=2/4 \
+       dune runtest --force --instrument-with ppx_windtrap.mutate"
+    ~actual:(narrowed `Mirrors);
+  check_string "no survivor, nothing to arm: never reached alone has none"
+    ~expected:"\u{ab}no reproduce line\u{bb}"
+    ~actual:(line { loop_report with Sections.survivors = [] });
+  let out = loop loop_report ~ansi:false in
+  check_contains "above the outcome, which stays last"
+    ~sub:"--arm lib/calc.ml:13:11:add\nmutants: 2 survived" out;
+  check_absent "no placeholder to fill" ~sub:"<id>" out;
+  check_absent "and no selection restated" ~sub:" -f " out
+
+(* Never-reached mutants are one row per file, in path order, their
+   distinct lines fitted as a coverage row's are. *)
+
+let test_mutation_unreached () =
+  let wide =
+    List.init 60 (fun i -> ("lib/report.ml", (i * 3) + 10))
+    @ List.init 60 (fun i -> ("lib/report.ml", (i * 3) + 10))
+    @ [ ("lib/a.ml", 7); ("lib/a.ml", 8); ("lib/a.ml", 8); ("lib/b.ml", 1) ]
+  in
+  let out =
+    at_rest
+      {
+        Sections.survivors = [];
+        unreached = wide;
+        killed = 1;
+        not_tested = 0;
+        scope = Sections.Executables 1;
+      }
+      ~ansi:true
+  in
+  check_string "one row per file; the count right-aligned in yellow"
+    ~expected:
+      (roles
+         "\u{ab}d|────────────────── never reached (124) \
+          ───────────────────\u{bb}\n\
+         \  \u{ab}y|  3\u{bb}  lib/a.ml        lines 7-8\n\
+         \  \u{ab}y|  1\u{bb}  lib/b.ml        lines 1\n\
+         \  \u{ab}y|120\u{bb}  lib/report.ml   lines 10, 13, 16, 19, 22, 25, \
+          28, 31 (+52 more)\n"
+      ^ roles closing
+      ^ "\n\
+         mutants: 1 reached, \027[32m1 killed\027[0m, \027[33m124 never \
+         reached\027[0m, 1 executable\n")
+    ~actual:out;
+  check_absent "no block per mutant" ~sub:"UNREACHED" out
+
+let test_mutation_escapes () =
+  let out =
+    at_rest
+      {
+        loop_report with
+        Sections.survivors =
+          [
+            {
+              add_survivor with
+              Sections.mutant =
+                {
+                  add_survivor.Sections.mutant with
+                  Sections.source =
+                    Some (source_of [ (13, "\t  | Sub -> \027[31ma\r - b") ]);
+                };
+            };
+          ];
+      }
+      ~ansi:true
+  in
+  check_contains "a survivor's source line prints its control bytes as text"
+    ~sub:"\027[2m13 \u{2502}\027[0m | Sub -> \\x1b[31ma\\x0d - b\n" out;
+  check_absent "never raw" ~sub:"\027[31ma" out
+
+let test_mutation_armed_verdict () =
+  let survived hits =
+    with_renderer (fun r -> Report.mutation_survived r ~hits)
+  in
+  check_string "evaluated once"
+    ~expected:
+      "mutant survived: the armed site was evaluated 1 time and no test failed.\n"
+    ~actual:(survived 1);
+  check_string "evaluated twice"
+    ~expected:
+      "mutant survived: the armed site was evaluated 2 times and no test failed.\n"
+    ~actual:(survived 2)
 
 (* The GitHub Actions envelope: golden ::error annotation, %0A/%0D/%25
    data encoding, %3A/%2C property encoding, ANSI stripping, group folding
@@ -4716,17 +5253,29 @@ let tests =
       test_excerpt_project_root;
     test "corrections: the written files, per mode" test_corrections_section;
     test "corrections: the quiet gate and refusals" test_corrections_quiet;
-    test "the coverage report's frozen bytes" test_coverage_report_bytes;
-    test "the uncovered cell is bounded" test_coverage_uncovered_cap;
-    test "the coverage thresholds are the renderer's" test_coverage_thresholds;
-    test "mutation: both reports, byte for byte" test_mutation_report;
+    test "coverage: the whole table, colour and plain" test_coverage_table;
+    test "coverage: the whole source view, colour and plain"
+      test_coverage_source;
+    test "coverage: the outcome is the last line" test_coverage_outcome_last;
+    test "coverage: the header row and the notes" test_coverage_header;
+    test "coverage: a row shows eight ranges" test_coverage_cap;
+    test "coverage: red below the gate, plain otherwise" test_coverage_colour;
+    test "coverage: source text is escaped" test_coverage_escapes;
+    test "mutation: a loop's whole report, colour and plain" test_mutation_loop;
+    test "mutation: a survivor's block is committed when its child ends"
+      test_mutation_streams;
+    test "mutation: the live line" test_mutation_live;
+    test "mutation: an interrupted loop's closing" test_mutation_interrupted;
+    test "mutation: the merge's whole report, colour and plain"
+      test_mutation_at_rest;
     test "mutation: the sentence and the executable column"
       test_mutation_sentence;
-    test "mutation: the blocks and the summary wear the palette"
-      test_mutation_colors;
-    test "mutation: summary line forms" test_mutation_summary_forms;
-    test "mutation: the reproduce footer" test_mutation_footer;
-    test "mutation: sections stand alone" test_mutation_sections;
+    test "mutation: the outcome line's forms" test_mutation_summary_forms;
+    test "mutation: the reproduce command" test_mutation_reproduce;
+    test "mutation: never reached, one row per file" test_mutation_unreached;
+    test "mutation: a survivor's source line is escaped" test_mutation_escapes;
+    test "mutation: the armed verdict counts in English"
+      test_mutation_armed_verdict;
     test "github: golden annotation" test_github_golden;
     test "github: data encoding (%0A/%0D/%25)" test_github_data_encoding;
     test "github: property encoding (%3A/%2C)" test_github_property_encoding;

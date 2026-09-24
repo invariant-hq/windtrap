@@ -60,10 +60,8 @@ let dismissed =
         is_true (Subject.dismissed 1 2 <> 99));
   ]
 
-(* Two survivors, so that the cap has something to drop and the label has
-   something to announce. [orphan] is weakly reached by one test and
-   [widen] by two, so the block order is also a claim: most-watched
-   first. *)
+(* A second survivor: [orphan] is weakly reached by one test, where
+   [widen] is by two. Every survivor gets a block. *)
 let two_survivors =
   [ test "orphan is nonzero" (fun () -> is_true (Subject.orphan 3 4 <> 0)) ]
 
@@ -152,31 +150,91 @@ let fatal =
      so only its own deadline can end it, and what an expiry proves is
      non-determinism. *)
 
+let hang () =
+  (match Sys.getenv_opt "MUTATE_GRANDCHILD_PIDFILE" with
+  | None | Some "" -> ()
+  | Some path ->
+      let pid =
+        Unix.create_process "sh"
+          [|
+            "sh";
+            "-c";
+            "trap '' TERM; n=0; while [ $n -lt 600 ]; do sleep 1; n=$((n+1)); \
+             done";
+          |]
+          Unix.stdin Unix.stdout Unix.stderr
+      in
+      let oc = open_out_gen [ Open_append; Open_creat ] 0o644 path in
+      output_string oc (string_of_int pid ^ "\n");
+      close_out oc);
+  let never_written, _held_open = Unix.pipe () in
+  ignore (Unix.read never_written (Bytes.create 1) 0 1)
+
 let block =
   [
     test "watches sub without pinning it" (fun () ->
         is_true (Subject.sub 10 4 < 100));
     test "blocks when sub changes" (fun () ->
-        if Subject.sub 10 4 <> 6 then (
-          (match Sys.getenv_opt "MUTATE_GRANDCHILD_PIDFILE" with
-          | None | Some "" -> ()
-          | Some path ->
-              let pid =
-                Unix.create_process "sh"
-                  [|
-                    "sh";
-                    "-c";
-                    "trap '' TERM; n=0; while [ $n -lt 600 ]; do sleep 1; \
-                     n=$((n+1)); done";
-                  |]
-                  Unix.stdin Unix.stdout Unix.stderr
-              in
-              let oc = open_out_gen [ Open_append; Open_creat ] 0o644 path in
-              output_string oc (string_of_int pid ^ "\n");
-              close_out oc);
-          let never_written, _held_open = Unix.pipe () in
-          ignore (Unix.read never_written (Bytes.create 1) 0 1));
+        if Subject.sub 10 4 <> 6 then hang ();
         equal int 6 (Subject.sub 10 4));
+  ]
+
+(* What a loop prints while it runs.
+
+   - [held] has two survivors, and the catalogue's order is not the
+     most-watched one: [sub] comes first and one test watches it, [widen]
+     second and two do. The child that has [widen]'s mutant armed waits
+     at the gate ([wait_at_gate]), so the harness can read what the parent
+     has printed, or leave, while the second child provably runs. Unarmed
+     nothing waits.
+   - [interrupted] puts a child that hangs between a survivor and a
+     mutant the loop never gets to: [sub] survives, [widen]'s child
+     blocks until a signal to the parent ends it, [orphan] is reached and
+     left untested.
+   - [pinned] kills every mutant of the catalogue that is not dismissed:
+     a loop with nothing to report but its outcome line, which is then
+     the one write a reader that left at the gate can fail. *)
+
+(* Under MUTATE_GATE, says the child started (MUTATE_STARTED) and waits
+   for the gate file. *)
+let wait_at_gate () =
+  match (Sys.getenv_opt "MUTATE_STARTED", Sys.getenv_opt "MUTATE_GATE") with
+  | Some started, Some gate ->
+      let oc = open_out started in
+      output_string oc "started\n";
+      close_out oc;
+      while not (Sys.file_exists gate) do
+        Unix.sleepf 0.005
+      done
+  | _ -> ()
+
+let held =
+  [
+    test "watches sub without pinning it" (fun () ->
+        is_true (Subject.sub 10 4 < 100));
+    test "widen is nonzero, once the gate opens" (fun () ->
+        if Subject.widen 3 4 <> 7 then wait_at_gate ();
+        is_true (Subject.widen 3 4 <> 0));
+    test "widen is not 99" (fun () -> is_true (Subject.widen 1 2 <> 99));
+  ]
+
+let interrupted =
+  [
+    test "watches sub without pinning it" (fun () ->
+        is_true (Subject.sub 10 4 < 100));
+    test "hangs when widen changes" (fun () ->
+        if Subject.widen 3 4 <> 7 then hang ();
+        is_true (Subject.widen 3 4 <> 0));
+    test "orphan is nonzero" (fun () -> is_true (Subject.orphan 3 4 <> 0));
+  ]
+
+let pinned =
+  [
+    test "widen adds, once the gate opens" (fun () ->
+        if Subject.widen 3 4 <> 7 then wait_at_gate ();
+        equal int 7 (Subject.widen 3 4));
+    test "orphan adds" (fun () -> equal int 7 (Subject.orphan 3 4));
+    test "crasher subtracts" (fun () -> equal int 2 (Subject.crasher 3 1));
   ]
 
 let slow =
@@ -226,6 +284,10 @@ let () =
         (Windtrap_runtime.Mutate.catalogue ())
   | "weak" -> exit @@ run "calc" [ group "widen" weak ]
   | "block" -> exit @@ run "calc" [ group "block" block ]
+  | "held" -> exit @@ run "calc" [ group "held" held ]
+  | "interrupted" -> exit @@ run "calc" [ group "held" interrupted ]
+  | "pinned" ->
+      exit @@ run "calc" [ group "calc" strong; group "pinned" pinned ]
   | "slow" -> exit @@ run "calc" [ group "slow" slow ]
   | "probe_block" -> exit @@ run "calc" [ group "probe" probe_block ]
   | "crash" ->

@@ -12,21 +12,14 @@ let spf = Printf.sprintf
 
 (* Layout constants — illustrative, not contract. The report is not a
    canvas: one width, so a pipe and a wide terminal are byte-identical. *)
-let rule_width = 54 (* of an instrumentation report's rules *)
+let columns = 80
+let rule_width = 58 (* of an instrumentation report's rules *)
 let max_diff_lines = 200
 let max_proposed_lines = 20
 let max_lines = 10 (* of a backtrace and of a captured tail *)
 let max_value_bytes = 800 (* ten full lines *)
 let max_headline_chars = 80
 let indent = "    "
-
-(* Gap between a survivor witness's name and its declaration site. Wide,
-   like the verbose status line's duration column and unlike the tight
-   table gutters: test names vary enough in length that a two-space gap
-   reads as a ragged wall. The executable column before it is tight:
-   executable names are of a length. *)
-let witness_gap = 6
-let exe_gap = 3
 
 (* Small helpers *)
 let rec take n = function
@@ -642,6 +635,13 @@ let pp_hunks ~ansi put ~ind ~limit hunks =
 let elided s = String.length s > max_value_bytes
 let shown s = Text.elide_middle max_value_bytes ~show:show_controls s
 
+(* A located source line as a block shows it, the gutter and what follows
+   it: dedented, and printed as a single-line value is, a file's bytes
+   being no more the report's than a test's are. *)
+let source_excerpt line text =
+  ( spf "%d \u{2502}" line,
+    match String.trim text with "" -> "" | text -> " " ^ shown text )
+
 (* What changed in [s], a value printed [lead] columns into its line. With
    colour the spans are [style]d inside the plain value and no [~] line
    prints, unless colour cannot show one of them; without it a [~] line
@@ -789,18 +789,14 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
    with
   | [] -> ()
   | parts -> put_ind (String.concat " " parts));
-  (* The located source line, best-effort and dedented, printed as a value
-     is: a file's bytes are no more the report's than a test's are. The
-     blank line after it closes a block's head; an inner entry has none. *)
+  (* The located source line is best effort. The blank line after it
+     closes a block's head; an inner entry has none. *)
   (match f.loc with
   | Some { Loc.file; line; _ } when excerpt ->
       Option.iter
         (fun text ->
-          let gutter = st `Faint (spf "%d \u{2502}" line) in
-          put_ind
-            (match String.trim text with
-            | "" -> "  " ^ gutter
-            | text -> spf "  %s %s" gutter (shown text));
+          let gutter, text = source_excerpt line text in
+          put_ind ("  " ^ st `Faint gutter ^ text);
           if not inner then put "")
         (source_line file line)
   | Some _ | None -> ());
@@ -1125,13 +1121,11 @@ let span_str k { style; text } =
   match style with None -> text | Some style -> st k style text
 
 let line_str k spans = String.concat "" (List.map (span_str k) spans)
+let pad width s = s ^ String.make (max 0 (width - Text.length_utf8 s)) ' '
 
 type column = { gap : string; align : [ `Left | `Right ]; width : int option }
 
-(* Line numbers as ranges ([88-94, 121]), the coverage table's uncovered
-   lists. Moved here from the coverage runtime with [excerpts]: layout
-   lives with the vocabulary, not with the instrumentation that measured
-   the lines. *)
+(* Line numbers as ranges ([88-94, 121]). *)
 
 let collapse_ranges lines =
   let rec loop acc range_start range_end = function
@@ -1143,28 +1137,24 @@ let collapse_ranges lines =
   in
   match lines with [] -> [] | first :: rest -> loop [] first first rest
 
-let format_ranges ranges =
-  ranges
-  |> List.map (fun (s, e) ->
-      if s = e then string_of_int s else Printf.sprintf "%d-%d" s e)
-  |> String.concat ", "
-
-(* The table's uncovered cell, bounded. A barely-tested file has
-   hundreds of uncovered regions, and their ranges render as one cell of
-   thousands of characters — a row no terminal can lay out, in the very
-   report a reader opens to find out where to start. The staleness
-   warnings bound their detail the same way; the unbounded answer is one
-   flag away. *)
-let uncovered_cap = 8
+(* The ranges of [lines], at most [max_ranges] of them and then
+   [(+N more)]. The ranges are what a reader goes and tests, so a row keeps
+   the eight that a well-covered file needs whole, whatever its width, and
+   bounds only a barely tested file. *)
+let max_ranges = 8
 
 let bounded_ranges lines =
-  let regions = collapse_ranges lines in
-  let total = List.length regions in
-  if total <= uncovered_cap then format_ranges regions
+  let ranges =
+    List.map
+      (fun (s, e) -> if s = e then string_of_int s else spf "%d-%d" s e)
+      (collapse_ranges lines)
+  in
+  let total = List.length ranges in
+  if total <= max_ranges then String.concat ", " ranges
   else
-    spf "%s (+%d more, -u shows them)"
-      (format_ranges (List.filteri (fun i _ -> i < uncovered_cap) regions))
-      (total - uncovered_cap)
+    spf "%s (+%d more)"
+      (String.concat ", " (take max_ranges ranges))
+      (total - max_ranges)
 
 (* Excerpt regions *)
 
@@ -1184,7 +1174,7 @@ let source_lines source =
     in
     Array.of_list lines
 
-let excerpts ?(context = 1) ~source marked =
+let excerpts ~source marked =
   let lines = source_lines source in
   let total = Array.length lines in
   let marked =
@@ -1195,7 +1185,7 @@ let excerpts ?(context = 1) ~source marked =
   List.iter (fun l -> Hashtbl.replace marked_set l ()) marked;
   let windows =
     collapse_ranges marked
-    |> List.map (fun (s, e) -> (max 1 (s - context), min total (e + context)))
+    |> List.map (fun (s, e) -> (max 1 (s - 1), min total (e + 1)))
   in
   let rec merge_windows = function
     | (s1, e1) :: (s2, e2) :: rest when s2 <= e1 + 1 ->
@@ -1215,81 +1205,48 @@ let excerpts ?(context = 1) ~source marked =
             marked = Hashtbl.mem marked_set number;
           }))
 
-(* The one gutter renderer: coverage draws the uncovered regions of a
-   file, mutation draws the one line a survivor rewrites. *)
+type excerpt = { source : string; marked_lines : int list }
 
-type excerpt = {
-  file : string;
-  heading : span list option;
-  source : string;
-  marked_lines : int list;
-}
-
-let excerpt k ?(context = 1) ?(marker = true) ?(margin = "  ") ?number_width e =
-  (match e.heading with
-  | None -> ()
-  | Some h ->
-      put k "";
-      put k (spf "%s \u{2014} %s" e.file (line_str k h));
-      put k "");
-  let regions = excerpts ~context ~source:e.source e.marked_lines in
+(* The marker rides inside the margin, so a marked row's escape sequence
+   opens at column zero. A file's bytes are no more the report's than a
+   test's are: they print as a failure block's source line does. *)
+let excerpt k e =
+  let regions = excerpts ~source:e.source e.marked_lines in
   let width =
-    match number_width with
-    | Some w -> w
-    | None ->
-        List.fold_left
-          (List.fold_left (fun w l ->
-               max w (String.length (string_of_int l.number))))
-          4 regions
+    List.fold_left
+      (List.fold_left (fun w l ->
+           max w (String.length (string_of_int l.number))))
+      4 regions
   in
-  (* The marker rides inside [margin] rather than beside it, so a marked
-     row's escape sequence opens at column zero exactly as it always
-     has — the coverage transcript is byte-frozen, escapes included. *)
-  let gutter marked =
-    if not marker then margin
-    else if marked then st k `Red (margin ^ "\u{258c}")
-    else margin ^ " "
-  in
-  let separator =
-    (if marker then margin ^ " " else margin)
-    ^ "\u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}"
-  in
+  let gutter marked = if marked then st k `Red "  \u{258c}" else "   " in
   List.iteri
     (fun i region ->
-      if i > 0 then put k separator;
+      if i > 0 then
+        put k (st k `Faint "   \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}");
       List.iter
         (fun l ->
           put k
             (rstrip
-               (spf "%s%*d \u{2502} %s" (gutter l.marked) width l.number l.text)))
+               (spf "%s%*d \u{2502} %s" (gutter l.marked) width l.number
+                  (show_controls l.text))))
         region)
     regions
 
-(* The subsystem-neutral report-section vocabulary. Internal: every
-   producer goes through the typed report entry points (coverage_report,
-   mutation_report), and no third-backend consumer exists. Priced like Failure.kind all the same — a new constructor is
-   a design amendment, not a convenience. Hint carries no spans by
-   construction: no color in any hint. *)
+(* Every producer goes through the typed report entry points below, so a
+   new constructor is a design amendment, not a convenience. Hint carries
+   no spans by construction: no color in any hint. *)
 type section =
   | Line of span list
   | Hint of string
   | Rows of { margin : string; columns : column list; rows : span list list }
-  | Excerpt of {
-      context : int;
-      marker : bool;
-      margin : string;
-      number_width : int option;
-      excerpt : excerpt;
-    }
+  | Excerpt of excerpt
   | Rule of string option
 
 let span_width (s : span) = Text.length_utf8 s.text
 
-(* Column widths are the widest cell (or the caller's floor, for tables
-   that align across blocks); padding sits outside a styled cell, and
-   the rendered row is stripped of trailing spaces — after styling, so a
-   row whose last cell styles an empty string sheds the padding before
-   it, exactly as the hand-laid rows always did. *)
+(* Padding sits outside a styled cell, and the rendered row is stripped of
+   trailing spaces after styling, so a row whose last cell is empty sheds
+   the padding before it. *)
 let put_rows k ~margin ~columns rows =
   let widths =
     List.map
@@ -1327,21 +1284,22 @@ let render_section k = function
   | Line spans -> put k (line_str k spans)
   | Hint line -> put k line
   | Rows { margin; columns; rows } -> put_rows k ~margin ~columns rows
-  | Excerpt { context; marker; margin; number_width; excerpt = e } ->
-      excerpt k ~context ~marker ~margin ?number_width e
+  | Excerpt e -> excerpt k e
   | Rule label -> put k (st k `Faint (rule ~width:rule_width label))
 
 let print ~out ~ansi sections =
   let k = { out; ansi } in
   List.iter (render_section k) sections;
   Pp.flush out ()
-(* Coverage (run data, rendered late)
 
-   The one place the coverage layout lives: the [windtrap coverage]
-   command's summary line and per-file report over merged files. The
-   data arrives as the record below, built by the command, which holds
-   the runtime — this module orders nothing and counts nothing, and it
-   does not name the runtime. *)
+(* Non-empty parts, one blank line between two. *)
+let join parts =
+  List.concat
+    (List.mapi
+       (fun i part -> if i > 0 then Line [] :: part else part)
+       (List.filter (function [] -> false | _ :: _ -> true) parts))
+
+(* Coverage *)
 
 type coverage_file = {
   file : string;
@@ -1357,109 +1315,118 @@ type coverage = { visited : int; total : int; files : coverage_file list }
 let coverage_percentage ~visited ~total =
   if total = 0 then 100. else 100. *. float_of_int visited /. float_of_int total
 
-(* The frozen thresholds the runtime's data has always been styled by:
-   green at 80% and above, yellow at 60%, red below. *)
-let coverage_style ~visited ~total : Pp.style =
-  let pct = coverage_percentage ~visited ~total in
-  if pct >= 80. then `Green else if pct >= 60. then `Yellow else `Red
+(* Red says which numbers need work: those below the gate the project
+   chose, or below 80 when it chose none. *)
+let percentage_span ~min ~visited ~total text =
+  if coverage_percentage ~visited ~total < Option.value min ~default:80. then
+    styled `Red text
+  else plain text
 
-(* The summary line of the coverage report, over the merge of every
-   executable's dumps: the project number, not one process's view. *)
-let coverage_line ~visited ~total () =
+(* The gate compares the raw percentage, and the line states the
+   measurement as a fraction of integers beside its rounding, so no
+   printed comparison is one its own digits can contradict. *)
+let coverage_line ~min ~visited ~total =
+  let pct = coverage_percentage ~visited ~total in
   [
     plain "coverage: ";
-    styled
-      (coverage_style ~visited ~total)
-      (spf "%.1f%%" (coverage_percentage ~visited ~total));
+    percentage_span ~min ~visited ~total (spf "%.1f%%" pct);
     plain (spf " (%d/%d points)" visited total);
   ]
-
-(* One source-excerpt block: file heading, then each uncovered region
-   with a gutter marker on the uncovered lines and [·····] between
-   regions. *)
-let coverage_excerpt (f : coverage_file) =
-  match f.source with
-  | Some source when f.uncovered <> [] ->
+  @
+  match min with
+  | None -> []
+  | Some min ->
       [
-        Excerpt
-          {
-            context = 1;
-            marker = true;
-            margin = "  ";
-            number_width = None;
-            excerpt =
-              {
-                file = f.file;
-                heading =
-                  Some
-                    [
-                      styled
-                        (coverage_style ~visited:f.visited ~total:f.total)
-                        (spf "%.1f%%"
-                           (coverage_percentage ~visited:f.visited
-                              ~total:f.total));
-                      plain (spf " (%d/%d)" f.visited f.total);
-                    ];
-                source;
-                marked_lines = f.uncovered;
-              };
-          };
+        plain (spf ", minimum %g%%: " min);
+        (if pct >= min then styled `Green "ok" else styled `Red "FAILED");
       ]
-  | _ -> []
 
-let coverage_report ~mode (c : coverage) =
-  let table_row (f : coverage_file) =
+let coverage_report ~mode ~min (c : coverage) =
+  let widest f = List.fold_left (fun w file -> max w (f file)) 0 c.files in
+  let digits n = String.length (string_of_int n) in
+  let visited_width = widest (fun (f : coverage_file) -> digits f.visited) in
+  let total_width = widest (fun (f : coverage_file) -> digits f.total) in
+  let points_width =
+    max (String.length "points") (visited_width + 1 + total_width)
+  in
+  let file_width =
+    max (String.length "file")
+      (widest (fun (f : coverage_file) -> Text.length_utf8 f.file))
+  in
+  (* A row after its eight columns of margin and percentage. *)
+  let lead ~points ~file =
+    spf "    %s   %s   " (pad points_width points) (pad file_width file)
+  in
+  let after_cover ~points ~file ~note = rstrip (lead ~points ~file ^ note) in
+  (* The hint says how to see what [(+N more)] hides; under [`Full] the
+     source follows the table. *)
+  let header =
+    Line
+      [
+        styled `Faint
+          ("   cover"
+          ^ after_cover ~points:"points" ~file:"file"
+              ~note:
+                (match mode with
+                | `Report -> "uncovered lines (-u shows the source)"
+                | `Full -> "uncovered lines"));
+      ]
+  in
+  let row (f : coverage_file) =
     let note =
-      if f.stale then
-        "stale: the source changed \u{2014} re-run the instrumented tests"
-      else if f.uncovered <> [] then "uncovered: " ^ bounded_ranges f.uncovered
-        (* Unvisited points with no line attribution: the source was not
-           found (a stale one already said so). *)
+      if f.stale then "stale: the source changed; re-run the instrumented tests"
+      else if f.uncovered <> [] then bounded_ranges f.uncovered
+        (* Unvisited points without a line: the source was not found. *)
       else if f.visited < f.total then "(source not found)"
       else ""
     in
-    [
-      styled
-        (coverage_style ~visited:f.visited ~total:f.total)
-        (spf "%5.1f%%" (coverage_percentage ~visited:f.visited ~total:f.total));
-      plain (string_of_int f.visited);
-      plain "/";
-      plain (string_of_int f.total);
-      plain f.file;
-      plain note;
-    ]
+    Line
+      [
+        plain "  ";
+        percentage_span ~min ~visited:f.visited ~total:f.total
+          (spf "%5.1f%%"
+             (coverage_percentage ~visited:f.visited ~total:f.total));
+        plain
+          (after_cover
+             ~points:
+               (spf "%*d/%-*d" visited_width f.visited total_width f.total)
+             ~file:f.file ~note);
+      ]
   in
-  Line (coverage_line ~visited:c.visited ~total:c.total ())
-  :: Rows
-       {
-         margin = "  ";
-         columns =
-           [
-             { gap = ""; align = `Right; width = None };
-             { gap = "  "; align = `Right; width = None };
-             { gap = ""; align = `Left; width = None };
-             { gap = ""; align = `Left; width = None };
-             { gap = "  "; align = `Left; width = None };
-             { gap = "   "; align = `Left; width = None };
-           ];
-         rows = List.map table_row c.files;
-       }
-  :: (if mode = `Full then List.concat_map coverage_excerpt c.files else [])
-(* Mutation (run data, rendered late)
+  let source (f : coverage_file) =
+    match (mode, f.source) with
+    | `Full, Some source when f.uncovered <> [] ->
+        [
+          Line
+            [
+              styled `Bold f.file;
+              plain ": ";
+              percentage_span ~min ~visited:f.visited ~total:f.total
+                (spf "%.1f%%"
+                   (coverage_percentage ~visited:f.visited ~total:f.total));
+              plain (spf " (%d/%d)" f.visited f.total);
+            ];
+          Line [];
+          Excerpt { source; marked_lines = f.uncovered };
+        ]
+    | (`Full | `Report), (Some _ | None) -> []
+  in
+  let table =
+    match c.files with [] -> [] | files -> header :: List.map row files
+  in
+  let outcome =
+    [ Line (coverage_line ~min ~visited:c.visited ~total:c.total) ]
+  in
+  match join (List.map source c.files) with
+  | [] -> table @ outcome
+  | sources -> join [ table; sources; outcome ]
 
-   A survivor is a failure block: the same 54-column labelled rule, the
-   same [  VERB  subject] head row, the same excerpt row, the same red —
-   because a survivor is a defect report about a named test. An unreached
-   mutant is the same block without the sentence, in yellow, because no
-   test is to blame. No second failure vocabulary is invented here, and
-   no ordering and no witness list is decided here: the producer hands
-   over what it measured and this projects it. *)
+(* Mutation *)
 
 type witness = { test : string; loc : Loc.t option; exe : string option }
 
-(* The identifier arrives spelled: the producer holds the runtime, whose
-   [id_to_string] is the canonical spelling, so this module spends none
-   of the Law-12 coupling budget re-spelling it. *)
+(* The identifier arrives spelled by the runtime's [id_to_string]: the
+   report prints it and hands it to [--arm] without re-spelling it. *)
 type mutant = {
   id : string;
   file : string;
@@ -1474,108 +1441,87 @@ type scope = Suite | Selected of int | Executables of int
 
 type mutation = {
   survivors : survivor list;
-  unreached : mutant list;
+  unreached : (string * int) list;
   killed : int;
+  not_tested : int;
   scope : scope;
-  filter : string option;
 }
 
-(* The command that arms a mutant under the run's selection, in the
-   invocation's spelling, with the literal [<id>] where the reader pastes
-   one: [--arm] under [`Exe], its WINDTRAP_MUTATE_ARM mirror under
-   [`Mirrors] — the flag's own mirror, as [replay_line] spells the seed's.
-   The filter is restated the way [replay_line] restates it — [-f] under
-   [`Exe], [WINDTRAP_FILTER] under [`Mirrors] — because a survivor of a
-   filtered run survived that selection, and the line must reproduce
-   that run. Under [`Mirrors] no command is spelled at all: this renderer
-   does not know how the suite is run, and the build-tool spelling that
-   used to stand there was wrong in every project but the one it was
-   written in. *)
-let reproduce_line ~invocation ~filter =
-  match (invocation, filter) with
-  | `Exe cmd, Some flt ->
-      spf "reproduce: %s --arm <id> -f %s" cmd (shell_quote flt)
-  | `Exe cmd, None -> spf "reproduce: %s --arm <id>" cmd
-  | `Mirrors, filter ->
-      (* No CLI to spell, and no build tool to name: the aggregate is
-         merged from executables this process never ran, and the inline
-         runner is driven by a build it cannot see. The placeholder
-         stands where the reader's own suite command goes — a run that
-         carries the mutants and is not replayed from a cache, since an
-         arming a cached run swallows appears to work and does not. *)
+(* A build action's suite is reached through dune alone. [--force] is
+   there because dune replays a cached test action, and an arming a
+   replayed run swallows arms nothing; the backend is named because a
+   plain build carries no mutant. *)
+let reproduce_line ~invocation ~selection id =
+  match invocation with
+  | `Exe cmd -> spf "reproduce: %s%s%s" cmd (arm_flag (Some id)) selection
+  | `Mirrors ->
       spf
-        "reproduce: WINDTRAP_MUTATE_ARM=<id>%s <re-run the instrumented suite>"
-        (match filter with
-        | Some flt -> " WINDTRAP_FILTER=" ^ shell_quote flt
-        | None -> "")
+        "reproduce: %s%sdune runtest --force --instrument-with \
+         ppx_windtrap.mutate"
+        (arm_mirror (Some id)) selection
 
-let pad_to width s = String.make (max 0 (width - Text.length_utf8 s)) ' '
+(* A survivor of a narrowed run survived that selection only, and a test
+   left out of it may kill the mutant: the command restates each
+   selection flag of the run, in the spelling [reproduce_line] puts it.
+   [--failed] has no mirror. *)
+let selection_words invocation (c : Run.config) =
+  let one flag var value =
+    Option.to_list (Option.map (fun v -> (flag, var, [ v ])) value)
+  in
+  let many flag var = function [] -> [] | values -> [ (flag, var, values) ] in
+  let items =
+    one "-f" "WINDTRAP_FILTER" (Option.map shell_quote c.Run.filter)
+    @ one "-e" "WINDTRAP_EXCLUDE" (Option.map shell_quote c.Run.exclude)
+    @ many "--tag" "WINDTRAP_TAG" (List.map shell_word c.Run.tags)
+    @ many "--exclude-tag" "WINDTRAP_EXCLUDE_TAG"
+        (List.map shell_word c.Run.exclude_tags)
+    @ one "--shard" "WINDTRAP_SHARD"
+        (Option.map (fun (k, n) -> spf "%d/%d" k n) c.Run.shard)
+  in
+  match invocation with
+  | `Exe _ ->
+      String.concat ""
+        (List.concat_map
+           (fun (flag, _, values) -> List.map (spf " %s %s" flag) values)
+           items)
+      ^ if c.Run.failed_only then " --failed" else ""
+  | `Mirrors ->
+      String.concat ""
+        (List.map
+           (fun (_, var, values) -> spf "%s=%s " var (String.concat "," values))
+           items)
 
-(* The head row and the excerpt row, shared by both block kinds. The
-   excerpt is best-effort, as every excerpt is: a mutant whose source the
-   producer could not read still names its line in the head row. *)
-let mutant_sections ~verb ~id_width ~number_width (m : mutant) =
-  let head =
+(* A survivor is drawn as a failure block is, title, source line and
+   facts, because it is a defect report about the tests it names. A
+   survivor always names one: an unreached mutant is another finding. The
+   executables are counted only when the reaching tests name several. *)
+let survivor_block ~exe_width (s : survivor) =
+  let m = s.mutant in
+  let title =
     Line
       [
         plain "  ";
-        verb;
+        styled `Red "SURVIVED";
         plain "  ";
         styled `Bold m.id;
-        plain
-          (pad_to id_width m.id ^ "   " ^ m.before ^ "  \u{2192}  " ^ m.after);
+        plain (spf "  %s \u{2192} %s" m.before m.after);
       ]
   in
-  match m.source with
-  | None -> [ head ]
-  | Some source ->
-      [
-        head;
-        Excerpt
-          {
-            context = 0;
-            marker = false;
-            margin = indent ^ "  ";
-            number_width = Some number_width;
-            excerpt =
-              {
-                file = m.file;
-                heading = None;
-                source;
-                marked_lines = [ m.line ];
-              };
-          };
-      ]
-
-(* One witness row: the executable column only when the report has one
-   ([exe_width] is [None] in a per-executable report, where every witness
-   is this executable's), then the name, then the faint declaration site
-   — empty for a producer that does not link the test tree. *)
-let witness_row ~exe_width (w : witness) =
-  (match exe_width with
-    | Some _ -> [ plain (Option.value w.exe ~default:"") ]
-    | None -> [])
-  @ [
-      plain (sanitize_name w.test);
-      styled `Faint (match w.loc with Some l -> Loc.to_string l | None -> "");
-    ]
-
-let survivor_sections ~id_width ~exe_width ~witness_width ~number_width
-    (s : survivor) =
-  (* The sentence that is the product. A survivor always names at least
-     one test (an unreached mutant is a different finding with a different
-     remedy), so the empty case cannot arise from a verdict. The
-     executables are counted only when the witnesses name more than one:
-     a per-executable report names none, and one executable's tests are
-     just tests. *)
-  let witness_rows =
+  let source =
+    match Option.map source_lines m.source with
+    | Some lines when 1 <= m.line && m.line <= Array.length lines ->
+        let gutter, text = source_excerpt m.line lines.(m.line - 1) in
+        [ Line [ plain (indent ^ "  "); styled `Faint gutter; plain text ] ]
+    | Some _ | None -> []
+  in
+  let reaching =
     match s.witnesses with
     | [] -> []
     | witnesses ->
         let n = List.length witnesses in
         let executables =
           List.length
-            (List.sort_uniq compare
+            (List.sort_uniq String.compare
                (List.filter_map (fun (w : witness) -> w.exe) witnesses))
         in
         let sentence =
@@ -1585,37 +1531,39 @@ let survivor_sections ~id_width ~exe_width ~witness_width ~number_width
               executables
           else spf "%d tests ran this line and none failed:" n
         in
-        let column width = { gap = ""; align = `Left; width } in
+        let left gap width = { gap; align = `Left; width } in
+        let test (w : witness) =
+          [
+            plain (sanitize_name w.test);
+            styled `Faint
+              (match w.loc with Some loc -> Loc.to_string loc | None -> "");
+          ]
+        in
+        let columns, cells =
+          match exe_width with
+          | None -> ([ left "" None; left "  " None ], test)
+          | Some _ ->
+              ( [ left "" exe_width; left "  " None; left "  " None ],
+                fun (w : witness) ->
+                  plain (Option.value w.exe ~default:"") :: test w )
+        in
         [
           Line [];
           Line [ plain (indent ^ sentence) ];
           Rows
-            {
-              margin = indent ^ "  ";
-              columns =
-                (match exe_width with
-                  | Some w -> [ column (Some w) ]
-                  | None -> [])
-                @ [ column (Some witness_width); column None ];
-              rows = List.map (witness_row ~exe_width) witnesses;
-            };
+            { margin = indent ^ "  "; columns; rows = List.map cells witnesses };
         ]
   in
-  mutant_sections ~verb:(styled `Red "SURVIVED") ~id_width ~number_width
-    s.mutant
-  @ witness_rows
+  (title :: source) @ reaching
 
-(* Zero terms are omitted, the way a passing suite prints no failure
-   count: [0 survived] never prints — the clean form is its absence, the
-   reached count standing alone — and neither does [0 killed] or
-   [0 never reached]. The reached count is [killed + survived], a count of
-   the lists and not a measurement, so the summary cannot disagree with
-   the blocks above it. *)
+(* Zero terms are omitted, as a passing suite prints no failure count. The
+   reached count is a sum of the other terms and not a measurement, so the
+   line cannot disagree with the blocks above it. *)
 let mutation_summary_spans (m : mutation) =
   let survived = List.length m.survivors in
   let unreached = List.length m.unreached in
   let reached =
-    let n = m.killed + survived in
+    let n = m.killed + survived + m.not_tested in
     match m.scope with
     | Suite -> spf "%d reached by this suite" n
     | Selected tests ->
@@ -1623,17 +1571,16 @@ let mutation_summary_spans (m : mutation) =
           (if tests = 1 then "" else "s")
     | Executables _ -> spf "%d reached" n
   in
+  let term n make = if n > 0 then [ make n ] else [] in
   let terms =
     (if survived > 0 then
        [
          [ styled `Red (spf "%d survived" survived); plain (" of " ^ reached) ];
        ]
      else [ [ plain reached ] ])
-    @ (if m.killed > 0 then [ [ styled `Green (spf "%d killed" m.killed) ] ]
-       else [])
-    @ (if unreached > 0 then
-         [ [ styled `Yellow (spf "%d never reached" unreached) ] ]
-       else [])
+    @ term m.killed (fun n -> [ styled `Green (spf "%d killed" n) ])
+    @ term unreached (fun n -> [ styled `Yellow (spf "%d never reached" n) ])
+    @ term m.not_tested (fun n -> [ plain (spf "%d not tested" n) ])
     @
     match m.scope with
     | Executables n ->
@@ -1643,79 +1590,90 @@ let mutation_summary_spans (m : mutation) =
   let rec separated = function
     | [] -> []
     | [ last ] -> last
-    | term :: rest -> term @ (plain " \u{00b7} " :: separated rest)
+    | term :: rest -> term @ (plain ", " :: separated rest)
   in
   plain "mutants: " :: separated terms
 
-(* Column widths are one per report, not one per block: the identifiers
-   of a section, the witness names and the executables of the whole
-   report, and the excerpt gutters throughout are meant to be read
-   down. *)
+(* One row per file, not a block per mutant: what a reader does with an
+   unreached mutant is write a test for its lines, and a project has
+   hundreds of them. *)
+let unreached_section unreached =
+  let files = List.sort_uniq String.compare (List.map fst unreached) in
+  let lines_of file =
+    List.filter_map
+      (fun (f, line) -> if String.equal f file then Some line else None)
+      unreached
+  in
+  let count_width =
+    List.fold_left
+      (fun w file ->
+        max w (String.length (string_of_int (List.length (lines_of file)))))
+      0 files
+  in
+  let file_width =
+    List.fold_left (fun w file -> max w (Text.length_utf8 file)) 0 files
+  in
+  let lead file = spf "  %s   lines " (pad file_width file) in
+  let row file =
+    let lines = lines_of file in
+    Line
+      [
+        plain "  ";
+        styled `Yellow (spf "%*d" count_width (List.length lines));
+        plain (lead file ^ bounded_ranges (List.sort_uniq Int.compare lines));
+      ]
+  in
+  match files with
+  | [] -> []
+  | _ :: _ ->
+      Rule (Some (spf "never reached (%d)" (List.length unreached)))
+      :: List.map row files
+      @ [ Rule None ]
+
+(* The command arms the first survivor printed, so it runs as pasted. *)
+let outcome ~invocation ~selection (m : mutation) =
+  (match m.survivors with
+    | [] -> []
+    | first :: _ ->
+        [ Hint (reproduce_line ~invocation ~selection first.mutant.id) ])
+  @ [ Line (mutation_summary_spans m) ]
+
+let mutation_closing ~(config : Run.config) (m : mutation) =
+  let invocation = config.Run.invocation in
+  let selection = selection_words invocation config in
+  let rest =
+    join [ unreached_section m.unreached; outcome ~invocation ~selection m ]
+  in
+  match (m.survivors, m.unreached) with
+  | [], [] -> rest
+  | [], _ :: _ -> Line [] :: rest
+  | _ :: _, _ -> Rule None :: Line [] :: rest
+
+(* The executables are one column for the report, read down it. *)
 let mutation_report ~invocation (m : mutation) =
-  let widest f l = List.fold_left (fun w x -> max w (f x)) 0 l in
-  let id_width_of = widest (fun (x : mutant) -> Text.length_utf8 x.id) in
-  let survivor_mutants =
-    List.map (fun (s : survivor) -> s.mutant) m.survivors
-  in
-  let number_width =
-    max 1
-      (widest
-         (fun (x : mutant) -> String.length (string_of_int x.line))
-         (survivor_mutants @ m.unreached))
-  in
   let witnesses =
     List.concat_map (fun (s : survivor) -> s.witnesses) m.survivors
   in
-  let witness_width =
-    widest
-      (fun (w : witness) -> Text.length_utf8 (sanitize_name w.test))
-      witnesses
-    + witness_gap
-  in
   let exe_width =
-    if List.exists (fun (w : witness) -> w.exe <> None) witnesses then
+    if List.exists (fun (w : witness) -> Option.is_some w.exe) witnesses then
       Some
-        (widest
-           (fun (w : witness) ->
-             Text.length_utf8 (Option.value w.exe ~default:""))
-           witnesses
-        + exe_gap)
+        (List.fold_left
+           (fun width (w : witness) ->
+             max width (Text.length_utf8 (Option.value w.exe ~default:"")))
+           0 witnesses)
     else None
   in
-  let section label blocks =
-    match blocks with
+  let survivors =
+    match m.survivors with
     | [] -> []
-    | blocks ->
-        [
-          Line [];
-          Rule (Some (spf "%s (%d)" label (List.length blocks)));
-          Line [];
-        ]
-        @ List.concat
-            (List.mapi
-               (fun i block -> (if i > 0 then [ Line [] ] else []) @ block)
-               blocks)
+    | survivors ->
+        Rule (Some (spf "survivors (%d)" (List.length survivors)))
+        :: join (List.map (survivor_block ~exe_width) survivors)
+        @ [ Rule None ]
   in
-  let survivor_part =
-    let id_width = id_width_of survivor_mutants in
-    section "survivors"
-      (List.map
-         (survivor_sections ~id_width ~exe_width ~witness_width ~number_width)
-         m.survivors)
-  in
-  let unreached_part =
-    let id_width = id_width_of m.unreached in
-    section "never reached"
-      (List.map
-         (mutant_sections
-            ~verb:(styled `Yellow "UNREACHED")
-            ~id_width ~number_width)
-         m.unreached)
-  in
-  let reported = m.survivors <> [] || m.unreached <> [] in
-  survivor_part @ unreached_part
-  @ (if reported then [ Line []; Rule None; Line [] ] else [])
-  @ [ Line (mutation_summary_spans m) ]
-  @
-  if reported then [ Hint (reproduce_line ~invocation ~filter:m.filter) ]
-  else []
+  join
+    [
+      survivors;
+      unreached_section m.unreached;
+      outcome ~invocation ~selection:"" m;
+    ]

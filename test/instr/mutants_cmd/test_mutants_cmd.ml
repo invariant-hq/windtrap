@@ -23,7 +23,7 @@
    the case the whole verdict file exists for, one suite killing what
    another merely reaches), the union of a survivor's witnesses, each
    tagged with the executable that ran it, a survivor that survives
-   everywhere, the unreached blocks, the colours as raw bytes, discovery
+   everywhere, the never-reached rows, the colours as raw bytes, discovery
    under _build/_mutants and through explicit PATH arguments, the
    staleness pass, and every exit code — 1 when a mutant survived the
    merge, 0 when none did, unreached mutants alone staying green.
@@ -218,8 +218,8 @@ let without_executables_term out =
     (List.map
        (fun line ->
          if String.starts_with ~prefix:"mutants: " line then
-           match String.rindex_opt line '\xb7' with
-           | Some i -> String.sub line 0 (i - 2)
+           match String.rindex_opt line ',' with
+           | Some i -> String.sub line 0 i
            | None -> line
          else line)
        (String.split_on_char '\n' out))
@@ -386,20 +386,49 @@ let two_executables =
   (* Each witness names the executable that ran it, by the basename of
      the identity its verdict file recorded. *)
   check_contains "the first executable's witness, in its column"
-    ~needle:"\n      pins_add.exe   shared \u{203a} shared is nonzero\n" out;
+    ~needle:"\n      pins_add.exe  shared \u{203a} shared is nonzero\n" out;
   check_contains "the second executable's witness, in its column"
-    ~needle:"\n      pins_sub.exe   shared \u{203a} shared is not 99\n" out;
+    ~needle:"\n      pins_sub.exe  shared \u{203a} shared is not 99\n" out;
   check_contains "the excerpt is drawn from the planted source"
     ~needle:"let shared a b = a + b" out;
   check_contains "the mutant neither executable reached is still a finding"
     ~needle:
-      (Printf.sprintf "UNREACHED  test/instr/mutants_cmd/calc.ml:%d:"
+      (Printf.sprintf "\n  1  test/instr/mutants_cmd/calc.ml   lines %d\n"
          (calc_line "let never"))
     out;
   equal ~msg:"the project's summary, whole" text
-    "mutants: 1 survived of 3 reached \u{00b7} 2 killed \u{00b7} 1 never \
-     reached \u{00b7} 2 executables"
-    (summary out)
+    "mutants: 1 survived of 3 reached, 2 killed, 1 never reached, 2 executables"
+    (summary out);
+  (* The one command names the executable of the survivor's first
+     reaching-test row, as dune runs it: the identity its verdict file
+     recorded, less the build context. Its identifier is pasted back into
+     that executable, the only proof that it is one the runtime
+     resolves. *)
+  let reproduce =
+    List.find
+      (String.starts_with ~prefix:"reproduce: ")
+      (String.split_on_char '\n' out)
+  in
+  let launcher =
+    "reproduce: dune exec --instrument-with ppx_windtrap.mutate \
+     test/pins_add.exe -- --arm "
+  in
+  check "the command is dune's, over the recorded executable"
+    (String.starts_with ~prefix:(launcher ^ shared) reproduce);
+  let id =
+    String.sub reproduce (String.length launcher)
+      (String.length reproduce - String.length launcher)
+  in
+  let code, armed, _ =
+    capture ~cwd:root
+      ~exe:(Filename.concat root "_build/default/test/pins_add.exe")
+      [ "--arm"; id ]
+  in
+  check_int "the armed run's exit code (this mutant survives)" ~expected:0
+    ~actual:code;
+  check_contains "the pasted identifier armed the survivor"
+    ~needle:("mutant " ^ id ^ " armed: a + b \u{2192} a - b")
+    armed
 
 (* The merge *)
 
@@ -417,7 +446,7 @@ let merge_report =
   check_absent "a crash in one suite kills for the project"
     ~needle:"lib/calc.ml:3:14:lt" out;
   check_contains "the survivor is the one no suite killed"
-    ~needle:"SURVIVED  lib/calc.ml:2:14:sub   a - b  \u{2192}  a + b" out;
+    ~needle:"SURVIVED  lib/calc.ml:2:14:sub  a - b \u{2192} a + b\n" out;
   check_int "exactly one survivor block" ~expected:1
     ~actual:
       (List.length
@@ -430,9 +459,13 @@ let merge_report =
      strictly worse than the per-executable one. *)
   check_contains "the excerpt is drawn from the planted source"
     ~needle:"2 \u{2502} let sub a b = a - b" out;
-  check_contains "the reproduce footer names no build tool"
+  check_contains
+    "files that record no executable are reached through the build: the \
+     command arms the survivor there, by its identifier"
     ~needle:
-      "\nreproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest \
+       --force --instrument-with ppx_windtrap.mutate\n"
     out;
   (* Witnesses union across the two executables that reached it, each
      naming its executable. These files record no identity, so the label
@@ -440,58 +473,62 @@ let merge_report =
   check_contains "the sentence counts both witnesses and both executables"
     ~needle:"2 tests in 2 executables ran this line and none failed:" out;
   check_contains "the first executable's witness, in its column"
-    ~needle:"\n      windtrap-b.mutants   cli \u{203a} subtracts\n" out;
+    ~needle:"\n      windtrap-b.mutants  cli \u{203a} subtracts\n" out;
   check_contains "the second executable's witness, in its column"
-    ~needle:"\n      windtrap-c.mutants   prop \u{203a} sub law\n" out;
+    ~needle:"\n      windtrap-c.mutants  prop \u{203a} sub law\n" out;
   (* Unreached is a finding with its own remedy, and prints by default:
-     one block per mutant, the rewrite in the head row, the excerpt under
-     it, in identifier order. *)
+     one row per file, how many of its mutants no test reached and the
+     lines they are on. *)
   check_contains "the never-reached section counts mutants, not files or lines"
     ~needle:"never reached (2)" out;
-  check_contains "the first never-reached block: head row and excerpt"
-    ~needle:
-      "  UNREACHED  lib/util.ml:1:13:or    p || q  \u{2192}  p && q\n\
-      \      1 \u{2502} let ok p q = p || q\n"
+  check_contains "the never-reached row: the count, the file, the lines"
+    ~needle:"\n  2  lib/util.ml   lines 1, 3\n" out;
+  check_absent "no block per never-reached mutant" ~needle:"UNREACHED" out;
+  (* The sections at rest, whole: the survivors counted, no blank line
+     just inside a rule, the command above the outcome. *)
+  equal ~msg:"the report, whole" text
+    "───────────────────── survivors (1) ──────────────────────\n\
+    \  SURVIVED  lib/calc.ml:2:14:sub  a - b \u{2192} a + b\n\
+    \      2 \u{2502} let sub a b = a - b\n\n\
+    \    2 tests in 2 executables ran this line and none failed:\n\
+    \      windtrap-b.mutants  cli \u{203a} subtracts\n\
+    \      windtrap-c.mutants  prop \u{203a} sub law\n\
+     ──────────────────────────────────────────────────────────\n\n\
+     ─────────────────── never reached (2) ────────────────────\n\
+    \  2  lib/util.ml   lines 1, 3\n\
+     ──────────────────────────────────────────────────────────\n\n\
+     reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest --force \
+     --instrument-with ppx_windtrap.mutate\n\
+     mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 executables\n"
     out;
-  check_contains "the second never-reached block: head row and excerpt"
-    ~needle:
-      "  UNREACHED  lib/util.ml:3:22:and   p && q  \u{2192}  p || q\n\
-      \      3 \u{2502} let both p q = p && q\n"
-    out;
-  check_before "unreached blocks are in identifier order"
-    ~first:"UNREACHED  lib/util.ml:1:13:or"
-    ~second:"UNREACHED  lib/util.ml:3:22:and" out;
   (* The summary is the project's, not one executable's: the reached
      count, and how many executables it is over. *)
   equal ~msg:"the summary line, whole" text
-    "mutants: 1 survived of 3 reached \u{00b7} 2 killed \u{00b7} 2 never \
-     reached \u{00b7} 3 executables"
+    "mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 executables"
     (summary out);
   (* The same report with colour on, read as the bytes it is: SURVIVED
-     red, UNREACHED yellow, the counts in the suite summary's palette, the
-     reproduce footer plain. *)
+     red, a never-reached count yellow, the counts in the suite summary's
+     palette, the reproduce command plain. *)
   let code, coloured, _ = mutate ~color:"always" ~cwd:proj [] in
   check_int "colour changes no exit code" ~expected:1 ~actual:code;
   check_contains "SURVIVED is red, the identifier bold"
     ~needle:
-      "  \027[31mSURVIVED\027[0m  \027[1mlib/calc.ml:2:14:sub\027[0m   a - b  \
-       \u{2192}  a + b\n"
+      "  \027[31mSURVIVED\027[0m  \027[1mlib/calc.ml:2:14:sub\027[0m  a - b \
+       \u{2192} a + b\n"
     coloured;
-  check_contains "UNREACHED is yellow, the identifier bold"
-    ~needle:
-      "  \027[33mUNREACHED\027[0m  \027[1mlib/util.ml:1:13:or\027[0m    p || \
-       q  \u{2192}  p && q\n"
-    coloured;
+  check_contains "a never-reached count is yellow, the file and lines plain"
+    ~needle:"\n  \027[33m2\027[0m  lib/util.ml   lines 1, 3\n" coloured;
   check_contains "the counts are coloured as the suite summary's are"
     ~needle:
       "\n\
-       mutants: \027[31m1 survived\027[0m of 3 reached \u{00b7} \027[32m2 \
-       killed\027[0m \u{00b7} \027[33m2 never reached\027[0m \u{00b7} 3 \
-       executables\n"
+       mutants: \027[31m1 survived\027[0m of 3 reached, \027[32m2 \
+       killed\027[0m, \027[33m2 never reached\027[0m, 3 executables\n"
     coloured;
-  check_contains "the reproduce footer is never coloured"
+  check_contains "the reproduce command is never coloured"
     ~needle:
-      "\nreproduce: WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>\n"
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:2:14:sub dune runtest \
+       --force --instrument-with ppx_windtrap.mutate\n"
     coloured
 
 (* A witness row or the sentence over it: the one part of a report that
@@ -562,10 +599,9 @@ let single_file =
     ~first:"SURVIVED  lib/calc.ml:1:14:add"
     ~second:"SURVIVED  lib/calc.ml:2:14:sub" out;
   check_contains "one executable's witnesses still name it"
-    ~needle:"\n      windtrap-b.mutants   cli \u{203a} runs\n" out;
+    ~needle:"\n      windtrap-b.mutants  cli \u{203a} runs\n" out;
   equal ~msg:"B alone scores itself" text
-    "mutants: 2 survived of 3 reached \u{00b7} 1 killed \u{00b7} 2 never \
-     reached \u{00b7} 1 executable"
+    "mutants: 2 survived of 3 reached, 1 killed, 2 never reached, 1 executable"
     (summary out)
 
 let clean_report =
@@ -579,7 +615,7 @@ let clean_report =
   check_int "a clean project exits 0" ~expected:0 ~actual:code;
   check "a clean project keeps stderr empty" (err = "");
   equal ~msg:"and prints exactly the summary" text
-    "mutants: 3 reached \u{00b7} 3 killed \u{00b7} 1 executable\n" out
+    "mutants: 3 reached, 3 killed, 1 executable\n" out
 
 let only_unreached =
   test "unreached mutants alone are a finding, not a failure" @@ fun () ->
@@ -596,12 +632,14 @@ let only_unreached =
   check_int "only unreached mutants exit 0" ~expected:0 ~actual:code;
   check "and warn about nothing" (err = "");
   check_absent "there is no survivor section" ~needle:"survivors (" out;
-  check_contains "the unreached block still prints"
-    ~needle:"  UNREACHED  lib/util.ml:1:13:or   p || q  \u{2192}  p && q\n" out;
+  check_contains "the never-reached row still prints"
+    ~needle:"\n  1  lib/util.ml   lines 1\n" out;
+  check "and its rule opens the report: nothing precedes it"
+    (String.starts_with ~prefix:"\u{2500}" out);
+  check_absent "no survivor, no mutant to arm: no command" ~needle:"reproduce:"
+    out;
   equal ~msg:"the summary counts it without a survived term" text
-    "mutants: 2 reached \u{00b7} 2 killed \u{00b7} 1 never reached \u{00b7} 1 \
-     executable"
-    (summary out)
+    "mutants: 2 reached, 2 killed, 1 never reached, 1 executable" (summary out)
 
 (* Discovery *)
 
@@ -698,8 +736,7 @@ let explicit_paths =
   check_int "a nested explicit directory finds the survivor" ~expected:1
     ~actual:code;
   equal ~msg:"and every depth reaches the merge" text
-    "mutants: 1 survived of 3 reached \u{00b7} 2 killed \u{00b7} 2 never \
-     reached \u{00b7} 3 executables"
+    "mutants: 1 survived of 3 reached, 2 killed, 2 never reached, 3 executables"
     (summary out)
 
 (* The staleness pass *)
@@ -727,11 +764,18 @@ let staleness =
     ~actual:code;
   check "a fresh identity-carrying file warns about nothing" (err = "");
   equal ~msg:"and is merged" text
-    "mutants: 1 survived of 2 reached \u{00b7} 1 killed \u{00b7} 3 never \
-     reached \u{00b7} 1 executable"
+    "mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable"
     (summary out);
   check_contains "its witness names the recorded executable, by basename"
-    ~needle:"\n      a.exe   calc \u{203a} compares\n" out;
+    ~needle:"\n      a.exe  calc \u{203a} compares\n" out;
+  check_contains
+    "an executable under a dune build directory is run again through dune: its \
+     identity less the build context, the backend before it"
+    ~needle:
+      "\n\
+       reproduce: dune exec --instrument-with ppx_windtrap.mutate test/a.exe \
+       -- --arm lib/calc.ml:3:14:lt\n"
+    out;
   (* Orphan: a second file whose executable no longer exists. Its data
      must not reach the report — under killed-anywhere-wins an excluded
      kill is the difference between a survivor and none, which is what
@@ -750,8 +794,7 @@ let staleness =
   let code, out, err = mutate ~cwd:root [] in
   check_int "an orphan still reports the live data" ~expected:1 ~actual:code;
   equal ~msg:"the orphan's kill never reaches the report" text
-    "mutants: 1 survived of 2 reached \u{00b7} 1 killed \u{00b7} 3 never \
-     reached \u{00b7} 1 executable"
+    "mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable"
     (summary out);
   check_contains "the orphan warning names the file" ~needle:"gone.mutants" err;
   check_contains "the orphan warning names the missing executable"
@@ -781,8 +824,7 @@ let staleness =
   check_int "a stale file beside a fresh one still reports" ~expected:1
     ~actual:code;
   equal ~msg:"the stale file's kill never reaches the report" text
-    "mutants: 1 survived of 2 reached \u{00b7} 1 killed \u{00b7} 3 never \
-     reached \u{00b7} 1 executable"
+    "mutants: 1 survived of 2 reached, 1 killed, 3 never reached, 1 executable"
     (summary out);
   check_contains "a stale file's warning says it was rebuilt"
     ~needle:"rebuilt since" err;
@@ -902,7 +944,7 @@ let executable_labels =
   (* The column is as wide as the widest label plus the gap. *)
   let labels = [ "my_lib_expect"; "plain.mutants"; "test_calc.exe" ] in
   let width =
-    3 + List.fold_left (fun w l -> max w (String.length l)) 0 labels
+    2 + List.fold_left (fun w l -> max w (String.length l)) 0 labels
   in
   let row exe test = Printf.sprintf "      %-*s%s\n" width exe test in
   check_contains "the witness rows, labelled, in (executable, test) order"
@@ -916,7 +958,49 @@ let executable_labels =
          ])
     out;
   equal ~msg:"the summary counts three executables" text
-    "mutants: 1 survived of 1 reached \u{00b7} 3 executables" (summary out)
+    "mutants: 1 survived of 1 reached, 3 executables" (summary out);
+  (* The first row is an inline suite's. Dune's inline runner takes its
+     arguments from dune alone, so the command is the build's. *)
+  check_contains "an inline runner is reached through the build"
+    ~needle:
+      "\n\
+       reproduce: WINDTRAP_MUTATE_ARM=lib/calc.ml:1:14:add dune runtest \
+       --force --instrument-with ppx_windtrap.mutate\n"
+    out;
+  (* An executable under no build directory records its absolute path,
+     and is run as it is. *)
+  let bare = scratch "built by hand" in
+  plant_sources bare;
+  let exe = Filename.concat bare "test_calc.exe" in
+  write_file exe "built by hand";
+  write_file
+    (Filename.concat bare "_windtrap/mutants/calc.mutants")
+    (V.to_string
+       ~identity:
+         { V.exe; digest = Digest.to_hex (Digest.string "built by hand") }
+       (verdicts [ [ "calc"; "adds" ] ]));
+  let code, out, err = mutate ~cwd:bare [] in
+  check_int "the hand-built project's survivor exits 1" ~expected:1 ~actual:code;
+  check "its file is fresh" (err = "");
+  check_contains
+    "an executable under no build directory is run as it is, its path quoted \
+     where a shell would split it"
+    ~needle:("\nreproduce: '" ^ exe ^ "' --arm lib/calc.ml:1:14:add\n")
+    out;
+  (* The same for the target dune is given. *)
+  let spaced = scratch "spaced" in
+  plant_sources spaced;
+  let identity = plant_exe spaced "default/my tests/a.exe" "a suite" in
+  write_file
+    (Filename.concat spaced "_build/_mutants/a.mutants")
+    (V.to_string ~identity (verdicts [ [ "calc"; "adds" ] ]));
+  let _, out, _ = mutate ~cwd:spaced [] in
+  check_contains "a dune target with a space is one quoted word"
+    ~needle:
+      "\n\
+       reproduce: dune exec --instrument-with ppx_windtrap.mutate 'my \
+       tests/a.exe' -- --arm lib/calc.ml:1:14:add\n"
+    out
 
 let survivor_order =
   test "survivors are ordered by witness count, then identifier" @@ fun () ->

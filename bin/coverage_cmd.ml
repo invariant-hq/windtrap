@@ -432,7 +432,7 @@ let coverage_data ~source_roots collection : Sections.coverage =
         (Windtrap_runtime.Coverage.file_reports ~source_roots collection);
   }
 
-let report_table ~color ~source_roots ~show_uncovered collection =
+let report_table ~color ~source_roots ~show_uncovered ~min collection =
   let ansi =
     Os.resolve_color color ~tty:(Os.is_tty_stdout ())
       ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
@@ -440,30 +440,24 @@ let report_table ~color ~source_roots ~show_uncovered collection =
   Sections.print ~out:Format.std_formatter ~ansi
     (Sections.coverage_report
        ~mode:(if show_uncovered then `Full else `Report)
+       ~min
        (coverage_data ~source_roots collection))
 
-(* The gate compares raw percentages. The verdict states the threshold
-   as given and, on failure, the measurement exactly as the report line
-   states it — a fraction of integers beside its rounding — so no printed
-   sentence carries a comparison its own digits can contradict. *)
-let check_min ~machine summary = function
+(* The gate compares raw percentages, as the outcome line it is stated on
+   does. The report ends on that line; a machine format owns standard
+   output, so under one the line is windtrap's own, and only a gate asks
+   for it. *)
+let check_min ~machine (summary : Windtrap_runtime.Coverage.summary) = function
   | None -> 0
   | Some min ->
-      let pct = Windtrap_runtime.Coverage.percentage summary in
-      (* A machine format owns standard output: the verdict is then
-         windtrap's own line. *)
-      let print line = if machine then Os.say line else print_endline line in
-      if pct >= min then begin
-        print (spf "minimum %g%%: ok" min);
-        0
-      end
-      else begin
-        print
-          (spf "minimum %g%%: FAILED \u{2014} %.1f%% (%d/%d points)" min pct
-             summary.Windtrap_runtime.Coverage.visited
-             summary.Windtrap_runtime.Coverage.total);
-        1
-      end
+      if machine then
+        Os.say
+          (String.concat ""
+             (List.map
+                (fun (span : Sections.span) -> span.text)
+                (Sections.coverage_line ~min:(Some min) ~visited:summary.visited
+                   ~total:summary.total)));
+      if Windtrap_runtime.Coverage.percentage summary >= min then 0 else 1
 
 let run args =
   match parse_args args with
@@ -498,10 +492,10 @@ let run args =
                 else if options.lcov then print_lcov ~source_roots collection
                 else
                   report_table ~color ~source_roots
-                    ~show_uncovered:options.show_uncovered collection;
+                    ~show_uncovered:options.show_uncovered ~min:options.min
+                    collection;
                 (* Both gates run, so one run names everything wrong;
-                   either failing is exit 1. A machine format owns
-                   stdout; the verdict moves aside. *)
+                   either failing is exit 1. *)
                 let expectations =
                   check_expectations ~expect:options.expect
                     ~do_not_expect:options.do_not_expect collection

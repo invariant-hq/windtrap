@@ -232,8 +232,9 @@ let version =
    configuration to every hint: under dune, a [dune exec] spelling of
    this executable — truthful for every dune invocation of every stanza
    kind, where [dune runtest] and [dune exec] are indistinguishable (both
-   set INSIDE_DUNE); standalone, argv0 verbatim, exactly as the user typed
-   it. An embedder passing [~argv:[||]] gets [`Mirrors] — the fixed dune
+   set INSIDE_DUNE); standalone, argv0 as the user typed it. Either path
+   is quoted where a shell would split it, so a hint runs as pasted. An
+   embedder passing [~argv:[||]] gets [`Mirrors], the fixed dune
    wording. A [--corrected] run is dune's — a stanza's action, or the
    inline runner — so its hints spell the mirrors and its acceptance is
    [dune promote], whatever argv says.
@@ -265,9 +266,12 @@ let invocation_of ~corrected argv : Run.invocation =
         "--instrument-with ppx_windtrap.mutate "
       else ""
     in
-    `Exe ("dune exec " ^ backend ^ Os.display_path absolute ^ " --")
+    `Exe
+      ("dune exec " ^ backend
+      ^ Report_sections.shell_word (Os.display_path absolute)
+      ^ " --")
   end
-  else `Exe argv0
+  else `Exe (Report_sections.shell_word argv0)
 
 let print_cli_error ~prog error =
   Os.say (Cli.error_message error);

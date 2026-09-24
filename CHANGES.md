@@ -680,19 +680,19 @@ Coverage and packaging:
   `windtrap coverage` merges them into the per-file table, which is the
   default report. A test run prints no coverage number of its own: the
   gate lives only in the command. `--min PCT` exits 1 below the threshold,
-  stating the exact fraction beside the percentage; `--expect PATH`
-  (`--do-not-expect` to exempt) fails when a source under `PATH` has no
-  data at all; `-u` adds the uncovered source excerpts; `--json` prints
-  per-file percentages and uncovered lines; `--lcov` prints an LCOV
-  tracefile for Codecov, Coveralls, GitLab, editor gutters and `genhtml`;
-  positional `PATH…` replaces the default search. A dump whose executable
-  was deleted or rebuilt since is excluded with a warning line, three such
-  lines at most and then `... and N more like that`, and one remedy
-  sentence; when nothing is left the run says how many files it found,
-  whether they are stale or orphaned, and that the usual cause is a build
-  without the instrumentation flag. There is no override. `WINDTRAP_COVERAGE_FILE=path`
-  sends one run's dump to an explicit file, which is also how a build rule
-  declares it as a target.
+  the report's last line stating the exact fraction beside the percentage;
+  `--expect PATH` (`--do-not-expect` to exempt) fails when a source under
+  `PATH` has no data at all; `-u` adds the uncovered source excerpts;
+  `--json` prints per-file percentages and uncovered lines; `--lcov`
+  prints an LCOV tracefile for Codecov, Coveralls, GitLab, editor gutters
+  and `genhtml`; positional `PATH…` replaces the default search. A dump
+  whose executable was deleted or rebuilt since is excluded with a warning
+  line, three such lines at most and then `... and N more like that`, and
+  one remedy sentence; when nothing is left the run says how many files it
+  found, whether they are stale or orphaned, and that the usual cause is a
+  build without the instrumentation flag. There is no override.
+  `WINDTRAP_COVERAGE_FILE=path` sends one run's dump to an explicit file,
+  which is also how a build rule declares it as a target.
 - **Percentages change meaning.** Coverage is expression-grade with entry
   points per block and out-edge points on calls, which count only when the
   call returns, so raising paths show as uncovered instead of painted
@@ -702,6 +702,19 @@ Coverage and packaging:
   exclude_file]`). Instrumentation never changes what a program means —
   out-edge points are given up wherever taking one would cost a tail call
   — and a semantics-preservation suite holds that line.
+- The report ends on its outcome: `coverage: 71.4% (312/437 points)` is
+  the last line, and under `--min` the gate is on it, `, minimum 80%:
+  FAILED` or `, minimum 70%: ok`. Under `--json` and `--lcov`, whose
+  standard output is the document, a gated run says the same sentence on
+  standard error behind `windtrap:`.
+- The table opens with a dim header row: `cover`, `points`, `file` and
+  `uncovered lines (-u shows the source)`, which is `uncovered lines`
+  under `-u`, where the source follows. A row lists its first eight uncovered line ranges, then `(+N more)`; the header's hint is how to see the others.
+- A percentage is red below `--min`, or below 80% without it, and
+  unstyled otherwise.
+- Under `-u` each file's source follows the table under `<file>: 58.0%
+  (69/119)`, the file bold, and the outcome follows the last file. Source
+  text prints its control bytes as `\xNN`, in a survivor's block too.
 
 ### Mutation testing
 
@@ -728,7 +741,7 @@ Coverage and packaging:
 - **`--arm ID`** runs the suite once with one mutant armed, announced
   before any output (`mutant <id> armed: <before> → <after>`) and closed
   with one verdict line (`mutant killed.`, `mutant survived: …`, `mutant
-  not evaluated: …`); the survivor block's `reproduce:` footer spells it.
+  not evaluated: …`); the report's `reproduce:` line spells it.
   Armed checking is read-only: no `.corrected` is written. `--mutate` and
   `--arm` together is a usage error. Both flags have mirrors,
   `WINDTRAP_MUTATE` (a truthy value is the bare flag, a falsy one its
@@ -738,7 +751,7 @@ Coverage and packaging:
   file under the build directory's `_mutants` (or `_windtrap/mutants`
   without one), and `windtrap mutants` merges them under **killed
   anywhere wins**, reporting survivors with the executable beside each
-  witness plus an `UNREACHED` section for mutants no executable's tests
+  reaching test plus a `never reached` section for mutants no executable's tests
   evaluate; it exits 1 when any mutant survived every executable that
   reached it — the one mutation exit code a build gates on. Two commands:
   `WINDTRAP_MUTATE=1 dune runtest --force --instrument-with
@@ -749,6 +762,41 @@ Coverage and packaging:
   and the stale/orphaned split when nothing is left), and
   `WINDTRAP_MUTATE_ARM=<id>` in front of the suite command arms one mutant
   across every suite.
+- The `--mutate` loop prints what it finds as it finds it: a `SURVIVED`
+  block when that mutant's child ends, in the catalogue's order, under a
+  `survivors` rule that carries no count; on a terminal a dim `[3/5]
+  <id>…` line names the mutant being tried. A loop that kills every
+  mutant it reaches, and reaches them all, is two lines: the suite's
+  summary, then `mutants: 3 reached by this suite, 3 killed`.
+- A survivor's block is `SURVIVED  <id>  <before> → <after>`, the mutated
+  source line as a failure block prints one, and its reaching tests
+  padded to the widest name of the block.
+- Mutants no test evaluated are one row per file under `never reached
+  (N)`: how many, the file, and their lines as ranges, eight at most
+  (`2  lib/calc.ml   lines 40-41`). Both the loop and `windtrap mutants`
+  print the section and count them on the `mutants:` line, the report's
+  last: `mutants: 2 survived of 5 reached by this suite, 3 killed, 2 never
+  reached`.
+- `reproduce:` is one command that runs as pasted, above the `mutants:`
+  line: it arms the first survivor printed, by its identifier, the
+  executable's path quoted where a shell would split it. The loop spells it
+  from the run's launcher and restates the run's selection (`-f`, `-e`,
+  `--tag`, `--exclude-tag`, `--shard`, `--failed`, or their mirrors), since
+  a survivor of a narrowed run survived that selection only; `windtrap
+  mutants` spells it from the executable the verdict file records:
+  - under dune: `dune exec --instrument-with ppx_windtrap.mutate <exe> --
+    --arm <id>`;
+  - run by hand: `<exe> --arm <id>`;
+  - under a build action, and for an inline runner: `WINDTRAP_MUTATE_ARM=<id>
+    dune runtest --force --instrument-with ppx_windtrap.mutate`.
+- SIGINT, SIGTERM and SIGHUP end a loop on what it knows: the running
+  child's process group is killed, `windtrap: interrupted while testing
+  <id>` goes to standard error, the `mutants:` line counts `N not tested`,
+  no verdict file is written, and the process dies by the same signal. A
+  reader that goes away (`… --mutate | head -1`) ends it as quietly as it
+  left: nothing is said, the loop's scratch directory is removed, and the
+  process dies by SIGPIPE. A loop that ran whole has written its
+  verdict file before its last lines print, so neither costs it.
 
 ### Packages and libraries
 

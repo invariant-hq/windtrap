@@ -187,6 +187,12 @@ val sanitize_name : string -> string
     ([\n], [\t], [\xNN]) and ESC left alone: how every terminal surface prints a
     user-controlled name. *)
 
+val shell_word : string -> string
+(** [shell_word s] is [s] as one word of a command line a POSIX shell reads: [s]
+    itself when it is made of letters, digits and [_-./:=+,@%], single-quoted
+    otherwise ([$'…'] when it holds a control byte). What spells a launcher
+    passes the executable's path through it, so a hint runs as pasted. *)
+
 (** {1:sections The section vocabulary}
 
     The lines, rows, excerpts and rules instrumentation reports are made of. A
@@ -206,15 +212,11 @@ type column = { gap : string; align : [ `Left | `Right ]; width : int option }
     width floor ([None] fits the widest cell). *)
 
 type excerpt = {
-  file : string;  (** The file the excerpt is from. *)
-  heading : span list option;
-      (** A heading line ([<file> — <heading>]) printed before the excerpt,
-          blank lines around it; [None] for none. *)
   source : string;  (** The file's text. *)
   marked_lines : int list;  (** The 1-based lines to mark. *)
 }
-(** The type for a source excerpt: the marked lines of [source] with their
-    context, touching windows merged, [·····] between regions. *)
+(** The type for a source excerpt: the marked lines of [source], each with one
+    line of context, touching windows merged. *)
 
 (** The type for report sections. *)
 type section =
@@ -223,17 +225,12 @@ type section =
   | Rows of { margin : string; columns : column list; rows : span list list }
       (** A table: each row's cells padded to the widest cell of their column,
           trailing spaces stripped. *)
-  | Excerpt of {
-      context : int;  (** Lines of context around each marked line. *)
-      marker : bool;
-          (** Whether marked lines carry the red [▌] gutter marker. *)
-      margin : string;  (** The text before the gutter. *)
-      number_width : int option;
-          (** The line-number column width; [None] fits the excerpt, floor four.
-          *)
-      excerpt : excerpt;
-    }
-  | Rule of string option  (** A faint 54-column {!rule}. *)
+  | Excerpt of excerpt
+      (** The excerpt's regions, a faint [·····] between two: each line as
+          [  <N> │ <text>], the number right-aligned in at least four columns, a
+          marked line carrying the red [▌] in its margin, [<text>] escaped as
+          {!pp_failure} escapes a source line. *)
+  | Rule of string option  (** A faint 58-column {!rule}. *)
 
 val rule : width:int -> string option -> string
 (** [rule ~width label] is a rule of [width] columns of [─], unstyled, [label]
@@ -275,30 +272,40 @@ type coverage = {
 }
 (** The type for a whole coverage report. *)
 
-val coverage_line : visited:int -> total:int -> unit -> span list
-(** [coverage_line ~visited ~total ()] is the summary line
-    ([coverage: 87.2% (312/358 points)]), the percentage green at 80% and above,
-    yellow at 60%, red below. *)
+val coverage_line : min:float option -> visited:int -> total:int -> span list
+(** [coverage_line ~min ~visited ~total] is the report's outcome line,
+    [coverage: 87.2% (312/358 points)], followed under a gate [min] by
+    [, minimum 80%: ok] (green) or [, minimum 90%: FAILED] (red): the gate is
+    met iff the unrounded percentage is at least [min]. A percentage, here and
+    throughout the report, is red below [min], or below 80 when [min] is [None],
+    and unstyled otherwise. *)
 
-val coverage_report : mode:[ `Report | `Full ] -> coverage -> section list
-(** [coverage_report ~mode c] is the coverage block for [c]: the summary line
-    ({!coverage_line}); one line per file with its percentage (styled as the
-    summary line's), visited/total, name and uncovered line ranges
-    ([uncovered: 88-94, 121], at most eight regions then
-    [(+N more, -u shows them)]; none for a fully covered file), a file whose
-    unvisited points have no line attribution noting the missing source, and a
-    stale file stating the staleness and the fix instead; and under [`Full] a
-    source excerpt per file with uncovered lines and a readable source, headed
-    [lib/eval.ml — 75.0% (111/148)], each uncovered region with one line of
-    context and a gutter marker. *)
+val coverage_report :
+  mode:[ `Report | `Full ] -> min:float option -> coverage -> section list
+(** [coverage_report ~mode ~min c] is the coverage report for [c]. In order:
+
+    - When [c] has files, a faint header row naming the columns, each label at
+      its column ([cover], [points], [file] and
+      [uncovered lines (-u shows the source)], the parenthesis omitted under
+      [`Full]; long file names take this row past 80 columns), then one row per
+      file: its percentage, visited/total, name and uncovered line ranges
+      ([88-94, 121]). A row prints its first eight ranges, then [(+N more)], [N]
+      the ranges not shown; nothing is fitted to a width. A file whose unvisited
+      points have no line attribution says [(source not found)], a stale one
+      [stale: the source changed; re-run the instrumented tests].
+    - Under [`Full], after one blank line, per file with uncovered lines and a
+      readable source: [<file>: 75.0% (111/148)], the name bold, a blank line
+      and the file's {!Excerpt}; one blank line between files and one after the
+      last.
+    - {!coverage_line}, always last. *)
 
 (** {1:mutation Mutation}
 
-    The mutation report: survivor blocks, unreached blocks, one summary line and
-    the reproduce footer. One layout serves the mutation loop's per-executable
-    report and [windtrap mutants]' aggregate. A survivor is drawn as a failure
-    block, in red; an unreached mutant is the same block without the sentence,
-    in yellow. Ordering and witness lists are the producer's. *)
+    The mutation report: survivor blocks, the never-reached rows, the reproduce
+    command and the outcome line. The mutation loop commits a survivor's block
+    when it finds it and ends on {!mutation_closing}; [windtrap mutants] prints
+    {!mutation_report} over a merge. Which mutants survived, in which order, and
+    their reaching tests are the producer's. *)
 
 type witness = {
   test : string;
@@ -308,8 +315,8 @@ type witness = {
       (** The test executable that ran the test. [None] in a per-executable
           report, where the column is omitted. *)
 }
-(** The type for survivor witnesses: a test that evaluated the mutated line and
-    did not fail when it changed. *)
+(** The type for a survivor's reaching tests: a test that evaluated the mutated
+    line and did not fail when it changed. *)
 
 type mutant = {
   id : string;
@@ -320,8 +327,8 @@ type mutant = {
   before : string;  (** The original expression's source text. *)
   after : string;  (** The armed expression's source text. *)
   source : string option;
-      (** The mutated file's text, when the producer could read it; the excerpt
-          row is dropped otherwise. *)
+      (** The mutated file's text, when the producer could read it; the source
+          line is dropped otherwise. *)
 }
 (** The type for one mutant as a block draws it. *)
 
@@ -333,9 +340,9 @@ type survivor = {
 }
 (** The type for one survived mutant. *)
 
-(** The type for what a report's reached count is relative to, the summary
+(** The type for what a report's reached count is relative to, the outcome
     line's subject: [5 reached by this suite],
-    [2 reached by the 2 selected tests], [12 reached · 3 executables]. *)
+    [2 reached by the 2 selected tests], [12 reached, 3 executables]. *)
 type scope =
   | Suite  (** A per-executable run over its whole suite. *)
   | Selected of int
@@ -346,32 +353,63 @@ type scope =
 
 type mutation = {
   survivors : survivor list;
-      (** Every survived mutant, ordered by witness count descending, then by
-          identifier. Never capped. *)
-  unreached : mutant list;
-      (** Every mutant no test evaluated, ordered by identifier. Aggregate only:
-          a per-executable report hands over [[]]. *)
+      (** Every survived mutant, in the order its block prints. Never capped. *)
+  unreached : (string * int) list;
+      (** The source file and 1-based line of every mutant no test evaluated. *)
   killed : int;  (** How many mutants were killed. *)
+  not_tested : int;
+      (** How many reached mutants have no verdict: those an interrupted loop
+          did not finish. [0] in every other report. *)
   scope : scope;  (** What the reached count is relative to. *)
-  filter : string option;
-      (** The run's [-f] filter, restated in the reproduce footer; [None] for
-          the aggregate. *)
 }
 (** The type for a whole mutation report. The reached count is
-    [killed + List.length survivors]. *)
+    [killed + List.length survivors + not_tested]. *)
+
+val survivor_block : exe_width:int option -> survivor -> section list
+(** [survivor_block ~exe_width s] is [s]'s block:
+
+    - [  SURVIVED  lib/calc.ml:9:12:add  a - b → a + b], [SURVIVED] red and the
+      identifier bold.
+    - The mutated source line as {!pp_failure} prints a located one
+      ([      9 │ | Sub -> a - b]), when the source is known and has the line.
+    - A blank line, then [3 tests ran this line and none failed:], singular
+      [1 test ran this line and did not fail:], and
+      [3 tests in 2 executables ran this line and none failed:] when the
+      reaching tests name several executables.
+    - One row per reaching test: its name ({!sanitize_name}) padded to the
+      widest of the block, then its faint location. Under [exe_width = Some w]
+      the executable comes first, padded to [w] columns. *)
+
+val mutation_closing : config:Run.config -> mutation -> section list
+(** [mutation_closing ~config m] is what ends a report whose survivor blocks are
+    already printed, under a [survivors] rule, after a run's summary line. In
+    order:
+
+    - The rule that closes the blocks, when [m.survivors] is not empty.
+    - When [m.unreached] is not empty, after a blank line: the rule
+      [never reached (N)], [N] the mutants; one row per file, by name: how many
+      of them it holds, right-aligned in yellow, the file, and [lines 40-41, 57]
+      over their distinct lines, eight at most as in a {!coverage_report} row; a
+      closing rule.
+    - A blank line, when either printed.
+    - When [m.survivors] is not empty, [reproduce: <command>], the command that
+      arms the first of them: [<cmd> --arm <id>] under [`Exe cmd], and under
+      [`Mirrors]
+      [WINDTRAP_MUTATE_ARM=<id> dune runtest --force --instrument-with
+       ppx_windtrap.mutate], [cmd] and the choice of spelling being the
+      invocation of [config]. The command restates the run's selection: [-f],
+      [-e], [--tag], [--exclude-tag], [--shard] and [--failed] after [--arm]
+      under [`Exe], their mirrors ahead of [dune runtest] under [`Mirrors],
+      [--failed] excepted. Unstyled.
+    - The outcome line, zero terms omitted:
+      [mutants: 1 survived of 12 reached, 11 killed, 2 never reached, 3 not
+       tested, 3 executables], survived red, killed green, never reached yellow.
+*)
 
 val mutation_report : invocation:Run.invocation -> mutation -> section list
-(** [mutation_report ~invocation m] is [m] as sections: the survivor section
-    when [m.survivors] is not empty (the labelled rule [survivors (2)], then per
-    survivor the head row [  SURVIVED  lib/calc.ml:9:12:add    a - b  →  a + b],
-    the excerpt row, and the sentence [3 tests ran this line and none failed:],
-    singular [1 test ran this line and did not fail:], over one row per
-    witness); the unreached section when [m.unreached] is not empty
-    ([never reached (2)], one block per mutant, no sentence); the closing rule
-    when either printed; the summary line with zero terms omitted
-    ([mutants: 1 survived of 12 reached · 11 killed · 2 never reached · 3
-      executables], survived red, killed green, never reached yellow); and, when
-    either section printed, the reproduce footer arming one mutant with the
-    literal [<id>], spelled from [invocation]: [--arm] under [`Exe] and
-    [WINDTRAP_MUTATE_ARM=<id> <re-run the instrumented suite>] under [`Mirrors],
-    [m.filter] restated as the replay line's is. *)
+(** [mutation_report ~invocation m] is [m] as a report at rest: when
+    [m.survivors] is not empty the rule [survivors (N)], one {!survivor_block}
+    per survivor with one blank line between two, the executables one column for
+    the report, and a closing rule; then, each after one blank line when
+    something precedes it, the never-reached section and the last lines of
+    {!mutation_closing} for a run that selects every test. *)

@@ -194,7 +194,7 @@ let dump_is_the_report =
   in
   check_int "an instrumented child exits 0" ~expected:0 ~actual:code;
   check_absent "the run prints no coverage line" ~needle:"coverage:" out;
-  check_absent "and draws no per-file table" ~needle:"uncovered:" out;
+  check_absent "and draws no per-file table" ~needle:"uncovered lines" out;
   (* The at_exit dump of the same run is what carries the measurement,
      and names the executable that wrote it, so `windtrap coverage` can
      merge and vet it. *)
@@ -308,12 +308,24 @@ let reporting_command =
   let code, out, err = coverage_cmd ~cwd:proj [] in
   check_int "the merged report exits 0" ~expected:0 ~actual:code;
   check "the merged report keeps stderr empty" (err = "");
+  check_string
+    "the table under its header row, the outcome last: counts merge across \
+     executables, each file reports its uncovered line"
+    ~expected:
+      "   cover    points   file         uncovered lines (-u shows the source)\n\
+      \   50.0%    1/2      lib/bar.ml   2\n\
+      \   66.7%    2/3      lib/foo.ml   3\n\
+       coverage: 60.0% (3/5 points)\n"
+    ~actual:out;
   check_contains "counts merge across executables"
     ~needle:"coverage: 60.0% (3/5 points)" out;
   check_contains "foo.ml adds counts from both executables" ~needle:"2/3" out;
-  check_contains "foo.ml reports its uncovered line" ~needle:"uncovered: 3" out;
+  check_contains "foo.ml reports its uncovered line" ~needle:"lib/foo.ml   3\n"
+    out;
   check_contains "bar.ml reports from one executable alone" ~needle:"1/2" out;
-  check_contains "bar.ml reports its uncovered line" ~needle:"uncovered: 2" out;
+  check_contains "bar.ml reports its uncovered line" ~needle:"lib/bar.ml   2\n"
+    out;
+  check_absent "no row repeats the column's name" ~needle:"uncovered:" out;
   check_absent "the table paints no excerpts by default" ~needle:"\u{258c}" out;
   (* Discovery walks up from a subdirectory to the project root. *)
   let code, out, _ = coverage_cmd ~cwd:(Filename.concat proj "lib") [] in
@@ -321,7 +333,7 @@ let reporting_command =
   check_contains "walk-up discovery finds the same data"
     ~needle:"coverage: 60.0% (3/5 points)" out;
   check_contains "walk-up discovery still resolves sources"
-    ~needle:"uncovered: 3" out;
+    ~needle:"lib/foo.ml   3\n" out;
   (* Explicit PATH arguments replace discovery; sources then resolve
      against the current directory only. *)
   let code, out, _ =
@@ -338,7 +350,13 @@ let reporting_command =
   check_contains "--show-uncovered paints the uncovered arm" ~needle:"\u{258c}"
     out;
   check_contains "--show-uncovered shows the uncovered source"
-    ~needle:"let c = 3" out
+    ~needle:"let c = 3" out;
+  check_contains "the source is shown, so the header does not say how"
+    ~needle:"file         uncovered lines\n" out;
+  check_contains "a file's heading ends on its numbers"
+    ~needle:"\nlib/foo.ml: 66.7% (2/3)\n\n" out;
+  check "and the outcome follows the last file, one blank line under it"
+    (String.ends_with ~suffix:"\n\ncoverage: 60.0% (3/5 points)\n" out)
 
 (* A tree built without dune: the executable is under no build
    directory, so it dumps under the working directory's _windtrap, the
@@ -431,13 +449,23 @@ let min_matrix =
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "50" ] in
   check_int "--min below the total exits 0" ~expected:0 ~actual:code;
   check_contains "--min ok prints the verdict" ~needle:"minimum 50%: ok" out;
+  check "on the outcome line, which is the last"
+    (String.ends_with
+       ~suffix:"\ncoverage: 60.0% (3/5 points), minimum 50%: ok\n" out);
+  check_absent "and the gate is no line of its own" ~needle:"\nminimum" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "60" ] in
   check_int "--min at the total exits 0" ~expected:0 ~actual:code;
   check_contains "--min at the boundary is ok" ~needle:"minimum 60%: ok" out;
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "80" ] in
   check_int "--min above the total exits 1" ~expected:1 ~actual:code;
-  check_contains "--min failure states the measurement and its fraction"
-    ~needle:"minimum 80%: FAILED \u{2014} 60.0% (3/5 points)" out;
+  check "--min failure states the measurement and its fraction, last"
+    (String.ends_with
+       ~suffix:"\ncoverage: 60.0% (3/5 points), minimum 80%: FAILED\n" out);
+  let code, out, _ = coverage_cmd ~cwd:proj [ "-u"; "--min"; "80" ] in
+  check_int "the source view gates alike" ~expected:1 ~actual:code;
+  check "and ends on the same line, after its last file"
+    (String.ends_with
+       ~suffix:"\n\ncoverage: 60.0% (3/5 points), minimum 80%: FAILED\n" out);
   let code, _, err = coverage_cmd ~cwd:proj [ "--min"; "eleventy" ] in
   check_int "a malformed --min exits 2" ~expected:2 ~actual:code;
   check_contains "a malformed --min is a usage error"
@@ -565,8 +593,15 @@ let json_shape =
   check_int "--json --min still gates" ~expected:1 ~actual:code;
   check "--json --min keeps stdout pure JSON" (json_well_formed out);
   check_contains "--json --min moves the verdict to stderr" ~needle:"FAILED" err;
-  check "where it is windtrap's own line, behind the anchor"
-    (String.starts_with ~prefix:"windtrap: minimum 80%: FAILED" err)
+  check_string "where it is windtrap's own line, behind the anchor"
+    ~expected:"windtrap: coverage: 60.0% (3/5 points), minimum 80%: FAILED\n"
+    ~actual:err;
+  let code, out, err = coverage_cmd ~cwd:proj [ "--json"; "--min"; "50" ] in
+  check_int "--json --min met exits 0" ~expected:0 ~actual:code;
+  check "and keeps stdout pure JSON" (json_well_formed out);
+  check_string "with the same sentence on stderr"
+    ~expected:"windtrap: coverage: 60.0% (3/5 points), minimum 50%: ok\n"
+    ~actual:err
 
 (* --expect: exhaustiveness *)
 
@@ -666,6 +701,10 @@ let lcov_output =
   check_int "--lcov --min still gates" ~expected:1 ~actual:code;
   check_absent "--lcov --min keeps stdout pure" ~needle:"minimum" out;
   check_contains "--lcov --min moves the verdict to stderr" ~needle:"FAILED" err;
+  check_absent "the outcome line stays off a tracefile" ~needle:"coverage:" out;
+  check_string "the sentence is the report's, behind the anchor"
+    ~expected:"windtrap: coverage: 60.0% (3/5 points), minimum 80%: FAILED\n"
+    ~actual:err;
   (* Two owners of stdout is a usage error. *)
   let code, _, err = coverage_cmd ~cwd:proj [ "--lcov"; "--json" ] in
   check_int "--lcov --json exits 2" ~expected:2 ~actual:code;
@@ -818,7 +857,7 @@ let min_boundaries =
   let code, out, _ = coverage_cmd ~cwd:proj [ "--min"; "100" ] in
   check_int "--min 100 fails below full coverage" ~expected:1 ~actual:code;
   check_contains "--min 100 states the shortfall"
-    ~needle:"minimum 100%: FAILED \u{2014} 60.0% (3/5 points)" out;
+    ~needle:"coverage: 60.0% (3/5 points), minimum 100%: FAILED\n" out;
   let full = scratch "fullproj" in
   let all =
     collection "full"
@@ -855,7 +894,7 @@ let min_boundaries =
   let code, out, _ = coverage_cmd ~cwd:thirds [ "--min"; "66.7" ] in
   check_int "the gate compares raw percentages" ~expected:1 ~actual:code;
   check_contains "a display-equal shortfall still fails, with its fraction"
-    ~needle:"minimum 66.7%: FAILED \u{2014} 66.7% (2/3 points)" out
+    ~needle:"coverage: 66.7% (2/3 points), minimum 66.7%: FAILED\n" out
 
 (* Discovery and merge robustness *)
 
@@ -925,7 +964,8 @@ let discovery_robustness =
   check_int "a cwd inside _build exits 0" ~expected:0 ~actual:code;
   check_contains "a cwd inside _build resolves the workspace root"
     ~needle:"coverage: 60.0% (3/5 points)" out;
-  check_contains "sources resolve from that root too" ~needle:"uncovered: 3" out;
+  check_contains "sources resolve from that root too" ~needle:"lib/foo.ml   3\n"
+    out;
   (* E2's trap: v1 garbage planted at _build/.sandbox/_build/_coverage
      must not capture discovery from a sandboxed action's cwd — the
      topmost _build wins. *)
@@ -1233,7 +1273,7 @@ let raise_attribution =
           check_contains "the report totals the unreached out-edge"
             ~needle:"coverage: 66.7% (2/3 points)" out;
           check_contains "the unreached out-edge is an uncovered line"
-            ~needle:"uncovered: 7" out;
+            ~needle:"covcli_fixture.ml   7\n" out;
           let code, out, _ = coverage_cmd ~cwd:root [ "--show-uncovered" ] in
           check_int "the raise excerpt exits 0" ~expected:0 ~actual:code;
           check_contains "the excerpt paints the raising call" ~needle:"boom ()"

@@ -70,6 +70,8 @@ type t = {
       (* the hint context: every acceptance, replay and rerun line derives
          from the one value the facade computed at startup. *)
   armed : string option; (* the armed mutant's identifier *)
+  config : Run.config;
+      (* the selection a mutation loop's [reproduce:] command restates *)
   mutable total_tests : int;
   mutable seen : int;
   mutable live_pending : bool;
@@ -79,6 +81,7 @@ type t = {
   mutable blocks : int;
       (* failure blocks committed: the first [blocks] counted failures of
          the results [finish] is given, in their order. *)
+  mutable survivors : int; (* survivor blocks a mutation loop committed *)
   mutable declared : int option;
       (* tests the suite declares, before selection — the denominator the
          empty-selection message needs; [total_tests] is what survived.
@@ -115,12 +118,14 @@ let create ~out ~ansi ?(live = false) (config : Run.config) =
       (match config.Run.mutation with
       | Run.Armed id -> Some id
       | Run.No_mutation | Run.Loop _ -> None);
+    config;
     total_tests = 0;
     seen = 0;
     live_pending = false;
     spaced = false;
     header_printed = false;
     blocks = 0;
+    survivors = 0;
     declared = None;
     selection = None;
     suite = None;
@@ -194,19 +199,23 @@ let header t ~suite ~tests ?declared ?selection ~seed () =
     Pp.flush t.out ()
   end
 
-let begin_test t ~path =
+(* Draws the live tail over the previous one. *)
+let draw_live t text =
   if t.live then begin
     clear_live t;
-    let name = sanitize_name (Test_tree.path_to_string path) in
-    let counter = spf "[%d/%d]" (t.seen + 1) (max t.total_tests (t.seen + 1)) in
-    let text =
-      if t.verbose then spf "Running %s %s\u{2026}" counter name
-      else spf "%s %s\u{2026}" counter name
-    in
     let text = Text.truncate_utf8 (columns - 4) text in
     Pp.pf t.out "\r\027[2K%s" (st t `Faint ("  " ^ text));
     Pp.flush t.out ();
     t.live_pending <- true
+  end
+
+let begin_test t ~path =
+  if t.live then begin
+    let name = sanitize_name (Test_tree.path_to_string path) in
+    let counter = spf "[%d/%d]" (t.seen + 1) (max t.total_tests (t.seen + 1)) in
+    draw_live t
+      (if t.verbose then spf "Running %s %s\u{2026}" counter name
+       else spf "%s %s\u{2026}" counter name)
   end
 
 let has_missing_baseline failures =
@@ -882,16 +891,47 @@ let mutation_survived t ~hits =
   put t
     (st t `Red
        (spf
-          "mutant survived: the armed site was evaluated %d time(s) and no \
-           test failed."
-          hits))
+          "mutant survived: the armed site was evaluated %d time%s and no test \
+           failed."
+          hits
+          (if hits = 1 then "" else "s")))
 
 let mutation_not_evaluated t =
   clear_live t;
   put t (st t `Yellow "mutant not evaluated: no selected test ran the site.")
 
-let mutation_report t m =
-  sections t (Sections.mutation_report ~invocation:t.invocation m)
+(* The loop's report *)
+
+let mutation_testing t ~index ~total ~id =
+  draw_live t (spf "[%d/%d] %s\u{2026}" index total (sanitize_name id))
+
+(* A survivor's block is committed when its child ends, so a loop that
+   dies has printed what it found. The rule that opens the blocks prints
+   before the first, and [mutation_finish] closes them. *)
+let mutation_survivor t survivor =
+  sections t
+    ((if t.survivors = 0 then
+        [ Sections.Line []; Sections.Rule (Some "survivors") ]
+      else [ Sections.Line [] ])
+    @ Sections.survivor_block ~exe_width:None survivor);
+  t.survivors <- t.survivors + 1
+
+let mutation_finish t m =
+  sections t (Sections.mutation_closing ~config:t.config m)
+
+(* Windtrap's own word goes to standard error, past [t.out]: the live
+   display is erased before it. *)
+let mutation_refused t message =
+  clear_live t;
+  Pp.flush t.out ();
+  Os.say message
+
+let mutation_interrupted t ~testing m =
+  mutation_refused t
+    (match testing with
+    | Some id -> "interrupted while testing " ^ id
+    | None -> "interrupted during the determinism probe");
+  mutation_finish t m
 
 (* Running, reported *)
 

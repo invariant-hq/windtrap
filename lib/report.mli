@@ -40,14 +40,14 @@ val create : out:Format.formatter -> ansi:bool -> ?live:bool -> Run.config -> t
     under [ansi:true] they pass through; compared values are escaped into
     visible text either way ({!pp_failure}). [live] (default [false], and off
     regardless under [ansi:false] and under [config.stream], where a test's own
-    bytes would land on it) is whether {!begin_test} maintains a self-erasing
-    progress display; pass the sink's TTY status. [config.verbose],
-    [config.stream], [config.slow_threshold] ([0.] disables slow warnings),
-    [config.invocation] and the identifier of a [config.mutation] that is
-    {!Run.Armed} are read once here. Names print with C0 control bytes and DEL
-    escaped ({!Report_sections.sanitize_name}); the width is [80] columns and a
-    failure block shows the last [10] lines of the captured tail with the full
-    log's path.
+    bytes would land on it) is whether {!begin_test} and {!mutation_testing}
+    maintain a self-erasing progress display; pass the sink's TTY status.
+    [config.verbose], [config.stream], [config.slow_threshold] ([0.] disables
+    slow warnings), [config.invocation] and the identifier of a
+    [config.mutation] that is {!Run.Armed} are read once here. Names print with
+    C0 control bytes and DEL escaped ({!Report_sections.sanitize_name}); the
+    width is [80] columns and a failure block shows the last [10] lines of the
+    captured tail with the full log's path.
 
     Raises [Invalid_argument] if [config.slow_threshold] is negative or not
     finite. *)
@@ -250,8 +250,9 @@ val annotations :
 
 (** {1:mutation Mutation lines}
 
-    The lines a mutation run prints on the terminal renderer in every mode; the
-    report itself is {!Report_sections.mutation_report}. *)
+    The lines a mutation run prints on the terminal renderer: an armed run's,
+    then a loop's report, whose blocks and closing sections are
+    {!Report_sections}'s. *)
 
 val mutation_armed : t -> id:string -> before:string -> after:string -> unit
 (** [mutation_armed t ~id ~before ~after] prints the armed announcement
@@ -264,18 +265,46 @@ val mutation_killed : t -> unit
 
 val mutation_survived : t -> hits:int -> unit
 (** [mutation_survived t ~hits] prints
-    [mutant survived: the armed site was evaluated 3 time(s) and no test
-     failed.], closing an armed run that completed green with the site evaluated
-    [hits] times. *)
+    [mutant survived: the armed site was evaluated 3 times and no test failed.]
+    ([1 time]), closing an armed run that completed green with the site
+    evaluated [hits] times. *)
 
 val mutation_not_evaluated : t -> unit
 (** [mutation_not_evaluated t] prints
     [mutant not evaluated: no selected test ran the site.], closing an armed run
     that never evaluated the site. *)
 
-val mutation_report : t -> Report_sections.mutation -> unit
-(** [mutation_report t m] prints {!Report_sections.mutation_report} of [m] under
-    [t]'s invocation and styling. *)
+val mutation_testing : t -> index:int -> total:int -> id:string -> unit
+(** [mutation_testing t ~index ~total ~id] shows the mutant a loop is trying,
+    the [index]th of [total], on the live display
+    ([  [3/5] lib/calc.ml:9:12:add…], faint), erased before anything else
+    prints. Prints nothing unless [live] and [ansi] are set. *)
+
+val mutation_survivor : t -> Report_sections.survivor -> unit
+(** [mutation_survivor t s] erases the live display and commits [s]'s
+    {!Report_sections.survivor_block}, flushed: after one blank line, and before
+    the first block of [t] the 58-column [── survivors ──] rule, which carries
+    no count, the loop not knowing it yet. *)
+
+val mutation_finish : t -> Report_sections.mutation -> unit
+(** [mutation_finish t m] erases the live display and ends a loop's report with
+    {!Report_sections.mutation_closing} of [m] under [t]'s configuration,
+    flushed. [m.survivors] are the survivors {!mutation_survivor} was given, in
+    order. *)
+
+val mutation_refused : t -> string -> unit
+(** [mutation_refused t message] erases the live display and says [message] on
+    standard error ({!Os.say}): how a loop that cannot go on stops, the blocks
+    it committed left as they are. *)
+
+val mutation_interrupted :
+  t -> testing:string option -> Report_sections.mutation -> unit
+(** [mutation_interrupted t ~testing m] ends the report of a loop a signal is
+    stopping: [windtrap: interrupted while testing <id>] on standard error
+    ({!Os.say}), [testing] the mutant whose child was stopped, or
+    [windtrap: interrupted during the determinism probe] when it is [None]; then
+    {!mutation_finish} over [m], whose [not_tested] counts the reached mutants
+    left without a verdict. *)
 
 (** {1:projections Failure projections}
 

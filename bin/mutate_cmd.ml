@@ -90,32 +90,55 @@ let discover paths = Data_files.discover V.format paths
    claim a kill the code no longer earns, and a false kill hides a live
    defect. Excluding is the only answer that cannot lie. *)
 
+(* Dune's inline-test runner is [inline-test-runner.exe] in every
+   library's [.<lib>.inline-tests] directory: the library is what tells
+   one from another. *)
+let inline_library exe =
+  let dir = Filename.basename (Filename.dirname exe) in
+  let suffix = ".inline-tests" in
+  if
+    Filename.basename exe = "inline-test-runner.exe"
+    && String.length dir > String.length suffix + 1
+    && dir.[0] = '.'
+    && Filename.check_suffix dir suffix
+  then Some (String.sub dir 1 (String.length dir - 1 - String.length suffix))
+  else None
+
 (* The executable a verdict file speaks for, as the witness column names
-   it: the basename of the recorded identity (`test_slug.exe`). Dune's
-   inline-test runner is `inline-test-runner.exe` in every library's
-   `.<lib>.inline-tests` directory, so it is named by the library whose
-   inline tests ran (`<lib>`) instead. A file that records no identity —
-   hand-written, or a merge, which has no single writer — is named by its
+   it: the basename of the recorded identity ([test_slug.exe]), or the
+   library whose inline tests ran. A file that records no identity
+   (hand-written, or a merge, which has no single writer) is named by its
    own basename. *)
 let executable_label ~path identity =
   match (identity : V.identity option) with
   | None -> Filename.basename path
   | Some { exe; _ } ->
-      let base = Filename.basename exe in
-      let dir = Filename.basename (Filename.dirname exe) in
-      let suffix = ".inline-tests" in
-      if
-        base = "inline-test-runner.exe"
-        && String.length dir > String.length suffix + 1
-        && dir.[0] = '.'
-        && Filename.check_suffix dir suffix
-      then String.sub dir 1 (String.length dir - 1 - String.length suffix)
-      else base
+      Option.value (inline_library exe) ~default:(Filename.basename exe)
+
+(* How a reader runs that executable again. An identity is relative iff
+   its executable was built under a dune build directory, its first
+   component the build context, which [dune exec] does not take. Dune's
+   inline runner takes its arguments from dune alone, and a file without
+   an identity names no executable: both are reached through the build. *)
+let invocation identity =
+  match (identity : V.identity option) with
+  | None -> `Mirrors
+  | Some { exe; _ } when Option.is_some (inline_library exe) -> `Mirrors
+  | Some { exe; _ } when Filename.is_relative exe ->
+      let target =
+        match String.index_opt exe '/' with
+        | Some i -> String.sub exe (i + 1) (String.length exe - i - 1)
+        | None -> exe
+      in
+      `Exe
+        ("dune exec --instrument-with ppx_windtrap.mutate "
+       ^ Sections.shell_word target ^ " --")
+  | Some { exe; _ } -> `Exe (Sections.shell_word exe)
 
 (* Loads [files], drops the orphaned and stale ones loudly, and returns
-   what is left, each collection labelled with its executable. Warnings
-   and failure details go to stderr; [Error code] is the exit code (data
-   problems are 1). *)
+   what is left, each collection with its executable's label and how to
+   run it again. Warnings and failure details go to stderr; [Error code]
+   is the exit code (data problems are 1). *)
 let load_fresh files =
   let loaded =
     List.fold_left
@@ -153,7 +176,7 @@ let load_fresh files =
         Ok
           (List.map
              (fun (path, t, identity, _) ->
-               (executable_label ~path identity, t))
+               (executable_label ~path identity, invocation identity, t))
              kept)
 
 (* Report data *)
@@ -195,13 +218,21 @@ let read_source ~roots =
    that killed the mutant contributes none; its tests noticed. A merged
    survivor's witnesses are then the tagged union from every file that
    reported it survived, sorted by (executable, test), without
-   duplicates. The ordering mirrors the loop's per-executable report: by
-   witness count descending, then by identifier. *)
+   duplicates. Survivors are ordered by reaching-test count descending,
+   then by identifier: the one the most tests watched is the one a reader
+   can act on soonest.
+
+   The second component is how the executable of the first survivor's
+   first reaching-test row is run again, for the report's one command: it
+   is the first of [files] carrying that row's label that let the mutant
+   survive. *)
 let render_data ~resolve_source files =
-  let merged = List.fold_left (fun acc (_, t) -> V.merge acc t) V.empty files in
+  let merged =
+    List.fold_left (fun acc (_, _, t) -> V.merge acc t) V.empty files
+  in
   let tagged = Hashtbl.create 64 in
   List.iter
-    (fun (exe, t) ->
+    (fun (exe, _, t) ->
       List.iter
         (fun (r : V.record) ->
           match r.V.verdict with
@@ -213,21 +244,19 @@ let render_data ~resolve_source files =
           | V.Killed | V.Unreached -> ())
         (V.records t))
     files;
-  let mutant_of (r : V.record) : Sections.mutant =
-    {
-      (* The identifier is spelled here, with the runtime's own function:
-         the report carries it into the head row without re-spelling it. *)
-      Sections.id = M.id_to_string r.V.id;
-      file = r.V.id.M.file;
-      line = r.V.id.M.line;
-      before = r.V.before;
-      after = r.V.after;
-      source = resolve_source r.V.id.M.file;
-    }
-  in
   let survivor_of (r : V.record) : Sections.survivor =
     {
-      Sections.mutant = mutant_of r;
+      Sections.mutant =
+        {
+          (* Spelled with the runtime's own function: the report carries
+             the identifier into the title and the command as it is. *)
+          Sections.id = M.id_to_string r.V.id;
+          file = r.V.id.M.file;
+          line = r.V.id.M.line;
+          before = r.V.before;
+          after = r.V.after;
+          source = resolve_source r.V.id.M.file;
+        };
       witnesses =
         List.map
           (fun (exe, test) ->
@@ -248,44 +277,60 @@ let render_data ~resolve_source files =
         | V.Killed | V.Unreached -> None)
       records
   in
-  (* [List.stable_sort] keeps identifier order within a count, as the
-     loop's does. *)
+  (* [List.stable_sort] keeps identifier order within a count. *)
   let survivors =
     List.stable_sort
       (fun (a : Sections.survivor) (b : Sections.survivor) ->
         compare (List.length b.witnesses) (List.length a.witnesses))
       survivors
   in
-  (* The merge is the one report that can call a mutant unreached: a
-     mutant no executable's tests evaluate is a finding here, where one
-     executable's unreached mutant was merely not its own. *)
+  let survived_in id t =
+    List.exists
+      (fun (r : V.record) ->
+        match r.V.verdict with
+        | V.Survived _ -> String.equal (M.id_to_string r.V.id) id
+        | V.Killed | V.Unreached -> false)
+      (V.records t)
+  in
+  let invocation =
+    match survivors with
+    | { mutant; witnesses = { exe = Some exe; _ } :: _ } :: _ ->
+        List.find_map
+          (fun (label, invocation, t) ->
+            if String.equal label exe && survived_in mutant.id t then
+              Some invocation
+            else None)
+          files
+    | { witnesses = { exe = None; _ } :: _ | []; _ } :: _ | [] -> None
+  in
+  (* The merge is the one report that can call a mutant unreached by the
+     project: a mutant no executable's tests evaluate. *)
   let unreached =
     List.filter_map
       (fun (r : V.record) ->
         match r.V.verdict with
-        | V.Unreached -> Some (mutant_of r)
+        | V.Unreached -> Some (r.V.id.M.file, r.V.id.M.line)
         | V.Killed | V.Survived _ -> None)
       records
   in
-  {
-    Sections.survivors;
-    unreached;
-    killed =
-      List.length
-        (List.filter (fun (r : V.record) -> r.V.verdict = V.Killed) records);
-    scope = Sections.Executables (List.length files);
-    filter = None;
-  }
+  ( {
+      Sections.survivors;
+      unreached;
+      killed =
+        List.length
+          (List.filter (fun (r : V.record) -> r.V.verdict = V.Killed) records);
+      not_tested = 0;
+      scope = Sections.Executables (List.length files);
+    },
+    Option.value invocation ~default:`Mirrors )
 
-let print_report ~color report =
+let print_report ~color ~invocation report =
   let ansi =
     Os.resolve_color color ~tty:(Os.is_tty_stdout ())
       ~inside_dune:(Os.inside_dune ()) ~term_dumb:(Os.term_dumb ())
   in
-  (* No command line re-runs the merged suites, so the footer's spelling
-     is the mirrors'. *)
   Sections.print ~out:Format.std_formatter ~ansi
-    (Sections.mutation_report ~invocation:`Mirrors report)
+    (Sections.mutation_report ~invocation report)
 
 (* The command *)
 
@@ -323,10 +368,10 @@ let run args =
             match load_fresh files with
             | Error code -> code
             | Ok files ->
-                let report =
+                let report, invocation =
                   render_data ~resolve_source:(read_source ~roots) files
                 in
-                print_report ~color report;
+                print_report ~color ~invocation report;
                 (* A survivor is the project's failure: a fault every
                    executable that reached it let through. An unreached
                    mutant is a coverage-style finding, listed and not

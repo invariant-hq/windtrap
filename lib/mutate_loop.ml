@@ -18,9 +18,8 @@
    file, report. The runtime below (Windtrap_runtime.Mutate) owns the catalogue,
    the arming slot and the reach counters, and Windtrap_runtime.Verdicts
    owns the verdict collection and its file; this module owns the
-   protocol over them and every decision the report shows — the
-   ordering, the cap, the counts. The report orders nothing and counts
-   nothing, and neither does the runtime. *)
+   protocol over them and what the report is given: which mutants
+   survived, in which order, and their reaching tests. *)
 
 module M = Windtrap_runtime.Mutate
 module V = Windtrap_runtime.Verdicts
@@ -227,6 +226,94 @@ let rec waitpid_retry pid =
    children is not a score. *)
 exception Supervision of string
 
+(* Interruption
+
+   A child is a session of its own, so a terminal's signal reaches the
+   parent alone, and a parent that died of it would leave an armed child
+   behind with nothing to enforce its deadline. While the loop forks, the
+   first of [interrupt_signals] is recorded and kills the running child's
+   process group; [fork_child] then stops watching, and the loop reports
+   what it has and dies by the signal. The handler prints nothing: it runs
+   at a safepoint of whatever the parent was doing, and that can be the
+   report.
+
+   SIGPIPE is recorded too: its default action would kill the parent
+   inside a write of the report, past every [Fun.protect], and leave the
+   scratch root behind. Handled, the write fails with [Sys_error] instead
+   and unwinds. *)
+
+type interrupt = {
+  mutable signal : int option; (* the first signal received *)
+  mutable child : int option; (* the child running, not yet reaped *)
+}
+
+let interrupt = { signal = None; child = None }
+let interrupt_signals = [ Sys.sigint; Sys.sigterm; Sys.sighup ]
+
+let kill_group pid =
+  (* The group does not exist until the child has run [setsid]. *)
+  (try Unix.kill (-pid) Sys.sigkill with Unix.Unix_error _ -> ());
+  try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ()
+
+(* As [Run.execute] handles them: a signal the process was started
+   ignoring stays ignored, the first one puts the default dispositions
+   back so that a second kills at once, and a forked child, which
+   inherits the handler until it installs its own run's, dies as it would
+   have without one. SIGPIPE keeps its handler after the first signal:
+   every later write to the reader that left has to fail, not kill. *)
+let with_interrupts fn =
+  let owner = Unix.getpid () in
+  interrupt.signal <- None;
+  interrupt.child <- None;
+  let handled = Sys.sigpipe :: interrupt_signals in
+  let default signals =
+    List.iter (fun signal -> Sys.set_signal signal Sys.Signal_default) signals;
+    ignore (Unix.sigprocmask Unix.SIG_UNBLOCK signals)
+  in
+  let handle signal =
+    if Unix.getpid () <> owner then begin
+      default handled;
+      Unix.kill (Unix.getpid ()) signal
+    end
+    else begin
+      default interrupt_signals;
+      if Option.is_none interrupt.signal then interrupt.signal <- Some signal;
+      Option.iter kill_group interrupt.child
+    end
+  in
+  let previous =
+    List.map
+      (fun signal -> (signal, Sys.signal signal (Sys.Signal_handle handle)))
+      handled
+  in
+  List.iter
+    (fun (signal, behavior) ->
+      match behavior with
+      | Sys.Signal_ignore -> Sys.set_signal signal behavior
+      | Sys.Signal_default | Sys.Signal_handle _ -> ())
+    previous;
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter
+        (fun (signal, behavior) -> Sys.set_signal signal behavior)
+        previous)
+    fn
+
+(* The parent sees a death by signal and no [at_exit] function runs, as
+   when a signal stops [Run.execute]. The exit status is what a shell
+   reports for the signal, should it not be delivered. *)
+let die_by signal =
+  Sys.set_signal signal Sys.Signal_default;
+  ignore (Unix.sigprocmask Unix.SIG_UNBLOCK [ signal ]);
+  Unix.kill (Unix.getpid ()) signal;
+  Unix._exit
+    (128
+    +
+    if signal = Sys.sighup then 1
+    else if signal = Sys.sigint then 2
+    else if signal = Sys.sigpipe then 13
+    else 15)
+
 type report = {
   line : string; (* the first complete (newline-terminated) line *)
   status : Unix.process_status;
@@ -237,13 +324,14 @@ type report = {
 
 (* One child, one process group, one deadline. [setsid] at fork puts the
    child — and everything a test under it spawns — in a session of its
-   own, so an expiry kills the lot with one signal to the group; the
-   direct [kill pid] closes the window before [setsid] has run, where the
-   group does not exist yet and a child left alive would block the drain
-   below. The parent reads the pipe to EOF before it waits, which is what
-   keeps a child writing more than a pipe buffer from deadlocking against
-   a parent already in waitpid; [select] is what lets it wake on the
-   deadline while it reads. The pipe is close-on-exec: a process a test
+   own, so an expiry or an interruption kills the lot with one signal to
+   the group ([kill_group]); a child left alive would block the drain
+   below. A recorded signal is looked for before every [select]: the
+   handler may have run where no system call was there to interrupt. The
+   parent reads the pipe to EOF before it waits, which is what keeps a
+   child writing more than a pipe buffer from deadlocking against a parent
+   already in waitpid; [select] is what lets it wake on the deadline while
+   it reads. The pipe is close-on-exec: a process a test
    [exec]s must not inherit the write end and hold the drain open past
    its group's death. *)
 let fork_child ~deadline body =
@@ -264,16 +352,12 @@ let fork_child ~deadline body =
       (try ignore (Unix.setsid ()) with _ -> ());
       child_body write_fd body
   | pid ->
+      interrupt.child <- Some pid;
       Unix.close write_fd;
       let buffer = Buffer.create 128 in
       let chunk = Bytes.create 4096 in
       let killed = ref `No in
       let expires_at = Unix.gettimeofday () +. deadline in
-      let kill_group reason =
-        killed := reason;
-        (try Unix.kill (-pid) Sys.sigkill with Unix.Unix_error _ -> ());
-        try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ()
-      in
       let read_ready () =
         match Unix.read read_fd chunk 0 (Bytes.length chunk) with
         | 0 -> false
@@ -284,7 +368,11 @@ let fork_child ~deadline body =
       in
       let rec watch () =
         let remaining = expires_at -. Unix.gettimeofday () in
-        if remaining <= 0. then kill_group `Deadline
+        if Option.is_some interrupt.signal then kill_group pid
+        else if remaining <= 0. then begin
+          killed := `Deadline;
+          kill_group pid
+        end
         else
           match Unix.select [ read_fd ] [] [] remaining with
           | [], _, _ -> watch ()
@@ -294,11 +382,14 @@ let fork_child ~deadline body =
       watch ();
       (try Unix.close read_fd with _ -> ());
       let status =
-        match waitpid_retry pid with
-        | status -> status
-        | exception Unix.Unix_error (e, _, _) ->
-            raise
-              (Supervision (spf "waitpid failed: %s" (Unix.error_message e)))
+        Fun.protect
+          ~finally:(fun () -> interrupt.child <- None)
+          (fun () ->
+            match waitpid_retry pid with
+            | status -> status
+            | exception Unix.Unix_error (e, _, _) ->
+                raise
+                  (Supervision (spf "waitpid failed: %s" (Unix.error_message e))))
       in
       let contents = Buffer.contents buffer in
       (* Derived, so a torn write cannot decode as a survivor: bytes that
@@ -457,62 +548,32 @@ let witness_locations tests =
     (Test_tree.flatten tests);
   table
 
-(* The per-executable report, from the verdict collection and nothing
-   else — which is why the records carry the renderings. The loop links
-   the test tree, so a witness names its declaration site; it is one
-   executable, so no witness names one and the unreached mutants are not
-   this report's to list: one executable's unreached mutant is usually
-   another's reached one, and only the merge knows. *)
-let render_data ~resolve_source ~loc_of ~scope ~filter t =
-  let records = V.records t in
-  let survivor_of (r : V.record) witnesses : Report_sections.survivor =
-    {
-      Report_sections.mutant =
-        {
-          (* The identifier is spelled here, with the runtime's own
-             function: the report carries it into the head row without
-             re-spelling it. *)
-          Report_sections.id = M.id_to_string r.V.id;
-          file = r.V.id.M.file;
-          line = r.V.id.M.line;
-          before = r.V.before;
-          after = r.V.after;
-          source = resolve_source r.V.id.M.file;
-        };
-      witnesses =
-        List.map
-          (fun path ->
-            let test = Test_tree.path_to_string path in
-            { Report_sections.test; loc = loc_of test; exe = None })
-          witnesses;
-    }
-  in
-  let survivors =
-    List.filter_map
-      (fun (r : V.record) ->
-        match r.V.verdict with
-        | V.Survived { witness; others } ->
-            Some (survivor_of r (witness :: others))
-        | V.Killed | V.Unreached -> None)
-      records
-  in
-  (* Ordered by reaching-test count descending: the survivor the most
-     tests watched is the one whose block a reader can act on soonest.
-     [List.stable_sort] keeps identifier order within a count. *)
-  let survivors =
-    List.stable_sort
-      (fun (a : Report_sections.survivor) (b : Report_sections.survivor) ->
-        compare (List.length b.witnesses) (List.length a.witnesses))
-      survivors
-  in
+(* A survivor as its block draws it. The reaching tests are the verdict's,
+   which are the dry run's: the loop links the test tree, so each names
+   its declaration site, and it is one executable, so none names one. *)
+let survivor ~locations (r : V.record) witnesses : Report_sections.survivor =
   {
-    Report_sections.survivors;
-    unreached = [];
-    killed =
-      List.length
-        (List.filter (fun (r : V.record) -> r.V.verdict = V.Killed) records);
-    scope;
-    filter;
+    Report_sections.mutant =
+      {
+        (* Spelled with the runtime's own function: the report carries the
+           identifier into the title and the command as it is. *)
+        Report_sections.id = M.id_to_string r.V.id;
+        file = r.V.id.M.file;
+        line = r.V.id.M.line;
+        before = r.V.before;
+        after = r.V.after;
+        source = read_source r.V.id.M.file;
+      };
+    witnesses =
+      List.map
+        (fun path ->
+          let test = Test_tree.path_to_string path in
+          {
+            Report_sections.test;
+            loc = Option.join (Hashtbl.find_opt locations test);
+            exe = None;
+          })
+        witnesses;
   }
 
 (* The determinism probe
@@ -615,20 +676,39 @@ let check_determinism ~scratch ~dry_run_wall ~suite ~(config : Run.config)
           | _ -> Error "the determinism probe reported an unreadable result")
       | _ -> Error "the determinism probe died without reporting a result")
 
+(* What the forks left: the verdicts of the children that ended, the
+   survivors in the order their blocks printed, and the signal that
+   stopped the forks with the mutant whose child it found running, none
+   under the probe. *)
+type tested = {
+  verdicts : V.t;
+  survivors : Report_sections.survivor list;
+  stopped : (int * M.mutant option) option;
+}
+
 (* The bracket the loop opens before its first fork: one scratch root
    for the run, removed however the run leaves, and the determinism probe
-   in front. *)
+   in front. A probe a signal killed reports a disagreement that is not
+   the suite's: the signal outranks it. *)
 let probed ~dry_run_wall ~suite ~config ~reach ~paths tests forks =
   let scratch = scratch_root () in
   Fun.protect
     ~finally:(fun () -> Run.remove_tree scratch)
     (fun () ->
-      match
+      let agreed =
         check_determinism ~scratch ~dry_run_wall ~suite ~config ~reach ~paths
           tests
-      with
-      | Error _ as error -> error
-      | Ok () -> Ok (forks ~scratch))
+      in
+      match (agreed, interrupt.signal) with
+      | Ok (), (Some _ | None) -> Ok (forks ~scratch)
+      | Error _, Some signal ->
+          Ok
+            {
+              verdicts = V.empty;
+              survivors = [];
+              stopped = Some (signal, None);
+            }
+      | (Error _ as error), None -> error)
 
 (* One mutant *)
 
@@ -679,21 +759,47 @@ let run_mutant ~scratch ~dry_run_wall ~index ~suite ~(config : Run.config)
           | Unix.WEXITED 0 -> verdict
           | Unix.WEXITED _ | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> V.Killed))
 
-(* The fork loop: one child per reached mutant, in catalogue order. *)
-
-let run_children ~scratch ~dry_run_wall ~suite ~config ~reach ~reached tests =
-  let rec go index verdicts = function
-    | [] -> verdicts
-    | mutant :: rest ->
+(* The fork loop: one child per reached mutant, in catalogue order. A
+   survivor's block is committed when its child ends, which is why the
+   order is the catalogue's: how many tests watched a survivor ranks it
+   only among survivors, and those are known when the last child ends. A
+   recorded signal is honoured when [run_mutant] returns, never before a
+   fork, so the mutant the loop names as interrupted is one it did start;
+   whatever that child reported, its mutant is not tested. *)
+let run_children renderer ~locations ~scratch ~dry_run_wall ~suite ~config
+    ~reach ~reached tests =
+  let total = List.length reached in
+  let rec go index verdicts survivors = function
+    | [] -> { verdicts; survivors = List.rev survivors; stopped = None }
+    | mutant :: rest -> (
+        Report.mutation_testing renderer ~index:(index + 1) ~total
+          ~id:(M.id_to_string mutant.M.id);
         let paths = reaching_tests reach mutant in
         let budget = budget_of (site_hits reach mutant) in
         let verdict =
           run_mutant ~scratch ~dry_run_wall ~index ~suite ~config ~reach ~paths
             ~budget ~mutant tests
         in
-        go (index + 1) (V.add verdicts (V.record_of_mutant mutant verdict)) rest
+        match interrupt.signal with
+        | Some signal ->
+            {
+              verdicts;
+              survivors = List.rev survivors;
+              stopped = Some (signal, Some mutant);
+            }
+        | None ->
+            let record = V.record_of_mutant mutant verdict in
+            let survivors =
+              match verdict with
+              | V.Survived { witness; others } ->
+                  let found = survivor ~locations record (witness :: others) in
+                  Report.mutation_survivor renderer found;
+                  found :: survivors
+              | V.Killed | V.Unreached -> survivors
+            in
+            go (index + 1) (V.add verdicts record) survivors rest)
   in
-  go 0 V.empty reached
+  go 0 V.empty [] reached
 
 (* The report *)
 
@@ -714,18 +820,15 @@ let narrows_suite ~(config : Run.config) ~focus =
   || config.Run.exclude_tags <> []
   || config.Run.failed_only || focus || config.Run.shard <> None
 
+(* What windtrap has to say about the file, for after the report. *)
 let write_verdicts verdicts =
   let exe = Sys.executable_name in
-  try V.save ?identity:(V.writer_identity ~exe) (V.output_file ~exe) verdicts
-  with Sys_error message ->
-    note "could not write the verdict file: %s" message
-
-let print_report renderer ~scope ~filter ~verdicts tests =
-  let locations = witness_locations tests in
-  Report.mutation_report renderer
-    (render_data ~resolve_source:read_source
-       ~loc_of:(fun test -> Option.join (Hashtbl.find_opt locations test))
-       ~scope ~filter verdicts)
+  match
+    V.save ?identity:(V.writer_identity ~exe) (V.output_file ~exe) verdicts
+  with
+  | () -> None
+  | exception Sys_error message ->
+      Some (spf "could not write the verdict file: %s" message)
 
 (* The population, before the dry run: the catalogue is complete once
    module initialization is over, and the scope is [--mutate]'s. The
@@ -799,43 +902,90 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
             let narrowed =
               narrows_suite ~config ~focus:outcome.Run.focus_active
             in
-            let outcome =
-              probed ~dry_run_wall ~suite ~config ~reach ~paths:executed tests
-                (fun ~scratch ->
-                  run_children ~scratch ~dry_run_wall ~suite ~config ~reach
-                    ~reached tests)
+            (* A narrowed run's reach is its selection's, and the outcome
+               line says so by the count the dry run executed. *)
+            let scope =
+              if narrowed then Report_sections.Selected (List.length executed)
+              else Report_sections.Suite
             in
-            match outcome with
-            | Error message -> refuse "%s" message
-            | Ok reported ->
-                let verdicts =
-                  List.fold_left
-                    (fun acc (m : M.mutant) ->
-                      V.add acc (V.record_of_mutant m V.Unreached))
-                    reported unreached
+            (* The signals are handled from before the scratch root exists
+               until the verdict file is written: a complete loop has its
+               file whatever becomes of its report, and what windtrap says
+               about the file is held until the report is out. A narrowed
+               run's verdicts are never persisted, nor a stopped run's:
+               neither is the executable's whole answer. *)
+            let forks =
+              try
+                with_interrupts @@ fun () ->
+                match
+                  probed ~dry_run_wall ~suite ~config ~reach ~paths:executed
+                    tests (fun ~scratch ->
+                      run_children renderer ~locations:(witness_locations tests)
+                        ~scratch ~dry_run_wall ~suite ~config ~reach ~reached
+                        tests)
+                with
+                | exception Supervision message -> Error message
+                | Error _ as refused -> refused
+                | Ok tested ->
+                    let unsaved =
+                      match tested.stopped with
+                      | Some _ -> None
+                      | None when narrowed ->
+                          Some
+                            "verdicts not saved: this run's selection narrows \
+                             the suite, and a partial run's verdicts would \
+                             stand in the project merge as the whole."
+                      | None ->
+                          write_verdicts
+                            (List.fold_left
+                               (fun acc (m : M.mutant) ->
+                                 V.add acc (V.record_of_mutant m V.Unreached))
+                               tested.verdicts unreached)
+                    in
+                    Ok (tested, unsaved)
+              with Sys_error _ when interrupt.signal = Some Sys.sigpipe ->
+                (* The reader of the report went away on purpose: nothing
+                   is said, and no report is tried on the dead pipe. *)
+                die_by Sys.sigpipe
+            in
+            match forks with
+            | Error message ->
+                Report.mutation_refused renderer message;
+                Reported 1
+            | Ok ({ verdicts; survivors; stopped }, unsaved) -> (
+                let records = V.records verdicts in
+                let report =
+                  {
+                    Report_sections.survivors;
+                    unreached =
+                      List.map
+                        (fun (m : M.mutant) -> (m.M.id.M.file, m.M.id.M.line))
+                        unreached;
+                    killed =
+                      List.length
+                        (List.filter
+                           (fun (r : V.record) -> r.V.verdict = V.Killed)
+                           records);
+                    not_tested = List.length reached - List.length records;
+                    scope;
+                  }
                 in
-                (* A narrowed run's verdicts are never persisted — and the
-                 previous file is left alone, never deleted: the run says
-                 so instead, after the report it still prints in full. *)
-                if not narrowed then write_verdicts verdicts;
-                (* A narrowed run's reach is its selection's, and the
-                 summary says so by the count the dry run executed. *)
-                let scope =
-                  if narrowed then
-                    Report_sections.Selected (List.length executed)
-                  else Report_sections.Suite
-                in
-                print_report renderer ~scope ~filter:config.Run.filter ~verdicts
-                  tests;
-                flush_descriptors ();
-                (* Windtrap's own word, so not the report's: a loop run ends
-                   on its [mutants:] line. *)
-                if narrowed then
-                  note
-                    "verdicts not saved: this run's selection narrows the \
-                     suite, and a partial run's verdicts would stand in the \
-                     project merge as the whole.";
-                Reported 0))
+                match stopped with
+                | Some (signal, _) when signal = Sys.sigpipe -> die_by signal
+                | Some (signal, testing) ->
+                    Report.mutation_interrupted renderer
+                      ~testing:
+                        (Option.map
+                           (fun (m : M.mutant) -> M.id_to_string m.M.id)
+                           testing)
+                      report;
+                    flush_descriptors ();
+                    die_by signal
+                | None ->
+                    Report.mutation_finish renderer report;
+                    flush_descriptors ();
+                    Option.iter (note "%s") unsaved;
+                    Reported 0)))
 
 (* The ordinary run with one mutant armed. [spec] is the identifier as
    [--arm] read it, unparsed: the runtime's grammar decides what it
@@ -845,10 +995,10 @@ let arm_mode renderer ~spec ~suite (config : Run.config) tests =
   match Result.bind (M.id_of_string spec) M.arm with
   | Error (M.Uncatalogued _ as error) ->
       (* Not a refusal. One identifier is handed to every test
-         executable at once — the aggregate report's remedy arms one
-         identifier across a re-run of the whole suite, because a
-         command that links no test executable has no single binary to
-         name — and in a project with several test executables most of
+         executable at once: a build action's reproduce command, and an
+         inline runner's, arm it across a re-run of the whole suite,
+         because a build has no single binary to name. In a
+         project with several test executables most of
          them were built from other sources. An executable that
          catalogues no site of the named file
          is simply not the one the identifier is about: exiting 1 here
