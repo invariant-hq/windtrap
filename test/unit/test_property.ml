@@ -36,6 +36,14 @@ let payload_count (failure : Failure.t) =
   | Failure.Property { count; _ } -> count
   | _ -> failf "expected a Property failure kind"
 
+(* The inner failure of a Fail, as [Printexc.to_string] rendered the law's or
+   the generator's exception. *)
+let inner_exception (failure : Failure.t) =
+  let _, _, _, _, _, _, inner = property_payload failure in
+  match inner with
+  | Some { Failure.kind = Failure.Raise { actual; _ }; _ } -> actual
+  | _ -> None
+
 let expect_fail = function
   | Property.Fail { failure; stats } -> (failure, stats)
   | Property.Pass _ -> failf "expected Fail, got Pass"
@@ -929,7 +937,14 @@ let a_raising_candidate_stops_the_search_visibly () =
            Check.fail "always"))
   in
   is_true ~msg:"a descent stopped by a raising candidate reads as converged"
-    (shrink_exhausted failure)
+    (shrink_exhausted failure);
+  (* The forcing's exception is dropped: no text of the payload names it. *)
+  let rendered, _, _, _, _, _, _ = property_payload failure in
+  List.iter
+    (fun text ->
+      is_false ~msg:"no payload text names the forcing's exception"
+        (contains "forcing raised" text))
+    (rendered :: Option.to_list (inner_exception failure))
 
 (* The count and its provenance are one argument, so the engine can never be
    handed a number without being told whether a replay needs the flag. *)
@@ -997,8 +1012,190 @@ let the_summary_is_of_the_reported_counterexample () =
   is_true ~msg:"a property declared without one has one"
     (summary_of failure = None)
 
+let exit_and_fatal_exceptions =
+  [ Failure.Exit_attempt; Sys.Break; Out_of_memory; Stack_overflow ]
+
+let a_law_s_exit_and_fatal_exceptions_fail_the_case () =
+  List.iter
+    (fun exn ->
+      let name = Printexc.to_string exn in
+      let failure, _ =
+        expect_fail
+          (Property.run ~root ~path:"fatal law" Gen.int (fun _ _ -> raise exn))
+      in
+      equal ~msg:name (option string) (Some name) (inner_exception failure))
+    exit_and_fatal_exceptions
+
+let a_generator_s_control_exceptions_fail_the_case_unshrunk () =
+  List.iter
+    (fun exn ->
+      let name = Printexc.to_string exn in
+      let gen = Gen_engine.make (fun _ -> raise exn) in
+      let failure, _ =
+        expect_fail (Property.run ~root ~path:"raising gen" gen (fun _ _ -> ()))
+      in
+      let rendered, _, shrink_steps, _, _, _, _ = property_payload failure in
+      equal
+        ~msg:(name ^ ": the placeholder")
+        string "<generator raised before producing a value>" rendered;
+      equal ~msg:(name ^ ": unshrunk") int 0 shrink_steps;
+      equal
+        ~msg:(name ^ ": the inner exception")
+        (option string) (Some name) (inner_exception failure))
+    (Property.Discard
+    :: Failure.Check_failure (Failure.message "from the generator")
+    :: exit_and_fatal_exceptions)
+
+let a_context_used_after_its_run () =
+  let kept = ref None in
+  ignore
+    (expect_pass
+       (Property.run ~root ~path:"late context" ~count:(`Declared 3)
+          (Gen.constant 0) (fun ctx _ -> kept := Some ctx)));
+  let ctx = Option.get !kept in
+  Property.collect ctx "late";
+  Property.cover ctx "late cover" true;
+  let stats =
+    expect_pass
+      (Property.run ~root ~path:"late context" ~count:(`Declared 3)
+         (Gen.constant 0) (fun _ _ -> ()))
+  in
+  equal ~msg:"the next run reads none of its marks"
+    (list (pair string int))
+    [] stats.Property.collected;
+  is_true ~msg:"and none of its demands" (stats.Property.coverage = [])
+
+let a_cover_reached_in_a_dropped_case_stays_registered () =
+  let unsatisfied label = function
+    | [ { Property.label = l; hits = 0; satisfied = false } ] -> l = label
+    | _ -> false
+  in
+  let stats =
+    expect_gave_up
+      (Property.run ~root ~path:"cover discard" ~count:(`Declared 5)
+         (Gen.constant 0) (fun ctx _ ->
+           Property.cover ctx "discarded" true;
+           Property.reject ()))
+  in
+  is_true ~msg:"a discarded case"
+    (unsatisfied "discarded" stats.Property.coverage);
+  let _, stats =
+    expect_fail
+      (Property.run ~root ~path:"cover fail" (Gen.constant 0) (fun ctx _ ->
+           Property.cover ctx "failed" true;
+           Check.fail "always"))
+  in
+  is_true ~msg:"a failing case" (unsatisfied "failed" stats.Property.coverage);
+  let stats =
+    expect_pass
+      (Property.run ~root ~path:"cover unreached" ~count:(`Declared 5)
+         (Gen.constant 0) (fun ctx v ->
+           if v <> 0 then Property.cover ctx "unreached" true))
+  in
+  is_true ~msg:"a cover no case reaches registers nothing"
+    (stats.Property.coverage = [])
+
+let an_unmarked_cover_never_turns_a_fail_into_another_outcome () =
+  let _, stats =
+    expect_fail
+      (Property.run ~root ~path:"cover then fail" (Gen.int_range 0 100)
+         (fun ctx v ->
+           Property.cover ctx "never" false;
+           Check.is_true (v < 50)))
+  in
+  is_true ~msg:"the demand is unsatisfied, and the outcome still Fail"
+    (match stats.Property.coverage with
+    | [ { Property.satisfied = false; _ } ] -> true
+    | _ -> false)
+
+let an_inner_raise_carries_the_backtrace_when_recorded () =
+  let backtrace recording =
+    let saved = Printexc.backtrace_status () in
+    Printexc.record_backtrace recording;
+    Fun.protect ~finally:(fun () -> Printexc.record_backtrace saved)
+    @@ fun () ->
+    let failure, _ =
+      expect_fail
+        (Property.run ~root ~path:"inner backtrace" Gen.int (fun _ _ ->
+             raise Not_found))
+    in
+    let _, _, _, _, _, _, inner = property_payload failure in
+    match inner with
+    | Some { Failure.kind = Failure.Raise { backtrace; _ }; _ } -> backtrace
+    | _ -> failf "expected an inner Raise"
+  in
+  is_true ~msg:"recorded" (Option.is_some (backtrace true));
+  is_none ~msg:"not recorded" (backtrace false)
+
+let examples_draw_no_seed () =
+  (* Two passing examples, then the law fails on the first generated case:
+     that case is index 0, the seed the examples would have drawn. *)
+  let path = "examples draw nothing" in
+  let failure, _ =
+    expect_fail
+      (Property.run ~root ~path ~examples:[ -1; -2 ] Gen.int (fun _ v ->
+           Check.is_true (v < 0)))
+  in
+  let _, case_index, _, _, _, examples, _ = property_payload failure in
+  is_false ~msg:"a generated case" examples;
+  is_true ~msg:"premise: case 0 fails"
+    (value_at Gen.int ~root ~path ~index:0 >= 0);
+  equal ~msg:"the first generated case is index 0" int 0 case_index
+
+let a_timeout_while_formatting_does_not_leave_run () =
+  let gen =
+    Gen.with_pp (fun _ _ -> raise (Failure.Timeout 0.25)) (Gen.int_range 0 10)
+  in
+  let failure, _ =
+    expect_fail
+      (Property.run ~root ~path:"formatting timeout" gen (fun _ _ ->
+           Check.fail "always"))
+  in
+  let rendered, _, _, timed_out, _, _, _ = property_payload failure in
+  equal ~msg:"the guard's text" string
+    (Printf.sprintf "<printer raised %s>"
+       (Printexc.to_string (Failure.Timeout 0.25)))
+    rendered;
+  is_none ~msg:"not a timed-out search" timed_out
+
+let a_replay_descends_the_same_path_whatever_the_configuration () =
+  let path = "replay path" in
+  let body _ x = Check.is_true (x < 700) in
+  let payload count max_discard =
+    let failure, _ =
+      expect_fail
+        (Property.run ~count ?max_discard ~root ~path (Gen.int_range 0 1000)
+           body)
+    in
+    let rendered, case_index, shrink_steps, _, _, _, _ =
+      property_payload failure
+    in
+    (rendered, case_index, shrink_steps)
+  in
+  let reference = payload (`Config 100) None in
+  List.iter
+    (fun (count, max_discard) ->
+      equal (triple string int int) reference (payload count max_discard))
+    [ (`Config 1_000, None); (`Declared 5_000, Some 7); (`Config 300, Some 0) ]
+
 let suite =
   [
+    ( "a law's exit and fatal exceptions fail the case",
+      a_law_s_exit_and_fatal_exceptions_fail_the_case );
+    ( "a generator's control exceptions fail the case unshrunk",
+      a_generator_s_control_exceptions_fail_the_case_unshrunk );
+    ("a context used after its run", a_context_used_after_its_run);
+    ( "a cover reached in a dropped case stays registered",
+      a_cover_reached_in_a_dropped_case_stays_registered );
+    ( "an unmarked cover never turns a Fail into another outcome",
+      an_unmarked_cover_never_turns_a_fail_into_another_outcome );
+    ( "an inner Raise carries the backtrace when recorded",
+      an_inner_raise_carries_the_backtrace_when_recorded );
+    ("examples draw no seed", examples_draw_no_seed);
+    ( "a timeout while formatting does not leave run",
+      a_timeout_while_formatting_does_not_leave_run );
+    ( "a replay descends the same path whatever the configuration",
+      a_replay_descends_the_same_path_whatever_the_configuration );
     ( "the summary is of the reported counterexample",
       the_summary_is_of_the_reported_counterexample );
     ("same inputs, same outcome", same_inputs_same_outcome);
