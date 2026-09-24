@@ -9,5 +9,5 @@
 (test
  (name test_mutate_verdicts)
  (modules test_mutate_verdicts)
- (libraries windtrap windtrap_runtime unix)
+ (libraries windtrap windtrap_runtime windtrap_test_support unix)
  (deps save_child.exe))

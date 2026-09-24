@@ -19,6 +19,7 @@
 
 open Windtrap
 module M = Windtrap_runtime.Mutate
+module Child = Windtrap_test_support.Child
 
 (* Printers and lookups the runtime does not export: they are for
    diagnostics and assertions, which is a test's business rather than a
@@ -87,37 +88,9 @@ let fresh () =
 
 (* Hermeticity: all paths are absolute, so the suite behaves identically
    under dune's sandbox and when run by hand from anywhere. The child
-   executable sits next to this one; scratch files live in a private temp
-   directory removed at exit. Nothing is ever written under
+   executable sits next to this one. Nothing is ever written under
    _build/_mutants. *)
 let exe_dir = Filename.dirname Sys.executable_name
-
-let rec remove_tree path =
-  match Sys.is_directory path with
-  | true ->
-      Array.iter
-        (fun name -> remove_tree (Filename.concat path name))
-        (Sys.readdir path);
-      Sys.rmdir path
-  | false -> Sys.remove path
-  | exception Sys_error _ -> ()
-
-let scratch_dir =
-  let dir = Filename.temp_file "windtrap_mut_scratch" "" in
-  Sys.remove dir;
-  Sys.mkdir dir 0o755;
-  at_exit (fun () -> remove_tree dir);
-  dir
-
-let scratch path = Filename.concat scratch_dir path
-
-let read_file path =
-  match open_in_bin path with
-  | ic ->
-      Fun.protect
-        ~finally:(fun () -> close_in_noerr ic)
-        (fun () -> Some (really_input_string ic (in_channel_length ic)))
-  | exception Sys_error _ -> None
 
 (* Identifiers *)
 
@@ -405,11 +378,9 @@ let registry_tests =
     test "a conflicting registration warns and yields an inert guard" (fun () ->
         let sites = [| site ~line:1 ~col:0 ~rewrite:"lt" () |] in
         register_only ~file:"t/conflict.ml" ~sites;
-        let path = scratch "warn.txt" in
+        let path = temp_file () in
         let saved = Unix.dup Unix.stderr in
-        let fd =
-          Unix.openfile path [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o644
-        in
+        let fd = Unix.openfile path [ Unix.O_WRONLY; Unix.O_TRUNC ] 0o644 in
         Unix.dup2 fd Unix.stderr;
         Unix.close fd;
         let g =
@@ -423,10 +394,8 @@ let registry_tests =
                 ~sites:
                   [| site ~line:1 ~col:0 ~rewrite:"lt" ~before:"x < y" () |])
         in
-        (match read_file path with
-        | Some err ->
-            contains ~msg:"warns" ~sub:"conflicting instrumentation tables" err
-        | None -> fail "no stderr captured");
+        contains ~msg:"warns" ~sub:"conflicting instrumentation tables"
+          (In_channel.with_open_bin path In_channel.input_all);
         fresh ();
         is_false ~msg:"the dropped guard is inert" (g 0);
         equal ~msg:"the dropped guard reports no reach" (list reached_t) []
@@ -693,14 +662,8 @@ let child_exe = Filename.concat exe_dir "arm_child.exe"
    no environment, and the child arms what it is handed, as the core
    does. *)
 let run_child ?arm args =
-  let out = scratch "child-out.txt" and err = scratch "child-err.txt" in
-  let args = args @ Option.to_list arm in
-  let status =
-    Sys.command (Filename.quote_command child_exe ~stdout:out ~stderr:err args)
-  in
-  ( status,
-    Option.value ~default:"" (read_file out),
-    Option.value ~default:"" (read_file err) )
+  let r = Child.run child_exe (args @ Option.to_list arm) in
+  (Child.exit_code r, r.Child.out, r.Child.err)
 
 let child_tests =
   [

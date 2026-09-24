@@ -18,6 +18,7 @@
 open Windtrap
 module M = Windtrap_runtime.Mutate
 module V = Windtrap_runtime.Verdicts
+module Child = Windtrap_test_support.Child
 
 (* Printers and lookups the module does not export: they are for
    diagnostics and assertions, which is a test's business rather than a
@@ -64,37 +65,10 @@ let ok_error name = function
 
 (* Hermeticity: all paths are absolute, so the suite behaves identically
    under dune's sandbox and when run by hand from anywhere. The child
-   executable sits next to this one; scratch files live in a private temp
-   directory removed at exit. Nothing is ever written under
-   _build/_mutants. *)
+   executable sits next to this one; scratch files live in each test's
+   temp_dir. Nothing is ever written under _build/_mutants. *)
 let exe_dir = Filename.dirname Sys.executable_name
-
-let rec remove_tree path =
-  match Sys.is_directory path with
-  | true ->
-      Array.iter
-        (fun name -> remove_tree (Filename.concat path name))
-        (Sys.readdir path);
-      Sys.rmdir path
-  | false -> Sys.remove path
-  | exception Sys_error _ -> ()
-
-let scratch_dir =
-  let dir = Filename.temp_file "windtrap_verd_scratch" "" in
-  Sys.remove dir;
-  Sys.mkdir dir 0o755;
-  at_exit (fun () -> remove_tree dir);
-  dir
-
-let scratch path = Filename.concat scratch_dir path
-
-let read_file path =
-  match open_in_bin path with
-  | ic ->
-      Fun.protect
-        ~finally:(fun () -> close_in_noerr ic)
-        (fun () -> Some (really_input_string ic (in_channel_length ic)))
-  | exception Sys_error _ -> None
+let scratch path = Filename.concat (temp_dir ()) path
 
 (* The verdict lattice *)
 
@@ -646,26 +620,16 @@ let file_tests =
 
 (* The child executable *)
 
-(* The child executable *)
-
 let child_exe = Filename.concat exe_dir "save_child.exe"
-
-let run_child args =
-  let out = scratch "child-out.txt" and err = scratch "child-err.txt" in
-  let status =
-    Sys.command (Filename.quote_command child_exe ~stdout:out ~stderr:err args)
-  in
-  ( status,
-    Option.value ~default:"" (read_file out),
-    Option.value ~default:"" (read_file err) )
 
 let child_tests =
   [
     test "a child writes a verdict file the parent can load" (fun () ->
-        let path = scratch "child.mutants" in
-        let status, _, err = run_child [ "save"; path ] in
-        equal ~msg:"exit code" int 0 status;
-        equal ~msg:"stderr" text "" err;
+        let dir = temp_dir () in
+        let path = Filename.concat dir "child.mutants" in
+        let r = Child.run child_exe [ "save"; path ] in
+        equal ~msg:"exit code" int 0 (Child.exit_code r);
+        equal ~msg:"stderr" text "" r.Child.err;
         let t, recorded = ok_error "load" (V.load path) in
         equal ~msg:"the record" (option record_t)
           (Some
@@ -680,7 +644,7 @@ let child_tests =
                Digest.to_hex (Digest.file child_exe) ))
           (Option.map (fun (i : V.identity) -> (i.V.exe, i.V.digest)) recorded);
         equal ~msg:"no temporary files are left behind" (list string) []
-          (Sys.readdir scratch_dir |> Array.to_list
+          (Sys.readdir dir |> Array.to_list
           |> List.filter (fun n -> Filename.check_suffix n ".tmp")));
   ]
 

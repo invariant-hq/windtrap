@@ -9,5 +9,5 @@
 (test
  (name test_mutate)
  (modules test_mutate)
- (libraries windtrap windtrap_runtime unix)
+ (libraries windtrap windtrap_runtime windtrap_test_support unix)
  (deps arm_child.exe))
