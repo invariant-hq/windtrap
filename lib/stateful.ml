@@ -26,7 +26,7 @@ type ('model, 'sut) command =
    time it raises, so [Loc.capture] there answers [None] and the step is
    reported without a location. Capturing where the command is written
    points the report at the code that failed, which is the same fallback
-   [Run.add_failure] makes for a test — one level finer. *)
+   the runner makes for a test — one level finer. *)
 let command ?__POS__ ?(pre = fun _ _ -> true) name gen ~next body =
   Command { name; gen; pre; next; body; loc = Loc.resolve ?__POS__ () }
 

@@ -217,10 +217,6 @@ let frame ?(corrections = true) t ~path ~loc =
     fr_cwd = None;
   }
 
-let run_of_frame frame = frame.owner
-let path frame = frame.fr_path
-let loc frame = frame.fr_loc
-
 let add_failure frame failure =
   (* The one fallback point of the attribution ladder: a failure recorded
      without a location — its failing call sat in tail position, so
@@ -697,7 +693,7 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
   let loc = Loc.resolve ?__POS__ () in
   let body () =
     let frame = current_frame () in
-    let config = config (run_of_frame frame) in
+    let config = config frame.owner in
     (* Case count: declaration site > --prop-count > engine default. The
        engine is told which, not just how many: it stamps a config-sourced
        count on failure payloads so the replay hint can restate the flag,
@@ -707,7 +703,7 @@ let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
       | Some n -> Some (`Declared n)
       | None -> Option.map (fun n -> `Config n) config.prop_count
     in
-    let path = Test_tree.path_to_string (path frame) in
+    let path = Test_tree.path_to_string frame.fr_path in
     let outcome =
       Property.run ?loc ?count ?max_discard ?examples ?summary ~root:config.seed
         ~path gen (fun context value ->
