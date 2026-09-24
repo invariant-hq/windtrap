@@ -43,15 +43,22 @@ val truncate_utf8 : int -> string -> string
     points, unlike that of {!truncate_bytes_utf8}. For [n <= 3] a longer [s]
     gives the first [n] bytes of ["..."]. It never raises. *)
 
+val prefix_bytes_utf8 : int -> string -> string
+(** [prefix_bytes_utf8 n s] is the longest prefix of [s] of at most [n] bytes
+    that ends on a code-point boundary. It is [s] when [s] is at most [n] bytes
+    long, and [""] when [n <= 0]. It never raises. *)
+
+val mark_truncated : length:int -> string -> string
+(** [mark_truncated ~length kept] is [kept] followed by the marker
+    [... (truncated; N bytes total)], where [N] is [length]. *)
+
 val truncate_bytes_utf8 : int -> string -> string
 (** [truncate_bytes_utf8 n s] is ["<truncated>"] when [n <= 0]. It is otherwise
-    [s] when [s] is at most [n] bytes long, and else a prefix of [s] followed by
-    a marker that gives the length of [s] in bytes. The prefix is the longest of
-    at most [n] bytes that ends on a code-point boundary.
+    [s] when [s] is at most [n] bytes long, and else
+    [mark_truncated ~length:(String.length s) (prefix_bytes_utf8 n s)].
 
     The marker comes on top of the bound, so the result is longer than [n]
-    bytes. A caller that bounds storage must budget for it. The marker is
-    [... (truncated; N bytes total)]. It never raises. *)
+    bytes. A caller that bounds storage must budget for it. It never raises. *)
 
 val elide_middle : int -> show:(string -> string) -> string -> string
 (** [elide_middle n ~show s] is [show s] when [s] is at most [n] bytes long.

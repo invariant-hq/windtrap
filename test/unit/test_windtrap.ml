@@ -385,12 +385,29 @@ let () =
   expect_run "failing verbs" ~config suite @@ fun outcome ->
   check_int "failing verbs: exit code" ~expected:1 ~actual:outcome.Run.exit_code;
   (match failure_list (outcome_of outcome [ "wrong" ]) with
-  | [ { Failure.kind = Failure.Equality { expected; actual; not_ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Equality
+         {
+           expected = { Failure.kept = expected; _ };
+           actual = { Failure.kept = actual; _ };
+           not_;
+         };
+     _;
+   };
+  ] ->
       check "equal failure renders expected then actual"
         (expected = "5" && actual = "7" && not not_)
   | _ -> check "equal failure carries an Equality payload" false);
   (match failure_list (outcome_of outcome [ "unwrap" ]) with
-  | [ { Failure.kind = Failure.Equality { actual; _ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Equality { actual = { Failure.kept = actual; _ }; _ };
+     _;
+   };
+  ] ->
       check "require_ok renders the error side via pp"
         (contains "bad parse" actual)
   | _ -> check "require_ok failure carries an Equality payload" false);
@@ -612,7 +629,13 @@ let () =
   let suite = [ test "stray collect" (fun () -> collect "label") ] in
   expect_run "ambient collect misuse" ~config suite @@ fun outcome ->
   match failure_list (outcome_of outcome [ "stray collect" ]) with
-  | [ { Failure.kind = Failure.Raise { actual = Some rendered; _ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Raise { actual = Some { Failure.kept = rendered; _ }; _ };
+     _;
+   };
+  ] ->
       check "collect outside a property names the misuse"
         (contains "collect" rendered && contains "property" rendered)
   | _ -> check "collect outside a property fails the test" false
@@ -632,7 +655,7 @@ let () =
   List.iter
     (fun name ->
       match failure_list (outcome_of outcome [ name ]) with
-      | [ { Failure.kind = Failure.Message text; _ } ] ->
+      | [ { Failure.kind = Failure.Message { Failure.kept = text; _ }; _ } ] ->
           check
             (name ^ " fails with the message")
             (text = "assume or reject was called outside a property")
@@ -663,7 +686,7 @@ let () =
   let suite = [ test "streams" (fun () -> ignore (output ())) ] in
   expect_run "output () under --stream" ~config suite @@ fun outcome ->
   match failure_list (outcome_of outcome [ "streams" ]) with
-  | [ { Failure.kind = Failure.Message message; _ } ] ->
+  | [ { Failure.kind = Failure.Message { Failure.kept = message; _ }; _ } ] ->
       check "output () under --stream fails with the capture hint"
         (contains "--stream" message)
   | _ -> check "output () under --stream fails the test" false
@@ -695,7 +718,11 @@ let () =
      {
        Failure.kind =
          Failure.Baseline
-           { baseline = Failure.File p; state = Failure.Missing { proposed } };
+           {
+             baseline = Failure.File p;
+             state =
+               Failure.Missing { proposed = { Failure.kept = proposed; _ } };
+           };
        _;
      };
     ] ->
@@ -726,7 +753,16 @@ let () =
   | [
    {
      Failure.kind =
-       Failure.Baseline { state = Failure.Mismatch { expected; actual }; _ };
+       Failure.Baseline
+         {
+           state =
+             Failure.Mismatch
+               {
+                 expected = { Failure.kept = expected; _ };
+                 actual = { Failure.kept = actual; _ };
+               };
+           _;
+         };
      _;
    };
   ] ->
@@ -771,7 +807,12 @@ let () =
        Failure.Baseline
          {
            baseline = Failure.Literal { exact = true };
-           state = Failure.Mismatch { expected = "new "; actual = "new" };
+           state =
+             Failure.Mismatch
+               {
+                 expected = { Failure.kept = "new "; _ };
+                 actual = { Failure.kept = "new"; _ };
+               };
          };
      _;
    };
@@ -785,7 +826,12 @@ let () =
         Failure.Baseline
           {
             baseline = Failure.Literal { exact = false };
-            state = Failure.Mismatch { expected; actual };
+            state =
+              Failure.Mismatch
+                {
+                  expected = { Failure.kept = expected; _ };
+                  actual = { Failure.kept = actual; _ };
+                };
           };
       _;
     } as f);
@@ -1073,7 +1119,12 @@ let () =
    {
      Failure.kind =
        Failure.Equality
-         { expected = claim; actual = value; diffable = false; _ };
+         {
+           expected = { Failure.kept = claim; _ };
+           actual = { Failure.kept = value; _ };
+           diffable = false;
+           _;
+         };
      _;
    };
   ] ->
@@ -1083,13 +1134,21 @@ let () =
         (claim = "value satisfying the predicate")
   | _ -> check "satisfies carries an undiffable Equality payload" false);
   (match failure_list (outcome_of outcome [ "contains" ]) with
-  | [ { Failure.kind = Failure.Containment { needle; _ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Containment { needle = { Failure.kept = needle; _ }; _ };
+     _;
+   };
+  ] ->
       check "contains carries the needle" (needle = "needle")
   | _ -> check "contains carries a Containment payload" false);
   (match failure_list (outcome_of outcome [ "require_match" ]) with
   | [
    {
-     Failure.kind = Failure.Equality { expected = claim; diffable = false; _ };
+     Failure.kind =
+       Failure.Equality
+         { expected = { Failure.kept = claim; _ }; diffable = false; _ };
      _;
    };
   ] ->
@@ -1160,7 +1219,13 @@ let () =
   in
   expect_run "raising extractor" ~config suite @@ fun outcome ->
   match failure_list (outcome_of outcome [ "raising extractor" ]) with
-  | [ { Failure.kind = Failure.Raise { actual = Some rendered; _ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Raise { actual = Some { Failure.kept = rendered; _ }; _ };
+     _;
+   };
+  ] ->
       check "require_match propagates the extractor's exception"
         (contains "Not_found" rendered)
   | _ -> check "require_match propagates the extractor's exception" false
@@ -1854,7 +1919,13 @@ let () =
     [ test "first" (fun () -> db ()); test "second" (fun () -> db ()) ]
   @@ fun outcome ->
   match failure_list (outcome_of outcome [ "second" ]) with
-  | [ { Failure.kind = Failure.Raise { backtrace = Some bt; _ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Raise { backtrace = Some { Failure.kept = bt; _ }; _ };
+     _;
+   };
+  ] ->
       check_contains "the second call carries the first create's backtrace"
         ~sub:"failing_create" bt
   | _ -> check "a Raise failure with a backtrace" false
@@ -2130,7 +2201,8 @@ let () =
   (match failure_list (outcome_of outcome [ "summary" ]) with
   | [ { Failure.kind = Failure.Property { summary; _ }; _ } ] ->
       check "a stateful failure's summary is the program's summary"
-        (summary = Some "3 calls, last: tick")
+        (Option.map (fun (s : Failure.text) -> s.kept) summary
+        = Some "3 calls, last: tick")
   | _ -> check "a stateful failure carries a Property payload" false);
   check "~count:0 draws no case"
     (match result_of outcome [ "none" ] with

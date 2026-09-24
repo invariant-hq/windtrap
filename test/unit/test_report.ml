@@ -1346,11 +1346,15 @@ let test_headline () =
     (h
        {
          (Failure.equality ~expected:"1" ~actual:"2" ()) with
-         Failure.msg = Some "deliberate";
+         Failure.msg = Some (Failure.text "deliberate");
        }
     = "deliberate: expected 1, got 2");
   contains ~msg:"headline: msg annotation prefixed" ~sub:"context: boom"
-    (h { (Failure.message "boom") with Failure.msg = Some "context" });
+    (h
+       {
+         (Failure.message "boom") with
+         Failure.msg = Some (Failure.text "context");
+       });
   (* Two failing subtests of one test must not read the same. *)
   let labelled label =
     {
@@ -1364,7 +1368,11 @@ let test_headline () =
   is_true ~msg:"headline: sibling subtests differ by their label"
     (h (labelled "shape [0]") <> h (labelled "shape [2]"));
   is_true ~msg:"headline: the label, the user message, then the sentence"
-    (h { (labelled "shape [0]") with Failure.msg = Some "deliberate" }
+    (h
+       {
+         (labelled "shape [0]") with
+         Failure.msg = Some (Failure.text "deliberate");
+       }
     = "contract \u{203a} shape [0]: deliberate: expected [1; 2], got [1; 3]");
   (* 80 code points, not bytes, then the ellipsis. *)
   let long = String.concat "" (List.init 300 (fun _ -> "\u{00e9}")) in
@@ -1375,7 +1383,11 @@ let test_headline () =
       ^ String.concat "" (List.init 71 (fun _ -> "\u{00e9}"))
       ^ "\u{2026}");
   not_contains ~msg:"headline: no em dash" ~sub:"\u{2014}"
-    (h { (Failure.message "boom") with Failure.msg = Some "context" });
+    (h
+       {
+         (Failure.message "boom") with
+         Failure.msg = Some (Failure.text "context");
+       });
   let multi = h (Failure.message "line one\nline two") in
   is_true ~msg:"headline: never multi-line" (not (String.contains multi '\n'));
   let esc = h (Failure.message "\027[31mred\027[0m alert") in
@@ -1578,7 +1590,8 @@ let test_kind_details () =
     failure_block
       (Failure.baseline
          (Failure.Literal { exact })
-         (Failure.Mismatch { expected = "a\n"; actual = "b\n" }))
+         (Failure.Mismatch
+            { expected = Failure.text "a\n"; actual = Failure.text "b\n" }))
   in
   contains ~msg:"expect: the flexible verb, then the hunks with no head"
     ~sub:"    expect: mismatch\n    @@ -1,1 +1,1 @@\n    - a\n    + b\n"
@@ -1598,12 +1611,17 @@ let test_kind_details () =
     (failure_block
        (Failure.baseline
           (Failure.Literal { exact = true })
-          (Failure.Mismatch { expected = "exact"; actual = "exact\n" })));
+          (Failure.Mismatch
+             {
+               expected = Failure.text "exact";
+               actual = Failure.text "exact\n";
+             })));
   is_true ~msg:"the headline is that first fact line"
     (Report.headline
        (Failure.baseline
           (Failure.Literal { exact = true })
-          (Failure.Mismatch { expected = "a\n"; actual = "b\n" }))
+          (Failure.Mismatch
+             { expected = Failure.text "a\n"; actual = Failure.text "b\n" }))
     = "expect_exact: mismatch");
   let b =
     failure_block (Failure.equality ~expected:"a\nb\nc" ~actual:"a\nB\nc" ())
@@ -1882,7 +1900,10 @@ let test_control_bytes_hunks () =
       (Failure.baseline
          (Failure.Literal { exact = false })
          (Failure.Mismatch
-            { expected = "\027[1mbold\027[0m\n"; actual = "bold\n" }))
+            {
+              expected = Failure.text "\027[1mbold\027[0m\n";
+              actual = Failure.text "bold\n";
+            }))
   in
   contains ~msg:"hunks: baselines escape as well"
     ~sub:"- \\x1b[1mbold\\x1b[0m\n" snap
@@ -1957,8 +1978,8 @@ let test_control_bytes_are_render_only () =
   in
   (match f.Failure.kind with
   | Failure.Equality { expected; actual; _ } ->
-      equal ~msg:"payloads store the raw bytes" string {|"\027"|} expected;
-      equal ~msg:"and the other side's own bytes" string {|"\\x1b"|} actual
+      equal ~msg:"payloads store the raw bytes" string {|"\027"|} expected.kept;
+      equal ~msg:"and the other side's own bytes" string {|"\\x1b"|} actual.kept
   | _ -> fail "expected an Equality payload");
   (* Two values a lossy printer merges are reported as such; two the
      ESCAPING would merge are not, because the test is made on the raw
@@ -1983,7 +2004,10 @@ let test_diff_truncation () =
     failure_block
       (Failure.baseline (Failure.File "p.expected")
          (Failure.Mismatch
-            { expected = text "e" ^ "\n"; actual = text "a" ^ "\n" }))
+            {
+              expected = Failure.text (text "e" ^ "\n");
+              actual = Failure.text (text "a" ^ "\n");
+            }))
   in
   contains ~msg:"baseline diff truncation mark" ~sub:"more diff lines)" snap;
   contains ~msg:"acceptance survives a truncated diff"
@@ -1996,7 +2020,7 @@ let test_proposed_truncation () =
   let b =
     failure_block
       (Failure.baseline (Failure.File "p.expected")
-         (Failure.Missing { proposed }))
+         (Failure.Missing { proposed = Failure.text proposed }))
   in
   (* A missing baseline has no file to diff against: its proposed text
      prints under a heading that counts it, as [+] lines, 20 at most. *)
@@ -2022,7 +2046,7 @@ let test_proposed_truncation () =
   let short =
     failure_block
       (Failure.baseline (Failure.File "p.expected")
-         (Failure.Missing { proposed = "only\n" }))
+         (Failure.Missing { proposed = Failure.text "only\n" }))
   in
   contains ~msg:"a missing file under the cap prints whole, uncapped"
     ~sub:"    proposed (1 line):\n      + only\n    accept: " short;
@@ -2030,7 +2054,7 @@ let test_proposed_truncation () =
     ~sub:"    proposed (1 line):\n      \027[31m+ only\027[0m\n    accept: "
     (failure_block ~ansi:true
        (Failure.baseline (Failure.File "p.expected")
-          (Failure.Missing { proposed = "only\n" })));
+          (Failure.Missing { proposed = Failure.text "only\n" })));
   contains ~msg:"acceptance survives a bounded proposal"
     ~sub:
       "    accept: touch 'p.expected' && dune runtest; dune promote p.expected\n"
@@ -2495,7 +2519,7 @@ let test_subtest_projection () =
   let collision =
     {
       (Failure.message "boom") with
-      Failure.msg = Some "contract \u{203a} shape [0]";
+      Failure.msg = Some (Failure.text "contract \u{203a} shape [0]");
     }
   in
   is_true ~msg:"a user msg spelling the label prefix is not a subtest entry"
@@ -2605,6 +2629,20 @@ let test_prop_stats () =
     ~sub:"covered labels:" b1;
   contains ~msg:"prop stats: its labels still print"
     ~sub:"labels (100 passing cases):" b1
+
+(* A cut text prints what the failure kept and then the marker, which the
+   payload holds as a length, never as bytes of the value. *)
+let test_cut_text_marker () =
+  let marker = "... (truncated; 70000 bytes total)" in
+  let long = String.make 70_000 'm' in
+  contains ~msg:"a cut message ends in the marker"
+    ~sub:(String.make 20 'm' ^ marker ^ "\n")
+    (failure_block (Failure.message long));
+  contains ~msg:"a cut value ends in the marker, after the report's elision"
+    ~sub:(marker ^ "\n")
+    (failure_block (Failure.equality ~expected:long ~actual:"m" ()));
+  contains ~msg:"the headline prints it too" ~sub:"mmm"
+    (Report.headline (Failure.message long))
 
 (* Containment blocks *)
 
@@ -3018,7 +3056,11 @@ let test_trailing_whitespace_hunks () =
     failure_block
       (Failure.baseline
          (Failure.Literal { exact = true })
-         (Failure.Mismatch { expected = "a \nb\n"; actual = "a\nb\n" }))
+         (Failure.Mismatch
+            {
+              expected = Failure.text "a \nb\n";
+              actual = Failure.text "a\nb\n";
+            }))
   in
   contains ~msg:"baseline diffs mark a trailing space too"
     ~sub:
@@ -3137,7 +3179,8 @@ let test_budget_spent_marker () =
 let test_candidate_raised_marker () =
   let f =
     Failure.property
-      ~shrink_end:(Failure.Candidate_raised {|Failure("no small values")|})
+      ~shrink_end:
+        (Failure.Candidate_raised (Failure.text {|Failure("no small values")|}))
       ~rendered:"9" ~case_index:4 ~shrink_steps:3 ~root:Fixtures.root
       ~examples:false ()
   in
@@ -3213,7 +3256,8 @@ let test_hints_per_invocation () =
     ~sub:"    accept: dune promote test/help.expected\n"
     (failure_block
        (Failure.baseline (Failure.File "test/help.expected")
-          (Failure.Mismatch { expected = "a\n"; actual = "b\n" })));
+          (Failure.Mismatch
+             { expected = Failure.text "a\n"; actual = Failure.text "b\n" })));
   (* Promotion never creates a file: a missing file baseline under dune
      is accepted by creating it first, and the hint says so. *)
   let missing = failure_block Fixtures.snap_missing in
@@ -3335,7 +3379,8 @@ let test_withheld_correction () =
   and file =
     outside
       (Failure.baseline (Failure.File "p.expected")
-         (Failure.Mismatch { expected = "a\n"; actual = "b\n" }))
+         (Failure.Mismatch
+            { expected = Failure.text "a\n"; actual = Failure.text "b\n" }))
   and missing = outside Fixtures.snap_missing in
   (* Run by hand, whatever the mode: [-u] would rewrite nothing. *)
   let exe = failure_block ~invocation:(`Exe "./t.exe") ~filter:"t" in
@@ -5626,6 +5671,7 @@ let tests =
     test "subtest projection" test_subtest_projection;
     test "subtest rendering" test_subtest_rendering;
     test "property stats" test_prop_stats;
+    test "a cut text prints its marker" test_cut_text_marker;
     test "containment: claim-aware block" test_containment_block;
     test "containment: multi-line haystack block" test_containment_multiline;
     test "containment: not-found display cap" test_containment_not_found_cap;

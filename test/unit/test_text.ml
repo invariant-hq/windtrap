@@ -131,6 +131,17 @@ let tests =
         equal ~msg:"truncated prefix ends on a char boundary" string
           "éé... (truncated; 10 bytes total)"
           (Text.truncate_bytes_utf8 5 "ééééé"));
+    test "prefix_bytes_utf8 keeps the prefix and no marker" (fun () ->
+        equal ~msg:"fits: unchanged" string "abc"
+          (Text.prefix_bytes_utf8 3 "abc");
+        equal ~msg:"cut" string "abcd" (Text.prefix_bytes_utf8 4 "abcdefgh");
+        equal ~msg:"never splits a multibyte char" string "\195\169"
+          (Text.prefix_bytes_utf8 3 "éé");
+        equal ~msg:"non-positive budget" string ""
+          (Text.prefix_bytes_utf8 0 "abc");
+        equal ~msg:"the marker is spelled apart" string
+          "ab... (truncated; 9 bytes total)"
+          (Text.mark_truncated ~length:9 "ab"));
     test "first_occurrence returns the byte offset" (fun () ->
         equal ~msg:"match in the middle" (option int) (Some 1)
           (Text.first_occurrence ~pattern:"ell" "hello");

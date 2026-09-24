@@ -271,7 +271,12 @@ let message_diff expected_exn raised =
   | Some (constructor, expected_message), Some (ctor, actual_message)
     when String.equal constructor ctor
          && not (String.equal expected_message actual_message) ->
-      Some { Failure.constructor; expected_message; actual_message }
+      Some
+        {
+          Failure.constructor;
+          expected_message = Failure.text expected_message;
+          actual_message = Failure.text actual_message;
+        }
   | _ -> None
 
 let raises ?__POS__ ?msg expected_exn fn =

@@ -148,9 +148,11 @@ pinned — never inlined, `fn` not called in tail position. `to_string`
 omits the column: it is identity data (`Loc.equal`), not an editor-jump
 target.
 
-**Failure and the renderers.** Payload strings are bounded once at
-construction (64 KiB), because renderings are the one thing that cannot
-outlive the failure site. The `exit` interception works because `exit`
+**Failure and the renderers.** Payload texts are bounded once, by
+`Failure.text` (64 KiB), because renderings are the one thing that cannot
+outlive the failure site. A cut is recorded as the whole length beside
+the kept prefix, never as a marker in the bytes, so a renderer never
+takes a cut text for a whole one. The `exit` interception works because `exit`
 runs the `at_exit` handlers and an exception from one propagates to
 `exit`'s caller. `backtrace_to_string` is the single conversion, so terminal,
 JUnit and GitHub show the same frames, and only a trailing run of

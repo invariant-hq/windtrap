@@ -126,7 +126,9 @@ let failure_list = function
 let phases_of fs = List.map (fun f -> f.Failure.phase) fs
 
 let message_of (f : Failure.t) =
-  match f.Failure.kind with Failure.Message m -> m | _ -> "<not a message>"
+  match f.Failure.kind with
+  | Failure.Message m -> m.Failure.kept
+  | _ -> "<not a message>"
 
 (* Whether [loc] is the site of [pos], a [__POS__] of this file. *)
 let at_pos (file, line, _, _) = function
@@ -359,7 +361,13 @@ let () =
   in
   let raised outcome path =
     match failure_list (outcome_of outcome path) with
-    | [ { Failure.kind = Failure.Raise { actual = Some actual; _ }; _ } ] ->
+    | [
+     {
+       Failure.kind =
+         Failure.Raise { actual = Some { Failure.kept = actual; _ }; _ };
+       _;
+     };
+    ] ->
         contains "No_db" actual
     | _ -> false
   in
@@ -529,7 +537,8 @@ let () =
         (msg_of f = "throws › throws"
         &&
         match f.Failure.kind with
-        | Failure.Raise { actual = Some actual; _ } -> contains "Boom" actual
+        | Failure.Raise { actual = Some { Failure.kept = actual; _ }; _ } ->
+            contains "Boom" actual
         | _ -> false);
       (* No verb raised it: the declaration is its site. *)
       check "the subtest exception names the declaration as its own site"
@@ -540,7 +549,9 @@ let () =
   | [ nested; outer ] ->
       check "the label is data: the test, then the open subtests"
         (nested.Failure.subtest = [ "test"; "outer"; "inner" ]);
-      check "and never in msg" (nested.Failure.msg = Some "ctx");
+      check "and never in msg"
+        (Option.map (fun (m : Failure.text) -> m.kept) nested.Failure.msg
+        = Some "ctx");
       check "after the nested subtest returns, its label is popped"
         (msg_of outer = "test › outer")
   | _ -> check "two nested subtest failures" false);
@@ -744,7 +755,13 @@ let () =
        [ "ok-ok"; "fail-ok"; "ok-fail"; "fail-fail"; "skip-ok"; "skip-fail" ]);
   (let fs = failure_list (outcome_of outcome [ "uncaught" ]) in
    match fs with
-   | [ { Failure.kind = Failure.Raise { actual = Some actual; _ }; _ } ] ->
+   | [
+    {
+      Failure.kind =
+        Failure.Raise { actual = Some { Failure.kept = actual; _ }; _ };
+      _;
+    };
+   ] ->
        check "uncaught exception is a Raise failure naming it"
          (contains "Boom" actual)
    | _ -> check "uncaught exception is a Raise failure" false);
@@ -892,7 +909,7 @@ let () =
       match failure_list (outcome_of outcome [ "deep raise" ]) with
       | [ { Failure.kind = Failure.Raise { backtrace; _ }; _ } ] -> (
           match backtrace with
-          | Some bt ->
+          | Some { Failure.kept = bt; _ } ->
               check "the Raise payload carries a non-empty backtrace"
                 (String.trim bt <> "");
               check "the backtrace names the function that raised"
@@ -2597,7 +2614,7 @@ let () =
   (match failure_list (outcome_of outcome [ "summarized" ]) with
   | [ { Failure.kind = Failure.Property { summary; _ }; _ } ] ->
       check "a declared ?summary rides the failure, of the shrunk value"
-        (summary = Some "n=10")
+        (Option.map (fun (s : Failure.text) -> s.kept) summary = Some "n=10")
   | _ -> check "summarized yields a Property failure" false);
   match failure_list (outcome_of outcome [ "plain" ]) with
   | [ { Failure.kind = Failure.Property { summary; _ }; _ } ] ->
@@ -2651,7 +2668,7 @@ let () =
   let rendered outcome =
     match failure_list (outcome_of outcome [ "shrinks" ]) with
     | [ { Failure.kind = Failure.Property { rendered; case_index; _ }; _ } ] ->
-        Some (rendered, case_index)
+        Some (rendered.Failure.kept, case_index)
     | _ -> None
   in
   expect_run "prop determinism (1st)" ~config tests @@ fun first ->
@@ -2717,7 +2734,13 @@ let () =
   in
   expect_run "nested-run suite runs" ~config tests @@ fun outcome ->
   match failure_list (outcome_of outcome [ "starts-a-run" ]) with
-  | [ { Failure.kind = Failure.Raise { actual = Some actual; _ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Raise { actual = Some { Failure.kept = actual; _ }; _ };
+     _;
+   };
+  ] ->
       check "a nested run fails the calling test"
         (contains "already active" actual)
   | _ -> check "a nested run fails the calling test" false
@@ -3250,7 +3273,9 @@ let () =
   | Some r ->
       check "exit in a property law is the intercepted exit, not a case"
         (match r.Run.outcome with
-        | Failure.Fail [ { Failure.kind = Failure.Message text; _ } ] ->
+        | Failure.Fail
+            [ { Failure.kind = Failure.Message { Failure.kept = text; _ }; _ } ]
+          ->
             contains "the test called exit and was intercepted" text
         | _ -> false)
   | None -> check "law-bomb recorded" false
@@ -3310,7 +3335,7 @@ let () =
         (f.Failure.subtest = []
         &&
         match f.Failure.kind with
-        | Failure.Message text ->
+        | Failure.Message { Failure.kept = text; _ } ->
             contains "the test called exit and was intercepted" text
         | _ -> false)
   | _ -> check "exit-subtest: exactly one failure" false
@@ -3542,7 +3567,13 @@ let () =
   in
   expect_run "stack overflow suite runs" ~config tests @@ fun outcome ->
   (match failure_list (outcome_of outcome [ "overflows" ]) with
-  | [ { Failure.kind = Failure.Raise { actual = Some actual; _ }; _ } ] ->
+  | [
+   {
+     Failure.kind =
+       Failure.Raise { actual = Some { Failure.kept = actual; _ }; _ };
+     _;
+   };
+  ] ->
       check "a stack overflow is an uncaught exception of its test"
         (actual = "Stack overflow")
   | _ -> check "one failure for the overflow" false);

@@ -28,7 +28,13 @@ let property_payload (failure : Failure.t) =
         | Failure.Timed_out limit -> Some limit
         | _ -> None
       in
-      (rendered, case_index, shrink_steps, timed_out, root, examples, inner)
+      ( rendered.Failure.kept,
+        case_index,
+        shrink_steps,
+        timed_out,
+        root,
+        examples,
+        inner )
   | _ -> failf "expected a Property failure kind"
 
 let shrink_end (failure : Failure.t) =
@@ -53,7 +59,8 @@ let payload_count (failure : Failure.t) =
 let inner_exception (failure : Failure.t) =
   let _, _, _, _, _, _, inner = property_payload failure in
   match inner with
-  | Some { Failure.kind = Failure.Raise { actual; _ }; _ } -> actual
+  | Some { Failure.kind = Failure.Raise { actual; _ }; _ } ->
+      Option.map (fun (t : Failure.text) -> t.kept) actual
   | _ -> None
 
 let expect_fail = function
@@ -488,7 +495,17 @@ let shrinks_to_minimal_counterexample () =
     (rendered = "1" || rendered = "-1");
   is_true ~msg:"shrinking must have taken steps" (shrink_steps > 0);
   match inner with
-  | Some { Failure.kind = Failure.Equality { expected; actual; not_ }; _ } ->
+  | Some
+      {
+        Failure.kind =
+          Failure.Equality
+            {
+              expected = { Failure.kept = expected; _ };
+              actual = { Failure.kept = actual; _ };
+              not_;
+            };
+        _;
+      } ->
       is_true ~msg:"inner expected side is the assertion's" (expected = "0");
       is_true ~msg:"inner failure must describe the shrunk case"
         (actual = rendered);
@@ -533,7 +550,8 @@ let assertion_shrink_skips_exception_candidates () =
          "the assertion goal must skip the exception trap at 1, got %S" rendered)
     (rendered = "2");
   match inner with
-  | Some { Failure.kind = Failure.Message "wanted"; _ } -> ()
+  | Some { Failure.kind = Failure.Message { Failure.kept = "wanted"; _ }; _ } ->
+      ()
   | _ -> failf "expected the inner Message failure at the shrunk case"
 
 let exception_shrink_skips_assertion_candidates () =
@@ -554,7 +572,12 @@ let exception_shrink_skips_assertion_candidates () =
          "the exception goal must skip the assertion trap at 1, got %S" rendered)
     (rendered = "2");
   match inner with
-  | Some { Failure.kind = Failure.Raise { actual = Some text; _ }; _ } ->
+  | Some
+      {
+        Failure.kind =
+          Failure.Raise { actual = Some { Failure.kept = text; _ }; _ };
+        _;
+      } ->
       is_true ~msg:"the inner failure must render Exit" (contains "Exit" text)
   | _ -> failf "expected the inner Raise failure at the shrunk case"
 
@@ -750,7 +773,7 @@ let timeout_after_accepted_steps_keeps_best_so_far () =
          rendered)
     (abs (int_of_string rendered) >= 10);
   match inner with
-  | Some { Failure.kind = Failure.Message "big"; _ } -> ()
+  | Some { Failure.kind = Failure.Message { Failure.kept = "big"; _ }; _ } -> ()
   | _ -> failf "the inner failure must describe the last accepted node"
 
 let timeout_during_generation_escapes_unchanged () =
@@ -786,7 +809,7 @@ let msg_and_loc_are_preserved () =
     (failure.Failure.loc = Some loc);
   let _, _, _, _, _, _, inner = property_payload failure in
   match inner with
-  | Some { Failure.msg = Some "labelled"; _ } -> ()
+  | Some { Failure.msg = Some { Failure.kept = "labelled"; _ }; _ } -> ()
   | _ -> failf "the inner failure must keep the assertion's ?msg"
 
 let generator_crash_is_a_failure () =
@@ -806,7 +829,12 @@ let generator_crash_is_a_failure () =
   is_true ~msg:"nothing can shrink without a sample" (shrink_steps = 0);
   is_true ~msg:"the crash is a generated case" (not examples);
   match inner with
-  | Some { Failure.kind = Failure.Raise { actual = Some text; _ }; _ } ->
+  | Some
+      {
+        Failure.kind =
+          Failure.Raise { actual = Some { Failure.kept = text; _ }; _ };
+        _;
+      } ->
       is_true ~msg:"the crash must be rendered"
         (contains "Invalid_argument" text)
   | _ -> failf "expected an inner Raise failure for the generator crash"
@@ -954,7 +982,7 @@ let a_raising_candidate_stops_the_search_visibly () =
   equal ~msg:"the stop names the forcing's exception" string
     {|Failure("forcing raised")|}
     (match shrink_end failure with
-    | Failure.Candidate_raised text -> text
+    | Failure.Candidate_raised text -> text.kept
     | _ -> fail "a descent stopped by a raising candidate reads as converged");
   let rendered, _, _, _, _, _, _ = property_payload failure in
   List.iter
@@ -992,7 +1020,8 @@ let count_provenance_decides_the_payload () =
 let the_summary_is_of_the_reported_counterexample () =
   let summary_of (failure : Failure.t) =
     match failure.Failure.kind with
-    | Failure.Property { summary; _ } -> summary
+    | Failure.Property { summary; _ } ->
+        Option.map (fun (t : Failure.text) -> t.kept) summary
     | _ -> failf "expected a Property failure kind"
   in
   let summary value = if value = 0 then None else Some (Pp.str "n=%d" value) in
@@ -1067,13 +1096,24 @@ let a_generator_s_exception_fails_the_case_unshrunk () =
     inner
   in
   (match failed Not_found with
-  | Some { Failure.kind = Failure.Raise { actual = Some "Not_found"; _ }; _ } ->
+  | Some
+      {
+        Failure.kind =
+          Failure.Raise { actual = Some { Failure.kept = "Not_found"; _ }; _ };
+        _;
+      } ->
       ()
   | _ -> fail "the inner failure is not the generator's exception");
   (match
      failed (Failure.Check_failure (Failure.message "from the generator"))
    with
-  | Some { Failure.kind = Failure.Message "from the generator"; _ } -> ()
+  | Some
+      {
+        Failure.kind =
+          Failure.Message { Failure.kept = "from the generator"; _ };
+        _;
+      } ->
+      ()
   | _ -> fail "the inner failure is not the generator's assertion");
   List.iter
     (fun exn ->
@@ -1181,7 +1221,8 @@ let an_inner_raise_carries_the_backtrace_when_recorded () =
     in
     let _, _, _, _, _, _, inner = property_payload failure in
     match inner with
-    | Some { Failure.kind = Failure.Raise { backtrace; _ }; _ } -> backtrace
+    | Some { Failure.kind = Failure.Raise { backtrace; _ }; _ } ->
+        Option.map (fun (t : Failure.text) -> t.kept) backtrace
     | _ -> failf "expected an inner Raise"
   in
   is_true ~msg:"recorded" (Option.is_some (backtrace true));

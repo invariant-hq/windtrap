@@ -220,7 +220,11 @@ let check t ?loc ?(correct = true) subject actual =
       | Some accepted ->
           if not (String.equal actual' accepted) then
             fail ~withheld:Failure.Conflict
-              (Failure.Mismatch { expected = accepted; actual = actual' })
+              (Failure.Mismatch
+                 {
+                   expected = Failure.text accepted;
+                   actual = Failure.text actual';
+                 })
       | None -> (
           match entry.baseline with
           | Some expected when String.equal expected actual' -> ()
@@ -228,8 +232,12 @@ let check t ?loc ?(correct = true) subject actual =
               let state =
                 match baseline with
                 | Some expected ->
-                    Failure.Mismatch { expected; actual = actual' }
-                | None -> Failure.Missing { proposed = actual' }
+                    Failure.Mismatch
+                      {
+                        expected = Failure.text expected;
+                        actual = Failure.text actual';
+                      }
+                | None -> Failure.Missing { proposed = Failure.text actual' }
               in
               match mode with
               | Check -> fail state

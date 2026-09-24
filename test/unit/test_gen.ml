@@ -74,11 +74,12 @@ let shrink ?(from = fun _ -> true) ?(failing = fun _ -> true) gen =
   with
   | Fail { failure = { kind = Property payload; _ }; _ } ->
       if payload.shrink_end <> Converged then
-        failf "the search stopped at %s before it converged" payload.rendered;
+        failf "the search stopped at %s before it converged"
+          payload.rendered.kept;
       let text =
         match payload.rendering with
-        | Value -> payload.rendered
-        | Pre_image -> "from " ^ payload.rendered
+        | Value -> payload.rendered.kept
+        | Pre_image -> "from " ^ payload.rendered.kept
       in
       (text, payload.shrink_steps)
   | _ -> failf "no case in 10000 satisfied the predicate"

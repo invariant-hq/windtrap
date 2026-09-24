@@ -354,14 +354,14 @@ let relabel ?loc label (failure : Failure.t) =
   let msg =
     match failure.Failure.msg with
     | None -> label
-    | Some user -> label ^ "; " ^ one_line user
+    | Some user -> label ^ "; " ^ one_line user.Failure.kept
   in
   (* The command's declaration site fills in only where the assertion left
      none — which is the common case, since a body is idiomatically one
      assertion in tail position. A body that did record its own site keeps
      it: it is nearer the failure than the declaration is. *)
   let loc = match failure.Failure.loc with None -> loc | some -> some in
-  { failure with Failure.msg = Some msg; loc }
+  { failure with Failure.msg = Some (Failure.text msg); loc }
 
 (* [label] is a thunk: it is spelled once per failure, not once per step. *)
 let attributed ?loc label fn =

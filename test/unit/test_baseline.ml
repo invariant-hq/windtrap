@@ -67,7 +67,9 @@ let () =
   (match
      expect_failure "missing" (fun () -> B.check t file_help "hello\r\nworld")
    with
-  | Some (Failure.File path, Failure.Missing { proposed }) ->
+  | Some
+      ( Failure.File path,
+        Failure.Missing { proposed = { Failure.kept = proposed; _ } } ) ->
       equal ~msg:"the failure names the path as given" string help path;
       equal ~msg:"the proposal is canonical" string "hello\nworld\n" proposed
   | _ -> is_true ~msg:"missing: File/Missing payload" false);
@@ -94,7 +96,13 @@ let () =
   write_raw (Filename.concat root help) "hello\n";
   let t = B.create ~root ~cwd:root ~mode:B.Check () in
   match expect_failure "mismatch" (fun () -> B.check t file_help "bye") with
-  | Some (_, Failure.Mismatch { expected; actual }) ->
+  | Some
+      ( _,
+        Failure.Mismatch
+          {
+            expected = { Failure.kept = expected; _ };
+            actual = { Failure.kept = actual; _ };
+          } ) ->
       equal ~msg:"expected is the canonical baseline" string "hello\n" expected;
       equal ~msg:"actual is canonical" string "bye\n" actual
   | _ -> is_true ~msg:"mismatch: Mismatch payload" false
@@ -110,7 +118,8 @@ let () =
   expect_pass "a recheck compares against the same content" (fun () ->
       B.check t file_help "one");
   match expect_failure "divergence" (fun () -> B.check t file_help "two") with
-  | Some (_, Failure.Mismatch { expected; _ }) ->
+  | Some (_, Failure.Mismatch { expected = { Failure.kept = expected; _ }; _ })
+    ->
       equal ~msg:"against the first-read baseline" string "one\n" expected
   | _ -> is_true ~msg:"divergence is a Mismatch" false
 
@@ -127,8 +136,12 @@ let () =
          B.check t (literal "\n    a\n      b\n  ") "a\nb")
    with
   | Some
-      (Failure.Literal { exact = false }, Failure.Mismatch { expected; actual })
-    ->
+      ( Failure.Literal { exact = false },
+        Failure.Mismatch
+          {
+            expected = { Failure.kept = expected; _ };
+            actual = { Failure.kept = actual; _ };
+          } ) ->
       equal ~msg:"both sides in normalized form" string "a\n  b" expected;
       equal ~msg:"the produced text, normalized" string "a\nb" actual
   | _ -> is_true ~msg:"flexible mismatch: Literal/Mismatch payload" false);
@@ -139,8 +152,12 @@ let () =
         B.check t (literal ~line:3 ~exact:true " a ") "a")
   with
   | Some
-      (Failure.Literal { exact = true }, Failure.Mismatch { expected; actual })
-    ->
+      ( Failure.Literal { exact = true },
+        Failure.Mismatch
+          {
+            expected = { Failure.kept = expected; _ };
+            actual = { Failure.kept = actual; _ };
+          } ) ->
       is_true ~msg:"exact keeps the bytes" (expected = " a " && actual = "a")
   | _ -> is_true ~msg:"exact mismatch: Literal/Mismatch payload" false
 
@@ -203,7 +220,13 @@ let () =
   (match
      expect_failure "another content" (fun () -> B.check t file_help "yo")
    with
-  | Some (_, Failure.Mismatch { expected; actual }) ->
+  | Some
+      ( _,
+        Failure.Mismatch
+          {
+            expected = { Failure.kept = expected; _ };
+            actual = { Failure.kept = actual; _ };
+          } ) ->
       is_true ~msg:"the mismatch is against the accepted content"
         (expected = "hi\n" && actual = "yo\n")
   | _ -> is_true ~msg:"another content: Mismatch" false);
@@ -217,7 +240,7 @@ let () =
   ignore (expect_failure "first" (fun () -> B.check t file_help "hi"));
   equal ~msg:"settle without keep drops it" int 0 (B.settle t ~keep:false);
   (match expect_failure "next test" (fun () -> B.check t file_help "yo") with
-  | Some (_, Failure.Missing { proposed }) ->
+  | Some (_, Failure.Missing { proposed = { Failure.kept = proposed; _ } }) ->
       equal ~msg:"the next test records its own content" string "yo\n" proposed
   | _ -> is_true ~msg:"next test: Missing again, not a Mismatch" false);
   equal ~msg:"and that one is kept" int 1 (B.settle t ~keep:true);
@@ -236,7 +259,8 @@ let () =
   (match
      expect_failure "another content" (fun () -> B.check t file_help "x")
    with
-  | Some (_, Failure.Mismatch { expected; _ }) ->
+  | Some (_, Failure.Mismatch { expected = { Failure.kept = expected; _ }; _ })
+    ->
       equal ~msg:"never last-write-wins" string "hello\nworld\n" expected
   | _ -> is_true ~msg:"another content: Mismatch" false);
   ignore (B.settle t ~keep:true);
@@ -579,7 +603,7 @@ let () =
   in
   let t = B.create ~root ~cwd:root ~mode:B.Corrected () in
   (match expect_failure "missing" (fun () -> B.check t file_help big) with
-  | Some (_, Failure.Missing { proposed }) ->
+  | Some (_, Failure.Missing { proposed = { Failure.kept = proposed; _ } }) ->
       is_true ~msg:"the proposal is bounded"
         (String.length proposed < String.length big)
   | _ -> is_true ~msg:"missing: Missing payload" false);

@@ -15,8 +15,28 @@
     A failure holds no styling and no command. A renderer spells the [replay:]
     and [accept:] commands from the payload and from the invocation of the run.
     What a failure holds is the text that cannot be made again after the failure
-    site: printed values, messages and a backtrace, stored as given and bounded
-    by the constructor. *)
+    site: printed values, messages and a backtrace, each a bounded {!type-text}.
+*)
+
+(** {1:texts Texts} *)
+
+type text = private {
+  kept : string;
+      (** The whole text or, past 64 KiB, its longest prefix of at most 65 536
+          bytes that ends on a code-point boundary. It holds no marker. *)
+  length : int;  (** The length of the whole text in bytes. *)
+}
+(** The type for a text of a payload: a printed value, a message, a backtrace.
+    It is cut iff [String.length kept < length]. A consumer must never take a
+    cut text for a whole one: two texts are known equal only when neither is cut
+    and their [kept] are equal. *)
+
+val text : string -> text
+(** [text s] is [s], bounded. It is the only way to make a {!type-text}, so
+    every writer of a payload field keeps the bound. *)
+
+val is_cut : text -> bool
+(** [is_cut t] is [String.length t.kept < t.length]. *)
 
 (** {1:types Types} *)
 
@@ -58,10 +78,10 @@ type baseline =
 
 (** The type for how a baseline check failed (see {!Baseline.check}). *)
 type baseline_state =
-  | Missing of { proposed : string }
+  | Missing of { proposed : text }
       (** No baseline exists, and [proposed] is the content that the check would
           accept. *)
-  | Mismatch of { expected : string; actual : string }
+  | Mismatch of { expected : text; actual : text }
       (** The baseline [expected] differs from the produced [actual], both in
           their comparison form. A renderer computes the diff from them. *)
   | Unresolvable of { candidate : string }
@@ -88,8 +108,8 @@ type message_diff = {
   constructor : string;
       (** The constructor that both exceptions share, which the producer names
           from the exceptions and never from a rendering. *)
-  expected_message : string;  (** The message of the expected exception. *)
-  actual_message : string;  (** The message of the raised exception. *)
+  expected_message : text;  (** The message of the expected exception. *)
+  actual_message : text;  (** The message of the raised exception. *)
 }
 (** The type for an exception failure with the right constructor and the wrong
     message. A producer must record one only when both exceptions share a
@@ -114,12 +134,7 @@ type containment_demand =
 (** The type for failure payloads. A renderer matches on it without a wildcard,
     so a new constructor is a design amendment that every renderer answers. *)
 type kind =
-  | Equality of {
-      expected : string;
-      actual : string;
-      not_ : bool;
-      diffable : bool;
-    }
+  | Equality of { expected : text; actual : text; not_ : bool; diffable : bool }
       (** Two sides that had to match did not. [expected] and [actual] are
           printed values, or descriptions of a constructor such as [Some _].
           Under [not_], a negated assertion, both must hold one rendering, and a
@@ -128,7 +143,7 @@ type kind =
           renderer then computes no diff and marks neither side against the
           other. *)
   | Containment of {
-      needle : string;  (** The needle. *)
+      needle : text;  (** The needle. *)
       found_at : int option;
           (** The byte offset of the first occurrence of the needle in the
               haystack, if any. Under {!Prefix} and {!Suffix} [Some _] says
@@ -145,10 +160,10 @@ type kind =
           (** What was demanded beyond an occurrence. *)
     }  (** A containment assertion failed. *)
   | Raise of {
-      expected : string option;
-      actual : string option;
+      expected : text option;
+      actual : text option;
       predicate : bool;
-      backtrace : string option;
+      backtrace : text option;
       message_diff : message_diff option;
     }
       (** An exception assertion failed, or an exception was raised that nothing
@@ -173,10 +188,10 @@ type kind =
     }
       (** A baseline check failed: what it compared against and how it ended. *)
   | Property of {
-      rendered : string;
+      rendered : text;
           (** The counterexample as printed, after shrinking, or the text that
               stands for one (see {!Property.outcome}). *)
-      summary : string option;
+      summary : text option;
           (** [Some line] iff [rendered] is a table whose first line names the
               columns. [line] then says in one line what the table holds, as
               [2 calls, last: get] does for a stateful program. A renderer must
@@ -211,7 +226,7 @@ type kind =
               printed, its backtrace and no location. A failure that
               {!Property.run} builds always has one. *)
     }  (** A property failed. *)
-  | Message of string
+  | Message of text
       (** A direct failure: the text of a [fail], or a failure that the library
           words itself, as it does a timeout and an intercepted [exit]. *)
 
@@ -220,7 +235,7 @@ type kind =
 and shrink_end =
   | Converged  (** No candidate of the last node was accepted. *)
   | Budget_spent  (** The search took its budget of accepted steps. *)
-  | Candidate_raised of string
+  | Candidate_raised of text
       (** Forcing a candidate raised the exception printed here, and the
           siblings behind it were unreachable. *)
   | Timed_out of float
@@ -248,7 +263,7 @@ and t = {
           Nothing in the record tells the two apart. The [loc] of a
           {!constructor-Property} failure is the declaration of the property,
           and the site of the assertion is on its [inner]. *)
-  msg : string option;
+  msg : text option;
       (** The [?msg] of the assertion, when given. For the failure of a call,
           {!Stateful} writes the label of the call before it. *)
   subtest : string list;
@@ -264,8 +279,7 @@ and t = {
 }
 (** The type for failures. The record is concrete, and two clients write fields
     past the constructors. {!Run} writes [loc] and [subtest], and {!Stateful}
-    writes the [msg] and the [loc] of the failure of a call. The bound of the
-    {{!section-constructors}constructors} is then the client's to keep. *)
+    writes the [msg] and the [loc] of the failure of a call. *)
 
 (** {1:control Control} *)
 
@@ -360,18 +374,10 @@ val backtrace_to_string : Printexc.raw_backtrace -> string
     [?loc:(Loc.resolve ?__POS__ ())] and leaves [loc] out where it would be a
     guess.
 
-    {b Bounds.} A constructor stores a text of at most 64 KiB, 65 536 bytes, as
-    given. It cuts a longer one to its longest prefix of at most 64 KiB that
-    ends on a code-point boundary, and appends [... (truncated; N bytes total)],
-    where [N] is the length of the original. The marker is part of the stored
-    string, so a renderer prints it with the value.
-
-    The bound applies to [msg], to a backtrace and to the texts of every
-    payload, with three exceptions. The path of a {!File} and the [candidate] of
-    an {!Unresolvable} are stored whole, and an [excerpt] has the bounds of
-    {!containment}. Two texts that agree on their first 64 KiB and have the same
-    length are stored as equal strings, and nothing in the payload then tells
-    them from two equal renderings. *)
+    {b Bounds.} A constructor makes each text that it takes as a string, [msg]
+    included, with {!val-text}. The path of a {!File}, the [candidate] of an
+    {!Unresolvable} and the [constructor] of a {!type-message_diff} are strings
+    stored whole, and an [excerpt] has the bounds of {!containment}. *)
 
 val equality :
   ?loc:Loc.t ->
@@ -451,9 +457,8 @@ val property :
 (** [property ~rendered ~case_index ~shrink_steps ~root ~examples ()] is a
     {!constructor-Property} failure with the fields given. [inner], [count] and
     [summary] default to [None], [shrink_end] to {!Converged} and [rendering] to
-    {!Value}. The text of a {!Candidate_raised} is bounded. Nothing is
-    validated, so the invariants that {!type-kind} states are the producer's to
-    keep. *)
+    {!Value}. Nothing is validated, so the invariants that {!type-kind} states
+    are the producer's to keep. *)
 
 val message : ?loc:Loc.t -> string -> t
 (** [message text] is a {!Message} failure that carries [text]. *)

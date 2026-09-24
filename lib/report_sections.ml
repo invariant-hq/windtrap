@@ -314,17 +314,22 @@ let width spans = List.fold_left (fun w { text; _ } -> w + cols text) 0 spans
 
 (* Failure projections *)
 
+(* A text of a payload as it prints: what the failure kept, and after it
+   the marker of a cut. *)
+let shown_text (t : Failure.text) =
+  if Failure.is_cut t then Text.mark_truncated ~length:t.length t.kept
+  else t.kept
+
 (* The msg slot as displayed: a sub-case entry's [leaf › name] label
    (derived from the structured components — never sniffed from the text)
    joined with the user's annotation when there is one. *)
 let labeled_msg (f : Failure.t) =
+  let msg = Option.map shown_text f.Failure.msg in
   match f.Failure.subtest with
-  | [] -> f.Failure.msg
+  | [] -> msg
   | components -> (
       let label = Test_tree.path_to_string components in
-      match f.Failure.msg with
-      | None -> Some label
-      | Some m -> Some (label ^ ": " ^ m))
+      match msg with None -> Some label | Some m -> Some (label ^ ": " ^ m))
 
 (* Fact lines and the headline *)
 
@@ -372,10 +377,11 @@ let headline (f : Failure.t) =
   let fact =
     match f.kind with
     | Failure.Equality { not_ = true; expected; _ } ->
-        "both sides equal: " ^ expected
+        "both sides equal: " ^ shown_text expected
     | Failure.Equality { expected; actual; diffable = false; _ } ->
-        spf "expected %s, got %s" expected actual
+        spf "expected %s, got %s" (shown_text expected) (shown_text actual)
     | Failure.Equality { expected; actual; _ } -> (
+        let expected = shown_text expected and actual = shown_text actual in
         if String.equal expected actual then "both sides render as: " ^ expected
         else if
           not (String.contains expected '\n' || String.contains actual '\n')
@@ -387,6 +393,7 @@ let headline (f : Failure.t) =
               spf "expected and actual differ (%d diff lines)"
                 (diff_lines hunks))
     | Failure.Containment { needle; found_at; haystack_length; demand; _ } -> (
+        let needle = shown_text needle in
         (* A chain break is its own verdict: it reads as neither "found" nor
            "not found". *)
         match (demand, found_at) with
@@ -403,14 +410,15 @@ let headline (f : Failure.t) =
             spf "%s %S not found (%d-byte haystack)" (needle_word demand) needle
               haystack_length)
     | Failure.Raise { expected = Some e; actual = Some a; _ } ->
-        spf "expected exception %s, raised %s" e a
+        spf "expected exception %s, raised %s" (shown_text e) (shown_text a)
     | Failure.Raise { expected = Some e; actual = None; _ } ->
-        spf "expected exception %s, none raised" e
+        spf "expected exception %s, none raised" (shown_text e)
     | Failure.Raise { expected = None; actual = Some a; predicate; _ } ->
         (* [predicate] tells a [raises_match] rejection from an exception
            nobody expected. *)
-        if predicate then spf "exception did not satisfy the predicate: %s" a
-        else spf "uncaught exception: %s" a
+        if predicate then
+          spf "exception did not satisfy the predicate: %s" (shown_text a)
+        else spf "uncaught exception: %s" (shown_text a)
     | Failure.Raise { expected = None; actual = None; _ } ->
         "expected an exception, none raised"
     | Failure.Baseline { baseline; state; _ } -> (
@@ -446,9 +454,9 @@ let headline (f : Failure.t) =
           (match rendering with
           | Failure.Pre_image -> " computed from "
           | Failure.Value -> " ")
-          (Option.value summary ~default:rendered)
-    | Failure.Message "" -> "(empty failure message)"
-    | Failure.Message m -> m
+          (shown_text (Option.value summary ~default:rendered))
+    | Failure.Message m -> (
+        match shown_text m with "" -> "(empty failure message)" | m -> m)
   in
   let line =
     String.map
@@ -816,9 +824,12 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         [
           styled `Faint "subtest"; plain ("   " ^ Test_tree.path_to_string names);
         ]);
-  Option.iter (fun msg -> List.iter put_text (Text.split_lines msg)) f.msg;
+  Option.iter
+    (fun msg -> List.iter put_text (Text.split_lines (shown_text msg)))
+    f.msg;
   (match f.kind with
   | Failure.Equality { not_ = true; expected; _ } ->
+      let expected = shown_text expected in
       if String.contains expected '\n' then begin
         put_text "both sides equal:";
         put_block expected
@@ -826,6 +837,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
       else put_text (spf "both sides equal: %s" (shown expected))
   | Failure.Equality { expected = claim; actual = value; diffable = false; _ }
     ->
+      let claim = shown_text claim and value = shown_text value in
       (* A claim is a description, not a rendering: never diff or refine the
          two. Colour still applies — green and red mark which side is
          which, and that is as true of a description as of a value, and so is
@@ -841,7 +853,8 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         put_ind
           [ styled `Faint "actual"; plain "    "; styled `Red (shown value) ]
   | Failure.Equality { expected; actual; _ } ->
-      pp_eq ~ansi put ~ind ~expected ~actual
+      pp_eq ~ansi put ~ind ~expected:(shown_text expected)
+        ~actual:(shown_text actual)
   | Failure.Containment
       { needle; found_at; haystack_length; excerpt; excerpt_offset; demand } ->
       (* The block is the containment payload, never a fake equality diff.
@@ -862,7 +875,8 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
           styled `Faint (needle_word demand);
           plain
             ("    \""
-            ^ Text.elide_middle max_value_bytes ~show:String.escaped needle
+            ^ Text.elide_middle max_value_bytes ~show:String.escaped
+                (shown_text needle)
             ^ "\": "
             ^ containment_verdict ~demand ~found_at);
         ];
@@ -877,7 +891,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         | Some at ->
             let start = at - excerpt_offset in
             let length =
-              min (String.length needle) (String.length excerpt - start)
+              min needle.Failure.length (String.length excerpt - start)
             in
             if start >= 0 && length > 0 then Some { Diff.start; length }
             else None
@@ -938,9 +952,11 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
              the constructor said once. *)
           put_text (spf "raised %s with the wrong message:" constructor);
           pp_eq ~ansi put ~ind
-            ~expected:(spf "%S" expected_message)
-            ~actual:(spf "%S" actual_message)
-      | None, Some expected, actual -> pp_raise ~ansi put ~ind ~expected ~actual
+            ~expected:(spf "%S" (shown_text expected_message))
+            ~actual:(spf "%S" (shown_text actual_message))
+      | None, Some expected, actual ->
+          pp_raise ~ansi put ~ind ~expected:(shown_text expected)
+            ~actual:(Option.map shown_text actual)
       | None, None, Some actual ->
           (* [predicate] tells a [raises_match] rejection from a test body's
              escape: the two demand different reactions. *)
@@ -948,12 +964,12 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
             (if predicate then
                "raised exception does not satisfy the predicate:"
              else "uncaught exception:");
-          pp_value_block put ~ind `Red actual
+          pp_value_block put ~ind `Red (shown_text actual)
       | None, None, None ->
           put_text "expected an exception, but none was raised");
       match backtrace with
       | Some bt ->
-          let frames = Text.split_lines bt in
+          let frames = Text.split_lines (shown_text bt) in
           List.iter
             (fun l -> put_ind [ styled `Faint l ])
             (take max_lines frames);
@@ -968,7 +984,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
           put_text (subject ^ ": no baseline");
           (* The file does not exist: its proposed text is all [+] and has
              no hunk to head. *)
-          let lines = Text.split_lines proposed in
+          let lines = Text.split_lines (shown_text proposed) in
           let n = List.length lines in
           put_text (spf "proposed (%d line%s):" n (if n = 1 then "" else "s"));
           List.iter
@@ -982,6 +998,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
                   (spf "\u{2026} (+%d more lines)" (n - max_proposed_lines));
               ]
       | Failure.Mismatch { expected; actual } -> (
+          let expected = shown_text expected and actual = shown_text actual in
           put_text (subject ^ ": mismatch");
           match Diff.hunks ~expected ~actual () with
           | [] -> put_text (newline_fact ~expected ~actual)
@@ -1007,6 +1024,8 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
         root = _;
         count = _;
       } -> (
+      let rendered = shown_text rendered
+      and summary = Option.map shown_text summary in
       (* A pre-image is marked in the slot itself, [computed from], so a
          reader who stops at this line does not take it for the value the
          body received; the aside under it says what it is and what to do. *)
@@ -1064,7 +1083,7 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
           (* Two lines: the exception is the user's text, of any length. *)
           put_text
             (spf "shrinking stopped after %d steps: a candidate raised %s"
-               shrink_steps text);
+               shrink_steps (shown_text text));
           put_text "counterexample may not be minimal"
       | Failure.Converged -> ());
       (* An inner failure raised in tail position has no site: [at:] over
@@ -1078,8 +1097,10 @@ let rec pp_gen ~ansi ~excerpt ~inner ~hints:hinted ~filter ~invocation ~armed
           pp_gen ~ansi ~excerpt ~inner:true ~hints:false ~filter ~invocation
             ~armed ~ind:(ind ^ "  ") ppf i
       | None -> ())
-  | Failure.Message "" -> put_text "(empty failure message)"
-  | Failure.Message m -> List.iter put_text (Text.split_lines m));
+  | Failure.Message m -> (
+      match shown_text m with
+      | "" -> put_text "(empty failure message)"
+      | m -> List.iter put_text (Text.split_lines m)));
   if hinted then List.iter put_text (hints ?armed ~invocation ~filter [ f ])
 
 let pp_failure ~ansi ?(excerpt = false) ?(hints = true) ?filter

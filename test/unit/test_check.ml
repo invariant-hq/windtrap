@@ -45,7 +45,7 @@ let caught name f =
 let equality_payload name f k =
   match caught name f with
   | { F.kind = F.Equality { expected; actual; not_; diffable = true }; _ } ->
-      k (expected, actual, not_)
+      k (expected.F.kept, actual.F.kept, not_)
   | _ -> fail (name ^ ": kind is a diffable Equality")
 
 (* The demand as a flat string, so a wrong one is legible in the report —
@@ -70,7 +70,7 @@ let containment_payload name f k =
       k
         ( describe_demand demand,
           excerpt,
-          needle,
+          needle.F.kept,
           found_at,
           haystack_length,
           excerpt_offset )
@@ -96,13 +96,14 @@ let describe_offset = function
 let predicate_payload name f k =
   match caught name f with
   | { F.kind = F.Equality { expected; actual; diffable = false; _ }; _ } ->
-      k (expected, actual)
+      k (expected.F.kept, actual.F.kept)
   | _ -> fail (name ^ ": kind is an undiffable Equality")
 
 let raise_payload name f k =
   match caught name f with
   | { F.kind = F.Raise { expected; actual; backtrace; _ }; _ } ->
-      k (expected, actual, backtrace)
+      let kept = Option.map (fun (t : F.text) -> t.kept) in
+      k (kept expected, kept actual, kept backtrace)
   | _ -> fail (name ^ ": kind is Raise")
 
 (* Enrichment variant: [k] gets the recorded message diff. *)
@@ -115,7 +116,8 @@ let raise_message_diff name f k =
 let describe_message_diff = function
   | None -> "none"
   | Some { F.constructor; expected_message; actual_message } ->
-      Printf.sprintf "%s: %S -> %S" constructor expected_message actual_message
+      Printf.sprintf "%s: %S -> %S" constructor expected_message.F.kept
+        actual_message.F.kept
 
 (* A witness that counts printer calls, to pin down when rendering runs. *)
 let counting_int calls =
@@ -950,7 +952,13 @@ let tests =
            caught "raises: inner Check_failure propagates" (fun () ->
                Check.raises Not_found (fun () -> Check.equal Testable.int 1 2))
          with
-        | { F.kind = F.Equality { expected = "1"; actual = "2"; _ }; _ } -> ()
+        | {
+         F.kind =
+           F.Equality
+             { expected = { F.kept = "1"; _ }; actual = { F.kept = "2"; _ }; _ };
+         _;
+        } ->
+            ()
         | _ -> fail "raises: inner assertion failure survives unchanged");
         is_true ~msg:"raises: inner Skip_test propagates"
           (match
@@ -992,7 +1000,7 @@ let tests =
           caught "raises_match: inner Check_failure propagates" (fun () ->
               Check.raises_match (fun _ -> true) (fun () -> Check.fail "inner"))
         with
-        | { F.kind = F.Message "inner"; _ } -> ()
+        | { F.kind = F.Message { F.kept = "inner"; _ }; _ } -> ()
         | _ -> fail "raises_match: inner failure survives unchanged");
     test "raises_match" (fun () ->
         passes "raises_match: pass on a matching exception" (fun () ->
@@ -1234,7 +1242,7 @@ let tests =
         (match
            caught "fail: raises a Message failure" (fun () -> Check.fail "boom")
          with
-        | { F.kind = F.Message "boom"; msg = None; _ } -> ()
+        | { F.kind = F.Message { F.kept = "boom"; _ }; msg = None; _ } -> ()
         | _ -> fail "fail: message stored, no msg annotation");
         is_true ~msg:"fail: usable in expression position"
           (match
@@ -1249,7 +1257,7 @@ let tests =
                Check.failf "bad %s %d" "value" 42)
          with
         | { F.kind = F.Message m; _ } ->
-            equal ~msg:"failf: formatted payload" string "bad value 42" m
+            equal ~msg:"failf: formatted payload" string "bad value 42" m.F.kept
         | _ -> fail "failf: kind is Message");
         is_true ~msg:"failf: usable in expression position"
           (match
@@ -1257,7 +1265,7 @@ let tests =
                  let n : int = if true then Check.failf "no %d" 7 else 3 in
                  ignore n)
            with
-          | Failed { F.kind = F.Message "no 7"; _ } -> true
+          | Failed { F.kind = F.Message { F.kept = "no 7"; _ }; _ } -> true
           | _ -> false);
         is_true ~msg:"skip: raises Skip_test with the reason"
           (match Check.skip ~reason:"needs docker" () with
@@ -1351,7 +1359,7 @@ let tests =
         List.iter
           (fun (name, f) ->
             equal ~msg:(name ^ ": ?msg stored") (option string) (Some m)
-              (caught name f).F.msg)
+              (Option.map (fun (t : F.text) -> t.kept) (caught name f).F.msg))
           [
             ("equal", fun () -> Check.equal ~msg:m Testable.int 1 2);
             ("not_equal", fun () -> Check.not_equal ~msg:m Testable.int 1 1);

@@ -348,7 +348,7 @@ let test_unopenable_log () =
           equal ~msg:"the message names the log and why" string
             ("this test's captured output cannot be read: " ^ log
            ^ ": No such file or directory")
-            m
+            m.Failure.kept
       | _ -> fail "the failure is a Message");
       is_true ~msg:"located at ?__POS__"
         (Option.map (fun l -> l.Loc.line) f.Failure.loc = Some 7)
@@ -398,7 +398,8 @@ let test_disabled () =
   | exception Failure.Check_failure f -> (
       (match f.Failure.kind with
       | Failure.Message m ->
-          equal ~msg:"the typed requires-capture message" string stream_error m
+          equal ~msg:"the typed requires-capture message" string stream_error
+            m.Failure.kept
       | _ -> is_true ~msg:"failure kind is Message" false);
       match f.Failure.loc with
       | Some l ->

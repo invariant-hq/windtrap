@@ -39,8 +39,20 @@ let containment_parts name (f : F.t) k =
   match f.F.kind with
   | F.Containment
       { needle; found_at; haystack_length; excerpt; excerpt_offset; _ } ->
-      k (excerpt, needle, found_at, haystack_length, excerpt_offset)
+      k (excerpt, needle.F.kept, found_at, haystack_length, excerpt_offset)
   | _ -> is_true ~msg:(name ^ ": Containment kind") false
+
+(* What a text kept, for the pins that compare it with a string. *)
+let kept (t : F.text) = t.kept
+
+(* A text of 200,000 bytes is cut: its [kept] is shorter, holds no marker,
+   and its [length] is the whole text's. *)
+let cut_whole ~msg (t : F.text) =
+  is_true ~msg
+    (F.is_cut t
+    && String.length t.kept < 200_000
+    && t.length = 200_000
+    && not (has ~needle:"truncated" t.kept))
 
 let big = String.make 200_000 'a'
 
@@ -54,7 +66,12 @@ let tests =
         is_true ~msg:"kind payload"
           (match f.F.kind with
           | F.Equality
-              { expected = "1"; actual = "2"; not_ = false; diffable = true } ->
+              {
+                expected = { kept = "1"; length = 1 };
+                actual = { kept = "2"; length = 1 };
+                not_ = false;
+                diffable = true;
+              } ->
               true
           | _ -> false);
         is_true ~msg:"default phase is Body" (f.F.phase = F.Body);
@@ -71,7 +88,7 @@ let tests =
           | F.Equality { not_ = true; _ } -> true
           | _ -> false);
         is_true ~msg:"loc stored" (f.F.loc = Some loc);
-        is_true ~msg:"msg stored" (f.F.msg = Some "ids"));
+        is_true ~msg:"msg stored" (Option.map kept f.F.msg = Some "ids"));
     test "predicate constructor" (fun () ->
         let loc = loc_of "test/t.ml" 7 in
         let f = F.predicate ~loc ~msg:"positive" ~claim:"a match" "None" in
@@ -80,105 +97,88 @@ let tests =
         is_true ~msg:"claim and value stored"
           (match f.F.kind with
           | F.Equality
-              { expected = "a match"; actual = "None"; diffable = false; _ } ->
+              {
+                expected = { kept = "a match"; _ };
+                actual = { kept = "None"; _ };
+                diffable = false;
+                _;
+              } ->
               true
           | _ -> false);
         is_true ~msg:"loc stored" (f.F.loc = Some loc);
-        is_true ~msg:"msg stored" (f.F.msg = Some "positive");
-        let f = F.predicate ~claim:big big in
-        is_true ~msg:"claim and value are bounded"
-          (match f.F.kind with
-          | F.Equality { expected; actual; diffable = false; _ } ->
-              String.length expected < 200_000
-              && String.length actual < 200_000
-              && has ~needle:"truncated" actual
-          | _ -> false));
+        is_true ~msg:"msg stored" (Option.map kept f.F.msg = Some "positive");
+        match (F.predicate ~claim:big big).F.kind with
+        | F.Equality { expected; actual; diffable = false; _ } ->
+            cut_whole ~msg:"the claim is bounded" expected;
+            cut_whole ~msg:"the value is bounded" actual
+        | _ -> fail "predicate kind");
     test "payload bounding" (fun () ->
-        (let f = F.equality ~expected:big ~actual:"2" () in
-         match f.F.kind with
-         | F.Equality { expected; actual = "2"; _ } ->
-             is_true ~msg:"long payload is shorter than the original"
-               (String.length expected < String.length big);
-             is_true ~msg:"marker states the original byte count"
-               (has ~needle:"truncated" expected
-               && has ~needle:"200000 bytes" expected);
-             is_true ~msg:"truncation keeps a prefix of the value"
-               (String.length expected > 1_000 && expected.[0] = 'a')
-         | _ -> is_true ~msg:"kind preserved" false);
+        (match (F.equality ~expected:big ~actual:"2" ()).F.kind with
+        | F.Equality { expected; actual; _ } ->
+            cut_whole ~msg:"a long side is cut" expected;
+            is_true ~msg:"a short side is whole" (not (F.is_cut actual));
+            is_true ~msg:"the cut keeps a prefix of the value"
+              (String.length expected.kept > 1_000 && expected.kept.[0] = 'a')
+        | _ -> fail "equality kind");
         (* All-2-byte content: any code-point boundary is an even offset, so
            an odd-length kept prefix would mean a split UTF-8 sequence. *)
         (let s = String.concat "" (List.init 100_000 (fun _ -> "\xc3\xa9")) in
-         let f = F.message s in
-         match f.F.kind with
-         | F.Message text -> (
-             let rec marker_index i =
-               if i + 3 > String.length text then None
-               else if String.sub text i 3 = "..." then Some i
-               else marker_index (i + 1)
-             in
-             match marker_index 0 with
-             | None -> is_true ~msg:"utf-8 payload has a marker" false
-             | Some i ->
-                 is_true ~msg:"never splits a UTF-8 sequence" (i mod 2 = 0))
-         | _ -> is_true ~msg:"message kind preserved" false);
-        (let f = F.equality ~msg:big ~expected:"1" ~actual:"2" () in
-         match f.F.msg with
-         | Some msg ->
-             is_true ~msg:"msg is bounded too" (String.length msg < 200_000)
-         | None -> is_true ~msg:"msg kept" false);
-        let f =
-          F.raised ~expected:big ~actual:big ~backtrace:big
-            ~message_diff:
-              {
-                F.constructor = big;
-                expected_message = big;
-                actual_message = big;
-              }
-            ()
-        in
-        is_true ~msg:"raise payloads are bounded"
-          (match f.F.kind with
-          | F.Raise
-              {
-                expected = Some e;
-                actual = Some a;
-                backtrace = Some b;
-                message_diff =
-                  Some { F.constructor; expected_message; actual_message };
-                _;
-              } ->
-              String.length e < 200_000
-              && String.length a < 200_000
-              && String.length b < 200_000
-              && String.length constructor < 200_000
-              && String.length expected_message < 200_000
-              && String.length actual_message < 200_000
-          | _ -> false);
-        let f =
-          F.property ~rendered:big ~case_index:0 ~shrink_steps:0 ~root:1L
-            ~examples:false ()
-        in
-        is_true ~msg:"property counterexample is bounded"
-          (match f.F.kind with
-          | F.Property { rendered; _ } -> String.length rendered < 200_000
-          | _ -> false));
+         match (F.message s).F.kind with
+         | F.Message text ->
+             is_true ~msg:"the text is cut" (F.is_cut text);
+             is_true ~msg:"never splits a UTF-8 sequence"
+               (String.length text.kept mod 2 = 0)
+         | _ -> fail "message kind");
+        (match (F.equality ~msg:big ~expected:"1" ~actual:"2" ()).F.msg with
+        | Some msg -> cut_whole ~msg:"msg is bounded too" msg
+        | None -> fail "msg kept");
+        (match
+           (F.raised ~expected:big ~actual:big ~backtrace:big
+              ~message_diff:
+                {
+                  F.constructor = "Failure";
+                  expected_message = F.text big;
+                  actual_message = F.text big;
+                }
+              ())
+             .F.kind
+         with
+        | F.Raise
+            {
+              expected = Some e;
+              actual = Some a;
+              backtrace = Some b;
+              message_diff = Some { expected_message; actual_message; _ };
+              _;
+            } ->
+            cut_whole ~msg:"the expected exception is bounded" e;
+            cut_whole ~msg:"the raised exception is bounded" a;
+            cut_whole ~msg:"the backtrace is bounded" b;
+            cut_whole ~msg:"the expected message is bounded" expected_message;
+            cut_whole ~msg:"the raised message is bounded" actual_message
+        | _ -> fail "raise kind");
+        match
+          (F.property ~rendered:big ~case_index:0 ~shrink_steps:0 ~root:1L
+             ~examples:false ())
+            .F.kind
+        with
+        | F.Property { rendered; _ } ->
+            cut_whole ~msg:"property counterexample is bounded" rendered
+        | _ -> fail "property kind");
     test "a text is bounded at 65,536 bytes" (fun () ->
-        let stored text =
-          match (F.message text).F.kind with
-          | F.Message stored -> stored
-          | _ -> fail "message kind"
-        in
         let at_bound = String.make 65_536 'a' in
-        equal ~msg:"65,536 bytes are stored as given" string at_bound
-          (stored at_bound);
-        equal ~msg:"65,537 bytes keep 65,536 and the marker" string
-          (at_bound ^ "... (truncated; 65537 bytes total)")
-          (stored (at_bound ^ "b")));
-    test "texts equal on their first 64 KiB with one length are stored equal"
-      (fun () ->
+        let whole = F.text at_bound and cut = F.text (at_bound ^ "b") in
+        equal ~msg:"65,536 bytes are kept as given" string at_bound whole.kept;
+        is_true ~msg:"and are whole" (not (F.is_cut whole));
+        equal ~msg:"65,537 bytes keep 65,536, with no marker" string at_bound
+          cut.kept;
+        equal ~msg:"and record the whole length" int 65_537 cut.length;
+        is_true ~msg:"and are cut" (F.is_cut cut));
+    test "two texts equal on their first 64 KiB are both cut" (fun () ->
         let head = String.make 65_536 'a' in
-        let a = F.message (head ^ "xyz") and b = F.message (head ^ "XYZ") in
-        is_true ~msg:"the two payloads are equal" (a.F.kind = b.F.kind));
+        let a = F.text (head ^ "xyz") and b = F.text (head ^ "XYZ") in
+        is_true ~msg:"they keep the same bytes" (String.equal a.kept b.kept);
+        is_true ~msg:"and neither is whole" (F.is_cut a && F.is_cut b));
     test "an empty backtrace is stored as none" (fun () ->
         let f = F.raised ~backtrace:"" () in
         is_true ~msg:"backtrace = None"
@@ -207,9 +207,9 @@ let tests =
           (match f.F.kind with
           | F.Raise
               {
-                expected = Some "Not_found";
-                actual = Some "Invalid_argument \"x\"";
-                backtrace = Some "Raised at ...";
+                expected = Some { kept = "Not_found"; _ };
+                actual = Some { kept = "Invalid_argument \"x\""; _ };
+                backtrace = Some { kept = "Raised at ..."; _ };
                 _;
               } ->
               true
@@ -220,8 +220,8 @@ let tests =
             ~message_diff:
               {
                 F.constructor = "Invalid_argument";
-                expected_message = "a";
-                actual_message = "b";
+                expected_message = F.text "a";
+                actual_message = F.text "b";
               }
             ()
         in
@@ -233,8 +233,8 @@ let tests =
                   Some
                     {
                       F.constructor = "Invalid_argument";
-                      expected_message = "a";
-                      actual_message = "b";
+                      expected_message = { kept = "a"; _ };
+                      actual_message = { kept = "b"; _ };
                     };
                 _;
               } ->
@@ -394,19 +394,24 @@ let tests =
         is_true ~msg:"the needle is bounded"
           (match f.F.kind with
           | F.Containment { needle; _ } ->
-              String.length needle < 200_000 && has ~needle:"truncated" needle
+              F.is_cut needle && needle.length = 200_000
           | _ -> false));
     test "baseline constructor" (fun () ->
         let f =
           F.baseline (F.File "test/greeting.expected")
-            (F.Mismatch { expected = "hi\n"; actual = "ho\n" })
+            (F.Mismatch { expected = F.text "hi\n"; actual = F.text "ho\n" })
         in
         is_true ~msg:"identity and state stored"
           (match f.F.kind with
           | F.Baseline
               {
                 baseline = F.File "test/greeting.expected";
-                state = F.Mismatch { expected = "hi\n"; actual = "ho\n" };
+                state =
+                  F.Mismatch
+                    {
+                      expected = { kept = "hi\n"; _ };
+                      actual = { kept = "ho\n"; _ };
+                    };
               } ->
               true
           | _ -> false);
@@ -422,27 +427,11 @@ let tests =
               { baseline = F.File p; state = F.Unresolvable { candidate } } ->
               String.equal p path && String.equal candidate path
           | _ -> false);
-        let f =
-          F.baseline
-            (F.Literal { exact = false })
-            (F.Mismatch { expected = big; actual = "a" })
-        in
-        is_true ~msg:"mismatch contents are bounded"
-          (match f.F.kind with
-          | F.Baseline { state = F.Mismatch { expected; _ }; _ } ->
-              String.length expected < 200_000
-          | _ -> false);
-        let f = F.baseline (F.File "p") (F.Missing { proposed = big }) in
-        is_true ~msg:"proposed content is bounded"
-          (match f.F.kind with
-          | F.Baseline { state = F.Missing { proposed }; _ } ->
-              String.length proposed < 200_000
-          | _ -> false);
         let site = loc_of "test/a.ml" 3 in
         let f =
           F.baseline ~loc:site
             (F.Literal { exact = true })
-            (F.Mismatch { expected = "a"; actual = "b" })
+            (F.Mismatch { expected = F.text "a"; actual = F.text "b" })
         in
         is_true ~msg:"a literal failure carries its site" (f.F.loc = Some site);
         is_true ~msg:"and the verb that read it"
@@ -451,7 +440,7 @@ let tests =
           | _ -> false));
     test "baseline constructor: nothing withheld" (fun () ->
         match
-          (F.baseline (F.File "p") (F.Missing { proposed = "x" })).F.kind
+          (F.baseline (F.File "p") (F.Missing { proposed = F.text "x" })).F.kind
         with
         | F.Baseline { withheld; _ } -> is_true (withheld = None)
         | _ -> fail "baseline kind");
@@ -477,7 +466,7 @@ let tests =
           (match f.F.kind with
           | F.Property
               {
-                rendered = "Rect (2, 0)";
+                rendered = { kept = "Rect (2, 0)"; _ };
                 case_index = 12;
                 shrink_steps = 4;
                 shrink_end = F.Converged;
@@ -507,8 +496,11 @@ let tests =
                .F.kind
            with
           | F.Property
-              { summary = Some "2 calls, last: get"; rendered = " #  call"; _ }
-            ->
+              {
+                summary = Some { kept = "2 calls, last: get"; _ };
+                rendered = { kept = " #  call"; _ };
+                _;
+              } ->
               true
           | _ -> false);
         let f =
@@ -518,16 +510,6 @@ let tests =
         is_true ~msg:"an explicit shrink_end is stored"
           (match f.F.kind with
           | F.Property { shrink_end = F.Timed_out 0.3; _ } -> true
-          | _ -> false);
-        let long = String.make 70_000 'e' in
-        is_true ~msg:"the text of a raising candidate is bounded"
-          (match
-             (F.property ~shrink_end:(F.Candidate_raised long) ~rendered:"[]"
-                ~case_index:0 ~shrink_steps:0 ~root:1L ~examples:false ())
-               .F.kind
-           with
-          | F.Property { shrink_end = F.Candidate_raised text; _ } ->
-              String.length text < String.length long
           | _ -> false));
     test "with_phase and with_output_tail" (fun () ->
         let f = F.message "boom" in
@@ -557,14 +539,16 @@ let tests =
                  (F.with_withheld F.Skipped (F.baseline (F.File "p") state))
               = Some F.Skipped))
           [
-            F.Mismatch { expected = "a"; actual = "b" };
-            F.Missing { proposed = "a" };
+            F.Mismatch { expected = F.text "a"; actual = F.text "b" };
+            F.Missing { proposed = F.text "a" };
             F.Unresolvable { candidate = "c" };
           ];
         let eq = F.equality ~expected:"1" ~actual:"2" () in
         is_true ~msg:"another kind is returned as it is"
           (F.with_withheld F.Failed_outside eq = eq);
-        let inner = F.baseline (F.File "p") (F.Missing { proposed = "a" }) in
+        let inner =
+          F.baseline (F.File "p") (F.Missing { proposed = F.text "a" })
+        in
         let prop =
           F.property ~inner ~rendered:"x" ~case_index:0 ~shrink_steps:0 ~root:1L
             ~examples:false ()
@@ -575,7 +559,7 @@ let tests =
           F.with_withheld
             (F.Refused { line = 3; reason = "why" })
             (F.baseline (F.File "p")
-               (F.Mismatch { expected = "a"; actual = "b" }))
+               (F.Mismatch { expected = F.text "a"; actual = F.text "b" }))
         in
         is_true ~msg:"a Refused mark holds whatever the attempt adds"
           (withheld (F.with_withheld F.Failed_outside refused)
@@ -583,7 +567,7 @@ let tests =
         let conflict =
           F.with_withheld F.Conflict
             (F.baseline (F.File "p")
-               (F.Mismatch { expected = "a"; actual = "b" }))
+               (F.Mismatch { expected = F.text "a"; actual = F.text "b" }))
         in
         is_true ~msg:"so does a Conflict mark"
           (withheld (F.with_withheld F.Skipped conflict) = Some F.Conflict));

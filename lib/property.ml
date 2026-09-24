@@ -170,7 +170,7 @@ let shrink ~budget ~body tree first_class =
   let rec descend steps tree =
     match first_accepted (Gen.Engine.Shrink_tree.children tree) with
     | `Converged -> ()
-    | `Stopped text -> stop := Failure.Candidate_raised text
+    | `Stopped text -> stop := Failure.Candidate_raised (Failure.text text)
     | `Accepted (candidate, accepted) ->
         if steps >= budget then stop := Failure.Budget_spent
         else begin

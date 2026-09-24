@@ -3,13 +3,25 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
+(* A rendering cannot be made again once the failure site is left, so it is
+   captured there and bounded once, here. The cut is data, as a tail's is:
+   [kept] holds no marker, and a renderer spells the cut from [length]. *)
+let value_limit = 65_536
+
+type text = { kept : string; length : int }
+
+let text s =
+  { kept = Text.prefix_bytes_utf8 value_limit s; length = String.length s }
+
+let is_cut t = String.length t.kept < t.length
+
 type phase = Body | Setup | Teardown | Release
 type tail = { text : string; omitted_bytes : int; log_path : string option }
 type baseline = Literal of { exact : bool } | File of string
 
 type baseline_state =
-  | Missing of { proposed : string }
-  | Mismatch of { expected : string; actual : string }
+  | Missing of { proposed : text }
+  | Mismatch of { expected : text; actual : text }
   | Unresolvable of { candidate : string }
 
 type withheld =
@@ -20,8 +32,8 @@ type withheld =
 
 type message_diff = {
   constructor : string;
-  expected_message : string;
-  actual_message : string;
+  expected_message : text;
+  actual_message : text;
 }
 
 type containment_demand =
@@ -31,14 +43,9 @@ type containment_demand =
   | Ordered of { index : int; resumed_at : int }
 
 type kind =
-  | Equality of {
-      expected : string;
-      actual : string;
-      not_ : bool;
-      diffable : bool;
-    }
+  | Equality of { expected : text; actual : text; not_ : bool; diffable : bool }
   | Containment of {
-      needle : string;
+      needle : text;
       found_at : int option;
       haystack_length : int;
       excerpt : string;
@@ -46,10 +53,10 @@ type kind =
       demand : containment_demand;
     }
   | Raise of {
-      expected : string option;
-      actual : string option;
+      expected : text option;
+      actual : text option;
       predicate : bool;
-      backtrace : string option;
+      backtrace : text option;
       message_diff : message_diff option;
     }
   | Baseline of {
@@ -58,8 +65,8 @@ type kind =
       withheld : withheld option;
     }
   | Property of {
-      rendered : string;
-      summary : string option;
+      rendered : text;
+      summary : text option;
       case_index : int;
       shrink_steps : int;
       shrink_end : shrink_end;
@@ -69,12 +76,12 @@ type kind =
       rendering : rendering;
       inner : t option;
     }
-  | Message of string
+  | Message of text
 
 and shrink_end =
   | Converged
   | Budget_spent
-  | Candidate_raised of string
+  | Candidate_raised of text
   | Timed_out of float
 
 and rendering = Value | Pre_image
@@ -83,7 +90,7 @@ and t = {
   kind : kind;
   phase : phase;
   loc : Loc.t option;
-  msg : string option;
+  msg : text option;
   subtest : string list;
   output_tail : tail option;
 }
@@ -200,13 +207,8 @@ let backtrace_to_string raw =
       end
 
 (* Bounds. They are contract: [failure.mli] states each one, so a change here
-   is a change to what users were told. *)
-
-(* A rendering cannot be made again once the failure site is left, so it is
-   captured there as a string and bounded once, here. Payload strings are
-   pp-rendered values or user messages; past this many bytes they are cut
-   with Text's explicit truncation marker. *)
-let value_limit = 65_536
+   is a change to what users were told. [value_limit] is above, with
+   [text]. *)
 
 (* Captured-output tails retain at most this many final bytes; the cut is
    recorded in [omitted_bytes], not as a marker inside the text. *)
@@ -223,8 +225,6 @@ let excerpt_limit = tail_bytes
    these is shorter. *)
 let head_excerpt_bytes = 1_024
 let head_excerpt_lines = 10
-let cap s = Text.truncate_bytes_utf8 value_limit s
-let cap_opt o = Option.map cap o
 
 (* First byte index at or after [pos] that does not continue a UTF-8
    sequence. Continuation bytes are 0b10xxxxxx; a well-formed sequence has at
@@ -244,7 +244,7 @@ let make ?loc ?msg kind =
     kind;
     phase = Body;
     loc;
-    msg = cap_opt msg;
+    msg = Option.map text msg;
     subtest = [];
     output_tail = None;
   }
@@ -252,7 +252,7 @@ let make ?loc ?msg kind =
 let equality ?loc ?msg ?(not_ = false) ~expected ~actual () =
   make ?loc ?msg
     (Equality
-       { expected = cap expected; actual = cap actual; not_; diffable = true })
+       { expected = text expected; actual = text actual; not_; diffable = true })
 
 (* The head window, for a haystack with no anchor: at most
    [head_excerpt_lines] lines and [head_excerpt_bytes] bytes. Line-structured
@@ -370,7 +370,7 @@ let containment ?loc ?msg ?found_at ~demand ~needle ~haystack () =
   make ?loc ?msg
     (Containment
        {
-         needle = cap needle;
+         needle = text needle;
          found_at;
          haystack_length = String.length haystack;
          excerpt;
@@ -386,18 +386,11 @@ let predicate ?loc ?msg ~claim value =
   make ?loc ?msg
     (Equality
        {
-         expected = cap claim;
-         actual = cap value;
+         expected = text claim;
+         actual = text value;
          not_ = false;
          diffable = false;
        })
-
-let bound_message_diff { constructor; expected_message; actual_message } =
-  {
-    constructor = cap constructor;
-    expected_message = cap expected_message;
-    actual_message = cap actual_message;
-  }
 
 (* [message_diff] is stored as given. The failure site decides it with both
    exceptions in hand, so that a renderer branches on the option alone. *)
@@ -406,40 +399,31 @@ let raised ?loc ?msg ?expected ?actual ?(predicate = false) ?backtrace
   make ?loc ?msg
     (Raise
        {
-         expected = cap_opt expected;
-         actual = cap_opt actual;
+         expected = Option.map text expected;
+         actual = Option.map text actual;
          predicate;
          backtrace =
-           (match backtrace with Some "" -> None | _ -> cap_opt backtrace);
-         message_diff = Option.map bound_message_diff message_diff;
+           (match backtrace with
+           | Some "" -> None
+           | _ -> Option.map text backtrace);
+         message_diff;
        })
-
-let bound_baseline_state = function
-  | Missing { proposed } -> Missing { proposed = cap proposed }
-  | Mismatch { expected; actual } ->
-      Mismatch { expected = cap expected; actual = cap actual }
-  | Unresolvable _ as state -> state
 
 let baseline ?loc baseline state =
   (* The path is an identity: renderers name the file from it, so it is
      stored unmodified. *)
-  make ?loc
-    (Baseline { baseline; state = bound_baseline_state state; withheld = None })
+  make ?loc (Baseline { baseline; state; withheld = None })
 
 let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
     ?(shrink_end = Converged) ~root ~examples ?(rendering = Value) () =
   make ?loc
     (Property
        {
-         rendered = cap rendered;
-         summary = cap_opt summary;
+         rendered = text rendered;
+         summary = Option.map text summary;
          case_index;
          shrink_steps;
-         shrink_end =
-           (match shrink_end with
-           | Candidate_raised text -> Candidate_raised (cap text)
-           | (Converged | Budget_spent | Timed_out _) as shrink_end ->
-               shrink_end);
+         shrink_end;
          root;
          count;
          examples;
@@ -447,7 +431,7 @@ let property ?loc ?inner ?count ?summary ~rendered ~case_index ~shrink_steps
          inner;
        })
 
-let message ?loc text = make ?loc (Message (cap text))
+let message ?loc s = make ?loc (Message (text s))
 
 (* Updating *)
 

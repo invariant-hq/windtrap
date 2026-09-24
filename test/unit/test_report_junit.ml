@@ -520,7 +520,7 @@ let test_project_root_paths () =
          "out\n")
       (Failure.baseline
          (Failure.File (Filename.concat root "test/help.expected"))
-         (Failure.Missing { proposed = "x\n" }))
+         (Failure.Missing { proposed = Failure.text "x\n" }))
   in
   let doc =
     Report_junit.render ~release_failures:[] ~suite:"s"

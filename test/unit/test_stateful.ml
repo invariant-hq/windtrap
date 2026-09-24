@@ -75,12 +75,12 @@ let expect_check_failure what fn =
 
 let failure_msg (failure : Failure.t) =
   match failure.Failure.msg with
-  | Some msg -> msg
+  | Some msg -> msg.Failure.kept
   | None -> failf "the failure carries no ~msg"
 
 let raised_actual (failure : Failure.t) =
   match failure.Failure.kind with
-  | Failure.Raise { actual = Some actual; _ } -> actual
+  | Failure.Raise { actual = Some actual; _ } -> actual.Failure.kept
   | _ -> failf "expected a Raise failure kind with an actual side"
 
 let expect_fail = function
@@ -99,7 +99,7 @@ let property_payload (failure : Failure.t) =
   match failure.Failure.kind with
   | Failure.Property { rendered; case_index; shrink_steps; rendering; inner; _ }
     ->
-      (rendered, case_index, shrink_steps, rendering, inner)
+      (rendered.Failure.kept, case_index, shrink_steps, rendering, inner)
   | _ -> failf "expected a Property failure kind"
 
 let failure_block failure =
@@ -534,7 +534,8 @@ let a_raising_pre_or_next_is_a_specification_bug () =
           (* The wrapper carries the raise's own backtrace: the frame that
              raised is this file's, not the engine's. *)
           match inner.Failure.kind with
-          | Failure.Raise { backtrace = Some backtrace; _ } ->
+          | Failure.Raise
+              { backtrace = Some { Failure.kept = backtrace; _ }; _ } ->
               is_true
                 ~msg:
                   (Printf.sprintf
@@ -583,10 +584,11 @@ let a_specification_bug_met_while_shrinking_stops_the_search () =
   in
   let failure, _ = expect_fail outcome in
   match failure.Failure.kind with
-  | Failure.Property { rendered; shrink_end; inner; _ } -> (
+  | Failure.Property { rendered = { kept = rendered; _ }; shrink_end; inner; _ }
+    -> (
       is_true ~msg:"the search did not name the ~pre that stopped it"
         (match shrink_end with
-        | Failure.Candidate_raised text ->
+        | Failure.Candidate_raised { kept = text; _ } ->
             contains "~pre raised" text && contains "Candidate_boom" text
         | _ -> false);
       is_true
@@ -595,7 +597,8 @@ let a_specification_bug_met_while_shrinking_stops_the_search () =
              rendered)
         (contains "check" rendered);
       match inner with
-      | Some { Failure.kind = Failure.Message "the body"; _ } -> ()
+      | Some { Failure.kind = Failure.Message { kept = "the body"; _ }; _ } ->
+          ()
       | _ -> failf "the inner failure is not the body's")
   | _ -> failf "expected a Property failure kind"
 
@@ -744,7 +747,7 @@ let control_exceptions_escape_a_body_unconverted () =
              (Failure.Check_failure
                 {
                   (Failure.message "nope") with
-                  Failure.msg = Some "note\nand more";
+                  Failure.msg = Some (Failure.text "note\nand more");
                 })))
   in
   is_true
@@ -753,7 +756,7 @@ let control_exceptions_escape_a_body_unconverted () =
          (failure_msg asserted))
     (failure_msg asserted = "call 1 of 1: boom; note and more");
   is_true ~msg:"an assertion failure lost its payload"
-    (asserted.Failure.kind = Failure.Message "nope");
+    (asserted.Failure.kind = Failure.Message (Failure.text "nope"));
   (* And anything else is narrowed, under the same label. *)
   let narrowed =
     expect_check_failure "a raising body" (fun () ->
@@ -854,7 +857,7 @@ let a_release_failure_never_replaces_the_program_s () =
         Stateful.execute ~scope:(releasing Not_found) failing)
   in
   is_true ~msg:"the release's exception replaced the program's failure"
-    (failure.Failure.kind = Failure.Message "the body");
+    (failure.Failure.kind = Failure.Message (Failure.text "the body"));
   (* Passing path: the release's exception is the only one there is, and it
      propagates as itself — [execute] converts nothing outside a step. *)
   (match Stateful.execute ~scope:(releasing Not_found) (counter_program 0) with
@@ -907,9 +910,10 @@ let a_scope_that_never_runs_the_program_fails_the_case () =
       (Printf.sprintf "a scope that never called back failed with %S"
          (Printexc.to_string (Failure.Check_failure failure)))
     (failure.Failure.kind
-   = Failure.Message
-       "the scope returned without running the program; a scope must call its \
-        callback exactly once");
+    = Failure.Message
+        (Failure.text
+           "the scope returned without running the program; a scope must call \
+            its callback exactly once"));
   (* It carries the declaration site: it is the one failure with no
      assertion of its own to be located by. *)
   let loc = { Loc.file = "spec.ml"; line = 42; column = 7 } in
@@ -1084,7 +1088,7 @@ let a_failing_program_keeps_its_identity_through_the_scope () =
       ~msg:
         (Printf.sprintf "%s reported %S" what
            (Printexc.to_string (Failure.Check_failure failure)))
-      (failure.Failure.kind = Failure.Message "the body");
+      (failure.Failure.kind = Failure.Message (Failure.text "the body"));
     is_true
       ~msg:(Printf.sprintf "%s was labelled %S" what (failure_msg failure))
       (failure_msg failure = "call 1 of 1: boom")
@@ -1764,8 +1768,10 @@ let a_buggy_system_renders_a_diagnosable_failure () =
       is_true
         ~msg:
           (Printf.sprintf "the failure's summary is %s"
-             (Option.value summary ~default:"absent"))
-        (summary = Some "3 calls, last: pop")
+             (Option.fold summary ~none:"absent"
+                ~some:(fun (s : Failure.text) -> s.kept)))
+        (Option.map (fun (s : Failure.text) -> s.kept) summary
+        = Some "3 calls, last: pop")
   | _ -> failf "expected a Property failure kind");
   (match inner with
   | Some inner ->
@@ -1777,7 +1783,12 @@ let a_buggy_system_renders_a_diagnosable_failure () =
       is_true ~msg:"the inner failure is not the body's own equality"
         (inner.Failure.kind
         = Failure.Equality
-            { expected = "0"; actual = "1"; not_ = false; diffable = true })
+            {
+              expected = Failure.text "0";
+              actual = Failure.text "1";
+              not_ = false;
+              diffable = true;
+            })
   | None -> failf "the counterexample reported no inner failure");
   List.iter
     (fun needle ->

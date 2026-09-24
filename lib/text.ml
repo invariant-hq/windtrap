@@ -73,23 +73,27 @@ let truncate_utf8 max_chars s =
     let cut = find_cut_point 0 0 in
     String.sub s 0 cut ^ "..."
 
+let prefix_bytes_utf8 max_bytes s =
+  (* Walk forward character-by-character; [byte_pos] is always a
+     character boundary, so landing exactly on [max_bytes] is a valid cut
+     and a character straddling it is excluded. *)
+  let len = String.length s in
+  let rec find_safe_cut byte_pos =
+    if byte_pos >= len then byte_pos
+    else
+      let decode = String.get_utf_8_uchar s byte_pos in
+      let next_pos = byte_pos + Uchar.utf_decode_length decode in
+      if next_pos > max_bytes then byte_pos else find_safe_cut next_pos
+  in
+  String.sub s 0 (find_safe_cut 0)
+
+let mark_truncated ~length kept =
+  Printf.sprintf "%s... (truncated; %d bytes total)" kept length
+
 let truncate_bytes_utf8 max_bytes s =
   if max_bytes <= 0 then "<truncated>"
   else if String.length s <= max_bytes then s
-  else
-    (* Walk forward character-by-character; [byte_pos] is always a
-       character boundary, so landing exactly on [max_bytes] is a valid
-       cut and a character straddling it is excluded. *)
-    let rec find_safe_cut byte_pos =
-      if byte_pos >= max_bytes then byte_pos
-      else
-        let decode = String.get_utf_8_uchar s byte_pos in
-        let next_pos = byte_pos + Uchar.utf_decode_length decode in
-        if next_pos > max_bytes then byte_pos else find_safe_cut next_pos
-    in
-    let cut = find_safe_cut 0 in
-    Printf.sprintf "%s... (truncated; %d bytes total)" (String.sub s 0 cut)
-      (String.length s)
+  else mark_truncated ~length:(String.length s) (prefix_bytes_utf8 max_bytes s)
 
 (* Each cut moves away from the middle, so neither side passes its half. A
    UTF-8 sequence has at most three continuation bytes. *)

@@ -31,7 +31,10 @@
 
 (** {1:failures Failure projections}
 
-    An entry is what {!pp_failure} prints for one failure. *)
+    An entry is what {!pp_failure} prints for one failure. Where a projection
+    prints a cut {!Failure.type-text}, it prints what the text kept and then
+    [... (truncated; N bytes total)], where [N] is the length of the whole text.
+*)
 
 val headline : Failure.t -> string
 (** [headline f] is [f] as one unstyled sentence, for a field that holds a

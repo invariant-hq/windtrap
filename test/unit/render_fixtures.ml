@@ -68,7 +68,10 @@ let snap_missing =
   Failure.baseline ~loc:(loc "test/test_cli.ml" 9)
     (Failure.File "test/help.expected")
     (Failure.Missing
-       { proposed = "Usage: mytool [OPTIONS] COMMAND\nCommands:\n  run\n" })
+       {
+         proposed =
+           Failure.text "Usage: mytool [OPTIONS] COMMAND\nCommands:\n  run\n";
+       })
 
 let snap_mismatch =
   Failure.baseline
@@ -76,8 +79,8 @@ let snap_mismatch =
     (Failure.Literal { exact = false })
     (Failure.Mismatch
        {
-         expected = "line one\nline two\nline three";
-         actual = "line one\nline 2\nline three";
+         expected = Failure.text "line one\nline two\nline three";
+         actual = Failure.text "line one\nline 2\nline three";
        })
 
 let prop_failure =
@@ -107,8 +110,8 @@ let raise_message_failure =
     ~message_diff:
       {
         Failure.constructor = "Invalid_argument";
-        expected_message = "index 3 out of bounds";
-        actual_message = "index 4 out of bounds";
+        expected_message = Failure.text "index 3 out of bounds";
+        actual_message = Failure.text "index 4 out of bounds";
       }
     ()
 
