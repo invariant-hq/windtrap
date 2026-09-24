@@ -53,7 +53,9 @@ let tests =
         let f = F.equality ~expected:"1" ~actual:"2" () in
         is_true ~msg:"kind payload"
           (match f.F.kind with
-          | F.Equality { expected = "1"; actual = "2"; not_ = false } -> true
+          | F.Equality
+              { expected = "1"; actual = "2"; not_ = false; diffable = true } ->
+              true
           | _ -> false);
         is_true ~msg:"default phase is Body" (f.F.phase = F.Body);
         is_true ~msg:"default loc is None" (f.F.loc = None);
@@ -160,6 +162,38 @@ let tests =
           (match f.F.kind with
           | F.Property { rendered; _ } -> String.length rendered < 200_000
           | _ -> false));
+    test "a text is bounded at 65,536 bytes" (fun () ->
+        let stored text =
+          match (F.message text).F.kind with
+          | F.Message stored -> stored
+          | _ -> fail "message kind"
+        in
+        let at_bound = String.make 65_536 'a' in
+        equal ~msg:"65,536 bytes are stored as given" string at_bound
+          (stored at_bound);
+        equal ~msg:"65,537 bytes keep 65,536 and the marker" string
+          (at_bound ^ "... (truncated; 65537 bytes total)")
+          (stored (at_bound ^ "b")));
+    test "texts equal on their first 64 KiB with one length are stored equal"
+      (fun () ->
+        let head = String.make 65_536 'a' in
+        let a = F.message (head ^ "xyz") and b = F.message (head ^ "XYZ") in
+        is_true ~msg:"the two payloads are equal" (a.F.kind = b.F.kind));
+    test "recorded_backtrace" (fun () ->
+        let saved = Printexc.backtrace_status () in
+        Fun.protect ~finally:(fun () -> Printexc.record_backtrace saved)
+        @@ fun () ->
+        Printexc.record_backtrace true;
+        (try raise Not_found with Not_found -> ());
+        is_true ~msg:"recording on: the last raise's backtrace"
+          (match F.recorded_backtrace () with
+          | Some bt -> String.starts_with ~prefix:"Raised at" bt
+          | None -> false);
+        Printexc.record_backtrace false;
+        is_none ~msg:"recording off: None" (F.recorded_backtrace ());
+        (* Turning recording on empties the backtrace the runtime keeps. *)
+        Printexc.record_backtrace true;
+        is_none ~msg:"an empty backtrace: None" (F.recorded_backtrace ()));
     test "raise constructor" (fun () ->
         let f = F.raised () in
         is_true ~msg:"all payloads default to absent"
@@ -288,6 +322,42 @@ let tests =
               (excerpt_offset mod 2 = 0);
             is_true ~msg:"window never ends inside a UTF-8 sequence"
               ((excerpt_offset + String.length excerpt) mod 2 = 0)));
+    test "containment constructor: an unanchored excerpt is the head" (fun () ->
+        let excerpt haystack =
+          match (F.containment ~claim:"d" ~needle:"n" ~haystack ()).F.kind with
+          | F.Containment { excerpt; _ } -> excerpt
+          | _ -> fail "containment kind"
+        in
+        let lines n width =
+          String.concat ""
+            (List.init n (fun i -> Printf.sprintf "%0*d\n" (width - 1) i))
+        in
+        equal ~msg:"short lines: the first 10" string (lines 10 10)
+          (excerpt (lines 20 10));
+        equal ~msg:"long lines: the first 1 KiB" string
+          (String.sub (lines 10 200) 0 1_024)
+          (excerpt (lines 10 200));
+        equal ~msg:"one line: the first 1 KiB" string (String.make 1_024 'a')
+          (excerpt (String.make 5_000 'a')));
+    test "containment constructor: an anchored window may pass its bound by 3"
+      (fun () ->
+        (* The window's end falls on the first continuation byte of a
+           4-byte character, so the cut moves forward three bytes. *)
+        let found_at = 10_000 in
+        let four = "\xf0\x9d\x84\x9e" in
+        let haystack =
+          String.make (found_at + (F.tail_bytes / 2) - 1) 'a'
+          ^ four ^ String.make 10_000 'a'
+        in
+        match
+          (F.containment ~claim:"d" ~needle:"a" ~haystack ~found_at ()).F.kind
+        with
+        | F.Containment { excerpt; _ } ->
+            equal ~msg:"tail_bytes + 3" int (F.tail_bytes + 3)
+              (String.length excerpt);
+            is_true ~msg:"ends on the whole character"
+              (String.ends_with ~suffix:four excerpt)
+        | _ -> fail "containment kind");
     test "containment constructor: found_at validation and bounding" (fun () ->
         raises_match ~msg:"negative found_at rejected" Exn.invalid_arg
           (fun () ->
@@ -363,6 +433,24 @@ let tests =
           (match f.F.kind with
           | F.Baseline { baseline = F.Literal { exact }; _ } -> exact
           | _ -> false));
+    test "baseline constructor: nothing withheld" (fun () ->
+        match
+          (F.baseline (F.File "p") (F.Missing { proposed = "x" })).F.kind
+        with
+        | F.Baseline { withheld; _ } -> is_true (withheld = None)
+        | _ -> fail "baseline kind");
+    test "property constructor: count, shrink_exhausted and rendering defaults"
+      (fun () ->
+        match
+          (F.property ~rendered:"[]" ~case_index:0 ~shrink_steps:0 ~root:1L
+             ~examples:false ())
+            .F.kind
+        with
+        | F.Property { count; shrink_exhausted; rendering; _ } ->
+            is_true ~msg:"count None" (count = None);
+            is_false ~msg:"shrink_exhausted false" shrink_exhausted;
+            is_true ~msg:"rendering Value" (rendering = F.Value)
+        | _ -> fail "property kind");
     test "property constructor" (fun () ->
         let inner = F.equality ~expected:"true" ~actual:"false" () in
         let f =
@@ -429,7 +517,43 @@ let tests =
         is_true ~msg:"with_output_tail: attaches the tail"
           (h.F.output_tail = Some tl);
         is_true ~msg:"with_output_tail: original unchanged"
-          (f.F.output_tail = None));
+          (f.F.output_tail = None);
+        let tl' = F.tail "again" in
+        is_true ~msg:"with_output_tail: replaces an existing tail"
+          ((F.with_output_tail tl' h).F.output_tail = Some tl'));
+    test "with_withheld marks a Baseline failure and nothing else" (fun () ->
+        let withheld (f : F.t) =
+          match f.F.kind with
+          | F.Baseline { withheld; _ } -> withheld
+          | _ -> None
+        in
+        List.iter
+          (fun state ->
+            is_true ~msg:"every Baseline state is marked"
+              (withheld
+                 (F.with_withheld F.Skipped (F.baseline (F.File "p") state))
+              = Some F.Skipped))
+          [
+            F.Mismatch { expected = "a"; actual = "b" };
+            F.Missing { proposed = "a" };
+            F.Unresolvable { candidate = "c" };
+          ];
+        let eq = F.equality ~expected:"1" ~actual:"2" () in
+        is_true ~msg:"another kind is returned as it is"
+          (F.with_withheld F.Failed_outside eq = eq);
+        let inner = F.baseline (F.File "p") (F.Missing { proposed = "a" }) in
+        let prop =
+          F.property ~inner ~rendered:"x" ~case_index:0 ~shrink_steps:0 ~root:1L
+            ~examples:false ()
+        in
+        is_true ~msg:"a Property's inner is not reached"
+          (F.with_withheld F.Skipped prop = prop));
+    test "tail_bytes is 8 KiB, what a tail keeps" (fun () ->
+        equal ~msg:"tail_bytes" int 8_192 F.tail_bytes;
+        let tl = F.tail (String.make 10_000 'a') in
+        equal ~msg:"an ASCII tail keeps exactly 8,192 bytes" int 8_192
+          (String.length tl.F.text);
+        equal ~msg:"and counts the rest omitted" int 1_808 tl.F.omitted_bytes);
     test "tails" (fun () ->
         let tl = F.tail "hello\n" in
         is_true ~msg:"short text kept verbatim"
