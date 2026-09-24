@@ -30,6 +30,8 @@ let small_results =
     Fixtures.result
       [ "platform"; "windows paths" ]
       (Failure.Skip (Some "unix only"));
+    Fixtures.timed_result;
+    Fixtures.release_result;
   ]
 
 let test_golden () =
@@ -49,7 +51,7 @@ let test_full_run () =
   let doc = full () in
   check_well_formed "full fixture document is well-formed" doc;
   contains ~msg:"counts derive from results"
-    ~sub:{|tests="11" failures="6" errors="0" skipped="1" time="6.500"|} doc;
+    ~sub:{|tests="13" failures="7" errors="0" skipped="1" time="6.500"|} doc;
   contains ~msg:"acceptance command inside failure text"
     ~sub:"accept: dune promote" doc;
   contains ~msg:"replay line inside failure text"

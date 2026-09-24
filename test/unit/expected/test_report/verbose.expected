@@ -1,4 +1,4 @@
-mylib: 11 tests (seed s1:7be1d2c904aa31f5)
+mylib: 12 tests (seed s1:7be1d2c904aa31f5)
   PASS  math › addition                            0.1ms
   FAIL  users › sessions after login               0.2ms
     test/test_users.ml:31
@@ -55,6 +55,10 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
   PASS  slow › big sort                            2.5s
   PASS  slow › hash                                3.0s
   SKIP  platform › windows paths (unix only)
+  PASS  math › multiplication                      42ms
+  FAIL  fixture release                            0.0ms
+    [release] test/test_db.ml:3
+    fixture (test/test_db.ml:3): release raised Failure("pool leaked")
 
 slow tests (2, over 1s):
   3.0s  slow › hash
@@ -63,4 +67,4 @@ slow tests (2, over 1s):
 flaky tests (1):
   passed on attempt 3  flaky › eventually
 
-4 passed (1 flaky), 1 skipped, 6 failed in 6.5s.
+5 passed (1 flaky), 1 skipped, 7 failed in 6.5s.

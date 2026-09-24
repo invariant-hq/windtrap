@@ -85,16 +85,19 @@ let sections ?(ansi = false) l =
   Sections.print ~out:ppf ~ansi l;
   Buffer.contents buf
 
+(* As the executor drives it: each test row through [begin_test] and
+   [result], the release row only in [finish]. *)
 let transcript ?ansi ?mode ?live ?invocation ?(seed = Some Fixtures.root) () =
+  let tests =
+    List.filter (fun (r : Run.result) -> r.subject = Run.Test) Fixtures.results
+  in
   with_renderer ?ansi ?mode ?live ?invocation (fun r ->
-      Report.header r ~suite:"mylib"
-        ~tests:(List.length Fixtures.results)
-        ~seed ();
+      Report.header r ~suite:"mylib" ~tests:(List.length tests) ~seed ();
       List.iter
         (fun (res : Run.result) ->
           Report.begin_test r ~path:res.path;
           Report.result r res)
-        Fixtures.results;
+        tests;
       Report.finish r ~results:Fixtures.results ~duration:Fixtures.duration ())
 
 let failure_block ?(ansi = false) ?excerpt ?filter ?invocation ?armed f =
@@ -246,7 +249,7 @@ let test_ansi () =
      whole transcript, not two for the same run. *)
   contains ~msg:"ansi: summary skip count is yellow"
     ~sub:"\027[33m1 skipped\027[0m" c;
-  contains ~msg:"ansi: summary fail count is red" ~sub:"\027[31m6 failed\027[0m"
+  contains ~msg:"ansi: summary fail count is red" ~sub:"\027[31m7 failed\027[0m"
     c;
   (* The transcript fixture carries no excused result, so the faint count
      gets its own run. *)
@@ -4845,10 +4848,12 @@ let test_github_subtest_annotations () =
 
 let test_github_annotations () =
   let block = Report.annotations Fixtures.results in
-  is_true ~msg:"one command per failure entry (teardown pair gives two)"
-    (occurrences_of ~sub:"::error " block = 7);
+  is_true
+    ~msg:
+      "one command per failure entry (teardown pair gives two, the release one)"
+    (occurrences_of ~sub:"::error " block = 8);
   is_true ~msg:"every command on its own line"
-    (occurrences_of ~sub:"\n" block = 7);
+    (occurrences_of ~sub:"\n" block = 8);
   contains ~msg:"paths name the failing tests"
     ~sub:"title=Test failure%3A db › insert::" block;
   equal ~msg:"no failures, no output" string ""

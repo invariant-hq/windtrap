@@ -1,4 +1,4 @@
-mylib: 11 tests (seed s1:7be1d2c904aa31f5)
+mylib: 12 tests (seed s1:7be1d2c904aa31f5)
 «d|──────────────────────── failures ────────────────────────»
   «r|FAIL»  «b|users › sessions after login»
     «d|test/test_users.ml:31»
@@ -49,6 +49,10 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
 
     «y|[teardown]»
     teardown exploded
+
+  «r|FAIL»  «b|fixture release»
+    «y|[release]» «d|test/test_db.ml:3»
+    fixture (test/test_db.ml:3): release raised Failure("pool leaked")
 «d|──────────────────────────────────────────────────────────»
 
 «y|slow tests (2, over 1s):»
@@ -58,4 +62,4 @@ mylib: 11 tests (seed s1:7be1d2c904aa31f5)
 «y|flaky tests (1):»
 «y|  passed on attempt 3  flaky › eventually»
 
-4 passed «y|(1 flaky)», «y|1 skipped», «r|6 failed» in 6.5s.
+5 passed «y|(1 flaky)», «y|1 skipped», «r|7 failed» in 6.5s.

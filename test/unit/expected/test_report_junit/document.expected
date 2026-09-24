@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="windtrap" tests="3" failures="1" errors="0" skipped="1" time="1.234">
-  <testsuite name="mylib" tests="3" failures="1" errors="0" skipped="1" time="1.234">
+<testsuites name="windtrap" tests="5" failures="2" errors="0" skipped="1" time="1.234">
+  <testsuite name="mylib" tests="5" failures="2" errors="0" skipped="1" time="1.234">
     <testcase name="math › addition" classname="mylib.math" time="0.000"/>
     <testcase name="users › sessions after login" classname="mylib.users" time="0.000">
       <failure message="expected [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;, [4])], got [(&quot;alice&quot;, [1; 2; 3]); (&quot;bob&quot;…">    test/test_users.ml:31
@@ -16,6 +16,12 @@ full log: _build/_tests/mylib/latest/users/sessions-after-login.output</system-o
     </testcase>
     <testcase name="platform › windows paths" classname="mylib.platform" time="0.000">
       <skipped message="unix only"/>
+    </testcase>
+    <testcase name="math › multiplication" classname="mylib.math" time="0.042"/>
+    <testcase name="fixture release" classname="mylib" time="0.000">
+      <failure message="fixture (test/test_db.ml:3): release raised Failure(&quot;pool leaked&quot;)">    [release] test/test_db.ml:3
+    fixture (test/test_db.ml:3): release raised Failure("pool leaked")
+</failure>
     </testcase>
   </testsuite>
 </testsuites>
