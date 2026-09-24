@@ -52,10 +52,9 @@
      first call, reach counts that match the number of evaluations, and
      nothing armed from first line to last.
 
-   A windtrap suite ([run] executes tests sequentially in declaration
-   order); the reach-map assertions and [lazy_witness] observe shared
-   in-process state, so the tests are order-dependent - run the suite
-   whole, not filtered. *)
+   The registry is process-global: a test that reads what was reached
+   drains it first, and what was reached before the first test is
+   captured at module load, so each test passes alone. *)
 
 open Windtrap
 module I = Mutsem_fixtures.Mutsem_order
@@ -187,6 +186,14 @@ let reached f =
 
 let reach = list (pair string int)
 
+(* What the fixtures reached before any test ran. The registry keeps it
+   only until the first drain, which any test may make, so it is drained
+   once, here, at module load. *)
+let reached_at_load =
+  List.map
+    (fun (r : M.reached) -> (r.mutant.id.rewrite, r.hits))
+    (drain_fixtures ())
+
 let tests =
   [
     (* {1 Registration and inertness} *)
@@ -196,13 +203,9 @@ let tests =
         is_true ~msg:"nothing is armed" (M.armed () = None);
         (* The mutation dialect of coverage's "no point visited before any
            call": a site marks itself the first time it is evaluated, and
-           no fixture's module initialization evaluates one - not even
-           the lazy bodies, which is half of what the
-           laziness test below re-checks from the other side. *)
+           no fixture's module initialization evaluates one. *)
         equal ~msg:"no site was evaluated before the first call" reach []
-          (List.map
-             (fun (r : M.reached) -> (r.mutant.id.rewrite, r.hits))
-             (drain_fixtures ()));
+          reached_at_load;
         (* Exactly the three instrumented sources register, each once.
            Whole PATHS, not basenames: the baseline library compiles
            files of the same three names one directory down, so a
@@ -451,9 +454,6 @@ let tests =
           (raised F.tap_raise F.raise_unit));
     (* {1 Laziness} *)
     test "lazy stays lazy; trivial lazy stays a value" (fun () ->
-        (* The one-shot half of the differential: [lazy_witness] mutates
-           state that cannot be reset, so it is not in the replayable
-           battery and is called exactly once per copy. *)
         equal ~msg:"the instrumented copy is lazy exactly as its twin is" string
           (B.lazy_witness ()) (I.lazy_witness ());
         (* And from the registry's side, on the shared fixture: the two

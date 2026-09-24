@@ -228,16 +228,18 @@ let neg_guard a = match a with _ when note "g" a -> "t" | _ -> "f"
    often it is forced. [lazy_trivial] is a trivial syntactic value and
    must still compile as already forced.
 
-   One-shot: [lazy_witness] mutates state that cannot be reset, so it is
-   not in [witnesses] (which the suite replays under every mutant of
-   this file) and the suite calls it exactly once per copy. *)
+   [lazy_thunk ()] is a fresh suspension with its effect counter, built
+   per call because a forced lazy stays forced for the rest of the
+   process: [lazy_witness] then says the same thing however often it
+   runs. It is not in [witnesses], which the suite replays under every
+   mutant of this file. *)
 
-let lazy_effects = ref 0
-
-let lazy_thunk =
-  lazy
-    (lazy_effects := !lazy_effects + 1;
-     20 + 22)
+let lazy_thunk () =
+  let effects = ref 0 in
+  ( lazy
+      (effects := !effects + 1;
+       20 + 22),
+    effects )
 
 let lazy_trivial = lazy 42
 
@@ -249,16 +251,17 @@ let lazy_trivial = lazy 42
 let lazy_fun = lazy (fun x -> x + 1)
 
 let lazy_witness () =
-  let val_before = Lazy.is_val lazy_thunk in
+  let thunk, effects = lazy_thunk () in
+  let val_before = Lazy.is_val thunk in
   let trivial_val = Lazy.is_val lazy_trivial in
   let fun_val = Lazy.is_val lazy_fun in
-  let effects_before = !lazy_effects in
-  let first = Lazy.force lazy_thunk in
-  let second = Lazy.force lazy_thunk in
+  let effects_before = !effects in
+  let first = Lazy.force thunk in
+  let second = Lazy.force thunk in
   Printf.sprintf
     "thunk_is_val_before=%b trivial_is_val=%b fun_is_val=%b effects=%d->%d \
      forced=%d,%d applied=%d"
-    val_before trivial_val fun_val effects_before !lazy_effects first second
+    val_before trivial_val fun_val effects_before !effects first second
     (Lazy.force lazy_fun 41)
 
 (* {1 Generalization}
