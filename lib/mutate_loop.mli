@@ -126,8 +126,9 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     - The population is empty, because the executable links no instrumented
       module, because the prefixes leave no mutant, or because every mutant in
       scope is dismissed.
-    - The probe disagrees with the dry run, passes its deadline, is refused at
-      startup, or reports nothing readable.
+    - The probe disagrees with the dry run, and the sentence names the tests
+      that failed in it, or it passes its deadline, is refused at startup, or
+      reports nothing readable.
     - A child cannot arm its mutant, or is refused at startup.
     - The supervision fails. The scratch directory cannot be created, which is
       tried before the probe, or [pipe], [fork] or [waitpid] fails for the probe
@@ -153,10 +154,11 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
       error before the transcript, and the result is [Ran] of the ordinary run
       under {!Run.No_mutation}.
     - With the mutant armed, the run announces it and ends on one verdict line
-      ({{!Report.section-armed}the lines of an armed run}). It runs
-      {!Report.run} with [baseline] set to {!Baseline.Check}, so it records no
-      correction. It ends on no verdict line when no test ran, which is exit
-      code [2], or when its startup was refused.
+      ({{!Report.section-armed}the lines of an armed run}), whose count of
+      evaluations starts at the arming. It runs {!Report.run} with [baseline]
+      set to {!Baseline.Check}, so it records no correction. It ends on no
+      verdict line when no test ran, which is exit code [2], or when its startup
+      was refused.
 
     The result of an armed run is [Ran], so its exit code is that of the
     ordinary run, [2] included, and it writes its JUnit file. *)

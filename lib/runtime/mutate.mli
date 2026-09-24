@@ -84,8 +84,8 @@ type site = {
       (** The 1-based line of the first byte of the mutated expression. *)
   col : int;  (** The 0-based column of that byte. *)
   rewrite : string;  (** The name of the replacement, from {!rewrites}. *)
-  before : string;  (** The source text of the original expression. *)
-  after : string;  (** The source text of the armed expression. *)
+  before : string;  (** The original expression, printed from the parsetree. *)
+  after : string;  (** The armed expression, printed from the parsetree. *)
   dismissed : string option;
       (** [Some reason] when the expression carries [[@mutate off]]. The site is
           then catalogued and carries no guard, so a caller must leave it out of
@@ -131,8 +131,8 @@ val register : file:string -> sites:site array -> int -> bool
 
 type mutant = {
   id : id;  (** The identifier of the mutant. *)
-  before : string;  (** The source text of the original expression. *)
-  after : string;  (** The source text of the armed expression. *)
+  before : string;  (** The original expression, printed from the parsetree. *)
+  after : string;  (** The armed expression, printed from the parsetree. *)
   dismissed : string option;  (** The reason of [[@mutate off]], if any. *)
 }
 (** The type for catalogued mutants: a {!type-site} with its file. *)

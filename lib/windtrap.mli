@@ -190,8 +190,8 @@ val slow :
   (unit -> unit) ->
   test
 (** [slow name fn] is {!val:test} with the tag ["slow"] added to [tags]. The
-    report lists under [slow tests] every test without the tag that ran longer
-    than [--slow-threshold] seconds. The threshold defaults to [1], and [0]
+    report lists under [slow tests] every test without the tag that ran for at
+    least [--slow-threshold] seconds. The threshold defaults to [1], and [0]
     turns the list off. [--exclude-tag slow] drops the tagged tests. ["slow"] is
     an ordinary tag, and [~tags:["slow"]] on any constructor or enclosing group
     has the same effect. *)
@@ -1583,11 +1583,19 @@ val run : ?argv:string array -> string -> test list -> int
     Under dune the stanza [(test (name test_mylib) (libraries windtrap))] builds
     [test_mylib.ml] and runs it on [dune runtest]. In a suite over several files
     each module exports its groups and one [run] lists them. A test left out of
-    the list does not run. [-l] prints the selected paths and runs nothing.
+    the list does not run. [-l] prints the selected paths, one per line, and
+    runs nothing. A selection that keeps no test of a suite that declares some
+    prints no path and says [windtrap: no tests ran: <reason>.] on standard
+    error.
 
     [suite] names the run in its report, and names the directory of the capture
     logs and of the last failed tests. [argv] defaults to [Sys.argv]. [argv.(0)]
-    is not parsed and names the program in the commands a report prints.
+    is not parsed and names the program in the commands a report prints. Under
+    dune ([INSIDE_DUNE] set) such a command is [dune exec <program> --], with
+    [--instrument-with ppx_windtrap.mutate] before the program when it holds
+    mutants, and elsewhere it is [argv.(0)], quoted where a shell would split
+    it. Under [--corrected], or when [argv.(0)] is empty, it spells the flags'
+    variables in front of [dune runtest].
 
     Raises [Invalid_argument] if a run is executing, as when a test body starts
     another run. Two runs one after the other are allowed, and fixtures are
@@ -1597,14 +1605,16 @@ val run : ?argv:string array -> string -> test list -> int
 
     {!run} returns:
     - [0] when no selected test failed. A skip and an expected failure are no
-      failure. [--help], [--version] and [-l] print and return [0].
+      failure. [--help], [--version] and [-l] print and return [0]. [--version]
+      prints [windtrap <version>].
     - [1] when a test failed, or when a fixture's release or the writing of a
       correction failed. It is also the code of a run refused before anything
       executed, under [-l] too. The refusals are two tests with one path, a
       {!focus} under [CI] and [-u] under [CI].
     - [2] when no test ran, as with a mistyped filter, or when the command line
       does not parse. An empty [--shard] bucket and a [--failed] with nothing
-      recorded are cases of the first.
+      recorded are cases of the first, and the second returns [2] under [-l]
+      too.
 
     Under [--corrected] a test whose failures are all kept corrections leaves
     the code alone. It still stops a run under [-x], and it still enters the

@@ -13,11 +13,13 @@
     or renders a failure. {!skip} raises {!Failure.Skip_test} and builds no
     failure.
 
-    A verb prints nothing, computes no diff and reads no state of the run. A
-    passing verb resolves no location and calls no printer. Only {!raises} and
-    {!raises_match} catch an exception, and only from the function that they
-    run. What the equality, the order or the printer of a witness, a [?pp], a
-    predicate or an [extract] raises escapes the verb as it is. *)
+    A verb's [?msg] is the failure's [msg], and its [?__POS__] is the failure's
+    site in place of the one {!Loc.resolve} finds. A verb prints nothing,
+    computes no diff and reads no state of the run. A passing verb resolves no
+    location and calls no printer. Only {!raises} and {!raises_match} catch an
+    exception, and only from the function that they run. What the equality, the
+    order or the printer of a witness, a [?pp], a predicate or an [extract]
+    raises escapes the verb as it is. *)
 
 (* The facade declares every value below again, with the contract that a test's
    author reads ([{1:assertions}] in windtrap.mli). A change to one text is a
