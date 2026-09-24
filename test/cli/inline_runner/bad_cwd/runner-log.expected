@@ -13,5 +13,7 @@ bad_cwd: 1 test
 ──────────────────────────────────────────────────────────
 
 1 failed in <duration>.
+--- stderr ---
 windtrap: could not write test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml.corrected: <scratch>/test/cli/inline_runner/bad_cwd/inline_bad_cwd.ml: No such file or directory
+--- probe ---
 .corrected in scratch cwd: no

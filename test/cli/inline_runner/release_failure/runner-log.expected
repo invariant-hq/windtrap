@@ -8,3 +8,4 @@ release_failure: 1 test
 ──────────────────────────────────────────────────────────
 
 1 passed, 1 failed in <duration>.
+--- stderr ---

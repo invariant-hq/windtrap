@@ -6,3 +6,4 @@ slow tests (1, over 0.000000001s):
   <duration>  Inline_slow_knobs › untagged
 
 2 passed in <duration>.
+--- stderr ---

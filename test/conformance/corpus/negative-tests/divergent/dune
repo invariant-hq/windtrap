@@ -18,10 +18,14 @@
  (deps similar_distinct_outputs.ml)
  (action
   (run
-   ../../../drive.exe
+   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --placeholder
+   similar_distinct_outputs.ml
+   --run
    runner
    %{dep:conformance_runner.exe}
-   similar_distinct_outputs.ml)))
+   inline-test-runner
+   conformance)))
 
 (rule
  (alias runtest)

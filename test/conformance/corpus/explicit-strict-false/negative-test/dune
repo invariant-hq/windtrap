@@ -13,7 +13,15 @@
  (targets runner-log runner-exit nine.ml.corrected)
  (deps nine.ml)
  (action
-  (run ../../../drive.exe runner %{dep:conformance_runner.exe} nine.ml)))
+  (run
+   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --placeholder
+   nine.ml
+   --run
+   runner
+   %{dep:conformance_runner.exe}
+   inline-test-runner
+   conformance)))
 
 (rule
  (alias runtest)

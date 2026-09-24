@@ -4,21 +4,16 @@
   ---------------------------------------------------------------------------*)
 
 (* The process harness behind every transcript golden under
-   test/cli/inline_runner.
+   test/cli/inline_runner and every runner run of test/conformance.
 
-   Each of these directories asks the same question — what does a real
-   generated runner print, and what does it exit with — and each answer
-   is diffed byte-for-byte against a committed golden. Only two things
-   can make such a golden lie: an environment variable the developer's
-   shell happens to carry, and a number that is measured rather than
-   computed. [environment] answers the first by scrubbing every
-   WINDTRAP_* mirror and every CI/color variable out of the child's
-   environment, leaving only the bindings the fixture's own rule names;
-   [transcript] answers the second by masking what varies.
-
-   Eight copies of this file used to sit next to their fixtures, so a
-   change to the masking convention took eight edits and one of the eight
-   still carried its neighbour's title. *)
+   Each of these rules asks the same question — what does a real
+   generated runner print, on which stream, and what does it exit with —
+   and each answer is diffed byte-for-byte against a committed golden.
+   Only two things can make such a golden lie: an environment variable
+   the developer's shell happens to carry, and a number that is measured
+   rather than computed. [environment] answers the first by stating the
+   child's whole environment, so that only the bindings the rule names
+   reach it; [transcript] answers the second by masking what varies. *)
 
 type mask =
   | Full_log  (** the [full log: <path>] tail — a random per-run directory *)
@@ -30,12 +25,6 @@ let write_file path contents =
   let oc = open_out_bin path in
   output_string oc contents;
   close_out oc
-
-let read_file path =
-  let ic = open_in_bin path in
-  Fun.protect
-    ~finally:(fun () -> close_in_noerr ic)
-    (fun () -> really_input_string ic (in_channel_length ic))
 
 (* Masks every [in <number><unit>] duration token, the unit included
    since it varies with the measurement: ["1 failed in 2.1ms."] becomes
@@ -181,73 +170,51 @@ let replace ~pattern ~by s =
   done;
   Buffer.contents b
 
-(* The child's environment: this process's, minus every variable that
-   could reshape a pinned transcript, plus [extra] — which is the whole
-   of what a fixture's rule pins, so the rule reads as the environment
-   the golden was recorded under. A later binding for a name replaces an
-   earlier one; [WINDTRAP_COLOR=never] is the one default, since no
-   golden carries escape sequences. *)
+(* The child's environment is stated, never inherited: what
+   [Windtrap_test_support.Child] passes, then [INSIDE_DUNE] as dune set it
+   for this driver, then [extra], which is the whole of what a rule pins.
+   [INSIDE_DUNE] is the one variable passed through: it is how a runner
+   started by a build rule finds the build directory it was started in,
+   and a rule that means a runner outside any build says so by binding it
+   empty. A later binding for a name replaces an earlier one. *)
 let environment extra =
-  (* A name [extra] binds is dropped from the inherited environment too:
-     a duplicate entry would let the inherited value win the lookup. *)
-  let dropped name =
-    String.starts_with ~prefix:"WINDTRAP_" name
-    || List.mem name
-         [ "CI"; "GITHUB_ACTIONS"; "NO_COLOR"; "CLICOLOR"; "CLICOLOR_FORCE" ]
-    || List.mem_assoc name extra
+  let inside_dune =
+    match Sys.getenv_opt "INSIDE_DUNE" with
+    | Some value -> [ ("INSIDE_DUNE", value) ]
+    | None -> []
   in
-  let keep binding =
-    match String.index_opt binding '=' with
-    | Some eq -> not (dropped (String.sub binding 0 eq))
-    | None -> true
-  in
-  let bindings =
-    List.fold_left
-      (fun acc (name, value) -> (name, value) :: List.remove_assoc name acc)
-      [ ("WINDTRAP_COLOR", "never") ]
-      extra
-  in
-  Array.append
-    (Array.of_list (List.filter keep (Array.to_list (Unix.environment ()))))
-    (Array.of_list
-       (List.rev_map (fun (name, value) -> name ^ "=" ^ value) bindings))
+  inside_dune @ extra
 
-let spawn ~exe ~args ~env ~log =
-  let fd =
-    Unix.openfile log [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o644
-  in
-  let pid =
-    Unix.create_process_env exe
-      (Array.of_list (exe :: args))
-      env Unix.stdin fd fd
-  in
-  Unix.close fd;
-  let _, status = Unix.waitpid [] pid in
-  match status with
-  | Unix.WEXITED code -> code
-  | Unix.WSIGNALED signal -> 128 + signal
-  | Unix.WSTOPPED _ -> 255
+(* The exit file's line: the code, or the signal that ended the child. *)
+let status_line = function
+  | Unix.WEXITED code -> string_of_int code
+  | Unix.WSIGNALED signal -> Printf.sprintf "killed by signal %d" signal
+  | Unix.WSTOPPED signal -> Printf.sprintf "stopped by signal %d" signal
 
-(* One run, as the goldens read it: [NAME-log] holds the masked combined
-   output and [NAME-exit] the exit code. [probe] runs in the child's cwd
-   before the log is rewritten — the one observation a transcript cannot
-   carry, whether the run left a file behind — and its text is appended.
-   [decorate] rewrites the masked transcript. *)
+(* The two streams, masked apart and written one after the other under a
+   line that names the second: which stream carried a line is part of
+   what a golden pins, and the report's own output never starts a line
+   with that marker. *)
+let log masks ~out ~err =
+  let out = transcript masks out and err = transcript masks err in
+  let out =
+    if out = "" || String.ends_with ~suffix:"\n" out then out else out ^ "\n"
+  in
+  out ^ "--- stderr ---\n" ^ err
+
+(* One run, as the goldens read it: [NAME-log] holds the masked output and
+   [NAME-exit] how the child ended. [probe] runs in the child's cwd after
+   it ended, the one observation a transcript cannot carry (whether the
+   run left a file behind), and its text is appended under a line of its
+   own. [decorate] rewrites the log. *)
 let record ?(probe = fun () -> "") ?(decorate = Fun.id) ~name ~exe ~args ~env
     ~masks () =
-  let log = name ^ "-log" in
-  let code = spawn ~exe ~args ~env ~log in
-  let probed = probe () in
-  write_file log (decorate (transcript masks (read_file log)) ^ probed);
-  write_file (name ^ "-exit") (string_of_int code ^ "\n");
-  code
-
-let rec remove_tree path =
-  match (Unix.lstat path).Unix.st_kind with
-  | Unix.S_DIR ->
-      Array.iter
-        (fun name -> remove_tree (Filename.concat path name))
-        (Sys.readdir path);
-      Unix.rmdir path
-  | _ -> Unix.unlink path
-  | exception Unix.Unix_error (Unix.ENOENT, _, _) -> ()
+  let result =
+    Windtrap_test_support.Child.run ~env:(environment env) exe args
+  in
+  let probed =
+    match probe () with "" -> "" | text -> "--- probe ---\n" ^ text
+  in
+  write_file (name ^ "-log")
+    (decorate (log masks ~out:result.out ~err:result.err) ^ probed);
+  write_file (name ^ "-exit") (status_line result.status ^ "\n")

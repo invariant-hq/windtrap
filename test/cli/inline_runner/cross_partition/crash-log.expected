@@ -13,3 +13,4 @@ cross_partition/crash.ml: 1 test
 ──────────────────────────────────────────────────────────
 
 1 failed in <duration>.
+--- stderr ---

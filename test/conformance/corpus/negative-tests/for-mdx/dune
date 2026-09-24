@@ -13,7 +13,15 @@
  (targets runner-log runner-exit foo.ml.corrected)
  (deps foo.ml)
  (action
-  (run ../../../drive.exe runner %{dep:conformance_runner.exe} foo.ml)))
+  (run
+   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --placeholder
+   foo.ml
+   --run
+   runner
+   %{dep:conformance_runner.exe}
+   inline-test-runner
+   conformance)))
 
 (rule
  (alias runtest)

@@ -3,15 +3,16 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* The transcript driver every fixture directory under
-   test/cli/inline_runner runs.
+(* The transcript driver of every fixture directory under
+   test/cli/inline_runner and of the conformance corpus's runners.
 
    Usage:
 
      drive.exe [GLOBAL]... --run NAME EXE [RUN]... [ARG]... [--run ...]
 
-   Each [--run NAME EXE ARG...] spawns EXE with ARGs under the scrubbed
-   environment and records [NAME-log] (its masked combined output) and
+   Each [--run NAME EXE ARG...] spawns EXE with ARGs in a stated
+   environment and records [NAME-log] (its masked standard output, then
+   its masked standard error under a [--- stderr ---] line) and
    [NAME-exit] (its exit code), which the directory's runtest rules diff
    against committed goldens.
 
@@ -22,14 +23,16 @@
      --scratch-cwd   run from a fresh empty directory, removed afterwards
                      and masked as <scratch>
      --scratch-exe   with --scratch-cwd, run a copy of each EXE placed in
-                     that directory, with INSIDE_DUNE unset: a binary
+                     that directory, with INSIDE_DUNE bound empty: a binary
                      outside any build directory, run from outside any
                      project and not by dune, is the one that cannot
                      resolve its sources
      --probe FILE    append whether FILE exists in the child's cwd, the
                      one thing a transcript cannot say
-     --mkdir DIR     create DIR before the runs — a per-run scratch a
-                     child needs somewhere to write into
+     --placeholder F after the runs, write F.corrected as the line
+                     [=== no correction produced ===] unless a run wrote
+                     it, so that a diff rule always has a file to compare
+                     and a run that corrects nothing reads as that line
 
    Everything a directory pins is therefore in its dune file, not in a
    program of its own. *)
@@ -43,8 +46,8 @@ type run = {
 
 let usage () =
   prerr_endline
-    "usage: drive.exe [--env K=V] [--mask M] [--mkdir DIR] [--scratch-cwd] \
-     [--scratch-exe] [--probe FILE] --run NAME EXE [ARG]...";
+    "usage: drive.exe [--env K=V] [--mask M] [--scratch-cwd] [--scratch-exe] \
+     [--probe FILE] [--placeholder FILE] --run NAME EXE [ARG]...";
   exit 2
 
 let binding s =
@@ -62,7 +65,7 @@ let mask_of_string = function
 let parse argv =
   let masks = ref [] and shared = ref [] and scratch = ref false in
   let scratch_exe = ref false in
-  let probe = ref None and dirs = ref [] and runs = ref [] in
+  let probe = ref None and placeholders = ref [] and runs = ref [] in
   let rec go = function
     | [] -> ()
     | "--run" :: name :: exe :: rest ->
@@ -80,8 +83,8 @@ let parse argv =
     | "--probe" :: file :: rest ->
         probe := Some file;
         go rest
-    | "--mkdir" :: dir :: rest ->
-        dirs := dir :: !dirs;
+    | "--placeholder" :: file :: rest ->
+        placeholders := file :: !placeholders;
         go rest
     | "--env" :: b :: rest ->
         (match !runs with
@@ -108,7 +111,7 @@ let parse argv =
       !runs
   in
   if !scratch_exe && not !scratch then usage ();
-  (List.rev !masks, !scratch, !scratch_exe, !probe, List.rev !dirs, runs)
+  (List.rev !masks, !scratch, !scratch_exe, !probe, List.rev !placeholders, runs)
 
 (* A byte copy with the executable bit: the copy's own path carries no
    build directory, so with INSIDE_DUNE unset the runner's root rule
@@ -118,33 +121,25 @@ let copy_executable ~src ~dst =
   Out_channel.with_open_gen [ Open_wronly; Open_creat; Open_trunc; Open_binary ]
     0o755 dst (fun oc -> Out_channel.output_string oc contents)
 
+let placeholder = "=== no correction produced ===\n"
+
 let () =
-  let masks, scratch, scratch_exe, probe, dirs, runs = parse Sys.argv in
-  List.iter
-    (fun dir ->
-      try Unix.mkdir dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ())
-    dirs;
+  let masks, scratch, scratch_exe, probe, placeholders, runs = parse Sys.argv in
   let start_dir = Sys.getcwd () in
   let absolute p =
     if Filename.is_relative p then Filename.concat start_dir p else p
   in
-  let dir, decorate =
-    if not scratch then (None, Fun.id)
+  let decorate =
+    if not scratch then Fun.id
     else begin
-      let dir =
-        Filename.concat
-          (Filename.get_temp_dir_name ())
-          (Printf.sprintf "windtrap-drive-%d" (Unix.getpid ()))
-      in
-      Unix.mkdir dir 0o755;
+      let dir = Windtrap_test_support.Scratch.dir "windtrap-drive-" in
       Sys.chdir dir;
       (* The OS may report a resolved spelling of the scratch path (macOS
          resolves /var to /private/var): mask both. *)
       let resolved = Sys.getcwd () in
-      ( Some dir,
-        fun s ->
-          Drive_harness.replace ~pattern:dir ~by:"<scratch>"
-            (Drive_harness.replace ~pattern:resolved ~by:"<scratch>" s) )
+      fun s ->
+        Drive_harness.replace ~pattern:dir ~by:"<scratch>"
+          (Drive_harness.replace ~pattern:resolved ~by:"<scratch>" s)
     end
   in
   let probe () =
@@ -159,7 +154,6 @@ let () =
       (* Empty reads as unset for every windtrap variable: the copy must
          not inherit the build context this driver itself runs in. *)
       let env = if scratch_exe then ("INSIDE_DUNE", "") :: env else env in
-      let env = Drive_harness.environment env in
       let exe =
         if not scratch_exe then absolute exe
         else begin
@@ -168,12 +162,13 @@ let () =
           copy
         end
       in
-      ignore
-        (Drive_harness.record ~probe ~decorate ~name:(absolute name) ~exe ~args
-           ~env ~masks ()))
+      Drive_harness.record ~probe ~decorate ~name:(absolute name) ~exe ~args
+        ~env ~masks ())
     runs;
-  match dir with
-  | None -> ()
-  | Some dir ->
-      Sys.chdir start_dir;
-      Drive_harness.remove_tree dir
+  Sys.chdir start_dir;
+  List.iter
+    (fun file ->
+      let corrected = file ^ ".corrected" in
+      if not (Sys.file_exists corrected) then
+        Drive_harness.write_file corrected placeholder)
+    placeholders

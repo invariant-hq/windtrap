@@ -70,21 +70,36 @@
   unidiomatic_syntax.ml)
  (action
   (run
-   ../../drive.exe
+   %{dep:../../../cli/inline_runner/drive/drive.exe}
+   --placeholder
+   chdir.ml
+   --placeholder
+   escaped_strings.ml
+   --placeholder
+   exact.ml
+   --placeholder
+   flexible.ml
+   --placeholder
+   missing.ml
+   --placeholder
+   normal_strings.ml
+   --placeholder
+   semicolon.ml
+   --placeholder
+   spacing.ml
+   --placeholder
+   string_extension_syntax.ml
+   --placeholder
+   string_padding.ml
+   --placeholder
+   trailing.ml
+   --placeholder
+   unidiomatic_syntax.ml
+   --run
    runner
    %{dep:conformance_runner.exe}
-   chdir.ml
-   escaped_strings.ml
-   exact.ml
-   flexible.ml
-   missing.ml
-   normal_strings.ml
-   semicolon.ml
-   spacing.ml
-   string_extension_syntax.ml
-   string_padding.ml
-   trailing.ml
-   unidiomatic_syntax.ml)))
+   inline-test-runner
+   conformance)))
 
 (rule
  (alias runtest)

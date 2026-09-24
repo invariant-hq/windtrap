@@ -4,7 +4,7 @@
   ---------------------------------------------------------------------------*)
 
 (* Cross-partition fixture driver: [drive_cross_partition.exe RUNNER]
-   spawns RUNNER once per partition, under the harness's scrubbed
+   spawns RUNNER once per partition, in the harness's stated
    environment, and records each run's transcript, exit code, and what it
    wrote — which is the whole of what dune reads when it decides whether
    a correction is promotable. The one directory with a driver of its
@@ -21,9 +21,6 @@
 
 let masks = [ Drive_harness.Full_log; Drive_harness.Backtrace ]
 
-let environment extra =
-  Drive_harness.environment (("WINDTRAP_SLOW_THRESHOLD", "0") :: extra)
-
 (* .corrected files in the rule's directory, which is where the run
    writes them: beside dune's copy of the source, under the build root
    the runner started in. *)
@@ -38,15 +35,19 @@ let clear_corrected () =
     (corrected_files ())
 
 let run ~runner ~partition ~name =
-  ignore
-    (Drive_harness.record ~name ~exe:runner
-       ~args:
-         [ "inline-test-runner"; "cross_partition"; "-partition"; partition ]
-       ~env:(environment []) ~masks ())
+  Drive_harness.record ~name ~exe:runner
+    ~args:[ "inline-test-runner"; "cross_partition"; "-partition"; partition ]
+    ~env:[ ("WINDTRAP_SLOW_THRESHOLD", "0") ]
+    ~masks ()
 
 let () =
   match Sys.argv with
   | [| _; runner |] ->
+      let runner =
+        if Filename.is_relative runner then
+          Filename.concat (Sys.getcwd ()) runner
+        else runner
+      in
       (* 1. The crashing partition: the veto, and the empty .corrected set
          that makes it a veto over somebody else's work. *)
       run ~runner ~partition:"crash.ml" ~name:"crash";

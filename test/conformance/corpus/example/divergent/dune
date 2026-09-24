@@ -22,7 +22,15 @@
  (targets functor-log functor-exit functor.ml.corrected)
  (deps functor.ml)
  (action
-  (run ../../../drive.exe functor %{dep:conformance_runner.exe} functor.ml)))
+  (run
+   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --placeholder
+   functor.ml
+   --run
+   functor
+   %{dep:conformance_runner.exe}
+   inline-test-runner
+   conformance)))
 
 (rule
  (alias runtest)
@@ -46,10 +54,14 @@
  (deps control_chars.ml)
  (action
   (run
-   ../../../drive.exe
+   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --placeholder
+   control_chars.ml
+   --run
    control_chars
    %{dep:runner_control_chars.exe}
-   control_chars.ml)))
+   inline-test-runner
+   conformance)))
 
 (rule
  (alias runtest)

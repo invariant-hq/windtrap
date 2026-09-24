@@ -22,10 +22,14 @@
  (deps unflushed_stubs_output.ml)
  (action
   (run
-   ../../../drive.exe
+   %{dep:../../../../cli/inline_runner/drive/drive.exe}
+   --placeholder
+   unflushed_stubs_output.ml
+   --run
    runner
    %{dep:conformance_runner.exe}
-   unflushed_stubs_output.ml)))
+   inline-test-runner
+   conformance)))
 
 (rule
  (alias runtest)
