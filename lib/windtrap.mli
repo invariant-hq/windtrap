@@ -1271,8 +1271,7 @@ val stateful :
     - [invariant m sut] runs on the fresh system before the first call and after
       every call. Bodies check what a call returns, and the invariant checks
       what the state is. The last assertion of an invariant is in tail position.
-      Without [~__POS__] its failure is located at the command that ran before
-      it, or at the test's declaration on the fresh system.
+      Without [~__POS__] its failure is located at the test's declaration.
     - [steps] is the number of calls drawn per case. Defaults to [20]. A drawn
       call whose [pre] fails is dropped, so a program has at most [steps] calls.
     - [pp_model] adds a column to the printed program: the model before each

@@ -188,8 +188,9 @@ val execute :
     The [msg] of a [Failure.Check_failure] gets a label that names the call:
     [call 3 of 5: pop], [invariant after call 3 of 5: pop] or
     [invariant on the fresh system]. The assertion's own [msg] follows the label
-    after ["; "], flattened to one line. On the fresh system there is no
-    command, and the failure keeps no location of its own.
+    after ["; "], flattened to one line. A failing body that recorded no
+    location gets its command's. A failing invariant keeps its own, and none
+    when it recorded none, on the fresh system as after a call.
 
     {b The scope.} When [scope] does not call back once, or raises, [execute]
     ends as follows:

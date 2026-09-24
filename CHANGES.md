@@ -350,7 +350,8 @@ Coverage and packaging:
   before  call`, the model being the one the call ran against and the
   column absent without `?pp_model` (`… (N calls omitted)` in the middle
   of a program over 40 calls); then the failing command's declaration
-  site over `call N of M: <name>`. A
+  site over `call N of M: <name>`, or the test's declaration over
+  `invariant after call N of M: <name>` for an invariant. A
   `~pre` or `~next` that raises is reported once, unshrunk, as a
   specification bug naming the call, the operation and which of the two
   raised (`call 3: close, ~pre raised Failure("nth")`).

@@ -1972,7 +1972,7 @@ let the_summary_names_the_last_call_not_the_failing_one () =
        (expect_check_failure "the first call" (fun () ->
             Stateful.execute ~scope:unit_scope program)))
 
-let a_fresh_system_invariant_failure_has_no_command_location () =
+let an_invariant_failure_has_no_command_location () =
   let site = ("declared.ml", 7, 0, 3) in
   let program =
     program_at
@@ -1987,9 +1987,13 @@ let a_fresh_system_invariant_failure_has_no_command_location () =
   in
   is_true ~msg:"on the fresh system: none"
     (loc_under (fun _ () -> raise Exit) = None);
-  is_true ~msg:"after a call: that call's"
-    (loc_under (fun model () -> if model = 1 then raise Exit)
-    = Some (Loc.of_pos site))
+  is_true ~msg:"after a call: none either"
+    (loc_under (fun model () -> if model = 1 then raise Exit) = None);
+  let own = ("invariant.ml", 3, 0, 5) in
+  is_true ~msg:"an invariant that locates its failure keeps its own"
+    (loc_under (fun model () ->
+         if model = 1 then fail ~__POS__:own "the state is wrong")
+    = Some (Loc.of_pos own))
 
 let an_invalid_timeout_raises_at_declaration () =
   List.iter
@@ -2012,8 +2016,8 @@ let suite =
       every_fatal_exception_escapes_as_itself );
     ( "the summary names the last call, not the failing one",
       the_summary_names_the_last_call_not_the_failing_one );
-    ( "a fresh-system invariant failure has no command location",
-      a_fresh_system_invariant_failure_has_no_command_location );
+    ( "an invariant failure has no command location",
+      an_invariant_failure_has_no_command_location );
     ( "an invalid timeout raises at declaration",
       an_invalid_timeout_raises_at_declaration );
     ( "repair keeps exactly the fold's calls",

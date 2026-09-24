@@ -423,8 +423,11 @@ let run_program ?invariant program sut =
             normalize (fun () -> call.body model sut));
         (* Repair already evaluated this transition without raising. *)
         let model = call.next model in
-        at_step ~after:true ?loc:call.loc ~name:call.name ~step ~total
-          (fun () -> normalize (fun () -> check model));
+        (* The invariant is the test's, not the command's: a failure it
+           did not locate is located at the declaration, as on the fresh
+           system. *)
+        at_step ~after:true ~name:call.name ~step ~total (fun () ->
+            normalize (fun () -> check model));
         go (step + 1) model rest
   in
   go 1 program.initial program.calls
