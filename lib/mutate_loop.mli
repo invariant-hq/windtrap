@@ -91,9 +91,9 @@ val execute_and_report : suite:string -> Run.config -> Test_tree.t list -> run
     passed its deadline, did not exit with [0], or left no complete line.
 
     {b Limits.} Nothing bounds a whole run. A child that passes its deadline has
-    its process group killed, and the loop goes on. The deadline is the wall
-    time of the dry run, read on the system clock ([Unix.gettimeofday]), plus a
-    share for the tests of the child. The share is ten times
+    its process group killed, and the loop goes on. The deadline is the time
+    that the dry run took, read on the monotonic clock ({!Os.val-counter}), plus
+    a share for the tests of the child. The share is ten times
     ([deadline_multiplier]) what the dry run measured for those tests, and at
     least one second. The probe has the same deadline, over every executed test.
 

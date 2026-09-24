@@ -362,7 +362,7 @@ let fork_child ~deadline body =
       let buffer = Buffer.create 128 in
       let chunk = Bytes.create 4096 in
       let killed = ref `No in
-      let expires_at = Unix.gettimeofday () +. deadline in
+      let started = Os.counter () in
       let read_ready () =
         match Unix.read read_fd chunk 0 (Bytes.length chunk) with
         | 0 -> false
@@ -372,7 +372,7 @@ let fork_child ~deadline body =
         | exception Unix.Unix_error (Unix.EINTR, _, _) -> true
       in
       let rec watch () =
-        let remaining = expires_at -. Unix.gettimeofday () in
+        let remaining = deadline -. Os.count_s started in
         if Option.is_some interrupt.signal then kill_group pid
         else if remaining <= 0. then begin
           killed := `Deadline;
@@ -875,7 +875,7 @@ let population ~scope =
 let loop renderer ~scope ~suite (config : Run.config) tests =
   let population = population ~scope in
   let reach = fresh_reach () in
-  let started = Unix.gettimeofday () in
+  let started = Os.counter () in
   match Report.run ~on_event:(observe reach) ~suite (dry_run config) tests with
   (* The startup message is already on stderr; a refused run never
      produced a number. *)
@@ -899,9 +899,7 @@ let loop renderer ~scope ~suite (config : Run.config) tests =
                 (fun mutant -> reaching_tests reach mutant <> [])
                 population
             in
-            let dry_run_wall =
-              Float.max 0.01 (Unix.gettimeofday () -. started)
-            in
+            let dry_run_wall = Float.max 0.01 (Os.count_s started) in
             let narrowed =
               narrows_suite ~config ~focus:outcome.Run.focus_active
             in
