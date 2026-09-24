@@ -1565,20 +1565,18 @@ let stateful_declares_a_prop_node_with_its_tags_timeout_and_site () =
 
 (* [stateful] is [Run.prop] over [program] with [execute] as its law, and
    the only way to see that wiring is to run the node it declares. The body
-   ends by raising the engine's outcome in a constructor [Run]'s
-   interface does not export, so the evidence is the lifecycle the run left
-   behind rather than the outcome value. That constructor is recognised by
-   its name, the one thing of it this suite can see, and any other
-   exception the body raises escapes to fail the test. *)
+   returns on a pass and raises the property's failure otherwise; either is
+   an outcome, so the evidence is the lifecycle the run left behind, and any
+   other exception the body raises escapes to fail the test. *)
 let run_declared_body tree =
   match (flattened tree).Test_tree.body with
   | Test_tree.Scoped _ ->
       failf "the declared node scopes a resource, not a plain test"
   | Test_tree.Body body -> (
       match body () with
-      | () -> failf "the property body returned without an engine outcome"
-      | exception outcome
-        when Printexc.exn_slot_name outcome = "Windtrap__Run.Prop_outcome" ->
+      | () -> ()
+      | exception Failure.Check_failure { Failure.kind = Failure.Property _; _ }
+        ->
           ())
 
 let stateful_runs_one_fresh_system_per_case_over_steps_calls () =

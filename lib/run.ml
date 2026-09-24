@@ -194,6 +194,7 @@ type frame = {
   fr_loc : Loc.t option; (* declaration site: the location fallback *)
   fr_corrections : bool; (* may this attempt record baseline corrections? *)
   mutable fr_prop : Property.context option;
+  mutable fr_prop_stats : Property.stats option; (* of the engine's outcome *)
   mutable fr_rev_failures : Failure.t list;
   mutable fr_subtests : string list; (* enclosing subtests, innermost first *)
   mutable fr_temp_root : string option; (* the attempt's scratch dir *)
@@ -209,6 +210,7 @@ let frame ?(corrections = true) t ~path ~loc =
     fr_loc = loc;
     fr_corrections = corrections;
     fr_prop = None;
+    fr_prop_stats = None;
     fr_rev_failures = [];
     fr_subtests = [];
     fr_temp_root = None;
@@ -687,37 +689,6 @@ let install_exit_guard () =
 
 (* Property tests *)
 
-(* The channel between a [prop] body and the classifier below: the body
-   always raises its engine outcome, the Body-phase guard of the same test
-   consumes it. Never installed in run state and never visible
-   to user code — the raise happens after the user's law returned. *)
-exception Prop_outcome of Property.outcome
-
-let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
-    law =
-  let loc = Loc.resolve ?__POS__ () in
-  let body () =
-    let frame = current_frame () in
-    let config = config frame.owner in
-    (* Case count: declaration site > --prop-count > engine default. The
-       engine is told which, not just how many: it stamps a config-sourced
-       count on failure payloads so the replay hint can restate the flag,
-       while a declaration-site count replays by itself. *)
-    let count =
-      match count with
-      | Some n -> Some (`Declared n)
-      | None -> Option.map (fun n -> `Config n) config.prop_count
-    in
-    let path = Test_tree.path_to_string frame.fr_path in
-    let outcome =
-      Property.run ?loc ?count ?max_discard ?examples ?summary ~root:config.seed
-        ~path gen (fun context value ->
-          with_prop_context frame context (fun () -> law value))
-    in
-    raise (Prop_outcome outcome)
-  in
-  Test_tree.test ?__POS__ ?tags ?timeout name body
-
 let coverage_failure ?loc (stats : Property.stats) =
   let unsatisfied =
     List.filter (fun c -> not c.Property.satisfied) stats.Property.coverage
@@ -734,6 +705,43 @@ let gave_up_failure ?loc (stats : Property.stats) =
        "property gave up: %d discards exhausted the generation budget (%d \
         cases passed)"
        stats.Property.discards stats.Property.cases)
+
+(* The engine's outcome is the body's: its stats go to the frame, and a
+   failing outcome fails the body as an assertion does, located at the
+   declaration where the engine gave no location. *)
+let prop ?__POS__ ?tags ?timeout ?count ?max_discard ?examples ?summary name gen
+    law =
+  let loc = Loc.resolve ?__POS__ () in
+  let body () =
+    let frame = current_frame () in
+    let config = config frame.owner in
+    (* Case count: declaration site > --prop-count > engine default. The
+       engine is told which, not just how many: it stamps a config-sourced
+       count on failure payloads so the replay hint can restate the flag,
+       while a declaration-site count replays by itself. *)
+    let count =
+      match count with
+      | Some n -> Some (`Declared n)
+      | None -> Option.map (fun n -> `Config n) config.prop_count
+    in
+    let path = Test_tree.path_to_string frame.fr_path in
+    let fail stats failure =
+      frame.fr_prop_stats <- Some stats;
+      raise (Failure.Check_failure failure)
+    in
+    match
+      Property.run ?loc ?count ?max_discard ?examples ?summary ~root:config.seed
+        ~path gen (fun context value ->
+          with_prop_context frame context (fun () -> law value))
+    with
+    | Property.Pass stats -> frame.fr_prop_stats <- Some stats
+    | Property.Fail { failure; stats } -> fail stats failure
+    | Property.Coverage_failed stats ->
+        fail stats (coverage_failure ?loc:frame.fr_loc stats)
+    | Property.Gave_up stats ->
+        fail stats (gave_up_failure ?loc:frame.fr_loc stats)
+  in
+  Test_tree.test ?__POS__ ?tags ?timeout name body
 
 (* The per-test boundary *)
 
@@ -852,26 +860,12 @@ let same_raise (a : Failure.caught) (b : Failure.caught) =
    attempt's failures are all kept corrections, and whether it is the test's
    last whatever its retries. Fatal exceptions propagate. *)
 let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
-  let prop_stats = ref None in
   let skipped = ref None in
   let phase = ref Failure.Body in
   let record_failure ph failure =
     add_failure frame (Failure.with_phase ph failure)
   in
-  let record_prop_outcome ph = function
-    | Property.Pass stats -> prop_stats := Some stats
-    | Property.Fail { failure; stats } ->
-        prop_stats := Some stats;
-        record_failure ph failure
-    | Property.Coverage_failed stats ->
-        prop_stats := Some stats;
-        record_failure ph (coverage_failure ?loc:case.Test_tree.loc stats)
-    | Property.Gave_up stats ->
-        prop_stats := Some stats;
-        record_failure ph (gave_up_failure ?loc:case.Test_tree.loc stats)
-  in
   let classify ph : Failure.caught -> unit = function
-    | `Exception (Prop_outcome outcome, _) -> record_prop_outcome ph outcome
     | `Assertion failure -> record_failure ph failure
     | `Exception (exn, backtrace) ->
         record_failure ph
@@ -1064,7 +1058,7 @@ let run_attempt run frame (case : Test_tree.case) ~limit ~groups ~test_name =
         | None -> Failure.Pass)
     | failures -> Failure.Fail failures
   in
-  (outcome, !prop_stats, corrected, final)
+  (outcome, frame.fr_prop_stats, corrected, final)
 
 (* A failing test's report carries its bounded captured output — the
    final attempt's, attached to the first failure entry. *)
